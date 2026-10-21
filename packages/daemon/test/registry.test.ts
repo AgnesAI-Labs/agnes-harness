@@ -41,6 +41,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-on-demand',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command,
@@ -82,6 +83,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-live-projected',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command,
@@ -113,6 +115,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-missing-row',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
@@ -163,6 +166,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-artifacts',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 3,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(async () => {
@@ -208,7 +212,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     expect(order.slice(-2)).toEqual(['reset', 'worker-close'])
   })
 
-  it('drains replayed frames in one sidebar batch, then live frames in wire order, including ones arriving mid-drain', async () => {
+  it('drains buffered frames in wire order, including ones arriving mid-drain, and projects each row once', async () => {
     let releaseScan: ((events: EventEnvelope[]) => void) | undefined
     const scan = new Promise<EventEnvelope[]>((resolve) => {
       releaseScan = resolve
@@ -225,6 +229,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-drain',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 3,
       }),
       onExit: vi.fn(),
       command: vi.fn(async (method: string, params: Record<string, unknown>) =>
@@ -241,29 +246,15 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
           })
       }),
     }
-    let batching = false
-    const workspaces = {
-      batch: vi.fn((_key: string, run: () => void) => {
-        batching = true
-        order.push('batch')
-        try {
-          run()
-        } finally {
-          batching = false
-          order.push('batch-end')
-        }
-      }),
-    }
     const registry = new WorkerRegistry(
       { acquire: vi.fn(async () => link), retire: vi.fn() } as unknown as WorkerPool,
       lifecycle,
-      workspaces,
     )
     const opening = open(registry, { key: 'drain-session', cwd: '/workspace', resume: true })
     await vi.waitFor(() => expect(link.command).toHaveBeenCalledWith('scan', expect.anything()))
     const publish = (event: EventEnvelope) =>
-      registry.deliver('drain-session', event, () => order.push(`publish-${event.seq}${batching ? '*' : ''}`))
-    // The tail repeats the scanned rows, then a live row that is projected while the drain awaits.
+      registry.deliver('drain-session', event, () => order.push(`publish-${event.seq}`))
+    // Rows 1..3 are repeated by a tail that was already running; 4 is new and its projection waits.
     for (const seq of [1, 2, 3, 4]) publish(row(seq))
     releaseScan?.([1, 2, 3].map(row))
     await vi.waitFor(() => expect(releaseFour).toBeDefined())
@@ -275,18 +266,14 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
       'observe-1',
       'observe-2',
       'observe-3',
-      'batch',
-      'publish-1*',
-      'publish-2*',
-      'publish-3*',
-      'batch-end',
+      'publish-1',
+      'publish-2',
+      'publish-3',
       'observe-4',
       'publish-4',
       'observe-5',
       'publish-5',
     ])
-    expect(workspaces.batch).toHaveBeenCalledOnce()
-    expect(workspaces.batch).toHaveBeenCalledWith('drain-session', expect.any(Function))
   })
 
   it('wakes a waiter registered while openFresh replay is still in flight, like deliver() does for live frames', async () => {
@@ -306,6 +293,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
           writerRunId: 'run-replay-waiter',
           generation: 1,
           profileHash: 'sha256-profile',
+          lastSeq: 1,
         }),
         onExit: vi.fn(),
         closeSession: vi.fn(async () => undefined),
@@ -351,6 +339,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-tail-failure',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       tail: vi.fn(async () => {
@@ -387,6 +376,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-one',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(),
@@ -416,6 +406,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
           writerRunId: `run-${generation}`,
           generation,
           profileHash: 'sha256-profile',
+          lastSeq: 0,
         }),
         onExit: vi.fn(),
         command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
@@ -453,6 +444,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(async () => undefined),
@@ -503,6 +495,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(closeSession),
@@ -561,6 +554,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
           writerRunId: `run-${generation}`,
           generation,
           profileHash: 'sha256-profile',
+          lastSeq: 0,
         }),
         onExit: vi.fn(),
         command: vi.fn(),
@@ -594,6 +588,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       closeSession: vi.fn(async () => undefined),
@@ -641,6 +636,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-busy',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn((method: string) => (method === 'run' ? run : undefined)),
@@ -672,6 +668,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-old',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn((notify: () => void) => {
         oldExit = notify
@@ -687,6 +684,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-current',
         generation: 2,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(),
@@ -725,6 +723,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-scheduler',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(),
@@ -752,6 +751,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'run-prompt',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(async () => ({ reason: 'completed', lastSeq: 4 })),
@@ -795,6 +795,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: `${key}-run`,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command,
@@ -854,6 +855,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'parent-run',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: parentCommand,
@@ -895,6 +897,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         generation: 1,
         workerGeneration: 2,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn((notify: () => void) => {
         link.alive = false
@@ -926,6 +929,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'old-run',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn((notify: () => void) => {
         oldExit = notify
@@ -941,6 +945,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'new-run',
         generation: 2,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       closeSession: vi.fn(async () => {
         throw new Error('recovery channel close failed')
@@ -983,6 +988,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: token,
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       // Like a real session channel, exit is observed on the whole worker link.
       onExit: (notify: () => void) => void workerExit.push(notify),
@@ -1024,6 +1030,7 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
         writerRunId: 'close-failure-run',
         generation: 1,
         profileHash: 'sha256-profile',
+        lastSeq: 0,
       }),
       onExit: vi.fn(),
       command: vi.fn(),

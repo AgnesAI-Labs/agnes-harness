@@ -3,6 +3,17 @@ import { ArtifactRef as ArtifactRefSchema } from '../gen/ts/agnes-v1.js'
 import { validateAgainst, validateStoredAttachment } from './validate.js'
 
 export const ARTIFACT_REGISTERED_EVENT = 'x/core/artifact.registered'
+/**
+ * Every event type `sessionArtifactRoots` can return roots for. A reader that only needs the rows
+ * that can create artifact authority scans exactly these; the parser answers `undefined` for the rest.
+ */
+export const SESSION_ARTIFACT_ROOT_EVENT_TYPES: readonly string[] = [
+  ARTIFACT_REGISTERED_EVENT,
+  'user/message',
+  'inbox',
+  'request/header',
+  'tool/result',
+]
 const MAX_ROOTS = 256
 const ARTIFACT_URI = /^artifact:\/\/([0-9a-f]{64})$/u
 

@@ -27,6 +27,7 @@ export {
   expireProgress,
   isRunProgress,
   observeProgress,
+  RUN_PROGRESS_EVENT_TYPES,
   type RunProgress,
   startProgress,
 } from './run-progress.js'

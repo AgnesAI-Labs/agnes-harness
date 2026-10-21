@@ -97,6 +97,7 @@ async function openOnWorker(
       writerRunId: `run-${key}`,
       generation: 1,
       profileHash: 'sha256-profile',
+      lastSeq: 3,
     }),
     onExit: vi.fn(),
     closeSession: vi.fn(async () => undefined),
