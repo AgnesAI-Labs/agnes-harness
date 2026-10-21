@@ -1,4 +1,4 @@
-import { publicErrorContract } from '@agnes/protocol'
+import { publicErrorContract, publicErrorReason } from '@agnes/protocol'
 
 /** Closed boot refusals are generated from the public error contract; no extension prose crosses IPC. */
 export function workerBootFailureCode(value: unknown): string | undefined {
@@ -13,7 +13,8 @@ export async function reportWorkerBootFailure(error: unknown): Promise<void> {
   if (!code || !process.send || !process.connected) return
   await new Promise<void>((resolve) => {
     try {
-      process.send?.({ kind: 'worker-boot-failure', code }, () => resolve())
+      const reason = publicErrorReason(error)
+      process.send?.({ kind: 'worker-boot-failure', code, ...(reason ? { reason } : {}) }, () => resolve())
     } catch {
       resolve()
     }

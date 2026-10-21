@@ -342,7 +342,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
               type: 'text',
               text: collected
                 ? `Delegated task ${collected.status}.\n${collected.text ?? 'No findings returned.'}`
-                : 'Task delegated in the background. A completion notice will carry the findings. Use subagent_list for the handle if follow-up is needed; do not repeat internal handles to the user.',
+                : 'Task delegated in the background. A completion notice will carry the findings. Keep the task reference for follow-up; do not repeat internal handles to the user.',
             },
           ],
           details,
@@ -522,7 +522,7 @@ function listedChildren(
 export const subagentListTool = defineTool({
   name: 'subagent_list',
   description:
-    'List child agents and available application roles for this session. Continuable children accept subagent_send_message.',
+    'List child agents and available application roles for this session. Continuable children accept follow-up messages.',
   parameters: Type.Object({}, { additionalProperties: false }),
   meta: { ...controlMeta, isReadOnly: true, replay: 'safe' },
   async execute(_args, ctx) {

@@ -408,7 +408,7 @@ it.each(['@community/fake-model-adapter', 'community-fake'])(
 
 it.each([
   { selected: 'missing-adapter', missingCredential: false, code: 'E_SEAM_INIT' },
-  { selected: 'community-fake', missingCredential: true, code: 'E_SEAM_INIT' },
+  { selected: 'community-fake', missingCredential: true, code: 'E_SECRET_UNRESOLVED' },
 ])(
   'refuses before inference for $selected with missing credential $missingCredential',
   async ({ selected, missingCredential, code }) => {

@@ -24,7 +24,6 @@ import {
   resourceWorkerObservation,
 } from '@agnes/resource-control-daemon'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
-import { workerBootFailureCode } from '@agnes/worker-runtime'
 import type { DaemonConfig } from './config.js'
 import type { RequestFrame } from './frames.js'
 import type {
@@ -379,15 +378,14 @@ export class WorkerPool {
       let child: ChildProcess | undefined
       let startupFinished = false
       let helloReceived = false
-      let bootFailureCode: string | undefined
-      const bootEpoch = this.bootFailures.epoch
+      const bootFailure = this.bootFailures.start(workerKey)
       // Set from the moment a runtime target is offered until the worker proves it can run it.
       let bootOffer: RuntimeBootDelivery | undefined
       const failStarting = (error: Error): void => {
         if (startupFinished) return
         startupFinished = true
-        this.o.onRuntimeLog?.({ kind: 'worker.start_failed', detail: { code: bootFailureCode } })
-        if (!helloReceived && !this.stopping) this.bootFailures.record(workerKey, bootFailureCode, bootEpoch)
+        this.o.onRuntimeLog?.({ kind: 'worker.start_failed', detail: { code: bootFailure.code } })
+        if (!helloReceived && !this.stopping) bootFailure.record()
         // A start that dies on the very target it was given says something about that target, not
         // about the worker; only then is the exit expected rather than a crash to count.
         // Operator shutdown cancels admission; it says nothing about whether the target can boot.
@@ -404,7 +402,7 @@ export class WorkerPool {
         if (slot.startupTimer !== undefined) clearTimeout(slot.startupTimer)
         slot.startupTimer = undefined
         if (child?.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
-        reject(this.bootFailures.blocked(workerKey) ?? error)
+        reject(bootFailure.failure(error))
       }
       slot.failStarting = failStarting
       const timer = setTimeout(() => {
@@ -573,8 +571,7 @@ export class WorkerPool {
       slot.child = spawnedChild
       spawnedChild.on('message', (message: unknown) => {
         if (startupFinished || slot.initializingLink || !message || typeof message !== 'object') return
-        const frame = message as { kind?: unknown; code?: unknown }
-        if (frame.kind === 'worker-boot-failure') bootFailureCode = workerBootFailureCode(frame.code)
+        bootFailure.observe(message)
       })
       spawnedChild.once('error', (error) => {
         if (!slot.link)
@@ -617,7 +614,7 @@ export class WorkerPool {
         }
         failStarting(
           new Error(
-            `worker ${workerKey} exited before hello${bootFailureCode ? `: ${bootFailureCode}` : ''} (${code === null ? 'signal' : `code ${code}`}${signal ? `, ${signal}` : ''})`,
+            `worker ${workerKey} exited before hello${bootFailure.code ? `: ${bootFailure.code}` : ''} (${code === null ? 'signal' : `code ${code}`}${signal ? `, ${signal}` : ''})`,
           ),
         )
       })

@@ -148,3 +148,9 @@ thumbnail/original references on demand; downloading an original preserves its b
 Model image renditions are provider-owned cached derivatives. The original is unchanged;
 current-turn images must fit the selected model, missing older originals show a placeholder,
 and an omitted historical prefix remains omitted across model changes and restart.
+
+A worker that cannot start because a configured model credential is absent refuses opening with
+`E_SECRET_UNRESOLVED`; restore the credential in the selected home or its configured environment,
+then retry. A retired plugin-core format returns the clean-home guidance. Neither refusal converts
+saved data. Moving a home can separately change its path-bound sandbox execution policy: a policy
+mismatch remains a refusal, rather than silently changing the session’s isolation decision.

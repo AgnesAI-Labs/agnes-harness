@@ -308,6 +308,7 @@ describe('subagent_spawn', () => {
     const result = await tool.execute({ task: 'Read', role: role.ref }, ctx)
     expect(result.structured).toMatchObject({ childKey: 'role-child', role, task: 'Read', status: 'running' })
     expect(JSON.stringify(result.content)).not.toContain('role-child')
+    expect(JSON.stringify(result.content)).not.toMatch(/subagent_(?:send_message|list)/)
     const waitedContext = context({ spawn: async () => ({ childKey: 'waited-role', role }) })
     const waited = await tool.execute({ task: 'Read', role: role.ref, wait: true }, waitedContext.ctx)
     expect(waited.structured).toMatchObject({ childKey: 'waited-role', status: 'completed' })

@@ -447,6 +447,7 @@
             {
               "const": "E_PACKAGE_INTEGRITY",
               "x-public-error": {
+                "boot": true,
                 "rpc": "SEMANTIC_REJECTED",
                 "messageKey": "appServer.errors.rejected",
                 "copy": "rejected",
@@ -1775,9 +1776,10 @@
             {
               "const": "E_SECRET_UNRESOLVED",
               "x-public-error": {
+                "boot": true,
                 "rpc": "SEMANTIC_REJECTED",
                 "messageKey": "appServer.errors.unavailable",
-                "copy": "unavailable"
+                "copy": "credentialRequired"
               }
             },
             {

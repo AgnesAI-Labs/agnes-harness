@@ -1,5 +1,5 @@
 /**
- * 界面语言偏好。未保存、非法值与读取失败一律回落英文。
+ * 界面语言偏好。有效保存值优先，否则使用浏览器首选语言；不支持的语言回落英文。
  *
  * 取值与 `@agnes/web-client` 的 `resolveUiLocale` 保持一致：`en` | `zh-CN`。
  * 本模块不引用 web-client，以便首帧脚本 `theme-boot` 可以单独打进阻塞式 IIFE。
@@ -20,12 +20,16 @@ export function isUiLocale(value: unknown): value is UiLocale {
   return typeof value === 'string' && (UI_LOCALES as readonly string[]).includes(value)
 }
 
-export function readLocalePreference(storage: Pick<Storage, 'getItem'>): UiLocale {
+export function readLocalePreference(
+  storage: Pick<Storage, 'getItem'>,
+  browserLanguage: string = typeof navigator === 'undefined' ? 'en' : navigator.language,
+): UiLocale {
+  const fallback: UiLocale = /^zh(?:-CN|-Hans(?:-CN)?)?$/i.test(browserLanguage) ? 'zh-CN' : 'en'
   try {
     const raw = storage.getItem(LOCALE_STORAGE_KEY)
-    return isUiLocale(raw) ? raw : 'en'
+    return isUiLocale(raw) ? raw : fallback
   } catch {
-    return 'en'
+    return fallback
   }
 }
 

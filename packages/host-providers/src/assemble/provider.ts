@@ -1,6 +1,7 @@
 import { basename, dirname, join } from 'node:path'
 import type { ContractStore, ManualRoute, Registry } from '@agnes/ai'
 import {
+  AiSetupError,
   API_KEY_CREDENTIAL_REFS,
   createApiKeyProviderConfigs,
   createProvider,
@@ -86,6 +87,16 @@ export type ProviderBuildOptions = {
   pricing?: { creditsPerUsd: number }
 }
 
+function withSetupErrors<T>(create: () => T): T {
+  try {
+    return create()
+  } catch (error) {
+    if (error instanceof AiSetupError && error.code === 'SECRET_UNRESOLVED')
+      throw new HostError('E_SECRET_UNRESOLVED', 'A configured model credential is unavailable.')
+    throw error
+  }
+}
+
 export async function buildProvider(
   profile: ResolvedProfile,
   routes: RouteTable,
@@ -132,9 +143,10 @@ export async function buildProvider(
   // ERRATA B19: a test host, and AGNES_TEST_PROVIDER=faux, replace the whole model seam. Such a
   // provider has no registry, which is why the field is optional on the way out - and why the
   // caller cannot treat a missing registry as "verification passed".
-  if (deps.providerFactory)
+  const factory = deps.providerFactory
+  if (factory)
     return {
-      provider: deps.providerFactory(profile, built),
+      provider: withSetupErrors(() => factory(profile, built)),
       contractStore: built.contractStore,
       preconfiguredRoutes: [],
       dispose: async () => undefined,
@@ -284,18 +296,20 @@ export async function buildProvider(
       if (!id) throw new HostError('E_API_RANGE', 'builtin adapter declares no API')
       instances.push(await modelAdapters.create(id, withRetryDirectory(config)))
     }
-    const provider = createProvider({
-      ...(deps.trace ? { trace: deps.trace } : {}),
-      adapters: instances.map((instance) => instance.adapter),
-      routes,
-      secrets: deps.secrets,
-      clock: deps.clock,
-      parserVersion: PARSER_VERSION,
-      log: built.log,
-      ...(built.pricing ? { pricing: built.pricing } : {}),
-      contract: built.contractStore,
-      optionalCredentialRefs,
-    })
+    const provider = withSetupErrors(() =>
+      createProvider({
+        ...(deps.trace ? { trace: deps.trace } : {}),
+        adapters: instances.map((instance) => instance.adapter),
+        routes,
+        secrets: deps.secrets,
+        clock: deps.clock,
+        parserVersion: PARSER_VERSION,
+        log: built.log,
+        ...(built.pricing ? { pricing: built.pricing } : {}),
+        contract: built.contractStore,
+        optionalCredentialRefs,
+      }),
+    )
     verifyRoutes(routes, provider.registry)
     return {
       provider,
