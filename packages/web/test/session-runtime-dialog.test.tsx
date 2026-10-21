@@ -122,6 +122,11 @@ it('re-reads an open runtime summary after invalidation and ignores stale reads,
       await Promise.resolve()
     })
 
+    current = { ...current, loaded: false }
+    integrity.mockClear()
+    await act(async () => dialog.invalidate('child'))
+    expect(integrity).not.toHaveBeenCalled()
+
     current = snapshot('workspace-write', 'parent-owner')
     await act(async () => dialog.invalidate('unrelated'))
     expect(summary()).toContain('first-chooser')

@@ -18,7 +18,7 @@ Web 中，历史内容可在执行准入完成前阅读。“正在准备会话�
 
 校验完成前，作为证据的 decision 回答/消费（含审批和签名）、审批复核证据、profile service 准入回执、声明 `attestsHistory` 的报告/导出工具、最终 turn verifier/gate 结论、RLAF 与 CLI 历史导出、诊断事件导出和执行依据审计视图等待校验。持有写锁的操作遇到新校验时可明确拒绝并提示正在校验历史；冷态审计视图要求先打开会话。这些门位于通用 decision、verifier 和导出合同；普通会话展示和 artifact 字节读取不构成账本完整性证明。fork 独立校验继承的前缀；父会话封存或关闭后，不再发布正在创建的子会话。
 
-显式重新审计入口：`_agnes/v1/session.integrity` 传 `{sessionId, verify: true}`；SDK `client.session.integrity(id, true)` / `session.integrity(true)`；CLI `node agnes.mjs sessions verify SESSION_ID --json`；Web **运行信息 → 历史完整性 → 运行完整校验**。不传 `verify` 时返回当前状态。结果包含 `state`、`verifiedThroughSeq`、`verifiedAtMs`、`lastSeq`、`legacyThroughSeq`，损坏时包含 `failureSeq`。Web 等待期间显示“正在校验历史…”。取消客户端等待不会取消会话校验，也不会解除证据门。
+显式重新审计入口：`_agnes/v1/session.integrity` 传 `{sessionId, verify: true}`；SDK `client.session.integrity(id, true)` / `session.integrity(true)`；CLI `node agnes.mjs sessions verify SESSION_ID --json`；Web **运行信息 → 历史完整性 → 运行完整校验**。不传 `verify` 时返回已打开会话的当前状态，未打开时拒绝；读取状态不会打开会话。显式审计会先打开未加载的会话，再进行校验。结果包含 `state`、`verifiedThroughSeq`、`verifiedAtMs`、`lastSeq`、`legacyThroughSeq`，损坏时包含 `failureSeq`。Web 等待期间显示“正在校验历史…”。取消客户端等待不会取消会话校验，也不会解除证据门。
 
 `session/load` 或 `_agnes/v1/session.open` 成功仅表示打开检查与会话装配结束；ACP 回放内容的前缀哈希可能仍待完成。后台或显式校验会发现 checkpoint 之前的字节变化，以 `E_LEDGER_INTEGRITY` 封存会话、删除 checkpoint、保留账本和持久化失败标记；发现后拒绝排队和新工作，reload 返回 `E_SESSION_CORRUPT`。发现前已准入的普通工作可能已经执行，因此保证是篡改检测与证据门控，不能声称普通执行始终读取已完整审计的历史。校验是时间点结论，怀疑变化时应重新审计。没有哈希的 legacy 行不能获得追溯性保护（`legacyThroughSeq` 标识其范围）。能同时重写数据及所有本地完整性元数据的攻击者可绕过本地检查；独立外部锚点/签名需另行建立。
 

@@ -490,7 +490,7 @@ export function createRuntimeDialog(options: {
       // The composer's catalog names loops; an id it does not know is shown as it is.
       loopLabel = value.loop ? options.loopLabel?.(value.loop.id) : undefined
       render()
-      void readIntegrity(mine)
+      if (value.loaded) void readIntegrity(mine)
       void readTools(mine)
       void readGrants(mine, id)
     } catch (failure) {

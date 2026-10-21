@@ -13,6 +13,10 @@ export function registerSessionIntegrity(
     requireOwner('session.integrity', sessionId)
     let entry = cx.registry.get(sessionId)
     if (!entry) {
+      if (!verify)
+        throw rpcError('CAPABILITY_DENIED', {
+          reason: 'Open the session or request a full audit before reading its verification status',
+        })
       const binding = await cx.workspaces.restoreBinding(sessionId)
       entry = await cx.registry.open({ key: sessionId, cwd: binding.canonicalRoot, binding })
     }

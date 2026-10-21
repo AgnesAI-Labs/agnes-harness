@@ -63,7 +63,7 @@ type N = {
 describe('local endpoint: ACP round trip', () => {
   it('audits a real SQLite session through the owner RPC, including corruption before its checkpoint', async () => {
     const h = await openTestHost({ provider: new ScriptedProvider({ scripts: [say('evidence')] }) })
-    const ep = h.endpoint({ clock: Date.now, pollMs: 5 })
+    let ep = h.endpoint({ clock: Date.now, pollMs: 5 })
     try {
       await ep.handle(init)
       await addWorkspace(ep, h.dataDir)
@@ -87,6 +87,12 @@ describe('local endpoint: ACP round trip', () => {
           method: '_agnes/v1/session.integrity',
           params: { sessionId, verify },
         })
+      await expect(audit(true)).resolves.toMatchObject({ result: { state: 'verified', legacyThroughSeq: 0 } })
+      await ep.close()
+      ep = h.endpoint({ clock: Date.now, pollMs: 5 })
+      await ep.handle(init)
+      await expect(audit(false)).resolves.toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
+      expect(h.host.kernel.get(sessionId)).toBeUndefined()
       await expect(audit(true)).resolves.toMatchObject({ result: { state: 'verified', legacyThroughSeq: 0 } })
       const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
       const target = raw
