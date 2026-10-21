@@ -18,6 +18,8 @@ export type ApprovalAnswer = { verdict: Verdict; reason?: ApprovalReason; answer
 export type ApprovalRequest = {
   /** Present only for Core's already-persisted human gate; this is delivery metadata, not authority. */
   decision?: { handle: DecisionHandle; revision: number }
+  /** Backend-only routing of a child's canonical human gate to its owning session surface. */
+  delegation?: { role: string; childSessionKey: string; parentSessionKey: string; reason: string }
   requestId: string
   kind: 'tool' | 'budget' | 'unknown-outcome' | 'refine'
   sessionKey: string

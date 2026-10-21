@@ -182,6 +182,7 @@ import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { permissionOperator, SessionPermissionAuthority } from './session-permission-authority.js'
 import { invalidatePermissionProjection } from './session-permission-projection.js'
 import { sessionToolCatalog } from './tool-catalog.js'
+import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 
@@ -754,6 +755,9 @@ export class SessionImpl {
       get permissionContext() {
         return session.permissionContext
       },
+      get delegatedToolApprovals() {
+        return session.roleAuthority?.humanApprovals !== false
+      },
       get refuseApprovals() {
         return session.d.roleDelegation !== undefined
       },
@@ -916,16 +920,9 @@ export class SessionImpl {
     (tool) => this.turn?.snapshot.byName.get(tool)?.meta.commandArg,
     (input, signal) => this.d.commandPathScope?.(input, signal) ?? Promise.resolve(undefined),
   )
-  /** The selected policy inside this session's command floor: its own preset's table, read per call. */
+  /** The selected policy inside this session's effective command and captured role floors. */
   toolPolicy(selection?: string) {
-    const own = this.commandFloor(
-      this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default'),
-      this.preset.approval.commandTable,
-    )
-    const captured = this.roleAuthority
-    if (!captured) return own
-    const parent = this.commandFloor(this.toolPolicies.resolve(captured.parentPolicy), captured.commandTable)
-    return captured.toolPolicy(own, parent)
+    return effectiveToolPolicy(this, this.toolPolicies, this.commandFloor, selection)
   }
 
   loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {
@@ -2030,6 +2027,7 @@ export class SessionImpl {
         )
           return outcome
       }
+      if (!opts.signal.aborted && this.abortRevision === abortRevision) await this.d.children.recover?.()
       this.availableRoles = (await this.d.childRoles?.list(this).catch(() => [])) ?? []
       return this.runTurns(opts, abortRevision)
     })

@@ -6173,8 +6173,17 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     note: 'Static Bundle launch projection',
   },
   ApplicationTemplate: {
-    valid: { id: 'acme', brand: { name: { en: 'Acme' } } },
-    invalid: [{}, { id: 'acme', brand: { unknown: true } }],
+    valid: {
+      id: 'acme',
+      brand: { name: { en: 'Acme' } },
+      agents: Array.from({ length: 64 }, (_, index) => `acme/kit#role${index}`),
+      delegableAgents: Array.from({ length: 64 }, (_, index) => `acme/kit#role${index}`),
+    },
+    invalid: [
+      {},
+      { id: 'acme', brand: { unknown: true } },
+      { id: 'acme', delegableAgents: Array.from({ length: 65 }, (_, index) => `acme/kit#role${index}`) },
+    ],
     note: 'Application identity and presentation contract',
   },
   ApplicationWorkbench: {

@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs'
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FsPolicy } from '@agnes/core'
@@ -72,7 +72,10 @@ describe('session workspace adapters', () => {
   it('gives each local session an independent fs and exec gate', async () => {
     const rootA = await realpath(await mkdtemp(join(tmpdir(), 'agnes-ws-a-')))
     const rootB = await realpath(await mkdtemp(join(tmpdir(), 'agnes-ws-b-')))
-    roots.push(rootA, rootB)
+    const skillRoot = await realpath(await mkdtemp(join(tmpdir(), 'agnes-ws-skill-')))
+    roots.push(rootA, rootB, skillRoot)
+    const attachment = join(skillRoot, 'attachment.txt')
+    await writeFile(attachment, 'shared skill attachment')
     const run = vi.fn<ExecAdapter['run']>(async () => ({
       code: 0,
       stdout: 'ok',
@@ -83,6 +86,7 @@ describe('session workspace adapters', () => {
     const factory = createSessionWorkspaceAdapterFactory({
       platform: createPlatform(),
       exec: { run, killAll: async () => undefined },
+      skillReadRoots: (sessionKey) => (sessionKey === 'a' ? [skillRoot] : []),
     })
     const handleA = await factory.openWorkspace(new CliWorkspaceAuthority(rootA).bind('a'))
     const handleB = await factory.openWorkspace(new CliWorkspaceAuthority(rootB).bind('b'))
@@ -105,6 +109,12 @@ describe('session workspace adapters', () => {
         sandbox: { policyDigest: 'b'.repeat(64), backend: 'none' },
       }),
     ).rejects.toThrow('SANDBOX_UNAVAILABLE')
+    const reads = await Promise.allSettled([fenceA.fs.read(attachment), fenceB.fs.read(attachment)])
+    expect(reads[0]).toMatchObject({
+      status: 'fulfilled',
+      value: new TextEncoder().encode('shared skill attachment'),
+    })
+    expect(reads[1]).toMatchObject({ status: 'rejected', reason: { code: 'E_FS_DENIED' } })
     await fenceA.fs.write('window.txt', new TextEncoder().encode('0123456789'))
     await expect(fenceA.fs.read('window.txt', { unit: 'bytes', offset: 2, limit: 3 })).resolves.toEqual(
       new TextEncoder().encode('234'),

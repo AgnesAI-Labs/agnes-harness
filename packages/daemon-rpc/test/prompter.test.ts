@@ -538,3 +538,34 @@ it('keeps expiry and cancellation authoritative for automatic permission decisio
     }
   }
 })
+
+it('keeps delegated child human gates out of parent full-access automation', async () => {
+  const { r, ep, log } = mk({ connections: () => [] })
+  try {
+    const evidence: unknown[] = []
+    const answer = await withPermissionContext(
+      permissionContext,
+      (value) => evidence.push(value),
+      () =>
+        r.ask(
+          {
+            ...req,
+            options: ['allowed-once', 'rejected'],
+            delegation: {
+              role: '@fixture/app#requirements',
+              childSessionKey: 'child',
+              parentSessionKey: 'k',
+              reason: 'taint',
+            },
+          },
+          { signal: never },
+        ),
+      async () => permissionContext,
+    )
+    expect(answer).toEqual({ verdict: 'unavailable', reason: 'no-approver' })
+    expect(evidence).toEqual([])
+    expect(log).toMatchObject([{ via: 'absent' }])
+  } finally {
+    await ep.close()
+  }
+})

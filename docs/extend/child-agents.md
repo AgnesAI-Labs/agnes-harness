@@ -60,6 +60,13 @@ Extension config has the same shape under `allow`, plus `sessions` for individua
 
 If Core refuses child creation with `E_CHILD_LIMIT` before returning a child handle, the official fork/spawn tools return an error ToolResult carrying that code, so the parent can report the limit. Unexpected backend errors, budget recovery errors and failures after a child handle exists still propagate through the existing cleanup and uncertain-effect path.
 
+Fan-out limits count concurrent reservations: creation, execution, human waits and recovery retain a
+slot. Finished resident turns are `idle`; stopped resident turns are `interrupted`. They remain
+continuable and release their slot. Continuing them must atomically reacquire a parent/root slot;
+retaining a child or collecting its result does not spend a lifetime quota. Already queued follow-up
+work retains its reservation until drained. Approval waits retain the configured timeout; an unanswered
+request reports its actual unavailable reason.
+
 ## Tools
 
 These tools keep their current names:
@@ -75,11 +82,11 @@ them. Backend receipt details and application task cards are presentation data; 
 parse those UI details to control an ordinary child. Keep handles out of user-facing replies.
 
 
-An adopted application may additionally declare `delegableAgents` (up to eight launchable refs,
+An adopted application may additionally declare `delegableAgents` (up to 64 launchable refs,
 also in `agents`). `subagent_spawn` accepts an optional `role` ref from this backend allowlist.
 The role starts fresh with its own composition; its tools and workspace authority are capped by a
-spawn-time parent snapshot recorded on the child ledger. All approval and business signature
-requests in that child are refused with instructions to hand the action back to the main assistant.
+spawn-time parent snapshot recorded on the child ledger. Tool effects that need a human wait for
+approval on the owning session surface. Business signatures remain refused and return to the main assistant.
 `role` cannot be combined with `fork` or `model`; invalid roles never fall back to ordinary children.
 A tool is eligible only when its Host-verified package, version, export, code snapshot and plugin-row
 configuration digest match the parent's binding, in addition to its safety definition. Unprovable
@@ -88,10 +95,35 @@ Skill resources are the intersection of both effective resource scopes captured 
 input uses the real workspace read/list view, filtered by its published root and exact plugin-row
 instance; a warmed composition or a stale discovery entry cannot add resources to another session. These
 snapshot allowlists are literal: an empty intersection refuses access, rather than selecting defaults.
-Shared tools, nested invocations and PTC use the same resource gates. Reopen restores the validated,
+Shared tools, nested invocations and PTC use the same resource gates. A role filesystem handle
+does not inherit the global Skill attachment read roots; use resource-gated Skill APIs for those files. Reopen restores the validated,
 trusted role fact from the child's own raw ledger in both Core and Host; a materialized register or a
 parent's fork prefix is not authority. Later parent changes do not alter this snapshot.
+The parent ledger records excluded declared tools and their refusal reasons in
+`x/host/role-tool-intersection`. If every declared tool is removed, including by an additional
+child tool filter, spawn fails with those reasons instead of starting a child with no tools.
+A role uses the captured parent command table as well as its own policy and command rules.
+It may execute an effect both policies admit without asking, including built-in `write` and `edit`
+on paths the captured table auto-allows. The same path normalization, filesystem ceiling and sandbox
+still apply, including after reopen. A deny remains a refusal. A tool effect that asks for approval
+waits on the child's canonical decision and appears in the owning parent session's human approval
+surface, including the Web approvals panel. The card identifies the role, child session, exact effect
+and policy reason. Only an authenticated human can allow that effect once or refuse it; neither the
+child nor the coordinator model can answer. `approvalPolicy: never` continues to prohibit the role
+from approving or signing; it does not prevent already admitted work. Business signatures remain
+refused. With no human surface, including headless or unattended work, an effect needing a human is
+refused. Cancellation withdraws the question. Cold recovery reuses the child's original decision and
+pinned composition when the owning session explicitly continues.
+The snapshot also retains the parent's taint. Policy sees that captured taint or the role's current
+turn taint, so a fresh or reopened role cannot erase it. An older snapshot without that evidence is
+conservatively treated as tainted; the existing taint rules still decide whether an effect asks.
+Nested roles retain the effective parent table and each ancestor policy floor separately. A nearer
+allow rule cannot discard an ancestor deny or human requirement, including after reopen.
 See [applications](applications.md) for adoption and attribution.
+Applications may declare up to 64 delegable agents, all of which must belong to `agents`.
+The model-facing role directory is bounded: titles and descriptions are shortened, and an unusually
+long directory may show only some refs with an explicit notice. The full adopted roster remains
+delegable by exact ref; the display budget does not narrow backend authority.
 - `subagent_collect` reads the current result on demand. It is not needed to learn that a child finished; see Completion notices.
 - `subagent_cancel` stops a spawned child and its subtree.
 

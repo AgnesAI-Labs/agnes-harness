@@ -23,6 +23,8 @@ export type CancelledChildFact = Readonly<{
 export type ChildExecutionState =
   | 'creating'
   | 'ready'
+  | 'idle'
+  | 'interrupted'
   | 'running'
   | 'waiting_approval'
   | 'recovery_pending'
@@ -231,7 +233,13 @@ export interface ChildControlStore {
    * the active set: `failed` for an open that failed, `cancelled` otherwise. It never ran.
    */
   cancelCreatingChild(input: CancelCreatingChildInput): Promise<CancelledChildFact>
-  casState(childKey: SessionKey, expectedRevision: number, next: ChildTaskRecord['state']): Promise<boolean>
+  /** Re-entering execution from idle/interrupted requires atomic parent/root admission. */
+  casState(
+    childKey: SessionKey,
+    expectedRevision: number,
+    next: ChildTaskRecord['state'],
+    admission?: { maxFanOut: number },
+  ): Promise<boolean>
   nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number>
   existsSession(key: SessionKey): Promise<boolean>
   ensureRootScope(rootTaskId: string, capMicro: bigint): Promise<BudgetScopeRecord>

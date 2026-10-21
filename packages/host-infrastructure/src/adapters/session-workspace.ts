@@ -18,6 +18,7 @@ import { probeCaseSensitive } from './platform-posix.js'
 import type { RemoteTransport } from './remote-transport.js'
 
 type HandleState = Readonly<{
+  sessionKey: string
   io: FsIo
   semantics: WorkspacePathSemantics
 }>
@@ -93,7 +94,7 @@ export function createSessionWorkspaceAdapterFactory(
     transport?: RemoteTransport
     remotePool?: RemoteWorkspacePool
     /** Skill directories local reads may reach; a remote workspace never gets them. */
-    skillReadRoots?: () => readonly string[]
+    skillReadRoots?: (sessionKey: string) => readonly string[]
     /** The installation's own state, read-only under full file access; ignored for a remote workspace. */
     fullAccessReadOnlyRoots?: () => readonly string[]
   }>,
@@ -113,6 +114,7 @@ export function createSessionWorkspaceAdapterFactory(
           close: () => lease.close(),
         })
         handles.set(handle, {
+          sessionKey: binding.sessionKey,
           io: createRemoteFsIo(input.transport),
           semantics: Object.freeze({ flavor: 'posix', caseSensitive: false }),
         })
@@ -141,6 +143,7 @@ export function createSessionWorkspaceAdapterFactory(
         },
       })
       handles.set(handle, {
+        sessionKey: binding.sessionKey,
         io: Object.freeze({
           lstat: (...args) => {
             if (closed)
@@ -240,6 +243,7 @@ export function createSessionWorkspaceAdapterFactory(
       let bound: FsPolicy | undefined
       let gate: ExecGateState = { backend: 'none', onUnavailable: 'deny' }
       const holder: FsBinding = { policy: bootstrap, caseSensitive: state.semantics.caseSensitive }
+      const readRoots = input.skillReadRoots
       const fs = createFs(
         () => {
           if (closed)
@@ -249,7 +253,7 @@ export function createSessionWorkspaceAdapterFactory(
           return holder
         },
         state.io,
-        handle.kind === 'local' ? input.skillReadRoots : undefined,
+        handle.kind === 'local' && readRoots ? () => readRoots(state.sessionKey) : undefined,
         handle.kind === 'local' ? input.fullAccessReadOnlyRoots : undefined,
       )
       const execGate = {
