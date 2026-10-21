@@ -4,6 +4,7 @@ import type { SchedulingService, SlotFill, ToolContext, ToolDef } from '@agnes/e
 import { schedulingKind, schedulingServiceCapabilities } from '@agnes/extension-api'
 import type { Context } from '@agnes/plugin-runtime'
 import { expect, it } from 'vitest'
+import { memoryScheduleJobs } from '../../../testkit/index.js'
 import { openScheduleCatalog, type ScheduleDb } from '../src/catalog.js'
 import { createScheduleExtension } from '../src/index.js'
 import { createScheduleTools } from '../src/tools.js'
@@ -36,7 +37,7 @@ function catalog(): (ctx: ToolContext) => Promise<SchedulingService> {
       }
     },
   }
-  const catalog = openScheduleCatalog(sql, () => NOW)
+  const catalog = openScheduleCatalog(sql, memoryScheduleJobs(), () => NOW)
   return async (ctx) => {
     const key = ctx.session.key
     const owned = (id: string) => {

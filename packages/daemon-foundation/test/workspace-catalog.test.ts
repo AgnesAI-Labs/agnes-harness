@@ -10,7 +10,7 @@ import {
   WorkspaceIndex,
   type WorkspaceStore,
 } from '../src/storage/workspaces.js'
-import { sqliteTables } from './sqlite-tables.js'
+import { recordingTable, sqliteTables } from './sqlite-tables.js'
 
 const workspaceId = (path: string) => createHash('sha256').update(path, 'utf8').digest('hex')
 const resolver =
@@ -127,6 +127,20 @@ describe('WorkspaceCatalog', () => {
     await expect(catalog.list()).resolves.toMatchObject({
       items: [{ path: '/repo/a', lastUsedAt: '1970-01-01T00:00:00.000Z', sessionCount: 1 }],
     })
+  })
+
+  it('opens workspace_registry with listed in its CREATE and no ALTER', async () => {
+    const tables = sqliteTables()
+    const { table, sql } = recordingTable(tables.table('workspace_registry'))
+    new WorkspaceIndex(table)
+    expect(sql.filter((s) => /ALTER TABLE/.test(s))).toEqual([])
+    expect(
+      tables
+        .table('x')
+        .all<{ name: string }>("SELECT name FROM pragma_table_info('workspace_registry')")
+        .map((c) => c.name),
+    ).toEqual(['path', 'name', 'workspace_id', 'revision', 'registered_at', 'last_used_at', 'listed'])
+    await tables.close()
   })
 
   it('persists registration and successful use across store reopen', async () => {

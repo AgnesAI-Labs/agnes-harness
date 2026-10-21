@@ -61,7 +61,6 @@ import {
   type ReclaimStore,
   type ResumeReport,
   reclaimExpired,
-  tableReclaimStore,
 } from '@agnes/daemon-foundation/lease/reclaim'
 import type { AttachedFeed } from '@agnes/daemon-foundation/local/attached'
 import { type ConnectionState, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
@@ -85,7 +84,6 @@ import type { SessionWorkspacePort } from '@agnes/daemon-foundation/storage/list
 import {
   MemorySessionWorkspaces,
   SessionWorkspaceIndex,
-  StorageLister,
   TicketIndex,
 } from '@agnes/daemon-foundation/storage/lister'
 import {
@@ -602,11 +600,6 @@ export type StartSupervisorOptions = {
   workerExecArgv?: string[]
   workerEntry?: string
   processIdentity?: (pid: number) => Promise<ProcessIdentity>
-  /**
-   * A privileged view of core's tables, used by crash reclaim. The sqliteTables test fixture can
-   * provide this combined view; Host deliberately does not expose one in production today.
-   */
-  tables?: Tables
   /** Narrow production access to expired core claims and the op.state cell used for recovery. */
   reclaim?: ReclaimStore
   /** Package-owned tables. Production supplies Host's isolated `@agnes/daemon` table store here. */
@@ -939,7 +932,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       originOf: (key) => inflightConn.get(key),
       clock,
     })
-    const jobTables = o.jobTables ?? o.tables
+    const jobTables = o.jobTables
     const journal =
       o.ports?.journal ??
       (jobTables
@@ -1038,9 +1031,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       workspaceRoot: o.workspaceRoot,
     })
     workspaceCatalogRef = workspaceCatalog
-    const reclaimStore =
-      o.reclaim ??
-      (o.tables ? tableReclaimStore(o.tables.table('writer_claims'), o.tables.table('registers')) : undefined)
+    const reclaimStore = o.reclaim
     tickets?.gc(clock())
     // `registry` is assigned right after `pool` is constructed, but `pool`'s own `onEvent` closure only
     // ever runs later (once a worker actually reports an event) - by which point `registry` is always
@@ -1822,32 +1813,30 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         )
       : new MemorySidebarSessions(workspaces, sessionOwnership, preferences, () => workspaceCatalog.list())
     startupCleanup.push(() => sidebarSessions.close())
-    const rawLister =
-      o.ports?.lister ??
-      (o.tables
-        ? new StorageLister(o.tables.table('events'), o.tables.table('writer_claims'), workspaces)
-        : supervisorLister(supervisorRegistry, workspaces))
+    const rawLister = o.ports?.lister ?? supervisorLister(supervisorRegistry, workspaces)
 
     const lister = withSessionPreferences(rawLister, preferences)
 
     const jobsRepo = jobTables ? new JobsRepo(jobTables.table('jobs'), clock) : undefined
-    const schedules = jobTables
-      ? scheduledTasks({
-          db: openDaemonScheduleDb(jobTables.table('schedules')),
-          clock,
-          socketPath: o.config.socketPath,
-          serverIdentity: lock.owner,
-          sources: {
-            workspaces: async () => (await workspaceCatalog.list()).items,
-            normalize: async (path) => (await workspaceCatalog.validate(path)).path,
-            catalog: async () =>
-              (await (
-                await pool.acquireSharedWorker()
-              ).command('session.catalog', {}, { timeoutMs: 31_000 })) as ScheduleCatalog,
-            presets: () => host.profile.presets.allowed,
-          },
-        })
-      : undefined
+    const schedules =
+      jobTables && jobsRepo
+        ? scheduledTasks({
+            db: openDaemonScheduleDb(jobTables.table('schedules')),
+            jobs: jobsRepo.scheduleJobs(),
+            clock,
+            socketPath: o.config.socketPath,
+            serverIdentity: lock.owner,
+            sources: {
+              workspaces: async () => (await workspaceCatalog.list()).items,
+              normalize: async (path) => (await workspaceCatalog.validate(path)).path,
+              catalog: async () =>
+                (await (
+                  await pool.acquireSharedWorker()
+                ).command('session.catalog', {}, { timeoutMs: 31_000 })) as ScheduleCatalog,
+              presets: () => host.profile.presets.allowed,
+            },
+          })
+        : undefined
     automationEvents.schedules = schedules
     if (schedules) startupCleanup.push(() => schedules.close())
     const profilePorts = createSupervisorProfileServices({
@@ -2678,7 +2667,7 @@ type SupervisorHandle = Awaited<ReturnType<typeof startSupervisor>>
  * operation-only port, never a raw core SQLite handle.
  */
 export async function startProductionSupervisor(
-  o: Omit<StartSupervisorOptions, 'tables' | 'jobTables' | 'artifactAuthorityTable'>,
+  o: Omit<StartSupervisorOptions, 'jobTables' | 'artifactAuthorityTable'>,
   deps: {
     createStorage?: typeof createSqliteStorage
     start?: typeof startSupervisor

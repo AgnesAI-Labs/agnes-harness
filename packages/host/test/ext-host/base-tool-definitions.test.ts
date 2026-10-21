@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import { openScheduleCatalog, type ScheduleWrite } from '@agnes/base/schedule'
+import { memoryScheduleJobs } from '@agnes/base/testkit'
 import { sanitize } from '@agnes/core'
 import { checkToolDef, TOOL_DESCRIPTION_MAX_LENGTH } from '@agnes/extension-api'
 import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
@@ -73,18 +74,26 @@ describe('built-in base tools', () => {
   it('renders the question, deliverable and schedule surfaces through ui_render', async () => {
     const dataDir = scratch()
     writeFileSync(join(dataDir, 'report.txt'), 'A synthetic report')
-    const schedulerStorage = createSqliteStorage({ file: join(dataDir, 'scheduler.db') })
+    // Its own tables directory: the host below owns `<dataDir>/tables`, and package tables without
+    // the host's sessions.db are a refused data directory.
+    const schedulerStorage = createSqliteStorage({
+      file: join(dataDir, 'scheduler.db'),
+      tablesDir: join(dataDir, 'scheduler-tables'),
+    })
     cleanup.push(() => schedulerStorage.close())
     const table = schedulerStorage.tables('fixture/scheduler').table('schedules')
-    const schedules = openScheduleCatalog({
-      exec(sql, params) {
-        if (params?.length) table.run(sql, params)
-        else table.exec(sql)
+    const schedules = openScheduleCatalog(
+      {
+        exec(sql, params) {
+          if (params?.length) table.run(sql, params)
+          else table.exec(sql)
+        },
+        get: (sql, params) => table.get(sql, params),
+        all: (sql, params) => table.all(sql, params),
+        transaction: (run) => table.transaction(run),
       },
-      get: (sql, params) => table.get(sql, params),
-      all: (sql, params) => table.all(sql, params),
-      transaction: (run) => table.transaction(run),
-    })
+      memoryScheduleJobs(),
+    )
     const provider = new ScriptedProvider({
       models: [fakeModel({ route: 'gw', id: 'm1' })],
       scripts: [

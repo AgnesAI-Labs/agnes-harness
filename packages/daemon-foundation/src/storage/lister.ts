@@ -179,24 +179,6 @@ export class TicketIndex implements TicketPort {
       t,
       'CREATE TABLE IF NOT EXISTS approval_tickets (ticket TEXT PRIMARY KEY, session_key TEXT NOT NULL, expires_at INTEGER NOT NULL, cwd TEXT)',
     )
-    ensure(t, 'CREATE TABLE IF NOT EXISTS approval_ticket_schema (version INTEGER PRIMARY KEY)')
-    const version = this.t.get<{ version: number | null }>(
-      'SELECT MAX(version) AS version FROM approval_ticket_schema',
-    )?.version
-    if ((version ?? 0) < 1)
-      this.t.transaction(() => {
-        // Legacy installations have a three-column table without a schema marker. A direct
-        // column projection is allowed by Host's owner SQL fence (PRAGMA is intentionally not), and
-        // runs only for that unversioned migration. Fresh four-column tables take the success path.
-        try {
-          this.t.get('SELECT cwd FROM approval_tickets LIMIT 1')
-        } catch (error) {
-          if (!/no such column: cwd/i.test(String((error as { message?: unknown }).message ?? error)))
-            throw error
-          this.t.exec('ALTER TABLE approval_tickets ADD COLUMN cwd TEXT')
-        }
-        this.t.exec('INSERT OR IGNORE INTO approval_ticket_schema (version) VALUES (1)')
-      })
   }
 
   put(ticket: string, sessionKey: string, expiresAt: number, cwd?: string): void {
@@ -338,22 +320,6 @@ function alreadyFolded(row: WorkspaceRow, event: EventEnvelope, generation: numb
   )
 }
 
-/** Adds one nullable projection column to an existing table by direct probe; PRAGMA is outside
- * Host's owner SQL allow-list. A concurrent opener adding it first is not an error. */
-function ensureColumn(t: TableHandle, column: string, definition: string): void {
-  const text = (error: unknown) => String((error as { message?: unknown }).message ?? error)
-  try {
-    t.get(`SELECT ${column} FROM session_workspaces LIMIT 1`)
-  } catch (error) {
-    if (!/no such column/i.test(text(error))) throw error
-    try {
-      t.exec(`ALTER TABLE session_workspaces ADD COLUMN ${column} ${definition}`)
-    } catch (migrationError) {
-      if (!/duplicate column name/i.test(text(migrationError))) throw migrationError
-    }
-  }
-}
-
 function checkWorkspace(sessionKey: string, cwd: string): void {
   if (!sessionKey || sessionKey.includes('\u0000')) throw new Error('invalid session workspace key')
   if (!cwd || cwd.includes('\u0000')) throw new Error(`invalid workspace for session ${sessionKey}`)
@@ -373,44 +339,18 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
         last_seq INTEGER NOT NULL DEFAULT 0,
         generation INTEGER NOT NULL DEFAULT 0,
         preset TEXT,
-        profile_hash TEXT
+        profile_hash TEXT,
+        title TEXT,
+        last_active_at TEXT,
+        loop_pin TEXT,
+        message_at INTEGER,
+        message_seq INTEGER NOT NULL DEFAULT 0,
+        sidebar_sort_at INTEGER NOT NULL DEFAULT 0,
+        sidebar_failed INTEGER NOT NULL DEFAULT 0,
+        sidebar_group TEXT NOT NULL DEFAULT 'unassigned',
+        sidebar_target_seq INTEGER NOT NULL DEFAULT 0
       )`,
     )
-    ensureColumn(t, 'title', 'TEXT')
-    ensureColumn(t, 'last_active_at', 'TEXT')
-    ensureColumn(t, 'loop_pin', 'TEXT')
-    ensureColumn(t, 'message_at', 'INTEGER')
-    ensureColumn(t, 'message_seq', 'INTEGER NOT NULL DEFAULT 0')
-    ensureColumn(t, 'sidebar_sort_at', 'INTEGER NOT NULL DEFAULT 0')
-    ensureColumn(t, 'sidebar_failed', 'INTEGER NOT NULL DEFAULT 0')
-    ensureColumn(t, 'sidebar_group', "TEXT NOT NULL DEFAULT 'unassigned'")
-    ensureColumn(t, 'sidebar_target_seq', 'INTEGER NOT NULL DEFAULT 0')
-    // The workspace table shipped before the listing projection. Migrate by direct column probes;
-    // PRAGMA is intentionally outside Host's owner SQL allow-list. Each ALTER is idempotent under
-    // the one-time probe because an old table has all of these columns missing.
-    try {
-      t.get('SELECT created_at, last_seq, generation, preset, profile_hash FROM session_workspaces LIMIT 1')
-    } catch (error) {
-      if (!/no such column/i.test(String((error as { message?: unknown }).message ?? error))) throw error
-      for (const column of [
-        'created_at TEXT',
-        'last_seq INTEGER NOT NULL DEFAULT 0',
-        'generation INTEGER NOT NULL DEFAULT 0',
-        'preset TEXT',
-        'profile_hash TEXT',
-      ]) {
-        try {
-          t.exec(`ALTER TABLE session_workspaces ADD COLUMN ${column}`)
-        } catch (alterError) {
-          if (
-            !/duplicate column name/i.test(
-              String((alterError as { message?: unknown }).message ?? alterError),
-            )
-          )
-            throw alterError
-        }
-      }
-    }
   }
 
   put(sessionKey: string, cwd: string): void {

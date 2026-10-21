@@ -1,8 +1,6 @@
 import { VERIFIED_HEAD_DDL } from './storage-sqlite-verified-head.js'
 
 export const DDL = [
-  `CREATE TABLE IF NOT EXISTS ledger_heads (
-     session_key TEXT PRIMARY KEY, seq INTEGER NOT NULL, digest TEXT)`,
   // `lane` is a BLOB for the same reason `key` below is, and it is the same value: a lane is the
   // register key for every register except harness/entry and artifact/job. Read back through a TEXT
   // column a lane stops at its first NUL, so the durable event and the register it keys disagreed -
@@ -29,9 +27,10 @@ export const DDL = [
   `CREATE TABLE IF NOT EXISTS writer_claims (
      session_key TEXT PRIMARY KEY, run_id TEXT NOT NULL, until INTEGER NOT NULL, ttl_ms INTEGER NOT NULL,
      generation INTEGER NOT NULL DEFAULT 1)`,
+  // head_seq/head_digest are the append watermark; head_version = 1 with head_seq IS NULL means it was removed.
   `CREATE TABLE IF NOT EXISTS sessions (
-     session_key TEXT PRIMARY KEY, format_version INTEGER NOT NULL DEFAULT 1, parent_key TEXT, boundary_seq INTEGER, created_at TEXT NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS child_control_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)`,
+     session_key TEXT PRIMARY KEY, format_version INTEGER NOT NULL DEFAULT 1, parent_key TEXT, boundary_seq INTEGER, created_at TEXT NOT NULL,
+     head_version INTEGER NOT NULL DEFAULT 0 CHECK (head_version IN (0, 1)), head_seq INTEGER, head_digest TEXT)`,
   `CREATE TABLE IF NOT EXISTS child_tasks (
      child_key TEXT PRIMARY KEY, creation_id TEXT NOT NULL UNIQUE, parent_key TEXT NOT NULL,
      root_task_id TEXT NOT NULL, runtime_owner TEXT NOT NULL, kind TEXT NOT NULL,
@@ -41,6 +40,9 @@ export const DDL = [
      state TEXT NOT NULL, state_revision INTEGER NOT NULL, control_format INTEGER NOT NULL,
      attempt_id TEXT NOT NULL, creation_phase TEXT NOT NULL, creation_revision INTEGER NOT NULL,
      attempt_started_at INTEGER NOT NULL, deferred_fact TEXT, cancelled_fact TEXT)`,
+  `CREATE INDEX IF NOT EXISTS child_tasks_parent ON child_tasks (parent_key)`,
+  `CREATE INDEX IF NOT EXISTS child_tasks_root ON child_tasks (root_task_id)`,
+  `CREATE INDEX IF NOT EXISTS child_tasks_creating ON child_tasks (child_key) WHERE creation_phase = 'creating'`,
   `CREATE TABLE IF NOT EXISTS budget_scopes (
      scope_id TEXT PRIMARY KEY, root_task_id TEXT NOT NULL, child_key TEXT, parent_scope_id TEXT,
      cap_micro TEXT NOT NULL, settled_micro TEXT NOT NULL, held_micro TEXT NOT NULL)`,
@@ -48,11 +50,13 @@ export const DDL = [
      permit_id TEXT PRIMARY KEY, root_task_id TEXT NOT NULL, scope_ids TEXT NOT NULL,
      q_micro TEXT NOT NULL, effect_id TEXT NOT NULL, request_hash TEXT NOT NULL,
      writer_generation INTEGER NOT NULL, status TEXT NOT NULL)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS budget_reservations_root_effect ON budget_reservations (root_task_id, effect_id)`,
   `CREATE TABLE IF NOT EXISTS cost_origins (
      origin_key TEXT PRIMARY KEY, micro TEXT NOT NULL, scope_ids TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS child_workspaces (
      workspace_id TEXT PRIMARY KEY, child_key TEXT NOT NULL, isolation TEXT NOT NULL,
      path TEXT NOT NULL, phase TEXT NOT NULL, root TEXT, branch TEXT)`,
+  `CREATE INDEX IF NOT EXISTS child_workspaces_child ON child_workspaces (child_key)`,
   `CREATE TABLE IF NOT EXISTS child_ordinals (
      parent_key TEXT NOT NULL, effect_id TEXT NOT NULL, n INTEGER NOT NULL,
      PRIMARY KEY (parent_key, effect_id))`,

@@ -13,7 +13,7 @@ import {
   TicketIndex,
 } from '../src/storage/lister.js'
 import { ensure, type TableHandle } from '../src/storage/table.js'
-import { sqliteTables } from './sqlite-tables.js'
+import { recordingTable, sqliteTables } from './sqlite-tables.js'
 
 const EVENTS_DDL = `CREATE TABLE IF NOT EXISTS events (
   session_key TEXT NOT NULL, seq INTEGER NOT NULL, ts INTEGER NOT NULL, id TEXT NOT NULL,
@@ -162,33 +162,24 @@ describe('TicketIndex', () => {
     await tables.close()
   })
 
-  it('migrates the original three-column table without losing tickets', async () => {
+  it('creates approval_tickets without a schema marker table', async () => {
     const tables = sqliteTables()
-    const table = tables.table('approval_tickets')
-    table.exec(
-      'CREATE TABLE approval_tickets (ticket TEXT PRIMARY KEY, session_key TEXT NOT NULL, expires_at INTEGER NOT NULL)',
-    )
-    table.exec('INSERT INTO approval_tickets VALUES (?, ?, ?)', ['legacy', 'session-old', 9000])
-
-    const idx = new TicketIndex(table)
-    expect(idx.get('legacy')).toBe('session-old')
-    expect(idx.cwd('legacy')).toBeUndefined()
-    idx.put('new', 'session-new', 10_000, '/workspace/new')
-    expect(idx.cwd('new')).toBe('/workspace/new')
+    const { table, sql } = recordingTable(tables.table('approval_tickets'))
+    new TicketIndex(table)
+    expect(sql.filter((s) => /ALTER TABLE|approval_ticket_schema/.test(s))).toEqual([])
+    expect(
+      tables.table('x').get("SELECT name FROM sqlite_master WHERE name = 'approval_ticket_schema'"),
+    ).toBeUndefined()
     await tables.close()
   })
 
-  it('migrates and persists through Host owner tables without using forbidden PRAGMA', async () => {
+  it('persists through Host owner tables across reopen', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agnes-ticket-owner-'))
     const open = () =>
       createSqliteStorage({ file: join(root, 'sessions.db'), tablesDir: join(root, 'tables') })
     let storage = open()
     try {
       const owner = storage.tables('@agnes/daemon').table('approval_tickets')
-      owner.exec(
-        'CREATE TABLE approval_tickets (ticket TEXT PRIMARY KEY, session_key TEXT NOT NULL, expires_at INTEGER NOT NULL)',
-      )
-      owner.run('INSERT INTO approval_tickets VALUES (?, ?, ?)', ['legacy', 'session-old', 9000])
       const adapt = (): TableHandle => ({
         exec(sql, params = []) {
           if (params.length) owner.run(sql, params)
@@ -199,6 +190,7 @@ describe('TicketIndex', () => {
         transaction: <T>(fn: () => T) => owner.transaction(fn),
       })
       const idx = new TicketIndex(adapt())
+      idx.put('legacy', 'session-old', 9000)
       expect(idx.get('legacy')).toBe('session-old')
       idx.put('fresh', 'session-new', 10_000, '/workspace/new')
       expect(idx.cwd('fresh')).toBe('/workspace/new')
@@ -425,18 +417,44 @@ describe('SessionWorkspaceIndex', () => {
     await tables.close()
   })
 
-  it('adds listing columns to an old table and restores the recorded loop without losing rows', async () => {
+  it('opens a fresh table with every listing column and no ALTER or column probe', async () => {
+    const tables = sqliteTables()
+    const { table, sql } = recordingTable(tables.table('session_workspaces'))
+    new SessionWorkspaceIndex(table)
+    expect(sql.filter((s) => /ALTER TABLE|FROM session_workspaces LIMIT 1/.test(s))).toEqual([])
+    expect(
+      tables
+        .table('x')
+        .all<{ name: string }>("SELECT name FROM pragma_table_info('session_workspaces')")
+        .map((c) => c.name),
+    ).toEqual([
+      'session_key',
+      'cwd',
+      'created_at',
+      'last_seq',
+      'generation',
+      'preset',
+      'profile_hash',
+      'title',
+      'last_active_at',
+      'loop_pin',
+      'message_at',
+      'message_seq',
+      'sidebar_sort_at',
+      'sidebar_failed',
+      'sidebar_group',
+      'sidebar_target_seq',
+    ])
+    await tables.close()
+  })
+
+  it('restores the recorded loop without losing rows', async () => {
     const tables = sqliteTables()
     const table = tables.table('session_workspaces')
-    table.exec(
-      `CREATE TABLE session_workspaces (session_key TEXT PRIMARY KEY, cwd TEXT NOT NULL, created_at TEXT,
-        last_seq INTEGER NOT NULL DEFAULT 0, generation INTEGER NOT NULL DEFAULT 0, preset TEXT,
-        profile_hash TEXT, title TEXT)`,
-    )
+    const index = new SessionWorkspaceIndex(table)
     table.exec(
       "INSERT INTO session_workspaces (session_key, cwd, created_at, last_seq, title) VALUES ('old', '/w', '2026-09-01T00:00:00.000Z', 7, 'kept')",
     )
-    const index = new SessionWorkspaceIndex(table)
     expect(index.metadata('old')).toMatchObject({ createdAt: '2026-09-01T00:00:00.000Z', title: 'kept' })
     expect(index.metadata('old')?.lastActiveAt).toBeUndefined()
     index.observe('old', ledgerEvent(8, 'user/message', '2026-09-21T00:00:00.000Z'), 1)

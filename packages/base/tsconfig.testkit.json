@@ -11,6 +11,7 @@
     "testkit/jobs.ts",
     "testkit/mem-fts.ts",
     "testkit/mem-table.ts",
+    "testkit/schedule-jobs.ts",
     "testkit/seam-init.ts",
     "testkit/tool-context.test.ts",
     "testkit/tool-context.ts"
