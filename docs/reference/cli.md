@@ -26,6 +26,8 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh resume ID [-p prompt]` | Resume entry point |
 | `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | List (pinned rows are marked; `--archived` keeps archived ones) / details |
 | `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | Session preferences; `--json` prints the stored preferences |
+| `agh sessions deliverables ID [--json]` / `--save N\|ID [--out PATH] [--force]` | List the files a session delivered / download one: sha256 and size are checked, only the name's last path segment is used, an existing file is refused without `--force` |
+| `agh approvals grants SESSION [--json]` / `agh approvals revoke SESSION GRANT [--json]` | List the approval grants in force for a session / revoke one (admin connection; a refusal is printed as the daemon sends it) |
 | `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | Search history by session (admin connection; a refusal is printed as the daemon sends it) / session groups |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | Export; also supports `--html` and `--raw` |
 | `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | Convert and import |

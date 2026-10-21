@@ -22,6 +22,8 @@
 | `agh resume ID [-p prompt]` | 恢复入口 |
 | `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | 列表（置顶行带标记，`--archived` 只看已归档）/详情 |
 | `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | 会话偏好；`--json` 输出已保存的偏好 |
+| `agh sessions deliverables ID [--json]` / `--save N\|ID [--out PATH] [--force]` | 列出会话交付的文件/下载一个：校验 sha256 与大小，只取名称最后一段路径，目标已存在时须加 `--force` |
+| `agh approvals grants SESSION [--json]` / `agh approvals revoke SESSION GRANT [--json]` | 列出会话生效中的审批授权/撤销一条（需管理员连接，拒绝原样输出）|
 | `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | 按会话搜索历史（需管理员连接，拒绝原样输出）/会话分组 |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | 导出；另有 `--html`、`--raw` |
 | `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | 转换导入 |

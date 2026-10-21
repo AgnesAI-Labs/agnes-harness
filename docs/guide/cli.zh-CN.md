@@ -38,6 +38,8 @@ node agnes.mjs
 | 模型/预设 | `/model`、`/model main ROUTE/MODEL`、`/preset NAME` |
 | 上下文/用量 | `/context`、`/usage`、`/cost` |
 | 会话整理 | `/pin`、`/unpin`、`/rename TITLE`、`/archive` |
+| 审批授权 | `/grants` 列出本会话中无需询问即可运行工具的授权（「本会话」与「总是」）；`/grants revoke N\|ID` 撤销一条（需管理员连接） |
+| 交付物 | `/deliverables` 列出本会话交付的文件；`/deliverables save N\|ID [PATH]` 校验大小与 sha256 后下载 |
 | 压缩 | `/compact [instructions]`，结果可能是执行、跳过或失败，按回执判断 |
 | 分叉 | `/rewind` 打开已完成轮次的选择器；`/rewind SEQ` 按序号分叉。都会创建新会话，不是文件系统回滚 |
 | 插件 | `/packages`、`/install SOURCE`、`/package ...` |

@@ -42,6 +42,8 @@ Type `/` to see the current menu. Common actions:
 | --- | --- |
 | New task / history | `/new [DIR]`, `/sessions`, `/resume [id\|all]` (`all` lists every workspace), `/search QUERY` (admin connection) |
 | Session housekeeping | `/pin`, `/unpin`, `/rename TITLE`, `/archive` |
+| Approval grants | `/grants` lists what lets tools run unasked in this session ("this session" and "always"); `/grants revoke N\|ID` withdraws one (admin connection) |
+| Deliverables | `/deliverables` lists the files this session delivered; `/deliverables save N\|ID [PATH]` downloads one after checking size and sha256 |
 | Model / preset | `/model`, `/model main ROUTE/MODEL`, `/preset NAME` |
 | Context / usage | `/context`, `/usage`, `/cost` |
 | Compaction | `/compact [instructions]`; inspect the receipt for execution, skip, or failure |
