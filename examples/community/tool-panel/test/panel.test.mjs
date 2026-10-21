@@ -9,6 +9,10 @@ test('panel displays real result previews as text and releases its slot on unloa
   apply(
     {
       slots: {
+        inject(name, create) {
+          assert.equal(name, 'tool.call.toolview')
+          return create()
+        },
         register(value, render) {
           options = value
           component = render
