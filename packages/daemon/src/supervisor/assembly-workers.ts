@@ -146,7 +146,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     })
   })
   if (stopDesired) lifetime.own({ dispose: stopDesired })
-  const registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, {
+  const registry: WorkerRegistry = new WorkerRegistry(pool, projectedArtifactRead?.projection, {
     workspaces,
     history: createWorkerHistory({
       pool,
