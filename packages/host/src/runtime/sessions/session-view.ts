@@ -1,4 +1,4 @@
-import { boundedTimelinePage, type Event, projectUI, turnsForNodes } from '@agnes/core'
+import { boundedTimelinePage, type Event, leanEvents, projectUI, turnsForNodes } from '@agnes/core'
 import {
   type SessionVersionIssue,
   type SessionViewNotice,
@@ -140,6 +140,40 @@ export async function readSessionView(
     },
     ...(notice ? { notice } : {}),
   }
+}
+
+/** The ledger reads a stored view needs; lean pages when the adapter has them. */
+export type SessionViewStorage = {
+  scan(key: string, query: Parameters<SessionRowsReader>[1]): Promise<Event[]>
+  scanLean?(key: string, query: Parameters<SessionRowsReader>[1]): Promise<Event[]>
+}
+
+/** What a preview may spend: small enough to answer before the session is opened anywhere. */
+export const STORED_VIEW_BUDGET = Object.freeze({ events: 2000, bytes: 8 * 1024 * 1024, timeMs: 750 })
+
+/**
+ * One session's view read straight from a storage adapter with the preview budget. The Host and the
+ * daemon both answer `session.view` through this, so their rows, budget and projection cannot drift.
+ */
+export function readStoredSessionView(
+  storage: SessionViewStorage,
+  sessionKey: string,
+  options: { maxNodes?: number; signal?: AbortSignal } = {},
+): Promise<SessionViewResult> {
+  const read = storage.scanLean?.bind(storage) ?? storage.scan.bind(storage)
+  return readSessionView(
+    async (key, query) =>
+      leanEvents(
+        await read(key, {
+          ...(query.fromSeq === undefined ? {} : { fromSeq: query.fromSeq }),
+          ...(query.toSeq === undefined ? {} : { toSeq: query.toSeq }),
+          limit: query.limit,
+          order: query.order ?? 'asc',
+        }),
+      ),
+    sessionKey,
+    { budget: STORED_VIEW_BUDGET, ...options },
+  )
 }
 
 type Fetch = (query: Parameters<SessionRowsReader>[1]) => ReturnType<typeof settled<Event[]>>

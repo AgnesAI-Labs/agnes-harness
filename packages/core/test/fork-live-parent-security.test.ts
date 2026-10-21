@@ -431,7 +431,8 @@ it('perf3-review: a delegated fork admitted before a recheck cannot publish chil
       ...event,
       data: { ...(event.data as object), args: { path: 'tampered-under-live-parent' } },
     }))
-    await parent.verifyHistory().catch(() => undefined)
+    // A changed prefix of a live parent is found by a full recheck.
+    await parent.verifyHistory({ rehashPrefix: true }).catch(() => undefined)
     await expect(parent.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     expect(parent.d.log.faulted).toBe(true)
     release()
@@ -561,14 +562,14 @@ it.each(
         const [call] = await storage.scan('parent', { type: 'tool/call', limit: 1 })
         if (!call) throw new Error('missing tool call')
         tamper(storage, 'parent', call.seq, (event) => ({ ...event, data: { changed: true } }))
-        await parent.verifyHistory().catch(() => undefined)
+        await parent.verifyHistory({ rehashPrefix: true }).catch(() => undefined)
         await expect(parent.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
       } else if (change === 'close') {
         closing = parent.close()
         expect(parent.closingOrClosed).toBe(true)
       } else if (change === 'pending') {
         holdVerify = true
-        await parent.verifyHistory()
+        await parent.verifyHistory({ rehashPrefix: true })
         await vi.waitFor(() => expect(verificationPaused).toBe(true))
         expect(parent.d.log.historyVerified).toBe(false)
       } else {

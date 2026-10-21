@@ -13,6 +13,8 @@ type ViewScan = { fromSeq: number; throughSeq: number } | undefined
 type ReadOnlyNotice = Pick<SessionViewNotice, 'actions' | 'localized'>
 
 const PAGE = 200
+/** The opening preview shows about what the formal opening will (its `WEB_OPENING` window). */
+const PREVIEW_PAGE = 50
 const CODES: readonly string[] = Object.values(SESSION_VERSION_CODES)
 
 /** Only known recovery refusals may offer history without reopening the execution session. */
@@ -195,7 +197,7 @@ export function createReadOnlyController(
   }
 
   async function preview(id: string, epoch: SessionBinding): Promise<void> {
-    if (!(await load(id, PAGE, epoch))) return
+    if (!(await load(id, PREVIEW_PAGE, epoch))) return
     const ticket = latest
     // A cold page still needs its profile-level conversation/composer presenters to display the
     // preview. If admission raced this read, reconcile its current generation instead; load()

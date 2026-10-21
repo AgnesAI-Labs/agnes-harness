@@ -68,8 +68,11 @@ export function useComposerAttachments({
   const clearImageBlocks = useCallback((): void => {
     generation.current += 1
     uploads.clear()
+    const cleared = attachmentsRef.current.length > 0 || pendingCountRef.current > 0
     pendingCountRef.current = 0
     pendingImageCountRef.current = 0
+    // A session switch clears an empty composer too; publishing nothing would still re-render the host.
+    if (!cleared) return
     setPendingCount(0)
     for (const attachment of attachmentsRef.current)
       if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)

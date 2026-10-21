@@ -558,4 +558,5 @@ export {
 } from './runtime/sessions/session.js'
 export { readProfileTelemetryConsent } from './runtime/sessions/session-hooks.js'
 export { loadSessionTitle } from './runtime/sessions/session-title.js'
+export { readStoredSessionView } from './runtime/sessions/session-view.js'
 export { enqueueSystemInput } from './runtime/sessions/system-input.js'

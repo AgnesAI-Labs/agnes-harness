@@ -4,7 +4,7 @@ import { restoreRolePolicy, roleWorkspacePreset } from '../sessions/role-policy.
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { type Kernel, leanEvents, type WorkspaceInvocationPort } from '@agnes/core'
+import type { Kernel, WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { presetNameAllowed, selectionAllowed } from '@agnes/host-common/presets/admission'
 import { legacyPermission } from '@agnes/host-common/presets/permission'
@@ -61,7 +61,7 @@ import {
   validatePresetSwitch,
 } from '../sessions/session-switch.js'
 import { createTitleQueue, startSessionTitle } from '../sessions/session-title.js'
-import { readSessionView } from '../sessions/session-view.js'
+import { readStoredSessionView } from '../sessions/session-view.js'
 import { adminSecurityStatus } from './admin-security-status.js'
 import type { HostConvergenceReport, HostPublicationReport } from './host-facade.js'
 import { registerHostIdle } from './host-idle.js'
@@ -414,26 +414,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         limit,
         order: 'asc',
       }),
-    readSessionView: (sessionKey, options) =>
-      readSessionView(
-        async (key, query) =>
-          leanEvents(
-            await (
-              a.kernel.o.storage.scanLean?.bind(a.kernel.o.storage) ??
-              a.kernel.o.storage.scan.bind(a.kernel.o.storage)
-            )(key, {
-              ...(query.fromSeq === undefined ? {} : { fromSeq: query.fromSeq }),
-              ...(query.toSeq === undefined ? {} : { toSeq: query.toSeq }),
-              limit: query.limit,
-              order: query.order ?? 'asc',
-            }),
-          ),
-        sessionKey,
-        {
-          budget: { events: 2000, bytes: 8 * 1024 * 1024, timeMs: 750 },
-          ...options,
-        },
-      ),
+    readSessionView: (sessionKey, options) => readStoredSessionView(a.kernel.o.storage, sessionKey, options),
     get provider() {
       return a.provider
     },

@@ -242,7 +242,7 @@ import { callWorkerScheduling } from './scheduling-service.js'
 import { canonicalPath, daemonProfileLoader, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import { workerClientServices } from './service-worker.js'
 import { registerSessionMethods } from './session-methods.js'
-import { recencyCursor } from './session-reads.js'
+import { recencyCursor, type SessionViewRead, storageReads } from './session-reads.js'
 import { keepSharedWorker, type SharedWorkerKeeper } from './shared-keeper.js'
 import { createSkillInstallRequests } from './skill-install-requests.js'
 import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
@@ -587,6 +587,8 @@ export type StartSupervisorOptions = {
   profileDir: string
   /** Existing ledger adapter's read port; reads never acquire a worker or writer claim. */
   sessionFactRead?: (sessionId: string) => ScanRead<import('@agnes/protocol').EventEnvelope>
+  /** Recorded session views from the same ledger; without it `session.view` waits for a worker. */
+  sessionViewRead?: SessionViewRead
   profileFile: string
   /** One daemon scope owns one canonical workspace skill root. Session cwd may vary, but profile
    * resource control never silently scans the daemon process cwd. */
@@ -1272,7 +1274,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       })
     })
-    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection)
+    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, workspaces)
     // Resource lifecycle owns a profile-scoped service generation, independent of chat workers.
     if (localResourceStore) {
       const resourceAdapters = installResourceServiceAdapters({
@@ -2178,7 +2180,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         effectivePackageAdmin?.service,
       )
       sessionPrefs.registerSessionPreferences(ep, lister, preferences)
-      registerSessionMethods(ep, pool, cx)
+      registerSessionMethods(ep, pool, cx, o.sessionViewRead)
       registerWorkspaces(ep, workspaceCatalog, {
         running: (id) => Boolean(registry.get(id)?.inflight || registry.get(id)?.session.running),
         archive: (id) => {
@@ -2703,7 +2705,7 @@ export async function startProductionSupervisor(
         'artifact_read_authority',
       ),
       reclaim: storage.crashReclaim,
-      sessionFactRead: o.sessionFactRead ?? ((key) => (query) => storage.scan(key, query)),
+      ...storageReads(o, storage),
     })
   } catch (error) {
     stopDiagnostics()

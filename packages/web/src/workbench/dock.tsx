@@ -565,8 +565,11 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   return controlsView
 }
 const workbenchRenderers = new WeakMap<HTMLElement, RegionRenderer>()
+const pendingUnmounts = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>()
 /** Controller refreshes may arrive in bursts; only this domain surface publishes once per frame. */
 export function renderWorkbench(host: HTMLElement, context: UiExtensionContext): void {
+  clearTimeout(pendingUnmounts.get(host))
+  pendingUnmounts.delete(host)
   let renderer = workbenchRenderers.get(host)
   const initial = !renderer
   if (!renderer) {
@@ -579,6 +582,23 @@ export function renderWorkbench(host: HTMLElement, context: UiExtensionContext):
 }
 
 export function unmountWorkbench(host: HTMLElement): void {
+  clearTimeout(pendingUnmounts.get(host))
+  pendingUnmounts.delete(host)
   workbenchRenderers.get(host)?.unmount()
   workbenchRenderers.delete(host)
+}
+
+/**
+ * Unmounts in a later task: a session switch hides the dock at once, but tearing its tree down
+ * synchronously would delay the requests for the next session. Rendering again cancels it.
+ */
+export function unmountWorkbenchSoon(host: HTMLElement): void {
+  if (!workbenchRenderers.has(host) || pendingUnmounts.has(host)) return
+  pendingUnmounts.set(
+    host,
+    setTimeout(() => {
+      pendingUnmounts.delete(host)
+      unmountWorkbench(host)
+    }, 0),
+  )
 }

@@ -1031,4 +1031,113 @@ describe('production supervisor storage', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it.each([
+    ['SQLite Host persistence', undefined, true],
+    ['another Host persistence provider', { provider: 'jsonl' }, false],
+  ])('reads recorded session views from its own ledger only for %s', async (_name, persistence, direct) => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-stored-view-'))
+    try {
+      let received: StartSupervisorOptions | undefined
+      const base = options(dir)
+      const supervisor = await startProductionSupervisor(
+        { ...base, profile: { ...base.profile, ...(persistence ? { persistence } : {}) } },
+        {
+          createStorage: (() => ({
+            crashReclaim: reclaim,
+            tables: () => ({ table: () => ({}) }),
+            scan: async () => {
+              throw new Error('a stored view reads lean pages')
+            },
+            scanLean: async () => [],
+            close: async () => undefined,
+          })) as never,
+          start: (async (o: StartSupervisorOptions) => {
+            received = o
+            return { socketPath: join(dir, 'daemon', 'agnesd.sock'), close: async () => undefined }
+          }) as never,
+        },
+      )
+      await supervisor.close()
+      if (!direct) expect(received?.sessionViewRead).toBeUndefined()
+      else
+        await expect(received?.sessionViewRead?.('empty', {})).resolves.toMatchObject({
+          sessionId: 'empty',
+          readOnly: true,
+          lastSeq: 0,
+        })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('answers a recorded session view before any worker can start', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-view-no-worker-'))
+    const sessionId = 'agnes:local:default:daemon:dm:recorded'
+    const started = join(dir, 'worker-started')
+    // A worker entry that only leaves a mark: a view that needs a worker cannot be answered.
+    const workerEntry = join(dir, 'worker.mjs')
+    writeFileSync(
+      workerEntry,
+      `import { writeFileSync } from 'node:fs'\nwriteFileSync(${JSON.stringify(started)}, 'started')\nprocess.exit(1)\n`,
+    )
+    const o = { ...options(dir), workerEntry }
+    writeFileSync(o.profileFile, JSON.stringify(o.profile))
+    const seeded = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
+    const ownership = seeded.tables('@agnes/daemon').table('session_principal_ownership')
+    ownership.exec(`CREATE TABLE IF NOT EXISTS session_principal_ownership (
+      session_id TEXT PRIMARY KEY,
+      principal_id TEXT NOT NULL,
+      reservation_kind TEXT NOT NULL,
+      reservation_state TEXT NOT NULL,
+      parent_session_id TEXT,
+      boundary_seq INTEGER
+    )`)
+    ownership.run(
+      `INSERT INTO session_principal_ownership
+       (session_id, principal_id, reservation_kind, reservation_state, parent_session_id, boundary_seq)
+       VALUES (?, ?, 'new', 'active', NULL, NULL)`,
+      [sessionId, 'local'],
+    )
+    await seeded.open(sessionId, { writerRunId: 'view-fixture', ttlMs: 10_000 })
+    await seeded.commit(sessionId, {
+      expectedWriterRunId: 'view-fixture',
+      events: [
+        {
+          id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+          ts: '2026-01-01T00:00:00Z',
+          type: 'user/message',
+          v: 1,
+          lane: 'main',
+          origin: 'principal',
+          trust: 'trusted',
+          actor: { id: 'local', org: '', role: '', deptPath: [], attrs: {} },
+          data: { content: [{ type: 'text', text: 'recorded question' }] },
+        },
+      ],
+    })
+    await seeded.release(sessionId, 'view-fixture')
+    await seeded.close()
+    const supervisor = await startProductionSupervisor(o)
+    const rpc = await client(supervisor.socketPath)
+    try {
+      await rpc.call(1, 'initialize', {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+      })
+      const view = (await rpc.call(2, '_agnes/v1/session.view', { sessionId, maxNodes: 20 })) as {
+        timeline: { nodes: Array<{ kind: string }> }
+      }
+      expect(view).toMatchObject({ sessionId, readOnly: true, lastSeq: 1 })
+      expect(view.timeline.nodes.map((node) => node.kind)).toEqual(['user'])
+      await expect(
+        rpc.call(3, '_agnes/v1/session.view', { sessionId: 'unknown-session' }),
+      ).rejects.toMatchObject({ data: { code: 'SESSION_NOT_FOUND' } })
+      expect(existsSync(started)).toBe(false)
+    } finally {
+      rpc.close()
+      await supervisor.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
 })

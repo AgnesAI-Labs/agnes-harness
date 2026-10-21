@@ -3,6 +3,7 @@ import { afterEach, expect, it } from 'vitest'
 import { SessionWorkspaceIndex } from '../src/storage/lister.js'
 import type { TableHandle, Tables } from '../src/storage/table.js'
 import { sqliteTables } from './sqlite-tables.js'
+import { sequential } from './workspace-fold-reference.js'
 
 // Opening a session replays its whole history through observe(). Rows that already folded those
 // events must not be rewritten: each rewrite takes the database write lock the worker also needs.
@@ -191,12 +192,7 @@ it('skipping a replayed event never leaves a row the full fold would have change
         })
         const [skipping, folding] = rows as [ReturnType<typeof index>, ReturnType<typeof index>]
         skipping.workspaces.observe('s', replayed, generation)
-        const fold = (
-          folding.workspaces as unknown as {
-            fold(key: string, meta: unknown, event: EventEnvelope, generation: number): void
-          }
-        ).fold.bind(folding.workspaces)
-        fold('s', folding.workspaces.metadata('s'), replayed, generation)
+        sequential(folding.table, 's', replayed, generation, true)
         expect(skipping.row(), JSON.stringify({ state, generation, seq: replayed.seq })).toEqual(
           folding.row(),
         )

@@ -17,7 +17,7 @@ import type { AppSessionContext } from '../app.js'
 import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
 import { defaultPermissionLevel, defaultRecipe, permissionModeOf } from '../session-permission.js'
 import { webView } from '../view.js'
-import { renderWorkbench, unmountWorkbench } from '../workbench/dock.js'
+import { renderWorkbench, unmountWorkbenchSoon } from '../workbench/dock.js'
 
 /** Ends the progress of the session being opened, while one is. */
 let endSessionRead: (() => void) | undefined
@@ -155,7 +155,7 @@ export function createComposerController(
             return selected
           },
         })
-      else unmountWorkbench(dockHost)
+      else unmountWorkbenchSoon(dockHost)
     }
     renderSessionActions(
       context.goalHost,

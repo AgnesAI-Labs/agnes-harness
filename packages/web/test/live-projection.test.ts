@@ -202,7 +202,7 @@ describe('Web live projection', () => {
     expect(d.projectUIOpening).toHaveBeenCalledTimes(1)
     expect(d.projectUIOpening).toHaveBeenCalledWith({
       surface: 'web',
-      maxNodes: 500,
+      maxNodes: 50,
       maxBytes: UI_PROJECTION_MAX_BYTES,
     })
     expect(d.events).toHaveBeenCalledWith({ preview: true, cursor: { fromSeq: 40, generation: 1 } })

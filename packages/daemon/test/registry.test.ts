@@ -208,6 +208,87 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     expect(order.slice(-2)).toEqual(['reset', 'worker-close'])
   })
 
+  it('drains replayed frames in one sidebar batch, then live frames in wire order, including ones arriving mid-drain', async () => {
+    let releaseScan: ((events: EventEnvelope[]) => void) | undefined
+    const scan = new Promise<EventEnvelope[]>((resolve) => {
+      releaseScan = resolve
+    })
+    const row = (seq: number) => ({ seq, type: 'request/header', lane: 'main' }) as EventEnvelope
+    let releaseFour: (() => void) | undefined
+    const order: string[] = []
+    const link = {
+      alive: true,
+      hello: Promise.resolve({
+        kind: 'hello' as const,
+        token: 'token-drain',
+        sessionKey: 'drain-session',
+        writerRunId: 'run-drain',
+        generation: 1,
+        profileHash: 'sha256-profile',
+      }),
+      onExit: vi.fn(),
+      command: vi.fn(async (method: string, params: Record<string, unknown>) =>
+        method === 'scan' ? (await scan).filter((event) => event.seq >= Number(params.fromSeq)) : undefined,
+      ),
+    }
+    const lifecycle = {
+      resetSession: vi.fn(),
+      observe: vi.fn(async (_session: string, event: EventEnvelope) => {
+        order.push(`observe-${event.seq}`)
+        if (event.seq === 4)
+          await new Promise<void>((resolve) => {
+            releaseFour = resolve
+          })
+      }),
+    }
+    let batching = false
+    const workspaces = {
+      batch: vi.fn((_key: string, run: () => void) => {
+        batching = true
+        order.push('batch')
+        try {
+          run()
+        } finally {
+          batching = false
+          order.push('batch-end')
+        }
+      }),
+    }
+    const registry = new WorkerRegistry(
+      { acquire: vi.fn(async () => link), retire: vi.fn() } as unknown as WorkerPool,
+      lifecycle,
+      workspaces,
+    )
+    const opening = open(registry, { key: 'drain-session', cwd: '/workspace', resume: true })
+    await vi.waitFor(() => expect(link.command).toHaveBeenCalledWith('scan', expect.anything()))
+    const publish = (event: EventEnvelope) =>
+      registry.deliver('drain-session', event, () => order.push(`publish-${event.seq}${batching ? '*' : ''}`))
+    // The tail repeats the scanned rows, then a live row that is projected while the drain awaits.
+    for (const seq of [1, 2, 3, 4]) publish(row(seq))
+    releaseScan?.([1, 2, 3].map(row))
+    await vi.waitFor(() => expect(releaseFour).toBeDefined())
+    publish(row(5))
+    releaseFour?.()
+    await opening
+
+    expect(order).toEqual([
+      'observe-1',
+      'observe-2',
+      'observe-3',
+      'batch',
+      'publish-1*',
+      'publish-2*',
+      'publish-3*',
+      'batch-end',
+      'observe-4',
+      'publish-4',
+      'observe-5',
+      'publish-5',
+    ])
+    expect(workspaces.batch).toHaveBeenCalledOnce()
+    expect(workspaces.batch).toHaveBeenCalledWith('drain-session', expect.any(Function))
+  })
+
   it('wakes a waiter registered while openFresh replay is still in flight, like deliver() does for live frames', async () => {
     vi.useFakeTimers()
     try {
