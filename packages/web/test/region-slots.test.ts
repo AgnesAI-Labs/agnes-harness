@@ -175,10 +175,9 @@ describe('migrated sidebar region', () => {
       newDisabled: false,
     })
 
-    expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain('应用')
-    expect(sidebar.querySelector('[data-testid=application-switch]')?.getAttribute('href')).toBe(
-      '?settings=application',
-    )
+    expect(sidebar.querySelector('[data-testid=application-switch]')).toBeNull()
+    expect(sidebar.querySelector('.application-footer')).toBeNull()
+    expect(sidebar.querySelector('.sidebar-footer')?.textContent?.trim()).toBe('设置')
     expect(sidebar.querySelector('[data-slot="ui:sidebar"]')).toBeTruthy()
     expect(sidebar.querySelectorAll('#new')).toHaveLength(1)
     expect(sidebar.querySelectorAll('#settings')).toHaveLength(1)
@@ -190,7 +189,8 @@ describe('migrated sidebar region', () => {
       () => expect(sidebar.querySelector('#settings')?.textContent).toBe('Settings'),
       committed,
     )
-    expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain('Applications')
+    expect(sidebar.querySelector('[data-testid=application-switch]')).toBeNull()
+    expect(sidebar.querySelector('.sidebar-footer')?.textContent?.trim()).toBe('Settings')
     expect(sidebar.querySelector('#new')?.getAttribute('aria-label')).toBe('New conversation')
     expect(sidebar.querySelector<HTMLButtonElement>('#new')?.disabled).toBe(false)
     locale.setLocale('zh-CN')
@@ -204,7 +204,7 @@ describe('migrated sidebar region', () => {
     )
     await vi.waitFor(() => {
       expect(sidebar.querySelector('#replacement-sidebar')).toBeTruthy()
-      expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain('应用')
+      expect(sidebar.querySelector('[data-testid=application-switch]')).toBeNull()
       expect(sidebar.querySelector('#new')).toBeNull()
     }, committed)
     const { applicationIdentity } = await import('@agnes/web-client')
@@ -228,6 +228,26 @@ describe('migrated sidebar region', () => {
       expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain('切换应用')
       expect(sidebar.querySelector('[data-testid=application-return] svg')).not.toBeNull()
     }, committed)
+    expect(sidebar.querySelector('[data-testid=application-switch]')?.getAttribute('href')).toBe(
+      '?settings=application',
+    )
+    locale.setLocale('en')
+    await vi.waitFor(() => {
+      expect(sidebar.querySelector('[data-testid=application-return]')?.textContent).toContain(
+        'Return to official UI',
+      )
+      expect(sidebar.querySelector('[data-testid=application-switch]')?.textContent).toContain(
+        'Switch application',
+      )
+    }, committed)
+    locale.setLocale('zh-CN')
+    await vi.waitFor(
+      () =>
+        expect(sidebar.querySelector('[data-testid=application-return]')?.textContent).toContain(
+          '返回官方界面',
+        ),
+      committed,
+    )
     const adminModule = await import('../src/pages/admin-api.js')
     const clear = vi.fn(async (_revision: number) => {
       throw new Error('CONFIG_REVISION_CONFLICT')
@@ -612,7 +632,7 @@ describe('migrated approval region', () => {
       expect(approval.querySelector('pre')?.textContent).toBe('{"path":"README.md"}')
       expect(approval.querySelector('#fixture-approval-detail-content')?.textContent).toBe('扩展审批详情')
     }, committed)
-    const allow = approval.querySelector<HTMLButtonElement>('button')
+    const allow = approval.querySelector<HTMLButtonElement>('[data-approval-action=allow]')
     allow?.focus()
     mount.render({
       key: 'approval-1',
@@ -627,7 +647,7 @@ describe('migrated approval region', () => {
       disabled: true,
     })
     await vi.waitFor(() => {
-      const disabledAllow = approval.querySelector<HTMLButtonElement>('button')
+      const disabledAllow = approval.querySelector<HTMLButtonElement>('[data-approval-action=allow]')
       expect(document.activeElement).not.toBe(disabledAllow)
       expect(disabledAllow?.disabled).toBe(true)
     }, committed)
@@ -644,10 +664,10 @@ describe('migrated approval region', () => {
       disabled: false,
     })
     await vi.waitFor(() => {
-      const restoredAllow = approval.querySelector<HTMLButtonElement>('button')
+      const restoredAllow = approval.querySelector<HTMLButtonElement>('[data-approval-action=allow]')
       expect(document.activeElement).toBe(restoredAllow)
     }, committed)
-    approval.querySelectorAll<HTMLButtonElement>('button')[2]?.click()
+    approval.querySelector<HTMLButtonElement>('[data-approval-action=cancel]')?.click()
     expect(selected).toEqual(['cancel'])
 
     const remove = slots.register(

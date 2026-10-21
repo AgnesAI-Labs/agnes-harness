@@ -79,6 +79,7 @@ import { createDiagnosticsDialog } from './diagnostics-dialog.js'
 import {
   type LoopSelection,
   loadNewSessionCatalog,
+  loadNewSessionComposition,
   loopIdentity,
   type NewSessionCatalog,
 } from './loop-picker.js'
@@ -1138,7 +1139,7 @@ async function refreshSessionCatalog(): Promise<void> {
   renderControls()
   try {
     const [catalog, runtime] = await Promise.all([
-      loadNewSessionCatalog(),
+      loadNewSessionCatalog(fetch, false),
       loadRuntimeCatalog().catch(() => undefined),
     ])
     if (generation !== sessionCatalogGeneration) return
@@ -1147,6 +1148,13 @@ async function refreshSessionCatalog(): Promise<void> {
     loopCatalogError = false
     if (draftingNew && !draftLoopEdited) draftLoop = defaultLoop(newSessionCatalog.defaults)
     if (draftingNew) syncDraftPermission()
+    void loadNewSessionComposition()
+      .then((composition) => {
+        if (generation !== sessionCatalogGeneration || !newSessionCatalog) return
+        newSessionCatalog = { ...newSessionCatalog, ...(composition ? { composition } : {}) }
+        renderControls()
+      })
+      .catch(() => undefined)
   } catch {
     if (generation === sessionCatalogGeneration) loopCatalogError = true
   } finally {
@@ -1679,7 +1687,9 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   sessionPending = true
   renderControls()
   let cleanupError: unknown
-  try {
+  // Catalog reads do not depend on detaching the old view. Start them together, but
+  // keep submission disabled until both the catalog and client roster are ready.
+  const catalogReady = (async () => {
     await refreshSessionCatalog()
     if (sessionBinding.isCurrent(epoch) && draftingNew && !draftModelExplicit && !draftModelSettingsEdited) {
       const adminModel = newSessionCatalog && defaultModelAdapter(newSessionCatalog.defaults)
@@ -1697,6 +1707,15 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
         : undefined
       if (preferred) knownSessionModel = modelDefaults(preferred)
     }
+  })().catch((error: unknown) => {
+    cleanupError = error
+  })
+  // The binding and module identity already belong to the draft. Its roster can share
+  // in-flight catalog checks while the old subscription is being closed.
+  const rosterReady = clientModules.reconciler.reconcileNow().catch((error: unknown) => {
+    cleanupError ??= error
+  })
+  try {
     const stopped = await stopWithTimeout(stop)
     if (!stopped) {
       notice.setText(t('app.notice.oldSessionClosing'))
@@ -1707,10 +1726,10 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   }
   try {
     await previous.session?.detach()
-    await clientModules.reconciler.reconcileNow()
   } catch (error) {
     cleanupError ??= error
   } finally {
+    await Promise.all([catalogReady, rosterReady])
     if (sessionBinding.isCurrent(epoch)) {
       sessionPending = false
       render()
@@ -1730,9 +1749,11 @@ function selectedModelAvailable(): boolean {
     !selected || runtimeModels.some((model) => model.route === selected.route && model.id === selected.id)
   )
 }
-async function refreshModels(): Promise<ModelPickerOption[]> {
+async function refreshModels(catalogReady?: Promise<void>): Promise<ModelPickerOption[]> {
   const generation = ++modelReadGeneration
   const apis = await client.apis()
+  // Start the model read immediately; defaults and labels must settle before selection is applied.
+  await catalogReady
   const models = (apis.profile.models ?? []).map((model) => ({
     ...model,
     ...(accountLabels.has(model.route) ? { label: accountLabels.get(model.route) as string } : {}),
@@ -2126,8 +2147,8 @@ async function refreshModelConfiguration(): Promise<void> {
   const snapshot = await client.config.get()
   accountProvider = snapshot.provider
   accountLabels = new Map((snapshot.accounts ?? []).map((row) => [row.route, row.label]))
-  await refreshSessionCatalog()
-  await refreshModels()
+  const catalogReady = refreshSessionCatalog()
+  await Promise.all([catalogReady, refreshModels(catalogReady)])
 }
 const modelRefresh = createRefreshCoordinator({
   refresh: refreshModelConfiguration,
@@ -2263,7 +2284,6 @@ run(async () => {
   if (startupRequest.get('new') === '1') {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
-    scheduleClientRosterRead(true)
     requestNewSession()
     sessionPending = false
     await beginNewDraft(configured)
@@ -2324,7 +2344,6 @@ run(async () => {
   else if (empty) {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
-    scheduleClientRosterRead(true)
     await beginNewDraft(
       configured &&
         !startupSection &&

@@ -1,4 +1,10 @@
-import type { Kernel, PresetView, SeamImplementations, ToolRegistry } from '@agnes/core'
+import type {
+  Kernel,
+  PresetView,
+  SeamImplementations,
+  ToolRegistry,
+  WorkspaceInvocationPort,
+} from '@agnes/core'
 import type { MemorySession, SystemPromptProvider } from '@agnes/extension-api'
 import type { ComputerUseArtifactGcRuntime } from '@agnes/host-artifacts/computer-use-artifact-gc'
 import type { Permission } from '@agnes/host-common/presets/permission'
@@ -75,6 +81,10 @@ export type Assembled = {
   childAgentCatalog(): ReturnType<typeof childAgentCatalog>
   compositionForPreset(name?: string, session?: CompositionPatch): ResolvedComposition
   sessionCapabilities(sessionKey: string, tools?: ToolRegistry): SessionCapabilitySet
+  captureSessionCapabilities(
+    sessionKey: string,
+    workspace: WorkspaceInvocationPort,
+  ): Promise<SessionCapabilitySet>
   /** Reviewed bundled API-key routes fitted at assembly, eligible for runtime model switching. */
   preconfiguredRoutes: readonly string[]
   presets: Record<string, PresetDoc>
@@ -99,6 +109,7 @@ export type Assembled = {
     binding: WorkspaceBinding,
     preset?: PresetDoc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
+    ceiling?: import('@agnes/core').FsPolicy,
   ): Promise<SessionWorkspaceRuntime>
   /**
    * Cleanly unload and reload an extension row declaring live resources with a fresh resource snapshot, without

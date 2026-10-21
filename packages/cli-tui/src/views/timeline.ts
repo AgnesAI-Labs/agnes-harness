@@ -56,6 +56,11 @@ export class Timeline implements Component {
     this.hasEarlier = options.hasEarlier ?? this.hasEarlier
   }
 
+  /** Whether the startup banner is what the viewport currently opens with (nothing to show above it). */
+  showsWelcome(): boolean {
+    return this.ordered.length === 0 && this.local.length === 0 && !this.hasEarlier
+  }
+
   /** Adds connection-local transcript content without manufacturing a projected UINode. */
   appendLocal(sessionId: string, view: Component, afterSeq = this.upto): void {
     if (this.sessionId === undefined) this.sessionId = sessionId

@@ -33,12 +33,12 @@ import { Hints } from './views/hints.js'
 import { UserMessage } from './views/message.js'
 import { ModelPicker, type ModelSelection } from './views/model-picker.js'
 import { SessionPicker } from './views/session-picker.js'
-import { Header, StatusBar } from './views/status-bar.js'
+import { StatusBar } from './views/status-bar.js'
 import { ThemePicker } from './views/theme-picker.js'
 import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { ToolCard } from './views/tool-card.js'
 import { UsagePanel } from './views/usage-panel.js'
-import { WelcomeBanner } from './views/welcome-banner.js'
+import { WelcomeController, type WelcomeOptions } from './welcome-controller.js'
 import { readWorkspaceInfo, tildePath, type WorkspaceProbe, workspaceRefresher } from './workspace-info.js'
 
 export { formatTuiErrorNotice } from './error-notice.js'
@@ -65,7 +65,7 @@ export class TuiApp {
   // replaces it with a fresh projection built for the newly current session.
   private projection: TuiProjection
   private readonly timeline: Timeline
-  private readonly welcomeBanner: WelcomeBanner
+  private readonly welcome: WelcomeController
   private readonly toolCards = new Map<string, ToolCard>()
   private latestTool: string | undefined
   private readonly approvalCards = new Map<string, ApprovalCard>()
@@ -84,7 +84,6 @@ export class TuiApp {
   private flushingQueued = false
   private queuedWake: ReturnType<typeof setTimeout> | undefined
   private readonly mouse: TuiMouse
-  private readonly header: Header
   private readonly statusBar: StatusBar
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
@@ -144,6 +143,8 @@ export class TuiApp {
       /** Last model and permission for the next fresh session. Omitted in tests that do not inherit. */
       composerSelectionPath?: string
       themePreferencePath?: string
+      /** What the launcher knows for the welcome, and what tests pin (see `WelcomeOptions`). */
+      welcome?: WelcomeOptions
       /** Shown once on the status bar after a fresh session inherits a model or full permission. */
       initialNotice?: string
       /** Reads branch and worktree for the composer rail; the gallery injects fixed answers. */
@@ -170,15 +171,6 @@ export class TuiApp {
       const plain = new VStack([echo, new Text(text)])
       return { render: (w) => styled.render(w), transcript: (w) => plain.render(w), invalidate() {} }
     }
-    this.header = new Header(ansi, branding)
-    // Placeholder until the first `apply()` tick lands (moments later, inside `start()`, before
-    // any render happens): real profile/preset/sessionId are already known now, generation is not.
-    this.header.set({
-      profile: o.profile ?? o.header ?? '',
-      preset: o.preset ?? '',
-      sessionId: o.session.id,
-      generation: 1,
-    })
     this.statusBar = new StatusBar(ansi, locale)
     this.mouse = new TuiMouse(
       (rows) => this.scrollTimeline(rows),
@@ -186,14 +178,14 @@ export class TuiApp {
       () => ansi.fg('success', tt('app.copied', this.locale)),
       () => this.stopped || this.renderer.requestRender(),
     )
-    this.welcomeBanner = new WelcomeBanner({
-      profile: o.profile ?? o.header ?? '',
-      preset: o.preset ?? '',
-      ...(o.model ? { model: o.model } : {}),
+    this.welcome = new WelcomeController(o, {
       branding,
       ansi,
       theme: this.theme,
       locale,
+      viewport: () => ({ rows: o.term.size().rows, reserved: this.reservedRows }),
+      shows: () => !this.stopped && !this.turnActive && this.timeline.showsWelcome(),
+      repaint: () => this.stopped || this.renderer.requestRender(),
     })
     this.timeline = new Timeline({
       rows: () => o.term.size().rows,
@@ -202,7 +194,7 @@ export class TuiApp {
       // The welcome banner rides at the top of the timeline: it is built once here, so a session
       // switch (`/new`, `/resume`, `/rewind`) reuses it. It scrolls inside the fullscreen
       // viewport, never into the shell's history.
-      top: this.welcomeBanner,
+      top: this.welcome.banner,
       nodeView: (node) => {
         if (node.kind === 'tool') {
           const card = new ToolCard(node, {
@@ -334,6 +326,7 @@ export class TuiApp {
     // At startup and after every turn (the agent may have switched branch); never blocks a frame.
     this.refreshWorkspace = workspaceRefresher(this.cwd, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
       this.composer.setWorkspace(info)
+      this.welcome.workspace(info)
       if (!this.stopped) this.renderer.requestRender()
     })
     // Zero rows until the first turn starts (spec RP1.2). `Loader`'s own constructor is
@@ -341,7 +334,6 @@ export class TuiApp {
     // component -- is what decides a fresh session shows nothing yet.
     this.loader.hide()
     const root = new VStack([
-      this.header,
       this.timeline,
       this.live,
       this.loader,
@@ -594,6 +586,7 @@ export class TuiApp {
       await this.stop()
       throw error
     }
+    this.welcome.start()
   }
 
   // Forces a full re-fetch of the projected timeline through the same `apply()` path an
@@ -742,9 +735,6 @@ export class TuiApp {
     this.applyOpState(value.opState)
     this.statusBar.setParked(value.opState?.parked?.decisionRef.id)
     this.statusBar.setUsage(value.usage)
-    if (value.usage) {
-      this.welcomeBanner.setModel(value.usage.model.id)
-    }
     this.composer.setUsage(value.usage)
     // `UITimeline.budget` (core's project/ui.ts:282,330) rides along on every projection tick for
     // free -- it is read out of the same register snapshot the rest of this timeline was built
@@ -753,15 +743,7 @@ export class TuiApp {
     // value older or newer than what the rest of this repaint reflects), so this reads `value.
     // budget` directly rather than polling `session.budget()` on `turn/end`.
     if (value.budget) this.statusBar.setBudget(value.budget.creditsUsed, value.budget.creditsCap ?? undefined)
-    this.header.set({
-      profile: this.o.profile ?? this.o.header ?? '',
-      preset: this.o.preset ?? '',
-      sessionId: this.o.session.id,
-      generation: value.generation,
-      ...(value.opState
-        ? { opState: { turn: value.opState.turn, step: value.opState.step, phase: value.opState.phase } }
-        : {}),
-    })
+    this.welcome.projected(value.usage)
     // Projection callbacks arrive after the renderer's input frame.  Updating the component tree
     // alone leaves that old frame on screen (for example a completed tool still reads "running"),
     // which in turn makes a healthy idle session look as if subsequent input is queued forever.
@@ -931,7 +913,7 @@ export class TuiApp {
     // paint a stale, fabricated elapsed time for a turn that belongs to a session no longer even
     // attached. Reset turn-lifecycle state to exactly what a freshly-constructed TuiApp looks like.
     this.resetTurn()
-    this.welcomeBanner.setModel(undefined)
+    this.welcome.banner.setModel(undefined)
     this.surfacePrompt = undefined
     this.surfaceCommand = undefined
     this.surfaceVersions.clear()

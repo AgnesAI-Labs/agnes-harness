@@ -272,6 +272,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
     childAgentCatalog: () => childAgentCatalog(pluginTree.root),
     compositionForPreset: c.capabilities.compositionForPreset,
     sessionCapabilities: c.capabilities.sessionCapabilities,
+    captureSessionCapabilities: c.capabilities.captureSessionCapabilities,
     applyModelProfile: c.providerStage.applyModelProfile,
     presets: f.presets.presets,
     ...(ctx.deps.retainedModelBootstrap ? { retainedModelBootstrap: true } : {}),

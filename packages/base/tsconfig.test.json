@@ -23,6 +23,7 @@
     "testkit/mem-fts.ts",
     "testkit/seam-init.ts",
     "testkit/mem-table.ts",
+    "testkit/schedule-jobs.ts",
     "testkit/tool-context.ts",
     "testkit/index.ts"
   ],

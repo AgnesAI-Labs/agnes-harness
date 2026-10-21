@@ -258,6 +258,98 @@ describe('present sources from typed ledger reads', () => {
     },
   )
 
+  it.each(Object.entries(scenarios))('%s: bounded pages merge by callSeq', async (_name, rows) => {
+    const events = ledger(rows)
+    const expected = byCall(await fromProjection(events))
+    for (const limit of [1, 2, 3]) {
+      const merged = new Map<number, DeliverableSource>()
+      let afterSeq = 0
+      while (afterSeq < events.length) {
+        const page = await projectDeliverableSources(
+          store(events).scan,
+          { lane: 'main', afterSeq, toSeq: events.length },
+          { limit, fits: () => true },
+        )
+        expect(page.upto).toBeGreaterThan(afterSeq)
+        expect(page.items.length).toBeLessThanOrEqual(limit)
+        expect(page.items.every((item) => item.resultSeq > afterSeq && item.resultSeq <= page.upto)).toBe(
+          true,
+        )
+        const atCut = (await fromProjection(events.slice(0, page.upto))).filter(
+          (item) => item.resultSeq > afterSeq,
+        )
+        expect(byCall(page.items)).toEqual(byCall(atCut))
+        for (const item of page.items) merged.set(item.callSeq, item)
+        afterSeq = page.upto
+      }
+      expect(byCall([...merged.values()])).toEqual(expected)
+    }
+  })
+
+  it('bounds repeated results even when they all replace a single call', async () => {
+    const events = ledger([
+      turnStart(1),
+      call('repeat'),
+      ...Array.from({ length: 8 }, (_, attempt) => result('repeat', { attempt })),
+      turnEnd(),
+    ])
+    const ledgerAt = store(events)
+    const page = await projectDeliverableSources(
+      ledgerAt.scan,
+      { lane: 'main', afterSeq: 0, toSeq: events.length },
+      { limit: 2, fits: () => true },
+    )
+    expect(page.upto).toBe(4)
+    expect(page.items).toEqual([
+      { callSeq: 2, resultSeq: 4, toolUseId: 'repeat', turnId: 'turn:1', structured: { attempt: 1 } },
+    ])
+    expect(ledgerAt.read.filter((row) => row.type.startsWith('tool/')).length).toBeLessThanOrEqual(5)
+  })
+
+  it('attributes calls at the byte cut, before an interleaved turn is reopened', async () => {
+    const events = ledger(interleaved)
+    const page = await projectDeliverableSources(
+      store(events).scan,
+      { lane: 'main', afterSeq: 0, toSeq: events.length },
+      { limit: 10, fits: (items) => items.length <= 1 },
+    )
+    expect(page.upto).toBe(6)
+    expect(page.items).toEqual([
+      { callSeq: 5, resultSeq: 6, toolUseId: 'between', turnId: 'turn:2', structured: delivered('between') },
+    ])
+    const continued = await projectDeliverableSources(
+      store(events).scan,
+      { lane: 'main', afterSeq: page.upto, toSeq: events.length },
+      { limit: 1, fits: () => true },
+    )
+    expect(continued.items[0]).toMatchObject({ callSeq: 2, turnId: 'turn:1' })
+  })
+
+  it('restores an earlier result when a byte cut excludes its replacement', async () => {
+    const events = ledger([
+      turnStart(1),
+      call('a'),
+      result('a', { note: 'old' }),
+      call('b'),
+      result('b', { note: 'small' }),
+      result('a', { note: 'large' }),
+      turnEnd(),
+    ])
+    const page = await projectDeliverableSources(
+      store(events).scan,
+      { lane: 'main', afterSeq: 0, toSeq: events.length },
+      {
+        limit: 10,
+        fits: (items) => items.every((item) => (item.structured as { note: string }).note !== 'large'),
+      },
+    )
+    expect(page.upto).toBe(5)
+    expect(page.items.map((item) => item.structured)).toEqual([{ note: 'old' }, { note: 'small' }])
+    expect(page.items).toEqual(
+      await projectDeliverableSources(store(events).scan, { lane: 'main', afterSeq: 0, toSeq: page.upto }),
+    )
+  })
+
   it('reads only main-lane tool and turn rows, and no turn rows when nothing was presented', async () => {
     const rows: Row[] = [
       ['user/message', { content: [{ type: 'text', text: 'go' }] }],

@@ -41,12 +41,6 @@ export type CompositeTargetAck = Readonly<{
   generation: number
 }>
 
-export type CompositeTargetOverlay = Readonly<{
-  sessionKey: string
-  desired: unknown
-  digest: string
-}>
-
 const ARTIFACT_COLUMNS = Object.freeze([
   'desired_json',
   'previous_json',
@@ -130,25 +124,6 @@ export class CompositeTargetStore {
         report_json TEXT,
         last_failure_json TEXT,
         acknowledged_json TEXT
-      )`,
-    )
-    ensure(
-      this.#table,
-      `CREATE TABLE IF NOT EXISTS composite_target_overlays (
-        profile TEXT NOT NULL,
-        session_key TEXT NOT NULL,
-        overlay_json TEXT NOT NULL,
-        digest TEXT NOT NULL,
-        PRIMARY KEY (profile, session_key)
-      )`,
-    )
-    ensure(
-      this.#table,
-      `CREATE TABLE IF NOT EXISTS composite_target_commands (
-        profile TEXT NOT NULL,
-        command_id TEXT NOT NULL,
-        result_json TEXT NOT NULL,
-        PRIMARY KEY (profile, command_id)
       )`,
     )
     ensure(
@@ -254,15 +229,6 @@ export class CompositeTargetStore {
         profile: row.profile,
         configId: row.row_id,
         value: JSON.parse(row.value_json),
-      })
-    for (const row of this.#table.all<{ profile: string; session_key: string; overlay_json: string }>(
-      'SELECT profile, session_key, overlay_json FROM composite_target_overlays',
-    ))
-      values.push({
-        kind: 'plugin',
-        profile: row.profile,
-        configId: `session-overlay:${row.session_key}`,
-        value: JSON.parse(row.overlay_json),
       })
     for (const row of this.#table.all<{ profile: string; value_json: string | null }>(
       'SELECT profile, value_json FROM plugin_config_intents',
@@ -514,46 +480,6 @@ export class CompositeTargetStore {
         [this.#profile, digest],
       ) !== undefined
     )
-  }
-
-  overlay(sessionKey: string, desired: unknown, digest: string): void {
-    if (!sessionKey) throw new TypeError('sessionKey is required')
-    this.#table.exec(
-      `INSERT INTO composite_target_overlays (profile, session_key, overlay_json, digest)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(profile, session_key) DO UPDATE SET overlay_json = excluded.overlay_json, digest = excluded.digest`,
-      [this.#profile, sessionKey, JSON.stringify(desired), digest],
-    )
-  }
-
-  overlayOf(sessionKey: string): CompositeTargetOverlay | undefined {
-    const row = this.#table.get<{ overlay_json: unknown; digest: unknown }>(
-      `SELECT overlay_json, digest FROM composite_target_overlays WHERE profile = ? AND session_key = ?`,
-      [this.#profile, sessionKey],
-    )
-    if (!row || typeof row.overlay_json !== 'string' || typeof row.digest !== 'string') return undefined
-    return Object.freeze({
-      sessionKey,
-      desired: JSON.parse(row.overlay_json),
-      digest: row.digest,
-    })
-  }
-
-  rememberCommand(commandId: string, result: unknown): void {
-    if (!commandId) throw new TypeError('commandId is required')
-    this.#table.exec(
-      `INSERT OR IGNORE INTO composite_target_commands (profile, command_id, result_json) VALUES (?, ?, ?)`,
-      [this.#profile, commandId, JSON.stringify(result)],
-    )
-  }
-
-  commandResult(commandId: string): unknown {
-    const row = this.#table.get<{ result_json: unknown }>(
-      `SELECT result_json FROM composite_target_commands WHERE profile = ? AND command_id = ?`,
-      [this.#profile, commandId],
-    )
-    if (!row || typeof row.result_json !== 'string') return undefined
-    return JSON.parse(row.result_json)
   }
 
   pin(value: string): void {

@@ -148,6 +148,13 @@ export function validateFsPolicy(policy: FsPolicy): void {
     bad('networkAllow is not a string list')
 }
 
+/** Decode persisted policy data at the owning boundary, without exposing its rule list to Core. */
+export function restoreFilesystemPolicy(value: unknown): FsPolicy {
+  const policy = value as FsPolicy
+  validateFsPolicy(policy)
+  return structuredClone(policy)
+}
+
 /** Folds away `.` and `..` without a platform path module, so a probe path is spelled once. */
 function normalize(path: string): string {
   const windows = /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\') || path.startsWith('//')

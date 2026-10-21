@@ -886,3 +886,38 @@ it.each([
   await act(async () => composer.restoreImageBlocks([{ type: 'image', data: 'bad', mimeType: 'image/png' }]))
   expect(composer.getImageBlocks()).toEqual(images)
 })
+
+it('clears attachments without notifying the host when there is nothing to clear', async () => {
+  const handle = createRef<ComposerHandle>()
+  const changed = vi.fn()
+  await act(async () => {
+    root.render(
+      createElement(Composer, {
+        ref: handle,
+        dependencies,
+        initialView: view,
+        onAttachmentsChange: changed,
+        onCancel() {},
+        onDraftChange() {},
+        onError() {},
+        onModelSelect: async () => false,
+        onPermissionSelect: async () => false,
+        onSubmit() {},
+        onWorkspace() {},
+      }),
+    )
+  })
+  // Switching sessions clears the composer; an empty one must not re-render the host's controls.
+  await act(async () => handle.current?.clearImageBlocks())
+  expect(changed).not.toHaveBeenCalled()
+  const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+  if (!prompt) throw new Error('composer input is missing')
+  await act(async () => prompt.dispatchEvent(imagePasteEvent([pngFile()])))
+  await act(async () => {
+    await vi.waitFor(() => expect(handle.current?.getImageBlocks()).toHaveLength(1))
+  })
+  changed.mockClear()
+  await act(async () => handle.current?.clearImageBlocks())
+  expect(handle.current?.getImageBlocks()).toEqual([])
+  expect(changed).toHaveBeenCalled()
+})

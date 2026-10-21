@@ -1,6 +1,7 @@
 import { defaultLoop, userImagePolicy, type WorkspaceEntry } from '@agnes/protocol'
 import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
 import { choiceName } from '@agnes/web-admin/settings/choices'
+import { effectiveApplication } from '@agnes/web-client'
 import type { ComposerView } from '@agnes/web-conversation/composer'
 import {
   composerActionPresentation,
@@ -16,7 +17,7 @@ import type { AppSessionContext } from '../app.js'
 import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
 import { defaultPermissionLevel, defaultRecipe, permissionModeOf } from '../session-permission.js'
 import { webView } from '../view.js'
-import { renderWorkbench, unmountWorkbench } from '../workbench/dock.js'
+import { renderWorkbench, unmountWorkbenchSoon } from '../workbench/dock.js'
 
 /** Ends the progress of the session being opened, while one is. */
 let endSessionRead: (() => void) | undefined
@@ -154,7 +155,7 @@ export function createComposerController(
             return selected
           },
         })
-      else unmountWorkbench(dockHost)
+      else unmountWorkbenchSoon(dockHost)
     }
     renderSessionActions(
       context.goalHost,
@@ -233,7 +234,7 @@ export function createComposerController(
         label: context.stopping ? context.t('composer.cancel.stopping') : context.t('composer.cancel.stop'),
       },
       children:
-        context.sessionControls?.sessionId === context.current?.id
+        !effectiveApplication()?.workbench && context.sessionControls?.sessionId === context.current?.id
           ? (context.sessionControls?.value.children ?? [])
           : [],
       childrenDisabled: !context.connected || context.sessionPending || context.stopping,

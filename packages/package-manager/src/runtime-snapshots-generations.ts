@@ -1,15 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import {
-  existsSync,
-  linkSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
   decodeRuntimeTargetArtifact,
@@ -22,8 +12,15 @@ import {
   publishFileDurablySync,
   removeFileDurablySync,
   syncDirectorySync,
-  syncTreeSync,
+  syncTreeBatchedSync,
 } from '@agnes/system-node'
+import {
+  acquireOwnerFileLock,
+  pidExists,
+  readLockOwner,
+  releaseOwnerFileLock,
+  takeOverOwnerFileLock,
+} from '@agnes/system-node/owner-lock'
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
@@ -89,15 +86,6 @@ function parseHolder(bytes: string): Holder | undefined {
   }
 }
 
-function pidExists(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code !== 'ESRCH'
-  }
-}
-
 function pause(ms: number): void {
   try {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
@@ -108,27 +96,6 @@ function pause(ms: number): void {
     }
   }
 }
-type LockOwner = Readonly<{ pid: number; startId?: string; token: string }>
-
-function readLockOwner(lock: string): LockOwner | undefined {
-  try {
-    const bytes = readFileSync(lock, 'utf8'),
-      holder = parseHolder(bytes),
-      token = (JSON.parse(bytes) as { token?: unknown }).token
-    return holder && typeof token === 'string' ? { ...holder, token } : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function removeLockFile(lock: string): void {
-  try {
-    unlinkSync(lock)
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-  }
-}
-
 /** The seam selections a generation's container is compiled from, with the format they were written in. */
 export type GenerationSeams = Readonly<{
   formatVersion: 1
@@ -247,15 +214,18 @@ export class RuntimeGenerationSnapshotStore {
           mode: 0o600,
           flush: true,
         })
+        const destinations: string[] = []
         const copied = sources.map((source, index) => {
           if (!source.trusted) throw new Error('E_GENERATION_UNTRUSTED: snapshot is not trusted')
           const destination = join(directory, String(index))
+          destinations.push(destination)
           copyPackageTreeSync(source.snapshot.directory, destination)
           if (hashDirectory(destination, { exclude: [] }) !== source.snapshot.treeIntegrity)
             throw new Error('E_GENERATION_INTEGRITY: package snapshot changed')
-          syncTreeSync(destination)
           return { ...source, snapshot: { ...source.snapshot, directory: String(index) } }
         })
+        // One drive flush for every copied tree, before anything names them.
+        syncTreeBatchedSync(...destinations)
         const resourcesDigest = resources
           ? writeGenerationResources(join(directory, 'resources'), resources)
           : undefined
@@ -285,6 +255,18 @@ export class RuntimeGenerationSnapshotStore {
 
   read(id: string): PluginGenerationSnapshot {
     return collectRead(this.readSteps(id))
+  }
+
+  /** Display metadata only; never supplies executable sources or proves that an archive can resume. */
+  describe(id: string): Pick<PluginGenerationSnapshot, 'id' | 'packages'> {
+    const file = join(this.directory(id), 'generation.json')
+    const record = decodeGenerationRecord(
+      parseRecord(readFileSync(file, 'utf8'), file),
+      id,
+      file,
+      GENERATION_SNAPSHOT_VERSION,
+    )
+    return Object.freeze({ id: record.id, packages: record.packages })
   }
 
   /** Same integrity checks as read(), with cooperative file hashing for read-only status. */
@@ -474,9 +456,9 @@ export class RuntimeGenerationSnapshotStore {
       owner = { ...this.#holder(), token: randomUUID() }
     this.#ensure('sessions')
     for (;;) {
-      if (this.#acquireLock(lock, owner)) break
+      if (acquireOwnerFileLock(lock, owner)) break
       const held = readLockOwner(lock)
-      if (held && !pidExists(held.pid)) this.#takeOverLock(lock, held.token)
+      if (held && !pidExists(held.pid)) takeOverOwnerFileLock(lock, held.token)
       else if (Date.now() > deadline)
         throw new DurableStateError(
           'E_GENERATION_PIN_BUSY',
@@ -490,47 +472,7 @@ export class RuntimeGenerationSnapshotStore {
     try {
       return body()
     } finally {
-      const held = readLockOwner(lock)
-      if (held?.token === owner.token) removeLockFile(lock)
-    }
-  }
-
-  /** True when this holder created the lock; false only when it already exists. Any other failure is thrown. */
-  #acquireLock(lock: string, owner: object): boolean {
-    const pending = `${lock}.${randomUUID()}.tmp`
-    try {
-      writeFileSync(pending, JSON.stringify(owner), { flag: 'wx', mode: 0o600, flush: true })
-      linkSync(pending, lock)
-      return true
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
-      throw error
-    } finally {
-      rmSync(pending, { force: true })
-    }
-  }
-
-  /**
-   * Moves a lock whose owner was seen dead out of the way. If the lock found there is not the one that
-   * was seen (it was released and re-acquired in between), the live owner's lock is put back.
-   */
-  #takeOverLock(lock: string, seenToken: string): void {
-    const away = `${lock}.${randomUUID()}.stale`
-    try {
-      renameSync(lock, away)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
-      throw error
-    }
-    try {
-      if (readLockOwner(away)?.token === seenToken) return
-      try {
-        linkSync(away, lock)
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      }
-    } finally {
-      rmSync(away, { force: true })
+      releaseOwnerFileLock(lock, owner.token)
     }
   }
 

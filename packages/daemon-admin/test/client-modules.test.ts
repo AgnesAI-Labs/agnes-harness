@@ -536,11 +536,23 @@ describe('client module immutable snapshots', () => {
       directory: files.packageDirectory,
       blockers: [{ code: 'incompatible', references: ['reserved-row-id:web:'] }],
     })
-    const revoked = await registry.list({
+    const module = first.modules[0]
+    if (!module) throw new Error('missing ready client module')
+    const paths = [module.entryUrl, ...module.styleUrls]
+    expect(await Promise.all(paths.map((path) => registry.read({ ...input, path })))).toEqual(
+      paths.map(() => expect.objectContaining({ found: true })),
+    )
+    const reading = registry.read({ ...input, path: module.entryUrl })
+    const blockedInput = {
       ...input,
       inventory: inventory(blocked),
       refreshInventory: async () => inventory(blocked),
-    })
+    }
+    // A queued revocation is a new observation: later reads must not join the older preparation.
+    const revoking = registry.refresh(blockedInput, 'trust', row.id)
+    const refused = registry.read({ ...blockedInput, path: module.entryUrl })
+    const [, revoked] = await Promise.all([reading, revoking])
+    expect(await refused).toEqual({ found: false })
     expect(revoked.modules).toEqual([])
     expect(revoked.statuses).toEqual([])
     expect(

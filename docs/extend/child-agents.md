@@ -65,7 +65,26 @@ If Core refuses child creation with `E_CHILD_LIMIT` before returning a child han
 These tools keep their current names:
 
 - `subagent_fork` starts a background child seeded from parent history and returns its key.
-- `subagent_spawn` starts a background child and returns its key. Both fork and spawn stay open for follow-ups.
+- `subagent_spawn` starts a background child. Set `wait: true` to collect its findings in the same call and finish the request in one user turn. Default background mode keeps the asynchronous completion notice. Both fork and spawn stay open for follow-ups.
+
+
+An adopted application may additionally declare `delegableAgents` (up to eight launchable refs,
+also in `agents`). `subagent_spawn` accepts an optional `role` ref from this backend allowlist.
+The role starts fresh with its own composition; its tools and workspace authority are capped by a
+spawn-time parent snapshot recorded on the child ledger. All approval and business signature
+requests in that child are refused with instructions to hand the action back to the main assistant.
+`role` cannot be combined with `fork` or `model`; invalid roles never fall back to ordinary children.
+A tool is eligible only when its Host-verified package, version, export, code snapshot and plugin-row
+configuration digest match the parent's binding, in addition to its safety definition. Unprovable
+bindings are excluded; a matching name or schema fingerprint alone does not grant access. MCP and
+Skill resources are the intersection of both effective resource scopes captured at spawn. Each
+input uses the real workspace read/list view, filtered by its published root and exact plugin-row
+instance; a warmed composition or a stale discovery entry cannot add resources to another session. These
+snapshot allowlists are literal: an empty intersection refuses access, rather than selecting defaults.
+Shared tools, nested invocations and PTC use the same resource gates. Reopen restores the validated,
+trusted role fact from the child's own raw ledger in both Core and Host; a materialized register or a
+parent's fork prefix is not authority. Later parent changes do not alter this snapshot.
+See [applications](applications.md) for adoption and attribution.
 - `subagent_collect` reads the current result on demand. It is not needed to learn that a child finished; see Completion notices.
 - `subagent_cancel` stops a spawned child and its subtree.
 
@@ -85,7 +104,7 @@ The parent does not poll. When a background child (one started by `subagent_fork
 - `data`: `{ childKey, status, continuable?, result?, truncated?, credits? }`. `status` is `completed`, `failed`, `cancelled` or `budget_stopped`. `continuable: true` means the child is idle and still accepts `subagent_send_message`. `result` is the last assistant text, capped at 4000 characters; `subagent_collect` returns the full text.
 - `summary`: a short model-facing line with the result head. `presentation`: `{ kind: "child-completed", status, label }`; Web renders a localized status line with the data expandable.
 
-An idle parent wakes and the loop continues with the notice; a busy parent queues it like any input. The command id is `child-completed:<childKey>:<endSeq>:<status>` and Core deduplicates it against the parent's inbox history, so retries and restarts deliver once. When a parent session is reopened, Core delivers the notices of terminal children that a crash or a closed parent missed. Awaited forks (`ctx.subagent.fork`) and loop-owned children report through their caller and send no notice. A workflow loop reads the notice from `LoopInput.system`.
+An idle parent wakes and the loop continues with the notice; a busy parent queues it like any input. Once `subagent_spawn` with `wait: true` or `subagent_collect` returns a completed result (including an idle resident turn), Core durably acknowledges that result and withdraws its pending notice. A later delivery or session reopen cannot wake the parent for the same collected result. The delegation card and child trace retain the completed status. A running snapshot or wait timeout does not acknowledge a result; uncollected results, including later resident turns, still wake the parent. The command id is `child-completed:<childKey>:<endSeq>:<status>` and Core deduplicates it against the parent's inbox history, so retries and restarts deliver once. When a parent session is reopened, Core delivers the notices of terminal children that a crash or a closed parent missed. Awaited forks (`ctx.subagent.fork`) and loop-owned children report through their caller and send no notice. A workflow loop reads the notice from `LoopInput.system`.
 
 ## Parent-bound facade
 
@@ -137,4 +156,4 @@ A save publishes replacement builtin rows onto the current desired runtime targe
 
 `sdk` speaks the pinned newline protocol `agnes.child-engine`: `initialize`, `run`, `text` notifications, and `cancel`. It is one shot. Choosing protocol `acp` registers the continuable `acp` provider instead, with the same command allowlist. Do not mount that row beside another `acp` provider. This engine does not speak the DeepSeek SDK wire.
 
-Provider `events()` and `updateExternalChild` update the in-process child listing only. The project UI writes a child card's `resultPreview` when a `tool/result` event arrives. `subagent_spawn` returns a start notice. `subagent_collect` returns the final text. The card updates when those tool results land. There is no `tool/progress` event and no websocket of child provider events, so the card does not show text while the process is still running.
+Provider `events()` and `updateExternalChild` update the in-process child listing only. The project UI writes a child card's `resultPreview` when a `tool/result` event arrives. `subagent_spawn` returns a short start acknowledgement, or findings with `wait: true`. Application role cards use structured role/task/handle data and durable child trace or notice status; raw receipts and handles stay under Technical details. `subagent_collect` returns the final text. The card updates when those tool results land. There is no `tool/progress` event and no websocket of child provider events, so the card does not show text while the process is still running.

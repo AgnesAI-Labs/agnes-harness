@@ -721,10 +721,12 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           try {
             const lock = load(profileDir)
             return projectLocal(
-              await (opts.fresh ? readInventory : readInventoryAsync)(lock, {
+              await readInventoryAsync(lock, {
                 ...storeFor(profileDir),
                 ceiling: ceiling(lock),
-                ...(opts.fresh ? {} : { verificationCache: inventoryVerifications }),
+                // Static manifest interpretation is reusable only after this read verifies
+                // every file again. Fresh admission still has its own digest boundary.
+                verificationCache: inventoryVerifications,
               }),
             )
           } finally {
@@ -738,7 +740,9 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
           return read()
         }
         reading = (existsSync(profileDir) ? locked(profileDir, scan, {}, !opts.fresh) : scan()).finally(clear)
-        if (!opts.fresh) inventoryReads.set(key, { boundary, promise: reading })
+        // Ordinary readers may join this unfinished verification, including a fresh one.
+        // A fresh admission still discards any prior read above and starts independently.
+        inventoryReads.set(key, { boundary, promise: reading })
         return reading
       })
     },

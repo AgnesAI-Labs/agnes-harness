@@ -1,8 +1,11 @@
 import type { UINode, UITurn } from '@agnes/protocol'
 import { type ReactNode, useMemo, useRef } from 'react'
+import { PushStack } from '../ui/push-stack.js'
 import { Bubble, type BubbleItemType } from '../x/index.js'
 import type { ConversationMessagesProps } from './messages/context.js'
+import { delegationView } from './messages/delegation-card.js'
 import { isSystemInput, Message } from './messages/message.js'
+import { SubtaskPages, Subtasks, type SubtaskView } from './messages/subtask-details.js'
 import { Turn } from './messages/turn.js'
 import { type ConversationNode, conversationNodes } from './projection.js'
 import { stableRecords } from './stable-records.js'
@@ -66,6 +69,36 @@ export function ConversationMessages(props: ConversationMessagesProps) {
       props.renderNode,
     ],
   )
+  const taskViews = new Map<string, SubtaskView>()
+  for (const node of stable.nodes) {
+    if (node.kind !== 'tool' || !node.delegatedTask) continue
+    const view = delegationView(node, stable.nodes, stable.turns)
+    if (view) taskViews.set(node.delegatedTask.childKey, view)
+  }
+  for (const node of stable.nodes) {
+    if (node.kind !== 'user' || node.system?.presentation?.kind !== 'child-completed') continue
+    const data = node.system.data
+    if (
+      !data ||
+      typeof data !== 'object' ||
+      Array.isArray(data) ||
+      typeof data.childKey !== 'string' ||
+      taskViews.get(data.childKey)?.role
+    )
+      continue
+    taskViews.set(data.childKey, {
+      status: node.system.presentation.status,
+      trace: [],
+      task: node.system.presentation.label,
+      role: undefined,
+      technical: JSON.stringify(data, null, 2),
+    })
+  }
+  const delegationKey = JSON.stringify([...taskViews])
+  const delegationStates = useMemo(
+    () => new Map<string, SubtaskView>(JSON.parse(delegationKey)),
+    [delegationKey],
+  )
   const visible = props.visibleNodeIds ? new Set(props.visibleNodeIds) : undefined
   const nodes = conversationNodes(stable.nodes)
   if (visible) for (const id of [...nodes.keys()]) if (!visible.has(id)) nodes.delete(id)
@@ -120,11 +153,16 @@ export function ConversationMessages(props: ConversationMessagesProps) {
       item(id, nodeRole(node), <Message node={node} props={presentation} />),
     )
   return (
-    <ConversationXScope>
-      <section data-agnes-conversation-messages="">
-        <Bubble.List autoScroll={false} items={items} role={ROLES} />
-      </section>
-    </ConversationXScope>
+    <Subtasks.Provider value={delegationStates}>
+      <ConversationXScope>
+        <PushStack rootTitle={props.t('delegation.conversation')} historyKey="agnesConversationSubtask">
+          <section data-agnes-conversation-messages="">
+            <Bubble.List autoScroll={false} items={items} role={ROLES} />
+          </section>
+          <SubtaskPages t={props.t} />
+        </PushStack>
+      </ConversationXScope>
+    </Subtasks.Provider>
   )
 }
 

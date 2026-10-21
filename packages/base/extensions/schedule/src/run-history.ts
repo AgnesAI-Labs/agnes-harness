@@ -11,21 +11,16 @@ export const previousApprovalExpired = (db: ScheduleDb, scheduleId: string): boo
   )?.reason === 'approval_expired'
 
 export function saveRunProgress(db: ScheduleDb, now: number, rid: number, state: RunProgress) {
-  db.transaction(() => {
-    db.exec('INSERT OR REPLACE INTO schedule_run_progress (run_id, state) VALUES (?, ?)', [
-      rid,
+  db.exec(
+    `UPDATE schedule_runs SET progress = ?, outcome = ?,
+     reason = COALESCE(?, CASE WHEN reason = 'previous_approval_expired' THEN reason END),
+     ended_at = ? WHERE rowid = ?`,
+    [
       JSON.stringify(state),
-    ])
-    db.exec(
-      `UPDATE schedule_runs SET outcome = ?,
-       reason = COALESCE(?, CASE WHEN reason = 'previous_approval_expired' THEN reason END),
-       ended_at = ? WHERE rowid = ?`,
-      [
-        state.outcome,
-        state.reason ?? (state.needsAttention ? 'needs_attention' : null),
-        ['ran', 'failed'].includes(state.outcome) ? now : null,
-        rid,
-      ],
-    )
-  })
+      state.outcome,
+      state.reason ?? (state.needsAttention ? 'needs_attention' : null),
+      ['ran', 'failed'].includes(state.outcome) ? now : null,
+      rid,
+    ],
+  )
 }

@@ -14,7 +14,12 @@ function ledger(notes: string[], lane = 'main') {
     add('tool/result', { toolUseId: `p${index}`, content: [], structured: { note }, isError: false })
   }
   add('turn/end', { reason: 'completed', lastAssistantSeq: null })
+  let rowsRead = 0
   return {
+    rows,
+    get rowsRead() {
+      return rowsRead
+    },
     key: 'session-a',
     lane,
     lastSeq: rows.length,
@@ -34,7 +39,9 @@ function ledger(notes: string[], lane = 'main') {
           (types.length === 0 || types.includes(row.type)) &&
           (q.lane === undefined || row.lane === q.lane),
       )
-      return (q.order === 'desc' ? found.reverse() : found).slice(0, q.limit)
+      const page = (q.order === 'desc' ? found.reverse() : found).slice(0, q.limit)
+      rowsRead += page.length
+      return page
     },
   }
 }
@@ -86,6 +93,48 @@ describe('readDeliverablesPage', () => {
     await expect(
       readDeliverablesPage(ledger(['x'.repeat(TOOL_DETAIL_PAGE_BYTES)]), { afterSeq: 0, limit: 100 }),
     ).resolves.toEqual({ ok: false, reason: 'deliverable-too-large' })
+  })
+
+  it('keeps first-page work bounded and cumulative work linear as the ledger grows', async () => {
+    let previousTotal = 0
+    for (const n of [60, 120]) {
+      const session = ledger(Array.from({ length: n }, () => 'small'))
+      let afterSeq = 0
+      let count = 0
+      for (;;) {
+        const result = await readDeliverablesPage(session, { afterSeq, limit: 5 })
+        if (!result.ok) throw new Error(result.reason)
+        count += result.page.items.length
+        if (afterSeq === 0) expect(session.rowsRead).toBeLessThanOrEqual(16)
+        if (result.page.nextAfterSeq === undefined) break
+        expect(result.page.nextAfterSeq).toBe(result.page.upto)
+        expect(result.page.upto).toBeGreaterThan(afterSeq)
+        afterSeq = result.page.nextAfterSeq
+      }
+      expect(count).toBe(n)
+      expect(session.rowsRead).toBeLessThan(n * 4)
+      if (previousTotal > 0) expect(session.rowsRead).toBeLessThanOrEqual(previousTotal * 2 + 4)
+      previousTotal = session.rowsRead
+    }
+  })
+
+  it('uses the page cursor to pick up a replacement appended after an earlier head', async () => {
+    const session = ledger(['old'])
+    const first = await readDeliverablesPage(session, { afterSeq: 0, limit: 100 })
+    if (!first.ok) throw new Error(first.reason)
+    const afterSeq = first.page.upto
+    const previous = session.rows.find((row) => row.type === 'tool/result')
+    if (!previous) throw new Error('result missing')
+    session.rows.push({
+      ...previous,
+      seq: afterSeq + 1,
+      data: { toolUseId: 'p0', content: [], structured: { note: 'new' } },
+    })
+    session.lastSeq++
+    await expect(readDeliverablesPage(session, { afterSeq, limit: 100 })).resolves.toMatchObject({
+      ok: true,
+      page: { upto: session.lastSeq, items: [{ ...item(0, 'new'), resultSeq: afterSeq + 1 }] },
+    })
   })
 
   it('refuses a cut past the ledger head', async () => {

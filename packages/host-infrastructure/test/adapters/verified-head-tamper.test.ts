@@ -236,7 +236,7 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     raw(file, 'DELETE FROM events WHERE session_key = ? AND seq > ?', 'k', 45)
     raw(
       file,
-      'UPDATE ledger_heads SET seq = 45, digest = (SELECT integrity_digest FROM events WHERE session_key = ? AND seq = 45) WHERE session_key = ?',
+      'UPDATE sessions SET head_seq = 45, head_digest = (SELECT integrity_digest FROM events WHERE session_key = ? AND seq = 45) WHERE session_key = ?',
       'k',
       'k',
     )
@@ -324,7 +324,7 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     const head = (await storage.readVerifiedHead('k'))!
     const forged = 'b'.repeat(64)
     raw(file, 'UPDATE events SET integrity_digest = ? WHERE session_key = ? AND seq = ?', forged, 'k', 50)
-    raw(file, 'UPDATE ledger_heads SET digest = ? WHERE session_key = ?', forged, 'k')
+    raw(file, 'UPDATE sessions SET head_digest = ? WHERE session_key = ?', forged, 'k')
     await storage.writeVerifiedHead(makeVerifiedHead({ ...head, headDigest: forged }), { force: true })
     // At the head: the checkpoint is used and the background verify finds the row.
     const log = await SessionLogImpl.open(options(storage, 'r1'))

@@ -565,12 +565,12 @@ export async function createRuntimeGenerationHost(
     host.providers
       .catalog()
       .some((entry) => entry.sourcePackage === id && providerRestartRequired(entry.scope))
-  const status = (pins = store.sessions(), readSnapshot = store.read.bind(store)): PluginGenerationStatus => {
+  const status = (pins = store.sessions(), read = store.describe.bind(store)): PluginGenerationStatus => {
     const errors = new Map(failures)
     const counts = new Map<string, number>()
     const pinsByKey = new Map(pins.map((pin) => [pin.sessionKey, pin.generationId]))
     for (const pin of pins) counts.set(pin.generationId, (counts.get(pin.generationId) ?? 0) + 1)
-    const snapshots = generationStatusSnapshots(counts.keys(), live, failedSnapshots, errors, readSnapshot)
+    const snapshots = generationStatusSnapshots(counts.keys(), live, failedSnapshots, errors, read)
     const active = new Set(current?.snapshot.packages.map((pkg) => pkg.id) ?? [])
     const plugins = new Map<string, PluginGenerationStatus['plugins'][number]>()
     const generations: PluginGenerationStatus['generations'][number][] = []

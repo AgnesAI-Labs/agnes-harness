@@ -1,3 +1,11 @@
+import type { AgentRef, PluginLocalizedText } from '@agnes/protocol'
+
+export type ChildRole = Readonly<{
+  ref: AgentRef
+  title: PluginLocalizedText
+  description?: PluginLocalizedText
+}>
+
 /** What a child-agent provider can honestly honor. A false flag is refused at start. */
 export type ChildAgentCapabilities = Readonly<{
   /** Accepts a later message and keeps the child after a turn. */
@@ -158,6 +166,7 @@ export type ChildAgentListing = Readonly<{
   status: ChildAgentStatus
   continuable: boolean
   text?: string
+  role?: ChildRole
 }>
 
 /**

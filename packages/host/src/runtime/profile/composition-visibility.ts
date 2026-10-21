@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { canonicalJson, sha256Hex, type ToolRegistry } from '@agnes/core'
 import type { CompositionPatch, ResolvedComposition } from '@agnes/host-common/profile/composition'
@@ -114,12 +115,16 @@ export function compositionSkills(
   input: SkillRuntimeInput | undefined,
   selection: VisibilitySelection,
   owners: ReadonlyMap<string, string> = new Map(),
+  resourceScope?: (sessionKey?: string) => { mcp: readonly string[]; skills: readonly string[] } | undefined,
 ): SkillRuntimeInput | undefined {
   if (!input) return input
-  if (!selection.skills?.length && !selection.packages?.some((pkg) => pkg.enabled === false)) return input
-  const capabilities = (skills = input.list()) =>
+  const restricted = !!selection.skills?.length || selection.packages?.some((pkg) => pkg.enabled === false)
+  if (!restricted && !resourceScope) return input
+  const workspace = new AsyncLocalStorage<string>()
+  const capabilities = (skills = input.list(), sessionKey = workspace.getStore()) =>
     resolveSessionCapabilities({
       selection: visibilitySelection(selection),
+      ...(resourceScope?.(sessionKey) ? { resourceScope: resourceScope(sessionKey)! } : {}),
       live: {
         skills: skills.map((skill) => ({
           id: skill.resourceId,
@@ -128,7 +133,8 @@ export function compositionSkills(
         })),
       },
     }).skills
-  const visible = (id: string) => capabilityEnabled(capabilities(), id)
+  const visible = (id: string, sessionKey: string) =>
+    capabilityEnabled(capabilities(input.list(), sessionKey), id)
   return Object.freeze({
     ...input,
     list: () => {
@@ -137,13 +143,19 @@ export function compositionSkills(
       return skills.filter((skill) => capabilityEnabled(set, skill.resourceId))
     },
     read: (id, session) =>
-      visible(id) ? input.read(id, session) : { ok: false, code: 'UNAUTHORIZED' as const },
+      visible(id, session.sessionKey)
+        ? input.read(id, session)
+        : { ok: false, code: 'UNAUTHORIZED' as const },
     readFile: (id, revision, path, session) =>
-      visible(id)
+      visible(id, session.sessionKey)
         ? input.readFile(id, revision, path, session)
         : { ok: false, code: 'UNAUTHORIZED' as const },
     // Restricted reads go through read/readFile. Do not grant the broad user Skill file fence.
-    readRoots: () => [],
+    readRoots: () => (restricted || resourceScope?.(workspace.getStore()) ? [] : (input.readRoots?.() ?? [])),
+    scopeWorkspace: (root, sessionKey, invoke) =>
+      workspace.run(sessionKey, () =>
+        input.scopeWorkspace ? input.scopeWorkspace(root, sessionKey, invoke) : invoke(),
+      ),
   })
 }
 

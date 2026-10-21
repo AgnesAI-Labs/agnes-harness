@@ -175,7 +175,9 @@ execFileSync(
 const local = join(root, 'dist', 'local')
 for (const name of [
   'daemon.mjs',
+  'daemon-main.mjs',
   'worker.mjs',
+  'worker-main.mjs',
   'web',
   'THIRD-PARTY-NOTICES',
   'bundled-plugins',

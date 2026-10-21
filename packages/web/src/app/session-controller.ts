@@ -94,6 +94,7 @@ export function createSessionController(
     // 投影与转录区都保留到新投影就绪：加载期间旧画面继续显示（body.session-switching
     // 半透明提示，状态栏「正在准备会话」），不经历「清空 → 空白 → 填充」的闪屏，
     // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
+    // 会话区若因切换而重挂载，不会再回放上一会话的转录（见 boot.tsx），先显示新会话的预览/加载态。
     context.moduleSessionId = undefined
     context.clientModules.session.setSession(undefined)
     if (!options.created) context.permissionMode = 'workspace'

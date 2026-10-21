@@ -1662,12 +1662,14 @@ describe('web session selection', () => {
       expect((document.getElementById('model') as HTMLButtonElement).disabled).toBe(false),
     )
     const stale = deferred<Response>()
+    const firstCatalog = deferred<Response>()
     let loopReads = 0
     vi.stubGlobal(
       'fetch',
       vi.fn<typeof fetch>(async (url) => {
         if (url === '/admin/api/loops') {
-          if (++loopReads === 2) return stale.promise
+          if (++loopReads === 1) return firstCatalog.promise
+          if (loopReads === 2) return stale.promise
           return Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] })
         }
         if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
@@ -1690,13 +1692,35 @@ describe('web session selection', () => {
     window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
     await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(2))
     expect(loopReads).toBe(0)
+    const detached = deferred<void>()
+    old.detach.mockImplementationOnce(() => detached.promise)
+    const rosterReady = deferred<void>()
+    let rosterStarted = false
+    if (!releaseRuntime) throw new Error('missing client runtime')
+    vi.spyOn(releaseRuntime.reconciler, 'reconcileNow').mockImplementationOnce(() => {
+      rosterStarted = true
+      return rosterReady.promise
+    })
     newButton().click()
     await vi.waitFor(() => expect(loopReads).toBe(1))
+    // Detach the old view while catalogs are pending, without allowing an unready draft to send.
+    await vi.waitFor(() => expect(old.detach).toHaveBeenCalled())
+    // The new identity may prepare its roster without waiting for the old transport to detach.
+    await vi.waitFor(() => expect(rosterStarted).toBe(true))
+    expect(newButton().disabled).toBe(true)
+    expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
+    firstCatalog.resolve(Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] }))
+    detached.resolve()
+    await Promise.resolve()
+    expect(newButton().disabled).toBe(true)
+    rosterReady.resolve()
     await vi.waitFor(() => expect(newButton().disabled).toBe(false))
     const workspaceDialog = document.getElementById('new-session') as HTMLDialogElement
     workspaceDialog.dispatchEvent(new Event('cancel', { cancelable: true }))
     window.dispatchEvent(new CustomEvent('agnes:session-configuration-changed'))
     await vi.waitFor(() => expect(loopReads).toBe(2))
+    // Reading models is independent of the pending catalog; applying defaults still waits for it.
+    await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(3))
     newButton().click()
     await vi.waitFor(() => expect(loopReads).toBe(3))
     await vi.waitFor(() => expect(newButton().disabled).toBe(false))

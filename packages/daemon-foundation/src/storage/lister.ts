@@ -179,24 +179,6 @@ export class TicketIndex implements TicketPort {
       t,
       'CREATE TABLE IF NOT EXISTS approval_tickets (ticket TEXT PRIMARY KEY, session_key TEXT NOT NULL, expires_at INTEGER NOT NULL, cwd TEXT)',
     )
-    ensure(t, 'CREATE TABLE IF NOT EXISTS approval_ticket_schema (version INTEGER PRIMARY KEY)')
-    const version = this.t.get<{ version: number | null }>(
-      'SELECT MAX(version) AS version FROM approval_ticket_schema',
-    )?.version
-    if ((version ?? 0) < 1)
-      this.t.transaction(() => {
-        // Legacy installations have a three-column table without a schema marker. A direct
-        // column projection is allowed by Host's owner SQL fence (PRAGMA is intentionally not), and
-        // runs only for that unversioned migration. Fresh four-column tables take the success path.
-        try {
-          this.t.get('SELECT cwd FROM approval_tickets LIMIT 1')
-        } catch (error) {
-          if (!/no such column: cwd/i.test(String((error as { message?: unknown }).message ?? error)))
-            throw error
-          this.t.exec('ALTER TABLE approval_tickets ADD COLUMN cwd TEXT')
-        }
-        this.t.exec('INSERT OR IGNORE INTO approval_ticket_schema (version) VALUES (1)')
-      })
   }
 
   put(ticket: string, sessionKey: string, expiresAt: number, cwd?: string): void {
@@ -262,6 +244,8 @@ export interface SessionWorkspacePort {
   aggregate?(): Map<string, { count: number; lastUsedAt: string | null }>
   /** Fold observed ledger rows into the bounded listing projection. */
   observe(sessionKey: string, event: EventEnvelope, generation?: number): void
+  /** Observe a run of one session's events with one row read and at most one write. */
+  batch?(sessionKey: string, run: () => void): void
   metadata(sessionKey: string): SessionWorkspaceMeta | undefined
   /** Catch the projection up from its persisted sequence after a workspace row is first bound. */
   refresh(sessionKey: string, source: SessionProjectionSource, generation?: number): Promise<void>
@@ -324,33 +308,75 @@ function workspaceMeta(row: WorkspaceRow): SessionWorkspaceMeta {
   }
 }
 
-/** True when folding `event` would write every column of `row` back unchanged: the event is at or
- * below both projected sequences, the generation does not advance, and no stored value is one the
- * fold normalises (an empty string becomes NULL, the sort key is recomputed from its inputs). */
-function alreadyFolded(row: WorkspaceRow, event: EventEnvelope, generation: number): boolean {
-  if (!row.createdAt || row.title === '' || row.lastActiveAt === '') return false
+/** The sequence and generation up to which folding an event would write every column of `row` back
+ * unchanged: the event is at or below both projected sequences, the generation does not advance, and
+ * no stored value is one the fold normalises (an empty string becomes NULL, the sort key is
+ * recomputed from its inputs). Undefined when any event would rewrite the row. */
+function foldedBound(row: WorkspaceRow): { through: number; generation: number } | undefined {
+  if (!row.createdAt || row.title === '' || row.lastActiveAt === '') return undefined
   const created = Date.parse(row.createdAt)
-  return (
-    event.seq <= (row.lastSeq ?? 0) &&
-    event.seq <= row.messageSeq &&
-    generation <= (row.generation ?? 0) &&
-    row.sortAt === (row.messageAt ?? (Number.isFinite(created) ? created : 0))
-  )
+  if (row.sortAt !== (row.messageAt ?? (Number.isFinite(created) ? created : 0))) return undefined
+  return { through: Math.min(row.lastSeq ?? 0, row.messageSeq), generation: row.generation ?? 0 }
 }
 
-/** Adds one nullable projection column to an existing table by direct probe; PRAGMA is outside
- * Host's owner SQL allow-list. A concurrent opener adding it first is not an error. */
-function ensureColumn(t: TableHandle, column: string, definition: string): void {
-  const text = (error: unknown) => String((error as { message?: unknown }).message ?? error)
-  try {
-    t.get(`SELECT ${column} FROM session_workspaces LIMIT 1`)
-  } catch (error) {
-    if (!/no such column/i.test(text(error))) throw error
-    try {
-      t.exec(`ALTER TABLE session_workspaces ADD COLUMN ${column} ${definition}`)
-    } catch (migrationError) {
-      if (!/duplicate column name/i.test(text(migrationError))) throw migrationError
-    }
+function alreadyFolded(row: WorkspaceRow, event: EventEnvelope, generation: number): boolean {
+  const bound = foldedBound(row)
+  return bound !== undefined && event.seq <= bound.through && generation <= bound.generation
+}
+
+/**
+ * The row one event folds into, computed as the projection's UPDATE computes it from the old row:
+ * the high-water columns only advance, the message sequence advances one contiguous row at a time,
+ * and the sort key follows the newest message time or else the creation time. `loopPin` is set when
+ * the event rewrites the stored pin.
+ */
+function foldRow(
+  sessionKey: string,
+  row: WorkspaceRow,
+  event: EventEnvelope,
+  generation: number,
+): { row: WorkspaceRow; loopPin?: string } {
+  const current = workspaceMeta(row)
+  let { createdAt, preset, profileHash, title, lastActiveAt } = current
+  let pin: string | undefined
+  if (event.seq > current.lastSeq) {
+    const generated = readSessionTitle(event)
+    if (generated?.status === 'generated') title = generated.title
+    if (event.type === 'session/start' && (event.data as { key?: string })?.key === sessionKey)
+      title = undefined
+    if (event.type === 'user/message') lastActiveAt = event.ts
+  }
+  const data = event.data as { preset?: unknown; resolvedProfileHash?: unknown; to?: unknown } | null
+  if (event.type === 'session/start' && (event.seq > current.lastSeq || !createdAt)) {
+    pin = JSON.stringify(loopPin((event.data as { loop?: unknown } | null)?.loop) ?? null)
+    if (!createdAt) createdAt = event.ts
+    preset = typeof data?.preset === 'string' ? data.preset : null
+    profileHash = typeof data?.resolvedProfileHash === 'string' ? data.resolvedProfileHash : null
+  } else if (
+    event.seq > current.lastSeq &&
+    event.type === 'x/core/preset-switch' &&
+    typeof data?.to === 'string'
+  )
+    preset = data.to
+  const messageAt = sidebarMessageTime(event) ?? null
+  const created = Date.parse(createdAt)
+  const newer = messageAt !== null && event.seq > row.messageSeq
+  const latest = newer ? Math.max(row.messageAt ?? messageAt, messageAt) : row.messageAt
+  return {
+    row: {
+      createdAt: createdAt || null,
+      lastSeq: Math.max(row.lastSeq ?? 0, event.seq),
+      generation: Math.max(row.generation ?? 0, generation),
+      preset,
+      profileHash,
+      title: title ?? null,
+      lastActiveAt: lastActiveAt ?? null,
+      loopPin: pin ?? row.loopPin,
+      messageAt: latest,
+      messageSeq: event.seq === row.messageSeq + 1 ? event.seq : row.messageSeq,
+      sortAt: latest ?? (Number.isFinite(created) ? created : 0),
+    },
+    ...(pin === undefined ? {} : { loopPin: pin }),
   }
 }
 
@@ -363,6 +389,12 @@ function checkWorkspace(sessionKey: string, cwd: string): void {
  * insert-only: silently remapping an existing session key would make later scheduled work execute
  * against a different tree than the session was created for. */
 export class SessionWorkspaceIndex implements SessionWorkspacePort {
+  /** Sessions inside `batch`: the folded bound read once, and the events that change the row. */
+  private readonly batches = new Map<
+    string,
+    { through: number; generation: number; events: Array<{ event: EventEnvelope; generation: number }> }
+  >()
+
   constructor(private readonly t: TableHandle) {
     ensure(
       t,
@@ -373,44 +405,18 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
         last_seq INTEGER NOT NULL DEFAULT 0,
         generation INTEGER NOT NULL DEFAULT 0,
         preset TEXT,
-        profile_hash TEXT
+        profile_hash TEXT,
+        title TEXT,
+        last_active_at TEXT,
+        loop_pin TEXT,
+        message_at INTEGER,
+        message_seq INTEGER NOT NULL DEFAULT 0,
+        sidebar_sort_at INTEGER NOT NULL DEFAULT 0,
+        sidebar_failed INTEGER NOT NULL DEFAULT 0,
+        sidebar_group TEXT NOT NULL DEFAULT 'unassigned',
+        sidebar_target_seq INTEGER NOT NULL DEFAULT 0
       )`,
     )
-    ensureColumn(t, 'title', 'TEXT')
-    ensureColumn(t, 'last_active_at', 'TEXT')
-    ensureColumn(t, 'loop_pin', 'TEXT')
-    ensureColumn(t, 'message_at', 'INTEGER')
-    ensureColumn(t, 'message_seq', 'INTEGER NOT NULL DEFAULT 0')
-    ensureColumn(t, 'sidebar_sort_at', 'INTEGER NOT NULL DEFAULT 0')
-    ensureColumn(t, 'sidebar_failed', 'INTEGER NOT NULL DEFAULT 0')
-    ensureColumn(t, 'sidebar_group', "TEXT NOT NULL DEFAULT 'unassigned'")
-    ensureColumn(t, 'sidebar_target_seq', 'INTEGER NOT NULL DEFAULT 0')
-    // The workspace table shipped before the listing projection. Migrate by direct column probes;
-    // PRAGMA is intentionally outside Host's owner SQL allow-list. Each ALTER is idempotent under
-    // the one-time probe because an old table has all of these columns missing.
-    try {
-      t.get('SELECT created_at, last_seq, generation, preset, profile_hash FROM session_workspaces LIMIT 1')
-    } catch (error) {
-      if (!/no such column/i.test(String((error as { message?: unknown }).message ?? error))) throw error
-      for (const column of [
-        'created_at TEXT',
-        'last_seq INTEGER NOT NULL DEFAULT 0',
-        'generation INTEGER NOT NULL DEFAULT 0',
-        'preset TEXT',
-        'profile_hash TEXT',
-      ]) {
-        try {
-          t.exec(`ALTER TABLE session_workspaces ADD COLUMN ${column}`)
-        } catch (alterError) {
-          if (
-            !/duplicate column name/i.test(
-              String((alterError as { message?: unknown }).message ?? alterError),
-            )
-          )
-            throw alterError
-        }
-      }
-    }
   }
 
   put(sessionKey: string, cwd: string): void {
@@ -459,75 +465,73 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
   }
 
   observe(sessionKey: string, event: EventEnvelope, generation = 0): void {
-    const row = this.row(sessionKey)
-    if (!row) return
-    // Opening a session replays its whole history through here. Skip events the row has already
-    // folded instead of rewriting it to the same values, each under the database write lock.
-    if (alreadyFolded(row, event, generation)) return
-    this.fold(sessionKey, workspaceMeta(row), event, generation)
+    const batch = this.batches.get(sessionKey)
+    if (batch) {
+      // Every event at or below both sequences, from no newer generation, is already in the row.
+      if (!batch.events.length && event.seq <= batch.through && generation <= batch.generation) return
+      batch.events.push({ event, generation })
+      return
+    }
+    this.fold(sessionKey, [{ event, generation }])
   }
 
-  private fold(sessionKey: string, current: SessionWorkspaceMeta, event: EventEnvelope, generation: number) {
-    let createdAt = current.createdAt
-    let preset = current.preset
-    let profileHash = current.profileHash
-    let title = current.title
-    let lastActiveAt = current.lastActiveAt
-    const messageAt = sidebarMessageTime(event) ?? null
-    if (event.seq > current.lastSeq) {
-      const generated = readSessionTitle(event)
-      if (generated?.status === 'generated') title = generated.title
-      if (event.type === 'session/start' && (event.data as { key?: string })?.key === sessionKey)
-        title = undefined
-      if (event.type === 'user/message') lastActiveAt = event.ts
+  /**
+   * Observes a run of events with one row read and at most one write: opening a session replays its
+   * whole history, which an already folded row skips after reading its bound once, and a lagging
+   * row catches up in memory instead of with one UPDATE per event. Writes happen before this returns,
+   * inside any transaction the caller holds; observing other sessions meanwhile writes as usual.
+   */
+  batch(sessionKey: string, run: () => void): void {
+    const row = this.batches.has(sessionKey) ? undefined : this.row(sessionKey)
+    if (!row) {
+      run()
+      return
     }
-    const data = event.data as { preset?: unknown; resolvedProfileHash?: unknown; to?: unknown } | null
-    if (event.type === 'session/start' && (event.seq > current.lastSeq || !createdAt)) {
-      this.t.exec('UPDATE session_workspaces SET loop_pin = ? WHERE session_key = ?', [
-        JSON.stringify(loopPin((event.data as { loop?: unknown } | null)?.loop) ?? null),
-        sessionKey,
-      ])
-      if (!createdAt) createdAt = event.ts
-      preset = typeof data?.preset === 'string' ? data.preset : null
-      profileHash = typeof data?.resolvedProfileHash === 'string' ? data.resolvedProfileHash : null
-    } else if (
-      event.seq > current.lastSeq &&
-      event.type === 'x/core/preset-switch' &&
-      typeof data?.to === 'string'
-    ) {
-      preset = data.to
+    this.batches.set(sessionKey, { ...(foldedBound(row) ?? { through: 0, generation: -1 }), events: [] })
+    try {
+      run()
+    } finally {
+      const batch = this.batches.get(sessionKey)
+      this.batches.delete(sessionKey)
+      if (batch?.events.length) this.fold(sessionKey, batch.events)
     }
+  }
+
+  /** Folds events into the row as one UPDATE per event would, then writes the result once. */
+  private fold(sessionKey: string, events: Array<{ event: EventEnvelope; generation: number }>): void {
+    const before = this.row(sessionKey)
+    if (!before) return
+    let row = before
+    let pin: string | undefined
+    for (const { event, generation } of events) {
+      // Skip events the row has already folded instead of rewriting it to the same values, each
+      // under the database write lock the worker also needs.
+      if (alreadyFolded(row, event, generation)) continue
+      const next = foldRow(sessionKey, row, event, generation)
+      row = next.row
+      if (next.loopPin !== undefined) pin = next.loopPin
+    }
+    if (pin !== undefined)
+      this.t.exec('UPDATE session_workspaces SET loop_pin = ? WHERE session_key = ?', [pin, sessionKey])
+    if (row === before) return
+    // The high-water columns stay monotonic even if another writer advanced them since the read.
     this.t.exec(
       `UPDATE session_workspaces
-       SET created_at = ?, last_seq = CASE WHEN last_seq < ? THEN ? ELSE last_seq END,
-           generation = CASE WHEN generation < ? THEN ? ELSE generation END,
+       SET created_at = ?, last_seq = MAX(last_seq, ?), generation = MAX(generation, ?),
            preset = ?, profile_hash = ?, title = ?, last_active_at = ?,
-           message_at = CASE WHEN ? > message_seq AND ? IS NOT NULL THEN MAX(COALESCE(message_at, ?), ?) ELSE message_at END,
-           sidebar_sort_at = CASE WHEN ? > message_seq AND ? IS NOT NULL
-             THEN MAX(COALESCE(message_at, ?), ?) ELSE COALESCE(message_at, ?) END,
-           message_seq = CASE WHEN ? = message_seq + 1 THEN ? ELSE message_seq END
+           message_at = ?, sidebar_sort_at = ?, message_seq = MAX(message_seq, ?)
        WHERE session_key = ?`,
       [
-        createdAt || null,
-        event.seq,
-        event.seq,
-        generation,
-        generation,
-        preset,
-        profileHash,
-        title ?? null,
-        lastActiveAt ?? null,
-        event.seq,
-        messageAt,
-        messageAt,
-        messageAt,
-        event.seq,
-        messageAt,
-        messageAt,
-        messageAt,
-        Number.isFinite(Date.parse(createdAt)) ? Date.parse(createdAt) : 0,
-        event.seq,
-        event.seq,
+        row.createdAt,
+        row.lastSeq,
+        row.generation,
+        row.preset,
+        row.profileHash,
+        row.title,
+        row.lastActiveAt,
+        row.messageAt,
+        row.sortAt,
+        row.messageSeq,
         sessionKey,
       ],
     )
@@ -570,12 +574,14 @@ export class SessionWorkspaceIndex implements SessionWorkspacePort {
       }
       // A source that returns no progress must not make a refresh loop forever or advance the
       // projection past rows it did not actually fold.
-      while (from <= target) {
-        const event = bySeq.get(from)
-        if (!event) break
-        this.observe(sessionKey, event, generation)
-        from++
-      }
+      this.batch(sessionKey, () => {
+        while (from <= target) {
+          const event = bySeq.get(from)
+          if (!event) break
+          this.observe(sessionKey, event, generation)
+          from++
+        }
+      })
       if (from === pageFrom) break
       current = this.metadata(sessionKey)
       if (!current) return

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { JsonValue } from '@agnes/protocol'
-import { mkdirDurablySync, syncTreeSync } from '@agnes/system-node'
+import { mkdirDurablySync, syncTreeBatchedSync } from '@agnes/system-node'
 import { collectRead, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { hashDirectory } from './sources.js'
@@ -44,7 +44,7 @@ export function writeGenerationResources(directory: string, input: RuntimeGenera
   })
   const text = resourcesText(input.data, trees)
   writeFileSync(join(directory, 'resources.json'), text, { mode: 0o600, flag: 'wx', flush: true })
-  syncTreeSync(directory)
+  syncTreeBatchedSync(directory)
   return digest(text)
 }
 

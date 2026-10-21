@@ -206,13 +206,13 @@ export function createExtensionRowPlugin(input: ExtensionRowLifecycleInput) {
 
 export type FacadeRowLifecycleInput = Readonly<{
   /** Loads the extension for this row. Resolves with a handle even when the load failed. */
-  load(): Promise<BuiltinRowHandle>
+  load(config?: unknown): Promise<BuiltinRowHandle>
 }>
 
 /** The lifecycle of a migrated row. A failed load leaves the row mounted and empty, as before. */
 export function createFacadeRowPlugin(input: FacadeRowLifecycleInput) {
   return async (_ctx: Context, _config: unknown) => {
-    const handle = await input.load()
+    const handle = await input.load(_config)
     return () => handle.release('operator')
   }
 }

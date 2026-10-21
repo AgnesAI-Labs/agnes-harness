@@ -28,34 +28,16 @@ const keyId = () => randomBytes(16).toString('hex')
  * storage boundary.
  */
 export class SourceAuthRotation {
-  private readonly migratedFromVerifier: boolean
-  private readonly migratedCurrentKeyId: string | undefined
-
   constructor(private readonly table: TableHandle) {
-    // v2 contained a salted verifier. Remove it during migration instead of retaining material that
-    // can be used to test guesses offline. Creating v3 and dropping v2 are one transaction so a
-    // failed migration cannot destroy the only durable rotation marker.
-    this.migratedFromVerifier = !!table.get(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'source_auth_keyring_v2'",
+    if (
+      table.get(
+        "SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'source_auth_keyring_v2'",
+      )
     )
-    let v2Current: unknown
-    if (this.migratedFromVerifier)
-      try {
-        // Do not use PRAGMA-based schema introspection: Host's package-table security boundary
-        // deliberately refuses every PRAGMA. Older/incomplete v2 shapes simply have no id to carry.
-        v2Current = table.get<{ current_key_id?: unknown }>(
-          'SELECT current_key_id FROM source_auth_keyring_v2 WHERE singleton = 1',
-        )?.current_key_id
-      } catch (error) {
-        if (!String(error).includes('no such column: current_key_id')) throw error
-        v2Current = undefined
-      }
-    this.migratedCurrentKeyId =
-      typeof v2Current === 'string' && /^[0-9a-f]{32}$/.test(v2Current) ? v2Current : undefined
-    table.transaction(() => {
-      ensure(table, DDL)
-      table.exec('DROP TABLE IF EXISTS source_auth_keyring_v2')
-    })
+      throw new Error(
+        'E_DATA_DIR_STALE: source_auth_keyring_v2 found in the daemon tables; back up and delete the data directory',
+      )
+    ensure(table, DDL)
   }
 
   configure(configured: readonly SourceAuthCredential[], now: number): void {
@@ -64,21 +46,12 @@ export class SourceAuthRotation {
     this.table.transaction(() => {
       const row = this.row()
       if (!row) {
-        // v2 cannot be retained because its verifier enables offline guessing. Its previous-key age
-        // also cannot be trusted after removal, so fail closed instead of granting a configured
-        // second key a fresh grace window during migration.
-        const previous = this.migratedFromVerifier ? undefined : configured[1]
+        const previous = configured[1]
         this.table.exec(
           `INSERT INTO source_auth_keyring_v3
            (singleton, current_credential_id, current_key_id, previous_credential_id, previous_key_id, rotated_at)
            VALUES (1, ?, ?, ?, ?, ?)`,
-          [
-            current.credentialId,
-            this.migratedCurrentKeyId ?? keyId(),
-            previous?.credentialId ?? null,
-            previous ? keyId() : null,
-            now,
-          ],
+          [current.credentialId, keyId(), previous?.credentialId ?? null, previous ? keyId() : null, now],
         )
         return
       }

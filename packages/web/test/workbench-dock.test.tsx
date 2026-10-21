@@ -6,7 +6,7 @@ import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { registerJobsClientContribution } from '../src/client-modules/jobs.js'
-import { Dock, renderWorkbench, unmountWorkbench } from '../src/workbench/dock.js'
+import { Dock, renderWorkbench, unmountWorkbench, unmountWorkbenchSoon } from '../src/workbench/dock.js'
 import { RIGHT_DEFAULT } from '../src/workbench/dock-size.js'
 import { cycleTaskFocus } from '../src/workbench/focus.js'
 import { mentionPanelPath } from '../src/workbench/mention-path.js'
@@ -458,4 +458,30 @@ it('registers and retires the shared jobs client contribution without owning a b
   release()
   expect(workbenchPanels.get('terminal')).toBeUndefined()
   expect(settingsSections.get('background-jobs')).toBeUndefined()
+})
+
+it('defers a session-switch unmount past the current task and cancels it when the dock renders again', async () => {
+  document.body.innerHTML =
+    '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
+  const host = document.getElementById('controls')!
+  const nextTask = () => new Promise((resolve) => setTimeout(resolve, 0))
+  try {
+    renderWorkbench(host, { t: (key) => key, data: { session: { id: 'first' } } })
+    const mounted = host.innerHTML
+    expect(mounted).not.toBe('')
+    // Switching sessions: the click task does not pay for tearing the dock down.
+    unmountWorkbenchSoon(host)
+    expect(host.innerHTML).toBe(mounted)
+    await nextTask()
+    expect(host.innerHTML).toBe('')
+    // A dock rendered again before the deferred unmount runs stays mounted.
+    renderWorkbench(host, { t: (key) => key, data: { session: { id: 'second' } } })
+    unmountWorkbenchSoon(host)
+    renderWorkbench(host, { t: (key) => key, data: { session: { id: 'second' } } })
+    await nextTask()
+    expect(host.innerHTML).not.toBe('')
+  } finally {
+    unmountWorkbench(host)
+    document.body.replaceChildren()
+  }
 })

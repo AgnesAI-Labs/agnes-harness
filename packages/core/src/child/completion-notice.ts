@@ -1,8 +1,11 @@
 import { hasChildControl } from '@agnes/core-child-control/child/store'
 import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
 import { isTerminalChildState } from '@agnes/core-child-control/child/types'
+import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { SystemInput } from '@agnes/protocol'
 import type { SessionImpl } from '../step/session.js'
+import { childResultCollected, childResultSequence } from './collected-result.js'
+import { recordedChildRole } from './roles.js'
 
 export const CHILD_COMPLETION_SOURCE = 'agnes/child'
 export const CHILD_COMPLETED = 'child-completed'
@@ -12,6 +15,12 @@ const MAX_SUMMARY_RESULT_CHARS = 1200
 const MAX_LABEL_CHARS = 120
 
 type ChildOutcome = 'completed' | 'failed' | 'cancelled'
+
+export function childCompletionId(childKey: string, outcome: ChildOutcome, endSeq?: number): string {
+  const identity = endSeq === undefined ? `terminal:${outcome}` : `${endSeq}:${outcome}`
+  const id = `${CHILD_COMPLETED}:${childKey}:${identity}`
+  return id.length <= 128 ? id : `${CHILD_COMPLETED}:${sha256Hex(id)}`
+}
 
 function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`
@@ -69,13 +78,19 @@ export async function childCompletionInput(
   record: ChildTaskRecord,
   outcome: ChildOutcome,
   options: ChildCompletionOptions = {},
-): Promise<{ system: SystemInput; commandId: string }> {
+): Promise<{ system: SystemInput; commandId: string; resultSeq: number }> {
   const { text, endReason, endSeq } = await childOutcome(parent, record)
   const status =
     outcome === 'failed' && (endReason === 'budget' || endReason === 'max_steps')
       ? ('budget_stopped' as const)
       : outcome
-  const label = clip(record.inputText.trim().split('\n', 1)[0] || record.childKey, MAX_LABEL_CHARS)
+  const role = await recordedChildRole(parent, record.childKey)
+  const label = clip(
+    role
+      ? (role.title['zh-CN'] ?? role.title.en)
+      : record.inputText.trim().split('\n', 1)[0] || record.childKey,
+    MAX_LABEL_CHARS,
+  )
   const result = text.trim()
   const truncated = result.length > MAX_RESULT_CHARS
   const shown = clip(result, MAX_SUMMARY_RESULT_CHARS)
@@ -91,22 +106,26 @@ export async function childCompletionInput(
     type: CHILD_COMPLETED,
     data: {
       childKey: record.childKey,
+      ...(role ? { role } : {}),
       status,
       ...(options.continuable ? { continuable: true } : {}),
       ...(result ? { result: clip(result, MAX_RESULT_CHARS), truncated } : {}),
       ...(options.credits === undefined ? {} : { credits: options.credits }),
     },
-    summary: result ? `${lead} Result:\n${shown}${tail}` : lead,
+    summary: `${role ? `Handled by ${clip(role.title.en, MAX_LABEL_CHARS)} / 由 ${label} 处理. ` : ''}${result ? `${lead} Result:\n${shown}${tail}` : lead}`,
     presentation: { kind: 'child-completed', status, label },
   }
   // A terminal notice is keyed by the durable outcome alone: the child's last turn/end may still land
   // after a cancel, so a ledger-derived sequence would differ between live delivery and recovery.
-  const identity = options.continuable ? `${endSeq}:${status}` : `terminal:${outcome}`
-  return { system, commandId: `${CHILD_COMPLETED}:${record.childKey}:${identity}` }
+  return {
+    system,
+    resultSeq: await childResultSequence(parent, record),
+    commandId: childCompletionId(record.childKey, outcome, options.continuable ? endSeq : undefined),
+  }
 }
 
 /**
- * Exactly one notice per child: the commandId dedupes against the parent's inbox history, so the live
+ * Exactly one wakeup per uncollected result: the commandId dedupes against the parent's inbox history, so the live
  * path, a retried close and the recovery scan converge. A closed parent cannot take it; recovery
  * delivers it the next time the parent opens.
  */
@@ -117,7 +136,7 @@ export async function deliverChildCompletion(
   options: ChildCompletionOptions = {},
 ): Promise<void> {
   if (parent.closingOrClosed || !isBackgroundChild(parent, record)) return
-  const { system, commandId } = await childCompletionInput(parent, record, outcome, options)
+  const { system, commandId, resultSeq } = await childCompletionInput(parent, record, outcome, options)
   await parent.enqueue(
     'next-turn',
     {
@@ -129,7 +148,10 @@ export async function deliverChildCompletion(
       trust: 'untrusted',
       origin: 'system',
     },
-    { dedupeByCommandId: true },
+    {
+      dedupeByCommandId: true,
+      skipIf: () => childResultCollected(parent, record.childKey, commandId, resultSeq),
+    },
   )
 }
 

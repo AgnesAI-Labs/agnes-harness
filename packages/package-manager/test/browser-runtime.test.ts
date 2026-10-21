@@ -89,8 +89,19 @@ it('prepares interaction without takeover, rejects foreign/stale input and prese
       (await next.send({ type: 'input', pageId: page.pageId, input: { ...input, seq: 2, pageEpoch: 99 } }))
         .code,
     ).toBe('STALE_INPUT')
+    expect(
+      (await next.send({ type: 'pause', pageId: page.pageId, controlEpoch: result.controlEpoch })).status,
+    ).toBe('ok')
+    expect(runtime.get(session, page.pageId).mode).toBe('agent')
+    await expect(
+      runtime.act(session, { action: 'key', pageId: page.pageId, pageEpoch: 0, key: 'Enter' }),
+    ).rejects.toMatchObject({ code: 'STALE_TARGET' })
+    Object.assign(pages[0]!, { screenshot: async () => new Uint8Array([1]) })
+    await runtime.act(session, { action: 'screenshot', pageId: page.pageId })
+    await runtime.act(session, { action: 'key', pageId: page.pageId, pageEpoch: 0, key: 'Enter' })
+    expect(pages[0]!.keyboard.press).toHaveBeenCalledWith('Enter')
     next.abort.abort()
-    expect(runtime.get(session, page.pageId).mode).toBe('paused')
+    expect(runtime.get(session, page.pageId).mode).toBe('agent')
     await runtime.closePage(session, page.pageId)
     expect(runtime.sessions.has(session.key)).toBe(false)
     expect(foreign.runtime.sessions.has('other')).toBe(true)
@@ -98,6 +109,72 @@ it('prepares interaction without takeover, rejects foreign/stale input and prese
     first.abort.abort()
     await runtime.close()
     await foreign.runtime.close()
+  }
+})
+
+it('coordinates native human input per page without a manual return and rejects stale observations', async () => {
+  const { runtime, session, pages } = fixture()
+  let now = 1000
+  runtime.now = () => now
+  const first = await runtime.act(session, { action: 'open', url: 'http://localhost/one' })
+  const other = await runtime.act(session, { action: 'open', url: 'http://localhost/two' })
+  const actor = { id: 'viewer' }
+  const grant = await runtime.control(session, { pageId: first.pageId, mode: 'human' }, actor, {
+    grantId: 'native',
+    expiresAt: 100_000,
+  })
+  Object.assign(pages[0]!, { screenshot: async () => new Uint8Array([1]) })
+  try {
+    await runtime.humanInput(session, { ...grant, seq: 0, type: 'text', text: 'typing' }, actor)
+    // A different page remains usable while the human is actively typing.
+    await runtime.act(session, { action: 'key', pageId: other.pageId, pageEpoch: 0, key: 'Escape' })
+    expect(pages[1]!.keyboard.press).toHaveBeenCalledWith('Escape')
+    const abort = new AbortController()
+    const waiting = runtime.act(
+      session,
+      { action: 'key', pageId: first.pageId, pageEpoch: 0, key: 'Enter' },
+      abort.signal,
+    )
+    const cancelled = expect(waiting).rejects.toThrow()
+    abort.abort()
+    await cancelled
+    now += 1000
+    await expect(
+      runtime.act(session, { action: 'key', pageId: first.pageId, pageEpoch: 0, key: 'Enter' }),
+    ).rejects.toMatchObject({ code: 'STALE_TARGET' })
+    const observed = await runtime.act(session, { action: 'screenshot', pageId: first.pageId })
+    await runtime.act(session, { action: 'key', pageId: first.pageId, pageEpoch: 0, key: 'Enter' })
+    expect(pages[0]!.keyboard.press).toHaveBeenCalledWith('Enter')
+    // The human grant survives; only a gesture captured before the agent action is refused.
+    await expect(
+      runtime.humanInput(
+        session,
+        {
+          ...grant,
+          agentRevision: observed.agentRevision,
+          seq: 1,
+          type: 'click',
+          x: 10,
+          y: 10,
+        },
+        actor,
+      ),
+    ).rejects.toMatchObject({ code: 'STALE_INPUT' })
+    const current = runtime.describe(runtime.get(session, first.pageId))
+    await runtime.humanInput(
+      session,
+      {
+        ...grant,
+        agentRevision: current.agentRevision,
+        seq: 2,
+        type: 'text',
+        text: 'continue',
+      },
+      actor,
+    )
+    expect(pages[0]!.keyboard.insertText).toHaveBeenLastCalledWith('continue')
+  } finally {
+    await runtime.close()
   }
 })
 
@@ -372,9 +449,10 @@ it('uses one exact Page for navigation, display frames and human input; rejects 
   const errors = await runtime.act(session, { action: 'events', pageId: opened.pageId })
   expect(Buffer.byteLength(JSON.stringify(errors))).toBeLessThanOrEqual(65536)
   await expect(runtime.humanInput(session, input, actor)).rejects.toMatchObject({ code: 'STALE_INPUT' })
+  runtime.now = () => Date.now() + 1000
   await expect(
     runtime.act(session, { action: 'key', pageId: opened.pageId, pageEpoch: 0, key: 'Enter' }),
-  ).rejects.toMatchObject({ code: 'CONTROL_CHANGED' })
+  ).rejects.toMatchObject({ code: 'STALE_TARGET' })
   const beforeNavigation = sent.length
   original.emit('framenavigated', original.mainFrame())
   expect(sent).toHaveLength(beforeNavigation)
@@ -556,9 +634,17 @@ it('displays the final frame of a burst and cancels delayed frames when the view
         stream: { send: (frame: Uint8Array) => frames.push(frame), close: vi.fn(), onDisconnect: vi.fn() },
       },
     )
-    const emit = (data: string) =>
-      cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.from(data).toString('base64') })
+    const sampling = cdp.send.mock.calls.find(([method]) => method === 'Page.startScreencast')?.[1] as
+      | { everyNthFrame?: number }
+      | undefined
+    let paints = 0
+    const emit = (data: string) => {
+      // Model CDP's sampling: the last paint of a static page has no successor.
+      if (++paints % (sampling?.everyNthFrame ?? 1) === 0)
+        cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.from(data).toString('base64') })
+    }
     emit('first')
+    emit('middle')
     emit('final')
     expect(frames).toHaveLength(1)
     await vi.advanceTimersByTimeAsync(100)

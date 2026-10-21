@@ -1,5 +1,6 @@
 import { SlotOutlet, type SlotRegistry, SlotsProvider } from '@agnes/web-client'
 import { createRegionHost, createRegionRenderer } from '@agnes/web-ui'
+import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { DSH_ROOT_CHILDREN, type EmptyStateRegionMount } from './contracts.js'
 export interface DshShellRegionMount extends EmptyStateRegionMount {}
@@ -8,7 +9,7 @@ export interface DshShellRegionMount extends EmptyStateRegionMount {}
  * compatibility boundaries; their built-ins below forward into this tree so a DSH contribution
  * can replace a top-level surface without making the old app shell disappear.
  */
-export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount {
+export function mountDshShellRegion(registry: SlotRegistry, hostOverlay?: ReactNode): DshShellRegionMount {
   if (registry.spec('root')) throw new Error('DSH shell root is already mounted')
   registry.declare('root', { kind: 'single', scope: 'root' }, 'web-shell')
   // The composer can remain selected when a different conversation frame owns main.conversation.
@@ -42,6 +43,7 @@ export function mountDshShellRegion(registry: SlotRegistry): DshShellRegionMount
     overlayRoot.render(
       <SlotsProvider registry={registry}>
         <SlotOutlet name="shell.overlay" hideWhenEmpty={true} />
+        {hostOverlay}
       </SlotsProvider>,
     )
   })

@@ -20,6 +20,8 @@ export async function runTui(
     signal(): SignalName | undefined
     resourceController?: TuiResourceController
     composerSelectionPath?: string
+    /** The CLI's own version, shown on the welcome. */
+    agnesVersion?: string
   },
 ): Promise<number> {
   refuseWhatCannotBeHonoured(p)
@@ -87,6 +89,10 @@ export async function runTui(
       ...(io.composerSelectionPath
         ? { themePreferencePath: join(dirname(io.composerSelectionPath), 'tui-theme.json') }
         : {}),
+      welcome: {
+        motion: io.stdout.isTTY === true,
+        ...(io.agnesVersion ? { version: io.agnesVersion } : {}),
+      },
       controlClient: booted.client,
       ...(io.resourceController ? { resourceController: io.resourceController } : {}),
       screenAlreadyEntered: true,

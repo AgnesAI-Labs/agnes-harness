@@ -35,15 +35,14 @@ const title = (seq: number, value: string): EventEnvelope => ({
   },
 })
 
-it('migrates an old database, preserves titles after restart and rejects stale/forged updates', async () => {
+it('preserves titles after restart and rejects stale/forged updates', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-title-index-'))
   const path = join(root, 'index.sqlite')
   const tables = sqliteTables(path)
   try {
     const table = tables.table('session_workspaces')
-    table.exec('CREATE TABLE session_workspaces (session_key TEXT PRIMARY KEY, cwd TEXT NOT NULL)')
-    table.exec('INSERT INTO session_workspaces VALUES (?, ?)', ['existing', root])
     const sql = new SessionWorkspaceIndex(table)
+    sql.put('existing', root)
     const memory = new MemorySessionWorkspaces()
     memory.put('existing', root)
     for (const store of [sql, memory]) {

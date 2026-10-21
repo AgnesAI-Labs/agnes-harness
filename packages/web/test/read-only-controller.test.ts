@@ -191,7 +191,7 @@ it('labels opening history as unverified and ignores a preview that finishes aft
   const { context, controller, pending } = setup()
   const preview = controller.preview('A', context.sessionBinding.capture())
   await tick()
-  pending.get('A:200')?.(view('A'))
+  pending.get('A:50')?.(view('A'))
   await preview
   expect(context.readOnly?.id).toBe('A')
   expect(appReadOnly.show).toHaveBeenLastCalledWith({
@@ -219,7 +219,7 @@ it('labels opening history as unverified and ignores a preview that finishes aft
   await tick()
   context.sessionBinding.attach(context.sessionBinding.capture(), { session: { id: 'B' } as Session })
   context.clientModules.session.setSession('B', 'connecting')
-  pending.get('B:200')?.(view('B'))
+  pending.get('B:50')?.(view('B'))
   await late
   expect(context.projection).toEqual({ sessionId: 'B' })
   expect(context.readOnly?.id).toBe('B')
@@ -232,7 +232,7 @@ it('labels opening history as unverified and ignores a preview that finishes aft
   controller.clear()
   context.projection = { sessionId: 'live' }
   context.clientModules.session.setReadiness('ready', 'B')
-  pending.get('B:200')?.(view('B'))
+  pending.get('B:50')?.(view('B'))
   await lateAfterOpening
   expect(context.projection).toEqual({ sessionId: 'live' })
   expect(context.readOnly).toBeUndefined()
@@ -242,7 +242,7 @@ it('labels opening history as unverified and ignores a preview that finishes aft
   await tick()
   context.sessionBinding.begin('A')
   context.sessionBinding.begin('B')
-  pending.get('B:200')?.(view('B'))
+  pending.get('B:50')?.(view('B'))
   await obsolete
   expect(context.projection).toEqual({ sessionId: 'live' })
 })
@@ -301,7 +301,7 @@ it.each(['refused', 'preview'])(
           ? controller.show('history', refusal, context.sessionBinding.capture())
           : controller.preview('history', context.sessionBinding.capture())
       await tick()
-      pending.get('history:200')?.(view('history', false))
+      pending.get(mode === 'refused' ? 'history:200' : 'history:50')?.(view('history', false))
       const result = await shown
       if (mode === 'refused') expect(result).toBe(true)
       expect(reconciler.snapshot().get('@agnes/conversation-ui')?.phase).toBe('active')

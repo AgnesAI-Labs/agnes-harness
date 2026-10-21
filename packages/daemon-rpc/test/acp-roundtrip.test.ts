@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { noticeParams } from '@agnes/daemon-foundation/local/attached'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
@@ -46,6 +47,14 @@ async function drain(ep: {
   for await (const n of ep.notifications) out.push(n)
   return out
 }
+function deferred(): { promise: Promise<void>; resolve(): void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 type N = {
   method?: string
   params?: { _meta?: Record<string, { phase: string; eventSequence: number; promptTurnId: string }> }
@@ -317,125 +326,207 @@ describe('local endpoint: ACP round trip', () => {
     { method: '_agnes/v1/session.open', cold: false },
     { method: '_agnes/v1/session.open', cold: true },
   ])(
-    '$method admits a live reopen after checking the tail (cold=$cold), replaying only for ACP load',
+    '$method admits and verifies history (cold=$cold), replaying only for ACP load',
     async ({ method, cold }) => {
-      const h = await openTestHost({ script: [say('hi'), say('again')] })
+      const provider = new ScriptedProvider({ scripts: [say('hi'), say('again')] })
+      const infer = vi.spyOn(provider, 'infer')
+      const h = await openTestHost({ provider })
       let ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
-      await ep.handle(init)
-      await addWorkspace(ep, h.dataDir)
-      const ok = (await ep.handle({
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'session/new',
-        params: { cwd: h.dataDir, mcpServers: [] },
-      })) as { result: { sessionId: string } }
-      await ep.handle({
-        jsonrpc: '2.0',
-        id: 3,
-        method: 'session/prompt',
-        params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'x' }] },
-      })
-      await ep.handle({
-        jsonrpc: '2.0',
-        id: 6,
-        method: 'session/prompt',
-        params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'next' }] },
-      })
-      if (cold) {
-        await ep.close()
-        ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+      try {
         await ep.handle(init)
-      }
-      // Preview frames use a separate budget but share the ordered notification queue.
-      const before = ep.pending().events + ep.pendingPreviews().events
-      expect(
+        await addWorkspace(ep, h.dataDir)
+        const ok = (await ep.handle({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'session/new',
+          params: { cwd: h.dataDir, mcpServers: [] },
+        })) as { result: { sessionId: string } }
         await ep.handle({
           jsonrpc: '2.0',
-          id: 4,
-          method,
-          params: {
-            sessionId: ok.result.sessionId,
-            cwd: h.dataDir,
-            ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-1' }),
-          },
-        }),
-      ).toMatchObject({ result: {} })
-      // A cold open hashes the prefix in the background; let that finish before the rows change.
-      const live = h.host.kernel.get(ok.result.sessionId) as unknown as {
-        d: { log: { fullVerified(): Promise<void> } }
-      }
-      await live.d.log.fullVerified()
-      const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
-      const turns = raw
-        .prepare("SELECT seq FROM events WHERE session_key = ? AND type = 'turn/start' ORDER BY seq")
-        .all(ok.result.sessionId) as { seq: number }[]
-      raw
-        .prepare(
-          "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
-        )
-        .run(ok.result.sessionId)
-      raw.close()
-      const second = await ep.handle({
-        jsonrpc: '2.0',
-        id: 5,
-        method,
-        params: {
-          sessionId: ok.result.sessionId,
-          cwd: h.dataDir,
-          ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-2' }),
-        },
-      })
-      // The session is live in this process (after a cold endpoint too, whose first open hashed the
-      // prefix): reopening checks only the tail after the checkpoint, so changed old rows are admitted.
-      // The next cold open of the ledger refuses them (covered at the ledger level).
-      expect(second).toMatchObject({ result: {} })
-      const replayed = (await drain(ep)).slice(before) as N[]
-      const updates = replayed
-        .filter((n) => n.method === 'session/update')
-        .map(
-          (n) =>
-            (n.params as unknown as { update: { sessionUpdate: string; content?: { text?: string } } })
-              .update,
-        )
-      const kinds = updates.map((u) => u.sessionUpdate)
-      if (method !== 'session/load') {
-        // A lagging live turn/end may still deliver its empty quiescence carrier.
-        expect(updates.filter((update) => update.content?.text !== '')).toEqual([])
-        await h.close()
-        return
-      }
-      expect(turns).toHaveLength(2)
-      for (const n of replayed.filter((n) => n.method === 'session/update')) {
-        const meta = n.params?._meta?.['ai.agnes.harness']
-        expect(meta).toBeDefined()
-        if (meta)
-          expect(meta.promptTurnId).toBe(
-            String(turns.filter((t) => t.seq <= meta.eventSequence).at(-1)?.seq ?? 0),
+          id: 3,
+          method: 'session/prompt',
+          params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'x' }] },
+        })
+        await ep.handle({
+          jsonrpc: '2.0',
+          id: 6,
+          method: 'session/prompt',
+          params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'next' }] },
+        })
+        if (cold) {
+          await ep.close()
+          ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+          await ep.handle(init)
+        }
+        // Preview frames use a separate budget but share the ordered notification queue.
+        const before = ep.pending().events + ep.pendingPreviews().events
+        expect(
+          await ep.handle({
+            jsonrpc: '2.0',
+            id: 4,
+            method,
+            params: {
+              sessionId: ok.result.sessionId,
+              cwd: h.dataDir,
+              ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-1' }),
+            },
+          }),
+        ).toMatchObject({ result: {} })
+        // Finish the healthy check before editing storage; no race with its background hash pass.
+        const healthy = h.host.kernel.sessions.get(ok.result.sessionId)
+        if (!healthy) throw new Error('load did not open the session')
+        await healthy.d.log.fullVerified()
+        let coldReplay: JsonRpcMessage[] | undefined
+        if (cold) {
+          coldReplay = (await drain(ep)).slice(before)
+          ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+          await ep.handle(init)
+        } else {
+          // Without a checkpoint, a live recheck must detect corruption in the foreground.
+          await h.host.kernel.o.storage.deleteVerifiedHead?.(ok.result.sessionId)
+          expect(await h.host.kernel.o.storage.readVerifiedHead?.(ok.result.sessionId)).toBeUndefined()
+        }
+        const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
+        const turns = raw
+          .prepare("SELECT seq FROM events WHERE session_key = ? AND type = 'turn/start' ORDER BY seq")
+          .all(ok.result.sessionId) as { seq: number }[]
+        raw
+          .prepare(
+            "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
           )
+          .run(ok.result.sessionId)
+        raw.close()
+        const load = () =>
+          ep.handle({
+            jsonrpc: '2.0',
+            id: 5,
+            method,
+            params: {
+              sessionId: ok.result.sessionId,
+              cwd: h.dataDir,
+              ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-2' }),
+            },
+          })
+        if (cold) {
+          const storage = h.host.kernel.o.storage
+          const scan = storage.scanIntegrity.bind(storage)
+          const gate = deferred()
+          const reached = deferred()
+          let folded = false
+          // Ignore single-row authority probes. Cold open folds the prefix, then rehashes it in the background.
+          const hold = vi.spyOn(storage, 'scanIntegrity').mockImplementation(async (key, query) => {
+            if (key === ok.result.sessionId && query.fromSeq === 1 && query.toSeq > 1) {
+              if (folded) {
+                reached.resolve()
+                await gate.promise
+              }
+              folded = true
+            }
+            return scan(key, query)
+          })
+          try {
+            await expect(load()).resolves.toMatchObject({ result: {} })
+            await reached.promise
+            const session = h.host.kernel.sessions.get(ok.result.sessionId)
+            if (!session) throw new Error('cold load did not open the session')
+            const log = session.d.log
+            expect(log.openStats.checkpoint).toMatchObject({ used: true })
+            expect(log.historyVerified).toBe(false)
+            infer.mockClear()
+            const queued = deferred()
+            const appended: string[] = []
+            const off = session.onAppended((events) => {
+              appended.push(...events.map((event) => event.type))
+              if (events.some((event) => event.type === 'inbox')) queued.resolve()
+            })
+            const prompt = () =>
+              ep.handle({
+                jsonrpc: '2.0',
+                id: 7,
+                method: 'session/prompt',
+                params: { sessionId: session.key, prompt: [{ type: 'text', text: 'must not execute' }] },
+              })
+            try {
+              // Input may queue after open, but neither the model nor tools may execute it.
+              const pending = prompt()
+              await queued.promise
+              expect(infer).not.toHaveBeenCalled()
+              expect(appended).toEqual(['inbox'])
+              const verified = expect(log.fullVerified()).rejects.toMatchObject({
+                code: 'E_LEDGER_INTEGRITY',
+              })
+              gate.resolve()
+              await verified
+              expect(log.faulted).toBe(true)
+              expect(await storage.readVerifiedHead?.(session.key)).toBeUndefined()
+              await expect(pending).resolves.toMatchObject({
+                error: { data: { code: 'TURN_ERROR', error: { code: 'E_LEDGER_INTEGRITY' } } },
+              })
+              await expect(prompt()).resolves.toMatchObject({
+                error: { data: { code: 'E_LEDGER_INTEGRITY' } },
+              })
+              await expect(load()).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
+              expect(infer).not.toHaveBeenCalled()
+              expect(appended).toEqual(['inbox'])
+            } finally {
+              off()
+            }
+          } finally {
+            gate.resolve()
+            hold.mockRestore()
+          }
+        } else {
+          await expect(load()).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
+        }
+        const remaining = await drain(ep)
+        const replayed = (coldReplay ?? remaining.slice(before)) as N[]
+        const updates = replayed
+          .filter((n) => n.method === 'session/update')
+          .map(
+            (n) =>
+              (n.params as unknown as { update: { sessionUpdate: string; content?: { text?: string } } })
+                .update,
+          )
+        const kinds = updates.map((u) => u.sessionUpdate)
+        if (method !== 'session/load') {
+          // A lagging live turn/end may still deliver its empty quiescence carrier.
+          expect(updates.filter((update) => update.content?.text !== '')).toEqual([])
+          return
+        }
+        expect(turns).toHaveLength(2)
+        for (const n of replayed.filter((n) => n.method === 'session/update')) {
+          const meta = n.params?._meta?.['ai.agnes.harness']
+          expect(meta).toBeDefined()
+          if (meta)
+            expect(meta.promptTurnId).toBe(
+              String(turns.filter((t) => t.seq <= meta.eventSequence).at(-1)?.seq ?? 0),
+            )
+        }
+        // Only the durable classes come back; chunks and turn edges are not part of a load.
+        expect(kinds).toContain('user_message_chunk')
+        expect(
+          kinds.every((k) =>
+            ['user_message_chunk', 'agent_message_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(
+              k,
+            ),
+          ),
+        ).toBe(true)
+        // Both halves of the conversation, not just the client's own. Chunks are excluded from a load,
+        // so assistant/message is the only row that can carry the answer back.
+        expect(kinds).toContain('agent_message_chunk')
+        const said = updates
+          .filter((u) => u.sessionUpdate === 'agent_message_chunk')
+          .map((u) => u.content?.text ?? '')
+          .join('')
+        // A cold connection can also receive the registry's historical live-tail backlog. Check
+        // attribution on every frame above without making duplicate delivery part of this contract.
+        if (cold) expect(said).toContain('hiagain')
+        else expect(said).toBe('hiagain')
+      } finally {
+        await ep.close()
+        infer.mockRestore()
+        await h.close()
       }
-      // Only the durable classes come back; chunks and turn edges are not part of a load.
-      expect(kinds).toContain('user_message_chunk')
-      expect(
-        kinds.every((k) =>
-          ['user_message_chunk', 'agent_message_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(k),
-        ),
-      ).toBe(true)
-      // Both halves of the conversation, not just the client's own. Chunks are excluded from a load,
-      // so assistant/message is the only row that can carry the answer back.
-      expect(kinds).toContain('agent_message_chunk')
-      const said = updates
-        .filter((u) => u.sessionUpdate === 'agent_message_chunk')
-        .map((u) => u.content?.text ?? '')
-        .join('')
-      // A cold connection can also receive the registry's historical live-tail backlog. Check
-      // attribution on every frame above without making duplicate delivery part of this contract.
-      if (cold) expect(said).toContain('hiagain')
-      // The second, admitted load replays the history again, changed rows included.
-      else expect(said).toBe('hiagainhiagain')
-      expect(
-        updates.some((u) => u.sessionUpdate === 'user_message_chunk' && u.content?.text === 'changed'),
-      ).toBe(true)
-      await h.close()
     },
   )
 

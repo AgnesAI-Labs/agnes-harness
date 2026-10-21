@@ -68,7 +68,7 @@ function config(dataDir: string): DaemonConfig {
   }
 }
 
-function options(dataDir: string): Omit<StartSupervisorOptions, 'tables' | 'jobTables'> {
+function options(dataDir: string): Omit<StartSupervisorOptions, 'jobTables'> {
   return {
     config: config(dataDir),
     profile: profile(dataDir),
@@ -979,7 +979,6 @@ describe('production supervisor storage', () => {
       expect(received?.jobTables).toBeDefined()
       expect(received?.artifactAuthorityTable).toBeDefined()
       expect(received?.reclaim).toBeDefined()
-      expect(received?.tables).toBeUndefined()
       expect(received?.ports?.directory).toBe(directory)
       await Promise.all([supervisor.close(), supervisor.close()])
       expect(events).toEqual(['supervisor.close', 'storage.close'])

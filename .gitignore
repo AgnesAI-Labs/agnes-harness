@@ -57,3 +57,6 @@ packages/package-manager/bundled-plugins/deliverables-ui/NOTICE
 
 packages/package-manager/bundled-plugins/browser/src/client.js
 packages/package-manager/bundled-plugins/browser/NOTICE
+
+# DevBoard live projects written into the session workspace during manual demos
+/devboard-projects/

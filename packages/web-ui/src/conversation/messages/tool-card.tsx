@@ -6,6 +6,7 @@ import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
 import { ActivityRow, type ActivityState } from './activity-row.js'
 import { fallbackT, type ToolNode } from './context.js'
+import { DelegationCard } from './delegation-card.js'
 import { shellOutput } from './shell-output.js'
 import { ToolOutput } from './tool-output.js'
 import { toolStep } from './tool-step.js'
@@ -118,6 +119,8 @@ export function ConversationToolCard({
         ? t('timeline.reason.fullAccess')
         : undefined
   const target = step.target || (meaningful && step.kind !== 'command' ? summary : '')
+  if (node.delegatedRole && node.delegatedTask)
+    return <DelegationCard node={node} status={node.delegatedTask.status} t={t} />
   return (
     <div
       ref={cardHost}

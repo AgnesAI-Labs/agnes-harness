@@ -27,9 +27,11 @@ import {
   DecisionResponse as ResponseSchema,
   DecisionSpec as SpecSchema,
 } from '@agnes/protocol/gen/session-v1'
+import { ROLE_APPROVAL_REFUSAL } from '../child/roles.js'
 
 /** Minimal authority needed by the decision commands; the session supplies the writer gate. */
 export interface DecisionAuthority {
+  readonly refuseApprovals?: boolean
   readonly key: string
   /** A profile journal uses AR1 without creating a session or granting session access. */
   readonly profileId?: string
@@ -148,12 +150,14 @@ export class DecisionCommands {
     value: DecisionSnapshot,
     recheck: () => void | Promise<void> = () => undefined,
     executionCheck: () => void = () => undefined,
+    initial?: DecisionSnapshot,
   ): Promise<void> {
     const cell = this.s.readDecisions().get(value.handle.id)
     const event = this.event(value)
     const { register: _register, ...checkpoint } = event
     await this.s.log.append(
       [
+        ...(initial ? [this.event(initial)] : []),
         event,
         ...(value.consumption && !cell?.value.consumption
           ? [
@@ -413,13 +417,28 @@ export class DecisionCommands {
         consumption: null,
         invalidation: null,
       }
-      const automatic = automaticPermissionDecision(
-        this.s.permissionContext,
-        spec.purpose,
-        spec.options,
-        source.permission ? 'permission' : 'question',
-        spec.presentation,
-      )
+      const refused =
+        this.s.refuseApprovals &&
+        (source.permission || isPermissionPurpose(spec.purpose) || spec.purpose === 'business.confirm')
+      // Persist request and refusal in one commit, following the existing decision transition contract.
+      const initial = refused ? detached(value) : undefined
+      if (refused) {
+        value.revision = 2
+        value.result = {
+          reason: 'unavailable',
+          code: 'delegated-approval-refused',
+          at: new Date(now).toISOString(),
+        }
+      }
+      const automatic = this.s.refuseApprovals
+        ? undefined
+        : automaticPermissionDecision(
+            this.s.permissionContext,
+            spec.purpose,
+            spec.options,
+            source.permission ? 'permission' : 'question',
+            spec.presentation,
+          )
       if (
         automatic &&
         spec.purpose !== 'business.confirm' &&
@@ -450,6 +469,7 @@ export class DecisionCommands {
           this.live(source)
           this.execution()
         },
+        initial,
       )
       if (!value.result)
         await this.recordAutomaticSkip(
@@ -772,6 +792,8 @@ export class DecisionCommands {
         wake = notify
         if (ended) return { status: 'pending', handle: detached(handle), waitEndedBy: 'detached' }
         const value = await this.get(handle, source)
+        if (value.result?.code === 'delegated-approval-refused')
+          throw new CoreError('E_UNSUPPORTED', ROLE_APPROVAL_REFUSAL)
         if (value.result || value.invalidation) return { status: 'resolved', snapshot: value }
         if (ended) return { status: 'pending', handle: detached(handle), waitEndedBy: 'detached' }
         if (value.request.expiresAt !== null)

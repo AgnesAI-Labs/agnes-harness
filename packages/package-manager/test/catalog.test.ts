@@ -1,4 +1,6 @@
-import { readFileSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { validateAgainst } from '@agnes/protocol'
 import { PackageCatalogDescriptor } from '@agnes/protocol/gen/package-admin'
@@ -208,6 +210,28 @@ it('rechecks every snapshot at the common publication time after slow discovery'
 
 describe('local example catalog', () => {
   const workspace = fileURLToPath(new URL('../../..', import.meta.url))
+
+  it('uses the install payload digest even with nested development dependencies', async () => {
+    const isolated = mkdtempSync(join(tmpdir(), 'agnes-catalog-payload-'))
+    try {
+      cpSync(join(workspace, 'examples', 'packages'), join(isolated, 'examples', 'packages'), {
+        recursive: true,
+        filter: (path) => !['node_modules', '.git'].includes(basename(path)),
+      })
+      const target = join(isolated, 'examples', 'packages', 'hot-service', 'v1')
+      const nested = join(target, 'development', 'node_modules')
+      mkdirSync(nested, { recursive: true })
+      writeFileSync(join(nested, 'ignored.txt'), 'Not part of the installed payload')
+      const catalog = await createLocalExamplesCatalog({ workspace: isolated, now: () => epoch })
+      const entry = (await catalog.read({ offline: true })).entries.find(
+        (row) => row.source.ref === 'file:./examples/packages/hot-service/v1',
+      )
+      expect(entry?.integrity).toBe(hashDirectory(target))
+      expect(entry?.integrity).not.toBe(hashDirectory(target, { exclude: [] }))
+    } finally {
+      rmSync(isolated, { recursive: true, force: true })
+    }
+  })
 
   it('publishes only current plugin-row examples with verified source trees', async () => {
     const catalog = await createLocalExamplesCatalog({ workspace, now: () => epoch })

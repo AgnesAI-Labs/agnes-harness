@@ -13,6 +13,22 @@ export function brandColour(accent: string): Tone | Colour {
 /** False in mono and on the none tier, where state has to be carried by glyph and weight instead. */
 export const paintsColour = (ansi: ThemedAnsi): boolean => ansi.fg('accent', 'x') !== 'x'
 
+/** Linear RGB blend along evenly spaced stops; `t` is clamped to 0..1. Non-hex stops give no answer. */
+export function blendColours(stops: readonly (Colour | undefined)[], t: number): Colour | undefined {
+  const hex = stops.map((c) => (typeof c === 'string' ? hexColour(c) : undefined))
+  const rgb = hex.map((c) => (c ? [1, 3, 5].map((k) => Number.parseInt(c.slice(k, k + 2), 16)) : undefined))
+  const first = rgb[0]
+  if (first === undefined || rgb.some((c) => c === undefined)) return undefined
+  if (rgb.length === 1) return hex[0]
+  const span = rgb.length - 1
+  const at = Math.min(1, Math.max(0, Number.isFinite(t) ? t : 0)) * span
+  const i = Math.min(span - 1, Math.floor(at))
+  const a = rgb[i] ?? first
+  const b = rgb[i + 1] ?? first
+  const mixed = a.map((v, k) => Math.round(v + ((b[k] ?? v) - v) * (at - i)))
+  return `#${mixed.map((v) => v.toString(16).padStart(2, '0')).join('')}`
+}
+
 export type TuiThemeName = 'light' | 'dark' | 'mono'
 
 /**
@@ -49,6 +65,19 @@ export class TuiTheme {
   /** The brand gradient, darkest first; mono has none. */
   ramp(): readonly Colour[] {
     return this.current === 'mono' ? [] : BRAND_RAMP[this.current]
+  }
+
+  /** The brand gradient sampled at `t` (0..1); mono has none. */
+  rampAt(t: number): Colour | undefined {
+    return blendColours(this.ramp(), t)
+  }
+
+  /** A gradient through existing tones sampled at `t` (0..1); mono has none. */
+  toneAt(tones: readonly Tone[], t: number): Colour | undefined {
+    return blendColours(
+      tones.map((tone) => this.colour(tone)),
+      t,
+    )
   }
 
   frame(base: Ansi, rows: string[], width: number, height: number): string[] {

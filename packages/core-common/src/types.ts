@@ -57,6 +57,8 @@ export type CoreErrorCode =
   | 'E_FORMAT_NEWER'
   | 'E_FORMAT_OLDER'
   | 'E_FORMAT_CORRUPT'
+  | 'E_DATA_DIR_STALE'
+  | 'E_DATA_DIR_NEWER'
 
 /**
  * Every failure core raises carries a machine-readable `code`; the human message is prefixed with

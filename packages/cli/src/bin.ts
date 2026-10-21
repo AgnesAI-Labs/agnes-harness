@@ -953,6 +953,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                   signal: () => signal,
                   ...(resourceController ? { resourceController } : {}),
                   composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
+                  agnesVersion: io.agnesVersion,
                 })
               : runPrint(booted, p, {
                   locale: io.env.LC_ALL ?? io.env.LC_MESSAGES ?? io.env.LANG ?? 'en',

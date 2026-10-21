@@ -1,4 +1,5 @@
-import { dirname } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 declare const AGNES_PACKAGED_BUILTINS: boolean | undefined
@@ -107,6 +108,24 @@ export function bundledPluginSource(ref: string): { root: string; path: string }
   }
 }
 
+/** Written beside the shipped payloads at build time: `{ [source.path]: hashDirectory(payload) }`. */
+export const BUNDLED_PLUGIN_DIGESTS = 'bundled-plugin-digests.json'
+
+/** The build-time digest of a shipped payload, or undefined (missing, unreadable, partial) so the
+ * caller hashes the source itself. It ships with the payload and carries the trust of that code. */
+export function bundledPluginDigest(source: { root: string; path: string }): string | undefined {
+  try {
+    const digests: unknown = JSON.parse(readFileSync(join(source.root, BUNDLED_PLUGIN_DIGESTS), 'utf8'))
+    const digest =
+      digests && typeof digests === 'object'
+        ? Object.entries(digests).find(([path]) => path === source.path)?.[1]
+        : undefined
+    return typeof digest === 'string' && /^sha256-[a-f0-9]{64}$/.test(digest) ? digest : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Only this reserved identity is runtime-owned; ordinary file sources keep workspace semantics. */
 export function bundledPluginSourceRoot(ref: string): string | undefined {
   if (![...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES].some((helper) => helper.ref === ref))
@@ -129,6 +148,7 @@ export const BUNDLED_EXAMPLES = Object.freeze(
     { family: 'showcase', name: 'pharma-gmp' },
     ...['tool-panel', 'mcp-skills', 'dag-loop-adapter'].map((name) => ({ family: 'community', name })),
     { family: 'showcase', name: 'aerospace-quality' },
+    { family: 'showcase', name: 'devboard' },
   ].map((example) => ({ ...example, ref: `file:./bundled-examples/${example.family}/${example.name}` })),
 )
 

@@ -848,6 +848,15 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
   if (options.changed) listeners.add(options.changed)
   const lastRevision = new Map<string, string>()
   const tails = new Map<string, Promise<void>>()
+  const assetPreparations = new Map<
+    string,
+    {
+      inventory: InstalledInventory
+      directory: string
+      tail: Promise<void> | undefined
+      promise: Promise<void>
+    }
+  >()
   const inputs = new Map<string, Parameters<ClientModuleRegistry['list']>[0]>()
   const timers = new Map<string, ReturnType<typeof setTimeout>>()
   const resourceFailures = new Map<string, boolean>()
@@ -1336,11 +1345,22 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       await pruneGenerationAssets(input)
       inputs.set(input.profile, input)
       return serialize(input.profile, async () => {
-        const current = filterRoster(await reconcile(input, true), options.composition?.(input.profile))
-        if (!input.sessionId) return current
-        const pin = new RuntimeGenerationSnapshotStore(input.profileDirectory).session(input.sessionId)
-        if (!pin) return current
-        const historical = await generationRoster(input, pin.generationId)
+        const pin = input.sessionId
+          ? new RuntimeGenerationSnapshotStore(input.profileDirectory).session(input.sessionId)
+          : undefined
+        // Historical publication owns a separate directory/queue. Settle both reads before
+        // releasing this profile's queue, including on failure; neither can publish a partial roster.
+        const results = await Promise.allSettled([
+          reconcile(input, true),
+          pin ? generationRoster(input, pin.generationId) : Promise.resolve(undefined),
+        ])
+        for (const result of results) if (result.status === 'rejected') throw result.reason
+        const [profileRead, historicalRead] = results
+        if (profileRead.status !== 'fulfilled' || historicalRead.status !== 'fulfilled')
+          throw new Error('Roster unavailable')
+        const current = filterRoster(profileRead.value, options.composition?.(input.profile))
+        const historical = historicalRead.value
+        if (!historical || !input.sessionId) return current
         const selection = new CompositionSessionStore(input.profileDirectory).read(input.sessionId)?.tree
           .selection
         const selected = filterRoster(historical, selection)
@@ -1374,10 +1394,37 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
         const selected = await generationInput(input, generationPath[1] as string)
         return selected.registry.read({ ...selected.input, path: `/plugins/${generationPath[2]}` })
       }
+      const prior = assetPreparations.get(input.profile)
+      let preparation: Promise<void>
+      if (
+        prior?.inventory === input.inventory &&
+        prior.directory === input.profileDirectory &&
+        prior.tail === tails.get(input.profile)
+      )
+        preparation = prior.promise
+      else {
+        // Only requests already sharing the manager's unfinished inventory observation can join.
+        // A queued refresh/list/expiry changes the tail; a fresh inventory changes its identity.
+        // Nothing is retained after preparation settles, and every asset still checks its bytes.
+        preparation = serialize(input.profile, async () => {
+          await pruneGenerationAssets(input)
+          inputs.set(input.profile, input)
+          await reconcile(input, true)
+        })
+        const pending = {
+          inventory: input.inventory,
+          directory: input.profileDirectory,
+          tail: tails.get(input.profile),
+          promise: preparation,
+        }
+        assetPreparations.set(input.profile, pending)
+        const clear = () => {
+          if (assetPreparations.get(input.profile) === pending) assetPreparations.delete(input.profile)
+        }
+        preparation.then(clear, clear)
+      }
+      await preparation
       return serialize(input.profile, async () => {
-        await pruneGenerationAssets(input)
-        inputs.set(input.profile, input)
-        await reconcile(input, true)
         const root = options.snapshotDirectory(input.profile, input.profileDirectory)
         const state = (await readState(root, input.profile)) ?? emptyState(input.profile)
         let declaredFile: SnapshotManifest['files'][number] | undefined
@@ -1386,6 +1433,9 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
             ...(item.current ? [item.current] : []),
             ...item.retained.map((retained) => retained.revision),
           ]) {
+            // Reconciliation already checked the roster. At the byte-serving boundary,
+            // verify only the snapshot this canonical URL can name, not every earlier package.
+            if (!input.path.startsWith(route(packageId, revision, ''))) continue
             const snapshot = await verifySnapshot(root, packageId, revision)
             const file = snapshot?.manifest.files.find(
               (candidate) => route(packageId, revision, candidate.path) === input.path,
@@ -1424,6 +1474,7 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       timers.clear()
       inputs.clear()
       resourceFailures.clear()
+      assetPreparations.clear()
       listeners.clear()
     },
   }

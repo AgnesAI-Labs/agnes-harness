@@ -43,48 +43,14 @@ describe('SourceAuthRotation', () => {
     await tables.close()
   })
 
-  it('drops the verifier-bearing v2 table during migration', async () => {
+  it('refuses a data dir that still holds the verifier-bearing v2 keyring', async () => {
     const tables = sqliteTables()
     const table = tables.table('rotation')
-    table.exec('CREATE TABLE source_auth_keyring_v2 (singleton INTEGER PRIMARY KEY, current_verifier TEXT)')
-    table.exec('INSERT INTO source_auth_keyring_v2 VALUES (1, ?)', ['offline-verifier'])
-    new SourceAuthRotation(table)
+    table.exec('CREATE TABLE source_auth_keyring_v2 (id INTEGER PRIMARY KEY)')
+    expect(() => new SourceAuthRotation(table)).toThrow(/^E_DATA_DIR_STALE: /)
     expect(
-      table.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'source_auth_keyring_v2'"),
+      table.get("SELECT 1 AS found FROM sqlite_master WHERE name = 'source_auth_keyring_v3'"),
     ).toBeUndefined()
-    await tables.close()
-  })
-
-  it('does not resurrect a configured previous key when verifier-bearing v2 state is migrated', async () => {
-    const tables = sqliteTables()
-    const table = tables.table('rotation')
-    table.exec('CREATE TABLE source_auth_keyring_v2 (singleton INTEGER PRIMARY KEY, current_verifier TEXT)')
-    table.exec('INSERT INTO source_auth_keyring_v2 VALUES (1, ?)', ['unusable-offline-verifier'])
-    const rotation = new SourceAuthRotation(table)
-    const current = sourceCredential('current')
-    const previous = sourceCredential('previous')
-    rotation.configure([current, previous], 10_000)
-    expect(rotation.accepted([current, previous], 10_001, 60_000).map((key) => key.secret)).toEqual([
-      current.secret,
-    ])
-    await tables.close()
-  })
-
-  it('preserves the current opaque principal id while removing the v2 verifier', async () => {
-    const tables = sqliteTables()
-    const table = tables.table('rotation')
-    const existingKeyId = 'a'.repeat(32)
-    table.exec(
-      'CREATE TABLE source_auth_keyring_v2 (singleton INTEGER PRIMARY KEY, current_verifier TEXT, current_key_id TEXT)',
-    )
-    table.exec('INSERT INTO source_auth_keyring_v2 VALUES (1, ?, ?)', ['offline-verifier', existingKeyId])
-    const rotation = new SourceAuthRotation(table)
-    const current = sourceCredential('current')
-    rotation.configure([current], 10_000)
-    expect(rotation.accepted([current], 10_001, 60_000)[0]?.keyId).toBe(existingKeyId)
-    expect(JSON.stringify(table.get('SELECT * FROM source_auth_keyring_v3'))).not.toContain(
-      'offline-verifier',
-    )
     await tables.close()
   })
 

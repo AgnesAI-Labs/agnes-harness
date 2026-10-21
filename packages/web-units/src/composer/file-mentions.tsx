@@ -112,7 +112,9 @@ export function useFileMentions({
     [publish],
   )
 
-  const clear = useCallback(() => publish([]), [publish])
+  const clear = useCallback(() => {
+    if (mentionsRef.current.length > 0) publish([])
+  }, [publish])
 
   /** Backspace and Delete take a token whole; the caret never rests inside one. */
   const keydown = useCallback(

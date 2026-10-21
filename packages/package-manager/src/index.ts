@@ -6,8 +6,10 @@ export * from './bundle-contract.js'
 export {
   BUNDLED_EXAMPLES,
   BUNDLED_HELPERS,
+  BUNDLED_PLUGIN_DIGESTS,
   BUNDLED_SKILL_HELPER_REF,
   bundledExampleSource,
+  bundledPluginDigest,
   bundledPluginSource,
   bundledPluginSourceRoot,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,

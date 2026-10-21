@@ -187,6 +187,13 @@ A package declaring `metadata.exampleOf` is managed only on its parent plugin’
 
 ## Update and roll back
 
+Management generation lists read retained descriptions, session bindings and already reported failures;
+they do not re-hash every historical executable archive. Listing a historical generation is not an
+archive health check. Resume, migration and execution still verify the selected archive and fail closed.
+Static composition and bundle views reuse resolved display metadata while configuration, package lock,
+capability policy and runtime snapshot records remain unchanged. Applying configuration and admitting a
+session always use fresh validation; editing installed source bytes directly is not an activation path.
+
 Rebuilding AGH preserves an installed package’s reviewed capability snapshot. Immutable package bytes are verified again at startup. Older client descriptors that were normalized without their declared streams remain usable with their original grants and capability hash; discovering those streams does not authorize them. Use the normal reviewed update flow, even from the same source and version, to approve the current declarations. Changed installed bytes still fail integrity verification.
 
 Runtime snapshot records carry a format version. Earlier plugin-core records (including records without a version) are verified using their original metadata and capability digest rules, with the same byte and tree checks. A format upgrade needs no manual recovery and does not rewrite snapshot identities, trust decisions or session pins. New snapshots use the current format; obtaining new agent or application declarations follows the normal integrity-verified, reviewed package update path. Retained package-operation results also keep their historical metadata and labels on disk; management responses project them into the current display contract. Corrupt records and modified bytes still fail closed.

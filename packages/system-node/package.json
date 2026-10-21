@@ -11,6 +11,7 @@
     "./process-spawn": "./src/process-spawn.ts",
     "./process-detached": "./src/process-detached.ts",
     "./windows-pipe": "./src/windows-pipe.ts",
+    "./owner-lock": "./runtime/owner-lock.mjs",
     "./process-broker": "./runtime/process-broker.mjs",
     "./native": "./dist/native/agnes-system.node",
     "./deployment-network": "./src/deployment-network.ts",

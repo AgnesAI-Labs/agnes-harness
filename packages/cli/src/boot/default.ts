@@ -1,8 +1,9 @@
 import { daemonStatus, resolveDaemonScope } from '@agnes/daemon'
 import { BootError } from '../errors.js'
+import { resolveLocale } from '../tui/locale.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { type EnsureLocalBackendOptions, ensureLocalBackend } from './backend.js'
-import { bootConnect, bootLocalConnect, type ConnectBootDeps } from './connect.js'
+import { bootConnect, type ConnectBootDeps } from './connect.js'
 import { localPreparation } from './connection-scope.js'
 import { bootLocal, type LocalBootDeps } from './local.js'
 
@@ -39,8 +40,11 @@ export async function bootDefault(
   }
   if (options.useEmbedded || p.standalone || p.ephemeral) return bootLocal(p, deps)
 
+  const started = performance.now()
   const backend = await ensureLocalBackend({
     preparation: localPreparation(p),
+    // The client that proves readiness is this session's connection: one client, one initialize.
+    retainClient: { locale: resolveLocale(deps.env) },
     env: deps.env,
     cwd: p.cwd ?? deps.cwd,
     ...(deps.home ? { home: deps.home } : {}),
@@ -58,22 +62,16 @@ export async function bootDefault(
       : { startupWeb: { addr: '127.0.0.1:0', origin: 'http://127.0.0.1:4177' } }),
     ...depsForBackend(options.backend),
   })
-  try {
-    const connected = await bootLocalConnect(
-      p,
-      deps,
-      backend.socketPath,
-      backend.discovery.owner,
-      backend.scope,
-    )
-    return {
-      ...connected,
-      profileName: backend.scope.profile,
-      resolvedProfileHash: backend.discovery.profileHash,
-    }
-  } catch (error) {
-    await backend.closeClient().catch(() => undefined)
-    throw error
+  const client = backend.client
+  if (!client) throw new BootError('connect handshake failed: client was not created')
+  return {
+    client,
+    profileName: backend.scope.profile,
+    resolvedProfileHash: backend.discovery.profileHash,
+    bootMs: performance.now() - started,
+    form: 'connect',
+    // The SDK closes only this socket and its own sessions; the daemon keeps running.
+    close: () => client.close(),
   }
 }
 

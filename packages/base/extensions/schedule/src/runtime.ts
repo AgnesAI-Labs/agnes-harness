@@ -5,6 +5,7 @@ export type {
   ScheduleCatalog,
   ScheduleCode,
   ScheduleDb,
+  ScheduleJobs,
   ScheduleRun,
   ScheduleSelector,
   ScheduleTarget,
@@ -15,6 +16,8 @@ export type {
 export {
   compileTarget,
   createSchedulesPort,
+  JOBS_DDL,
+  JOBS_INDEXES,
   openDaemonScheduleDb,
   openScheduleCatalog,
   ScheduleRejected,

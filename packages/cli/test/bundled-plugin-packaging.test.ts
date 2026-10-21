@@ -5,7 +5,10 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   BUNDLED_EXAMPLES,
+  BUNDLED_PLUGIN_DIGESTS,
+  bundledPluginDigest,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
+  hashDirectory,
   OPTIONAL_BUNDLED_PACKAGES,
 } from '@agnes/package-manager'
 import { build } from 'esbuild'
@@ -28,6 +31,12 @@ it.each([
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
   expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop'])
+  // The release digest is the same formula boot would otherwise compute over the final payload.
+  const payload = { root: output, path: `bundled-plugins/${helper.name}` }
+  expect(bundledPluginDigest(payload)).toBe(hashDirectory(join(output, payload.path)))
+  expect(Object.keys(JSON.parse(await readFile(join(output, BUNDLED_PLUGIN_DIGESTS), 'utf8')))).toHaveLength(
+    DEFAULT_ENABLED_BUNDLED_PACKAGES.length + OPTIONAL_BUNDLED_PACKAGES.length,
+  )
   expect((await readdir(join(output, 'bundled-plugins'))).sort()).toEqual(
     [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map((pkg) => pkg.name).sort(),
   )

@@ -15,6 +15,7 @@ import {
   type CommandAuthorizer,
   CommandService,
   type HostAgnesClient,
+  homeNavigation,
   LocaleService,
   type PresentationHost,
   PresentationService,
@@ -84,7 +85,9 @@ import {
   mountTraceRegion,
   mountTranscriptRegion,
 } from '../region-slots.js'
-import { ProfileApprovals } from '../regions/profile-approvals.js'
+import { ProfileApprovals, ProfileAttentionEntry } from '../regions/profile-approvals.js'
+import { profileAttentionCaller } from '../regions/profile-attention-caller.js'
+import { createProfileAttention } from '../regions/profile-attention-state.js'
 import type { SidebarActions, SidebarState } from '../sidebar.js'
 import { type ClientReconciler, createReconciler, type RosterSource } from './reconcile.js'
 export interface ClientModulesRuntime {
@@ -171,15 +174,20 @@ export async function startClientModules(options: {
   const builtinUnits = new BuiltinWebUnitRegistry()
   const pref = readThemePreference(safeThemeStorage())
   const prefersDark = window.matchMedia('(prefers-color-scheme: dark)')
+  const attention = createProfileAttention()
+  const theme = new ThemeService(ctx, resolveTheme(pref, prefersDark.matches))
+  const session = new SessionService(ctx, undefined, options.agnes)
   new AgnesClientService(
     ctx,
     options.agnes,
     options.clientServiceCaller,
     options.clientEffectCaller,
-    options.clientProfileCaller,
+    options.clientProfileCaller
+      ? profileAttentionCaller(options.clientProfileCaller, attention, session)
+      : undefined,
   )
-  const theme = new ThemeService(ctx, resolveTheme(pref, prefersDark.matches))
-  const session = new SessionService(ctx, undefined, options.agnes)
+  const stopAttentionPage = homeNavigation.subscribe(attention.reconcile)
+  const stopAttentionSession = session.readiness.subscribe(attention.reconcile)
   const resources = new ClientResourceService(ctx, options.agnes, session)
   const storedLocale = readLocalePreference(safeThemeStorage())
   applyDocumentLocale(document.documentElement, storedLocale)
@@ -197,7 +205,10 @@ export async function startClientModules(options: {
       slots: SlotRegistry
     }
   ).slots
-  const dshShell: DshShellRegionMount = mountDshShellRegion(registry)
+  const dshShell: DshShellRegionMount = mountDshShellRegion(
+    registry,
+    <ProfileApprovals client={options.agnes} locale={locale} attention={attention} entry={false} />,
+  )
   // Seats belong to the host; default occupants arrive through the release roster.
   for (const name of ['ui:sidebar', 'ui:conversation', 'ui:transcript', 'ui:composer'])
     registry.declare(
@@ -325,7 +336,10 @@ export async function startClientModules(options: {
         attach(handle) {
           const attached = { ...handle, dispose() {} }
           transcriptDelegate.current = attached
-          if (lastTranscript) handle.render(...lastTranscript)
+          // A region remounted for another selection starts empty: repainting the previous session's
+          // whole transcript there only delays the switch, and its own content replaces it anyway.
+          if (lastTranscript && lastTranscript.sessionId === session.sessionId)
+            handle.render(...lastTranscript.args)
           return () => {
             if (transcriptDelegate.current === attached) transcriptDelegate.current = null
           }
@@ -463,7 +477,7 @@ export async function startClientModules(options: {
       history: archivedSessions,
       initial: {
         ...options.sidebar,
-        profileApprovals: <ProfileApprovals client={options.agnes} locale={locale} />,
+        profileApprovals: <ProfileAttentionEntry attention={attention} locale={locale} />,
       },
       attach(handle) {
         const attached = { ...handle, dispose() {} }
@@ -502,11 +516,13 @@ export async function startClientModules(options: {
         })
       : undefined
   if (transcript) builtinUnits.mount('@agnes/web-transcript', () => transcript.dispose())
-  let lastTranscript: Parameters<TranscriptRegionMount['render']> | undefined
+  let lastTranscript:
+    | { sessionId: string | undefined; args: Parameters<TranscriptRegionMount['render']> }
+    | undefined
   const transcriptRuntime = conversation
     ? ({
         render(nodes, turns, meta) {
-          lastTranscript = [nodes, turns, meta]
+          lastTranscript = { sessionId: session.sessionId, args: [nodes, turns, meta] }
           transcriptDelegate.current?.render(nodes, turns, meta)
         },
         reset() {
@@ -551,6 +567,9 @@ export async function startClientModules(options: {
     ...(rightbar ? { rightbar } : {}),
     ...(settingsPane ? { settings: settingsPane } : {}),
     dispose: async () => {
+      stopAttentionPage()
+      stopAttentionSession()
+      attention.dispose()
       conversationChildrenGeneration++
       for (const root of panelRoots) root.unmount()
       builtinUnits.dispose()

@@ -44,3 +44,25 @@ export function sqliteTables(path = ':memory:'): Tables {
     },
   }
 }
+
+/** Wraps `t` so every `exec`/`get`/`all` SQL string is appended to `sql` before the call is
+ * forwarded. Lets a test assert which statements a constructor issued. */
+export function recordingTable(t: TableHandle): { table: TableHandle; sql: string[] } {
+  const sql: string[] = []
+  const table: TableHandle = {
+    exec: (statement, params) => {
+      sql.push(statement)
+      t.exec(statement, params)
+    },
+    get: <T>(statement: string, params?: unknown[]) => {
+      sql.push(statement)
+      return t.get<T>(statement, params)
+    },
+    all: <T>(statement: string, params?: unknown[]) => {
+      sql.push(statement)
+      return t.all<T>(statement, params)
+    },
+    transaction: (fn) => t.transaction(fn),
+  }
+  return { table, sql }
+}

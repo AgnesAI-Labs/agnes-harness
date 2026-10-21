@@ -27,6 +27,7 @@ type SubagentCalls = {
       (
         | {
             model?: string
+            role?: string
             isolation?: 'worktree' | 'shared'
             budget?: number
             cwd?: string
@@ -292,6 +293,48 @@ describe('subagent_spawn', () => {
       text: expect.stringContaining('worktree creation failed: not-git'),
     })
     expect(second.calls.resume).toEqual([])
+  })
+
+  it('passes an explicit role and backend attribution, rejecting incompatible and refused roles without fallback', async () => {
+    const d = deps()
+    const role = { ref: '@fixture/roles#reader', title: { en: 'Reader', 'zh-CN': '读者' } }
+    const { ctx, calls } = context({
+      spawn: async (_task, options) => {
+        if (options?.role !== role.ref) throw new Error('Role is not delegable')
+        return { childKey: 'role-child', role }
+      },
+    })
+    const tool = subagentSpawnTool(d)
+    const result = await tool.execute({ task: 'Read', role: role.ref }, ctx)
+    expect(result.structured).toMatchObject({ childKey: 'role-child', role, task: 'Read', status: 'running' })
+    expect(JSON.stringify(result.content)).not.toContain('role-child')
+    const waitedContext = context({ spawn: async () => ({ childKey: 'waited-role', role }) })
+    const waited = await tool.execute({ task: 'Read', role: role.ref, wait: true }, waitedContext.ctx)
+    expect(waited.structured).toMatchObject({ childKey: 'waited-role', status: 'completed' })
+    expect(waited.content).toEqual([{ type: 'text', text: 'Delegated task completed.\ndone' }])
+    expect(waitedContext.calls.collect).toContainEqual(['waited-role', { wait: true }])
+    for (const status of ['idle', 'failed', 'running'] as const) {
+      const waiting = context({
+        spawn: async () => ({ childKey: `role-${status}`, role }),
+        collect: async (childKey) => ({ childKey, status, text: 'specialist findings' }),
+      })
+      const outcome = await subagentSpawnTool(deps()).execute(
+        { task: 'Read', role: role.ref, wait: true },
+        waiting.ctx,
+      )
+      expect(outcome.structured).toMatchObject({ status: status === 'idle' ? 'completed' : status })
+      expect(outcome.content).toEqual([
+        { type: 'text', text: `Delegated task ${status}.\nspecialist findings` },
+      ])
+    }
+    expect(calls.spawn[0]?.[1]).toMatchObject({ role: role.ref, isolation: 'shared' })
+    expect((await tool.execute({ task: 'Read', role: '@other/app#reader' }, ctx)).isError).toBe(true)
+    const attempted = calls.spawn.length
+    expect((await tool.execute({ task: 'Read', role: role.ref, model: 'other' }, ctx)).isError).toBe(true)
+    expect((await subagentSpawnTool(d, true).execute({ task: 'Read', role: role.ref }, ctx)).isError).toBe(
+      true,
+    )
+    expect(calls.spawn).toHaveLength(attempted)
   })
 
   it('enforces depth before worktree or child creation', async () => {

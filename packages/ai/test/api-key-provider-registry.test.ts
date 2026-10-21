@@ -242,6 +242,10 @@ describe('API-key provider registry', () => {
       expect(models.length).toBeGreaterThan(0)
       expect(models.every((model) => model.route === id && model.baseUrl === entry?.baseUrl)).toBe(true)
       expect(models.every((model) => validateModelRecord(model).ok)).toBe(true)
+      // Catalogue sampling params are merged verbatim into the request body: only wire values belong here.
+      for (const model of models)
+        for (const value of Object.values(model.samplingParams ?? {}))
+          expect(['string', 'number', 'boolean']).toContain(typeof value)
       const first = models[0]
       if (!adapter || !first) throw new Error(`missing ${id} adapter catalogue`)
       adapter.bindCredential(id, `${id}-explicit-key`)
@@ -434,6 +438,8 @@ describe('API-key provider registry', () => {
           expect(bodies.at(-1)?.model).toBe(model)
           expect(bodies.at(-1)?.max_tokens).toBe(maxTokens ?? 65536)
           expect(bodies.at(-1)?.max_completion_tokens).toBeUndefined()
+          expect(bodies.at(-1)?.temperature).toBeUndefined()
+          expect(bodies.at(-1)?.top_p).toBeUndefined()
         }
       }
     } finally {

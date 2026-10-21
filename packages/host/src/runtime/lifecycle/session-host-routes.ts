@@ -45,6 +45,9 @@ export function sessionHostRoutes(
     readSessionRows: (key, query) => storage().readSessionRows(key, query),
     readSessionView: (key, options) => storage().readSessionView(key, options),
     memory: (workspaceRoot, key) => owner(key).memory(workspaceRoot, key),
+    captureSessionCapabilities: current().captureSessionCapabilities
+      ? (key, workspace) => owner(key).captureSessionCapabilities!(key, workspace)
+      : undefined,
     sessionCapabilities: current().sessionCapabilities
       ? (key) => owner(key).sessionCapabilities!(key)
       : undefined,

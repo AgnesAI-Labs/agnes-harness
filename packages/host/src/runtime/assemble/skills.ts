@@ -13,14 +13,12 @@ import type { AssemblyContext } from './context.js'
 import type { ProcessServices } from './process-services.js'
 
 /**
- * The Skill generation this assembly serves, which a Skills row refresh replaces. The three
+ * The Skill generation this assembly serves, which a Skills row refresh replaces. The two
  * mutable fields move together: `refreshSkillRow` swaps them and restores them on failure.
  */
 export type SkillState = {
   readonly bind: (input: SkillRuntimeInput | undefined) => SkillRuntimeInput | undefined
   readonly owners: ReturnType<typeof compositionSkillOwners>
-  /** What the daemon supplied, before composition filtering. */
-  available: SkillRuntimeInput | undefined
   /** What prompts preload and the fence's read roots come from. */
   preload: SkillRuntimeInput | undefined
   /** What the live resource input reads; equal to `preload` outside a refresh. */
@@ -47,13 +45,15 @@ export function createSkillState(ctx: AssemblyContext, proc: ProcessServices): S
           return !!tree && skillRuntimeOwnerMatches(owner, tree.root, (rowId) => tree.tree.fiber(rowId))
         }) ?? input)
       : input
-    return compositionSkills(scoped, ctx.profile.composition ?? {}, owners)
+    return compositionSkills(scoped, ctx.profile.composition ?? {}, owners, (key) => {
+      const role = key ? ctx.live.kernel.peek()?.get(key)?.d.roleDelegation : undefined
+      return role ? (role.resources ?? { mcp: [], skills: [] }) : undefined
+    })
   }
   const preload = bind(deps.skillResources)
   const state: SkillState = {
     bind,
     owners,
-    available: deps.skillResources,
     preload,
     active: preload,
     liveInput: Object.freeze({

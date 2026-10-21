@@ -9,6 +9,7 @@ import { commandHookInvocationSnapshot } from '@agnes/host-common/profile-policy
 import type { WorkspaceBinding } from '@agnes/host-common/workspace-authority'
 import {
   compileWorkspacePolicy,
+  intersectWorkspacePlan,
   memoryRequiresFileIsolation,
   normalizeSandboxStaticConfig,
 } from '@agnes/host-common/workspace-policy'
@@ -254,6 +255,7 @@ export type WorkspaceRuntimeFactory = Readonly<{
     binding: WorkspaceBinding,
     preset?: PresetDoc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
+    ceiling?: import('@agnes/core').FsPolicy,
   ): Promise<SessionWorkspaceRuntime>
 }>
 
@@ -279,6 +281,7 @@ export function createWorkspaceRuntimeFactory(
     binding: WorkspaceBinding,
     preset: PresetDoc = presets.defaultPreset.doc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
+    ceiling?: import('@agnes/core').FsPolicy,
   ): Promise<SessionWorkspaceRuntime> => {
     const { implementation, unconfined, requiresFileIsolation, sandboxConfig } = workspaceSandboxPolicy(
       ctx,
@@ -343,7 +346,7 @@ export function createWorkspaceRuntimeFactory(
         const sessionFence = openedFence as SessionWorkspaceFence
         if (!adapters.transport && adapters.platform.os === 'linux')
           await prepareSandboxWorkspaceAncestor(sessionFence.root)
-        const plan = await compileWorkspacePolicy({
+        const compiled = await compileWorkspacePolicy({
           canonicalRoot: sessionFence.root,
           dataDir,
           homeDir: deps.homeDir ?? homedir(),
@@ -357,6 +360,7 @@ export function createWorkspaceRuntimeFactory(
           staticConfig: sandboxConfig,
           canonicalize: (path, options) => sessionFence.fs.canonicalize(path, options),
         })
+        const plan = ceiling ? intersectWorkspacePlan(compiled, ceiling) : compiled
         const rootIdentity = plan.semantics.caseSensitive
           ? plan.policy.workspaceRoot
           : plan.policy.workspaceRoot.toLocaleLowerCase('en-US')

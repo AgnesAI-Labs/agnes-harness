@@ -298,6 +298,7 @@ it('drains a disabled business bundle while existing sessions retain their code'
   const dataDir = fixture.dataDir
   try {
     await fixture.host.applyRuntimeTarget(targetOf(ids.map((vendor) => row(vendor))))
+    expect(await fixture.host.sessionBundleCatalog?.()).toHaveProperty('acme/a#a')
     const normal = await fixture.host.createSession({ key: 'default-tools', cwd: dataDir })
     const a = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir, bundles: ['acme/a#a'] })
     expect(
@@ -310,6 +311,7 @@ it('drains a disabled business bundle while existing sessions retain their code'
     const disabled = targetOf(ids.map((vendor) => row(vendor, vendor !== 'acme/b')))
     const report = await fixture.host.applyRuntimeTarget(disabled)
     expect(report.ok, JSON.stringify(report)).toBe(true)
+    expect(await fixture.host.sessionBundleCatalog?.()).not.toHaveProperty('acme/a#a')
     expect(normal.currentTools().resolve('fixture_2')).toBeDefined()
     expect(a.loop).toEqual({ id: 'fixture.business', version: '1.0.0' })
     expect(a.currentTools().resolve('fixture_0')).toBeDefined()
@@ -708,7 +710,7 @@ it('publishes a restarted worker’s delivered target on each composition’s ea
   }
 }, 180_000)
 
-it('restricts Skill reads and optional panels to the selected resources and slots', () => {
+it('restricts Skill reads and optional panels to the selected resources and slots', async () => {
   let listed = [
     { resourceId: 'visible', name: 'read' },
     { resourceId: 'hidden', name: 'write' },
@@ -727,6 +729,30 @@ it('restricts Skill reads and optional panels to the selected resources and slot
     code: 'UNAUTHORIZED',
   })
   expect(skills.readRoots?.()).toEqual([])
+  const bound = compositionSkills(input, { skills: [] }, new Map(), (key) =>
+    key === 'child'
+      ? { mcp: [], skills: ['visible'] }
+      : key === 'empty-child'
+        ? { mcp: [], skills: [] }
+        : undefined,
+  )!
+  expect(bound.read('visible', { sessionKey: 'child' })).toEqual({ ok: true })
+  expect(bound.read('hidden', { sessionKey: 'child' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
+  expect(bound.readFile('visible', 'revision', 'SKILL.md', { sessionKey: 'empty-child' })).toEqual({
+    ok: false,
+    code: 'UNAUTHORIZED',
+  })
+  expect(bound.readRoots?.()).toEqual(['/broad'])
+  const scoped = (key: string) =>
+    bound.scopeWorkspace!('/w', key, async () => {
+      await Promise.resolve()
+      return { ids: bound.list().map((skill) => skill.resourceId), roots: bound.readRoots?.() }
+    })
+  expect(await Promise.all([scoped('child'), scoped('fixture'), scoped('empty-child')])).toEqual([
+    { ids: ['visible'], roots: [] },
+    { ids: ['visible', 'hidden'], roots: ['/broad'] },
+    { ids: [], roots: [] },
+  ])
   // A live catalog may refresh between reads; each returned list must use one catalog snapshot.
   const snapshot = listed
   const refreshing = compositionSkills(
@@ -748,6 +774,7 @@ it('restricts Skill reads and optional panels to the selected resources and slot
     { resourceId: 'added-hidden', name: 'write' },
   ]
   expect(skills.list().map((skill) => skill.resourceId)).toEqual(['replacement'])
+  expect(bound.read('replacement', { sessionKey: 'child' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
   expect(skills.read('visible', { sessionKey: 'fixture' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
   expect(skills.read('added-hidden', { sessionKey: 'fixture' })).toEqual({ ok: false, code: 'UNAUTHORIZED' })
   const location = ['acme/skills', 'refund', 'skills/refund'].join('\0')

@@ -61,7 +61,6 @@ import {
   type ReclaimStore,
   type ResumeReport,
   reclaimExpired,
-  tableReclaimStore,
 } from '@agnes/daemon-foundation/lease/reclaim'
 import type { AttachedFeed } from '@agnes/daemon-foundation/local/attached'
 import { type ConnectionState, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
@@ -85,7 +84,6 @@ import type { SessionWorkspacePort } from '@agnes/daemon-foundation/storage/list
 import {
   MemorySessionWorkspaces,
   SessionWorkspaceIndex,
-  StorageLister,
   TicketIndex,
 } from '@agnes/daemon-foundation/storage/lister'
 import {
@@ -202,6 +200,7 @@ import {
   type ProductionArtifactAuthorityProjection,
   type ProductionArtifactReadAuthority,
 } from './artifact-read.js'
+import { type BootVerification, openBootVerification } from './boot-verification.js'
 import { startChildMaintenance } from './child-maintenance.js'
 import { type Args, buildConfig, type DaemonConfig } from './config.js'
 import { configurationApplication } from './configuration.js'
@@ -219,6 +218,7 @@ import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
 import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
+import { createProfileInspection } from './profile-inspection.js'
 import { createSupervisorProfileServices } from './profile-services.js'
 import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
@@ -239,7 +239,7 @@ import { openDaemonLogs } from './runtime-log.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
 import { callWorkerScheduling } from './scheduling-service.js'
-import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
+import { canonicalPath, daemonProfileLoader, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import { workerClientServices } from './service-worker.js'
 import { registerSessionMethods } from './session-methods.js'
 import { recencyCursor } from './session-reads.js'
@@ -594,16 +594,12 @@ export type StartSupervisorOptions = {
   /** Optional local configuration authority; activation updates only future worker defaults. */
   configuration?: ConfigurationService
   reloadProfile?: (adminBundles?: readonly string[]) => Promise<ResolvedProfile>
+  inspectProfile?: (adminBundles?: readonly string[]) => Promise<ResolvedProfile>
   clock?: () => number
   workerExecPath?: string
   workerExecArgv?: string[]
   workerEntry?: string
   processIdentity?: (pid: number) => Promise<ProcessIdentity>
-  /**
-   * A privileged view of core's tables, used by crash reclaim. The sqliteTables test fixture can
-   * provide this combined view; Host deliberately does not expose one in production today.
-   */
-  tables?: Tables
   /** Narrow production access to expired core claims and the op.state cell used for recovery. */
   reclaim?: ReclaimStore
   /** Package-owned tables. Production supplies Host's isolated `@agnes/daemon` table store here. */
@@ -643,6 +639,8 @@ export type StartSupervisorOptions = {
   audit?: (rec: unknown) => void
   /** Test/composition injection; production creates one global supervisor gate. */
   activationBarrier?: ExtensionActivationBarrier
+  /** runAgnesd's boot read boundary; startup closes it before the client socket listens. */
+  bootVerification?: BootVerification
   /** PackageAdmin is composed once and registered on every matching transport endpoint. */
   packageAdmin?: {
     service: PackageAdminService
@@ -934,7 +932,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       originOf: (key) => inflightConn.get(key),
       clock,
     })
-    const jobTables = o.jobTables ?? o.tables
+    const jobTables = o.jobTables
     const journal =
       o.ports?.journal ??
       (jobTables
@@ -1033,9 +1031,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       workspaceRoot: o.workspaceRoot,
     })
     workspaceCatalogRef = workspaceCatalog
-    const reclaimStore =
-      o.reclaim ??
-      (o.tables ? tableReclaimStore(o.tables.table('writer_claims'), o.tables.table('registers')) : undefined)
+    const reclaimStore = o.reclaim
     tickets?.gc(clock())
     // `registry` is assigned right after `pool` is constructed, but `pool`'s own `onEvent` closure only
     // ever runs later (once a worker actually reports an event) - by which point `registry` is always
@@ -1276,7 +1272,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         })
       })
     })
-    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection)
+    registry = new WorkerRegistry(pool, projectedArtifactRead?.projection, workspaces)
     // Resource lifecycle owns a profile-scoped service generation, independent of chat workers.
     if (localResourceStore) {
       const resourceAdapters = installResourceServiceAdapters({
@@ -1310,7 +1306,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
     })
     // Runtime initialization may validate or bootstrap active extensions in a real service worker,
     // so the private listener must exist before initialize() can acquire that worker.
-    const workersServer = await listenUnix(o.config.workersSocketPath, (socket) => pool.adopt(socket))
+    const listenWorkers = () => listenUnix(o.config.workersSocketPath, (socket) => pool.adopt(socket))
+    const workersServer = await (o.bootVerification?.outside(listenWorkers) ?? listenWorkers())
     startupCleanup.push(() => workersServer.close())
     let socketFailure: Error | undefined
     void workersServer.failed?.then((error) => {
@@ -1726,6 +1723,8 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       })
       await effectivePackageAdmin.service.rebuildClientModules(o.profile.name)
     }
+    // Package-runtime boot reads end here; nothing after this point shares their observations.
+    await o.bootVerification?.end()
     const supervisorRegistry = new SupervisorRegistry(registry, workspaces)
     o.packageRuntime?.bindAgentResolver?.(hostFacade.resolveApplicationAgent)
     const services = workerClientServices(pool, () => host.profile)
@@ -1814,32 +1813,30 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
         )
       : new MemorySidebarSessions(workspaces, sessionOwnership, preferences, () => workspaceCatalog.list())
     startupCleanup.push(() => sidebarSessions.close())
-    const rawLister =
-      o.ports?.lister ??
-      (o.tables
-        ? new StorageLister(o.tables.table('events'), o.tables.table('writer_claims'), workspaces)
-        : supervisorLister(supervisorRegistry, workspaces))
+    const rawLister = o.ports?.lister ?? supervisorLister(supervisorRegistry, workspaces)
 
     const lister = withSessionPreferences(rawLister, preferences)
 
     const jobsRepo = jobTables ? new JobsRepo(jobTables.table('jobs'), clock) : undefined
-    const schedules = jobTables
-      ? scheduledTasks({
-          db: openDaemonScheduleDb(jobTables.table('schedules')),
-          clock,
-          socketPath: o.config.socketPath,
-          serverIdentity: lock.owner,
-          sources: {
-            workspaces: async () => (await workspaceCatalog.list()).items,
-            normalize: async (path) => (await workspaceCatalog.validate(path)).path,
-            catalog: async () =>
-              (await (
-                await pool.acquireSharedWorker()
-              ).command('session.catalog', {}, { timeoutMs: 31_000 })) as ScheduleCatalog,
-            presets: () => host.profile.presets.allowed,
-          },
-        })
-      : undefined
+    const schedules =
+      jobTables && jobsRepo
+        ? scheduledTasks({
+            db: openDaemonScheduleDb(jobTables.table('schedules')),
+            jobs: jobsRepo.scheduleJobs(),
+            clock,
+            socketPath: o.config.socketPath,
+            serverIdentity: lock.owner,
+            sources: {
+              workspaces: async () => (await workspaceCatalog.list()).items,
+              normalize: async (path) => (await workspaceCatalog.validate(path)).path,
+              catalog: async () =>
+                (await (
+                  await pool.acquireSharedWorker()
+                ).command('session.catalog', {}, { timeoutMs: 31_000 })) as ScheduleCatalog,
+              presets: () => host.profile.presets.allowed,
+            },
+          })
+        : undefined
     automationEvents.schedules = schedules
     if (schedules) startupCleanup.push(() => schedules.close())
     const profilePorts = createSupervisorProfileServices({
@@ -2018,6 +2015,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       dataDir: o.config.dataDir,
       profileDir: o.profileDir,
       resolveProfile: o.reloadProfile ?? (async () => o.profile),
+      ...(o.inspectProfile ? { inspectProfile: o.inspectProfile } : {}),
       workspaces: () => workspaceCatalog.list(),
       plan: createPlanCommands({
         activationBarrier,
@@ -2669,7 +2667,7 @@ type SupervisorHandle = Awaited<ReturnType<typeof startSupervisor>>
  * operation-only port, never a raw core SQLite handle.
  */
 export async function startProductionSupervisor(
-  o: Omit<StartSupervisorOptions, 'tables' | 'jobTables' | 'artifactAuthorityTable'>,
+  o: Omit<StartSupervisorOptions, 'jobTables' | 'artifactAuthorityTable'>,
   deps: {
     createStorage?: typeof createSqliteStorage
     start?: typeof startSupervisor
@@ -2796,318 +2794,329 @@ function secretsDirectory(profile: ResolvedProfile, config: DaemonConfig): strin
 
 export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = {}): Promise<void> {
   const platform = createPlatform().snapshot()
-  const scope = await (deps.resolveScope ?? resolveDaemonScope)({
-    env: process.env,
-    ...(platform.os === 'win32' ? { initializeHome: true } : {}),
-    ...(args.home !== undefined ? { home: args.home } : {}),
-    ...(args.profile !== undefined ? { profile: args.profile } : {}),
-    ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
-    ...(args.dataDir !== undefined ? { dataDir: args.dataDir } : {}),
-  })
-  if (!deps.resolveScope) {
-    if (platform.os === 'win32')
-      await initializeHomeLocked(scope.home, scope.profile, { dataDir: scope.dataDir })
-    else initializeHome(scope.home, scope.profile)
-  }
-  const resolver = deps.resolveProfile ?? resolveDaemonProfile
-  const loadProfile = async (
-    options: Parameters<typeof resolveDaemonProfile>[1] = {},
-  ): Promise<Awaited<ReturnType<typeof resolveDaemonProfile>>> => {
-    try {
-      return await resolver(scope, options)
-    } catch (error) {
-      // Preserve a corrupt package lock as recovery evidence. Host can still resolve the configured
-      // profile with an empty lock overlay; PackageManager remains the authoritative lock reader and
-      // exposes the profile as read-only rather than replacing its bytes during boot.
-      if (!(error instanceof HostError) || error.code !== 'E_LOCK_MISMATCH') throw error
-      return await resolveDaemonProfile(scope, { ...options, ignorePackageLock: true })
-    }
-  }
-  const loaded = await loadProfile()
-  const { profile, configuration } = loaded
-  const reloadProfile = async (adminBundles?: readonly string[]): Promise<ResolvedProfile> => {
-    return (await loadProfile({ configuration, ...(adminBundles !== undefined ? { adminBundles } : {}) }))
-      .profile
-  }
-  // `buildConfig`'s own doc comment: the OS/transport shape comes from the caller, which already went
-  // through host's platform adapter above - never a raw runtime OS check of this package's own.
-  const ipc: 'unix' | 'pipe' = platform.os === 'win32' ? 'pipe' : 'unix'
-  const config = buildConfig({
-    args: { profile: scope.profile, ...args, dataDir: scope.dataDir },
-    profile,
-    home: scope.home,
-    ipc,
-  })
-  prepareDaemonSocketPaths(config)
-  const localWeb =
-    deps.localWeb ??
-    (args.localWebAddr !== undefined || args.localWebOrigin !== undefined
-      ? { addr: args.localWebAddr ?? '127.0.0.1:0', origin: args.localWebOrigin ?? '' }
-      : undefined)
-  if (localWeb) {
-    if (!localWeb.addr || !localWeb.origin)
-      throw new Error('local Web requires both address and exact origin')
-    config.localWeb = localWeb
-    delete config.ws
-  }
-  let remoteAuth: StartSupervisorOptions['remoteAuth']
-  if (config.ws) {
-    const resolver =
-      deps.secrets ??
-      (profile.adapters.secrets.kind === 'file'
-        ? composeSecrets(
-            createSecretsFile({
-              dir: secretsDirectory(profile, config),
-            }),
-            createSecretsEnv(),
-          )
-        : createSecretsEnv())
-    config.ws = { ...config.ws, cert: resolver.resolve(config.ws.cert), key: resolver.resolve(config.ws.key) }
-    const transportAuth = profile.transports.find((transport) => transport.kind === 'ws-tls')?.auth
-    const sourceAuthCredentials = transportAuth?.sourceAuthSecrets?.map((credentialId) => ({
-      credentialId,
-      secret: resolver.resolve(credentialId),
-    }))
-    const jwt = transportAuth?.jwt
-    if (sourceAuthCredentials?.length || (jwt?.issuer && (jwt.secret || jwt.jwks))) {
-      remoteAuth = {
-        ...(sourceAuthCredentials?.length ? { sourceAuthCredentials } : {}),
-        ...(transportAuth?.rotationGraceMs !== undefined
-          ? { rotationGraceMs: transportAuth.rotationGraceMs }
-          : {}),
-        ...(jwt?.issuer && (jwt.secret || jwt.jwks)
-          ? {
-              jwt: {
-                issuer: jwt.issuer,
-                ...(jwt.secret ? { secret: resolver.resolve(jwt.secret) } : {}),
-                ...(jwt.jwks ? { jwksUrl: jwt.jwks } : {}),
-              },
-            }
-          : {}),
-      }
-    }
-  }
-  // PackageManager is the only lockfile writer. Establish the scoped directory first, then stamp
-  // the already-resolved Host profile through its public bootstrap API. A damaged existing lock is
-  // deliberately left in place: PackageAdmin reads expose its safe failure and the BFF enters
-  // recovery/read-only mode instead of daemon startup replacing forensic state with a new lock.
-  const packageProfileDirectory = scopedPackageProfileDirectory({
-    profile: scope.profile,
-    profileDir: scope.profileDir,
-    profilesRoot: join(scope.home, 'profiles'),
-  })
-  const checkedProfileDir = await packageProfileDirectory(scope.profile)
-  if (platform.os === 'win32') {
-    for (const directory of [scope.home, scope.dataDir, join(scope.home, 'profiles'), checkedProfileDir])
-      if (!hasPrivateDaclSync(directory))
-        throw Object.assign(new Error('E_HOME_UNSAFE'), { code: 'E_HOME_UNSAFE' })
-  } else await mkdir(checkedProfileDir, { recursive: true, mode: 0o700 })
-  const profileDir = await packageProfileDirectory(scope.profile)
-  let runtimeReferenceReader: PackageReferenceFactReader | undefined
-  const packageManager = createPackageManager({
-    dataDir: scope.dataDir,
-    agnesVersion: PACKAGE_MANAGER_VERSION,
-    cwd: scope.workspace,
-    localPlugins: localPluginRoots(scope.home, scope.workspace),
-    sourceAdapters: [pluginProposalSourceAdapter(join(scope.dataDir, 'resource-control'))],
-    references: createPackageReferences((input) => {
-      if (!runtimeReferenceReader)
-        throw new PackageError('E_EXT_LOAD', 'runtime reference authority is unavailable')
-      return runtimeReferenceReader(input)
-    }),
-  })
+  // Scope and profile resolution already verify the installed trees; boot shares that pass.
+  const bootVerification = openBootVerification()
+  // Every exit path closes the boundary, including a throw between bound steps; end() is idempotent.
   try {
-    const initializePolicy = () => snapshotPolicy(profileDir, profile, '0.0.0')
-    if (deps.packageAdmin) await initializePolicy()
-    else await initializeDefaultHelpers({ profileDir, manager: packageManager, initializePolicy })
-  } catch (error) {
-    // Helper inventory can encounter the same damaged lock before policy initialization.
-    // Keep the recovery-only admin surface available; never replace or trust the damaged state.
-    if (!(error instanceof PackageError) || error.legacyCode !== 'E_LOCK_MISMATCH') throw error
-  }
-  let packageActivation: PackageActivationAdapter | undefined
-  const deferredActivation = deferPackageActivation(() => packageActivation)
-  // Mirrors deferredActivation above: defaultPackageAdmin.service is constructed synchronously,
-  // before startProductionSupervisor awaits runtime.initialize() and calls bindRuntimePins with the
-  // real adapter, so the Service instance needs a stable object that reads the closure variable
-  // lazily at call time rather than the (still-undefined) value captured at construction.
-  let packageRuntimePins: RuntimePinsAdapter | undefined
-  let packagePluginTree: CompositeTargetStore | undefined
-  let packageAgentResolver:
-    | ((profile: string, ref: string) => Promise<import('@agnes/protocol').AgentPlan>)
-    | undefined
-  let packageWorkerGeneration: (() => number | undefined) | undefined
-  let packagePluginTreePublisher:
-    | ((artifact: RuntimeTargetArtifact, liveConfig?: boolean) => Promise<void>)
-    | undefined
-  let packageClientServiceCall:
-    | ((
-        input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,
-      ) => Promise<ExtensionCallResult>)
-    | undefined
-  let packageClientEffectCall:
-    | ((
-        input: ClientModuleEffectCallParams & Readonly<{ packageId: string; extension: string }>,
-        authority: PackageAdminAuthority,
-      ) => Promise<ExtensionCallResult>)
-    | undefined
-  const deferredPins = deferredRuntimePins(() => packageRuntimePins)
-  const packageOperations = new FilePackageOperationStore(join(scope.daemonDir, 'package-operations'))
-  const localExamplesCatalog = await discoverLocalExamples(scope.workspace)
-  // An explicitly injected resource service owns its own durable recovery; the default store
-  // is recovered only after its service-worker adapters are installed in startSupervisor.
-  const resourceService = deps.resources?.service
-  if (resourceService) await resourceService.recover()
-  const defaultPackageAdmin = {
-    service: createPackageAdminService({
-      resolveAgent: async (profile, ref) => {
-        if (!packageAgentResolver) throw rpcError('CAPABILITY_DENIED')
-        return packageAgentResolver(profile, ref)
-      },
-      authoringHome: scope.home,
-      manager: packageManager,
-      profileDirectory: packageProfileDirectory,
-      operations: packageOperations,
-      ...(localExamplesCatalog ? { catalog: localExamplesCatalog } : {}),
-      activation: deferredActivation,
-      runtimePins: deferredPins,
-      pluginTree: () => packagePluginTree,
-      pluginTreePublisher: async (artifact, liveConfig) => {
-        const publish = packagePluginTreePublisher
-        if (!publish) throw new Error('E_PACKAGE_STATE: runtime target publisher is unavailable')
-        await publish(artifact, liveConfig)
-      },
-      workerGeneration: () => packageWorkerGeneration?.(),
-      clientServiceCall: async (input) => {
-        if (!packageClientServiceCall) throw rpcError('CAPABILITY_DENIED')
-        return await packageClientServiceCall(input)
-      },
-      clientEffectCall: async (input, authority) => {
-        if (!packageClientEffectCall) throw rpcError('CAPABILITY_DENIED')
-        return await packageClientEffectCall(input, authority)
-      },
-      clientModules: createClientModuleRegistry({
-        composition: () =>
-          profile.composition
-            ? resolveComposition(profile, {
-                preset: compositionPreset(profile, profile.presets.default),
-              }).selection
-            : undefined,
-        snapshotDirectory: (profileName) => join(scope.daemonDir, 'client-modules', profileName),
-        runtimeArtifacts: () => runtimeArtifactsFromStore(packagePluginTree, packageWorkerGeneration?.()),
-      }),
-    }),
-  }
-
-  const { record: audit, close: flushAudit } = openDaemonLogs(scope.dataDir)
-  const sup = await (deps.startProduction ?? startProductionSupervisor)({
-    audit,
-    config,
-    profile,
-    profileDir: scope.profileDir,
-    profileFile: scope.profileFile,
-    workspaceRoot: scope.workspace,
-    configuration,
-    reloadProfile,
-    ...(deps.workerExecPath ? { workerExecPath: deps.workerExecPath } : {}),
-    ...(deps.workerExecArgv ? { workerExecArgv: deps.workerExecArgv } : {}),
-    ...(deps.workerEntry ? { workerEntry: deps.workerEntry } : {}),
-    ...(remoteAuth ? { remoteAuth } : {}),
-    ...(deps.directory ? { ports: { directory: deps.directory } } : {}),
-    packageAdmin: deps.packageAdmin ?? defaultPackageAdmin,
-    ...(deps.resources ? { resources: deps.resources } : {}),
-    ...(!deps.packageAdmin
-      ? {
-          packageRuntime: {
-            manager: packageManager,
-            profileDirectory: packageProfileDirectory,
-            operations: packageOperations,
-            stateDirectory: join(scope.daemonDir, 'package-activation'),
-            ...(localExamplesCatalog ? { catalog: localExamplesCatalog } : {}),
-            bindAgentResolver(resolve) {
-              packageAgentResolver = resolve
-            },
-            bindReferences(reader: PackageReferenceFactReader) {
-              runtimeReferenceReader = reader
-            },
-            bindActivation(adapter: PackageActivationAdapter) {
-              packageActivation = adapter
-            },
-            bindRuntimePins(adapter: RuntimePinsAdapter) {
-              packageRuntimePins = adapter
-            },
-            bindPluginTree(store, workerGeneration, publish) {
-              packagePluginTree = store
-              packageWorkerGeneration = workerGeneration
-              packagePluginTreePublisher = publish
-            },
-            bindClientService(dispatcher) {
-              packageClientServiceCall = dispatcher
-            },
-            bindClientEffect(dispatcher) {
-              packageClientEffectCall = dispatcher
-            },
-          },
-        }
-      : {}),
-  }).catch(async (error) => {
-    await closeWithAudit(async () => {
-      throw error
-    }, flushAudit)
-    throw error
-  })
-  let socketFailure: Error | undefined
-  void sup.failed?.then((error) => {
-    socketFailure = error
-  })
-  try {
-    await (deps.publishDiscovery ?? publishDaemonDiscovery)(scope, {
-      owner: sup.owner,
-      socketPath: sup.socketPath,
-      profileHash: profile.hash,
-      ...(localWeb && sup.ws ? { web: { ...sup.ws, origin: localWeb.origin } } : {}),
+    const scope = await bootVerification.bind(deps.resolveScope ?? resolveDaemonScope)({
+      env: process.env,
+      ...(platform.os === 'win32' ? { initializeHome: true } : {}),
+      ...(args.home !== undefined ? { home: args.home } : {}),
+      ...(args.profile !== undefined ? { profile: args.profile } : {}),
+      ...(args.workspace !== undefined ? { workspace: args.workspace } : {}),
+      ...(args.dataDir !== undefined ? { dataDir: args.dataDir } : {}),
     })
-    if (socketFailure) throw socketFailure
-  } catch (error) {
-    await (deps.removeDiscovery ?? removeDaemonDiscovery)(scope, sup.owner.generation).catch(() => undefined)
-    await closeWithAudit(async () => {
-      try {
-        await sup.close()
-      } catch (cleanup) {
-        throw new AggregateError([error, cleanup], 'daemon discovery and cleanup failed')
+    if (!deps.resolveScope) {
+      if (platform.os === 'win32')
+        await initializeHomeLocked(scope.home, scope.profile, { dataDir: scope.dataDir })
+      else initializeHome(scope.home, scope.profile)
+    }
+    const loadProfile = daemonProfileLoader(scope, deps.resolveProfile ?? resolveDaemonProfile)
+    const loaded = await bootVerification.bind(loadProfile)()
+    const { profile, configuration } = loaded
+    const reloadProfile = async (adminBundles?: readonly string[]): Promise<ResolvedProfile> => {
+      return (await loadProfile({ configuration, ...(adminBundles !== undefined ? { adminBundles } : {}) }))
+        .profile
+    }
+    // `buildConfig`'s own doc comment: the OS/transport shape comes from the caller, which already went
+    // through host's platform adapter above - never a raw runtime OS check of this package's own.
+    const ipc: 'unix' | 'pipe' = platform.os === 'win32' ? 'pipe' : 'unix'
+    const config = buildConfig({
+      args: { profile: scope.profile, ...args, dataDir: scope.dataDir },
+      profile,
+      home: scope.home,
+      ipc,
+    })
+    prepareDaemonSocketPaths(config)
+    const localWeb =
+      deps.localWeb ??
+      (args.localWebAddr !== undefined || args.localWebOrigin !== undefined
+        ? { addr: args.localWebAddr ?? '127.0.0.1:0', origin: args.localWebOrigin ?? '' }
+        : undefined)
+    if (localWeb) {
+      if (!localWeb.addr || !localWeb.origin)
+        throw new Error('local Web requires both address and exact origin')
+      config.localWeb = localWeb
+      delete config.ws
+    }
+    let remoteAuth: StartSupervisorOptions['remoteAuth']
+    if (config.ws) {
+      const resolver =
+        deps.secrets ??
+        (profile.adapters.secrets.kind === 'file'
+          ? composeSecrets(
+              createSecretsFile({
+                dir: secretsDirectory(profile, config),
+              }),
+              createSecretsEnv(),
+            )
+          : createSecretsEnv())
+      const { cert, key } = config.ws
+      config.ws = { ...config.ws, cert: resolver.resolve(cert), key: resolver.resolve(key) }
+      const transportAuth = profile.transports.find((transport) => transport.kind === 'ws-tls')?.auth
+      const sourceAuthCredentials = transportAuth?.sourceAuthSecrets?.map((credentialId) => ({
+        credentialId,
+        secret: resolver.resolve(credentialId),
+      }))
+      const jwt = transportAuth?.jwt
+      if (sourceAuthCredentials?.length || (jwt?.issuer && (jwt.secret || jwt.jwks))) {
+        remoteAuth = {
+          ...(sourceAuthCredentials?.length ? { sourceAuthCredentials } : {}),
+          ...(transportAuth?.rotationGraceMs !== undefined
+            ? { rotationGraceMs: transportAuth.rotationGraceMs }
+            : {}),
+          ...(jwt?.issuer && (jwt.secret || jwt.jwks)
+            ? {
+                jwt: {
+                  issuer: jwt.issuer,
+                  ...(jwt.secret ? { secret: resolver.resolve(jwt.secret) } : {}),
+                  ...(jwt.jwks ? { jwksUrl: jwt.jwks } : {}),
+                },
+              }
+            : {}),
+        }
       }
+    }
+    // PackageManager is the only lockfile writer. Establish the scoped directory first, then stamp
+    // the already-resolved Host profile through its public bootstrap API. A damaged existing lock is
+    // deliberately left in place: PackageAdmin reads expose its safe failure and the BFF enters
+    // recovery/read-only mode instead of daemon startup replacing forensic state with a new lock.
+    const packageProfileDirectory = scopedPackageProfileDirectory({
+      profile: scope.profile,
+      profileDir: scope.profileDir,
+      profilesRoot: join(scope.home, 'profiles'),
+    })
+    const checkedProfileDir = await packageProfileDirectory(scope.profile)
+    if (platform.os === 'win32') {
+      for (const directory of [scope.home, scope.dataDir, join(scope.home, 'profiles'), checkedProfileDir])
+        if (!hasPrivateDaclSync(directory))
+          throw Object.assign(new Error('E_HOME_UNSAFE'), { code: 'E_HOME_UNSAFE' })
+    } else await mkdir(checkedProfileDir, { recursive: true, mode: 0o700 })
+    const profileDir = await packageProfileDirectory(scope.profile)
+    let runtimeReferenceReader: PackageReferenceFactReader | undefined
+    const packageManager = createPackageManager({
+      dataDir: scope.dataDir,
+      agnesVersion: PACKAGE_MANAGER_VERSION,
+      cwd: scope.workspace,
+      localPlugins: localPluginRoots(scope.home, scope.workspace),
+      sourceAdapters: [pluginProposalSourceAdapter(join(scope.dataDir, 'resource-control'))],
+      references: createPackageReferences((input) => {
+        if (!runtimeReferenceReader)
+          throw new PackageError('E_EXT_LOAD', 'runtime reference authority is unavailable')
+        return runtimeReferenceReader(input)
+      }),
+    })
+    try {
+      const initializePolicy = () => snapshotPolicy(profileDir, profile, '0.0.0')
+      const bootDefaultHelpers = bootVerification.bind(initializeDefaultHelpers)
+      if (deps.packageAdmin) await initializePolicy()
+      else await bootDefaultHelpers({ profileDir, manager: packageManager, initializePolicy })
+    } catch (error) {
+      // Helper inventory can encounter the same damaged lock before policy initialization.
+      // Keep the recovery-only admin surface available; never replace or trust the damaged state.
+      if (!(error instanceof PackageError) || error.legacyCode !== 'E_LOCK_MISMATCH') throw error
+    }
+    let packageActivation: PackageActivationAdapter | undefined
+    const deferredActivation = deferPackageActivation(() => packageActivation)
+    // Mirrors deferredActivation above: defaultPackageAdmin.service is constructed synchronously,
+    // before startProductionSupervisor awaits runtime.initialize() and calls bindRuntimePins with the
+    // real adapter, so the Service instance needs a stable object that reads the closure variable
+    // lazily at call time rather than the (still-undefined) value captured at construction.
+    let packageRuntimePins: RuntimePinsAdapter | undefined
+    let packagePluginTree: CompositeTargetStore | undefined
+    let packageAgentResolver:
+      | ((profile: string, ref: string) => Promise<import('@agnes/protocol').AgentPlan>)
+      | undefined
+    let packageWorkerGeneration: (() => number | undefined) | undefined
+    let packagePluginTreePublisher:
+      | ((artifact: RuntimeTargetArtifact, liveConfig?: boolean) => Promise<void>)
+      | undefined
+    let packageClientServiceCall:
+      | ((
+          input: ClientModuleServiceCallParams & Readonly<{ packageId: string; extension: string }>,
+        ) => Promise<ExtensionCallResult>)
+      | undefined
+    let packageClientEffectCall:
+      | ((
+          input: ClientModuleEffectCallParams & Readonly<{ packageId: string; extension: string }>,
+          authority: PackageAdminAuthority,
+        ) => Promise<ExtensionCallResult>)
+      | undefined
+    const deferredPins = deferredRuntimePins(() => packageRuntimePins)
+    const packageOperations = new FilePackageOperationStore(join(scope.daemonDir, 'package-operations'))
+    const localExamplesCatalog = await discoverLocalExamples(scope.workspace)
+    // An explicitly injected resource service owns its own durable recovery; the default store
+    // is recovered only after its service-worker adapters are installed in startSupervisor.
+    const resourceService = deps.resources?.service
+    if (resourceService) await resourceService.recover()
+    const defaultPackageAdmin = {
+      service: createPackageAdminService({
+        resolveAgent: async (profile, ref) => {
+          if (!packageAgentResolver) throw rpcError('CAPABILITY_DENIED')
+          return packageAgentResolver(profile, ref)
+        },
+        authoringHome: scope.home,
+        manager: packageManager,
+        profileDirectory: packageProfileDirectory,
+        operations: packageOperations,
+        ...(localExamplesCatalog ? { catalog: localExamplesCatalog } : {}),
+        activation: deferredActivation,
+        runtimePins: deferredPins,
+        pluginTree: () => packagePluginTree,
+        pluginTreePublisher: async (artifact, liveConfig) => {
+          const publish = packagePluginTreePublisher
+          if (!publish) throw new Error('E_PACKAGE_STATE: runtime target publisher is unavailable')
+          await publish(artifact, liveConfig)
+        },
+        workerGeneration: () => packageWorkerGeneration?.(),
+        clientServiceCall: async (input) => {
+          if (!packageClientServiceCall) throw rpcError('CAPABILITY_DENIED')
+          return await packageClientServiceCall(input)
+        },
+        clientEffectCall: async (input, authority) => {
+          if (!packageClientEffectCall) throw rpcError('CAPABILITY_DENIED')
+          return await packageClientEffectCall(input, authority)
+        },
+        clientModules: createClientModuleRegistry({
+          composition: () =>
+            profile.composition
+              ? resolveComposition(profile, {
+                  preset: compositionPreset(profile, profile.presets.default),
+                }).selection
+              : undefined,
+          snapshotDirectory: (profileName) => join(scope.daemonDir, 'client-modules', profileName),
+          runtimeArtifacts: () => runtimeArtifactsFromStore(packagePluginTree, packageWorkerGeneration?.()),
+        }),
+      }),
+    }
+
+    const { record: audit, close: flushAudit } = openDaemonLogs(scope.dataDir)
+    // An injected startProduction must not serve clients before the boundary ends; production
+    // startSupervisor ends it after rebuildClientModules, before the client socket listens.
+    const startProduction = bootVerification.bind(deps.startProduction ?? startProductionSupervisor)
+    const sup = await startProduction({
+      bootVerification,
+      audit,
+      config,
+      profile,
+      profileDir: scope.profileDir,
+      profileFile: scope.profileFile,
+      workspaceRoot: scope.workspace,
+      configuration,
+      reloadProfile,
+      inspectProfile: createProfileInspection({
+        profileDir: scope.profileDir,
+        workspace: scope.workspace,
+        configuration,
+        resolve: reloadProfile,
+      }),
+      ...(deps.workerExecPath ? { workerExecPath: deps.workerExecPath } : {}),
+      ...(deps.workerExecArgv ? { workerExecArgv: deps.workerExecArgv } : {}),
+      ...(deps.workerEntry ? { workerEntry: deps.workerEntry } : {}),
+      ...(remoteAuth ? { remoteAuth } : {}),
+      ...(deps.directory ? { ports: { directory: deps.directory } } : {}),
+      packageAdmin: deps.packageAdmin ?? defaultPackageAdmin,
+      ...(deps.resources ? { resources: deps.resources } : {}),
+      ...(!deps.packageAdmin
+        ? {
+            packageRuntime: {
+              manager: packageManager,
+              profileDirectory: packageProfileDirectory,
+              operations: packageOperations,
+              stateDirectory: join(scope.daemonDir, 'package-activation'),
+              ...(localExamplesCatalog ? { catalog: localExamplesCatalog } : {}),
+              bindAgentResolver(resolve) {
+                packageAgentResolver = resolve
+              },
+              bindReferences(reader: PackageReferenceFactReader) {
+                runtimeReferenceReader = reader
+              },
+              bindActivation(adapter: PackageActivationAdapter) {
+                packageActivation = adapter
+              },
+              bindRuntimePins(adapter: RuntimePinsAdapter) {
+                packageRuntimePins = adapter
+              },
+              bindPluginTree(store, workerGeneration, publish) {
+                packagePluginTree = store
+                packageWorkerGeneration = workerGeneration
+                packagePluginTreePublisher = publish
+              },
+              bindClientService(dispatcher) {
+                packageClientServiceCall = dispatcher
+              },
+              bindClientEffect(dispatcher) {
+                packageClientEffectCall = dispatcher
+              },
+            },
+          }
+        : {}),
+    }).catch(async (error) => {
+      await closeWithAudit(async () => {
+        throw error
+      }, flushAudit)
       throw error
-    }, flushAudit)
-    throw error
-  }
-  let closing: Promise<void> | undefined
-  let stopWatching = () => {}
-  const close = (): Promise<void> =>
-    (closing ??= (async () => {
-      stopWatching()
-      // Remove the generation-bound descriptor while the supervisor still owns its lock. A new
-      // daemon can therefore never be erased by cleanup from an older process.
+    })
+    // Normally already closed by startSupervisor; an injected startProduction may not close it.
+    await bootVerification.end()
+    let socketFailure: Error | undefined
+    void sup.failed?.then((error) => {
+      socketFailure = error
+    })
+    try {
+      await (deps.publishDiscovery ?? publishDaemonDiscovery)(scope, {
+        owner: sup.owner,
+        socketPath: sup.socketPath,
+        profileHash: profile.hash,
+        ...(localWeb && sup.ws ? { web: { ...sup.ws, origin: localWeb.origin } } : {}),
+      })
+      if (socketFailure) throw socketFailure
+    } catch (error) {
       await (deps.removeDiscovery ?? removeDaemonDiscovery)(scope, sup.owner.generation).catch(
         () => undefined,
       )
-      await closeWithAudit(() => sup.close(), flushAudit)
-    })())
-  installSignals(close)
-  void sup.failed?.then(() => {
-    console.error('agnesd local listener failed; shutting down')
-    void close().then(
-      () => process.exit(1),
-      () => process.exit(1),
-    )
-  })
-  const windows = process.platform === 'win32' // guards-allow-platform: Windows graceful stop is delivered through the private generation-bound request.
-  if (windows)
-    stopWatching = watchWindowsStopRequest(scope.home, sup.owner, () => {
+      await closeWithAudit(async () => {
+        try {
+          await sup.close()
+        } catch (cleanup) {
+          throw new AggregateError([error, cleanup], 'daemon discovery and cleanup failed')
+        }
+        throw error
+      }, flushAudit)
+      throw error
+    }
+    let closing: Promise<void> | undefined
+    let stopWatching = () => {}
+    const close = (): Promise<void> =>
+      (closing ??= (async () => {
+        stopWatching()
+        // Remove the generation-bound descriptor while the supervisor still owns its lock. A new
+        // daemon can therefore never be erased by cleanup from an older process.
+        await (deps.removeDiscovery ?? removeDaemonDiscovery)(scope, sup.owner.generation).catch(
+          () => undefined,
+        )
+        await closeWithAudit(() => sup.close(), flushAudit)
+      })())
+    installSignals(close)
+    void sup.failed?.then(() => {
+      console.error('agnesd local listener failed; shutting down')
       void close().then(
-        () => process.exit(0),
+        () => process.exit(1),
         () => process.exit(1),
       )
     })
-  console.error(`agnesd listening on ${sup.socketPath}`)
-  if (sup.ws) console.error(`agnesd WebSocket listening on ${sup.ws.url}; bearer token available to launcher`)
+    const windows = process.platform === 'win32' // guards-allow-platform: Windows graceful stop is delivered through the private generation-bound request.
+    if (windows)
+      stopWatching = watchWindowsStopRequest(scope.home, sup.owner, () => {
+        void close().then(
+          () => process.exit(0),
+          () => process.exit(1),
+        )
+      })
+    console.error(`agnesd listening on ${sup.socketPath}`)
+    if (sup.ws)
+      console.error(`agnesd WebSocket listening on ${sup.ws.url}; bearer token available to launcher`)
+  } finally {
+    await bootVerification.end()
+  }
 }

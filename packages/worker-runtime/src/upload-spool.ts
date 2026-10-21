@@ -1,7 +1,8 @@
+import { closeSync } from 'node:fs'
 import { type FileHandle, mkdtemp, open, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createPrivateDirectorySync } from '@agnes/system-node'
+import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 
 /** Private, session-owned intake; never a workspace path or a published artifact. */
 export class UploadSpool {
@@ -15,7 +16,10 @@ export class UploadSpool {
       const directory = join(root, 'private')
       // Node modes do not establish a private Windows DACL. Harden before creating byte files.
       createPrivateDirectorySync(directory)
-      return new UploadSpool(root, await open(join(directory, 'bytes'), 'wx+', 0o600))
+      const path = join(directory, 'bytes')
+      // Establish the file's own protected DACL too; Node's mode only applies on POSIX.
+      closeSync(createPrivateFileSync(path))
+      return new UploadSpool(root, await open(path, 'r+'))
     } catch (error) {
       await rm(root, { recursive: true, force: true })
       throw error

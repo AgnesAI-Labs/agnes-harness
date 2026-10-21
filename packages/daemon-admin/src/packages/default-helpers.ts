@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { rebuildDesiredFromInventory } from '@agnes/daemon-foundation/composite-desired'
 import {
+  bundledPluginDigest,
   bundledPluginSource,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   hashDirectory,
@@ -142,7 +143,9 @@ export async function refreshDefaultHelpers(options: {
   previous(): RuntimeTargetArtifact | undefined
   publish(target: RuntimeTargetArtifact): Promise<void>
 }): Promise<void> {
-  let inventory = await options.manager.inventory(options.profileDir, { fresh: true })
+  // An ordinary read joins the boot verification boundary; only a committed update re-reads fresh.
+  let inventory = await options.manager.inventory(options.profileDir)
+  // Unchanged helpers stay listed so a target lost after an earlier commit is still republished.
   const refreshed: string[] = []
   for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
     const current = inventory.packages.find((pkg) => pkg.id === helper.id)
@@ -157,7 +160,9 @@ export async function refreshDefaultHelpers(options: {
     if (!bundled) throw new Error('Bundled helper source unavailable')
     // An unchanged release needs no staging copy or candidate inspection. This is a byte hash,
     // not a version/mtime shortcut; installed trust and policy came from the verified inventory.
-    if (hashDirectory(join(bundled.root, bundled.path)) !== current.entry.integrity) {
+    // The build-time digest stands in for hashing the shipped source; update still verifies it.
+    const release = bundledPluginDigest(bundled) ?? hashDirectory(join(bundled.root, bundled.path))
+    if (release !== current.entry.integrity) {
       const source = parseSource(helper.ref)
       const preview = await options.manager.inspect(options.profileDir, source)
       if (
@@ -191,7 +196,7 @@ export async function refreshDefaultHelpers(options: {
   if (!refreshed.length) return
   // Publish the complete release once. Failed publication leaves the installed versions available
   // for the next boot to retry, including unchanged packages whose target was never published.
-  inventory = await options.manager.inventory(options.profileDir, { fresh: true })
+  // `inventory` is the read after the last committed update, or the first read when none ran.
   const previous = options.previous()
   let target = previous
   for (const packageId of refreshed)

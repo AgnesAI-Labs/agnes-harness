@@ -25,6 +25,47 @@ describe('Renderer differential output', () => {
     expect(screen.lines.slice(0, 3)).toEqual(['ZZZ', 'ccc', 'ZZZ'])
   })
 
+  // A row that animates beside static text (the welcome's wordmark and identity) is rewritten every
+  // frame. Erasing it first, or presenting the frame piecemeal, shows the static text flashing.
+  it('rewrites a changed row in place and presents the frame atomically', async () => {
+    const term = new FakeTerminal({ columns: 10, rows: 5 })
+    const row = new Text('aaa')
+    const r = new Renderer(term, new VStack([row]))
+    r.start()
+    const first = term.writes.length
+    row.set('ccc')
+    r.renderNow()
+    const frame = term.writes.slice(first).join('')
+    expect(frame).not.toContain('\x1b[2K')
+    expect(frame.indexOf('ccc')).toBeGreaterThan(-1)
+    expect(frame.indexOf('ccc')).toBeLessThan(frame.indexOf('\x1b[K'))
+    expect(frame.startsWith('\x1b[?2026h')).toBe(true)
+    expect(frame.endsWith('\x1b[?2026l')).toBe(true)
+    // A shorter row leaves nothing of the old one behind.
+    row.set('c')
+    r.renderNow()
+    const screen = await emulate(term, 10, 5)
+    expect(screen.lines[0]).toBe('c')
+  })
+
+  it('does not erase after a row that fills the terminal width, and clears the tail of a shorter one', async () => {
+    const term = new FakeTerminal({ columns: 6, rows: 3 })
+    const row = new Text('abcdef', { wrap: false })
+    const r = new Renderer(term, new VStack([row]))
+    r.start()
+    const first = term.writes.length
+    row.set('uvwxyz')
+    r.renderNow()
+    const full = term.writes.slice(first).join('')
+    expect(full).toContain('uvwxyz')
+    expect(full).not.toContain('\x1b[K')
+    expect((await emulate(term, 6, 3)).lines[0]).toBe('uvwxyz')
+    row.set('ab')
+    r.renderNow()
+    expect(term.writes.slice(first).join('')).toContain('ab\x1b[K')
+    expect((await emulate(term, 6, 3)).lines[0]).toBe('ab')
+  })
+
   it('positions the hardware cursor at CURSOR_MARKER', async () => {
     const term = new FakeTerminal({ columns: 10, rows: 3 })
     const r = new Renderer(term, new VStack([new Text('x'), new Text(`ab${CURSOR_MARKER}`, { wrap: false })]))
