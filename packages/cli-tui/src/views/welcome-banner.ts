@@ -3,6 +3,7 @@ import type { Colour } from '../ansi.js'
 import { slashCommand } from '../commands.js'
 import { type Component, escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
+import type { KeyName } from '../keys.js'
 import { type ExtendedKey, tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
@@ -62,6 +63,23 @@ const START_COMMANDS = [
   ['/skills', 'welcome.cmdSkills'],
 ] as const
 
+/** A key as the user presses it, spelled from the keymap's own names so a rename cannot drift. */
+const keyLabel = (name: KeyName): string => name.replace('-', '+')
+
+/**
+ * The built-in tips. Each one names something that works in this build; `fresh` marks a feature new
+ * in the current release and earns the NEW tag.
+ */
+export function welcomeTips(locale: string): { text: string; fresh: boolean }[] {
+  return [
+    { text: tt('welcome.tipToolDetails', locale, { key: keyLabel('ctrl-o') }), fresh: false },
+    { text: tt('welcome.tipQueue', locale, { key: keyLabel('alt-enter') }), fresh: false },
+    { text: tt('welcome.tipMention', locale), fresh: false },
+    { text: tt('welcome.tipTheme', locale), fresh: false },
+    { text: tt('welcome.tipContext', locale), fresh: false },
+  ]
+}
+
 /** What the banner knows beyond its constructor options; every field may be missing at any time. */
 export type WelcomeFacts = {
   version?: string
@@ -70,7 +88,7 @@ export type WelcomeFacts = {
   workspace?: { root: string; branch?: string; ahead?: number }
   session?: { id: string; generation: number }
   /** Free-form detail after the model, e.g. `reasoning high · 128K context`. */
-  modelDetail?: string
+  modelDetail?: string | undefined
   resources?: { plugins?: number; skills?: number; mcp?: number }
   recent?: readonly { at: number; title: string }[]
   tip?: { text: string; fresh: boolean }
@@ -111,6 +129,8 @@ export class WelcomeBanner implements Component {
       locale?: string
       /** Terminal height; omitted means tall enough for any layout. */
       rows?: () => number
+      /** Rows below the timeline that the welcome must leave free; the timeline's own default when omitted. */
+      reserved?: () => number
       /** Wall clock (ms) for the greeting and relative times; injected by tests. */
       now?: () => number
     },
@@ -146,7 +166,8 @@ export class WelcomeBanner implements Component {
     if (this.facts.returning) return this.returning(width)
     // The timeline keeps the bottom rows for the composer; a hero taller than what is left would lose
     // its top, so each tier sheds the tip, the recent list and then its spacing before giving way.
-    const room = rows === undefined ? Number.POSITIVE_INFINITY : rows - TIMELINE_RESERVED_ROWS
+    const room =
+      rows === undefined ? Number.POSITIVE_INFINITY : rows - (this.o.reserved?.() ?? TIMELINE_RESERVED_ROWS)
     const tiers: Tier[] =
       width >= 120 && (rows === undefined || rows >= 36)
         ? ['full', 'medium', 'narrow']

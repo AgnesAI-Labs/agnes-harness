@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ANSI_RE, createAnsi } from '../../src/tui/ansi.js'
 import { displayWidth } from '../../src/tui/terminal.js'
 import { TuiTheme, type TuiThemeName } from '../../src/tui/theme.js'
-import { WelcomeBanner, type WelcomeFacts } from '../../src/tui/views/welcome-banner.js'
+import { WelcomeBanner, type WelcomeFacts, welcomeTips } from '../../src/tui/views/welcome-banner.js'
 
 const BRANDING = { accent: '#5E57FE', mark: 'agnes', selfLabel: 'Agnes AI' }
 const NOW = new Date(2026, 9, 21, 20, 0, 0).getTime()
@@ -252,4 +252,12 @@ describe('returning visit', () => {
     })
     expect(text(acme.render(100))).not.toMatch(/[█▀▄]/)
   })
+})
+
+it('spells tip key names from the keymap and keeps each tip to one line', () => {
+  const tips = welcomeTips('en').map((tip) => tip.text)
+  expect(tips.join('\n')).toContain('Press ctrl+o to expand')
+  expect(tips.join('\n')).toContain('Press alt+enter while a turn runs')
+  expect(tips.every((tip) => !tip.includes('{') && !tip.includes('\n'))).toBe(true)
+  expect(welcomeTips('zh-CN').map((tip) => tip.text)).not.toEqual(tips)
 })

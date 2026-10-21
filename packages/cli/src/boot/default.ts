@@ -69,6 +69,7 @@ export async function bootDefault(
     profileName: backend.scope.profile,
     resolvedProfileHash: backend.discovery.profileHash,
     bootMs: performance.now() - started,
+    ...(backend.cold !== undefined ? { daemonCold: backend.cold } : {}),
     form: 'connect',
     // The SDK closes only this socket and its own sessions; the daemon keeps running.
     close: () => client.close(),

@@ -776,6 +776,105 @@ it('paints the startup session card, compact header and editor surface once acro
   }
 })
 
+it('fills the welcome after the first frame, omits what fails, and condenses on a return visit', async () => {
+  const state = mkdtempSync(join(tmpdir(), 'agh-welcome-'))
+  const seen = join(state, 'tui-welcome.json')
+  const launch = async (resources: boolean) => {
+    const { endpoint } = fakeSessionEndpoint()
+    endpoint
+      .on('_agnes/v1/session.list', () => ({
+        items: [
+          {
+            sessionId: 'x1',
+            createdAt: new Date(Date.now() - 7_200_000).toISOString(),
+            lastSeq: 3,
+            generation: 1,
+            preset: null,
+            title: 'Earlier work',
+          },
+        ],
+      }))
+      .on('_agnes/v1/session.tools', () => {
+        if (!resources) throw new Error('unavailable')
+        const on = (n: number) =>
+          Array.from({ length: n }, (_, i) => ({ id: `i${i}`, enabled: true, reasons: [] }))
+        return {
+          sessionId: 'x',
+          tools: [],
+          resources: [],
+          capabilities: {
+            preset: 'standard',
+            bundles: [],
+            codePin: { legacy: false, packages: [] },
+            loop: { value: { id: 'l', version: '1' }, source: { layer: 'default', name: 'x' } },
+            modelRoutes: { value: null, source: { layer: 'default', name: 'x' } },
+            permissions: {
+              preset: 'standard',
+              policy: 'p',
+              toolRuntime: 't',
+              readOnly: false,
+              source: { layer: 'default', name: 'x' },
+            },
+            sandbox: { provider: 'none', onUnavailable: 'allow', source: { layer: 'default', name: 'x' } },
+            compaction: { engine: null, source: { layer: 'default', name: 'x' } },
+            persistence: { provider: 'sqlite', source: { layer: 'default', name: 'x' } },
+            tools: [],
+            mcp: [],
+            skills: [...on(3), { id: 'off', enabled: false, reasons: [] }],
+            modelAdapters: [],
+            childEngines: [],
+            childModels: [],
+            uiModules: [],
+            surfaces: [],
+            packages: [],
+            plugins: on(2),
+            selectedModelAdapters: [],
+          },
+        }
+      })
+    const client = createClient({ transport: { kind: 'inproc', endpoint } })
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 100, rows: 30 })
+    const app = new TuiApp({
+      session,
+      term,
+      profile: 'local-dev',
+      preset: 'standard',
+      model: 'm1',
+      version: '0.9.3',
+      boot: { ms: 1500, cold: true },
+      welcomeSeenPath: seen,
+    })
+    await app.start()
+    return { app, client, term }
+  }
+  try {
+    const first = await launch(true)
+    await vi.waitFor(async () => {
+      const text = (await screenOf(first.term, 100, 30)).join('\n')
+      expect(text).toContain('v0.9.3')
+      expect(text).toContain('daemon cold 1.50s')
+      expect(text).toContain('◉ 2 plugins   ◉ 3 skills   ◉ 0 MCP servers')
+      expect(text).toMatch(/2h {2}Earlier work/)
+    })
+    await first.app.stop()
+    await first.client.close()
+    // The same version has now been welcomed: the next launch is the three-row header, and a
+    // failing resource query only leaves its field out.
+    const second = await launch(false)
+    await vi.waitFor(async () => {
+      const text = (await screenOf(second.term, 100, 30)).join('\n')
+      expect(text).toContain('welcome back')
+      expect(text).toContain('last: Earlier work · /resume')
+    })
+    expect((await screenOf(second.term, 100, 30)).join('\n')).not.toContain('plugins')
+    await second.app.stop()
+    await second.client.close()
+  } finally {
+    rmSync(state, { recursive: true, force: true })
+  }
+})
+
 it('uses the projected model in both empty-state card and composer when argv did not pin one', async () => {
   const projected = {
     ...EMPTY_TIMELINE,

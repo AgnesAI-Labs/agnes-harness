@@ -46,6 +46,8 @@ export type LocalBackend = {
   discovery: DaemonDiscovery
   socketPath: string
   web?: LocalBackendWeb
+  /** True when this invocation had to start the daemon; false when it attached to a running one. */
+  cold?: boolean
   /** The initialized readiness client, present only when `retainClient` was requested. */
   client?: Client
   /** Releases the retained client, if any; Web launchers have nothing else to release. */
@@ -688,6 +690,7 @@ export async function ensureLocalBackend(options: EnsureLocalBackendOptions = {}
       socketPath: discovery.socketPath,
       ...(web ? { web } : {}),
       ...(retained ? { client: retained } : {}),
+      cold: started.child !== undefined,
       closeClient: async () => {
         await retained?.close()
       },

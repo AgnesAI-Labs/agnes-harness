@@ -185,7 +185,7 @@ function renderComputerUseDoctor(report: ComputerUseDoctorResult): string {
 const MODEL_ARGS = /^([A-Za-z_]+)\s+([^/\s]+)\/(\S+?)(?:\s+(off|minimal|low|medium|high|xhigh|max))?$/
 
 /** `resumableFrom` (the picker): only other sessions this TUI's workspace can load. */
-async function listSessionChoices(session: Session, resumableFrom?: string): Promise<SessionChoice[]> {
+export async function listSessionChoices(session: Session, resumableFrom?: string): Promise<SessionChoice[]> {
   const items: Awaited<ReturnType<typeof session.client.session.list>>['items'] = []
   const cursors = new Set<string>()
   let cursor: string | undefined
