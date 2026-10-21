@@ -39,7 +39,7 @@
 
 `coordinator`（研发协调员）带全部 15 个 `devboard_*` 工具、读写与 shell、`tool_search` / `tool_describe`、`subagent_spawn` / `subagent_collect`，以及技能 `devboard-playbook`（全流程、角色提示词、文件约定、门的规则）。预设 `devboard` 允许在工作区内编辑与写入；所有 shell 命令（含 `node --test`、`node server.js`）都会请人确认，因为它们运行的是智能体自己写的代码；五个声明式可委派角色（`requirements`、`architect`、`developer`、`reviewer`、`tester`）在新鲜子会话中共用父工作目录，权限取角色与父快照交集。代码评审员只读，其余角色可编辑项目文件；均没有 shell、看板或审批/签署能力，命令交回协调员执行。所有角色全过程中文叙述（用户明确选其他语言时遵从用户），业务状态用中文。
 
-预设显式申请经审阅的 `sandbox.loopback_serve`：强制 L1、`on_unavailable: deny`、外网白名单为空，命令仍需审批。受支持的 macOS 沙箱允许本地 TCP 服务；不支持的沙箱后端拒绝该能力，不降级。现场演示须使用支持此能力的平台构建。
+预设显式申请经审阅的 `sandbox.loopback_serve`：强制 L1、`on_unavailable: deny`、外网白名单为空，命令仍需审批。受支持的 macOS Host 先绑定 loopback socket，再传入 `AGH_LOOPBACK_FD` 与 `AGH_LOOPBACK_URL`；生成的 Node 服务必须用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 接管，并在就绪后输出该 URL。无 activation 的普通部署才使用 `127.0.0.1` / `--port` 分支。命令自行 bind 或主动连接仍被拒绝；不支持的沙箱后端拒绝该能力，不降级。现场演示须使用支持此能力的平台构建。
 
 现场项目「车门健康监测看板」是无依赖的 Node 网页应用，文件写在工作区的 `devboard-projects/<项目编号>/`。角色子智能体只处理工作区文件，看板只由研发协调员登记。每过一道门，研发协调员提交评审后结束本轮；人在看板审批，再点「继续推进」，草稿里带上门编号，由人点发送。
 
@@ -54,12 +54,12 @@
    - 门 2 需求（项目经理）：出现 typed `requirements` 任务卡与子角色编写的 `docs/SRS.md`、`docs/RTM.md`，追溯页出现 CUS/SYS/SWR。
    - 门 3 设计（技术负责人）：typed `architect` 子角色；`docs/SAD.md`，DES 挂到 SWR。
    - 开发实现：typed `developer` 与独立只读 `reviewer` 子角色；`src/`、`server.js`、`test/`；修复并经独立复核后关闭意见，自动通过。
-   - 门 4 测试（质量负责人）：typed `tester` 只依据 SRS 与公开 HTTP 合同编写验收测试；协调员通过真实 TCP listener 执行，在「缺陷与测试」和 `docs/TEST-REPORT.md` 记录命令、cwd、计数与缺口。内部处理函数调用不算验收通过。
-   - 门 5 发布验收（质量负责人）：`docs/RELEASE-NOTE.md`；真实 HTTP 就绪检查与浏览器线路→车辆→车门、故障排行检查通过后登记应用，项目页出现「打开应用」。保留后台 job 编号，演示后停止。
+   - 门 4 测试（质量负责人）：typed `tester` 只依据 SRS 与公开 HTTP 合同编写验收测试；协调员运行单元测试，演示者在命令沙箱外的真实浏览器执行测试角色的公开 HTTP/页面检查，通过 activation listener 验收；在「缺陷与测试」和 `docs/TEST-REPORT.md` 记录命令、cwd、计数与缺口。内部处理函数调用不算验收通过。
+   - 门 5 发布验收（质量负责人）：`docs/RELEASE-NOTE.md`；真实 HTTP 就绪检查与浏览器线路→车辆→车门、故障排行检查通过后按实际 `AGH_LOOPBACK_URL` 登记应用，项目页出现「打开应用」。保留后台 job 编号，演示后停止。
 
 真实模型跑完全流程可能需要几十分钟。
 
-命令需要正确的工作目录：shell 默认 cwd 是工作区根目录，传真实存在的测试文件，如 `node --test devboard-projects/<项目编号>/test/unit.test.js devboard-projects/<项目编号>/test/acceptance.test.js`；或把 shell `cwd` 设为 `devboard-projects/<项目编号>/` 后用 `node --test` 自动发现。不要把 `test/` 目录作为位置参数。启动 `node server.js --port <空闲端口>` 同样设项目 cwd，只绑定 `127.0.0.1`，禁止使用 4177/4178。无需外网或安装依赖。
+命令需要正确的工作目录：shell 默认 cwd 是工作区根目录，传真实存在的测试文件，如 `node --test devboard-projects/<项目编号>/test/unit.test.js`；或把 shell `cwd` 设为 `devboard-projects/<项目编号>/` 后用 `node --test` 自动发现。不要把 `test/` 目录作为位置参数。启动 `node server.js --port <空闲端口>` 同样设项目 cwd；AGH 中接管 Host listener 并读取实际 URL，普通部署才绑定 `127.0.0.1`。`--port` 不能指定 Host 分配的端口。禁止使用 4177/4178，无需外网或安装依赖。命令内 `curl` / `fetch` 不能主动连接此 listener，公开 HTTP 验收由真实浏览器执行，结果与 `node --test` 单元测试分别计数。
 
 委派失败时标注「角色独立性未满足」，保留质量意见；协调员自审不能替代独立角色。监听或浏览器失败仍是验收阻断项。不得仅因移交后续阶段关闭意见，也不得登记未经验证的 URL。
 
