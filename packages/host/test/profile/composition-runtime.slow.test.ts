@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -664,6 +665,43 @@ it('restores and migrates pinned preset and bundle compositions after a cold reo
     await bundledResume.close()
     await host.releaseSessionGeneration?.(resumed.key)
     expect(bindings.read(resumed.key)).toBeUndefined()
+  } finally {
+    await host?.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 180_000)
+
+it('publishes a restarted worker’s delivered target on each composition’s earlier generation', async () => {
+  const { root, options } = presetCompositionFixture()
+  // Like the daemon's, this target names no Host-default rows, so it differs from every boot target.
+  const delivered = buildCompleteRuntimeTarget({ rows: [], resources: { mcp: [], skills: {} } }).target
+  const generationsDir = join(root, 'profiles', 'local-dev', '.runtime-generations')
+  const durable = () => ({
+    generations: readdirSync(generationsDir)
+      .filter((name) => /^[a-f0-9-]{36}$/.test(name))
+      .sort(),
+    heads: readdirSync(join(generationsDir, 'heads'))
+      .sort()
+      .map((name) => readFileSync(join(generationsDir, 'heads', name), 'utf8')),
+  })
+  let host: Awaited<ReturnType<typeof createTestHost>>['host'] | undefined
+  try {
+    host = (await createTestHost(options)).host
+    await host.applyRuntimeTarget(delivered)
+    // The writer preset selects another composition and profile, so it opens its own container.
+    const writer = await host.createSession({ key: 'writer-session', preset: 'writer', cwd: root })
+    const pinned = writer.pluginGenerationId
+    await writer.close()
+    await host.close()
+    const before = durable()
+    expect(before.heads).toHaveLength(2)
+    host = (await createTestHost(options)).host
+    await host.applyRuntimeTarget(delivered)
+    const resumed = await host.createSession({ key: 'writer-session', cwd: root })
+    expect(resumed.pluginGenerationId).toBe(pinned)
+    await resumed.close()
+    await host.close()
+    expect(durable()).toEqual(before)
   } finally {
     await host?.close()
     rmSync(root, { recursive: true, force: true })

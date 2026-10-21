@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { approvalKind } from '@agnes/extension-api/seams'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import { decodeRuntimeTargetArtifact, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it } from 'vitest'
@@ -415,5 +416,81 @@ it('starts a later worker on the recorded head instead of snapshotting the same 
     expect(() => store.read(duplicate.id)).toThrow('E_GENERATION_SNAPSHOT_MISSING')
   } finally {
     await second.host.close()
+  }
+})
+
+it('publishes a delivered target on the generation an earlier worker recorded for it', async () => {
+  const root = scratch()
+  // Like the daemon's, this target names no Host-default rows, so it differs from every boot target.
+  const delivered = buildCompleteRuntimeTarget({ rows: [], resources: { mcp: [], skills: {} } }).target
+  const generations = () =>
+    readdirSync(snapshotsOf(root).root)
+      .filter((name) => /^[a-f0-9-]{36}$/.test(name))
+      .sort()
+  const first = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  let published: string | undefined
+  try {
+    await first.host.applyRuntimeTarget(delivered)
+    published = first.host.lastChange?.()?.generationId
+    await (await first.host.createSession({ key: 'first', cwd: root })).close()
+  } finally {
+    await first.host.close()
+  }
+  const before = generations()
+  expect(snapshotsOf(root).session('first')?.generationId).toBe(published)
+  const second = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  try {
+    // The new worker snapshots its own boot target first; the delivery then matches the earlier one.
+    await second.host.applyRuntimeTarget(delivered)
+    expect(second.host.lastChange?.()).toMatchObject({ outcome: 'in-place', generationId: published })
+    const resumed = await second.host.createSession({ key: 'first', cwd: root })
+    expect(resumed.pluginGenerationId).toBe(published)
+    await resumed.close()
+  } finally {
+    await second.host.close()
+  }
+  expect(generations()).toEqual(before)
+})
+
+it('publishes afresh rather than on a generation another Host in this process still runs', async () => {
+  const root = scratch()
+  const delivered = buildCompleteRuntimeTarget({ rows: [], resources: { mcp: [], skills: {} } }).target
+  const first = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  let second: Awaited<ReturnType<typeof createTestHost>> | undefined
+  try {
+    await first.host.applyRuntimeTarget(delivered)
+    const running = first.host.lastChange?.()?.generationId
+    // A second worker on the same composition snapshots its boot target over the first one's head.
+    second = await createTestHost({ dataDir: root, disableSessionTitle: true })
+    await second.host.applyRuntimeTarget(delivered)
+    const published = second.host.lastChange?.()?.generationId
+    expect(published).toBeDefined()
+    expect(published).not.toBe(running)
+  } finally {
+    await second?.host.close()
+    await first.host.close()
+  }
+})
+
+it('never publishes on a generation this host still runs for an open session', async () => {
+  const root = scratch()
+  const delivered = buildCompleteRuntimeTarget({ rows: [], resources: { mcp: [], skills: {} } }).target
+  const { host } = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  try {
+    const boot = host.runtimeTargetSnapshot?.()
+    if (!boot) throw new Error('test host has no runtime target')
+    await host.applyRuntimeTarget(delivered)
+    const open = await host.createSession({ key: 'open', cwd: root })
+    const pinned = open.pluginGenerationId
+    // A code change with a bound session forks a container; the open session stays on the old one.
+    await host.applyRuntimeTarget(boot)
+    expect(host.lastChange?.()).toMatchObject({ outcome: 'forked' })
+    // Publishing the first target again matches the generation the open session still runs on.
+    await host.applyRuntimeTarget(delivered)
+    expect(host.lastChange?.()?.generationId).not.toBe(pinned)
+    expect(host.kernel.get(open.key)).toBe(open)
+    await open.close()
+  } finally {
+    await host.close()
   }
 })

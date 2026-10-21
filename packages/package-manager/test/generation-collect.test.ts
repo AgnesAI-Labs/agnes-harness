@@ -16,6 +16,7 @@ import { SEAM_KINDS } from '@agnes/extension-api/seams'
 import { buildRuntimeTarget, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RuntimeGenerationSnapshotStore } from '../src/runtime-snapshots-generations.js'
+import { generationResourcesDigest } from '../src/runtime-snapshots-resources.js'
 
 const homes: string[] = []
 afterEach(() => {
@@ -156,6 +157,89 @@ describe('durable composition head', () => {
   })
 })
 
+describe('reusing an identical generation for a publication', () => {
+  const target = (revision: string) =>
+    buildRuntimeTarget({
+      rows: [],
+      resources: { mcp: [], skills: {} },
+      resourceRevision: revision.repeat(64).slice(0, 64),
+      compositeRevision: 'b'.repeat(64),
+    })
+  const seams = { formatVersion: 1 as const, selections: SELECTIONS }
+  const resources = { data: { rows: [] }, directories: [] }
+  const create = (store: RuntimeGenerationSnapshotStore, revision: string) =>
+    store.create(target(revision), [], 'compat', [{ id: 'pkg', version: '1.0.0' }], resources, seams)
+  const expected = (revision: string) => ({
+    artifactDigest: encodeRuntimeTargetArtifact(target(revision)).digest,
+    compatibility: 'compat',
+    packages: [{ id: 'pkg', version: '1.0.0' }],
+    resourcesDigest: generationResourcesDigest(resources),
+    seams,
+  })
+  /** A worker that boots on a snapshot of its own target replaces the previous worker's head. */
+  const restarted = (home: string, previous: string) => {
+    const worker = new RuntimeGenerationSnapshotStore(home)
+    const boot = create(worker, 'c')
+    worker.setHead('composition-a', boot.id)
+    expect(worker.headId('composition-a')).not.toBe(previous)
+    return worker
+  }
+
+  it('takes the head it replaced when the publication matches it, and adopts it', () => {
+    const { store } = fixture()
+    const previous = create(store, 'a')
+    store.setHead('composition-a', previous.id)
+    const worker = restarted(join(store.root, '..'), previous.id)
+    const reused = worker.reusableGeneration('composition-a', expected('a'), new Set())
+    expect(reused?.id).toBe(previous.id)
+    expect(readdirSync(join(store.root, previous.id, 'adopters'))).toHaveLength(2)
+  })
+
+  it('takes a generation a session pin names', () => {
+    const { store } = fixture()
+    const pinned = create(store, 'a')
+    store.pin('session-a', pinned.id, [])
+    const worker = restarted(join(store.root, '..'), pinned.id)
+    expect(worker.reusableGeneration('composition-a', expected('a'), new Set())?.id).toBe(pinned.id)
+    // The caller already runs it: a publication must not take over that generation's identity.
+    expect(worker.reusableGeneration('composition-a', expected('a'), new Set([pinned.id]))).toBeUndefined()
+  })
+
+  it.each([
+    ['target digest', { artifactDigest: expected('d').artifactDigest }],
+    ['compatibility', { compatibility: 'other' }],
+    ['package list', { packages: [{ id: 'pkg', version: '1.0.1' }] }],
+    ['resources digest', { resourcesDigest: generationResourcesDigest({ data: {}, directories: [] }) }],
+    ['seam selections', { seams: { ...seams, selections: { ...SELECTIONS, approval: { provider: 'x' } } } }],
+  ])('snapshots afresh when the recorded %s does not match', (_field, change) => {
+    const { store } = fixture()
+    const previous = create(store, 'a')
+    store.setHead('composition-a', previous.id)
+    const worker = restarted(join(store.root, '..'), previous.id)
+    expect(
+      worker.reusableGeneration('composition-a', { ...expected('a'), ...change }, new Set()),
+    ).toBeUndefined()
+    expect(worker.reusableGeneration('composition-a', expected('a'), new Set())?.id).toBe(previous.id)
+  })
+
+  it('skips a candidate with accepted live configuration or a damaged record, without adopting it', () => {
+    const { store } = fixture()
+    const configured = create(store, 'a')
+    store.saveLiveConfig(configured.id, encodeRuntimeTargetArtifact(target('a')))
+    store.pin('session-a', configured.id, [])
+    const damaged = create(store, 'a')
+    store.pin('session-b', damaged.id, [])
+    writeFileSync(join(store.root, damaged.id, 'resources', 'resources.json'), '{}')
+    const worker = restarted(join(store.root, '..'), damaged.id)
+    expect(worker.reusableGeneration('composition-a', expected('a'), new Set())).toBeUndefined()
+    for (const id of [configured.id, damaged.id])
+      expect(readdirSync(join(store.root, id, 'adopters'))).toHaveLength(1)
+    const intact = create(store, 'a')
+    store.pin('session-c', intact.id, [])
+    expect(worker.reusableGeneration('composition-a', expected('a'), new Set())?.id).toBe(intact.id)
+  })
+})
+
 /**
  * Two stores over one profile stand in for two processes. The collector's liveness probe is the stop
  * point: it answers "gone" for the recorded adopter, but only when the test opens the numbered gate, so
@@ -267,6 +351,34 @@ describe('adopt, pin and collect across stores', () => {
         expected('a'),
       ),
     ).toBeUndefined()
+    stop(2).open()
+    expect(await collecting).toEqual([old.id])
+    expect(existsSync(join(worker.root, old.id))).toBe(false)
+  })
+
+  it('keeps a generation a publication reused after the collector checked it', async () => {
+    const { worker, collector, old, newer, stop } = scenario()
+    // This worker once recorded the old generation as its head, so a publication may take it again.
+    worker.setHead('composition-a', old.id)
+    worker.setHead('composition-a', newer.id)
+    const collecting = collector.collect(new Set())
+    await stop(1).reached
+    expect(worker.reusableGeneration('composition-a', expected('a'), new Set())?.id).toBe(old.id)
+    stop(1).open()
+    stop(2).open()
+    expect(await collecting).toEqual([])
+    expect(worker.read(old.id).id).toBe(old.id)
+  })
+
+  it('reuses nothing once the generation is claimed', async () => {
+    const { worker, collector, old, newer, stop } = scenario()
+    worker.setHead('composition-a', old.id)
+    worker.setHead('composition-a', newer.id)
+    const collecting = collector.collect(new Set())
+    await stop(1).reached
+    stop(1).open()
+    await stop(2).reached
+    expect(worker.reusableGeneration('composition-a', expected('a'), new Set())).toBeUndefined()
     stop(2).open()
     expect(await collecting).toEqual([old.id])
     expect(existsSync(join(worker.root, old.id))).toBe(false)
