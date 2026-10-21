@@ -16,6 +16,7 @@ import { mountReleasePresentations } from './release-presentations-fixture.js'
 
 export type WebPageName = 'index.html' | 'admin.html' | 'resources.html'
 export type WebDomFixtureOptions = {
+  clientProfileCaller?: Parameters<typeof startClientModules>[0]['clientProfileCaller']
   agnes?: AgnesClient
   composer?: Partial<ComposerRegionOptions>
   sidebar?: { state?: SidebarState; actions?: Partial<SidebarActions> }
@@ -57,6 +58,7 @@ export async function mountRenderedIndex(options: WebDomFixtureOptions = {}): Pr
     // Tests may supply a synthetic client for shell operations such as profile approvals.
     // The separate roster source keeps this fixture independent of the daemon.
     agnes: options.agnes ?? ({} as AgnesClient),
+    ...(options.clientProfileCaller ? { clientProfileCaller: options.clientProfileCaller } : {}),
     rosterSource: { list: async () => ({ revision: '', modules: [], statuses: [] }) },
     panelContainer: hosts.panels,
     sidebarContainer: hosts.sidebar,

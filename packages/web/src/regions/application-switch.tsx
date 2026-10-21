@@ -34,6 +34,7 @@ export function ApplicationSwitch({ locale }: { locale: LocaleService }) {
       if (live.current) setBusy(false)
     }
   }
+  if (!adopted) return null
   return (
     <div className="application-footer">
       {adopted && (
@@ -52,11 +53,11 @@ export function ApplicationSwitch({ locale }: { locale: LocaleService }) {
       <a
         className="application-footer-item"
         href="?settings=application"
-        aria-label={adopted ? tr('Switch application', '切换应用') : tr('Applications', '应用')}
+        aria-label={tr('Switch application', '切换应用')}
         data-testid="application-switch"
       >
         <Icon name="puzzle" />
-        <span>{adopted ? tr('Switch application', '切换应用') : tr('Applications', '应用')}</span>
+        <span>{tr('Switch application', '切换应用')}</span>
       </a>
       {error && (
         <p role="alert">

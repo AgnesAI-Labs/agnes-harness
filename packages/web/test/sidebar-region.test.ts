@@ -85,7 +85,7 @@ describe('rendered sidebar region', () => {
     expect([...document.querySelectorAll('[role=menuitem]')].map((item) => item.textContent)).toContain(
       'Show in Explorer',
     )
-    document.querySelector<HTMLButtonElement>('[role="menuitem"]')?.click()
+    getByRole(document.body, 'menuitem', { name: 'Rename' }).click()
     expect(sessionAction).toHaveBeenCalledWith('rename', 'one', '会话 one', expect.any(HTMLElement))
     await vi.waitFor(() =>
       expect(sidebar?.querySelector('.session-menu-trigger')?.getAttribute('aria-expanded')).toBe('false'),

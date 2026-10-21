@@ -43,7 +43,8 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     // of the two hidden account page rows, plus the side-model list page's two glyphs. Adding an
     // account now renders with the loaded list, so the unloaded shell has no header-plus glyph.
     // Also includes the Agents link row's bot and chevron, and the host application footer's puzzle.
-    icon: ['svg', 44],
+    // The official footer has Settings only; application recovery controls appear after adoption.
+    icon: ['svg', 43],
     // 插件详情、资源详情和账户详情/新增都使用独立模态框。
     dialog: ['dialog', 9],
     'settings-pane': ['section', 3],

@@ -601,3 +601,101 @@
     }
   }
 }
+
+@layer app {
+  .profile-attention-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s16);
+    min-width: 0;
+    overflow-wrap: anywhere;
+    padding: 0;
+    font-size: var(--font-size-body);
+  }
+  .profile-attention-panel[hidden] {
+    display: none;
+  }
+  .profile-attention-panel :is(h3, p) {
+    margin: 0;
+  }
+  .profile-attention-panel h3 {
+    font-size: var(--font-size-body);
+    color: var(--agnes-text-secondary);
+  }
+  .profile-attention-group ul {
+    display: grid;
+    gap: var(--s8);
+    padding: 0;
+    margin: var(--s8) 0 0;
+    list-style: none;
+  }
+  .profile-attention-group a,
+  .profile-attention-panel [data-approval-key] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s8);
+    padding: var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    background: var(--agnes-bg-surface);
+  }
+  .profile-attention-group a {
+    color: var(--agnes-text-primary);
+    text-decoration: none;
+  }
+  .profile-attention-group a:hover {
+    background: var(--agnes-bg-hover);
+  }
+  .profile-attention-group a:focus-visible {
+    outline: 2px solid var(--agnes-brand-primary);
+    outline-offset: 2px;
+  }
+  .profile-attention-group a span {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .profile-attention-panel pre {
+    max-width: 100%;
+    overflow: auto;
+  }
+  .profile-attention-panel [role="alert"] {
+    color: var(--agnes-status-danger-text);
+  }
+  .profile-attention-panel [data-approval-key] h2 {
+    margin: 0;
+    font-size: var(--font-size-body);
+    line-height: 1.5;
+  }
+}
+
+@layer app {
+  .profile-attention-dialog .approval-actions {
+    margin-top: var(--s4);
+  }
+  .profile-decision-expiry {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+}
+
+@layer app {
+  /* This confirmation stays centered on narrow screens too, outside the navigation sheet. */
+  @media (max-width: 767px) {
+    .ant-modal-wrap:has(.profile-attention-dialog) {
+      align-items: center;
+      padding: var(--s12);
+    }
+    .ant-modal-root .profile-attention-dialog {
+      bottom: auto;
+      max-width: calc(100vw - var(--s24));
+    }
+    .ant-modal-wrap:has(.profile-attention-dialog) .agh-sheet-handle {
+      display: none;
+    }
+    .profile-attention-dialog .ant-modal-container,
+    .profile-attention-dialog .ant-modal-content {
+      max-height: calc(100dvh - var(--s24));
+      border-radius: var(--radius-modal);
+    }
+  }
+}

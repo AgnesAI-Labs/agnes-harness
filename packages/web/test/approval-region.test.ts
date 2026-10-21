@@ -1,11 +1,17 @@
 /** @vitest-environment happy-dom */
 
 import { Context } from '@agnes/cordis'
-import { type HostAgnesClient, LocaleService } from '@agnes/web-client'
+import {
+  type AgnesClientService,
+  type HostAgnesClient,
+  homeNavigation,
+  LocaleService,
+} from '@agnes/web-client'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgnesClient } from '../src/client-modules/boot.js'
+import * as adminApi from '../src/pages/admin-api.js'
 import { APPROVAL_SLOT } from '../src/region-slots.js'
 import { ProfileApprovals } from '../src/regions/profile-approvals.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
@@ -187,9 +193,13 @@ it.each(['en', 'zh-CN'] as const)(
       revision: 1,
       request: {
         owner: 'plugin/report',
+        sourcePackage: 'plugin/report',
         spec: {
           prompt: 'Publish report?',
-          subject: { report: 'reviewed-one' },
+          subject: {
+            report: 'reviewed-one',
+            presentation: { title: { en: 'Publish the reviewed report', 'zh-CN': '发布已审阅报表' } },
+          },
           options: ['allowed-once', 'rejected'],
         },
       },
@@ -212,7 +222,37 @@ it.each(['en', 'zh-CN'] as const)(
               ]
             : [],
         }
-      if (method === '_agnes/v1/admin.triggers') return { snapshot: { deliveries: [] } }
+      if (method === '_agnes/v1/packages.list')
+        return {
+          packages: [
+            {
+              id: 'plugin/report',
+              metadata: {
+                displayName: 'Reports',
+                summary: 'Reports',
+                description: 'Reports',
+                locales: { 'zh-CN': { displayName: '报表' } },
+              },
+            },
+          ],
+        }
+      if (method === '_agnes/v1/admin.triggers')
+        return {
+          snapshot: {
+            rules: [{ id: 'private-rule-id', event: 'Issue opened' }],
+            deliveries: automationPending
+              ? [
+                  { sessionId: 'trigger-session', ruleId: 'private-rule-id', status: 'needs_attention' },
+                  {
+                    sessionId: 'deleted-rule-session',
+                    ruleId: 'deleted-rule-id',
+                    status: 'waiting_approval',
+                  },
+                  { sessionId: 'finished-session', status: 'ran' },
+                ]
+              : [],
+          },
+        }
       if (method === '_agnes/v1/profile.decisions.list') {
         const snapshot = [...pending]
         if (blockedList) await blockedList
@@ -224,6 +264,18 @@ it.each(['en', 'zh-CN'] as const)(
       pending = pending.filter((value) => value.handle.id !== input?.handle.id)
       return {}
     })
+    const inventory = vi.spyOn(adminApi, 'homeAdmin').mockResolvedValue({
+      api: {
+        list: async () => ({
+          packages: [
+            {
+              id: 'plugin/report',
+              metadata: { displayName: 'Reports', locales: { 'zh-CN': { displayName: '报表' } } },
+            },
+          ],
+        }),
+      },
+    } as unknown as adminApi.HomeAdmin)
     const profileReads = () =>
       call.mock.calls.filter(([method]) => method === '_agnes/v1/profile.decisions.list').length
     const listeners = new Map<string, (payload: unknown) => void>()
@@ -281,7 +333,7 @@ it.each(['en', 'zh-CN'] as const)(
       document.dispatchEvent(new Event('visibilitychange'))
       await vi.advanceTimersByTimeAsync(0)
       expect(profileReads()).toBe(idleReads + 2)
-      expect(document.querySelector('.sidebar-footer')?.textContent).not.toMatch(/Approvals|操作审批/)
+      expect(document.querySelector('.sidebar-footer')?.textContent).not.toMatch(/Needs attention|待处理/)
 
       pending = [decision, { ...decision, handle: { ...handle, id: 'second-decision' } }]
       changed()
@@ -292,7 +344,7 @@ it.each(['en', 'zh-CN'] as const)(
       expect(row()?.classList.contains('home-entry')).toBe(true)
       expect(row()?.classList.contains('agh-btn--ghost')).toBe(true)
       expect(row()?.querySelector('.icon')).toBeTruthy()
-      expect(row()?.textContent).toContain(language === 'en' ? 'Approvals' : '操作审批')
+      expect(row()?.textContent).toContain(language === 'en' ? 'Needs attention' : '待处理')
       expect(row()?.getAttribute('aria-label')).toContain('(2)')
       expect(row()?.getAttribute('aria-expanded')).toBe('false')
       expect(surface()?.hidden).toBe(true)
@@ -306,6 +358,19 @@ it.each(['en', 'zh-CN'] as const)(
         expect(action(allowLabel)).toBeTruthy()
       })
       expect(surface()?.textContent).toContain('reviewed-one')
+      expect(surface()?.querySelector('h2')?.textContent).toContain(
+        language === 'en' ? 'Publish the reviewed report' : '发布已审阅报表',
+      )
+      expect(surface()?.querySelector('.approval-summary-text')?.textContent).toContain(
+        language === 'en' ? 'Review the operation details' : '请核对操作详情',
+      )
+      expect(surface()?.closest('.sidebar')).toBeNull()
+      expect(surface()?.textContent).toContain(language === 'en' ? 'Plugin Reports' : '插件 报表')
+      expect(surface()?.textContent).toContain(language === 'en' ? 'Plugin requests' : '插件请求')
+      expect(surface()?.textContent).toContain(
+        language === 'en' ? 'Allow once or reject here' : '在此允许一次或拒绝',
+      )
+      expect(surface()?.querySelector('h2')?.textContent).not.toContain('plugin/report')
       listUnavailable = true
       window.dispatchEvent(new Event('focus'))
       await Promise.resolve()
@@ -397,18 +462,37 @@ it.each(['en', 'zh-CN'] as const)(
       })
       automationPending = true
       emit('notice', { kind: 'automation_attention', sessionId: 'unattended-run' })
-      await vi.waitFor(() => expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('1'))
-      if (surface()?.hidden) row()?.click()
-      expect(surface()?.hidden).toBe(false)
+      await vi.waitFor(() => expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('3'))
+      if (!surface() || surface()?.hidden) row()?.click()
+      await vi.waitFor(() => expect(surface()?.hidden).toBe(false))
       await vi.waitFor(() =>
         expect(surface()?.querySelector('a[href="/?session=unattended-run"]')?.textContent).toContain(
           'Scheduled report',
         ),
       )
+      const scheduleGroup = surface()?.querySelector(
+        `section[aria-label="${language === 'en' ? 'Scheduled tasks' : '定时任务'}"]`,
+      )
+      const triggerGroup = surface()?.querySelector(
+        `section[aria-label="${language === 'en' ? 'Triggers' : '触发器'}"]`,
+      )
+      expect(scheduleGroup?.textContent).toContain(
+        language === 'en' ? 'Waiting for your approval' : '等待你确认',
+      )
+      expect(triggerGroup?.textContent).toContain('Issue opened')
+      expect(triggerGroup?.textContent).toContain(language === 'en' ? 'Needs attention' : '需要处理')
+      expect(triggerGroup?.textContent).toContain(language === 'en' ? 'Automation run' : '自动化运行')
+      expect(triggerGroup?.textContent).toContain(language === 'en' ? 'Open the run session' : '打开运行会话')
+      expect(surface()?.textContent).not.toMatch(
+        /private-rule-id|deleted-rule-id|trigger-session|unattended-run/,
+      )
+      expect(surface()?.querySelector('a[href="/?session=trigger-session"]')).toBeTruthy()
+      expect(surface()?.querySelector('a[href="/?session=finished-session"]')).toBeNull()
       automationPending = false
       window.dispatchEvent(new Event('focus'))
       await vi.waitFor(() => expect(row()).toBeNull())
     } finally {
+      inventory.mockRestore()
       await runtime?.dispose()
       expect(listeners.size).toBe(0)
       visibility.mockRestore()
@@ -430,6 +514,7 @@ it.each(['saved', 'failed'] as const)(
       revision: 1,
       request: {
         owner: 'plugin/report',
+        sourcePackage: 'plugin/report',
         spec: { prompt: 'Publish?', subject: {}, options: ['allowed-once', 'rejected'] },
       },
     }
@@ -444,7 +529,8 @@ it.each(['saved', 'failed'] as const)(
         call: vi.fn(async (method: string) => {
           if (method === '_agnes/v1/profile.decisions.list') return { decisions: [decision] }
           if (method === '_agnes/v1/schedules.list') return { schedules: [] }
-          if (method === '_agnes/v1/admin.triggers') return { snapshot: { deliveries: [] } }
+          if (method === '_agnes/v1/packages.list') return { packages: [] }
+          if (method === '_agnes/v1/admin.triggers') return { snapshot: { rules: [], deliveries: [] } }
           return answer
         }),
       }) as unknown as HostAgnesClient
@@ -455,7 +541,7 @@ it.each(['saved', 'failed'] as const)(
     const draw = (client: HostAgnesClient) =>
       act(async () => root.render(createElement(ProfileApprovals, { client, locale })))
     const toggle = () => host.querySelector<HTMLButtonElement>('button[aria-controls="profile-approvals"]')!
-    const action = () => host.querySelector<HTMLButtonElement>('[data-testid="approval-action"]')!
+    const action = () => document.querySelector<HTMLButtonElement>('[data-testid="approval-action"]')!
     try {
       await draw(first)
       await act(async () => toggle().click())
@@ -466,13 +552,177 @@ it.each(['saved', 'failed'] as const)(
       await act(async () => action().click())
       expect(action().disabled).toBe(true)
       await act(async () => (outcome === 'saved' ? resolve({}) : reject(new Error('old answer'))))
-      expect(host.querySelector('[data-testid="approval-card"]')).not.toBeNull()
-      expect(host.querySelector('[role="alert"]')).toBeNull()
+      expect(document.querySelector('[data-testid="approval-card"]')).not.toBeNull()
+      expect(document.querySelector('[role="alert"]')).toBeNull()
       expect(action().disabled).toBe(true)
     } finally {
       await act(async () => root.unmount())
       await ctx.fiber.dispose()
       host.remove()
+    }
+  },
+)
+
+it.each(['en', 'zh-CN'] as const)(
+  'prompts only the initiating page and leaves retired requests in the inbox (%s)',
+  async (language) => {
+    const handle = { id: 'profile-aero', sessionId: null, profileId: 'local-dev' }
+    const input = { kind: 'rule', id: 'TVAC-LOT-001', expectedRevision: 2 }
+    const decision = {
+      handle,
+      revision: 2,
+      request: {
+        owner: 'plugin/dc284c9c60f840ff',
+        sourcePackage: '@synthetic/aerospace',
+        operationId: 'private-operation',
+        expiresAt: '2099-10-21T12:30:00Z',
+        spec: {
+          prompt: 'Approve aero.decide?',
+          subject: { input, presentation: { input, revision: 2, warning: 'Synthetic' } },
+          options: ['allowed-once', 'rejected'],
+        },
+      },
+    }
+    let pending = true
+    const call = vi.fn(async (method: string) => {
+      if (method === '_agnes/v1/profile.decisions.list') return { decisions: pending ? [decision] : [] }
+      if (method === '_agnes/v1/schedules.list') return { schedules: [] }
+      if (method === '_agnes/v1/admin.triggers') return { snapshot: { rules: [], deliveries: [] } }
+      if (method === '_agnes/v1/packages.list')
+        return {
+          packages: [
+            {
+              id: '@synthetic/aerospace',
+              metadata: {
+                displayName: 'Aerospace example',
+                locales: { 'zh-CN': { displayName: '航空示例' } },
+              },
+            },
+          ],
+        }
+      pending = false
+      return {}
+    })
+    const receipt = { state: 'approval-required', operationId: 'same-operation', decision: handle }
+    let release: (() => void) | undefined
+    let delayed: Promise<void> | undefined
+    const inventory = vi.spyOn(adminApi, 'homeAdmin').mockResolvedValue({
+      api: {
+        list: async () => ({
+          packages: [
+            {
+              id: '@synthetic/aerospace',
+              metadata: {
+                displayName: 'Aerospace example',
+                locales: { 'zh-CN': { displayName: '航空示例' } },
+              },
+            },
+          ],
+        }),
+      },
+    } as unknown as adminApi.HomeAdmin)
+    const runtime = await mountRenderedIndex({
+      agnes: { call } as unknown as AgnesClient,
+      clientProfileCaller: async () => {
+        if (delayed) await delayed
+        return receipt
+      },
+    })
+    runtime.locale.setLocale(language)
+    const toggle = () =>
+      document.querySelector<HTMLButtonElement>('button[aria-controls="profile-approvals"]')
+    const panel = () => document.querySelector<HTMLElement>('#profile-approvals')
+    const bridge = (runtime.ctx.get('agnes') as AgnesClientService).profileCaller
+    if (!bridge) throw new Error('Missing host profile caller')
+    const source = document.body.appendChild(document.createElement('button'))
+    source.textContent = 'Request the rule operation'
+    const effect = () => {
+      source.focus()
+      return bridge({ packageId: '@synthetic/aerospace', revision: 'one' }, 'aero.decide', input, {
+        operationId: 'same-operation',
+      })
+    }
+    try {
+      await vi.waitFor(() => expect(toggle()).toBeTruthy())
+      expect(panel()?.hidden).not.toBe(false)
+      await bridge({ packageId: '@synthetic/aerospace', revision: 'one' }, 'aero.decide', undefined, {
+        operationId: 'same-operation',
+        read: true,
+      })
+      expect(panel()?.hidden).not.toBe(false)
+      await expect(effect()).resolves.toEqual(receipt)
+      await vi.waitFor(() => expect(panel()?.hidden).toBe(false))
+      await vi.waitFor(() =>
+        expect(panel()?.querySelector('h2')?.textContent).toBe(
+          language === 'en'
+            ? 'Aerospace example plugin requests an operation'
+            : '航空示例 插件请求执行一个操作',
+        ),
+      )
+      expect(panel()?.closest('.sidebar')).toBeNull()
+      expect(toggle()).toBeNull()
+      expect(panel()?.textContent).toContain(
+        language === 'en' ? 'Rule TVAC-LOT-001 · Revision 2' : '规则 TVAC-LOT-001 · 修订 2',
+      )
+      expect(panel()?.querySelector('time')?.getAttribute('datetime')).toBe('2099-10-21T12:30:00Z')
+      expect(panel()?.querySelector('time')?.textContent).toContain('2099')
+      expect(panel()?.querySelector('.approval-summary-text')?.textContent).not.toMatch(
+        /aero\.decide|Approve /,
+      )
+      expect(panel()?.querySelector('h2')?.textContent).not.toMatch(/plugin\/|aero\.decide/)
+      expect(call.mock.calls.some(([method]) => method.endsWith('decisions.answer'))).toBe(false)
+      homeNavigation.open('closed-initiating-page')
+      await vi.waitFor(() => expect(toggle()?.querySelector('.home-entry-badge')?.textContent).toBe('1'))
+      expect(panel()?.hidden).not.toBe(false)
+      toggle()?.click()
+      await vi.waitFor(() => expect(panel()?.hidden).toBe(false))
+      expect(panel()?.closest('[role="dialog"]')).toBeTruthy()
+      // A late response after leaving the initiating page cannot open a new prompt.
+      document.querySelector<HTMLButtonElement>('.profile-attention-dialog .ant-modal-close')?.click()
+      await vi.waitFor(() => expect(panel()?.hidden).not.toBe(false))
+      const nativeDialog = document.body.appendChild(document.createElement('dialog'))
+      nativeDialog.setAttribute('open', '')
+      nativeDialog.append(source)
+      await effect()
+      await vi.waitFor(() => expect(panel()?.hidden).toBe(false))
+      expect(panel()?.closest('dialog')).toBe(nativeDialog)
+      nativeDialog.removeAttribute('open')
+      await vi.waitFor(() => expect(panel()?.hidden).not.toBe(false))
+      document.body.append(source)
+      nativeDialog.remove()
+      source.hidden = true
+      await effect()
+      expect(panel()?.hidden).not.toBe(false)
+      source.hidden = false
+      delayed = new Promise<void>((done) => {
+        release = done
+      })
+      const late = effect()
+      homeNavigation.open('another-page')
+      release?.()
+      await late
+      expect(panel()?.hidden).not.toBe(false)
+      delayed = undefined
+      await effect()
+      await vi.waitFor(() => expect(panel()?.hidden).toBe(false))
+      const allow = [
+        ...document.querySelectorAll<HTMLButtonElement>('#profile-approvals [data-approval-action]'),
+      ].find((button) => button.dataset.approvalAction === 'allowed-once')
+      expect(allow).toBeTruthy()
+      allow?.click()
+      await vi.waitFor(() => expect(toggle()).toBeNull())
+      await vi.waitFor(() => expect(panel()).toBeNull())
+      expect(call).toHaveBeenCalledWith('_agnes/v1/profile.decisions.answer', {
+        handle,
+        revision: 2,
+        commandId: expect.any(String),
+        response: { option: 'allowed-once', value: null },
+      })
+    } finally {
+      inventory.mockRestore()
+      homeNavigation.close()
+      await runtime.dispose()
+      resetWebDom()
     }
   },
 )
