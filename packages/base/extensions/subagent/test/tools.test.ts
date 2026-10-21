@@ -306,7 +306,27 @@ describe('subagent_spawn', () => {
     })
     const tool = subagentSpawnTool(d)
     const result = await tool.execute({ task: 'Read', role: role.ref }, ctx)
-    expect(result.structured).toMatchObject({ childKey: 'role-child', role })
+    expect(result.structured).toMatchObject({ childKey: 'role-child', role, task: 'Read', status: 'running' })
+    expect(JSON.stringify(result.content)).not.toContain('role-child')
+    const waitedContext = context({ spawn: async () => ({ childKey: 'waited-role', role }) })
+    const waited = await tool.execute({ task: 'Read', role: role.ref, wait: true }, waitedContext.ctx)
+    expect(waited.structured).toMatchObject({ childKey: 'waited-role', status: 'completed' })
+    expect(waited.content).toEqual([{ type: 'text', text: 'Delegated task completed.\ndone' }])
+    expect(waitedContext.calls.collect).toContainEqual(['waited-role', { wait: true }])
+    for (const status of ['idle', 'failed', 'running'] as const) {
+      const waiting = context({
+        spawn: async () => ({ childKey: `role-${status}`, role }),
+        collect: async (childKey) => ({ childKey, status, text: 'specialist findings' }),
+      })
+      const outcome = await subagentSpawnTool(deps()).execute(
+        { task: 'Read', role: role.ref, wait: true },
+        waiting.ctx,
+      )
+      expect(outcome.structured).toMatchObject({ status: status === 'idle' ? 'completed' : status })
+      expect(outcome.content).toEqual([
+        { type: 'text', text: `Delegated task ${status}.\nspecialist findings` },
+      ])
+    }
     expect(calls.spawn[0]?.[1]).toMatchObject({ role: role.ref, isolation: 'shared' })
     expect((await tool.execute({ task: 'Read', role: '@other/app#reader' }, ctx)).isError).toBe(true)
     const attempted = calls.spawn.length
