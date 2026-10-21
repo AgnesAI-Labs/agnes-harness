@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { DEFAULT_COMPUTER_USE, type ResolvedProfile } from '@agnes/host'
 import type { PackageManager } from '@agnes/package-manager'
 import { afterEach, expect, it, vi } from 'vitest'
+import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import * as clients from '../src/supervisor/assembly-client-listener.js'
 import * as modules from '../src/supervisor/assembly-client-modules.js'
 import * as runtime from '../src/supervisor/assembly-runtime.js'
@@ -19,8 +20,11 @@ import { runAgnesd, startSupervisor } from '../src/supervisor/supervisor.js'
 import type { WorkerPool } from '../src/supervisor/worker-pool.js'
 
 const directories = new Set<string>()
-afterEach(() => {
+const tableStores = new Set<ReturnType<typeof sqliteTables>>()
+afterEach(async () => {
   vi.restoreAllMocks()
+  for (const tables of tableStores) await tables.close()
+  tableStores.clear()
   for (const dir of directories) rmSync(dir, { recursive: true, force: true })
   directories.clear()
 })
@@ -44,7 +48,10 @@ function fixture() {
     pid === process.pid
       ? { state: 'alive' as const, startId: 'assembly-fixture' }
       : { state: 'dead' as const }
+  const jobTables = sqliteTables()
+  tableStores.add(jobTables)
   const options = {
+    jobTables,
     config: {
       dataDir: home,
       profileName: profile.name,
