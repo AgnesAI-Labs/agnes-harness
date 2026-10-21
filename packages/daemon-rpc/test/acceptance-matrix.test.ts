@@ -1,11 +1,12 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { type ResumeReport, reclaimExpired, tableReclaimStore } from '@agnes/daemon-foundation/lease/reclaim'
+import { type ResumeReport, reclaimExpired } from '@agnes/daemon-foundation/lease/reclaim'
 import { PersistentCommandJournal } from '@agnes/daemon-foundation/storage/command-journal'
 import { ensure } from '@agnes/daemon-foundation/storage/table'
 import { describe, expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { tableReclaimStore } from '../../daemon-foundation/test/table-reclaim-store.js'
 import { commandBinding } from '../src/local/command-binding.js'
 
 const CLAIMS_DDL =

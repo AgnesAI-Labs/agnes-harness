@@ -13,7 +13,6 @@ import { WebSocket } from 'ws'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
 import { SessionPrincipalOwnershipIndex } from '../src/storage/session-ownership.js'
-import { ensure } from '../src/storage/table.js'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 import { DaemonMutationLockError } from '../src/supervisor/mutation-lock.js'
@@ -488,14 +487,6 @@ describe('agnesd supervisor: real end-to-end', () => {
       const ownership = new SessionPrincipalOwnershipIndex(tables.table('session_principal_ownership'))
       expect(ownership.bindNew(artifactSessionId, 'local')).toBe(true)
       expect(ownership.activateNew(artifactSessionId, 'local')).toBe(true)
-      ensure(
-        tables.table('writer_claims'),
-        'CREATE TABLE IF NOT EXISTS writer_claims (session_key TEXT PRIMARY KEY, run_id TEXT NOT NULL, until INTEGER NOT NULL, generation INTEGER NOT NULL)',
-      )
-      ensure(
-        tables.table('registers'),
-        'CREATE TABLE IF NOT EXISTS registers (session_key TEXT, register TEXT, key TEXT, seq INTEGER, data TEXT, PRIMARY KEY (session_key, register, key))',
-      )
 
       const sup = await startSupervisor({
         config,
@@ -503,7 +494,7 @@ describe('agnesd supervisor: real end-to-end', () => {
         profileDir: join(dir, 'profiles', 'local-dev'),
         profileFile,
         workspaceRoot: dir,
-        tables,
+        jobTables: tables,
         remoteAuth: {
           sourceAuthCredentials: [{ credentialId: 'secret://test/supervisor-e2e', secret: SOURCE_AUTH_KEY }],
         },
@@ -548,7 +539,7 @@ describe('agnesd supervisor: real end-to-end', () => {
             profileDir: join(dir, 'profiles', 'local-dev'),
             profileFile,
             workspaceRoot: dir,
-            tables,
+            jobTables: tables,
             processIdentity,
             ...workerSpawnOpts,
           }),
