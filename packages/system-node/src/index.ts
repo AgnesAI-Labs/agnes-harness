@@ -705,15 +705,16 @@ function plainDescriptorFlush(): NonNullable<Native['syncDescriptor']> | null {
 }
 
 /**
- * `syncTreeSync` for one publication: the tree is durable when this returns. Node's fsync on macOS drains
- * the whole drive cache on every call, so there each entry gets a plain fsync and the root one full flush
- * (see `syncTreeBatched`). Elsewhere, or with a native artifact lacking that flush, this is `syncTreeSync`.
+ * `syncTreeSync` for each tree of one publication: the trees are durable when this returns. Node's fsync
+ * on macOS drains the whole drive cache on every call, so there each entry gets a plain fsync and the
+ * last root one full flush (see `syncTreeBatched`). Elsewhere, or with a native artifact lacking that
+ * flush, this is `syncTreeSync` on each root, in order.
  */
-export function syncTreeBatchedSync(root: string): void {
+export function syncTreeBatchedSync(...roots: string[]): void {
   const sync = plainDescriptorFlush()
-  if (!sync) syncTreeSync(root)
+  if (!sync) for (const root of roots) syncTreeSync(root)
   else
-    syncTreeBatched(filePath(root), (path, directory, full) =>
+    syncTreeBatched(roots.map(filePath), (path, directory, full) =>
       (directory ? syncDirectoryWith : syncFileWith)(path, (fd) => sync(fd, full)),
     )
 }

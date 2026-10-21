@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join, relative } from 'node:path'
+import { basename, join, relative, sep } from 'node:path'
 import { buildRuntimeTarget } from '@agnes/plugin-runtime/host'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { RuntimePluginSnapshot } from '../src/package-plugin-loader.js'
@@ -10,16 +10,18 @@ import { hashDirectory } from '../src/sources.js'
 const recorded = vi.hoisted(() => ({ events: [] as string[], root: '' }))
 vi.mock('@agnes/system-node', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@agnes/system-node')>()
-  const at = (path: string) => relative(recorded.root, path).split('/').slice(1).join('/') || '.'
+  const at = (path: string) => relative(recorded.root, path).split(sep).slice(1).join('/') || '.'
   return {
     ...actual,
     syncTreeSync: vi.fn((root: string) => {
       recorded.events.push(`per-entry ${at(root)}`)
       actual.syncTreeSync(root)
     }),
-    syncTreeBatchedSync: vi.fn((root: string) => {
-      recorded.events.push(`batched ${at(root)} [${readdirSync(root).sort().join(',')}]`)
-      actual.syncTreeBatchedSync(root)
+    syncTreeBatchedSync: vi.fn((...roots: string[]) => {
+      recorded.events.push(
+        `batched ${roots.map((root) => `${at(root)} [${readdirSync(root).sort().join(',')}]`).join(' + ')}`,
+      )
+      actual.syncTreeBatchedSync(...roots)
     }),
     publishFileDurablySync: vi.fn((path: string, ...rest: unknown[]) => {
       recorded.events.push(`publish ${basename(path)}`)
@@ -55,7 +57,7 @@ function source(home: string, name: string): RuntimePluginSnapshot {
   }
 }
 
-it('flushes every copied tree before generation.json names it, with one batched flush per tree root', () => {
+it('flushes every copied tree before generation.json names it, with one batched flush for all package trees', () => {
   const home = mkdtempSync(join(tmpdir(), 'agh-generation-order-'))
   homes.push(home)
   const store = new RuntimeGenerationSnapshotStore(join(home, 'profile'))
@@ -78,7 +80,7 @@ it('flushes every copied tree before generation.json names it, with one batched 
   )
   // The adopter record that follows is published by the same primitive after generation.json.
   expect(recorded.events.slice(0, recorded.events.indexOf('publish generation.json') + 1)).toEqual([
-    'batched . [0,1,owner.json]',
+    'batched 0 [lib,package.json] + 1 [lib,package.json]',
     'batched resources [0,resources.json]',
     'publish generation.json',
   ])

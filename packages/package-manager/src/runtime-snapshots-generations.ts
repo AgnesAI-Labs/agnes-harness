@@ -247,16 +247,18 @@ export class RuntimeGenerationSnapshotStore {
           mode: 0o600,
           flush: true,
         })
+        const destinations: string[] = []
         const copied = sources.map((source, index) => {
           if (!source.trusted) throw new Error('E_GENERATION_UNTRUSTED: snapshot is not trusted')
           const destination = join(directory, String(index))
+          destinations.push(destination)
           copyPackageTreeSync(source.snapshot.directory, destination)
           if (hashDirectory(destination, { exclude: [] }) !== source.snapshot.treeIntegrity)
             throw new Error('E_GENERATION_INTEGRITY: package snapshot changed')
           return { ...source, snapshot: { ...source.snapshot, directory: String(index) } }
         })
         // One drive flush for every copied tree, before anything names them.
-        syncTreeBatchedSync(directory)
+        syncTreeBatchedSync(...destinations)
         const resourcesDigest = resources
           ? writeGenerationResources(join(directory, 'resources'), resources)
           : undefined

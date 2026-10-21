@@ -29,15 +29,19 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-it('falls back to a full flush per entry when the native module has no descriptor flush', () => {
-  const root = mkdtempSync(join(tmpdir(), 'agh-tree-sync-fallback-'))
-  roots.push(root)
-  writeFileSync(join(root, 'a.txt'), 'a')
-  mkdirSync(join(root, 'nested'))
-  writeFileSync(join(root, 'nested', 'b.txt'), 'b')
-  const fsync = vi.mocked(fsyncSync)
-  fsync.mockClear()
-  syncTreeBatchedSync(root)
-  // root, nested, and the two files
-  expect(fsync).toHaveBeenCalledTimes(4)
-})
+// Only macOS has a batched flush to fall back from; elsewhere the function is syncTreeSync itself.
+it.runIf(process.platform === 'darwin')(
+  'falls back to a full flush per entry when the native module has no descriptor flush',
+  () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-tree-sync-fallback-'))
+    roots.push(root)
+    writeFileSync(join(root, 'a.txt'), 'a')
+    mkdirSync(join(root, 'nested'))
+    writeFileSync(join(root, 'nested', 'b.txt'), 'b')
+    const fsync = vi.mocked(fsyncSync)
+    fsync.mockClear()
+    syncTreeBatchedSync(root)
+    // root, nested, and the two files
+    expect(fsync).toHaveBeenCalledTimes(4)
+  },
+)

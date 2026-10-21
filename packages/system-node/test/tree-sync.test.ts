@@ -41,7 +41,8 @@ function tree(): string {
   mkdirSync(join(root, 'readonly-dir'))
   writeFileSync(join(root, 'readonly-dir', 'inside.txt'), 'inside')
   chmodSync(join(root, 'readonly-dir'), 0o500)
-  writeFileSync(join(root, 'readonly.txt'), 'readonly', { mode: 0o400 })
+  // Windows opens files for writing to flush them, so a read-only file cannot be flushed there at all.
+  if (process.platform !== 'win32') writeFileSync(join(root, 'readonly.txt'), 'readonly', { mode: 0o400 })
   symlinkSync(join(root, 'a.txt'), join(root, 'link'))
   return root
 }
@@ -61,7 +62,7 @@ describe('batched tree flush', () => {
   it('hands every file and directory to the drive, children first, then flushes the drive once through the root', () => {
     const root = tree()
     const calls: [path: string, directory: boolean, full: boolean][] = []
-    syncTreeBatched(root, (path, directory, full) => calls.push([path, directory, full]))
+    syncTreeBatched([root], (path, directory, full) => calls.push([path, directory, full]))
     expect(calls.at(-1)).toEqual([root, true, true])
     expect(calls.filter(([, , full]) => full)).toHaveLength(1)
     const handed = calls.slice(0, -1)
@@ -73,6 +74,21 @@ describe('batched tree flush', () => {
       for (const [other] of descendants)
         expect(handed.findIndex(([candidate]) => candidate === other)).toBeLessThan(index)
     }
+  })
+
+  it('flushes several roots with one full flush through the last, and nothing for no roots', () => {
+    const first = tree(),
+      second = tree(),
+      calls: [string, boolean][] = []
+    syncTreeBatched([first, second], (path, _directory, full) => calls.push([path, full]))
+    expect(calls.filter(([, full]) => full)).toEqual([[second, true]])
+    expect(calls.at(-1)).toEqual([second, true])
+    expect(calls.findIndex(([path]) => path === second)).toBeGreaterThan(
+      calls.findIndex(([path]) => path === first),
+    )
+    calls.length = 0
+    syncTreeBatched([], (path, _directory, full) => calls.push([path, full]))
+    expect(calls).toEqual([])
   })
 
   it('flushes a tree through the native drive flush on macOS and per entry elsewhere', () => {
