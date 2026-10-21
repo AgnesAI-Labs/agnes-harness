@@ -342,8 +342,7 @@ it('opens a real Host session with bounded source verification and still refuses
     // Independent copy validation and the publication reader retain fresh verification.
     // The previous fixture observed 99 sync + 54 async walks. Count both kinds after the conversion.
     expect(hash.mock.calls.length).toBeLessThanOrEqual(99)
-    // The release identity authority additionally pins the official source tree before import.
-    expect(hash.mock.calls.length + asyncHash.mock.calls.length).toBeLessThanOrEqual(154)
+    expect(hash.mock.calls.length + asyncHash.mock.calls.length).toBeLessThanOrEqual(153)
     // Review probe: the original asynchronous import/use gates remain independent of the memo.
     console.log('verification async read and use gates', asyncHash.mock.calls.length)
     expect(asyncHash.mock.calls.length).toBeGreaterThanOrEqual(45)
