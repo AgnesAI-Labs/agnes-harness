@@ -134,7 +134,7 @@ acpChildAgentsPlugin({
 
 ## Codex、Claude Code 与通用引擎
 
-`@agnes/base` 声明三行普通插件，每一行都是 `default: false`、`apiRange: "^4.0.0"`、`inject: ["childAgents"]`、`runtime: "in-process"`：
+`@agnes/base` 声明三行普通插件，每一行都是 `default: false`、`apiRange: "^5.0.0"`、`inject: ["childAgents"]`、`runtime: "in-process"`：
 
 | 行 | 导出 |
 | --- | --- |

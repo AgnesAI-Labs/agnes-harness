@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/aerospace-quality",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -54,7 +54,7 @@
       {
         "id": "ext:@agnes-showcase/aerospace-quality/main",
         "export": "main",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "inject": [
           "tools",
           "services",
@@ -93,7 +93,7 @@
       {
         "id": "ext:@agnes-showcase/aerospace-quality/cards",
         "export": "cards",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "capabilities": {
           "ui": true
         }
@@ -101,7 +101,7 @@
       {
         "id": "ext:@agnes-showcase/aerospace-quality/review-policy",
         "export": "reviewPolicyPlugin",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "inject": [
           "providers"
         ]
@@ -109,7 +109,7 @@
     ],
     "hostProvidedExternals": {
       "@agnes/plugin-runtime": "0.0.0",
-      "@agnes/extension-api": "^4.0.0",
+      "@agnes/extension-api": "^5.0.0",
       "@sinclair/typebox": "0.34.33"
     },
     "clientDescriptors": [

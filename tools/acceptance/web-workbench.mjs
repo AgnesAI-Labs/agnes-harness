@@ -118,7 +118,7 @@ for (const [name, version, entry, label] of [
   )
   await writeFile(
     join(destination, 'extensions/main/package.json'),
-    `${JSON.stringify({ name: '@examples/client-panel-failure', version, type: 'module', private: true, exports: './index.mjs', agnes: { plugins: [{ id: 'ext:examples/client-panel-failure', export: 'default', apiRange: '^4.0.0', runtimeSupports: ['in-process'], capabilities: { ui: true }, contributes: { client: { entry: './client/index.js', styles: ['./client/index.css'], slots: ['ui:sidebar'], publicConfig: { label }, services: [], projections: [] } } }] } }, null, 2)}\n`,
+    `${JSON.stringify({ name: '@examples/client-panel-failure', version, type: 'module', private: true, exports: './index.mjs', agnes: { plugins: [{ id: 'ext:examples/client-panel-failure', export: 'default', apiRange: '^5.0.0', runtimeSupports: ['in-process'], capabilities: { ui: true }, contributes: { client: { entry: './client/index.js', styles: ['./client/index.css'], slots: ['ui:sidebar'], publicConfig: { label }, services: [], projections: [] } } }] } }, null, 2)}\n`,
   )
   await writeFile(join(destination, 'extensions/main/client/index.js'), entry)
   failureFixtures[name] = { type: 'file', ref: `file:./client-module-failure-fixtures/${name}` }

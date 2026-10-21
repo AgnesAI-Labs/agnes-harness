@@ -20,7 +20,7 @@
     "plugins": [
       {
         "export": "toolPolicyPlugin",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "id": "tool-policy:default",
         "inject": [
           "providers",
@@ -51,7 +51,7 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "configReload": "next-session",
         "configSchema": {
           "type": "object",
@@ -163,7 +163,7 @@
       },
       {
         "export": "seamProvidersPlugin",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "id": "seam-providers:default",
         "inject": [
           "providers"
@@ -190,7 +190,7 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "metadata": {
           "displayName": "Default Agent Loop",
           "summary": "Runs the default agent workflow through model calls, tools, approvals and continuation.",
@@ -212,7 +212,7 @@
         ],
         "runtime": "in-process",
         "default": false,
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "metadata": {
           "displayName": "Codex child agents",
           "summary": "Uses a configured Codex process to handle delegated coding tasks.",
@@ -234,7 +234,7 @@
         ],
         "runtime": "in-process",
         "default": false,
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "metadata": {
           "displayName": "Claude Code child agents",
           "summary": "Uses a configured Claude Code process to handle delegated coding tasks.",
@@ -256,7 +256,7 @@
         ],
         "runtime": "in-process",
         "default": false,
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "metadata": {
           "displayName": "Built-in child agents",
           "summary": "Runs delegated tasks in child sessions through AGH's built-in agent engine.",
@@ -278,7 +278,7 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "metadata": {
           "displayName": "Workspace memory",
           "summary": "Keeps reviewed workspace preferences in local files for later sessions, with agent access off by default.",
@@ -300,7 +300,7 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "metadata": {
           "displayName": "Remembering playbook",
           "summary": "Supplies a reusable playbook for reviewing and recording workspace preferences.",
@@ -322,7 +322,7 @@
         ],
         "runtime": "in-process",
         "default": true,
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "metadata": {
           "displayName": "Conversation references",
           "summary": "Resolves supported file and session references attached to a conversation.",
@@ -339,7 +339,7 @@
       {
         "id": "service:plan-mode",
         "export": "planModePlugin",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "inject": [
           "providers",
           "services"

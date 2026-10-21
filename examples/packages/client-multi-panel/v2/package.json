@@ -8,7 +8,7 @@
     "plugins": [
       {
         "export": "primary",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "id": "ext:examples/client-multi-panel/primary",
         "runtime": "in-process",
         "metadata": {
@@ -26,7 +26,7 @@
       },
       {
         "export": "secondary",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "id": "ext:examples/client-multi-panel/secondary",
         "runtime": "in-process",
         "metadata": {

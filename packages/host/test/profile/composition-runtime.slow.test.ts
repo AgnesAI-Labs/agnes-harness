@@ -948,7 +948,7 @@ it('opens a new composition from the published code after retiring a boot snapsh
         version,
         exports: './index.mjs',
         agnes: {
-          plugins: [{ apiRange: '^4.0.0', export: 'main', id: 'ext:composition-code', inject: ['tools'] }],
+          plugins: [{ apiRange: '^5.0.0', export: 'main', id: 'ext:composition-code', inject: ['tools'] }],
         },
       }),
     )

@@ -81,7 +81,7 @@ function setup(restrictCeiling = false) {
           {
             id: 'ext:fixture.console',
             export: 'consolePlugin',
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             inject: ['services'],
             runtime: 'in-process',
             capabilities: {
@@ -696,7 +696,7 @@ it.each(DEFAULT_ENABLED_BUNDLED_PACKAGES)(
               id: 'ext:fixture.report',
               export: 'reportPlugin',
               capabilities: { ui: true },
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               inject: ['tools'],
               runtime: 'in-process',
             },

@@ -52,7 +52,7 @@ function pkg(extra: Record<string, unknown> = {}) {
     license: 'MIT',
     exports: './index.ts',
     agnes: {
-      plugins: [{ apiRange: '^4.0.0', export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' }],
+      plugins: [{ apiRange: '^5.0.0', export: 'main', id: 'ext:acme/pkg-a/main', runtime: 'in-process' }],
     },
     ...extra,
   })
@@ -84,7 +84,7 @@ it('previews without importing code or writing lock, then installs only disabled
   writeFileSync(join(sourceDir, 'index.ts'), `throw new Error('must not run')`)
   pkg({
     scripts: { postinstall: 'exit 99' },
-    agnes: { metadata: purpose, plugins: [{ apiRange: '^4.0.0', export: 'main', metadata: purpose }] },
+    agnes: { metadata: purpose, plugins: [{ apiRange: '^5.0.0', export: 'main', metadata: purpose }] },
   })
   const before = lockBytes(),
     phases: number[] = []
@@ -118,7 +118,7 @@ it('recognizes the static agnes.plugins declaration without importing plugin cod
   pkg({
     exports: './index.mjs',
     agnes: {
-      plugins: [{ apiRange: '^4.0.0', export: 'main', runtime: 'in-process', config: { greeting: 'hello' } }],
+      plugins: [{ apiRange: '^5.0.0', export: 'main', runtime: 'in-process', config: { greeting: 'hello' } }],
     },
   })
 
@@ -131,7 +131,7 @@ it('refuses invalid present package purpose without installing or executing it',
   pkg({
     agnes: {
       metadata: { ...purpose, docsUrl: 'http://example.org/' },
-      plugins: [{ apiRange: '^4.0.0', export: 'main' }],
+      plugins: [{ apiRange: '^5.0.0', export: 'main' }],
     },
   })
   const before = lockBytes()
@@ -142,7 +142,7 @@ it('refuses invalid present package purpose without installing or executing it',
 })
 
 it('rejects a package that declares both executable loading formats', async () => {
-  pkg({ agnes: { plugins: [{ apiRange: '^4.0.0', export: 'main' }], extensions: [] } })
+  pkg({ agnes: { plugins: [{ apiRange: '^5.0.0', export: 'main' }], extensions: [] } })
   await expect(manager().inspect(profile, source)).rejects.toMatchObject({
     detail: { reason: 'legacy-extension-format' },
   })
@@ -152,7 +152,7 @@ it('rejects package-authored web rows with a stable reserved-prefix reason', asy
   writeFileSync(join(sourceDir, 'index.mjs'), 'export default () => ({})\n')
   pkg({
     exports: './index.mjs',
-    agnes: { plugins: [{ apiRange: '^4.0.0', export: 'panel', id: 'web:@victim/panel' }] },
+    agnes: { plugins: [{ apiRange: '^5.0.0', export: 'panel', id: 'web:@victim/panel' }] },
   })
   await expect(manager().inspect(profile, source)).rejects.toMatchObject({
     code: 'E_PACKAGE_STATE',
@@ -190,9 +190,9 @@ it('reads the non-executable contribution kinds and detects grant/dependency dif
   mkdirSync(join(sourceDir, 'dist'))
   writeFileSync(join(sourceDir, 'dist', 'server.mjs'), 'throw Error()')
   const contributions = [
-    { kind: 'seam', id: 'acme/seam', path: './index.ts', apiRange: '^4.0.0', provides: ['billing'] },
-    { kind: 'provider', id: 'acme/provider', path: './index.ts', apiRange: '^4.0.0' },
-    { kind: 'runtime', id: 'acme/runtime', path: './index.ts', apiRange: '^4.0.0' },
+    { kind: 'seam', id: 'acme/seam', path: './index.ts', apiRange: '^5.0.0', provides: ['billing'] },
+    { kind: 'provider', id: 'acme/provider', path: './index.ts', apiRange: '^5.0.0' },
+    { kind: 'runtime', id: 'acme/runtime', path: './index.ts', apiRange: '^5.0.0' },
     { kind: 'skill', id: 'acme/skill', path: './index.ts' },
     { kind: 'preset', id: 'acme/preset', path: './index.ts' },
   ]
@@ -203,7 +203,7 @@ it('reads the non-executable contribution kinds and detects grant/dependency dif
       surfaces: [
         {
           id: 'web',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           artifact: { kind: 'node', entry: './dist/server.mjs' },
           healthPath: '/health',
           requires: { services: [{ extension: 'acme/pkg-a', name: 'status', range: '^1.0' }] },
@@ -239,7 +239,7 @@ it('rejects bundled legacy manifests even when the package does not declare plug
   const manifest = {
     id: 'acme/pkg-a',
     version: '1.0.0',
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     entry: './index.ts',
     capabilities: {},
   }
@@ -255,7 +255,7 @@ it.each([
   { kinds: ['tool'] },
   { metadata: { ...purpose, category: 'tools' } },
   { metadata: { ...purpose, launches: [] } },
-  { plugins: [{ apiRange: '^4.0.0', export: 'main', metadata: { ...purpose, category: 'tools' } }] },
+  { plugins: [{ apiRange: '^5.0.0', export: 'main', metadata: { ...purpose, category: 'tools' } }] },
 ])('refuses retired metadata with a clean-home hint %#', async (agnes) => {
   pkg({ agnes })
   await expect(manager().inspect(profile, source)).rejects.toThrow(/Retired.*clean home/)
@@ -263,12 +263,12 @@ it.each([
 })
 it.each([
   { agnes: { unknown: [] } },
-  { agnes: { provides: ['invalid'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } },
+  { agnes: { provides: ['invalid'], plugins: [{ apiRange: '^5.0.0', export: 'main' }] } },
   { agnes: { contributions: [{ kind: 'mystery', id: 'acme/x' }] } },
   {
     agnes: {
       contributions: [
-        { kind: 'extension', id: 'acme/x', path: './index.ts', apiRange: '^4.0.0', capabilities: {} },
+        { kind: 'extension', id: 'acme/x', path: './index.ts', apiRange: '^5.0.0', capabilities: {} },
       ],
     },
   },
@@ -305,7 +305,7 @@ it('returns blockers for legacy dynamic-only packages and policy/API incompatibi
   json(join(sourceDir, 'agnes.extension.json'), {
     id: 'acme/pkg-a',
     version: '1.0.0',
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     entry: './index.ts',
     capabilities: {},
   })
@@ -325,7 +325,7 @@ it('does not report a plugin config update as an extension capability expansion'
   expect((await m.inspect(profile, source)).capabilityDiff.added).toEqual([])
   pkg({
     agnes: {
-      plugins: [{ apiRange: '^4.0.0', export: 'main', id: 'ext:acme/pkg-a/main', config: { mode: 'next' } }],
+      plugins: [{ apiRange: '^5.0.0', export: 'main', id: 'ext:acme/pkg-a/main', config: { mode: 'next' } }],
     },
   })
   const next = await m.inspect(profile, source)
@@ -485,7 +485,7 @@ it('rejects duplicate Surface grants with conflicting ranges during inspect', as
       surfaces: [
         {
           id: 'web',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           artifact: { kind: 'oci', image: `registry.test/web@sha256:${'0'.repeat(64)}` },
           healthPath: '/health',
           requires: {
@@ -513,7 +513,7 @@ it('rejects custom npm identity different from the exact source', async () => {
 })
 
 it('projects declared package kinds through preview and verified installed inventory', async () => {
-  pkg({ agnes: { provides: ['loop', 'ui'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } })
+  pkg({ agnes: { provides: ['loop', 'ui'], plugins: [{ apiRange: '^5.0.0', export: 'main' }] } })
   const instance = manager()
   const preview = await instance.inspect(profile, source)
   expect(preview.provides).toEqual(['loop', 'ui'])

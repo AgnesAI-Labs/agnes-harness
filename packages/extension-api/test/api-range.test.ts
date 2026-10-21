@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { API_VERSION, checkApiRange, isExtensionError, parseSemver, satisfiesApiRange } from '../src/index.js'
 
@@ -67,11 +68,11 @@ describe('checkApiRange', () => {
   it('throws E_API_RANGE with detail', () => {
     expect(() => checkApiRange({ id: 'xinwei/sales-analysis', apiRange: '^1.0.0' }, '1.3.0')).not.toThrow()
     try {
-      checkApiRange({ id: 'xinwei/sales-analysis', apiRange: '^4.0.0' }, '1.3.0')
+      checkApiRange({ id: 'xinwei/sales-analysis', apiRange: '^5.0.0' }, '1.3.0')
       expect.unreachable()
     } catch (e) {
       expect(isExtensionError(e) && e.code).toBe('E_API_RANGE')
-      expect(isExtensionError(e) && e.detail).toEqual({ apiRange: '^4.0.0', apiVersion: '1.3.0' })
+      expect(isExtensionError(e) && e.detail).toEqual({ apiRange: '^5.0.0', apiVersion: '1.3.0' })
       expect(isExtensionError(e) && e.extId).toBe('xinwei/sales-analysis')
     }
   })
@@ -101,9 +102,73 @@ describe('supported API subset boundary cases', () => {
     expect(parseSemver('1.2.3-rc.1+build.01')).toEqual({ major: 1, minor: 2, patch: 3, pre: 'rc.1' })
   })
   it('exercises checkApiRange default version through both acceptance and rejection', () => {
-    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^4.0' })).not.toThrow()
-    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^5.0' })).toThrow(/E_API_RANGE/)
+    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^5.0' })).not.toThrow()
+    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^6.0' })).toThrow(/E_API_RANGE/)
+    expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^4.0' })).toThrow(/E_API_RANGE/)
     expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^3.0' })).toThrow(/E_API_RANGE/)
     expect(() => checkApiRange({ id: 'agnes/test', apiRange: '^1.0' })).toThrow(/E_API_RANGE/)
+  })
+})
+
+describe('5.0.0 major API', () => {
+  it('admits ^5 ranges and refuses every ^4 range at the 5.0.0 major API', () => {
+    expect(API_VERSION).toBe('5.0.0')
+    for (const range of ['^5.0.0', '^5.0', '>=5.0.0 <6.0.0', '5.*'])
+      expect(satisfiesApiRange(range), range).toBe(true)
+    for (const range of ['^4.0.0', '^4.0', '4.*']) expect(satisfiesApiRange(range), range).toBe(false)
+  })
+
+  // The default plugins ship with the API: every bundled helper and every builtin package row the
+  // daemon loads on boot must be admitted by the current API_VERSION, or a fresh install refuses
+  // its own defaults with E_API_RANGE.
+  it('admits every bundled plugin and builtin plugin row', () => {
+    const packages = new URL('../../', import.meta.url)
+    const dirs = (rel: string) =>
+      readdirSync(new URL(rel, packages), { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => `${rel}${d.name}/`)
+    const manifestDirs = [
+      ...dirs('package-manager/bundled-plugins/'),
+      'ai/',
+      'base/',
+      'code/',
+      ...dirs('base/extensions/'),
+      ...dirs('code/src/extensions/'),
+    ]
+    const ranges: [string, string | undefined][] = []
+    for (const dir of manifestDirs) {
+      let pkg: {
+        agnes?: {
+          plugins?: { id?: string; apiRange?: string }[]
+          hostProvidedExternals?: Record<string, string>
+        }
+      }
+      try {
+        pkg = JSON.parse(readFileSync(new URL(`${dir}package.json`, packages), 'utf8'))
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === 'ENOENT') continue
+        throw e
+      }
+      for (const row of pkg.agnes?.plugins ?? []) ranges.push([`${dir} ${row.id ?? ''}`, row.apiRange])
+      const external = pkg.agnes?.hostProvidedExternals?.['@agnes/extension-api']
+      if (external !== undefined) ranges.push([`${dir} hostProvidedExternals`, external])
+    }
+    // Rows declared in code rather than in a package.json: the packaged CLI's copies of the base and
+    // code declarations, and the Host's own kernel rows.
+    for (const file of [
+      'cli/launch/packaged-host.ts',
+      'host/src/runtime/assemble/kernel-stage.ts',
+      'host-providers/src/assemble/tool-providers.ts',
+      'worker-runtime/src/mcp-server-rows.ts',
+    ]) {
+      const text = readFileSync(new URL(file, packages), 'utf8')
+      const found = [...text.matchAll(/apiRange: '([^']*)'/g)].map((m) => m[1])
+      expect(found.length, file).toBeGreaterThan(0)
+      for (const range of found) ranges.push([file, range])
+    }
+    expect(ranges.length).toBeGreaterThan(60)
+    const refused = ranges.filter(([, range]) => range === undefined || !satisfiesApiRange(range))
+    expect(refused).toEqual([])
+    expect(ranges.filter(([, range]) => range !== '^5.0.0')).toEqual([])
   })
 })

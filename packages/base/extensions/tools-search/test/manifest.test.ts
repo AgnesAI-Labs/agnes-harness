@@ -53,7 +53,7 @@ describe('tools-search manifest', () => {
     // path, so the file has to be there for the declaration to mean anything.
     const entry = fileURLToPath(new URL(`../${manifest.entry.replace(/^\.\//, '')}`, import.meta.url))
     expect(existsSync(entry), entry).toBe(true)
-    expect(manifest.apiRange).toBe('^4.0.0')
+    expect(manifest.apiRange).toBe('^5.0.0')
     expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/)
   })
 

@@ -208,7 +208,7 @@ it.each(['settled', 'unknown'] as const)('restarts resources after %s shutdown',
           {
             id: 'ext:sample/managed',
             export: 'plugin',
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             inject,
             capabilities: { store: true, managedServices: ['hub', 'example'].map(descriptor) },
           },
@@ -332,7 +332,7 @@ it('upgrades the pre-stream-normalization snapshot, reviews current code, reconc
               id: rowId,
               export: 'plugin',
               runtime: 'in-process',
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               inject: ['profileRuntime', 'services'],
               capabilities: {
                 store: true,

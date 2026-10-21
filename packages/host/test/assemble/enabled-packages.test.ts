@@ -168,7 +168,7 @@ async function setup(projections = false) {
       bundledPackageJson({
         id: 'agnes/enabled-test',
         version: '1.0.0',
-        apiRange: '^4.0.0',
+        apiRange: '^5.0.0',
         // The current extension-manifest schema requires a `./`-prefixed entry (protocol's
         // extension-manifest.json `entry` pattern `^\./`); the old bare `'index.mjs'` here predates
         // that and only ever passed the legacy reader's looser check, not the new one.

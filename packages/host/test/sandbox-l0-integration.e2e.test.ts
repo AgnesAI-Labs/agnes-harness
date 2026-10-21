@@ -202,7 +202,7 @@ async function assembleWithSandbox(opts: {
                 declaration: {
                   export: 'memoryPlugin',
                   id: 'memory:file',
-                  apiRange: '^4.0.0',
+                  apiRange: '^5.0.0',
                   default: true,
                   inject: ['providers'],
                   provide: [],

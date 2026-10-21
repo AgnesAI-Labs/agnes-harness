@@ -10,7 +10,7 @@ it('lists the optional Jev loop in the built-in catalog with its run-mode tag an
     const catalog = await discoverLocalExamples(root)
     const result = await catalog.read({ offline: true })
     expect(result.entries.find((entry) => entry.id === '@agnes/jev-loop')).toMatchObject({
-      version: '0.1.0',
+      version: '0.1.2',
       sourceId: 'builtin-plugins',
       source: { type: 'file', ref: 'file:./bundled-plugins/jev-loop' },
       provides: ['loop'],

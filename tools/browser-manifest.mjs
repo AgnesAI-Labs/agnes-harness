@@ -55,7 +55,7 @@ const manifest = {
       {
         id: 'ext:browser/main',
         export: 'main',
-        apiRange: '^4.0.0',
+        apiRange: '^5.0.0',
         runtime: 'in-process',
         inject: ['tools', 'hooks', 'services', 'profileRuntime'],
         metadata,

@@ -145,7 +145,7 @@ export async function createKernel(
     {
       id: 'agnes/observability',
       version: '1.0.0',
-      apiRange: '^4.0.0',
+      apiRange: '^5.0.0',
       entry: './observability',
       capabilities: { hooks: ['session_start', 'shutdown', 'subagent_start', 'subagent_end'] },
     },
@@ -157,7 +157,7 @@ export async function createKernel(
         {
           id: 'agnes/composition',
           version: '0.1.0',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           entry: './composition',
           capabilities: { hooks: ['tool_call'] },
         },

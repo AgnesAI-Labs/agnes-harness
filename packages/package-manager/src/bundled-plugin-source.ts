@@ -74,7 +74,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
   {
     name: 'jev-loop',
     id: '@agnes/jev-loop',
-    version: '0.1.0',
+    version: '0.1.2',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/jev-loop',
     // index.mjs is generated from packages/loop-jev and is not committed.

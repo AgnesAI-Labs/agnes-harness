@@ -134,7 +134,7 @@ export const pluginHelper = {
         if (kind === 'tool-with-panel') {
           const guide = {
             host: 'Agnes Harness',
-            apiVersion: '4.0.0',
+            apiVersion: '5.0.0',
             authoringCapability,
             authoringPath: authoringGuidance,
             guidance:
@@ -167,7 +167,7 @@ export const pluginHelper = {
         if (kind === 'skin')
           return result({
             host: 'Agnes Harness',
-            apiVersion: '4.0.0',
+            apiVersion: '5.0.0',
             authoringCapability,
             authoringPath: authoringGuidance,
             guidance: skinGuidance,
@@ -190,7 +190,7 @@ export const pluginHelper = {
           agnes: {
             plugins: [
               {
-                apiRange: '^4.0.0',
+                apiRange: '^5.0.0',
                 id: 'ext:my-agh-plugin/main',
                 export: 'main',
                 inject: kind === 'tool' ? ['tools'] : ['skills'],
@@ -204,7 +204,7 @@ export const pluginHelper = {
             : "export const main = { inject: ['skills'], apply(ctx) { ctx.skills.register({ name: 'my-workflow', description: 'Use when the user requests this workflow.', body: 'Describe the concrete workflow here.' }) } }\n"
         return result({
           host: 'Agnes Harness',
-          apiVersion: '4.0.0',
+          apiVersion: '5.0.0',
           authoringCapability,
           authoringPath: authoringGuidance,
           guidance:

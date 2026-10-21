@@ -1,19 +1,19 @@
 {
   "name": "@agnes-example/react-loop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "license": "Apache-2.0",
   "exports": "./index.mjs",
   "types": "./index.d.mts",
   "peerDependencies": {
-    "@agnes/extension-api": "^4.0.0"
+    "@agnes/extension-api": "^5.0.0"
   },
   "agnes": {
     "plugins": [
       {
         "id": "ext:example-react",
         "export": "plugin",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "default": true,
         "inject": [
           "providers"

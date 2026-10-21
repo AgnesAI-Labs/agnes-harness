@@ -980,7 +980,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       manifest: {
         id: extensionId,
         version: '0.1.0',
-        apiRange: '^4.0.0',
+        apiRange: '^5.0.0',
         entry: './index.mjs',
         capabilities: { tools: { prefix: 'mcp_' }, resources: ['mcp' as const] },
       },
@@ -1080,7 +1080,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         manifest: {
           id: extensionId,
           version: '0.1.0',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           entry: './index.mjs',
           capabilities: { tools: { prefix: 'mcp_' }, resources: ['mcp' as const] },
         },

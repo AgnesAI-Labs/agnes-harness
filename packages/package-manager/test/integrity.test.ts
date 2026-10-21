@@ -51,7 +51,7 @@ it.each([false, true])('rechecks installed bytes and registry identity (async=%s
     treeIntegrity: hashDirectory(directory, { exclude: [] }),
     trust: 'trusted',
     license: 'MIT',
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     dependencies: {},
     previous: null,
     state: { installed: new Date(0).toISOString(), trusted: new Date(0).toISOString(), enabled: true },

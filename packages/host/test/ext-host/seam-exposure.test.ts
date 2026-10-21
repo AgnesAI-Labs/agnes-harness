@@ -68,7 +68,7 @@ function fixture() {
       bundledPackageJson({
         id: 'fixture/seam-consumer',
         version: '1.0.0',
-        apiRange: '^4.0.0',
+        apiRange: '^5.0.0',
         entry: './index.js',
         capabilities: {
           tools: { prefix: 'sx_', names: ['sx_probe'] },
@@ -170,7 +170,7 @@ describe('seam exposure: what a third-party extension can reach at each moment (
         bundledPackageJson({
           id: 'fixture/isolated-consumer',
           version: '1.0.0',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           entry: './index.js',
           runtime: { supports: ['isolated'] },
           capabilities: { hooks: ['before_step'] },

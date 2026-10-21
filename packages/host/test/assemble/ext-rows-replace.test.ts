@@ -35,7 +35,7 @@ function vendorSource(rowId: string): Readonly<RuntimePluginSnapshot> {
       type: 'module',
       exports: './index.js',
       agnes: {
-        plugins: [{ apiRange: '^4.0.0', export: 'replacement', id: rowId, provide: ['replacementMarker'] }],
+        plugins: [{ apiRange: '^5.0.0', export: 'replacement', id: rowId, provide: ['replacementMarker'] }],
       },
     })}\n`,
   )

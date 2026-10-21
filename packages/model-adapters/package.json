@@ -22,7 +22,7 @@
       {
         "id": "model-adapters",
         "export": "modelAdaptersPlugin",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "inject": [
           "providers"
         ]

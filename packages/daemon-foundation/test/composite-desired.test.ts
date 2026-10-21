@@ -107,7 +107,7 @@ describe('rebuildDesiredFromInventory', () => {
         agnes: {
           plugins: [
             {
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               export: 'echo',
               id: 'ext:acme/echo',
               runtime: 'in-process',
@@ -176,7 +176,7 @@ describe('rebuildDesiredFromInventory', () => {
         name: 'acme/skin',
         version: '1.0.0',
         agnes: {
-          plugins: [{ apiRange: '^4.0.0', export: 'skin', id: 'ext:acme/skin', runtime: 'in-process' }],
+          plugins: [{ apiRange: '^5.0.0', export: 'skin', id: 'ext:acme/skin', runtime: 'in-process' }],
         },
       }),
     )
@@ -254,7 +254,7 @@ describe('rebuildDesiredFromInventory', () => {
       `${JSON.stringify({
         name: 'acme/claim',
         version: '1.0.0',
-        agnes: { plugins: [{ apiRange: '^4.0.0', export: 'claim', id: 'web:acme/claim' }] },
+        agnes: { plugins: [{ apiRange: '^5.0.0', export: 'claim', id: 'web:acme/claim' }] },
       })}\n`,
     )
     const next = rebuildDesiredFromInventory({
@@ -275,7 +275,7 @@ describe('rebuildDesiredFromInventory', () => {
       `${JSON.stringify({
         name: 'acme/claim',
         version: '1.0.0',
-        agnes: { plugins: [{ apiRange: '^4.0.0', export: 'claim', id: 'custom:acme/claim' }] },
+        agnes: { plugins: [{ apiRange: '^5.0.0', export: 'claim', id: 'custom:acme/claim' }] },
       })}\n`,
     )
     const next = rebuildDesiredFromInventory({

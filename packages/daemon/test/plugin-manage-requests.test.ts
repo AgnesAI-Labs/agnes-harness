@@ -57,7 +57,7 @@ const files = [
       agnes: {
         plugins: [
           {
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             id: 'ext:test-plugin/main',
             export: 'main',
             inject: ['tools'],

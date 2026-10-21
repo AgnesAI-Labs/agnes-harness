@@ -4,13 +4,13 @@ English | [简体中文](contracts-v0.1.zh-CN.md)
 
 [Plugin architecture](architecture-plugins.md) · [Author guide](../extend/README.md) · [Versions](../maintainers/versioning.md)
 
-This page maintains the author-contract inventory for product v0.1. Extension API is **4.0.0**. Source, schemas and declared package exports define current behavior; pin the source revision. This inventory is not a release or a deployment acceptance report. Record release results with version-matched CI and acceptance evidence.
+This page maintains the author-contract inventory for product v0.1. Extension API is **5.0.0**. Source, schemas and declared package exports define current behavior; pin the source revision. This inventory is not a release or a deployment acceptance report. Record release results with version-matched CI and acceptance evidence.
 
 ## Stability and compatibility policy
 
 **stable** identifies an established author contract selected for compatibility protection in v0.1. **experimental** identifies an evolving contract that must be used with matching source, examples and testkit revisions. Neither label certifies production readiness, platform support, arbitrary plugin isolation or npm availability. The candidate policy takes effect when maintainers accept the product freeze; existing preview revisions remain subject to the [preview policy](../maintainers/versioning.md).
 
-For accepted stable contracts, published packages follow semver: incompatible signatures, removals, narrower accepted inputs or changed observable guarantees require a major package version; compatible additions require a minor version; compatible fixes require a patch. Product `v0.1` does not renumber extension API `4.0.0`. Experimental changes require explicit change and migration notes, even while preview versions stay unchanged. The repository's published-package semver rules also apply to experimental exports; this candidate introduces no published-package exception. A published stable interface cannot evade its major-version rule by being relabeled experimental.
+For accepted stable contracts, published packages follow semver: incompatible signatures, removals, narrower accepted inputs or changed observable guarantees require a major package version; compatible additions require a minor version; compatible fixes require a patch. Product `v0.1` ships extension API `5.0.0`. Experimental changes require explicit change and migration notes, even while preview versions stay unchanged. The repository's published-package semver rules also apply to experimental exports; this candidate introduces no published-package exception. A published stable interface cannot evade its major-version rule by being relabeled experimental.
 
 Deprecations identify the old name, replacement, compatibility window and migration in the API changelog and both language guides. This protects accepted stable aliases after public release: they remain supported for at least one subsequent minor release and may be removed only in a major release. Unpublished preview builds do not promise permanent aliases; retired formats are refused with a clean-home hint, without conversion or carrying trust digests over from old bytes. Security-driven exceptions require explicit release notes and recovery instructions. No removal date is assigned here to the `defineKind` input `restartRequired` (use `scope`; restart is derived). Generation aliases, ACP `session/load`, without/fresh execution gates, old-home layout detection and Windows safety fallbacks remain supported. Plugin-defined checkpoint and data migrations require their own compatibility decisions; a package upgrade or generation migration does not migrate schemas automatically.
 
@@ -23,7 +23,7 @@ Deprecations identify the old name, replacement, compatibility window and migrat
 | Integrity/code digest, generation id, composition hash | Verified content and session binding, not semver or a permission grant |
 | `wireApi` | Model transport format; `Route.api` selects the adapter registration id, not extension API compatibility |
 
-`satisfiesApiRange` supports exact semver, comparators joined by whitespace (intersection), `^`, `~`, `*`, and numeric `x`/`*` wildcards. It does not implement npm's complete range grammar: unions, hyphen ranges and prerelease admission are unsupported. Use a tested range such as `^4.0.0`. See [the implementation](../../packages/extension-api/src/api-range.ts).
+`satisfiesApiRange` supports exact semver, comparators joined by whitespace (intersection), `^`, `~`, `*`, and numeric `x`/`*` wildcards. It does not implement npm's complete range grammar: unions, hyphen ranges and prerelease admission are unsupported. Use a tested range such as `^5.0.0`. See [the implementation](../../packages/extension-api/src/api-range.ts).
 
 ## Public contract inventory
 

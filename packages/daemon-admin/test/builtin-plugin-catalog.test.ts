@@ -94,39 +94,39 @@ it.each([
     ).toBe(true)
     expect(result.entries.find((entry) => entry.id === '@agnes/skill-helper')).toMatchObject({
       id: '@agnes/skill-helper',
-      version: '0.3.0',
+      version: '0.3.1',
       sourceId: 'builtin-plugins',
       source: { type: 'file', ref: 'file:./bundled-plugins/skill-helper' },
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/mcp-helper')).toMatchObject({
       id: '@agnes/mcp-helper',
-      version: '0.1.0',
+      version: '0.1.1',
       source: { ref: 'file:./bundled-plugins/mcp-helper' },
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/goal-ui')).toMatchObject({
       id: '@agnes/goal-ui',
-      version: '0.1.1',
+      version: '0.1.2',
       source: { ref: 'file:./bundled-plugins/goal-ui' },
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/interaction-ui')).toMatchObject({
       id: '@agnes/interaction-ui',
-      version: '0.1.1',
+      version: '0.1.2',
       source: { ref: 'file:./bundled-plugins/interaction-ui' },
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/deliverables-ui')).toMatchObject({
       id: '@agnes/deliverables-ui',
-      version: '0.1.2',
+      version: '0.1.3',
       source: { ref: 'file:./bundled-plugins/deliverables-ui' },
     })
     for (const id of ['navigation-ui', 'conversation-ui'])
       expect(result.entries.find((entry) => entry.id === `@agnes/${id}`)).toMatchObject({
         id: `@agnes/${id}`,
-        version: '0.1.0',
+        version: '0.1.1',
         source: { ref: `file:./bundled-plugins/${id}` },
       })
     expect(result.entries.find((entry) => entry.id === '@agnes/document-reader')).toMatchObject({
       id: '@agnes/document-reader',
-      version: '0.1.2',
+      version: '0.1.3',
       source: { ref: 'file:./bundled-plugins/document-reader' },
     })
     for (const pkg of OPTIONAL_BUNDLED_PACKAGES)

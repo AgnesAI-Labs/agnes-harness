@@ -138,7 +138,7 @@ In-process events carry turn status and the turn's text. They are not a token st
 
 ## Codex, Claude Code, and the generic engine
 
-`@agnes/base` declares three ordinary plugin rows, each `default: false`, `apiRange: "^4.0.0"`, `inject: ["childAgents"]`, and `runtime: "in-process"`:
+`@agnes/base` declares three ordinary plugin rows, each `default: false`, `apiRange: "^5.0.0"`, `inject: ["childAgents"]`, and `runtime: "in-process"`:
 
 | Row | Export |
 | --- | --- |

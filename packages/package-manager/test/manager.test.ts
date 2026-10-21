@@ -260,7 +260,7 @@ describe('PackageManager project trust', () => {
           {
             id: 'xinwei/sales-analysis',
             version: '1.0.0',
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             entry: './index.ts',
             capabilities: { tools: { prefix: 'xw_', names: ['xw_analyze'] } },
           },

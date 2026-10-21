@@ -10,7 +10,7 @@
         "id": "ext:agnes/follow-up-hint",
         "export": "default",
         "default": true,
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "inject": [
           "hooks",
           "services"

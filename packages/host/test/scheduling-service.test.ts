@@ -47,7 +47,7 @@ it('lets a declared third-party tool bind the fixed daemon service and closes it
   const manifest: ExtensionManifest = {
     id: 'vendor/schedule',
     version: '1.0.0',
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     entry: './index.ts',
     lease: { budget: 100 },
     capabilities: {
@@ -192,7 +192,7 @@ it.each([true, false])(
             {
               id: rowId,
               export: 'main',
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               inject: ['tools', 'providers'],
               capabilities: {
                 tools: { prefix: 'vendor_', names: ['vendor_list'] },

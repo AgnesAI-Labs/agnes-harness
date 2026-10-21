@@ -8,7 +8,7 @@
     "plugins": [
       {
         "export": "hooksRunnerReplacement",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "id": "ext:agnes/hooks-runner",
         "inject": [
           "hooks"

@@ -65,7 +65,7 @@ async function fixture(
             {
               export: 'main',
               id: 'loop:children',
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               inject: ['providers', 'childAgents'],
               runtime: 'in-process',
             },

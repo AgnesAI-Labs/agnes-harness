@@ -15,7 +15,7 @@ Daemon 在启动时扫描 `<AGH_HOME>/plugins/<name>/` 和 `<workspace>/.agh/plu
   "type": "module",
   "exports": "./src/index.ts",
   "agnes": {
-    "plugins": [{ "apiRange": "^4.0.0", "export": "main", "id": "ext:my-plugin/main", "inject": ["extension"] }]
+    "plugins": [{ "apiRange": "^5.0.0", "export": "main", "id": "ext:my-plugin/main", "inject": ["extension"] }]
   }
 }
 ```
