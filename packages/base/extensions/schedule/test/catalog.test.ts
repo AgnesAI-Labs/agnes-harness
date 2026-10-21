@@ -439,3 +439,29 @@ it.each(['approve', 'expire', 'refuse'] as const)(
     db.close()
   },
 )
+
+it('finds the open run of a job through the schedule_runs_schedule index', () => {
+  const db = new DatabaseSync(':memory:')
+  const seen: Array<{ sql: string; params: readonly unknown[] }> = []
+  const base = sqlOf(db)
+  const catalog = openScheduleCatalog(
+    {
+      ...base,
+      get: <T>(sql: string, params?: readonly unknown[]) => {
+        seen.push({ sql, params: params ?? [] })
+        return base.get<T>(sql, params)
+      },
+    },
+    () => NOW,
+  )
+  const created = catalog.create(daily())
+  catalog.recordDispatch(`schedule:${created.id}:1`, { at: NOW, reason: 'prompt', sessionKey: 'run-1' })
+  const open = seen.find((q) => /FROM schedule_runs WHERE[\s\S]*job_key = \?/.test(q.sql))
+  if (!open) throw new Error('openRun query was not issued')
+  const plan = db
+    .prepare(`EXPLAIN QUERY PLAN ${open.sql}`)
+    .all(...(open.params as SQLInputValue[])) as Array<{
+    detail: string
+  }>
+  expect(plan.map((row) => row.detail).join('\n')).toContain('USING INDEX schedule_runs_schedule')
+})

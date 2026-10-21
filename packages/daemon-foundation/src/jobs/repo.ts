@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
+import { JOBS_DDL, JOBS_INDEXES } from '@agnes/base/schedule'
 import { type JobSpec, rpcError, type Schedule } from '@agnes/protocol'
 import { ensure, type TableHandle } from '../storage/table.js'
 
@@ -52,29 +53,6 @@ type RawJobRow = {
   updated_at: number
 }
 
-const DDL = `CREATE TABLE IF NOT EXISTS jobs (
-  idempotency_key TEXT PRIMARY KEY,
-  session_key TEXT NOT NULL,
-  profile_hash TEXT NOT NULL,
-  payload TEXT NOT NULL,
-  schedule TEXT NOT NULL,
-  status TEXT NOT NULL,
-  attempts INTEGER NOT NULL DEFAULT 0,
-  max_attempts INTEGER NOT NULL,
-  backoff_ms INTEGER NOT NULL DEFAULT 1000,
-  delay_until INTEGER NOT NULL DEFAULT 0,
-  lease_owner TEXT,
-  lease_until INTEGER,
-  heartbeat INTEGER,
-  stalled_counter INTEGER NOT NULL DEFAULT 0,
-  budget REAL,
-  protected INTEGER NOT NULL DEFAULT 0,
-  result TEXT,
-  error TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-)`
-
 const TERMINAL = new Set<JobStatusName>(['completed', 'failed', 'dead', 'cancelled'])
 
 function toRow(raw: RawJobRow): JobRow {
@@ -107,9 +85,7 @@ export class JobsRepo {
     private readonly table: TableHandle,
     private readonly clock: () => number,
   ) {
-    ensure(table, DDL)
-    ensure(table, 'CREATE INDEX IF NOT EXISTS jobs_due ON jobs (status, delay_until)')
-    ensure(table, 'CREATE INDEX IF NOT EXISTS jobs_session ON jobs (session_key, status)')
+    for (const ddl of [JOBS_DDL, ...JOBS_INDEXES]) ensure(table, ddl)
   }
 
   insert(job: JobRow): boolean {

@@ -53,7 +53,7 @@ type DaemonTable = {
 const SCHEDULE_KEY = /^schedule:(sched_[a-f0-9]{16}):(\d+)$/
 
 // Shared database schema for the daemon's job and schedule catalog.
-const JOBS_DDL = `CREATE TABLE IF NOT EXISTS jobs (
+export const JOBS_DDL = `CREATE TABLE IF NOT EXISTS jobs (
   idempotency_key TEXT PRIMARY KEY,
   session_key TEXT NOT NULL,
   profile_hash TEXT NOT NULL,
@@ -75,6 +75,11 @@ const JOBS_DDL = `CREATE TABLE IF NOT EXISTS jobs (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 )`
+
+export const JOBS_INDEXES = [
+  'CREATE INDEX IF NOT EXISTS jobs_due ON jobs (status, delay_until)',
+  'CREATE INDEX IF NOT EXISTS jobs_session ON jobs (session_key, status)',
+] as const
 
 function bind(params?: readonly unknown[]): unknown[] | undefined {
   return params ? [...params] : undefined
@@ -98,9 +103,7 @@ export function openDaemonScheduleDb(table: DaemonTable): ScheduleDb {
 }
 
 function ensureScheduleSchema(db: ScheduleDb): void {
-  db.exec(JOBS_DDL)
-  db.exec('CREATE INDEX IF NOT EXISTS jobs_due ON jobs (status, delay_until)')
-  db.exec('CREATE INDEX IF NOT EXISTS jobs_session ON jobs (session_key, status)')
+  for (const ddl of [JOBS_DDL, ...JOBS_INDEXES]) db.exec(ddl)
   db.exec(`CREATE TABLE IF NOT EXISTS schedules (
     id TEXT PRIMARY KEY,
     session_key TEXT NOT NULL,
@@ -376,11 +379,11 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
   }
   const idOf = (key: string) => SCHEDULE_KEY.exec(key)?.[1]
   /** The run a job started and has not closed: the one its settlement or failure finishes. */
-  const openRun = (key: string) =>
+  const openRun = (id: string, key: string) =>
     db.get<{ rid: number }>(
-      `SELECT rowid AS rid FROM schedule_runs WHERE job_key = ? AND outcome IN ('running', 'waiting_approval', 'needs_attention')
+      `SELECT rowid AS rid FROM schedule_runs WHERE schedule_id = ? AND job_key = ? AND outcome IN ('running', 'waiting_approval', 'needs_attention')
        ORDER BY at DESC, rowid DESC LIMIT 1`,
-      [key],
+      [id, key],
     )
   const insertRun = (id: string, key: string, run: ScheduleRun) =>
     db.transaction(() => {
@@ -620,7 +623,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
         ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
         ...(info.seq === undefined ? {} : { seq: info.seq }),
       })
-      const open = openRun(key)
+      const open = openRun(id, key)
       if (open && outcome === 'running') saveProgress(open.rid, startProgress())
     },
     observeSession(sessionKey, event) {
@@ -658,7 +661,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       const id = idOf(key)
       if (!id) return
       const now = clock()
-      const open = openRun(key)
+      const open = openRun(id, key)
       if (open) {
         const stored = db.get<{ state: string }>('SELECT state FROM schedule_run_progress WHERE run_id = ?', [
           open.rid,
@@ -691,7 +694,7 @@ export function openScheduleCatalog(db: ScheduleDb, clock: () => number = () => 
       if (!id || !load(id)) return
       const reason = info.reason.slice(0, 64)
       const detail = clipDetail(info.detail)
-      const open = info.reason === 'approval_pending_previous_run' ? undefined : openRun(key)
+      const open = info.reason === 'approval_pending_previous_run' ? undefined : openRun(id, key)
       if (open) {
         db.exec(
           `UPDATE schedule_runs SET outcome = 'failed', ended_at = ?, reason = ?, detail = ? WHERE rowid = ?`,

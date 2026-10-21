@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { JOBS_DDL, JOBS_INDEXES } from '@agnes/base/schedule'
 import { describe, expect, it } from 'vitest'
 import { type JobRow, JobsRepo } from '../src/jobs/repo.js'
 import { sqliteTables } from './sqlite-tables.js'
@@ -21,6 +23,21 @@ const row = (key: string, over: Partial<JobRow> = {}): JobRow => ({
 })
 
 describe('JobsRepo', () => {
+  it('creates jobs from the one shared schedule DDL', () => {
+    expect(JOBS_DDL).toMatch(/^CREATE TABLE IF NOT EXISTS jobs \(/)
+    expect(JOBS_INDEXES).toHaveLength(2)
+    expect(readFileSync(new URL('../src/jobs/repo.ts', import.meta.url), 'utf8')).not.toContain(
+      'CREATE TABLE IF NOT EXISTS jobs',
+    )
+    const t = sqliteTables().table('jobs')
+    new JobsRepo(t, () => 0)
+    expect(
+      t
+        .all<{ name: string }>("SELECT name FROM sqlite_master WHERE tbl_name = 'jobs' ORDER BY name")
+        .map((r) => r.name),
+    ).toEqual(['jobs', 'jobs_due', 'jobs_session', 'sqlite_autoindex_jobs_1'])
+  })
+
   it('inserts idempotently, claims due rows, heartbeats, settles, reclaims, and cancels', () => {
     let now = 1_000
     const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)

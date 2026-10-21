@@ -15,6 +15,8 @@ export type {
 export {
   compileTarget,
   createSchedulesPort,
+  JOBS_DDL,
+  JOBS_INDEXES,
   openDaemonScheduleDb,
   openScheduleCatalog,
   ScheduleRejected,
