@@ -73,33 +73,39 @@ export async function initializeRuntime(
     const { surfaceController, pinCoordinator, publishChildEngines } = surfaces
     const { compositeActivation, compositePins, revertFailedDesired, localPluginWatcher } = activation
     void revertFailedDesired?.()
-    const effectivePackageAdmin: NonNullable<AssemblyBase['o']['packageAdmin']> = o.packageAdmin ?? {
-      service: createPackageAdminService({
-        resolveAgent: hostFacade.resolveApplicationAgent,
-        authoringHome: ownerHome,
-        manager: o.packageRuntime.manager,
-        profileDirectory: o.packageRuntime.profileDirectory,
-        operations: o.packageRuntime.operations,
-        ...(o.packageRuntime.catalog ? { catalog: o.packageRuntime.catalog } : {}),
-        ...(compositeActivation ? { activation: compositeActivation } : {}),
-        ...(compositePins ? { runtimePins: compositePins } : {}),
-        ...(runtimeStore ? { pluginTree: runtimeStore } : {}),
-        ...(pluginTreePublisher ? { pluginTreePublisher } : {}),
-        ...(pinCoordinator ? { revokeRuntimePackage: pinCoordinator.revokePackage } : {}),
-        workerGeneration: () => pool.businessWorker()?.generation,
-        clientServiceCall: async (input) => {
-          return await services.dispatchClientService(input)
-        },
-        clientEffectCall: async (input, authority) => {
-          return await dispatchClientEffect(input, authority)
-        },
-        clientModules: createClientModuleRegistry({
-          composition: () => composition,
-          snapshotDirectory: (profile) => join(o.config.dataDir, 'daemon', 'client-modules', profile),
-          runtimeArtifacts: () => runtimeArtifactsFromStore(runtimeStore, pool.businessWorker()?.generation),
-        }),
-      }),
-    }
+    const readyPackageAdmin: NonNullable<AssemblyBase['o']['packageAdmin']> =
+      o.packageAdmin && !packageRuntime.embeddedAdmin
+        ? o.packageAdmin
+        : {
+            service: createPackageAdminService({
+              resolveAgent: hostFacade.resolveApplicationAgent,
+              authoringHome: ownerHome,
+              manager: o.packageRuntime.manager,
+              profileDirectory: o.packageRuntime.profileDirectory,
+              operations: o.packageRuntime.operations,
+              ...(o.packageRuntime.catalog ? { catalog: o.packageRuntime.catalog } : {}),
+              ...(compositeActivation ? { activation: compositeActivation } : {}),
+              ...(compositePins ? { runtimePins: compositePins } : {}),
+              ...(runtimeStore ? { pluginTree: runtimeStore } : {}),
+              ...(pluginTreePublisher ? { pluginTreePublisher } : {}),
+              ...(pinCoordinator ? { revokeRuntimePackage: pinCoordinator.revokePackage } : {}),
+              workerGeneration: () => pool.businessWorker()?.generation,
+              clientServiceCall: async (input) => {
+                return await services.dispatchClientService(input)
+              },
+              clientEffectCall: async (input, authority) => {
+                return await dispatchClientEffect(input, authority)
+              },
+              clientModules: createClientModuleRegistry({
+                composition: () => composition,
+                snapshotDirectory: (profile) => join(o.config.dataDir, 'daemon', 'client-modules', profile),
+                runtimeArtifacts: () =>
+                  runtimeArtifactsFromStore(runtimeStore, pool.businessWorker()?.generation),
+              }),
+            }),
+          }
+    packageRuntime.embeddedAdmin?.initialize(readyPackageAdmin.service)
+    const effectivePackageAdmin = o.packageAdmin ?? readyPackageAdmin
     return { effectivePackageAdmin, surfaceController, localPluginWatcher, publishChildEngines }
   }
   return {

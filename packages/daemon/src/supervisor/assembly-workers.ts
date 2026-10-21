@@ -62,6 +62,8 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     })
   const references = o.packageRuntime?.references
   if (references) lifetime.own({ dispose: () => references.close() })
+  const embeddedAdmin = o.packageRuntime?.embeddedAdmin
+  if (embeddedAdmin) lifetime.own({ dispose: () => embeddedAdmin.close() })
   const runtimeFailure = assemblyPort<() => Promise<void>>()
   const runtimeWork = assemblyTasks()
   lifetime.own({

@@ -91,7 +91,7 @@ export async function preparePackageRuntime(
       stateDirectory: join(scope.daemonDir, 'package-activation'),
       ...(localExamplesCatalog ? { catalog: localExamplesCatalog } : {}),
       references,
-      ...(embedded ? { bindRuntimePins: embedded.bindRuntimePins } : {}),
+      ...(embedded ? { bindRuntimePins: embedded.bindRuntimePins, embeddedAdmin: embedded } : {}),
     },
   }
 }

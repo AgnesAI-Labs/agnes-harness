@@ -37,6 +37,7 @@ import type {
 import type { assemblyPort } from './assembly-lifetime.js'
 import type { BootVerification } from './boot-verification.js'
 import type { DaemonConfig } from './config.js'
+import type { embeddedPackageAdmin } from './embedded-package-admin.js'
 import type { JwksResolver, JwksTransport } from './jwks-cache.js'
 import type { acquireOwnerLock } from './owner-lock.js'
 import type { SessionViewRead } from './session-reads.js'
@@ -128,6 +129,7 @@ export type StartSupervisorOptions = {
     catalog?: LocalExamplesCatalog
     /** Embedded catalog-only starters can install their private pin adapter explicitly. */
     bindRuntimePins?(adapter: RuntimePinsAdapter): void
+    embeddedAdmin?: Pick<ReturnType<typeof embeddedPackageAdmin>, 'initialize' | 'close'>
     references?: ReturnType<typeof assemblyPort<PackageReferenceFactReader>>
   }
 }
