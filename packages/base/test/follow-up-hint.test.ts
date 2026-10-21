@@ -2,7 +2,11 @@ import type { HookContext, HookHandler, ServiceContext, ServiceDef } from '@agne
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it, vi } from 'vitest'
-import { createFollowUpHintExtension, FOLLOW_UP_HINT_SYSTEM, normalizeHint } from '../extensions/follow-up-hint/src/index.js'
+import {
+  createFollowUpHintExtension,
+  FOLLOW_UP_HINT_SYSTEM,
+  normalizeHint,
+} from '../extensions/follow-up-hint/src/index.js'
 import type { SessionTasks } from '../src/seam-init.js'
 
 async function fixture() {
