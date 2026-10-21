@@ -336,13 +336,17 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           isolation: worktree ? 'worktree' : 'shared',
         }
         if (worktree) details.worktree = worktree
+        const followUp =
+          ctx.tools.availability?.('subagent_list').status === 'offered'
+            ? 'Use subagent_list for the handle if follow-up is needed'
+            : 'Keep the task reference for follow-up'
         return {
           content: [
             {
               type: 'text',
               text: collected
                 ? `Delegated task ${collected.status}.\n${collected.text ?? 'No findings returned.'}`
-                : 'Task delegated in the background. A completion notice will carry the findings. Keep the task reference for follow-up; do not repeat internal handles to the user.',
+                : `Task delegated in the background. A completion notice will carry the findings. ${followUp}; do not repeat internal handles to the user.`,
             },
           ],
           details,

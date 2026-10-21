@@ -304,11 +304,32 @@ describe('subagent_spawn', () => {
         return { childKey: 'role-child', role }
       },
     })
+    ctx.tools.availability = (name) => ({
+      status: name === 'subagent_list' ? 'offered' : 'unavailable',
+      message: 'Request tool selection.',
+    })
     const tool = subagentSpawnTool(d)
     const result = await tool.execute({ task: 'Read', role: role.ref }, ctx)
     expect(result.structured).toMatchObject({ childKey: 'role-child', role, task: 'Read', status: 'running' })
     expect(JSON.stringify(result.content)).not.toContain('role-child')
-    expect(JSON.stringify(result.content)).not.toMatch(/subagent_(?:send_message|list)/)
+    expect(JSON.stringify(result.content)).not.toContain('subagent_send_message')
+    expect(JSON.stringify(result.content)).toContain(
+      'Use subagent_list for the handle if follow-up is needed',
+    )
+    for (const availability of ['deferred', 'unavailable', undefined] as const) {
+      const restricted = context({ spawn: async () => ({ childKey: 'restricted-child', role }) })
+      restricted.ctx.tools.list = () => [subagentListTool]
+      if (availability)
+        restricted.ctx.tools.availability = () => ({ status: availability, message: availability })
+      const receipt = await subagentSpawnTool(deps()).execute(
+        { task: 'Read', role: role.ref },
+        restricted.ctx,
+      )
+      expect(JSON.stringify(receipt.content)).not.toContain('subagent_list')
+      expect(JSON.stringify(receipt.content)).not.toContain('subagent_send_message')
+      expect(JSON.stringify(receipt.content)).not.toContain('restricted-child')
+      expect(receipt.structured).toMatchObject({ childKey: 'restricted-child', status: 'running' })
+    }
     const waitedContext = context({ spawn: async () => ({ childKey: 'waited-role', role }) })
     const waited = await tool.execute({ task: 'Read', role: role.ref, wait: true }, waitedContext.ctx)
     expect(waited.structured).toMatchObject({ childKey: 'waited-role', status: 'completed' })
