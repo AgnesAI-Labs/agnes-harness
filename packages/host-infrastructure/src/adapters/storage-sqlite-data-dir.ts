@@ -26,6 +26,11 @@ function resetInstructions({ file, tablesDir }: DataDirPaths): string {
 export function assertDataDirVersion(db: DatabaseSync, paths: DataDirPaths): 'fresh' | 'current' {
   const { file, tablesDir } = paths
   const dataDir = dirname(file)
+  // Look at the package tables BEFORE the snapshot. Package tables are only created after
+  // sessions.db has committed, so a table seen here means the snapshot below is not empty. Read in
+  // the other order, a process that creates the directory in between makes a live ledger look like
+  // an orphan, and the caller would then delete the file that process just stamped.
+  const packageTables = hasPackageTables(tablesDir)
   // One statement, so one snapshot: another process committing between two reads would show tables
   // with a version that does not yet include them.
   const row = db
@@ -48,7 +53,7 @@ export function assertDataDirVersion(db: DatabaseSync, paths: DataDirPaths): 'fr
       { dataDir, file, found, supported: DATA_DIR_VERSION },
     )
   if (empty) {
-    if (hasPackageTables(tablesDir))
+    if (packageTables)
       throw new CoreError(
         'E_DATA_DIR_STALE',
         `data directory ${dataDir} has package tables in ${tablesDir} but no ledger at ${file}. ${resetInstructions(paths)}`,
