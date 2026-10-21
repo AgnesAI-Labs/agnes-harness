@@ -197,6 +197,8 @@ describe('generation record shape gate', () => {
     const before = statSync(file)
     writeFileSync(file, 'modified')
     utimesSync(file, before.atime, before.mtime)
+    // Listing historical ownership is not an archive-health verdict or executable source.
+    expect(store.describe(snapshot.id)).toEqual({ id: snapshot.id, packages: snapshot.packages })
     await withPackageVerification(async () => {
       expect(() => store.read(snapshot.id)).toThrow('E_GENERATION_RESOURCE_MISSING')
       await expect(store.readAsync(snapshot.id)).rejects.toThrow('E_GENERATION_RESOURCE_MISSING')
@@ -217,6 +219,7 @@ describe('generation record shape gate', () => {
     const file = join(store.root, snapshot.id, 'generation.json')
     const record = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>
     writeFileSync(file, JSON.stringify(mutate(record)))
+    expect(() => store.describe(snapshot.id)).toThrow()
     let caught: unknown
     try {
       store.read(snapshot.id)

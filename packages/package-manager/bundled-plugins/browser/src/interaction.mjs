@@ -18,7 +18,9 @@ export function interact(runtime, _input, context) {
         owned.delete(item.id)
         if (item.inputStream === handle) {
           item.inputStream = undefined
-          item.mode = 'paused'
+          item.mode = 'agent'
+          item.control = undefined
+          runtime.clearRefs(item)
           for (const key of ['Shift', 'Control', 'Alt', 'Meta'])
             void item.page.keyboard.up(key).catch(() => {})
           void item.page.mouse.up().catch(() => {})
@@ -71,7 +73,13 @@ export function interact(runtime, _input, context) {
       const item = runtime.get(session, frame.pageId)
       if (frame.type === 'pause') {
         if (owned.get(item.id) === item.inputStream && item.controlEpoch === frame.controlEpoch)
-          runtime.revoke(item)
+          await runtime.control(
+            session,
+            { pageId: item.id, mode: 'agent' },
+            context.actor,
+            undefined,
+            context.signal,
+          )
         return { status: 'ok' }
       }
       if (frame.type === 'control') {

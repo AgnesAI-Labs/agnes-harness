@@ -287,6 +287,18 @@ export class RuntimeGenerationSnapshotStore {
     return collectRead(this.readSteps(id))
   }
 
+  /** Display metadata only; never supplies executable sources or proves that an archive can resume. */
+  describe(id: string): Pick<PluginGenerationSnapshot, 'id' | 'packages'> {
+    const file = join(this.directory(id), 'generation.json')
+    const record = decodeGenerationRecord(
+      parseRecord(readFileSync(file, 'utf8'), file),
+      id,
+      file,
+      GENERATION_SNAPSHOT_VERSION,
+    )
+    return Object.freeze({ id: record.id, packages: record.packages })
+  }
+
   /** Same integrity checks as read(), with cooperative file hashing for read-only status. */
   readAsync(id: string): Promise<PluginGenerationSnapshot> {
     return collectReadAsync(this.readSteps(id))

@@ -220,6 +220,7 @@ import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { acquireOwnerLock } from './owner-lock.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
 import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
+import { createProfileInspection } from './profile-inspection.js'
 import { createSupervisorProfileServices } from './profile-services.js'
 import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
@@ -595,6 +596,7 @@ export type StartSupervisorOptions = {
   /** Optional local configuration authority; activation updates only future worker defaults. */
   configuration?: ConfigurationService
   reloadProfile?: (adminBundles?: readonly string[]) => Promise<ResolvedProfile>
+  inspectProfile?: (adminBundles?: readonly string[]) => Promise<ResolvedProfile>
   clock?: () => number
   workerExecPath?: string
   workerExecArgv?: string[]
@@ -2024,6 +2026,7 @@ export async function startSupervisor(o: StartSupervisorOptions): Promise<{
       dataDir: o.config.dataDir,
       profileDir: o.profileDir,
       resolveProfile: o.reloadProfile ?? (async () => o.profile),
+      ...(o.inspectProfile ? { inspectProfile: o.inspectProfile } : {}),
       workspaces: () => workspaceCatalog.list(),
       plan: createPlanCommands({
         activationBarrier,
@@ -3025,6 +3028,12 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
       workspaceRoot: scope.workspace,
       configuration,
       reloadProfile,
+      inspectProfile: createProfileInspection({
+        profileDir: scope.profileDir,
+        workspace: scope.workspace,
+        configuration,
+        resolve: reloadProfile,
+      }),
       ...(deps.workerExecPath ? { workerExecPath: deps.workerExecPath } : {}),
       ...(deps.workerExecArgv ? { workerExecArgv: deps.workerExecArgv } : {}),
       ...(deps.workerEntry ? { workerEntry: deps.workerEntry } : {}),

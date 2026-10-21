@@ -5,6 +5,7 @@ export type BrowserPage = {
   url: string
   pageEpoch: number
   controlEpoch: number
+  agentRevision?: number
   mode: 'agent' | 'human' | 'paused'
   uncertain?: boolean
   activity?: number

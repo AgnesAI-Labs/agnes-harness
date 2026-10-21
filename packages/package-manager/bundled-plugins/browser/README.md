@@ -23,15 +23,17 @@ click, fill, key, scroll, wait, back, forward, reload and close. Inspect returns
 element refs and pageEpoch; mutations must use current observations. Page console
 and network summaries are bounded; HTTP failures and network failures are separate.
 
-**Take control** pauses model writes and admits human input through a native
-session effect. Control is bound to the actor, session, page and original request.
-Opening the panel prepares a native authorized interaction channel without taking control.
-Clicking, scrolling or navigating takes control through that channel before forwarding input. Typing and IME input
-stay within the page display; there is no separate visible text editor. An action
-captured before a document change during handover is discarded, not retargeted.
+Opening the panel prepares a native authorized interaction channel. Clicking,
+scrolling and typing work directly; there is no manual take/return toggle. Admission
+remains bound to the actor, session, page and original request.
+The page's existing queue serializes website actions. Model writes wait until human
+input has been idle for 600 ms, outside the queue so typing and other tabs continue.
+After human input, the model must inspect or screenshot the page again. Human gestures
+captured before an agent action or document change are discarded rather than retargeted.
+Typing and IME input stay within the page display; there is no separate visible editor.
 Thirty-second input leases renew within a five-minute control session. Disconnect
-pauses input; expired control needs another explicit takeover. **Return to AGH**
-revokes human input and requires the model to observe the page again.
+stops human input without permanently reserving the page; uncertain actions still need
+inspection and are never replayed. Legacy explicit control services remain compatible.
 
 Turning off immediately rejects new operations and queued input, disconnects
 views and closes only plugin-owned resources. It cannot undo an action already

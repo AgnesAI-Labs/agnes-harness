@@ -42,6 +42,7 @@ export function createAppServerAdmin(options: {
   dataDir: string
   profileDir: string
   resolveProfile(bundles?: readonly string[]): Promise<ResolvedProfile>
+  inspectProfile?(bundles?: readonly string[]): Promise<ResolvedProfile>
   memory?(
     input: AdminMemoryParams,
   ): Promise<Pick<import('@agnes/protocol/gen/app-server').AdminMemoryResult, 'inspection' | 'file'>>
@@ -53,6 +54,7 @@ export function createAppServerAdmin(options: {
   const composition = createCompositionAdmin({
     profileDir: options.profileDir,
     resolveProfile: options.resolveProfile,
+    ...(options.inspectProfile ? { inspectProfile: options.inspectProfile } : {}),
   })
   resolveFileSecretsDirectory({ home: options.home, dataDir: options.dataDir })
   const credentials = createCredentialStore({ root: options.home })

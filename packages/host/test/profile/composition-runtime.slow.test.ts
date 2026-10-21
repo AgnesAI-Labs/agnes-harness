@@ -298,6 +298,7 @@ it('drains a disabled business bundle while existing sessions retain their code'
   const dataDir = fixture.dataDir
   try {
     await fixture.host.applyRuntimeTarget(targetOf(ids.map((vendor) => row(vendor))))
+    expect(await fixture.host.sessionBundleCatalog?.()).toHaveProperty('acme/a#a')
     const normal = await fixture.host.createSession({ key: 'default-tools', cwd: dataDir })
     const a = await fixture.host.createSession({ key: 'bundle-a', cwd: dataDir, bundles: ['acme/a#a'] })
     expect(
@@ -310,6 +311,7 @@ it('drains a disabled business bundle while existing sessions retain their code'
     const disabled = targetOf(ids.map((vendor) => row(vendor, vendor !== 'acme/b')))
     const report = await fixture.host.applyRuntimeTarget(disabled)
     expect(report.ok, JSON.stringify(report)).toBe(true)
+    expect(await fixture.host.sessionBundleCatalog?.()).not.toHaveProperty('acme/a#a')
     expect(normal.currentTools().resolve('fixture_2')).toBeDefined()
     expect(a.loop).toEqual({ id: 'fixture.business', version: '1.0.0' })
     expect(a.currentTools().resolve('fixture_0')).toBeDefined()

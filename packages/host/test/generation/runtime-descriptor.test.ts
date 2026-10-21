@@ -89,10 +89,10 @@ it('projects a draining composition without mutating its durable generation fact
   expect(active.generations[0]?.state).toBe('active')
 })
 
-it('uses cooperative reads for cold generations and propagates damage', async () => {
+it('reads cold generation descriptions and propagates damaged metadata', async () => {
   const store = {
     sessions: () => [{ sessionKey: 's', generationId: 'g' }],
-    readAsync: async () => ({ packages: [{ id: 'p', version: '1' }] }),
+    describe: () => ({ id: 'g', packages: [{ id: 'p', version: '1' }] }),
   }
   const describe = (
     _pins: unknown,
@@ -117,7 +117,7 @@ it('uses cooperative reads for cold generations and propagates damage', async ()
     readGenerationStatusAsync(
       {
         ...store,
-        readAsync: async () => {
+        describe: () => {
           throw new Error('snapshot damaged')
         },
       } as never,

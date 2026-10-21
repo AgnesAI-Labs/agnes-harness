@@ -138,10 +138,17 @@ it('shares an ordinary in-flight read, then verifies bytes again even without a 
   const warm = await f.manager.inventory(f.profileDir)
   expect(warm).toEqual(first)
   expect(await f.manager.inventory(f.profileDir, { fresh: true })).toEqual(first)
+  const [fresh, follower] = await Promise.all([
+    f.manager.inventory(f.profileDir, { fresh: true }),
+    f.manager.inventory(f.profileDir),
+  ])
+  expect(fresh).toBe(follower)
+  expect(fresh).toEqual(first)
   writeFileSync(join(f.directory, 'index.mjs'), 'changed bytes')
   const failures = await Promise.allSettled([
     f.manager.inventory(f.profileDir),
     f.manager.inventory(f.profileDir),
+    f.manager.inventory(f.profileDir, { fresh: true }),
   ])
   expect(failures.every((result) => result.status === 'rejected')).toBe(true)
   writeFileSync(join(f.directory, 'index.mjs'), 'export const main = () => {}\n')
@@ -165,6 +172,10 @@ it('cuts read boundaries on mutations, fresh verification and administrator poli
   const denied = f.manager.inventory(f.profileDir)
   expect(await oldPolicy).not.toBe(await denied)
   expect((await denied).packages[0]?.blockers).toContainEqual({
+    code: 'policy',
+    references: ['capability-blocked', 'ui'],
+  })
+  expect((await f.manager.inventory(f.profileDir, { fresh: true })).packages[0]?.blockers).toContainEqual({
     code: 'policy',
     references: ['capability-blocked', 'ui'],
   })

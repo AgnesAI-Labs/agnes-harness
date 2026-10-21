@@ -216,28 +216,6 @@ export function apply(ctx: ClientContext) {
           )}
           {page && (
             <>
-              <IconButton
-                className="agh-browser-control"
-                name={control ? 'bot' : 'user'}
-                label={t(control ? 'return' : 'take')}
-                data-browser-control
-                aria-pressed={Boolean(control)}
-                disabled={busy}
-                title={t(page.mode)}
-                onClick={() => {
-                  if (!control) void takeControl()
-                  else
-                    void interaction
-                      .request({
-                        type: 'control',
-                        pageId: page.pageId,
-                        pageEpoch: page.pageEpoch,
-                        mode: 'agent',
-                      })
-                      .then(() => setControl(undefined))
-                      .catch((error) => setError(String(error)))
-                }}
-              />
               <Menu
                 label={t('more')}
                 trigger={<IconButton name="ellipsis" label={t('more')} />}

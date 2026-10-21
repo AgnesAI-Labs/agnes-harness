@@ -62,7 +62,10 @@ export function namedLoops(
 }
 
 /** Read only same-origin public descriptions through the authenticated launcher BFF. */
-export async function loadNewSessionCatalog(fetcher: typeof fetch = fetch): Promise<NewSessionCatalog> {
+export async function loadNewSessionCatalog(
+  fetcher: typeof fetch = fetch,
+  includeComposition = true,
+): Promise<NewSessionCatalog> {
   const request = async (path: string, message: string) => {
     const response = await fetcher(path, { credentials: 'same-origin', cache: 'no-store' })
     if (!response.ok) throw new Error(message)
@@ -73,9 +76,11 @@ export async function loadNewSessionCatalog(fetcher: typeof fetch = fetch): Prom
     request('/admin/api/model-adapters', 'adapter catalog unavailable') as Promise<{
       modelAdapters?: unknown
     }>,
-    request('/admin/api/composition', 'composition unavailable')
-      .then(readComposition)
-      .catch(() => undefined),
+    includeComposition
+      ? request('/admin/api/composition', 'composition unavailable')
+          .then(readComposition)
+          .catch(() => undefined)
+      : undefined,
   ])
   const snapshot = { revision: value?.revision, defaults: value?.defaults }
   if (
@@ -100,6 +105,13 @@ export async function loadNewSessionCatalog(fetcher: typeof fetch = fetch): Prom
     modelAdapters: adapters.modelAdapters,
     ...(composition ? { composition } : {}),
   }
+}
+
+/** Optional origin/help text must not hold the draft's model and permission controls. */
+export async function loadNewSessionComposition(fetcher: typeof fetch = fetch) {
+  const response = await fetcher('/admin/api/composition', { credentials: 'same-origin', cache: 'no-store' })
+  if (!response.ok) throw new Error('composition unavailable')
+  return readComposition(await response.json())
 }
 
 export interface LoopPickerView {

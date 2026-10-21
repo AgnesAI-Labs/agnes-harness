@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
 import { browserUrl, failure, isBrowserRefusal } from './policy.mjs'
 
 const MAX_PAGES = 3
@@ -186,6 +187,10 @@ export class BrowserRuntime {
       events: [],
       cursor: 0,
       inputVersion: 0,
+      humanRevision: 0,
+      observedHumanRevision: 0,
+      agentRevision: 0,
+      lastHumanInput: -Infinity,
       refs: new Map(),
       viewers: new Set(),
     }
@@ -269,13 +274,27 @@ export class BrowserRuntime {
     const pending = item.queue.then(async () => {
       this.guard(epoch)
       signal?.throwIfAborted()
-      if (item.controlEpoch !== controlEpoch || (human ? item.mode !== 'human' : item.mode !== 'agent'))
+      const shared = item.mode === 'human' && item.control?.nativeId
+      if (
+        item.controlEpoch !== controlEpoch ||
+        (human ? item.mode !== 'human' : item.mode !== 'agent' && !shared)
+      )
         throw failure('CONTROL_CHANGED', 'Page control changed. Inspect the current page.')
+      if (
+        !human &&
+        ((shared && this.now() - item.lastHumanInput < 600) ||
+          item.observedHumanRevision !== item.humanRevision)
+      )
+        throw failure('STALE_TARGET', 'The user is editing this page. Inspect again after their input.')
       if (item.uncertain) throw failure('UNCERTAIN', 'Inspect the page before any further operation.')
       let result
       try {
         if (!human) this.activate(item)
         item.inputVersion++
+        if (human) {
+          item.humanRevision++
+          this.clearRefs(item)
+        } else item.agentRevision++
         result = await work()
       } catch (error) {
         if (!isBrowserRefusal(error)) {
@@ -299,6 +318,14 @@ export class BrowserRuntime {
   // refusal identity with the runtime that created it, never with caller error text.
   isRefusal(error) {
     return isBrowserRefusal(error)
+  }
+
+  async waitForHumanInput(item, signal) {
+    // Wait outside the page queue: typing and other tabs must keep working.
+    while (item.mode === 'human' && item.control?.nativeId && this.now() - item.lastHumanInput < 600) {
+      this.guard()
+      await delay(Math.max(1, 600 - (this.now() - item.lastHumanInput)), undefined, { signal })
+    }
   }
 
   async act(identity, input, signal) {
@@ -333,6 +360,7 @@ export class BrowserRuntime {
           session.opening--
         }
       }
+      await this.waitForHumanInput(item, signal)
       await this.enqueue(
         item,
         () => item.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 }),
@@ -389,6 +417,7 @@ export class BrowserRuntime {
           throw failure('STALE_TARGET', 'Page changed while observing. Inspect again.')
         }
         item.uncertain = false
+        item.observedHumanRevision = item.humanRevision
         this.activate(item)
         return { ...this.describe(item), text, elements }
       })
@@ -397,13 +426,17 @@ export class BrowserRuntime {
     }
     if (input.action === 'screenshot') {
       this.activate(item)
+      const observedHumanRevision = item.humanRevision
+      const bytes = await item.page.screenshot({ type: 'png', scale: 'css', timeout: 10_000 })
+      if (observedHumanRevision === item.humanRevision) item.observedHumanRevision = observedHumanRevision
       return {
         ...this.describe(item),
-        bytes: await item.page.screenshot({ type: 'png', scale: 'css', timeout: 10_000 }),
+        bytes,
       }
     }
     if (input.pageEpoch !== item.epoch)
       throw failure('STALE_TARGET', 'Inspect the page again before interacting.')
+    await this.waitForHumanInput(item, signal)
     const result = await this.enqueue(
       item,
       async () => {
@@ -482,6 +515,7 @@ export class BrowserRuntime {
       mode: item.mode,
       viewportWidth: 1280,
       viewportHeight: 800,
+      agentRevision: item.agentRevision,
     }
   }
 
@@ -561,12 +595,15 @@ export class BrowserRuntime {
     if (input.pageEpoch !== item.epoch || input.controlEpoch !== item.controlEpoch)
       throw failure('STALE_INPUT', 'Refresh the page before interacting.')
     item.control.seq = input.seq
+    item.lastHumanInput = this.now()
     return this.enqueue(
       item,
       async () => {
         this.controlGrant(identity, input, actor)
         if (input.pageEpoch !== item.epoch || input.controlEpoch !== item.controlEpoch)
           throw failure('STALE_INPUT', 'Refresh the page before interacting.')
+        if (input.agentRevision !== undefined && input.agentRevision !== item.agentRevision)
+          throw failure('STALE_INPUT', 'The agent changed the page. Use the current display.')
         switch (input.type) {
           case 'click':
             if (

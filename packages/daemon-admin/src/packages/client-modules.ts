@@ -1345,11 +1345,22 @@ export function createClientModuleRegistry(options: ClientModuleRegistryOptions)
       await pruneGenerationAssets(input)
       inputs.set(input.profile, input)
       return serialize(input.profile, async () => {
-        const current = filterRoster(await reconcile(input, true), options.composition?.(input.profile))
-        if (!input.sessionId) return current
-        const pin = new RuntimeGenerationSnapshotStore(input.profileDirectory).session(input.sessionId)
-        if (!pin) return current
-        const historical = await generationRoster(input, pin.generationId)
+        const pin = input.sessionId
+          ? new RuntimeGenerationSnapshotStore(input.profileDirectory).session(input.sessionId)
+          : undefined
+        // Historical publication owns a separate directory/queue. Settle both reads before
+        // releasing this profile's queue, including on failure; neither can publish a partial roster.
+        const results = await Promise.allSettled([
+          reconcile(input, true),
+          pin ? generationRoster(input, pin.generationId) : Promise.resolve(undefined),
+        ])
+        for (const result of results) if (result.status === 'rejected') throw result.reason
+        const [profileRead, historicalRead] = results
+        if (profileRead.status !== 'fulfilled' || historicalRead.status !== 'fulfilled')
+          throw new Error('Roster unavailable')
+        const current = filterRoster(profileRead.value, options.composition?.(input.profile))
+        const historical = historicalRead.value
+        if (!historical || !input.sessionId) return current
         const selection = new CompositionSessionStore(input.profileDirectory).read(input.sessionId)?.tree
           .selection
         const selected = filterRoster(historical, selection)

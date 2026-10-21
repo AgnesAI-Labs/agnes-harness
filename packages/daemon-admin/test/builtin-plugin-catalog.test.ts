@@ -63,7 +63,7 @@ it.each([
     if (broken) mkdirSync(join(root, 'examples', 'packages'), { recursive: true })
     const catalog = await discoverLocalExamples(root)
     const result = await catalog.read({ offline: true })
-    expect(result.entries).toHaveLength(optional ? 28 : 27)
+    expect(result.entries).toHaveLength(optional ? 23 : 22)
     if (!optional) expect(OPTIONAL_BUNDLED_PACKAGES).toEqual([])
     expect(
       result.entries
@@ -72,14 +72,21 @@ it.each([
         .sort(),
     ).toEqual([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map((pkg) => pkg.id).sort())
     const examples = result.entries.filter((entry) => entry.sourceId === 'official-examples')
-    expect(examples).toHaveLength(17)
-    expect(examples.filter((entry) => entry.id.startsWith('@agnes-fde/'))).toHaveLength(12)
-    expect(examples.map((entry) => entry.id)).toEqual(
-      expect.arrayContaining([
+    expect(examples.map((entry) => entry.id).sort()).toEqual(
+      [
         '@agnes-example/dag-loop',
         '@agnes-example/react-loop',
+        '@agnes-fde/data-report',
+        '@agnes-fde/finance-reconcile',
+        '@agnes-fde/knowledge-qa',
+        '@agnes-fde/ops-runbook',
+        '@agnes-fde/support-triage',
+        '@agnes-showcase/pharma-gmp',
+        '@agnes-showcase/aerospace-quality',
         '@community/tool-panel',
-      ]),
+        '@community/mcp-skills',
+        '@community/dag-loop-adapter',
+      ].sort(),
     )
     expect(
       examples.every((entry) => entry.integrity && entry.source.ref.startsWith('file:./bundled-examples/')),
@@ -97,17 +104,17 @@ it.each([
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/goal-ui')).toMatchObject({
       id: '@agnes/goal-ui',
-      version: '0.1.0',
+      version: '0.1.1',
       source: { ref: 'file:./bundled-plugins/goal-ui' },
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/interaction-ui')).toMatchObject({
       id: '@agnes/interaction-ui',
-      version: '0.1.0',
+      version: '0.1.1',
       source: { ref: 'file:./bundled-plugins/interaction-ui' },
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/deliverables-ui')).toMatchObject({
       id: '@agnes/deliverables-ui',
-      version: '0.1.0',
+      version: '0.1.2',
       source: { ref: 'file:./bundled-plugins/deliverables-ui' },
     })
     for (const id of ['navigation-ui', 'conversation-ui'])

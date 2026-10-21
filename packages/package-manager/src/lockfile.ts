@@ -160,6 +160,9 @@ export async function withLock<T>(
     // without its owner: a crash can leave only an inert temporary, never an unreclaimable empty lock.
     const pending = `${lockFile}.${randomUUID()}.tmp`
     try {
+      // A live holder cannot be acquired yet. Avoid creating and flushing a temporary
+      // owner file on every poll; linkSync still arbitrates the race after this hint.
+      if (existsSync(lockFile)) throw Object.assign(new Error('package lock held'), { code: 'EEXIST' })
       try {
         writeFileSync(pending, String(process.pid), { flag: 'wx', mode: 0o600, flush: true })
         linkSync(pending, lockFile)

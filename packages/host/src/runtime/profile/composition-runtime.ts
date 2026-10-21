@@ -334,6 +334,7 @@ export async function createCompositionHost(
     { ...options, runtimePluginSources: async () => options.runtimePluginSnapshots ?? [] },
     undefined,
   )
+  let displayedBundles = bootProfile.bundleCatalog
   const initialTree = resolveComposition(
     { ...profile, bundleCatalog: bootProfile.bundleCatalog },
     {
@@ -458,13 +459,9 @@ export async function createCompositionHost(
     (key, coldRead = false) => owner(key, coldRead).host.kernel,
     sessions,
   )
-  const admission = () =>
-    sessionAdmission(
-      profile,
-      modelProfile,
-      options,
-      activeAgentPackages(latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? []),
-    )
+  const admission = (
+    rows = latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? [],
+  ) => sessionAdmission(profile, modelProfile, options, activeAgentPackages(rows))
   const prepareAgent = createAgentResolver({
     admission,
     host: initial.host,
@@ -534,10 +531,8 @@ export async function createCompositionHost(
   }
   const overrides: HostFacadeOverrides = {
     resolveAgent: (ref) => calls.enqueue(async () => (await prepareAgent(ref)).plan),
-    // Display-only metadata captures an immutable profile/target view; actual session admission
-    // remains serialized and freshly verified. A directory scan must not occupy the mutation queue.
-    sessionBundleCatalog: () =>
-      withPackageVerification(async () => (await admission()).current.bundleCatalog),
+    // The published catalog is descriptive. Actual session admission still verifies current sources.
+    sessionBundleCatalog: async () => displayedBundles,
     ...sessionHostRoutes(
       (key, coldRead = false) => owner(key, coldRead).host,
       () => initial.host,
@@ -707,6 +702,7 @@ export async function createCompositionHost(
     applyRuntimeTarget: (target) =>
       calls.enqueue(async () => {
         await refreshTrust()
+        const { current: nextCatalog } = await admission(target.tree.rows)
         const publication = await broadcast('runtime-target', async (container) => {
           const report = await container.host.applyRuntimeTarget(
             project(target, container.tree, container.host),
@@ -716,6 +712,7 @@ export async function createCompositionHost(
         })
         if (publication.ok) {
           latestTarget = target
+          displayedBundles = nextCatalog.bundleCatalog
           latestRows = undefined
           await publishAdapters()
         }
@@ -777,10 +774,11 @@ export async function createCompositionHost(
       apply: (rows) =>
         calls.enqueue(async () => {
           await refreshTrust()
+          const { current: nextCatalog } = await admission(rows)
           latestRows = rows
           const selected = new Set(rows.map((row) => row.id))
           for (const id of prepared.keys()) if (!selected.has(`ext:${id}`)) prepared.delete(id)
-          await broadcast('extension-rows', async (container) => {
+          const publication = await broadcast('extension-rows', async (container) => {
             const projected = projectRows(rows, container.tree, container.host)
             const inactive = draining(rows, container.tree, container.host)
             const report = await container.host.extensionRows.apply(
@@ -794,6 +792,7 @@ export async function createCompositionHost(
             container.draining = inactive
             return report
           })
+          if (publication.ok) displayedBundles = nextCatalog.bundleCatalog
           return convergence()
         }),
     },

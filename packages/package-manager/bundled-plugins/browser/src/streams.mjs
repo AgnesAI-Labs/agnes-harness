@@ -170,23 +170,13 @@ export async function showPage(runtime, input, context) {
               snapshotting = true
               try {
                 runtime.get(session, input.pageId)
-                const { visualViewport } = await cdp.send('Page.getLayoutMetrics')
-                if (item.capture !== capture || item.epoch !== epoch || item.inputVersion !== inputVersion)
-                  return
-                // Screencast remains CSS-sized even on Retina. A single idle image
-                // supplies real 2x pixels without rendering every moving frame at 2x.
+                // Capture the same viewport as the live stream. A scaled clip can
+                // include a different CSS area, making idle pixels and click coordinates disagree.
                 const result = await cdp.send('Page.captureScreenshot', {
                   format: 'jpeg',
                   quality: 90,
                   fromSurface: true,
                   captureBeyondViewport: false,
-                  clip: {
-                    x: visualViewport.pageX,
-                    y: visualViewport.pageY,
-                    width: Math.ceil(1280 / visualViewport.scale),
-                    height: Math.ceil(800 / visualViewport.scale),
-                    scale: 2 * visualViewport.scale,
-                  },
                 })
                 runtime.get(session, input.pageId)
                 if (
@@ -290,7 +280,9 @@ export async function showPage(runtime, input, context) {
             quality: 85,
             maxWidth: 1280,
             maxHeight: 800,
-            everyNthFrame: 2,
+            // Coalesce at publish(), where the final paint is retained. Sampling
+            // here can discard a static page's only update after a click.
+            everyNthFrame: 1,
           })
           settle(true)
         } catch (error) {

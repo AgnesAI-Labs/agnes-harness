@@ -237,7 +237,7 @@ it('keeps input bound to displayed pixels when navigation acknowledgement preced
   }
 })
 
-it.each(['granted', 'denied', 'navigated', 'wheel'] as const)(
+it.each(['granted', 'denied', 'navigated', 'agent-changed', 'wheel'] as const)(
   'admits the first page click through native control and handles %s handover',
   async (outcome) => {
     const callbacks = new Map<string, (value: unknown) => void>()
@@ -292,8 +292,8 @@ it.each(['granted', 'denied', 'navigated', 'wheel'] as const)(
           t: (key) => key,
         }),
       )
-    const pixels = (pageEpoch: number) => {
-      const metadata = new TextEncoder().encode(JSON.stringify({ ...page, pageEpoch }))
+    const pixels = (pageEpoch: number, agentRevision = 0) => {
+      const metadata = new TextEncoder().encode(JSON.stringify({ ...page, pageEpoch, agentRevision }))
       const frame = new Uint8Array(metadata.length + 5)
       new DataView(frame.buffer).setUint32(0, metadata.length)
       frame.set(metadata, 4)
@@ -311,9 +311,17 @@ it.each(['granted', 'denied', 'navigated', 'wheel'] as const)(
       else canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 40, clientY: 50 }))
       expect(request).toHaveBeenCalledTimes(1)
       expect(send).not.toHaveBeenCalled()
-      if (outcome === 'navigated') {
-        pixels(1)
-        await vi.waitFor(() => expect(host.querySelector('textarea')?.disabled).toBe(true))
+      if (outcome !== 'wheel') {
+        const editor = host.querySelector('textarea')!
+        expect(editor.disabled).toBe(false)
+        expect(document.activeElement).toBe(editor)
+        editor.value = 'first-characters'
+        editor.dispatchEvent(new Event('input', { bubbles: true }))
+        editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }))
+        expect(send).not.toHaveBeenCalled()
+      }
+      if (outcome === 'navigated' || outcome === 'agent-changed') {
+        pixels(outcome === 'navigated' ? 1 : 0, 1)
         // Let the replacement frame decode before the native admission resolves.
         await new Promise((done) => setTimeout(done, 0))
       }
@@ -321,17 +329,24 @@ it.each(['granted', 'denied', 'navigated', 'wheel'] as const)(
       if (outcome === 'denied') {
         await waiting
         expect(callbacks.has('browser.input')).toBe(false)
-      } else if (outcome === 'navigated') {
+        expect(send).not.toHaveBeenCalled()
+      } else if (outcome === 'navigated' || outcome === 'agent-changed') {
         await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('pageChanged'))
+        expect(send).not.toHaveBeenCalled()
       } else {
         await vi.waitFor(() => expect(send).toHaveBeenCalled())
-        expect(send.mock.lastCall?.[0]).toMatchObject({
+        expect(send.mock.calls[0]?.[0]).toMatchObject({
           type: outcome === 'wheel' ? 'scroll' : 'click',
           x: outcome === 'wheel' ? 0 : 80,
           y: outcome === 'wheel' ? 240 : 100,
           pageEpoch: 0,
           controlEpoch: 1,
         })
+        if (outcome === 'granted')
+          expect(send.mock.calls.slice(1).map(([frame]) => frame)).toMatchObject([
+            { type: 'text', text: 'first-characters', pageEpoch: 0 },
+            { type: 'key', key: 'Backspace', pageEpoch: 0 },
+          ])
         if (outcome !== 'wheel') expect(document.activeElement).toBe(host.querySelector('textarea'))
         if (outcome === 'granted') {
           send.mockClear()
@@ -447,7 +462,10 @@ it('recovers the read-only display after admission cooldown and stops retrying w
       },
     }
   })
-  const ctx = { sessionStreams: { open } } as unknown as ClientContext
+  const effect = vi.fn(async () => {
+    throw new Error('selection connection lost')
+  })
+  const ctx = { sessionStreams: { open }, agnes: { services: { effect } } } as unknown as ClientContext
   vi.stubGlobal('createImageBitmap', async () => ({ width: 1280, height: 800, close() {} }))
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
     drawImage() {},
@@ -463,14 +481,24 @@ it('recovers the read-only display after admission cooldown and stops retrying w
     controlEpoch: 0,
     mode: 'agent' as const,
   }
-  try {
+  const onError = vi.fn()
+  const render = (pageId: string) =>
     flushSync(() =>
       root.render(
-        createElement(BrowserScreen, { ctx, page, reconnect: 0, t: (key) => key, onError: vi.fn() }),
+        createElement(BrowserScreen, {
+          ctx,
+          page: { ...page, pageId },
+          reconnect: 0,
+          t: (key) => key,
+          onError,
+        }),
       ),
     )
+  try {
+    render(page.pageId)
     await vi.advanceTimersByTimeAsync(7000)
     expect(host.querySelector('[data-connected="true"]')).toBeNull()
+    expect(onError).not.toHaveBeenCalled()
     // The native admission window is one minute. The display must recover after it,
     // without issuing a new input effect or increasing the server's allowance.
     available = true
@@ -482,6 +510,16 @@ it('recovers the read-only display after admission cooldown and stops retrying w
     frame.set(metadata, 4)
     receive!(frame)
     await vi.waitFor(() => expect(host.querySelector('[data-connected="true"]')).not.toBeNull())
+    render('next-page')
+    await vi.advanceTimersByTimeAsync(1100)
+    const nextMetadata = new TextEncoder().encode(JSON.stringify({ ...page, pageId: 'next-page' }))
+    const nextFrame = new Uint8Array(nextMetadata.length + 5)
+    new DataView(nextFrame.buffer).setUint32(0, nextMetadata.length)
+    nextFrame.set(nextMetadata, 4)
+    receive!(nextFrame)
+    await vi.waitFor(() => expect(host.querySelector('[data-connected="true"]')).not.toBeNull())
+    expect(effect).toHaveBeenCalledTimes(1)
+    expect(onError).not.toHaveBeenCalled()
     expect(open.mock.calls.every(([name]) => name === 'browser.frames')).toBe(true)
     disconnect?.()
     flushSync(() => root.unmount())
