@@ -1,48 +1,62 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
-import type { RegistrySnapshot, ToolRegistry } from './tools.js'
+import { type RegistrySnapshot, ToolRegistry } from './tools.js'
 
-/**
- * A view of a tool registry that lists, resolves and snapshots only the named tools. A turn takes its
- * snapshot from this view, so a tool outside the list is neither offered to the model nor found when
- * the model calls it. This is visibility, not authorization: the tool policy still decides what a
- * visible tool may do.
- */
-export function onlyTools(tools: ToolRegistry, names: readonly string[]): ToolRegistry {
-  const allowed = new Set(names)
-  return new Proxy(tools, {
-    get(target, property) {
-      if (property === 'list')
-        return (filter?: Parameters<ToolRegistry['list']>[0]) =>
-          target.list(filter).filter((tool) => allowed.has(tool.name))
-      if (property === 'resolve')
-        return (name: string) => (allowed.has(name) ? target.resolve(name) : undefined)
-      if (property === 'size') return target.list().filter((tool) => allowed.has(tool.name)).length
-      if (property === 'snapshot')
-        return (seq: Parameters<ToolRegistry['snapshot']>[0]): RegistrySnapshot => {
-          const original = target.snapshot(seq)
-          // A session's explicit names are its requested working set, not discovery hints.
-          // Offer that set even when the global catalog deferred the same tools. Visibility,
-          // model capability, custom Loop selection and execution policy still apply later.
-          const defs = Object.freeze(
-            [...original.byName.values()]
-              .filter((tool) => allowed.has(tool.name))
-              .map((tool) =>
-                tool.meta.deferLoading === true
-                  ? Object.freeze({ ...tool, meta: Object.freeze({ ...tool.meta, deferLoading: false }) })
-                  : tool,
-              ),
-          )
-          return Object.freeze({
-            ...original,
-            defs,
-            byName: new Map(defs.map((tool) => [tool.name, tool])),
-            hash: sha256Hex(
-              canonicalJson(defs.map((tool) => ({ name: tool.name, parameters: tool.parameters }))),
-            ),
-          })
-        }
-      const value = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
+/** A live catalog view. Tool policy still decides what each visible tool may do. */
+export class ToolRegistryView extends ToolRegistry {
+  private readonly allowed: () => ReadonlySet<string>
+  private readonly explicit: boolean
+  constructor(source: ToolRegistry, names: readonly string[] | (() => readonly string[])) {
+    super()
+    this.source = source
+    this.explicit = typeof names !== 'function'
+    this.add = source.add.bind(source)
+    this.registrations = source.registrations.bind(source)
+    this.prepareOwnerReplacement = source.prepareOwnerReplacement.bind(source)
+    const fixed = typeof names === 'function' ? undefined : new Set(names)
+    this.allowed = () => fixed ?? new Set(typeof names === 'function' ? names() : names)
+  }
+  private readonly source: ToolRegistry
+  override readonly add: ToolRegistry['add']
+  override readonly registrations: ToolRegistry['registrations']
+  override readonly prepareOwnerReplacement: ToolRegistry['prepareOwnerReplacement']
+  override resolve(name: string) {
+    return this.allowed().has(name) ? this.source.resolve(name) : undefined
+  }
+  override get size(): number {
+    return this.list().length
+  }
+  override list(filter: Parameters<ToolRegistry['list']>[0] = {}) {
+    const allowed = this.allowed()
+    return this.source.list(filter).filter((tool) => allowed.has(tool.name))
+  }
+  override snapshot(seq: number): RegistrySnapshot {
+    const original = this.source.snapshot(seq)
+    const allowed = this.allowed()
+    if (this.explicit) {
+      // An explicit working set offers deferred tools; a live visibility filter does not.
+      const defs = Object.freeze(
+        [...original.byName.values()]
+          .filter((tool) => allowed.has(tool.name))
+          .map((tool) =>
+            tool.meta.deferLoading === true
+              ? Object.freeze({ ...tool, meta: Object.freeze({ ...tool.meta, deferLoading: false }) })
+              : tool,
+          ),
+      )
+      return Object.freeze({
+        ...original,
+        defs,
+        byName: new Map(defs.map((tool) => [tool.name, tool])),
+        hash: sha256Hex(canonicalJson(defs.map(({ name, parameters }) => ({ name, parameters })))),
+      })
+    }
+    const defs = Object.freeze(original.defs.filter((tool) => allowed.has(tool.name)))
+    if (defs.length === original.defs.length) return original
+    return Object.freeze({
+      ...original,
+      defs,
+      byName: new Map([...original.byName].filter(([name]) => allowed.has(name))),
+      hash: sha256Hex(canonicalJson(defs.map(({ name, parameters }) => ({ name, parameters })))),
+    })
+  }
 }

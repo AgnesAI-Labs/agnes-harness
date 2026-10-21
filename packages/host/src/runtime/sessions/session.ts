@@ -3,6 +3,7 @@ import {
   type ChildWorkspaceRuntimePort,
   CoreError,
   type SessionWorkspaceRuntime as CoreSessionWorkspaceRuntime,
+  roleAuthority,
   type SandboxSeam,
   type SeamImplementations,
   type Seq,
@@ -437,19 +438,9 @@ export async function createSession(
     presetView: preset.view,
     adapterCatalog: a.modelAdapterCatalog(),
   }).modelRoutes.value!
+  const authority = opts.roleDelegation ? roleAuthority(opts.roleDelegation) : undefined
   let view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
-  if (opts.roleDelegation)
-    view = {
-      ...view,
-      permission: opts.roleDelegation.permission,
-      generationLimit: opts.roleDelegation.generationLimit,
-      maxFanOut: opts.roleDelegation.maxFanOut,
-      approval: {
-        ...view.approval,
-        ...(view.approval.policy === 'full-access' ? { policy: 'default' } : {}),
-      },
-      tools: { ...view.tools, allow: opts.roleDelegation.tools },
-    }
+  if (authority) view = authority.preset(view)
   // Defaults are captured by session/start; resumed ledgers restore their own model selections.
   if (!parentSession && !opts.strict && a.sessionModelSlots) {
     const { slots, auto } = await a.sessionModelSlots()
@@ -496,8 +487,8 @@ export async function createSession(
   )
 
   // 3 the opener's Actor - host is the only caller of principals.resolve
-  const actor = opts.roleDelegation
-    ? structuredClone(opts.roleDelegation.actor)
+  const actor = authority
+    ? structuredClone(authority.actor)
     : await a.seams.principals.resolve(opts.credential ?? { kind: 'local' }, 'session')
   if (parentSession) {
     const sameActor =
@@ -542,7 +533,7 @@ export async function createSession(
     ...(opts.roleDelegation
       ? {
           roleDelegation: { ...opts.roleDelegation, filesystem: structuredClone(sandbox.fsPolicy()) },
-          toolFilter: { allow: opts.roleDelegation.tools },
+          toolFilter: { allow: roleAuthority(opts.roleDelegation).tools.ids },
         }
       : {}),
     ...(opts.delegation ? { delegation: opts.delegation } : {}),

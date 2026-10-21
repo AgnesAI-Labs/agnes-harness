@@ -1,15 +1,14 @@
-import { createHash } from 'node:crypto'
-import type { ChildRolePort, RoleDelegation } from '@agnes/core'
+import { type ChildRolePort, intersectCapabilities, type RoleDelegation, sha256Hex } from '@agnes/core'
 import type { ChildRole } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
-import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
+import { canonicalJson } from '@agnes/host-common/profile/canonical'
 import type { ConfigurationService } from '@agnes/host-infrastructure/configuration'
 import type { CompositionBinding } from '@agnes/host-providers/profile/composition-state'
 import { parseAgentRef } from '@agnes/protocol'
 import type { Host, HostSession } from '../lifecycle/host.js'
 import type { createAgentResolver, sessionAdmission } from './agent-plan.js'
-import { type CompositionContainer, profileForComposition } from './composition-selection.js'
-import { roleToolBinding } from './role-tool-bindings.js'
+import type { CompositionContainer } from './composition-selection.js'
+import { roleToolBindingIdentity } from './role-tool-bindings.js'
 
 export function createRoleChildren(deps: {
   host(): Host
@@ -31,10 +30,9 @@ export function createRoleChildren(deps: {
       snapshot.integrity !== selection.integrity ||
       snapshot.declaration.id !== selection.applicationId ||
       snapshot.declarationDigest !== selection.declarationDigest ||
-      createHash('sha256').update(canonicalJson(snapshot.declaration)).digest('hex') !==
-        selection.declarationDigest ||
+      sha256Hex(canonicalJson(snapshot.declaration)) !== selection.declarationDigest ||
       consentDigest !== selection.consentDigest ||
-      createHash('sha256').update(canonicalJson(content)).digest('hex') !== consentDigest
+      sha256Hex(canonicalJson(content)) !== consentDigest
     )
       return []
     const { current } = await deps.admission()
@@ -72,8 +70,8 @@ export function createRoleChildren(deps: {
       if (!workspace || !parentHost.captureSessionCapabilities)
         throw new HostError('E_PRESET_UNSUPPORTED', 'Parent resource workspace is unavailable')
       const parentTools = [...parent.currentTools().snapshot(parent.lastSeq).byName.values()]
-      const parentBindings = new Map(
-        parentTools.map((tool) => [tool.name, roleToolBinding(parentHost, tool)]),
+      const parentBindingIdentities = new Map(
+        parentTools.map((tool) => [tool.name, roleToolBindingIdentity(parentHost, tool)]),
       )
       const sandbox = (parent as HostSession).commandSandboxPolicy?.()
       if (!sandbox)
@@ -95,33 +93,24 @@ export function createRoleChildren(deps: {
       const roleCapabilities = await candidate.host.captureSessionCapabilities('', workspace)
       const enabled = roleCapabilities.tools.filter((tool) => tool.enabled).map((tool) => tool.id)
       const resources = {
-        mcp: (parentResources?.mcp ?? [])
-          .filter(
-            (item) =>
-              item.enabled && roleCapabilities?.mcp.some((other) => other.enabled && other.id === item.id),
-          )
-          .map((item) => item.id),
-        skills: (parentResources?.skills ?? [])
-          .filter(
-            (item) =>
-              item.enabled && roleCapabilities?.skills.some((other) => other.enabled && other.id === item.id),
-          )
-          .map((item) => item.id),
+        mcp: intersectCapabilities(parentResources.mcp, roleCapabilities.mcp),
+        skills: intersectCapabilities(parentResources.skills, roleCapabilities.skills),
       }
       const rolePreset = candidate.host.kernel.o.preset
       const tools = parentTools
-        .filter(
-          (tool) =>
-            parentBindings.get(tool.name) !== undefined &&
-            parentBindings.get(tool.name) ===
-              (candidate.host.kernel.tools.resolve(tool.name)
-                ? roleToolBinding(candidate.host, candidate.host.kernel.tools.resolve(tool.name)!)
-                : undefined) &&
-            enabled.includes(tool.name) &&
-            (rolePreset.tools.allow === undefined || rolePreset.tools.allow.includes(tool.name)) &&
-            candidate.host.kernel.tools.resolve(tool.name)?.definitionFingerprint ===
-              tool.definitionFingerprint,
-        )
+        .filter((parentTool) => {
+          const roleTool = candidate.host.kernel.tools.resolve(parentTool.name)
+          const bindingIdentity = parentBindingIdentities.get(parentTool.name)
+          const definitionIdentity = parentTool.definitionFingerprint
+          return (
+            roleTool &&
+            bindingIdentity !== undefined &&
+            bindingIdentity === roleToolBindingIdentity(candidate.host, roleTool) &&
+            roleTool.definitionFingerprint === definitionIdentity &&
+            enabled.includes(parentTool.name) &&
+            (rolePreset.tools.allow === undefined || rolePreset.tools.allow.includes(parentTool.name))
+          )
+        })
         .map((tool) => tool.name)
       const rolePermissions = roleCapabilities.permissions
       const roleReadOnly =
@@ -147,21 +136,7 @@ export function createRoleChildren(deps: {
             : (parentPreset.approval.policy ?? 'default'),
         ...(parentPreset.approval.commandTable ? { commandTable: parentPreset.approval.commandTable } : {}),
       }
-      const { hash: _hash, ...body } = reviewed.tree
-      const narrowed = {
-        ...body,
-        selection: {
-          ...body.selection,
-          tools,
-          toolPolicy: {
-            ...body.selection.toolPolicy,
-            allow: tools,
-            readOnly: permission === 'read-only' || body.selection.toolPolicy?.readOnly === true,
-          },
-        },
-      }
-      const tree = { ...narrowed, hash: `sha256-${sha256hex(canonicalJson(narrowed))}` }
-      const profile = profileForComposition(reviewed.profile, tree)
+      const { tree, profile } = reviewed
       return {
         role,
         async open(key, options) {

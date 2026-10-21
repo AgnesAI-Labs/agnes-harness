@@ -1,9 +1,9 @@
-import type { RegisteredTool } from '@agnes/core'
+import { canonicalJson, type RegisteredTool, sha256Hex } from '@agnes/core'
 import { pluginConfigDigest } from '@agnes/plugin-runtime/host'
 import type { Host } from '../lifecycle/host.js'
 
 /** Prove the registration still describes the verified row configuration in this Host. */
-export function roleToolBinding(host: Host, tool: RegisteredTool): string | undefined {
+export function roleToolBindingIdentity(host: Host, tool: RegisteredTool): string | undefined {
   const binding = tool.executionBinding
   if (
     !binding ||
@@ -26,12 +26,5 @@ export function roleToolBinding(host: Host, tool: RegisteredTool): string | unde
       pluginConfigDigest(tool.source.trust === 'builtin' ? (row.config ?? {}) : row.config)
   )
     return undefined
-  return JSON.stringify([
-    tool.packageIdentity,
-    tool.packageVersion,
-    binding.rowId,
-    binding.exportName,
-    binding.snapshotId,
-    binding.configDigest,
-  ])
+  return sha256Hex(canonicalJson([tool.packageIdentity, tool.packageVersion, binding]))
 }

@@ -110,12 +110,8 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
-import {
-  type ChildRolePort,
-  intersectRoleToolPolicy,
-  type RoleDelegation,
-  roleToolSnapshot,
-} from '../child/roles.js'
+import { roleAuthority } from '../child/role-authority.js'
+import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
@@ -138,7 +134,7 @@ import type {
   RequestMediaSurfaceLimits,
 } from '../orchestrator/request-media-surface.js'
 import { ResourceRegistry } from '../registry/resources.js'
-import { onlyTools } from '../registry/tool-allow.js'
+import { ToolRegistryView } from '../registry/tool-allow.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
 import { commitSessionAttachments, queuedInputSizeFloor } from '../request/attachment-admission.js'
 import type { PromptSection } from '../request/contribute.js'
@@ -697,8 +693,8 @@ export class SessionImpl {
   private readonly authorization: SessionPermissionAuthority
   get permissionContext(): import('@agnes/protocol').PermissionContext {
     const context = this.authorization.context(this.key, this.preset.permission ?? '')
-    return this.d.roleDelegation && !this.closing
-      ? { ...context, policy: this.d.roleDelegation.permission }
+    return this.roleAuthority && !this.closing
+      ? { ...context, policy: this.roleAuthority.permission }
       : context
   }
   onPermissionChange(listener: () => void): () => void {
@@ -812,14 +808,18 @@ export class SessionImpl {
     this.fallbackHooks = hooks
   }
 
+  get roleAuthority() {
+    return this.d.roleDelegation ? roleAuthority(this.d.roleDelegation) : undefined
+  }
+
   /** Current tool registry used only when taking a new lookup/snapshot. */
   currentTools(): ToolRegistry {
     const tools = this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
-    const allow = this.d.roleDelegation?.tools ?? this.preset.tools.allow
+    const allow = this.roleAuthority?.tools.ids ?? this.preset.tools.allow
     if (allow === undefined) return tools
     // One view per registry and list, so repeated lookups in a turn share it.
     if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
-      this.allowedTools = { source: tools, allow, view: onlyTools(tools, allow) }
+      this.allowedTools = { source: tools, allow, view: new ToolRegistryView(tools, allow) }
     return this.allowedTools.view
   }
   private allowedTools?: { source: ToolRegistry; allow: readonly string[]; view: ToolRegistry }
@@ -918,10 +918,10 @@ export class SessionImpl {
       this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default'),
       this.preset.approval.commandTable,
     )
-    const captured = this.d.roleDelegation
+    const captured = this.roleAuthority
     if (!captured) return own
     const parent = this.commandFloor(this.toolPolicies.resolve(captured.parentPolicy), captured.commandTable)
-    return intersectRoleToolPolicy(own, parent, captured)
+    return captured.toolPolicy(own, parent)
   }
 
   loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {

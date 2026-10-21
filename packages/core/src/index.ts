@@ -1,5 +1,7 @@
+export * from './child/role-authority.js'
 export { readRoleDelegation } from './child/role-snapshot.js'
 export type { ChildRolePort, ResolvedChildRole, RoleDelegation } from './child/roles.js'
+export { ToolRegistryView } from './registry/tool-allow.js'
 // The model seam is declared in protocol, the one package both sides of it may depend on, and is
 // re-exported here so a caller assembling a session against core does not have to reach past core
 // for the single interface its step machine calls every step.

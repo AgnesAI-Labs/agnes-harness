@@ -1,7 +1,8 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
-import { expect, it, vi } from 'vitest'
+import { expect, expectTypeOf, it, vi } from 'vitest'
+import type { DefaultSelection, LiteralCeiling } from '../src/child/role-authority.js'
 import { readRoleDelegation } from '../src/child/role-snapshot.js'
 import { intersectRoleToolPolicy, ROLE_DELEGATION, type RoleDelegation } from '../src/child/roles.js'
 import { Kernel } from '../src/kernel.js'
@@ -55,6 +56,11 @@ const make = (storage = new MemoryStorage(), provider = fakeProvider([textTurn('
     timers: noTimers,
     logger: { debug() {}, info() {}, warn() {}, error() {} },
   })
+
+it('keeps default selections and literal ceilings distinct at the type boundary', () => {
+  expectTypeOf<DefaultSelection>().not.toMatchTypeOf<LiteralCeiling>()
+  expectTypeOf<LiteralCeiling>().not.toMatchTypeOf<DefaultSelection>()
+})
 
 it.each(['untrusted-core', 'ext-register', 'tombstone'] as const)(
   'review-role: %s rows cannot replace the captured authority on reopen',
