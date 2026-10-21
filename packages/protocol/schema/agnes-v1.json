@@ -3603,6 +3603,16 @@
                 "title": { "$ref": "extension-manifest.json#/$defs/PluginLocalizedText" }
               }
             },
+            "delegatedTask": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["childKey", "task", "status"],
+              "properties": {
+                "childKey": { "type": "string", "minLength": 1, "maxLength": 512 },
+                "task": { "type": "string", "maxLength": 512 },
+                "status": { "enum": ["running", "completed", "failed", "cancelled", "budget_stopped"] }
+              }
+            },
             "resultPreview": {
               "type": "string",
               "maxLength": 4096

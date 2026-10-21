@@ -10,6 +10,7 @@ import { type FileMention, FileMentionChip, fileMentionLinks, fileMentionOf } fr
 import { UserMessageReferences } from '../reference-chips.js'
 import { systemInputText } from '../user-presentation.js'
 import { AttachmentImage, type AttachmentReader } from './attachment-image.js'
+import { SubtaskDetailsButton } from './subtask-details.js'
 
 /** 缩略图固定 72×56，和输入框里的待发图片同尺寸：图片不再按原图比例把消息撑长。 */
 export const USER_MESSAGE_IMAGE_THUMBNAIL = { width: 72, height: 56 } as const
@@ -196,16 +197,34 @@ export function UserMessage({
     .join('\n')
   if (node.origin === 'system' && node.system)
     return (
-      <>
+      <div className={node.system.presentation?.kind === 'child-completed' ? 'delegation-notice' : undefined}>
         <div className="system-input-status" role="status">
           {systemInputText(node.system, t) ?? value}
         </div>
+        {node.system.presentation?.kind === 'child-completed' &&
+          (() => {
+            const data = node.system.data
+            return data &&
+              typeof data === 'object' &&
+              !Array.isArray(data) &&
+              typeof data.childKey === 'string' ? (
+              <SubtaskDetailsButton childKey={data.childKey} t={t} />
+            ) : null
+          })()}
         {node.system && (
-          <Disclosure variant="plain" className="system-input-trace" summary={t('tool.detail.expand')}>
+          <Disclosure
+            variant="plain"
+            className="system-input-trace"
+            summary={t(
+              node.system.presentation?.kind === 'child-completed'
+                ? 'delegation.technical'
+                : 'tool.detail.expand',
+            )}
+          >
             <pre className="system-input-data">{JSON.stringify(node.system.data, null, 2)}</pre>
           </Disclosure>
         )}
-      </>
+      </div>
     )
   return (
     <>

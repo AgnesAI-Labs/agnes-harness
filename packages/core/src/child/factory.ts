@@ -805,7 +805,9 @@ export class KernelChildren implements ChildrenFactory {
         return {
           state: state === 'error' || state === 'cancelled' ? 'error' : state === 'done' ? 'done' : 'running',
           lastSeq: terminal ? cachedSeq : child.lastSeq,
-          ...(opts.resident && state === 'ready' ? { idle: true } : {}),
+          ...(opts.resident && state === 'ready' && this.continued.has(record.childKey)
+            ? { idle: true }
+            : {}),
           ...(text ? { text } : {}),
           receipt: await childExecutionReceipt(parent, record),
         }

@@ -90,6 +90,8 @@ describe('conversation projection store', () => {
       status: 'completed',
       summary: 'Delegated investigation',
       delegatedRole: { ref: '@fixture/roles#reader', title: { en: 'Reader', 'zh-CN': '读者' } },
+      delegatedTask: { childKey: 'internal-child', task: '核查偏差证据\n供子代理执行的详细步骤', status: 'running' },
+      resultPreview: 'started internal-child; follow up with subagent_send_message',
     }
     const projection = {
       sessionId: 'roles',
@@ -101,11 +103,92 @@ describe('conversation projection store', () => {
     }
     await mount(createConversationProjectionStore(projection))
     expect(host.textContent).toContain('由 读者 处理')
+    expect(host.querySelector('[data-testid="delegation-card"]')?.getAttribute('data-status')).toBe('running')
+    expect(host.querySelector('.delegation-card button')?.textContent).toBe('查看子任务')
+    expect(host.querySelector('.delegation-card > p')?.textContent).toBe('核查偏差证据')
+    expect(host.querySelector('.delegation-card .agh-disclosure-content')?.hasAttribute('hidden')).toBe(true)
     await act(async () => root.unmount())
     root = createRoot(host)
     sessionStorage.clear()
-    await mount(createConversationProjectionStore(JSON.parse(JSON.stringify(projection))))
+    const store = createConversationProjectionStore(JSON.parse(JSON.stringify(projection)))
+    await mount(store)
     expect(host.textContent).toContain('由 读者 处理')
+    for (const status of ['completed', 'failed'] as const) {
+      const notice: UINode = {
+        kind: 'user',
+        id: 'notice',
+        seq: 4,
+        origin: 'system',
+        content: [],
+        system: {
+          source: 'agnes/child',
+          type: 'child-completed',
+          data: { childKey: 'internal-child', status },
+          presentation: { kind: 'child-completed', status, label: '读者' },
+          summary: 'internal-child',
+        },
+      }
+      await update(store, { ...projection, nodes: [node, notice] })
+      expect(host.querySelector('[data-testid="delegation-card"]')?.getAttribute('data-status')).toBe(status)
+    }
+    const continued = turn(['role'], 'completed', 'completed')
+    const common = { startSeq: 1, startedAt: '2026-10-21T00:00:00.000Z' }
+    continued.trace = {
+      ...common,
+      id: 'main',
+      kind: 'turn',
+      name: 'main',
+      status: 'completed',
+      children: [
+        {
+          ...common,
+          id: 'child-span',
+          kind: 'subagent',
+          name: 'reader',
+          status: 'completed',
+          childSessionKey: 'internal-child',
+          children: [
+            {
+              ...common,
+              id: 'continued-turn',
+              kind: 'turn',
+              name: 'follow-up',
+              status: 'running',
+              children: [
+                {
+                  ...common,
+                  id: 'child-tool',
+                  kind: 'tool',
+                  name: 'child_read',
+                  status: 'completed',
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    }
+    const completion: UINode = {
+      kind: 'user',
+      id: 'last-notice',
+      seq: 4,
+      origin: 'system',
+      content: [],
+      system: {
+        source: 'agnes/child',
+        type: 'child-completed',
+        summary: 'Child completed',
+        data: { childKey: 'internal-child' },
+        presentation: { kind: 'child-completed', status: 'completed', label: '读者' },
+      },
+    }
+    await update(store, { ...projection, nodes: [node, completion], turns: [continued] })
+    expect(host.querySelector('[data-testid="delegation-card"]')?.getAttribute('data-status')).toBe('running')
+    await act(async () => host.querySelector<HTMLButtonElement>('.delegation-card button')?.click())
+    expect(host.querySelector('[data-testid="delegation-subtask"]')?.textContent).toContain('核查偏差证据')
+    expect(host.querySelector('[data-testid="subtask-tool"]')?.textContent).toContain('child_read')
+    expect(host.querySelectorAll('[data-testid="delegation-subtask"]')).toHaveLength(1)
   })
 
   it('replaces same-ID stream and business states in place, one article per source ID', async () => {

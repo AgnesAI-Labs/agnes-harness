@@ -126,7 +126,9 @@ describe('child completion notice', () => {
       parentEffectId: 'call-2',
       resident: true,
     })
+    expect(await child?.status()).not.toHaveProperty('idle', true)
     await child?.run('work')
+    expect(await child?.status()).toMatchObject({ idle: true, text: 'child says hi' })
     expect(notices(parent)).toMatchObject([{ data: { status: 'completed', continuable: true } }])
     await k.close()
   })

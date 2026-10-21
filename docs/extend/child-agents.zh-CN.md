@@ -65,7 +65,7 @@ Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork
 这些工具保持原名：
 
 - `subagent_fork` 在后台启动继承父历史的子代理并返回 key。
-- `subagent_spawn` 在后台启动子代理并返回 key。fork 和 spawn 都保留子代理以接受后续消息。
+- `subagent_spawn` 在后台启动子代理并返回 key。fork 和 spawn 都保留子代理以接受后续消息。 设置 `wait: true` 可在同一次调用中等待并收取调查结论，一条用户消息即可完成后续汇总与已明确要求的主会话签署。默认后台模式仍保留异步完成通知。
 
 
 已采纳应用可声明 `delegableAgents`（最多八个可启动引用，也必须在 `agents` 中）。
@@ -145,3 +145,5 @@ Honest flags live on the provider objects:Codex、Claude Code 和 SDK 模式都�
 `sdk` 使用固定的换行协议 `agnes.child-engine`：`initialize`、`run`、`text` 通知和 `cancel`。它是单轮的。协议选 `acp` 时改为注册可继续的 `acp` 提供者，并使用同一份命令允许名单。不要把它和另一个 `acp` 提供者同时挂载。这个引擎不说 DeepSeek SDK 的线路协议。
 
 提供者的 `events()` 和 `updateExternalChild` 只更新进程内的子代理列表。项目界面只在 `tool/result` 事件到达时写入子代理卡片的 `resultPreview`。`subagent_spawn` 返回开始通知。`subagent_collect` 返回最终文本。卡片在这些工具结果落地时更新。没有 `tool/progress` 事件，也没有把子代理提供者事件推到网页的 websocket，所以进程还在跑的时候卡片不会显示文本。
+
+应用角色的委派卡使用结构化角色、任务和子会话数据，状态来自持久化子任务轨迹或完成通知。卡片提供“查看子任务”，原始回执和内部编号留在“技术详情”。

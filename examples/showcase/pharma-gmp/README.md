@@ -48,8 +48,10 @@ For an explicit test-operator source review, set `AGH_SHOWCASE_REQUIRE_REVIEW=1`
 
 The signature card shows the object, reviewed revision, exact meaning and evidence in the current UI language. The human answer must return that view’s bound meaning unchanged; receipts and audit records preserve it. A legacy null answer cannot complete these new signatures.
 
-Version 1.2.0 adds role subagents and the single Quality Assistant entry; existing installations can review the bundled update on the Plugins page. Installation and application adoption remain separate.
+Version 1.2.1 adds role subagents and the single Quality Assistant entry; existing installations can review the bundled update on the Plugins page. Installation and application adoption remain separate.
 
 The workbench offers Current object, Pending signatures and Evidence & reports. Start deviation, CAPA, EM, batch review or QA release work from object buttons or composer actions; the hub delegates to four specialist roles and records their attribution. Overview and Tasks & signatures form the primary navigation; all other modules remain under More and overview links.
 
 Role children capture a spawn-time intersection of role and parent tools, file/network scope, sandbox and read-only limits. They cannot obtain approvals or business signatures, even from a Full access parent. A refused action returns to the main Quality Assistant. Their persistent persona comes from the role recipe, independently of the editable launch draft.
+
+The Quality Assistant waits for specialist findings and finishes the request in one user turn, including an explicitly requested signed record in the main session. It summarizes any generated reports with their paths. Delegation cards show the role, task and durable status, with a link to the child; internal handles remain in Technical details. Long tasks can still use background completion notices.

@@ -72,6 +72,23 @@ export function applyToolResultEvent(
         },
       }
   }
+  if (node.delegatedRole && details && typeof details === 'object' && !Array.isArray(details)) {
+    const { childKey } = details
+    const task = typeof details.task === 'string' ? details.task : node.summary
+    const status = details.status ?? 'running'
+    if (
+      typeof childKey === 'string' &&
+      childKey.length > 0 &&
+      childKey.length <= 512 &&
+      typeof task === 'string' &&
+      (status === 'running' ||
+        status === 'completed' ||
+        status === 'failed' ||
+        status === 'cancelled' ||
+        status === 'budget_stopped')
+    )
+      node.delegatedTask = { childKey, task: clipUtf16(task, 512), status }
+  }
   node.resultSeq = event.seq
   node.enforcement = structuredClone(result.enforcement)
   completed.push({ seq: event.seq, toolUseId: node.toolUseId })

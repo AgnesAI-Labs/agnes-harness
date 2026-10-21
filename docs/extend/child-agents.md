@@ -65,7 +65,7 @@ If Core refuses child creation with `E_CHILD_LIMIT` before returning a child han
 These tools keep their current names:
 
 - `subagent_fork` starts a background child seeded from parent history and returns its key.
-- `subagent_spawn` starts a background child and returns its key. Both fork and spawn stay open for follow-ups.
+- `subagent_spawn` starts a background child. Set `wait: true` to collect its findings in the same call and finish the request in one user turn. Default background mode keeps the asynchronous completion notice. Both fork and spawn stay open for follow-ups.
 
 
 An adopted application may additionally declare `delegableAgents` (up to eight launchable refs,
@@ -146,4 +146,4 @@ A save publishes replacement builtin rows onto the current desired runtime targe
 
 `sdk` speaks the pinned newline protocol `agnes.child-engine`: `initialize`, `run`, `text` notifications, and `cancel`. It is one shot. Choosing protocol `acp` registers the continuable `acp` provider instead, with the same command allowlist. Do not mount that row beside another `acp` provider. This engine does not speak the DeepSeek SDK wire.
 
-Provider `events()` and `updateExternalChild` update the in-process child listing only. The project UI writes a child card's `resultPreview` when a `tool/result` event arrives. `subagent_spawn` returns a start notice. `subagent_collect` returns the final text. The card updates when those tool results land. There is no `tool/progress` event and no websocket of child provider events, so the card does not show text while the process is still running.
+Provider `events()` and `updateExternalChild` update the in-process child listing only. The project UI writes a child card's `resultPreview` when a `tool/result` event arrives. `subagent_spawn` returns a short start acknowledgement, or findings with `wait: true`. Application role cards use structured role/task/handle data and durable child trace or notice status; raw receipts and handles stay under Technical details. `subagent_collect` returns the final text. The card updates when those tool results land. There is no `tool/progress` event and no websocket of child provider events, so the card does not show text while the process is still running.

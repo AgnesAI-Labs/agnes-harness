@@ -212,6 +212,7 @@ export function subagentForkToolWithDeps(deps: SubagentDeps): ToolDef<typeof for
 const spawnParameters = Type.Object(
   {
     task: Type.String({ minLength: 1 }),
+    wait: Type.Optional(Type.Boolean()),
     role: Type.Optional(Type.String({ minLength: 1, maxLength: 384 })),
     model: Type.Optional(Type.String({ minLength: 1 })),
     isolation: Type.Optional(Type.Union([Type.Literal('worktree'), Type.Literal('shared')])),
@@ -234,7 +235,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
   const definition: ToolDef<typeof spawnParameters> = {
     name: 'subagent_spawn',
     description:
-      'Start a background continuable child and send follow-ups. Its result arrives as a child-completed notice, so end your turn instead of polling.',
+      'Delegate a self-contained task to a continuable child. Use wait: true to receive findings and finish the user request in this turn. Default background mode returns immediately; a child-completed notice arrives later. Keep internal handles out of the user reply.',
     parameters: spawnParameters,
     meta: {
       isReadOnly: false,
@@ -319,9 +320,19 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         }
         state.children.set(spawned.childKey, { running: true, ...(worktree ? { worktree } : {}) })
 
+        const collected = args.wait ? await ctx.subagent.collect(spawned.childKey, { wait: true }) : undefined
+        if (collected && collected.childKey !== spawned.childKey)
+          throw new Error('subagent backend returned a mismatched child key')
+        if (collected && collected.status !== 'running') state.children.delete(spawned.childKey)
         const details: Record<string, JsonValue> = {
           childKey: spawned.childKey,
-          ...(spawned.role ? { role: spawned.role } : {}),
+          ...(spawned.role
+            ? {
+                role: spawned.role,
+                task: args.task,
+                status: collected?.status === 'idle' ? 'completed' : (collected?.status ?? 'running'),
+              }
+            : {}),
           isolation: worktree ? 'worktree' : 'shared',
         }
         if (worktree) details.worktree = worktree
@@ -329,7 +340,9 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           content: [
             {
               type: 'text',
-              text: `started ${spawned.childKey}; its result arrives as a notice, use subagent_send_message to follow up`,
+              text: collected
+                ? `Delegated task ${collected.status}.\n${collected.text ?? 'No findings returned.'}`
+                : 'Task delegated in the background. A completion notice will carry the findings. Use subagent_list for the handle if follow-up is needed; do not repeat internal handles to the user.',
             },
           ],
           details,

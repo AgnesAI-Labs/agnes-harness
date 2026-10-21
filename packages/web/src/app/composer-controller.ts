@@ -1,6 +1,7 @@
 import { defaultLoop, userImagePolicy, type WorkspaceEntry } from '@agnes/protocol'
 import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
 import { choiceName } from '@agnes/web-admin/settings/choices'
+import { effectiveApplication } from '@agnes/web-client'
 import type { ComposerView } from '@agnes/web-conversation/composer'
 import {
   composerActionPresentation,
@@ -233,7 +234,7 @@ export function createComposerController(
         label: context.stopping ? context.t('composer.cancel.stopping') : context.t('composer.cancel.stop'),
       },
       children:
-        context.sessionControls?.sessionId === context.current?.id
+        !effectiveApplication()?.workbench && context.sessionControls?.sessionId === context.current?.id
           ? (context.sessionControls?.value.children ?? [])
           : [],
       childrenDisabled: !context.connected || context.sessionPending || context.stopping,
