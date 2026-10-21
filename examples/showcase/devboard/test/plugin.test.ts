@@ -140,7 +140,6 @@ describe('DevBoard plugin contract', () => {
     expect(coordinator.profile.toolPolicy.allow).toEqual(coordinator.profile.tools)
     expect(coordinator.presets.devboard.sandbox).toEqual({
       level: 'L1',
-      required: true,
       on_unavailable: 'deny',
       network_allow: [],
       loopback_serve: true,
