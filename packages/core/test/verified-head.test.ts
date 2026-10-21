@@ -1133,3 +1133,123 @@ it('perf3-review: documents that a Byzantine persistence provider is a trusted b
     await log.close()
   }
 })
+
+// Recheck the checkpoint queue with more than one admitted write, including a rejected write.
+it.each(
+  (['write-ok', 'write-outage'] as const).flatMap((write) =>
+    (['integrity', 'read-outage', 'close', 'pending-close'] as const).map((end) => ({ write, end })),
+  ),
+)(
+  'perf3-recheck: drains repeated checkpoint writes ($write) before $end hands back the writer',
+  async ({ write, end }) => {
+    const storage = await seeded(10)
+    const wrapped: StorageAdapter = Object.create(storage)
+    let armed = false,
+      arrived = false,
+      closingDone = false,
+      released = false
+    let reading: 'normal' | 'outage' | 'hold' = 'normal',
+      readPaused = false
+    let release!: () => void, resumeRead!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const readGate = new Promise<void>((resolve) => {
+      resumeRead = resolve
+    })
+    wrapped.writeVerifiedHead = async (head, opts) => {
+      if (armed) {
+        armed = false
+        arrived = true
+        await gate
+        if (write === 'write-outage') throw new Error('synthetic checkpoint write outage')
+      }
+      await storage.writeVerifiedHead(head, opts)
+    }
+    wrapped.scanIntegrity = async (key, query) => {
+      if (reading === 'outage') throw new Error('synthetic ledger read outage')
+      if (reading === 'hold') {
+        readPaused = true
+        await readGate
+      }
+      return storage.scanIntegrity(key, query)
+    }
+    wrapped.release = async (...args) => {
+      await storage.release(...args)
+      released = true
+    }
+    const log = await SessionLogImpl.open(options(wrapped, 'review-queue'))
+    let closing: Promise<void> | undefined
+    let pendingRead: Promise<unknown> | undefined
+    try {
+      await log.fullVerified()
+      await storage.deleteVerifiedHead('k')
+      armed = true
+      await log.verifyHistory()
+      await vi.waitFor(() => expect(arrived).toBe(true))
+      expect(log.historyVerified).toBe(true)
+      // The next successful cycle queues another forced write behind the held one.
+      await log.verifyHistory()
+      expect(log.historyVerified).toBe(true)
+      if (end === 'integrity' || end === 'read-outage') {
+        if (end === 'integrity') tamper(storage, 'k', 2)
+        else reading = 'outage'
+        const code = end === 'integrity' ? 'E_LEDGER_INTEGRITY' : 'E_STORAGE_FAULT'
+        const foreground = log.verifyHistory()
+        if (end === 'integrity') await expect(foreground).rejects.toMatchObject({ code })
+        else await expect(foreground).rejects.toThrow('synthetic ledger read outage')
+        expect(log.historyVerified).toBe(false)
+        expect(log.faulted).toBe(true)
+        await expect(log.append([input('refused')], { beforeFullVerify: 'allow' })).rejects.toMatchObject({
+          code,
+        })
+        await expect(
+          log.forkInto(5, 'queue-child', {
+            actor,
+            agnesVersion: '0.0.1',
+            preset: 'standard',
+            resolvedProfileHash: null,
+            writerRunId: 'child',
+            lane: 'main',
+          }),
+        ).rejects.toMatchObject({ code })
+      } else if (end === 'pending-close') {
+        reading = 'hold'
+        pendingRead = log.verifyHistory().then(
+          () => ({ ok: true }),
+          (error: unknown) => ({ error }),
+        )
+        await vi.waitFor(() => expect(readPaused).toBe(true))
+        expect(log.historyVerified).toBe(false)
+      }
+      closing = log.close().then(() => {
+        closingDone = true
+      })
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(closingDone).toBe(false)
+      expect(released).toBe(false)
+      release()
+      await closing
+      expect(released).toBe(true)
+      resumeRead()
+      await pendingRead
+      if (end === 'integrity' || end === 'read-outage' || end === 'pending-close') {
+        const code =
+          end === 'integrity' ? 'E_LEDGER_INTEGRITY' : end === 'read-outage' ? 'E_STORAGE_FAULT' : 'E_CLOSED'
+        await expect(log.fullVerified()).rejects.toMatchObject({ code })
+        expect(log.historyVerified).toBe(false)
+      }
+      const checkpoint = await storage.readVerifiedHead('k')
+      if (end === 'integrity') expect(checkpoint).toBeUndefined()
+      else expect(checkpoint?.throughSeq).toBe(10)
+      expect((await storage.scan('k', { limit: 100 })).length).toBe(10)
+      expect((storage as unknown as Books).books.has('queue-child')).toBe(false)
+    } finally {
+      release()
+      resumeRead()
+      await pendingRead
+      await closing
+      await log.close()
+    }
+  },
+)

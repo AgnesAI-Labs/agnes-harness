@@ -584,6 +584,11 @@ it.each(
       expect((await ownRows()).length).toBe(before)
       expect(provider.calls).toBe(calls)
       expect(k.get(record.childKey)).toBeUndefined()
+      expect(await requireChildControl(storage).lookupByKey(record.childKey)).toMatchObject(
+        stage === 'publish'
+          ? { creationPhase: 'committed', state: 'cancelled' }
+          : { creationPhase: 'cancelled', state: 'failed', cancelledFact: { reason: 'open_failed' } },
+      )
       finishVerify()
       if (change === 'pending') await parent.d.log.fullVerified()
       await closing
