@@ -8,8 +8,11 @@ import {
   type UIProjectionWindow,
 } from '@agnes/sdk/browser'
 
-/** Web keeps the protocol's bounded opening and a modest history page. */
-export const WEB_OPENING = { maxNodes: 500, maxBytes: UI_PROJECTION_MAX_BYTES } as const
+/**
+ * Web opens with the last screenful or so and pages earlier records in on scroll: rendering a long
+ * opening window is most of the time between choosing a session and being able to use it.
+ */
+export const WEB_OPENING = { maxNodes: 50, maxBytes: UI_PROJECTION_MAX_BYTES } as const
 export const WEB_HISTORY_LIMIT = 100
 /** Pages loaded on their own to find a pending approval that lies before the loaded window. */
 export const APPROVAL_SEARCH_PAGES = 3
