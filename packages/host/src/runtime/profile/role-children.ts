@@ -18,6 +18,7 @@ export function createRoleChildren(deps: {
   resolve: ReturnType<typeof createAgentResolver>
   containers: ReadonlyMap<string, CompositionContainer>
   sessionOwners: Map<string, CompositionContainer>
+  read(key: string): CompositionBinding | undefined
   pin(binding: CompositionBinding): CompositionBinding
   open(binding: CompositionBinding): Promise<{ host: Host }>
 }): ChildRolePort {
@@ -42,11 +43,36 @@ export function createRoleChildren(deps: {
   }
   return {
     list: () => catalogue(),
+    async reopen(key, options) {
+      const binding = deps.read(key)
+      if (!binding || binding.sessionKey !== key)
+        throw new HostError('E_PRESET_UNSUPPORTED', 'Role child composition binding is unavailable')
+      const container = await deps.open(binding)
+      const child = await container.host.createSession({
+        key,
+        cwd: options.cwd,
+        writerRunId: options.writerRunId,
+        ...(options.lane ? { lane: options.lane } : {}),
+      })
+      const close = child.close.bind(child)
+      child.close = async () => {
+        try {
+          await close()
+        } finally {
+          container.host.kernel.sessions.delete(key)
+          deps.sessionOwners.delete(key)
+        }
+      }
+      const owned = [...deps.containers.values()].find((entry) => entry.host === container.host)
+      if (owned) deps.sessionOwners.set(key, owned)
+      return child
+    },
     async resolve(parent, input) {
       const ref = parseAgentRef(input)
       // Copy synchronous parent state before the first await; resources enter its workspace below.
       // Never retain a live parent authorization link after admission.
       const parentPreset = structuredClone(parent.preset)
+      const triggerSeq = parent.op()?.meta.triggerSeq
       const parentAuthority = parent.roleAuthority
       const parentTainted =
         parent.laneTaint() || (parentAuthority !== undefined && parentAuthority.parentTainted !== false)
@@ -76,6 +102,19 @@ export function createRoleChildren(deps: {
       const filesystem = structuredClone(sandbox.policy)
       if (sandbox.network === 'allow') filesystem.networkAllow = ['*']
       const enforced = parent.d.runtime.enforcement().level !== 'none'
+      const [trigger] =
+        triggerSeq === undefined
+          ? []
+          : await parent.d.log.scan({
+              type: 'user/message',
+              lane: parent.lane,
+              toSeq: triggerSeq,
+              order: 'desc',
+              limit: 1,
+            })
+      const humanApprovals =
+        parentAuthority?.humanApprovals !== false &&
+        !(trigger?.origin === 'system' && trigger.actor.attrs.unattendedApproval === 'refuse')
       const parentResources = await parentHost.captureSessionCapabilities(parent.key, workspace)
       const role = (await catalogue()).find((entry) => entry.ref === ref)
       if (!role)
@@ -124,6 +163,7 @@ export function createRoleChildren(deps: {
         permission: roleReadOnly ? 'read-only' : permission,
         approvalPolicy: 'never',
         parentTainted,
+        humanApprovals,
         filesystem,
         sandboxRequired: enforced,
         parentPolicy:
@@ -196,6 +236,7 @@ export function createRoleChildren(deps: {
 export function lazyRoleChildren(deps: () => Parameters<typeof createRoleChildren>[0]): ChildRolePort {
   return {
     list: (parent) => createRoleChildren(deps()).list(parent),
+    reopen: (key, options) => createRoleChildren(deps()).reopen!(key, options),
     resolve: (parent, ref) => createRoleChildren(deps()).resolve(parent, ref),
   }
 }
