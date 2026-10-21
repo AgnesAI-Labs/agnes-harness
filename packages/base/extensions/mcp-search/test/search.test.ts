@@ -68,6 +68,17 @@ describe('MetadataToolIndex', () => {
     })
   })
 
+  it('ranks an exact tool-name match above a row that only repeats the terms in its description', () => {
+    const index = new MetadataToolIndex(new MemNamespace())
+    index.upsert([
+      { name: 'ui_render', description: 'Render a bounded surface', schema: '{}' },
+      { name: 'render_card', description: 'ui_render render detail card UI', schema: '{}' },
+    ])
+    expect(index.search('UI_RENDER render detail card UI', 1).map((hit) => hit.name)).toEqual(['ui_render'])
+    // Without an exact name term the description-heavy row wins on plain substring score.
+    expect(index.search('render detail card', 2).map((hit) => hit.name)).toEqual(['render_card', 'ui_render'])
+  })
+
   it('delete removes exactly the named rows and leaves the rest untouched', () => {
     const index = new MetadataToolIndex(new MemNamespace())
     index.upsert(rows)
