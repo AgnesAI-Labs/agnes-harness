@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import type {
   ComputerUseDoctorResult,
   ComputerUseStatusResult,
@@ -11,6 +12,7 @@ import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import type { ResourceCommandKind } from './resource-controller.js'
+import { rewindChoices, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
 import type { TuiThemeName } from './theme.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
@@ -28,9 +30,29 @@ export type SlashCommand = {
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { name: '/help', descriptionKey: 'commands.help', summaryKey: 'commands.helpSummary' },
   { name: '/quit', descriptionKey: 'commands.quit', summaryKey: 'commands.quitSummary' },
-  { name: '/new', descriptionKey: 'commands.new', summaryKey: 'commands.newSummary' },
-  { name: '/resume', args: '[id]', descriptionKey: 'commands.resume', summaryKey: 'commands.resumeSummary' },
+  { name: '/new', args: '[dir]', descriptionKey: 'commands.new', summaryKey: 'commands.newSummary' },
+  {
+    name: '/resume',
+    args: '[id|all]',
+    descriptionKey: 'commands.resume',
+    summaryKey: 'commands.resumeSummary',
+  },
   { name: '/sessions', descriptionKey: 'commands.sessions', summaryKey: 'commands.sessionsSummary' },
+  { name: '/pin', descriptionKey: 'commands.pin', summaryKey: 'commands.pinSummary' },
+  { name: '/unpin', descriptionKey: 'commands.unpin', summaryKey: 'commands.unpinSummary' },
+  {
+    name: '/rename',
+    args: '<title>',
+    descriptionKey: 'commands.rename',
+    summaryKey: 'commands.renameSummary',
+  },
+  { name: '/archive', descriptionKey: 'commands.archive', summaryKey: 'commands.archiveSummary' },
+  {
+    name: '/search',
+    args: '<query>',
+    descriptionKey: 'commands.search',
+    summaryKey: 'commands.searchSummary',
+  },
   { name: '/cost', descriptionKey: 'commands.cost', summaryKey: 'commands.costSummary' },
   { name: '/usage', descriptionKey: 'commands.usage', summaryKey: 'commands.usageSummary' },
   {
@@ -45,7 +67,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.doctor',
     summaryKey: 'commands.doctorSummary',
   },
-  { name: '/rewind', args: '<seq>', descriptionKey: 'commands.rewind', summaryKey: 'commands.rewindSummary' },
+  { name: '/rewind', args: '[seq]', descriptionKey: 'commands.rewind', summaryKey: 'commands.rewindSummary' },
   {
     name: '/compact',
     args: '[instructions]',
@@ -82,7 +104,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.model',
     summaryKey: 'commands.modelSummary',
   },
-  { name: '/yolo', descriptionKey: 'commands.yolo', summaryKey: 'commands.yoloSummary' },
+  { name: '/yolo', args: '[on|off]', descriptionKey: 'commands.yolo', summaryKey: 'commands.yoloSummary' },
   {
     name: '/attach',
     args: '<path>',
@@ -145,6 +167,8 @@ export type SessionChoice = {
   lastSeq: number
   preset: string | null
   title?: string
+  /** Set by the /rewind picker: choosing forks this session at that completed-turn boundary. */
+  forkAt?: number
 }
 
 export type SlashResult = {
@@ -158,6 +182,7 @@ export type SlashResult = {
   switchSession?: Session
   modelChoices?: ModelChoice[]
   sessionChoices?: SessionChoice[]
+  sessionPickerTitle?: ExtendedKey
   quit?: boolean
 }
 
@@ -225,7 +250,10 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   const locale = app.locale
   // Refused before the daemon creates, forks or loads a session this app would then not switch to. A bare
   // /resume only opens the picker, which refuses the choice itself.
-  const opens = cmd === '/new' || cmd === '/rewind' || (cmd === '/resume' && args.length > 0)
+  const opens =
+    cmd === '/new' ||
+    (cmd === '/rewind' && args.length > 0) ||
+    (cmd === '/resume' && args.length > 0 && args[0] !== 'all')
   if (opens && app.refuseSwitch()) return {}
   const s = app.session
   const c = s.client
@@ -319,8 +347,10 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return computerUseDoctor()
     }
     case '/new': {
+      // A directory the daemon has not authorised is refused by the daemon, and shown as it comes.
+      const dir = line.trim().slice('/new'.length).trim()
       const created = await c.session.new({
-        cwd: app.cwd,
+        cwd: dir ? resolve(app.cwd, dir) : app.cwd,
         sessionKey: freshTuiSessionKey(app.profile),
       })
       const inherited = await inheritFreshSession(created, app.composerSelectionPath, undefined, locale)
@@ -330,14 +360,16 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       }
     }
     case '/resume': {
-      const id = args[0]
+      const id = args[0] === 'all' ? undefined : args[0]
       // A listed durable session may not have a live worker in this daemon process. `attach` only
       // subscribes to an already-open registry entry and therefore answers SESSION_NOT_FOUND for
       // exactly that normal historical-session case. `load` reopens/replays it first, matching the
       // CLI's `agnes resume <id>` and `--resume` paths.
       if (id) return { switchSession: await c.session.load(id, { cwd: app.cwd }) }
-      const sessionChoices = await listSessionChoices(s, app.cwd)
-      return sessionChoices.length ? { sessionChoices } : { text: 'no other sessions in this workspace' }
+      const everywhere = args[0] === 'all'
+      const sessionChoices = await listSessionChoices(s, everywhere ? undefined : app.cwd)
+      if (sessionChoices.length) return { sessionChoices }
+      return { text: everywhere ? 'no sessions' : 'no other sessions in this workspace' }
     }
     case '/sessions': {
       const choices = (await listSessionChoices(s)).slice(0, 20)
@@ -364,14 +396,24 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       }
     }
     case '/rewind': {
+      if (args.length === 0) {
+        const sessionChoices = await rewindChoices(app)
+        return sessionChoices.length
+          ? { sessionChoices, sessionPickerTitle: 'picker.rewindTitle' }
+          : { text: tt('session.noTurns', locale) }
+      }
       const at = Number(args[0])
-      if (!Number.isInteger(at)) return { text: 'usage: /rewind <seq>' }
-      // `session.fork` is wired end-to-end (protocol/sdk), but daemon's forkSession handler always
-      // answers CAPABILITY_DENIED today -- host's CreateSessionOptions has no parent/forkAt support
-      // yet. That denial is real, known debt, not something to route around here: the call below is
-      // the honest real path, and it will surface exactly that error against a real daemon.
+      if (!Number.isInteger(at)) return { text: 'usage: /rewind [seq]' }
+      // The daemon forks a session only for its owner and only at a completed turn boundary; any
+      // other request is refused there, and that refusal is shown as it comes.
       return { switchSession: await c.session.fork(s.id, at) }
     }
+    case '/pin':
+    case '/unpin':
+    case '/rename':
+    case '/archive':
+    case '/search':
+      return sessionSlash(app, cmd, line)
     case '/goal': {
       if (line.trim() === '/goal' || line.trim() === '/goal show') {
         const { timeline } = await s.projectUIOpening({ surface: 'tui' })
@@ -456,14 +498,15 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return { text: `model from seq ${r.effectiveFromSeq}` }
     }
     case '/yolo': {
-      // No dedicated SDK wrapper (unlike setPreset/setModel): this is the one caller today, and
-      // `s.client` is the same public escape hatch a Web caller would reach for later.
-      const r = (await s.client.call('_agnes/v1/session.setYolo', {
-        sessionId: s.id,
-        enabled: true,
-      })) as { effectiveFromSeq: number }
+      if (args.length > 1 || (args[0] !== undefined && args[0] !== 'on' && args[0] !== 'off'))
+        return { text: 'usage: /yolo [on|off]' }
+      if (args[0] === 'off') {
+        const off = await s.setYolo(false)
+        return { text: tt('session.yoloOff', locale, { seq: off.effectiveFromSeq }) }
+      }
+      const r = await s.setYolo(true)
       return {
-        text: `routine approvals skipped from seq ${r.effectiveFromSeq}; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.`,
+        text: `routine approvals skipped from seq ${r.effectiveFromSeq}; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. /yolo off asks again.`,
       }
     }
     case '/export':

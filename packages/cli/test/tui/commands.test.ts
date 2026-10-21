@@ -115,13 +115,18 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(27)
+    expect(SLASH_COMMANDS).toHaveLength(32)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
       '/new',
       '/resume',
       '/sessions',
+      '/pin',
+      '/unpin',
+      '/rename',
+      '/archive',
+      '/search',
       '/cost',
       '/usage',
       '/computer-use',
@@ -148,8 +153,8 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   })
 
   it('carries an args shape for commands that take one and a description for all', () => {
-    expect(slashCommand('/resume')?.args).toBe('[id]')
-    expect(slashCommand('/rewind')?.args).toBe('<seq>')
+    expect(slashCommand('/resume')?.args).toBe('[id|all]')
+    expect(slashCommand('/rewind')?.args).toBe('[seq]')
     expect(slashCommand('/compact')?.args).toBe('[instructions]')
     expect(slashCommand('/plan')?.args).toBe('[on|off|status|pending|instruction]')
     expect(slashCommand('/preset')?.args).toBe('<name>')
@@ -620,11 +625,11 @@ describe('runSlash', () => {
     }
   })
 
-  it('/yolo takes no args and switches through the real setYolo call', async () => {
+  it('/yolo switches on through the real setYolo call', async () => {
     const { app, ep, client } = await unstartedApp()
     try {
       expect((await runSlash(app, '/yolo')).text).toBe(
-        'routine approvals skipped from seq 7; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.',
+        'routine approvals skipped from seq 7; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. /yolo off asks again.',
       )
       expect(ep.calls.find((entry) => entry.method === '_agnes/v1/session.setYolo')?.params).toEqual({
         sessionId: app.session.id,
@@ -727,7 +732,7 @@ describe('completeToken', () => {
     // full table.
     expect(completeToken('/zzzz')).toEqual([])
     // A prefix shared by several commands returns all of them, not one arbitrarily.
-    expect(completeToken('/re')).toEqual(['/resume', '/rewind', '/refine'])
+    expect(completeToken('/re')).toEqual(['/resume', '/rename', '/rewind', '/refine'])
     // '@' mentions have their own menu; a plain word has nothing to complete against.
     expect(completeToken('@REA')).toEqual([])
     expect(completeToken('plain')).toEqual([])

@@ -879,7 +879,7 @@ export class TuiApp {
     }
     if (r.sessionChoices) {
       this.statusBar.setNotice(undefined)
-      this.sessionPicker.show(r.sessionChoices)
+      this.sessionPicker.show(r.sessionChoices, r.sessionPickerTitle)
     }
     if (r.switchSession) await this.applySwitch(r.switchSession)
     if (r.quit) this.onQuit()
@@ -963,9 +963,20 @@ export class TuiApp {
       if (this.refuseSwitch()) return this.renderer.requestRender()
       this.statusBar.setNotice(`Loading session ${escapeControl(choice.sessionId)}…`)
       this.renderer.requestRender()
-      const next = await this.o.session.client.session.load(choice.sessionId, { cwd: this.cwd })
+      // A rewind row forks the open session at its completed-turn boundary; any other row resumes.
+      const next =
+        choice.forkAt === undefined
+          ? await this.o.session.client.session.load(choice.sessionId, { cwd: this.cwd })
+          : await this.o.session.client.session.fork(choice.sessionId, choice.forkAt)
       if (await this.applySwitch(next))
-        this.statusBar.setNotice(`Resumed ${escapeControl(choice.sessionId)}`, 'success')
+        this.statusBar.setNotice(
+          choice.forkAt === undefined
+            ? `Resumed ${escapeControl(choice.sessionId)}`
+            : tt('session.rewound', this.locale, {
+                turn: choice.title?.match(/^#(\d+)/)?.[1] ?? choice.forkAt,
+              }),
+          'success',
+        )
       if (!this.stopped) this.renderer.requestRender()
     } catch (error) {
       this.showError(error)

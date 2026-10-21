@@ -34,8 +34,8 @@ it.each(['en', 'zh-CN'] as const)(
   async (locale) => {
     expect(tt('commands.yolo', locale)).toContain(locale === 'en' ? 'routine approvals' : '普通审批')
     expect(tt('commands.preset', locale)).toContain('security')
-    const call = vi.fn(async () => ({ effectiveFromSeq: 12 }))
-    const app = { session: { id: 's', client: { call } } } as unknown as TuiApp
+    const setYolo = vi.fn(async () => ({ effectiveFromSeq: 12 }))
+    const app = { session: { id: 's', setYolo, client: {} } } as unknown as TuiApp
     const result = await runSlash(app, '/yolo')
     expect(result.text).toContain('routine approvals skipped')
     expect(result.text).not.toContain('full access')

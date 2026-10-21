@@ -1,0 +1,82 @@
+import type { ContentBlock, UINode } from '@agnes/protocol'
+import type { TuiApp } from './app.js'
+import type { SessionChoice, SlashResult } from './commands.js'
+import { escapeControl } from './component.js'
+import { tt } from './locale-extended.js'
+
+/** Titles, snippets and prompts are external text: one inert line each. */
+const oneLine = (text: string): string => escapeControl(text).replace(/\s+/g, ' ').trim()
+
+type HistoryHit = { sessionId: string; title: string; snippet: string; ts: string; seq?: number }
+
+function promptPreview(nodes: readonly UINode[], ids: readonly string[]): string | undefined {
+  const user = nodes.find((n) => n.kind === 'user' && ids.includes(n.id))
+  if (user?.kind !== 'user') return undefined
+  const text = (user.content as ContentBlock[]).map((b) => (b.type === 'text' ? b.text : '')).join(' ')
+  return oneLine(text).slice(0, 80) || undefined
+}
+
+/** Completed turns the daemon will fork from: `forkable` marks a turn whose boundary is a turn/end. */
+export async function rewindChoices(app: TuiApp): Promise<SessionChoice[]> {
+  const { timeline } = await app.session.projectUIOpening({ surface: 'tui' })
+  return timeline.turns
+    .filter((t) => t.forkable && t.endSeq !== undefined)
+    .reverse()
+    .map((t) => {
+      const title = promptPreview(timeline.nodes, t.nodeIds)
+      return {
+        sessionId: app.session.id,
+        createdAt: t.startedAt,
+        lastSeq: t.endSeq as number,
+        preset: null,
+        forkAt: t.endSeq as number,
+        ...(title ? { title: `#${t.turn} ${title}` } : { title: `#${t.turn}` }),
+      }
+    })
+}
+
+/** /pin /unpin /rename /archive /search: every write goes through the daemon and echoes its refusal. */
+export async function sessionSlash(app: TuiApp, cmd: string, line: string): Promise<SlashResult> {
+  const locale = app.locale
+  const s = app.session
+  const rest = line.trim().slice(cmd.length).trim()
+  switch (cmd) {
+    case '/pin':
+    case '/unpin':
+      await s.client.session.pin(s.id, cmd === '/pin')
+      return { text: tt(cmd === '/pin' ? 'session.pinned' : 'session.unpinned', locale) }
+    case '/rename': {
+      if (!rest) return { text: 'usage: /rename <title>' }
+      const prefs = await s.client.session.rename(s.id, rest)
+      return { text: tt('session.renamed', locale, { title: oneLine(prefs.title ?? rest) }) }
+    }
+    case '/archive':
+      await s.client.session.archive(s.id, true)
+      return { text: tt('session.archived', locale) }
+    default: {
+      if (!rest) return { text: tt('session.searchUsage', locale) }
+      const result = await s.client.call<{ items: HistoryHit[] }>('_agnes/v1/admin.history.search', {
+        query: rest,
+        title: '',
+        workspace: '',
+      })
+      const seen = new Set<string>()
+      const sessionChoices: SessionChoice[] = []
+      for (const hit of result.items) {
+        if (seen.has(hit.sessionId)) continue
+        seen.add(hit.sessionId)
+        const label = [oneLine(hit.title), oneLine(hit.snippet)].filter(Boolean).join(' — ')
+        sessionChoices.push({
+          sessionId: hit.sessionId,
+          createdAt: hit.ts,
+          lastSeq: hit.seq ?? 0,
+          preset: null,
+          ...(label ? { title: label } : {}),
+        })
+      }
+      return sessionChoices.length
+        ? { sessionChoices, sessionPickerTitle: 'picker.searchTitle' }
+        : { text: tt('session.noMatches', locale) }
+    }
+  }
+}

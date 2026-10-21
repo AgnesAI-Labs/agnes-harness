@@ -2,7 +2,7 @@ import type { SessionChoice } from '../commands.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
 import { Select } from '../components/select.js'
-import { tt } from '../locale-extended.js'
+import { type ExtendedKey, tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
 
 function label(choice: SessionChoice, locale: string): string {
@@ -33,11 +33,14 @@ export class SessionPicker implements Component {
     return this.box !== undefined
   }
 
-  show(choices: readonly SessionChoice[]): void {
-    const byId = new Map(choices.map((choice) => [choice.sessionId, structuredClone(choice)]))
+  show(choices: readonly SessionChoice[], titleKey: ExtendedKey = 'picker.sessionTitle'): void {
+    // A rewind row is one turn of the same session, so its key carries the boundary.
+    const keyOf = (choice: SessionChoice): string =>
+      choice.forkAt === undefined ? choice.sessionId : `${choice.sessionId}@${choice.forkAt}`
+    const byId = new Map(choices.map((choice) => [keyOf(choice), structuredClone(choice)]))
     const select = new Select({
-      options: [...byId.values()].map((choice) => ({
-        id: choice.sessionId,
+      options: [...byId.entries()].map(([id, choice]) => ({
+        id,
         label: label(choice, this.o.locale ?? 'en'),
       })),
       ansi: this.o.ansi,
@@ -51,7 +54,7 @@ export class SessionPicker implements Component {
       onCancel: () => this.close(),
     })
     this.box = new Box(select, {
-      title: tt('picker.sessionTitle', this.o.locale ?? 'en'),
+      title: tt(titleKey, this.o.locale ?? 'en'),
       ansi: this.o.ansi,
     })
     this.o.changed()
