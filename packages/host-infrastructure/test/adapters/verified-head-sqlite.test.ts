@@ -248,13 +248,14 @@ describe('integrityDigestAt against SQLite', () => {
 })
 
 describe('the checkpoint beside the append watermark', () => {
-  it('is not written by an append, only by closing the log, and does not set the watermark', async () => {
+  it('advances after full verification or close, never an unverified append, and does not set the watermark', async () => {
     const { file, storage } = await built()
     const before = (await storage.readVerifiedHead('k')) as VerifiedHead
     const log = await SessionLogImpl.open(options(storage, 'k', 'w1'))
     await log.append([input('later')])
     // The append moved the ledger on; the checkpoint stays where the last full verification left it.
     expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(before.throughSeq)
+    await log.fullVerified()
     await log.close()
     expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(before.throughSeq + 1)
     // A checkpoint for a session the ledger has never seen leaves no watermark or session behind.

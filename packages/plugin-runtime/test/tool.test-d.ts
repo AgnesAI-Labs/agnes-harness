@@ -123,6 +123,7 @@ describe('tool types', () => {
   })
   it('ToolMeta requires safety keys and permits omitted hints', () => {
     expectTypeOf<keyof ToolMeta>().toEqualTypeOf<
+      | 'attestsHistory'
       | 'presentation'
       | 'isReadOnly'
       | 'isDestructive'

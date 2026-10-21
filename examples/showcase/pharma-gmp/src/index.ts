@@ -174,7 +174,7 @@ export const reports = defineTool({
     },
     { additionalProperties: false },
   ),
-  meta: meta(true),
+  meta: { ...meta(true), attestsHistory: true },
   async execute(input, ctx) {
     ctx.signal.throwIfAborted()
     try {

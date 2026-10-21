@@ -589,6 +589,10 @@ export class Session {
     })
   }
 
+  integrity(verify = false): Promise<import('@agnes/protocol').SessionIntegrityStatus> {
+    return this.client.session.integrity(this.id, verify)
+  }
+
   projectUI(upto?: number, opts: Pick<SessionProjectUIParams, 'surface'> = {}): Promise<UITimeline> {
     return this.reads.read<UITimeline>('_agnes/v1/session.projectUI', {
       sessionId: this.id,

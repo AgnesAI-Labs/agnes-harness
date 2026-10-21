@@ -61,6 +61,64 @@ type N = {
 }
 
 describe('local endpoint: ACP round trip', () => {
+  it('audits a real SQLite session through the owner RPC, including corruption before its checkpoint', async () => {
+    const h = await openTestHost({ provider: new ScriptedProvider({ scripts: [say('evidence')] }) })
+    let ep = h.endpoint({ clock: Date.now, pollMs: 5 })
+    try {
+      await ep.handle(init)
+      await addWorkspace(ep, h.dataDir)
+      const created = (await ep.handle({
+        jsonrpc: '2.0',
+        id: 200,
+        method: 'session/new',
+        params: { cwd: h.dataDir, mcpServers: [] },
+      })) as { result: { sessionId: string } }
+      const sessionId = created.result.sessionId
+      await ep.handle({
+        jsonrpc: '2.0',
+        id: 201,
+        method: 'session/prompt',
+        params: { sessionId, prompt: [{ type: 'text', text: 'audit me' }] },
+      })
+      const audit = (verify: boolean) =>
+        ep.handle({
+          jsonrpc: '2.0',
+          id: 202,
+          method: '_agnes/v1/session.integrity',
+          params: { sessionId, verify },
+        })
+      await expect(audit(true)).resolves.toMatchObject({ result: { state: 'verified', legacyThroughSeq: 0 } })
+      await ep.close()
+      ep = h.endpoint({ clock: Date.now, pollMs: 5 })
+      await ep.handle(init)
+      await expect(audit(false)).resolves.toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
+      expect(h.host.kernel.get(sessionId)).toBeUndefined()
+      await expect(audit(true)).resolves.toMatchObject({ result: { state: 'verified', legacyThroughSeq: 0 } })
+      const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
+      const target = raw
+        .prepare(
+          "SELECT seq FROM events WHERE session_key = ? AND type = 'user/message' ORDER BY seq LIMIT 1",
+        )
+        .get(sessionId) as { seq: number }
+      raw
+        .prepare(
+          "UPDATE events SET data = json_set(data, '$.content[0].text', 'tampered audit') WHERE session_key = ? AND seq = ?",
+        )
+        .run(sessionId, target.seq)
+      raw.close()
+      await expect(audit(true)).resolves.toMatchObject({
+        result: { state: 'failed', failureSeq: target.seq },
+      })
+      await expect(audit(false)).resolves.toMatchObject({
+        result: { state: 'failed', failureSeq: target.seq },
+      })
+      expect(await h.host.kernel.o.storage.readVerifiedHead?.(sessionId)).toBeUndefined()
+    } finally {
+      await ep.close()
+      await h.close()
+    }
+  })
+
   it('requires explicit workspace.add before session/new and never grants authority from cwd', async () => {
     const h = await openTestHost()
     const ep = createLocalEndpoint(h.host, { clock: () => Date.now(), pollMs: 5 })
@@ -328,7 +386,9 @@ describe('local endpoint: ACP round trip', () => {
   ])(
     '$method admits and verifies history (cold=$cold), replaying only for ACP load',
     async ({ method, cold }) => {
-      const provider = new ScriptedProvider({ scripts: [say('hi'), say('again')] })
+      const provider = new ScriptedProvider({
+        scripts: [say('hi'), say('again'), say('ordinary before verification')],
+      })
       const infer = vi.spyOn(provider, 'infer')
       const h = await openTestHost({ provider })
       let ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
@@ -430,10 +490,8 @@ describe('local endpoint: ACP round trip', () => {
             if (!session) throw new Error('cold load did not open the session')
             const log = session.d.log
             expect(log.openStats.checkpoint).toMatchObject({ used: true })
-            // Opening does not hash the prefix, so the load succeeded past the changed rows; the
-            // explicit full verification is what hashes it, behind the execution gate.
-            expect(log.historyVerified).toBe(true)
-            await log.verifyHistory({ rehashPrefix: true })
+            // Cold open returns before its automatic prefix check; only attestations wait.
+            expect(log.historyVerified).toBe(false)
             await reached.promise
             expect(log.historyVerified).toBe(false)
             infer.mockClear()
@@ -451,11 +509,11 @@ describe('local endpoint: ACP round trip', () => {
                 params: { sessionId: session.key, prompt: [{ type: 'text', text: 'must not execute' }] },
               })
             try {
-              // Input may queue after open, but neither the model nor tools may execute it.
+              // An ordinary model step can run; the final verifier gate still waits for history.
               const pending = prompt()
               await queued.promise
-              expect(infer).not.toHaveBeenCalled()
-              expect(appended).toEqual(['inbox'])
+              await vi.waitFor(() => expect(infer).toHaveBeenCalledTimes(1))
+              expect(appended).not.toContain('turn/end')
               const verified = expect(log.fullVerified()).rejects.toMatchObject({
                 code: 'E_LEDGER_INTEGRITY',
               })
@@ -470,8 +528,8 @@ describe('local endpoint: ACP round trip', () => {
                 error: { data: { code: 'E_LEDGER_INTEGRITY' } },
               })
               await expect(load()).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
-              expect(infer).not.toHaveBeenCalled()
-              expect(appended).toEqual(['inbox'])
+              expect(infer).toHaveBeenCalledTimes(1)
+              expect(appended).not.toContain('turn/end')
             } finally {
               off()
             }

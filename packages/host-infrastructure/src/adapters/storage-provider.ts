@@ -232,6 +232,8 @@ function bridge(
     })
   const discardNewSession = store.discardNewSession?.bind(store)
   const scanLean = store.scanLean?.bind(store)
+  const readIntegrityFailure = store.readIntegrityFailure?.bind(store)
+  const writeIntegrityFailure = store.writeIntegrityFailure?.bind(store)
   const readVerifiedHead = store.readVerifiedHead?.bind(store)
   const writeVerifiedHead = store.writeVerifiedHead?.bind(store)
   const deleteVerifiedHead = store.deleteVerifiedHead?.bind(store)
@@ -266,6 +268,15 @@ function bridge(
       : {}),
     scanIntegrity: (key: string, query: { fromSeq: number; toSeq: number; limit: number }) =>
       call(async () => (await store.scanIntegrity(key, query)) as IntegrityRow[]),
+    ...(readIntegrityFailure
+      ? { readIntegrityFailure: (key: string) => call(() => readIntegrityFailure(key)) }
+      : {}),
+    ...(writeIntegrityFailure
+      ? {
+          writeIntegrityFailure: (key: string, failure: { seq?: number }) =>
+            call(() => writeIntegrityFailure(key, failure)),
+        }
+      : {}),
     ...(readVerifiedHead ? { readVerifiedHead: (key: string) => call(() => readVerifiedHead(key)) } : {}),
     ...(writeVerifiedHead
       ? {
@@ -359,6 +370,8 @@ class PersistenceProviderRegistry extends ProviderRegistry<PersistenceProvider> 
               'scanIntegrity',
               'createChild',
               'discardNewSession',
+              'readIntegrityFailure',
+              'writeIntegrityFailure',
               'readVerifiedHead',
               'writeVerifiedHead',
               'deleteVerifiedHead',

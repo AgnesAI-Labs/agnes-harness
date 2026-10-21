@@ -48,6 +48,8 @@ For an explicit test-operator source review, set `AGH_SHOWCASE_REQUIRE_REVIEW=1`
 
 The signature card shows the object, reviewed revision, exact meaning and evidence in the current UI language. The human answer must return that view’s bound meaning unchanged; receipts and audit records preserve it. A legacy null answer cannot complete these new signatures.
 
+Version 1.2.2 declares report generation as history evidence: Core waits for full session-history verification before dispatch.
+
 Version 1.2.1 adds role subagents and the single Quality Assistant entry; existing installations can review the bundled update on the Plugins page. Installation and application adoption remain separate.
 
 The workbench offers Current object, Pending signatures and Evidence & reports. Start deviation, CAPA, EM, batch review or QA release work from object buttons or composer actions; the hub delegates to four specialist roles and records their attribution. Overview and Tasks & signatures form the primary navigation; all other modules remain under More and overview links.

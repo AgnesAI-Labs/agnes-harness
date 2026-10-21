@@ -245,6 +245,7 @@ function materializeToolMeta(value: unknown): unknown {
 function snapshotToolMeta(meta: ToolMeta): ToolMeta {
   const costHint = meta.costHint === undefined ? undefined : Object.freeze({ ...meta.costHint })
   return Object.freeze({
+    ...(meta.attestsHistory === true ? { attestsHistory: true } : {}),
     isReadOnly: meta.isReadOnly,
     isDestructive: meta.isDestructive,
     ...(meta.isPresentational === true ? { isPresentational: true } : {}),
@@ -370,6 +371,7 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
         ...(def.meta.paths ? { paths: def.meta.paths } : {}),
         ...(def.meta.requiresImageInput === true ? { requiresImageInput: true } : {}),
         ...(def.meta.modelVisible === false ? { modelVisible: false } : {}),
+        ...(def.meta.attestsHistory === true ? { attestsHistory: true } : {}),
         policyVersion: def.policyVersion,
         isConcurrencySafe: def.meta.isConcurrencySafe,
         isOpenWorld: def.meta.isOpenWorld,
@@ -387,6 +389,7 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
       ...(def.meta.paths ? { paths: def.meta.paths } : {}),
       ...(def.meta.requiresImageInput === true ? { requiresImageInput: true } : {}),
       ...(def.meta.modelVisible === false ? { modelVisible: false } : {}),
+      ...(def.meta.attestsHistory === true ? { attestsHistory: true } : {}),
       policyVersion: 'static-v1',
       policy: {
         isReadOnly: def.meta.isReadOnly,

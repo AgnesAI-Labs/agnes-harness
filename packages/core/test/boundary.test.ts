@@ -32,6 +32,7 @@ const EXT_VALUE_ALLOWED = new Set([
   'extEventType',
   'ProviderError', // shared provider admission failures; Core session opening keeps its compatibility alias
   'createCompactionThreshold', // authority-free default threshold shared with Base
+  'mcpStablePrefix', // authority-free MCP namespace binding shared with role delegation
   'defaultToolPolicy', // authority-free default risk decision shared with Base
   'APPROVAL_DEFAULTS', // single public configuration defaults, shared with Core
   'unavailableDecisions', // registration and unconfigured test scopes refuse session access

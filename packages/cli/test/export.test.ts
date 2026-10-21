@@ -58,6 +58,13 @@ function endpoint(
       agentCapabilities: {},
       _meta: { agnes: { agnesVersion: 'test' } },
     }))
+    .on('_agnes/v1/session.integrity', () => ({
+      state: 'verified',
+      verifiedThroughSeq: events.length,
+      lastSeq: events.length,
+      legacyThroughSeq: 0,
+      verifiedAtMs: 1,
+    }))
     .on('session/load', (params) => {
       expect(params).toEqual({ sessionId, cwd: '', mcpServers: [] })
       restored = true

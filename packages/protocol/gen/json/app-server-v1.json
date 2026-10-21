@@ -1865,6 +1865,16 @@
         "$ref": "#/$defs/_agnes_v1_session_runtimeResult"
       }
     },
+    "_agnes/v1/session.integrity": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_session_integrityParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_session_integrityResult"
+      }
+    },
     "_agnes/v1/session.tools": {
       "kind": "request",
       "direction": "c2s",
@@ -44316,6 +44326,58 @@
           "maxLength": 1024,
           "type": "string"
         },
+        "integrity": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "state": {
+              "anyOf": [
+                {
+                  "const": "verifying",
+                  "type": "string"
+                },
+                {
+                  "const": "verified",
+                  "type": "string"
+                },
+                {
+                  "const": "failed",
+                  "type": "string"
+                },
+                {
+                  "const": "stopped",
+                  "type": "string"
+                }
+              ]
+            },
+            "verifiedThroughSeq": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "lastSeq": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "legacyThroughSeq": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "verifiedAtMs": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "failureSeq": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "state",
+            "verifiedThroughSeq",
+            "lastSeq",
+            "legacyThroughSeq"
+          ]
+        },
         "loaded": {
           "type": "boolean"
         },
@@ -44816,6 +44878,75 @@
         "providers",
         "seams",
         "restartRequired"
+      ]
+    },
+    "_agnes_v1_session_integrityParams": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "minLength": 1,
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "verify": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sessionId"
+      ]
+    },
+    "_agnes_v1_session_integrityResult": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "state": {
+          "anyOf": [
+            {
+              "const": "verifying",
+              "type": "string"
+            },
+            {
+              "const": "verified",
+              "type": "string"
+            },
+            {
+              "const": "failed",
+              "type": "string"
+            },
+            {
+              "const": "stopped",
+              "type": "string"
+            }
+          ]
+        },
+        "verifiedThroughSeq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "lastSeq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "legacyThroughSeq": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "verifiedAtMs": {
+          "minimum": 0,
+          "type": "number"
+        },
+        "failureSeq": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "state",
+        "verifiedThroughSeq",
+        "lastSeq",
+        "legacyThroughSeq"
       ]
     },
     "_agnes_v1_session_toolsParams": {

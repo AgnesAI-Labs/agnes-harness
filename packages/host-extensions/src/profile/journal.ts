@@ -157,6 +157,8 @@ export class ProfileJournal {
       },
       cancelled: false,
       log: this.log,
+      beforeAttestation: () => this.log.fullVerified(),
+      historyVerified: () => this.log.historyVerified,
       readDecisions: () => this.cells,
       clock: this.clock,
       id: randomUUID,
@@ -176,11 +178,12 @@ export class ProfileJournal {
       trust: 'trusted',
     }
   }
-  write(
+  async write(
     operation: ProfileOperation,
     decisions: EventInput[] = [],
     check: () => void = () => undefined,
   ): Promise<unknown> {
+    await this.log.fullVerified()
     return this.log.append(
       [
         ...decisions,
@@ -200,6 +203,7 @@ export class ProfileJournal {
   }
   async close(): Promise<void> {
     this.closed = true
+    this.log.cancelHistoryVerification()
     clearTimeout(this.expiryTimer)
     await this.tail
     await this.log.close()

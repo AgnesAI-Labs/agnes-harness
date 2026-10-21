@@ -11,6 +11,33 @@ afterEach(async () => {
 })
 
 describe('sessions command', () => {
+  it.each(['verified', 'failed'] as const)(
+    'reports %s audits through the SDK with an appropriate exit code',
+    async (state) => {
+      const endpoint = new FakeEndpoint()
+        .on('initialize', () => ({ protocolVersion: 1, agentCapabilities: {} }))
+        .on('_agnes/v1/session.integrity', (params) => {
+          expect(params).toEqual({ sessionId: 'k', verify: true })
+          return {
+            state,
+            lastSeq: 50,
+            verifiedThroughSeq: state === 'verified' ? 50 : 0,
+            legacyThroughSeq: 0,
+            ...(state === 'failed' ? { failureSeq: 10 } : { verifiedAtMs: 1000 }),
+          }
+        })
+      const client = createClient({ transport: { kind: 'inproc', endpoint } })
+      clients.push(client)
+      const writes: string[] = []
+      const code = await sessionsCommand(parseArgs(['sessions', 'verify', 'k', '--json']), client, {
+        stdout: { write: (value: string) => writes.push(value) } as never,
+        stderr: { write: () => true } as never,
+      })
+      expect(code).toBe(state === 'verified' ? 0 : 1)
+      expect(JSON.parse(writes.join(''))).toMatchObject({ state })
+    },
+  )
+
   it('uses the SDK list surface and filters show to the exact requested id', async () => {
     const endpoint = new FakeEndpoint()
     let params: unknown

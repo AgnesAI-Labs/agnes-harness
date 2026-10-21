@@ -260,6 +260,10 @@ export function createRuntimeDialog(options: {
 }) {
   const t = options.translate
   const host = createRegionHost(document.body, 'div')
+  let integrity: import('@agnes/protocol').SessionIntegrityStatus | undefined
+  let auditing = false
+  let integrityRead = 0
+  let integrityTimer: ReturnType<typeof setTimeout> | undefined
   let runtime: SessionRuntimeDescriptor | undefined
   let tools: SessionToolsResult | undefined
   let toolsFailed = false
@@ -273,6 +277,7 @@ export function createRuntimeDialog(options: {
   let sessionId: string | undefined
   const close = () => {
     opened = false
+    clearTimeout(integrityTimer)
     version++
     render()
     const trigger = returnFocus?.isConnected
@@ -309,6 +314,31 @@ export function createRuntimeDialog(options: {
               permission={sessionId ? options.permissionOf?.(sessionId) : undefined}
               t={t}
             >
+              <SettingsGroup title={t('session.integrity.title')}>
+                <p role="status" aria-live="polite" aria-busy={auditing || integrity?.state === 'verifying'}>
+                  {t(
+                    auditing || integrity?.state === 'verifying'
+                      ? 'session.integrity.verifying'
+                      : integrity?.state === 'verified'
+                        ? 'session.integrity.verified'
+                        : integrity?.state === 'failed'
+                          ? integrity.failureSeq === undefined
+                            ? 'session.integrity.failedUnknown'
+                            : 'session.integrity.failed'
+                          : 'session.integrity.unknown',
+                    {
+                      seq: integrity?.failureSeq ?? integrity?.verifiedThroughSeq ?? 0,
+                      time: integrity?.verifiedAtMs ? new Date(integrity.verifiedAtMs).toLocaleString() : '',
+                    },
+                  )}
+                </p>
+                {integrity && integrity.legacyThroughSeq > 0 && (
+                  <MetaText>{t('session.integrity.legacy', { seq: integrity.legacyThroughSeq })}</MetaText>
+                )}
+                <Button disabled={auditing} onClick={() => void readIntegrity(version, true)}>
+                  {t('session.integrity.verify')}
+                </Button>
+              </SettingsGroup>
               <SessionGrantList
                 grants={grants}
                 revoking={revoking}
@@ -411,11 +441,40 @@ export function createRuntimeDialog(options: {
         render()
       })
   }
+  const readIntegrity = async (mine: number, verify = false) => {
+    if (!sessionId || mine !== version || !opened) return
+    const read = ++integrityRead
+    const current = () => mine === version && read === integrityRead
+    clearTimeout(integrityTimer)
+    if (verify) {
+      auditing = true
+      render()
+    }
+    try {
+      const result = await options.client.session.integrity(sessionId, verify)
+      if (!current()) return
+      integrity = result
+      if (result.state === 'verifying') integrityTimer = setTimeout(() => void readIntegrity(mine), 1000)
+    } catch (failure) {
+      if (current()) {
+        integrity = undefined
+        options.error(failure)
+      }
+    } finally {
+      if (current()) {
+        auditing = false
+        render()
+      }
+    }
+  }
   const open = async (id: string, trigger: HTMLElement) => {
     const mine = ++version
     sessionId = id
     returnFocus = trigger
     runtime = undefined
+    integrity = undefined
+    auditing = false
+    clearTimeout(integrityTimer)
     tools = undefined
     toolsFailed = false
     toolsBusy = false
@@ -431,6 +490,7 @@ export function createRuntimeDialog(options: {
       // The composer's catalog names loops; an id it does not know is shown as it is.
       loopLabel = value.loop ? options.loopLabel?.(value.loop.id) : undefined
       render()
+      if (value.loaded) void readIntegrity(mine)
       void readTools(mine)
       void readGrants(mine, id)
     } catch (failure) {
@@ -446,6 +506,7 @@ export function createRuntimeDialog(options: {
       if (opened && sessionId === id && returnFocus) return open(id, returnFocus)
     },
     dispose() {
+      clearTimeout(integrityTimer)
       opened = false
       version++
       unmountRegion(host)

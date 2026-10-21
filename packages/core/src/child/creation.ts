@@ -9,7 +9,7 @@ export async function reportFailedCreation(
   childKey: string,
   credits: number,
 ): Promise<void> {
-  const available = () => parent.d.log.historyVerified && !parent.d.log.faulted && !parent.closingOrClosed
+  const available = () => !parent.d.log.faulted && !parent.closingOrClosed
   if (!available()) return
   const record = await requireChildControl(parent.d.log.storage).lookupByKey(childKey)
   if (!available()) return

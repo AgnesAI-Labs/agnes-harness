@@ -58,7 +58,7 @@ function start(s: SessionImpl, requestId: string | undefined = 'r1', trigger = '
 
 describe('approval decision consumption state', () => {
   it.each(['callback', 'timeout'] as const)(
-    'consumes %s once, preserves prior state, and rebuilds the marker',
+    'consumes %s once, rebuilds the marker, and refuses retired verifier history on reload',
     async (via) => {
       const h = await ready(via)
       const previous = h.session.state
@@ -72,17 +72,13 @@ describe('approval decision consumption state', () => {
       const rebuilt = foldEvents(await h.log.scan({ fromSeq: 1, toSeq: h.log.lastSeq }))
       expect([...rebuilt.resumedRequests]).toEqual(['r1'])
       await h.session.close()
-      const reopened = await openSession({
-        storage: h.storage,
-        clock,
-        provider: fakeProvider([textTurn('unused')]),
-      })
-      try {
-        expect([...reopened.session.state.resumedRequests]).toEqual(['r1'])
-        await expect(start(reopened.session)).rejects.toThrow('already consumed')
-      } finally {
-        await reopened.session.close()
-      }
+      await expect(
+        openSession({
+          storage: h.storage,
+          clock,
+          provider: fakeProvider([textTurn('unused')]),
+        }),
+      ).rejects.toMatchObject({ code: 'E_RELATION', detail: { reason: 'clean-home-required' } })
     },
   )
   it.each(['missing', 'other-lane', 'wrong-trigger'])(

@@ -1,4 +1,5 @@
 import { type Static, Type } from '@sinclair/typebox'
+import { SessionIntegrityStatus } from './session-integrity.js'
 
 const text = Type.String({ minLength: 1, maxLength: 1024 })
 const hash = Type.String({ minLength: 1, maxLength: 256 })
@@ -22,6 +23,7 @@ export const SessionRuntimeParams = Type.Object({ sessionId: text }, { additiona
 export const SessionRuntimeDescriptor = Type.Object(
   {
     sessionKey: text,
+    integrity: Type.Optional(SessionIntegrityStatus),
     /**
      * False for a session no container has open: the descriptor then carries only what its durable pin and
      * composition record say, and the sections that need a live container (`providers`, `resources`,

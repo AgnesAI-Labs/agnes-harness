@@ -1,6 +1,6 @@
 import { createSha256, type Sha256Stream } from '@agnes/core-common/request/hash'
 import { CoreError, type Event, type Seq, type SessionKey } from '@agnes/core-common/types'
-import { jcsWrite } from '@agnes/protocol'
+import { jcsChunks, jcsWrite } from '@agnes/protocol'
 import type { IntegrityCommit, IntegrityMetadata, IntegrityRow, StorageAdapter } from './storage.js'
 
 export const LEDGER_INTEGRITY_ALGORITHM = 'agnes-ledger-jcs-sha256-v1' as const
@@ -157,7 +157,7 @@ export const COLD_TAIL_ROWS = 32
  *   recomputed; the last stored digest before the tail is adopted as the chain head there. Only the tail
  *   is hashed. `hashPrefix` hashes every row instead, as an explicit full verification does.
  *
- * A prefix that was not hashed stays unverified until an explicit full verification hashes it.
+ * A prefix that was not hashed stays unverified until the background full verification hashes it.
  */
 export async function verifyLedger(
   storage: StorageAdapter,
@@ -286,4 +286,46 @@ export function prepareIntegrity(
     state = { ...state, lastSeq: event.seq, headDigest: integrity.digest }
   }
   return { entries, state, canonicalBytes }
+}
+
+/** Same chain contract as verifyIntegrityRows, with cooperative hashing for very large event bodies. */
+export async function verifyIntegrityRowCooperatively(
+  row: IntegrityRow,
+  state: IntegrityState,
+  yieldCpu: () => void | Promise<void>,
+): Promise<IntegrityState> {
+  const next = verifyIntegrityRows([row], state, false)
+  if (!row.integrity) return next
+  const value =
+    row.integrity.mode === 'anchor'
+      ? {
+          algorithm: LEDGER_INTEGRITY_ALGORITHM,
+          sessionKey: row.sessionKey,
+          legacyThroughSeq: state.legacyThroughSeq,
+          event: row.event,
+        }
+      : {
+          algorithm: LEDGER_INTEGRITY_ALGORITHM,
+          sessionKey: row.sessionKey,
+          previousDigest: row.integrity.previousDigest,
+          event: row.event,
+        }
+  const hash = createSha256()
+  let pending = ''
+  try {
+    for (const token of jcsChunks(value)) {
+      pending += token
+      if (pending.length >= FLUSH_CHARS) {
+        hash.update(pending)
+        pending = ''
+        await yieldCpu()
+      }
+    }
+    if (pending) hash.update(pending)
+  } catch (error) {
+    if (error instanceof CoreError) throw error
+    fail('stored event cannot be canonicalized', row.event.seq)
+  }
+  if (!sameDigest(row.integrity.digest, hash.digestHex())) fail('ledger digest mismatch', row.event.seq)
+  return next
 }
