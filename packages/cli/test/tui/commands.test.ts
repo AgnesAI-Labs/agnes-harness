@@ -2,12 +2,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { attachmentLink } from '@agnes/protocol'
+import { attachmentLink, rpcError } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { resourceCapabilityMissing } from '../../src/commands/resources.js'
 import { type Colour, createAnsi } from '../../src/tui/ansi.js'
-import { TuiApp } from '../../src/tui/app.js'
+import { formatTuiErrorNotice, TuiApp } from '../../src/tui/app.js'
 import {
   attachmentsFrom,
   completeToken,
@@ -115,7 +115,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(34)
+    expect(SLASH_COMMANDS).toHaveLength(35)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -151,6 +151,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/skill',
       '/mcp',
       '/context',
+      '/agents',
     ])
   })
 
@@ -165,6 +166,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/install')?.args).toBe('<source>|confirm|cancel')
     expect(slashCommand('/package')?.args).toContain('rollback')
     expect(slashCommand('/skill')?.args).toBe('invoke <name> [arguments]|refresh|trust ...')
+    expect(slashCommand('/agents')?.args).toBe('[stop <n|id>|resume <n|id> <message>]')
     // Commands without arguments carry no shape at all, and an unknown name finds nothing.
     expect(slashCommand('/help')?.args).toBeUndefined()
     expect(slashCommand('/nope')).toBeUndefined()
@@ -288,6 +290,94 @@ describe('runSlash', () => {
       await client.close()
     }
   })
+  it('/agents reads session.controls and sends stop and resume as child controls on the wire', async () => {
+    const { app, client, ep } = await unstartedApp()
+    const child = (id: string, status: string, controls = { stop: true, continue: true }) => ({
+      id,
+      parentId: 'cur',
+      providerId: 'codex',
+      status,
+      controls,
+      durationMs: 12_345,
+      totalTokens: null,
+    })
+    ep.on('_agnes/v1/session.controls', () => ({
+      controls: {},
+      paused: false,
+      pending: [],
+      children: [
+        child('child-a', 'running'),
+        child('child\u001b[31m-b', 'idle', { stop: false, continue: true }),
+      ],
+    }))
+    try {
+      const listed = await runSlash(app, '/agents')
+      expect(listed.text).toBe(
+        [
+          '1. child-a [running] codex · 12.3s · - Token · stop resume',
+          '2. child[31m-b [idle] codex · 12.3s · - Token · resume',
+        ].join('\n'),
+      )
+      // Stop and resume take a list number or an id; the resume message keeps its inner whitespace.
+      await runSlash(app, '/agents stop 1')
+      await runSlash(app, '/agents resume child-a  keep going\nplease')
+      const sent = ep.calls.filter((call) => call.method === '_agnes/v1/submit').map((call) => call.params)
+      expect(sent).toMatchObject([
+        { kind: 'control', payload: { action: 'child-stop', childId: 'child-a' } },
+        {
+          kind: 'control',
+          payload: { action: 'child-continue', childId: 'child-a', text: 'keep going\nplease' },
+        },
+      ])
+      // Usage mistakes and unknown targets never reach the daemon.
+      const before = ep.calls.length
+      for (const line of ['/agents stop', '/agents stop 1 extra', '/agents resume 1', '/agents jump 1'])
+        expect((await runSlash(app, line)).text).toBe(
+          '用法：/agents [stop <序号|id> | resume <序号|id> <消息>]',
+        )
+      expect(ep.calls.length).toBe(before)
+      expect((await runSlash(app, '/agents stop 9')).text).toBe('没有子智能体 9')
+      expect(ep.calls.filter((call) => call.method === '_agnes/v1/submit')).toHaveLength(2)
+    } finally {
+      await client.close()
+      await ep.close()
+    }
+  })
+
+  it('/agents shows a daemon refusal through the standard error notice and changes nothing else', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    const refusal = rpcError('SEMANTIC_REJECTED', { code: 'CONTROL_NOT_RUNNING' })
+    ep.on('_agnes/v1/session.controls', () => ({
+      controls: {},
+      paused: false,
+      pending: [],
+      children: [
+        {
+          id: 'child-a',
+          parentId: 'cur',
+          providerId: 'codex',
+          status: 'completed',
+          controls: { stop: true, continue: false },
+          durationMs: null,
+          totalTokens: 7,
+        },
+      ],
+    })).on('_agnes/v1/submit', () => {
+      throw refusal
+    })
+    try {
+      await app.start()
+      await app.runInput('/agents stop child-a')
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 100, 24)).join('\n')).toContain(formatTuiErrorNotice(refusal, 'zh-CN')),
+      )
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
   it('/help lists the command table with descriptions; /quit signals quit; unknown names say so', async () => {
     const { app, client, ep } = await unstartedApp()
     try {

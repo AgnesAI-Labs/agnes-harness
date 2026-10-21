@@ -7,6 +7,7 @@ import type {
   ThinkingLevel,
 } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
+import { agentsSlash } from './agent-commands.js'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
@@ -149,6 +150,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   { name: '/mcp', args: '<action> ...', descriptionKey: 'commands.mcp', summaryKey: 'commands.mcpSummary' },
   { name: '/context', descriptionKey: 'commands.context', summaryKey: 'commands.contextSummary' },
+  {
+    name: '/agents',
+    args: '[stop <n|id>|resume <n|id> <message>]',
+    descriptionKey: 'commands.agents',
+    summaryKey: 'commands.agentsSummary',
+  },
 ]
 
 export function slashCommand(name: string): SlashCommand | undefined {
@@ -426,6 +433,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return grantsSlash(app, line)
     case '/deliverables':
       return deliverablesSlash(app, line)
+    case '/agents':
+      return agentsSlash(app, line)
     case '/pin':
     case '/unpin':
     case '/rename':
