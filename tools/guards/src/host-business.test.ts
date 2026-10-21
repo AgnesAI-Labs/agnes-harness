@@ -71,7 +71,10 @@ const cases = [
   ],
 ] as const
 const paths = cases.map(([, source], index) => {
-  const file = join(scratch, `case-${index}${CODE_EXTENSIONS[index % CODE_EXTENSIONS.length]}`)
+  const extension = /\b(?:import\s+type|type\s+\w+\s*=)/.test(source)
+    ? '.ts'
+    : CODE_EXTENSIONS[index % CODE_EXTENSIONS.length]
+  const file = join(scratch, `case-${index}${extension}`)
   writeFileSync(file, source)
   return file
 })
