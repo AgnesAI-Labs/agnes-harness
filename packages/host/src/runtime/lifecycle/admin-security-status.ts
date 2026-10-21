@@ -32,9 +32,11 @@ function securityPolicy(
     networkMode:
       sandbox.level === 'L0'
         ? ('unrestricted' as const)
-        : sandbox.networkAllow.length
-          ? ('allow-list' as const)
-          : ('deny' as const),
+        : sandbox.loopbackServe
+          ? ('loopback-serve' as const)
+          : sandbox.networkAllow.length
+            ? ('allow-list' as const)
+            : ('deny' as const),
   }
 }
 
