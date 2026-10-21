@@ -3,9 +3,13 @@
 // the v1 requirement / task / human-intervention machines, derived metrics and store persistence.
 // No host imports, so tests run against a plain in-memory store.
 import { readFileSync } from 'node:fs'
+import { TEMPLATES } from './approval-templates.mjs'
+import { act, DomainError, FLOW_LABELS, newFlow, roleOf, view } from './approvals.mjs'
 import { blockers } from './blockers.mjs'
 import { GATE_PROFILES, LIVE_TAILORING, ORGS, ROLES } from './profiles.mjs'
 import { buildSeed } from './seed-data.mjs'
+
+export { DomainError, roleOf }
 
 export const STAGES = ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE']
 export const LEVELS = ['CUS', 'SYS', 'SWR', 'DES', 'TC']
@@ -205,6 +209,20 @@ export const LABELS = Object.freeze({
     INCIDENT_HANDLING: '故障处理',
   },
   priority: { P0: 'P0 紧急', P1: 'P1 重要', P2: 'P2 一般' },
+  approvalState: FLOW_LABELS,
+  approvalTemplate: Object.fromEntries(Object.entries(TEMPLATES).map(([k, t]) => [k, t.name])),
+  approvalSubject: { artifact: '交付物', change: '变更', problem: '质量问题', trial: '试验' },
+  nodeState: { WAITING: '待到达', ACTIVE: '处理中', DONE: '已完成', RETURNED: '已驳回', SKIPPED: '已跳过' },
+  nodeMode: { SERIAL: '任一人', ALL: '全部会签', ANY: '或签' },
+  approvalAction: {
+    APPROVE: '同意',
+    REJECT: '驳回',
+    RETURN: '退回',
+    TRANSFER: '转办',
+    ADD_SIGN: '加签',
+    COMMENT: '评论',
+    WITHDRAW: '撤回',
+  },
 })
 
 const COLLECTIONS = {
@@ -224,6 +242,7 @@ const COLLECTIONS = {
   requirement: 'requirements',
   task: 'tasks',
   intervention: 'interventions',
+  approval: 'approvals',
 }
 const PREFIX = { requirement: 'REQ', task: 'TASK', intervention: 'HI' }
 const HOUR = 3_600_000
@@ -233,7 +252,6 @@ const OPEN_CHANGE = ['SUBMITTED', 'ANALYZED', 'CCB_REVIEW', 'APPROVED', 'IMPLEME
 /** Live document bodies are cached in the store, whose values are capped at 64 KiB. */
 export const DOC_LIMIT_BYTES = 48 * 1024
 
-export class DomainError extends Error {}
 const fail = (message) => {
   throw new DomainError(message)
 }
@@ -270,12 +288,6 @@ const stageLabel = (state, stage) => {
   const project = state.projects.find((p) => p.id === stage.projectId)
   return (project && profileOf(project)[stage.stage]?.label) || LABELS.stage[stage.stage] || stage.stage
 }
-/** "质量工程师 韩雪" and "质量工程师" both sign as 质量工程师; "RAMS 工程师 唐力" keeps its inner space. */
-export const roleOf = (by) => {
-  const text = String(by ?? '').trim()
-  return ROLES.find((r) => text === r || text.startsWith(`${r} `)) ?? text.split(/\s+/)[0]
-}
-
 function record(item, at, by, from, to, note) {
   item.history = [...(item.history ?? []), { at, by, from, to, ...(note ? { note } : {}) }].slice(
     -HISTORY_LIMIT,
@@ -296,6 +308,26 @@ const ids = (value, name) => {
   return [...new Set(value)]
 }
 
+// Moves only an approval flow may make: the flow's settlement calls transition with this key set.
+const FLOW = Symbol('approvalFlow')
+const FLOW_ONLY = {
+  change: ['APPROVED', 'ECR'],
+  problem: ['CLOSED', 'PROBLEM_CLOSE'],
+  trial: ['APPROVED', 'TRIAL_REPORT'],
+}
+const SUBJECTS = { artifact: 'artifacts', change: 'changes', problem: 'problems', trial: 'trials' }
+const runningFlow = (state, type, id) =>
+  state.approvals.find((a) => a.state === 'RUNNING' && a.subject.type === type && a.subject.id === id)
+
+/** Object states advance only through their approval flow; a running flow also freezes manual moves. */
+function guardFlow(state, kind, item, to, input) {
+  const [target, template] = FLOW_ONLY[kind] ?? []
+  if (!target || input[FLOW]) return
+  if (to === target) fail(`${item.id} 不能直接流转至 ${to}：需走 ${template} 审批`)
+  const running = runningFlow(state, kind, item.id)
+  if (running) fail(`${item.id} 有进行中的审批 ${running.id}，请先在流程中处理`)
+}
+
 /** The only write path for states. Refuses any move absent from the kind's table. */
 export function transition(state, input, now = Date.now()) {
   const { kind, id, to, by, note } = input
@@ -305,6 +337,7 @@ export function transition(state, input, now = Date.now()) {
   const item = find(state, kind, id)
   const from = effectiveState(item, kind, now)
   if (!MACHINES[kind][from]?.includes(to)) fail(`非法状态流转：${from} 不可流转至 ${to}`)
+  guardFlow(state, kind, item, to, input)
   const at = new Date(now).toISOString()
   const actor = by || '未署名'
   if (kind === 'intervention') {
@@ -439,6 +472,15 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
           '系统检查',
         )
     }
+    for (const a of stageArtifacts(state, stage)) {
+      const flow = latestRelease(state, a.id)
+      if (flow && !['APPROVED', 'WITHDRAWN'].includes(flow.state))
+        addFindings(
+          gate,
+          [`交付物 ${a.id} 的发布审批 ${flow.id} ${FLOW_LABELS[flow.state]}，尚未批准`],
+          '系统检查',
+        )
+    }
     const [type, label] = TRIAL_GATES[def.code] ?? []
     if (type) {
       const open = state.trials.filter(
@@ -462,6 +504,11 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
 
 const stageArtifacts = (state, stage) =>
   state.artifacts.filter((a) => a.projectId === stage.projectId && a.stage === stage.stage)
+/** The newest DOC_RELEASE flow of a deliverable. */
+const latestRelease = (state, artifactId) =>
+  state.approvals.findLast(
+    (a) => a.template === 'DOC_RELEASE' && a.subject.type === 'artifact' && a.subject.id === artifactId,
+  )
 
 /** Approving a gate that is not the stage's last returns the stage to IN_PROGRESS for the next one. */
 function approve(state, stage, gate, by, comment, at) {
@@ -475,7 +522,8 @@ function approve(state, stage, gate, by, comment, at) {
   }
   record(stage, at, by, 'IN_REVIEW', 'PASSED', comment)
   stage.actualEnd = at
-  const items = stageArtifacts(state, stage)
+  // A deliverable whose release flow is still running is baselined when that flow is approved.
+  const items = stageArtifacts(state, stage).filter((a) => !runningFlow(state, 'artifact', a.id))
   for (const a of items) {
     a.status = 'BASELINED'
     // A draft (V0.x) becomes the first released version when it is baselined.
@@ -600,14 +648,13 @@ function ecnId(state, cr) {
 }
 
 /**
- * An approved change gets its ECN and, when it names items, a new as-designed baseline. It marks impacted
- * requirements CHANGED and sends impacted PASSED stages to rework, except in a project already in service.
+ * An approved change (its ECR flow) gets its ECN. It marks impacted requirements CHANGED and sends
+ * impacted PASSED stages to rework, except in a project already in service. The as-designed baseline
+ * comes later, when the ECN_RELEASE flow is approved.
  */
 function applyChange(state, cr, at) {
   const project = projectOf(state, cr.projectId)
   cr.ecn = ecnId(state, cr)
-  if (cr.impact?.items?.length)
-    addBaseline(state, project.id, 'AS_DESIGNED', [], cr.impact.items, at, `${cr.ecn}：${cr.title}`)
   if (cr.impact?.fleet && !cr.retrofit) cr.retrofit = { done: 0, total: cr.impact.fleet.doors }
   const stages = new Set()
   for (const id of cr.impact?.reqs ?? []) {
@@ -630,6 +677,12 @@ function applyChange(state, cr, at) {
     reworked.push(stage.id)
   }
   cr.reworked = reworked
+}
+
+/** Releasing an ECN, when it names items, creates the new as-designed baseline. */
+function releaseEcn(state, cr, at) {
+  if (!cr.impact?.items?.length) return undefined
+  return addBaseline(state, cr.projectId, 'AS_DESIGNED', [], cr.impact.items, at, `${cr.ecn}：${cr.title}`)
 }
 
 /** Retrofit progress only increases; the last door brings the as-maintained baseline up to the ECN. */
@@ -994,11 +1047,7 @@ function moveTrial(state, trial, to, input, at) {
       fail(`${trial.id} 缺少试验结论：出具报告前需判定合格或不合格`)
     trial.at ??= at
   }
-  if (to === 'APPROVED' && trial.result === 'FAIL') {
-    const change = state.changes.find((c) => c.id === trial.changeId)
-    if (!change || !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(change.state))
-      fail(`${trial.id} 结论为不合格，需关联已批准的变更后才能批准（条件放行）`)
-  }
+  if (to === 'APPROVED') trialApprovable(state, trial)
   if (trial.state === 'REPORTED' && to === 'IN_PROGRESS') {
     // A retest: the previous report and result stay in the history, the new report starts empty.
     trial.history.push({
@@ -1011,6 +1060,14 @@ function moveTrial(state, trial, to, input, at) {
     delete trial.reportNo
     trial.result = 'PENDING'
   }
+}
+
+/** A failed trial is approved only with an approved change (conditional release). */
+function trialApprovable(state, trial) {
+  if (trial.result !== 'FAIL') return
+  const change = state.changes.find((c) => c.id === trial.changeId)
+  if (!change || !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(change.state))
+    fail(`${trial.id} 结论为不合格，需关联已批准的变更后才能批准（条件放行）`)
 }
 
 /** The report fields a trial move or edit may carry. */
@@ -1151,14 +1208,16 @@ function moveProblem(state, problem, to, input) {
     if (!problem.rootCause) fail(`${problem.id} 缺少根本原因（rootCause）：进入措施阶段前需完成原因分析`)
     if (!problem.steps?.D4?.done) fail(`${problem.id} 的 D4（根本原因）尚未完成`)
   }
-  if (to === 'CLOSED') {
-    if (!problem.steps?.D8?.done) fail(`${problem.id} 的 D8（总结与关闭）尚未完成`)
-    if (problem.changeId) {
-      const change = state.changes.find((c) => c.id === problem.changeId)
-      if (change?.state !== 'CLOSED') fail(`${problem.id} 关联的变更 ${problem.changeId} 尚未关闭`)
-    } else if (!problem.noChangeReason)
-      fail(`${problem.id} 没有关联变更：请写明不需要设计变更的理由（noChangeReason）`)
-  }
+  if (to === 'CLOSED') problemClosable(state, problem)
+}
+
+function problemClosable(state, problem) {
+  if (!problem.steps?.D8?.done) fail(`${problem.id} 的 D8（总结与关闭）尚未完成`)
+  if (problem.changeId) {
+    const change = state.changes.find((c) => c.id === problem.changeId)
+    if (change?.state !== 'CLOSED') fail(`${problem.id} 关联的变更 ${problem.changeId} 尚未关闭`)
+  } else if (!problem.noChangeReason)
+    fail(`${problem.id} 没有关联变更：请写明不需要设计变更的理由（noChangeReason）`)
 }
 
 /** Faults in a time window, aggregated by signal, week and train, for the analysis step of an 8D. */
@@ -1337,6 +1396,144 @@ export function create(state, input, now = Date.now()) {
   return fail(`未知实体类型：${input.kind}`)
 }
 
+// ── Approval flows ─────────────────────────────────────────────────────────────────────────────
+// The rules of a flow live in approvals.mjs; this is the link to the objects whose state it advances.
+
+const AUTHOR_FALLBACK = {
+  artifact: '系统设计师',
+  change: '系统设计师',
+  problem: '质量工程师',
+  trial: '验证工程师',
+}
+function authorRole(type, subject) {
+  const role =
+    type === 'artifact'
+      ? subject.authorRole
+      : roleOf(
+          type === 'change'
+            ? subject.raisedBy
+            : type === 'problem'
+              ? subject.owner
+              : subject.history?.[0]?.by,
+        )
+  return ROLES.includes(role) ? role : AUTHOR_FALLBACK[type]
+}
+
+/** What a subject must look like for its template to start. */
+function startable(state, template, subject) {
+  const same = (s) => `${subject.id} 当前${LABELS.state[s] ?? s}`
+  if (template === 'DOC_RELEASE' && subject.status === 'BASELINED')
+    fail(`${subject.id} 已基线，修改后才能再次发起发布审批`)
+  if (template === 'ECR' && subject.state !== 'CCB_REVIEW')
+    fail(`${same(subject.state)}，需先提交 CCB 才能发起 ECR 审批`)
+  if (template === 'ECN_RELEASE') {
+    if (!subject.ecn || !['APPROVED', 'IMPLEMENTED'].includes(subject.state))
+      fail(`${same(subject.state)}，ECR 批准并生成 ECN 后才能发起 ECN 发布`)
+    if (
+      state.approvals.some(
+        (a) => a.template === template && a.subject.id === subject.id && a.state === 'APPROVED',
+      )
+    )
+      fail(`${subject.ecn} 已发布`)
+  }
+  if (template === 'PROBLEM_CLOSE') {
+    if (subject.state !== 'VERIFYING') fail(`${same(subject.state)}，处于验证中才能发起关闭审批`)
+    problemClosable(state, subject)
+  }
+  if (template === 'TRIAL_REPORT') {
+    if (subject.state !== 'REPORTED') fail(`${same(subject.state)}，出具报告后才能发起试验报告审批`)
+    trialApprovable(state, subject)
+  }
+}
+
+/**
+ * Start the flow of a template for an object. One RUNNING flow per object; the initiator is the role that
+ * wrote or raised it. An agent (`agent: true`) may start flows only for objects it drafted itself.
+ */
+export function submitApproval(state, { template, subjectId, by, agent }, now = Date.now()) {
+  const def =
+    TEMPLATES[template] ?? fail(`未知审批模板：${template}（可选 ${Object.keys(TEMPLATES).join(' / ')}）`)
+  const type = def.subject
+  const actor = by || '未署名'
+  const subject =
+    state[SUBJECTS[type]].find((x) => x.id === text(subjectId, 'subjectId', 64)) ??
+    fail(`未找到${LABELS.approvalSubject[type]} ${subjectId}`)
+  const running = runningFlow(state, type, subject.id)
+  if (running) fail(`${subject.id} 已有进行中的审批 ${running.id}：一个对象同一时间只能有一个进行中的流程`)
+  startable(state, template, subject)
+  if (agent) {
+    const mine =
+      type === 'artifact'
+        ? subject.source?.type === 'workspace'
+        : (type === 'change' ? subject.raisedBy : subject.history?.[0]?.by) === actor
+    if (!mine) fail(`${subject.id} 不是智能体起草的对象：请让用户在看板上发起审批`)
+  }
+  const year = new Date(now).getUTCFullYear()
+  const flow = newFlow({
+    id: `AP-${year}-${pad(yearSeq(state.approvals, 'AP', year), 4)}`,
+    projectId: subject.projectId,
+    template,
+    subject: { type, id: subject.id },
+    title: `${def.name}：${subject.id} ${subject.title ?? ''}`.trim(),
+    initiator: { role: authorRole(type, subject), by: actor },
+    now,
+  })
+  state.approvals.push(flow)
+  return flow
+}
+
+/** Handle the current node of a flow; the end of the flow settles its object. A refused action or settlement leaves the flow untouched. */
+export function actApproval(state, input, now = Date.now()) {
+  const flow = state.approvals.find((a) => a.id === input.id) ?? fail(`未找到审批 ${input.id}`)
+  const draft = structuredClone(flow)
+  const outcome = act(draft, input, now)
+  if (outcome) settle(state, draft, outcome, now)
+  for (const key of Object.keys(flow)) delete flow[key]
+  return Object.assign(flow, draft)
+}
+
+function settle(state, flow, outcome, now) {
+  const { type, id } = flow.subject
+  const subject = state[SUBJECTS[type]].find((x) => x.id === id)
+  if (!subject || outcome === 'WITHDRAWN') return
+  const at = new Date(now).toISOString()
+  const last = flow.actions.at(-1)
+  const by = last.by
+  const move = (to, extra = {}) =>
+    transition(
+      state,
+      { kind: type, id, to, by, [FLOW]: true, note: `${flow.id} ${FLOW_LABELS[outcome]}`, ...extra },
+      now,
+    )
+  if (outcome === 'APPROVED') {
+    if (type === 'artifact') {
+      subject.status = 'BASELINED'
+      if (/^V0\./.test(subject.version)) subject.version = 'V1.0'
+      subject.updatedAt = at
+    } else if (flow.template === 'ECR') {
+      const signers = [...new Set(flow.actions.filter((a) => a.action === 'APPROVE').map((a) => a.by))]
+      move('APPROVED', { members: signers })
+    } else if (flow.template === 'ECN_RELEASE') {
+      const baseline = releaseEcn(state, subject, at)
+      record(
+        subject,
+        at,
+        by,
+        subject.state,
+        subject.state,
+        `${subject.ecn} 已发布${baseline ? `，生成设计态基线 ${baseline.id}` : ''}`,
+      )
+    } else move(type === 'problem' ? 'CLOSED' : 'APPROVED')
+    return
+  }
+  // Rejected: the object returns to an editable state and needs a new flow.
+  if (type === 'artifact') {
+    if (subject.status === 'IN_REVIEW') subject.status = 'DRAFT'
+  } else if (flow.template === 'ECR') move('REJECTED')
+  else if (flow.template === 'PROBLEM_CLOSE') move('ACTION')
+  else if (flow.template === 'TRIAL_REPORT') move('IN_PROGRESS')
+}
+
 // ── Read model ─────────────────────────────────────────────────────────────────────────────────
 
 const OPEN_DEFECT = ['NEW', 'CONFIRMED', 'FIXING', 'RETEST']
@@ -1464,6 +1661,7 @@ export function snapshot(state, now = Date.now(), projectId) {
     requirements: pick(state.requirements),
     tasks: pick(state.tasks),
     interventions,
+    approvals: pick(state.approvals).map((a) => view(a, now)),
     blockers: blockers(state, now, projectId),
     counts: {
       requirement: count(pick(state.requirements), 'requirement'),
@@ -1473,6 +1671,8 @@ export function snapshot(state, now = Date.now(), projectId) {
       fault: count(pick(state.faults), 'fault'),
       problem: count(pick(state.problems), 'problem'),
       pendingGates: gates.filter((g) => g.decision === 'PENDING').length,
+      approvalsRunning: pick(state.approvals).filter((a) => a.state === 'RUNNING').length,
+      approvalsOverdue: pick(state.approvals).filter((a) => view(a, now).overdue).length,
     },
     machines: MACHINES,
     labels: LABELS,
@@ -1480,6 +1680,7 @@ export function snapshot(state, now = Date.now(), projectId) {
     orgs: ORGS,
     profiles: GATE_PROFILES,
     liveTailoring: LIVE_TAILORING,
+    approvalTemplates: TEMPLATES,
   }
 }
 
@@ -1488,7 +1689,7 @@ export function snapshot(state, now = Date.now(), projectId) {
 // cached live document body.
 
 const META = 'devboard/meta'
-const SCHEMA = 3
+const SCHEMA = 4
 const CHUNK_BYTES = 56 * 1024
 const V1_KEYS = ['devboard/requirements', 'devboard/tasks', 'devboard/interventions']
 const NAMES = Object.values(COLLECTIONS)
@@ -1513,7 +1714,8 @@ function chunks(list) {
 /** A store written by another schema (v1, v2) reads as empty, so the caller falls back to the seed. */
 function load(store) {
   const meta = store.get(META)
-  if (!meta || meta.schema !== SCHEMA) return undefined
+  // Schema 3 (before approval flows) loads with an empty approvals collection.
+  if (!meta || ![3, SCHEMA].includes(meta.schema)) return undefined
   const state = { schema: SCHEMA, revision: meta.revision }
   for (const c of NAMES)
     state[c] = Array.from(
