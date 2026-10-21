@@ -2022,14 +2022,27 @@
     border-top: 1px solid var(--agnes-line-primary);
     pointer-events: none;
   }
-  /* Prose that is not made of setting rows keeps the card's own inset and one rhythm. */
+  /* Prose that is not made of setting rows keeps one rhythm: a paragraph, then one divided
+     group per role with its own 8px stack and a start-aligned action. */
   .agnes-settings-prose {
     display: grid;
-    gap: var(--s12);
     min-width: 0;
   }
-  .agnes-settings-prose > :is(p, section) {
+  .agnes-settings-prose > p {
+    margin: 0 0 var(--s12);
+  }
+  .agnes-settings-prose > section {
+    display: grid;
+    gap: var(--s8);
+    min-width: 0;
+    padding-block: var(--s12);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-settings-prose > section > :is(h4, p) {
     margin: 0;
+  }
+  .agnes-settings-prose > section > .agh-btn {
+    justify-self: start;
   }
   .agnes-settings-item {
     display: flex;
