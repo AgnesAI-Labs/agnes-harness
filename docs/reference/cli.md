@@ -38,6 +38,8 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh settings SECTION [get] [--json]` | Print one section (`model-slots`, `child-engines`, `auto-review`, `system-prompt`, `memory`, `observability`, `search`, `session-defaults`) as one line per value, or the daemon result with `--json`; `memory` uses `--cwd` |
 | `agh settings SECTION set --file FILE\|-` | Save a section from JSON (`-` reads stdin); checked against the protocol schema before anything is sent. `system-prompt` also takes `--text TEXT` (replaces the whole prompt and needs `--yes`; empty removes it) |
 | `agh settings search test --text QUERY [PROVIDER]` | Run one search on a provider (default: the default provider); a failed test prints the reason and exits 1 |
+| `agh credentials [list] [--json]` / `agh credentials rename ID NAME...` | List generic credentials (id, name, kind, creation time, references; never a secret) / rename one |
+| `agh credentials delete ID [--yes] [--force]` | Without `--yes`, show what would be deleted and send nothing; a credential still in use also needs `--force` |
 | `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | Search history by session (admin connection; a refusal is printed as the daemon sends it) / session groups |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | Export; also supports `--html` and `--raw` |
 | `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | Convert and import |

@@ -27,6 +27,7 @@ export type Command =
   | 'schedules'
   | 'triggers'
   | 'settings'
+  | 'credentials'
   | 'computer-use'
   | 'profile'
   | 'plugin'

@@ -62,9 +62,11 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 
 这些命令对应 Web 管理页，需要管理员连接。`agh plugins config get ID` 列出插件的配置行及当前值、schema 摘要和是否有效；schema 标为 `x-secret`、`writeOnly` 或 `credential-reference` 的字段，以及名字像凭据的键，文本和 `--json` 都显示为 `[redacted]`。配置值只从 JSON 文件读取，不走命令行：`agh plugins config validate ID [ROW] --file value.json` 只校验，`set` 先校验，值无效时不保存并以 1 退出。`agh plugins tree` 和 `generations` 显示插件树与运行代（generation）；`tree apply --file artifact.json` 与 `tree rollback` 会改变运行态，不带 `--yes` 只打印将要做什么。`agh app show` 和 `preview 插件#应用` 读取应用状态与同意预览，`app adopt` 同样需要 `--yes`。`agh package source-policy` 显示允许的包来源。后台的拒绝原样显示并以 1 退出。
 
-## 设置
+## 设置与凭据
 
 `agh settings` 修改与 Web 设置页相同的设置，需要管理员连接。不带 section 时列出全部：`model-slots`、`child-engines`、`auto-review`、`system-prompt`、`memory`、`observability`、`search`、`session-defaults`。`agh settings SECTION`（或 `get`）每个值输出一行，`--json` 输出 daemon 的原始返回。`agh settings SECTION set --file settings.json` 保存 JSON（`-` 读标准输入），保存前先按协议 schema 校验；多数 section 可以把 `get --json` 的结果改一改直接作为输入。`agh settings system-prompt set --text "..."` 替换整个系统提示词（需要 `--yes`；文本为空则移除替换）。`memory` 作用于 `--cwd` 指定的目录。`agh settings search test --text "查询" [PROVIDER]` 跑一次搜索。它与 `agh config` 不同：后者用于登录账号和输出生效的运行配置。
+
+`agh credentials` 列出通用 API 密钥凭据（id、名称、创建时间、被谁使用），`rename ID 名称...` 改名，`delete ID --yes` 删除；不带 `--yes` 只显示将删除的对象，仍被使用的凭据还需要 `--force`。密钥值从不显示。新增或替换密钥请用 `agh config`，命令行不接收密钥。
 
 ## 退出码
 
@@ -79,6 +81,5 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
 实现依据：[参数与 usage](../../packages/cli/src/args.ts)、[退出码](../../packages/cli/src/errors.ts)、[TUI 命令](../../packages/cli-tui/src/commands.ts)。
-
 
 在 TUI 中使用 `/attach <path>` 分块上传原件，并将回执作为 prompt 提交。路径可含空格。失败保留后端附件原因；回执属于当前会话，上传完成前切换会话会拒绝提交。

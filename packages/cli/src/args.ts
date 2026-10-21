@@ -18,6 +18,7 @@ const COMMANDS = new Set<string>([
   'schedules',
   'triggers',
   'settings',
+  'credentials',
   'export',
   'import',
   'doctor',

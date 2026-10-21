@@ -5,6 +5,7 @@ import { ExitCode, UsageError } from '../errors.js'
 import { newPackageCommandId } from '../tui/package-admin.js'
 import type { ParsedArgs } from '../types.js'
 import { approvalsCommand } from './approvals.js'
+import { credentialsCommand } from './credentials.js'
 import { deliverablesCommand } from './deliverables.js'
 import { schedulesCommand } from './schedules.js'
 import { MANAGE_ACTIONS, manageSessions, oneLine } from './sessions-manage.js'
@@ -50,6 +51,7 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
   if (p.command === 'schedules') return schedulesCommand(p, client, io)
   if (p.command === 'triggers') return triggersCommand(p, client, io)
   if (p.command === 'settings') return settingsCommand(p, client, io)
+  if (p.command === 'credentials') return credentialsCommand(p, client, io)
   const action = p.positional[0] ?? 'list'
   if (action === 'migrate') {
     const sessionId = p.positional[1]
