@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/devboard",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -10,6 +10,9 @@
   "files": [
     "index.mjs",
     "domain.mjs",
+    "seed-data.mjs",
+    "seed-docs",
+    "skills",
     "client",
     "assets",
     "README.md",
@@ -17,7 +20,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check domain.mjs"
+    "build": "node --check index.mjs && node --check domain.mjs && node --check seed-data.mjs"
   },
   "agnes": {
     "provides": [
@@ -45,9 +48,24 @@
               "devboard_create_requirement",
               "devboard_create_task",
               "devboard_transition",
-              "devboard_request_human"
+              "devboard_request_human",
+              "devboard_project_create",
+              "devboard_stage_update",
+              "devboard_artifact_record",
+              "devboard_req_upsert",
+              "devboard_gate_submit",
+              "devboard_gate_status",
+              "devboard_test_record",
+              "devboard_defect_upsert",
+              "devboard_change_upsert",
+              "devboard_app_register"
             ],
             "prefix": "devboard_"
+          },
+          "filesystem": {
+            "read": [
+              "devboard-projects/**"
+            ]
           }
         }
       }
@@ -67,7 +85,38 @@
         "presets": {
           "devboard": {
             "name": "devboard",
-            "extends": "standard"
+            "extends": "standard",
+            "approval": {
+              "command_policy": [
+                {
+                  "tool": "edit|write",
+                  "argv": "^/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F  ]+/)*[^/\\\\\\x00-\\x1F\\x7F\\u0080-\\u009F  ]+$",
+                  "action": "allow"
+                },
+                {
+                  "tool": "edit|write",
+                  "argv": "^[A-Z]:/(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F  ]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F  ]+$",
+                  "action": "allow"
+                },
+                {
+                  "tool": "edit|write",
+                  "argv": "^//(?!(?:[\\s\\S]*/)?\\.\\.(?:/|$))[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F  ]+/[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F  ]+/(?:[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F  ]+/)*[^/\\\\:\\x00-\\x1F\\x7F\\u0080-\\u009F  ]+$",
+                  "action": "allow"
+                }
+              ]
+            },
+            "sandbox": {
+              "level": "L1",
+              "on_unavailable": "allow-if-unimplemented"
+            },
+            "subagent": {
+              "isolation": "shared"
+            },
+            "providers": {
+              "tool-policy": {
+                "provider": "default"
+              }
+            }
           }
         },
         "profile": {
@@ -77,7 +126,32 @@
             "devboard_create_task",
             "devboard_transition",
             "devboard_request_human",
-            "skill_read"
+            "devboard_project_create",
+            "devboard_stage_update",
+            "devboard_artifact_record",
+            "devboard_req_upsert",
+            "devboard_gate_submit",
+            "devboard_gate_status",
+            "devboard_test_record",
+            "devboard_defect_upsert",
+            "devboard_change_upsert",
+            "devboard_app_register",
+            "skill_read",
+            "read",
+            "write",
+            "edit",
+            "shell",
+            "grep",
+            "find",
+            "ls",
+            "present",
+            "tool_search",
+            "subagent_spawn",
+            "subagent_collect",
+            "subagent_list",
+            "job_output",
+            "job_list",
+            "job_kill"
           ]
         },
         "launch": {
@@ -86,20 +160,23 @@
             "zh-CN": "研发协调员"
           },
           "description": {
-            "en": "Read the board, refine requirements, split them into tasks, move work forward and ask a human when a decision is needed.",
-            "zh-CN": "读取看板，细化需求并拆分任务，推进进度，需要人拍板时发起人工介入请求。"
+            "en": "Run the R&D lifecycle of Ningchuan Equipment (fictional): portfolio, stages and review gates, traceability, changes, defects and tests; drive a live software project from requirements to acceptance.",
+            "zh-CN": "宁川装备（虚构企业）研发全流程：项目组合、阶段与评审门、需求追溯、变更、缺陷与测试；带领各角色把一个现场软件项目从需求做到验收。"
           },
           "preset": "devboard",
           "pages": [
             "devboard-overview",
-            "devboard-requirements",
+            "devboard-projects",
+            "devboard-trace",
             "devboard-tasks",
-            "devboard-interventions"
+            "devboard-changes",
+            "devboard-quality",
+            "devboard-reviews"
           ],
           "prompt": {
             "text": {
-              "en": "First call skill_read(name=devboard-playbook). Read the board, refine the newest RAW requirement and split it into development, testing and security-check tasks; raise a human-intervention request wherever a person must decide.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。看一下看板，把最新的原始需求细化并拆成研发、测试、安全校验任务，需要人拍板的地方发起介入请求。"
+              "en": "First call skill_read(name=devboard-playbook). Read the board (devboard_board), summarize each project's stage, pending review gates and risks, then ask what to drive next.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。读取看板（devboard_board），汇总各项目的阶段、待评审的门与风险，然后问我下一步推进什么。"
             },
             "mode": "draft"
           }
@@ -114,8 +191,8 @@
           "zh-CN": "DevBoard"
         },
         "title": {
-          "en": "DevBoard R&D Agent Board",
-          "zh-CN": "DevBoard 研发智能体看板"
+          "en": "DevBoard R&D Lifecycle Workbench",
+          "zh-CN": "DevBoard 研发全流程工作台"
         },
         "assistantName": {
           "en": "R&D Coordinator",
@@ -129,9 +206,12 @@
         "navigation": {
           "entries": [
             "@agnes-showcase/devboard#devboard-overview",
-            "@agnes-showcase/devboard#devboard-requirements",
+            "@agnes-showcase/devboard#devboard-projects",
+            "@agnes-showcase/devboard#devboard-trace",
             "@agnes-showcase/devboard#devboard-tasks",
-            "@agnes-showcase/devboard#devboard-interventions"
+            "@agnes-showcase/devboard#devboard-changes",
+            "@agnes-showcase/devboard#devboard-quality",
+            "@agnes-showcase/devboard#devboard-reviews"
           ]
         }
       },
@@ -142,15 +222,51 @@
       "workbench": {
         "actions": [
           {
-            "id": "refine",
+            "id": "new-project",
             "title": {
-              "en": "Refine and split new requirements",
-              "zh-CN": "细化并拆解新需求"
+              "en": "Create and start an R&D project",
+              "zh-CN": "新建并启动一个研发项目"
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). Read the board, refine the newest RAW requirement and split it into development, testing and security-check tasks; raise a human-intervention request wherever a person must decide.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。看一下看板，把最新的原始需求细化并拆成研发、测试、安全校验任务，需要人拍板的地方发起介入请求。"
+              "en": "First call skill_read(name=devboard-playbook). Create the live project “Door health monitoring dashboard” (a small dependency-free Node web app for the O&M platform) with devboard_project_create, write the project plan, record it and submit the initiation gate; then stop and tell me to approve it on the board.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。用 devboard_project_create 新建现场项目「车门健康监测看板」（智能运维平台的一个小切片，无依赖的 Node 网页应用），写项目计划、登记交付物并提交立项评审；提交后停下，告诉我到看板审批。"
+            }
+          },
+          {
+            "id": "continue",
+            "title": {
+              "en": "Continue a project",
+              "zh-CN": "继续推进项目"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "First call skill_read(name=devboard-playbook). A review gate has been decided on the board; its id is in the attached work object. Call devboard_gate_status for that gate, read the decision and findings, then continue the project: next stage if approved, rework per the findings if rejected.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。看板上有评审门已决议，门的编号在附带的工作对象里。先用 devboard_gate_status 读取该门的决议与意见，然后继续推进：批准就进入下一阶段，驳回就按意见返工后重新提交。"
+            }
+          },
+          {
+            "id": "change",
+            "title": {
+              "en": "Process change requests",
+              "zh-CN": "处理变更申请"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "First call skill_read(name=devboard-playbook). List open change requests. For SUBMITTED ones, complete the impact analysis (requirements, deliverables, test cases, safety, effort) with devboard_change_upsert and move them to ANALYZED and CCB_REVIEW; leave the CCB decision to people.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。列出未关闭的变更申请。对已提交的 CR，用 devboard_change_upsert 补齐影响分析（需求、交付物、用例、安全影响、工作量），推进到已分析并提交 CCB；CCB 决议留给人。"
+            }
+          },
+          {
+            "id": "progress",
+            "title": {
+              "en": "Summarize portfolio progress",
+              "zh-CN": "查看项目组合进度"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "Read the board and summarize each project: stage, review gates, coverage, open defects, test pass rate, overdue items and risks. Do not change anything.",
+              "zh-CN": "读取看板，按项目汇总：阶段、评审门、追溯覆盖率、未关闭缺陷、测试通过率、超期事项与风险。只汇总，不做任何修改。"
             }
           },
           {
@@ -164,32 +280,20 @@
               "en": "First call skill_read(name=devboard-playbook). Read the board, list overdue and open human-intervention requests, and continue the work whose requests have been resolved.",
               "zh-CN": "先调用 skill_read(name=devboard-playbook)。读取看板，列出超时和待处理的人工介入请求；对已处理完成的请求，按处理结论继续推进相关工作。"
             }
-          },
-          {
-            "id": "progress",
-            "title": {
-              "en": "Summarize delivery progress",
-              "zh-CN": "查看研发全局进度"
-            },
-            "agent": "@agnes-showcase/devboard#coordinator",
-            "prompt": {
-              "en": "Read the board and summarize progress: requirement states, blocked or failed tasks, and decisions waiting for people. Do not change anything.",
-              "zh-CN": "读取看板并汇总研发进度：各需求状态、阻塞或失败的任务、等待人决策的事项。只汇总，不做任何修改。"
-            }
           }
         ],
         "scenarios": [
           {
-            "en": "New requirement → refine → split into tasks",
-            "zh-CN": "新需求 → 细化 → 拆解为研发、测试、安全任务"
+            "en": "Requirements → architecture → development → test acceptance, one review gate per stage",
+            "zh-CN": "需求分析 → 架构设计 → 开发实现 → 测试验收，每个阶段过评审门"
           },
           {
-            "en": "Decision point → human intervention → agent continues",
-            "zh-CN": "决策点 → 人工介入处理 → 智能体继续推进"
+            "en": "Gate decided on the board → continue the project",
+            "zh-CN": "看板审批评审门 → 继续推进项目"
           },
           {
-            "en": "Board overview → blocked work → next steps",
-            "zh-CN": "研发全局进度 → 阻塞与失败任务 → 下一步"
+            "en": "Change request → impact analysis → CCB → rework",
+            "zh-CN": "变更申请 → 影响分析 → CCB 决议 → 返工"
           }
         ],
         "includes": [
@@ -199,14 +303,14 @@
       }
     },
     "metadata": {
-      "displayName": "DevBoard R&D agent board",
-      "summary": "A proof-of-concept task board for multi-agent software delivery: requirements, tasks and human-intervention requests on fictional data.",
-      "description": "Proof-of-concept board with three state machines, an R&D coordinator agent and synthetic demo data.",
+      "displayName": "DevBoard R&D lifecycle workbench",
+      "summary": "A full-lifecycle R&D workbench for a fictional rail-equipment company: portfolio, stage gates, traceability, changes, defects and tests on simulated data.",
+      "description": "Requirements to acceptance with review gates, CUS→SYS→SWR→DES→TC traceability, change control and a coordinator agent that drives a live software project.",
       "locales": {
         "zh-CN": {
-          "displayName": "DevBoard 研发智能体看板",
-          "summary": "研发多智能体协作任务看板概念演示：需求、任务与人工介入请求，数据均为虚构。",
-          "description": "含三套状态机、研发协调员智能体与虚构演示数据的概念验证看板。"
+          "displayName": "DevBoard 研发全流程工作台",
+          "summary": "虚构轨交装备企业的研发全流程工作台：项目组合、阶段评审门、需求追溯、变更、缺陷与测试，数据均为模拟。",
+          "description": "从需求到验收的评审门、CUS→SYS→SWR→DES→TC 双向追溯、变更控制，以及带领现场软件项目的研发协调员智能体。"
         }
       }
     }

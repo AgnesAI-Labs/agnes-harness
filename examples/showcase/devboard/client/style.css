@@ -145,4 +145,171 @@
   .devboard-overdue td {
     color: var(--agnes-status-danger-text);
   }
+  .devboard-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .devboard-kpi {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .devboard-kpi strong {
+    font-size: 24px;
+  }
+  .devboard-kpi-label {
+    color: var(--agnes-text-secondary);
+    font-size: 12px;
+  }
+  .devboard-projects {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .devboard-project {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .devboard-project header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .devboard-project h2 {
+    margin: 0;
+  }
+  .devboard-stagebar {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
+    margin: 4px 0 8px;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-stage {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 4px 6px;
+    border-top: 4px solid var(--agnes-line-primary);
+    font-size: 12px;
+  }
+  .devboard-stage-name,
+  .devboard-stage-state {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .devboard-stage-state {
+    color: var(--agnes-text-secondary);
+  }
+  .devboard-stage-PASSED {
+    border-top-color: var(--agnes-status-success-solid);
+  }
+  .devboard-stage-IN_PROGRESS,
+  .devboard-stage-IN_REVIEW {
+    border-top-color: var(--agnes-status-warning-solid);
+  }
+  .devboard-stage-REWORK {
+    border-top-color: var(--agnes-status-danger-solid);
+  }
+  .devboard-meter {
+    display: grid;
+    grid-template-columns: minmax(64px, auto) 1fr 52px;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .devboard-meter-label {
+    color: var(--agnes-text-secondary);
+  }
+  .devboard-meter-track {
+    position: relative;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--agnes-bg-page);
+    border: 1px solid var(--agnes-line-primary);
+    overflow: hidden;
+  }
+  .devboard-meter-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+  }
+  .devboard-tone-ok {
+    background: var(--agnes-status-success-solid);
+  }
+  .devboard-tone-warn {
+    background: var(--agnes-status-warning-solid);
+  }
+  .devboard-tone-bad {
+    background: var(--agnes-status-danger-solid);
+  }
+  .devboard-coverage {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 8px 24px;
+    margin-bottom: 12px;
+  }
+  .devboard-trend {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-trend li {
+    display: grid;
+    grid-template-columns: 48px 1fr 1fr 64px;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 12px;
+  }
+  .devboard-bar {
+    display: block;
+    height: 8px;
+    min-width: 1px;
+    border-radius: 3px;
+  }
+  .devboard-md {
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .devboard-md h2,
+  .devboard-md h3,
+  .devboard-md h4 {
+    margin: 16px 0 6px;
+  }
+  .devboard-md-table {
+    overflow-x: auto;
+  }
+  .devboard-md table {
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 13px;
+  }
+  .devboard-md th,
+  .devboard-md td {
+    padding: 4px 8px;
+    border: 1px solid var(--agnes-line-primary);
+    text-align: start;
+    vertical-align: top;
+  }
+  .devboard-md-code {
+    padding: 8px 12px;
+    overflow-x: auto;
+    border-radius: 6px;
+    background: var(--agnes-bg-page);
+  }
+  .devboard-md blockquote {
+    margin: 8px 0;
+    padding-left: 12px;
+    border-left: 3px solid var(--agnes-line-primary);
+    color: var(--agnes-text-secondary);
+  }
 }

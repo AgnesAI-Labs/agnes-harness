@@ -5,31 +5,50 @@
     "entry": "./index.js",
     "styles": ["./style.css"],
     "slots": [],
-    "services": ["devboard.snapshot", "devboard.transition", "devboard.create", "devboard.reset"],
+    "services": [
+      "devboard.snapshot",
+      "devboard.artifact",
+      "devboard.transition",
+      "devboard.create",
+      "devboard.gate",
+      "devboard.reset"
+    ],
     "projections": [],
     "homeEntries": [
       {
         "id": "devboard-overview",
         "placement": "primary",
         "navigation": {
-          "title": "DevBoard overview",
+          "title": "Portfolio",
           "titles": {
-            "zh-CN": "DevBoard 总览"
+            "zh-CN": "总览"
           },
           "icon": "activity",
           "order": 10
         }
       },
       {
-        "id": "devboard-requirements",
+        "id": "devboard-projects",
         "placement": "primary",
         "navigation": {
-          "title": "Requirements",
+          "title": "Projects",
           "titles": {
-            "zh-CN": "需求"
+            "zh-CN": "项目"
+          },
+          "icon": "file-text",
+          "order": 11
+        }
+      },
+      {
+        "id": "devboard-trace",
+        "placement": "primary",
+        "navigation": {
+          "title": "Traceability",
+          "titles": {
+            "zh-CN": "需求与追溯"
           },
           "icon": "list",
-          "order": 11
+          "order": 12
         }
       },
       {
@@ -41,19 +60,43 @@
             "zh-CN": "任务"
           },
           "icon": "check",
-          "order": 12
+          "order": 13
         }
       },
       {
-        "id": "devboard-interventions",
+        "id": "devboard-changes",
         "placement": "primary",
         "navigation": {
-          "title": "Human interventions",
+          "title": "Changes",
           "titles": {
-            "zh-CN": "人工介入"
+            "zh-CN": "变更"
+          },
+          "icon": "history",
+          "order": 14
+        }
+      },
+      {
+        "id": "devboard-quality",
+        "placement": "primary",
+        "navigation": {
+          "title": "Defects & tests",
+          "titles": {
+            "zh-CN": "缺陷与测试"
+          },
+          "icon": "circle-alert",
+          "order": 15
+        }
+      },
+      {
+        "id": "devboard-reviews",
+        "placement": "primary",
+        "navigation": {
+          "title": "Reviews",
+          "titles": {
+            "zh-CN": "评审待办"
           },
           "icon": "shield",
-          "order": 13
+          "order": 16
         }
       }
     ]
