@@ -177,6 +177,7 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
       }
     return actual
   }
+  const readOnly = selection.toolPolicy?.readOnly === true || input.authority?.permission === 'read-only'
   const mcpSelection = defaultSelection(selection.mcp)
   const tools = (input.installed?.tools ?? []).map((tool) =>
     decision(tool.name, [
@@ -200,11 +201,7 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         'role-tool-snapshot',
         { layer: 'session', name: 'role-delegation' },
       ],
-      [
-        !(selection.toolPolicy?.readOnly || input.authority?.permission === 'read-only') || tool.readOnly,
-        'read-only',
-        source('toolPolicy.readOnly'),
-      ],
+      [!readOnly || tool.readOnly, 'read-only', source('toolPolicy.readOnly')],
       [listAllows(selection.tools, [tool.name]), 'tool-selection', source('tools')],
       [
         selection.toolPolicy?.allow === undefined || selection.toolPolicy.allow.includes(tool.name),
@@ -300,13 +297,13 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         preset: presetSource.name,
         policy: preset?.approval.policy ?? 'default',
         toolRuntime: preset?.tools.runtime ?? 'default',
-        readOnly: selection.toolPolicy?.readOnly === true,
+        readOnly,
         ...(input.profile ? { approvalMode: input.profile.approvals.mode } : {}),
         source: presetSource,
       },
       sandbox: {
         provider: selection.sandbox?.provider ?? input.profile?.sandbox?.provider ?? 'local',
-        onUnavailable: preset?.sandbox.onUnavailable ?? 'deny',
+        onUnavailable: input.authority?.sandboxRequired ? 'deny' : (preset?.sandbox.onUnavailable ?? 'deny'),
         source: source('sandbox'),
       },
       compaction: {
