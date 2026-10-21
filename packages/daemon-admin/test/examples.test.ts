@@ -649,14 +649,15 @@ it.each([
       capabilityHash: 'cap-original',
     },
   ]
+  const declaration = { id: 'acme', brand: { name: { en: 'Acme' } }, agents: [original.ref] }
   const body = {
     packageId: 'acme/kit',
     version: '1.0.0',
     integrity: 'sha256-original',
     source: { type: 'file', ref: 'file:./synthetic' },
     signature: 'unverified',
-    declaration: { id: 'acme', brand: { name: { en: 'Acme' } }, agents: [original.ref] },
-    declarationDigest: 'a'.repeat(64),
+    declaration,
+    declarationDigest: createHash('sha256').update(jcs(declaration)).digest('hex'),
     dependencies: [],
     replacedRoles: [],
     dependencyDiff: {},
