@@ -299,6 +299,8 @@ static napi_value initialize(napi_env env, napi_value exports) {
   napi_set_named_property(env, exports, "syncDescriptor", function);
   napi_create_function(env, "openLoopbackListener", NAPI_AUTO_LENGTH, open_loopback_listener, NULL, &function);
   napi_set_named_property(env, exports, "openLoopbackListener", function);
+  napi_create_function(env, "openUnixListener", NAPI_AUTO_LENGTH, open_unix_listener, NULL, &function);
+  napi_set_named_property(env, exports, "openUnixListener", function);
   return exports;
 }
 

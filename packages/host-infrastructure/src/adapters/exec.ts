@@ -65,6 +65,8 @@ export type ExecAdapter = {
       sandbox?: SandboxExecBinding
       /** Host-private inherited listener; never accepted from a tool request. */
       loopbackFd?: number
+      /** Host-private resource revocation, before stdio inherited by descendants can delay close. */
+      onExit?: () => void
     },
   ): Promise<ExecResult>
   killAll(): Promise<void>
@@ -241,6 +243,7 @@ export function createExec(
           () => {
             if (cancelled) return
             timedOut = true
+            o.onExit?.()
             killGroup(child)
           },
           o.timeoutMs ?? opts.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS,
@@ -248,10 +251,12 @@ export function createExec(
         const onAbort = () => {
           cancelled = true
           sig = 'SIGKILL'
+          o.onExit?.()
           killGroup(child)
         }
         o.signal?.addEventListener('abort', onAbort, { once: true })
         child.once('exit', () => {
+          o.onExit?.()
           if (opts.detached === false || child.pid === undefined) return
           try {
             stoppedProcesses = stopProcessGroup(child.pid)
@@ -261,6 +266,7 @@ export function createExec(
           }
         })
         child.on('error', (e) => {
+          o.onExit?.()
           closeBridge()
           clearTimeout(timer)
           o.signal?.removeEventListener('abort', onAbort)

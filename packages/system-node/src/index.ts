@@ -29,6 +29,7 @@ const darwin = process.platform === 'darwin' // guards-allow-platform: shared sy
 const linux = process.platform === 'linux' // guards-allow-platform: shared system leaf, independent of Host.
 type Native = {
   openLoopbackListener?(ipv6: boolean): { fd: number; port: number }
+  openUnixListener?(path: string): number
   openCanonicalFile?(path: string): number
   openCanonicalWritableFile?(path: string): number
   openCanonicalExclusiveFile?(path: string): number
@@ -78,6 +79,19 @@ export function openLoopbackListener(family: 'ipv4' | 'ipv6' = 'ipv4'): { fd: nu
       { code: 'E_SYSTEM_NATIVE_UNAVAILABLE' },
     )
   return implementation(family === 'ipv6')
+}
+
+/** Reserved macOS activation namespace, denied to sandbox writes even when cwd is an ancestor. */
+export const LOOPBACK_GATE_PATH_PREFIX = '/private/tmp/agh-loopback-'
+
+/** Host-private socket activation transport; the caller owns the fd and path cleanup. */
+export function openUnixListener(path: string): number {
+  const implementation = darwin ? native().openUnixListener : undefined
+  if (typeof implementation !== 'function')
+    throw Object.assign(new Error('Unix socket activation requires the macOS native module; rebuild it'), {
+      code: 'E_SYSTEM_NATIVE_UNAVAILABLE',
+    })
+  return implementation(path)
 }
 
 /** Read-only kernel availability query; this does not establish a command boundary. */

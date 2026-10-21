@@ -42,6 +42,30 @@ export function createLocalSandboxProvider(
       signal?.throwIfAborted()
       let disposed = false
       const controllers = new Set<AbortController>()
+      const activations = new Set<{ close(): void }>()
+      const activate = (
+        policy: import('@agnes/extension-api').SandboxExecutionPolicy,
+        actual: import('@agnes/extension-api').SandboxEnforcement,
+        signal?: AbortSignal,
+      ) => {
+        const activation = loopbackActivation(policy, actual, os)
+        if (!activation) return undefined
+        const bound = {
+          ...activation,
+          unwatch() {
+            signal?.removeEventListener('abort', bound.close)
+          },
+          close() {
+            activations.delete(bound)
+            bound.unwatch()
+            activation.close()
+          },
+        }
+        activations.add(bound)
+        signal?.addEventListener('abort', bound.close, { once: true })
+        if (signal?.aborted) bound.close()
+        return bound
+      }
       const processes = new Set<import('@agnes/extension-api').SandboxProcess>()
       const pending = new Set<Promise<Awaited<ReturnType<ExecAdapter['run']>>>>()
       return {
@@ -64,24 +88,41 @@ export function createLocalSandboxProvider(
             required.scope.some((scope) => !actual.scope.includes(scope))
           )
             throw sandboxUnavailable('interactive execution cannot enforce this policy')
-          const activation = loopbackActivation(request.policy, actual, os)
+          const activation = activate(request.policy, actual, request.signal)
           let handle: import('@agnes/extension-api').SandboxProcess
           try {
             handle = await exec.openProcess([...request.argv], {
               cwd: request.cwd,
               ...(request.env || activation ? { env: { ...request.env, ...activation?.env } } : {}),
-              ...(activation ? { loopbackFd: activation.fd } : {}),
+              ...(activation ? { loopbackFd: activation.fd, onExit: activation.close } : {}),
               ...(request.pty ? { pty: request.pty } : {}),
               ...(request.signal ? { signal: request.signal } : {}),
             })
-          } finally {
+          } catch (error) {
             activation?.close()
+            throw error
+          } finally {
+            // Open is authorized by the call; the returned process belongs to the session.
+            // Core aborts the call signal on settlement, including successful background starts.
+            activation?.unwatch()
           }
-          const bound = { ...handle, enforcement: actual }
+          const bound = {
+            ...handle,
+            enforcement: actual,
+            async close() {
+              activation?.close()
+              await handle.close()
+            },
+          }
           processes.add(bound)
           void bound.exited.then((result) => {
+            activation?.close()
             if (!result.error) processes.delete(bound)
           })
+          if (request.signal?.aborted) {
+            await bound.close()
+            request.signal.throwIfAborted()
+          }
           if (disposed) {
             await bound.close()
             throw sandboxUnavailable('workspace sandbox was disposed during launch')
@@ -110,7 +151,7 @@ export function createLocalSandboxProvider(
             required.scope.some((scope) => !actual.scope.includes(scope))
           )
             throw sandboxUnavailable('the local OS sandbox cannot enforce this policy')
-          const activation = loopbackActivation(request.policy, actual, os)
+          const activation = activate(request.policy, actual, request.signal)
           const controller = new AbortController()
           controllers.add(controller)
           let invocation: Promise<Awaited<ReturnType<ExecAdapter['run']>>>
@@ -119,7 +160,7 @@ export function createLocalSandboxProvider(
               .run([...request.argv], {
                 cwd: request.cwd,
                 ...(request.env || activation ? { env: { ...request.env, ...activation?.env } } : {}),
-                ...(activation ? { loopbackFd: activation.fd } : {}),
+                ...(activation ? { loopbackFd: activation.fd, onExit: activation.close } : {}),
                 ...(request.stdin === undefined ? {} : { stdin: request.stdin }),
                 ...(request.bridge ? { bridge: request.bridge } : {}),
                 signal: request.signal
@@ -157,6 +198,7 @@ export function createLocalSandboxProvider(
         },
         async dispose() {
           disposed = true
+          for (const activation of activations) activation.close()
           for (const controller of controllers) controller.abort(new Error('workspace sandbox disposed'))
           await Promise.allSettled([...pending])
           await Promise.all([...processes].map((handle) => handle.close()))

@@ -1,5 +1,6 @@
 import type { SeamWorkspace } from '@agnes/core'
 import { testFsPolicy } from '@agnes/core/testkit'
+import { SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { createSandboxSeam } from '../src/sandbox-seam.js'
 
@@ -75,7 +76,19 @@ describe('Host-bound sandbox seam', () => {
   })
 
   it('carries inbound-only loopback authority and refuses unconfined or external bindings', async () => {
-    const ws = workspace({ policy: { ...testFsPolicy('/work/proj'), loopbackServe: true } })
+    const handle = {
+      enforcement: { level: 'full' as const, scope: ['file', 'network', 'process'] as const },
+      exited: Promise.resolve({ code: 0 }),
+      onOutput: () => () => {},
+      write: async () => {},
+      resize: async () => {},
+      signal: async () => {},
+      close: async () => {},
+    }
+    const ws = workspace({
+      policy: { ...testFsPolicy('/work/proj'), loopbackServe: true },
+      openProcess: async () => handle,
+    })
     const seam = await createSandboxSeam().forWorkspace(ws.value)
     await seam.exec(['/bin/true'], { cwd: ws.value.root })
     expect(ws.exec).toHaveBeenCalledWith(
@@ -86,6 +99,16 @@ describe('Host-bound sandbox seam', () => {
         }),
       }),
     )
+    await expect(seam.openProcess!({ argv: ['$SHELL', 'node server.js'] })).resolves.toBe(handle)
+    await expect(seam.openProcess!({ argv: ['sh', '-c', 'node server.js'] })).resolves.toBe(handle)
+    for (const request of [
+      { argv: ['bash', '--noprofile', '--norc', '-s'] },
+      { argv: ['zsh', '-f', '-s'] },
+      { argv: [SHELL_STDIN_SENTINEL] },
+      { argv: ['node', 'server.js'] },
+      { argv: ['$SHELL', 'node server.js'], pty: { columns: 80, rows: 24 } },
+    ])
+      await expect(seam.openProcess!(request)).rejects.toThrow('loopback serving requires one shell command')
     for (const overrides of [
       { execBackend: 'none' as const },
       { execBackend: 'remote' as const },

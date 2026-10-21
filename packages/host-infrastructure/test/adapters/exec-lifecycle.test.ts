@@ -23,9 +23,16 @@ it('cleans descendants on leader exit before pipe close and returns the measured
   mocked.spawn.mockReturnValue(child)
   mocked.stop.mockReturnValue(2)
   const exec = createExec()
-  const running = exec.run(['fixture'], { cwd: '/work' })
+  let serving = true
+  const running = exec.run(['fixture'], {
+    cwd: '/work',
+    onExit: () => {
+      serving = false
+    },
+  })
   child.stdout.write('ready')
   child.emit('exit', 0, null)
+  expect(serving).toBe(false)
   child.emit('close', 0, null)
   expect(await running).toMatchObject({ code: 0, stdout: 'ready', timedOut: false, stoppedProcesses: 2 })
   await exec.killAll()

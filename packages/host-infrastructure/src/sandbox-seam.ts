@@ -117,6 +117,14 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
     async openProcess(request) {
       if (!workspace.openProcess)
         throw fault('SANDBOX_UNAVAILABLE', 'interactive process backend is unavailable')
+      const singleCommand =
+        (request.argv.length === 2 && request.argv[0] === SHELL_SENTINEL) ||
+        (request.argv.length === 3 && request.argv[0] === 'sh' && request.argv[1] === '-c')
+      if (policy.loopbackServe && (request.pty || !singleCommand))
+        throw fault(
+          'SANDBOX_UNAVAILABLE',
+          'loopback serving requires one shell command; persistent shells and PTYs are unsupported',
+        )
       const cwd = request.cwd ?? workspace.root
       const stdinShell = request.argv[0] === SHELL_STDIN_SENTINEL
       if (stdinShell && (request.argv.length !== 1 || request.pty || workspace.shell !== 'powershell'))
