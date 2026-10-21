@@ -51,7 +51,7 @@ describe('welcome layouts', () => {
   it('draws the full hero at 120x36 and above: shadowed wordmark, identity, dust, tip and a two-column card', () => {
     const lines = make({ rows: 40 }).render(132)
     const plain = lines.map(strip)
-    expect(lines).toHaveLength(23)
+    expect(lines).toHaveLength(21)
     // Eight wordmark rows (seven glyph rows plus the shadow row), two columns per pixel.
     expect(plain[0]).toMatch(/^ {3}██████ {8}██████/)
     // Without colour the shadow is not drawn, so the glyph rows read as the font.
@@ -65,6 +65,9 @@ describe('welcome layouts', () => {
     expect(plain.slice(0, 8).join('')).toMatch(/[⠁-⣿]/)
     expect(plain[9]).toMatch(/^ ✦ Tip {2}Press ctrl\+o to see the plugins\. {2}NEW +$/)
     expect(plain[11]).toMatch(/^ ╭─+╮ $/)
+    // The card hugs its content: no blank row under the top border or above the bottom one.
+    expect(plain[12]).toContain('Good evening')
+    expect(plain.at(-2)).toContain('/resume for more')
     const card = plain.slice(11).join('\n')
     expect(card).toContain('Good evening. What shall we build?')
     expect(card).toContain('● deepseek-flash   reasoning high')

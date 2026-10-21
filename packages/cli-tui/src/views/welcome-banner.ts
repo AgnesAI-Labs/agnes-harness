@@ -481,28 +481,25 @@ export class WelcomeBanner implements Component {
     const detail = this.facts.modelDetail
     const gap = v.tight ? [] : ['']
     const left = [
-      ...gap,
       this.greeting(),
       ...gap,
       `${ansi.fg('success', '●')} ${this.modelText()}${detail ? ansi.fg('muted', `   ${clean(detail)}`) : ''}`,
       ...(ws ? [ws] : []),
       ...(health ? [...gap, health] : []),
-      ...gap,
     ]
     const start = this.startHere()
     let body: string[]
     if (tier === 'narrow') {
-      body = [...left, ...start, ...gap].map((l) => `${edge('│')} ${fitLine(l, cardW - 4)} ${edge('│')}`)
+      body = [...left, ...gap, ...start].map((l) => `${edge('│')} ${fitLine(l, cardW - 4)} ${edge('│')}`)
     } else {
       const rw = tier === 'full' ? 46 : width >= 100 ? 40 : 34
       const lw = cardW - 2 - 3 - rw - 2
-      const right = [...gap, ...start, ...(tier === 'full' ? this.recentLines() : [])]
+      const right = [...start, ...(tier === 'full' ? this.recentLines() : [])]
       body = Array.from(
         { length: Math.max(left.length, right.length) },
         (_, i) =>
           `${edge('│')} ${fitLine(left[i] ?? '', lw)} ${edge('│')} ${fitLine(right[i] ?? '', rw)} ${edge('│')}`,
       )
-      if (!v.tight) body.push(`${edge('│')} ${spaces(lw)} ${edge('│')} ${spaces(rw)} ${edge('│')}`)
     }
     const top = edge(`╭${'─'.repeat(cardW - 2)}╮`)
     return [top, ...body, edge(`╰${'─'.repeat(cardW - 2)}╯`)].map((line) => fitLine(` ${line}`, width))
