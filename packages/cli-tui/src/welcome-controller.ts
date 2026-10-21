@@ -3,7 +3,6 @@ import type { Session } from '@agnes/sdk'
 import { listSessionChoices } from './commands.js'
 import { tt } from './locale-extended.js'
 import { WelcomeBanner, welcomeTips } from './views/welcome-banner.js'
-import { readWelcomeSeen, saveWelcomeSeen } from './welcome-seen.js'
 import { tildePath, type WorkspaceInfo } from './workspace-info.js'
 
 /** The welcome's own options on the app: what the launcher knows, and what tests and the gallery pin. */
@@ -11,8 +10,6 @@ export type WelcomeOptions = {
   version?: string
   /** How long the daemon took to be ready, and whether this launch started it. */
   boot?: { ms: number; cold: boolean }
-  /** Remembers the version whose full welcome was shown; unreadable or unwritable reads as first run. */
-  seenPath?: string
   /** The output is a TTY, so the welcome may animate (it still needs colour and a non-mono theme). */
   motion?: boolean
   /** Wall clock (ms) and randomness for the greeting, tip and blink. */
@@ -26,7 +23,6 @@ export type WelcomeOptions = {
  */
 export class WelcomeController {
   readonly banner: WelcomeBanner
-  private readonly returning: boolean
   private timer: ReturnType<typeof setTimeout> | undefined
   private readonly locale: string
 
@@ -66,14 +62,12 @@ export class WelcomeController {
       ...(o.random ? { random: o.random } : {}),
     })
     const tips = welcomeTips(this.locale)
-    this.returning = o.version !== undefined && readWelcomeSeen(o.seenPath) === o.version
     this.banner.update({
       session: { id: app.session.id, generation: 1 },
       workspace: { root: tildePath(app.cwd ?? process.cwd()) },
       ...(o.version ? { version: o.version } : {}),
       ...(o.boot ? { boot: o.boot } : {}),
       ...(tips.length > 0 ? { tip: tips[Math.floor((o.random ?? Math.random)() * tips.length)] } : {}),
-      returning: this.returning,
     })
   }
 
@@ -84,8 +78,6 @@ export class WelcomeController {
    */
   start(): void {
     const { session } = this.app
-    const { version, seenPath } = this.app.welcome ?? {}
-    if (version && !this.returning) saveWelcomeSeen(seenPath, version)
     const apply = (facts: Parameters<WelcomeBanner['update']>[0]): void => {
       this.banner.update(facts)
       this.hooks.repaint()

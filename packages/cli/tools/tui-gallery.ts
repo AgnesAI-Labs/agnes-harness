@@ -152,9 +152,6 @@ async function capture(scene: Scene, variant: Variant, prefs: string): Promise<S
     mkdirSync(dirname(join(files as string, file)), { recursive: true })
     writeFileSync(join(files as string, file), '')
   }
-  const seen = join(prefs, `${variant.theme}-welcome.json`)
-  if (scene.welcome?.returning) writeFileSync(seen, '{"version":"0.9.3"}\n')
-  else rmSync(seen, { force: true })
   const app = new TuiApp({
     session,
     term,
@@ -162,7 +159,7 @@ async function capture(scene: Scene, variant: Variant, prefs: string): Promise<S
     welcome: {
       now: () => new Date(2026, 9, 21, 20, 30).getTime() + 3_600_000,
       random: () => 0.1,
-      ...(scene.welcome ? { version: '0.9.3', boot: { ms: 420, cold: false }, seenPath: seen } : {}),
+      ...(scene.welcome ? { version: '0.9.3', boot: { ms: 420, cold: false } } : {}),
     },
     profile: 'local-dev',
     preset: 'standard',

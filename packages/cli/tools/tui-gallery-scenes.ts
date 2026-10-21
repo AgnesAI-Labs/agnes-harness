@@ -19,8 +19,8 @@ export type Scene = {
   files?: string[]
   /** What the composer rail's git probe answers; the bare gallery cwd otherwise. */
   workspace?: WorkspaceInfo
-  /** Gives the app a version and a daemon boot time; `returning` marks this version as already welcomed. */
-  welcome?: { returning?: boolean }
+  /** Gives the app a version and a daemon boot time. */
+  welcome?: Record<string, never>
 }
 
 export const SID = 'agnes:local:default:cli:dm:4f9c2a7e'
@@ -220,15 +220,6 @@ function welcomeScenes(): Scene[] {
       rows: 20,
       ...base,
       ready: ['agnes ·ᴗ· v0.9.3'],
-    },
-    {
-      id: 'welcome-returning',
-      title: 'Welcome on a return visit, 100x30',
-      cols: 100,
-      rows: 30,
-      ...base,
-      welcome: { returning: true },
-      ready: ['welcome back', 'last: DevBoard v2 seed review'],
     },
   ]
 }

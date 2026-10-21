@@ -776,9 +776,7 @@ it('paints the startup session card, compact header and editor surface once acro
   }
 })
 
-it('fills the welcome after the first frame, omits what fails, and condenses on a return visit', async () => {
-  const state = mkdtempSync(join(tmpdir(), 'agh-welcome-'))
-  const seen = join(state, 'tui-welcome.json')
+it('fills the welcome after the first frame, omits what fails, and shows the full welcome on every launch', async () => {
   const launch = async (resources: boolean) => {
     const { endpoint } = fakeSessionEndpoint()
     endpoint
@@ -841,36 +839,33 @@ it('fills the welcome after the first frame, omits what fails, and condenses on 
       profile: 'local-dev',
       preset: 'standard',
       model: 'm1',
-      welcome: { version: '0.9.3', boot: { ms: 1500, cold: true }, seenPath: seen },
+      welcome: { version: '0.9.3', boot: { ms: 1500, cold: true } },
     })
     await app.start()
     return { app, client, term }
   }
-  try {
-    const first = await launch(true)
-    await vi.waitFor(async () => {
-      const text = (await screenOf(first.term, 100, 30)).join('\n')
-      expect(text).toContain('v0.9.3')
-      expect(text).toContain('daemon cold 1.50s')
-      expect(text).toContain('◉ 2 plugins   ◉ 3 skills   ◉ 0 MCP servers')
-      expect(text).toMatch(/2h {2}Earlier work/)
-    })
-    await first.app.stop()
-    await first.client.close()
-    // The same version has now been welcomed: the next launch is the three-row header, and a
-    // failing resource query only leaves its field out.
-    const second = await launch(false)
-    await vi.waitFor(async () => {
-      const text = (await screenOf(second.term, 100, 30)).join('\n')
-      expect(text).toContain('welcome back')
-      expect(text).toContain('last: Earlier work · /resume')
-    })
-    expect((await screenOf(second.term, 100, 30)).join('\n')).not.toContain('plugins')
-    await second.app.stop()
-    await second.client.close()
-  } finally {
-    rmSync(state, { recursive: true, force: true })
-  }
+  const first = await launch(true)
+  await vi.waitFor(async () => {
+    const text = (await screenOf(first.term, 100, 30)).join('\n')
+    expect(text).toContain('v0.9.3')
+    expect(text).toContain('daemon cold 1.50s')
+    expect(text).toContain('◉ 2 plugins   ◉ 3 skills   ◉ 0 MCP servers')
+    expect(text).toMatch(/2h {2}Earlier work/)
+  })
+  await first.app.stop()
+  await first.client.close()
+  // A second launch of the same version still draws the full hero, and a failing resource query
+  // only leaves its field out.
+  const second = await launch(false)
+  await vi.waitFor(async () => {
+    const text = (await screenOf(second.term, 100, 30)).join('\n')
+    expect(text).toContain('local agent workbench')
+    expect(text).toContain('What shall we build?')
+    expect(text).toMatch(/2h {2}Earlier work/)
+  })
+  expect((await screenOf(second.term, 100, 30)).join('\n')).not.toContain('plugins')
+  await second.app.stop()
+  await second.client.close()
 })
 
 it('repaints the welcome while it animates and stops the timer with the app', async () => {

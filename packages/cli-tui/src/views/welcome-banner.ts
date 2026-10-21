@@ -92,8 +92,6 @@ export type WelcomeFacts = {
   resources?: { plugins?: number; skills?: number; mcp?: number }
   recent?: readonly { at: number; title: string }[]
   tip?: { text: string; fresh: boolean }
-  /** The condensed three-row header for a launch that has already seen this version's welcome. */
-  returning?: boolean
 }
 
 // Motion, all measured from `start()`: a diagonal shine over the wordmark, a hue cycle on the NEW tag
@@ -245,7 +243,6 @@ export class WelcomeBanner implements Component {
     const { rows, reserved = TIMELINE_RESERVED_ROWS } = this.o.viewport?.() ?? {}
     if (width < 24) return [fitLine(` ${this.brand()} ${this.face()}`, width)]
     if (width < 60 || (rows !== undefined && rows < 24)) return this.compact(width)
-    if (this.facts.returning) return this.returning(width)
     // The timeline keeps the bottom rows for the composer; a hero taller than what is left would lose
     // its top, so each tier sheds the tip, the recent list and then its spacing before giving way.
     const room = rows === undefined ? Number.POSITIVE_INFINITY : rows - reserved
@@ -286,13 +283,6 @@ export class WelcomeBanner implements Component {
     return this.model === undefined
       ? ansi.fg('faint', tt('welcome.modelResolving', this.locale))
       : ansi.bold(ansi.fg('fg', clean(this.model)))
-  }
-
-  private contextText(): string {
-    return [this.o.profile, this.o.preset]
-      .filter((field): field is string => Boolean(field))
-      .map(clean)
-      .join(' · ')
   }
 
   private workspaceText(): string | undefined {
@@ -415,33 +405,6 @@ export class WelcomeBanner implements Component {
       .filter(Boolean)
       .join(' · ')
     return [fitLine(` ${first}`, width), ...(where ? [fitLine(` ${ansi.fg('faint', where)}`, width)] : [])]
-  }
-
-  /** Three rows: a one-letter mark, identity and model, then workspace and the last session. */
-  private returning(width: number): string[] {
-    const { ansi, theme } = this.o
-    const glyph = this.stock ? ['▄▀▀▄', '█▀▀█', '▀  ▀'] : undefined
-    const ramp = theme.ramp()
-    const lead = (i: number): string => {
-      const g = glyph?.[i]
-      if (g === undefined) return ' '
-      return ` ${ansi.bold(ramp[i] === undefined ? g : ansi.fg(ramp[i] as Colour, g))}  `
-    }
-    const sep = ansi.fg('faint', ' · ')
-    const last = this.facts.recent?.[0]
-    const line1 = `${this.identityName()}  ${this.face()}${ansi.fg('faint', ` ${tt('welcome.welcomeBack', this.locale)}`)}`
-    const line2 = [
-      `${ansi.fg('success', '●')} ${this.modelText()}`,
-      ansi.fg('muted', this.contextText()),
-      this.healthText(),
-    ]
-      .filter(Boolean)
-      .join(sep)
-    const lastText =
-      last &&
-      `${ansi.fg('faint', `${tt('welcome.last', this.locale)}: `)}${ansi.fg('muted', clean(last.title))}${ansi.fg('faint', ' · /resume')}`
-    const line3 = [this.workspaceText(), lastText].filter(Boolean).join('   ')
-    return [line1, line2, line3].map((l, i) => fitLine(lead(i) + l, width))
   }
 
   private hero(width: number, tier: Tier, v: Variant): string[] {

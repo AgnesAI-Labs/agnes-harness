@@ -128,16 +128,12 @@ describe('welcome layouts', () => {
 
   it('never exceeds the width or the rows left above the composer, at every breakpoint', () => {
     for (const theme of ['dark', 'light', 'mono'] as const)
-      for (const returning of [false, true])
-        for (const cols of [1, 2, 10, 23, 24, 30, 50, 59, 60, 70, 79, 80, 99, 100, 119, 120, 132, 200])
-          for (const rows of [undefined, 20, 24, 30, 36, 50]) {
-            const lines = make({ theme, ...(rows ? { rows } : {}), facts: { ...FACTS, returning } }).render(
-              cols,
-            )
-            expect(lines.every((line) => displayWidth(line) <= cols)).toBe(true)
-            if (rows && cols >= 24 && rows >= 24 && !returning)
-              expect(lines.length).toBeLessThanOrEqual(rows - 5)
-          }
+      for (const cols of [1, 2, 10, 23, 24, 30, 50, 59, 60, 70, 79, 80, 99, 100, 119, 120, 132, 200])
+        for (const rows of [undefined, 20, 24, 30, 36, 50]) {
+          const lines = make({ theme, ...(rows ? { rows } : {}) }).render(cols)
+          expect(lines.every((line) => displayWidth(line) <= cols)).toBe(true)
+          if (rows && cols >= 24 && rows >= 24) expect(lines.length).toBeLessThanOrEqual(rows - 5)
+        }
   })
 
   it('draws the same dust field at every width, flush right', () => {
@@ -179,12 +175,7 @@ describe('welcome degradation', () => {
 
   it('emits no escape sequence on the none tier, and bold only in mono', () => {
     for (const cols of [10, 50, 60, 100, 132])
-      for (const returning of [false, true])
-        expect(
-          make({ tier: 'none', rows: 40, facts: { ...FACTS, returning } })
-            .render(cols)
-            .join('\n'),
-        ).not.toContain('\x1b')
+      expect(make({ tier: 'none', rows: 40 }).render(cols).join('\n')).not.toContain('\x1b')
     const mono = make({ theme: 'mono', rows: 40 }).render(132)
     expect(mono[0]?.startsWith(' \x1b[1m ')).toBe(true)
     expect(strip(mono[0] as string)).toMatch(/^ +██/)
@@ -236,24 +227,6 @@ describe('welcome degradation', () => {
       now: () => morning,
     })
     expect(text(b.render(100))).toContain('Good morning. What shall we build?')
-  })
-})
-
-describe('returning visit', () => {
-  it('condenses to three rows with the mark, identity, resources, workspace and the last session', () => {
-    const lines = make({ rows: 40, facts: { ...FACTS, returning: true } })
-      .render(100)
-      .map(strip)
-    expect(lines).toHaveLength(3)
-    expect(lines[0]).toContain('▄▀▀▄  Agnes AI  v0.9.3  ·ᴗ· welcome back')
-    expect(lines[1]).toContain('█▀▀█  ● deepseek-flash · local-dev · default · ◉ 12 plugins')
-    expect(lines[2]).toContain('▀  ▀  ⌂ ~/agnes-harness • feat/x  +2 ahead')
-    expect(lines[2]).toContain('last: DevBoard seed review · /resume')
-    const acme = make({
-      branding: { accent: '#00875A', mark: 'acme', selfLabel: 'Acme' },
-      facts: { ...FACTS, returning: true },
-    })
-    expect(text(acme.render(100))).not.toMatch(/[█▀▄]/)
   })
 })
 
