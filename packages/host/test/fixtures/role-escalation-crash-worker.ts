@@ -6,7 +6,8 @@ import type { ApprovalRequest } from '@agnes/core'
 import { createTestHost } from '../../testkit/index.js'
 
 const [file, phase] = process.argv.slice(2)
-if (!file || !['hold', 'allow'].includes(phase ?? '')) throw new Error('Missing crash fixture arguments')
+if (!file || !['hold', 'allow', 'replay'].includes(phase ?? ''))
+  throw new Error('Missing crash fixture arguments')
 const config = JSON.parse(readFileSync(file, 'utf8'))
 const questions: ApprovalRequest[] = []
 const host = (
@@ -41,7 +42,7 @@ const host = (
         models: profile.provider.routes?.flatMap((r) => r.models ?? []) ?? [],
         scripts: [
           (request) => {
-            if (phase === 'allow' || request.messages.at(-1)?.role !== 'user')
+            if (phase !== 'hold' || request.messages.at(-1)?.role !== 'user')
               return [{ type: 'done', reason: 'stop' }]
             return [
               {
@@ -75,6 +76,21 @@ if (phase === 'hold')
   })
 await parent.run({ until: 'turn-end', signal: AbortSignal.timeout(80000) })
 if (phase === 'hold') throw new Error('Pending human gate unexpectedly settled')
+if (phase === 'replay') {
+  if (questions.length) throw new Error('Consumed decision was offered again')
+  const previous = JSON.parse(readFileSync(join(config.dataDir, 'cold-result.json'), 'utf8'))
+  const child = await host.createSession({ key: previous.decision.handle.sessionId, cwd: config.dataDir })
+  writeFileSync(
+    join(config.dataDir, 'replay-result.json'),
+    JSON.stringify({
+      decision: await child.decisions.get(previous.decision.handle),
+      calls: await child.scan({ type: 'tool/call', limit: 100 }),
+      role: child.d.roleDelegation,
+    }),
+  )
+  await host.close()
+  process.exit(0)
+}
 const question = questions.find((request) => request.delegation)
 if (!question?.decision) throw new Error('Cold child question was not reoffered')
 const key = question.decision.handle.sessionId!
