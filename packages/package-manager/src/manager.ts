@@ -1209,7 +1209,6 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               ceiling: ceiling(lock),
               capabilityPolicy: readPluginCapabilityPolicy(profileDir),
               // Only this integrity-verified retained tree may use historical manifest fields.
-              stored: true,
             })
             if (checked.preview.blockers.length)
               throw new PackageError('E_API_RANGE', 'previous package is blocked')

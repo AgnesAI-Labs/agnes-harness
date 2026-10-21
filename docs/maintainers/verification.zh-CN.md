@@ -63,6 +63,8 @@ pnpm exec vitest run tools/plugin-performance.slow.test.ts --project heavy --max
 
 ## 前一构建升级门
 
+统一前的旧插件元数据现在必须明确拒绝并提示使用干净 home，lock、快照、pin 与信任字节保持不变。只有格式仍受支持的基线才验证续跑；闸门不再注入旧元数据或将旧信任转入新快照。
+
 ```sh
 pnpm exec vitest run tools/upgrade/previous-build.e2e.test.ts --project heavy --maxWorkers=1
 ```

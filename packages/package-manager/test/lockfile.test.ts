@@ -79,11 +79,12 @@ describe('lockfile', () => {
     )
     const captured = JSON.parse(capturedText)
     writeFileSync(lockPath(dir), capturedText)
-    const legacy = readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })
-    expect(legacy).toEqual(captured)
+    expect(() => readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' })).toThrow(
+      /Retired.*clean home/,
+    )
     expect(readFileSync(lockPath(dir), 'utf8')).toBe(capturedText)
-    writeLock(dir, legacy)
-    expect(readLock(dir, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages).toEqual(captured.packages)
+    expect(() => writeLock(dir, captured)).toThrow(/Retired.*clean home/)
+    expect(readFileSync(lockPath(dir), 'utf8')).toBe(capturedText)
   })
 
   it('rejects a lock that is not JSON, and one that does not validate, with E_LOCK_MISMATCH', () => {

@@ -13,8 +13,8 @@ import { join, resolve } from 'node:path'
 import { type PackageLock, type Lockfile as ValidatedLockfile, validateLockfile } from '@agnes/protocol'
 import { renameWriteThroughSync, syncFileSync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
+import { assertCurrentPackageFormat } from './package-format.js'
 import { checkCancelled } from './ports.js'
-import { currentStoredShape } from './stored-metadata.js'
 
 export type LockEntry = PackageLock
 /**
@@ -96,7 +96,8 @@ export function readLock(profileDir: string, opts: { profile: string; agnesVersi
       detail: { reason: 'invalid' },
     })
   }
-  const r = validateLockfile(currentStoredShape(parsed))
+  assertCurrentPackageFormat(parsed)
+  const r = validateLockfile(parsed)
   if (!r.ok)
     throw new PackageError(
       'E_LOCK_MISMATCH',
@@ -124,7 +125,8 @@ export function prepareLockPublication(profileDir: string, lock: Lockfile) {
   // Validated before the tmp file is even opened: the contract is that anything on disk reads back,
   // and checking after rename would make that contract a hope. A draft (null resolvedProfileHash,
   // partial seams) fails here, which is what keeps an unresolved profile's lock off disk.
-  const r = validateLockfile(currentStoredShape(out))
+  assertCurrentPackageFormat(out)
+  const r = validateLockfile(out)
   if (!r.ok)
     throw new PackageError('E_LOCK_MISMATCH', 'refusing to write a lockfile that would not read back', {
       source: { file: 'agnes-lock.json' },

@@ -71,7 +71,7 @@ function pluginsFromPackage(pkg: InstalledPackage): ReturnType<typeof parseAgnes
     const manifest = JSON.parse(readFileSync(join(pkg.directory, 'package.json'), 'utf8')) as {
       agnes?: { plugins?: unknown }
     }
-    return parseAgnesPluginEntries(pkg.id, manifest.agnes?.plugins, { stored: true })
+    return parseAgnesPluginEntries(pkg.id, manifest.agnes?.plugins)
   } catch {
     return Object.freeze([])
   }

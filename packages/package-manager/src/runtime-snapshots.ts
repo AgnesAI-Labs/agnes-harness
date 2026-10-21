@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { type PackageBlocker, validatePackageAdminData } from '@agnes/protocol'
+import { type PackageBlocker, validatePackageAdminData, validatePluginMetadata } from '@agnes/protocol'
 import { renameWriteThroughSync } from '@agnes/system-node'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { validAgentDeclarations, validApplicationDeclaration } from './agent-declarations.js'
@@ -24,6 +24,7 @@ import {
   verifyPackageDirectory,
 } from './inventory.js'
 import type { LockEntry, Lockfile } from './lockfile.js'
+import { assertCurrentPackageFormat } from './package-format.js'
 import { assertCurrentBinding, hasSnapshotTrust } from './runtime-snapshot-binding.js'
 import { contributionCeiling, recordEntry } from './runtime-snapshot-entry.js'
 import type {
@@ -42,7 +43,6 @@ import type {
 } from './runtime-snapshot-types.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
-import { currentStoredShape, legacyMetadata, validStoredMetadata } from './stored-metadata.js'
 import { invalidatePackageVerification } from './verification-operation.js'
 
 export type {
@@ -106,9 +106,16 @@ function validateToken(value: unknown, reason: string): asserts value is string 
 function validateRecord(raw: unknown): SnapshotRecord {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) integrityFailure('snapshot-shape')
   const value = raw as Record<string, unknown>
+  assertCurrentPackageFormat(value)
+  if (value.version !== 2)
+    throw new PackageError(
+      'E_LOCK_MISMATCH',
+      'Retired runtime snapshot format; select a new, empty AGH_HOME (clean home).',
+      { detail: { reason: 'clean-home-required' } },
+    )
   if (
     !exactKeys(value, [
-      ...(value.version === undefined ? [] : ['version']),
+      'version',
       'snapshotId',
       'packageId',
       'packageVersion',
@@ -127,8 +134,7 @@ function validateRecord(raw: unknown): SnapshotRecord {
     ]) ||
     (value.declaredCapabilities !== undefined &&
       !validatePackageAdminData('PluginCapabilities', value.declaredCapabilities).ok) ||
-    (value.metadata !== undefined && !validStoredMetadata(value.metadata)) ||
-    (value.version !== undefined && value.version !== 1 && value.version !== 2) ||
+    (value.metadata !== undefined && !validatePluginMetadata(value.metadata).ok) ||
     typeof value.snapshotId !== 'string' ||
     !SHA256.test(value.snapshotId) ||
     typeof value.packageId !== 'string' ||
@@ -156,10 +162,9 @@ function validateRecord(raw: unknown): SnapshotRecord {
     if (!id || id.length > 256 || typeof range !== 'string' || range.length > 1024)
       integrityFailure('snapshot-dependencies')
   for (const contribution of value.contributions)
-    if (!validatePackageAdminData('PackageContributionSummary', currentStoredShape(contribution)).ok)
+    if (!validatePackageAdminData('PackageContributionSummary', contribution).ok)
       integrityFailure('snapshot-contribution')
   if (
-    (legacyMetadata(value.metadata) && (value.agents !== undefined || value.application !== undefined)) ||
     !validApplicationDeclaration(value.application) ||
     !validAgentDeclarations(value.agents, String(value.packageId))
   )
@@ -173,7 +178,7 @@ function validateRecord(raw: unknown): SnapshotRecord {
         integrity: record.integrity,
         treeIntegrity: record.treeIntegrity,
         capabilityHash: record.capabilityHash,
-        ...(record.version === 2 ? { recordVersion: 2 } : {}),
+        recordVersion: 2,
       }) ||
     capabilityHash(record) !== record.capabilityHash
   )
@@ -262,7 +267,7 @@ function runtimeSnapshotId(value: {
   integrity: string
   treeIntegrity: string
   capabilityHash: string
-  recordVersion?: 2
+  recordVersion: 2
 }): string {
   return `sha256-${snapshotHash(value)}`
 }

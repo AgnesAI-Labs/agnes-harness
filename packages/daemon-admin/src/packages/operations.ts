@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, open, readFile, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { currentStoredShape } from '@agnes/package-manager'
+import { assertCurrentPackageFormat, PackageError } from '@agnes/package-manager'
 import {
   jcs,
   type PackageAdminDataName,
@@ -148,8 +148,10 @@ const request = (value: unknown): value is PackageOperationRequest => {
     validatePackageAdminData(paramsDataName[row.kind], row.params).ok
   )
 }
-const validOperation = (value: unknown): value is PackageOperation =>
-  validatePackageAdminData('PackageOperation', currentStoredShape(value)).ok
+const validOperation = (value: unknown): value is PackageOperation => {
+  assertCurrentPackageFormat(value)
+  return validatePackageAdminData('PackageOperation', value).ok
+}
 const clone = <T>(value: T): T => structuredClone(value)
 
 function validStoredOperation(value: unknown): value is StoredPackageOperation {
@@ -401,6 +403,7 @@ export class FilePackageOperationStore implements PackageOperationStore {
     } catch (error) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
         this.journal = { version: 1, operations: [], cancels: [] }
+      else if (error instanceof PackageError && error.detail.reason === 'clean-home-required') throw error
       else throw new Error('package operation journal is unavailable')
     }
     return this.journal

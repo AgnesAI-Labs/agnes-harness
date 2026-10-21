@@ -190,6 +190,14 @@ it('carries real Host permission-axis and revoked full-access denials through wo
         ),
     },
     {
+      code: 'E_PACKAGE_INTEGRITY',
+      reason: 'clean-home-required',
+      raise: async () => {
+        const { assertCurrentPackageFormat } = await import('@agnes/package-manager')
+        assertCurrentPackageFormat({ metadata: { category: 'private authoring log' } })
+      },
+    },
+    {
       code: 'E_PACKAGE_BLOCKED',
       reason: undefined,
       raise: async () => {

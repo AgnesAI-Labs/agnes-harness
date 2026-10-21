@@ -268,7 +268,6 @@ export type {
   Capabilities,
   ClientContribution,
   DeclaredAgent,
-  ExampleLaunchDeclaration,
   ExtensionManifest,
   HomeContributionDeclaration,
   PluginLocalizedText,

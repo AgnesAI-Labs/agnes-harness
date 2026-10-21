@@ -252,11 +252,17 @@ it('rejects bundled legacy manifests even when the package does not declare plug
   clean()
 })
 it.each([
+  { kinds: ['tool'] },
+  { metadata: { ...purpose, category: 'tools' } },
+  { metadata: { ...purpose, launches: [] } },
+  { plugins: [{ apiRange: '^4.0.0', export: 'main', metadata: { ...purpose, category: 'tools' } }] },
+])('refuses retired metadata with a clean-home hint %#', async (agnes) => {
+  pkg({ agnes })
+  await expect(manager().inspect(profile, source)).rejects.toThrow(/Retired.*clean home/)
+  clean()
+})
+it.each([
   { agnes: { unknown: [] } },
-  { agnes: { kinds: ['tool'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } },
-  {
-    agnes: { metadata: { ...purpose, category: 'tools' }, plugins: [{ apiRange: '^4.0.0', export: 'main' }] },
-  },
   { agnes: { provides: ['invalid'], plugins: [{ apiRange: '^4.0.0', export: 'main' }] } },
   { agnes: { contributions: [{ kind: 'mystery', id: 'acme/x' }] } },
   {

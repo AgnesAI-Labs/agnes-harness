@@ -73,7 +73,7 @@ export class PluginConfiguration {
     const manifest = JSON.parse(await readFile(join(pkg.directory, 'package.json'), 'utf8')) as {
       agnes?: { plugins?: unknown }
     }
-    const entries = parseAgnesPluginEntries(pkg.id, manifest.agnes?.plugins, { stored: true })
+    const entries = parseAgnesPluginEntries(pkg.id, manifest.agnes?.plugins)
     const store = this.options.store()
     const artifact = store?.desired()
     if (!artifact || !store) throw new Error('E_PACKAGE_STATE')

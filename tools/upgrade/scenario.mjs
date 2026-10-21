@@ -4,7 +4,6 @@ import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { verifyCurrentDeclarations } from './current-declarations.mjs'
 import { packageId, writePackage } from './fixture.mjs'
 import { connect, eventually, packages } from './runtime.mjs'
 
@@ -251,8 +250,6 @@ try {
     const state = JSON.parse(await readFile(stateFile, 'utf8'))
     serviceOwner = state.serviceOwner
     await verifyManaged(state)
-  } else if (phase === 'current-declarations') {
-    await verifyCurrentDeclarations(sdk, admin, workspace)
   } else {
     const state = JSON.parse(await readFile(stateFile, 'utf8'))
     serviceOwner = state.serviceOwner

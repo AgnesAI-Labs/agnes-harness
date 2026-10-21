@@ -3,8 +3,7 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { currentStoredShape } from '@agnes/package-manager'
-import { jcs, validatePackageAdminData } from '@agnes/protocol'
+import { jcs } from '@agnes/protocol'
 import * as systemNode from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
 import { FilePackageOperationStore, withOperationState } from '../src/packages/operations.js'
@@ -122,7 +121,7 @@ it('reclaims a settled operation and its cancel commands seven days after it set
   expect(saved.cancels).toEqual([])
 })
 
-it('reopens historical operation results without rewriting them and refuses invalid legacy declarations', async () => {
+it('refuses historical operation results without rewriting them', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-operation-upgrade-'))
   roots.push(root)
   const directory = join(root, 'operations')
@@ -172,30 +171,10 @@ it('reopens historical operation results without rewriting them and refuses inva
   const original = JSON.stringify(journal)
   await writeFile(file, original)
   const reopened = new FilePackageOperationStore(directory)
-  expect(await reopened.pending()).toEqual([])
-  expect((await reopened.get('local-dev', 'op-old'))?.operation).toEqual(operation)
+  await expect(reopened.pending()).rejects.toMatchObject({
+    code: 'E_PACKAGE_INTEGRITY',
+    detail: { reason: 'clean-home-required' },
+    message: expect.stringMatching(/Retired.*clean home/),
+  })
   expect(await readFile(file, 'utf8')).toBe(original)
-  expect(validatePackageAdminData('PackageOperation', currentStoredShape(operation)).ok).toBe(true)
-  await reopened.admit(inspect('op-new', now))
-  expect(JSON.parse(await readFile(file, 'utf8')).operations[0].operation).toEqual(operation)
-
-  for (const corrupt of [
-    (value: typeof operation) => {
-      value.installed.metadata.category = 'unknown'
-    },
-    (value: typeof operation) => {
-      value.installed.metadata.launches[0].kind = 'unknown'
-    },
-    (value: typeof operation) => {
-      value.installed.presentation.includes.kinds = ['service']
-    },
-    (value: typeof operation) => {
-      value.installed.kinds = ['bundle', 'bundle']
-    },
-  ]) {
-    const invalid = JSON.parse(original)
-    corrupt(invalid.operations[0].operation)
-    await writeFile(file, JSON.stringify(invalid))
-    await expect(new FilePackageOperationStore(directory).pending()).rejects.toThrow('unavailable')
-  }
 })
