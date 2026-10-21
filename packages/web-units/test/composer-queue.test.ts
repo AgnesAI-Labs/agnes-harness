@@ -147,7 +147,7 @@ describe('queue tray', () => {
   })
 
   it('queues on Enter and sends guidance on ⌘/Ctrl+Enter', () => {
-    const { host, props } = mount()
+    const { host, props } = mount({ ...busy, send: { ...busy.send, disabled: false } })
     const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
     if (!prompt) throw new Error('missing prompt')
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(prompt, '补充')

@@ -198,17 +198,17 @@ describe('schema form actions and control semantics', () => {
     await act(async () =>
       host.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })),
     )
-    expect(host.textContent).toContain('Settings changed. Reload before retrying.')
+    expect(host.textContent).toContain('The resource changed. Reload the latest state before retrying.')
     await act(async () => {
       document.documentElement.lang = 'zh-CN'
       window.dispatchEvent(new Event('agnes:locale-changed'))
     })
-    expect(host.textContent).toContain('设置已变更，请刷新后重试。')
+    expect(host.textContent).toContain('资源已变更。 请重新载入最新状态后重试。')
     expect(host.textContent).not.toContain('private conflict')
     expect(credential.value).toBe(valid.credential)
     probe.mockRejectedValue({ data: { messageKey: 'appServer.errors.forbidden' } })
     await act(async () => host.querySelector<HTMLButtonElement>('button[type="button"]')?.click())
-    expect(host.textContent).toContain('你没有执行此操作的权限。')
+    expect(host.textContent).toContain('此操作的权限被拒绝。 请管理员复核适用策略后再重试。')
     locale.dispose()
     document.documentElement.lang = 'en'
     await act(async () => root.unmount())
@@ -324,7 +324,9 @@ it('blocks missing field translations and safely retries unavailable configurati
   expect(host.textContent).not.toContain('private backend detail')
   expect(host.textContent).toContain('unavailable')
   await act(async () => host.querySelector<HTMLButtonElement>('button')?.click())
-  expect(host.textContent).toContain('The required backend is unavailable. Check its configuration.')
+  expect(host.textContent).toContain(
+    'The required backend is unavailable. Check its configuration and compatibility.',
+  )
   await act(async () => host.querySelector<HTMLButtonElement>('button')?.click())
   expect(host.querySelector<HTMLInputElement>('#credential')?.disabled).toBe(true)
   expect(save).not.toHaveBeenCalled()

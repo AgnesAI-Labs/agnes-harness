@@ -248,7 +248,7 @@ it('accepts a legacy context but treats every optional hot-update feature as uns
   expect(hasFeature(resolved, ADMIN_FEATURES.operationControl)).toBe(false)
 })
 
-it('keeps safe BFF errors actionable without exposing a raw response', async () => {
+it('uses the public BFF error contract instead of raw backend prose', async () => {
   const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
     new Response(
       JSON.stringify({ error: { code: 'E_PACKAGE_BLOCKED', message: '部署引用仍在使用此插件。' } }),
@@ -261,7 +261,11 @@ it('keeps safe BFF errors actionable without exposing a raw response', async () 
 
   await expect(api.remove('acme/plugin')).rejects.toMatchObject<Partial<AdminApiError>>({
     name: 'AdminApiError',
-    details: { code: 'E_PACKAGE_BLOCKED', message: '部署引用仍在使用此插件。' },
+    details: {
+      code: 'E_PACKAGE_BLOCKED',
+      message:
+        'Plugin publication was refused by trust or capability policy. Review the candidate, declared capabilities and publication approval.',
+    },
   })
 })
 
