@@ -409,11 +409,27 @@ export function sqliteChildControl(
         return fact
       })
     },
-    async casState(childKey, expectedRevision, next) {
+    async casState(childKey, expectedRevision, next, admission) {
       return tx(() => {
         const row = q.task.get(childKey) as Record<string, unknown> | undefined
         if (!row || Number(row.state_revision) !== expectedRevision) return false
         if (!canTransitionChildState(String(row.state) as ChildTaskRecord['state'], next)) return false
+        if (!isActive(String(row.state)) && isActive(next) && next !== 'cancelling') {
+          if (!admission) return false
+          const parentActive = (
+            q.byParent.all(String(row.parent_key)) as Array<Record<string, unknown>>
+          ).filter((task) => isActive(String(task.state))).length
+          const rootActive = (
+            q.byRoot.all(String(row.root_task_id)) as Array<Record<string, unknown>>
+          ).filter((task) => isActive(String(task.state))).length
+          if (
+            !Number.isSafeInteger(admission.maxFanOut) ||
+            admission.maxFanOut < 0 ||
+            parentActive >= admission.maxFanOut ||
+            rootActive >= admission.maxFanOut
+          )
+            throw new CoreError('E_CHILD_LIMIT', `fan-out limit ${admission.maxFanOut} reached`)
+        }
         return q.cas.run(next, childKey, expectedRevision).changes === 1
       })
     },
