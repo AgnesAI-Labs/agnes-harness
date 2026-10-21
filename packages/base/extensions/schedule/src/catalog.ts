@@ -20,7 +20,13 @@ import {
   textField,
 } from './rules.js'
 import { previousApprovalExpired, saveRunProgress } from './run-history.js'
-import { expireProgress, observeProgress, type RunProgress, startProgress } from './run-progress.js'
+import {
+  expireProgress,
+  observeProgress,
+  RUN_PROGRESS_EVENT_TYPES,
+  type RunProgress,
+  startProgress,
+} from './run-progress.js'
 
 export {
   compileTarget,
@@ -597,8 +603,7 @@ export function openScheduleCatalog(
       if (open && outcome === 'running') saveProgress(open.rid, startProgress())
     },
     observeSession(sessionKey, event) {
-      if (!['decision/state', 'turn/start', 'turn/end', 'x/core/unattended-refused'].includes(event.type))
-        return false
+      if (!RUN_PROGRESS_EVENT_TYPES.includes(event.type)) return false
       let attention = false
       for (const row of progressRows()) {
         if (row.session_key !== sessionKey) continue

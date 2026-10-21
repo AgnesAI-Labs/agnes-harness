@@ -243,6 +243,7 @@ describe('protocol src boundary', () => {
         'attachmentLink',
         'attachmentErrorCode',
         'storedAttachment',
+        'SESSION_ARTIFACT_ROOT_EVENT_TYPES',
         'sessionArtifactRoots',
         'CURRENT_V',
         'DEFAULT_JSON_DATA_MAX_BYTES',

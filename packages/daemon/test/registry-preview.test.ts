@@ -8,7 +8,10 @@ import type { WorkerPool } from '../src/supervisor/worker-pool.js'
 
 const update: PreviewUpdate = { lane: 'main', effectId: 'e1', stream: 'text', offset: 0, delta: 'hi' }
 
-function fakeLink(command: (method: string, params: Record<string, unknown>) => Promise<unknown>) {
+function fakeLink(
+  command: (method: string, params: Record<string, unknown>) => Promise<unknown>,
+  lastSeq = 0,
+) {
   return {
     alive: true,
     hello: Promise.resolve({
@@ -18,6 +21,7 @@ function fakeLink(command: (method: string, params: Record<string, unknown>) => 
       writerRunId: 'run',
       generation: 1,
       profileHash: 'sha256-profile',
+      lastSeq,
     }),
     onExit: vi.fn(),
     closeSession: vi.fn(async () => undefined),
@@ -95,11 +99,15 @@ describe('WorkerRegistry live previews', () => {
     let generation = 0
     const acquire = vi.fn(async () => {
       const second = ++generation === 2
-      const link = fakeLink(async (method) => {
-        if (method !== 'scan') return undefined
-        if (second) await scanGate
-        return []
-      })
+      // The reopened generation has history to read, so its replay has a scan to hold back.
+      const link = fakeLink(
+        async (method) => {
+          if (method !== 'scan') return undefined
+          if (second) await scanGate
+          return []
+        },
+        second ? 1 : 0,
+      )
       link.onExit = vi.fn((fn: () => void) => {
         if (!second) exit = fn
       })

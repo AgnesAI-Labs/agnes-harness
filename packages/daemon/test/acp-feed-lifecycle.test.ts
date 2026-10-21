@@ -27,6 +27,7 @@ function workerLink(hold: Hold) {
       writerRunId: 'run',
       generation: 1,
       profileHash: 'sha256-profile',
+      lastSeq: 0,
     }),
     onExit: (fn: () => void) => void exits.push(fn),
     command: vi.fn(async (method: string) => {

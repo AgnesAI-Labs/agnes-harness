@@ -5,7 +5,11 @@ import { indexApprovalTicket } from '@agnes/daemon-rpc/local/methods/agnes'
 import type { EventEnvelope } from '@agnes/protocol'
 import type { WorkerRegistry } from './registry.js'
 
-/** Index a parked ticket with its worker workspace before publishing the same row to subscribers. */
+/**
+ * Index a parked ticket with its worker workspace before publishing the same row to subscribers.
+ * `onWire` runs when the row arrives, or, while the session's open is still catching up on its
+ * history, in order behind that catch-up.
+ */
 export function deliverWorkerEvent(
   registry: Pick<WorkerRegistry, 'get' | 'deliver'>,
   tickets: TicketPort | undefined,
@@ -13,6 +17,7 @@ export function deliverWorkerEvent(
   sessionKey: string,
   event: EventEnvelope,
   workspaces?: Pick<SessionWorkspacePort, 'observe'>,
+  onWire?: () => void,
 ): void | Promise<void> {
   const publish = () => {
     workspaces?.observe(sessionKey, event, registry.get(sessionKey)?.generation)
@@ -24,7 +29,7 @@ export function deliverWorkerEvent(
   const indexBeforePublish = () => {
     publish()
   }
-  return registry.deliver(sessionKey, event, indexBeforePublish)
+  return registry.deliver(sessionKey, event, indexBeforePublish, onWire)
 }
 
 /** Observe durable run state before publishing its owner-scoped invalidation. */
