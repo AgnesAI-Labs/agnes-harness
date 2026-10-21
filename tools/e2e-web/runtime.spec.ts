@@ -69,9 +69,11 @@ test('consented role takeover and host-only recovery hand back the same session 
   }
   page.on('request', record)
   await page.goto(`${runtime.url}/?admin`)
-  await expect(page.getByRole('heading', { name: 'Application recovery', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Application recovery', exact: true }),
+  ).toBeVisible()
   await expect(page.getByRole('main')).toContainText(id)
-  await page.getByRole('button', { name: 'Clear application and interface choices', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore official interface', exact: true }).click()
   await expect.poll(async () => (await application()).status).toBe('host')
   const cleared = await application()
   expect(cleared.selection).toBeNull()

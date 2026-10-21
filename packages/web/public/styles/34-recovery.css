@@ -1,0 +1,115 @@
+@layer app {
+  /* Application recovery (/?admin). The workbench grid has no sidebar here, so the page spans both
+     columns and scrolls on its own; only this page overrides the shared `main` frame. */
+  .recovery-page {
+    grid-column: 1 / -1;
+    display: block;
+    height: 100dvh;
+    overflow-y: auto;
+    padding: clamp(2rem, 7vh, 4.5rem) var(--s24) var(--s48);
+  }
+  .recovery-column {
+    display: grid;
+    gap: var(--s32);
+    width: 100%;
+    max-width: 40rem;
+    margin: 0 auto;
+  }
+  .recovery-header {
+    display: grid;
+    gap: var(--s8);
+    min-width: 0;
+  }
+  /* The product name is a small label; the page name carries the heading. */
+  .recovery-brand {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+    line-height: var(--line-sm);
+  }
+  .recovery-header h1 {
+    margin: 0;
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-title);
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-title);
+    line-height: var(--line-title);
+  }
+  .recovery-lede {
+    max-width: 60ch;
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-body);
+    line-height: 1.6;
+  }
+  .recovery-panel {
+    display: grid;
+    gap: var(--s16);
+    min-width: 0;
+  }
+  .recovery-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s12);
+    min-width: 0;
+  }
+  .recovery-panel-head h2,
+  .recovery-fallback h2 {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-sm);
+  }
+  .recovery-note {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .recovery-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s12);
+  }
+  .recovery-return {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .recovery-return:hover {
+    color: var(--agnes-text-primary);
+  }
+  /* Navigating away while the clear is in flight could split one decision across two tabs. */
+  .recovery-return[aria-disabled="true"] {
+    color: var(--agnes-text-tertiary);
+    pointer-events: none;
+  }
+  .recovery-fallback {
+    display: grid;
+    gap: var(--s12);
+    padding-top: var(--s24);
+    border-top: var(--hairline) solid var(--agnes-line-hairline);
+  }
+  .recovery-fallback p {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  @media (max-width: 640px) {
+    .recovery-page {
+      padding-right: var(--s16);
+      padding-left: var(--s16);
+    }
+    .recovery-header h1 {
+      font-size: var(--font-size-xl);
+    }
+    .recovery-actions {
+      justify-content: flex-start;
+    }
+  }
+}
