@@ -36,6 +36,7 @@
     "test/sandbox.ts",
     "fixtures.ts",
     "quality.ts",
+    "axe.ts",
     "trace-visual.ts",
     "i18n.ts",
     "../acceptance/provider-fixture.ts",

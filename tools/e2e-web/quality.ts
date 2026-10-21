@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { basename } from 'node:path'
-import AxeBuilder from '@axe-core/playwright'
 import type { Locator, Page, TestInfo } from '@playwright/test'
+import { scanAccessibility } from './axe.js'
 import { expect } from './fixtures.js'
 import { localeKeys, unresolvedLabels } from './i18n.js'
 import { normalizeTraceVisual } from './trace-visual.js'
@@ -67,7 +67,7 @@ export async function translated(page: Page) {
 }
 export async function accessible(page: Page, info: TestInfo, name: string) {
   await settled(page)
-  const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
+  const scan = await scanAccessibility(page)
   await info.attach(`axe-${name}.json`, {
     body: JSON.stringify(scan.violations, null, 2),
     contentType: 'application/json',

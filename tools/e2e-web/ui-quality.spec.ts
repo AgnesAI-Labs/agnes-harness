@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import AxeBuilder from '@axe-core/playwright'
 import { test as base, expect } from '@playwright/test'
+import { scanAccessibility } from './axe.js'
 import { localeKeys, unresolvedLabels } from './i18n.js'
 import { settled } from './quality.js'
 import { isolatedRuntime, type Runtime } from './runtime.js'
@@ -70,9 +70,7 @@ for (const locale of ['zh-CN', 'en'])
           expect(errors, `${name}: uncaught browser errors`).toEqual([])
           if (folder) await page.screenshot({ path: join(folder, `${name}.png`) })
           if (process.env.AGH_UI_AXE === '1' && width === 1440) {
-            const scan = await new AxeBuilder({ page })
-              .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-              .analyze()
+            const scan = await scanAccessibility(page)
             expect(
               scan.violations.map(({ id, nodes }) => ({
                 id,
