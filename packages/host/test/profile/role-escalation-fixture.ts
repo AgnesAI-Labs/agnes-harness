@@ -14,24 +14,39 @@ export const roleHuman = { id: 'reviewer', org: 'test', role: 'human', deptPath:
 
 export async function setupRoleEscalation(
   answer: (request: ApprovalRequest, signal: AbortSignal) => Promise<ApprovalAnswer>,
+  review: {
+    nested?: boolean
+    calls?: (key: string, step: number) => Array<{ name: string; args: Record<string, unknown> }>
+    hookBody?: string
+    tools?: string[]
+    commandAction?: 'allow' | 'deny' | 'require_approval'
+    home?: string
+  } = {},
 ) {
-  const raw = pluginSourceWith([{ exportName: 'plugin', rowId: 'ext:fixture/escalation', body: '' }], {
-    vendor,
-  })
+  const raw = pluginSourceWith(
+    [{ exportName: 'plugin', rowId: 'ext:fixture/escalation', body: review.hookBody ?? '' }],
+    {
+      vendor,
+    },
+  )
   const file = join(raw.snapshot.directory, 'package.json')
   const manifest = JSON.parse(readFileSync(file, 'utf8'))
   const refs = Array.from({ length: 12 }, (_, index) => `${vendor}#role${index}`)
   const bundle = (parent: boolean) => ({
     profile: {
-      tools: ['write', ...(parent ? ['subagent_spawn'] : [])],
-      toolPolicy: { allow: ['write', ...(parent ? ['subagent_spawn'] : [])] },
+      tools: ['write', ...(review.tools ?? []), ...(parent || review.nested ? ['subagent_spawn'] : [])],
+      toolPolicy: {
+        allow: ['write', ...(review.tools ?? []), ...(parent || review.nested ? ['subagent_spawn'] : [])],
+      },
     },
     presets: {
       role: {
         name: 'role',
         extends: 'standard',
         subagent: { max_depth: 2, max_fan_out: 4, isolation: 'shared' },
-        approval: { command_policy: [{ tool: 'write', argv: '^/.*$', action: 'allow' }] },
+        approval: {
+          command_policy: [{ tool: 'write', argv: '^/.*$', action: review.commandAction ?? 'allow' }],
+        },
       },
     },
     launch: {
@@ -53,6 +68,7 @@ export async function setupRoleEscalation(
   }
   const steps = new Map<string, number>()
   const fixture = await pluginHost(source, {
+    ...(review.home ? { dataDir: review.home } : {}),
     seams: {
       approval: {
         ask: (request, options) => answer(request, options?.signal ?? new AbortController().signal),
@@ -67,6 +83,17 @@ export async function setupRoleEscalation(
           (request) => {
             const step = steps.get(request.sessionKey) ?? 0
             steps.set(request.sessionKey, step + 1)
+            if (review.calls) {
+              const calls = review.calls(request.sessionKey, step)
+              return [
+                ...calls.map((call, ordinal) => ({
+                  type: 'toolcall_end' as const,
+                  via: 'native' as const,
+                  call: { toolUseId: '', ordinal, ...call },
+                })),
+                { type: 'done' as const, reason: calls.length ? ('toolUse' as const) : ('stop' as const) },
+              ]
+            }
             if (step)
               return [
                 { type: 'text_delta', delta: 'Done' },
@@ -96,6 +123,7 @@ export async function setupRoleEscalation(
         ],
       }),
   })
+  const dataDir = review.home ?? fixture.dataDir
   await fixture.host.applyRuntimeTarget(
     targetOf([pluginRow('ext:fixture/escalation', 'plugin', false, { vendor })]),
   )
@@ -117,9 +145,9 @@ export async function setupRoleEscalation(
   }
   const preview = { ...body, consentDigest: digest(body) }
   const config = createConfigurationService({
-    home: fixture.dataDir,
+    home: dataDir,
     profile: 'local-dev',
-    profileDir: join(fixture.dataDir, 'profiles/local-dev'),
+    profileDir: join(dataDir, 'profiles/local-dev'),
   })
   await config.saveApplication!({
     revision: 0,
@@ -135,11 +163,12 @@ export async function setupRoleEscalation(
   })
   const parent = await fixture.host.createSession({
     key: 'parent',
-    cwd: fixture.dataDir,
+    cwd: dataDir,
     agent: `${vendor}#coordinator`,
   })
   return {
     ...fixture,
+    dataDir,
     parent,
     refs,
     source,
