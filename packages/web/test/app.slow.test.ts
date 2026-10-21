@@ -17,6 +17,7 @@ import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
 import { act } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { appReadOnly } from '../src/app-notices.js'
 
 let releaseRuntime: import('../src/client-modules/boot.js').ClientModulesRuntime | undefined
 let mountRelease: () => Promise<void>
@@ -4218,12 +4219,13 @@ describe('session that cannot continue on this build', () => {
     expect(document.body.classList.contains('session-switching')).toBe(false)
     expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
     expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
-    expect(document.querySelector('[data-testid="session-history-preview"]')).not.toBeNull()
-    expect(document.body.textContent).toContain('正在准备会话')
+    expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
+    const cleared = vi.spyOn(appReadOnly, 'clear')
     opening.resolve({ session: old, offPermission: vi.fn() })
-    await vi.waitFor(() =>
-      expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull(),
-    )
+    // Admission retires the preview in the same turn it installs the live projection.
+    await vi.waitFor(() => expect(cleared).toHaveBeenCalled())
+    cleared.mockRestore()
+    expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
     expect(document.body.classList.contains('session-switching')).toBe(false)
 
@@ -4312,9 +4314,6 @@ describe('session that cannot continue on this build', () => {
       await bootApp()
       await vi.waitFor(() => expect(document.getElementById('transcript')?.textContent).toContain('历史问题'))
       expect(document.body.classList.contains('session-switching')).toBe(false)
-      expect(document.querySelector('[data-testid="session-history-preview"]')?.textContent).toContain(
-        '待校验',
-      )
       expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()
       expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
       expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
