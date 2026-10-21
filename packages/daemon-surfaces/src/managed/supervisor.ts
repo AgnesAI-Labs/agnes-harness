@@ -127,7 +127,6 @@ export function createManagedServiceSupervisor(options: {
         ...(!settled || !reaped ? { reason: 'shutdown-unconfirmed' as const } : {}),
       }
       record.lease.record(reaped ? 'stopped' : 'unknown')
-      if (!settled || !reaped) record.lease.diagnose('shutdown-unconfirmed')
       if (reaped) record.lease.release()
       else throw new ManagedServiceError('SHUTDOWN_UNCONFIRMED')
     })()
@@ -136,7 +135,6 @@ export function createManagedServiceSupervisor(options: {
   async function unhealthy(record: Record): Promise<void> {
     if (record.signal.signal.aborted || record.status.state !== 'ready') return
     record.status.reason = 'health-failed'
-    record.lease.diagnose('health-failed')
     await stopRecord(record, 'exit').catch(() => undefined)
     record.status = {
       ...record.status,
@@ -175,7 +173,6 @@ export function createManagedServiceSupervisor(options: {
           (found?.state === 'alive' && found.startId && found.startId !== owner.startId)
         )
       ) {
-        lease.diagnose('shutdown-unconfirmed')
         lease.release()
         throw new ManagedServiceError('SHUTDOWN_UNCONFIRMED')
       }
@@ -339,7 +336,6 @@ export function createManagedServiceSupervisor(options: {
       }
       record.status = { ...record.status, state: 'failed', reason: failure }
       lease.record(reaped ? 'stopped' : 'unknown')
-      lease.diagnose(failure)
       if (reaped) lease.release()
       return snapshot(record)
     }

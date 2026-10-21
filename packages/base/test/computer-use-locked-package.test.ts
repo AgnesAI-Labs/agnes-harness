@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -426,6 +427,12 @@ describe('locked Computer Use package activation', () => {
     ).rejects.toThrow('activation is busy')
     release()
     await first
+    const lock = new DatabaseSync(join(store, '.computer-use-package-lock.sqlite'), { readOnly: true })
+    try {
+      expect(lock.prepare('SELECT name FROM sqlite_master').all()).toEqual([])
+    } finally {
+      lock.close()
+    }
   })
 
   storeIt('rejects forged nested state, changed trust, and a symlinked selected package', async () => {
