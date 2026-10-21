@@ -17,6 +17,7 @@ const COMMANDS = new Set<string>([
   'approvals',
   'schedules',
   'triggers',
+  'settings',
   'export',
   'import',
   'doctor',
@@ -98,6 +99,7 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
   '--unattended': 'unattended',
   '--payload': 'payload',
   '--file': 'file',
+  '--text': 'text',
 })
 
 const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {

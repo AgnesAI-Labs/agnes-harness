@@ -8,6 +8,7 @@ import { approvalsCommand } from './approvals.js'
 import { deliverablesCommand } from './deliverables.js'
 import { schedulesCommand } from './schedules.js'
 import { MANAGE_ACTIONS, manageSessions, oneLine } from './sessions-manage.js'
+import { settingsCommand } from './settings.js'
 import { triggersCommand } from './triggers.js'
 
 type SessionsIO = {
@@ -48,6 +49,7 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
   if (p.command === 'approvals') return approvalsCommand(p, client, io)
   if (p.command === 'schedules') return schedulesCommand(p, client, io)
   if (p.command === 'triggers') return triggersCommand(p, client, io)
+  if (p.command === 'settings') return settingsCommand(p, client, io)
   const action = p.positional[0] ?? 'list'
   if (action === 'migrate') {
     const sessionId = p.positional[1]

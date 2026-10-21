@@ -26,6 +26,7 @@ export type Command =
   | 'approvals'
   | 'schedules'
   | 'triggers'
+  | 'settings'
   | 'computer-use'
   | 'profile'
   | 'plugin'
@@ -110,6 +111,8 @@ export type ParsedArgs = {
   unattended?: 'notify' | 'refuse'
   /** `triggers`: a JSON file (or `-` for stdin) holding the rule, the configuration or the test payload. */
   file?: string
+  /** `settings`: the system prompt replacement, or the search test query. */
+  text?: string
   payload?: string
   /** Explicitly permit provider doctor to issue its bounded minimal-inference probe. */
   probe: boolean

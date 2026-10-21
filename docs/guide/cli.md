@@ -68,6 +68,10 @@ When an approval card appears, inspect the tool, arguments, and scope, then choo
 
 These commands mirror the Web admin pages and need an admin connection. `agh plugins config get ID` lists a plugin's configuration rows with their value, schema summary and whether the value is valid; fields the schema marks `x-secret`, `writeOnly` or `credential-reference`, and keys that look like credentials, are printed as `[redacted]` in text and `--json`. Values are written from a JSON file, never from the command line: `agh plugins config validate ID [ROW] --file value.json` only checks, `set` checks first and saves nothing (exit 1) when the value is invalid. `agh plugins tree` and `generations` show the plugin tree and runtime generations; `tree apply --file artifact.json` and `tree rollback` change the runtime and print what they would do unless `--yes` is given. `agh app show` and `preview PACKAGE#APP` read the application state and the consent preview; `app adopt` also needs `--yes`. `agh package source-policy` prints the allowed package sources. A refusal from the daemon is printed as is and exits 1.
 
+## Settings
+
+`agh settings` changes the same settings as the Web settings pages and needs an admin connection. Without a section it lists them: `model-slots`, `child-engines`, `auto-review`, `system-prompt`, `memory`, `observability`, `search` and `session-defaults`. `agh settings SECTION` (or `get`) prints one line per value, `--json` prints what the daemon returned. `agh settings SECTION set --file settings.json` saves JSON (`-` reads stdin) after checking it against the protocol schema; for most sections a `get --json` document, edited, is a valid input. `agh settings system-prompt set --text "..."` replaces the whole system prompt (it needs `--yes`; an empty text removes the replacement). `memory` works on the directory given by `--cwd`. `agh settings search test --text "query" [PROVIDER]` runs one search. This is separate from `agh config`, which signs in accounts and dumps the effective run configuration.
+
 <a id="退出码"></a>
 
 ## Exit codes
