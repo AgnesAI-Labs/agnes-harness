@@ -146,9 +146,8 @@ test('session admission keeps history readable, drafts editable and sending gate
   await input.press('Enter')
   await expect(input).toHaveValue('/plan Local draft A')
   await expect(page.locator('#send')).toBeDisabled()
-  await expect(
-    page.getByRole('status').filter({ hasText: 'History preview (not yet verified)' }),
-  ).toBeVisible()
+  // The pending recorded history is a read-only preview until admission: the composer says so.
+  await expect(input).toHaveAttribute('placeholder', /read-only/i)
   await expect(page.getByTestId('attachment-file-input')).toBeDisabled()
   await page.getByText('Admission B', { exact: true }).first().click()
   await input.fill('Local draft B')

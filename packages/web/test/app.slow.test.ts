@@ -17,7 +17,6 @@ import type { InitializeInfo, LedgerEvent } from '@agnes/sdk/browser'
 import { act } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
-import { appReadOnly } from '../src/app-notices.js'
 
 let releaseRuntime: import('../src/client-modules/boot.js').ClientModulesRuntime | undefined
 let mountRelease: () => Promise<void>
@@ -4219,13 +4218,13 @@ describe('session that cannot continue on this build', () => {
     expect(document.body.classList.contains('session-switching')).toBe(false)
     expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
     expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
-    expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
-    const cleared = vi.spyOn(appReadOnly, 'clear')
+    // The pending read-only preview states itself on the composer, which is what admission retires.
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).toContain('只读')
     opening.resolve({ session: old, offPermission: vi.fn() })
-    // Admission retires the preview in the same turn it installs the live projection.
-    await vi.waitFor(() => expect(cleared).toHaveBeenCalled())
-    cleared.mockRestore()
-    expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
+    await vi.waitFor(() =>
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).not.toContain('只读'),
+    )
+    expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
     expect(document.body.classList.contains('session-switching')).toBe(false)
 
@@ -4243,7 +4242,7 @@ describe('session that cannot continue on this build', () => {
     expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
     nextOpening.resolve({ session: next, offPermission: vi.fn() })
     await switched
-    expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).not.toContain('只读')
     expect(document.body.classList.contains('session-switching')).toBe(false)
   })
 
