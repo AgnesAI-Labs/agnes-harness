@@ -15,18 +15,22 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { packageByteBinding, packageLockByteBinding } from '../src/byte-verification.js'
 import {
   activeRuntimePinId,
   createPackageManager,
   emptyLock,
   type ManagerOptions,
+  PackageByteVerification,
   packageDir,
   parseSource,
   readLock,
+  revokePackageByteFailure,
   withLock,
   writeLock,
 } from '../src/index.js'
 import * as sourceModule from '../src/sources.js'
+import * as treeModule from '../src/tree-identity.js'
 
 const id = 'acme/runtime-snapshot'
 const source = parseSource('file:./source')
@@ -107,6 +111,92 @@ beforeEach(() => {
 })
 
 afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+it('persists an integrity failure through the existing revoked grant without waiting on the read lock', async () => {
+  await installTrusted()
+  const faults: Promise<readonly string[]>[] = []
+  const verification = new PackageByteVerification({
+    profileDir: profile,
+    roots: [root],
+    onMismatch: (failure) => {
+      faults.push(revokePackageByteFailure(profile, root, failure))
+    },
+  })
+  const m = manager({ byteVerification: verification })
+  try {
+    await m.inventory(profile)
+    const file = join(packageDir(root, 'local-dev', id), 'nested.mjs')
+    writeFileSync(file, 'changed bytes')
+    await expect(m.inventory(profile)).rejects.toThrow()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(await Promise.all(faults)).toEqual([[id]])
+    const lock = readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' })
+    expect(lock.packages[id]?.state).toMatchObject({ trusted: null, enabled: false })
+    expect(lock.packages[id]?.trustDecision).toBeUndefined()
+    // The existing lock reader understands this state without a new quarantine format.
+  } finally {
+    await verification.close()
+  }
+})
+
+it('does not revoke a re-trusted grant with a late failure from its previous ABA cycle', async () => {
+  const m = await installTrusted(),
+    row = (await m.inventory(profile)).packages[0]!
+  const failure = {
+    directory: row.directory!,
+    identity: {
+      version: row.entry.version,
+      integrity: row.entry.integrity,
+      treeIntegrity: row.entry.treeIntegrity!,
+      capabilityHash: row.capabilityHash,
+      packageId: id,
+    },
+    binding: packageByteBinding(profile),
+    lockBinding: packageLockByteBinding(profile),
+  }
+  const decision = { integrity: row.entry.integrity, capabilityHash: row.capabilityHash }
+  await m.untrust(profile, id, decision)
+  await m.trust(profile, id, decision)
+  expect(await revokePackageByteFailure(profile, root, failure)).toEqual([])
+  expect(
+    readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[id]?.state.trusted,
+  ).not.toBeNull()
+})
+
+it.each(['trust', 'enable', 'update', 'rollback'] as const)(
+  'keeps %s fully verified even with a warm frozen identity',
+  async (operation) => {
+    const m = await installTrusted(),
+      row = (await m.inventory(profile)).packages[0]!
+    const verification = new PackageByteVerification({ profileDir: profile, roots: [root] })
+    try {
+      const frozen = await treeModule.treeIdentity(row.directory!)
+      await verification.run(() => m.inventory(profile))
+      const actual = treeModule.treeIdentity
+      const spy = vi
+        .spyOn(treeModule, 'treeIdentity')
+        .mockImplementation((dir) => (dir === row.directory ? Promise.resolve(frozen) : actual(dir)))
+      writeVersion('2.0.0', 'v2')
+      const preview = await m.inspect(profile, source)
+      writeFileSync(join(row.directory!, 'nested.mjs'), 'BAD')
+      const invoke = () =>
+        operation === 'trust'
+          ? m.trust(profile, id, { integrity: row.entry.integrity, capabilityHash: row.capabilityHash })
+          : operation === 'enable'
+            ? m.enable(profile, id, true)
+            : operation === 'rollback'
+              ? m.rollback(profile, id)
+              : m.update(profile, id, source, { expectedIntegrity: preview.integrity })
+      await expect(verification.run(invoke)).rejects.toThrow()
+      expect(readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[id]?.integrity).toBe(
+        row.entry.integrity,
+      )
+      spy.mockRestore()
+    } finally {
+      await verification.close()
+    }
+  },
+)
 
 it('lets a worker read validated active snapshots while a package effect owns the lock', async () => {
   const manifestFile = join(sourceDir, 'package.json')

@@ -9,6 +9,7 @@ import {
   VerifiedRowError,
 } from '@agnes/plugin-runtime/host'
 import { parsePackageBundleContract } from './bundle-contract.js'
+import { byteDirectoryDigest, byteDirectoryDigestAsync } from './byte-verification.js'
 import { PackageError } from './errors.js'
 import { canonical, freezeData, readStaticJson } from './integrity.js'
 import type { InstalledInventory, InstalledPackage } from './inventory.js'
@@ -197,7 +198,8 @@ function integrityFailure(reason: string): never {
 function assertSnapshotTree(snapshot: RuntimeSnapshot, reason: string): void {
   let digest: string
   try {
-    digest = hashDirectory(snapshot.directory, { exclude: [] })
+    digest =
+      byteDirectoryDigest(snapshot.directory, snapshot) ?? hashDirectory(snapshot.directory, { exclude: [] })
   } catch {
     integrityFailure(reason)
   }
@@ -206,9 +208,13 @@ function assertSnapshotTree(snapshot: RuntimeSnapshot, reason: string): void {
 
 async function assertSnapshotTreeAsync(snapshot: RuntimeSnapshot, reason: string): Promise<void> {
   try {
-    if ((await hashDirectoryAsync(snapshot.directory, { exclude: [] })) !== snapshot.treeIntegrity)
+    if (
+      (await (byteDirectoryDigestAsync(snapshot.directory, snapshot) ??
+        hashDirectoryAsync(snapshot.directory, { exclude: [] }))) !== snapshot.treeIntegrity
+    )
       integrityFailure(reason)
-  } catch {
+  } catch (error) {
+    if (error instanceof PackageError && error.code === 'E_PACKAGE_BUSY') throw error
     integrityFailure(reason)
   }
 }

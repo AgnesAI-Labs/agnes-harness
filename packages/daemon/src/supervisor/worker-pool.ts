@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process'
+import type { ChildProcess, spawn as nodeSpawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import type { Duplex, Writable } from 'node:stream'
 import type { PreviewUpdate } from '@agnes/daemon-foundation/registry'
@@ -7,6 +7,7 @@ import {
   type WorkspaceBindingEnvelope,
 } from '@agnes/daemon-foundation/storage/workspaces'
 import type { ResolvedProfile } from '@agnes/host'
+import type { ByteFailure, PackageBootAdmission } from '@agnes/package-manager'
 import type { LoopSelection } from '@agnes/protocol'
 import {
   type DaemonNotice,
@@ -23,7 +24,6 @@ import {
   resourceWorkerEnvironment,
   resourceWorkerObservation,
 } from '@agnes/resource-control-daemon'
-import { windowsProcessStartTimeSync } from '@agnes/system-node'
 import { workerBootFailureCode } from '@agnes/worker-runtime'
 import type { DaemonConfig } from './config.js'
 import type { RequestFrame } from './frames.js'
@@ -31,10 +31,10 @@ import type {
   CompositeRuntimeDelivery,
   RuntimeBootDelivery,
 } from './publication/composite-runtime-delivery.js'
-import { workerStderrEvidence } from './runtime-log.js'
 import { WorkerBootFailures } from './worker-boot-failures.js'
 import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
 import { waitForWorkerExit } from './worker-process-exit.js'
+import { observeWorkerStartup, spawnPackageWorker } from './worker-startup.js'
 
 /**
  * The narrow shape this pool needs from daemon's notice sink. The real `NoticeSink` is
@@ -141,6 +141,8 @@ export class WorkerPool {
       execPath?: string
       execArgv?: string[]
       workerEntry: string
+      preparePackageAdmission?: () => Promise<PackageBootAdmission>
+      onPackageByteFailure?: (failure: ByteFailure) => void
       clock: () => number
       onEvent: (sessionKey: string, e: EventEnvelope) => void | Promise<void>
       /** Live streamed text, only from the worker that currently hosts the session. */
@@ -343,12 +345,17 @@ export class WorkerPool {
     const until = this.backoffUntil.get(workerKey) ?? 0
     if (until > this.o.clock()) await new Promise((r) => setTimeout(r, until - this.o.clock()))
     assertAdmission()
+    // Parent-owned byte admission happens before spawn, without any Host/session request channel.
+    const packageAdmission =
+      (opts.kind ?? 'session') === 'session' ? await this.o.preparePackageAdmission?.() : undefined
+
     // Another caller may have already (re)inserted a live or starting slot for this worker key
-    // while this call was backing off. Fall back onto that slot instead of spawning a second
+    // while this call was backing off or preparing package inputs. Fall back onto that slot instead of spawning a second
     // process and silently overwriting it (a slot left behind by a startup failure that never
     // reached `link`/`starting` is still fair game to retry over, same as the checks above).
     const raced = this.slots.get(workerKey)
     if (raced?.link?.alive || raced?.starting) return this.startWorker(workerKey, opts)
+
     const selected = { profile: this.o.profile, profileFile: this.o.profileFile }
     // Activation may have frozen membership while admission was in progress; re-check before
     // inserting the slot so waitForStarting cannot miss a late old-revision worker.
@@ -520,41 +527,20 @@ export class WorkerPool {
         })
       })
       try {
-        const supervisorStartId = this.o.config.workersSocketPath.startsWith('\\\\.\\pipe\\')
-          ? windowsProcessStartTimeSync(process.pid)
-          : undefined
-        if (supervisorStartId === null) throw new Error('Supervisor process identity unavailable')
-        child = (this.o.spawn ?? nodeSpawn)(
-          this.o.execPath ?? process.execPath,
-          [...(this.o.execArgv ?? []), this.o.workerEntry],
-          {
-            env: {
-              ...process.env,
-              ...(this.o.config.home !== undefined ? { AGH_HOME: this.o.config.home } : {}),
-              AGNES_WORKER_TOKEN: token,
-              AGNES_SUPERVISOR_SOCKET: this.o.config.workersSocketPath,
-              AGNES_SUPERVISOR_PID: supervisorStartId ? String(process.pid) : undefined,
-              AGNES_SUPERVISOR_START_ID: supervisorStartId,
-              AGNES_WORKER_KEY: workerKey,
-              AGNES_WORKER_KIND: opts.kind ?? 'session',
-              ...(workerKey === '@shared' && (opts.kind ?? 'session') === 'session'
-                ? (() => {
-                    const boot = this.o.runtimeDelivery?.bootFor(generation)
-                    return boot ? { AGNES_RUNTIME_BOOT_SOURCE: boot.source } : {}
-                  })()
-                : {}),
-              ...resourceWorkerEnvironment(opts, this.o.resourceBootstrap),
-              AGNES_WORKER_GENERATION: String(generation),
-              AGNES_GATE_FD: '3',
-              AGNES_PROFILE_FILE: selected.profileFile,
-              // The shared business worker multiplexes unrelated workspaces. Explicitly clear an
-              // inherited value so its process-wide Host cannot be pinned to the first session cwd.
-              AGNES_WORKER_ROOT: opts.kind === 'service' && opts.cwd ? opts.cwd : undefined,
-            },
-            windowsHide: true,
-            stdio: ['ignore', 'inherit', 'pipe', 'pipe', 'ipc'],
-          },
-        )
+        child = spawnPackageWorker(this.o, {
+          token,
+          generation,
+          workerKey,
+          kind: opts.kind ?? 'session',
+          cwd: opts.cwd,
+          profileFile: selected.profileFile,
+          admission: packageAdmission,
+          bootSource:
+            workerKey === '@shared' && (opts.kind ?? 'session') === 'session'
+              ? this.o.runtimeDelivery?.bootFor(generation)?.source
+              : undefined,
+          resourceEnv: resourceWorkerEnvironment(opts, this.o.resourceBootstrap),
+        })
       } catch (error) {
         failStarting(
           new Error(
@@ -568,13 +554,18 @@ export class WorkerPool {
         return
       }
       const spawnedChild = child
-      const stderr = workerStderrEvidence()
-      spawnedChild.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
       slot.child = spawnedChild
-      spawnedChild.on('message', (message: unknown) => {
-        if (startupFinished || slot.initializingLink || !message || typeof message !== 'object') return
-        const frame = message as { kind?: unknown; code?: unknown }
-        if (frame.kind === 'worker-boot-failure') bootFailureCode = workerBootFailureCode(frame.code)
+      const stderr = observeWorkerStartup(spawnedChild, {
+        token,
+        generation,
+        profileHash: selected.profile.hash,
+        admission: packageAdmission,
+        starting: () => !startupFinished && !slot.initializingLink,
+        current: () => this.slots.get(workerKey) === slot,
+        bootFailure: (code) => {
+          bootFailureCode = workerBootFailureCode(code)
+        },
+        failure: this.o.onPackageByteFailure,
       })
       spawnedChild.once('error', (error) => {
         if (!slot.link)
@@ -777,6 +768,16 @@ export class WorkerPool {
     slot.intentionalExit = true
     slot.link.close('test-retire')
     return true
+  }
+
+  /** Integrity failure cannot wait for arbitrary plugin callbacks to acknowledge shutdown. */
+  stopPluginExecution(): void {
+    const slot = this.slots.get('@shared')
+    if (!slot) return
+    slot.intentionalExit = true
+    if (slot.child?.exitCode === null && slot.child.signalCode === null) slot.child.kill('SIGKILL')
+    slot.failStarting?.(new Error('plugin integrity admission failed'))
+    slot.link?.close('plugin-integrity')
   }
 
   /** 5-minute rolling window, 3 strikes: the third qualifying crash quarantines the session (no more

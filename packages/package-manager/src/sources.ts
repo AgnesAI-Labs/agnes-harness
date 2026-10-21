@@ -210,7 +210,7 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
 /** Same wire digest and exclusions as hashDirectory; yields for filesystem IO and streams file bytes. */
 export async function hashDirectoryAsync(
   dir: string,
-  opts: { exclude?: string[]; signal?: AbortSignal } = {},
+  opts: { exclude?: string[]; signal?: AbortSignal; onChunk?: (bytes: number) => Promise<void> } = {},
 ): Promise<string> {
   checkCancelled(opts.signal)
   let root: string
@@ -265,6 +265,7 @@ export async function hashDirectoryAsync(
         const { bytesRead } = await handle.read(chunk)
         if (!bytesRead) break
         inner.update(chunk.subarray(0, bytesRead))
+        if (opts.onChunk) await opts.onChunk(bytesRead)
       }
       const after = await handle.stat()
       const linked = await asyncFs.lstat(file)

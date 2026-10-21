@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { lstatSync } from 'node:fs'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
+import { withoutByteVerification } from './byte-verification.js'
 import { canonical } from './integrity.js'
 import { hashDirectory, hashDirectoryAsync } from './sources.js'
 
@@ -33,7 +34,7 @@ export function withoutPackageVerification(action: () => unknown): unknown {
   const parent = operations.getStore()
   invalidate(parent)
   try {
-    const result = operations.run(undefined, action)
+    const result = withoutByteVerification(() => operations.run(undefined, action))
     if (result instanceof Promise) return result.finally(() => invalidate(parent))
     return result
   } finally {

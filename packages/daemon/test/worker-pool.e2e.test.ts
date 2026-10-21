@@ -1194,70 +1194,76 @@ describe('WorkerPool', () => {
     expect(notices).toContain('worker_quarantined')
   })
 
-  it('does not orphan a spawned child when two callers race the same post-crash backoff wait', async () => {
-    vi.useFakeTimers()
-    try {
-      const spawnedChildren: FakeChild[] = []
-      const fakeSpawn = ((..._args: unknown[]) => {
-        const child = erroredChild()
-        spawnedChildren.push(child)
-        return child
-      }) as unknown as typeof import('node:child_process').spawn
+  it.each(['backoff', 'package-admission'])(
+    'does not orphan a spawned child when two callers race %s',
+    async (mode) => {
+      vi.useFakeTimers()
+      try {
+        const spawnedChildren: FakeChild[] = []
+        const fakeSpawn = ((..._args: unknown[]) => {
+          const child = erroredChild()
+          spawnedChildren.push(child)
+          return child
+        }) as unknown as typeof import('node:child_process').spawn
 
-      const pool = new WorkerPool({
-        workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
-        config: {
-          profileName: 'p',
-          dataDir: '/unused',
-          socketPath: '/unused/client.sock',
-          workersSocketPath: '/unused/worker.sock',
-          limits: { ...DEFAULT_LIMITS, workerStartupMs: 60_000 },
-        },
-        profile: { name: 'p', hash: 'h1' } as never,
-        profileFile: '/unused/profile.json',
-        spawn: fakeSpawn,
-        clock: () => Date.now(),
-        onEvent: () => undefined,
-        onRequest: async () => undefined,
-        notices: { emit() {} },
-      })
+        const pool = new WorkerPool({
+          workerEntry: fileURLToPath(new URL('../src/worker/main.js', import.meta.url)),
+          config: {
+            profileName: 'p',
+            dataDir: '/unused',
+            socketPath: '/unused/client.sock',
+            workersSocketPath: '/unused/worker.sock',
+            limits: { ...DEFAULT_LIMITS, workerStartupMs: 60_000 },
+          },
+          profile: { name: 'p', hash: 'h1' } as never,
+          profileFile: '/unused/profile.json',
+          spawn: fakeSpawn,
+          preparePackageAdmission: async () => ({ binding: 'test', trees: [] }),
+          clock: () => Date.now(),
+          onEvent: () => undefined,
+          onRequest: async () => undefined,
+          notices: { emit() {} },
+        })
 
-      // Models the state right after a crash: `crashed()` sets a future `backoffUntil` for this key
-      // and the dead slot is already gone (the `cur?.exitRecovery` branch deletes it before
-      // recursing), so the next acquire() calls for this key go straight to the backoff wait with no
-      // slot present.
-      const workerKey = 'agnes:t:a:x:dm:backoff-race'
-      pool.crashed(workerKey)
+        // Models the state right after a crash: `crashed()` sets a future `backoffUntil` for this key
+        // and the dead slot is already gone (the `cur?.exitRecovery` branch deletes it before
+        // recursing), so the next acquire() calls for this key go straight to the backoff wait with no
+        // slot present.
+        const workerKey = 'agnes:t:a:x:dm:backoff-race'
+        if (mode === 'backoff') pool.crashed(workerKey)
 
-      // Issue both calls before awaiting either - real concurrency, not a manual retry loop.
-      const opts = { kind: 'service', resourceControl: true } as const
-      const call1 = pool.acquire(workerKey, opts)
-      const call2 = pool.acquire(workerKey, opts)
-      // Neither call's fake worker ever completes its hello handshake in this test; both would
-      // eventually reject on the startup timeout (60s, never reached here). Only the synchronous
-      // slot-management side effects of the race are under test.
-      call1.catch(() => undefined)
-      call2.catch(() => undefined)
+        // Issue both calls before awaiting either - real concurrency, not a manual retry loop.
+        const opts = { kind: 'service', resourceControl: true } as const
+        const acquire = () =>
+          mode === 'backoff' ? pool.acquire(workerKey, opts) : pool.acquireSharedWorker()
+        const call1 = acquire()
+        const call2 = acquire()
+        // Neither call's fake worker ever completes its hello handshake in this test; both would
+        // eventually reject on the startup timeout (60s, never reached here). Only the synchronous
+        // slot-management side effects of the race are under test.
+        call1.catch(() => undefined)
+        call2.catch(() => undefined)
 
-      // Let both backoff timers fire; vi's async timer advance flushes each continuation's
-      // microtasks (including the synchronous spawn() + slot bookkeeping) before the next timer
-      // callback runs, mirroring two real macrotask-separated resumptions.
-      await vi.advanceTimersByTimeAsync(6_000)
+        // Let both backoff timers fire; vi's async timer advance flushes each continuation's
+        // microtasks (including the synchronous spawn() + slot bookkeeping) before the next timer
+        // callback runs, mirroring two real macrotask-separated resumptions.
+        await vi.advanceTimersByTimeAsync(6_000)
 
-      // At least one child was spawned to service this worker key.
-      expect(spawnedChildren.length).toBeGreaterThanOrEqual(1)
+        // At least one child was spawned to service this worker key.
+        expect(spawnedChildren.length).toBeGreaterThanOrEqual(1)
 
-      pool.killAll()
+        pool.killAll()
 
-      // Contract (killAll doc comment): "Force-terminates every child still owned by the pool,
-      // including one still in startup." Every process spawned for this key is still in startup
-      // (neither received a hello), so every one of them must be force-killed - none may be
-      // silently orphaned outside `this.slots` by the backoff race.
-      for (const child of spawnedChildren) expect(child.killCalls).toBe(1)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
+        // Contract (killAll doc comment): "Force-terminates every child still owned by the pool,
+        // including one still in startup." Every process spawned for this key is still in startup
+        // (neither received a hello), so every one of them must be force-killed - none may be
+        // silently orphaned outside `this.slots` by the backoff race.
+        for (const child of spawnedChildren) expect(child.killCalls).toBe(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
 })
 
 describe('WorkerPool when a start from the desired target fails', () => {
@@ -1344,22 +1350,27 @@ describe('WorkerPool when a start from the desired target fails', () => {
 
   const bootstrapOnly = (store: CompositeTargetStore) => store.publishDesired(artifact('ext:bad'))
 
-  it.each(['timeout', 'shutdown', 'kill', 'fail-stop'])(
+  it.each(['timeout', 'shutdown', 'kill', 'fail-stop', 'integrity'])(
     'attributes a start that never became ready: %s',
     async (cause) => {
       await withBoot(bootstrapOnly, async ({ pool, store, notices, booting }) => {
         const starting = expect(pool.acquireSharedWorker()).rejects.toThrow(
-          cause === 'timeout' ? 'did not boot_ready' : 'shut down during startup',
+          cause === 'timeout'
+            ? 'did not boot_ready'
+            : cause === 'integrity'
+              ? 'plugin integrity admission failed'
+              : 'shut down during startup',
         )
         if (cause !== 'timeout') {
           await booting
           if (cause === 'shutdown') await pool.closeAll(1_000)
           else if (cause === 'kill') pool.killAll()
+          else if (cause === 'integrity') pool.stopPluginExecution()
           else pool.failStop('uncertain activation')
         }
         await starting
         await pool.waitForExitRecovery()
-        if (cause === 'timeout')
+        if (cause === 'timeout' || cause === 'integrity')
           expect(store.lastFailure()).toMatchObject({ phase: 'boot', digest: store.desired()?.digest })
         else {
           expect(store.lastFailure()).toBeUndefined()

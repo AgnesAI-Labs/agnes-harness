@@ -478,6 +478,6 @@ it('gates real immutable package preparation, readonly views and Surface event l
     }
   } finally {
     await feed.close()
-    f.close()
+    await f.close()
   }
 }, 180_000)

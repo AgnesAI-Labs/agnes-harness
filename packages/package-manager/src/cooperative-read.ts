@@ -1,4 +1,5 @@
 import { setImmediate } from 'node:timers/promises'
+import { type ByteIdentity, byteDirectoryDigest, byteDirectoryDigestAsync } from './byte-verification.js'
 import { verifiedDirectoryDigest, verifiedDirectoryDigestAsync } from './verification-operation.js'
 
 type ReadAction = { sync(): string; async(): Promise<string> }
@@ -9,8 +10,11 @@ export function* directoryDigestSteps(
   ...args: Parameters<typeof verifiedDirectoryDigest>
 ): ReadSteps<string> {
   return yield {
-    sync: () => verifiedDirectoryDigest(...args),
-    async: () => verifiedDirectoryDigestAsync(...args),
+    sync: () =>
+      (!args[2] ? byteDirectoryDigest(args[0], args[1]) : undefined) ?? verifiedDirectoryDigest(...args),
+    async: () =>
+      (!args[2] ? byteDirectoryDigestAsync(args[0], args[1]) : undefined) ??
+      verifiedDirectoryDigestAsync(...args),
   }
 }
 
@@ -40,4 +44,9 @@ export async function collectReadAsync<T>(steps: ReadSteps<T>, asyncHashes = tru
       step = steps.throw(error)
     }
   }
+}
+
+/** Managed Host reads preserve operation-scoped full verification without a private owner. */
+export function readRuntimePackageTreeDigest(directory: string, identity: ByteIdentity): Promise<string> {
+  return byteDirectoryDigestAsync(directory, identity) ?? verifiedDirectoryDigestAsync(directory, identity)
 }

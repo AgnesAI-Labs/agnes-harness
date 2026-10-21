@@ -135,6 +135,12 @@ A successful ordinary installation starts disabled. Internally, AGH also records
 
 <a id="安装后端示例"></a>
 
+Installation, trust, update, enable and rollback verify actual content. Later managed reads may
+check file identity and periodically rehash; unknown filesystems and standalone callers retain full
+checks. An integrity failure removes trust and stops the affected worker, including pinned historical
+code. Repair the bytes and explicitly review/trust the package again; ordinary reads never restore
+trust. A repaired current version does not validate another physical archive copy.
+
 ## Plugin kinds, states and session defaults
 
 Packages can declare an optional multi-value field in `package.json`:
