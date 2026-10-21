@@ -66,6 +66,13 @@ Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork
 
 - `subagent_fork` 在后台启动继承父历史的子代理并返回 key。
 - `subagent_spawn` 在后台启动子代理并返回 key。fork 和 spawn 都保留子代理以接受后续消息。
+
+
+已采纳应用可声明 `delegableAgents`（最多八个可启动引用，也必须在 `agents` 中）。
+`subagent_spawn` 的可选 `role` 从后端名单选择角色。角色使用自己的组合启动全新会话；工具和
+工作区权限受启动时捕获的父会话权限快照限制，快照记录在子账本中。子会话的所有审批及业务
+签署请求都会拒绝，并提示交回主助手。`role` 不能与 `fork` 或 `model` 同时使用；无效角色
+不会降级为普通子代理。采纳及归属说明见[应用](applications.zh-CN.md)。
 - `subagent_collect` 按需读取当前结果。了解子代理是否完成不需要它，见“完成通知”。
 - `subagent_cancel` 停止已启动的子任务及其子树。
 

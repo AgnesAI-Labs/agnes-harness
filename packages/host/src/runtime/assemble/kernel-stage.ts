@@ -175,6 +175,7 @@ export async function createKernel(
         .map(({ id, version, sourcePackage }) => Object.freeze({ id, version, sourcePackage })),
     )
   const kernel = Kernel.create({
+    ...(deps.childRoles ? { childRoles: deps.childRoles } : {}),
     ...(systemPromptProvider
       ? {
           systemPrompt: {

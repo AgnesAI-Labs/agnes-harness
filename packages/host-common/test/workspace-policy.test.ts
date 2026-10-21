@@ -1,8 +1,10 @@
 import { posix } from 'node:path'
+import { decideFsPath, validateFsPolicy } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
 import { privateStateRoots } from '../src/paths.js'
 import {
   compileWorkspacePolicy,
+  intersectWorkspacePlan,
   memoryRequiresFileIsolation,
   normalizeSandboxStaticConfig,
   sandboxStaticConfigHash,
@@ -132,6 +134,43 @@ describe('Host workspace policy compiler', () => {
     expect(full.backendOptions.denyPaths).toContain('/work/.git')
     expect(new Set([readOnly.staticConfigHash, writable.staticConfigHash, full.staticConfigHash]).size).toBe(
       3,
+    )
+  })
+
+  it('captures file and network scope as a conjunction, retaining hard denials and read-only writes', async () => {
+    const parent = await compile('/work', {
+      sandbox: {
+        extra_paths: ['/parent', '/shared'],
+        deny_paths: ['/work/private'],
+        network_allow: ['shared.test', 'parent.test'],
+      },
+    })
+    const role = await compile('/work', {
+      sandbox: { extra_paths: ['/role', '/shared'], network_allow: ['shared.test', 'role.test'] },
+    })
+    const joined = intersectWorkspacePlan(role, parent.policy)
+    expect(() => validateFsPolicy(joined.policy)).not.toThrow()
+    for (const [path, effect] of [
+      ['/work/a', 'allow'],
+      ['/shared/a', 'allow'],
+      ['/parent/a', 'deny'],
+      ['/role/a', 'deny'],
+      ['/work/private/a', 'deny'],
+      ['/work/.git/a', 'deny'],
+    ] as const)
+      expect(decideFsPath(joined.policy, path, { caseSensitive: true }).effect).toBe(effect)
+    expect(joined.backendOptions.networkAllow).toEqual(['shared.test'])
+    expect(joined.backendOptions.fullAccess).toBeUndefined()
+    expect(joined.backendOptions.network).toBe('deny')
+    expect(joined.staticConfigHash).not.toBe(role.staticConfigHash)
+    expect(joined.staticConfigHash).toBe(sandboxStaticConfigHash(joined.staticConfig))
+    expect(intersectWorkspacePlan(role, { ...parent.policy, networkAllow: [] }).staticConfigHash).not.toBe(
+      joined.staticConfigHash,
+    )
+    const readOnly = await compile('/work', { providers: { 'tool-policy': { provider: 'read-only' } } })
+    expect(intersectWorkspacePlan(readOnly, parent.policy).backendOptions.allowPaths).toEqual([])
+    expect(() => intersectWorkspacePlan(role, { ...parent.policy, workspaceRoot: '/different' })).toThrow(
+      'root differs',
     )
   })
 

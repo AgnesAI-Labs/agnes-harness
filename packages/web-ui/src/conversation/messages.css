@@ -1,6 +1,13 @@
 @import "../layers.css";
 
 @layer ui {
+  [data-agnes-conversation-messages] .delegated-role-attribution {
+    margin: var(--s4) 0 0 var(--s24);
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
+  }
+
   [data-agnes-conversation-messages] .approval-pending-link {
     min-width: 0;
     max-width: 100%;

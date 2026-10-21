@@ -3594,6 +3594,15 @@
               },
               "description": "Core's argument rejection fact. Render failed attempts in one collapsed technical record."
             },
+            "delegatedRole": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ref", "title"],
+              "properties": {
+                "ref": { "$ref": "extension-manifest.json#/$defs/AgentRef" },
+                "title": { "$ref": "extension-manifest.json#/$defs/PluginLocalizedText" }
+              }
+            },
             "resultPreview": {
               "type": "string",
               "maxLength": 4096

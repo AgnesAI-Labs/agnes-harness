@@ -66,6 +66,15 @@ These tools keep their current names:
 
 - `subagent_fork` starts a background child seeded from parent history and returns its key.
 - `subagent_spawn` starts a background child and returns its key. Both fork and spawn stay open for follow-ups.
+
+
+An adopted application may additionally declare `delegableAgents` (up to eight launchable refs,
+also in `agents`). `subagent_spawn` accepts an optional `role` ref from this backend allowlist.
+The role starts fresh with its own composition; its tools and workspace authority are capped by a
+spawn-time parent snapshot recorded on the child ledger. All approval and business signature
+requests in that child are refused with instructions to hand the action back to the main assistant.
+`role` cannot be combined with `fork` or `model`; invalid roles never fall back to ordinary children.
+See [applications](applications.md) for adoption and attribution.
 - `subagent_collect` reads the current result on demand. It is not needed to learn that a child finished; see Completion notices.
 - `subagent_cancel` stops a spawned child and its subtree.
 

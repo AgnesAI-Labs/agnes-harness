@@ -4,7 +4,7 @@
 
 An installable, explicitly adopted pharmaceutical quality application, `@agnes-showcase/pharma-gmp`. Sableleaf OSD, people, products, signatures and evidence are fictional and synthetic. A public name search found no obvious namesake pharmaceutical plant; this is not trademark clearance. This unvalidated teaching system models nonsterile tablets/capsules and must not be used for real batch release or regulatory submissions.
 
-The fixed scenario date is **2024-10-20**: 36 batches, 240 EM samples, nine equipment records and 12 deviations. The workbench combines overview, tasks/signatures, live object dossiers and the batch/record, deviation/CAPA, EM, QA release and audit modules. A single Quality Hub entry routes work to five internal roles; their localized names appear as turn attribution.
+The fixed scenario date is **2024-10-20**: 36 batches, 240 EM samples, nine equipment records and 12 deviations. The workbench combines overview, tasks/signatures, live object dossiers and the batch/record, deviation/CAPA, EM, QA release and audit modules. The Quality Assistant is the single entry. It delegates fresh investigation, review, EM and pre-release checks to four declared role subagents; delegation cards and completion notices retain their localized role attribution after reload. The hub summarizes their findings and performs requested signed records, advancement and release in the main conversation.
 
 From the source repository root, after preparing the local CLI using the installation guide:
 
@@ -21,7 +21,7 @@ Review exact capabilities/integrity, trust and enable in Plugins; preview and ad
 
 Profile pages use only declared `pharma.snapshot`, `pharma.change` and `pharma.release` services. Host-bound owner/profile storage persists across restart; no browser database or private filesystem access. Transactions bind monotonic revisions to audit entries. Originals are retained. The page saves operation IDs and inspects pending/unknown receipts before resuming. Release requires the entire checklist, exact revision, exact meaning and backend-injected human approval. Signer identity comes from that proof.
 
-`pharma_report` creates Markdown and print HTML and calls `present`. The EM agent creates an ordinary nightly schedule. Growth uses the platform candidate helper: create, test, submit for review, then human-publish the exact hash. Host code pins retain running session versions across upgrades.
+`pharma_report` creates Markdown and print HTML and calls `present`. The main Quality Assistant can create an ordinary nightly EM schedule. Growth uses the platform candidate helper: create, test, submit for review, then human-publish the exact hash. Host code pins retain running session versions across upgrades.
 
 Focused checks from the root (under the repository toolchain and heavy-lock rules):
 
@@ -48,6 +48,8 @@ For an explicit test-operator source review, set `AGH_SHOWCASE_REQUIRE_REVIEW=1`
 
 The signature card shows the object, reviewed revision, exact meaning and evidence in the current UI language. The human answer must return that view’s bound meaning unchanged; receipts and audit records preserve it. A legacy null answer cannot complete these new signatures.
 
-Version 1.1.0 updates the conversation workbench; existing 1.0.0 installations can review the bundled update on the Plugins page. Installation and application adoption remain separate.
+Version 1.2.0 adds role subagents and the single Quality Assistant entry; existing installations can review the bundled update on the Plugins page. Installation and application adoption remain separate.
 
-The workbench offers Current object, Pending signatures and Evidence & reports. Start deviation, CAPA, EM, batch review or QA release work from object buttons or composer actions; five internal roles appear as turn attribution. Overview and Tasks & signatures form the primary navigation; all other modules remain under More and overview links.
+The workbench offers Current object, Pending signatures and Evidence & reports. Start deviation, CAPA, EM, batch review or QA release work from object buttons or composer actions; the hub delegates to four specialist roles and records their attribution. Overview and Tasks & signatures form the primary navigation; all other modules remain under More and overview links.
+
+Role children capture a spawn-time intersection of role and parent tools, file/network scope, sandbox and read-only limits. They cannot obtain approvals or business signatures, even from a Full access parent. A refused action returns to the main Quality Assistant. Their persistent persona comes from the role recipe, independently of the editable launch draft.

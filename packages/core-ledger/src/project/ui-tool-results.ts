@@ -45,6 +45,33 @@ export function applyToolResultEvent(
       .join(''),
     4096,
   )
+  const details = result.structured
+  if (
+    node.name === 'subagent_spawn' &&
+    !result.isError &&
+    details &&
+    typeof details === 'object' &&
+    !Array.isArray(details)
+  ) {
+    const role = details.role
+    if (
+      role &&
+      typeof role === 'object' &&
+      !Array.isArray(role) &&
+      typeof role.ref === 'string' &&
+      role.title &&
+      typeof role.title === 'object' &&
+      !Array.isArray(role.title) &&
+      typeof role.title.en === 'string'
+    )
+      node.delegatedRole = {
+        ref: role.ref,
+        title: {
+          en: role.title.en,
+          ...(typeof role.title['zh-CN'] === 'string' ? { 'zh-CN': role.title['zh-CN'] } : {}),
+        },
+      }
+  }
   node.resultSeq = event.seq
   node.enforcement = structuredClone(result.enforcement)
   completed.push({ seq: event.seq, toolUseId: node.toolUseId })

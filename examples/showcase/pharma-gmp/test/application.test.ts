@@ -21,6 +21,16 @@ it('inspects and installs the third-party application with valid raster assets a
     expect(Object.keys(bundles)).toHaveLength(5)
     for (const ref of manifest.agnes.application.agents)
       expect(bundles[ref]?.document.launch?.preset).toBe('gmp')
+    expect(manifest.agnes.application.delegableAgents).toHaveLength(4)
+    expect(
+      manifest.agnes.application.workbench.actions.every((action: { agent: string }) =>
+        action.agent.endsWith('#hub'),
+      ),
+    ).toBe(true)
+    for (const role of Object.values(manifest.agnes.bundles) as Array<{
+      presets: { gmp: { model: { system_prompt: { personaPrefix: string } } } }
+    }>)
+      expect(role.presets.gmp.model.system_prompt.personaPrefix.length).toBeGreaterThan(60)
     const assets = await readApplicationAssets(packageDir, manifest.agnes.application)
     expect(Object.keys(assets)).toEqual(expect.arrayContaining(['mark', 'favicon']))
     const manager = createPackageManager({
@@ -48,7 +58,7 @@ it('inspects and installs the third-party application with valid raster assets a
     })
     const preview = await manager.inspect(profile, source)
     expect(preview.blockers).toEqual([])
-    expect(preview.version).toBe('1.1.0')
+    expect(preview.version).toBe('1.2.0')
     expect(preview.application?.id).toBe('sableleaf-quality')
     expect(preview.application?.workbench?.tabs).toHaveLength(3)
     expect(preview.application?.workbench?.actions).toHaveLength(5)
