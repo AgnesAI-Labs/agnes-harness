@@ -60,6 +60,13 @@ Extension config has the same shape under `allow`, plus `sessions` for individua
 
 If Core refuses child creation with `E_CHILD_LIMIT` before returning a child handle, the official fork/spawn tools return an error ToolResult carrying that code, so the parent can report the limit. Unexpected backend errors, budget recovery errors and failures after a child handle exists still propagate through the existing cleanup and uncertain-effect path.
 
+Fan-out limits count concurrent reservations: creation, execution, human waits and recovery retain a
+slot. Finished resident turns are `idle`; stopped resident turns are `interrupted`. They remain
+continuable and release their slot. Continuing them must atomically reacquire a parent/root slot;
+retaining a child or collecting its result does not spend a lifetime quota. Already queued follow-up
+work retains its reservation until drained. Approval waits retain the configured timeout; an unanswered
+request reports its actual unavailable reason.
+
 ## Tools
 
 These tools keep their current names:
@@ -75,11 +82,11 @@ them. Backend receipt details and application task cards are presentation data; 
 parse those UI details to control an ordinary child. Keep handles out of user-facing replies.
 
 
-An adopted application may additionally declare `delegableAgents` (up to eight launchable refs,
+An adopted application may additionally declare `delegableAgents` (up to 64 launchable refs,
 also in `agents`). `subagent_spawn` accepts an optional `role` ref from this backend allowlist.
 The role starts fresh with its own composition; its tools and workspace authority are capped by a
-spawn-time parent snapshot recorded on the child ledger. All approval and business signature
-requests in that child are refused with instructions to hand the action back to the main assistant.
+spawn-time parent snapshot recorded on the child ledger. Tool effects that need a human wait for
+approval on the owning session surface. Business signatures remain refused and return to the main assistant.
 `role` cannot be combined with `fork` or `model`; invalid roles never fall back to ordinary children.
 A tool is eligible only when its Host-verified package, version, export, code snapshot and plugin-row
 configuration digest match the parent's binding, in addition to its safety definition. Unprovable
@@ -98,9 +105,15 @@ child tool filter, spawn fails with those reasons instead of starting a child wi
 A role uses the captured parent command table as well as its own policy and command rules.
 It may execute an effect both policies admit without asking, including built-in `write` and `edit`
 on paths the captured table auto-allows. The same path normalization, filesystem ceiling and sandbox
-still apply, including after reopen. A deny remains a refusal. A human-only requirement or an operation
-the policies ask about must be handed back to the main assistant. `approvalPolicy: never`
-prevents answering approvals and signing business actions; it does not prevent already admitted work.
+still apply, including after reopen. A deny remains a refusal. A tool effect that asks for approval
+waits on the child's canonical decision and appears in the owning parent session's human approval
+surface, including the Web approvals panel. The card identifies the role, child session, exact effect
+and policy reason. Only an authenticated human can allow that effect once or refuse it; neither the
+child nor the coordinator model can answer. `approvalPolicy: never` continues to prohibit the role
+from approving or signing; it does not prevent already admitted work. Business signatures remain
+refused. With no human surface, including headless or unattended work, an effect needing a human is
+refused. Cancellation withdraws the question. Cold recovery reuses the child's original decision and
+pinned composition when the owning session explicitly continues.
 The snapshot also retains the parent's taint. Policy sees that captured taint or the role's current
 turn taint, so a fresh or reopened role cannot erase it. An older snapshot without that evidence is
 conservatively treated as tainted; the existing taint rules still decide whether an effect asks.

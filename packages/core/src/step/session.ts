@@ -755,6 +755,9 @@ export class SessionImpl {
       get permissionContext() {
         return session.permissionContext
       },
+      get delegatedToolApprovals() {
+        return session.roleAuthority?.humanApprovals !== false
+      },
       get refuseApprovals() {
         return session.d.roleDelegation !== undefined
       },
@@ -2024,6 +2027,7 @@ export class SessionImpl {
         )
           return outcome
       }
+      if (!opts.signal.aborted && this.abortRevision === abortRevision) await this.d.children.recover?.()
       this.availableRoles = (await this.d.childRoles?.list(this).catch(() => [])) ?? []
       return this.runTurns(opts, abortRevision)
     })

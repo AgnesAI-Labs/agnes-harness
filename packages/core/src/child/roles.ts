@@ -27,6 +27,8 @@ export type RoleDelegation = {
   parentPolicy: string
   /** Captured before admission awaits; absent legacy evidence is conservatively tainted. */
   parentTainted?: boolean
+  /** Scheduled/unattended ancestors cannot acquire an interactive human surface. */
+  humanApprovals?: boolean
   commandTable?: PresetView['approval']['commandTable']
   /** Retained ancestor floors for nested roles; each table keeps its own decision order. */
   policyCeilings?: Array<{ policy: string; commandTable?: PresetView['approval']['commandTable'] }>
@@ -41,6 +43,8 @@ export type ResolvedChildRole = {
   open(key: string, options: SessionOptions): Promise<SessionImpl>
 }
 export type ChildRolePort = {
+  /** Reopen an existing child's pinned composition and captured authority; never resolve afresh. */
+  reopen?(key: string, options: SessionOptions): Promise<SessionImpl>
   list(parent: SessionImpl): Promise<readonly ChildRole[]>
   resolve(parent: SessionImpl, ref: string): Promise<ResolvedChildRole>
 }
@@ -71,7 +75,7 @@ export function roleToolSnapshot(snapshot: RegistrySnapshot, roles: readonly Chi
   const original = snapshot.byName.get('subagent_spawn')
   if (!original || !roles.length) return snapshot
   const heading =
-    '\nAvailable application roles (choose role by exact ref). A role starts fresh with its own persona and tools. Do not combine role with model or fork. Approval/signature actions must return to the main assistant:'
+    '\nAvailable application roles (choose role by exact ref). A role starts fresh with its own persona and tools. Do not combine role with model or fork. Tool effects needing approval wait for a human in the owning session; business signatures must return to the main assistant:'
   const overflow = '\nAdditional roles remain available by exact ref from the adopted application.'
   let description = original.description
   const localized = (value: ChildRole['title'] | undefined, limit: number) => {
