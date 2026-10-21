@@ -183,7 +183,12 @@ export class Renderer {
     const height = Math.max(frame.length, this.lastFrame.length)
     for (let row = 0; row < height; row++) {
       if (frame[row] === this.lastFrame[row]) continue
-      changed.push(`\x1b[${row + 1};1H\x1b[2K${frame[row] ?? ''}`)
+      // Overwrite, then erase what is left of the old row. Erasing first would blank the whole row
+      // (identity text beside an animated wordmark included) before it is written again.
+      // A row that fills the terminal leaves the cursor pending-wrap on its last cell, where an erase
+      // would blank that cell, and it overwrites the whole line anyway.
+      const text = frame[row] ?? ''
+      changed.push(`\x1b[${row + 1};1H${text}${displayWidth(text) < columns ? '\x1b[K' : ''}`)
     }
 
     // The cursor is parked below the frame and left hidden when no component asked for it, so it does
@@ -194,7 +199,8 @@ export class Renderer {
     this.lastFrame = frame
     if (changed.length === 0 && cursorKey === this.lastCursorKey) return
     this.lastCursorKey = cursorKey
-    this.term.write(`\x1b[?25l${changed.join('')}${place}`)
+    // Synchronized update (mode 2026): the terminal presents the frame at once; ones without it ignore it.
+    this.term.write(`\x1b[?2026h\x1b[?25l${changed.join('')}${place}\x1b[?2026l`)
   }
 
   /** Selection in reading order, end column exclusive; a click that never moved selects nothing. */
