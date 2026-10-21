@@ -1,5 +1,9 @@
 import type { UINode, UITimeline } from '@agnes/protocol'
+import type { Session } from '@agnes/sdk'
+import { formatTuiErrorNotice } from './error-notice.js'
+import { oneLine } from './session-commands.js'
 import type { ThemedAnsi } from './theme.js'
+import { type ToolDetailState, toolDetailText } from './tool-detail.js'
 import { ToolCard } from './views/tool-card.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
@@ -11,12 +15,19 @@ type ToolNode = Extract<UINode, { kind: 'tool' }>
  */
 export class ToolCards {
   private readonly cards = new Map<string, ToolCard>()
+  /** Full records fetched on expand; `key` names the call/result pair they were fetched for. */
+  private readonly details = new Map<string, { key: string; view: ToolDetailState }>()
   private latest: string | undefined
 
   constructor(
     private readonly o: {
       ansi: ThemedAnsi
       locale: string
+      session(): Pick<Session, 'id' | 'readToolDetail'>
+      /** After 'closed' nothing may call the daemon any more. */
+      closed(): boolean
+      /** A fetch settled: the screen has to be drawn again. */
+      changed(): void
       /** Numbered inline actions of an expanded card. */
       onAction(actionId: string): void
     },
@@ -28,9 +39,37 @@ export class ToolCards {
       ansi: this.o.ansi,
       locale: this.o.locale,
       onAction: this.o.onAction,
+      detail: () => this.details.get(node.id)?.view,
+      onExpand: () => this.load(node),
     })
     this.cards.set(node.id, card)
+    // A node that changed under an open card (its result arrived) needs its record fetched again.
+    if (!card.collapsed) this.load(node)
     return card
+  }
+
+  /** Asks the daemon for the whole record once per call/result pair; a failure is retried on the next expand. */
+  private load(node: ToolNode): void {
+    if (this.o.closed()) return
+    const session = this.o.session()
+    const key = `${session.id}:${node.seq}:${node.resultSeq ?? ''}`
+    const known = this.details.get(node.id)
+    if (known?.key === key && known.view.state !== 'failed') return
+    this.details.set(node.id, { key, view: { state: 'loading' } })
+    void session
+      .readToolDetail(node.seq, node.resultSeq)
+      .then((detail): ToolDetailState => ({ state: 'ready', ...toolDetailText(detail) }))
+      .catch(
+        (error): ToolDetailState => ({
+          state: 'failed',
+          reason: oneLine(formatTuiErrorNotice(error, this.o.locale)),
+        }),
+      )
+      .then((view) => {
+        if (this.details.get(node.id)?.key !== key) return
+        this.details.set(node.id, { key, view })
+        this.o.changed()
+      })
   }
 
   /** Forgets cards whose node left the projection and remembers which tool came last. */
@@ -38,6 +77,7 @@ export class ToolCards {
     const tools = value.nodes.filter((node) => node.kind === 'tool')
     const ids = new Set(tools.map((node) => node.id))
     for (const id of this.cards.keys()) if (!ids.has(id)) this.cards.delete(id)
+    for (const id of this.details.keys()) if (!ids.has(id)) this.details.delete(id)
     this.latest = tools.at(-1)?.id
   }
 

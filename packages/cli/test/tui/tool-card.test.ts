@@ -1,3 +1,4 @@
+import type { ToolDetailState } from '@agnes/cli-tui'
 import type { UINode, UITimeline } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
@@ -247,4 +248,30 @@ it('collects status.line and sidebar.action across tool-attached and standalone 
   // sidebar.action carries no requestSeq: the field belongs to the slot fill, not to the
   // client-minted value a real click sends.
   expect(s.actions).toEqual([{ id: 'rerun', label: '重跑本月' }])
+})
+
+it('shows the fetched record in place of the previews, and keeps them while it loads or when it fails', () => {
+  let detail: ToolDetailState | undefined
+  let opened = 0
+  const card = new ToolCard(node, { detail: () => detail, onExpand: () => opened++ })
+  card.toggle()
+  expect(opened).toBe(1)
+  detail = { state: 'loading' }
+  let rows = card.render(60).join('\n')
+  expect(rows).toContain('Loading the full record…')
+  expect(rows).toContain('Result: contents')
+  detail = { state: 'failed', reason: 'Request failed (X)' }
+  rows = card.render(90).join('\n')
+  expect(rows).toContain('Full record unavailable (Request failed (X)); showing the preview.')
+  expect(rows).toContain('Result: contents')
+  // The record is external text: controls are dropped and every row keeps to the width.
+  detail = { state: 'ready', args: '{\n  "path": "中.txt"\n}', result: `full\x1b[2J${'x'.repeat(100)}` }
+  const lines = card.render(30)
+  rows = lines.join('\n')
+  expect(rows).toContain('"中.txt"')
+  expect(rows).not.toContain('contents')
+  expect(rows).not.toContain('\x1b')
+  expect(lines.every((line) => displayWidth(line) === 30)).toBe(true)
+  card.toggle()
+  expect(opened).toBe(1)
 })

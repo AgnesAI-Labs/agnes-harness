@@ -178,7 +178,14 @@ export class TuiApp {
       shows: () => !this.stopped && !this.turnActive && this.timeline.showsWelcome(),
       repaint: () => this.stopped || this.renderer.requestRender(),
     })
-    this.cards = new ToolCards({ ansi, locale, onAction: (actionId) => this.dispatchAction(actionId) })
+    this.cards = new ToolCards({
+      ansi,
+      locale,
+      session: () => this.o.session,
+      closed: () => this.closedNotice !== undefined,
+      changed: () => this.stopped || this.renderer.requestRender(),
+      onAction: (actionId) => this.dispatchAction(actionId),
+    })
     this.timeline = new Timeline({
       rows: () => o.term.size().rows,
       reservedRows: () => this.reservedRows,

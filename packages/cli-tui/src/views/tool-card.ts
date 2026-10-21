@@ -6,6 +6,7 @@ import { tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
 import { paintsColour, type ThemedAnsi, TuiTheme } from '../theme.js'
+import type { ToolDetailState } from '../tool-detail.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
@@ -102,6 +103,7 @@ export class ToolCard implements Component {
   private collapsedState: boolean
   private readonly actions: Array<{ id: string; label: string }> = []
   private readonly onAction: (actionId: string) => void
+  private readonly onExpand: () => void
 
   constructor(
     node: ToolNode,
@@ -109,11 +111,16 @@ export class ToolCard implements Component {
       collapsed?: boolean
       ansi?: ThemedAnsi
       onAction?(actionId: string): void
+      /** The full record fetched for this tool, read when drawn so a late answer needs no new card. */
+      detail?(): ToolDetailState | undefined
+      /** Called each time the card opens. */
+      onExpand?(): void
       locale?: string
     } = {},
   ) {
     const ansi = options.ansi ?? new TuiTheme('mono').ansi(createAnsi('none'))
     this.onAction = options.onAction ?? (() => {})
+    this.onExpand = options.onExpand ?? (() => {})
     const locale = options.locale ?? 'en'
     const toolKey = TOOL_KEYS[node.name]
     this.name = ansi.bold(toolKey ? tt(toolKey, locale) : escapeControl(node.name))
@@ -131,20 +138,40 @@ export class ToolCard implements Component {
     this.collapsedState = options.collapsed ?? true
 
     if (node.summary) this.rail.push((width) => wrapText(escapeControl(node.summary), width))
-    const fields: Array<[string, string | undefined]> = [
-      ['Arguments', node.argsPreview],
-      ['Result', node.resultPreview],
-      ['Enforcement', node.enforcement && `${node.enforcement.level} (${node.enforcement.scope.join(', ')})`],
+    // The fetched record replaces the previews; until it arrives, and when it cannot, the previews stay.
+    const fetched = () => {
+      const detail = options.detail?.()
+      return detail?.state === 'ready' ? detail : undefined
+    }
+    this.rail.push((width) => {
+      const detail = options.detail?.()
+      if (detail?.state === 'loading') return [ansi.dim(tt('tool.detail.loading', locale))]
+      return detail?.state === 'failed'
+        ? wrapText(tt('tool.detail.failed', locale, { reason: detail.reason }), width).map((line) =>
+            ansi.fg('warning', line),
+          )
+        : []
+    })
+    const fields: Array<[string, () => string | undefined]> = [
+      ['Arguments', () => fetched()?.args ?? node.argsPreview],
+      ['Result', () => fetched()?.result ?? node.resultPreview],
+      [
+        'Enforcement',
+        () => node.enforcement && `${node.enforcement.level} (${node.enforcement.scope.join(', ')})`,
+      ],
     ]
-    for (const [label, value] of fields) {
-      if (value === undefined) continue
+    for (const [label, read] of fields) {
       const head = ansi.dim(`${label}:`.padStart(LABEL_WIDTH))
       const indent = ' '.repeat(LABEL_WIDTH + 1)
-      this.rail.push((width) =>
-        wrapText(escapeControl(value), width - LABEL_WIDTH - 1).map(
-          (line, i) => `${i === 0 ? `${head} ` : indent}${line}`,
-        ),
-      )
+      // A fetched record can be long and the card draws on every frame: wrap it once per width.
+      let wrapped: { value: string; width: number; lines: string[] } | undefined
+      this.rail.push((width) => {
+        const value = read()
+        if (value === undefined) return []
+        if (wrapped?.value !== value || wrapped.width !== width)
+          wrapped = { value, width, lines: wrapText(escapeControl(value), width - LABEL_WIDTH - 1) }
+        return wrapped.lines.map((line, i) => `${i === 0 ? `${head} ` : indent}${line}`)
+      })
     }
     // `tool.card.inline` has `multi` cardinality, so a tool result can carry several fills; every
     // one of them contributes its own title/chart/actions block, in the order they arrive.
@@ -169,6 +196,7 @@ export class ToolCard implements Component {
   }
   toggle(): void {
     this.collapsedState = !this.collapsedState
+    if (!this.collapsedState) this.onExpand()
   }
   invalidate(): void {}
   // Numbered actions only fire while the card is expanded, so a collapsed card is inert to
