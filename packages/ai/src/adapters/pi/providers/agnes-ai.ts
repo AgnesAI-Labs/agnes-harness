@@ -39,10 +39,6 @@ const AGNES_AI_MODELS: Model<Api>[] = CHAT_MODELS.map(
       maxTokens: 65536,
       compat: { maxTokensField: 'max_tokens' },
       reasoning: false,
-      samplingParams: {
-        temperature: { min: 0, max: 2, step: 0.01 },
-        top_p: { min: 0, max: 1, step: 0.01 },
-      },
       cost: {
         input: 0,
         output: 0,
