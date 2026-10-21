@@ -80,7 +80,7 @@ export function publicErrorReason(error: unknown): string | undefined {
       data?: { reason?: unknown }
       detail?: { reason?: unknown }
     } | null
-    const reason = value?.data?.reason ?? value?.reason ?? value?.detail?.reason
+    const reason = value?.data?.reason ?? value?.detail?.reason ?? value?.reason
     const reasons = publicErrorContract(code)?.reasons
     return typeof reason === 'string' && reasons && Object.hasOwn(reasons, reason) ? reason : undefined
   } catch {
