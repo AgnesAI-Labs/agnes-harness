@@ -28,6 +28,11 @@ import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from 
 import { createAutomationEvents, deliverWorkerEvent } from './worker-events.js'
 import { WorkerPool } from './worker-pool.js'
 
+interface WorkerFeedbackOwner {
+  bind: FeedbackOwner['bind']
+  close: FeedbackOwner['close']
+}
+
 export async function openWorkers(state: AssemblyBase & StoresState, lifetime: AssemblyLifetime) {
   const {
     o,
@@ -195,7 +200,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     : undefined
   if (localResourceStore)
     wireResourceSnapshotNotifications({ localResourceStore, registry, pool, log: console })
-  const feedbackOwner: FeedbackOwner = createFeedbackOwner(o.profile.name)
+  const feedbackOwner: WorkerFeedbackOwner = createFeedbackOwner(o.profile.name)
   lifetime.own({ dispose: () => feedbackOwner.close() })
   lifetime.own({
     drain: async (graceMs, signal) => {
