@@ -112,7 +112,7 @@ Host/Core binds `childAgents.forSession(parent)` once and passes the resulting `
 
 The parent scope carries `sessionKey`, `signal`, `cwd`, and optional code `generation`, remaining `budget`, and `toolFilter`. Start options cannot replace parent identity or generation; a child budget or tool allowlist can only narrow inherited constraints. Starts check the live session model/provider allowlist. A facade refuses controls for handles it does not own. Parent abort requests cancellation. The caller must await `dispose()` to join starts and cleanup and observe failures. Handle `result()` is terminal completion, not the answer to each continuable turn; use events or listings for turn status.
 
-The legacy `runLoopChild` Core export remains a synchronous in-process compatibility helper. It does not select an external provider.
+Loops start children through `LoopContext.children`; the retired `runLoopChild` Core export is removed.
 
 ## ACP children
 
