@@ -1,6 +1,6 @@
 {
   "name": "@agnes/plugin-helper",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "Draft, test and submit AGH plugins for human review",
   "type": "module",
   "license": "Apache-2.0",
