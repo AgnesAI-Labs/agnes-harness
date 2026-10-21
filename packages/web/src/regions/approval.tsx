@@ -3,6 +3,7 @@ import { createRegionRenderer } from '@agnes/web-ui'
 import { Approval, type ApprovalHandle, type ApprovalView } from '@agnes/web-units/shell'
 import type { ReactElement } from 'react'
 import { flushSync } from 'react-dom'
+import { registerSessionApprovalPanel } from '../workbench/approval-panel.js'
 import { workbenchApproval } from '../workbench/approval-store.js'
 import { APPROVAL_SLOT, type EmptyStateRegionMount } from './contracts.js'
 export interface ApprovalRegionMount extends EmptyStateRegionMount, ApprovalHandle {}
@@ -23,6 +24,7 @@ export function ApprovalDshFrame({
 }
 /** Mount the component-owned approval card behind the live-region section and slot boundary. */
 export function mountApprovalRegion(registry: SlotRegistry, container: HTMLElement): ApprovalRegionMount {
+  const removePanel = registerSessionApprovalPanel()
   const handle = { current: null as ApprovalHandle | null }
   let view: ApprovalView | undefined
   const setHandle = (value: ApprovalHandle | null): void => {
@@ -68,6 +70,7 @@ export function mountApprovalRegion(registry: SlotRegistry, container: HTMLEleme
       workbenchApproval.set(undefined)
       root.unmount()
       removeBuiltin()
+      removePanel()
     },
   }
 }

@@ -121,20 +121,43 @@ describe('Kernel child lifecycle (generation, fan-out, budget)', () => {
     await k.close()
   })
 
-  it('counts creating and running children toward fan-out and frees the slot on terminal without collect', async () => {
-    const k = kernel({
-      preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 2, maxFanOut: 1 },
-    })
-    const parent = await k.session('parent', sessionOpts)
-    const first = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'one' })
-    await expect(
-      parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'two' }),
-    ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
-    await first.run('one')
-    const second = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'two' })
-    expect(second.key).not.toBe(first.key)
-    await k.close()
-  })
+  it.each([false, true])(
+    'counts concurrent reservations and readmits continuable children (resident=%s)',
+    async (resident) => {
+      const k = kernel({
+        preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 2, maxFanOut: 1 },
+      })
+      const parent = await k.session('parent', sessionOpts)
+      const first = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'one', resident })
+      await expect(
+        parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'two' }),
+      ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+      await first.run('one')
+      const second = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'two', resident })
+      expect(second.key).not.toBe(first.key)
+      if (resident) {
+        expect(await parent.d.children.list!()).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: first.key, status: 'idle', continuable: true }),
+          ]),
+        )
+        const before = k.get(first.key)!.lastSeq
+        await expect(
+          parent.d.children.sendMessage!(first.key, 'queued continuation', new AbortController().signal),
+        ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+        expect(k.get(first.key)!.lastSeq).toBe(before)
+        await expect(first.run('continue')).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+        await second.run('two')
+        const resumed = await Promise.allSettled([first.run('continue'), second.run('continue')])
+        expect(resumed.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+        expect(resumed.find((result) => result.status === 'rejected')).toMatchObject({
+          status: 'rejected',
+          reason: { code: 'E_CHILD_LIMIT' },
+        })
+      }
+      await k.close()
+    },
+  )
 
   it('delegates with a built-in default tree budget when tree_budget_credits is missing', async () => {
     // Every shipped preset left this unset, which used to refuse every fork/spawn outright — a

@@ -179,7 +179,7 @@ function collectListed(req: RequestBody): InferenceEvent[] {
 }
 
 describe('subagents in a workspace-bound Host session', () => {
-  it('collects a forked child turn and leaves it ready for follow-ups', async () => {
+  it('collects a forked child turn and leaves it idle for follow-ups', async () => {
     const provider = new RoutedProvider(
       [
         toolCall('subagent_fork', { question: 'summarise the workspace', isolation: 'shared' }),
@@ -201,7 +201,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect(childKey?.startsWith(`${PARENT}/`)).toBe(true)
       expect(await childRecord(dataDir, childKey as string)).toMatchObject({
         creationPhase: 'committed',
-        state: 'ready',
+        state: 'idle',
       })
     } finally {
       await host.close()
@@ -249,7 +249,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect((await childRecord(dataDir, childKey))?.cwd).toBe(root)
       expect(await childRecord(dataDir, childKey)).toMatchObject({
         creationPhase: 'committed',
-        state: 'ready',
+        state: 'idle',
       })
     } finally {
       await host.close()
@@ -285,7 +285,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect(textOf(spawn)).not.toMatch(/worktree skipped/)
       expect(textOf(collect)).toBe('child answered')
       const record = await childRecord(dataDir, childKey)
-      expect(record).toMatchObject({ isolation: 'worktree', creationPhase: 'committed', state: 'ready' })
+      expect(record).toMatchObject({ isolation: 'worktree', creationPhase: 'committed', state: 'idle' })
       expect(record?.cwd.startsWith(join(root, '.worktrees', 'agnes-'))).toBe(true)
     } finally {
       await host.close()
@@ -315,7 +315,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect(switchedWith).toBeUndefined()
       release()
       await activation
-      expect(switchedWith).toBe('ready')
+      expect(switchedWith).toBe('idle')
     } finally {
       release()
       await host.close()
@@ -350,7 +350,7 @@ describe('subagents in a workspace-bound Host session', () => {
       expect((await prompt(opened.session, 'spawn during a switch')).reason).toBe('completed')
       await activation
       expect(childAtSwitch).toEqual({ requests: 0 })
-      await expect.poll(async () => (await childRecord(opened.dataDir, childKey))?.state).toBe('ready')
+      await expect.poll(async () => (await childRecord(opened.dataDir, childKey))?.state).toBe('idle')
     } finally {
       await host.close()
     }

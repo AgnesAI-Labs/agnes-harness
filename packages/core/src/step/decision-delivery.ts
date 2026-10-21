@@ -2,6 +2,7 @@ import { CoreError, type EventInput } from '@agnes/core-common/types'
 import { isPending } from '@agnes/core-effects/effects/approval-answer'
 import type { ApprovalRequest } from '@agnes/core-effects/effects/seams'
 import type { DecisionSnapshot } from '@agnes/extension-api'
+import { delegatedApprovalRequest } from '../child/approval.js'
 import type { DecisionSource } from './decisions.js'
 import type { SessionImpl } from './session.js'
 
@@ -23,6 +24,7 @@ export async function deliverDecision(
   if (!snapshot.result && !snapshot.invalidation) {
     const local = new AbortController()
     const deliverySignal = AbortSignal.any([signal, local.signal])
+    offered = await delegatedApprovalRequest(s, snapshot, offered)
     const delivery = s
       .askApprovalAnswer(
         {
@@ -59,6 +61,7 @@ export async function deliverDecision(
       !isPending(answer) &&
       answer.answeredBy &&
       answer.answeredBy.role !== 'agent' &&
+      (!s.roleAuthority || answer.answeredBy.role !== 'system') &&
       ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'].includes(answer.verdict)
     ) {
       try {
@@ -86,6 +89,14 @@ export async function deliverDecision(
     } else {
       const current = await s.decisions.get(snapshot.handle)
       if (!current.result && !current.invalidation) {
+        if (s.roleAuthority)
+          return {
+            snapshot: await s.decisions.withdraw(
+              current.handle,
+              source,
+              isPending(answer) ? 'detached' : (answer.reason ?? 'invalid-answer'),
+            ),
+          }
         const op = s.op()
         const [input] = op
           ? await s.d.log.scan({

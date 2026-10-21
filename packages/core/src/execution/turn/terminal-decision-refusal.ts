@@ -1,4 +1,4 @@
-import { approvalRefusal } from '@agnes/core-effects/effects/approval-answer'
+import { approvalRefusal, isApprovalReason } from '@agnes/core-effects/effects/approval-answer'
 import type { DecisionSnapshot } from '@agnes/extension-api'
 import { ROLE_APPROVAL_REFUSAL } from '../../child/roles.js'
 
@@ -11,6 +11,8 @@ export function terminalDecisionRefusal(snapshot: DecisionSnapshot, timeoutMs: n
       code: 'UNATTENDED_APPROVAL_REFUSED',
       text: 'unattended-refused: nobody answered; this task is configured to refuse approval-dependent steps',
     }
+  if (snapshot.result?.reason === 'unavailable' && isApprovalReason(snapshot.result.code))
+    return approvalRefusal('unavailable', snapshot.result.code, timeoutMs)
   const reason =
     snapshot.invalidation?.code ?? (snapshot.result?.reason === 'stopped' ? 'stopped' : 'deadline')
   return approvalRefusal(

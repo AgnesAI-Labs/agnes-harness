@@ -36,7 +36,7 @@ function typedToolSource(directory: string): void {
   )
 }
 
-it('opens adopted roles fresh with their own requests, captured authority and automatic approval/signature refusal', async () => {
+it('opens adopted roles fresh with their own requests, captured authority, absent-human refusal and signature refusal', async () => {
   const declaration = {
     id: 'role-fixture',
     defaultAgent: ref('assistant'),
@@ -148,6 +148,7 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
       },
     },
     disableSessionTitle: true,
+    approval: async () => ({ verdict: 'unavailable', reason: 'no-approver' }),
     treeBudgetCredits: 100,
     allowed: ['standard', 'inspect'],
     presets: {

@@ -47,6 +47,7 @@ function snapshot(value: unknown): RoleDelegation {
     value.approvalPolicy !== 'never' ||
     typeof value.parentPolicy !== 'string' ||
     (value.parentTainted !== undefined && typeof value.parentTainted !== 'boolean') ||
+    (value.humanApprovals !== undefined && typeof value.humanApprovals !== 'boolean') ||
     typeof value.sandboxRequired !== 'boolean' ||
     !object(value.filesystem) ||
     (value.resources !== undefined &&

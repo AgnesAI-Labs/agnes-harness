@@ -79,7 +79,7 @@ function captureAuthority(snapshot: RoleDelegation) {
               reason: 'Captured parent authority is read-only; hand the action back to the main assistant',
             }
           // Policies decide whether an effect is already admitted. A role may execute an
-          // automatic allowance; any actual approval request still meets approvalPolicy never.
+          // automatic allowance; an actual tool gate waits for a human without granting the role approval authority.
           const [input, signal, ports] = args
           const scoped = { ...input, tainted: input.tainted || snapshot.parentTainted !== false }
           const a = await own.decide(scoped, signal, ports)

@@ -38,6 +38,13 @@ export function approvalIsPermission(toolCall: Record<string, unknown>): boolean
   return isRecord(harness) && harness.category === 'permission'
 }
 
+/** Delivery metadata only: the child, rather than its parent turn, owns this question's lifetime. */
+export function approvalIsDelegated(toolCall: Record<string, unknown>): boolean {
+  const meta = toolCall._meta
+  const harness = isRecord(meta) ? meta['ai.agnes.harness'] : undefined
+  return isRecord(harness) && isRecord(harness.delegation)
+}
+
 function leadingFirst(input: unknown): unknown {
   if (!isRecord(input)) return input
   const keys = Object.keys(input)
@@ -85,15 +92,18 @@ export function liveApprovalCard(toolCall: Record<string, unknown>, t: Translate
   const impact = impactOf(tool, toolCall.kind, input, t)
   const title = typeof toolCall.title === 'string' ? toolCall.title.trim() : ''
   const humanTitle = title && (!tool || (title !== tool && !title.startsWith(`${tool} `))) ? title : undefined
+  const delegated = approvalIsDelegated(toolCall)
   const summary =
-    isRecord(input) && typeof input.description === 'string' && input.description.trim()
-      ? [baseToolTitle(tool ?? '', t), input.description].filter(Boolean).join(' · ')
-      : (humanTitle ? localizeToolSummary(humanTitle, t, tool) : baseToolTitle(tool ?? '', t)) || impact
-  const sessionLabel = t('app.approval.session.tool')
-  if (input === undefined) return { summary, impact, sessionLabel }
+    delegated && humanTitle
+      ? localizeToolSummary(humanTitle, t, tool)
+      : isRecord(input) && typeof input.description === 'string' && input.description.trim()
+        ? [baseToolTitle(tool ?? '', t), input.description].filter(Boolean).join(' · ')
+        : (humanTitle ? localizeToolSummary(humanTitle, t, tool) : baseToolTitle(tool ?? '', t)) || impact
+  const sessionLabel = delegated ? undefined : t('app.approval.session.tool')
+  if (input === undefined) return { summary, impact, ...(sessionLabel ? { sessionLabel } : {}) }
   const text = JSON.stringify(leadingFirst(input), null, 2) ?? String(input)
   if (tool === 'exit_plan_mode' || text.length <= PREVIEW_LIMIT)
-    return { summary, impact, preview: text, sessionLabel }
+    return { summary, impact, preview: text, ...(sessionLabel ? { sessionLabel } : {}) }
   let shown = PREVIEW_LIMIT
   const last = text.charCodeAt(shown - 1)
   if (last >= 0xd800 && last <= 0xdbff) shown -= 1

@@ -114,9 +114,7 @@ it.each(['devboard', 'pharma'] as const)(
     const outside = scratch()
     let traversal = ''
     const options: Partial<TestHostOptions> = {
-      approval: async () => {
-        throw new Error('Role must never ask a human')
-      },
+      approval: async () => ({ verdict: 'unavailable', reason: 'no-approver' }),
       provider: (profile) => {
         let program: Array<[string, Record<string, JsonValue>]> | undefined
         let step = 0
@@ -395,7 +393,7 @@ it.each(['devboard', 'pharma'] as const)(
             expect(automatic ? ['docs/needs-human.md'] : ['docs/needs-human.md', 'docs/SRS.md']).toContain(
               (request?.args as { path?: string })?.path,
             )
-            expect(value.result).toMatchObject({ code: 'delegated-approval-refused' })
+            expect(value.result).toMatchObject({ reason: 'unavailable', code: 'no-approver' })
             expect(value.result).not.toHaveProperty('answeredBy')
             expect(value.consumption).toBeNull()
           }
