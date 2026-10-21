@@ -5,7 +5,7 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import type { ApprovalAnswer, ApprovalRequest } from '@agnes/core'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { hashDirectory } from '@agnes/package-manager'
-import { jcs } from '@agnes/protocol'
+import { type JsonValue, jcs } from '@agnes/protocol'
 import { pluginHost, pluginRow, pluginSourceWith, targetOf } from '../assemble/plugin-extension-fixture.js'
 
 const vendor = '@fixture/escalation'
@@ -16,7 +16,7 @@ export async function setupRoleEscalation(
   answer: (request: ApprovalRequest, signal: AbortSignal) => Promise<ApprovalAnswer>,
   review: {
     nested?: boolean
-    calls?: (key: string, step: number) => Array<{ name: string; args: Record<string, unknown> }>
+    calls?: (key: string, step: number) => Array<{ name: string; args: Record<string, JsonValue> }>
     hookBody?: string
     tools?: string[]
     commandAction?: 'allow' | 'deny' | 'require_approval'
