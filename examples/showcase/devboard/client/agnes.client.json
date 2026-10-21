@@ -1,0 +1,61 @@
+{
+  "client": {
+    "id": "devboard-pages",
+    "lifetime": "profile",
+    "entry": "./index.js",
+    "styles": ["./style.css"],
+    "slots": [],
+    "services": ["devboard.snapshot", "devboard.transition", "devboard.create", "devboard.reset"],
+    "projections": [],
+    "homeEntries": [
+      {
+        "id": "devboard-overview",
+        "placement": "primary",
+        "navigation": {
+          "title": "DevBoard overview",
+          "titles": {
+            "zh-CN": "DevBoard 总览"
+          },
+          "icon": "activity",
+          "order": 10
+        }
+      },
+      {
+        "id": "devboard-requirements",
+        "placement": "primary",
+        "navigation": {
+          "title": "Requirements",
+          "titles": {
+            "zh-CN": "需求"
+          },
+          "icon": "list",
+          "order": 11
+        }
+      },
+      {
+        "id": "devboard-tasks",
+        "placement": "primary",
+        "navigation": {
+          "title": "Tasks",
+          "titles": {
+            "zh-CN": "任务"
+          },
+          "icon": "check",
+          "order": 12
+        }
+      },
+      {
+        "id": "devboard-interventions",
+        "placement": "primary",
+        "navigation": {
+          "title": "Human interventions",
+          "titles": {
+            "zh-CN": "人工介入"
+          },
+          "icon": "shield",
+          "order": 13
+        }
+      }
+    ]
+  }
+}

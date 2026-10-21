@@ -1,0 +1,148 @@
+@layer app {
+  .devboard-app {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 1280px;
+    min-width: 0;
+    margin: 0 auto;
+    padding: 24px 32px 32px;
+    color: var(--agnes-text-primary);
+  }
+  .devboard-toolbar,
+  .devboard-filters,
+  .devboard-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .devboard-filters {
+    margin-bottom: 12px;
+  }
+  .devboard-muted {
+    color: var(--agnes-text-secondary);
+    font-size: 12px;
+  }
+  .devboard-alert {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: var(--agnes-status-danger-text);
+    border: 1px solid var(--agnes-status-danger-border);
+    background: var(--agnes-status-danger-bg);
+  }
+  .devboard-heading {
+    margin: 20px 0 8px;
+    font-size: 16px;
+  }
+  .devboard-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+  }
+  .devboard-card,
+  .devboard-column {
+    padding: 12px 16px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .devboard-card h2 {
+    margin: 0 0 8px;
+    font-size: 15px;
+  }
+  .devboard-card ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-card li {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+  }
+  /* One row of state columns; narrow windows scroll inside the board instead of wrapping. */
+  .devboard-columns {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(160px, 1fr);
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .devboard-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .devboard-column h3 {
+    margin: 0;
+    font-size: 14px;
+  }
+  .devboard-columns .devboard-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 8px 10px;
+    text-align: start;
+    font: inherit;
+    color: inherit;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 8px;
+    background: var(--agnes-bg-page);
+    cursor: pointer;
+  }
+  .devboard-columns .devboard-tile > span {
+    text-align: start;
+  }
+  .devboard-tile:focus-visible {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+  }
+  .devboard-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 0 24px;
+  }
+  .devboard-detail h3 {
+    margin: 8px 0 0;
+    font-size: 15px;
+  }
+  .devboard-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px 16px;
+    margin: 0;
+  }
+  .devboard-fact dt {
+    color: var(--agnes-text-secondary);
+    font-size: 12px;
+  }
+  .devboard-fact dd {
+    margin: 2px 0 0;
+  }
+  .devboard-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+  }
+  .devboard-note {
+    width: 100%;
+    font: inherit;
+    padding: 6px 8px;
+    color: inherit;
+    background: var(--agnes-bg-page);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 6px;
+    resize: vertical;
+  }
+  .devboard-overdue td {
+    color: var(--agnes-status-danger-text);
+  }
+}

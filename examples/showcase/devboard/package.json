@@ -1,0 +1,214 @@
+{
+  "name": "@agnes-showcase/devboard",
+  "version": "1.0.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24.10"
+  },
+  "exports": "./index.mjs",
+  "files": [
+    "index.mjs",
+    "domain.mjs",
+    "client",
+    "assets",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node --check index.mjs && node --check domain.mjs"
+  },
+  "agnes": {
+    "provides": [
+      "tool",
+      "ui",
+      "bundle",
+      "skills"
+    ],
+    "plugins": [
+      {
+        "id": "ext:@agnes-showcase/devboard/main",
+        "export": "main",
+        "apiRange": "^4.0.0",
+        "inject": [
+          "tools",
+          "services",
+          "skills"
+        ],
+        "capabilities": {
+          "ui": true,
+          "store": true,
+          "tools": {
+            "names": [
+              "devboard_board",
+              "devboard_create_requirement",
+              "devboard_create_task",
+              "devboard_transition",
+              "devboard_request_human"
+            ],
+            "prefix": "devboard_"
+          }
+        }
+      }
+    ],
+    "hostProvidedExternals": {
+      "@agnes/plugin-runtime": "0.0.0",
+      "@sinclair/typebox": "~0.34.0"
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:@agnes-showcase/devboard/main",
+        "path": "./client/agnes.client.json"
+      }
+    ],
+    "bundles": {
+      "coordinator": {
+        "presets": {
+          "devboard": {
+            "name": "devboard",
+            "extends": "standard"
+          }
+        },
+        "profile": {
+          "tools": [
+            "devboard_board",
+            "devboard_create_requirement",
+            "devboard_create_task",
+            "devboard_transition",
+            "devboard_request_human",
+            "skill_read"
+          ]
+        },
+        "launch": {
+          "title": {
+            "en": "R&D Coordinator",
+            "zh-CN": "研发协调员"
+          },
+          "description": {
+            "en": "Read the board, refine requirements, split them into tasks, move work forward and ask a human when a decision is needed.",
+            "zh-CN": "读取看板，细化需求并拆分任务，推进进度，需要人拍板时发起人工介入请求。"
+          },
+          "preset": "devboard",
+          "pages": [
+            "devboard-overview",
+            "devboard-requirements",
+            "devboard-tasks",
+            "devboard-interventions"
+          ],
+          "prompt": {
+            "text": {
+              "en": "First call skill_read(name=devboard-playbook). Read the board, refine the newest RAW requirement and split it into development, testing and security-check tasks; raise a human-intervention request wherever a person must decide.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。看一下看板，把最新的原始需求细化并拆成研发、测试、安全校验任务，需要人拍板的地方发起介入请求。"
+            },
+            "mode": "draft"
+          }
+        }
+      }
+    },
+    "application": {
+      "id": "devboard",
+      "brand": {
+        "name": {
+          "en": "DevBoard",
+          "zh-CN": "DevBoard"
+        },
+        "title": {
+          "en": "DevBoard R&D Agent Board",
+          "zh-CN": "DevBoard 研发智能体看板"
+        },
+        "assistantName": {
+          "en": "R&D Coordinator",
+          "zh-CN": "研发协调员"
+        },
+        "mark": "assets/mark.png",
+        "favicon": "assets/favicon.png"
+      },
+      "presentation": {
+        "home": "@agnes-showcase/devboard#devboard-overview",
+        "navigation": {
+          "entries": [
+            "@agnes-showcase/devboard#devboard-overview",
+            "@agnes-showcase/devboard#devboard-requirements",
+            "@agnes-showcase/devboard#devboard-tasks",
+            "@agnes-showcase/devboard#devboard-interventions"
+          ]
+        }
+      },
+      "defaultAgent": "@agnes-showcase/devboard#coordinator",
+      "agents": [
+        "@agnes-showcase/devboard#coordinator"
+      ],
+      "workbench": {
+        "actions": [
+          {
+            "id": "refine",
+            "title": {
+              "en": "Refine and split new requirements",
+              "zh-CN": "细化并拆解新需求"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "First call skill_read(name=devboard-playbook). Read the board, refine the newest RAW requirement and split it into development, testing and security-check tasks; raise a human-intervention request wherever a person must decide.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。看一下看板，把最新的原始需求细化并拆成研发、测试、安全校验任务，需要人拍板的地方发起介入请求。"
+            }
+          },
+          {
+            "id": "interventions",
+            "title": {
+              "en": "Follow up on human interventions",
+              "zh-CN": "跟进人工介入请求"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "First call skill_read(name=devboard-playbook). Read the board, list overdue and open human-intervention requests, and continue the work whose requests have been resolved.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。读取看板，列出超时和待处理的人工介入请求；对已处理完成的请求，按处理结论继续推进相关工作。"
+            }
+          },
+          {
+            "id": "progress",
+            "title": {
+              "en": "Summarize delivery progress",
+              "zh-CN": "查看研发全局进度"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "Read the board and summarize progress: requirement states, blocked or failed tasks, and decisions waiting for people. Do not change anything.",
+              "zh-CN": "读取看板并汇总研发进度：各需求状态、阻塞或失败的任务、等待人决策的事项。只汇总，不做任何修改。"
+            }
+          }
+        ],
+        "scenarios": [
+          {
+            "en": "New requirement → refine → split into tasks",
+            "zh-CN": "新需求 → 细化 → 拆解为研发、测试、安全任务"
+          },
+          {
+            "en": "Decision point → human intervention → agent continues",
+            "zh-CN": "决策点 → 人工介入处理 → 智能体继续推进"
+          },
+          {
+            "en": "Board overview → blocked work → next steps",
+            "zh-CN": "研发全局进度 → 阻塞与失败任务 → 下一步"
+          }
+        ],
+        "includes": [
+          "pages",
+          "tools"
+        ]
+      }
+    },
+    "metadata": {
+      "displayName": "DevBoard R&D agent board",
+      "summary": "A proof-of-concept task board for multi-agent software delivery: requirements, tasks and human-intervention requests on fictional data.",
+      "description": "Proof-of-concept board with three state machines, an R&D coordinator agent and synthetic demo data.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "DevBoard 研发智能体看板",
+          "summary": "研发多智能体协作任务看板概念演示：需求、任务与人工介入请求，数据均为虚构。",
+          "description": "含三套状态机、研发协调员智能体与虚构演示数据的概念验证看板。"
+        }
+      }
+    }
+  }
+}

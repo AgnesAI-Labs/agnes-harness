@@ -188,6 +188,8 @@ importers:
         specifier: 7.0.2
         version: 7.0.2
 
+  examples/showcase/devboard: {}
+
   examples/showcase/pharma-gmp:
     dependencies:
       '@agnes/extension-api':
