@@ -1,4 +1,4 @@
-import { CoreError } from '@agnes/core'
+import { CoreError, roleAuthority } from '@agnes/core'
 import { isProfileDecisionJournal, rpcError } from '@agnes/protocol'
 import { restoreRolePolicy, roleWorkspacePreset } from '../sessions/role-policy.js'
 import '../provided-contracts.js'
@@ -610,7 +610,6 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           const openWorkspaceRuntime = opts.openWorkspaceRuntime ?? a.openWorkspaceRuntime
           const binding = o.binding as WorkspaceBinding
           const inheritedView = o.parent ? a.kernel.get(o.parent.key)?.preset : undefined
-          const inheritedPreset = inheritedView?.name
           if (!o.parent) {
             const [selection] = await a.adapters.storage.scan(binding.sessionKey, {
               type: ['session/start', 'x/core/preset-switch'],
@@ -644,9 +643,10 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             ...(runtimeSelection.permission ? { permission: runtimeSelection.permission } : {}),
             ...(runtimeSelection.fallback ? { carry: runtimeSelection.fallback } : {}),
           }).doc
-          runtimePreset = roleWorkspacePreset(runtimePreset, o.roleDelegation)
+          const authority = o.roleDelegation ? roleAuthority(o.roleDelegation) : undefined
+          runtimePreset = roleWorkspacePreset(runtimePreset, authority)
           const runtime = await workspaceRuntimes.open(binding, (invocation) =>
-            openWorkspaceRuntime(binding, runtimePreset, invocation, o.roleDelegation?.filesystem),
+            openWorkspaceRuntime(binding, runtimePreset, invocation, authority?.filesystem),
           )
           workspace = Object.freeze({
             runtime,

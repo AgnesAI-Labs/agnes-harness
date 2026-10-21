@@ -97,9 +97,11 @@ resolve to a launchable bundle. After adoption, the backend advertises those rol
 starts that role with its own recipe, persona, tools and skills in a fresh conversation. A missing
 adoption, unknown or unlisted role, or combining `role` with `fork` or `model`, is an error.
 
-Role children capture the intersection of their role and the parent's tool, file, network, sandbox
-and read-only authority at spawn time. Their own ledger records this snapshot; later parent changes
-do not propagate. Operations requiring approval or a business signature are refused and must return
+Role children capture one authority snapshot: the role intersected with the parent's tools, MCP servers,
+Skills, files, network, sandbox and read-only authority. Capture uses the same workspace resource view as
+actual reads; tools must match both definition and execution binding. Empty captured ceilings grant
+nothing, while empty composition selections retain defaults. The child's ledger restores this authority
+without a live parent; later parent changes do not propagate. Operations requiring approval or a business signature are refused and must return
 to the main assistant, including when the parent uses Full access. The delegation card and completion
 notice retain the backend-recorded role attribution across reload. Plain spawns keep their existing behavior.
 

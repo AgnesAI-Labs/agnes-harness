@@ -1,7 +1,16 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
-import { expect, it, vi } from 'vitest'
+import { expect, expectTypeOf, it, vi } from 'vitest'
+import {
+  ceilingAllows,
+  type DefaultSelection,
+  defaultSelection,
+  type LiteralCeiling,
+  literalCeiling,
+  roleAuthority,
+  selectionAllows,
+} from '../src/child/role-authority.js'
 import { readRoleDelegation } from '../src/child/role-snapshot.js'
 import { intersectRoleToolPolicy, ROLE_DELEGATION, type RoleDelegation } from '../src/child/roles.js'
 import { Kernel } from '../src/kernel.js'
@@ -55,6 +64,18 @@ const make = (storage = new MemoryStorage(), provider = fakeProvider([textTurn('
     timers: noTimers,
     logger: { debug() {}, info() {}, warn() {}, error() {} },
   })
+
+it('distinguishes default selections from literal role ceilings in types and behavior', () => {
+  expectTypeOf<DefaultSelection>().not.toMatchTypeOf<LiteralCeiling>()
+  expectTypeOf<LiteralCeiling>().not.toMatchTypeOf<DefaultSelection>()
+  expect(selectionAllows(defaultSelection([]), ['read'])).toBe(true)
+  expect(ceilingAllows(literalCeiling([]), 'read')).toBe(false)
+  const snapshot = captured()
+  const authority = roleAuthority(snapshot)
+  expect(roleAuthority(snapshot)).toBe(authority)
+  expect(ceilingAllows(authority.resources.skills, 'skill/private')).toBe(false)
+  expect(ceilingAllows(authority.resources.mcp, 'mcp/private')).toBe(false)
+})
 
 it.each(['untrusted-core', 'ext-register', 'tombstone'] as const)(
   'review-role: %s rows cannot replace the captured authority on reopen',

@@ -1,4 +1,4 @@
-import { type RoleDelegation, readRoleDelegation, type SessionImpl } from '@agnes/core'
+import { type RoleAuthority, readRoleDelegation, type SessionImpl } from '@agnes/core'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { CreateSessionOptions } from './session.js'
 
@@ -14,15 +14,15 @@ export async function restoreRolePolicy(
 }
 
 /** The sandbox receives the snapshot's stricter access and isolation posture. */
-export function roleWorkspacePreset(preset: PresetDoc, captured?: RoleDelegation): PresetDoc {
-  if (!captured) return preset
+export function roleWorkspacePreset(preset: PresetDoc, authority?: RoleAuthority): PresetDoc {
+  if (!authority) return preset
   return {
     ...preset,
     providers: {
       ...((preset.providers as object) ?? {}),
-      'tool-policy': { provider: captured.permission === 'read-only' ? 'read-only' : 'default' },
+      'tool-policy': { provider: authority.permission === 'read-only' ? 'read-only' : 'default' },
     },
-    ...(captured.sandboxRequired
+    ...(authority.sandboxRequired
       ? {
           sandbox: {
             ...((preset.sandbox as object) ?? {}),

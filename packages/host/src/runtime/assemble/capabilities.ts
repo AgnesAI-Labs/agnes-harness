@@ -103,9 +103,7 @@ export function createCapabilities(
     ]
     return resolveSessionCapabilities({
       profile: ctx.profile,
-      ...(session?.d.roleDelegation
-        ? { resourceScope: session.d.roleDelegation.resources ?? { mcp: [], skills: [] } }
-        : {}),
+      ...(session?.roleAuthority ? { authority: session.roleAuthority } : {}),
       adapterCatalog: modelAdapterCatalog(runtimeTarget.pluginTree.root),
       composition:
         deps.compositionPin ??

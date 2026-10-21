@@ -6,6 +6,7 @@ import type { Actor } from '@agnes/protocol'
 import type { SessionOptions } from '../kernel.js'
 import type { RegistrySnapshot } from '../registry/tools.js'
 import type { SessionImpl } from '../step/session.js'
+import { roleAuthority } from './role-authority.js'
 
 export const ROLE_DELEGATION = 'x/core/role-delegation'
 export const ROLE_APPROVAL_REFUSAL =
@@ -104,48 +105,11 @@ ${role.ref}: ${title}. ${purpose}`.replace(/[\r\t]/g, ' ')
   })
 }
 
-const rolePolicies = new WeakMap<RoleDelegation, WeakMap<ToolPolicy, WeakMap<ToolPolicy, ToolPolicy>>>()
-
-/** Both independently composed policies must allow a child call; equal inputs retain policy identity. */
+/** Kept at the role contract for callers; the normalized authority owns policy composition. */
 export function intersectRoleToolPolicy(
   own: ToolPolicy,
   parent: ToolPolicy,
   captured: RoleDelegation,
 ): ToolPolicy {
-  let ownPolicies = rolePolicies.get(captured)
-  if (!ownPolicies) {
-    ownPolicies = new WeakMap()
-    rolePolicies.set(captured, ownPolicies)
-  }
-  let parentPolicies = ownPolicies.get(own)
-  if (!parentPolicies) {
-    parentPolicies = new WeakMap()
-    ownPolicies.set(own, parentPolicies)
-  }
-  const existing = parentPolicies.get(parent)
-  if (existing) return existing
-  const policy: ToolPolicy = {
-    ...own,
-    decide: async (...args) => {
-      if (captured.permission === 'read-only' && !args[0].policy.isReadOnly)
-        return {
-          effect: 'deny',
-          reason: 'Captured parent authority is read-only; hand the action back to the main assistant',
-        }
-      const input = args[0]
-      // A role never turns a declared approval into an automatic policy/reviewer allowance.
-      if (
-        input.policy.requiresApproval === 'always' ||
-        (input.policy.requiresApproval === 'destructive' && input.policy.isDestructive) ||
-        (input.tainted && !input.policy.isReadOnly && !input.policy.isPresentational)
-      )
-        return { effect: 'ask', reason: ROLE_APPROVAL_REFUSAL }
-      const a = await own.decide(...args)
-      if (a.effect === 'deny') return a
-      const b = await parent.decide(...args)
-      return b.effect === 'deny' || (b.effect === 'ask' && a.effect === 'allow') ? b : a
-    },
-  }
-  parentPolicies.set(parent, policy)
-  return policy
+  return roleAuthority(captured).toolPolicy(own, parent)
 }

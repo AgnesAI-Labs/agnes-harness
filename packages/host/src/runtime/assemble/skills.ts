@@ -46,8 +46,7 @@ export function createSkillState(ctx: AssemblyContext, proc: ProcessServices): S
         }) ?? input)
       : input
     return compositionSkills(scoped, ctx.profile.composition ?? {}, owners, (key) => {
-      const role = key ? ctx.live.kernel.peek()?.get(key)?.d.roleDelegation : undefined
-      return role ? (role.resources ?? { mcp: [], skills: [] }) : undefined
+      return key ? ctx.live.kernel.peek()?.get(key)?.roleAuthority?.resources : undefined
     })
   }
   const preload = bind(deps.skillResources)
