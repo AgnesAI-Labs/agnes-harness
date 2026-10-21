@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/devboard",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -107,7 +107,10 @@
             },
             "sandbox": {
               "level": "L1",
-              "on_unavailable": "allow-if-unimplemented"
+              "required": true,
+              "on_unavailable": "deny",
+              "network_allow": [],
+              "loopback_serve": true
             },
             "subagent": {
               "isolation": "shared"
@@ -115,6 +118,11 @@
             "providers": {
               "tool-policy": {
                 "provider": "default"
+              }
+            },
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "你是宁川装备的研发协调员。先读 devboard-playbook。全过程（进度、工具调用前说明、交接和最终答复）使用中文；用户明确选择其他语言时遵从用户。业务状态使用未开始、进行中、评审中、已通过、返工等中文，不向用户直接堆叠状态枚举。原始错误与技术诊断放在可展开的证据中。必须通过 subagent_spawn 的 role 参数委派应用声明的独立角色，以全限定 package#bundle 标识调用。只有协调员登记看板、请求命令审批和运行测试/服务；子角色不能审批或签署。委派失败必须标注「角色独立性未满足」，保留质量缺口，不得自行代写代审后声称独立完成。测试与发布必须有真实 TCP/HTTP 和浏览器证据，不以内部函数调用替代。避免 node --version 等无必要 shell 探测。"
               }
             }
           }
@@ -146,13 +154,53 @@
             "ls",
             "present",
             "tool_search",
+            "tool_describe",
             "subagent_spawn",
             "subagent_collect",
             "subagent_list",
             "job_output",
             "job_list",
             "job_kill"
-          ]
+          ],
+          "skills": [
+            "devboard-playbook"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "devboard_board",
+              "devboard_create_requirement",
+              "devboard_create_task",
+              "devboard_transition",
+              "devboard_request_human",
+              "devboard_project_create",
+              "devboard_stage_update",
+              "devboard_artifact_record",
+              "devboard_req_upsert",
+              "devboard_gate_submit",
+              "devboard_gate_status",
+              "devboard_test_record",
+              "devboard_defect_upsert",
+              "devboard_change_upsert",
+              "devboard_app_register",
+              "skill_read",
+              "read",
+              "write",
+              "edit",
+              "shell",
+              "grep",
+              "find",
+              "ls",
+              "present",
+              "tool_search",
+              "tool_describe",
+              "subagent_spawn",
+              "subagent_collect",
+              "subagent_list",
+              "job_output",
+              "job_list",
+              "job_kill"
+            ]
+          }
         },
         "launch": {
           "title": {
@@ -180,6 +228,222 @@
             },
             "mode": "draft"
           }
+        }
+      },
+      "requirements": {
+        "profile": {
+          "tools": [
+            "read",
+            "ls",
+            "find",
+            "grep",
+            "write",
+            "edit"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "read",
+              "ls",
+              "find",
+              "grep",
+              "write",
+              "edit"
+            ]
+          }
+        },
+        "presets": {
+          "devboard": {
+            "name": "devboard",
+            "extends": "standard",
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "你是宁川装备的需求工程师。全过程（进度、工具调用前说明、交接和最终答复）使用中文；用户明确选择其他语言时遵从用户。业务状态使用未开始、进行中、评审中、已通过、返工等中文，不向用户直接堆叠状态枚举。原始错误与技术诊断放在可展开的证据中。读项目计划，写 docs/SRS.md（CUS/SYS/SWR 条款及上游，软件需求可验证、可量化）、docs/RTM.md；列出编号、标题、上游。 你在全新角色会话中与父协调员共享工作目录；只处理任务指定项目目录。只交付文件和证据，不调用 devboard_*，不审批、不签署、不运行 shell。需要命令或审批时把完整命令、cwd 和理由交回协调员。结尾列出实际文件路径、条目编号、未解决问题；不得伪造结果。"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Requirements Engineer",
+            "zh-CN": "需求工程师"
+          },
+          "description": {
+            "en": "Independent requirements engineer for the live project; returns files and findings to the coordinator.",
+            "zh-CN": "读项目计划，写 docs/SRS.md（CUS/SYS/SWR 条款及上游）、docs/RTM.md；列出编号、标题、上游。"
+          },
+          "preset": "devboard"
+        }
+      },
+      "architect": {
+        "profile": {
+          "tools": [
+            "read",
+            "ls",
+            "find",
+            "grep",
+            "write",
+            "edit"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "read",
+              "ls",
+              "find",
+              "grep",
+              "write",
+              "edit"
+            ]
+          }
+        },
+        "presets": {
+          "devboard": {
+            "name": "devboard",
+            "extends": "standard",
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "你是宁川装备的软件架构师。全过程（进度、工具调用前说明、交接和最终答复）使用中文；用户明确选择其他语言时遵从用户。业务状态使用未开始、进行中、评审中、已通过、返工等中文，不向用户直接堆叠状态枚举。原始错误与技术诊断放在可展开的证据中。读 SRS/RTM，写 docs/SAD.md（模块、公开 HTTP 接口、数据流、非功能约束、DES→SWR）。 你在全新角色会话中与父协调员共享工作目录；只处理任务指定项目目录。只交付文件和证据，不调用 devboard_*，不审批、不签署、不运行 shell。需要命令或审批时把完整命令、cwd 和理由交回协调员。结尾列出实际文件路径、条目编号、未解决问题；不得伪造结果。"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Software Architect",
+            "zh-CN": "软件架构师"
+          },
+          "description": {
+            "en": "Independent software architect for the live project; returns files and findings to the coordinator.",
+            "zh-CN": "读 SRS/RTM，写 docs/SAD.md（模块、公开 HTTP 接口、数据流、非功能约束、DES→SWR）。"
+          },
+          "preset": "devboard"
+        }
+      },
+      "developer": {
+        "profile": {
+          "tools": [
+            "read",
+            "ls",
+            "find",
+            "grep",
+            "write",
+            "edit"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "read",
+              "ls",
+              "find",
+              "grep",
+              "write",
+              "edit"
+            ]
+          }
+        },
+        "presets": {
+          "devboard": {
+            "name": "devboard",
+            "extends": "standard",
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "你是宁川装备的软件开发工程师。全过程（进度、工具调用前说明、交接和最终答复）使用中文；用户明确选择其他语言时遵从用户。业务状态使用未开始、进行中、评审中、已通过、返工等中文，不向用户直接堆叠状态枚举。原始错误与技术诊断放在可展开的证据中。按 SRS/SAD 实现 src/、server.js 和 test/*.test.js，无第三方依赖。服务只绑定 127.0.0.1，支持 --port。测试命令交给协调员；按真实反馈修复，不声称未运行的测试通过。 你在全新角色会话中与父协调员共享工作目录；只处理任务指定项目目录。只交付文件和证据，不调用 devboard_*，不审批、不签署、不运行 shell。需要命令或审批时把完整命令、cwd 和理由交回协调员。结尾列出实际文件路径、条目编号、未解决问题；不得伪造结果。"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Software Developer",
+            "zh-CN": "软件开发工程师"
+          },
+          "description": {
+            "en": "Independent software developer for the live project; returns files and findings to the coordinator.",
+            "zh-CN": "按 SRS/SAD 实现 src/、server.js 和 test/*.test.js，无第三方依赖。服务只绑定 127.0.0.1，支持 --port。测试命令交给协调员；按真实反馈修复，不声称未运行的测试通过。"
+          },
+          "preset": "devboard"
+        }
+      },
+      "reviewer": {
+        "profile": {
+          "tools": [
+            "read",
+            "ls",
+            "find",
+            "grep"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "read",
+              "ls",
+              "find",
+              "grep"
+            ]
+          }
+        },
+        "presets": {
+          "devboard": {
+            "name": "devboard",
+            "extends": "standard",
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "你是宁川装备的代码评审员。全过程（进度、工具调用前说明、交接和最终答复）使用中文；用户明确选择其他语言时遵从用户。业务状态使用未开始、进行中、评审中、已通过、返工等中文，不向用户直接堆叠状态枚举。原始错误与技术诊断放在可展开的证据中。只读 SRS/SAD、代码和测试，独立输出编号评审意见及 SWR 覆盖缺口。不得修改被审代码或自行关闭意见。 你在全新角色会话中与父协调员共享工作目录；只处理任务指定项目目录。只交付文件和证据，不调用 devboard_*，不审批、不签署、不运行 shell。需要命令或审批时把完整命令、cwd 和理由交回协调员。结尾列出实际文件路径、条目编号、未解决问题；不得伪造结果。"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Code Reviewer",
+            "zh-CN": "代码评审员"
+          },
+          "description": {
+            "en": "Independent code reviewer for the live project; returns files and findings to the coordinator.",
+            "zh-CN": "只读 SRS/SAD、代码和测试，独立输出编号评审意见及 SWR 覆盖缺口。不得修改被审代码或自行关闭意见。"
+          },
+          "preset": "devboard"
+        }
+      },
+      "tester": {
+        "profile": {
+          "tools": [
+            "read",
+            "ls",
+            "find",
+            "grep",
+            "write",
+            "edit"
+          ],
+          "toolPolicy": {
+            "allow": [
+              "read",
+              "ls",
+              "find",
+              "grep",
+              "write",
+              "edit"
+            ]
+          }
+        },
+        "presets": {
+          "devboard": {
+            "name": "devboard",
+            "extends": "standard",
+            "model": {
+              "system_prompt": {
+                "personaPrefix": "你是宁川装备的测试工程师。全过程（进度、工具调用前说明、交接和最终答复）使用中文；用户明确选择其他语言时遵从用户。业务状态使用未开始、进行中、评审中、已通过、返工等中文，不向用户直接堆叠状态枚举。原始错误与技术诊断放在可展开的证据中。只依据 SRS 和公开接口独立设计 TC→SWR，写 test/acceptance.test.js 和 docs/TEST-REPORT.md。验收使用真实 TCP 监听和 HTTP 请求，不导入实现私有函数，也不在监听失败时回退进程内调用。由协调员运行命令并回传结果，再据证据更新报告。 你在全新角色会话中与父协调员共享工作目录；只处理任务指定项目目录。只交付文件和证据，不调用 devboard_*，不审批、不签署、不运行 shell。需要命令或审批时把完整命令、cwd 和理由交回协调员。结尾列出实际文件路径、条目编号、未解决问题；不得伪造结果。"
+              }
+            }
+          }
+        },
+        "launch": {
+          "title": {
+            "en": "Test Engineer",
+            "zh-CN": "测试工程师"
+          },
+          "description": {
+            "en": "Independent test engineer for the live project; returns files and findings to the coordinator.",
+            "zh-CN": "只依据 SRS 和公开接口独立设计 TC→SWR，写 test/acceptance.test.js 和 docs/TEST-REPORT.md。验收使用真实 TCP 监听和 HTTP 请求，不导入实现私有函数，也不在监听失败时回退进程内调用。由协调员运行命令并回传结果，再据证据更新报告。"
+          },
+          "preset": "devboard"
         }
       }
     },
@@ -217,7 +481,12 @@
       },
       "defaultAgent": "@agnes-showcase/devboard#coordinator",
       "agents": [
-        "@agnes-showcase/devboard#coordinator"
+        "@agnes-showcase/devboard#coordinator",
+        "@agnes-showcase/devboard#requirements",
+        "@agnes-showcase/devboard#architect",
+        "@agnes-showcase/devboard#developer",
+        "@agnes-showcase/devboard#reviewer",
+        "@agnes-showcase/devboard#tester"
       ],
       "workbench": {
         "actions": [
@@ -300,7 +569,14 @@
           "pages",
           "tools"
         ]
-      }
+      },
+      "delegableAgents": [
+        "@agnes-showcase/devboard#requirements",
+        "@agnes-showcase/devboard#architect",
+        "@agnes-showcase/devboard#developer",
+        "@agnes-showcase/devboard#reviewer",
+        "@agnes-showcase/devboard#tester"
+      ]
     },
     "metadata": {
       "displayName": "DevBoard R&D lifecycle workbench",

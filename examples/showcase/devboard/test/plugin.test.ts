@@ -6,6 +6,7 @@ import {
   type ServiceDef,
   type ToolDef,
 } from '../../../../packages/extension-api/src/index.js'
+import { parsePackageBundleContract } from '../../../../packages/package-manager/src/index.js'
 import { read, seed, update } from '../domain.mjs'
 import { main } from '../index.mjs'
 
@@ -56,8 +57,10 @@ describe('DevBoard plugin contract', () => {
       'devboard.snapshot',
       'devboard.transition',
     ])
-    for (const t of tools)
+    for (const t of tools) {
       expect(checkToolDef(t, { prefix: 'devboard_' }), t.name).toMatchObject({ ok: true })
+      expect(t.meta.presentation?.title, t.name).toMatch(/[\u4e00-\u9fff]/u)
+    }
     for (const s of services) expect(checkServiceDef(s), s.name).toMatchObject({ ok: true })
     expect(skills.map((s) => s.name)).toEqual(['devboard-playbook'])
   })
@@ -125,10 +128,58 @@ describe('DevBoard plugin contract', () => {
     expect(update(store, (s: Any) => s.artifacts.length).result).toBe(seed(Date.now()).artifacts.length + 1)
   })
 
-  it('keeps the coordinator preset free of shell allow rules', () => {
+  it('resolves declared roles with narrow tools and keeps approved commands in the coordinator', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-    const policy = pkg.agnes.bundles.coordinator.presets.devboard.approval.command_policy
+    const { bundles, application } = pkg.agnes
+    const contracts = parsePackageBundleContract(pkg.name, bundles)
+    const coordinator = bundles.coordinator
+    const policy = coordinator.presets.devboard.approval.command_policy
     expect(policy.length).toBeGreaterThan(0)
     expect(policy.every((r: { tool: string }) => r.tool === 'edit|write')).toBe(true)
+    expect(coordinator.presets.devboard.subagent.isolation).toBe('shared')
+    expect(coordinator.profile.toolPolicy.allow).toEqual(coordinator.profile.tools)
+    expect(coordinator.presets.devboard.sandbox).toEqual({
+      level: 'L1',
+      required: true,
+      on_unavailable: 'deny',
+      network_allow: [],
+      loopback_serve: true,
+    })
+    expect(coordinator.profile.tools).toEqual(
+      expect.arrayContaining([
+        ...tools.map((tool) => tool.name),
+        'tool_search',
+        'tool_describe',
+        'subagent_spawn',
+        'subagent_collect',
+        'shell',
+        'job_output',
+        'job_list',
+        'job_kill',
+      ]),
+    )
+    expect(application.delegableAgents).toEqual(
+      ['requirements', 'architect', 'developer', 'reviewer', 'tester'].map(
+        (role) => `${pkg.name}#${role}`,
+      ),
+    )
+    for (const ref of application.agents) {
+      expect(contracts[ref]?.document.launch?.preset).toBe('devboard')
+      const role = bundles[ref.split('#')[1]]
+      expect(role.presets.devboard.model.system_prompt.personaPrefix).toContain('全过程')
+    }
+    for (const ref of application.delegableAgents) {
+      expect(application.agents).toContain(ref)
+      const role = bundles[ref.split('#')[1]]
+      expect(role.profile.tools).toEqual(role.profile.toolPolicy.allow)
+      expect(role.profile.tools.every((name: string) => coordinator.profile.tools.includes(name))).toBe(
+        true,
+      )
+      expect(role.profile.tools).toEqual(
+        ref.endsWith('#reviewer')
+          ? ['read', 'ls', 'find', 'grep']
+          : ['read', 'ls', 'find', 'grep', 'write', 'edit'],
+      )
+    }
   })
 })

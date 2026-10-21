@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 A full-lifecycle R&D workbench demo for a rail-equipment company: requirements → architecture → development → test acceptance. **The company "Ningchuan Transportation Equipment Co., Ltd." (宁川交通装备股份有限公司), its customers, metro lines and people are fictional, and all data is simulated**; no external system (PLM, ERP, QIS, MES …) is contacted. Anything about safety integrity is stated as an assumption under EN 50126 / EN 50716 (formerly EN 50128).
 
-After installing and adopting DevBoard 2.0.0 on the Agents page, the workbench shows seven pages and an **R&D Coordinator** agent. Three projects are seeded at different stages:
+After installing and adopting DevBoard 2.1.0 on the Agents page, the workbench shows seven pages and an **R&D Coordinator** agent. Three projects are seeded at different stages:
 
 | Project | Kind | Stage | Shows |
 | --- | --- | --- | --- |
@@ -37,9 +37,11 @@ Every write goes through one set of functions in `domain.mjs`, shared by pages a
 
 ## Agent and live project
 
-`coordinator` carries all 15 `devboard_*` tools, file and shell tools, `tool_search`, `subagent_spawn` / `subagent_collect` and the `devboard-playbook` skill (lifecycle, role prompts, file layout, gate rules). Its `devboard` preset pre-approves edits and writes inside the workspace; every shell command (including `node --test` and `node server.js`) asks for approval, because it runs code the agents wrote. Child agents share the parent's working directory.
+`coordinator` carries all 15 `devboard_*` tools, file and shell tools, `tool_search` / `tool_describe`, `subagent_spawn` / `subagent_collect` and the `devboard-playbook` skill (lifecycle, role prompts, file layout, gate rules). Its `devboard` preset pre-approves edits and writes inside the workspace; every shell command (including `node --test` and `node server.js`) asks for approval, because it runs code the agents wrote. Five declared delegable agents (`requirements`, `architect`, `developer`, `reviewer`, `tester`) run as fresh role children with the parent’s shared working directory and a role ∩ parent capability snapshot. The reviewer is read-only; the other specialists can edit project files. Specialists have no shell or board tools and cannot approve or sign. They return commands to the coordinator for human approval and execution. All roles narrate in Chinese unless the user chooses another language, and use business labels instead of raw status enums.
 
-The live project "Door health monitoring dashboard" is a dependency-free Node web app written under `devboard-projects/<project id>/` in the workspace. Role child agents only write files; only the coordinator writes to the board. After submitting each gate the coordinator ends its turn; a person decides on the board, then presses "Continue", which opens a coordinator draft carrying the gate id for the person to send.
+The preset explicitly requests reviewed `sandbox.loopback_serve` under required L1 enforcement with `on_unavailable: deny` and no external network allowlist. Command approval remains mandatory. The supported macOS sandbox permits local TCP serving; unsupported sandbox backends refuse this capability rather than falling back. Use a platform build supporting this capability before the live demo.
+
+The live project "Door health monitoring dashboard" is a dependency-free Node web app written under `devboard-projects/<project id>/` in the workspace. Role child agents only work on workspace files; only the coordinator writes to the board. After submitting each gate the coordinator ends its turn; a person decides on the board, then presses "Continue", which opens a coordinator draft carrying the gate id for the person to send.
 
 ### Demo script and checkpoints
 
@@ -49,13 +51,24 @@ The live project "Door health monitoring dashboard" is a dependency-free Node we
 4. Changes: approving CR-2026-031 at the CCB sends PRJ-2025-042's requirements and design stages to rework.
 5. Live project: workbench action "Create and start an R&D project". After each submitted gate the board shows the stage in review with its new deliverable and the workspace holds the file; decide, then press "Continue".
    - Gate 1 initiation (研发总监): `docs/PROJECT-PLAN.md`.
-   - Gate 2 requirements (项目经理): `docs/SRS.md`, `docs/RTM.md`; CUS/SYS/SWR appear in traceability.
-   - Gate 3 design (技术负责人): `docs/SAD.md`; DES linked to SWR.
-   - Implementation: `src/`, `server.js`, `test/`; passes when code-review findings are closed.
-   - Gate 4 verification (质量负责人): `node --test` green, a live run under Defects & tests, `docs/TEST-REPORT.md`.
-   - Gate 5 acceptance (质量负责人): `docs/RELEASE-NOTE.md`; "open app" appears on the project page and opens in a browser.
+   - Gate 2 requirements (项目经理): a typed `requirements` task card and child-authored `docs/SRS.md`, `docs/RTM.md`; CUS/SYS/SWR appear in traceability.
+   - Gate 3 design (技术负责人): a typed `architect` child; `docs/SAD.md`; DES linked to SWR.
+   - Implementation: typed `developer` and separate read-only `reviewer` children; `src/`, `server.js`, `test/`; pass only after findings are resolved and independently rechecked.
+   - Gate 4 verification (质量负责人): typed `tester` writes independent tests from the SRS and public HTTP contract. The coordinator runs them against a real TCP listener; record command, cwd, counts and remaining gaps under Defects & tests and in `docs/TEST-REPORT.md`. Internal handler calls do not satisfy acceptance.
+   - Gate 5 acceptance (质量负责人): `docs/RELEASE-NOTE.md`; HTTP readiness and real browser checks of the line → vehicle → door view and fault ranking pass, then register the app. "Open app" appears on the project page. Keep the background job id and stop it after the demo.
 
 A real model may need tens of minutes for the whole flow.
+
+Run commands from the correct directory: shell defaults to the workspace root. Pass actual test files, for example `node --test devboard-projects/<project id>/test/unit.test.js devboard-projects/<project id>/test/acceptance.test.js`, or set shell `cwd` to `devboard-projects/<project id>/` and run `node --test` for discovery. Do not pass the `test/` directory as a positional argument. Set project `cwd` for `node server.js --port <free port>` too; bind only `127.0.0.1`, never use ports 4177/4178. No external network or package installation is needed.
+
+If role delegation fails, mark role independence as unmet and keep the quality finding open; coordinator self-review cannot replace an independent role. Listener or browser failures remain acceptance blockers. Do not close a finding merely by moving it to a later stage, or register an unverified URL.
+
+### Presenter checklist
+
+- Use an isolated home and workspace, a configured real model, a free app port and one or two browser tabs. Review the installed package version and permissions before adopting it.
+- Rehearse all five gates with typed role task cards and verify parent/child file visibility. Check Chinese progress narration and business state labels.
+- Review each command and cwd before approval. Avoid unnecessary shell probes such as `node --version`; commands execute generated code. Tainted results can also require approval for later writes or board operations; read the action title and evidence.
+- Before gates 4–5, require real HTTP test logs and browser evidence, resolve findings, verify the registered URL, and retain timing per gate. Confirm how to stop the background job.
 
 ## Layout
 
