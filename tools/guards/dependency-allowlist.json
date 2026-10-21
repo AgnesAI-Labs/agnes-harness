@@ -229,7 +229,8 @@
     "@agnes/protocol",
     "@agnes/sandbox-remote",
     "@agnes/system-node",
-    "@agnes/core-ledger"
+    "@agnes/core-ledger",
+    "@agnes/package-manager"
   ],
   "@agnes/host-computer-use": [
     "@agnes/core",
@@ -377,6 +378,7 @@
     "@agnes/model-adapters",
     "@agnes/package-manager",
     "@agnes/plugin-runtime",
-    "@agnes/protocol"
+    "@agnes/protocol",
+    "@agnes/cordis"
   ]
 }

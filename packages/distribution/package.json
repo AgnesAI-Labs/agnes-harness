@@ -16,7 +16,8 @@
     "@agnes/model-adapters": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
-    "@agnes/protocol": "workspace:*"
+    "@agnes/protocol": "workspace:*",
+    "@agnes/cordis": "workspace:*"
   },
   "license": "Apache-2.0"
 }

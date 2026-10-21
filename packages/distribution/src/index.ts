@@ -1,4 +1,5 @@
 import { createApiKeyProviderConfigs, modelAdaptersPlugin } from '@agnes/ai'
+import type { Context } from '@agnes/cordis'
 import { CompactionRunner, inProcessChildAgentProvider } from '@agnes/core'
 import type {
   CompactionEngine,
@@ -134,7 +135,15 @@ export function assembleDistributionPackages<T extends ReleaseModule>(
             provide: [],
             runtime: 'in-process' as const,
           },
-          entry: normalizePluginExport(factory),
+          entry: normalizePluginExport({
+            inject: ['providers'],
+            apply(ctx: Context) {
+              // Read through Cordis so registration keeps the calling row's provenance.
+              const providers: ProviderPluginContext['providers'] & ReleaseCompactionContext['providers'] =
+                Reflect.get(ctx, 'providers')
+              factory.apply({ providers })
+            },
+          }),
         },
       ],
     })

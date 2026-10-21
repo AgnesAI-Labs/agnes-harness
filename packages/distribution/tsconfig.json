@@ -26,6 +26,9 @@
     },
     {
       "path": "../protocol"
+    },
+    {
+      "path": "../cordis"
     }
   ]
 }

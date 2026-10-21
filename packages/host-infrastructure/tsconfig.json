@@ -38,6 +38,9 @@
     },
     {
       "path": "../core-ledger"
+    },
+    {
+      "path": "../package-manager"
     }
   ]
 }

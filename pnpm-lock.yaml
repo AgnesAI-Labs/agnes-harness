@@ -933,6 +933,9 @@ importers:
       '@agnes/ai':
         specifier: workspace:*
         version: link:../ai
+      '@agnes/cordis':
+        specifier: workspace:*
+        version: link:../cordis
       '@agnes/core':
         specifier: workspace:*
         version: link:../core
@@ -1226,6 +1229,9 @@ importers:
       '@agnes/host-common':
         specifier: workspace:*
         version: link:../host-common
+      '@agnes/package-manager':
+        specifier: workspace:*
+        version: link:../package-manager
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol

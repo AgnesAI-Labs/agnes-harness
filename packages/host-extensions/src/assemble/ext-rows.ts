@@ -219,7 +219,7 @@ export function composeExtensionRowTarget(
   rows: readonly Readonly<PluginRow>[]
   resources: Readonly<{ mcp: unknown; skills: unknown }>
 }> {
-  const owned = new Set([...EXT_ROW_EXTENSION_IDS].map((id) => `ext:${id}`))
+  const owned = new Set([...RELEASE_EXTENSION_IDS].map((id) => `ext:${id}`))
   for (const id of input.extraOwnedRowIds ?? []) owned.add(id)
   const published: readonly Readonly<PluginRow>[] = input.live
     ? [
