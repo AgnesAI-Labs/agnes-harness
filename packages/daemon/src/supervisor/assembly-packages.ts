@@ -89,6 +89,7 @@ export async function preparePackageRuntime(
       profileDirectory: packageProfileDirectory,
       operations: packageOperations,
       stateDirectory: join(scope.daemonDir, 'package-activation'),
+      clientModulesDirectory: join(scope.daemonDir, 'client-modules'),
       ...(localExamplesCatalog ? { catalog: localExamplesCatalog } : {}),
       references,
       ...(embedded ? { bindRuntimePins: embedded.bindRuntimePins, embeddedAdmin: embedded } : {}),

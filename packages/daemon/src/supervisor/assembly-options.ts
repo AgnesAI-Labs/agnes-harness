@@ -126,6 +126,7 @@ export type StartSupervisorOptions = {
     profileDirectory: PackageProfileDirectory
     operations: PackageOperationStore
     stateDirectory: string
+    clientModulesDirectory?: string
     catalog?: LocalExamplesCatalog
     /** Embedded catalog-only starters can install their private pin adapter explicitly. */
     bindRuntimePins?(adapter: RuntimePinsAdapter): void

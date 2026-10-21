@@ -98,7 +98,11 @@ export async function initializeRuntime(
               },
               clientModules: createClientModuleRegistry({
                 composition: () => composition,
-                snapshotDirectory: (profile) => join(o.config.dataDir, 'daemon', 'client-modules', profile),
+                snapshotDirectory: (profile) =>
+                  join(
+                    packageRuntime.clientModulesDirectory ?? join(o.config.dataDir, 'daemon', 'client-modules'),
+                    profile,
+                  ),
                 runtimeArtifacts: () =>
                   runtimeArtifactsFromStore(runtimeStore, pool.businessWorker()?.generation),
               }),
