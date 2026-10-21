@@ -102,6 +102,14 @@ const TOOL_KEYS: Record<string, 'tool.name.read' | 'tool.name.write' | 'tool.nam
     shell: 'tool.name.shell',
   }
 
+/** `wrapText` per line, keeping each line's leading indentation (pretty-printed arguments, code). */
+function wrapIndented(text: string, width: number): string[] {
+  return text.split('\n').flatMap((line) => {
+    const indent = ' '.repeat(Math.min(line.length - line.trimStart().length, Math.max(0, width - 8)))
+    return wrapText(line.trimStart(), width - indent.length).map((row) => `${indent}${row}`)
+  })
+}
+
 /** A left part clipped to leave room for a right-aligned one, or both run together when narrow. */
 function spread(left: string, right: string, width: number): string {
   if (!right) return fitLine(left, width)
@@ -238,7 +246,7 @@ export class ToolCard implements Component {
         const value = read()
         if (value === undefined) return []
         if (wrapped?.value !== value || wrapped.width !== width)
-          wrapped = { value, width, lines: wrapText(escapeControl(value), width - LABEL_WIDTH - 1) }
+          wrapped = { value, width, lines: wrapIndented(escapeControl(value), width - LABEL_WIDTH - 1) }
         return wrapped.lines.map((line, i) => `${i === 0 ? `${head} ` : indent}${line}`)
       })
     }

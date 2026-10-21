@@ -265,6 +265,9 @@ it('shows the fetched record in place of the previews, and keeps them while it l
   rows = card.render(90).join('\n')
   expect(rows).toContain('Full record unavailable (Request failed (X)); showing the preview.')
   expect(rows).toContain('Result: contents')
+  // Pretty-printed arguments keep their indentation under the label.
+  detail = { state: 'ready', args: '{\n  "path": "x"\n}' }
+  expect(card.render(50).join('\n')).toContain(`│ ${' '.repeat(13)}  "path": "x"`)
   // The record is external text: controls are dropped and every row keeps to the width.
   detail = { state: 'ready', args: '{\n  "path": "中.txt"\n}', result: `full\x1b[2J${'x'.repeat(100)}` }
   const lines = card.render(30)
