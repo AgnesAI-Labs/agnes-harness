@@ -41,7 +41,7 @@ test('signed business event creates a policy-bound root session', async ({
   await page.getByTestId('trigger-secret-picker').selectOption('secret://webhooks/sample')
   await page.getByTestId('trigger-workspace').selectOption(cwd)
   await page.getByTestId('trigger-advanced').locator('summary, .agh-disclosure-summary').click()
-  await page.getByTestId('trigger-agent').fill('read-only')
+  await page.getByTestId('trigger-agent').fill('standard')
   await page.getByTestId('trigger-save').click()
   await expect(page.getByTestId('trigger-row')).toContainText('business-issues')
   await page.getByTestId('triggers-config-details').locator('summary, .agh-disclosure-summary').click()
@@ -95,5 +95,8 @@ test('signed business event creates a policy-bound root session', async ({
   })
   await expect(page.getByTestId('conversation-turn')).toContainText('UNTRUSTED')
   const start = events.find((row) => row.type === 'session/start')
-  expect(start?.data).toMatchObject({ preset: 'read-only' })
+  expect(start?.data).toMatchObject({ preset: 'standard' })
+  expect((await client.session.runtime(session.id)).policy?.permission).toMatchObject({
+    policy: 'workspace-write',
+  })
 })

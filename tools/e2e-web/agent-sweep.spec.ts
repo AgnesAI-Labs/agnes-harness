@@ -44,10 +44,13 @@ async function answerControls(page: Page) {
     return
   }
   // Finance's declared interactive review has its own ordinary, permission-checked action.
-  const inline = page.getByTestId('intelligent-ui-inline').filter({ hasText: 'Finance reconciliation' })
-  const expand = inline.getByTestId('ui-expand')
+  const inline = page
+    .getByTestId('intelligent-ui-inline')
+    .filter({ hasText: 'Finance reconciliation' })
+    .last()
+  const expand = inline.getByTestId('ui-expand').last()
   if (await expand.isVisible()) await expand.click()
-  const action = page.getByTestId('ui-action-approve').first()
+  const action = page.getByTestId('intelligent-ui-panel').getByTestId('ui-action-approve').first()
   if ((await action.isVisible()) && (await action.isEnabled())) await action.click()
   const confirm = page.getByTestId('ui-confirm').first()
   if ((await confirm.isVisible()) && (await confirm.isEnabled())) await confirm.click()
@@ -172,9 +175,15 @@ test.describe('shipped agent acceptance', () => {
           const review = page.getByTestId('agent-launch-review')
           await expect(review).toBeVisible({ timeout: 90_000 })
           await expect(review).toContainText(draft)
-          for (const label of ['Model', 'Effective permissions', 'Reviewed packages'])
-            await expect(review).toContainText(label)
-          await expect(review).toContainText(real ? 'deepseek-flash' : 'demo-model')
+          for (const label of ['Agent', 'Task', 'Access', 'Next']) await expect(review).toContainText(label)
+          await expand(review.getByTestId('launch-technical'))
+          const plan = JSON.parse(await review.getByTestId('launch-technical').locator('pre').innerText())
+          expect(plan).toMatchObject({
+            ref: agent.ref,
+            model: { model: real ? 'deepseek-flash' : 'demo-model' },
+            permission: { readOnly: expect.any(Boolean), tools: expect.arrayContaining(['read']) },
+            sources: expect.arrayContaining([expect.objectContaining({ id: agent.ref.split('#')[0] })]),
+          })
           row.review = await review.innerText()
           await page.screenshot({
             path: info.outputPath(`${agent.ref.split('/').at(-1)?.split('#')[0]}-review.png`),

@@ -259,8 +259,8 @@ test('application permission switch governs a package-fixed role launched by a q
   await page.reload()
   await page.getByRole('button', { name: '新对话', exact: true }).click()
   await page.getByRole('button', { name: '签署模拟记录', exact: true }).click()
-  await expect(page.getByTestId('agent-launch-review')).toBeVisible()
-  await page.getByTestId('agent-launch-confirm').click()
+  // Adoption already covers this unchanged role and launch configuration.
+  await expect(page.getByTestId('agent-launch-review')).toHaveCount(0)
   await expect(page).toHaveURL(/session=/)
   const id = new URL(page.url()).searchParams.get('session')!
   const session = await client.session.load(id, { cwd: runtime.workspace })

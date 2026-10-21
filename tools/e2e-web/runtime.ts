@@ -1,6 +1,6 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
-import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -23,7 +23,8 @@ export async function isolatedRuntime(
   // Short paths avoid macOS Unix socket limits. Never inherit the user's profile or credentials.
   const parent = options.realModel ? join(homedir(), 'agh-real-eval') : sep === '\\' ? tmpdir() : '/tmp'
   await mkdir(parent, { recursive: true })
-  const root = await mkdtemp(join(parent, options.realModel ? 'sweep-' : 'agh-e2e-'))
+  // Cache ownership and workspace receipts must agree on macOS /tmp aliases.
+  const root = await realpath(await mkdtemp(join(parent, options.realModel ? 'sweep-' : 'agh-e2e-')))
   const home = join(root, 'h')
   const workspace = join(root, 'w')
   await mkdir(workspace)

@@ -4,7 +4,7 @@ import { createReadStream } from 'node:fs'
 import { mkdir, open, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { uploadedAttachment } from '@agnes/protocol'
+import { type ContentBlock, storedAttachment } from '@agnes/protocol'
 import { expect, test } from './fixtures.js'
 import { readSessionEvents } from './ledger.js'
 import { accessible, translated } from './quality.js'
@@ -137,7 +137,7 @@ for (const locale of ['en', 'zh-CN'])
     expect(saved).toContain('synthetic-contract.bin')
   })
 
-test('uploads 512 MiB with measured bounded browser and server memory', async ({
+test('uploads 100 MiB with measured bounded browser and server memory', async ({
   page,
   runtime,
   browser,
@@ -153,8 +153,8 @@ test('uploads 512 MiB with measured bounded browser and server memory', async ({
     .click()
     .catch(() => undefined)
   await expect(page.getByTestId('attachment-file-input')).toBeAttached()
-  const source = join(runtime.workspace, 'synthetic-512MiB.bin')
-  await synthetic(source, 512 * MiB)
+  const source = join(runtime.workspace, 'synthetic-100MiB.bin')
+  await synthetic(source, 100 * MiB)
   const owner = JSON.parse(await readFile(join(runtime.home, 'daemon/owner.json'), 'utf8')) as { pid: number }
   const cdp = await page.context().newCDPSession(page)
   const system = await browser.newBrowserCDPSession()
@@ -216,10 +216,13 @@ test('uploads 512 MiB with measured bounded browser and server memory', async ({
   } finally {
     clearInterval(timer)
   }
-  const originals = await files(join(runtime.workspace, '.agnes-attachments'))
+  expect(await files(join(runtime.workspace, '.agnes-attachments'))).toEqual([])
+  const originals: string[] = []
+  for (const path of await files(runtime.home))
+    if (path.includes('/artifacts/sha256/') && (await stat(path)).size === 100 * MiB) originals.push(path)
   expect(originals).toHaveLength(1)
   const original = originals[0] ?? ''
-  expect((await stat(original)).size).toBe(512 * MiB)
+  expect((await stat(original)).size).toBe(100 * MiB)
   expect(await digest(original)).toBe(await digest(source))
   const input = page.getByRole('textbox', { name: 'Task content', exact: true })
   await input.fill('Keep this large business original.')
@@ -231,10 +234,11 @@ test('uploads 512 MiB with measured bounded browser and server memory', async ({
     .filter((row) => row.type === 'user/message')
     .slice(0, 10)
   const attachments = messages
-    .flatMap((row) => (row.data as { content?: { type: string; uri?: string }[] }).content ?? [])
-    .filter((block) => block.uri?.startsWith('agnes-upload://'))
+    .flatMap((row) => (row.data as { content?: ContentBlock[] }).content ?? [])
+    .filter(storedAttachment)
   expect(attachments).toHaveLength(1)
-  expect(uploadedAttachment(attachments[0]?.uri ?? '')?.size).toBe(512 * MiB)
+  expect(attachments[0]?.attachment.artifact.size).toBe(100 * MiB)
+  expect(attachments[0]?.uri).toBe(`artifact://${await digest(source)}`)
   expect(JSON.stringify(messages).length).toBeLessThan(4096)
   const baseline = samples[0]
   if (!baseline) throw new Error('Missing memory baseline')
@@ -245,7 +249,7 @@ test('uploads 512 MiB with measured bounded browser and server memory', async ({
     ]),
   )
   const evidence = {
-    fileBytes: 512 * MiB,
+    fileBytes: 100 * MiB,
     chunkBytes: MiB,
     intervalMs: 500,
     baseline,

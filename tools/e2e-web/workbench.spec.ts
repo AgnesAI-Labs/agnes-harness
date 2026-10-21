@@ -235,10 +235,16 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await workbenchTab(page, 'terminal')
   await expect(page.getByTestId('workbench-tab-terminal')).toBeFocused()
   const resize = page.locator('#workbench-right .workbench-resize')
-  await expect(resize).toHaveAttribute('aria-valuenow', '320')
+  const initial = Number(await resize.getAttribute('aria-valuenow'))
+  const minimum = Number(await resize.getAttribute('aria-valuemin'))
+  const maximum = Number(await resize.getAttribute('aria-valuemax'))
+  // The initial dock follows the viewport; leave room to exercise growing it with the keyboard.
+  for (let i = 0; i < 8; i++) await resize.press('ArrowRight')
+  const shrunk = Math.max(minimum, initial - 8 * 16)
+  await expect(resize).toHaveAttribute('aria-valuenow', String(shrunk))
   for (let i = 0; i < 8; i++) {
     await resize.press('ArrowLeft')
-    await expect(resize).toHaveAttribute('aria-valuenow', String(320 + (i + 1) * 16))
+    await expect(resize).toHaveAttribute('aria-valuenow', String(Math.min(maximum, shrunk + (i + 1) * 16)))
   }
   // Agent jobs are attached automatically; selecting its tab follows the real output.
   await panel.getByTestId('terminal-tab').filter({ hasText: agent.command }).click()
@@ -664,7 +670,8 @@ test.describe('server sidebar pagination', () => {
       const session = await client.session.new({
         sessionKey: randomUUID(),
         cwd: runtime.workspace,
-        preset: 'full-access',
+        preset: 'standard',
+        permission: 'full-access',
       })
       ids.push(session.id)
       await client.session.rename(session.id, `Paging task ${index}`)

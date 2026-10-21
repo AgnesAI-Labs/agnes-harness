@@ -40,7 +40,8 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   const old = await client.session.new({
     sessionKey: crypto.randomUUID(),
     cwd: runtime.workspace,
-    preset: 'workspace-write',
+    preset: 'standard',
+    permission: 'workspace-write',
   })
   await old.attach()
   const authoringIdle = async () => {
@@ -287,7 +288,8 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   const freshSession = await client.session.new({
     sessionKey: crypto.randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
   })
   await freshSession.attach()
   expect((await freshSession.tools()).tools.some((tool) => tool.name === 'skill_read')).toBe(true)
@@ -587,7 +589,8 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   const skillSession = await client.session.new({
     sessionKey: crypto.randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
   })
   await skillSession.attach()
   await prompt(skillSession, 'call skill_read {"name":"reviewed-published"}')

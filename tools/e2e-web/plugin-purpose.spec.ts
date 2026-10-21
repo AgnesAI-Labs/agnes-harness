@@ -16,14 +16,12 @@ for (const locale of ['en', 'zh-CN'] as const) {
       locale === 'en' ? 'Coordinates sample work queues for a team.' : '协调团队的样例任务队列。',
     )
     await expect(row.getByTestId('plugin-declared-provides')).toHaveText(
-      locale === 'en' ? 'Declared: Service' : '声明提供: 服务',
+      locale === 'en' ? 'Includes: Service' : '包含：服务',
     )
     const source = row.getByTestId('plugin-source-badge')
     await expect(source).toHaveAttribute('data-origin', 'local-source')
     await expect(source).toHaveText(locale === 'en' ? 'Local' : '本地')
-    await expect(row.getByTestId('plugin-registered-provides')).toContainText(
-      locale === 'en' ? 'Registered' : '已登记',
-    )
+    await expect(row.getByTestId('plugin-registered-provides')).toHaveCount(0)
     await page.getByTestId('plugin-add-more').click()
     await expect(page.getByTestId('plugin-install-source')).toBeVisible()
     await expect(page.getByTestId('plugin-creator')).toBeVisible()

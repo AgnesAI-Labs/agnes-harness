@@ -73,7 +73,13 @@ for (const locale of ['en', 'zh-CN'])
         name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
         exact: true,
       })
-      if (!(await workspace.isVisible())) await page.locator('#composer-workspace').click()
+      if (!(await workspace.isVisible())) {
+        await page.locator('#composer-workspace').click()
+        await page
+          .getByRole('region', { name: locale === 'en' ? 'Select workspace' : '选择工作区', exact: true })
+          .getByRole('button', { name: locale === 'en' ? 'New workspace…' : '新建工作区…', exact: true })
+          .click()
+      }
 
       await expect(
         page.getByRole('dialog', {
@@ -114,6 +120,7 @@ for (const locale of ['en', 'zh-CN'])
       await section(page, 'model')
       const add = page.locator('.config-accounts-welcome [data-provider="deepseek"]')
       await expect(add).toBeEnabled()
+      await expand(page.getByTestId('advanced-models'))
       await expand(page.getByTestId('auxiliary-models'))
       await expect(page.getByTestId('model-slot-fast')).toHaveValue('')
       await expect(page.getByTestId('model-slot-verifier')).toHaveValue('')

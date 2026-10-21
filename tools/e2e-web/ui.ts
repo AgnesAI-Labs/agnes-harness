@@ -226,24 +226,6 @@ export async function section(page: Page, id: string) {
     await workbenchTab(page, 'terminal')
     return
   }
-  if (new URL(page.url()).pathname === '/admin/plugins') {
-    const back = page.getByTestId('settings-back')
-    if (await back.isVisible()) await back.click()
-    const canonical = ['bundles', 'system-prompt', 'context'].includes(id)
-      ? 'models'
-      : id === 'providers'
-        ? 'diagnostics'
-        : id
-    if (['models', 'diagnostics'].includes(canonical)) await expand(page.getByTestId('settings-advanced'))
-    await page.getByTestId(`settings-nav-${canonical}`).click()
-    if (['models', 'bundles', 'system-prompt', 'context'].includes(id))
-      await expand(page.getByTestId(`settings-subsection-${id}`))
-    if (id === 'providers') {
-      await expand(page.getByTestId('plugin-diagnostics'))
-      await expand(page.getByTestId('settings-subsection-provider-types'))
-    }
-    return
-  }
   const moved: Record<string, [string, string?]> = {
     plugins: ['plugins'],
     discover: ['plugins', 'market'],
@@ -306,7 +288,8 @@ export async function section(page: Page, id: string) {
         ? 'security'
         : id
   if (['models', 'diagnostics'].includes(canonical)) await advanced(page)
-  await page.getByTestId(`settings-nav-${canonical}`).click()
+  await page.getByTestId(`settings-nav-${canonical === 'models' ? 'model' : canonical}`).click()
+  if (canonical === 'models') await page.getByTestId('settings-nav-models-tab').click()
   if (id === 'models') await expect(page.locator('#settings-subsection-models')).toBeVisible()
   else if (id === 'bundles') {
     await expand(page.getByTestId('run-config-technical'))
@@ -407,19 +390,28 @@ export async function closeSettings(page: Page, _locale = 'en') {
 export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'workspace'>, locale = 'en') {
   const workspacePath = await realpath(runtime.workspace)
   const skip = page.getByTestId('first-run-skip')
+  const workspace = page.getByRole('dialog', {
+    name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
+    exact: true,
+  })
+  const picker = page.getByRole('region', {
+    name: locale === 'en' ? 'Select workspace' : '选择工作区',
+    exact: true,
+  })
+  const chip = page.locator('#composer-workspace')
+  let choosingFromPicker = false
   // Diagnostics can finish after the workspace chip is ready and open the first-run overlay.
   await page.addLocatorHandler(
     skip,
     async () => {
       await skip.click()
+      await expect(skip).toBeHidden()
+      // Closing onboarding also closes popovers; resume an interrupted workspace choice.
+      if (choosingFromPicker && !(await workspace.isVisible()) && !(await picker.isVisible()))
+        await chip.click()
     },
     { times: 1 },
   )
-  const workspace = page.getByRole('dialog', {
-    name: locale === 'en' ? 'Choose a workspace' : '选择工作区',
-    exact: true,
-  })
-  const chip = page.locator('#composer-workspace')
   await expect
     .poll(async () => (await skip.isVisible()) || (await workspace.isVisible()) || (await chip.isVisible()))
     .toBe(true)
@@ -427,19 +419,18 @@ export async function chooseWorkspace(page: Page, runtime: Pick<Runtime, 'worksp
   if (!(await workspace.isVisible())) {
     await expect(chip).toBeEnabled()
     await chip.click()
-    const picker = page.getByRole('region', {
-      name: locale === 'en' ? 'Select workspace' : '选择工作区',
-      exact: true,
-    })
+    choosingFromPicker = true
     await expect(picker).toBeVisible()
     const existing = picker.getByTitle(workspacePath, { exact: true })
     if (await existing.count()) {
       await existing.click()
+      choosingFromPicker = false
       await expect(picker).toBeHidden()
     } else {
       await picker
         .getByRole('button', { name: locale === 'en' ? 'New workspace…' : '新建工作区…', exact: true })
         .click()
+      choosingFromPicker = false
       await expect(workspace).toBeVisible()
     }
   }

@@ -59,6 +59,7 @@ test('auto review settings persist and exhausted budget escalates visibly', asyn
   if ((await detailToggle.getAttribute('aria-expanded')) !== 'true') await detailToggle.click()
   await reviewedTool.getByTestId('tool-fact-chain').click()
   await expect(page.getByTestId('review-evidence')).toContainText('human approval')
+  await expand(page.getByTestId('trace-auto-review').locator('.agh-disclosure'))
   await page.getByTestId('review-future-ask').click()
   await expect(
     page.getByRole('status').filter({ hasText: 'Rule saved. Applies to future identical calls' }),
@@ -149,6 +150,7 @@ test('reviewer defaults and session overrides are configurable from Web in both 
   await page.reload()
   await settings(page, 'zh-CN')
   await section(page, 'model')
+  await expand(page.getByTestId('advanced-models'))
   await expand(page.getByTestId('auxiliary-models'))
   await expect(page.getByTestId('auxiliary-models')).toBeVisible()
   await expect(page.getByTestId('auxiliary-models')).toContainText('辅助模型')

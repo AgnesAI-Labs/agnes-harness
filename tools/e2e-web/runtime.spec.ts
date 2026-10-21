@@ -101,12 +101,14 @@ test('session admission keeps history readable, drafts editable and sending gate
   const a = await client.session.new({
     sessionKey: randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
   })
   const b = await client.session.new({
     sessionKey: randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
   })
   await prompt(a, 'Admission history A')
   await prompt(b, 'Admission history B')
@@ -143,7 +145,10 @@ test('session admission keeps history readable, drafts editable and sending gate
   await input.fill('/plan Local draft A')
   await input.press('Enter')
   await expect(input).toHaveValue('/plan Local draft A')
-  await expect(page.getByRole('button', { name: 'Preparing session…', exact: true })).toBeDisabled()
+  await expect(page.locator('#send')).toBeDisabled()
+  await expect(
+    page.getByRole('status').filter({ hasText: 'History preview (not yet verified)' }),
+  ).toBeVisible()
   await expect(page.getByTestId('attachment-file-input')).toBeDisabled()
   await page.getByText('Admission B', { exact: true }).first().click()
   await input.fill('Local draft B')
@@ -375,7 +380,8 @@ test('streaming follows the bottom, preserves a reading position and resumes fro
     const session = await client.session.new({
       sessionKey: randomUUID(),
       cwd: runtime.workspace,
-      preset: 'full-access',
+      preset: 'standard',
+      permission: 'full-access',
     })
     await page.goto(`${runtime.url}/?session=${session.id}`)
     await page
@@ -457,7 +463,8 @@ test('fresh first run, keyless demo, SDK account save and credential persistence
   const session = await webClient.session.new({
     sessionKey: randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
   })
   await session.attach()
   await prompt(session, 'Hello offline E2E')
@@ -497,7 +504,8 @@ test('fresh first run, keyless demo, SDK account save and credential persistence
     const real = await configured.session.new({
       sessionKey: randomUUID(),
       cwd: runtime.workspace,
-      preset: 'full-access',
+      preset: 'standard',
+      permission: 'full-access',
     })
     expect(real.id).not.toBe(session.id)
     await real.attach()
@@ -519,6 +527,8 @@ test('fresh first run, keyless demo, SDK account save and credential persistence
     const cli = await runtime.cli([
       '-p',
       '--preset',
+      'standard',
+      '--permission',
       'full-access',
       '--cwd',
       runtime.workspace,
@@ -563,7 +573,8 @@ test('stored credential rejection offers account repair and recovers without res
     const session = await client.session.new({
       sessionKey: randomUUID(),
       cwd: runtime.workspace,
-      preset: 'full-access',
+      preset: 'standard',
+      permission: 'full-access',
     })
     await session.attach()
     await prompt(session, 'Before revocation')
@@ -585,7 +596,9 @@ test('stored credential rejection offers account repair and recovers without res
     await composer.press('Enter')
     const repair = page.getByTestId('credential-repair')
     await expect(repair).toHaveText('Fix model account')
-    await expect(page.locator('#notice')).toContainText('credentials have expired or were rejected')
+    await expect(page.locator('#notice')).toContainText(
+      'The credential was rejected. Check it and try again.',
+    )
     expect(provider.rejectedInferenceRequests).toBe(2)
     await page.screenshot({ path: info.outputPath('credential-repair-en-light.png') })
     await repair.click()
@@ -624,7 +637,8 @@ test('folder capability review, explicit trust/enable, tool invocation and disab
   const session = await client.session.new({
     sessionKey: randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
     loop,
   })
   await session.attach()
@@ -634,7 +648,8 @@ test('folder capability review, explicit trust/enable, tool invocation and disab
   const fresh = await client.session.new({
     sessionKey: randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
     loop,
   })
   expect((await fresh.tools()).tools.some((tool) => tool.name === 'demo_text_stats')).toBe(false)
@@ -673,7 +688,8 @@ test('CLI MCP stdio fixture runs through the SDK and workspace skills are discov
   const session = await client.session.new({
     sessionKey: randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
   })
   await session.attach()
   // MCP tools are deferred; discover the schema without bypassing normal tool authorization.

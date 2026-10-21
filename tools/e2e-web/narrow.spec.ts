@@ -201,7 +201,8 @@ for (const locale of ['en', 'zh-CN'])
       const client = await runtime.connect()
       const session = await client.session.new({
         cwd: runtime.workspace,
-        preset: 'full-access',
+        preset: 'standard',
+        permission: 'full-access',
         sessionKey: 'narrow-session',
       })
       await session.attach()
@@ -255,7 +256,7 @@ for (const locale of ['en', 'zh-CN'])
         await account
           .getByRole('textbox', { name: name('Base URL', '服务地址'), exact: true })
           .fill(provider.baseUrl)
-        await account.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
+        await account.locator('#config-api-key').fill(provider.apiKey)
         await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'workspace')
         await guide.locator('.agh-disclosure > .agh-disclosure-summary').click()

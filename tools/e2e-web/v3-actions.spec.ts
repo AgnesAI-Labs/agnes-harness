@@ -169,7 +169,8 @@ test('v3 MCP two-step local wizard saves a stdio fixture only after consent', as
   const probe = await client.session.new({
     sessionKey: crypto.randomUUID(),
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
   })
   await probe.attach()
   const tool = (await probe.tools()).tools.find(
@@ -284,7 +285,9 @@ test('v3 runtime dialog lists and revokes a session approval grant', async ({ pa
   await open(page, runtime)
   await page.locator('#new').click()
   const current = await send(page, 'call shell {"command":"printf REG5_SESSION_GRANT"}')
-  await page.getByRole('button', { name: 'Allow all shell calls in this session', exact: true }).click()
+  await page
+    .getByRole('button', { name: 'Allow all calls to this tool in this session', exact: true })
+    .click()
   await expect(current).toHaveAttribute('data-status', 'completed')
   const id = new URL(page.url()).searchParams.get('session')
   if (!id) throw new Error('Approval grant needs a session')
@@ -377,8 +380,11 @@ for (const locale of ['en', 'zh-CN']) {
     const picker = page.locator('#permission-picker-popover')
     await expect(picker).toContainText(
       locale === 'en'
-        ? 'Everything is allowed automatically; no approval prompts'
-        : '全部操作自动允许，不再弹出审批',
+        ? 'All actions are allowed automatically, including business sign-offs'
+        : '所有操作自动允许，包括业务签署',
+    )
+    await expect(picker).toContainText(
+      locale === 'en' ? 'Questions that need your answer still ask.' : '需要你回答的问题仍会询问。',
     )
     await expect(picker).not.toContainText(locale === 'en' ? 'exceptions apply' : '仍有例外')
     await page.screenshot({ path: test.info().outputPath('full-access-picker.png') })
