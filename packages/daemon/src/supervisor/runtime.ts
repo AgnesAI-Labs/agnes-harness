@@ -241,7 +241,7 @@ import { openDaemonLogs } from './runtime-log.js'
 import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
 import { callWorkerScheduling } from './scheduling-service.js'
-import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
+import { canonicalPath, daemonProfileLoader, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import { workerClientServices } from './service-worker.js'
 import { registerSessionMethods } from './session-methods.js'
 import { recencyCursor } from './session-reads.js'
@@ -2822,20 +2822,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
         await initializeHomeLocked(scope.home, scope.profile, { dataDir: scope.dataDir })
       else initializeHome(scope.home, scope.profile)
     }
-    const resolver = deps.resolveProfile ?? resolveDaemonProfile
-    const loadProfile = async (
-      options: Parameters<typeof resolveDaemonProfile>[1] = {},
-    ): Promise<Awaited<ReturnType<typeof resolveDaemonProfile>>> => {
-      try {
-        return await resolver(scope, options)
-      } catch (error) {
-        // Preserve a corrupt package lock as recovery evidence. Host can still resolve the configured
-        // profile with an empty lock overlay; PackageManager remains the authoritative lock reader and
-        // exposes the profile as read-only rather than replacing its bytes during boot.
-        if (!(error instanceof HostError) || error.code !== 'E_LOCK_MISMATCH') throw error
-        return await resolveDaemonProfile(scope, { ...options, ignorePackageLock: true })
-      }
-    }
+    const loadProfile = daemonProfileLoader(scope, deps.resolveProfile ?? resolveDaemonProfile)
     const loaded = await bootVerification.bind(loadProfile)()
     const { profile, configuration } = loaded
     const reloadProfile = async (adminBundles?: readonly string[]): Promise<ResolvedProfile> => {
