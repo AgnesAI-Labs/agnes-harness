@@ -73,7 +73,8 @@ export type SandboxExecRequest = Readonly<{
    * scope must refuse. It must not run the command and claim the scope held.
    */
   fsWrite?: readonly SandboxFsWriteScope[]
-  /** Ask for network. A provider with `network: false` must refuse. */
+  /** Ask to initiate network connections. Inbound-only loopback serving is carried by policy.
+   * A provider with `network: false` must refuse this flag. */
   network?: boolean
 }>
 

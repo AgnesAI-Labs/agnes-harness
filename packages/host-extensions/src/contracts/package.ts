@@ -145,6 +145,7 @@ export type SandboxWorkspaceProbeFactory = (input: {
     allowPaths: readonly string[]
     denyPaths: readonly string[]
     networkAllow: readonly string[]
+    loopbackServe?: boolean
   }
   probeExec: (
     argv: string[],

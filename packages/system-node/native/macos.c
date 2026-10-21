@@ -266,6 +266,7 @@ static napi_value sync_descriptor(napi_env env, napi_callback_info info) {
   return NULL;
 }
 
+#include "loopback-listener.h"
 #include "rename-directory.h"
 #include "skill-delete-posix.h"
 
@@ -296,6 +297,8 @@ static napi_value initialize(napi_env env, napi_value exports) {
   napi_set_named_property(env, exports, "renameDirectoryNoReplace", function);
   napi_create_function(env, "syncDescriptor", NAPI_AUTO_LENGTH, sync_descriptor, NULL, &function);
   napi_set_named_property(env, exports, "syncDescriptor", function);
+  napi_create_function(env, "openLoopbackListener", NAPI_AUTO_LENGTH, open_loopback_listener, NULL, &function);
+  napi_set_named_property(env, exports, "openLoopbackListener", function);
   return exports;
 }
 

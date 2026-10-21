@@ -405,6 +405,8 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
           workspaceRoot: policy.workspaceRoot,
           ...(slot.options ? { options: slot.options } : {}),
         })
+      if (policy.network.mode === 'loopback-serve' && selected.id !== LOCAL_SANDBOX_PROVIDER_ID)
+        throw sandboxUnavailable('loopback serving requires the local macOS L1 provider')
       if (!selected.capabilities.available || !selected.openProcess)
         throw sandboxUnavailable('the selected provider does not support interactive execution')
       if (
@@ -457,6 +459,8 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
         throw sandboxUnavailable('the request names a different sandbox provider')
       const policy = opts.sandbox?.policy
       if (!policy) throw sandboxUnavailable('the request carries no authorized execution policy')
+      if (policy.network.mode === 'loopback-serve' && selected.id !== LOCAL_SANDBOX_PROVIDER_ID)
+        throw sandboxUnavailable('loopback serving requires the local macOS L1 provider')
       opts.signal?.throwIfAborted()
       const required = policy.requiredEnforcement
       const offered =
@@ -484,7 +488,7 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
           ...(opts.maxOutputBytes === undefined ? {} : { maxOutputBytes: opts.maxOutputBytes }),
         },
         fsWrite: Object.freeze(policy.fsWrite.allow.map((path) => Object.freeze({ path }))),
-        network: policy.network.mode !== 'deny',
+        network: policy.network.mode === 'allow' || policy.network.mode === 'hosts',
       })
       const actual = result.enforcement
       if (
