@@ -109,7 +109,7 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
-import { roleAuthority, rolePolicyCeiling } from '../child/role-authority.js'
+import { roleAuthority } from '../child/role-authority.js'
 import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
@@ -182,6 +182,7 @@ import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { permissionOperator, SessionPermissionAuthority } from './session-permission-authority.js'
 import { invalidatePermissionProjection } from './session-permission-projection.js'
 import { sessionToolCatalog } from './tool-catalog.js'
+import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 
@@ -918,20 +919,7 @@ export class SessionImpl {
   )
   /** The selected policy inside this session's effective command and captured role floors. */
   toolPolicy(selection?: string) {
-    const captured = this.roleAuthority
-    const own = this.commandFloor(
-      this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default'),
-      // The role's floor must inherit the captured deployment table too. Otherwise its
-      // default risk policy asks about a write the parent table already admits.
-      captured?.commandRules(this.preset.approval.commandTable) ?? this.preset.approval.commandTable,
-    )
-    if (!captured) return own
-    return captured.toolPolicy(
-      own,
-      rolePolicyCeiling(captured, (policy, rules) =>
-        this.commandFloor(this.toolPolicies.resolve(policy), rules),
-      ),
-    )
+    return effectiveToolPolicy(this, this.toolPolicies, this.commandFloor, selection)
   }
 
   loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {
