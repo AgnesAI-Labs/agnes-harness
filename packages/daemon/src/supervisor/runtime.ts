@@ -161,7 +161,6 @@ import {
   RequestTraceStore,
   type ResolvedProfile,
   readFactChainBinding,
-  readStoredSessionView,
   resolveComposition,
   resolveFileSecretsDirectory,
   type ScanRead,
@@ -245,7 +244,7 @@ import { callWorkerScheduling } from './scheduling-service.js'
 import { canonicalPath, resolveDaemonProfile, resolveDaemonScope } from './scope.js'
 import { workerClientServices } from './service-worker.js'
 import { registerSessionMethods } from './session-methods.js'
-import { recencyCursor, type SessionViewRead } from './session-reads.js'
+import { recencyCursor, type SessionViewRead, storageReads } from './session-reads.js'
 import { keepSharedWorker, type SharedWorkerKeeper } from './shared-keeper.js'
 import { createSkillInstallRequests } from './skill-install-requests.js'
 import { type SkillWatcher, startSkillWatcher } from './skill-watcher.js'
@@ -2717,14 +2716,7 @@ export async function startProductionSupervisor(
         'artifact_read_authority',
       ),
       reclaim: storage.crashReclaim,
-      sessionFactRead: o.sessionFactRead ?? ((key) => (query) => storage.scan(key, query)),
-      // The daemon's ledger is the Host's only when the Host keeps the default SQLite persistence.
-      ...(o.sessionViewRead || o.profile.persistence === undefined
-        ? {
-            sessionViewRead:
-              o.sessionViewRead ?? ((key, options) => readStoredSessionView(storage, key, options)),
-          }
-        : {}),
+      ...storageReads(o, storage),
     })
   } catch (error) {
     stopDiagnostics()

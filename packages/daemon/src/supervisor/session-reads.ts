@@ -1,5 +1,11 @@
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import { rpcError, type SessionRuntimeParams, type SessionViewParams } from '@agnes/protocol'
+import { type createSqliteStorage, readStoredSessionView, type ScanRead } from '@agnes/host'
+import {
+  type EventEnvelope,
+  rpcError,
+  type SessionRuntimeParams,
+  type SessionViewParams,
+} from '@agnes/protocol'
 import type { WorkerPool } from './worker-pool.js'
 
 /** A recorded session's view read from the daemon's own ledger connection. */
@@ -7,6 +13,30 @@ export type SessionViewRead = (
   sessionId: string,
   options: { maxNodes?: number; signal?: AbortSignal },
 ) => Promise<unknown>
+
+/**
+ * The ledger reads the daemon answers itself: fact chains always, and recorded session views when
+ * the daemon's ledger is the Host's, which holds only for the default SQLite persistence.
+ */
+export function storageReads(
+  o: {
+    sessionFactRead?: (sessionId: string) => ScanRead<EventEnvelope>
+    sessionViewRead?: SessionViewRead
+    profile: { persistence?: unknown }
+  },
+  storage: ReturnType<typeof createSqliteStorage>,
+): { sessionFactRead: (sessionId: string) => ScanRead<EventEnvelope>; sessionViewRead?: SessionViewRead } {
+  const sessionViewRead =
+    o.sessionViewRead ??
+    (o.profile.persistence === undefined
+      ? (key: string, options: { maxNodes?: number; signal?: AbortSignal }) =>
+          readStoredSessionView(storage, key, options)
+      : undefined)
+  return {
+    sessionFactRead: o.sessionFactRead ?? ((key) => (query) => storage.scan(key, query)),
+    ...(sessionViewRead ? { sessionViewRead } : {}),
+  }
+}
 
 /**
  * Read through the shared Host without opening a session or acquiring its writer lease. A recorded
