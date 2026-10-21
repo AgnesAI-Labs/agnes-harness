@@ -240,7 +240,9 @@ it('spells tip key names from the keymap and keeps each tip to one line', () => 
 
 describe('welcome motion', () => {
   const T0 = NOW
-  function animated(over: { theme?: TuiThemeName; tier?: 'none' | '256'; motion?: boolean } = {}) {
+  function animated(
+    over: { theme?: TuiThemeName; tier?: 'none' | '256'; motion?: boolean; random?: number } = {},
+  ) {
     let t = T0
     const theme = new TuiTheme(over.theme ?? 'dark')
     const banner = new WelcomeBanner({
@@ -252,7 +254,7 @@ describe('welcome motion', () => {
       theme,
       viewport: () => ({ rows: 40 }),
       now: () => t,
-      random: () => 0.5,
+      random: () => over.random ?? 0.5,
       motion: over.motion ?? true,
     })
     banner.update(FACTS)
@@ -295,20 +297,42 @@ describe('welcome motion', () => {
   })
 
   it('blinks every four to six seconds for 150 ms and reopens on settle', () => {
-    const { banner, at } = animated()
+    // 0.25 puts the first blink at 4.5 s, between two sweeps.
+    const { banner, at } = animated({ random: 0.25 })
     banner.start()
     at(2400)
-    expect(banner.tick()).toBe(2600)
+    expect(banner.tick()).toBe(2100)
     expect(strip(banner.render(132)[5] as string)).toContain('·ᴗ·')
-    at(5000)
+    at(4500)
     expect(banner.tick()).toBe(150)
     expect(strip(banner.render(132)[5] as string)).toContain('˘ᴗ˘')
-    at(5100)
+    at(4600)
     banner.settle()
     expect(strip(banner.render(132)[5] as string)).toContain('·ᴗ·')
-    at(5150)
-    expect(banner.tick()).toBe(5000)
+    at(4650)
+    expect(banner.tick()).toBe(350)
     expect(banner.render(132)).toEqual(still)
+  })
+
+  it('repeats the shine every 5 s: sweep, rest, sweep again', () => {
+    const { banner, at } = animated()
+    banner.start()
+    const wordmark = () => banner.render(132).slice(0, 8)
+    at(600)
+    const sweep = wordmark()
+    expect(sweep).not.toEqual(still.slice(0, 8))
+    at(3000)
+    // Resting: the still layout, and the next wake-up is the next sweep (or a blink before it).
+    expect(wordmark()).toEqual(still.slice(0, 8))
+    expect(banner.tick()).toBe(2000)
+    at(5000)
+    expect(banner.tick()).toBe(60)
+    at(5600)
+    expect(wordmark()).toEqual(sweep)
+    at(6200)
+    expect(wordmark()).toEqual(still.slice(0, 8))
+    at(15600)
+    expect(wordmark()).toEqual(sweep)
   })
 
   it('stays still without motion, in mono and on the none tier', () => {

@@ -94,9 +94,11 @@ export type WelcomeFacts = {
   tip?: { text: string; fresh: boolean }
 }
 
-// Motion, all measured from `start()`: a diagonal shine over the wordmark, a hue cycle on the NEW tag
-// and an idle blink. Every one of them ends on the frame the still layout draws.
+// Motion, all measured from `start()`: a diagonal shine over the wordmark that repeats, a hue cycle on
+// the NEW tag and an idle blink. Every one of them rests on the frame the still layout draws.
 const SHINE_MS = 1200
+/** The shine starts again this long after the previous sweep started. */
+const SHINE_PERIOD_MS = 5000
 const SHINE_BAND = 0.18
 const NEW_MS = 2400
 const BLINK_MS = 150
@@ -192,9 +194,11 @@ export class WelcomeBanner implements Component {
       this.nextBlink = this.blinkEnd + 4000 + (this.o.random?.() ?? Math.random()) * 2000
     }
     const elapsed = now - this.startedAt
-    if (elapsed < SHINE_MS) return 60
+    const phase = elapsed % SHINE_PERIOD_MS
+    if (phase < SHINE_MS) return 60
     if (elapsed < NEW_MS && this.facts.tip?.fresh) return 80
-    return Math.max(1, Math.ceil(now < this.blinkEnd ? this.blinkEnd - now : this.nextBlink - now))
+    const blink = now < this.blinkEnd ? this.blinkEnd - now : this.nextBlink - now
+    return Math.max(1, Math.ceil(Math.min(blink, SHINE_PERIOD_MS - phase)))
   }
 
   /** Back to the still picture, eyes open: for when the welcome leaves view or a turn begins. */
@@ -211,8 +215,9 @@ export class WelcomeBanner implements Component {
     const base = this.o.theme.rampAt(d)
     if (base === undefined) return 'accent'
     const elapsed = this.elapsed
-    if (elapsed === undefined || elapsed >= SHINE_MS) return base
-    const front = (elapsed / SHINE_MS) * 1.5 - 0.25
+    const phase = elapsed === undefined ? SHINE_MS : elapsed % SHINE_PERIOD_MS
+    if (phase >= SHINE_MS) return base
+    const front = (phase / SHINE_MS) * 1.5 - 0.25
     const k = Math.max(0, 1 - Math.abs(d - front) / SHINE_BAND)
     return k > 0 ? (blendColours([base, this.o.theme.ramp().at(-1)], k) ?? base) : base
   }
