@@ -156,6 +156,29 @@ const fresh = (extra: Record<string, unknown> = {}) => ({
   target: { kind: 'new-session', cwd: '/work/report', ...extra },
 })
 
+it('keeps the target on the schedule row and run progress on the run row', () => {
+  const { db, catalog } = memory()
+  const created = catalog.create({ ...fresh(), origin: 'sess' })
+  expect(
+    db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('schedule_targets', 'schedule_run_progress')",
+      )
+      .all(),
+  ).toEqual([])
+  const row = db.prepare('SELECT target, origin FROM schedules WHERE id = ?').get(created.id) as {
+    target: string
+    origin: string | null
+  }
+  expect(JSON.parse(row.target)).toEqual(created.target)
+  expect(row.origin).toBe('sess')
+  catalog.recordDispatch(`schedule:${created.id}:1`, { at: NOW, reason: 'prompt', sessionKey: 'run-1' })
+  const run = db.prepare('SELECT progress FROM schedule_runs WHERE schedule_id = ?').get(created.id) as {
+    progress: string
+  }
+  expect(JSON.parse(run.progress)).toEqual({ outcome: 'running', needsAttention: false, pending: {} })
+})
+
 it('validates a target shape and stores a new-session target with a placeholder job session', () => {
   const { db, catalog } = memory()
   const created = catalog.create({
@@ -203,7 +226,7 @@ it('validates a target shape and stores a new-session target with a placeholder 
     )
 })
 
-it('reads a row written before targets existed as its session target', () => {
+it('reads a schedule row with no stored target as its session target', () => {
   const { db, catalog } = memory()
   db.prepare(
     `INSERT INTO schedules (id, session_key, title, prompt, selector, status, job_key, revision, next_run_at, created_at, updated_at)
