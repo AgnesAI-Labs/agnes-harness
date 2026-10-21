@@ -55,10 +55,16 @@ async function fixture(resolveAgent?: (profile: string, ref: string) => Promise<
     },
   })
   let packages = [make('a'), make('b')]
+  const inventoryOptions: Array<{ fresh?: boolean; settled?: boolean } | undefined> = []
   const inactive = new Set<string>()
   const applications = new Applications({
     ...(resolveAgent ? { resolveAgent } : {}),
-    manager: { inventory: async () => ({ profile: 'local-dev', hash: '', packages }) },
+    manager: {
+      inventory: async (_directory, options) => {
+        inventoryOptions.push(options)
+        return { profile: 'local-dev', hash: '', packages }
+      },
+    },
     profileDirectory: async () => directory,
     active: async (_profile, id) => !inactive.has(id),
     home,
@@ -74,6 +80,7 @@ async function fixture(resolveAgent?: (profile: string, ref: string) => Promise<
     directory,
     config,
     applications,
+    inventoryOptions,
     adopt,
     packages: () => packages,
     setActive(id: string, active: boolean) {
@@ -841,3 +848,14 @@ it.each(['snapshot', 'selection', 'launch-plan'] as const)(
     })
   },
 )
+
+it('reads the application state from the settled inventory, but never previews or adopts from it', async () => {
+  const f = await fixture()
+  f.inventoryOptions.length = 0
+  await f.applications.get('local-dev')
+  expect(f.inventoryOptions).toEqual([{ settled: true }])
+  f.inventoryOptions.length = 0
+  await f.adopt('a')
+  // get, preview, adopt (fresh), and the get adopt returns: only the display reads are settled.
+  expect(f.inventoryOptions).toEqual([{ settled: true }, undefined, { fresh: true }, { settled: true }])
+})

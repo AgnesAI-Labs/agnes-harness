@@ -336,7 +336,7 @@ export class Applications {
     // Clearing remains possible even when inventory cannot be read.
     let unavailable = false
     const packages = await this.options.manager
-      .inventory(directory)
+      .inventory(directory, { settled: true })
       .then((i) => i.packages)
       .catch(() => {
         unavailable = true

@@ -175,7 +175,11 @@ it('bounds each light query to one installed tree and one exact referenced snaps
       '_agnes/v1/skins.list',
       'models',
     ] as const) {
+      // Display reads of the roster and the application state reuse the last complete inventory
+      // until a package write: the cold round follows one, the warm round hashes nothing.
+      const settled = method === '_agnes/v1/applications.get' || method === '_agnes/v1/clientModules.list'
       for (const round of ['cold', 'warm']) {
+        if (round === 'cold') await f.m.recover(f.profileDir)
         hash.mockClear()
         asyncHash.mockClear()
         const start = performance.now()
@@ -199,7 +203,7 @@ it('bounds each light query to one installed tree and one exact referenced snaps
           `${(performance.now() - start).toFixed(2)}ms`,
         )
         expect(hash.mock.calls.length).toBe(0)
-        expect(asyncHash.mock.calls.length).toBe(18)
+        expect(asyncHash.mock.calls.length).toBe(settled && round === 'warm' ? 0 : 18)
         expect([...counts.values()].every((count) => count === 1)).toBe(true)
       }
     }
