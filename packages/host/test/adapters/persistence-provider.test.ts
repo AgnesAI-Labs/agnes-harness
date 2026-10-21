@@ -158,7 +158,7 @@ describe('persistence provider', () => {
       const reader = await SessionLogImpl.open(options)
       expect(reader.openStats.checkpoint).toEqual({ used: true, throughSeq: 1 })
       await reader.fullVerified()
-      // The reader hashed its prefix already: a recheck checks the tail only and finishes at once.
+      // A recheck checks the tail only and finishes at once; the prefix is hashed only when asked to.
       await reader.verifyHistory()
       expect(reader.historyVerified).toBe(true)
       await reader.verifyHistory({ rehashPrefix: true })

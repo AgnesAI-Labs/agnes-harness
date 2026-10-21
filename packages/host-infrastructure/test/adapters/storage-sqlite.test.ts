@@ -583,9 +583,10 @@ describe('storage-sqlite', () => {
         clock: () => now + 5000,
         timers: { setTimeout: () => 0, clearTimeout: () => undefined },
       })
-    // The writer's close left a verified-head checkpoint, so this open starts from it; the background
-    // verification then finds the row, seals the session and drops the checkpoint.
+    // The writer's close left a verified-head checkpoint, so this open starts from it without hashing
+    // the prefix; the explicit full verification then finds the row, seals the session and drops it.
     const reader = await reopen('reader')
+    await reader.verifyHistory({ rehashPrefix: true })
     await expect(reader.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await reader.close()
     await expect(reopen('second-reader')).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
@@ -720,9 +721,11 @@ describe('storage-sqlite', () => {
     await log.close()
     const db = new DatabaseSync(s.file)
     db.prepare("UPDATE events SET integrity_digest = 'bad' WHERE session_key = 'middle' AND seq = 2").run()
-    // The writer's close left a verified-head checkpoint, so this open starts from it; the background
-    // verification then finds the damaged row, seals the session and drops the checkpoint.
+    // The writer's close left a verified-head checkpoint, so this open starts from it without hashing
+    // the prefix; the explicit full verification then finds the damaged row, seals the session and
+    // drops the checkpoint.
     const reader = await SessionLogImpl.open({ ...options, writerRunId: 'reader' })
+    await reader.verifyHistory({ rehashPrefix: true })
     await expect(reader.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await reader.close()
     await expect(SessionLogImpl.open({ ...options, writerRunId: 'second-reader' })).rejects.toMatchObject({

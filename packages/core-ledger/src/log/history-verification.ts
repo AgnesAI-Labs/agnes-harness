@@ -74,13 +74,18 @@ export async function verifyCheckpointPrefix(
   }
 }
 
-/** Cold opens fold the prefix; live rechecks need only the tail. Both rehash the prefix afterwards. */
+/**
+ * Cold opens fold the prefix and hash only the tail; live rechecks need only the tail. Neither hashes the
+ * prefix: `hashPrefix` makes a ledger without a usable checkpoint hash every row, for an explicit full
+ * verification (one with a checkpoint rehashes its prefix with `verifyCheckpointPrefix`).
+ */
 export async function verifyCheckpointHistory(
   storage: StorageAdapter,
   key: SessionKey,
   lastSeq: Seq,
   options: VerificationOptions,
   onPage?: (events: Event[]) => void,
+  hashPrefix = false,
 ) {
   // An unreadable checkpoint is not used: verify everything instead.
   const decision = await decideCheckpoint(storage, key, lastSeq).catch(
@@ -94,6 +99,7 @@ export async function verifyCheckpointHistory(
     onPage,
     options,
     decision.use ? decision.head : undefined,
+    hashPrefix,
   )
   return { decision, state }
 }

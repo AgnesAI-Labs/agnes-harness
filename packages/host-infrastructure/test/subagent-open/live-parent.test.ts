@@ -170,7 +170,7 @@ describe('delegated child creation on SQLite: what is still detected', () => {
 })
 
 describe('delegated child creation on SQLite: what is no longer detected (approved)', () => {
-  it('a tool call rewritten at or before the fork point: child and parent both read it; a cold open refuses it once the history is verified', async () => {
+  it('a tool call rewritten at or before the fork point: child and parent both read it; an explicit full verification refuses it', async () => {
     const l = ledger()
     const storage = l.open()
     const provider = script()
@@ -188,8 +188,8 @@ describe('delegated child creation on SQLite: what is no longer detected (approv
     expect((await parent.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     expect(JSON.stringify(provider.requests.at(-1))).toContain('tampered')
     await k.close()
-    // Closing wrote each session's verified-head checkpoint, so a cold open starts before the prefix
-    // is hashed again; the background verification refuses the row and seals the session.
+    // Closing wrote each session's verified-head checkpoint, so a cold open does not hash the prefix;
+    // the explicit full verification refuses the row and seals the session.
     const reopened = l.open()
     const again = kernel(reopened, fakeProvider([]))
     for (const [key, writerRunId] of [
@@ -197,19 +197,23 @@ describe('delegated child creation on SQLite: what is no longer detected (approv
       [childKey, 'r4'],
     ] as const) {
       const session = await again.session(key, { ...sessionOpts, writerRunId })
+      await session.d.log.verifyHistory({ rehashPrefix: true })
       await expect(session.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     }
     await again.close()
     await reopened.close()
-    // The failure dropped both checkpoints: every later open verifies from the first row and fails.
+    // The failure dropped both checkpoints. A later cold open has none to use and does not hash the
+    // prefix either, so it opens; the explicit full verification still refuses the row.
     const fresh = l.open()
     const third = kernel(fresh, fakeProvider([]))
-    await expect(third.session('parent', { ...sessionOpts, writerRunId: 'r5' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    await expect(third.session(childKey, { ...sessionOpts, writerRunId: 'r6' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
+    for (const [key, writerRunId] of [
+      ['parent', 'r5'],
+      [childKey, 'r6'],
+    ] as const) {
+      const session = await third.session(key, { ...sessionOpts, writerRunId })
+      await session.d.log.verifyHistory({ rehashPrefix: true })
+      await expect(session.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    }
     await third.close()
     await fresh.close()
   })
