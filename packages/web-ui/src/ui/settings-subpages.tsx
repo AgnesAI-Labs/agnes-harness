@@ -6,6 +6,7 @@ import { Icon } from './icon.js'
 import type { IconName } from './icon-set.js'
 import { IconTile } from './icon-tile.js'
 import { PushHeader, searchParamRoute, usePushNavigation } from './push-stack.js'
+import { Tooltip } from './tooltip.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
@@ -194,16 +195,17 @@ function RowCopy({
 /** The explanation a row no longer prints: an ⓘ beside the name, read on hover or focus. */
 export function SettingsInfo({ text }: { text: string }) {
   return (
-    <span
-      className="agnes-settings-info agh-touch-target"
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users reach the explanation by focus.
-      tabIndex={0}
-      title={text}
-      aria-label={text}
-      role="note"
-    >
-      <Icon name="info" />
-    </span>
+    <Tooltip title={text}>
+      <span
+        className="agnes-settings-info agh-touch-target"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users reach the explanation by focus.
+        tabIndex={0}
+        aria-label={text}
+        role="note"
+      >
+        <Icon name="info" />
+      </span>
+    </Tooltip>
   )
 }
 
