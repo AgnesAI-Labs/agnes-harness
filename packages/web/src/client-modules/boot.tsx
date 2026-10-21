@@ -336,7 +336,10 @@ export async function startClientModules(options: {
         attach(handle) {
           const attached = { ...handle, dispose() {} }
           transcriptDelegate.current = attached
-          if (lastTranscript) handle.render(...lastTranscript)
+          // A region remounted for another selection starts empty: repainting the previous session's
+          // whole transcript there only delays the switch, and its own content replaces it anyway.
+          if (lastTranscript && lastTranscript.sessionId === session.sessionId)
+            handle.render(...lastTranscript.args)
           return () => {
             if (transcriptDelegate.current === attached) transcriptDelegate.current = null
           }
@@ -513,11 +516,13 @@ export async function startClientModules(options: {
         })
       : undefined
   if (transcript) builtinUnits.mount('@agnes/web-transcript', () => transcript.dispose())
-  let lastTranscript: Parameters<TranscriptRegionMount['render']> | undefined
+  let lastTranscript:
+    | { sessionId: string | undefined; args: Parameters<TranscriptRegionMount['render']> }
+    | undefined
   const transcriptRuntime = conversation
     ? ({
         render(nodes, turns, meta) {
-          lastTranscript = [nodes, turns, meta]
+          lastTranscript = { sessionId: session.sessionId, args: [nodes, turns, meta] }
           transcriptDelegate.current?.render(nodes, turns, meta)
         },
         reset() {

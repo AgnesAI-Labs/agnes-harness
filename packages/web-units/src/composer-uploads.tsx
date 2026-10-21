@@ -156,6 +156,7 @@ export function useComposerUploads(
     clear() {
       // Opening the session requested by this upload clears the ordinary composer attachments.
       // The preparation callback checks selection ownership before returning its session identity.
+      if (current.current.length === 0) return
       for (const entry of current.current) if (entry.state !== 'ready' && !entry.preparing) void cancel(entry)
       current.current = current.current.filter((entry) => entry.preparing && !entry.controller.signal.aborted)
       publish()
