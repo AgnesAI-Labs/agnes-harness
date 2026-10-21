@@ -7,6 +7,7 @@ import {
   openSync,
   readdirSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -93,7 +94,10 @@ describe('batched tree flush', () => {
 
   it('flushes a tree through the native drive flush on macOS and per entry elsewhere', () => {
     const root = tree(),
-      count = entries(root).size,
+      // On Windows a directory flush is a native call, not fsyncSync, so only files are counted.
+      count = [...entries(root)].filter(
+        (path) => process.platform !== 'win32' || !statSync(path).isDirectory(),
+      ).length,
       fsync = vi.mocked(fsyncSync)
     fsync.mockClear()
     syncTreeSync(root)
