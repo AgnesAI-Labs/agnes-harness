@@ -154,6 +154,22 @@ describe('Host locked-package durable operation receipts', () => {
     }
   })
 
+  it('refuses a receipt store of another version before every operation', async () => {
+    const storage = await openMetadata(temp())
+    try {
+      const receipts = createMetadataLockedPackageOperationReceiptPort(storage.metadata)
+      const receipt = await receipts.prepare(prepared())
+      storage.metadata.namespace(OWNER, 'receipts').set('version', 2)
+      await expect(receipts.read(receipt.operationId)).rejects.toThrow('E_LOCKED_PACKAGE_RECEIPT_SCHEMA')
+      await expect(receipts.prepare(prepared('other'))).rejects.toThrow('E_LOCKED_PACKAGE_RECEIPT_SCHEMA')
+      expect(() => createMetadataLockedPackageOperationReceiptPort(storage.metadata)).toThrow(
+        'E_LOCKED_PACKAGE_RECEIPT_SCHEMA',
+      )
+    } finally {
+      await storage.close()
+    }
+  })
+
   it('refuses credentialed provenance without persisting it', async () => {
     const root = temp()
     const storage = await openMetadata(root)

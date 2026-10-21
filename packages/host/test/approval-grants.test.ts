@@ -128,6 +128,26 @@ describe('Host approval grant store', () => {
     }
   })
 
+  it('requires a reset for a metadata store of another version or with grants but no version', async () => {
+    const session = await sqlitePersistenceProvider.open({ dataDir: temp() })
+    try {
+      if (!session.metadata) throw new Error('metadata port missing')
+      const future = session.metadata.namespace('@agnes/host/approval-grants', 'future')
+      future.set('version', 99)
+      expect(() => createApprovalGrantStore(future).list(query)).toThrow(
+        /reset-required: E_APPROVAL_GRANT_SCHEMA_VERSION/,
+      )
+      const unversioned = session.metadata.namespace('@agnes/host/approval-grants', 'unversioned')
+      unversioned.set('grant:x', { ...grant, grantId: 'x' })
+      expect(() => createApprovalGrantStore(unversioned).list(query)).toThrow(
+        /reset-required: unversioned approval grant metadata/,
+      )
+      expect(unversioned.get('version')).toBeUndefined()
+    } finally {
+      await session.close()
+    }
+  })
+
   it('strictly rejects extra fields and impossible calendar dates', async () => {
     const root = temp()
     const opened = await open(root)

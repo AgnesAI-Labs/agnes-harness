@@ -541,7 +541,7 @@ export {
   sqlitePersistenceProvider,
 } from '@agnes/host-infrastructure/adapters/storage-provider'
 
-export function lazyPackageTables(storage: HostPersistence, owner: string): TableStore {
+function lazyPackageTables(storage: HostPersistence, owner: string): TableStore {
   let opened: TableStore | undefined
   return {
     table(name) {
