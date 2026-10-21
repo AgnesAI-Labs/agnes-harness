@@ -162,7 +162,17 @@ describe('createMentionSource', () => {
 
   it('remote: asks the daemon, never the local disk, and drops entries with control characters', async () => {
     const changed = vi.fn()
-    const search = vi.fn(async () => found('srv/a.ts', 'evil\u001b[2Jx.ts'))
+    const search = vi.fn(async () =>
+      found(
+        'srv/a.ts',
+        'evil\u001b[2Jx.ts',
+        '../../etc/passwd',
+        '/etc/hosts',
+        '~/.ssh/id_ed25519',
+        'C:/x',
+        'a/../../b',
+      ),
+    )
     const source = createMentionSource({
       session: { searchReferences: search },
       cwd: '/nonexistent/agh-b7-remote',

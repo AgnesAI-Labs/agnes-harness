@@ -270,6 +270,10 @@ export function oneLine(text: string, max = 120): string {
 
 const noControls = (text: string): boolean => oneLine(text, Number.POSITIVE_INFINITY) === text
 
+/** A workspace-relative path: not absolute, no `~`, no `..` step out of the workspace. */
+const relativeInside = (id: string): boolean =>
+  !isAbsolute(id) && !/^[A-Za-z]:/u.test(id) && !id.startsWith('~') && !id.split(/[\\/]/u).includes('..')
+
 const unavailable = (error: unknown): boolean => {
   const code = (error as { data?: { code?: unknown } } | null)?.data?.code
   return code === 'METHOD_NOT_FOUND' || code === 'CAPABILITY_DENIED'
@@ -326,7 +330,9 @@ export class ReferenceMentionSource {
         (result) => {
           // Only workspace files are completed here; other sources have no `@path` form.
           const items = result.items
-            .filter((item) => item.source === 'file' && item.id && noControls(item.id))
+            .filter(
+              (item) => item.source === 'file' && item.id && noControls(item.id) && relativeInside(item.id),
+            )
             .map((item) => ({ id: item.id, directory: false }))
           this.last = items
           this.store(query, { status: 'ready', items })
@@ -381,7 +387,10 @@ const MENTION = /(^|\s)@(?:"([^"\n]+)"|([^\s@"]+))/gu
  * strips the `@` from the text left behind. Only the location travels; nothing is read. A mention
  * that names nothing (`@alice`) stays as typed.
  */
-export function attachmentsFrom(text: string, cwd: string): ContentBlock[] {
+export function attachmentsFrom(text: string, cwd: string, remote = false): ContentBlock[] {
+  // Over --connect this machine's disk is not the session's workspace: send the text as typed, never a
+  // local file:// location.
+  if (remote) return [{ type: 'text', text }]
   const links: ContentBlock[] = []
   const cleaned = text.replace(MENTION, (match, lead: string, quoted?: string, bare?: string) => {
     const path = quoted ?? bare ?? ''

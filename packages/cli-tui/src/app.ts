@@ -423,7 +423,7 @@ export class TuiApp {
         if (text.trim()) {
           this.editor.clear()
           void this.o.session
-            .followUp(attachmentsFrom(text, this.cwd))
+            .followUp(attachmentsFrom(text, this.cwd, this.o.remote))
             .catch((error) => this.showError(error))
         }
         return true
@@ -1024,7 +1024,7 @@ export class TuiApp {
       this.renderer.requestRender()
       return
     }
-    await this.submitBlocks(attachmentsFrom(text, this.cwd))
+    await this.submitBlocks(attachmentsFrom(text, this.cwd, this.o.remote))
   }
 
   private async submitBlocks(blocks: import('@agnes/protocol').ContentBlock[]): Promise<void> {

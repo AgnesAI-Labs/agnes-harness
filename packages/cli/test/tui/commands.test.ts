@@ -759,6 +759,8 @@ describe('attachmentsFrom', () => {
         { type: 'resource_link', uri: pathToFileURL(join(dir, 'a.txt')).href, name: 'a.txt' },
         { type: 'resource_link', uri: pathToFileURL(join(dir, 'b', 'c.txt')).href, name: 'b/c.txt' },
       ])
+      // Over --connect the local disk is not the workspace: the text goes as typed, with no file:// link.
+      expect(attachmentsFrom('look at @a.txt', dir, true)).toEqual([{ type: 'text', text: 'look at @a.txt' }])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
