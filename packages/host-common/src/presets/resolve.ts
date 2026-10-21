@@ -4,8 +4,7 @@ import { HostError } from '../errors.js'
 import { canonicalJson, sha256hex } from '../profile/canonical.js'
 import { mergePresets, mergeValue } from './merge.js'
 import {
-  aliasedPermission,
-  conflictingPermission,
+  assertRecipeName,
   DEFAULT_PERMISSION,
   declaresPermissionFields,
   OVERLAY_PREFIX,
@@ -43,8 +42,6 @@ function applyPermission(
   requested: Permission | undefined,
   carry: Permission | undefined,
 ): { doc: PresetDoc; permission?: Permission } {
-  const alias = aliasedPermission(name)
-  if (alias && requested && requested !== alias) throw conflictingPermission(name, alias, requested)
   // A recipe that writes permission-axis fields itself is already complete. Its own table is kept
   // as written; asking it for another level would either be ignored or replace a stricter table.
   // A tool policy provider counts too, unless it is the one the catalogue gives every document: a
@@ -62,26 +59,14 @@ function applyPermission(
         capability: 'permission',
         requested,
       })
-    // A permission-level name is `standard` under that level. If `standard` was replaced by a recipe
-    // that fixes its own table, `read-only` and `full-access` can no longer mean their level, and
-    // running them as that recipe would silently grant a different one. `workspace-write` is the
-    // level every recipe runs under as written, so it keeps meaning exactly that.
-    const bare = (doc: PresetDoc | undefined): boolean =>
-      doc !== undefined && Object.keys(doc).every((key) => key === 'name' || key === 'extends')
-    if (alias && alias !== DEFAULT_PERMISSION && bare(docs[name]))
-      refuse(`preset ${name} is the ${alias} permission, which its base recipe does not allow`, {
-        source: name,
-        capability: 'permission',
-        alias,
-      })
     return { doc: merged }
   }
   // `carry` is the level a running session already has: it applies to a recipe that takes one and is
   // ignored by a recipe that fixes its own, so switching between such recipes is still decided by the
   // sandbox comparison and not by this function.
-  const permission = alias ?? requested ?? carry ?? DEFAULT_PERMISSION
+  const permission = requested ?? carry ?? DEFAULT_PERMISSION
   const overlay = docs[overlayName(permission)]
-  // A catalogue that ships no overlays (a hand-built fixture, a deployment predating the split) runs
+  // A catalogue that ships no overlays runs
   // the recipe as written under the default level, which only ever asks more than the overlay would.
   // Any other level needs its overlay: there is nothing to apply and silently running without it
   // would grant a different permission from the one asked for.
@@ -107,19 +92,21 @@ function applyPermission(
 
 /**
  * Walks `extends` to the deepest base, merges downwards, applies the permission overlay and hashes
- * what came out. A name that was a permission level before the split keeps its level.
+ * what came out.
  */
 export function resolvePreset(
   name: string,
   docs: Record<string, PresetDoc>,
   opts: { limits?: Record<string, number>; park?: unknown; permission?: Permission; carry?: Permission } = {},
 ): ResolvedPreset {
+  assertRecipeName(name)
   if (name.startsWith(OVERLAY_PREFIX))
     refuse(`${name} is a permission overlay, not a preset`, { source: name, capability: 'preset' })
   const chain: PresetDoc[] = []
   const seen = new Set<string>()
   let cur: string | undefined = name
   while (cur) {
+    assertRecipeName(cur)
     if (seen.has(cur))
       throw new HostError('E_PROFILE_CYCLE', `preset extends cycle at ${cur}`, {
         detail: { chain: [...seen], preset: cur },

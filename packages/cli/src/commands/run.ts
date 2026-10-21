@@ -194,7 +194,9 @@ export async function runCommand(rest: string[], deps: RunCommandDeps): Promise<
           runId,
           signal: ac.signal,
           ...(parsed.args.preset ? { preset: parsed.args.preset } : {}),
-          ...(parsed.args.permission ? { permission: parsed.args.permission } : {}),
+          ...(parsed.args.permission !== undefined || !parsed.args.agent
+            ? { permission: parsed.args.permission ?? 'default' }
+            : {}),
           ...(parsed.args.loop ? { loop: parsed.args.loop } : {}),
           ...(parsed.args.agent ? { agent: parsed.args.agent } : {}),
           ...(parsed.args.model ? { model: parsed.args.model } : {}),

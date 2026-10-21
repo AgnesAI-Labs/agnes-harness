@@ -31,7 +31,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh --standalone` / `agh --ephemeral` | Embedded / temporary execution |
 | `agh acp` / `agh --mode acp` | ACP protocol entry point |
 
-`--preset` selects the recipe (`standard`, `minimal`, `ptc` or another allowed preset) and `--permission` what the session may do; any allowed pair combines, for example `agh --preset ptc --permission read-only` or just `agh --permission read-only`. The older `agh --preset read-only` (also `workspace-write`, `full-access`) still means `standard` under that permission and cannot be combined with a different `--permission`. See [permissions and presets](../guide/security.md#permissions-and-presets).
+`--preset` selects the recipe (`standard`, `minimal`, `ptc` or another allowed preset) and `--permission` what the session may do; any allowed pair combines, for example `agh --preset ptc --permission read-only` or just `agh --permission read-only`. Retired permission-as-preset aliases (`read-only`, `workspace-write`, `full-access`) are refused; use an explicit recipe and permission. Omitting permission or choosing `default` follows the deployment default. See [permissions and presets](../guide/security.md#permissions-and-presets).
 
 Print options `--park`, `--chunks`, and `--meta` control waiting and output. See [CLI usage](../guide/cli.md) for exit codes. There is no `--session` or plaintext API-key flag.
 

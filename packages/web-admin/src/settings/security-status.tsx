@@ -16,7 +16,6 @@ import {
 import { useEffect } from 'react'
 
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
-import { isPermissionLevel } from './session-choice.js'
 
 type Text = (key: string) => string
 type Policy = RuntimeSecurityStatus['presetPolicies'][number]
@@ -125,9 +124,7 @@ export function SecurityStatusPanel({
           'permission-preset-status',
           t(levels ? 'presetIsolationRequirements' : 'permissionRequirements'),
           t('presets'),
-          levels
-            ? status.presetPolicies.filter((policy) => !isPermissionLevel(policy.id))
-            : status.presetPolicies,
+          status.presetPolicies,
         )}
         <h4>{t('workspacePosture')}</h4>
         {!status.workspaces.length ? (

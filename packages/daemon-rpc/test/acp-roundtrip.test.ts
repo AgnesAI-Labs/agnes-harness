@@ -251,7 +251,7 @@ describe('local endpoint: ACP round trip', () => {
     expect(create.mock.calls[0]?.[0]).toMatchObject({ preset: 'standard', permission: 'full-access' })
     await open(5, { preset: 'standard', sessionKey: 'agnes:permission:b' })
     expect(create.mock.calls[1]?.[0]).toMatchObject({ preset: 'standard' })
-    expect(create.mock.calls[1]?.[0]).not.toHaveProperty('permission')
+    expect(create.mock.calls[1]?.[0]).toHaveProperty('permission', 'default')
     await ep.close()
     await h.close()
   })

@@ -5,8 +5,7 @@ import { readSandboxStartupConfig } from '@agnes/host-common/profile/sandbox-sta
 import { type ApprovalMode, type ApprovalProfile, validateCommandHooksPolicy } from '@agnes/protocol'
 import { HostError, type Layer } from '../errors.js'
 import { cacheDir as defaultCacheDir, dataDir as defaultDataDir } from '../paths.js'
-import { allowedPermissions } from '../presets/admission.js'
-import { DEFAULT_PERMISSION } from '../presets/permission.js'
+import { assertRecipeName, DEFAULT_PERMISSION } from '../presets/permission.js'
 import { canonicalJson, sha256hex } from './canonical.js'
 import { prepareProfileComposition } from './composition.js'
 import { DEFAULT_COMPUTER_USE, mergeComputerUse, resolveComputerUse } from './computer-use.js'
@@ -47,17 +46,16 @@ const SMART_MODE_REMOVED =
   'approvals.mode "smart" was removed; use "auto-review" (a model reviews tool calls and may approve them) or "manual"'
 const MAX_TIMER_MS = 2_147_483_647
 
-/**
- * `permissions` is written by profiles that know the split. An older profile has none, and the
- * levels it grants are derived from `presets.allowed` wherever they are needed (see
- * `allowedPermissions`), so nothing is invented here for it.
- */
+/** Resolve each axis independently; retired permission-level recipes require a clean home. */
 function resolvePermissions(m: RuntimeProfileManifest): Pick<ResolvedProfile, 'permissions'> {
-  if (!m.permissions) return {}
-  const allowed = m.permissions.allowed ?? [
-    ...allowedPermissions({ presets: { allowed: m.presets?.allowed ?? ['standard'] } }),
-  ]
-  return { permissions: { default: m.permissions.default ?? DEFAULT_PERMISSION, allowed } }
+  for (const name of [m.presets?.default, ...(m.presets?.allowed ?? [])])
+    if (name !== undefined) assertRecipeName(name)
+  return {
+    permissions: {
+      default: m.permissions?.default ?? DEFAULT_PERMISSION,
+      allowed: m.permissions?.allowed ?? [DEFAULT_PERMISSION],
+    },
+  }
 }
 
 function resolveReconcilePolicy(value: unknown, layer: Layer): ReconcilePolicy {
@@ -180,10 +178,6 @@ function mergeManifest(
         break
       case 'presets':
         out.presets = { ...(base.presets ?? {}), ...(v as RuntimeProfileManifest['presets']) }
-        // The permissions an earlier layer granted were written next to its own `presets`. A layer
-        // that rewrites `presets` and says nothing about permissions gets them derived from its list,
-        // as before the split, so narrowing the recipes can never leave a wider level granted.
-        if (layer !== 'builtin' && over.permissions === undefined) delete out.permissions
         break
       case 'permissions':
         out.permissions = { ...(base.permissions ?? {}), ...(v as RuntimeProfileManifest['permissions']) }

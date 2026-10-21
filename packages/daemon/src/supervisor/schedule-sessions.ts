@@ -101,6 +101,7 @@ export function scheduleSessions(
         // workspace's canonical session and every run would land in the same conversation.
         const session = await client.createSession({
           cwd: target.cwd,
+          permission: 'default',
           sessionKey: randomUUID(),
           ...(target.preset ? { preset: target.preset } : {}),
           ...(target.bundles?.length ? { bundles: target.bundles } : {}),

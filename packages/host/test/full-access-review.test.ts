@@ -12,10 +12,9 @@ it('business consent: narrowing before commit and revocation inside SQLite roll 
   const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'agh-business-commit-')))
   const h = await createTestHost({
     dataDir,
-    allowed: ['standard', 'full-access'],
+    allowed: ['standard'],
     presets: {
       'permission-full-access': loadPreset('permission-full-access'),
-      'full-access': { name: 'full-access', extends: 'standard' },
     },
   })
   mkdirSync(join(dataDir, 'business'))
@@ -24,7 +23,12 @@ it('business consent: narrowing before commit and revocation inside SQLite roll 
   const store = ownedStore(persistence.metadata.namespace('@fixture/business', 'quality'), () => {}, true)
   try {
     for (const gap of ['before-transaction', 'inside-transaction']) {
-      const session = await h.host.createSession({ key: gap, cwd: dataDir, preset: 'full-access' })
+      const session = await h.host.createSession({
+        key: gap,
+        cwd: dataDir,
+        preset: 'standard',
+        permission: 'full-access',
+      })
       const port = session.decisions.port({
         owner: '@fixture/business',
         sourcePackage: '@fixture/business',
@@ -68,12 +72,10 @@ it('review: a genuinely forked child narrowed from a full-access parent has no a
   const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'agh-full-access-child-')))
   const h = await createTestHost({
     dataDir,
-    allowed: ['standard', 'full-access', 'read-only'],
+    allowed: ['standard'],
     presets: {
       'permission-full-access': loadPreset('permission-full-access'),
       'permission-read-only': loadPreset('permission-read-only'),
-      'full-access': { name: 'full-access', extends: 'standard' },
-      'read-only': { name: 'read-only', extends: 'standard' },
     },
     script: [
       () => [
@@ -83,7 +85,12 @@ it('review: a genuinely forked child narrowed from a full-access parent has no a
     ],
   })
   try {
-    const parent = await h.host.createSession({ key: 'review-parent', cwd: dataDir, preset: 'full-access' })
+    const parent = await h.host.createSession({
+      key: 'review-parent',
+      cwd: dataDir,
+      preset: 'standard',
+      permission: 'full-access',
+    })
     const parentPermissions = parent.decisions.port({
       permission: true,
       owner: 'core/review',
@@ -111,7 +118,12 @@ it('review: a genuinely forked child narrowed from a full-access parent has no a
       cwd: dataDir,
       parent: { key: parent.key, boundarySeq: end.seq },
     })
-    await child.setPreset(h.host.validatePresetSwitch('read-only').view)
+    const readOnly = h.host.validatePresetSwitch('standard').view
+    await child.setPreset({
+      ...readOnly,
+      permission: 'read-only',
+      approval: { ...readOnly.approval, policy: 'read-only' },
+    })
     expect((await parentPermissions.get(inherited)).invalidation).toBeNull()
     const inheritedRows = (await child.scan({ type: 'decision/state', limit: 20 })).filter(
       (row) => (row.data as { handle: { id: string } }).handle.id === inherited.id,
@@ -132,8 +144,8 @@ it('review: a genuinely forked child narrowed from a full-access parent has no a
       prompt: 'Allow?',
       options: ['allowed-once', 'rejected'],
     })
-    expect(parent.preset.name).toBe('full-access')
-    expect(child.preset.name).toBe('read-only')
+    expect(parent.preset.permission).toBe('full-access')
+    expect(child.preset.permission).toBe('read-only')
     expect((await port.get(handle)).result).toBeNull()
   } finally {
     await h.host.close()
@@ -146,11 +158,10 @@ it('review: full access retains private-home and must-read-first hard refusals',
   writeFileSync(join(dataDir, 'existing.txt'), 'original content')
   const h = await createTestHost({
     dataDir,
-    allowed: ['standard', 'full-access'],
+    allowed: ['standard'],
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     presets: {
       'permission-full-access': loadPreset('permission-full-access'),
-      'full-access': { name: 'full-access', extends: 'standard' },
     },
     approval: async () => {
       throw new Error('Unexpected human permission request')
@@ -186,7 +197,11 @@ it('review: full access retains private-home and must-read-first hard refusals',
     ],
   })
   try {
-    const session = await h.host.createSession({ cwd: dataDir, preset: 'full-access' })
+    const session = await h.host.createSession({
+      cwd: dataDir,
+      preset: 'standard',
+      permission: 'full-access',
+    })
     await session.enqueue('next-turn', {
       content: [{ type: 'text', text: 'exercise hard refusals' }],
       actor: session.d.actor,
@@ -223,10 +238,9 @@ it('round6: nested signed writes retain admission until the outer SQLite commit'
   const dataDir = realpathSync(mkdtempSync(join(tmpdir(), 'agh-business-commit-')))
   const h = await createTestHost({
     dataDir,
-    allowed: ['standard', 'full-access'],
+    allowed: ['standard'],
     presets: {
       'permission-full-access': loadPreset('permission-full-access'),
-      'full-access': { name: 'full-access', extends: 'standard' },
     },
   })
   mkdirSync(join(dataDir, 'business'))
@@ -235,7 +249,12 @@ it('round6: nested signed writes retain admission until the outer SQLite commit'
   const store = ownedStore(persistence.metadata.namespace('@fixture/business', 'quality'), () => {}, true)
   try {
     for (const gap of ['after-inner-transaction']) {
-      const session = await h.host.createSession({ key: gap, cwd: dataDir, preset: 'full-access' })
+      const session = await h.host.createSession({
+        key: gap,
+        cwd: dataDir,
+        preset: 'standard',
+        permission: 'full-access',
+      })
       const port = session.decisions.port({
         owner: '@fixture/business',
         sourcePackage: '@fixture/business',

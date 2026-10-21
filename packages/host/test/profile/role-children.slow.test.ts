@@ -146,10 +146,10 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
     },
     disableSessionTitle: true,
     treeBudgetCredits: 100,
-    allowed: ['standard', 'read-only'],
+    allowed: ['standard', 'inspect'],
     presets: {
-      'read-only': {
-        name: 'read-only',
+      inspect: {
+        name: 'inspect',
         extends: 'standard',
         composition: { toolPolicy: { readOnly: true } },
       },

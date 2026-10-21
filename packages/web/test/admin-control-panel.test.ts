@@ -318,7 +318,8 @@ it('loads catalog choices and saves their exact identities and revision', async 
   const snapshot = {
     revision: 4,
     defaults: {
-      preset: 'read-only',
+      preset: 'standard',
+      permission: 'read-only',
       providers: {
         loop: { provider: loop.id, version: loop.version },
         'model-adapter': { provider: adapter.id, version: adapter.version },
@@ -337,7 +338,7 @@ it('loads catalog choices and saves their exact identities and revision', async 
             sourcePackage: `@acme/loop-${index}`,
           })),
         ],
-        presets: ['read-only', 'workspace-write', 'full-access'],
+        presets: ['standard', 'ptc'],
         ...snapshot,
       })
     if (String(url).endsWith('/model-adapters')) return Response.json({ modelAdapters: [adapter] })
@@ -345,7 +346,8 @@ it('loads catalog choices and saves their exact identities and revision', async 
       return Response.json({
         selection: { loop },
         sources: { loop: { layer: 'profile', name: 'test' } },
-        preset: 'workspace-write',
+        preset: 'standard',
+        permission: 'workspace-write',
       })
     expect(init?.method).toBe('PUT')
     return Response.json({ ...snapshot, revision: 5 })
@@ -405,7 +407,8 @@ it('loads catalog choices and saves their exact identities and revision', async 
   expect(JSON.parse(String(saved[0]?.[1]?.body))).toEqual({
     revision: 4,
     defaults: {
-      preset: 'read-only',
+      preset: 'standard',
+      permission: 'read-only',
       providers: { 'model-adapter': { provider: adapter.id, version: adapter.version } },
       model: 'model',
     },
@@ -420,7 +423,11 @@ it('rereads new-session defaults after a revision conflict so retry saves on the
   let conflict = true
   const fetcher = vi.fn<typeof fetch>(async (url, init) => {
     if (String(url).endsWith('/loops'))
-      return Response.json({ loops: [loop], revision, defaults: { preset: 'read-only' } })
+      return Response.json({
+        loops: [loop],
+        revision,
+        defaults: { preset: 'standard', permission: 'read-only' },
+      })
     if (String(url).endsWith('/model-adapters')) return Response.json({ modelAdapters: [] })
     if (String(url).endsWith('/composition')) return Response.json({})
     const body = JSON.parse(String(init?.body))
@@ -461,7 +468,11 @@ it('rereads new-session defaults after a revision conflict so retry saves on the
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="settings-save-retry"]')?.click())
   expect(saves().at(-1)).toEqual({
     revision: 9,
-    defaults: { preset: 'read-only', providers: { loop: { provider: 'workflow', version: '1.0.0' } } },
+    defaults: {
+      preset: 'standard',
+      permission: 'read-only',
+      providers: { loop: { provider: 'workflow', version: '1.0.0' } },
+    },
   })
 })
 
@@ -901,11 +912,7 @@ it('places ordered bundle and preset choices beside the loop only for a new sess
       label: 'Loop',
       inherited: 'Inherit',
       unavailable: 'Unavailable',
-      // A legacy permission-level name is never offered as a recipe.
-      presets: [
-        { id: 'standard', isDefault: true },
-        { id: 'read-only', isDefault: false },
-      ],
+      presets: [{ id: 'standard', isDefault: true }],
       presetLabel: 'Preset',
       inheritedPreset: 'standard',
       bundles,
@@ -1037,8 +1044,7 @@ it.each([
     label: 'Loop',
     inherited: 'Inherit',
     unavailable: 'Unavailable',
-    // Legacy permission-level aliases still sit in the Host's preset catalog.
-    presets: [...ids, 'read-only', 'workspace-write', 'full-access'].map((id) => ({
+    presets: ids.map((id) => ({
       id,
       isDefault: id === 'standard',
     })),
@@ -1081,7 +1087,7 @@ it('inherits the admin preset before the profile default and renders its permiss
     providers: [],
     presets: [
       { id: 'standard', isDefault: true },
-      { id: 'read-only', isDefault: false },
+      { id: 'review', isDefault: false },
     ],
     localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/.agh/plugins' },
     security: {
@@ -1099,20 +1105,20 @@ it('inherits the admin preset before the profile default and renders its permiss
       workspaces: [],
     },
   }
-  expect(effectiveSessionPreset(undefined, { preset: 'read-only' }, runtime)).toBe('read-only')
-  expect(effectiveSessionPreset('full-access', { preset: 'read-only' }, runtime)).toBe('full-access')
+  expect(effectiveSessionPreset(undefined, { preset: 'review' }, runtime)).toBe('review')
+  expect(effectiveSessionPreset('custom-full', { preset: 'review' }, runtime)).toBe('custom-full')
   expect(effectiveSessionPreset(undefined, {}, runtime)).toBe('standard')
-  expect(permissionForSessionPreset('read-only', runtime)).toBe('view')
+  expect(permissionForSessionPreset('read-only', runtime)).toBeUndefined()
   expect(permissionForSessionPreset('review', runtime)).toBe('view')
-  expect(permissionForSessionPreset('workspace-write', runtime)).toBe('workspace')
-  expect(permissionForSessionPreset('full-access', runtime)).toBe('full')
+  expect(permissionForSessionPreset('workspace-write', runtime)).toBeUndefined()
+  expect(permissionForSessionPreset('full-access', runtime)).toBeUndefined()
   expect(permissionForSessionPreset('unknown', runtime)).toBeUndefined()
 })
 
 it('keeps the draft preset and permission level independent and requests them as chosen', () => {
   const runtime = (permissions?: RuntimeAdminSnapshot['permissions']): RuntimeAdminSnapshot => ({
     providers: [],
-    presets: ['standard', 'minimal', 'ptc', 'read-only', 'workspace-write', 'full-access'].map((id) => ({
+    presets: ['standard', 'minimal', 'ptc'].map((id) => ({
       id,
       isDefault: id === 'standard',
     })),
@@ -1132,37 +1138,40 @@ it('keeps the draft preset and permission level independent and requests them as
     runtime: levels,
     ...input,
   })
-  // A draft that changed nothing names neither; a recipe alone follows the default level.
-  expect(newSessionRequest(draft({}))).toEqual({})
+  // Every draft sends a recipe and an explicit permission selection.
+  expect(newSessionRequest(draft({}))).toEqual({ preset: 'standard', permission: 'default' })
   expect(newSessionRequest(draft({ preset: 'ptc' }))).toEqual({ preset: 'ptc', permission: 'default' })
   // A chosen or remembered level is sent with any recipe, and the recipe never moves the level.
   expect(newSessionRequest(draft({ preset: 'ptc', explicit: 'full' }))).toEqual({
     preset: 'ptc',
     permission: 'full-access',
   })
-  expect(newSessionRequest(draft({ remembered: 'view' }))).toEqual({ permission: 'read-only' })
+  expect(newSessionRequest(draft({ remembered: 'view' }))).toEqual({
+    preset: 'standard',
+    permission: 'read-only',
+  })
   expect(draftPermissionMode(draft({ explicit: 'view', preset: 'ptc' }))).toBe('view')
   expect(draftPermissionMode(draft({ explicit: 'view', preset: 'minimal' }))).toBe('view')
   expect(draftPermissionMode(draft({}))).toBe('workspace')
   expect(draftPermissionMode(draft({ defaults: { permission: 'full-access' } }))).toBe('full')
-  // The default recipe skips the legacy level aliases an older admin default may still name.
-  expect(defaultRecipe({ preset: 'read-only' }, levels)).toBe('standard')
+  // A user's explicit recipe called default remains a real recipe.
+  expect(defaultRecipe({ preset: 'default' }, levels)).toBe('default')
   expect(defaultRecipe({ preset: 'ptc' }, levels)).toBe('ptc')
   // A level the deployment refuses is never requested; a remembered one falls back to the default.
   const narrow = runtime([{ id: 'workspace-write', isDefault: true }])
   expect(newSessionRequest(draft({ runtime: narrow, explicit: 'view' }))).toBeUndefined()
-  expect(newSessionRequest(draft({ runtime: narrow, remembered: 'view' }))).toEqual({})
+  expect(newSessionRequest(draft({ runtime: narrow, remembered: 'view' }))).toEqual({
+    preset: 'standard',
+    permission: 'default',
+  })
   expect(draftPermissionMode(draft({ runtime: narrow, remembered: 'view' }))).toBe('workspace')
-  // An older Host lists no levels and takes a level only as its legacy preset name.
-  const legacy = runtime()
-  expect(newSessionRequest(draft({ runtime: legacy, explicit: 'full' }))).toEqual({ preset: 'full-access' })
-  expect(newSessionRequest(draft({ runtime: legacy, preset: 'ptc' }))).toEqual({ preset: 'ptc' })
-  // Read-only must come from the preset itself there: a remembered level the recipe cannot honour is not sent.
-  expect(newSessionRequest(draft({ runtime: legacy, remembered: 'view' }))).toEqual({})
-  expect(
-    newSessionRequest(draft({ runtime: legacy, remembered: 'view', defaults: { preset: 'ptc' } })),
-  ).toBeUndefined()
-  expect(newSessionRequest(draft({ runtime: legacy, explicit: 'view', preset: 'ptc' }))).toBeUndefined()
+  // A missing permission catalogue cannot authorize a selected level or produce recipe aliases.
+  const unavailable = runtime()
+  expect(newSessionRequest(draft({ runtime: unavailable, explicit: 'full' }))).toBeUndefined()
+  expect(newSessionRequest(draft({ runtime: unavailable, preset: 'ptc' }))).toEqual({
+    preset: 'ptc',
+    permission: 'default',
+  })
 })
 
 it('reads an open session level from its row before guessing from its recipe', () => {
@@ -1198,9 +1207,7 @@ it('reads an open session level from its row before guessing from its recipe', (
     'read-only',
   )
   expect(sessionPermissionLevel({ sessionId: 'live', preset: 'ptc' }, runtime)).toBe('full-access')
-  expect(sessionPermissionLevel({ sessionId: 's', preset: 'workspace-write' }, runtime)).toBe(
-    'workspace-write',
-  )
+  expect(sessionPermissionLevel({ sessionId: 's', preset: 'workspace-write' }, runtime)).toBeUndefined()
   expect(sessionPermissionLevel({ sessionId: 's', preset: 'review' }, runtime)).toBe('read-only')
   expect(sessionPermissionLevel({ sessionId: 's', preset: 'ptc' }, runtime)).toBeUndefined()
   // The yolo switch widens the display to full access, but never a read-only session.
@@ -1263,7 +1270,7 @@ it('distinguishes requested permissions from measured workspace enforcement', as
         platform: { os: 'linux', l1: { level: 'unavailable', scope: [], reason: 'Not probed' } },
         presetPolicies: [
           {
-            id: 'read-only',
+            id: 'review',
             level: 'L1',
             required: true,
             onUnavailable: 'deny',
@@ -1271,7 +1278,7 @@ it('distinguishes requested permissions from measured workspace enforcement', as
             networkMode: 'deny',
           },
           {
-            id: 'full-access',
+            id: 'unrestricted',
             level: 'L0',
             required: false,
             onUnavailable: 'allow',
@@ -1283,7 +1290,7 @@ it('distinguishes requested permissions from measured workspace enforcement', as
           {
             sessionId: 'session-a',
             path: '/synthetic',
-            preset: 'read-only',
+            preset: 'review',
             provider: 'local',
             state: 'ready',
             enforcement: { level: 'partial', scope: ['file'] },
@@ -1293,14 +1300,14 @@ it('distinguishes requested permissions from measured workspace enforcement', as
             // A retained generation can report another posture for the same session.
             sessionId: 'session-a',
             path: '/synthetic',
-            preset: 'full-access',
+            preset: 'unrestricted',
             provider: 'local',
             state: 'unavailable',
           },
           {
             sessionId: 'session-a',
             path: '/synthetic',
-            preset: 'full-access',
+            preset: 'unrestricted',
             provider: 'local',
             state: 'ready',
           },

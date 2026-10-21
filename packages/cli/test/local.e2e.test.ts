@@ -25,11 +25,8 @@ const PRESETS = {
     model: { route: { primary: 'default' } },
   },
   'standard-windows': { name: 'standard-windows', extends: 'standard' },
-  'read-only': { name: 'read-only', extends: 'standard' },
-  'workspace-write': { name: 'workspace-write', extends: 'standard' },
-  'full-access': { name: 'full-access', extends: 'standard' },
   minimal: { name: 'minimal', extends: 'standard' },
-  ptc: { name: 'ptc', extends: 'workspace-write' },
+  ptc: { name: 'ptc', extends: 'standard' },
 }
 
 const tmp: string[] = []

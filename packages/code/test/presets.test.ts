@@ -271,9 +271,9 @@ describe('standard.yaml', () => {
       expect(JSON.stringify(loadPreset(name))).not.toMatch(/required|on_unavailable":"park|"park"/)
   })
 
-  it('keeps the permission-level names as aliases of the standard recipe', () => {
+  it('does not ship retired permission-level recipe aliases', () => {
     for (const name of ['read-only', 'workspace-write', 'full-access'])
-      expect(Object.keys(loadPreset(name)).sort()).toEqual(['extends', 'name'])
+      expect(() => loadPreset(name)).toThrow(/Retired.*clean home/)
   })
 
   it('names only registered prompt sections, each supplied by a package that exists', () => {
@@ -369,9 +369,6 @@ describe('standard.yaml', () => {
   it('is reachable through the named export the host reads', () => {
     expect(PRESET_NAMES).toEqual([
       'standard',
-      'read-only',
-      'workspace-write',
-      'full-access',
       'claw',
       'channel',
       'minimal-rl',

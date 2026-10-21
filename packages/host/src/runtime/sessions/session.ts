@@ -15,11 +15,10 @@ import { type CommandRule, checkCommandRule } from '@agnes/host-common/command-p
 import { HostError } from '@agnes/host-common/errors'
 import { selectionAllowed } from '@agnes/host-common/presets/admission'
 import {
-  aliasedPermission,
+  assertRecipeName,
   DEFAULT_PERMISSION,
   FOLLOW_DEFAULT_PERMISSION,
   isPermission,
-  legacyPermission,
   type Permission,
 } from '@agnes/host-common/presets/permission'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
@@ -285,13 +284,7 @@ function modelSwitchAllowed(...input: Parameters<typeof validateModelSwitch>): b
   }
 }
 
-/**
- * The recipe and permission a session opens under. A child inherits both from its parent. A request
- * that names a permission uses it (`default` meaning the deployment default); one that names only a
- * recipe is a pre-split request, so the recipe's own permission applies and an administrator changing
- * the default later never moves it; one that names nothing takes both deployment defaults.
- * `permission: undefined` leaves the choice to the resolver, which then applies exactly that rule.
- */
+/** A child inherits its selection; other requests use the deployment defaults for omitted axes. */
 export function sessionSelection(
   profile: ResolvedProfile,
   input: {
@@ -303,24 +296,12 @@ export function sessionSelection(
   },
 ): { name: string; permission?: Permission; fallback?: Permission } {
   const { parent, preset, permission } = input
-  const aliasLevel = preset === undefined ? aliasedPermission(profile.presets.default) : undefined
-  // A profile written before the split names a permission level as its default recipe. That level is
-  // the profile's default permission, which an administrator's default or a `permissions` block
-  // overrides; the recipe is then `standard` under that level, named by its permission-level alias
-  // where the profile allows no other spelling.
-  const defaultPermission =
-    input.defaultPermission ?? profile.permissions?.default ?? aliasLevel ?? DEFAULT_PERMISSION
+  const defaultPermission = input.defaultPermission ?? profile.permissions?.default ?? DEFAULT_PERMISSION
   if (parent) return { name: parent.name, ...(parent.permission ? { permission: parent.permission } : {}) }
-  const name =
-    aliasLevel !== undefined && aliasLevel !== defaultPermission
-      ? profile.presets.allowed.includes(defaultPermission)
-        ? defaultPermission
-        : 'standard'
-      : (preset ?? profile.presets.default)
-  // The deployment default is a fallback, not a demand: a recipe that fixes its own permission, or a
-  // permission-level name, keeps what it has instead of failing because the default differs.
-  if (permission === undefined) return preset === undefined ? { name, fallback: defaultPermission } : { name }
-  if (permission === FOLLOW_DEFAULT_PERMISSION) return { name, fallback: defaultPermission }
+  const name = preset ?? profile.presets.default
+  assertRecipeName(name)
+  if (permission === undefined || permission === FOLLOW_DEFAULT_PERMISSION)
+    return { name, fallback: defaultPermission }
   if (!isPermission(permission))
     throw new HostError('E_PRESET_UNSUPPORTED', 'unknown permission', {
       detail: { capability: 'permission', source: name },
@@ -395,7 +376,7 @@ export async function createSession(
     ...(opts.defaultPermission !== undefined ? { defaultPermission: opts.defaultPermission } : {}),
   })
   const name = selection.name
-  if (!selectionAllowed(profile, name, selection.permission ?? selection.fallback ?? legacyPermission(name)))
+  if (!selectionAllowed(profile, name, selection.permission ?? selection.fallback))
     throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
       detail: { source: name, capability: 'preset' },
     })

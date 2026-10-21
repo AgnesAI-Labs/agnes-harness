@@ -299,6 +299,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     forkAt?: number
     resume?: boolean
   }): Promise<RemoteEntry> {
+    if (o.agent === undefined) o = { ...o, permission: o.permission ?? 'default' }
     if (this.closingAll) throw new Error('worker registry is shutting down')
     if (o.key && this.generationMigrations.has(o.key))
       throw new Error('E_GENERATION_SESSION_OPEN: session migration is in progress')

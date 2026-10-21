@@ -1,13 +1,14 @@
+import { HostError } from '@agnes/host-common/errors'
+import { isPermission } from '@agnes/host-common/presets/permission'
 import type { SessionDefaults } from '@agnes/protocol'
 
-/**
- * Before permission was its own default, an administrator picked a permission level by saving one of
- * the permission-level preset names as the default preset. Reading such a record yields the level as
- * `permission`; the next save writes it that way.
- */
+/** Saved defaults use the current recipe and permission fields without conversion. */
 export function permissionLevelDefaults(stored: SessionDefaults | undefined): SessionDefaults {
-  const defaults = structuredClone(stored ?? {})
-  const { preset, ...rest } = defaults
-  if (preset !== 'read-only' && preset !== 'workspace-write' && preset !== 'full-access') return defaults
-  return { ...rest, permission: defaults.permission ?? preset }
+  if (isPermission(stored?.preset))
+    throw new HostError(
+      'E_PRESET_UNSUPPORTED',
+      'Retired permission-as-preset default; select a new, empty AGH_HOME (clean home).',
+      { detail: { reason: 'clean-home-required' } },
+    )
+  return structuredClone(stored ?? {})
 }

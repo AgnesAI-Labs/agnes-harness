@@ -18,7 +18,8 @@ it('validates exact catalog versions and model ids before persisting defaults', 
   }
   const provider = createAdminSessionSelection(
     {
-      presets: async () => ['read-only', 'workspace-write', 'full-access'],
+      presets: async () => ['standard', 'minimal'],
+      permissions: async () => ['read-only', 'workspace-write'],
       loops: async () => [loop],
       modelAdapters: async () => [adapter],
       models: async () => adapter.models,
@@ -28,7 +29,8 @@ it('validates exact catalog versions and model ids before persisting defaults', 
   const input = {
     revision: 0,
     defaults: {
-      preset: 'read-only',
+      preset: 'minimal',
+      permission: 'read-only' as const,
       providers: {
         loop: { provider: 'loop', version: '1.0.0' },
         'model-adapter': { provider: 'adapter', version: '1.0.0' },
@@ -39,7 +41,7 @@ it('validates exact catalog versions and model ids before persisting defaults', 
   expect(await provider.loops()).toEqual([loop])
   expect(await provider.getDefaults()).toEqual({ revision: 0, defaults: {} })
   expect(await provider.saveDefaults(input)).toEqual({ ...input, revision: 1 })
-  expect(await provider.presets?.()).toEqual(['read-only', 'workspace-write', 'full-access'])
+  expect(await provider.presets?.()).toEqual(['standard', 'minimal'])
   for (const defaults of [
     { preset: 'absent' },
     { providers: { loop: { provider: 'loop', version: '2.0.0' } } },
@@ -80,13 +82,12 @@ it('saves a default permission beside the default recipe, checked against the le
   expect(save).toHaveBeenCalledOnce()
 })
 
-it('reads a default recipe that names a permission level as that permission', () => {
-  expect(permissionLevelDefaults({ preset: 'read-only' })).toEqual({ permission: 'read-only' })
-  expect(
-    permissionLevelDefaults({ preset: 'full-access', permission: 'read-only', model: 'm' } as never),
-  ).toEqual({
+it('refuses saved permission-as-recipe aliases and preserves real recipe defaults', () => {
+  for (const preset of ['read-only', 'workspace-write', 'full-access'])
+    expect(() => permissionLevelDefaults({ preset })).toThrow(/Retired.*clean home/)
+  expect(permissionLevelDefaults({ preset: 'default', permission: 'read-only' })).toEqual({
+    preset: 'default',
     permission: 'read-only',
-    model: 'm',
   })
   expect(permissionLevelDefaults({ preset: 'minimal' })).toEqual({ preset: 'minimal' })
   expect(permissionLevelDefaults(undefined)).toEqual({})

@@ -93,9 +93,9 @@ presets: { default: standard, allowed: [standard, minimal, ptc] }
 permissions: { default: workspace-write, allowed: [read-only, workspace-write, full-access] }
 ```
 
-The local and enterprise templates ship these blocks (the enterprise template allows `standard` and `ptc`). A profile without a `permissions` block derives the allowed levels from `presets.allowed`; a user or workspace layer that sets `presets` without `permissions` drops the template's block, so narrowing `presets` also narrows the permissions. `--permission default` or `permission: 'default'` follows the deployment default.
+The local and enterprise templates ship these blocks (the enterprise template allows `standard` and `ptc`). Recipe and permission grants are independent: narrowing `presets` does not change `permissions`. Without a configured permissions block the built-in default is `workspace-write`. An omitted permission, `--permission default` and `permission: 'default'` all follow the deployment default, including requests that name a recipe.
 
-The earlier preset names `read-only`, `workspace-write` and `full-access` still work as `--preset` values and in `presets.allowed`: each means the `standard` preset under that permission, so `agh --preset read-only` is `agh --preset standard --permission read-only`. Combining one with a different `--permission` is an error. A request that names only a preset, such as `--preset ptc`, keeps running under `workspace-write` even if an administrator later changes the default permission, so existing scripts and schedules do not change behaviour. `--agent` cannot be combined with `--permission`; the agent's own launch decides.
+The retired preset aliases `read-only`, `workspace-write` and `full-access` are refused, including in `presets.allowed`. Use `agh --preset standard --permission read-only` instead of `agh --preset read-only`. Old profiles and persisted formats require a new, empty `AGH_HOME`; they are never converted or granted trust from old bytes. `--agent` cannot be combined with `--permission`; the agent's own launch decides.
 
 An open session keeps its permission. `/preset NAME` switches the preset and keeps the permission; a switch that would change what the sandbox enforces, including any permission change, is refused, so start a new session instead. A custom preset that writes its own sandbox or command-approval settings fixes its own permission and refuses a `--permission` choice.
 
@@ -127,7 +127,7 @@ Regulated e-signatures are business acts, separate from tool permission. Showcas
 
 `ask_user` questions, explicitly chosen plan/read-only modes, ordinary file-tool refusals for private `secrets/`, `auth/` and `profiles/`, and read-before-edit/stale-read checks remain in force. Selecting full access itself can require one initial grant confirmation. Factual reconciliation of an unknown external outcome is not a permission grant and cannot assert that an effect happened automatically.
 
-To allow files outside the workspace, select `full-access` explicitly, for example `agh --permission full-access` (the older `agh --preset full-access` still works). On macOS/Linux without a usable L1 backend, mediated file tools remain available but an installed memory provider refuses unconfined commands. Windows uses the explicitly declared unimplemented exception; memory API rules remain in effect. A profile can make it the default for new sessions:
+To allow files outside the workspace, select `full-access` explicitly, for example `agh --permission full-access`. On macOS/Linux without a usable L1 backend, mediated file tools remain available but an installed memory provider refuses unconfined commands. Windows uses the explicitly declared unimplemented exception; memory API rules remain in effect. A profile can make it the default for new sessions:
 
 ```yaml
 permissions:
@@ -165,7 +165,7 @@ The configuration service stores provider keys in a credential backend. Public c
 
 `AGH_HOME` contains sessions, configuration, grants, audits, and caches. Reduced logging does not mean conversation text is free of sensitive information. Review user input, tool arguments, and paths before exporting, taking screenshots, or publishing errors. Do not commit `secrets/`, `auth/`, a complete home, real traces, or credential files. `publicConfig` reaches the browser and must never contain secrets or secret references.
 
-File tools and sandbox policies protect workspace `.agh/secrets`. On Linux, Host prepares its `.agh` ancestor before compiling the command sandbox: it creates only this empty AGH-owned directory with normal permissions when missing, never follows symlinks, and refuses a symlink or non-directory with `E_SANDBOX_WORKSPACE` (`workspace-ancestor-not-directory`). The ancestor remains a real mount anchor so a command cannot rename it to expose secrets. `.agnes/secrets` belongs to another product and has no implicit AGH protection or migration. Do not point AGH's home at another product's data directory. Legacy `AGNES_HOME` is a compatibility option with no automatic migration.
+File tools and sandbox policies protect workspace `.agh/secrets`. On Linux, Host prepares its `.agh` ancestor before compiling the command sandbox: it creates only this empty AGH-owned directory with normal permissions when missing, never follows symlinks, and refuses a symlink or non-directory with `E_SANDBOX_WORKSPACE` (`workspace-ancestor-not-directory`). The ancestor remains a real mount anchor so a command cannot rename it to expose secrets. `.agnes/secrets` belongs to another product and has no implicit AGH protection or migration. Do not point AGH's home at another product's data directory. `AGNES_HOME` is retired: unset it and select a clean home with `AGH_HOME`.
 
 Check the target system before retrying an operation with unknown side effects. Recovering a backend database cannot recall an email, undo a network write, or reverse a physical device action.
 

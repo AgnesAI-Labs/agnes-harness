@@ -75,9 +75,7 @@ describe('supervisor open identity', () => {
         registry.open({ ...request, ...(permission ? { permission } : {}) }),
       ).resolves.toBeDefined()
     expect(inner.open).toHaveBeenCalledTimes(4)
-    expect(inner.open).toHaveBeenLastCalledWith(
-      expect.not.objectContaining({ permission: expect.anything() }),
-    )
+    expect(inner.open).toHaveBeenLastCalledWith(expect.objectContaining({ permission: 'default' }))
   })
 })
 

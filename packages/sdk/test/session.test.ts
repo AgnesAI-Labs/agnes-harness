@@ -388,30 +388,44 @@ describe('Session', () => {
     expect(params).toMatchObject({ sessionId: 'fixture' })
     await client.close()
   })
-  it('session.new sends cwd, empty mcpServers, preset + sessionKey in _meta', async () => {
-    let got: unknown
-    const f = fakeEndpoint({
-      initialize: init,
-      'session/new': (p) => {
-        got = p
-        return { sessionId: 'agnes:t:a:cli:dm:1' }
-      },
-    })
-    const c = createClient({
-      transport: { kind: 'inproc', endpoint: f.endpoint },
-      journal: memoryJournal(),
-      authProviders: providers,
-    })
+  it.each([
+    ['standard', undefined],
+    ['default', 'default'],
+    ['acme-custom', 'read-only'],
+  ] as const)(
+    'session.new sends explicit recipe %s and permission %s with its session key',
+    async (preset, permission) => {
+      let got: unknown
+      const f = fakeEndpoint({
+        initialize: init,
+        'session/new': (p) => {
+          got = p
+          return { sessionId: 'agnes:t:a:cli:dm:1' }
+        },
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
 
-    const s = await c.session.new({ cwd: '/w', preset: 'standard', sessionKey: 'agnes:t:a:cli:dm:1' })
+      const s = await c.session.new({
+        cwd: '/w',
+        preset,
+        ...(permission ? { permission } : {}),
+        sessionKey: 'agnes:t:a:cli:dm:1',
+      })
 
-    expect(s.id).toBe('agnes:t:a:cli:dm:1')
-    expect(got).toEqual({
-      cwd: '/w',
-      mcpServers: [],
-      _meta: { [META_KEY]: { preset: 'standard', sessionKey: 'agnes:t:a:cli:dm:1' } },
-    })
-  })
+      expect(s.id).toBe('agnes:t:a:cli:dm:1')
+      expect(got).toEqual({
+        cwd: '/w',
+        mcpServers: [],
+        _meta: {
+          [META_KEY]: { preset, permission: permission ?? 'default', sessionKey: 'agnes:t:a:cli:dm:1' },
+        },
+      })
+    },
+  )
 
   it('leaves preset and sessionKey out when the caller gave neither', async () => {
     let got: unknown
@@ -430,7 +444,7 @@ describe('Session', () => {
     await c.session.new({ cwd: '/w' })
     // Strict: an explicit `preset: undefined` would compare equal to an absent key,
     // yet it is a real difference on a transport that does not drop undefined values.
-    expect(got).toStrictEqual({ cwd: '/w', mcpServers: [], _meta: { [META_KEY]: {} } })
+    expect(got).toStrictEqual({ cwd: '/w', mcpServers: [], _meta: { [META_KEY]: { permission: 'default' } } })
   })
 
   it('hands back the same handle for a session id it already knows', async () => {

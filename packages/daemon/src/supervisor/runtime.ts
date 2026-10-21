@@ -357,6 +357,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
     private readonly workspaces: SessionWorkspacePort,
   ) {}
   async open(o: SessionOpenRequest): Promise<SessionEntry> {
+    if (o.agent === undefined) o = { ...o, permission: o.permission ?? 'default' }
     if (o.key) {
       const pending = this.opening.get(o.key)
       if (pending) {

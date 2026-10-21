@@ -7,7 +7,6 @@ import { join } from 'node:path'
 import type { Kernel, WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { presetNameAllowed, selectionAllowed } from '@agnes/host-common/presets/admission'
-import { legacyPermission } from '@agnes/host-common/presets/permission'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
@@ -533,13 +532,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             ...(o.defaultPermission !== undefined ? { defaultPermission: o.defaultPermission } : {}),
           })
           const presetName = selection.name
-          if (
-            !selectionAllowed(
-              profile,
-              presetName,
-              selection.permission ?? selection.fallback ?? legacyPermission(presetName),
-            )
-          )
+          if (!selectionAllowed(profile, presetName, selection.permission ?? selection.fallback))
             throw new HostError('E_PRESET_UNSUPPORTED', `preset ${presetName} is not in presets.allowed`, {
               detail: { source: presetName, capability: 'preset' },
             })
