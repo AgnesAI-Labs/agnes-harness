@@ -37,6 +37,13 @@ src/…  test/…  server.js  README.md
 
 `devboard_artifact_record` 的路径写相对项目目录的路径（如 `docs/SRS.md`）；工具会读取文件内容供看板预览，所以先写文件再登记。
 
+### 分节写入文档
+
+- 派工时把分节写入要求交给角色：先用 `write` 创建标题、目录和章节占位，再逐节用 `edit` 追加或替换；每次只写一节，内容约 2–4 KiB。章节过长继续拆分，不在一次模型输出中生成整篇 SRS、RTM 或 SAD。
+- 每节落盘后用 `read` 核对，再处理下一节；最终检查无占位残留、编号与上下游引用一致。本小项目的 SAD 目标约 8–12 KiB，避免重复复制需求正文。估计篇幅即可，不运行字节计数命令、不写探针文件。
+- 输出达到上限或写入被拒时，角色交回已写章节、实际文件路径和未完成项，停止宣称该文档完成；重新安排工作时只补缺失章节，不从头覆盖已有文档。协调员不接手代写，不把答复里的设计内容当作文件交付。
+- 最终交接只列文件、版本、章节和未关闭问题，不在答复中重复整篇正文。审核文件齐备后才登记交付物、发起人工发布流程。
+
 ### 流程
 
 1. 立项（CDCP）：`devboard_project_create` 建项目（默认 SOFTWARE 档案与裁剪）→ 写 `docs/PROJECT-PLAN.md`（目标、范围、里程碑、角色、风险）→ `devboard_artifact_record(kind=PLAN, stage=INITIATION)` → `devboard_gate_submit` → 结束本轮。
@@ -70,7 +77,7 @@ server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
 
 ## 角色子智能体
 
-只使用应用声明的角色，通过 `subagent_spawn({role:"@agnes-showcase/devboard#requirements", task:"项目目录、输入文件、交付物与验收要求……", isolation:"shared", wait:true})` 委派。每次都是新鲜角色会话，与父协调员共享工作目录，工具受角色与父快照交集约束；不是把角色名写在普通 task 中，也不能在失败后去掉 role 重试。需要后台模式时，用 `subagent_collect(childKey, wait=true)` 收结果，核对完成状态和实际文件后再登记。
+只使用应用声明的角色，通过 `subagent_spawn({role:"@agnes-showcase/devboard#requirements", task:"项目目录、输入文件、交付物与验收要求……", isolation:"shared", wait:true})` 委派。每次都是新鲜角色会话，与父协调员共享工作目录，工具受角色与父快照交集约束；不是把角色名写在普通 task 中，也不能在失败后去掉 role 重试。需要收取结果时（包括 `subagent_spawn(wait=true)` 返回仍在运行），**先调用 `subagent_list`，从本次列表逐字复制真实 `childKey`，再用 `subagent_collect({childKey: "列表返回的原值", wait: true})` 收取**。不得猜测、截断、重建或自行生成子会话编号，也不得把旧的已中断任务当作本次子会话。收取后核对完成状态和实际文件，答复完成不等于文件写入成功。
 
 平台会直接提供已授权的具名声明工具（包括 spawn、collect、job）的 schema，不要先 search/describe。保留的 `tool_describe` 只用于获授权但仍 deferred 的 schema；此时用 `tool_search` 找到名称，再用 `tool_describe({name:"工具名"})` 加载 schema，等下一次模型请求提供后调用；搜索不等于已加载，也不能扩大白名单或绕过 Loop 请求选择。工具被拒绝时依照真实诊断处理，不反复猜测调用。
 
@@ -90,7 +97,7 @@ server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
 
 后六个角色的工作文件写在 `devboard-projects/<项目编号>/analysis/<对象编号>/`（如 `analysis/QP-2026-007/`）：在役与订单项目没有工作目录，这个前缀可读写但不登记为交付物。子角色只写这里的文件，登记仍由你完成。`devboard_artifact_record` 对 `analysis/` 下的路径一律拒绝。
 
-当前协议最多 8 个可委派角色：`mechanical`、`electrical`、`config` 已声明但暂不可委派。要派它们而 `subagent_spawn` 拒绝时，标注「角色独立性未满足」，把需要的影响说明或核对项列给用户，不要自己代写。
+以上十一个角色均在应用的 `delegableAgents` 中，采用前须确认平台包检查接受完整列表。实际运行仍被拒时，依据真实诊断标注「角色独立性未满足」，保留未关闭意见并停止通过流程；不去掉 role 重试、不由协调员代写。
 
 ## 交付物编号与新类别
 
