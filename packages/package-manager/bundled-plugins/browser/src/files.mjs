@@ -69,15 +69,28 @@ const canonicalPath = (path) =>
   realpath(path).catch(() => {
     throw denied()
   })
+const textType = (mime, text) =>
+  (mime === 'text/html' && /<meta\b[^>]*\bcharset\s*=/i.test(text)) ||
+  (mime === 'text/css' && /^@charset\s+["']/i.test(text))
+    ? mime
+    : mime + '; charset=utf-8'
 async function contentType(path, files) {
   const known = types[extname(path).slice(1).toLowerCase()]
-  if (known) return known
+  if (known && !known.startsWith('text/')) return known
   const bytes = await files.read(path, { offset: 0, limit: 4096 })
   // Extensionless downloads and renamed files still use their native renderer.
   // Only inspect a bounded prefix, including on range requests for large media.
   const prefix = Buffer.from(bytes)
   const ascii = (start, end) => prefix.toString('latin1', start, end)
   const hex = prefix.subarray(0, 12).toString('hex')
+  let text
+  try {
+    // A bounded prefix may end halfway through a valid multi-byte character.
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: bytes.length === 4096 })
+  } catch {
+    // Preserve BOM/legacy browser decoding instead of declaring non-UTF-8 bytes as UTF-8.
+  }
+  if (known) return text === undefined ? known : textType(known, text)
   if (hex.startsWith('89504e470d0a1a0a')) return 'image/png'
   if (hex.startsWith('ffd8ff')) return 'image/jpeg'
   if (/^GIF8[79]a/.test(ascii(0, 6))) return 'image/gif'
@@ -98,8 +111,7 @@ async function contentType(path, files) {
   if (hex.startsWith('fffe') || hex.startsWith('feff')) return 'text/plain'
   if (ascii(0, 3) === 'ID3' || (prefix[0] === 255 && (prefix[1] & 0xe0) === 0xe0))
     return (prefix[1] & 0xf6) === 0xf0 ? 'audio/aac' : 'audio/mpeg'
-  try {
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  if (text !== undefined) {
     if (
       [...text].some((char) => {
         const code = char.codePointAt(0)
@@ -108,12 +120,10 @@ async function contentType(path, files) {
     )
       return undefined
     const markup = text.replace(/^\s*<\?xml[^?]*\?>/i, '').trimStart()
-    if (/^(?:<!doctype html|<html[\s>])/i.test(markup)) return 'text/html'
+    if (/^(?:<!doctype html|<html[\s>])/i.test(markup)) return textType('text/html', text)
     if (/^<svg[\s>]/i.test(markup)) return 'image/svg+xml'
     if (/^\s*<\?xml[\s>]/i.test(text)) return 'application/xml'
-    return 'text/plain'
-  } catch {
-    return undefined
+    return textType('text/plain', text)
   }
 }
 

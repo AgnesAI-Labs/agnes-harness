@@ -1,4 +1,4 @@
-import { lstat, mkdir, mkdtemp, open, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, open, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,7 +9,7 @@ const { openFilePreview, localFile } = await import(
 )
 
 it('serves authorized native types and bounded ranges, rejects aliases and revokes delayed resources', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agh-file-preview-'))
+  const root = await realpath(await mkdtemp(join(tmpdir(), 'agh-file-preview-')))
   const directory = join(root, '中文 space')
   await mkdir(directory)
   let live = true,
@@ -34,8 +34,8 @@ it('serves authorized native types and bounded ranges, rejects aliases and revok
     },
   }
   const names = {
-    'index.html': ['text/html', '<h1>预览</h1>'],
-    'style.css': ['text/css', 'h1{color:red}'],
+    'index.html': ['text/html; charset=utf-8', '<h1>预览</h1>'],
+    'style.css': ['text/css; charset=utf-8', 'h1{color:red}'],
     'picture.svg': ['image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg"/>'],
     'data.json': ['application/json', '{"hello":1}'],
     'document.pdf': ['application/pdf', '%PDF-1.4'],
@@ -62,6 +62,11 @@ it('serves authorized native types and bounded ranges, rejects aliases and revok
       ['download.unknown', '255044462d312e34', 'application/pdf'],
       ['recording', '524946460000000057415645', 'audio/wav'],
       ['unicode', 'fffe61006200', 'text/plain'],
+      [
+        'unicode-boundary',
+        Buffer.from('a'.repeat(4095) + '中文').toString('hex'),
+        'text/plain; charset=utf-8',
+      ],
     ]) {
       const path = join(directory, name!)
       await writeFile(path, Buffer.from(hex!, 'hex'))
@@ -74,6 +79,11 @@ it('serves authorized native types and bounded ranges, rejects aliases and revok
         detected.close()
       }
     }
+    const invalidText = join(directory, 'invalid-utf8')
+    await writeFile(invalidText, Buffer.concat([Buffer.alloc(4095, 65), Buffer.from([255])]))
+    await expect(openFilePreview({ ...args, value: invalidText })).rejects.toMatchObject({
+      code: 'UNSUPPORTED_FILE',
+    })
     const range = await fetch(preview.origin + '/large.txt', {
       headers: { ...preview.headers, range: 'bytes=10-29' },
     })

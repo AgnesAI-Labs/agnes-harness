@@ -15,6 +15,7 @@ import {
 import { createRequire } from 'node:module'
 import { arch, homedir, platform } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { failure } from './policy.mjs'
 
 const VERSION = '1.63.0'
@@ -103,7 +104,9 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
             releaseOwnerFileLock,
             takeOverOwnerFileLock,
           } = await import(
-            existsSync(packagedLock) ? packagedLock.href : require.resolve('@agnes/system-node/owner-lock')
+            existsSync(packagedLock)
+              ? packagedLock.href
+              : pathToFileURL(require.resolve('@agnes/system-node/owner-lock')).href
           )
           await mkdir(info.base, { recursive: true })
           const lock = owned(info.base, info.cache + '.lock')
