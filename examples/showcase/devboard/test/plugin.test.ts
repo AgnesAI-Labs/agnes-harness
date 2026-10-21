@@ -56,10 +56,34 @@ const tool = (name: string) => tools.find((t) => t.name === name) as Any
 const service = (name: string) => services.find((s) => s.name === name) as Any
 const signal = new AbortController().signal
 
+/** Start a flow through devboard.approval and approve every node with the roles of its node. */
+async function runFlow(ctx: Any, template: string, subjectId: string, running?: string) {
+  const approval = (input: Any) => service('devboard.approval').handler(input, ctx)
+  let id = running
+  if (!id) {
+    const started = await approval({ action: 'SUBMIT', template, subjectId, by: '客户代表 方卫东' })
+    expect(started, template).toMatchObject({ ok: true })
+    id = started.result.id
+  }
+  for (let guard = 0; guard < 12; guard++) {
+    const flow = read(ctx.store).approvals.find((a: Any) => a.id === id)
+    if (flow.state !== 'RUNNING') return flow
+    const node = flow.nodes[flow.current]
+    for (const role of node.mode === 'ALL'
+      ? node.roles.filter((r: string) => !node.signed.includes(r))
+      : [node.roles[0]])
+      expect(await approval({ action: 'APPROVE', id, by: role }), `${template} ${node.id}`).toMatchObject({
+        ok: true,
+      })
+  }
+  throw new Error(`${template} did not finish`)
+}
+
 describe('DevBoard plugin contract', () => {
   it('registers well-formed tools, services and the playbook skill', () => {
-    expect(tools).toHaveLength(18)
+    expect(tools).toHaveLength(19)
     expect(services.map((s) => s.name).sort()).toEqual([
+      'devboard.approval',
       'devboard.artifact',
       'devboard.create',
       'devboard.gate',
@@ -204,8 +228,15 @@ describe('DevBoard plugin contract', () => {
       ctx as Any,
     )
     const cid = change.structured.data.id
-    for (const to of ['ANALYZED', 'CCB_REVIEW', 'APPROVED'])
+    for (const to of ['ANALYZED', 'CCB_REVIEW'])
       expect(await transition({ kind: 'change', id: cid, to, by: 'CCB' })).toMatchObject({ ok: true })
+    // CCB approval is the ECR flow's move; the as-designed baseline comes with the ECN release
+    expect(await transition({ kind: 'change', id: cid, to: 'APPROVED', by: 'CCB' })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('需走 ECR 审批'),
+    })
+    await runFlow(ctx, 'ECR', cid)
+    await runFlow(ctx, 'ECN_RELEASE', cid)
     expect(await transition({ kind: 'retrofit', id: cid, done: 4 })).toMatchObject({ ok: true })
     expect(await transition({ kind: 'retrofit', id: cid, done: 4 })).toMatchObject({ ok: false })
     expect(await transition({ kind: 'retrofit', id: cid, done: 10 })).toMatchObject({ ok: true })
@@ -214,6 +245,10 @@ describe('DevBoard plugin contract', () => {
       'AS_DESIGNED',
       'AS_MAINTAINED',
     ])
+    expect(state.changes.find((c: Any) => c.id === cid)).toMatchObject({
+      state: 'APPROVED',
+      ecn: expect.any(String),
+    })
     expect((await service('devboard.snapshot').handler({ projectId: p.id }, { store })).trials[0].id).toBe(
       tid,
     )
@@ -242,6 +277,68 @@ describe('DevBoard plugin contract', () => {
     const close = await tool('devboard_problem_upsert').execute({ id: problem.id, to: 'CLOSED' }, ctx)
     expect(close.isError).toBe(true)
     expect(read(store).problems.find((q: Any) => q.id === problem.id).state).toBe('OPEN')
+  })
+
+  it('handles approvals through devboard.approval and lets the agent only start flows of its own drafts', async () => {
+    const store = memoryStore()
+    const ctx = { store, signal } as Any
+    const approval = (input: Any) => service('devboard.approval').handler(input, ctx)
+    const prepared = await service('devboard.approval').prepare(
+      { action: 'SUBMIT' },
+      { store: memoryStore(true) },
+    )
+    expect(prepared.resourceRevision).toBe('1')
+    // seeded: CR-2026-031's ECR is running at the co-sign node, quality overdue
+    const running = read(store).approvals.find((a: Any) => a.subject.id === 'CR-2026-031')
+    expect(running).toMatchObject({ state: 'RUNNING', template: 'ECR' })
+    expect(await approval({ action: 'APPROVE', id: running.id, by: '技术负责人' })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('审批不满足：当前节点「专业会签」需由'),
+    })
+    expect(await approval({ action: 'APPROVE', id: running.id, by: '机械设计师' })).toMatchObject({
+      ok: false,
+    })
+    expect(
+      await approval({ action: 'TRANSFER', id: running.id, by: '软件设计师', to: '邓超' }),
+    ).toMatchObject({
+      ok: true,
+    })
+    expect(
+      await approval({ action: 'SUBMIT', template: 'ECR', subjectId: 'CR-2026-031', by: '客户代表' }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('已有进行中的审批'),
+    })
+    const finished = await runFlow(ctx, 'ECR', 'CR-2026-031', running.id)
+    expect(finished.state).toBe('APPROVED')
+    expect(
+      await approval({ action: 'COMMENT', id: running.id, by: '质量工程师', comment: 'x' }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('已批准，不能再'),
+    })
+
+    // the tool starts flows for objects the agent drafted and nothing else
+    const submit = tool('devboard_approval_submit')
+    expect(tool('devboard_approval_submit').parameters.properties).not.toHaveProperty('action')
+    const other = await submit.execute({ template: 'ECN_RELEASE', subjectId: 'CR-2026-012' }, ctx)
+    expect(other.isError).toBe(true)
+    const { result: p } = update(store, (s: Any) =>
+      create(s, { kind: 'project', name: '订单', projectKind: 'NEW_BUILD' }),
+    )
+    const drafted = (
+      await tool('devboard_change_upsert').execute(
+        { projectId: p.id, title: '改', reason: 'r', impact: { reqs: ['CUS-001'] } },
+        ctx,
+      )
+    ).structured.data
+    for (const to of ['ANALYZED', 'CCB_REVIEW'])
+      await tool('devboard_change_upsert').execute({ id: drafted.id, to }, ctx)
+    const started = await submit.execute({ template: 'ECR', subjectId: drafted.id }, ctx)
+    expect(started.isError).toBeUndefined()
+    expect(started.structured.data).toMatchObject({ state: 'RUNNING', initiator: { by: '研发协调员' } })
+    const direct = await tool('devboard_change_upsert').execute({ id: drafted.id, to: 'APPROVED' }, ctx)
+    expect(direct.isError).toBe(true)
   })
 
   it('aggregates faults by signal and time window and writes nothing', async () => {
@@ -361,6 +458,10 @@ describe('DevBoard plugin contract', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const names = tools.map((t) => t.name)
     expect(pkg.version).toBe('3.0.0')
+    expect(names).toContain('devboard_approval_submit')
+    // the page may call only the services its client descriptor lists
+    const client = JSON.parse(readFileSync(new URL('../client/agnes.client.json', import.meta.url), 'utf8'))
+    expect([...client.client.services].sort()).toEqual(services.map((s) => s.name).sort())
     expect(names).toEqual(
       expect.arrayContaining(['devboard_trial_upsert', 'devboard_problem_upsert', 'devboard_fault_list']),
     )

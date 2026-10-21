@@ -11,6 +11,7 @@
       "devboard.transition",
       "devboard.create",
       "devboard.gate",
+      "devboard.approval",
       "devboard.reset"
     ],
     "projections": [],
@@ -91,9 +92,9 @@
         "id": "devboard-reviews",
         "placement": "primary",
         "navigation": {
-          "title": "Reviews",
+          "title": "My to-dos",
           "titles": {
-            "zh-CN": "评审待办"
+            "zh-CN": "我的待办"
           },
           "icon": "shield",
           "order": 16

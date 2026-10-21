@@ -10,6 +10,8 @@
   "files": [
     "index.mjs",
     "domain.mjs",
+    "approvals.mjs",
+    "approval-templates.mjs",
     "profiles.mjs",
     "seed-data.mjs",
     "seed-docs",
@@ -21,7 +23,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check domain.mjs && node --check profiles.mjs && node --check seed-data.mjs"
+    "build": "node --check index.mjs && node --check domain.mjs && node --check approvals.mjs && node --check approval-templates.mjs && node --check profiles.mjs && node --check seed-data.mjs"
   },
   "agnes": {
     "provides": [
@@ -62,6 +64,7 @@
               "devboard_trial_upsert",
               "devboard_problem_upsert",
               "devboard_fault_list",
+              "devboard_approval_submit",
               "devboard_app_register"
             ],
             "prefix": "devboard_"
@@ -149,6 +152,7 @@
             "devboard_trial_upsert",
             "devboard_problem_upsert",
             "devboard_fault_list",
+            "devboard_approval_submit",
             "devboard_app_register",
             "skill_read",
             "read",
@@ -190,6 +194,7 @@
               "devboard_trial_upsert",
               "devboard_problem_upsert",
               "devboard_fault_list",
+              "devboard_approval_submit",
               "devboard_app_register",
               "skill_read",
               "read",

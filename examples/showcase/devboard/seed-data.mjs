@@ -1,14 +1,17 @@
-// DevBoard v3 seed (schema 3). 虚构企业与模拟数据: 宁川交通装备股份有限公司 (宁川装备), its customers,
+// DevBoard v3 seed (schema 4: adds approval flows). 虚构企业与模拟数据: 宁川交通装备股份有限公司 (宁川装备), its customers,
 // lines and people are fictional. Pure data: every date is derived from `now`, nothing is random.
 // Requirement ids are unique across projects by number block: PRJ-2025-042 uses 0xx, PRJ-2026-008 3xx,
 // PRJ-2025-019 5xx, PRJ-2023-011 7xx. Document bodies live in seed-docs/<projectId>/<docId>.md.
 // Gate names, types, approver roles and stage authors come from profiles.mjs; this file only records
 // which gate code was decided when, by whom. Every numeric limit is a 「项目技术规格书假设」.
 
+import { TEMPLATES } from './approval-templates.mjs'
+import { act, newFlow } from './approvals.mjs'
 import { GATE_PROFILES } from './profiles.mjs'
 
 const DAY = 86_400_000
 const HOUR = 3_600_000
+const TEMPLATE_NAME = Object.fromEntries(Object.entries(TEMPLATES).map(([k, t]) => [k, t.name]))
 
 const P42 = 'PRJ-2025-042'
 const P08 = 'PRJ-2026-008'
@@ -3337,6 +3340,111 @@ const PROBLEMS = [
 ]
 
 // ---------------------------------------------------------------------------------------------
+// Approval flows, replayed through the real rules so the history cannot drift from them.
+// [id, template, subject type, subject id, initiator, start day, events]; an event is
+// [day, actor, action, extra?] with extra { to, role, comment }.
+const APPROVALS = [
+  [
+    'AP-2026-0021',
+    'DOC_RELEASE',
+    'artifact',
+    'DOC-042-SAD',
+    '系统设计师 陈立',
+    -126,
+    [
+      [-125.5, '机械设计师 沈岳', 'APPROVE', { comment: '校对完成' }],
+      [
+        -124,
+        '技术负责人 郑凯',
+        'RETURN',
+        { to: 'proofread', comment: '第 4.3 节与 DES-004 的低温参数不一致，退回校对节点重新核对' },
+      ],
+      [-123, '软件设计师 林涛', 'APPROVE', { comment: '参数已对齐，校对通过' }],
+      [-122.5, '技术负责人 郑凯', 'APPROVE'],
+      [-121.5, '标准化工程师 莫宁', 'APPROVE', { comment: '图号与格式符合标准' }],
+      [-120, '分技术中心主任 钱志远', 'APPROVE'],
+    ],
+  ],
+  [
+    'AP-2026-0022',
+    'DOC_RELEASE',
+    'artifact',
+    'DOC-042-TEST-PLAN',
+    '验证工程师 马骁',
+    -127,
+    [
+      [-126, '系统设计师 周敏', 'APPROVE'],
+      [-125, '技术负责人 郑凯', 'ADD_SIGN', { role: 'RAMS 工程师', comment: '安全相关用例需 RAMS 确认' }],
+      [-124.9, '技术负责人 郑凯', 'APPROVE'],
+      [-124.5, 'RAMS 工程师 唐力', 'APPROVE', { comment: '安全用例覆盖满足' }],
+      [-124, '标准化工程师 莫宁', 'APPROVE'],
+      [-123.5, '分技术中心主任 钱志远', 'APPROVE'],
+    ],
+  ],
+  [
+    'AP-2026-0023',
+    'ECR',
+    'change',
+    'CR-2026-019',
+    '系统设计师 陈立',
+    -158,
+    [
+      [-157, '机械设计师 沈岳', 'APPROVE'],
+      [-156, '电气设计师 彭程', 'APPROVE'],
+      [-155, '软件设计师 林涛', 'APPROVE'],
+      [-154, '工艺工程师 谢春', 'APPROVE'],
+      [-153, '质量工程师 韩雪', 'APPROVE', { comment: '涉及 SIL2，须补做安全影响分析' }],
+      [-150, '技术负责人 郑凯', 'APPROVE', { comment: '批准' }],
+    ],
+  ],
+  [
+    'AP-2026-0024',
+    'ECN_RELEASE',
+    'change',
+    'CR-2026-019',
+    '系统设计师 陈立',
+    -149,
+    [
+      [-148.5, '配置管理员 许诺', 'APPROVE', { comment: '受影响文件版本已核对' }],
+      [-148, '分技术中心主任 钱志远', 'APPROVE'],
+      [-147.5, '配置管理员 许诺', 'APPROVE', { comment: 'ECN-2026-019 已发布' }],
+    ],
+  ],
+  [
+    'AP-2026-0025',
+    'ECR',
+    'change',
+    'CR-2026-031',
+    '客户代表 方卫东',
+    -6,
+    [
+      [-5.5, '机械设计师 沈岳', 'APPROVE'],
+      [-5, '电气设计师 彭程', 'APPROVE'],
+      [-4, '软件设计师 林涛', 'COMMENT', { comment: '健康数据接口与安全功能隔离，待第 2 次 CCB 前确认' }],
+    ],
+  ],
+  [
+    'AP-2026-0026',
+    'PROBLEM_CLOSE',
+    'problem',
+    'QP-2026-003',
+    '质量工程师 韩雪',
+    -114,
+    [
+      [-113, '质量工程师 柳青', 'APPROVE', { comment: '8D 报告齐全，验证数据有效' }],
+      [-112, '分技术中心主任 钱志远', 'APPROVE'],
+    ],
+  ],
+  [
+    'AP-2026-0027',
+    'TRIAL_REPORT',
+    'trial',
+    'TT-2026-019',
+    '验证工程师 马骁',
+    -1.5,
+    [[-1.2, '质量工程师 韩雪', 'TRANSFER', { to: '柳青', comment: '韩雪出差，转柳青审核' }]],
+  ],
+]
 
 export function buildSeed(now = Date.now()) {
   const d = (n) => new Date(now + n * DAY).toISOString()
@@ -3621,6 +3729,22 @@ export function buildSeed(now = Date.now()) {
     }),
   )
 
+  const subjects = { artifact: artifacts, change: changes, problem: problems, trial: trials }
+  const approvals = APPROVALS.map(([id, template, type, subjectId, initiator, start, events]) => {
+    const subject = subjects[type].find((x) => x.id === subjectId)
+    const flow = newFlow({
+      id,
+      projectId: subject.projectId,
+      template,
+      subject: { type, id: subjectId },
+      title: `${TEMPLATE_NAME[template]}：${subjectId} ${subject.title}`,
+      initiator: { role: roleOf(initiator), by: initiator },
+      now: now + start * DAY,
+    })
+    for (const [day, by, action, extra] of events) act(flow, { by, action, ...extra }, now + day * DAY)
+    return flow
+  })
+
   const items = ITEMS.map(([id, name, discipline, lru]) => ({ id, projectId: P11, name, discipline, lru }))
   const configBaselines = CONFIG_BASELINES.map(([type, n, day, revIndex, note]) => ({
     id: `CB-${P11}-${type}-${String(n).padStart(2, '0')}`,
@@ -3632,7 +3756,7 @@ export function buildSeed(now = Date.now()) {
   }))
 
   return {
-    schema: 3,
+    schema: 4,
     revision: 1,
     projects,
     stages,
@@ -3647,6 +3771,7 @@ export function buildSeed(now = Date.now()) {
     problems,
     items,
     configBaselines,
+    approvals,
     ...legacy(now),
   }
 }

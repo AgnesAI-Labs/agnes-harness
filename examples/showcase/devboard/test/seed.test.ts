@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { isOverdue } from '../approvals.mjs'
 import { GATE_PROFILES, ORGS, ROLES } from '../profiles.mjs'
 import { buildSeed } from '../seed-data.mjs'
 
@@ -91,8 +92,8 @@ const isPerson = (by: string) => ROLES.some((r) => by.startsWith(`${r} `))
 const isActor = (by: string) => isPerson(by) || by === 'CCB' || by === 'PHM 平台'
 
 describe('DevBoard v3 seed data', () => {
-  it('has the schema 3 shape with unique ids per collection', () => {
-    expect(seed).toMatchObject({ schema: 3, revision: 1 })
+  it('has the schema 4 shape with unique ids per collection', () => {
+    expect(seed).toMatchObject({ schema: 4, revision: 1 })
     for (const key of [
       'projects',
       'stages',
@@ -107,6 +108,7 @@ describe('DevBoard v3 seed data', () => {
       'problems',
       'items',
       'configBaselines',
+      'approvals',
       'requirements',
       'tasks',
       'interventions',
@@ -724,6 +726,78 @@ describe('DevBoard v3 seed data', () => {
     // no baseline gap while the problem is analysed (checked above); one change is tied to the fleet
     expect(seed.changes.filter((c: Any) => c.projectId === 'PRJ-2023-011').map((c: Any) => c.id)).toEqual([
       'CR-2026-012',
+    ])
+  })
+
+  it('keeps approval flows consistent with their objects, the demo roles and the node rules', () => {
+    const roles = new Set<string>(ROLES)
+    const subjects: Record<string, Any[]> = {
+      artifact: seed.artifacts,
+      change: seed.changes,
+      problem: seed.problems,
+      trial: seed.trials,
+    }
+    const running = new Set<string>()
+    for (const f of seed.approvals) {
+      const subject = subjects[f.subject.type].find((x: Any) => x.id === f.subject.id)
+      expect(subject, `${f.id} subject`).toBeTruthy()
+      expect(subject.projectId, `${f.id} project`).toBe(f.projectId)
+      expect(f.initiator.by.startsWith(`${f.initiator.role} `), `${f.id} initiator`).toBe(true)
+      expect(isPerson(f.initiator.by), `${f.id} initiator`).toBe(true)
+      for (const n of f.nodes)
+        for (const r of n.roles) expect(roles.has(r), `${f.id} ${n.id} role`).toBe(true)
+      let at = t(f.startedAt)
+      for (const a of f.actions) {
+        expect(isPerson(a.by), `${f.id} actor ${a.by}`).toBe(true)
+        expect(roles.has(a.role), `${f.id} role ${a.role}`).toBe(true)
+        expect(
+          f.nodes.some((n: Any) => n.id === a.nodeId),
+          `${f.id} node ${a.nodeId}`,
+        ).toBe(true)
+        expect(t(a.at), `${f.id} action order`).toBeGreaterThanOrEqual(at)
+        at = t(a.at)
+      }
+      if (f.state === 'RUNNING') {
+        expect(running.has(`${f.subject.type}/${f.subject.id}`), `${f.id} second running flow`).toBe(false)
+        running.add(`${f.subject.type}/${f.subject.id}`)
+        expect(f.nodes[f.current].state).toBe('ACTIVE')
+      } else {
+        expect(
+          f.nodes.every((n: Any) => n.state === 'DONE'),
+          `${f.id} nodes`,
+        ).toBe(f.state === 'APPROVED')
+        expect(t(f.endedAt)).toBe(at)
+      }
+      // what the flow says about its object
+      if (f.template === 'DOC_RELEASE') expect(subject.status, f.id).toBe('BASELINED')
+      if (f.template === 'ECR' && f.state === 'RUNNING') expect(subject.state, f.id).toBe('CCB_REVIEW')
+      if (f.template === 'ECR' && f.state === 'APPROVED') {
+        expect(subject.ecn, f.id).toBeTruthy()
+        expect(t(subject.ccb.at), `${f.id} CCB time`).toBe(t(f.endedAt))
+      }
+      if (f.template === 'ECN_RELEASE') expect(subject.ecn, f.id).toBeTruthy()
+      if (f.template === 'PROBLEM_CLOSE') {
+        expect(subject.state, f.id).toBe('CLOSED')
+        expect(t(subject.history.at(-1).at), `${f.id} close time`).toBe(t(f.endedAt))
+      }
+      if (f.template === 'TRIAL_REPORT') expect(subject.state, f.id).toBe('REPORTED')
+    }
+    // the demo always has a running, a returned, a transferred, an added-signer and an overdue flow
+    const has = (pred: (f: Any) => boolean) => seed.approvals.some(pred)
+    expect(has((f) => f.state === 'RUNNING')).toBe(true)
+    expect(has((f) => f.actions.some((a: Any) => a.action === 'RETURN'))).toBe(true)
+    expect(has((f) => f.actions.some((a: Any) => a.action === 'TRANSFER'))).toBe(true)
+    expect(has((f) => f.nodes.some((n: Any) => n.addedBy))).toBe(true)
+    expect(has((f) => f.nodes.some((n: Any) => isOverdue(f, n, NOW)))).toBe(true)
+    // the planned flows: SAD and test plan, CR-2026-019 ECR and ECN, CR-2026-031 ECR, QP-2026-003, a type-test report
+    expect(seed.approvals.map((f: Any) => `${f.template} ${f.subject.id}`)).toEqual([
+      'DOC_RELEASE DOC-042-SAD',
+      'DOC_RELEASE DOC-042-TEST-PLAN',
+      'ECR CR-2026-019',
+      'ECN_RELEASE CR-2026-019',
+      'ECR CR-2026-031',
+      'PROBLEM_CLOSE QP-2026-003',
+      'TRIAL_REPORT TT-2026-019',
     ])
   })
 

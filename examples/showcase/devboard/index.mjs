@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { defineAgnesPlugin, defineTool, readOnlyTool, toolError } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import {
+  actApproval,
   artifactBody,
   create,
   DomainError,
@@ -17,6 +18,7 @@ import {
   reset,
   STAGES,
   snapshot,
+  submitApproval,
   submitGate,
   transition,
   update,
@@ -60,6 +62,7 @@ const titles = {
   trial_upsert: '登记或更新试验',
   problem_upsert: '起草或更新质量问题',
   fault_list: '读取 PHM 预警聚合',
+  approval_submit: '发起审批流程',
 }
 const result = Type.Object({ revision: Type.Integer(), data: Type.Unknown() }, strict)
 
@@ -120,6 +123,7 @@ function board(input, store) {
       'requirements',
       'tasks',
       'interventions',
+      'approvals',
     ]
     const items = all.flatMap((c) => view[c].filter((x) => x.id === input.id))
     if (!items.length) throw new DomainError(`未找到 ${input.id}`)
@@ -234,7 +238,7 @@ export const tools = [
   ),
   tool(
     'devboard_transition',
-    'Move a requirement, task, change request or defect to another state; illegal moves are refused. Stages use devboard_stage_update / devboard_gate_submit. Do not claim or resolve human-intervention requests. 推进状态。',
+    'Move a requirement, task, change request or defect to another state; illegal moves are refused. Stages use devboard_stage_update / devboard_gate_submit. A change cannot be moved to APPROVED here (it needs its ECR approval flow: devboard_approval_submit, decided by people on the board). Do not claim or resolve human-intervention requests. 推进状态。',
     Type.Object(
       {
         kind: literals(['requirement', 'task', 'change', 'defect']),
@@ -450,7 +454,7 @@ export const tools = [
   ),
   tool(
     'devboard_change_upsert',
-    'Create a change request (omit id), edit its impact analysis (reqs, artifacts, tests, items with revisions, fleet), source, root cause, retrofit total or verification, and/or move it: SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED (generates the ECN and a new as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Leave CCB decisions to people unless told otherwise. 登记或推进变更。',
+    'Create a change request (omit id), edit its impact analysis (reqs, artifacts, tests, items with revisions, fleet), source, root cause, retrofit total or verification, and/or move it: SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED only by an approved ECR flow (start it with devboard_approval_submit; it generates the ECN, and releasing the ECN adds the as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Leave CCB decisions to people unless told otherwise. 登记或推进变更。',
     Type.Object(
       {
         id: Type.Optional(id),
@@ -557,6 +561,12 @@ export const tools = [
     readOnlyTool,
   ),
   tool(
+    'devboard_approval_submit',
+    `Start the approval flow of an object you drafted yourself (template DOC_RELEASE for a deliverable, ECR for a change in CCB_REVIEW, ECN_RELEASE for an approved change, PROBLEM_CLOSE for a problem in VERIFYING, TRIAL_REPORT for a reported trial; subjectId is the object id). Starting is all you can do: people agree, reject, send back or transfer on the board page 「我的待办」, so tell the user which flow and node is waiting. One running flow per object. 发起审批（只能发起自己起草的对象，处理由人在「我的待办」完成）。`,
+    Type.Object({ template: keys(LABELS.approvalTemplate), subjectId: id }, strict),
+    (input, ctx) => mutate(ctx.store, (s) => submitApproval(s, { ...input, by: AGENT, agent: true })),
+  ),
+  tool(
     'devboard_app_register',
     'Register the local address where a live project application runs (http://127.0.0.1:<port>/). 登记运行地址。',
     Type.Object({ projectId: id, url: short(200) }, strict),
@@ -656,12 +666,32 @@ const schemas = {
     },
     strict,
   ),
+  'devboard.approval': Type.Object(
+    {
+      // SUBMIT starts a flow (template + subjectId); every other action handles the current node of flow id.
+      action: literals(['SUBMIT', ...Object.keys(LABELS.approvalAction)]),
+      by,
+      id: Type.Optional(id),
+      template: Type.Optional(keys(LABELS.approvalTemplate)),
+      subjectId: Type.Optional(id),
+      comment: optionalText(2000),
+      // RETURN: a node id or INITIATOR; TRANSFER: the person's name
+      to: optionalText(64),
+      // ADD_SIGN: the role of the new node
+      role: optionalText(32),
+    },
+    strict,
+  ),
   'devboard.reset': Type.Object({}, strict),
 }
 const handlers = {
   'devboard.transition': (input, store) => update(store, (s) => transition(s, input)),
   'devboard.create': (input, store) => update(store, (s) => create(s, input)),
   'devboard.gate': (input, store) => update(store, (s) => decideGate(s, input)),
+  'devboard.approval': ({ action, ...input }, store) =>
+    update(store, (s) =>
+      action === 'SUBMIT' ? submitApproval(s, input) : actApproval(s, { ...input, action }),
+    ),
   'devboard.reset': (_input, store) => reset(store),
 }
 const queries = {
