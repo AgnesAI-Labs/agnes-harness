@@ -2578,7 +2578,7 @@
   /* The themed trigger sizes itself inside the shrink-to-fit preset row. */
   .agnes-settings-preset > .select-picker-trigger {
     flex: 1 1 auto;
-    min-width: 7rem;
+    min-width: 0;
   }
   .agnes-settings-preset-custom > input {
     width: 6rem;
