@@ -127,7 +127,7 @@ async function settle(term: FakeTerminal, scene: Scene, cols: number, rows: numb
 }
 
 async function capture(scene: Scene, variant: Variant, prefs: string): Promise<Shot> {
-  const { cols = 100, rows = 30, ready = ['agnes ·ᴗ·'] } = scene
+  const { cols = 100, rows = 30, ready = ['What do you want to do?'] } = scene
   const endpoint = new FakeEndpoint()
     .on('initialize', () => ({
       protocolVersion: 1,

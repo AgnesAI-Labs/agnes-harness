@@ -10,24 +10,17 @@ import { displayWidth } from '../terminal.js'
 import { blendColours, brandColour, paintsColour, type ThemedAnsi, type TuiTheme } from '../theme.js'
 import { TIMELINE_RESERVED_ROWS } from './timeline.js'
 
-// The AGNES wordmark: a 5x7 pixel font, letters two pixels apart.
-const FONT: Record<string, readonly string[]> = {
-  A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
-  G: ['.###.', '#...#', '#....', '#.###', '#...#', '#...#', '.###.'],
-  N: ['#...#', '##..#', '#.#.#', '#..##', '#...#', '#...#', '#...#'],
-  E: ['#####', '#....', '#....', '####.', '#....', '#....', '#####'],
-  S: ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
-}
-const WORD = 'AGNES'
-const MARK_W = WORD.length * 7 - 2
-const MARK_H = 7
-const BITMAP: readonly (readonly boolean[])[] = Array.from({ length: MARK_H }, (_, y) => {
-  const row = Array.from({ length: MARK_W }, () => false)
-  for (const [li, letter] of [...WORD].entries())
-    for (let x = 0; x < 5; x++) row[li * 7 + x] = FONT[letter]?.[y]?.[x] === '#'
-  return row
-})
-const lit = (x: number, y: number): boolean => BITMAP[y]?.[x] === true
+// The AGNES wordmark, figlet's "ANSI Shadow": solid blocks with box-drawing strokes as their shadow.
+const MARK = [
+  ' █████╗  ██████╗ ███╗   ██╗███████╗███████╗',
+  '██╔══██╗██╔════╝ ████╗  ██║██╔════╝██╔════╝',
+  '███████║██║  ███╗██╔██╗ ██║█████╗  ███████╗',
+  '██╔══██║██║   ██║██║╚██╗██║██╔══╝  ╚════██║',
+  '██║  ██║╚██████╔╝██║ ╚████║███████╗███████║',
+  '╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝╚══════╝',
+]
+const MARK_H = MARK.length
+const MARK_W = Math.max(...MARK.map((row) => displayWidth(row)))
 
 /** Diagonal brand gradient position of a wordmark pixel, 0..1. */
 const diagonal = (x: number, y: number, w: number, h: number): number =>
@@ -38,7 +31,7 @@ const diagonal = (x: number, y: number, w: number, h: number): number =>
 const DUST = ['⠁', '⠂', '⠄', '⡀', '⠈', '⠐', '⠠', '⢀', '⠃', '⠘', '⠆', '⠰', '⡠', '⢁']
 const DUST_TONES: readonly Tone[] = ['border', 'borderStrong', 'accent', 'accentSoft']
 const DUST_W = 34
-const DUST_ROWS = 8
+const DUST_ROWS = 6
 type Dust = { ch: string; t: number } | undefined
 const FIELD: readonly (readonly Dust[])[] = (() => {
   let seed = 7
@@ -341,41 +334,34 @@ export class WelcomeBanner implements Component {
 
   // ---- wordmark -----------------------------------------------------------------------------
 
-  /** Eight rows of two-column pixels with a one-cell drop shadow; bold-only without colour. */
-  private fullMark(): string[] {
+  /**
+   * The wordmark: `█` cells take the diagonal brand gradient (and the shine), the box-drawing strokes
+   * one quieter tone as their shadow. Without colour the blocks are bold and the strokes dim.
+   */
+  private mark(): string[] {
     const { ansi } = this.o
     const colour = paintsColour(ansi)
-    const w = MARK_W + 1
-    const h = MARK_H + 1
-    return Array.from({ length: h }, (_, y) => {
-      if (!colour) {
-        const row = Array.from({ length: w }, (_, x) => (lit(x, y) ? '██' : '  ')).join('')
-        return ansi.bold(row)
-      }
+    return MARK.map((row, y) => {
       let line = ''
-      for (let x = 0; x < w; x++) {
-        if (lit(x, y)) line += ansi.fg(this.pixel(diagonal(x, y, w, h)), '██')
-        else if (x > 0 && y > 0 && lit(x - 1, y - 1)) line += ansi.fg('selection', '██')
-        else line += '  '
+      let run = ''
+      let solid = false
+      const flush = (): void => {
+        if (run) line += solid ? ansi.bold(run) : ansi.fg('faint', run)
+        run = ''
       }
+      for (const [x, ch] of [...row.padEnd(MARK_W)].entries()) {
+        if (!colour) {
+          if (ch === ' ' || (ch === '█') === solid) run += ch
+          else {
+            flush()
+            solid = ch === '█'
+            run = ch
+          }
+        } else if (ch === '█') line += ansi.fg(this.pixel(diagonal(x, y, MARK_W, MARK_H)), ch)
+        else line += ch === ' ' ? ch : ansi.fg('borderStrong', ch)
+      }
+      flush()
       return line
-    })
-  }
-
-  /** Four rows of half blocks, one column per pixel, no shadow. */
-  private halfMark(): string[] {
-    const { ansi } = this.o
-    const colour = paintsColour(ansi)
-    return Array.from({ length: 4 }, (_, r) => {
-      let line = ''
-      for (let x = 0; x < MARK_W; x++) {
-        const top = lit(x, 2 * r)
-        const bottom = lit(x, 2 * r + 1)
-        const ch = top && bottom ? '█' : top ? '▀' : bottom ? '▄' : ' '
-        const paint = this.pixel(diagonal(x, 2 * r + 0.5, MARK_W, MARK_H))
-        line += ch === ' ' || !colour ? ch : ansi.fg(paint, ch)
-      }
-      return colour ? line : ansi.bold(line)
     })
   }
 
@@ -413,9 +399,10 @@ export class WelcomeBanner implements Component {
       // A supplied brand never wears the AGNES glyphs: its own name takes the wordmark's place.
       lines.push(fitLine(` ${name}`, width), fitLine(` ${tagline}`, width), fitLine(` ${status}`, width))
     } else if (tier === 'full') {
-      const identity = ['', '', name, tagline, '', status, '', '']
+      // The identity sits in the middle of the mark's six rows.
+      const identity = ['', name, tagline, '', status, '']
       const fieldStart = width - 1 - DUST_W
-      for (const [y, row] of this.fullMark().entries()) {
+      for (const [y, row] of this.mark().entries()) {
         const id = identity[y] ?? ''
         const left = ` ${row}${id ? `   ${id}` : ''}`
         const leftW = displayWidth(left)
@@ -426,14 +413,16 @@ export class WelcomeBanner implements Component {
         lines.push(fitLine(left + tail, width))
       }
     } else if (tier === 'medium') {
-      const identity = [name, tagline, '', status]
-      for (const [i, row] of this.halfMark().entries())
-        lines.push(fitLine(` ${row}   ${identity[i] ?? ''}`, width))
+      const identity = ['', name, tagline, '', status, '']
+      for (const [i, row] of this.mark().entries()) {
+        const id = identity[i] ?? ''
+        lines.push(fitLine(` ${row}${id ? `   ${id}` : ''}`, width))
+      }
     } else {
-      lines.push(...this.halfMark().map((row) => fitLine(` ${row}`, width)))
-      lines.push(fitLine(` ${name}`, width), fitLine(` ${status}`, width))
+      lines.push(...this.mark().map((row) => fitLine(` ${row}`, width)))
+      lines.push(fitLine(` ${name}   ${status}`, width))
     }
-    lines.push(fitLine('', width))
+    if (!v.tight) lines.push(fitLine('', width))
     const tip = this.facts.tip
     if (tip && v.tip && tier !== 'narrow') {
       const fresh = tip.fresh ? `  ${this.newTag()}` : ''
