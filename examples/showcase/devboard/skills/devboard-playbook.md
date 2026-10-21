@@ -25,7 +25,7 @@
 
 ## 现场项目：车门健康监测看板
 
-建议规模：5–8 个源文件、15–25 个测试用例；无依赖的 Node 网页应用（不允许 `npm install`，不访问外网）。`node server.js --port <端口>` 提供页面和公开 JSON 接口：在 AGH 中接管 Host 预先绑定的 loopback listener；在没有 socket activation 的普通部署中才绑定 `127.0.0.1` 与指定端口；数据是生成的模拟门控器故障码和开关门时间；按线路、车辆、车门三级展示健康评分与故障排行；测试用 `node --test`。端口由现场指定或选择空闲端口，禁止使用 4177/4178。
+建议规模：5–8 个源文件、15–25 个测试用例；无依赖的 Node 网页应用（不允许 `npm install`，不访问外网）。`node server.js --port <端口>` 提供页面和公开 JSON 接口：在 AGH 中接管 Host 预先绑定的 loopback listener；在没有 socket activation 的普通部署中才绑定 `127.0.0.1` 与指定端口；数据是生成的模拟门控器故障码和开关门时间；按线路、车辆、车门三级展示健康评分与故障排行；测试用 `node --test`。AGH 实际端口由 Host 分配并输出 URL；普通部署另选空闲 fallback 端口，演示禁止使用 4177/4178。
 
 项目目录是 `devboard_project_create` 返回的 `workspaceDir`（`devboard-projects/<项目编号>/`），所有文件都写在这里面：
 

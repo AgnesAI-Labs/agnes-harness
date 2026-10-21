@@ -65,7 +65,7 @@ If role delegation fails, mark role independence as unmet and keep the quality f
 
 ### Presenter checklist
 
-- Use an isolated home and workspace, a configured real model, a free app port and one or two browser tabs. Review the installed package version and permissions before adopting it.
+- Use an isolated home and workspace, a configured real model, the Host-allocated loopback URL (or a free fallback port for ordinary deployment) and one or two browser tabs. Review the installed package version and permissions before adopting it.
 - Rehearse all five gates with typed role task cards and verify parent/child file visibility. Check Chinese progress narration and business state labels.
 - Review each command and cwd before approval. Avoid unnecessary shell probes such as `node --version`; commands execute generated code. Tainted results can also require approval for later writes or board operations; read the action title and evidence.
 - Before gates 4–5, require real HTTP test logs and browser evidence, resolve findings, verify the registered URL, and retain timing per gate. Confirm how to stop the background job.
