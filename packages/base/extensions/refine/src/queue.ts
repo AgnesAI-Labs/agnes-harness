@@ -33,28 +33,45 @@ export class RefineQueue {
           const cb = (b.value as Row).created_at
           return ca < cb ? -1 : ca > cb ? 1 : a.key < b.key ? -1 : a.key > b.key ? 1 : 0
         })
-      for (const { key } of terminal) this.#retire(key.slice('row:'.length))
+      if (terminal.length === 0) return
+      // Read the tombstones once, number the converted rows after them, trim once at the end.
+      const seqs = this.#tombstones()
+      let next = Math.max(0, ...seqs.values()) + 1
+      for (const { key } of terminal) {
+        const id = key.slice('row:'.length)
+        ns.delete(key)
+        ns.set(`done:${id}`, next)
+        seqs.set(`done:${id}`, next++)
+      }
+      this.#trim(seqs)
     })
+  }
+
+  #tombstones(): Map<string, number> {
+    return new Map(
+      this.ns
+        .entries()
+        .filter(({ key }) => key.startsWith('done:'))
+        .map(({ key, value }) => [key, value as number]),
+    )
+  }
+
+  /** Drop the tombstones with the smallest sequence numbers beyond REFINE_TOMBSTONE_MAX. */
+  #trim(seqs: Map<string, number>): void {
+    const excess = seqs.size - REFINE_TOMBSTONE_MAX
+    if (excess <= 0) return
+    for (const [key] of [...seqs].sort((a, b) => a[1] - b[1]).slice(0, excess)) this.ns.delete(key)
   }
 
   /** Replace `row:<id>` with a tombstone and trim the oldest tombstones. Runs inside the caller's transaction. */
   #retire(id: string): void {
     const ns = this.ns
     ns.delete(`row:${id}`)
-    const tombs = ns
-      .entries()
-      .filter(({ key }) => key.startsWith('done:'))
-      .map(({ key, value }) => ({ key, seq: value as number }))
-    const next = tombs.reduce((max, t) => Math.max(max, t.seq), 0) + 1
-    ns.set(`done:${id}`, next)
-    const excess = tombs.filter((t) => t.key !== `done:${id}`).length + 1 - REFINE_TOMBSTONE_MAX
-    if (excess > 0) {
-      for (const t of tombs
-        .filter((t) => t.key !== `done:${id}`)
-        .sort((a, b) => a.seq - b.seq)
-        .slice(0, excess))
-        ns.delete(t.key)
-    }
+    const seqs = this.#tombstones()
+    const seq = Math.max(0, ...seqs.values()) + 1
+    ns.set(`done:${id}`, seq)
+    seqs.set(`done:${id}`, seq)
+    this.#trim(seqs)
   }
 
   queuedCount(): number {
