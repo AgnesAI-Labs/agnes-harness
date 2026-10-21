@@ -19,7 +19,6 @@ import {
   inspectJsonData,
   isPermissionPurpose,
   permissionEffectAdmission,
-  validateActor,
   validateAgainst,
 } from '@agnes/protocol'
 import {
@@ -28,10 +27,12 @@ import {
   DecisionSpec as SpecSchema,
 } from '@agnes/protocol/gen/session-v1'
 import { ROLE_APPROVAL_REFUSAL } from '../child/roles.js'
+import { delegatedDecisionRefused, humanDecisionActorAllowed } from './decision-authority.js'
 
 /** Minimal authority needed by the decision commands; the session supplies the writer gate. */
 export interface DecisionAuthority {
   readonly refuseApprovals?: boolean
+  readonly delegatedToolApprovals?: boolean
   readonly key: string
   /** A profile journal uses AR1 without creating a session or granting session access. */
   readonly profileId?: string
@@ -153,6 +154,7 @@ export class DecisionCommands {
     return this.s.transact(work)
   }
   private automaticAnswer(spec: DecisionSpec, permission: boolean) {
+    if (this.s.refuseApprovals) return undefined
     return automaticPermissionDecision(
       this.s.permissionContext,
       spec.purpose,
@@ -430,9 +432,7 @@ export class DecisionCommands {
         consumption: null,
         invalidation: null,
       }
-      const refused =
-        this.s.refuseApprovals &&
-        (source.permission || isPermissionPurpose(spec.purpose) || spec.purpose === 'business.confirm')
+      const refused = delegatedDecisionRefused(this.s, source, spec)
       // Persist request and refusal in one commit, following the existing decision transition contract.
       const initial = refused ? detached(value) : undefined
       if (refused) {
@@ -640,8 +640,7 @@ export class DecisionCommands {
       this.live()
       const original = this.read(command.handle)
       await context.authorize(detached(original))
-      if (!validateActor(context.actor).ok || context.category !== 'human' || context.actor.role === 'agent')
-        fail('HUMAN_REQUIRED')
+      if (!humanDecisionActorAllowed(this.s, context)) fail('HUMAN_REQUIRED')
       if (original.answerCommand?.commandId === command.commandId) {
         if (original.answerCommand.digest !== digest) fail('COMMAND_CONFLICT')
         return detached(original.answerCommand)

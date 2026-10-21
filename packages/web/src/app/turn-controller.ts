@@ -3,6 +3,7 @@ import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { sessionLoopSelection } from '@agnes/web-admin/admin/plugins/session-loop'
 import type { ApprovalAction } from '@agnes/web-conversation/approval'
 import {
+  approvalIsDelegated,
   approvalIsPermission,
   approvalToolName,
   liveApprovalCard,
@@ -150,6 +151,7 @@ export function createTurnController(
       !view.busy &&
       receipt?.reason &&
       context.liveApproval &&
+      !approvalIsDelegated(context.liveApproval.request.toolCall) &&
       receipt.endSeq > context.liveApproval.afterSeq
     ) {
       // A real later terminal invalidates this live request; no cancelled task keeps an approval card.

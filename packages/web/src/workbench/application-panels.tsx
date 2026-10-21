@@ -10,47 +10,13 @@ import {
   type WorkbenchPanel,
 } from '@agnes/web-client'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
-import { Button, EmptyState, Icon, useDocumentLanguage } from '@agnes/web-ui'
+import { useDocumentLanguage } from '@agnes/web-ui'
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { ApplicationEvidence } from './application-evidence.js'
-import { workbenchApproval } from './approval-store.js'
+import { ApprovalMirror } from './approval-panel.js'
 
 function Signatures() {
-  const view = useSyncExternalStore(workbenchApproval.subscribe, workbenchApproval.getSnapshot)
-  const zh = useDocumentLanguage() === 'zh-CN'
-  return view ? (
-    <section className="application-panel">
-      <h3>{view.summary}</h3>
-      <p role="status">
-        {view.kind === 'answered'
-          ? zh
-            ? '已确认，等待继续'
-            : 'Answered; waiting to continue'
-          : zh
-            ? '等待在会话中确认'
-            : 'Awaiting confirmation in conversation'}
-      </p>
-      <Button
-        onClick={() => {
-          const card = document.querySelector<HTMLElement>('#approval-content [data-approval-key]')
-          card?.scrollIntoView?.({ block: 'nearest' })
-          ;(card?.querySelector<HTMLButtonElement>('[data-approval-action]:not(:disabled)') ?? card)?.focus()
-        }}
-      >
-        {zh ? '前往会话确认' : 'Go to confirmation'}
-      </Button>
-    </section>
-  ) : (
-    <EmptyState
-      icon={<Icon name="check" />}
-      title={zh ? '当前没有待签署事项' : 'No signatures pending'}
-      description={
-        zh
-          ? '当前会话需要确认时，将在这里显示宿主请求。'
-          : 'Host requests appear here when this session needs confirmation.'
-      }
-    />
-  )
+  return <ApprovalMirror signatures />
 }
 function pageComponent(page: HomeEntry, object: unknown): WorkbenchPanel['component'] {
   return function ApplicationPage({ context }) {
