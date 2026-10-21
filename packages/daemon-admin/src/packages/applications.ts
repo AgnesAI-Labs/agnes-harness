@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { type ConfigurationService, createConfigurationService } from '@agnes/host'
 import {
+  applicationConsentSnapshot,
   type InstalledPackage,
   lockPath,
   type PackageManager,
@@ -178,15 +179,8 @@ export class Applications {
         source: p.entry.source,
       }
     })
-    const snapshot = previous?.consentSnapshot
-    const { consentDigest: _previousDigest, ...previousBody } = snapshot ?? {}
-    const restored =
-      snapshot &&
-      snapshot.packageId === previous?.packageId &&
-      snapshot.integrity === previous.integrity &&
-      snapshot.declarationDigest === previous.declarationDigest &&
-      snapshot.consentDigest === previous.consentDigest &&
-      digest(previousBody) === previous.consentDigest
+    const snapshot = applicationConsentSnapshot(previous)
+    const restored = snapshot !== undefined
     const ids = (rows: ApplicationPreview['dependencies'], owner: string) =>
       rows.flatMap((value) =>
         value &&
@@ -197,7 +191,7 @@ export class Applications {
           ? [value.packageId]
           : [],
       )
-    const before = restored ? ids(snapshot.dependencies, snapshot.packageId) : []
+    const before = snapshot ? ids(snapshot.dependencies, snapshot.packageId) : []
     const after = ids(dependencies, row.id)
     const dependencyDiff =
       previous && !restored

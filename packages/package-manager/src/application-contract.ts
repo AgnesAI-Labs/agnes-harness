@@ -1,4 +1,12 @@
-import { type ApplicationTemplate, type PackageContributionSummary, validateAgainst } from '@agnes/protocol'
+import {
+  type ApplicationPreview,
+  type ApplicationSelection,
+  type ApplicationTemplate,
+  jcs,
+  type PackageContributionSummary,
+  sha256Hex,
+  validateAgainst,
+} from '@agnes/protocol'
 import { ApplicationTemplate as ApplicationSchema } from '@agnes/protocol/gen/extension-manifest'
 import type { PackageBundleCatalog } from './bundle-contract.js'
 
@@ -103,4 +111,24 @@ export function parseApplicationContract(
     else deploymentDependent = true
   }
   return { application: structuredClone(application), deploymentDependent }
+}
+
+/** Validates only the persisted consent envelope; callers own current admission and plan coverage. */
+export function applicationConsentSnapshot(
+  selection: ApplicationSelection | null | undefined,
+): ApplicationPreview | undefined {
+  const snapshot = selection?.consentSnapshot
+  if (!selection || !snapshot) return undefined
+  const { consentDigest, ...body } = snapshot
+  if (
+    snapshot.packageId !== selection.packageId ||
+    snapshot.integrity !== selection.integrity ||
+    snapshot.declaration.id !== selection.applicationId ||
+    snapshot.declarationDigest !== selection.declarationDigest ||
+    sha256Hex(jcs(snapshot.declaration)) !== selection.declarationDigest ||
+    consentDigest !== selection.consentDigest ||
+    sha256Hex(jcs(body)) !== consentDigest
+  )
+    return undefined
+  return snapshot
 }

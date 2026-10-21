@@ -10,13 +10,14 @@ import {
 } from '@agnes/host'
 import type { InstalledPackage } from '@agnes/package-manager'
 import {
+  applicationConsentSnapshot,
   capabilityHash,
   createPackageManager,
   emptyLock,
   parseSource,
   writeLock,
 } from '@agnes/package-manager'
-import { type AgentPlan, validatePackageAdminCall } from '@agnes/protocol'
+import { type AgentPlan, jcs, sha256Hex, validatePackageAdminCall } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { createAgentLaunches } from '../src/packages/agent-launches.js'
 import { Applications } from '../src/packages/applications.js'
@@ -812,7 +813,7 @@ function launchReviewPlan(): AgentPlan {
   }
 }
 
-it.each(['snapshot', 'selection', 'launch-plan'] as const)(
+it.each(['snapshot', 'selection', 'launch-plan', 'application-id', 'declaration-body'] as const)(
   'launch-review: alteration of the persisted %s cannot manufacture covered consent',
   async (change) => {
     const plan = launchReviewPlan()
@@ -826,7 +827,19 @@ it.each(['snapshot', 'selection', 'launch-plan'] as const)(
     if (change === 'selection') saved.selection!.consentDigest = 'f'.repeat(64)
     if (change === 'launch-plan')
       saved.selection!.consentSnapshot!.agentLaunches = [{ ...plan, digest: 'tampered' }]
+    if (change === 'application-id') saved.selection!.applicationId = 'other-app'
+    if (change === 'declaration-body') {
+      const snapshot = saved.selection!.consentSnapshot!
+      snapshot.declaration.brand = { name: { en: 'forged' } }
+      const { consentDigest: _digest, ...body } = snapshot
+      snapshot.consentDigest = saved.selection!.consentDigest = sha256Hex(jcs(body))
+    }
+    expect(applicationConsentSnapshot(saved.selection)).toBeUndefined()
     await f.config.saveApplication(saved)
+    expect((await f.applications.preview('local-dev', 'a')).dependencyDiff).toEqual({
+      status: 'unknown',
+      reason: 'previous-consent-unavailable',
+    })
     const facade = createAgentLaunches({
       directory: join(f.home, 'launches'),
       backend: {

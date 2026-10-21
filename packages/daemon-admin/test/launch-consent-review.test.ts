@@ -63,7 +63,7 @@ function fixture() {
     source: { type: 'file', ref: 'file:./synthetic' },
     signature: 'unverified',
     declaration: { id: 'kit', agents: [original.ref] },
-    declarationDigest: 'a'.repeat(64),
+    declarationDigest: hash({ id: 'kit', agents: [original.ref] }),
     agentLaunches: [structuredClone(original)],
     dependencies: [],
     replacedRoles: [],
@@ -177,6 +177,8 @@ it.each([
   'package',
   'integrity',
   'declaration',
+  'application-id',
+  'declaration-body',
   'catalogue',
   'legacy',
   'other-app',
@@ -190,6 +192,12 @@ it.each([
   if (change === 'package') state.selection!.packageId = 'other'
   if (change === 'integrity') state.selection!.integrity = 'other'
   if (change === 'declaration') state.selection!.declarationDigest = 'c'.repeat(64)
+  if (change === 'application-id') state.selection!.applicationId = 'other'
+  if (change === 'declaration-body') {
+    snapshot.declaration.brand = { name: { en: 'forged' } }
+    const { consentDigest: _digest, ...body } = snapshot
+    snapshot.consentDigest = state.selection!.consentDigest = hash(body)
+  }
   if (change === 'catalogue') snapshot.declaration.agents = ['other/app#work']
   if (change === 'legacy') delete snapshot.agentLaunches
   if (change === 'other-app') f.setPlan({ ...f.original, ref: 'other/app#work' })
@@ -318,6 +326,7 @@ function reviewedState(plan: AgentPlan): ApplicationState {
   snapshot.packageId = selection.packageId = '@agnes/code'
   snapshot.declaration.agents = [plan.ref]
   snapshot.agentLaunches = [structuredClone(plan)]
+  snapshot.declarationDigest = selection.declarationDigest = hash(snapshot.declaration)
   const { consentDigest: _digest, ...body } = snapshot
   snapshot.consentDigest = selection.consentDigest = hash(body)
   return state
