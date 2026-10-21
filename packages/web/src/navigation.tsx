@@ -255,8 +255,8 @@ export function shownSessions<T extends { sessionId: string }>(
  */
 function ArchiveViewRow({ archived, t }: { archived: boolean; t: Translate }) {
   return (
-    <button
-      type="button"
+    <Button
+      appearance="ghost"
       className="sidebar-view-row"
       data-testid="sidebar-view-row"
       aria-label={t(archived ? 'home.filter.backToWorkspaces' : 'home.filter.openArchived')}
@@ -270,7 +270,7 @@ function ArchiveViewRow({ archived, t }: { archived: boolean; t: Translate }) {
         {t(archived ? 'sidebar.sectionHeading' : 'home.filter.archived')}
       </span>
       {!archived && <Icon name="chevron-right" className="sidebar-view-row-icon sidebar-view-row-end" />}
-    </button>
+    </Button>
   )
 }
 
@@ -340,8 +340,8 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
               data-active={String(active)}
             >
               {/* Opening an archived session keeps the filter: the row marks the current session. */}
-              <button
-                type="button"
+              <Button
+                appearance="ghost"
                 className="sidebar-archive-open"
                 aria-current={active ? 'page' : undefined}
                 title={title}
@@ -349,7 +349,7 @@ function ArchivedSessions({ options, t }: { options: SidebarNavigationOptions; t
               >
                 <span className="sidebar-archive-title">{title}</span>
                 {row.cwd && <span className="sidebar-archive-workspace">{name(row.cwd)}</span>}
-              </button>
+              </Button>
               <IconButton
                 name="history"
                 className="sidebar-archive-restore"
