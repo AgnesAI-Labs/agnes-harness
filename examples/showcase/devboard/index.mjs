@@ -430,7 +430,7 @@ export const tools = [
   ),
   tool(
     'devboard_defect_upsert',
-    'Create a defect (omit id) or move one (id + to): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. 登记或流转缺陷。',
+    'Create a defect (omit id) or move one (id + to): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. An unclosed class-A defect holds the TR5 and ADCP gates (they cannot be approved); closing it closes its system finding on a waiting gate. 登记或流转缺陷。',
     Type.Object(
       {
         id: Type.Optional(id),
@@ -577,7 +577,7 @@ export const tools = [
   ),
   tool(
     'devboard_fastforward',
-    'Demo shortcut: create a NEW live project (never reuses a directory) and take it to the review gate gate from the sample project shipped with the plugin (CDCP, TR1, TR3, TR5, or DONE = ADCP approved). The sample files are written under the new workspaceDir and the board is advanced through the real gate rules; the target gate is left PENDING for a person to decide. The input is only the gate. Returns the project id, the pending gate and the next step. 快进演示到指定评审门。',
+    'Demo shortcut: create a NEW live project (never reuses a directory) and take it to the review gate gate from the sample project shipped with the plugin (CDCP, TR1, TR3, TR5, or DONE = ADCP approved; TR3_CHANGE = TR3 pending with a customer change already in CCB review and its ECR flow waiting; TR5_DEFECT = TR5 pending with a class-A defect still being fixed). The sample files are written under the new workspaceDir and the board is advanced through the real gate rules; the target gate is left PENDING for a person to decide. The input is only the gate. Returns the project id, the pending gate and the next step. 快进演示到指定评审门。',
     Type.Object({ gate: literals(GATES) }, strict),
     (input, ctx) => fastForward(input, ctx),
   ),

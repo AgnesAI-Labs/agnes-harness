@@ -1946,7 +1946,15 @@ describe('fast-forward from the shipped sample', () => {
       // an app address appears only once it is registered
       expect(project.appUrl).toBeUndefined()
     }
-    expect(shown).toEqual({ CDCP: false, TR1: false, TR3: false, TR5: true, DONE: true, TR3_CHANGE: false })
+    expect(shown).toEqual({
+      CDCP: false,
+      TR1: false,
+      TR3: false,
+      TR5: true,
+      DONE: true,
+      TR3_CHANGE: false,
+      TR5_DEFECT: true,
+    })
     // seed and order projects never show it
     const seeded = snapshot(seed(NOW))
     expect(seeded.projects.some((p: Item) => showDelivery(seeded, p))).toBe(false)
@@ -1995,6 +2003,122 @@ describe('fast-forward from the shipped sample', () => {
     )
   })
 
+  describe('class-A defects hold TR5 and ADCP', () => {
+    const open = async () => {
+      const store = memoryStore()
+      const { data } = (await run(store, 'TR5_DEFECT')) as Item
+      const state = read(store)
+      const gate = byId(state.gates, data.gateId)
+      const fatal = state.defects.find((d: Item) => d.projectId === data.projectId && d.severity === 'A')
+      return { state, gate, fatal, projectId: data.projectId as string, data }
+    }
+    const approve = (state: State, gate: Item, extra = {}) =>
+      sign(state, gate.id, gate.approverRoles[0], extra)
+    const closeAll = (gate: Item) => gate.findings.map((f: Item) => ({ id: f.id, note: '已复核' }))
+
+    it('TR5_DEFECT: the gate waits with a system finding for the A defect, and the approval says which rule and which defect', async () => {
+      const { state, gate, fatal, data } = await open()
+      expect(fatal).toMatchObject({ state: 'FIXING', testCase: 'TC-006', req: 'SWR-006' })
+      expect(gate).toMatchObject({ code: 'TR5', decision: 'PENDING' })
+      expect(gate.findings.map((f: Item) => [f.by, f.defectId, f.closed])).toEqual([
+        ['系统检查', fatal.id, false],
+        [
+          '系统检查',
+          state.defects.find((d: Item) => d.projectId === data.projectId && d.severity === 'B').id,
+          false,
+        ],
+      ])
+      expect(gate.findings[0].text).toBe(`A 类缺陷 ${fatal.id} 未关闭：${fatal.title}`)
+      expect(data.next).toContain('缺陷与测试')
+      expect(() => approve(state, gate, { closeFindings: closeAll(gate) })).toThrow(
+        new RegExp(`A 类缺陷 ${fatal.id}.*修复并回归通过后才能批准`),
+      )
+      expect(byId(state.stages, gate.stageId).state).toBe('IN_REVIEW')
+    })
+
+    it('holds by the defect, not by the finding: a finding closed by hand does not release the gate', async () => {
+      const { state, gate, fatal, projectId } = await open()
+      // the approver closes every finding, the refusal still stands; nothing was signed or changed
+      expect(() => approve(state, gate, { closeFindings: closeAll(gate) })).toThrow('A 类缺陷')
+      expect(gate.findings.every((f: Item) => f.closed)).toBe(true)
+      expect(gate.signatures ?? []).toEqual([])
+      expect(() => approve(state, gate)).toThrow(fatal.id)
+      // a deferred defect is still unclosed, and one raised after the gate was submitted has no finding at all
+      for (const to of ['RETEST', 'CLOSED'])
+        transition(state, { kind: 'defect', id: fatal.id, to, by: 'x' }, NOW)
+      const later = create(
+        state,
+        { kind: 'defect', projectId, title: '后发现的致命缺陷', severity: 'A', by: 'x' },
+        NOW,
+      )
+      transition(state, { kind: 'defect', id: later.id, to: 'DEFERRED', by: 'x' }, NOW)
+      expect(() => approve(state, gate)).toThrow(later.id)
+    })
+
+    it('closing the defect closes its finding as the system, and then the gate can be approved', async () => {
+      const { state, gate, fatal } = await open()
+      for (const to of ['RETEST', 'CLOSED'])
+        transition(state, { kind: 'defect', id: fatal.id, to, by: 'x' }, NOW)
+      const [mine, advisory] = gate.findings
+      expect(mine).toMatchObject({ closed: true })
+      expect(mine.closedNote).toContain('系统（缺陷已关闭）')
+      // the B defect's advisory finding is not touched by it; the approver closes it by hand
+      expect(advisory.closed).toBe(false)
+      approve(state, gate, { closeFindings: [{ id: advisory.id, note: '回归中，可放行' }] })
+      expect(byId(state.stages, gate.stageId).state).toBe('PASSED')
+    })
+
+    it('does not hold on a B defect, holds ADCP too, and leaves TR4 alone', async () => {
+      const { state, gate, fatal, projectId } = await open()
+      for (const to of ['RETEST', 'CLOSED'])
+        transition(state, { kind: 'defect', id: fatal.id, to, by: 'x' }, NOW)
+      // the B defect is still in retest: only its finding, closed by hand, stood in the way
+      approve(state, gate, { closeFindings: closeAll(gate) })
+      expect(state.defects.find((d: Item) => d.projectId === projectId && d.severity === 'B').state).toBe(
+        'RETEST',
+      )
+      // a new A defect in the release stage: ADCP gets the finding and refuses
+      const late = create(
+        state,
+        { kind: 'defect', projectId, title: '发布包缺少启动脚本', severity: 'A', by: 'x' },
+        NOW,
+      )
+      start(state, `${projectId}/RELEASE`)
+      const adcp = submitGate(state, { stageId: `${projectId}/RELEASE`, by: '研发协调员' }, NOW).gate
+      expect(adcp.code).toBe('ADCP')
+      expect(adcp.findings.map((f: Item) => f.defectId)).toContain(late.id)
+      expect(() => approve(state, adcp, { closeFindings: closeAll(adcp) })).toThrow(late.id)
+      for (const to of ['CONFIRMED', 'FIXING', 'RETEST', 'CLOSED'])
+        transition(state, { kind: 'defect', id: late.id, to, by: 'x' }, NOW)
+      approve(state, adcp)
+      expect(byId(state.stages, adcp.stageId).state).toBe('PASSED')
+    })
+
+    it('TR4 passes with an open A defect: only TR5 and ADCP look at defects', async () => {
+      const store = memoryStore()
+      const { data } = (await run(store, 'TR3')) as Item
+      const state = read(store)
+      create(
+        state,
+        { kind: 'defect', projectId: data.projectId, title: '早期发现的致命缺陷', severity: 'A', by: 'x' },
+        NOW,
+      )
+      sign(state, data.gateId, '技术负责人')
+      const pending = byId(state.gates, data.gateId)
+      const impl = pass(state, data.projectId, 'IMPLEMENTATION')
+      expect(pending.decision).toBe('APPROVED')
+      expect(impl.state).toBe('PASSED')
+      expect(
+        state.gates
+          .filter((g: Item) => g.code === 'TR4' && g.stageId.startsWith(`${data.projectId}/`))
+          .flatMap((g: Item) => g.findings.map((f: Item) => f.defectId)),
+      ).toEqual([])
+      expect(
+        state.gates.some((g: Item) => g.code === 'TR4' && g.stageId.startsWith(`${data.projectId}/`)),
+      ).toBe(true)
+    })
+  })
+
   it('refuses any input but the gate enum and leaves the board alone', async () => {
     const store = memoryStore()
     const fs = fakeFs()
@@ -2022,7 +2146,10 @@ describe('fast-forward from the shipped sample', () => {
       expect(() =>
         decideGate(state, { gateId: pending.id, decision: 'APPROVED', by: '客户代表 测试员' }, NOW),
       ).toThrow('本门需由')
-      sign(state, pending.id, pending.approverRoles[0])
+      // TR5 lists the B defect still in retest as an advisory finding; the approver closes it by hand
+      const closeFindings = pending.findings.map((f: Item) => ({ id: f.id, note: '已复核' }))
+      expect(pending.findings.length > 0).toBe(gate === 'TR5')
+      sign(state, pending.id, pending.approverRoles[0], { closeFindings })
       expect(byId(state.stages, pending.stageId).state).toBe('PASSED')
       // the remaining stages run the ordinary start / submit / sign loop
       for (const next of STAGE_LIST.slice(STAGE_LIST.indexOf(stage.stage) + 1)) pass(state, project.id, next)

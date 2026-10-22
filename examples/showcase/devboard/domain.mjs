@@ -352,6 +352,7 @@ export function transition(state, input, now = Date.now()) {
     if (to === 'CLOSED') item.closedAt = at
     else delete item.closedAt
   }
+  if (kind === 'defect' && to === 'CLOSED') closeDefectFindings(state, item)
   record(item, at, actor, from, to, note)
   if (kind === 'task') link(state, item, at)
   if (kind === 'change' && to === 'APPROVED') applyChange(state, item, at)
@@ -407,7 +408,7 @@ function nextGate(state, project, stage) {
   return gatesOf(project, stage.stage).find((g) => !passed.has(g.code))
 }
 
-function addFindings(gate, texts, by) {
+function addFindings(gate, texts, by, defectId) {
   for (const raw of texts ?? []) {
     const n = gate.findings.length + 1
     gate.findings.push({
@@ -415,7 +416,26 @@ function addFindings(gate, texts, by) {
       text: text(raw, 'finding', 500),
       by,
       closed: false,
+      ...(defectId ? { defectId } : {}),
     })
+  }
+}
+
+/** Gates that class-A defects hold: no approval while one is unclosed (a deferred defect is still unclosed). */
+const DEFECT_GATES = ['TR5', 'ADCP']
+const unclosedDefects = (state, projectId, severity) =>
+  state.defects.filter((d) => d.projectId === projectId && d.severity === severity && d.state !== 'CLOSED')
+
+/** A closed defect closes the system findings that name it on the gates still waiting. */
+function closeDefectFindings(state, defect) {
+  const by = '系统（缺陷已关闭）'
+  for (const gate of state.gates) {
+    if (gate.decision !== 'PENDING' || !gate.stageId.startsWith(`${defect.projectId}/`)) continue
+    for (const f of gate.findings)
+      if (f.defectId === defect.id && !f.closed) {
+        f.closed = true
+        f.closedNote = `缺陷 ${defect.id} 已关闭（${by}）`
+      }
   }
 }
 function closeFindings(gate, closes, by) {
@@ -480,6 +500,13 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
           [`交付物 ${a.id} 的发布审批 ${flow.id} ${FLOW_LABELS[flow.state]}，尚未批准`],
           '系统检查',
         )
+    }
+    if (DEFECT_GATES.includes(def.code)) {
+      // The rule itself is checked again at the decision, from the defects; these findings only show it.
+      for (const d of unclosedDefects(state, project.id, 'A'))
+        addFindings(gate, [`A 类缺陷 ${d.id} 未关闭：${d.title}`], '系统检查', d.id)
+      for (const d of unclosedDefects(state, project.id, 'B'))
+        addFindings(gate, [`B 类缺陷 ${d.id} 未关闭（提示，可人工关闭）：${d.title}`], '系统检查', d.id)
     }
     const [type, label] = TRIAL_GATES[def.code] ?? []
     if (type) {
@@ -546,7 +573,8 @@ function approve(state, stage, gate, by, comment, at) {
 
 /**
  * The gate rules: in review, approver ≠ author, the approver's role is one the gate names, every role of
- * a co-signed gate signs once, and every finding is closed before the last signature approves.
+ * a co-signed gate signs once, and every finding is closed before the last signature approves. TR5 and ADCP
+ * also refuse the last signature while the project has an unclosed class-A defect, whatever happened to the findings.
  */
 export function decideGate(state, input, now = Date.now()) {
   const gate = find(state, 'gate', input.gateId)
@@ -569,6 +597,12 @@ export function decideGate(state, input, now = Date.now()) {
   if (decision === 'APPROVED') {
     if (gate.signatures.some((s) => s.role === role)) fail(`评审门不满足：角色「${role}」已签署本门`)
     const waiting = roles.filter((r) => r !== role && !gate.signatures.some((s) => s.role === r))
+    const held =
+      DEFECT_GATES.includes(gate.code) && !waiting.length ? unclosedDefects(state, stage.projectId, 'A') : []
+    if (held.length)
+      fail(
+        `评审门不满足：A 类缺陷 ${held.map((d) => `${d.id}（${d.title}）`).join('、')} 未关闭，修复并回归通过后才能批准。请到「缺陷与测试」页把缺陷推进到已关闭，门上对应的系统意见会随之关闭。`,
+      )
     const open = gate.findings.filter((f) => !f.closed)
     if (!waiting.length && open.length)
       fail(`评审门不满足：还有 ${open.length} 条评审意见未关闭（${open.map((f) => f.id).join('、')}）`)

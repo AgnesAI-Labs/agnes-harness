@@ -19,12 +19,13 @@ import {
 
 /**
  * The only input: where the new project waits. CDCP … TR5 are the gates; DONE is ADCP approved; TR3_CHANGE
- * is TR3 pending with a customer change already in CCB review (its ECR flow waiting for approval).
+ * is TR3 pending with a customer change already in CCB review (its ECR flow waiting for approval);
+ * TR5_DEFECT is TR5 pending with a class-A defect still being fixed, which the gate refuses to approve over.
  */
-export const GATES = ['CDCP', 'TR1', 'TR3', 'TR5', 'DONE', 'TR3_CHANGE']
+export const GATES = ['CDCP', 'TR1', 'TR3', 'TR5', 'DONE', 'TR3_CHANGE', 'TR5_DEFECT']
 /** Where each value stops (level 0 CDCP … 4 DONE) and the scenario it adds on top, if any. */
-const STOPS = { CDCP: 0, TR1: 1, TR3: 2, TR5: 3, DONE: 4, TR3_CHANGE: 2 }
-const SCENARIO = { TR3_CHANGE: 'change' }
+const STOPS = { CDCP: 0, TR1: 1, TR3: 2, TR5: 3, DONE: 4, TR3_CHANGE: 2, TR5_DEFECT: 3 }
+const SCENARIO = { TR3_CHANGE: 'change', TR5_DEFECT: 'defect' }
 export const levelOf = (gate) => STOPS[gate] ?? -1
 export const PROJECT_NAME = '车门健康监测看板（演示快进）'
 export const UNIT_TOTAL = 18
@@ -162,8 +163,18 @@ function build(state, level, now, minSeq, scenario) {
     transition(state, { kind: 'stage', id: stageId(stage), to: 'IN_PROGRESS', by: AGENT }, at(h))
   const submit = (stage, h, extra) =>
     submitGate(state, { stageId: stageId(stage), by: AGENT, ...extra }, at(h)).gate
+  // The approver closes what the gate still lists (here the advisory finding of the B defect in retest).
   const approve = (gate, h) =>
-    decideGate(state, { gateId: gate.id, decision: 'APPROVED', by: PEOPLE[gate.approverRoles[0]] }, at(h))
+    decideGate(
+      state,
+      {
+        gateId: gate.id,
+        decision: 'APPROVED',
+        by: PEOPLE[gate.approverRoles[0]],
+        closeFindings: gate.findings.filter((f) => !f.closed).map((f) => ({ id: f.id, note: '已复核' })),
+      },
+      at(h),
+    )
   const move = (kind, id, to, h, note) => transition(state, { kind, id, to, by: AGENT, note }, at(h))
   // A customer asks to change the ranking limit (CUS-002 → SWR-004): registered, traced, sent to CCB, ECR started.
   const customerChange = (h) => {
@@ -317,11 +328,34 @@ function build(state, level, now, minSeq, scenario) {
   move('defect', major.id, 'CONFIRMED', 233)
   move('defect', major.id, 'FIXING', 236, '页面丢弃过期响应')
   move('defect', major.id, 'RETEST', 244, '修复已合入，待浏览器回归')
+  // The defect scenario: a class-A defect found by TC-006 is still being fixed when TR5 is submitted.
+  const unverified = ['TC-007']
+  if (scenario === 'defect') {
+    const fatal = create(
+      state,
+      {
+        kind: 'defect',
+        projectId,
+        title: '非 GET 请求返回 200，应返回 405',
+        severity: 'A',
+        foundIn: 'VERIFICATION',
+        testCase: 'TC-006',
+        req: 'SWR-006',
+        owner: '软件设计师',
+        description: '接口验收补充用例 TC-006：对排行接口发 POST 返回 200，SWR-006 要求只接受 GET',
+        by: AGENT,
+      },
+      at(245),
+    )
+    move('defect', fatal.id, 'CONFIRMED', 245)
+    move('defect', fatal.id, 'FIXING', 246, '路由层增加方法检查')
+    unverified.push('TC-006')
+  }
   upsertReqs(
     state,
     {
       projectId,
-      items: TC.filter((t) => t.id !== 'TC-007').map((t) => ({ id: t.id, status: 'VERIFIED' })),
+      items: TC.filter((t) => !unverified.includes(t.id)).map((t) => ({ id: t.id, status: 'VERIFIED' })),
       by: AGENT,
     },
     at(245),
@@ -350,7 +384,9 @@ const NEXT = {
   CDCP: '请切换为 IPMT，在「我的待办」批准 CDCP，再点「继续推进」。',
   TR1: '请切换为技术负责人，在「我的待办」批准 TR1，再点「继续推进」。',
   TR3: '请切换为技术负责人，在「我的待办」批准 TR3，再点「继续推进」。',
-  TR5: '请切换为质量工程师，在「我的待办」批准 TR5，再点「继续推进」。',
+  TR5: '请切换为质量工程师，在「我的待办」批准 TR5（门上有一条 B 类缺陷的提示意见，批准时写明理由关闭它），再点「继续推进」。',
+  TR5_DEFECT:
+    '门上有一条 A 类缺陷的系统意见：现在批准会被拒绝。请到「缺陷与测试」页打开这条缺陷，点「提交回归」再点「关闭」（或让协调员修复并回归），门上意见随之关闭，然后切换为质量工程师批准 TR5，再点「继续推进」。',
   TR3_CHANGE:
     '客户变更已在 CCB 评审，ECR 审批待批：请在「我的待办」先完成专业会签，再由技术负责人做 CCB 决议。批准后需求、设计阶段返工，原 TR1、TR3 作废，再点「继续推进」。',
   ADCP: '项目已完成：在项目页的「交付成果」查看成果，点「启动并打开」运行应用。',
