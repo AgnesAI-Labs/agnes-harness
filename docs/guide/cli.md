@@ -86,7 +86,7 @@ While the terminal reports focus, the TUI rings the bell once when a turn ends a
 
 `/plan`, `/plan on`, `/plan off`, and `/plan <instruction>` use the selected backend plan service in both TUI and Web. `/plan status` reports the mode; `/plan pending` shows the last submitted plan. If the backend is disabled or unavailable, the UI reports plan mode off. Existing `.agh/plan-mode.json` files are read without migration. Plan mode blocks write and execution tools even with full access; leaving through `exit_plan_mode` still requires human approval of the exact plan revision. An explicit human `/plan off` remains available.
 
-Esc during a turn interrupts it and keeps the message you were writing. With no turn running, Esc clears the draft; while the `@` file menu is open it only closes that menu. Ctrl-C still interrupts a turn, and pressing it twice within a second quits. Both keys interrupt any turn the session is running, including one another client started: the daemon lets the session owner stop it and refuses anyone else.
+Esc during a turn interrupts it and keeps the message you were writing. With no turn running, Esc clears the draft, and pressing Esc twice within half a second on an empty editor opens the `/rewind` picker; while the `@` file menu is open it only closes that menu. Ctrl-C still interrupts a turn, and pressing it twice within a second quits. Both keys interrupt any turn the session is running, including one another client started: the daemon lets the session owner stop it and refuses anyone else.
 
 ## Schedules and triggers
 

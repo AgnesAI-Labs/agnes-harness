@@ -1223,6 +1223,61 @@ it('Alt+Up takes the newest queued message back into an empty editor, and its at
   }
 })
 
+it('Esc Esc on an empty idle editor opens the rewind picker, and does not when a draft is there', async () => {
+  const { endpoint } = fakeSessionEndpoint()
+  endpoint.on('_agnes/v1/session.projectUI', () => ({
+    ...EMPTY_TIMELINE,
+    upto: 12,
+    turns: [
+      {
+        id: 't1',
+        turn: 1,
+        startSeq: 10,
+        endSeq: 12,
+        startedAt: '2026-10-03T00:00:00Z',
+        status: 'completed',
+        nodeIds: ['u1'],
+        usage: {
+          totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+          reasoningComplete: true,
+          billingComplete: true,
+          calls: [],
+        },
+        inherited: false,
+        forkable: true,
+      },
+    ],
+    nodes: [{ kind: 'user', id: 'u1', seq: 10, content: [{ type: 'text', text: 'earlier question' }] }],
+  }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const shown = async () => (await screenOf(term, 80, 24)).join('\n')
+    // The first Esc clears the draft; it takes a later pair on the empty editor to ask for the picker.
+    term.feed('half typed')
+    term.feed('\x1b')
+    term.feed('\x1b')
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(await shown()).not.toContain('Rewind To Turn')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    term.feed('\x1b')
+    term.feed('\x1b')
+    await vi.waitFor(async () => {
+      const screen = await shown()
+      expect(screen).toContain('Rewind To Turn')
+      expect(screen).toContain('#1 earlier question')
+    })
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 it('queues a prompt the daemon refused as busy exactly once, and shows any other refusal as it comes', async () => {
   const lagging = await busyHarness({ promptError: rpcError('SESSION_BUSY', {}) })
   try {

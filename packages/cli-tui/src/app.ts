@@ -13,7 +13,7 @@ import { formatTuiErrorNotice } from './error-notice.js'
 import { type ExternalEditorConfig, editDraft } from './external-editor.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { formatTurnSummary } from './format-usage.js'
-import { DoubleCtrlC } from './interrupt.js'
+import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
@@ -113,6 +113,7 @@ export class TuiApp {
   private closedNotice: string | undefined
   private localTurn = false
   private readonly interrupts = new DoubleCtrlC()
+  private readonly escapes = new DoubleEsc()
   private readonly busyInput = new BusyInput({
     session: () => this.o.session,
     locale: () => this.locale,
@@ -290,8 +291,10 @@ export class TuiApp {
       },
       onExternalEdit: () =>
         void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor),
-      onCancelKey: () => {
+      onCancelKey: (hadDraft) => {
+        const idle = !this.busy
         void this.cancel().catch((error) => this.showError(error))
+        this.escapes.press(idle && !hadDraft, () => void this.runInput('/rewind'))
       },
       complete: completeToken,
       mentions: this.mentions,
