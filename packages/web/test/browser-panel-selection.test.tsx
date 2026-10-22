@@ -12,7 +12,18 @@ vi.mock('@agnes/web-ui', async () => {
   return {
     Button: button,
     IconButton: button,
-    Menu: () => null,
+    Menu: ({ items }: { items: { id: string; label: string; onSelect(): void }[] }) =>
+      createElement(
+        'div',
+        {},
+        items.map((item) =>
+          createElement(
+            'button',
+            { key: item.id, 'data-option': item.id, onClick: item.onSelect },
+            item.label,
+          ),
+        ),
+      ),
     SettingsInput: (props: any) => createElement('input', props),
     Tabs: ({ items, activeKey, onChange }: any) =>
       createElement(
@@ -36,7 +47,14 @@ vi.mock('@agnes/web-ui', async () => {
 })
 vi.mock('../../package-manager/bundled-plugins/browser/src/browser-screen.js', async () => {
   const { createElement, forwardRef } = await import('react')
-  return { BrowserScreen: forwardRef((_props: unknown, _ref) => createElement('div')) }
+  return {
+    BrowserScreen: forwardRef((props: { fixedSize?: boolean; actualSize?: boolean }, _ref) =>
+      createElement('div', {
+        'data-viewport': props.fixedSize ? 'fixed' : 'adaptive',
+        'data-scale': props.actualSize ? 'actual' : 'fit',
+      }),
+    ),
+  }
 })
 
 it('keeps the user-selected tab while the model changes activity or opens another tab', async () => {
@@ -97,6 +115,13 @@ it('keeps the user-selected tab while the model changes activity or opens anothe
     await act(async () => root.render(createElement(Panel)))
     await vi.waitFor(() => expect(callbacks.has('browser.pages')).toBe(true))
     await publish([page('user', 1), page('model', 2)])
+    expect(container.querySelector('[data-viewport="adaptive"]')).not.toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-option="viewport"]')!.click())
+    expect(container.querySelector('[data-viewport="fixed"]')).not.toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-option="scale"]')!.click())
+    expect(container.querySelector('[data-scale="actual"]')).not.toBeNull()
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-option="viewport"]')!.click())
+    expect(container.querySelector('[data-viewport="adaptive"][data-scale="fit"]')).not.toBeNull()
     await act(async () => container.querySelector<HTMLButtonElement>('[data-tab="user"]')!.click())
     await publish([page('user', 1), page('model', 10), page('new-test', 11)])
     expect(container.querySelector('[data-tab="user"]')?.getAttribute('aria-selected')).toBe('true')

@@ -224,6 +224,8 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
         executablePath: info.executable,
         headless: true,
         chromiumSandbox: true,
+        // Headless screencasts use the native display density, not only context emulation.
+        args: ['--force-device-scale-factor=2'],
         env,
         timeout: 30_000,
         handleSIGINT: false,

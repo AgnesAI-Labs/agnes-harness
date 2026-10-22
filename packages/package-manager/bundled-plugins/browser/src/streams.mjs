@@ -1,4 +1,5 @@
 import { captureAudio } from './audio.mjs'
+import { viewportInput } from './contracts.mjs'
 import { failure } from './policy.mjs'
 
 const identity = (scope) => {
@@ -9,6 +10,30 @@ const identity = (scope) => {
 // View routing belongs to this plugin. The existing broker still owns admission,
 // session authorization and transport lifetime.
 const owner = (actor) => JSON.stringify([actor.id, actor.org ?? ''])
+
+// Read only the native PNG/JPEG dimensions, as in the CLI's image smoke fixture.
+// Chromium's metadata can precede the compositor surface during a resize.
+function matchesRaster(bytes, viewport) {
+  let width, height
+  if (bytes.length >= 24 && bytes.readUInt32BE(0) === 0x89504e47 && bytes.readUInt32BE(4) === 0x0d0a1a0a) {
+    width = bytes.readUInt32BE(16)
+    height = bytes.readUInt32BE(20)
+  } else if (bytes[0] === 255 && bytes[1] === 216) {
+    for (let offset = 2; offset + 9 < bytes.length; ) {
+      if (bytes[offset++] !== 255) break
+      const marker = bytes[offset++]
+      if ([192, 193, 194].includes(marker)) {
+        width = bytes.readUInt16BE(offset + 5)
+        height = bytes.readUInt16BE(offset + 3)
+        break
+      }
+      const size = bytes.readUInt16BE(offset)
+      if (size < 2) break
+      offset += size
+    }
+  }
+  return width === undefined || (width === viewport.width * 2 && height === viewport.height * 2)
+}
 
 export async function selectView(runtime, input, context) {
   if (context.session.lane !== 'main') throw failure('DENIED', 'Session view required.')
@@ -21,8 +46,61 @@ export async function selectView(runtime, input, context) {
     view.signal.aborted
   )
     throw failure('DENIED', 'Active owned browser view required.')
-  await view.select(input.pageId, input.sequence)
-  return { status: 'ok' }
+  validateViewport(input.viewport)
+  await view.select(input.pageId, input.sequence, input.viewport)
+  return { status: 'ok', ...runtime.describe(runtime.get(context.session, input.pageId)) }
+}
+
+function validateViewport(viewport) {
+  if (viewport === undefined) return
+  if (
+    !viewport ||
+    typeof viewport !== 'object' ||
+    Array.isArray(viewport) ||
+    Object.keys(viewport).length !== 2 ||
+    Object.entries(viewportInput.properties).some(
+      ([key, bounds]) =>
+        !Number.isSafeInteger(viewport[key]) ||
+        viewport[key] < bounds.minimum ||
+        viewport[key] > bounds.maximum,
+    )
+  )
+    throw failure('INVALID_INPUT', 'Invalid browser viewport.')
+}
+
+async function resizeViewport(runtime, session, item, view, viewport) {
+  if (viewport === undefined) return
+  validateViewport(viewport)
+  const pending = item.queue.then(async () => {
+    runtime.get(session, item.id)
+    if (view.signal.aborted) return
+    // One visible view owns geometry. Other windows display the same page without resize fights.
+    if (item.viewportView && item.viewportView !== view && !item.viewportView.signal.aborted) return
+    item.viewportView = view
+    if (item.viewport.width === viewport.width && item.viewport.height === viewport.height) return
+    item.resizing = true
+    item.epoch++
+    item.inputVersion++
+    item.humanRevision++
+    runtime.clearRefs(item)
+    try {
+      await item.capture?.pause()
+      view.signal.throwIfAborted()
+      runtime.get(session, item.id)
+      await item.page.setViewportSize(viewport)
+      item.viewport = { ...viewport }
+      await item.capture?.resume()
+    } catch (error) {
+      item.uncertain = true
+      for (const viewer of item.viewers) viewer.close('viewport-unavailable')
+      throw error
+    } finally {
+      item.resizing = false
+      runtime.notify()
+    }
+  })
+  item.queue = pending.catch(() => {})
+  await pending
 }
 
 export async function showView(runtime, input, context) {
@@ -34,6 +112,7 @@ export async function showView(runtime, input, context) {
   const registry = runtime.views
   if (registry.has(input.viewId)) throw failure('DENIED', 'Browser view already exists.')
   let sequence = -1,
+    capturedPageId,
     capture,
     cleanup,
     stopped = false,
@@ -42,23 +121,39 @@ export async function showView(runtime, input, context) {
     session: session.key,
     owner: owner(context.actor),
     signal: context.signal,
-    select(pageId, nextSequence) {
+    pageId: input.pageId,
+    select(pageId, nextSequence, viewport) {
       if (stopped || nextSequence <= sequence) return queue
       runtime.get(session, pageId)
       sequence = nextSequence
-      capture?.abort()
+      view.pageId = pageId
+      if (capturedPageId !== pageId) capture?.abort()
       queue = queue
         .catch(() => {})
         .then(async () => {
-          await cleanup?.()
-          cleanup = undefined
+          if (capturedPageId !== pageId) {
+            await cleanup?.()
+            cleanup = undefined
+            capturedPageId = undefined
+            for (const page of runtime.list(session)) {
+              const item = runtime.get(session, page.pageId)
+              if (item.viewportView === view && item.id !== pageId) item.viewportView = undefined
+            }
+          }
           if (stopped || nextSequence !== sequence) return
+          await resizeViewport(runtime, session, runtime.get(session, pageId), view, viewport)
+          if (stopped || nextSequence !== sequence) return
+          if (capturedPageId === pageId) {
+            runtime.get(session, pageId).capture?.broadcast()
+            return
+          }
           capture = new AbortController()
           cleanup = await showPage(
             runtime,
             { pageId, displayVersion: input.displayVersion },
             { ...context, signal: capture.signal },
           )
+          capturedPageId = pageId
           if (stopped || nextSequence !== sequence) await cleanup()
         })
       return queue
@@ -69,6 +164,8 @@ export async function showView(runtime, input, context) {
     if (stopped) return
     stopped = true
     registry.delete(input.viewId)
+    for (const entry of runtime.sessions.get(session.key)?.pages.values() ?? [])
+      if (entry.viewportView === view) entry.viewportView = undefined
     context.signal.removeEventListener('abort', close)
     disconnect?.()
     capture?.abort()
@@ -78,7 +175,7 @@ export async function showView(runtime, input, context) {
   context.signal.addEventListener('abort', close, { once: true })
   if (context.signal.aborted) close()
   try {
-    await view.select(input.pageId, 0)
+    await view.select(input.pageId, 0, input.viewport)
   } catch (error) {
     close()
     throw error
@@ -147,6 +244,8 @@ export async function showPage(runtime, input, context) {
       clearTimeout(capture.timer)
       clearTimeout(capture.retry)
       clearTimeout(capture.settle)
+      capture.paused = true
+      capture.cdp.off('Page.screencastFrame', capture.onFrame)
       runtime.listeners.delete(capture.broadcast)
       await capture.stopAudio?.()
       await capture.cdp.send('Page.stopScreencast').catch(() => {})
@@ -161,26 +260,17 @@ export async function showPage(runtime, input, context) {
       if (stopped || context.signal.aborted) return
       if (!item.capture) {
         const cdp = await item.page.context().newCDPSession(item.page)
-        // A secondary CDP session otherwise uses its default 1x capture metrics.
-        // Keep this session aligned with the context's existing CSS viewport/DPR.
-        try {
-          await cdp.send('Emulation.setDeviceMetricsOverride', {
-            width: 1280,
-            height: 800,
-            deviceScaleFactor: 2,
-            mobile: false,
-          })
-        } catch (error) {
-          await cdp.detach().catch(() => {})
-          throw error
-        }
         const capture = {
           cdp,
           bytes: undefined,
           pageEpoch: -1,
           last: -Infinity,
           dropped: new Set(),
-          liveWidth: 2560,
+          paused: false,
+          liveFormat: 'jpeg',
+          liveQuality: 90,
+          averageBytes: 0,
+          tunedAt: -Infinity,
           broadcast: () => {},
         }
         let paintVersion = 0,
@@ -190,7 +280,14 @@ export async function showPage(runtime, input, context) {
           capture.settle = setTimeout(
             async () => {
               capture.settle = undefined
-              if (snapshotting || item.capture !== capture || !item.viewers.size) return
+              if (
+                snapshotting ||
+                item.resizing ||
+                capture.paused ||
+                item.capture !== capture ||
+                !item.viewers.size
+              )
+                return
               const epoch = item.epoch,
                 version = paintVersion,
                 inputVersion = item.inputVersion,
@@ -226,6 +323,7 @@ export async function showPage(runtime, input, context) {
                 )
                   return
                 if (bytes.length > 1_000_000) return
+                if (!matchesRaster(bytes, item.viewport)) throw new Error('Screenshot surface is resizing.')
                 clearTimeout(capture.timer)
                 capture.pending = undefined
                 capture.bytes = bytes
@@ -236,6 +334,9 @@ export async function showPage(runtime, input, context) {
                 capture.sharpInputVersion = inputVersion
                 capture.snapshotFailures = 0
                 capture.broadcast()
+                // Recover lossless live text after a complex scene becomes cheap again.
+                if (mime === 'image/png' && bytes.length <= 250_000 && capture.liveFormat !== 'png')
+                  retune('png', 90)
               } catch {
                 // A transient capture failure must not strand a static tab at its
                 // live quality. Retry a bounded number of times without blocking input.
@@ -263,18 +364,26 @@ export async function showPage(runtime, input, context) {
           capture.timer = undefined
           const pending = capture.pending
           capture.pending = undefined
-          if (!pending || item.capture !== capture || pending.pageEpoch !== item.epoch) return
+          if (
+            !pending ||
+            item.resizing ||
+            capture.paused ||
+            item.capture !== capture ||
+            pending.pageEpoch !== item.epoch
+          )
+            return
           capture.last = performance.now()
           capture.bytes = pending.bytes
           capture.sharpLiveBytes = undefined
           capture.agentRevision = pending.agentRevision
-          capture.mime = 'image/jpeg'
+          capture.mime = pending.mime
           capture.pageEpoch = pending.pageEpoch
           capture.broadcast()
         }
         capture.broadcast = (recipients = item.viewers) => {
           try {
             runtime.get(session, input.pageId)
+            if (item.resizing || capture.paused) return
             // Never stamp cached pixels from the previous document with a new target epoch.
             if (capture.pageEpoch !== item.epoch) {
               // History restoration can change documents without a screencast paint.
@@ -320,36 +429,62 @@ export async function showPage(runtime, input, context) {
             for (const viewer of item.viewers) viewer.close('page-unavailable')
           }
         }
-        cdp.on('Page.screencastFrame', (frame) => {
+        const retune = (format, quality) => {
+          if (capture.tuning || item.capture !== capture) return
+          capture.tunedAt = performance.now()
+          const pending = item.queue.then(async () => {
+            if (item.capture !== capture || !item.viewers.size) return
+            await capture.pause()
+            await capture.resume(format, quality)
+          })
+          item.queue = pending.catch(() => {})
+          capture.tuning = pending
+            .catch(() => {
+              for (const viewer of item.viewers) viewer.close('capture-unavailable')
+            })
+            .finally(() => {
+              capture.tuning = undefined
+            })
+        }
+        capture.onFrame = (frame) => {
           void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {})
-          if (item.capture !== capture) return
+          if (item.capture !== capture || capture.paused || item.resizing) return
+          // The compositor can deliver the previous surface after a resize.
+          // Its pixels must never acquire the new viewport's epoch or coordinates.
+          if (
+            frame.metadata &&
+            (frame.metadata.deviceWidth !== item.viewport.width ||
+              frame.metadata.deviceHeight !== item.viewport.height)
+          )
+            return
           const bytes = Buffer.from(frame.data, 'base64')
-          // Large photographic frames must not freeze the view or build latency.
-          // Reduce live cost; the idle image retains the context's full 2x detail.
-          if (bytes.length > 150_000 && capture.liveWidth > 1280 && !capture.tuning) {
-            capture.tuning = true
-            capture.liveWidth = capture.liveWidth === 2560 ? 1920 : 1280
-            void cdp
-              .send('Page.stopScreencast')
-              .then(async () => {
-                if (item.capture !== capture) return
-                await cdp.send('Page.startScreencast', {
-                  format: 'jpeg',
-                  quality: 65,
-                  maxWidth: capture.liveWidth,
-                  maxHeight: (capture.liveWidth * 800) / 1280,
-                  everyNthFrame: 1,
-                })
-              })
-              .catch(() => {})
-              .finally(() => {
-                capture.tuning = false
-              })
+          if (!matchesRaster(bytes, item.viewport)) {
+            if (!snapshotting && !capture.settle) settle(true)
+            return
           }
+          // Keep 2x resolution while scrolling. Compress photo-heavy scenes rather
+          // than permanently reducing the number of pixels after one large paint.
+          if (capture.liveFormat === 'png' && bytes.length > 250_000) retune('jpeg', 90)
+          else if (bytes.length > 1_000_000 && capture.liveQuality > 25)
+            retune('jpeg', Math.max(25, capture.liveQuality - 20))
           if (bytes.length > 1_000_000) return
           // Screenshot capture can provoke an identical screencast repaint. Do not
           // downgrade the sharp image or repeatedly schedule captures for those pixels.
           if (capture.liveEpoch === item.epoch && capture.liveBytes?.equals(bytes)) return
+          capture.averageBytes = capture.averageBytes
+            ? capture.averageBytes * 0.8 + bytes.length * 0.2
+            : bytes.length
+          // Aim at 30 moving frames inside the existing allowance, reserving
+          // capacity for audio/envelopes. Keep 2x pixels and a quality floor;
+          // static text still gets the lossless idle screenshot above.
+          if (capture.liveFormat === 'jpeg' && performance.now() - capture.tunedAt >= 750) {
+            if (capture.averageBytes > 126_000 && capture.liveQuality > 70)
+              retune('jpeg', Math.max(70, capture.liveQuality - (capture.averageBytes > 180_000 ? 20 : 10)))
+            // Recover an oversized-frame fallback, but leave ordinary moving
+            // scenes stable. Idle PNG restores detail without quality oscillation.
+            else if (capture.averageBytes < 70_000 && capture.liveQuality < 70)
+              retune('jpeg', Math.min(70, capture.liveQuality + 20))
+          }
           capture.liveBytes = bytes
           capture.liveEpoch = item.epoch
           // Surface screenshots can briefly repaint before restoring the exact
@@ -371,41 +506,81 @@ export async function showPage(runtime, input, context) {
           paintVersion++
           settle()
           // Keep the final paint of a burst: dropping it can leave a static page showing old pixels.
-          capture.pending = { bytes, pageEpoch: item.epoch, agentRevision: item.agentRevision }
+          capture.pending = {
+            bytes,
+            mime: 'image/' + capture.liveFormat,
+            pageEpoch: item.epoch,
+            agentRevision: item.agentRevision,
+          }
           // Match the existing 4 MiB/s media allowance without growing its queue or budget.
-          const interval = Math.max(1000 / 60, bytes.length / 3500)
+          const interval = Math.max(1000 / 60, bytes.length / 3800)
           const delay = Math.max(sharp ? 50 : 0, interval - (performance.now() - capture.last))
           if (delay <= 0) {
             clearTimeout(capture.timer)
             publish()
           } else capture.timer ??= setTimeout(publish, Math.ceil(delay))
-        })
+        }
+        capture.pause = async () => {
+          capture.paused = true
+          cdp.off('Page.screencastFrame', capture.onFrame)
+          for (const timer of ['timer', 'retry', 'settle']) {
+            clearTimeout(capture[timer])
+            capture[timer] = undefined
+          }
+          capture.pending = undefined
+          capture.bytes = undefined
+          capture.liveBytes = undefined
+          capture.sharpLiveBytes = undefined
+          await cdp.send('Page.stopScreencast')
+        }
+        capture.resume = async (
+          format = item.modernViewers.size === item.viewers.size ? 'png' : 'jpeg',
+          quality = 90,
+        ) => {
+          if (item.capture !== capture || !item.viewers.size) return
+          // The secondary CDP session needs the same CSS viewport and 2x density.
+          await cdp.send('Emulation.setDeviceMetricsOverride', {
+            ...item.viewport,
+            deviceScaleFactor: 2,
+            mobile: false,
+          })
+          capture.liveFormat = format
+          capture.liveQuality = quality
+          capture.averageBytes = 0
+          cdp.off('Page.screencastFrame', capture.onFrame)
+          cdp.on('Page.screencastFrame', capture.onFrame)
+          capture.paused = false
+          await cdp.send('Page.startScreencast', {
+            format,
+            quality,
+            maxWidth: item.viewport.width * 2,
+            maxHeight: item.viewport.height * 2,
+            everyNthFrame: 1,
+          })
+          settle(true)
+        }
+        capture.retune = retune
         item.capture = capture
         if (item.modernViewers.size)
           capture.stopAudio = await captureAudio(runtime, item, capture).catch(() => undefined)
         runtime.listeners.add(capture.broadcast)
         try {
-          await cdp.send('Page.startScreencast', {
-            format: 'jpeg',
-            quality: 85,
-            maxWidth: 2560,
-            maxHeight: 1600,
-            // Coalesce at publish(), where the final paint is retained. Sampling
-            // here can discard a static page's only update after a click.
-            everyNthFrame: 1,
-          })
-          settle(true)
+          await capture.resume()
         } catch (error) {
           clearTimeout(capture.timer)
           clearTimeout(capture.retry)
           clearTimeout(capture.settle)
           runtime.listeners.delete(capture.broadcast)
+          capture.paused = true
+          cdp.off('Page.screencastFrame', capture.onFrame)
           item.capture = undefined
           await capture.stopAudio?.()
           await cdp.detach().catch(() => {})
           throw error
         }
       } else {
+        if (item.modernViewers.size !== item.viewers.size && item.capture.liveFormat === 'png')
+          item.capture.retune('jpeg', 90)
         if (item.modernViewers.size && !item.capture.stopAudio)
           item.capture.stopAudio = await captureAudio(runtime, item, item.capture).catch(() => undefined)
         item.capture.broadcast()

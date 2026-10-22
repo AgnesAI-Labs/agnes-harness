@@ -1,6 +1,15 @@
 import type { ClientContext } from '@agnes/web-client'
 import { SettingsTextArea } from '@agnes/web-ui'
-import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from 'react'
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { BrowserAudio } from './browser-audio.js'
 import type { BrowserPage } from './browser-client.js'
 import type { BrowserInteraction } from './browser-interaction.js'
@@ -26,16 +35,34 @@ export const BrowserScreen = forwardRef<
     control?: HumanControl | undefined
     reconnect: number
     actualSize?: boolean
+    fixedSize?: boolean
     t(key: string): string
     onError(message: string): void
     onRequestControl?(pageEpoch?: number): Promise<HumanControl | undefined>
     onControlLost?(): void
   }
 >(function BrowserScreen(
-  { ctx, interaction, page, control, t, onError, onRequestControl, onControlLost, reconnect, actualSize },
+  {
+    ctx,
+    interaction,
+    page,
+    control,
+    t,
+    onError,
+    onRequestControl,
+    onControlLost,
+    reconnect,
+    actualSize,
+    fixedSize,
+  },
   ref,
 ) {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const container = useRef<HTMLDivElement>(null)
+  const viewport = useRef({ width: 1280, height: 800 })
+  const expectedViewport = useRef<{ width: number; height: number }>()
+  const geometryPending = useRef(false)
+  const [displayWidth, setDisplayWidth] = useState(page.viewportWidth ?? 1280)
   const [audio] = useState(() => new BrowserAudio())
   useEffect(() => () => audio.close(), [audio])
   const text = useRef<HTMLTextAreaElement>(null)
@@ -43,9 +70,14 @@ export const BrowserScreen = forwardRef<
   const target = useRef(page.pageId)
   target.current = page.pageId
   const expectedEpoch = useRef(page.pageEpoch)
-  expectedEpoch.current = page.pageEpoch
+  const epochPage = useRef(page.pageId)
+  expectedEpoch.current =
+    epochPage.current === page.pageId ? Math.max(expectedEpoch.current, page.pageEpoch) : page.pageEpoch
+  epochPage.current = page.pageId
   const selectTarget = useRef<(refresh?: boolean) => void>()
   const stream = useRef<Stream>()
+  const enqueueInput = useRef<(input: Record<string, string | number>) => void>()
+  const flushWheel = useRef<() => void>()
   const sequence = useRef(0)
   const composing = useRef(false)
   const requesting = useRef(false)
@@ -64,6 +96,39 @@ export const BrowserScreen = forwardRef<
   const [connecting, setConnecting] = useState(true)
   const [taking, setTaking] = useState(false)
   const [controlling, setControlling] = useState(false)
+  useLayoutEffect(() => {
+    const element = container.current
+    if (!element) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const measure = (initial = false) => {
+      clearTimeout(timer)
+      // The frame border is outside the actual CSS viewport. client dimensions
+      // also exclude native scrollbars in fixed/actual-size mode.
+      const box = { width: element.clientWidth, height: element.clientHeight }
+      if (!fixedSize && (box.width < 1 || box.height < 1)) return
+      const next = fixedSize
+        ? { width: 1280, height: 800 }
+        : {
+            width: Math.max(240, Math.min(2560, Math.round(box.width))),
+            height: Math.max(160, Math.min(1600, Math.round(box.height))),
+          }
+      const update = () => {
+        if (viewport.current.width === next.width && viewport.current.height === next.height) return
+        viewport.current = next
+        pendingInput.current = undefined
+        selectTarget.current?.(true)
+      }
+      if (initial) update()
+      else timer = setTimeout(update, 120)
+    }
+    measure(true)
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(() => measure())
+    observer?.observe(element)
+    return () => {
+      clearTimeout(timer)
+      observer?.disconnect()
+    }
+  }, [fixedSize])
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new tab invalidates displayed pixels and pending gestures.
   useEffect(() => {
     setConnected(false)
@@ -99,7 +164,8 @@ export const BrowserScreen = forwardRef<
       revision = 0,
       ready = false
     let selecting = false,
-      refresh = false
+      refresh = false,
+      awaitingGeometry = false
     const select = (renew = false) => {
       refresh ||= renew
       if (!ready || abort.signal.aborted || (selected === target.current && !refresh) || selecting) return
@@ -108,15 +174,37 @@ export const BrowserScreen = forwardRef<
       const selection = ++revision
       const source = current
       selecting = true
+      const requestedViewport = { ...viewport.current }
+      expectedViewport.current = requestedViewport
+      geometryPending.current = true
+      awaitingGeometry = true
+      setConnected(false)
       void (
         interaction
-          ? interaction.request({ type: 'view', viewId, pageId: selected, sequence: selection })
+          ? interaction.request({
+              type: 'view',
+              viewId,
+              pageId: selected,
+              sequence: selection,
+              viewport: requestedViewport,
+            })
           : ctx.agnes.services.effect(
               'browser.view',
-              { viewId, pageId: selected, sequence: selection },
+              { viewId, pageId: selected, sequence: selection, viewport: requestedViewport },
               { operationId: crypto.randomUUID() },
             )
       )
+        .then((reply) => {
+          if (abort.signal.aborted || selection !== revision || current !== source) return
+          const result = ((reply as { result?: unknown }).result ?? reply) as BrowserPage
+          if (Number.isSafeInteger(result.viewportWidth) && Number.isSafeInteger(result.viewportHeight)) {
+            // A second viewer follows the owning view's geometry instead of fighting it.
+            expectedViewport.current = { width: result.viewportWidth!, height: result.viewportHeight! }
+            expectedEpoch.current = Math.max(expectedEpoch.current, result.pageEpoch)
+          }
+          awaitingGeometry = false
+          void paint()
+        })
         .catch((error) => {
           if (abort.signal.aborted || selection !== revision || current !== source) return
           setConnected(false)
@@ -140,7 +228,7 @@ export const BrowserScreen = forwardRef<
     const paint = async () => {
       if (decoding) return
       decoding = true
-      while (pending && !abort.signal.aborted) {
+      while (pending && !abort.signal.aborted && !awaitingGeometry) {
         const frame = pending
         pending = undefined
         try {
@@ -148,11 +236,19 @@ export const BrowserScreen = forwardRef<
             new Blob([frame.bytes], { type: frame.description.frameMime ?? 'image/jpeg' }),
           )
           try {
+            const width = frame.description.viewportWidth ?? 1280
+            const height = frame.description.viewportHeight ?? 800
+            // Reject an old compositor surface; tolerate one pixel of raster rounding.
+            if (Math.abs(bitmap.width * height - bitmap.height * width) > width + height) continue
             if (
               abort.signal.aborted ||
+              awaitingGeometry ||
               current !== frame.source ||
               frame.description.pageId !== target.current ||
               frame.description.pageEpoch < expectedEpoch.current ||
+              (expectedViewport.current &&
+                ((frame.description.viewportWidth ?? 1280) !== expectedViewport.current.width ||
+                  (frame.description.viewportHeight ?? 800) !== expectedViewport.current.height)) ||
               !canvas.current
             )
               continue
@@ -162,8 +258,10 @@ export const BrowserScreen = forwardRef<
             if (canvas.current.height !== bitmap.height) canvas.current.height = bitmap.height
             canvas.current.getContext('2d')?.drawImage(bitmap, 0, 0)
             meta.current = frame.description
+            expectedEpoch.current = Math.max(expectedEpoch.current, frame.description.pageEpoch)
+            setDisplayWidth(frame.description.viewportWidth ?? 1280)
+            geometryPending.current = false
             setConnected(true)
-            setConnecting(false)
             attempts = 0
           } finally {
             bitmap.close()
@@ -182,6 +280,8 @@ export const BrowserScreen = forwardRef<
       audio.reset()
       pending = undefined
       ready = false
+      awaitingGeometry = false
+      geometryPending.current = true
       current = undefined
       setConnected(false)
       setConnecting(false)
@@ -202,8 +302,14 @@ export const BrowserScreen = forwardRef<
       selected = target.current
       revision = 0
       ready = false
+      expectedViewport.current = { ...viewport.current }
+      geometryPending.current = true
       return ctx.sessionStreams
-        .open('browser.frames', { pageId: selected, viewId, displayVersion: 2 }, { signal: abort.signal })
+        .open(
+          'browser.frames',
+          { pageId: selected, viewId, displayVersion: 2, viewport: viewport.current },
+          { signal: abort.signal },
+        )
         .then((opened) => {
           if (abort.signal.aborted) {
             opened.close('cancelled')
@@ -242,11 +348,16 @@ export const BrowserScreen = forwardRef<
                 audio.push(frame.subarray(4 + size), description.sampleRate ?? 0)
               return
             }
+            if (!ready && description.pageId === selected)
+              expectedViewport.current = {
+                width: description.viewportWidth ?? 1280,
+                height: description.viewportHeight ?? 800,
+              }
             ready = true
             select()
             if (description.pageId !== target.current) return
             pending = { bytes: Uint8Array.from(frame.subarray(4 + size)), description, source: opened }
-            void paint()
+            if (!awaitingGeometry) void paint()
           })
         })
         .catch((error) => {
@@ -274,24 +385,108 @@ export const BrowserScreen = forwardRef<
       return
     }
     const abort = new AbortController()
+    const queued: Record<string, string | number>[] = []
+    let waiting: Record<string, string | number> | undefined
+    let receipt: ReturnType<typeof setTimeout> | undefined
+    let renewing = false
+    const discard = () => {
+      queued.length = 0
+      waiting = undefined
+      clearTimeout(receipt)
+    }
+    const complete = (seq: unknown, error?: string) => {
+      if (abort.signal.aborted || !waiting || waiting.seq !== seq) return
+      waiting = undefined
+      clearTimeout(receipt)
+      if (error) {
+        queued.length = 0
+        onError(error)
+      } else pump()
+    }
+    const pump = () => {
+      if (abort.signal.aborted || renewing || waiting || !stream.current) return
+      const next = queued.shift()
+      if (!next) return
+      // Keep the captured target; never rebase queued gestures onto newer pixels.
+      if (
+        geometryPending.current ||
+        target.current !== control.pageId ||
+        next.pageEpoch !== meta.current.pageEpoch ||
+        next.agentRevision !== meta.current.agentRevision
+      ) {
+        queued.length = 0
+        return
+      }
+      waiting = next
+      receipt = setTimeout(
+        () => complete(next.seq, 'Input result unavailable. Inspect before retrying.'),
+        25_000,
+      )
+      if (stream.current.send(next as Parameters<Stream['send']>[0]) !== 'accepted')
+        complete(next.seq, 'Input was not delivered. Reconnect and inspect before retrying.')
+    }
+    const enqueue = (input: Record<string, string | number>) => {
+      const tail = queued.at(-1)
+      if (
+        tail?.type === 'scroll' &&
+        input.type === 'scroll' &&
+        tail.pageEpoch === input.pageEpoch &&
+        tail.controlEpoch === input.controlEpoch &&
+        tail.agentRevision === input.agentRevision &&
+        ['x', 'y'].every((key) => {
+          const before = Number(tail[key]),
+            after = Number(input[key])
+          return before * after >= 0 && Math.abs(before + after) <= 4000
+        })
+      ) {
+        input = { ...input, x: Number(tail.x) + Number(input.x), y: Number(tail.y) + Number(input.y) }
+        queued.pop()
+      } else if (
+        tail?.type === 'text' &&
+        input.type === 'text' &&
+        tail.pageEpoch === input.pageEpoch &&
+        tail.controlEpoch === input.controlEpoch &&
+        tail.agentRevision === input.agentRevision &&
+        typeof tail.text === 'string' &&
+        typeof input.text === 'string' &&
+        new TextEncoder().encode(JSON.stringify(tail.text + input.text)).length <= 3400
+      ) {
+        input = { ...input, text: tail.text + input.text }
+        queued.pop()
+      }
+      if (queued.length >= 64) {
+        queued.length = 0
+        onError('Input queue is full. Buffered input was discarded; please retry.')
+        return
+      }
+      queued.push(input)
+      pump()
+    }
+    enqueueInput.current = enqueue
     if (control.channel) {
       const channel = control.channel
       const off = channel.onLost((pageId) => {
         if (!pageId || pageId === control.pageId) {
+          discard()
+          if (enqueueInput.current === enqueue) enqueueInput.current = undefined
           setControlling(false)
           onControlLost?.()
         }
       })
       stream.current = {
         send(input) {
-          void channel
-            .request({ type: 'input', pageId: control.pageId, input })
-            .catch((error) => onError(String(error)))
+          void channel.request({ type: 'input', pageId: control.pageId, input }).then(
+            () => complete((input as { seq: number }).seq),
+            (error) => complete((input as { seq: number }).seq, String(error)),
+          )
           return 'accepted'
         },
       } as Stream
       setControlling(true)
       return () => {
+        abort.abort()
+        discard()
+        if (enqueueInput.current === enqueue) enqueueInput.current = undefined
         off()
         stream.current = undefined
         void channel
@@ -301,6 +496,7 @@ export const BrowserScreen = forwardRef<
     }
     let timer: ReturnType<typeof setTimeout>
     const connect = async () => {
+      renewing = true
       try {
         const next = await ctx.sessionStreams.open(
           'browser.input',
@@ -317,6 +513,7 @@ export const BrowserScreen = forwardRef<
         setControlling(true)
         next.onDisconnect(() => {
           if (stream.current === next) {
+            discard()
             stream.current = undefined
             if (!abort.signal.aborted) {
               setControlling(false)
@@ -326,15 +523,26 @@ export const BrowserScreen = forwardRef<
         })
         next.onFrame((frame) => {
           if (!frame || frame instanceof Uint8Array || typeof frame !== 'object') return
-          if ('status' in frame && frame.status === 'error')
-            onError(String('code' in frame ? frame.code : 'Input refused'))
+          if ('status' in frame && (frame.status === 'ok' || frame.status === 'error'))
+            complete(
+              'seq' in frame ? frame.seq : undefined,
+              frame.status === 'error' ? String('code' in frame ? frame.code : 'Input refused') : undefined,
+            )
           // Only a decoded image may advance the input target epoch. An acknowledgement
           // can arrive before the new document's pixels and must never relabel the old image.
         })
-        timer = setTimeout(() => {
+        renewing = false
+        pump()
+        const renew = () => {
+          if (waiting) {
+            timer = setTimeout(renew, 100)
+            return
+          }
           void connect()
-        }, 25_000)
+        }
+        timer = setTimeout(renew, 25_000)
       } catch (error) {
+        discard()
         if (!abort.signal.aborted) {
           setControlling(false)
           onError(String(error))
@@ -345,6 +553,8 @@ export const BrowserScreen = forwardRef<
     void connect()
     return () => {
       abort.abort()
+      discard()
+      if (enqueueInput.current === enqueue) enqueueInput.current = undefined
       clearTimeout(timer)
       const previous = stream.current
       stream.current = undefined
@@ -354,6 +564,7 @@ export const BrowserScreen = forwardRef<
 
   const send = useCallback(
     (input: Record<string, string | number>) => {
+      if (input.type !== 'scroll') flushWheel.current?.()
       const pending = pendingInput.current
       if (!controlling && pending) {
         if (connected && pending.pageId === target.current && pending.pageEpoch === meta.current.pageEpoch) {
@@ -367,26 +578,26 @@ export const BrowserScreen = forwardRef<
       }
       if (
         !connected ||
+        geometryPending.current ||
         !controlling ||
         !control ||
         meta.current.pageId !== control.pageId ||
         control.pageId !== target.current
       )
         return
-      const accepted = stream.current?.send({
+      enqueueInput.current?.({
         ...input,
         seq: sequence.current++,
         pageEpoch: meta.current.pageEpoch,
         controlEpoch: control.controlEpoch,
         ...(meta.current.agentRevision === undefined ? {} : { agentRevision: meta.current.agentRevision }),
       })
-      if (accepted !== 'accepted') onError('Input was not delivered. Reconnect and inspect before retrying.')
     },
     [connected, controlling, control, onError],
   )
   const interact = useCallback(
     (input: Record<string, string | number>) => {
-      if (!connected || meta.current.pageId !== target.current) return
+      if (!connected || geometryPending.current || meta.current.pageId !== target.current) return
       if (controlling) {
         send(input)
         if (input.type === 'click') text.current?.focus({ preventScroll: true })
@@ -446,7 +657,25 @@ export const BrowserScreen = forwardRef<
     if (!element || !connected) return
     let x = 0,
       y = 0,
+      observed: BrowserPage | undefined,
       timer: ReturnType<typeof setTimeout> | undefined
+    const flush = () => {
+      clearTimeout(timer)
+      const previous = observed,
+        input = { type: 'scroll', x, y }
+      x = y = 0
+      timer = undefined
+      observed = undefined
+      // A batch belongs to the pixels visible at its first event.
+      if (
+        previous &&
+        meta.current.pageId === previous.pageId &&
+        meta.current.pageEpoch === previous.pageEpoch &&
+        meta.current.agentRevision === previous.agentRevision
+      )
+        send(input)
+    }
+    flushWheel.current = flush
     const wheel = (event: WheelEvent) => {
       event.preventDefault()
       const unitX =
@@ -463,20 +692,17 @@ export const BrowserScreen = forwardRef<
         })
         return
       }
-      x = Math.max(-4000, Math.min(4000, x + deltaX))
-      y = Math.max(-4000, Math.min(4000, y + deltaY))
-      const pageEpoch = meta.current.pageEpoch
-      timer ??= setTimeout(() => {
-        // A batched wheel gesture still belongs to the document visible when it began.
-        if (meta.current.pageEpoch === pageEpoch) send({ type: 'scroll', x, y })
-        x = 0
-        y = 0
-        timer = undefined
-      }, 50)
+      if (x * deltaX < 0 || y * deltaY < 0 || Math.abs(x + deltaX) > 4000 || Math.abs(y + deltaY) > 4000)
+        flush()
+      observed ??= meta.current
+      x += deltaX
+      y += deltaY
+      timer ??= setTimeout(flush, 8) // Receipts bound the processing queue.
     }
     element.addEventListener('wheel', wheel, { passive: false })
     return () => {
       clearTimeout(timer)
+      if (flushWheel.current === flush) flushWheel.current = undefined
       element.removeEventListener('wheel', wheel)
     }
   }, [connected, controlling, send, interact])
@@ -490,6 +716,7 @@ export const BrowserScreen = forwardRef<
   return (
     <div
       className="agh-browser-screen"
+      ref={container}
       data-controlling={controlling}
       data-scale={actualSize ? 'actual' : 'fit'}
     >
@@ -518,6 +745,7 @@ export const BrowserScreen = forwardRef<
         role="img"
         width={1280}
         height={800}
+        style={actualSize ? { width: displayWidth } : undefined}
         aria-label={t('screen')}
         aria-describedby={hintId}
         tabIndex={0}

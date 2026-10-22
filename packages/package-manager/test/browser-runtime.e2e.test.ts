@@ -13,8 +13,206 @@ const { BrowserRuntime } = await import(
 const { createLauncher } = await import(
   new URL('../bundled-plugins/browser/src/launcher.mjs', import.meta.url).href
 )
-const { showPage } = await import(new URL('../bundled-plugins/browser/src/streams.mjs', import.meta.url).href)
+const { showPage, showView, selectView } = await import(
+  new URL('../bundled-plugins/browser/src/streams.mjs', import.meta.url).href
+)
 const archive = process.env.AGH_BROWSER_TEST_ARCHIVE
+
+it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
+  'reflows the same page at adaptive and fixed sizes, preserves sharp scroll frames and rejects stale clicks',
+  async () => {
+    const website = createServer((_request, response) => {
+      response.setHeader('Content-Type', 'text/html; charset=utf-8')
+      response.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+        body{margin:0;font:16px system-ui;background:white;color:#123}
+        .grid{display:grid;grid-template-columns:repeat(3,1fr)}
+        @media(max-width:760px){.grid{grid-template-columns:1fr}}
+        button{position:fixed;right:10px;bottom:10px;width:80px;height:50px;border:0;background:white}
+        p{height:48px;margin:0} </style><div class="grid"><div>一</div><div>二</div><div>三</div></div>
+        ${Array.from({ length: 150 }, (_, index) => `<p>清晰文字 Sharp scrolling ${index}</p>`).join('')}
+        <button>0</button><script>let n=0;document.querySelector('button').onclick=e=>{e.target.textContent=++n;e.target.style.background=n%2?'rgb(0,128,0)':'white'}</script>`)
+    })
+    await new Promise<void>((resolve) => website.listen(0, '127.0.0.1', resolve))
+    const port = (website.address() as { port: number }).port
+    const launcher = createLauncher()
+    const runtime = new BrowserRuntime({ launch: () => launcher.launch() })
+    const session = { key: 'responsive-test', lane: 'main' },
+      actor = { id: 'responsive-viewer' }
+    const viewer = new AbortController()
+    const frames: { metadata: Record<string, any>; bytes: Buffer }[] = []
+    let sequence = 0,
+      inputSequence = 0,
+      clicks = 0
+    try {
+      const opened = await runtime.act(session, { action: 'open', url: `http://127.0.0.1:${port}/` })
+      const item = runtime.get(session, opened.pageId),
+        page = item.page
+      const context = { session, actor }
+      await showView(
+        runtime,
+        {
+          pageId: opened.pageId,
+          viewId: 'adaptive',
+          viewport: { width: 540, height: 900 },
+          displayVersion: 2,
+        },
+        {
+          actor,
+          scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+          signal: viewer.signal,
+          stream: {
+            send(value: Uint8Array) {
+              const frame = Buffer.from(value),
+                size = frame.readUInt32BE()
+              const metadata = JSON.parse(frame.subarray(4, size + 4).toString())
+              if (metadata.media !== 'audio') frames.push({ metadata, bytes: frame.subarray(size + 4) })
+              return 'accepted'
+            },
+            close() {},
+            onDisconnect() {},
+          },
+        },
+      )
+      const control = await runtime.control(session, { pageId: opened.pageId, mode: 'human' }, actor)
+      const feedback: number[] = []
+      for (const viewport of [
+        { width: 540, height: 900 },
+        { width: 1000, height: 650 },
+        { width: 1280, height: 800 },
+        { width: 420, height: 1100 },
+      ]) {
+        const before = runtime.describe(item)
+        await selectView(
+          runtime,
+          { viewId: 'adaptive', pageId: opened.pageId, sequence: ++sequence, viewport },
+          context,
+        )
+        expect(
+          await page.evaluate(() => ({ width: innerWidth, height: innerHeight, dpr: devicePixelRatio })),
+        ).toEqual({ ...viewport, dpr: 2 })
+        expect(
+          (
+            await page
+              .locator('.grid')
+              .evaluate((element: Element) => getComputedStyle(element).gridTemplateColumns)
+          ).split(' '),
+        ).toHaveLength(viewport.width <= 760 ? 1 : 3)
+        const current = runtime.describe(item)
+        await expect
+          .poll(() => frames.at(-1)?.metadata.pageEpoch, { timeout: 10_000 })
+          .toBe(current.pageEpoch)
+        await expect.poll(() => frames.at(-1)?.metadata.frameMime, { timeout: 10_000 }).toBe('image/png')
+        expect(await sharp(frames.at(-1)!.bytes).metadata()).toMatchObject({
+          width: viewport.width * 2,
+          height: viewport.height * 2,
+        })
+        if (before.pageEpoch !== current.pageEpoch)
+          await expect(
+            runtime.humanInput(
+              session,
+              { ...control, seq: inputSequence++, pageEpoch: before.pageEpoch, type: 'click', x: 10, y: 10 },
+              actor,
+            ),
+          ).rejects.toMatchObject({ code: 'STALE_INPUT' })
+        const started = performance.now()
+        await runtime.humanInput(
+          session,
+          {
+            ...control,
+            seq: inputSequence++,
+            pageEpoch: current.pageEpoch,
+            type: 'click',
+            x: viewport.width - 40,
+            y: viewport.height - 40,
+          },
+          actor,
+        )
+        clicks++
+        expect(await page.locator('button').innerText()).toBe(String(clicks))
+        await expect
+          .poll(
+            async () => {
+              const frame = frames.at(-1)!
+              if (frame.metadata.pageEpoch !== current.pageEpoch) return false
+              const pixel = await sharp(frame.bytes)
+                .extract({
+                  left: (viewport.width - 30) * 2,
+                  top: (viewport.height - 25) * 2,
+                  width: 1,
+                  height: 1,
+                })
+                .removeAlpha()
+                .raw()
+                .toBuffer()
+              return clicks % 2 ? pixel[1]! > 120 && pixel[0]! < 10 : pixel[0]! > 245 && pixel[1]! > 245
+            },
+            { timeout: 5000, interval: 5 },
+          )
+          .toBe(true)
+        feedback.push(performance.now() - started)
+      }
+      const epoch = runtime.describe(item).pageEpoch
+      const scrollStart = frames.length
+      const scrollFeedback: number[] = []
+      for (let index = 0; index < 8; index++) {
+        const priorY = await page.evaluate(() => scrollY)
+        const priorFrames = frames.length
+        const started = performance.now()
+        await runtime.humanInput(
+          session,
+          { ...control, seq: inputSequence++, pageEpoch: epoch, type: 'scroll', x: 0, y: 120.5 },
+          actor,
+        )
+        await expect.poll(() => page.evaluate(() => scrollY), { interval: 5 }).toBeGreaterThan(priorY)
+        await expect.poll(() => frames.length, { interval: 5 }).toBeGreaterThan(priorFrames)
+        expect(frames.at(-1)!.metadata.frameMime).toBe('image/png')
+        scrollFeedback.push(performance.now() - started)
+      }
+      expect(frames.slice(scrollStart).every((frame) => frame.metadata.frameMime === 'image/png')).toBe(true)
+      expect(await sharp(frames.at(-1)!.bytes).metadata()).toMatchObject({ width: 840, height: 2200 })
+      const reference = await sharp(await page.screenshot({ scale: 'device' }))
+        .removeAlpha()
+        .raw()
+        .toBuffer()
+      await expect
+        .poll(
+          async () => {
+            const actual = await sharp(frames.at(-1)!.bytes).removeAlpha().raw().toBuffer()
+            return actual.equals(reference)
+          },
+          { timeout: 10_000, interval: 20 },
+        )
+        .toBe(true)
+      feedback.sort((a, b) => a - b)
+      const p95 = Math.round(feedback[Math.ceil(feedback.length * 0.95) - 1]!)
+      scrollFeedback.sort((a, b) => a - b)
+      const scrollP95 = Math.round(scrollFeedback[Math.ceil(scrollFeedback.length * 0.95) - 1]!)
+      console.info(
+        'Adaptive browser measurement',
+        JSON.stringify({
+          clickFeedbackP95Ms: p95,
+          scrollFeedbackP95Ms: scrollP95,
+          scrollFrames: frames.length - scrollStart,
+          scrollMime: 'image/png',
+          logical: '420x1100',
+          raster: '840x2200',
+        }),
+      )
+      expect(p95).toBeLessThan(250)
+      expect(scrollP95).toBeLessThan(250)
+    } finally {
+      viewer.abort()
+      launcher.cancel()
+      try {
+        await runtime.close()
+      } finally {
+        await new Promise<void>((resolve, reject) =>
+          website.close((error) => (error ? reject(error) : resolve())),
+        )
+      }
+    }
+  },
+)
 
 // A single VP8 frame in a small valid WebM container, generated without external tools.
 function webm(packet: Buffer) {

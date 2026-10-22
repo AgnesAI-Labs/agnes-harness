@@ -4,7 +4,9 @@
     flex-direction: column;
     gap: 0;
     min-width: 0;
-    min-height: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
     background: var(--agnes-bg-card);
   }
   .agh-browser-address {
@@ -46,7 +48,13 @@
   }
   .agh-browser-screen {
     position: relative;
+    flex: 1 1 0;
     min-width: 0;
+    min-height: 0;
+    margin: 10px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 8px;
+    background: var(--agnes-bg-subtle);
     overflow: hidden;
   }
   .agh-browser-screen[data-scale="actual"] {
@@ -60,7 +68,6 @@
     cursor: pointer;
   }
   .agh-browser-screen[data-scale="actual"] canvas {
-    width: 1280px;
     max-width: none;
   }
   .agh-browser-screen[data-controlling="true"] canvas {
@@ -103,6 +110,13 @@
   .agh-browser-events,
   .agh-browser-panel > p {
     padding: 12px;
+  }
+  .agh-browser-panel > :not(.agh-browser-screen) {
+    flex-shrink: 0;
+  }
+  .agh-browser-events {
+    max-height: 30%;
+    overflow: auto;
   }
   .agh-browser-panel [role="alert"] {
     color: var(--agnes-status-danger-text);

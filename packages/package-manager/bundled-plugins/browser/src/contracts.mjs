@@ -14,8 +14,20 @@ export const pageInput = object(
   ['pageId'],
 )
 export const controlInput = { ...pageInput, required: ['pageId', 'mode'] }
+export const viewportInput = object(
+  {
+    width: { type: 'integer', minimum: 240, maximum: 2560 },
+    height: { type: 'integer', minimum: 160, maximum: 1600 },
+  },
+  ['width', 'height'],
+)
 const viewInput = object(
-  { ...pageInput.properties, viewId: text(100), displayVersion: { type: 'integer', enum: [2] } },
+  {
+    ...pageInput.properties,
+    viewId: text(100),
+    displayVersion: { type: 'integer', enum: [2] },
+    viewport: viewportInput,
+  },
   ['pageId'],
 )
 const outputSchema = { type: 'object', additionalProperties: true }
@@ -63,11 +75,15 @@ export const services = [
     'browser.view',
     'effect',
     'session',
-    object({ viewId: text(100), pageId: text(100), sequence: { type: 'integer', minimum: 1 } }, [
-      'viewId',
-      'pageId',
-      'sequence',
-    ]),
+    object(
+      {
+        viewId: text(100),
+        pageId: text(100),
+        sequence: { type: 'integer', minimum: 1 },
+        viewport: viewportInput,
+      },
+      ['viewId', 'pageId', 'sequence'],
+    ),
   ),
   service(
     'browser.open',

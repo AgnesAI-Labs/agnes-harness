@@ -26,6 +26,7 @@ export function apply(ctx: ClientContext) {
     const [copiedRecovery, setCopiedRecovery] = useState(false)
     const [showEvents, setShowEvents] = useState(false)
     const [actualSize, setActualSize] = useState(false)
+    const [fixedSize, setFixedSize] = useState(false)
     // biome-ignore lint/correctness/useExhaustiveDependencies: never reuse a channel across conversations.
     const interaction = useMemo(() => new BrowserInteraction(ctx), [state.sessionId])
     useEffect(() => {
@@ -221,9 +222,17 @@ export function apply(ctx: ClientContext) {
                 trigger={<IconButton name="ellipsis" label={t('more')} />}
                 items={[
                   {
+                    id: 'viewport',
+                    label: t(fixedSize ? 'adaptiveViewport' : 'fixedViewport'),
+                    onSelect: () => setFixedSize((value) => !value),
+                  },
+                  {
                     id: 'scale',
-                    label: t(actualSize ? 'fit' : 'actualSize'),
-                    onSelect: () => setActualSize((value) => !value),
+                    label: t(actualSize && fixedSize ? 'fit' : 'actualSize'),
+                    onSelect: () => {
+                      setActualSize(!(actualSize && fixedSize))
+                      setFixedSize(true)
+                    },
                   },
                   {
                     id: 'reconnect',
@@ -300,7 +309,8 @@ export function apply(ctx: ClientContext) {
               page={page}
               control={control}
               reconnect={reconnect}
-              actualSize={actualSize}
+              actualSize={actualSize && fixedSize}
+              fixedSize={fixedSize}
               t={t}
               onError={setError}
               onRequestControl={takeControl}
