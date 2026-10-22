@@ -852,7 +852,10 @@ seatbelt(
       const result = JSON.parse(attack.stdout) as { direct: string; replacement: string }
       expect(result.direct).toMatch(/^(EPERM|EACCES)$/)
       expect(readFileSync(join(root, 'ordinary-write'), 'utf8')).toBe('permitted')
-      const served = await fetch(url, { headers: { Connection: 'close' }, signal: AbortSignal.timeout(1000) }).then(
+      const served = await fetch(url, {
+        headers: { Connection: 'close' },
+        signal: AbortSignal.timeout(1000),
+      }).then(
         (response) => response.text(),
         () => 'REFUSED',
       )
