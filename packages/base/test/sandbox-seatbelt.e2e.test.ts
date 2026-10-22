@@ -242,6 +242,7 @@ seatbelt.each(['exit', 'abort', 'dispose'] as const)(
   async (end) => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-security2-listener-')))
     const ready = join(root, 'ready.json')
+    const finish = join(root, 'finish')
     const controller = new AbortController()
     const exec = createExec()
     const provider = createLocalSandboxProvider(exec, 'darwin', { ownProcesses: true })
@@ -255,7 +256,7 @@ seatbelt.each(['exit', 'abort', 'dispose'] as const)(
     const program = `
       const child = require('node:child_process').spawn(process.execPath, ['-e', ${JSON.stringify(childProgram)}], {detached:true, stdio:['ignore','ignore','ignore','ignore',4]});
       child.unref();
-      ${end === 'exit' ? '' : 'setInterval(() => {}, 1000);'}
+      ${end === 'exit' ? `setInterval(() => { if (require('node:fs').existsSync(${JSON.stringify(finish)})) process.exit(0); }, 10);` : 'setInterval(() => {}, 1000);'}
     `
     const invocation = instance.exec({
       argv: seatbeltDenyNetworkArgv([process.execPath, '-e', program], {
@@ -288,6 +289,7 @@ seatbelt.each(['exit', 'abort', 'dispose'] as const)(
       expect(await (await fetch(facts.url, { signal: AbortSignal.timeout(1000) })).text()).toBe(
         'SECURITY2_ORPHAN_LISTENER',
       )
+      if (end === 'exit') writeFileSync(finish, '')
       if (end === 'abort') controller.abort()
       if (end === 'dispose') await instance.dispose()
       await invocation
