@@ -13,6 +13,7 @@ import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { customCommandsFor, customHelp, customSlash } from './custom-commands.js'
 import { deliverablesSlash } from './deliverable-files.js'
+import { listExternalSessions } from './external-sessions.js'
 import { grantsSlash } from './grant-commands.js'
 import { infoSlash } from './info-commands.js'
 import { jobsSlash } from './job-commands.js'
@@ -20,7 +21,7 @@ import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { queueSlash } from './queue-commands.js'
 import type { ResourceCommandKind } from './resource-controller.js'
-import { rewindChoices, sessionSlash } from './session-commands.js'
+import { oneLine, rewindChoices, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
 import type { ThemePreference } from './theme-preference.js'
 import { thinkingMode } from './thinking.js'
@@ -46,6 +47,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '[id|all]',
     descriptionKey: 'commands.resume',
     summaryKey: 'commands.resumeSummary',
+  },
+  {
+    name: '/import',
+    args: '[<file> [--from claude-code|codex|pi|auto]]',
+    descriptionKey: 'commands.import',
+    summaryKey: 'commands.importSummary',
   },
   { name: '/sessions', descriptionKey: 'commands.sessions', summaryKey: 'commands.sessionsSummary' },
   { name: '/pin', descriptionKey: 'commands.pin', summaryKey: 'commands.pinSummary' },
@@ -244,6 +251,8 @@ export type SessionChoice = {
   title?: string
   /** Set by the /rewind picker: choosing forks this session at that completed-turn boundary. */
   forkAt?: number
+  /** Set by the /import picker: choosing imports this external session file instead of resuming. */
+  importFile?: string
 }
 
 export type SessionScopeView = {
@@ -462,6 +471,47 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         return { sessionChoices, sessionScope: { scope: everywhere ? 'all' : 'workspace', reload } }
       }
       return { text: everywhere ? 'no sessions' : 'no other sessions in this workspace' }
+    }
+    case '/import': {
+      // Importing writes through a local Host, which only the shared local daemon form leaves free.
+      if (!app.o.importSession) return { text: tt('import.remote', locale) }
+      const from = args.indexOf('--from')
+      const given = from < 0 ? args : args.slice(0, from)
+      const source = from < 0 ? undefined : args[from + 1]
+      if (from >= 0 && !source) return { text: tt('import.usage', locale) }
+      if (given.length > 0) {
+        // The rest of the line is the path, so a path with spaces needs no quoting.
+        const file = line
+          .trim()
+          .slice('/import'.length)
+          .trim()
+          .replace(/\s+--from\s+\S+$/, '')
+        try {
+          const { key } = await app.o.importSession(resolve(app.cwd, file), source)
+          return { text: tt('import.done', locale, { key: oneLine(key) }) }
+        } catch (error) {
+          return {
+            text: tt('import.failed', locale, {
+              reason: oneLine(error instanceof Error ? error.message : String(error)),
+            }),
+          }
+        }
+      }
+      const { items, skipped } = listExternalSessions(app.cwd, app.o.externalRoots)
+      const note = skipped > 0 ? tt('import.skipped', locale, { count: skipped }) : undefined
+      if (!items.length) return { text: [tt('import.none', locale), note].filter(Boolean).join(' ') }
+      return {
+        ...(note ? { text: note } : {}),
+        sessionPickerTitle: 'picker.importTitle',
+        sessionChoices: items.map((item) => ({
+          sessionId: oneLine(item.path),
+          importFile: item.path,
+          createdAt: new Date(item.mtimeMs).toISOString(),
+          lastSeq: 0,
+          preset: item.source,
+          ...(item.title ? { title: oneLine(item.title).slice(0, 60) } : {}),
+        })),
+      }
     }
     case '/sessions': {
       const choices = (await listSessionChoices(s)).slice(0, 20)

@@ -34,12 +34,13 @@ export class StatusBar implements Component {
   private notice = ''
   private noticeTone: NoticeTone = 'info'
   private link: LinkState = 'ok'
-  private safeMode = false
   private usage: UsageView | undefined
 
   constructor(
     private readonly ansi: ThemedAnsi,
     private readonly locale: Locale = 'en',
+    /** A run that skipped parts of its setup says so for its whole life, so nobody forgets it. */
+    private readonly safeMode = false,
   ) {}
 
   setSlots(items: StatusItem[]): void {
@@ -77,11 +78,6 @@ export class StatusBar implements Component {
   setNotice(text?: string, tone: NoticeTone = 'info'): void {
     this.notice = text ?? ''
     this.noticeTone = tone
-  }
-
-  /** A run that skipped parts of its setup says so for its whole life, so nobody forgets it. */
-  setSafeMode(on: boolean): void {
-    this.safeMode = on
   }
 
   setLink(state: LinkState): void {

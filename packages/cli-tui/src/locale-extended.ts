@@ -1,5 +1,6 @@
 import { LOCALES, type Locale, type LocaleKey } from './locale.js'
 import { CONTROL_DICT, type ControlKey } from './locale-control.js'
+import { IMPORT_DICT, type ImportKey } from './locale-import.js'
 import { KEYS_DICT, type KeysKey } from './locale-keys.js'
 import { TERMINAL_DICT, type TerminalKey } from './locale-terminal.js'
 import { TOOLS_DICT, type ToolsKey } from './locale-tools.js'
@@ -264,7 +265,7 @@ export const EXTENDED_KEYS = [
 ] as const
 
 type BaseKey = (typeof EXTENDED_KEYS)[number]
-export type ExtendedKey = BaseKey | ControlKey | TerminalKey | ToolsKey | KeysKey | UndoKey
+export type ExtendedKey = BaseKey | ControlKey | TerminalKey | ToolsKey | KeysKey | UndoKey | ImportKey
 
 const BASE: Record<Locale, Record<BaseKey, string>> = {
   en: {
@@ -774,6 +775,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     ...TOOLS_DICT.en,
     ...KEYS_DICT.en,
     ...UNDO_DICT.en,
+    ...IMPORT_DICT.en,
   },
   'zh-CN': {
     ...BASE['zh-CN'],
@@ -782,6 +784,7 @@ const DICT: Record<Locale, Record<ExtendedKey, string>> = {
     ...TOOLS_DICT['zh-CN'],
     ...KEYS_DICT['zh-CN'],
     ...UNDO_DICT['zh-CN'],
+    ...IMPORT_DICT['zh-CN'],
   },
 }
 

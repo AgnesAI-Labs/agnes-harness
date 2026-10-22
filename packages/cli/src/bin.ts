@@ -556,6 +556,23 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                 historyPath: join(resolveHome(io.env), 'tui-history.jsonl'),
                 commandsDir: join(home, 'commands'),
                 ...(breadcrumb ? { breadcrumb } : {}),
+                // Needs this machine's own Host, which only the shared local daemon form leaves free.
+                ...(p.connect === undefined &&
+                !p.standalone &&
+                !p.ephemeral &&
+                io.env.AGNES_CONNECT === undefined &&
+                Object.keys(boot).length === 0
+                  ? {
+                      importSession: async (file: string, from?: string) =>
+                        (await import('./commands/import.js')).importInto(
+                          p,
+                          deps,
+                          { cwd: p.cwd ?? io.cwd, env: io.env },
+                          file,
+                          from,
+                        ),
+                    }
+                  : {}),
                 editorTmpDir: join(resolveHome(io.env), 'tmp'),
                 agnesVersion: io.agnesVersion,
               })

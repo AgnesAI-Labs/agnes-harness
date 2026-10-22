@@ -11,11 +11,17 @@ import {
   UsageError,
 } from '../errors.js'
 import { checkStructured, loadOutputSchema, schemaInstruction } from '../output-schema.js'
-import type { Breadcrumb } from '../terminal-breadcrumb.js'
 import { timingMark } from '../timing.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { readPromptInput } from './prompt-input.js'
 import { cliEventLine, cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
+
+export type Breadcrumb = {
+  /** The session last used in this terminal pane for `cwd`, if one was left. Never throws. */
+  read(cwd: string): string | undefined
+  /** Remember `sessionKey` for this pane. Failures are ignored: a breadcrumb is a convenience. */
+  write(sessionKey: string, cwd: string): void
+}
 
 export type PrintIO = {
   stdout: NodeJS.WritableStream

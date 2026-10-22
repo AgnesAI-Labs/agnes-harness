@@ -31,8 +31,7 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     expect(cleared).toContain('credits 78/100 · 78%')
     // The safe-mode marker stays for the whole run.
     expect(cleared).not.toContain('safe mode')
-    s.setSafeMode(true)
-    expect(s.render(80)[0]).toContain('safe mode')
+    expect(new StatusBar(PLAIN, 'en', true).render(80)[0]).toContain('safe mode')
   })
 
   it('renders the projected usage as a separate Pi-style footer and clears it', () => {

@@ -11,7 +11,8 @@ const BARE_ALLOWED = [
   /^marked$/,
   /^get-east-asian-width$/,
 ]
-const IMPORTS = /(?:\bfrom|\bimport)\s*\(?\s*['"]([^'"]+)['"]/g
+// A word after a slash, dot or dash (the `/import` command, a `commands.import` key, the `--from` flag) is text, not an import statement.
+const IMPORTS = /(?<![-/.])\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g
 
 const list = (dir: string): string[] =>
   readdirSync(dir).flatMap((entry) => {
@@ -54,5 +55,13 @@ describe('cli tui layering', () => {
     ['app.ts', './renderer.js', null],
   ])('%s importing %s has result %s', (rel, spec, result) => {
     expect(violationFor(rel, spec)).toBe(result)
+  })
+})
+
+describe('cli tui import scan', () => {
+  it('reads every import form but not a slash command named like one', () => {
+    const text =
+      "import a from 'x'\nimport 'z'\nawait import('w')\n{ name: '/import', args: 'q' }\n'commands.import', 'x'\nargs.indexOf('--from')\n"
+    expect([...text.matchAll(IMPORTS)].map((m) => m[1])).toEqual(['x', 'z', 'w'])
   })
 })

@@ -1,6 +1,5 @@
 import { dirname, join } from 'node:path'
 import { ExitCode, SIGNAL_EXIT_CODES, type SignalName } from '../errors.js'
-import type { Breadcrumb } from '../terminal-breadcrumb.js'
 import { timingMark } from '../timing.js'
 import { inheritFreshSession, installKeybindings, TuiApp } from '../tui/app.js'
 import { escapeControl } from '../tui/component.js'
@@ -10,7 +9,7 @@ import type { TuiResourceController } from '../tui/resource-controller.js'
 import { freshTuiSessionKey } from '../tui/session-key.js'
 import { type InputStream, NodeTerminal, type OutputStream } from '../tui/terminal.js'
 import type { Booted, ParsedArgs } from '../types.js'
-import { refuseWhatCannotBeHonoured, sessionToOpen } from './print.js'
+import { type Breadcrumb, refuseWhatCannotBeHonoured, sessionToOpen } from './print.js'
 import { markFirstFrame, type TuiOpening } from './tui-opening.js'
 
 export { TuiOpening } from './tui-opening.js'
@@ -32,6 +31,8 @@ export async function runTui(
     commandsDir?: string
     /** This terminal pane's memory of its last session; absent over --connect and without a pane id. */
     breadcrumb?: Breadcrumb
+    /** `/import`; absent unless this is the shared local daemon connection. */
+    importSession?: (file: string, from?: string) => Promise<{ key: string }>
     /** Private scratch directory (`<AGH_HOME>/tmp`) for the Ctrl-G draft file. */
     editorTmpDir?: string
     /** The CLI's own version, shown on the welcome. */
@@ -117,6 +118,7 @@ export async function runTui(
       ...(io.commandsDir ? { commandsDir: io.commandsDir } : {}),
       ...(p.ignoreRules || p.safeMode ? { noCustomCommands: true } : {}),
       ...(p.safeMode ? { safeMode: true } : {}),
+      ...(io.importSession ? { importSession: io.importSession } : {}),
       ...(io.breadcrumb
         ? { onSessionSwitch: (sessionId: string) => io.breadcrumb?.write(sessionId, io.cwd) }
         : {}),

@@ -41,7 +41,7 @@ node agnes.mjs
 
 | 操作 | 用法 |
 | --- | --- |
-| 新任务/选择历史 | `/new [DIR]`、`/sessions`、`/resume [id\|all]`（`all` 列出所有工作区；选择器里 Tab 在本工作区与全部之间切换并保留已输入的过滤词，PgUp/PgDn 翻页，按最近活动的本地时间排序）、`/search QUERY`（需管理员连接） |
+| 新任务/选择历史 | `/new [DIR]`、`/sessions`、`/resume [id\|all]`（`all` 列出所有工作区；选择器里 Tab 在本工作区与全部之间切换并保留已输入的过滤词，PgUp/PgDn 翻页，按最近活动的本地时间排序）、`/search QUERY`（需管理员连接）、`/import [文件 [--from claude-code\|codex\|pi\|auto]]` |
 | 子智能体 | `/agents` 列出本会话可控的子智能体；`/agents stop N\|ID` 中断一个，`/agents resume N\|ID 消息` 让它继续。能否执行由 daemon 决定，拒绝会原样显示 |
 | 后台任务 | `/jobs` 列出本会话的后台任务；`/jobs stop N\|ID` 终止一个（agent 拥有的任务会被 daemon 拒绝） |
 | 排队消息 | 回合进行中按 Enter，消息进入 daemon 队列，回合结束后自动发送；按 Alt+Enter 则插入正在运行的回合（该回合不接受插入时改为排队）。TUI 不保存任何队列，退出后队列仍在，会话的所有客户端都看得到。`/queue` 列出排队的消息，并按序号管理：`/queue edit N` 放回输入框修改（附件随下一条消息发送），`/queue drop N` 丢弃，`/queue now N` 停止当前回合并先发送这一条，`/queue steer N` 把它变成对当前回合的插入。输入框为空时按 Alt+↑ 取回最新的一条排队消息。对已发送或已删除的消息操作会提示这一点 |
@@ -131,6 +131,8 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 `agh queue KEY [--steer] [--json] 文本...|-` 从另一个 shell 往已有会话注入一条消息。默认是 follow-up：等当前 turn 结束后再执行；`--steer` 则在当前 turn 中引导。`-` 从 stdin 读取消息，消息以连字符开头时在前面加 `--`。它和 TUI、Web 走同一条命令路径（commandId 和 pending journal），成功时打印 `queued followUp (seq N)`。daemon 拒绝（不是你的会话、会话已关闭、不支持）时打印 `refused: CODE: message` 并以 1 退出。如果 daemon 无法确认结果，命令会提示 `unconfirmed`、以 1 退出，并且不会重发；重试前先用 `agh sessions show KEY` 核对。
 
 `agh api METHOD [--params JSON|-] [--json]` 用 CLI 已有的连接调用一个协议方法，不新增任何权限。`METHOD` 是协议方法表里的名字，可带或不带 `_agnes/v1/` 前缀；`agh api --help` 列出所有可调用方法及其层级（`client` 或 `admin`），由协议方法表生成。`--params` 是 JSON 参数对象（`-` 从 stdin 读，默认 `{}`），发送前先在本地按协议 schema 校验：有问题的字段会被指出，并且不会发送。方法名不存在时拒绝并给出最接近的名字。结果以 JSON 打印到 stdout（`--json` 为单行）；daemon 的拒绝（包括没有 admin 连接时调用 admin 方法）以 `error: CODE: message` 打印到 stderr 并以 1 退出。流式和 attach 方法（`session.attach`、`participant.join` 等）以及命令类方法（`submit`、`session.control`、`session.fork` 等）会被拒绝，因为它们需要 commandId 和 pending journal：请用 `agh queue` 或对应子命令。ACP 会话调用（`session/prompt` 等）同样不提供。
+
+`/import 文件 [--from claude-code|codex|pi|auto]` 把一个 Claude Code、codex 或 pi 的会话文件导入 agh，转换和写入与 `agh import 文件` 完全相同，并打印新会话的 key，用 `/resume KEY` 继续。不带文件时，`/import` 打开选择器，按修改时间倒序列出当前工作区最近的 50 个外部会话：`~/.claude/projects/<编码后的 cwd>/*.jsonl` 里的 Claude Code 文件，以及 `~/.codex/sessions/**/rollout-*.jsonl` 里文件头指向当前目录的 codex 文件。只读文件元数据和前几行，不上传、不缓存内容；读不了的文件会被跳过并计数。它需要共享的本机 daemon 连接：使用 `--connect`、`--standalone` 或 `--ephemeral` 时只提示不可用，不做任何事，也不会把文件上传到远端 daemon。
 
 ## Shell 补全
 

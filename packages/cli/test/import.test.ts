@@ -8,9 +8,9 @@ import type { EventEnvelope } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { type MainIO, main } from '../src/bin.js'
-import { importBatches, importFile } from '../src/commands/import.js'
+import { importBatches, importFile, importInto } from '../src/commands/import.js'
 import { UsageError } from '../src/errors.js'
-import { TEST_LOCK } from './boot-host.js'
+import { TEST_LOCK, testDeps } from './boot-host.js'
 import { memoryAdmission, openAdmittedSession } from './import-admission.js'
 
 const source = (id = 'pi-cli') =>
@@ -46,6 +46,30 @@ const sink = () => {
     value: () => value,
   }
 }
+
+describe('importInto (the TUI /import path)', () => {
+  it('imports through a local Host, returns the new key, and refuses an unknown --from', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agnes-import-tui-'))
+    const file = join(home, 'pi.jsonl')
+    writeFileSync(file, source('from-tui'))
+    const deps = testDeps(home, {
+      createHostImpl: async () => (await createTestHost({ dataDir: home })).host,
+    })
+    try {
+      await expect(importInto(parseArgs([]), deps, { cwd: home, env: {} }, file, 'pi')).resolves.toEqual({
+        key: 'agnes:local:default:import:dm:from-tui',
+      })
+      await expect(importInto(parseArgs([]), deps, { cwd: home, env: {} }, file, 'vim')).rejects.toThrow(
+        UsageError,
+      )
+      await expect(
+        importInto(parseArgs([]), deps, { cwd: home, env: {} }, join(home, 'missing.jsonl')),
+      ).rejects.toThrow()
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('import command', () => {
   it('is dispatched by the executable through a local Host', async () => {

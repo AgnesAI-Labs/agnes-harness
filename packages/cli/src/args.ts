@@ -1,5 +1,6 @@
 import { parseAgentRef, parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol/command-line'
 import { UsageError } from './errors.js'
+import { refusePrivateHostFlags } from './private-host-flags.js'
 import type { Command, ModelSel, ParsedArgs } from './types.js'
 
 export type { Command, ModelSel, ParsedArgs } from './types.js'
@@ -282,19 +283,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     argv.includes('--session')
   )
     throw new UsageError('--session is supported only by tools, diagnostics and schedules')
-  if (p.safeMode || p.ignoreRules) {
-    // Both change what one session loads. A shared daemon serves other sessions with the same
-    // configuration, so they are honoured only by a private host (--ephemeral or --standalone) that
-    // this client starts itself; an explicit --connect always reaches someone else's host, even
-    // when --standalone is also given.
-    const name = p.safeMode ? '--safe-mode' : '--ignore-rules'
-    if (p.command !== undefined && p.command !== 'resume')
-      throw new UsageError(`${name} applies only to starting or resuming a session`)
-    if (p.connect !== undefined || !(p.standalone || p.ephemeral))
-      throw new UsageError(
-        `${name} needs a private host: add --ephemeral or --standalone, and do not combine it with --connect or a shared daemon`,
-      )
-  }
+  refusePrivateHostFlags(p)
   if (p.steer && p.command !== 'queue') throw new UsageError('--steer is supported only by queue')
   if (p.continue && p.resume !== undefined)
     throw new UsageError('--continue and --resume are mutually exclusive')

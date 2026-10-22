@@ -15,7 +15,13 @@ function label(choice: SessionChoice, locale: string): string {
   const time = Number.isFinite(parsed)
     ? `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`
     : tt('picker.timeUnknown', locale)
-  return [time, choice.title?.trim(), choice.preset, `seq ${choice.lastSeq}`, choice.sessionId]
+  return [
+    time,
+    choice.title?.trim(),
+    choice.preset,
+    choice.importFile === undefined ? `seq ${choice.lastSeq}` : undefined,
+    choice.sessionId,
+  ]
     .filter((part): part is string => Boolean(part))
     .join(' · ')
 }

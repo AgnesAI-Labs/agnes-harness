@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homeLayout } from '@agnes/host'
+import type { Breadcrumb } from './modes/print.js'
 
 /**
  * What identifies this terminal pane, from the first of these the terminal sets. A multiplexer comes
@@ -26,13 +27,6 @@ export function terminalId(env: NodeJS.ProcessEnv): string | undefined {
     if (value) return `${label}:${value}`
   }
   return undefined
-}
-
-export type Breadcrumb = {
-  /** The session last used in this pane for `cwd`, if one was left. Never throws. */
-  read(cwd: string): string | undefined
-  /** Remember `sessionKey` for this pane. Failures are ignored: a breadcrumb is a convenience. */
-  write(sessionKey: string, cwd: string): void
 }
 
 /** Present only when the terminal identifies itself; without it nothing is read or written. */

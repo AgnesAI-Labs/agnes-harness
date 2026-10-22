@@ -4,6 +4,7 @@ import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
 import type { Host, HostSession } from '@agnes/host'
 import type { EventEnvelope, SessionStart } from '@agnes/protocol'
+import type { LocalBootDeps } from '../boot/local.js'
 import { CommandError, ExitCode, UsageError } from '../errors.js'
 import type { ParsedArgs, SessionAdmissionPort } from '../types.js'
 import { bundleOriginals, readNativeBundle } from './native-bundle.js'
@@ -16,6 +17,8 @@ export type ImportDeps = {
   admission: SessionAdmissionPort
   io: { stdout: Sink; stderr: Sink }
   readFile?: (path: string) => Uint8Array
+  /** Told the target key once the import is committed; the TUI uses it to point at /resume. */
+  imported?: (key: string) => void
 }
 
 const BATCH_SIZE = 500
@@ -216,6 +219,7 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         `import of ${key} wrote ${written} events but could not admit the session; the new target was rolled back and may be retried with the same key: ${detail}`,
       )
     }
+    deps.imported?.(key)
     deps.io.stdout.write(
       `imported ${written} events into ${key} (source ${converted.report.source}; skipped ${converted.report.skipped.length}, repaired ${converted.report.repaired.length}, branches dropped ${converted.report.branches.dropped})\n`,
     )
@@ -224,5 +228,67 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
     return ExitCode.OK
   } finally {
     await session.close().catch(() => undefined)
+  }
+}
+
+const SOURCES = ['claude-code', 'codex', 'pi', 'auto'] as const
+
+/**
+ * What the TUI's /import runs: the same one-shot path as `agh import FILE`, on a local Host booted for
+ * the purpose and closed afterwards. Failures are thrown for the caller to show; the key comes back on success.
+ */
+export async function importInto(
+  p: ParsedArgs,
+  deps: LocalBootDeps,
+  where: { cwd: string; env: NodeJS.ProcessEnv },
+  file: string,
+  from?: string,
+): Promise<{ key: string }> {
+  if (from !== undefined && !(SOURCES as readonly string[]).includes(from))
+    throw new UsageError(`--from must be one of ${SOURCES.join('|')}`)
+  const { bootLocal } = await import('../boot/local.js')
+  const args: ParsedArgs = {
+    positional: [file],
+    rest: [],
+    command: 'import',
+    print: false,
+    help: false,
+    version: false,
+    continue: false,
+    park: false,
+    ephemeral: false,
+    json: false,
+    repair: false,
+    upgrade: false,
+    html: false,
+    raw: false,
+    resolved: false,
+    archived: false,
+    force: false,
+    probe: false,
+    ...(p.profile ? { profile: p.profile } : {}),
+    ...(p.cwd ? { cwd: p.cwd } : {}),
+    ...(from ? { from: from as NonNullable<ParsedArgs['from']> } : {}),
+  }
+  const booted = await bootLocal(args, deps)
+  try {
+    if (booted.host === undefined || booted.sessionAdmission === undefined)
+      throw new CommandError('local import requires a Host')
+    let key: string | undefined
+    const sink = { write: () => true }
+    await importFile(args, {
+      env: where.env,
+      cwd: where.cwd,
+      host: booted.host,
+      admission: booted.sessionAdmission,
+      io: { stdout: sink, stderr: sink },
+      imported: (k) => {
+        key = k
+      },
+    })
+    if (key === undefined) throw new CommandError('import finished without a session key')
+    return { key }
+  } finally {
+    await booted.close().catch(() => undefined)
   }
 }

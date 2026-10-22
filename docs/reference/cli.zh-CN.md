@@ -22,6 +22,7 @@
 | `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话。`--continue` 优先接回本终端窗格上次用的会话（同目录、未归档），见 [CLI 指南](../guide/cli.zh-CN.md) |
 | `agh --no-alt-screen` | 仅交互模式：保留 shell 屏幕，把已定稿的回合写入终端自己的滚动区；限制见 [CLI 指南](../guide/cli.zh-CN.md) |
 | `agh (--ephemeral\|--standalone) --ignore-rules` / `--safe-mode` | 仅私有 host（共享 daemon 或 `--connect` 下以退出码 2 拒绝）：跳过自定义斜杠命令 / 另外关闭非内置插件并在 TUI 状态栏标记。指令文件、hooks 和 MCP server 暂不跳过，见 [CLI 指南](../guide/cli.zh-CN.md) |
+| TUI `/import [文件 [--from 来源]]` | 导入 Claude Code、codex 或 pi 会话文件，或从当前工作区最近的外部会话里选择；仅共享本机 daemon 连接，见 [CLI 指南](../guide/cli.zh-CN.md) |
 | `agh resume ID [-p prompt]` | 恢复入口 |
 | `agh sessions [list --cwd DIR] [--archived] [--limit N] [--all] [--last] --json` / `agh sessions show ID` | 列表，每个会话一行、制表符分隔：id、最后序号、preset、`pinned` 或 `-`、最近活动时间（最后一条消息，没有则取创建时间）、cwd、标题（文本列可能调整，脚本请用 `--json`）；默认一页 50 条，`--limit N`（1 到 500）设置页大小，`--all` 翻完所有页（与 `--limit` 同用时 `--limit` 是总条数上限），`--last` 只打印最近活动的一个会话，还有更多时 stderr 给出提示；`--archived` 只看已归档；机器契约用 `--json` / 详情 |
 | `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | 会话偏好；`--json` 输出已保存的偏好 |

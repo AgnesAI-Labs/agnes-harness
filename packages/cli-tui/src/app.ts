@@ -11,6 +11,7 @@ import { writeComposerMemoryFile } from './composer-memory.js'
 import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
 import { type ExternalEditorConfig, editDraft } from './external-editor.js'
+import type { TuiExtraOptions } from './extra-options.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { FooterRenderer } from './footer-renderer.js'
 import { formatTurnSummary } from './format-usage.js'
@@ -172,12 +173,6 @@ export class TuiApp {
       historyPath?: string
       /** `<AGH_HOME>/commands`: where personal custom slash commands live. */
       commandsDir?: string
-      /** `--ignore-rules`: no personal or project custom slash commands are loaded. */
-      noCustomCommands?: boolean
-      /** Called with the new session's id after /new, /resume or a picker choice made it the current one. */
-      onSessionSwitch?: (sessionId: string) => void
-      /** `--safe-mode`: shown on the status bar for as long as the session runs. */
-      safeMode?: boolean
       /** Ctrl-G's editor command source and temp directory (`<AGH_HOME>/tmp`); tests leave it to the defaults. */
       externalEditor?: ExternalEditorConfig
       /** What the launcher knows for the welcome, and what tests pin (see `WelcomeOptions`). */
@@ -186,7 +181,7 @@ export class TuiApp {
       initialNotice?: string
       /** Reads branch and worktree for the composer rail; the gallery injects fixed answers. */
       probeWorkspace?: WorkspaceProbe
-    },
+    } & TuiExtraOptions,
   ) {
     // One ansi instance per colour tier for the whole frame: header, status bar, banner, editor
     // chrome and the cards all degrade through the same tier (none emits zero escape sequences).
@@ -201,7 +196,7 @@ export class TuiApp {
     this.loader = new Loader('', ansi)
     this.live = new LiveView(ansi, locale)
     this.localCommandView = localCommandView(ansi)
-    this.statusBar = new StatusBar(ansi, locale)
+    this.statusBar = new StatusBar(ansi, locale, o.safeMode)
     this.mouse = new TuiMouse(
       (rows) => this.scrollTimeline(rows),
       o.copy ?? systemCopy((s) => o.term.write(s)),
@@ -638,7 +633,6 @@ export class TuiApp {
       }),
       client.on('closed', () => this.handleClosed()),
     ]
-    if (this.o.safeMode) this.statusBar.setSafeMode(true)
     if (this.o.initialNotice) this.statusBar.setNotice(this.o.initialNotice)
     this.refreshWorkspace()
     try {
@@ -1023,6 +1017,8 @@ export class TuiApp {
 
   private async chooseSession(choice: SessionChoice): Promise<void> {
     if (this.refuseClosed()) return
+    // An import row runs `/import FILE` as if typed, so it reports through the same notice.
+    if (choice.importFile !== undefined) return this.runInput(`/import ${choice.importFile}`)
     try {
       // The picker stays open during a turn; picking from it is refused before the daemon loads anything.
       if (this.refuseSwitch()) return this.renderer.requestRender()
