@@ -23,6 +23,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh --model main=ROUTE/MODEL` | Explicit slot and route/model from the runtime catalog |
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | Ordinary run options; not all forwarded subcommands accept them. `LEVEL` is `read-only`, `workspace-write`, `full-access` or `default` (the deployment default) and applies to a new session only |
 | `agh --continue` / `agh --resume ID` | Mutually exclusive; resume recent/specified session |
+| `agh --no-alt-screen` | Interactive only: keep the shell screen and write finished turns into the terminal's own scrollback; see the [CLI guide](../guide/cli.md) for limits |
 | `agh resume ID [-p prompt]` | Resume entry point |
 | `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | List, one tab-separated row per session: id, last sequence, preset, `pinned` or `-`, last activity (last message, else creation time), title; `--archived` keeps archived ones; `--json` is the machine contract / details |
 | `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | Session preferences; `--json` prints the stored preferences |

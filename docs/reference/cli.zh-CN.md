@@ -19,6 +19,7 @@
 | `agh --model main=ROUTE/MODEL` | 显式槽位与运行目录中的路由/模型 |
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | 普通运行选项，不是所有转发子命令均支持。`LEVEL` 为 `read-only`、`workspace-write`、`full-access` 或 `default`（部署默认），只作用于新会话 |
 | `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话 |
+| `agh --no-alt-screen` | 仅交互模式：保留 shell 屏幕，把已定稿的回合写入终端自己的滚动区；限制见 [CLI 指南](../guide/cli.zh-CN.md) |
 | `agh resume ID [-p prompt]` | 恢复入口 |
 | `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | 列表，每个会话一行、制表符分隔：id、最后序号、preset、`pinned` 或 `-`、最近活动时间（最后一条消息，没有则取创建时间）、标题；`--archived` 只看已归档；机器契约用 `--json` / 详情 |
 | `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | 会话偏好；`--json` 输出已保存的偏好 |
