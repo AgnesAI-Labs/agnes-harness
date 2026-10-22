@@ -567,6 +567,9 @@ export async function approveAndExecute(
       call.name === 'exit_plan_mode' ? 'plan.exit' : 'tool.permission',
     )
     const needsAsk =
+      // A continuation still owes its original gate a validated, effect-bound consumption even
+      // when the fresh turn's policy would allow the call (for example after turn taint resets).
+      (await approvalContinuation(s))?.toolUseId === call.toolUseId ||
       (automatic !== undefined &&
         (policy.requiresApproval === 'always' ||
           (policy.requiresApproval === 'destructive' && policy.isDestructive) ||
