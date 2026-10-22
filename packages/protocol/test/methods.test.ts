@@ -302,6 +302,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/schedules.upsert',
         '_agnes/v1/session.archive',
         '_agnes/v1/session.attach',
+        '_agnes/v1/session.btw',
         '_agnes/v1/session.bookmarks.set',
         '_agnes/v1/session.budget',
         '_agnes/v1/session.deliverables',
@@ -371,7 +372,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(217)
+    expect(Object.keys(METHODS)).toHaveLength(218)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({

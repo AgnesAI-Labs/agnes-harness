@@ -596,6 +596,17 @@ export class Client {
     /** Replaces the bookmarked user prompts: UINode ids of kind 'user', kept in the order given. */
     setBookmarks: (sessionId: string, bookmarks: readonly string[]): Promise<SessionPreferences> =>
       this.call('_agnes/v1/session.bookmarks.set', { sessionId, bookmarks: [...bookmarks] }),
+    /** Answers a side question about the conversation without writing to it; billed as a side call. */
+    btw: (
+      sessionId: string,
+      question: string,
+      options: CallOptions = {},
+    ): Promise<import('@agnes/protocol').SessionBtwResult> =>
+      this.call(
+        '_agnes/v1/session.btw',
+        { sessionId, question },
+        { timeoutMs: Math.max(this.timeouts.request, 75_000), ...options },
+      ),
     fork: async (id: string, at: number, o: { cwd?: string } = {}): Promise<Session> => {
       const childId = await submitForkCommand(this, id, at)
       return this.sessionHandle(childId, o.cwd)

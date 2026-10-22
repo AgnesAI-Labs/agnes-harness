@@ -58,6 +58,8 @@ Web 创建 SDK 连接时设置 `sessionRestoreHistory: 'none'`，使保留了工
 
 `client.session.fork(parentId, at, { cwd? })` 可为子句柄保留父会话已知的工作区提示。Web 的 turn 和侧栏分叉都会传递它。该提示仅留在客户端；后端从父绑定派生子会话权限，恢复时仍会重新核对提示。
 
+`client.session.btw(sessionId, question)` 基于当前对话回答一个旁问（1 至 4000 字符），不进 transcript：账本里只多一条 `side-call` 的费用行，模型不能调用工具；回合进行中只看到该回合之前已完成的部分。同一会话同时只能有一个旁问（`SESSION_BUSY`）；单次请求或树预算不足是 `SEMANTIC_REJECTED`（`reason: 'BUDGET'`），60 秒超时是 `REQUEST_TIMEOUT`。模型一旦被调用，超时或失败也会写入 `side-call` 费用行（标记为中断）。
+
 准入后读取有界的 `projectUIOpening`，从该 opening 的 generation 和排他 `upto` cut 订阅；open 响应不是投影游标。权限处理器必须在打开前注册。中止 SDK 调用会发送带相同请求 ID 的 `session.loadingCancel`，只释放该连接上的本次等待，不停止运行中的 turn。省略 ID 保留旧的连接/会话级加载取消行为。历史预览和本地草稿都不能授权发送或回答审批。
 
 | 方法族 | 作用 |

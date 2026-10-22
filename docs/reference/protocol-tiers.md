@@ -23,6 +23,7 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 - `_agnes/v1/session.list`
 - `_agnes/v1/session.groups`
 - `_agnes/v1/session.fork`
+- `_agnes/v1/session.btw`
 - `_agnes/v1/session.rename`
 - `_agnes/v1/session.archive`
 - `_agnes/v1/session.pin`

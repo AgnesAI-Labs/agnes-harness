@@ -555,6 +555,7 @@ export {
   sessionKey,
 } from './runtime/sessions/session.js'
 export { readProfileTelemetryConsent } from './runtime/sessions/session-hooks.js'
+export { askSideQuestion, SideQuestionError } from './runtime/sessions/session-side-question.js'
 export { loadSessionTitle } from './runtime/sessions/session-title.js'
 export { readStoredSessionView } from './runtime/sessions/session-view.js'
 export { enqueueSystemInput } from './runtime/sessions/system-input.js'

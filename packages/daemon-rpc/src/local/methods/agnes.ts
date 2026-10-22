@@ -79,6 +79,7 @@ import { registerWorkspaceFiles } from '../workspace-files.js'
 import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
 import { registerIntelligentUi } from './intelligent-ui.js'
 import { registerSchedules } from './schedules.js'
+import { registerSessionBtw } from './session-btw.js'
 import { registerSessionGrants } from './session-grants.js'
 import { registerSessionUndo, undoOf, undoResultFromFact } from './session-undo.js'
 import { registerToolRecordReads } from './tool-records.js'
@@ -484,6 +485,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.pin',
       'session.bookmarks.set',
       'session.fork',
+      'session.btw',
       'session.setPreset',
       'session.setModel',
       'session.setYolo',
@@ -1190,6 +1192,7 @@ export function registerAgnes(
     )
     return r.result as { sessionId: string }
   })
+  registerSessionBtw(ep, cx, requireOwner)
   ep.register('_agnes/v1/session.setPreset', async (params, c) => {
     const p = params as { sessionId: string; preset: string }
     requireOwner('session.setPreset', p.sessionId, c)

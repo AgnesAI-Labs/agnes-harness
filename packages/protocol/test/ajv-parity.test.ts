@@ -650,6 +650,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   // as an honest $ref, so the coverage guard demands it registered here too.
   SlotName: AgnesGen.SlotName,
   SessionForkParams: AgnesGen.SessionForkParams,
+  SessionBtwParams: AgnesGen.SessionBtwParams,
+  SessionBtwResult: AgnesGen.SessionBtwResult,
   SessionPreferences: AgnesGen.SessionPreferences,
   SessionRenameParams: AgnesGen.SessionRenameParams,
   SessionArchiveParams: AgnesGen.SessionArchiveParams,
@@ -4085,6 +4087,23 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', at: 12, childKey: rep(513) }, // boundary: maxLength:512
     ],
     note: 'fork params: sessionId + the seq to fork from, with an optional childKey',
+  },
+  SessionBtwParams: {
+    valid: { sessionId: 's', question: 'what did we decide?' },
+    invalid: [
+      { sessionId: 's' }, // missing required question
+      { sessionId: 's', question: '' }, // boundary: one below minLength:1
+      { sessionId: 's', question: rep(4001) }, // boundary: one above maxLength:4000
+    ],
+    note: 'side question params: sessionId + a bounded question',
+  },
+  SessionBtwResult: {
+    valid: { text: 'a', model: 'm', credits: 0.1 },
+    invalid: [
+      { text: 'a' }, // missing required model
+      { text: 'a', model: 'm', credits: -1 }, // boundary: one below minimum:0
+    ],
+    note: 'side answer: text, the model that wrote it and the optional credits it cost',
   },
   WorkspaceEntry: {
     valid: {
@@ -8905,6 +8924,7 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/session.preview': { fileId: AGNES_ID, params: 'SessionPreviewParams' },
   '_agnes/v1/daemon.notice': { fileId: AGNES_ID, params: 'DaemonNotice' },
   '_agnes/v1/session.fork': { fileId: AGNES_ID, params: 'SessionForkParams', result: 'SessionIdParams' },
+  '_agnes/v1/session.btw': { fileId: AGNES_ID, params: 'SessionBtwParams', result: 'SessionBtwResult' },
   '_agnes/v1/session.rename': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'SessionRenameParams',
@@ -9772,6 +9792,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.preview': AGNES_SAMPLES.SessionPreviewParams as Sample,
   '_agnes/v1/daemon.notice': AGNES_SAMPLES.DaemonNotice as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionForkParams as Sample,
+  '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwParams as Sample,
   '_agnes/v1/session.rename': {
     note: 'manual title',
     valid: { sessionId: 's', title: 'name' },
@@ -10439,6 +10460,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.readToolDetail': AGNES_SAMPLES.SessionReadToolDetailResult as Sample,
   '_agnes/v1/session.deliverables': AGNES_SAMPLES.SessionDeliverablesResult as Sample,
   '_agnes/v1/session.fork': AGNES_SAMPLES.SessionIdParams as Sample,
+  '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwResult as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.PageSessionMeta as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListResult as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddResult as Sample,

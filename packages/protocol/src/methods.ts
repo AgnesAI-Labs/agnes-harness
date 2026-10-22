@@ -156,6 +156,7 @@ export type MethodName =
   | '_agnes/v1/session.readToolDetail'
   | '_agnes/v1/session.deliverables'
   | '_agnes/v1/session.fork'
+  | '_agnes/v1/session.btw'
   | '_agnes/v1/session.rename'
   | '_agnes/v1/session.archive'
   | '_agnes/v1/session.pin'
@@ -408,6 +409,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionForkParams,
     result: A.SessionIdParams,
   },
+  '_agnes/v1/session.btw': clientRequest(A.SessionBtwParams, A.SessionBtwResult),
   '_agnes/v1/session.rename': clientRequest(A.SessionRenameParams, A.SessionPreferences),
   '_agnes/v1/session.archive': clientRequest(A.SessionArchiveParams, A.SessionPreferences),
   '_agnes/v1/session.pin': clientRequest(A.SessionPinParams, A.SessionPreferences),

@@ -5291,6 +5291,38 @@
         }
       }
     },
+    "SessionBtwParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "question"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      }
+    },
+    "SessionBtwResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "model"],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "credits": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
     "WorkspaceEntry": {
       "type": "object",
       "additionalProperties": false,

@@ -66,6 +66,8 @@ Web creates its SDK connection with `sessionRestoreHistory: 'none'` so newly cre
 
 `client.session.fork(parentId, at, { cwd? })` can retain the parent's known workspace hint for child recovery. Web supplies that hint for both turn and sidebar forks. It stays client-side; the backend derives the child's authority from the parent binding and verifies the hint again when restoring.
 
+`client.session.btw(sessionId, question)` answers a side question (1-4000 characters) from the conversation so far, outside the transcript: nothing is written to the ledger except a `side-call` cost row, the model cannot call tools, and during a running turn only the completed turns before it are shown. One side question per session runs at a time (`SESSION_BUSY`); an exhausted per-request or tree budget is `SEMANTIC_REJECTED` with `reason: 'BUDGET'`, a deadline of 60 seconds is `REQUEST_TIMEOUT`. Once the model has been called, a timeout or failure still writes the `side-call` cost row (marked interrupted).
+
 Read the bounded `projectUIOpening` after admission and subscribe from that opening's generation and exclusive `upto` cut; the open response is not a projection cursor. Register the permission handler before opening. Aborting the SDK call sends `session.loadingCancel` with the same request ID, releasing only that wait on that connection, without stopping a running turn. Omitting the ID retains the older connection/session-wide loading cancellation behavior. History previews and local drafts never authorize sending or answering approvals.
 
 | Method family | Purpose |
