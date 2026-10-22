@@ -22,9 +22,14 @@ export async function workspacePickerAvailable(fetcher: Fetcher = fetch): Promis
   }
 }
 
-export async function requestWorkspacePicker(fetcher: Fetcher = fetch): Promise<WorkspacePickerResult> {
+/** Aborting `signal` drops the request; the daemon then closes the native window it opened. */
+export async function requestWorkspacePicker(
+  fetcher: Fetcher = fetch,
+  signal?: AbortSignal,
+): Promise<WorkspacePickerResult> {
   const response = await fetcher('/api/workspace-picker', {
     method: 'POST',
+    ...(signal ? { signal } : {}),
     cache: 'no-store',
     credentials: 'same-origin',
   })

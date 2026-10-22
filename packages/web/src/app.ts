@@ -1335,9 +1335,9 @@ const firstRun = createFirstRunController({
     if (!demo) throw new Error(t('composer.hint.modelUnavailable'))
     rememberWebComposer({ model: demo })
   },
-  chooseWorkspace: async (path) => {
+  chooseWorkspace: async (path, signal) => {
     if (!path) {
-      const result = await requestWorkspacePicker()
+      const result = await requestWorkspacePicker(fetch, signal)
       if (result.status === 'cancelled') return undefined
       if (result.status === 'unavailable') throw new Error(t('app.newSession.pickerFailed'))
       path = result.path

@@ -34,12 +34,14 @@ export function FirstRunGuide({
   demo,
   workspace,
   busy,
+  picking,
   error,
   t,
   attachAccount,
   onAdd,
   onDemo,
   onWorkspace,
+  onCancelPick,
   onExamples,
   onStep,
   onContinue,
@@ -52,12 +54,14 @@ export function FirstRunGuide({
   demo: boolean
   workspace: string
   busy: boolean
+  picking: boolean
   error: string
   t: Translate
   attachAccount(host: HTMLElement): () => void
   onAdd(): void
   onDemo(): void
   onWorkspace(path?: string): void
+  onCancelPick(): void
   onExamples(): void
   onStep(step: number): void
   onContinue(): void
@@ -120,10 +124,22 @@ export function FirstRunGuide({
         {step === 1 && (
           <>
             {workspace && <p data-testid="first-run-workspace">{workspace}</p>}
-            <Button data-testid="first-run-workspace-pick" onClick={() => onWorkspace()} disabled={busy}>
+            <Button
+              data-testid="first-run-workspace-pick"
+              onClick={() => onWorkspace()}
+              disabled={busy || picking}
+            >
               <Icon name="folder" />
               {t('firstRun.chooseWorkspace')}
             </Button>
+            {picking && (
+              <SettingsState tone="empty" data-testid="first-run-picking">
+                {t('firstRun.pickerOpened')}{' '}
+                <Button appearance="link" data-testid="first-run-pick-cancel" onClick={onCancelPick}>
+                  {t('firstRun.pickerCancel')}
+                </Button>
+              </SettingsState>
+            )}
             <Disclosure variant="plain" summary={t('firstRun.manualWorkspace')}>
               <Field label={t('firstRun.workspacePath')}>
                 <SettingsInput

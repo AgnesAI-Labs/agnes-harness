@@ -54,14 +54,29 @@ const windowsScript = (env: NodeJS.ProcessEnv) =>
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 try {
-  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -AssemblyName System.Windows.Forms, System.Drawing
   $dialog = [System.Windows.Forms.FolderBrowserDialog]::new()
   $dialog.Description = ${powerShellText(TITLE(env))}
   $dialog.ShowNewFolderButton = $true
-  if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
-    $result = @{ status = 'selected'; path = $dialog.SelectedPath }
-  } else {
-    $result = @{ status = 'cancelled' }
+  # A dialog without an owner opens behind the browser: this process is not the foreground one.
+  # A tiny invisible top-most owner makes Windows stack the dialog above every other window.
+  $owner = [System.Windows.Forms.Form]::new()
+  $owner.TopMost = $true
+  $owner.ShowInTaskbar = $false
+  $owner.FormBorderStyle = 'None'
+  $owner.Opacity = 0
+  $owner.StartPosition = 'CenterScreen'
+  $owner.Size = [System.Drawing.Size]::new(1, 1)
+  try {
+    $owner.Show()
+    $owner.Activate()
+    if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+      $result = @{ status = 'selected'; path = $dialog.SelectedPath }
+    } else {
+      $result = @{ status = 'cancelled' }
+    }
+  } finally {
+    $owner.Dispose()
   }
 } catch {
   $result = @{ status = 'unavailable' }

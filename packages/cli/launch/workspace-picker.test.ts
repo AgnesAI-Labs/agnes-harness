@@ -26,6 +26,7 @@ describe('native workspace picker', () => {
     expect(run.mock.calls[0]?.[0]).toBe('/usr/bin/osascript')
     expect(run.mock.calls[0]?.[1].at(-1)).toContain('choose folder')
     expect(run.mock.calls[0]?.[1].at(-1)).toContain('on error number -128')
+    expect(run.mock.calls[0]?.[1].at(-1)).toContain('activate')
     expect(run.mock.calls[0]?.[3]).not.toHaveProperty('DEEPSEEK_API_KEY')
   })
 
@@ -52,6 +53,11 @@ describe('native workspace picker', () => {
     expect(run.mock.calls[0]?.[1]).toContain('-STA')
     const encodedScript = run.mock.calls[0]?.[1].at(-1)
     expect(Buffer.from(encodedScript ?? '', 'base64').toString('utf16le')).toContain('FolderBrowserDialog')
+    // Without a top-most owner the dialog opens behind the browser window.
+    const script = Buffer.from(encodedScript ?? '', 'base64').toString('utf16le')
+    expect(script).toContain('$owner.TopMost = $true')
+    expect(script).toContain('Add-Type -AssemblyName System.Windows.Forms, System.Drawing')
+    expect(script).toContain('ShowDialog($owner)')
   })
 
   it('prefers Zenity, treats its exit 1 as cancel, and falls back to KDialog', async () => {

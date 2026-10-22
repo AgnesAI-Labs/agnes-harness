@@ -49,6 +49,13 @@ describe('workspace picker client', () => {
     ).resolves.toEqual({ status: 'unavailable' })
   })
 
+  it('hands the abort signal to the request so cancelling drops it', async () => {
+    const controller = new AbortController()
+    const fetcher = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }))
+    await requestWorkspacePicker(fetcher, controller.signal).catch(() => undefined)
+    expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(controller.signal)
+  })
+
   it('fails closed on malformed or unauthenticated results', async () => {
     await expect(
       requestWorkspacePicker(

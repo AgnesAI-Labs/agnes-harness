@@ -43,7 +43,7 @@ export function createFirstRunController(options: {
   attachAccount(host: HTMLElement): () => void
   connectAccount(): Promise<boolean>
   selectDemo(): Promise<void>
-  chooseWorkspace(path?: string): Promise<string | undefined>
+  chooseWorkspace(path?: string, signal?: AbortSignal): Promise<string | undefined>
   examples(): Promise<void>
   closeSettings(): void
   details(): Promise<void>
@@ -60,6 +60,7 @@ export function createFirstRunController(options: {
   let visible = false,
     paused = false,
     busy = false,
+    picking: AbortController | undefined,
     disposed = false,
     bannerDismissed = false
   let generation = 0
@@ -94,6 +95,12 @@ export function createFirstRunController(options: {
       release = undefined
     }
   }
+  /** Dropping the request makes the daemon close the system window; nothing stays pending. */
+  const cancelPick = () => {
+    const current = picking
+    picking = undefined
+    current?.abort()
+  }
   const render = () => {
     if (disposed) return
     if (!visible) {
@@ -112,6 +119,7 @@ export function createFirstRunController(options: {
         workspace,
         attachAccount,
         busy,
+        picking: picking !== undefined,
         error:
           error === undefined
             ? ''
@@ -135,19 +143,32 @@ export function createFirstRunController(options: {
           render()
         },
         onWorkspace(path?: string) {
-          if (busy) return
-          busy = true
+          if (busy || (!path && picking)) return
+          cancelPick()
+          const own = path ? undefined : new AbortController()
+          picking = own
+          if (!own) busy = true
           error = undefined
           render()
           void options
-            .chooseWorkspace(path)
+            .chooseWorkspace(path, own?.signal)
             .then((name) => {
               if (disposed) return
+              if (own && picking !== own) return
               if (name) workspace = name
+              picking = undefined
               busy = false
               render()
             })
-            .catch(showError)
+            .catch((value) => {
+              if (own?.signal.aborted) return
+              if (own && picking === own) picking = undefined
+              showError(value)
+            })
+        },
+        onCancelPick() {
+          cancelPick()
+          render()
         },
         onExamples() {
           paused = true
@@ -160,6 +181,7 @@ export function createFirstRunController(options: {
           void next()
         },
         onSkip() {
+          cancelPick()
           generation++
           visible = false
           remember()
@@ -282,6 +304,7 @@ export function createFirstRunController(options: {
     },
     dispose() {
       disposed = true
+      cancelPick()
       generation++
       pending.abort()
       stopHomeNavigation()

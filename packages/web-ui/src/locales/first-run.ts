@@ -41,6 +41,9 @@ export const firstRunCatalog: LocaleCatalog = {
     'firstRun.start': 'Start conversation',
     'firstRun.failed': 'Setup could not be saved. Try again, or skip for now.',
     'firstRun.loading': 'Saving your choice…',
+    'firstRun.pickerOpened':
+      'A system folder window was opened. If you do not see it, it may be behind your browser: check the taskbar or Dock. You can also type a path below, or skip.',
+    'firstRun.pickerCancel': 'Cancel',
     'doctor.title': 'Runtime diagnostics',
     'doctor.intro':
       'Check this local installation. Model services are contacted only when you explicitly test them.',
@@ -140,6 +143,9 @@ export const firstRunCatalog: LocaleCatalog = {
     'firstRun.start': '开始对话',
     'firstRun.failed': '配置未能保存，请重试或暂时跳过。',
     'firstRun.loading': '正在保存选择…',
+    'firstRun.pickerOpened':
+      '已打开系统文件夹窗口。如果没有看到，它可能在浏览器后面，请查看任务栏或 Dock。也可以在下方手动输入路径，或暂时跳过。',
+    'firstRun.pickerCancel': '取消',
     'doctor.title': '运行诊断',
     'doctor.intro': '检查本地安装状态。只有你主动测试账户时，才会连接模型服务。',
     'doctor.group.environment': '运行环境',

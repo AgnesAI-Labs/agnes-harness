@@ -28,7 +28,12 @@ it.each([
   expect(needsFirstRun(value)).toBe(expected)
 })
 
-async function setup(dismissed?: string, detach = () => {}) {
+async function setup(
+  dismissed?: string,
+  detach = () => {},
+  chooseWorkspace: (path?: string, signal?: AbortSignal) => Promise<string | undefined> = async () =>
+    'project',
+) {
   const host = document.createElement('div'),
     banner = document.createElement('div')
   document.body.append(host, banner)
@@ -61,7 +66,7 @@ async function setup(dismissed?: string, detach = () => {}) {
     attachAccount: () => detach,
     connectAccount: connect,
     selectDemo,
-    chooseWorkspace: async () => 'project',
+    chooseWorkspace,
     examples: async () => homeNavigation.open('agents'),
     details: async () => {},
     closeSettings: () => {},
@@ -166,4 +171,43 @@ it('keeps setup on the account step when selecting Demo fails and allows retry',
   expect(h.host.querySelector('[data-step="account"]')).not.toBeNull()
   h.click('first-run-next')
   await vi.waitFor(() => expect(h.host.querySelector('[data-step="workspace"]')).not.toBeNull())
+})
+
+// The native folder window can open behind the browser, so the step must say so, never look hung,
+// and keep Cancel, manual input and Skip usable while the request is outstanding.
+it('says the system folder window is open, keeps manual input and skip usable, and Cancel drops the request', async () => {
+  let signal: AbortSignal | undefined
+  const choose = vi.fn(
+    (path?: string, abort?: AbortSignal) =>
+      new Promise<string | undefined>((resolve, reject) => {
+        if (path) return resolve(path)
+        signal = abort
+        abort?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      }),
+  )
+  const h = await setup(undefined, undefined, choose)
+  h.click('first-run-demo')
+  h.click('first-run-next')
+  await vi.waitFor(() => expect(h.host.querySelector('[data-step="workspace"]')).not.toBeNull())
+  h.click('first-run-workspace-pick')
+  await vi.waitFor(() => expect(h.host.querySelector('[data-testid="first-run-picking"]')).not.toBeNull())
+  expect(h.host.querySelector('[data-testid="first-run-picking"]')?.textContent).toContain(
+    'behind your browser',
+  )
+  expect(h.host.querySelector('[aria-busy="true"]')).toBeNull()
+  expect(h.host.querySelector<HTMLButtonElement>('[data-testid="first-run-workspace-pick"]')?.disabled).toBe(
+    true,
+  )
+  expect(h.host.querySelector<HTMLInputElement>('input')?.disabled).toBe(false)
+  h.click('first-run-pick-cancel')
+  expect(signal?.aborted).toBe(true)
+  await vi.waitFor(() => expect(h.host.querySelector('[data-testid="first-run-picking"]')).toBeNull())
+  expect(h.host.querySelector('[role="alert"]')).toBeNull()
+  // A second click starts a fresh request; Skip while it is open drops it and reaches the composer.
+  h.click('first-run-workspace-pick')
+  await vi.waitFor(() => expect(choose).toHaveBeenCalledTimes(2))
+  const second = signal
+  h.click('first-run-skip')
+  expect(second?.aborted).toBe(true)
+  expect(h.start).toHaveBeenCalled()
 })
