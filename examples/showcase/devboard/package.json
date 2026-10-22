@@ -825,8 +825,20 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "(Fast-forward demo: press Send. In a few seconds the coordinator creates a new live project that waits at the gate you picked; then approve it in 「我的待办」 on the board.)\nFirst call skill_read(name=devboard-playbook). The target gate is the id of the attached work object (CDCP, TR1, TR3, TR5 or DONE, where DONE means ADCP approved). Call devboard_fastforward once with that gate; do not write files or register anything on the board yourself. Then tell me the new project id, which gate it waits at, and who approves it next in 「我的待办」.",
-              "zh-CN": "（快进演示：直接点发送。研发协调员会在十几秒内新建一个现场项目，停在你选的评审门；之后回看板的「我的待办」审批。）\n先调用 skill_read(name=devboard-playbook)。要快进到的门就是附带工作对象的编号（CDCP、TR1、TR3、TR5 或 DONE，DONE 表示 ADCP 已批准）。只用这个门调用一次 devboard_fastforward，不要自己写文件，也不要自己登记看板。完成后告诉我新项目的编号、停在哪一道门，以及下一步由谁在「我的待办」批准。"
+              "en": "(Fast-forward demo: press Send. In a few seconds the coordinator creates a new live project that waits at the gate you picked; then approve it in 「我的待办」 on the board.)\nFirst call skill_read(name=devboard-playbook). The target gate is the id of the attached work object (CDCP, TR1, TR3, TR5, DONE or TR3_CHANGE, where DONE means ADCP approved and TR3_CHANGE means TR3 pending with a customer change already in CCB review). Call devboard_fastforward once with that gate; do not write files or register anything on the board yourself. Then tell me the new project id, which gate it waits at, and who approves it next in 「我的待办」.",
+              "zh-CN": "（快进演示：直接点发送。研发协调员会在十几秒内新建一个现场项目，停在你选的评审门；之后回看板的「我的待办」审批。）\n先调用 skill_read(name=devboard-playbook)。要快进到的门就是附带工作对象的编号（CDCP、TR1、TR3、TR5、DONE 或 TR3_CHANGE，DONE 表示 ADCP 已批准，TR3_CHANGE 表示 TR3 待批且已登记一条客户变更并提交 CCB）。只用这个门调用一次 devboard_fastforward，不要自己写文件，也不要自己登记看板。完成后告诉我新项目的编号、停在哪一道门，以及下一步由谁在「我的待办」批准。"
+            }
+          },
+          {
+            "id": "customer-change",
+            "title": {
+              "en": "Customer asks for a change",
+              "zh-CN": "客户提出变更"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "(Customer change demo: press Send. The coordinator registers a change request, traces its impact and sends it to CCB review with its ECR approval started; then approve it in 「我的待办」 on the board.)\nFirst call skill_read(name=devboard-playbook). The attached work object is the live project id. Register one change request with devboard_change_upsert: source {type: 'CUSTOMER', ref: 'TA §3.2'}, title \"客户要求预警排行默认条数由 10 改为 20，并增加按线路筛选\", with the customer's reason; its impact starts from CUS-002 with traceFrom: true so the downstream requirements, design items, test cases and deliverables are traced for you; add the safety impact and effort in days. Move it to ANALYZED and CCB_REVIEW, then start its ECR flow with devboard_approval_submit and stop. Tell me the change id and that the flow waits in 「我的待办」; do not decide it yourself.",
+              "zh-CN": "（客户变更演示：直接点发送。研发协调员会登记一条变更申请、推算影响并提交 CCB，发起 ECR 审批；之后回看板的「我的待办」批准。）\n先调用 skill_read(name=devboard-playbook)。附带的工作对象是现场项目编号。用 devboard_change_upsert 登记一条变更申请：source 填 {type: 'CUSTOMER', ref: 'TA §3.2'}，标题「客户要求预警排行默认条数由 10 改为 20，并增加按线路筛选」并写明客户理由；影响分析从 CUS-002 出发并设 traceFrom: true，由系统沿追溯链补全下游需求、设计条目、用例和交付物；再补上安全影响和工作量（人日）。推进到已分析、提交 CCB，然后用 devboard_approval_submit 发起 ECR 审批并停下。告诉我变更编号，以及审批在「我的待办」等待处理；不要自己决议。"
             }
           },
           {

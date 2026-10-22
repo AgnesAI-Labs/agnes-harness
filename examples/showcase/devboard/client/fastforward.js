@@ -7,6 +7,7 @@ export const FAST_FORWARD = [
   ['TR1', 'TR1 待批'],
   ['TR3', 'TR3 待批'],
   ['TR5', 'TR5 待批'],
+  ['TR3_CHANGE', 'TR3 待批 + 客户变更'],
   ['DONE', '已完成'],
 ]
 

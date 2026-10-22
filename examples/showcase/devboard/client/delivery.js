@@ -30,3 +30,11 @@ export function evidenceDocs(data, projectId) {
 
 /** The entry file of the delivered app, relative to the workspace root. */
 export const entryFile = (project) => `${project.workspaceDir}/server.js`
+
+/** A customer may raise a change on a live project from design on, until it is released. */
+export const showCustomerChange = (project) =>
+  Boolean(
+    project?.live &&
+      !project.actualEnd &&
+      ['DESIGN', 'IMPLEMENTATION', 'VERIFICATION'].includes(project.stage),
+  )

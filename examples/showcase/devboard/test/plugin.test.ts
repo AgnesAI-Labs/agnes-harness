@@ -503,6 +503,13 @@ describe('DevBoard plugin contract', () => {
     const schema = JSON.parse(JSON.stringify(tool('devboard_change_upsert').parameters))
     expect(schema.properties.traceFrom).toMatchObject({ type: 'boolean' })
     expect(schema.required ?? []).not.toContain('traceFrom')
+    const action = pkg.agnes.application.workbench.actions.find((a: Any) => a.id === 'customer-change')
+    expect(action.agent).toBe('@agnes-showcase/devboard#coordinator')
+    for (const lang of ['en', 'zh-CN']) {
+      expect(action.prompt[lang]).toContain('traceFrom')
+      expect(action.prompt[lang]).toContain('CUSTOMER')
+      expect(action.prompt[lang]).toContain('devboard_approval_submit')
+    }
   })
 
   it('takes only the gate enum as input and writes only below the new project directory', async () => {

@@ -10,14 +10,22 @@ import {
   read,
   recordArtifact,
   recordTestRun,
+  submitApproval,
   submitGate,
   transition,
   update,
   upsertReqs,
 } from './domain.mjs'
 
-/** The only input: the gate the new project waits at. DONE is ADCP approved. */
-export const GATES = ['CDCP', 'TR1', 'TR3', 'TR5', 'DONE']
+/**
+ * The only input: where the new project waits. CDCP … TR5 are the gates; DONE is ADCP approved; TR3_CHANGE
+ * is TR3 pending with a customer change already in CCB review (its ECR flow waiting for approval).
+ */
+export const GATES = ['CDCP', 'TR1', 'TR3', 'TR5', 'DONE', 'TR3_CHANGE']
+/** Where each value stops (level 0 CDCP … 4 DONE) and the scenario it adds on top, if any. */
+const STOPS = { CDCP: 0, TR1: 1, TR3: 2, TR5: 3, DONE: 4, TR3_CHANGE: 2 }
+const SCENARIO = { TR3_CHANGE: 'change' }
+export const levelOf = (gate) => STOPS[gate] ?? -1
 export const PROJECT_NAME = '车门健康监测看板（演示快进）'
 export const UNIT_TOTAL = 18
 
@@ -136,7 +144,7 @@ const LAST_EVENT = [24, 72, 120, 250, 270]
  * Advance a state to the gate, the way a real run does. Returns the new project and its newest gate.
  * `minSeq` skips project numbers whose directory already exists on disk (a reset keeps the files).
  */
-function build(state, level, now, minSeq) {
+function build(state, level, now, minSeq, scenario) {
   const t0 = now - (LAST_EVENT[level] + 8) * HOUR
   const at = (h) => t0 + h * HOUR
   const project = create(state, { kind: 'project', name: PROJECT_NAME, minSeq, by: AGENT }, t0)
@@ -157,7 +165,28 @@ function build(state, level, now, minSeq) {
   const approve = (gate, h) =>
     decideGate(state, { gateId: gate.id, decision: 'APPROVED', by: PEOPLE[gate.approverRoles[0]] }, at(h))
   const move = (kind, id, to, h, note) => transition(state, { kind, id, to, by: AGENT, note }, at(h))
-  const done = (gate) => ({ project, gate })
+  // A customer asks to change the ranking limit (CUS-002 → SWR-004): registered, traced, sent to CCB, ECR started.
+  const customerChange = (h) => {
+    const cr = create(
+      state,
+      {
+        kind: 'change',
+        projectId,
+        title: '客户要求预警排行默认条数由 10 改为 20，并增加按线路筛选',
+        reason: '客户在设计评审期间提出：预警排行默认显示 20 扇门，并可按线路筛选（技术协议 §3.2）。',
+        source: { type: 'CUSTOMER', ref: 'TA §3.2' },
+        impact: { reqs: ['CUS-002'], safety: false, effortDays: 3 },
+        traceFrom: true,
+        by: AGENT,
+      },
+      at(h),
+    )
+    move('change', cr.id, 'ANALYZED', h + 1, '按追溯链推算影响：SWR-004、DES-001、DES-003 及相关用例')
+    move('change', cr.id, 'CCB_REVIEW', h + 2, '提交 CCB 评审')
+    const flow = submitApproval(state, { template: 'ECR', subjectId: cr.id, by: AGENT }, at(h + 3))
+    return { changeId: cr.id, approvalId: flow.id }
+  }
+  const done = (gate, extra = {}) => ({ project, gate, ...extra })
 
   // 概念
   docs('INITIATION', 4)
@@ -220,7 +249,7 @@ function build(state, level, now, minSeq) {
   upsertReqs(state, { projectId, items: DES.map((d) => ({ ...d, discipline: 'SW' })), by: AGENT }, at(100))
   docs('DESIGN', 102)
   gate = submit('DESIGN', 120)
-  if (level === 2) return done(gate)
+  if (level === 2) return done(gate, scenario === 'change' ? customerChange(121) : {})
   approve(gate, 126)
 
   // 开发：TR4 的代码评审意见挂在门上，全部关闭后自动通过
@@ -322,12 +351,14 @@ const NEXT = {
   TR1: '请切换为技术负责人，在「我的待办」批准 TR1，再点「继续推进」。',
   TR3: '请切换为技术负责人，在「我的待办」批准 TR3，再点「继续推进」。',
   TR5: '请切换为质量工程师，在「我的待办」批准 TR5，再点「继续推进」。',
+  TR3_CHANGE:
+    '客户变更已在 CCB 评审，ECR 审批待批：请在「我的待办」先完成专业会签，再由技术负责人做 CCB 决议。批准后需求、设计阶段返工，原 TR1、TR3 作废，再点「继续推进」。',
   ADCP: '项目已完成：在项目页的「交付成果」查看成果，点「启动并打开」运行应用。',
 }
 
 /** devboard_fastforward: write the stage's template files, then advance the board in one transaction. */
 export async function fastForward(input, ctx) {
-  const level = GATES.indexOf(input?.gate)
+  const level = levelOf(input?.gate)
   if (level < 0) throw new DomainError(`gate 取值无效：${input?.gate}（可选 ${GATES.join(' / ')}）`)
   const now = Date.now()
   const rows = structuredClone(read(ctx.store, now))
@@ -335,7 +366,7 @@ export async function fastForward(input, ctx) {
   let minSeq = 0
   let planned
   for (let tries = 0; tries < 50; tries++) {
-    planned = build(structuredClone(rows), level, now, minSeq)
+    planned = build(structuredClone(rows), level, now, minSeq, SCENARIO[input.gate])
     if (!(await exists(ctx.fs, planned.project.workspaceDir))) break
     minSeq = Number(planned.project.id.split('-').at(-1)) + 1
     planned = undefined
@@ -351,11 +382,11 @@ export async function fastForward(input, ctx) {
   }
   ctx.signal.throwIfAborted()
   const { revision, result } = update(ctx.store, (state) => {
-    const built = build(state, level, now, minSeq)
+    const built = build(state, level, now, minSeq, SCENARIO[input.gate])
     if (built.project.id !== project.id) throw new DomainError('看板在快进期间发生变化，请重试')
     return built
   })
-  const { gate } = result
+  const { gate, changeId, approvalId } = result
   return {
     revision,
     data: {
@@ -365,7 +396,8 @@ export async function fastForward(input, ctx) {
       gateId: gate.id,
       decision: gate.decision,
       files,
-      next: NEXT[gate.code],
+      ...(changeId ? { changeId, approvalId } : {}),
+      next: NEXT[SCENARIO[input.gate] ? input.gate : gate.code],
     },
   }
 }

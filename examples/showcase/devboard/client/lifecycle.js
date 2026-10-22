@@ -25,6 +25,7 @@ import {
   time,
   useProject,
 } from './board.js'
+import { CustomerChange } from './customer-change.js'
 import { cardsOf, lensSummary, METRICS, relevant } from './lens.js'
 import { NewProject } from './new-project.js'
 import { ArtifactPreview, DeliveryCard } from './result.js'
@@ -553,6 +554,7 @@ export function Projects({ data, board, role, setRole }) {
     ),
     project.service && h(ServiceInfo, { project }),
     h(StageBar, { data, projectId: project.id }),
+    h(CustomerChange, { board, project }),
     project.tailoring?.skipped?.length > 0 &&
       h(
         'p',

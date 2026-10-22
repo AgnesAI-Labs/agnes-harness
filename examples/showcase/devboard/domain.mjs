@@ -649,7 +649,7 @@ function ecnId(state, cr) {
 
 /**
  * An approved change (its ECR flow) gets its ECN. It marks impacted requirements CHANGED and sends
- * impacted PASSED stages to rework, except in a project already in service. The as-designed baseline
+ * impacted PASSED or IN_REVIEW stages to rework (the pending gate of the latter is withdrawn), except in a project already in service. The as-designed baseline
  * comes later, when the ECN_RELEASE flow is approved.
  */
 function applyChange(state, cr, at) {
@@ -670,10 +670,24 @@ function applyChange(state, cr, at) {
   const reworked = []
   for (const name of project.service ? [] : stages) {
     const stage = state.stages.find((s) => s.id === `${cr.projectId}/${name}`)
-    if (stage?.state !== 'PASSED') continue
-    record(stage, at, 'CCB', 'PASSED', 'REWORK', `${cr.id} 已批准，受影响阶段返工`)
-    // The gates it passed through no longer count: the stage goes through its gates again.
-    for (const g of state.gates) if (g.stageId === stage.id && g.decision === 'APPROVED') g.superseded = true
+    if (!['PASSED', 'IN_REVIEW'].includes(stage?.state)) continue
+    const note = `${cr.id} 已批准，受影响阶段返工`
+    record(stage, at, 'CCB', stage.state, 'REWORK', note)
+    for (const g of state.gates) {
+      if (g.stageId !== stage.id) continue
+      // The gates it passed through no longer count: the stage goes through its gates again.
+      if (g.decision === 'APPROVED') g.superseded = true
+      // A gate still waiting reviewed the old content: it is withdrawn, as a rejection would.
+      if (g.decision === 'PENDING')
+        Object.assign(g, {
+          decision: 'REJECTED',
+          approver: 'CCB',
+          decidedAt: at,
+          comment: note,
+          superseded: true,
+        })
+    }
+    for (const a of stageArtifacts(state, stage)) if (a.status === 'IN_REVIEW') a.status = 'DRAFT'
     reworked.push(stage.id)
   }
   cr.reworked = reworked

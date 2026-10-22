@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { act, newFlow, view } from '../approvals.mjs'
 import { BLOCKER_KINDS, blockers } from '../blockers.mjs'
-import { entryFile, evidenceDocs, latestRuns, showDelivery } from '../client/delivery.js'
+import { entryFile, evidenceDocs, latestRuns, showCustomerChange, showDelivery } from '../client/delivery.js'
 import { MAIN_STEPS } from '../client/guide-data.js'
 import { mainProgress } from '../client/guide-progress.js'
 import {
@@ -33,7 +33,7 @@ import {
   upsertReqs,
   upsertTrial,
 } from '../domain.mjs'
-import { FILES, fastForward, GATES, UNIT_TOTAL } from '../fastforward.mjs'
+import { FILES, fastForward, GATES, levelOf, UNIT_TOTAL } from '../fastforward.mjs'
 import { GATE_PROFILES, LIVE_TAILORING, ORGS, ROLES } from '../profiles.mjs'
 import { buildSeed } from '../seed-data.mjs'
 
@@ -1801,7 +1801,7 @@ describe('fast-forward from the shipped sample', () => {
   }
   const run = (store: ReturnType<typeof memoryStore>, gate: string, fs = fakeFs()) =>
     fastForward({ gate }, { store, fs, signal: new AbortController().signal })
-  const level = (gate: string) => GATES.indexOf(gate)
+  const level = levelOf
 
   // [gate, pending gate code, state of each stage, ticked main steps, tasks, defects]
   const LEVELS = [
@@ -1810,6 +1810,7 @@ describe('fast-forward from the shipped sample', () => {
     ['TR3', 'TR3', 'PPI···', ['m2', 'm3', 'm4', 'm5', 'm6', 'm7'], 6, 0],
     ['TR5', 'TR5', 'PPPPI·', ['m2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9', 'm10'], 6, 2],
     ['DONE', 'ADCP', 'PPPPPP', MAIN_STEPS.slice(1).map((m) => m.id), 6, 2],
+    ['TR3_CHANGE', 'TR3', 'PPI···', ['m2', 'm3', 'm4', 'm5', 'm6', 'm7'], 6, 0],
   ] as const
 
   it.each(LEVELS)(
@@ -1945,10 +1946,53 @@ describe('fast-forward from the shipped sample', () => {
       // an app address appears only once it is registered
       expect(project.appUrl).toBeUndefined()
     }
-    expect(shown).toEqual({ CDCP: false, TR1: false, TR3: false, TR5: true, DONE: true })
+    expect(shown).toEqual({ CDCP: false, TR1: false, TR3: false, TR5: true, DONE: true, TR3_CHANGE: false })
     // seed and order projects never show it
     const seeded = snapshot(seed(NOW))
     expect(seeded.projects.some((p: Item) => showDelivery(seeded, p))).toBe(false)
+  })
+
+  it('TR3_CHANGE: a customer change waits in CCB review with its ECR flow, and approving it sends the stages back', async () => {
+    const store = memoryStore()
+    const { data } = (await run(store, 'TR3_CHANGE')) as Item
+    const state = read(store)
+    const cr = byId(state.changes, data.changeId)
+    expect(cr).toMatchObject({
+      projectId: data.projectId,
+      state: 'CCB_REVIEW',
+      source: { type: 'CUSTOMER', ref: 'TA §3.2' },
+    })
+    expect(cr.impact.reqs).toEqual(['CUS-002', 'DES-001', 'DES-003', 'SWR-004', 'SYS-003'])
+    expect(cr.impact.tests).toEqual(['TC-004', 'TC-008'])
+    const flow = byId(state.approvals, data.approvalId)
+    expect(flow).toMatchObject({ template: 'ECR', state: 'RUNNING', subject: { id: cr.id } })
+    expect(data.next).toContain('CCB')
+    // the project page offers the customer change from design on, on a live project only
+    const project = byId(state.projects, data.projectId)
+    expect(showCustomerChange(project)).toBe(true)
+    expect(showCustomerChange({ ...project, stage: 'REQUIREMENTS' })).toBe(false)
+    expect(showCustomerChange({ ...project, stage: 'RELEASE' })).toBe(false)
+    expect(showCustomerChange({ ...project, live: false })).toBe(false)
+    // approving the flow: the change is applied, the passed and the in-review stage go back to rework
+    approveFlow(state, flow.id)
+    const applied = byId(state.changes, cr.id)
+    expect(applied).toMatchObject({ state: 'APPROVED', ecn: expect.any(String) })
+    const stage = (name: string) => byId(state.stages, `${data.projectId}/${name}`)
+    expect([stage('REQUIREMENTS').state, stage('DESIGN').state]).toEqual(['REWORK', 'REWORK'])
+    expect(applied.reworked).toEqual([`${data.projectId}/REQUIREMENTS`, `${data.projectId}/DESIGN`])
+    const gates = state.gates.filter((g: Item) => g.stageId.startsWith(`${data.projectId}/`))
+    expect(gates.filter((g: Item) => g.decision === 'PENDING')).toEqual([])
+    expect(gates.filter((g: Item) => ['TR1', 'TR3'].includes(g.code)).every((g: Item) => g.superseded)).toBe(
+      true,
+    )
+    const changed = state.reqs.filter((r: Item) => r.projectId === data.projectId && r.status === 'CHANGED')
+    expect(changed.map((r: Item) => r.id).sort()).toEqual(applied.impact.reqs)
+    // the stages run their gates again, and the old gate is not reused
+    for (const name of ['REQUIREMENTS', 'DESIGN']) pass(state, data.projectId, name)
+    expect([stage('REQUIREMENTS').state, stage('DESIGN').state]).toEqual(['PASSED', 'PASSED'])
+    expect(gates.length).toBeLessThan(
+      state.gates.filter((g: Item) => g.stageId.startsWith(`${data.projectId}/`)).length,
+    )
   })
 
   it('refuses any input but the gate enum and leaves the board alone', async () => {
