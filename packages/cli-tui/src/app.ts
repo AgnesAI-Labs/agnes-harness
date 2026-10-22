@@ -172,7 +172,7 @@ export class TuiApp {
     const ansi = this.theme.ansi(createAnsi(o.term.caps.color))
     const branding = o.branding ?? DEFAULT_BRANDING
     const locale = o.locale ?? 'en'
-    this.hints = new Hints(ansi)
+    this.hints = new Hints(ansi, () => this.timeline.newOutputHint(this.editor.text !== ''))
     this.loader = new Loader('', ansi)
     this.localCommandView = localCommandView(ansi)
     this.statusBar = new StatusBar(ansi, locale)
@@ -408,6 +408,7 @@ export class TuiApp {
         if (action && !action.disabled) this.dispatchAction(action.id)
         return true
       }
+      if (this.timeline.jumpKey(key.name, this.editor.text !== '')) return true
       if (key.name === 'pgup' || key.name === 'pgdn') {
         const page = Math.max(1, o.term.size().rows - this.reservedRows)
         this.scrollTimeline(key.name === 'pgup' ? -page : page)
@@ -905,6 +906,7 @@ export class TuiApp {
     this.modelPicker.close()
     this.sessionPicker.close()
     this.usagePanel.close()
+    this.editor.resetUndo()
     this.offPermission?.()
     await this.projection.stop()
     // stop() may have run before this switch's session arrived or during the await above. It stops only the

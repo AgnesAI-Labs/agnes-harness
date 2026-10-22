@@ -17,6 +17,8 @@ export class Timeline implements Component {
   private sessionId: string | undefined
   private hasEarlier = false
   private maxOffset = 0
+  // How many entries there were when the user scrolled away from the bottom: anything past that is new.
+  private leftAt: number | undefined
 
   constructor(
     private readonly o: {
@@ -34,7 +36,7 @@ export class Timeline implements Component {
       this.sessionId = timeline.sessionId
       this.entries = new Map()
       this.local = []
-      this.offset = 0
+      this.toBottom()
       this.maxOffset = 0
       this.hasEarlier = false
     }
@@ -66,11 +68,36 @@ export class Timeline implements Component {
     if (this.sessionId === undefined) this.sessionId = sessionId
     if (this.sessionId !== sessionId) return
     this.local.push({ afterSeq: Math.max(this.upto, afterSeq), view })
+    this.toBottom()
+  }
+
+  /** The footer line for a user reading above the bottom while entries have arrived since they left it. */
+  newOutputHint(hasDraft: boolean): string | undefined {
+    if (this.offset === 0 || this.leftAt === undefined || this.size <= this.leftAt) return undefined
+    return tt(hasDraft ? 'scroll.newBelowCtrl' : 'scroll.newBelow', this.o.locale ?? 'en')
+  }
+
+  /** End jumps back to the newest rows and follows new output again; with a draft only Ctrl-End does, since End moves the cursor. */
+  jumpKey(key: string, hasDraft: boolean): boolean {
+    if (key !== 'ctrl-end' && (key !== 'end' || hasDraft)) return false
+    this.toBottom()
+    return true
+  }
+
+  private toBottom(): void {
     this.offset = 0
+    this.leftAt = undefined
+  }
+
+  private get size(): number {
+    return this.ordered.length + this.local.length
   }
 
   scroll(delta: number): boolean {
+    const before = this.offset
     if (Number.isFinite(delta)) this.offset = Math.max(0, this.offset - Math.trunc(delta))
+    if (before === 0 && this.offset > 0) this.leftAt = this.size
+    else if (this.offset === 0) this.leftAt = undefined
     return delta < 0 && this.hasEarlier && this.offset >= this.maxOffset
   }
 

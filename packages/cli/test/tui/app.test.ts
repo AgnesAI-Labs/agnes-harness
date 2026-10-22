@@ -429,6 +429,20 @@ it('keeps long-conversation history inside fullscreen while paging the projected
     term.feed('\x1b[<65;1;1M'.repeat(10))
     await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 8'))
     expect((await emulate(term, 40, 16)).lines).toEqual(bottom)
+    // End returns to the bottom; with a draft, End stays with the cursor and only Ctrl-End jumps.
+    term.feed('\x1b[5~')
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 1'))
+    term.feed('\x1b[F')
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 8'))
+    expect((await emulate(term, 40, 16)).lines).toEqual(bottom)
+    term.feed('draft')
+    term.feed('\x1b[5~')
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 1'))
+    term.feed('\x1b[F')
+    expect((await emulate(term, 40, 16)).lines).toContain('line 1')
+    term.feed('\x1b[1;5F')
+    await vi.waitFor(async () => expect((await emulate(term, 40, 16)).lines).toContain('line 8'))
+    term.feed('\x15')
     // Dragging over the reply copies what the screen shows and says so without moving a row.
     const row = bottom.indexOf('line 8') + 1
     term.feed(`\x1b[<0;1;${row}M\x1b[<32;7;${row}M\x1b[<0;7;${row}m`)

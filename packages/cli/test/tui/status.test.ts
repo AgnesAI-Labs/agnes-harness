@@ -163,4 +163,14 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     mono.set([{ id: 'a', label: 'Export' }])
     expect(mono.render(30)[0]).toContain('\x1b[1mF1\x1b[22m \x1b[2mExport\x1b[22m')
   })
+  it('shows the way back to the bottom above the F-key row, or alone, only while it is offered', () => {
+    let note: string | undefined = '↓ New output below · End to jump back'
+    const hints = new Hints(PLAIN, () => note)
+    const rows = () => hints.render(60).map((row) => row.trimEnd())
+    expect(rows()).toEqual([note])
+    hints.set([{ id: 'a', label: 'Export' }])
+    expect(rows()).toEqual([note, 'F1 Export'])
+    note = undefined
+    expect(rows()).toEqual(['F1 Export'])
+  })
 })

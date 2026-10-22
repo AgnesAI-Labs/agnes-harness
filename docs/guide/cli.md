@@ -70,6 +70,8 @@ Ctrl-G edits the draft in your own editor: `$VISUAL`, else `$EDITOR` (the comman
 
 The session, model and theme pickers filter as you type, ignoring case, over each row's title, id and time. The top line reads `Filter: xx (3/20)`: matches out of all rows. Backspace deletes a character, Esc clears the filter first and closes the picker only when it is already empty, and the number keys pick a row only while the filter is empty (otherwise a digit is part of the filter).
 
+After you scroll up with PageUp or the wheel, a line above the function-key row reads `↓ New output below · End to jump back` once something new has arrived. End (or Ctrl-End) returns to the newest rows and follows new output again. While the input box holds a draft, End keeps moving the cursor to the end of its line, so only Ctrl-End jumps back and the line says so.
+
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
 Leaving the TUI gives the terminal back exactly as it was before; the conversation is not printed again. If this run sent at least one message in the current session and the output is a terminal, one line is left behind, `agh --resume ID`, to return to that session.

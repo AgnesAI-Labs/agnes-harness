@@ -20,6 +20,8 @@ export const TERMINAL_KEYS = [
   'editor.cancelled',
   'editor.failed',
   'picker.filter',
+  'scroll.newBelow',
+  'scroll.newBelowCtrl',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -43,6 +45,8 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'editor.cancelled': 'Cancelled (editor exited with {code}); the draft is unchanged',
     'editor.failed': 'Cannot run the editor: {reason}',
     'picker.filter': 'Filter: {q} ({n}/{total})',
+    'scroll.newBelow': '↓ New output below · End to jump back',
+    'scroll.newBelowCtrl': '↓ New output below · Ctrl-End to jump back',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -59,5 +63,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'editor.cancelled': '已取消（编辑器退出码 {code}），草稿保持不变',
     'editor.failed': '无法运行编辑器：{reason}',
     'picker.filter': '过滤：{q}（{n}/{total}）',
+    'scroll.newBelow': '↓ 有新内容 · End 回到底部',
+    'scroll.newBelowCtrl': '↓ 有新内容 · Ctrl-End 回到底部',
   },
 }
