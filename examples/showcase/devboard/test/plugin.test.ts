@@ -16,7 +16,7 @@ import {
   parseSource,
   writeLock,
 } from '../../../../packages/package-manager/src/index.js'
-import { ENTRIES, workOf } from '../client/entries.js'
+import { ENTRIES, handbackWork, workOf } from '../client/entries.js'
 import { create, read, seed, update, upsertReqs } from '../domain.mjs'
 import { FILES, GATES } from '../fastforward.mjs'
 import { HANDOFF_TYPES } from '../handoff.mjs'
@@ -90,6 +90,7 @@ describe('DevBoard plugin contract', () => {
       'devboard.artifact',
       'devboard.create',
       'devboard.gate',
+      'devboard.handback',
       'devboard.handoff',
       'devboard.reset',
       'devboard.snapshot',
@@ -733,6 +734,183 @@ describe('DevBoard plugin contract', () => {
     })
   })
 
+  it('closes the loop board → composer → coordinator → board with a scripted coordinator', async () => {
+    // The platform cannot be driven here, so the coordinator's turns are scripted: each turn calls the tools
+    // exactly as the playbook says, and the page's side is the real query and effect services.
+    const store = memoryStore()
+    const files = new Map<string, string>()
+    const fs = {
+      read: async (path: string) => {
+        const text = files.get(path)
+        if (text === undefined) throw new Error('ENOENT')
+        return new TextEncoder().encode(text)
+      },
+    }
+    const ctx = { store, signal, fs } as Any
+    const turn = async (name: string, input: Any) => {
+      const out = await tool(name).execute(input, ctx)
+      expect(out.isError, `${name} ${out.content?.[0]?.text}`).toBeFalsy()
+      return out.structured.data
+    }
+    const page = () => service('devboard.snapshot').handler({}, { store })
+
+    // turn 1 (the new-project action): create, write and record the plan, submit CDCP, stop
+    const project = await turn('devboard_project_create', { name: '车门健康监测看板' })
+    files.set(`${project.workspaceDir}/docs/PROJECT-PLAN.md`, '# 项目计划')
+    await turn('devboard_artifact_record', {
+      projectId: project.id,
+      stage: 'INITIATION',
+      kind: 'PLAN',
+      path: 'docs/PROJECT-PLAN.md',
+      actingRole: 'requirements',
+    })
+    const submitted = await turn('devboard_gate_submit', { projectId: project.id, stage: 'INITIATION' })
+    expect((await page()).handbacks).toEqual([])
+
+    // the person approves CDCP on the board
+    const gateId = submitted.gate.id
+    const decided = await service('devboard.gate').handler(
+      { gateId, decision: 'APPROVED', by: 'IPMT 周明远', comment: '同意立项' },
+      ctx,
+    )
+    expect(decided).toMatchObject({ ok: true })
+
+    // the board shows the hand-back card; its button opens the composer with the gate attached
+    const [card] = (await page()).handbacks
+    expect(card).toMatchObject({
+      text: 'CDCP 已批准 → 交回研发协调员继续',
+      action: 'continue',
+      object: { type: 'gate', id: gateId },
+    })
+    expect(workOf('continueGate', { id: gateId, decision: 'APPROVED' })).toMatchObject({
+      action: card.action,
+      object: card.object,
+    })
+    const action = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ).agnes.application.workbench.actions.find((a: Any) => a.id === card.action)
+    expect(action.prompt['zh-CN']).toContain('devboard_handoff')
+
+    // turn 2: the coordinator reads the hand-off first
+    const handoff = await turn('devboard_handoff', card.object)
+    expect(handoff).toMatchObject({
+      type: 'gate',
+      gate: { code: 'CDCP', decision: 'APPROVED', comment: '同意立项' },
+      project: { id: project.id },
+    })
+    expect(handoff.nextStep).toMatchObject({
+      stage: 'REQUIREMENTS',
+      state: 'NOT_STARTED',
+      nextGate: { code: 'TR1' },
+    })
+    expect(handoff.nextStep.deliverables.join(' ')).toContain('docs/SRS.md')
+    // the summary the page shows before sending is the same one
+    expect((await service('devboard.handoff').handler(card.object, { store })).summary).toBe(handoff.summary)
+
+    // then the coordinator does what the hand-off says, as the roles it delegated to
+    await turn('devboard_stage_update', {
+      projectId: project.id,
+      stage: 'REQUIREMENTS',
+      actingRole: 'requirements',
+    })
+    await turn('devboard_req_upsert', {
+      projectId: project.id,
+      actingRole: 'requirements',
+      items: [
+        { id: 'CUS-001', title: '客户', text: '客户要求' },
+        { id: 'SYS-001', title: '系统', text: '系统', parent: ['CUS-001'] },
+        { id: 'SWR-001', title: '软需', text: '软需', parent: ['SYS-001'] },
+        { id: 'TC-001', title: '用例', text: '用例', parent: ['SWR-001'] },
+      ],
+    })
+    files.set(`${project.workspaceDir}/docs/SRS.md`, '# SRS')
+    await turn('devboard_artifact_record', {
+      projectId: project.id,
+      stage: 'REQUIREMENTS',
+      kind: 'SRS',
+      path: 'docs/SRS.md',
+      actingRole: 'requirements',
+    })
+    await turn('devboard_test_record', {
+      projectId: project.id,
+      level: 'UNIT',
+      actingRole: 'tester',
+      results: [{ tc: 'TC-001', status: 'pass' }],
+    })
+
+    // the board now shows the work, by role, and the card is gone
+    const after = await page()
+    expect(after.handbacks).toEqual([])
+    const mine = after.activity.filter((a: Any) => a.projectId === project.id)
+    expect(mine.map((a: Any) => a.actor)).toEqual([
+      '研发协调员 · 验证工程师',
+      '研发协调员 · 系统设计师（需求）',
+      '研发协调员 · 系统设计师（需求）',
+      '研发协调员 · 系统设计师（需求）',
+      '研发协调员',
+      '研发协调员 · 系统设计师（需求）',
+      '研发协调员',
+    ])
+    expect(mine[0]).toMatchObject({
+      summary: expect.stringContaining('登记测试运行'),
+      entity: { kind: 'testRun' },
+    })
+    expect(after.reqs.find((r: Any) => r.id === 'SWR-001' && r.projectId === project.id).status).toBe(
+      'VERIFIED',
+    )
+    expect(after.stages.find((st: Any) => st.id === `${project.id}/REQUIREMENTS`)).toMatchObject({
+      state: 'IN_PROGRESS',
+    })
+    expect(after.artifacts.filter((a: Any) => a.projectId === project.id).map((a: Any) => a.kind)).toEqual([
+      'PLAN',
+      'SRS',
+    ])
+  })
+
+  it('dismisses a hand-back card through the service and opens only a card that names its work', async () => {
+    const store = memoryStore()
+    const ctx = { store, signal } as Any
+    const req = (
+      await service('devboard.create').handler({ kind: 'requirement', by: '产品经理', title: '需求' }, ctx)
+    ).result
+    const hi = (
+      await service('devboard.create').handler(
+        {
+          kind: 'intervention',
+          by: '研发协调员',
+          type: 'REQUIREMENT_APPROVAL',
+          entity: { kind: 'requirement', id: req.id },
+          ask: '怎么办',
+        },
+        ctx,
+      )
+    ).result
+    for (const to of ['CLAIMED', 'RESOLVED'])
+      await service('devboard.transition').handler(
+        { kind: 'intervention', id: hi.id, to, by: '项目经理', note: '方案二' },
+        ctx,
+      )
+    const [card] = (await service('devboard.snapshot').handler({}, { store })).handbacks
+    expect(handbackWork(card)).toMatchObject({
+      action: 'interventions',
+      object: { type: 'intervention', id: hi.id },
+    })
+    for (const bad of [
+      undefined,
+      {},
+      { action: 'continue' },
+      { action: 'continue', object: { type: 'gate' } },
+    ])
+      expect(handbackWork(bad as Any)).toBeUndefined()
+    expect(await service('devboard.handback').handler({ id: 'HB-404', by: '项目经理' }, ctx)).toMatchObject({
+      ok: false,
+    })
+    expect(await service('devboard.handback').handler({ id: card.id, by: '项目经理' }, ctx)).toMatchObject({
+      ok: true,
+    })
+    expect((await service('devboard.snapshot').handler({}, { store })).handbacks).toEqual([])
+  })
+
   it('registers every tool in the capability names and the coordinator profile, plus the new pages and actions', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const names = tools.map((t) => t.name)
@@ -814,6 +992,13 @@ describe('DevBoard plugin contract', () => {
     const done = await def.execute({ gate: 'TR5' }, ctx)
     expect(done.isError).toBeFalsy()
     const { projectId, workspaceDir, gate, decision } = done.structured.data
+    // the feed line names the new project, not its gate
+    expect(read(store).activity.at(-1)).toMatchObject({
+      tool: 'devboard_fastforward',
+      entity: { kind: 'project', id: projectId },
+      projectId,
+      summary: `快进演示项目 ${projectId}`,
+    })
     expect({ gate, decision, workspaceDir }).toEqual({
       gate: 'TR5',
       decision: 'PENDING',

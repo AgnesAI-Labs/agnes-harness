@@ -46,3 +46,13 @@ export function workOf(name, item) {
   if (!entry || !item?.id || (entry.when && !entry.when(item))) return undefined
   return { action: entry.action, object: { type: entry.type, id: item.id }, label: entry.label }
 }
+
+/** The action and work object a hand-back card opens; the card itself names them, the page adds nothing. */
+export function handbackWork(card) {
+  if (!card?.action || !card.object?.type || !card.object.id) return undefined
+  return {
+    action: card.action,
+    object: { type: card.object.type, id: card.object.id },
+    label: '交回研发协调员继续',
+  }
+}

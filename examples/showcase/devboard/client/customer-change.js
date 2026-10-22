@@ -58,7 +58,7 @@ export function CustomerChange({ board, project, role }) {
     open &&
       h(
         'section',
-        { 'aria-label': '客户变更' },
+        { 'aria-label': '客户变更', className: 'devboard-form' },
         h(
           Field,
           { label: '变更标题', htmlFor: 'devboard-cc-title' },

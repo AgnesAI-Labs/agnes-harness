@@ -27,6 +27,7 @@ import {
 } from './board.js'
 import { CustomerChange } from './customer-change.js'
 import { workOf } from './entries.js'
+import { HandbackCards } from './handback.js'
 import { cardsOf, lensSummary, METRICS, relevant } from './lens.js'
 import { NewProject } from './new-project.js'
 import { ArtifactPreview, DeliveryCard } from './result.js'
@@ -152,6 +153,7 @@ export function Overview({ data, board, role }) {
   return h(
     React.Fragment,
     null,
+    h(HandbackCards, { data, board, role }),
     h(Workbench, { data, role }),
     h(ActivityPanel, { data }),
     h('h2', { className: 'devboard-heading' }, '项目组合'),
@@ -632,15 +634,19 @@ export function Projects({ data, board, role, setRole }) {
           {
             title: '交付物',
             render: (_v, s) =>
-              data.artifacts
-                .filter((a) => a.projectId === project.id && a.stage === s.stage)
-                .map((a) =>
-                  h(
-                    Button,
-                    { key: a.id, appearance: 'link', onClick: () => openPage('artifact', a.id) },
-                    `${a.title} ${a.version}`,
+              h(
+                'div',
+                { className: 'devboard-buttons' },
+                data.artifacts
+                  .filter((a) => a.projectId === project.id && a.stage === s.stage)
+                  .map((a) =>
+                    h(
+                      Button,
+                      { key: a.id, appearance: 'link', onClick: () => openPage('artifact', a.id) },
+                      `${a.title} ${a.version}`,
+                    ),
                   ),
-                ),
+              ),
           },
           { title: '基线', render: (_v, s) => s.baseline?.id ?? '', width: 160 },
         ],

@@ -246,6 +246,7 @@ const COLLECTIONS = {
   intervention: 'interventions',
   approval: 'approvals',
   activity: 'activity',
+  handback: 'handbacks',
 }
 const PREFIX = { requirement: 'REQ', task: 'TASK', intervention: 'HI' }
 const HOUR = 3_600_000
@@ -358,6 +359,20 @@ export function transition(state, input, now = Date.now()) {
   if (kind === 'defect' && to === 'CLOSED') closeDefectFindings(state, item)
   record(item, at, actor, from, to, note)
   if (kind === 'task') link(state, item, at)
+  if (kind === 'intervention' && to === 'RESOLVED')
+    addHandback(
+      state,
+      {
+        kind: 'intervention',
+        subject: { type: 'intervention', id },
+        ...(item.projectId ? { projectId: item.projectId } : {}),
+        text: `${id} 已答复 → 交回研发协调员继续`,
+        action: 'interventions',
+        object: { type: 'intervention', id },
+        watch: [item.entity?.id, id].filter(Boolean),
+      },
+      now,
+    )
   if (kind === 'change' && to === 'APPROVED') applyChange(state, item, at)
   return item
 }
@@ -617,6 +632,21 @@ export function decideGate(state, input, now = Date.now()) {
     record(stage, at, by, 'IN_REVIEW', 'REWORK', comment)
     for (const a of stageArtifacts(state, stage)) if (a.status === 'IN_REVIEW') a.status = 'DRAFT'
   }
+  // Only the decision that settles the gate hands work back; a first co-signature leaves it pending.
+  if (gate.decision !== 'PENDING' && input.handback !== false && projectOf(state, stage.projectId).live)
+    addHandback(
+      state,
+      {
+        kind: 'gate',
+        subject: { type: 'gate', id: gate.id },
+        projectId: stage.projectId,
+        text: `${gate.code} ${gate.decision === 'APPROVED' ? '已批准' : '已驳回'} → 交回研发协调员继续`,
+        action: 'continue',
+        object: { type: 'gate', id: gate.id },
+        watch: [],
+      },
+      now,
+    )
   return { gate, stage }
 }
 
@@ -976,7 +1006,16 @@ export function recordArtifact(state, input, now = Date.now()) {
   const artifact = existing ?? { id, projectId: project.id, kind, status: 'DRAFT' }
   Object.assign(artifact, {
     stage,
-    title: text(input.title ?? existing?.title ?? LABELS.artifactKind[kind], 'title', 200),
+    // A file kind says which file in its default title; the other kinds have one deliverable per project.
+    title: text(
+      input.title ??
+        existing?.title ??
+        (SOURCE_KINDS.includes(kind)
+          ? `${LABELS.artifactKind[kind]} ${path.split('/').at(-1)}`
+          : LABELS.artifactKind[kind]),
+      'title',
+      200,
+    ),
     version: text(input.version ?? existing?.version ?? 'V0.1', 'version', 16),
     authorRole: optional(input.authorRole ?? existing?.authorRole ?? profileOf(project)[stage]?.author, 32),
     source: { type: 'workspace', path },
@@ -1731,6 +1770,21 @@ function settle(state, flow, outcome, now) {
   const at = new Date(now).toISOString()
   const last = flow.actions.at(-1)
   const by = last.by
+  const project = state.projects.find((p) => p.id === (flow.projectId ?? subject.projectId))
+  if (project?.live)
+    addHandback(
+      state,
+      {
+        kind: 'approval',
+        subject: { type: 'approval', id: flow.id },
+        projectId: project.id,
+        text: `${flow.template} ${id} 审批${outcome === 'APPROVED' ? '已通过' : '已驳回'} → 交回研发协调员继续`,
+        action: 'continue',
+        object: { type: 'project', id: project.id },
+        watch: [],
+      },
+      now,
+    )
   const move = (to, extra = {}) =>
     transition(
       state,
@@ -1902,6 +1956,7 @@ export function snapshot(state, now = Date.now(), projectId) {
     interventions,
     approvals: pick(state.approvals).map((a) => view(a, now)),
     activity: pick(state.activity ?? []).toReversed(),
+    handbacks: pick(pendingHandbacks(state)),
     blockers: blockers(state, now, projectId),
     counts: {
       requirement: count(pick(state.requirements), 'requirement'),
@@ -2077,7 +2132,10 @@ function logActivity(state, { tool, actor, input = {} }, result, now) {
   const [verb, kindOf] = ACTIVITY_VERBS[tool] ?? []
   if (!verb) return
   const kind = typeof kindOf === 'function' ? kindOf(input) : kindOf
-  const id = String(result?.gate?.id ?? result?.id ?? input.projectId ?? '').slice(0, 64)
+  // a gate submission answers { stage, gate }; every other write answers its entity (or a list, then the project)
+  const id = String(
+    (kind === 'gate' ? result?.gate?.id : undefined) ?? result?.id ?? input.projectId ?? '',
+  ).slice(0, 64)
   if (!kind || !id) return
   const to = typeof input.to === 'string' ? LABELS.state[input.to] : undefined
   const projectId =
@@ -2095,6 +2153,47 @@ function logActivity(state, { tool, actor, input = {} }, result, now) {
     summary: `${verb} ${id}${to ? ` → ${to}` : ''}`.slice(0, SUMMARY_LIMIT),
   })
   if (state.activity.length > ACTIVITY_LIMIT) state.activity.splice(0, state.activity.length - ACTIVITY_LIMIT)
+}
+
+// ── Hand-backs ────────────────────────────────────────────────────────────────────────────────
+// A person's decision on a live project (a gate, a finished approval flow) or an answered human-intervention
+// request leaves one card that hands the work back to the coordinator. The card opens the composer with the
+// hand-off attached; it is never sent for the person. It stays on the board until the coordinator writes
+// something for the same project (or the objects it names) afterwards, or until someone dismisses it.
+
+export const HANDBACK_LIMIT = 50
+
+function addHandback(state, card, now) {
+  const rev = state.revision + 1
+  state.handbacks ??= []
+  state.handbacks.push({
+    id: `HB-${rev}`,
+    rev,
+    at: new Date(now).toISOString(),
+    state: 'OPEN',
+    ...card,
+  })
+  if (state.handbacks.length > HANDBACK_LIMIT)
+    state.handbacks.splice(0, state.handbacks.length - HANDBACK_LIMIT)
+}
+
+/** Whether the coordinator has written for this card's project or objects since the card was made. */
+const followedUp = (state, card) =>
+  (state.activity ?? []).some(
+    (a) =>
+      a.rev > card.rev &&
+      ((card.projectId && a.projectId === card.projectId) || card.watch?.includes(a.entity?.id)),
+  )
+
+/** The cards still waiting for the coordinator, newest first. */
+export const pendingHandbacks = (state) =>
+  (state.handbacks ?? []).filter((card) => card.state === 'OPEN' && !followedUp(state, card)).toReversed()
+
+export function dismissHandback(state, { id, by }) {
+  const card = state.handbacks?.find((c) => c.id === id) ?? fail(`未找到 ${id}`)
+  card.state = 'DISMISSED'
+  card.dismissedBy = text(by, 'by', 64)
+  return card
 }
 
 /** One transaction per write: load, mutate, bump revision, persist. `activity` ({ tool, actor, input }) adds the feed line of a tool write. */

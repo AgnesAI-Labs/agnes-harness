@@ -171,6 +171,8 @@ function build(state, level, now, minSeq, scenario) {
         gateId: gate.id,
         decision: 'APPROVED',
         by: PEOPLE[gate.approverRoles[0]],
+        // the sample's history is not work waiting for the coordinator
+        handback: false,
         closeFindings: gate.findings.filter((f) => !f.closed).map((f) => ({ id: f.id, note: '已复核' })),
       },
       at(h),

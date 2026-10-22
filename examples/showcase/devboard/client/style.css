@@ -791,6 +791,15 @@
     background: var(--agnes-bg-surface);
     color: var(--agnes-text-primary);
   }
+  .devboard-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .devboard-handback {
+    border-color: var(--agnes-status-warning-solid);
+  }
   .devboard-activity-new {
     border-color: var(--agnes-status-warning-solid);
     background: var(--agnes-status-warning-bg);

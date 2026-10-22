@@ -19,6 +19,7 @@ import {
   useDetail,
 } from './board.js'
 import { workOf } from './entries.js'
+import { HandbackCards } from './handback.js'
 import { GatePanel } from './lifecycle.js'
 import { WorkButton } from './work.js'
 
@@ -482,6 +483,7 @@ export function MyTodo({ data, board, role, setRole }) {
   return h(
     React.Fragment,
     null,
+    h(HandbackCards, { data, board, role }),
     h(
       'div',
       { className: 'devboard-todo' },

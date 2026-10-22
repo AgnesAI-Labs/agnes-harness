@@ -9,6 +9,7 @@ import {
   create,
   DomainError,
   decideGate,
+  dismissHandback,
   faultSummary,
   LABELS,
   MACHINES,
@@ -142,7 +143,7 @@ function board(input, store) {
     if (!items.length) throw new DomainError(`未找到 ${input.id}`)
     return { revision: view.revision, data: items.length === 1 ? items[0] : items }
   }
-  const { machines, labels, roles, activity, ...rest } = view
+  const { machines, labels, roles, activity, handbacks, ...rest } = view
   if (input.projectId) return { revision: view.revision, data: { ...rest, reqs: rest.reqs.map(lean), roles } }
   return {
     revision: view.revision,
@@ -722,6 +723,7 @@ const schemas = {
     },
     strict,
   ),
+  'devboard.handback': Type.Object({ id, by }, strict),
   'devboard.reset': Type.Object({}, strict),
 }
 const handlers = {
@@ -732,6 +734,7 @@ const handlers = {
     update(store, (s) =>
       action === 'SUBMIT' ? submitApproval(s, input) : actApproval(s, { ...input, action }),
     ),
+  'devboard.handback': (input, store) => update(store, (s) => dismissHandback(s, input)),
   'devboard.reset': (_input, store) => reset(store),
 }
 const queries = {

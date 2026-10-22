@@ -14,9 +14,12 @@ import {
   create,
   DOC_LIMIT_BYTES,
   decideGate,
+  dismissHandback,
   faultSummary,
+  HANDBACK_LIMIT,
   MACHINES,
   metrics,
+  pendingHandbacks,
   projectPath,
   read,
   recordArtifact,
@@ -69,6 +72,7 @@ const COLLECTIONS = [
   'interventions',
   'approvals',
   'activity',
+  'handbacks',
 ]
 /** A small in-test state shaped per the schema 4 data contract; no dependence on the seed. */
 const blank = (): State => ({
@@ -1524,6 +1528,7 @@ describe('snapshot', () => {
         'defects',
         'faults',
         'gates',
+        'handbacks',
         'interventions',
         'items',
         'labels',
@@ -1708,6 +1713,25 @@ describe('store persistence', () => {
     expect(view.projects.map((p: Item) => p.id)).toEqual(buildSeed(NOW).projects.map((p: Item) => p.id))
     expect(read(store, NOW).revision).toBe(1)
     expect(store.rows.size).toBe(0)
+  })
+
+  it('reads a 3.6 store that has no activity or hand-back chunks and keeps writing to it', () => {
+    const store = memoryStore()
+    update(store, (s: State) => s.projects.length, NOW)
+    const meta = store.get('devboard/meta') as { chunks: Record<string, number> }
+    delete meta.chunks.activity
+    delete meta.chunks.handbacks
+    store.set('devboard/meta', meta)
+    store.delete('devboard/activity/0')
+    store.delete('devboard/handbacks/0')
+    const view = snapshot(read(store, NOW), NOW)
+    expect([view.activity, view.handbacks]).toEqual([[], []])
+    update(store, (s: State) => s.projects.length, NOW, {
+      tool: 'devboard_app_register',
+      actor: '研发协调员',
+      input: { projectId: 'PRJ-2025-042' },
+    })
+    expect(snapshot(read(store, NOW), NOW).activity).toHaveLength(1)
   })
 
   it('reads a store of another schema (1 or 2) as the seed and replaces it on the first write', () => {
@@ -2725,6 +2749,7 @@ describe('code, test and analysis files as deliverables', () => {
     const n = p.id.split('-').at(-1)
     expect([code.id, test.id]).toEqual([`DOC-${n}-CODE-APP`, `DOC-${n}-TEST-APP`])
     expect(code.source.path).toBe(`${p.workspaceDir}/src/app.js`)
+    expect([code.title, test.title]).toEqual(['源代码 app.js', '测试代码 app.test.js'])
     expect(state.artifacts.filter((a: Item) => a.projectId === p.id)).toHaveLength(2)
   })
 
@@ -2882,5 +2907,208 @@ describe('code, test and analysis files as deliverables', () => {
         NOW,
       ),
     ).toThrow('不是现场项目')
+  })
+})
+
+describe('hand-backs of human decisions', () => {
+  const cards = (state: State) => snapshot(state, NOW).handbacks
+  const agentWrote = (state: State, projectId: string, entity = { kind: 'project', id: projectId }) => {
+    state.activity.push({
+      id: `ACT-${state.revision + 9}`,
+      rev: state.revision + 9,
+      actor: '研发协调员',
+      tool: 'devboard_stage_update',
+      entity,
+      projectId,
+      summary: 's',
+      at: new Date(NOW).toISOString(),
+    })
+  }
+
+  it('leaves a card when a gate of a live project is approved or rejected, and not for a first co-signature', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    pass(state, p.id, 'INITIATION')
+    expect(cards(state)).toHaveLength(1)
+    expect(cards(state)[0]).toMatchObject({
+      kind: 'gate',
+      state: 'OPEN',
+      projectId: p.id,
+      text: 'CDCP 已批准 → 交回研发协调员继续',
+      action: 'continue',
+      object: { type: 'gate', id: state.gates[0].id },
+    })
+    start(state, `${p.id}/REQUIREMENTS`)
+    const { gate } = submitGate(state, { stageId: `${p.id}/REQUIREMENTS`, by: '研发协调员' }, NOW)
+    decideGate(
+      state,
+      { gateId: gate.id, decision: 'REJECTED', by: '技术负责人 测试员', comment: '补充' },
+      NOW,
+    )
+    expect(cards(state).map((c: Item) => c.text)).toEqual([
+      'TR1 已驳回 → 交回研发协调员继续',
+      'CDCP 已批准 → 交回研发协调员继续',
+    ])
+    // an order project is not driven by the coordinator and a co-signed gate settles only at its last signature
+    const order = newProject(state, 'NEW_BUILD')
+    const before = state.handbacks.length
+    const { gate: dl } = submitGate(state, { stageId: `${order.id}/INITIATION`, by: '研发协调员' }, NOW)
+    sign(state, dl.id, '分技术中心主任')
+    expect(state.handbacks).toHaveLength(before)
+  })
+
+  it('leaves a card when an approval flow of a live project ends, approved or rejected, not when withdrawn', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    const cr = create(
+      state,
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: '变更',
+        reason: '原因',
+        impact: { reqs: ['CUS-001'] },
+        by: 'x',
+      },
+      NOW,
+    )
+    ccbApprove(state, cr.id)
+    expect(cards(state)[0]).toMatchObject({
+      kind: 'approval',
+      text: `ECR ${cr.id} 审批已通过 → 交回研发协调员继续`,
+      object: { type: 'project', id: p.id },
+    })
+    const rejected = create(
+      state,
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: '变更二',
+        reason: '原因',
+        impact: { reqs: ['CUS-001'] },
+        by: 'x',
+      },
+      NOW,
+    )
+    for (const to of ['ANALYZED', 'CCB_REVIEW'])
+      transition(state, { kind: 'change', id: rejected.id, to, by: 'CCB' }, NOW)
+    const flow = submitApproval(state, { template: 'ECR', subjectId: rejected.id, by: '测试员' }, NOW)
+    const node = flow.nodes[flow.current]
+    actApproval(
+      state,
+      { id: flow.id, by: `${node.roles[0]} 测试员`, action: 'REJECT', comment: '不同意' },
+      NOW,
+    )
+    expect(cards(state)[0].text).toBe(`ECR ${rejected.id} 审批已驳回 → 交回研发协调员继续`)
+    const count = state.handbacks.length
+    const withdrawn = create(
+      state,
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: '变更三',
+        reason: '原因',
+        impact: { reqs: ['CUS-001'] },
+        by: 'x',
+      },
+      NOW,
+    )
+    for (const to of ['ANALYZED', 'CCB_REVIEW'])
+      transition(state, { kind: 'change', id: withdrawn.id, to, by: 'CCB' }, NOW)
+    const started = submitApproval(state, { template: 'ECR', subjectId: withdrawn.id, by: '测试员' }, NOW)
+    actApproval(state, { id: started.id, by: '测试员', action: 'WITHDRAW' }, NOW)
+    expect(state.handbacks).toHaveLength(count)
+  })
+
+  it('leaves a card when an intervention is answered, naming the work it blocks', () => {
+    const state = blank()
+    const req = create(state, { kind: 'requirement', title: '需求', by: 'x' }, NOW)
+    const hi = create(
+      state,
+      {
+        kind: 'intervention',
+        type: 'REQUIREMENT_APPROVAL',
+        entity: { kind: 'requirement', id: req.id },
+        ask: '怎么办',
+        by: 'x',
+      },
+      NOW,
+    )
+    transition(state, { kind: 'intervention', id: hi.id, to: 'CLAIMED', by: '项目经理' }, NOW)
+    expect(cards(state)).toEqual([])
+    transition(
+      state,
+      { kind: 'intervention', id: hi.id, to: 'RESOLVED', by: '项目经理', note: '按方案二' },
+      NOW,
+    )
+    expect(cards(state)[0]).toMatchObject({
+      kind: 'intervention',
+      text: `${hi.id} 已答复 → 交回研发协调员继续`,
+      action: 'interventions',
+      object: { type: 'intervention', id: hi.id },
+      watch: [req.id, hi.id],
+    })
+    // the card follows the answered work: the coordinator writing for the requirement clears it
+    agentWrote(state, 'none', { kind: 'requirement', id: req.id })
+    expect(cards(state)).toEqual([])
+  })
+
+  it('clears a card when the coordinator writes for its project afterwards, or when dismissed', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    const q = newProject(state, 'SOFTWARE')
+    pass(state, p.id, 'INITIATION')
+    state.revision++ // every real write is its own revision
+    pass(state, q.id, 'INITIATION')
+    expect(cards(state)).toHaveLength(2)
+    agentWrote(state, p.id)
+    expect(cards(state).map((c: Item) => c.projectId)).toEqual([q.id])
+    const left = cards(state)[0]
+    expect(dismissHandback(state, { id: left.id, by: '项目经理' })).toMatchObject({
+      state: 'DISMISSED',
+      dismissedBy: '项目经理',
+    })
+    expect(cards(state)).toEqual([])
+    expect(() => dismissHandback(state, { id: 'HB-404', by: 'x' })).toThrow('未找到')
+    expect(() => dismissHandback(state, { id: left.id, by: '' })).toThrow('缺少字段')
+    expect(pendingHandbacks(state)).toEqual([])
+  })
+
+  it(`keeps the newest ${HANDBACK_LIMIT} cards`, () => {
+    const state = blank()
+    const req = create(state, { kind: 'requirement', title: '需求', by: 'x' }, NOW)
+    for (let i = 0; i < HANDBACK_LIMIT + 3; i++) {
+      const hi = create(
+        state,
+        {
+          kind: 'intervention',
+          type: 'REQUIREMENT_APPROVAL',
+          entity: { kind: 'requirement', id: req.id },
+          ask: `问 ${i}`,
+          by: 'x',
+        },
+        NOW,
+      )
+      transition(state, { kind: 'intervention', id: hi.id, to: 'CLAIMED', by: '项目经理' }, NOW)
+      transition(state, { kind: 'intervention', id: hi.id, to: 'RESOLVED', by: '项目经理' }, NOW)
+      state.revision++
+    }
+    expect(state.handbacks).toHaveLength(HANDBACK_LIMIT)
+    expect(state.handbacks.at(-1).text).toContain(`HI-${String(HANDBACK_LIMIT + 3).padStart(3, '0')}`)
+  })
+
+  it('writes no card for the sample history of a fast-forwarded project', async () => {
+    const store = memoryStore()
+    const files = new Map<string, string>()
+    const fs = {
+      stat: async () => {
+        throw new Error('ENOENT')
+      },
+      write: async (path: string, data: string) => void files.set(path, data),
+    }
+    await fastForward({ gate: 'DONE' }, { store, fs, signal: new AbortController().signal })
+    expect(read(store, NOW).handbacks).toEqual([])
+    await fastForward({ gate: 'TR3_CHANGE' }, { store, fs, signal: new AbortController().signal })
+    expect(read(store, NOW).handbacks).toEqual([])
   })
 })
