@@ -6,6 +6,7 @@ import { Icon } from './icon.js'
 import type { IconName } from './icon-set.js'
 import { IconTile } from './icon-tile.js'
 import { PushHeader, searchParamRoute, usePushNavigation } from './push-stack.js'
+import { Tooltip } from './tooltip.js'
 
 type DataAttributes = { [name: `data-${string}`]: string | number | boolean | undefined }
 
@@ -194,16 +195,17 @@ function RowCopy({
 /** The explanation a row no longer prints: an ⓘ beside the name, read on hover or focus. */
 export function SettingsInfo({ text }: { text: string }) {
   return (
-    <span
-      className="agnes-settings-info agh-touch-target"
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users reach the explanation by focus.
-      tabIndex={0}
-      title={text}
-      aria-label={text}
-      role="note"
-    >
-      <Icon name="info" />
-    </span>
+    <Tooltip title={text}>
+      <span
+        className="agnes-settings-info agh-touch-target"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users reach the explanation by focus.
+        tabIndex={0}
+        aria-label={text}
+        role="note"
+      >
+        <Icon name="info" />
+      </span>
+    </Tooltip>
   )
 }
 
@@ -331,6 +333,8 @@ export function SettingsExpand({
   leading,
   value,
   defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange,
   children,
   ...props
 }: Omit<HTMLAttributes<HTMLDivElement>, 'title'> &
@@ -342,10 +346,19 @@ export function SettingsExpand({
     leading?: ReactNode
     value?: ReactNode
     defaultOpen?: boolean
+    /** Controlled expansion; omit to let the row keep its own state. */
+    open?: boolean
+    onOpenChange?(open: boolean): void
     children?: ReactNode
   }) {
-  const [open, setOpen] = useState(defaultOpen)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen)
+  const open = controlledOpen ?? uncontrolledOpen
   const testId = props['data-testid']
+  const toggle = () => {
+    const next = !open
+    if (controlledOpen === undefined) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
   return (
     <div {...props} className={['agnes-settings-expand', props.className].filter(Boolean).join(' ')}>
       <button
@@ -353,7 +366,7 @@ export function SettingsExpand({
         className="agnes-settings-item agnes-settings-drill"
         aria-expanded={open}
         data-testid={testId ? `${testId}-toggle` : undefined}
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggle}
       >
         <RowCopy label={label} hint={hint} info={info} icon={icon} leading={leading} />
         {value !== undefined && value !== null && value !== false && (

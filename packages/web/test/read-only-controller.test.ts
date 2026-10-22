@@ -187,27 +187,15 @@ it('states which rows a truncated record shows', async () => {
   )
 })
 
-it('labels opening history as unverified and ignores a preview that finishes after the formal projection', async () => {
+it('opens history without a banner and ignores a preview that finishes after the formal projection', async () => {
   const { context, controller, pending } = setup()
+  vi.mocked(appReadOnly.show).mockClear()
   const preview = controller.preview('A', context.sessionBinding.capture())
   await tick()
   pending.get('A:50')?.(view('A'))
   await preview
   expect(context.readOnly?.id).toBe('A')
-  expect(appReadOnly.show).toHaveBeenLastCalledWith({
-    kind: 'preview',
-    message: {
-      en: 'History preview (not yet verified) · Preparing session…',
-      'zh-CN': '历史预览（待校验）· 正在准备会话…',
-    },
-    actions: [],
-  })
-  controller.progress('A', 'verifying', 100, 1000)
-  expect(vi.mocked(appReadOnly.show).mock.lastCall?.[0].message['zh-CN']).toContain('正在校验历史 100/1000')
-  controller.progress('A', 'replaying', 500, 1000)
-  expect(vi.mocked(appReadOnly.show).mock.lastCall?.[0].message['zh-CN']).toContain(
-    '正在加载已验证历史 500/1000',
-  )
+  expect(appReadOnly.show).not.toHaveBeenCalled()
   context.sessionBinding.attach(context.sessionBinding.capture(), { session: { id: 'A' } as Session })
   context.clientModules.session.setSession('A', 'connecting')
   expect(context.readOnly?.id).toBe('A')

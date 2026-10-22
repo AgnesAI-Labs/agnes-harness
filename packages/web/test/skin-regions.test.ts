@@ -38,8 +38,10 @@ const EXPECTED: Record<string, Record<string, readonly [string, number]>> = {
     // Every icon glyph, so a skin can restyle or replace them without reaching for `.icon`.
     // Counts the composed shell's glyphs, including the workspace chooser, the report-problem action,
     // the top bar's Conversation/Trace glyphs (replacing its overflow menu), the empty session list's
-    // illustration and search/filter actions, the trace toolbar's fold-all chevron and ⋯ menu, and
-    // the settings pages' ⓘ explanations (General twice, the accounts label once), and the chevrons
+    // illustration and search action, the session heading's search and view-menu buttons (the archive
+    // entry moved into that menu, so it adds no glyph of its own), the trace toolbar's fold-all
+    // chevron and ⋯ menu, and the
+    // settings pages' ⓘ explanations (General twice, the accounts label once), and the chevrons
     // of the two hidden account page rows, plus the side-model list page's two glyphs. Adding an
     // account now renders with the loaded list, so the unloaded shell has no header-plus glyph.
     // Also includes the Agents link row's bot and chevron, and the host application footer's puzzle.

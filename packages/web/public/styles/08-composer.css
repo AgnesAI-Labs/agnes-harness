@@ -57,11 +57,6 @@
   body.session-switching #approval {
     opacity: 0.55;
   }
-  .session-history-preview {
-    padding: var(--s8) var(--s16);
-    color: var(--agnes-text-secondary);
-    font-size: var(--font-size-sm);
-  }
   #composer,
   .application-work-actions {
     width: min(calc(100% - 2rem), var(--composer-card-max-width));

@@ -59,7 +59,6 @@ import {
   webUnitsLocaleCatalog,
 } from '@agnes/web-units/shell'
 import { traceCatalog } from '@agnes/web-units/trace-locale'
-import { archivedSessions } from '../archived-sessions.js'
 import { LoopPicker } from '../loop-picker.js'
 import { businessAgentSuggestions } from '../pages/business-agents.js'
 import type {
@@ -88,6 +87,7 @@ import {
 import { ProfileApprovals, ProfileAttentionEntry } from '../regions/profile-approvals.js'
 import { profileAttentionCaller } from '../regions/profile-attention-caller.js'
 import { createProfileAttention } from '../regions/profile-attention-state.js'
+import { sessionInventory } from '../session-inventory.js'
 import type { SidebarActions, SidebarState } from '../sidebar.js'
 import { type ClientReconciler, createReconciler, type RosterSource } from './reconcile.js'
 export interface ClientModulesRuntime {
@@ -151,6 +151,7 @@ export async function startClientModules(options: {
   transcript?: {
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
+    turnErrorActions?: import('@agnes/web-ui/conversation').TurnErrorActions
   }
   conversationContainer?: HTMLElement | undefined
   topbarContainer?: HTMLElement | undefined
@@ -474,7 +475,7 @@ export async function startClientModules(options: {
   if (options.sidebarContainer)
     presentation.navigation = {
       container: options.sidebarContainer,
-      history: archivedSessions,
+      history: sessionInventory,
       initial: {
         ...options.sidebar,
         profileApprovals: <ProfileAttentionEntry attention={attention} locale={locale} />,

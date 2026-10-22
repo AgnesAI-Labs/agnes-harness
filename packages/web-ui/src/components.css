@@ -2022,6 +2022,28 @@
     border-top: 1px solid var(--agnes-line-primary);
     pointer-events: none;
   }
+  /* Prose that is not made of setting rows keeps one rhythm: a paragraph, then one divided
+     group per role with its own 8px stack and a start-aligned action. */
+  .agnes-settings-prose {
+    display: grid;
+    min-width: 0;
+  }
+  .agnes-settings-prose > p {
+    margin: 0 0 var(--s12);
+  }
+  .agnes-settings-prose > section {
+    display: grid;
+    gap: var(--s8);
+    min-width: 0;
+    padding-block: var(--s12);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
+  .agnes-settings-prose > section > :is(h4, p) {
+    margin: 0;
+  }
+  .agnes-settings-prose > section > .agh-btn {
+    justify-self: start;
+  }
   .agnes-settings-item {
     display: flex;
     align-items: center;
@@ -2464,8 +2486,12 @@
     display: inline-flex;
     margin-inline-start: var(--s4);
     color: var(--agnes-text-tertiary);
-    vertical-align: -2px;
     cursor: help;
+  }
+  /* The tooltip anchor is the inline box around the icon, so the optical nudge lives there;
+     vertical-align on the icon itself would be inert inside the anchor's flex layout. */
+  .agh-tooltip-anchor:has(> .agnes-settings-info) {
+    vertical-align: -2px;
   }
   .agnes-settings-info:focus-visible {
     border-radius: var(--radius-full);
@@ -2565,6 +2591,11 @@
     display: inline-flex;
     align-items: center;
     gap: var(--s4);
+  }
+  /* The themed trigger sizes itself inside the shrink-to-fit preset row. */
+  .agnes-settings-preset > .select-picker-trigger {
+    flex: 1 1 auto;
+    min-width: 0;
   }
   .agnes-settings-preset-custom > input {
     width: 6rem;

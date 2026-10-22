@@ -45,6 +45,21 @@
     gap: var(--s24);
     min-width: 0;
   }
+  /* Review rows read across: the name on the left, its value on the right. */
+  .application-review-row > .agnes-settings-item-copy {
+    flex: 0 1 38%;
+  }
+  .application-review-row > .agnes-settings-item-control {
+    flex: 1 1 62%;
+    justify-content: flex-start;
+    color: var(--agnes-text-secondary);
+    font-weight: normal;
+    text-align: start;
+  }
+  .application-review-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
   .application-review-brand .agnes-settings-item-description {
     max-width: none;
   }

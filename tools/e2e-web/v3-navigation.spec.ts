@@ -2,6 +2,7 @@ import { expect, test } from './fixtures.js'
 import { accessible, translated } from './quality.js'
 import {
   advanced,
+  chooseView,
   chooseWorkspace,
   closeSettings,
   expand,
@@ -84,16 +85,14 @@ test('v3 archive filter restores the same session and its conversation', async (
   await expect
     .poll(async () => (await client.session.list()).items.find((row) => row.sessionId === id)?.archived)
     .toBe(true)
-  await page.locator('#session-filter').click()
-  await page.getByTestId('session-filter-archived').click()
-  const row = page.getByTestId('archived-sessions').locator(`[data-session="${id}"]`)
+  await chooseView(page, 'archived')
+  const row = page.getByTestId('session-inventory').locator(`[data-session="${id}"]`)
   await expect(row).toBeVisible()
   await row.getByTestId('archived-restore').click()
   await expect
     .poll(async () => (await client.session.list()).items.find((row) => row.sessionId === id)?.archived)
     .toBe(false)
-  await page.locator('#session-filter').click()
-  await page.getByTestId('session-filter-unarchived').click()
+  await chooseView(page, 'active')
   await page.locator(`.session[data-session="${id}"]`).click()
   await expect(page.getByTestId('conversation-turn')).toContainText('REG5_ARCHIVE_CONTENT')
 })

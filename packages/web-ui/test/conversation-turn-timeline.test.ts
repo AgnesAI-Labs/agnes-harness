@@ -276,12 +276,79 @@ describe('turn timeline', () => {
           endedAt: '2026-10-01T00:00:01.000Z',
         }),
       )
-      expect(host.querySelector('[data-testid="turn-timing"]')?.textContent).toContain('执行失败')
-      expect(host.querySelector('.turn-error')?.textContent).toContain('E_RUNTIME')
+      expect(host.querySelector('.turn-status')?.textContent).toContain('执行失败')
+      expect(host.querySelector('.turn-error')?.textContent).toContain('这次执行失败了。')
+      expect(host.querySelector('[data-testid="turn-error-detail"] pre')?.textContent).toContain('E_RUNTIME')
       expect(host.querySelector('[data-testid="turn-verification"]')).toBeNull()
       expect(host.querySelector('.conversation-turn')?.hasAttribute('data-verification')).toBe(false)
     },
   )
+
+  it('offers a retry for a transient failure and passes the failed turn back', async () => {
+    const retry = vi.fn()
+    const nodes = [user, say('answer', 'Available answer.')]
+    const failed = turn(nodes, {
+      status: 'failed',
+      reason: 'error',
+      error: { code: 'TRANSPORT', message: 'status=500 requestId=req_8f3a2b7d' },
+      finalAssistantId: 'answer',
+      endedAt: '2026-10-01T00:00:01.000Z',
+    })
+    await render(nodes, failed, { turnErrorActions: { onRetry: retry } })
+    expect(host.querySelector('.turn-error-sentence')?.textContent).toBe('连接模型服务失败。')
+    expect(host.querySelector('.turn-error-meta')?.textContent).toBe('状态 500 · 请求 req_8f3a2b7d')
+    const button = [...host.querySelectorAll('button')].find((element) => element.textContent === '重试')
+    expect(button?.title).toBe('以相同输入重新发送')
+    await click(button)
+    expect(retry).toHaveBeenCalledTimes(1)
+    expect(retry).toHaveBeenCalledWith(expect.objectContaining({ id: 'turn:1' }))
+  })
+
+  it('disables the retry while the host says it cannot send', async () => {
+    const retry = vi.fn()
+    const nodes = [user, say('answer', 'Available answer.')]
+    await render(
+      nodes,
+      turn(nodes, {
+        status: 'failed',
+        reason: 'error',
+        error: { code: 'TIMEOUT', message: 'status=?' },
+        finalAssistantId: 'answer',
+        endedAt: '2026-10-01T00:00:01.000Z',
+      }),
+      { turnErrorActions: { onRetry: retry, retryDisabledReason: '本轮仍在执行' } },
+    )
+    const button = [...host.querySelectorAll('button')].find((element) => element.textContent === '重试')
+    expect(button?.disabled).toBe(true)
+    await click(button)
+    expect(retry).not.toHaveBeenCalled()
+  })
+
+  it('gives a rejected credential the settings action instead of a retry', async () => {
+    const openSettings = vi.fn()
+    const nodes = [user, say('answer', 'Available answer.')]
+    await render(
+      nodes,
+      turn(nodes, {
+        status: 'failed',
+        reason: 'error',
+        error: { code: 'AUTH', message: 'status=401' },
+        finalAssistantId: 'answer',
+        endedAt: '2026-10-01T00:00:01.000Z',
+      }),
+      { turnErrorActions: { onRetry: vi.fn(), onOpenSettings: openSettings } },
+    )
+    expect(host.querySelector('.turn-error-sentence')?.textContent).toBe(
+      '模型账户的凭证被拒绝了，检查账户后可以继续。',
+    )
+    expect(host.querySelector('.turn-error-meta')?.textContent).toBe('状态 401')
+    const labels = [...host.querySelectorAll('.turn-error-actions button')].map(
+      (element) => element.textContent,
+    )
+    expect(labels).toEqual(['打开账户设置'])
+    await click(host.querySelector('.turn-error-actions button'))
+    expect(openSettings).toHaveBeenCalledWith('account')
+  })
 
   it.each([true, false])(
     'shows one collapsed recovery note and retains raw attempts (visual=%s)',

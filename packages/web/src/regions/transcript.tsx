@@ -22,6 +22,7 @@ export function mountTranscriptRegion(
     claim?: ClaimResolver
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
+    turnErrorActions?: import('@agnes/web-ui/conversation').TurnErrorActions
     session?: SessionService
     locale?: LocaleService
     resources?: ClientResourceService
@@ -67,6 +68,7 @@ export function mountTranscriptRegion(
           {...(options.claim ? { claim: options.claim } : {})}
           {...(options.newContentButton ? { newContentButton: options.newContentButton } : {})}
           {...(options.onFork ? { onFork: options.onFork } : {})}
+          {...(options.turnErrorActions ? { turnErrorActions: options.turnErrorActions } : {})}
           {...(options.session ? { session: options.session } : {})}
           {...(options.locale ? { locale: options.locale } : {})}
           {...(options.resources ? { resources: options.resources } : {})}

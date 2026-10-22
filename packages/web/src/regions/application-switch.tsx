@@ -1,6 +1,6 @@
 import { applicationIdentity, type LocaleService } from '@agnes/web-client'
 import { Button, Icon } from '@agnes/web-ui'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { type MouseEvent, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { canEffect, homeAdmin } from '../pages/admin-api.js'
 
 /** Host-owned footer, outside every replaceable navigation slot. */
@@ -34,6 +34,18 @@ export function ApplicationSwitch({ locale }: { locale: LocaleService }) {
       if (live.current) setBusy(false)
     }
   }
+  // The host owns navigation. Plain clicks ask it to open the settings page in place; modifier
+  // clicks keep the href so a new tab still works, and a host that does not handle the event keeps
+  // the link as its fallback.
+  const requestSettings = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    const request = new CustomEvent('agnes:open-settings', {
+      bubbles: true,
+      cancelable: true,
+      detail: { section: 'application' },
+    })
+    if (!event.currentTarget.dispatchEvent(request)) event.preventDefault()
+  }
   if (!adopted) return null
   return (
     <div className="application-footer">
@@ -55,6 +67,7 @@ export function ApplicationSwitch({ locale }: { locale: LocaleService }) {
         href="?settings=application"
         aria-label={tr('Switch application', '切换应用')}
         data-testid="application-switch"
+        onClick={requestSettings}
       >
         <Icon name="puzzle" />
         <span>{tr('Switch application', '切换应用')}</span>

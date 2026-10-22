@@ -4235,12 +4235,13 @@ describe('session that cannot continue on this build', () => {
     expect(document.body.classList.contains('session-switching')).toBe(false)
     expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
     expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
-    expect(document.querySelector('[data-testid="session-history-preview"]')).not.toBeNull()
-    expect(document.body.textContent).toContain('正在准备会话')
+    // The pending read-only preview states itself on the composer, which is what admission retires.
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).toContain('只读')
     opening.resolve({ session: old, offPermission: vi.fn() })
     await vi.waitFor(() =>
-      expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull(),
+      expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).not.toContain('只读'),
     )
+    expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
     expect(document.body.classList.contains('session-switching')).toBe(false)
 
@@ -4258,7 +4259,7 @@ describe('session that cannot continue on this build', () => {
     expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
     nextOpening.resolve({ session: next, offPermission: vi.fn() })
     await switched
-    expect(document.querySelector('[data-testid="session-history-preview"]')).toBeNull()
+    expect((document.getElementById('prompt') as HTMLTextAreaElement).placeholder).not.toContain('只读')
     expect(document.body.classList.contains('session-switching')).toBe(false)
   })
 
@@ -4329,9 +4330,6 @@ describe('session that cannot continue on this build', () => {
       await bootApp()
       await vi.waitFor(() => expect(document.getElementById('transcript')?.textContent).toContain('历史问题'))
       expect(document.body.classList.contains('session-switching')).toBe(false)
-      expect(document.querySelector('[data-testid="session-history-preview"]')?.textContent).toContain(
-        '待校验',
-      )
       expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()
       expect((document.getElementById('prompt') as HTMLTextAreaElement).disabled).toBe(false)
       expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)

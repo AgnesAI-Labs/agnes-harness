@@ -35,9 +35,15 @@ export interface ComposerPresentationPort {
   controls: ComposerPresentationControls
   attach(handle: ComposerHandle): () => void
 }
+/** Which sessions the sidebar lists; older hosts only know the first and last. */
+export type SessionListMode = 'active' | 'all' | 'archived'
+
 export interface NavigationHistory {
   getSnapshot(): Readonly<{
+    /** Compatibility field, derived from `mode`: several plugins still read the two-state filter. */
     filter: 'unarchived' | 'archived'
+    /** Absent on hosts that predate the three-state filter; the UI derives it from `filter`. */
+    mode?: SessionListMode
     rows: readonly PageSessionMeta['items'][number][]
     status: 'idle' | 'loading' | 'error'
     error?: string
@@ -45,6 +51,10 @@ export interface NavigationHistory {
   }>
   subscribe(listener: () => void): () => void
   show(filter: 'unarchived' | 'archived'): void
+  /** Optional so a host without the three-state filter still implements this port. */
+  setMode?(mode: SessionListMode): void
+  /** Optional: reads the whole session list once, which the flat list and mixed views need. */
+  ensureLoaded?(): Promise<void>
   reload(): Promise<void>
   restore(sessionId: string): Promise<void>
 }

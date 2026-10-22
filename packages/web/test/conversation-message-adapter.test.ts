@@ -381,9 +381,7 @@ it.each([true, false])('shows a failed turn reason through the React adapter (%s
   await act(async () => root.render(createElement(FailedTurn, { current: turn })))
   const error = host.querySelector<HTMLElement>('.turn-error')
   expect(error?.getAttribute('role')).toBe('alert')
-  expect(error?.textContent).toBe(
-    withError ? `BUDGET_EXCEEDED：${message}` : '本次执行未完成（budget），暂未收到具体错误信息。',
-  )
+  expect(error?.textContent).toBe('这次执行达到了费用上限。')
   expect(error?.closest('.turn-process, .turn-process-body')).toBeNull()
   expect(error?.querySelector('img, strong')).toBeNull()
   expect(host.querySelector<HTMLElement>('.turn-process')?.dataset.open).toBe('false')
@@ -405,6 +403,55 @@ it.each([true, false])('shows a failed turn reason through the React adapter (%s
     await act(async () => root.render(createElement(FailedTurn, { current })))
     expect(host.querySelector('[data-testid="message-feedback"]')).toBeNull()
   }
+})
+
+it('shows the retry only once the session is live and wires it to the host', async () => {
+  const session = new SessionService(ctx, 'session')
+  const onRetry = vi.fn()
+  const failedTurn: UITurn = {
+    id: 'turn:1',
+    turn: 1,
+    startSeq: 1,
+    endSeq: 3,
+    startedAt: '2026-10-01T00:00:00.000Z',
+    endedAt: '2026-10-01T00:00:01.000Z',
+    status: 'failed',
+    reason: 'error',
+    error: { code: 'TRANSPORT', message: 'status=500' },
+    nodeIds: ['user', 'assistant'],
+    inherited: false,
+    forkable: false,
+    usage: {
+      totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      reasoningComplete: false,
+      billingComplete: false,
+      calls: [],
+    },
+  }
+  const nodes: UINode[] = [user, { kind: 'assistant', id: 'assistant', seq: 2, text: 'earlier progress' }]
+  const store = createConversationProjectionStore({ sessionId: 'session', nodes, turns: [failedTurn] })
+  function FailedTurn() {
+    const projection = useConversationProjection(store)
+    return createElement(WebConversationMessages, {
+      nodes: projection.nodes,
+      registry,
+      session,
+      ...(projection.turns ? { turns: projection.turns } : {}),
+      locale: zhLocaleService(),
+      turnErrorActions: { onRetry },
+    })
+  }
+  await act(async () => root.render(createElement(FailedTurn)))
+  expect(host.querySelector('.turn-error')?.textContent).toBe('连接模型服务失败。状态 500')
+  const findRetry = () =>
+    [...host.querySelectorAll('button')].find((button) => button.textContent === '重试')
+  // A session that is still connecting cannot carry the retry.
+  expect(findRetry()).toBeUndefined()
+  await act(async () => session.setReadiness('ready', 'session'))
+  const retry = findRetry()
+  expect(retry).toBeDefined()
+  await act(async () => retry?.click())
+  expect(onRetry).toHaveBeenCalledWith(expect.objectContaining({ id: 'turn:1' }))
 })
 
 it('keeps each React action footer through replay and history prepend, then retires reused turn IDs across sessions', async () => {

@@ -1,7 +1,8 @@
 import type { HTMLAttributes, ReactNode } from 'react'
-import { useId, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { fallbackT } from '../locales/index.js'
+import { createSelectPicker, type SelectPicker } from '../select-picker.js'
 import { SettingsGroup, SettingsInput, SettingsSelect } from '../settings-layout.js'
 import { presetChoice, type SettingsPreset } from '../settings-values.js'
 import { Icon } from './icon.js'
@@ -135,11 +136,27 @@ export function SettingsPresetSelect({
 }) {
   const [custom, setCustom] = useState(false)
   const choice = custom ? 'custom' : presetChoice(value, presets)
+  const generated = useId()
+  const selectId = id ?? generated
+  const select = useRef<HTMLSelectElement>(null)
+  const picker = useRef<SelectPicker>()
+  useLayoutEffect(() => {
+    if (!select.current) return
+    const created = createSelectPicker(select.current, { label })
+    picker.current = created
+    return () => {
+      picker.current = undefined
+      created.destroy()
+    }
+  }, [label])
+  // The picker mirrors the select, so it is brought up to date after every render.
+  useLayoutEffect(() => picker.current?.sync())
   return (
     <span className="agnes-settings-preset">
       <SettingsSelect
         {...props}
-        id={id}
+        id={selectId}
+        ref={select}
         aria-label={label}
         value={choice}
         disabled={disabled}

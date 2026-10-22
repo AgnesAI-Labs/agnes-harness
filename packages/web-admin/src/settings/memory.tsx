@@ -9,7 +9,7 @@ import {
   SettingsBlock,
   SettingsDrill,
   SettingsItem,
-  SettingsSelect,
+  SettingsPickerSelect,
   SettingsTextArea,
   trackPageRequest,
   useUiText,
@@ -124,9 +124,10 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
         <SettingsItem label={t('noWorkspace')} data-testid="memory-no-workspace" />
       ) : (
         <SettingsItem label={t('workspace')} info={t('workspaceHelp')}>
-          <SettingsSelect
+          <SettingsPickerSelect
             id="memory-workspace"
             data-testid="memory-workspace"
+            label={t('workspace')}
             aria-label={t('workspace')}
             value={cwd}
             disabled={busy}
@@ -144,7 +145,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
                 {workspace.path}
               </option>
             ))}
-          </SettingsSelect>
+          </SettingsPickerSelect>
         </SettingsItem>
       )}
       {inspection && mode && (

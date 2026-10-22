@@ -1,4 +1,5 @@
 import type { LocaleCatalog } from './index.js'
+import { turnErrorLocaleCatalog } from './turn-error.js'
 
 /**
  * 对话区组件文案。key 与 web 包 timeline/turns 域同名同文——宿主注册两个命名空间，
@@ -153,9 +154,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'turn.duration.s': '{n} s',
     'turn.duration.minSec': '{min} min {sec} s',
     'turn.elapsedSuffix': ' · took {duration}',
-    'turn.error.codeJoin': '{code}: {message}',
-    'turn.error.unknownReason': 'unknown reason',
-    'turn.error.noDetail': 'The run did not finish ({reason}); no error details were received.',
+    ...turnErrorLocaleCatalog.en,
     'activity.verb.command': 'Run command',
     'activity.verb.read': 'Read',
     'activity.verb.search': 'Search',
@@ -551,9 +550,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'turn.duration.s': '{n} 秒',
     'turn.duration.minSec': '{min} 分 {sec} 秒',
     'turn.elapsedSuffix': ' · 用时 {duration}',
-    'turn.error.codeJoin': '{code}：{message}',
-    'turn.error.unknownReason': '未知原因',
-    'turn.error.noDetail': '本次执行未完成（{reason}），暂未收到具体错误信息。',
+    ...turnErrorLocaleCatalog['zh-CN'],
     'activity.verb.command': '运行命令',
     'activity.verb.read': '读取',
     'activity.verb.search': '搜索',

@@ -271,26 +271,19 @@
     }
   }
 
-  /* Session list tools sit in the heading row; the filter shows when it hides the active list. */
+  /* Session list tools sit in the heading row; the list itself keeps its own view rows below. */
   .sidebar-section-heading .section-label {
     flex: 1;
     min-width: 0;
   }
-  .sidebar-section-heading .session-filter-on {
-    color: var(--agnes-brand-primary);
-    background: color-mix(in srgb, var(--agnes-brand-primary) 12%, transparent);
-  }
-  .session-filter-unset {
-    width: 1rem;
-    display: inline-block;
-  }
-  .archived-sessions {
+  /* The full-list views: an optional search field, then rows in the same style as the paged list. */
+  .sidebar-inventory {
     min-width: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s4);
   }
-  .archived-search {
+  .sidebar-inventory-search {
     display: flex;
     align-items: center;
     gap: var(--s8);
@@ -302,10 +295,12 @@
     color: var(--agnes-text-tertiary);
     background: var(--agnes-bg-surface);
   }
-  .archived-search:focus-within {
+  .sidebar-inventory-search:focus-within {
     border-color: var(--agnes-brand-primary);
   }
-  .archived-search input,
+  /* The list search and the global session-search palette share one bare field: the container
+     draws the boundary, so the input itself drops its border, fill and font reset. */
+  .sidebar-inventory-search input,
   .session-search-field input,
   .session-search-filters input {
     min-width: 0;
@@ -316,58 +311,37 @@
     background: transparent;
     font: inherit;
   }
-  .archived-search input:focus,
+  .sidebar-inventory-search input {
+    font-size: var(--font-size-sm);
+  }
+  .sidebar-inventory-search input:focus,
   .session-search-field input:focus,
   .session-search-filters input:focus {
     outline: 0;
     box-shadow: none;
   }
-  .archived-search input {
-    font-size: var(--font-size-sm);
+  .sidebar-inventory-search input::-webkit-search-cancel-button {
+    appearance: none;
   }
-  .archived-sessions .session-list-empty {
+  .sidebar-inventory .session-list-empty {
     border: 0;
     background: transparent;
   }
-  .session-search-snippet mark {
-    padding: 0 1px;
-    border-radius: var(--radius-xs);
-    color: inherit;
-    background: color-mix(in srgb, var(--agnes-brand-primary) 18%, transparent);
+  .sidebar-inventory-loading {
+    margin: 0 var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
   }
-  .archived-session-list {
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: var(--s2);
-    list-style: none;
+  .sidebar-inventory-error {
+    margin: 0 var(--s8);
+    color: var(--agnes-status-danger-text);
+    font-size: var(--font-size-xs);
+    overflow-wrap: anywhere;
   }
-  .archived-session {
-    min-width: 0;
-    min-height: 2rem;
-    display: flex;
-    align-items: center;
-    gap: var(--s4);
-    padding: var(--s2) var(--s2) var(--s2) var(--s8);
-    border-radius: var(--radius-control);
-  }
-  .archived-session:hover {
-    background: var(--agnes-bg-hover);
-  }
-  .archived-session-copy {
-    min-width: 0;
-    flex: 1;
-    display: grid;
-  }
-  .archived-session-copy .session-title {
-    overflow: hidden;
-    color: var(--agnes-text-primary);
-    font-size: var(--font-size-sm);
-    line-height: 1.25rem;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .archived-session-workspace {
+  /* Marks the full-list views add to the shared row: the workspace name, pin and archived state. */
+  .session-workspace-label {
+    max-width: 45%;
+    margin-left: auto;
     overflow: hidden;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
@@ -375,13 +349,49 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .archived-sessions-error {
-    margin: 0 var(--s8);
-    color: var(--agnes-status-danger-text);
-    font-size: var(--font-size-xs);
-    overflow-wrap: anywhere;
+  .session-pin-mark,
+  .session-archive-mark {
+    width: 0.75rem;
+    height: 0.75rem;
+    flex: none;
+    margin-left: var(--s4);
+    color: var(--agnes-text-tertiary);
   }
-
+  /* An archived row stays readable but visibly secondary; opening it is still allowed. */
+  .session-row[data-archived="true"] .session-title {
+    color: var(--agnes-text-tertiary);
+  }
+  .session-row[data-archived="true"]:hover .session-title,
+  .session-row[data-archived="true"]:focus-within .session-title {
+    color: var(--agnes-text-secondary);
+  }
+  /* The restore action stays out of the way until the row is pointed at, focused, or restoring. */
+  .session-restore {
+    width: 1.5rem;
+    min-width: 1.5rem;
+    height: 1.5rem;
+    min-height: 1.5rem;
+    padding: 0;
+    flex: none;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .session-row:hover .session-restore,
+  .session-row:focus-within .session-restore,
+  .session-restore[aria-busy="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* Touch has no durable hover target: expose the restore action and keep a tappable row height. */
+  @media (max-width: 720px) {
+    .session-row {
+      min-height: var(--control-height-touch);
+    }
+    .session-restore {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
   /* Session search: a palette. One field, results below it, keys along the bottom. */
   .session-search-dialog .ant-modal-container,
   .session-search-dialog .ant-modal-content {
@@ -410,8 +420,7 @@
     height: 3rem;
     font-size: var(--font-size-md);
   }
-  .session-search-field input::-webkit-search-cancel-button,
-  .archived-search input::-webkit-search-cancel-button {
+  .session-search-field input::-webkit-search-cancel-button {
     appearance: none;
   }
   .session-search-filters {
@@ -495,6 +504,14 @@
     -webkit-line-clamp: 2;
     line-clamp: 2;
     overflow-wrap: anywhere;
+  }
+  /* The index marks matched runs with `[match]`; the palette tints them instead of using the
+     browser's default yellow, which does not follow either theme. */
+  .session-search-snippet mark {
+    padding: 0 1px;
+    border-radius: var(--radius-xs);
+    color: inherit;
+    background: color-mix(in srgb, var(--agnes-brand-primary) 18%, transparent);
   }
   .session-search-count {
     color: var(--agnes-text-tertiary);

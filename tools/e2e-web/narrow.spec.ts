@@ -5,7 +5,16 @@ import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
 import { prompt, toolResult } from './sdk.js'
-import { advanced, closeSettings, expand, preferences, section, settings, workbenchTab } from './ui.js'
+import {
+  advanced,
+  closeSettings,
+  expand,
+  preferences,
+  section,
+  selectValue,
+  settings,
+  workbenchTab,
+} from './ui.js'
 
 const phone = { width: 375, height: 812 }
 const tablet = { width: 768, height: 1024 }
@@ -559,7 +568,7 @@ for (const locale of ['en', 'zh-CN'])
             await section(page, id)
             if (id === 'memory') {
               await expect(page.getByTestId('memory-panel')).toHaveAttribute('aria-busy', 'false')
-              await page.getByTestId('memory-workspace').selectOption(await realpath(runtime.workspace))
+              await selectValue(page, 'memory-workspace', await realpath(runtime.workspace))
               await page.getByTestId('memory-open').click()
               await expect(page.getByTestId('memory-content')).toBeVisible()
             }

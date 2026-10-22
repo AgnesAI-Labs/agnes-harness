@@ -12,7 +12,7 @@ import {
   useDocumentLanguage,
   useResource,
 } from '@agnes/web-ui'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PluginAdminApi } from '../admin/plugins/api.js'
 import { ApplicationChoice } from './application-choice.js'
 import { ApplicationPreviewSummary } from './application-preview.js'
@@ -37,8 +37,13 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
     if (resourceKey) setResource(resourceKey, next)
   }
   const [preview, setPreview] = useState<ApplicationPreview>()
+  const previewRef = useRef<HTMLElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // The review opens below the candidate list; bring it into view the way the dialog it replaced did.
+  useEffect(() => {
+    if (preview) previewRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [preview])
   const refresh = resource.reload
   // biome-ignore lint/correctness/useExhaustiveDependencies: scope changes retire pending callbacks and reset their UI state.
   useEffect(() => {
@@ -165,7 +170,7 @@ export function ApplicationPanel({ api, canSave }: { api?: PluginAdminApi | unde
           )}
         </SettingsSection>
         {preview && (
-          <section aria-label={tr('Application consent preview', '应用采纳预览')}>
+          <section ref={previewRef} aria-label={tr('Application consent preview', '应用采纳预览')}>
             <h3>{tr('Review application', '审阅应用')}</h3>
             <ApplicationPreviewSummary preview={preview} application />
             <p className="agnes-settings-note">

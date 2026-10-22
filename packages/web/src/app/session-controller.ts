@@ -155,15 +155,6 @@ export function createSessionController(
               context.client.session.open(sessionId, {
                 ...options,
                 ...(workspaceHint ? { cwd: workspaceHint } : {}),
-                onProgress: (progress) => {
-                  if (context.sessionBinding.isCurrent(epoch) && !context.current)
-                    context.readOnlyController.progress(
-                      id,
-                      progress.phase,
-                      progress.verifiedSeq,
-                      progress.lastSeq,
-                    )
-                },
               }),
             id,
             permission,
