@@ -13,6 +13,7 @@ export {
   NONE_BACKEND,
   type RuntimeBackend,
   SEATBELT_BACKEND,
+  SEATBELT_COMPAT_BACKEND,
 } from './backend-runtime.js'
 export { bwrapConfine } from './backends/bwrap.js'
 export { seatbeltConfine } from './backends/seatbelt.js'
