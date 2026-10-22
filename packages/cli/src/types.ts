@@ -57,7 +57,7 @@ export type ParsedArgs = {
   /** Everything after a forwarded command, untouched: that command owns its own grammar. */
   rest: string[]
   print: boolean
-  mode?: 'text' | 'json' | 'acp'
+  mode?: 'text' | 'json' | 'stream-json' | 'acp'
   help: boolean
   yes?: boolean
   version: boolean

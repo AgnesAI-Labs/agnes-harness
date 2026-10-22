@@ -5,7 +5,7 @@ import type { Session } from '@agnes/sdk'
 import { CommandError, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageError } from '../errors.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { readPromptInput } from './prompt-input.js'
-import { cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
+import { cliEventLine, cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
 
 export type PrintIO = {
   stdout: NodeJS.WritableStream
@@ -161,6 +161,10 @@ function errorCause(error: unknown, locale = 'en'): string {
  */
 export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Promise<number> {
   refuseWhatCannotBeHonoured(p)
+  // Both machine modes keep stderr quiet; stream-json only adds one stdout line per event.
+  const machine = p.mode === 'json' || p.mode === 'stream-json'
+  // Switched off before the result line so a late row cannot land after it.
+  let streaming = p.mode === 'stream-json'
 
   const blocks = await readPromptInput({
     positional: (p.command === 'resume' ? p.positional.slice(1) : p.positional).join(' '),
@@ -172,8 +176,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
   const signalledBeforePrompt = (): number | undefined => {
     const signal = io.signal?.()
     if (!signal) return undefined
-    if (p.mode !== 'json')
-      io.stderr.write(`agh: ${signal}; prompt not sent (exit ${SIGNAL_EXIT_CODES[signal]})\n`)
+    if (!machine) io.stderr.write(`agh: ${signal}; prompt not sent (exit ${SIGNAL_EXIT_CODES[signal]})\n`)
     return SIGNAL_EXIT_CODES[signal]
   }
   const early = signalledBeforePrompt()
@@ -215,7 +218,8 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
       for await (const e of session.events()) {
         if (e.seq <= startSeq) continue
         events.push(e)
-        if (p.mode !== 'json') {
+        if (streaming) io.stdout.write(cliEventLine(e))
+        if (!machine) {
           if (e.type === 'tool/call') {
             const call = e.data as ToolCall
             toolNames.set(call.toolUseId, call.name)
@@ -276,8 +280,9 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     const exitCode = signal ? SIGNAL_EXIT_CODES[signal] : exitCodeForReason(reason)
     const ticket = reason === 'parked' ? findParkedTicket(events) : undefined
     const text = lastAssistantText(events)
-    if (p.mode === 'json') {
-      // JSON mode writes only the result line; stream mode emits per-event JSONL.
+    streaming = false
+    if (machine) {
+      // The result line is last in both machine modes; stream-json has already written the events.
       io.stdout.write(
         cliResultLine({
           sessionId: session.id,
@@ -299,7 +304,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     // retry at all -- so a wrapper reading the integer alone either retries forever or gives up on a
     // turn that would have succeeded. The word is what tells them apart. An `error` turn also names
     // its cause: without it the caller cannot tell a bad key from an unknown model from an outage.
-    if (exitCode !== 0 && p.mode !== 'json') {
+    if (exitCode !== 0 && !machine) {
       const cause = errorCause((ended?.data as { error?: unknown } | null)?.error ?? thrownError, io.locale)
       io.stderr.write(
         `agh: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}\n`,

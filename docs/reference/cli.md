@@ -19,7 +19,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh run --bundle ID_OR_PATH --input FILE_OR_DASH --json [--batch]` | Fresh headless sessions and versioned JSONL; see [headless runs](../guide/headless.md) |
 | `agh [prompt]` | TUI in a TTY; print outside a TTY |
 | `agh -p [prompt]` | One-shot task with piped input support |
-| `agh --mode text\|json` | Selects print automatically; ACP is separate |
+| `agh --mode text\|json\|stream-json` | Selects print automatically (`stream-json`: one event line per event, then the result line); ACP is separate |
 | `agh --model main=ROUTE/MODEL` | Explicit slot and route/model from the runtime catalog |
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | Ordinary run options; not all forwarded subcommands accept them. `LEVEL` is `read-only`, `workspace-write`, `full-access` or `default` (the deployment default) and applies to a new session only |
 | `agh --continue` / `agh --resume ID` | Mutually exclusive; resume recent/specified session |
@@ -50,7 +50,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 
 `--preset` selects the recipe (`standard`, `minimal`, `ptc` or another allowed preset) and `--permission` what the session may do; any allowed pair combines, for example `agh --preset ptc --permission read-only` or just `agh --permission read-only`. Retired permission-as-preset aliases (`read-only`, `workspace-write`, `full-access`) are refused; use an explicit recipe and permission. Omitting permission or choosing `default` follows the deployment default. See [permissions and presets](../guide/security.md#permissions-and-presets).
 
-Print output is chosen with `--mode text|json`. Waiting for approval is a profile setting (`limits."approval.park"`), not a flag. See [CLI usage](../guide/cli.md) for exit codes. There is no `--session` or plaintext API-key flag.
+Print output is chosen with `--mode text|json|stream-json`. Waiting for approval is a profile setting (`limits."approval.park"`), not a flag. See [CLI usage](../guide/cli.md) for exit codes. There is no `--session` or plaintext API-key flag.
 
 <a id="控制面"></a>
 

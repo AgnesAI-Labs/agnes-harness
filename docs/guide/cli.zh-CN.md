@@ -14,9 +14,10 @@ CLI 适合把 AGH 接到日常终端和脚本中；TUI 适合持续对话、检�
 node agnes.mjs -p "解释当前项目"
 printf '%s\n' '请总结这段文本' | node agnes.mjs -p
 node agnes.mjs --mode json "解释当前项目"
+node agnes.mjs --mode stream-json "解释当前项目"
 ```
 
-`--mode json` 自动选择 print 模式；JSON 输出适合程序消费，stderr 仍可能含运行时警告。检查进程退出码，不能把收到部分文本当成功。一次性调用只有在配置里设置了 `limits."approval.park"` 时才会为等待审批而挂起；挂起后输出 `parked ticket=… session=…`，退出码为 3。命令行参数 `--park` 会被拒绝。不带可用审批交互的脚本不能自行批准危险操作。
+`--mode json` 和 `--mode stream-json` 自动选择 print 模式。`--mode stream-json` 每收到一个会话事件就输出一行 `{"schema":"agnes-cli-event/v1","event":{…}}`（event 是会话事件信封），最后一行永远是 `--mode json` 同样的 `agnes-cli-result/v1` 结果行；退出码和 stderr 不变。两种格式都是 `v1`：可能新增字段，已有字段的含义不变。JSON 输出适合程序消费，stderr 仍可能含运行时警告。检查进程退出码，不能把收到部分文本当成功。一次性调用只有在配置里设置了 `limits."approval.park"` 时才会为等待审批而挂起；挂起后输出 `parked ticket=… session=…`，退出码为 3。命令行参数 `--park` 会被拒绝。不带可用审批交互的脚本不能自行批准危险操作。
 
 默认连接或启动本地共享 daemon。`--connect TARGET` 是显式连接，失败不回退；`--standalone` 为嵌入式，`--ephemeral` 为显式临时执行。ACP 入口为 `acp` 或 `--mode acp`，不能推定其生命周期与普通共享 daemon 模式一致。
 

@@ -17,6 +17,13 @@ export function cliResultLine(o: CliResult): string {
   return `${JSON.stringify({ v: RESULT_V, ...o })}\n`
 }
 
+export const EVENT_V = 'agnes-cli-event/v1' as const
+
+/** One session event per line, as it arrives: what `--mode stream-json` writes before the result line. */
+export function cliEventLine(event: EventEnvelope): string {
+  return `${JSON.stringify({ schema: EVENT_V, event })}\n`
+}
+
 /**
  * The current unanswered decision a parked turn left behind. Read only each handle's latest
  * state so an answered, consumed or invalidated request cannot revive its earlier open state.

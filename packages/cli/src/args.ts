@@ -130,7 +130,7 @@ const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create
 })
 
 const ENUMS: Record<string, string[]> = Object.assign(Object.create(null), {
-  mode: ['text', 'json', 'acp'],
+  mode: ['text', 'json', 'stream-json', 'acp'],
   format: ['agnes', 'sharegpt', 'claude-code'],
   from: ['claude-code', 'codex', 'pi', 'auto'],
   permission: ['read-only', 'workspace-write', 'full-access', 'default'],
@@ -250,7 +250,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
   // Both printing modes select the one-shot form. Only acp does not, because it is a third form
   // rather than a way of printing, and resolveMode reads it as such.
-  if (p.mode === 'json' || p.mode === 'text') p.print = true
+  if (p.mode === 'json' || p.mode === 'stream-json' || p.mode === 'text') p.print = true
   if (p.agent && (p.loop || p.preset || p.permission))
     throw new UsageError('--agent cannot be combined with --loop, --preset or --permission')
   if (p.agent && (p.continue || p.resume !== undefined || p.command === 'resume' || p.key !== undefined))
@@ -299,7 +299,7 @@ export function resolveMode(
   // Read off `mode` here as well as off `print`, rather than trusting parseArgs to have set print
   // for the two printing modes. A caller that builds a ParsedArgs by hand -- a test, a later
   // command that reuses the type -- would otherwise get a TUI out of `--mode json`.
-  if (p.mode === 'text' || p.mode === 'json') return 'print'
+  if (p.mode === 'text' || p.mode === 'json' || p.mode === 'stream-json') return 'print'
   // Either end not being a terminal is enough: a piped stdin has nobody to type into the TUI, and a
   // redirected stdout would be filled with cursor movement instead of an answer.
   if (p.print || !tty.stdin || !tty.stdout) return 'print'

@@ -15,7 +15,7 @@
 | `agh run --bundle ID_OR_PATH --input FILE_OR_DASH --json [--batch]` | 新会话无界面运行和版本化 JSONL，见[指南](../guide/headless.zh-CN.md) |
 | `agh [prompt]` | TTY 为 TUI；非 TTY 为 print |
 | `agh -p [prompt]` | 一次性任务，读取管道输入 |
-| `agh --mode text\|json` | 自动 print；ACP 为单独模式 |
+| `agh --mode text\|json\|stream-json` | 自动 print（`stream-json`：每个事件一行，最后是结果行）；ACP 为单独模式 |
 | `agh --model main=ROUTE/MODEL` | 显式槽位与运行目录中的路由/模型 |
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | 普通运行选项，不是所有转发子命令均支持。`LEVEL` 为 `read-only`、`workspace-write`、`full-access` 或 `default`（部署默认），只作用于新会话 |
 | `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话 |
@@ -46,7 +46,7 @@
 
 `--preset` 选择配方（`standard`、`minimal`、`ptc` 或其他允许的预设），`--permission` 选择会话能做什么；任何允许的组合均可，例如 `agh --preset ptc --permission read-only`，或只写 `agh --permission read-only`。旧的权限配方别名（`read-only`、`workspace-write`、`full-access`）已拒绝，请分别指定配方与权限。省略权限或选择 `default` 均跟随部署默认值。见[权限与预设](../guide/security.zh-CN.md#permissions-and-presets)。
 
-Print 输出用 `--mode text|json` 选择；等待审批是配置项（`limits."approval.park"`），不是命令行参数。退出码见[CLI 指南](../guide/cli.zh-CN.md)。当前无 `--session` 或命令行明文 API key 开关。
+Print 输出用 `--mode text|json|stream-json` 选择；等待审批是配置项（`limits."approval.park"`），不是命令行参数。退出码见[CLI 指南](../guide/cli.zh-CN.md)。当前无 `--session` 或命令行明文 API key 开关。
 
 ## 控制面
 

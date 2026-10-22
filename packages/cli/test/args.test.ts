@@ -45,6 +45,7 @@ describe('parseArgs: the common forms', () => {
   it('--mode selects the one-shot form on its own, for both of its printing values', () => {
     expect(parseArgs(['--mode', 'json']).print).toBe(true)
     expect(parseArgs(['--mode', 'text']).print).toBe(true)
+    expect(parseArgs(['--mode', 'stream-json']).print).toBe(true)
     // acp is a third form, not a printing one, so it does not set print.
     expect(parseArgs(['--mode', 'acp']).print).toBe(false)
   })
@@ -240,7 +241,7 @@ describe('parseArgs: every rejection says which check fired', () => {
     [['--profile'], '--profile needs a value'],
     [['--profile', '--preset', 'b'], '--profile needs a value'],
     [['--mode'], '--mode needs a value'],
-    [['--mode', 'rpc'], '--mode must be one of text|json|acp'],
+    [['--mode', 'rpc'], '--mode must be one of text|json|stream-json|acp'],
     [['--format', 'yaml'], '--format must be one of agnes|sharegpt|claude-code'],
     [['--from', 'aider'], '--from must be one of claude-code|codex|pi|auto'],
     [['--permission', 'root'], '--permission must be one of read-only|workspace-write|full-access|default'],

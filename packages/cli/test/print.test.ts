@@ -138,6 +138,36 @@ describe('runPrint in text mode', () => {
       expect(code).toBe(4)
       expect(JSON.parse(o.out())).toMatchObject({ reason: 'blocked', exitCode: 4, lastSeq: 3 })
     })
+
+    it.each([
+      ['completed', 0, { reply: 'done' }],
+      ['parked', 3, { parkedTicket: 'tk-9' }],
+    ])(
+      'stream-json writes each event as its own line before the %s result line',
+      async (reason, code, extra) => {
+        const o = io()
+        const ep = scriptedEndpoint({ reason, rowsAfterReply, ...extra })
+        const got = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', 'stream-json']), o)
+        expect(got).toBe(code)
+        const lines = o
+          .out()
+          .trimEnd()
+          .split('\n')
+          .map((line) => JSON.parse(line))
+        const result = lines.at(-1)
+        expect(result).toMatchObject({ v: 'agnes-cli-result/v1', reason, exitCode: code })
+        const events = lines.slice(0, -1)
+        expect(events.length).toBeGreaterThan(0)
+        for (const line of events)
+          expect(line).toMatchObject({ schema: 'agnes-cli-event/v1', event: { type: expect.any(String) } })
+        expect(events.at(-1).event.type).toBe('turn/end')
+        expect(events.map((l) => l.event.seq)).toEqual(
+          [...events.map((l) => l.event.seq)].sort((a, b) => a - b),
+        )
+        // stderr follows the json rules: the session line only, no reason word.
+        expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+      },
+    )
   })
 
   // daemon raises TURN_ERROR rather than answering with an ACP stop reason it has no member for, so
