@@ -1,5 +1,5 @@
 import type { ToolDetailState } from '@agnes/cli-tui'
-import { childFacts } from '@agnes/cli-tui'
+import { childFacts, groupRuns, groupTitle, Timeline, ToolCards } from '@agnes/cli-tui'
 import type { UINode, UITimeline } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
@@ -461,4 +461,93 @@ it('shows +a -b after an edit title and no preview, then the diff when expanded'
   expect(new ToolCard(cut, { collapsed: false, detail: () => fetched }).render(60).join('\n')).toContain(
     '3 + three',
   )
+})
+
+const call = (n: number, name: string, over: Partial<typeof node> = {}): typeof node => ({
+  ...node,
+  id: `t${n}`,
+  seq: n,
+  name,
+  summary: `${name} ${n}`,
+  ...over,
+})
+const tools = (...names: string[]) => names.map((name, i) => call(i + 1, name))
+
+it('groups consecutive read-only calls, breaks at any other call and leaves a lone call alone', () => {
+  const nodes = [...tools('read', 'grep', 'shell', 'read', 'ls', 'find', 'edit', 'read')] as UINode[]
+  expect(groupRuns(nodes).map((run) => run.map((n) => (n as { name: string }).name))).toEqual([
+    ['read', 'grep'],
+    ['shell'],
+    ['read', 'ls', 'find'],
+    ['edit'],
+    ['read'],
+  ])
+  // Nodes that draw nothing do not end a run; a message does.
+  const cost = { kind: 'cost', id: 'c', seq: 9 } as unknown as UINode
+  const text = { kind: 'assistant', id: 'a', seq: 10, text: 'hi' } as UINode
+  const [a, b] = tools('read', 'grep') as [UINode, UINode]
+  expect(groupRuns([a, cost, b]).map((run) => run.length)).toEqual([2])
+  expect(groupRuns([a, text, b]).map((run) => run.length)).toEqual([1, 1, 1])
+})
+
+it('titles a group by what its calls did, in either language', () => {
+  const mix = tools('read', 'read', 'read', 'read', 'grep', 'find', 'ls')
+  expect(groupTitle(mix, 'zh-CN')).toBe('已读取 4 个文件 · 搜索 2 次 · 列出 1 个目录')
+  expect(groupTitle(tools('read', 'grep'), 'en')).toBe('Read 1 file · Searched once')
+})
+
+it('draws a group as one head row and lists each call head when opened, by click or Ctrl-O', () => {
+  const nodes = [call(1, 'read', { status: 'failed' }), call(2, 'grep'), call(3, 'read')]
+  const cards = new ToolCards({
+    ansi: A,
+    locale: 'en',
+    session: () => ({ id: 's', readToolDetail: async () => ({ call: {} as never }) }),
+    closed: () => false,
+    changed() {},
+    onAction() {},
+  })
+  cards.sync({ nodes, turns: [] } as unknown as UITimeline)
+  const group = cards.group(nodes)
+  expect(group.render(60)).toHaveLength(1)
+  expect(group.render(60)[0]).toContain('Read 2 files · Searched once')
+  group.clickHead()
+  const open = group.render(60)
+  expect(open).toHaveLength(4)
+  expect(open.slice(1).map((row) => row.trim().slice(0, 12))).toEqual([
+    '✗ read  read',
+    '◆ grep  grep',
+    '◆ read  read',
+  ])
+  expect(open.every((row) => displayWidth(row) === 60)).toBe(true)
+  // A rebuilt group keeps its state, and Ctrl-O on the latest call closes the group that shows it.
+  expect(cards.group(nodes).collapsed).toBe(false)
+  cards.toggleLatest()
+  expect(cards.group(nodes).collapsed).toBe(true)
+})
+
+it('turns a run into one timeline entry and keeps the click on its head row', () => {
+  const timeline = new Timeline({
+    rows: () => 20,
+    nodeView: (n) => ({ render: () => [(n as { name: string }).name], invalidate() {} }),
+    groupView: (ns) => ({
+      render: () => [`group of ${ns.length}`, 'second row'],
+      clickHead() {
+        clicked++
+      },
+      invalidate() {},
+    }),
+  })
+  let clicked = 0
+  timeline.apply({
+    sessionId: 's',
+    upto: 4,
+    generation: 1,
+    opState: null,
+    turns: [],
+    nodes: tools('read', 'grep', 'shell', 'read'),
+  } as unknown as UITimeline)
+  expect(timeline.render(30).map((r) => r.trimEnd())).toEqual(['group of 2', 'second row', 'shell', 'read'])
+  expect(timeline.click(1)).toBe(false)
+  expect(timeline.click(0)).toBe(true)
+  expect(clicked).toBe(1)
 })

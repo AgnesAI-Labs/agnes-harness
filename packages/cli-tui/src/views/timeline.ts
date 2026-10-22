@@ -1,10 +1,11 @@
 import type { UINode, UITimeline } from '@agnes/protocol'
 import type { Component } from '../component.js'
 import { tt } from '../locale-extended.js'
+import { groupRuns } from '../tool-groups.js'
 
 export const TIMELINE_RESERVED_ROWS = 5
 
-type Entry = { signature: string; node: UINode; view: Component }
+type Entry = { signature: string; nodes: UINode[]; view: Component }
 type LocalEntry = { afterSeq: number; view: Component }
 
 /** A fullscreen viewport over core's projected nodes; it never reduces ledger events itself. */
@@ -29,6 +30,8 @@ export class Timeline implements Component {
       reservedRows?(): number
       locale?: string
       nodeView(node: UINode): Component
+      /** One view for a run of consecutive read-only tool calls; without it every call keeps its own card. */
+      groupView?(nodes: UINode[]): Component
       /** Startup banner, part of the scrollable viewport but not the exit transcript. */
       top?: Component
     },
@@ -45,20 +48,27 @@ export class Timeline implements Component {
     }
     const next = new Map<string, Entry>()
     const ordered: Entry[] = []
-    for (const node of timeline.nodes) {
-      const signature = JSON.stringify(node)
-      const previous = this.entries.get(node.id)
+    for (const nodes of this.o.groupView ? groupRuns(timeline.nodes) : timeline.nodes.map((n) => [n])) {
+      const first = nodes[0] as UINode
+      const signature = JSON.stringify(nodes)
+      const previous = this.entries.get(first.id)
       const entry =
         previous?.signature === signature
           ? previous
-          : { signature, node: structuredClone(node), view: this.o.nodeView(structuredClone(node)) }
-      next.set(node.id, entry)
+          : { signature, nodes: structuredClone(nodes), view: this.build(structuredClone(nodes)) }
+      next.set(first.id, entry)
       ordered.push(entry)
     }
     this.entries = next
     this.ordered = ordered
     this.upto = timeline.upto
     this.hasEarlier = options.hasEarlier ?? this.hasEarlier
+  }
+
+  private build(nodes: UINode[]): Component {
+    return nodes.length > 1 && this.o.groupView
+      ? this.o.groupView(nodes)
+      : this.o.nodeView(nodes[0] as UINode)
   }
 
   /** Whether the startup banner is what the viewport currently opens with (nothing to show above it). */
@@ -121,8 +131,8 @@ export class Timeline implements Component {
   refreshViews(): void {
     const next = new Map<string, Entry>()
     this.ordered = this.ordered.map((entry) => {
-      const replacement = { ...entry, view: this.o.nodeView(structuredClone(entry.node)) }
-      next.set(entry.node.id, replacement)
+      const replacement = { ...entry, view: this.build(structuredClone(entry.nodes)) }
+      next.set((entry.nodes[0] as UINode).id, replacement)
       return replacement
     })
     this.entries = next
@@ -136,7 +146,7 @@ export class Timeline implements Component {
     const pushLocal = () => content.push(...rows((this.local[localIndex++] as LocalEntry).view))
     if (!plain) this.heads = []
     for (const entry of this.ordered) {
-      const seq = entry.node.seq ?? Number.POSITIVE_INFINITY
+      const seq = entry.nodes[0]?.seq ?? Number.POSITIVE_INFINITY
       while ((this.local[localIndex]?.afterSeq ?? Number.POSITIVE_INFINITY) < seq) pushLocal()
       if (!plain && entry.view.clickHead) this.heads.push({ row: content.length, view: entry.view })
       content.push(...rows(entry.view))

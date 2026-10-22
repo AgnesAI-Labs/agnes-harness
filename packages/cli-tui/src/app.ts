@@ -208,6 +208,7 @@ export class TuiApp {
       // switch (`/new`, `/resume`, `/rewind`) reuses it. It scrolls inside the fullscreen
       // viewport, never into the shell's history.
       top: this.welcome.banner,
+      groupView: (nodes) => this.cards.group(nodes),
       nodeView: (node) => {
         if (node.kind === 'tool') return this.cards.view(node)
         if (node.kind === 'approval') {
