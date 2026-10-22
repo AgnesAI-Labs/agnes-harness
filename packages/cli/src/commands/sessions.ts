@@ -23,7 +23,9 @@ function json(page: PageSessionMeta): string {
 
 function line(item: PageSessionMeta['items'][number]): string {
   const preset = item.preset ?? 'default'
-  return `${item.sessionId}\t${item.lastSeq}\t${preset}${item.pinnedAt ? '\tpinned' : ''}`
+  // Columns 1-3 keep their place for scripts that cut by number; the rest only ever append.
+  const pinned = item.pinnedAt ? 'pinned' : '-'
+  return `${item.sessionId}\t${item.lastSeq}\t${preset}\t${pinned}\t${item.lastMessageAt ?? item.createdAt}\t${oneLine(item.title)}`
 }
 
 const inert = oneLine

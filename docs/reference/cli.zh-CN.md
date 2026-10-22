@@ -20,7 +20,7 @@
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | 普通运行选项，不是所有转发子命令均支持。`LEVEL` 为 `read-only`、`workspace-write`、`full-access` 或 `default`（部署默认），只作用于新会话 |
 | `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话 |
 | `agh resume ID [-p prompt]` | 恢复入口 |
-| `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | 列表（置顶行带标记，`--archived` 只看已归档）/详情 |
+| `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | 列表，每个会话一行、制表符分隔：id、最后序号、preset、`pinned` 或 `-`、最近活动时间（最后一条消息，没有则取创建时间）、标题；`--archived` 只看已归档；机器契约用 `--json` / 详情 |
 | `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | 会话偏好；`--json` 输出已保存的偏好 |
 | `agh sessions deliverables ID [--json]` / `--save N\|ID [--out PATH] [--force]` | 列出会话交付的文件/下载一个：校验 sha256 与大小，只取名称最后一段路径，目标已存在时须加 `--force` |
 | `agh approvals grants SESSION [--json]` / `agh approvals revoke SESSION GRANT [--json]` | 列出会话生效中的审批授权/撤销一条（需管理员连接，拒绝原样输出）|

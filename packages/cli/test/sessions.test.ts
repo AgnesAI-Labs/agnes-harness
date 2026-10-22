@@ -144,13 +144,23 @@ describe('sessions command', () => {
     expect(await run(['sessions', 'list'], [])).toEqual({ exit: 0, out: 'no sessions\n', err: '' })
   })
 
-  it('list --archived keeps only archived sessions and marks pinned ones', async () => {
+  it('list --archived keeps only archived sessions; columns 4-6 are pinned or -, last activity and the inert title', async () => {
     const items = [
       { ...target, sessionId: 'a', archived: true },
-      { ...target, sessionId: 'b', pinnedAt: '2026-09-12T00:00:00Z' },
+      { ...target, sessionId: 'b', pinnedAt: '2026-09-12T00:00:00Z', lastMessageAt: '2026-09-13T08:00:00Z' },
     ]
-    expect((await run(['sessions', 'list', '--archived'], items)).out).toBe('a\t4\tstandard\n')
-    expect((await run(['sessions', 'list'], items)).out).toBe('a\t4\tstandard\nb\t4\tstandard\tpinned\n')
+    const title = 'red[31m title second line'
+    expect((await run(['sessions', 'list', '--archived'], items)).out).toBe(
+      `a\t4\tstandard\t-\t2026-09-12T00:00:00Z\t${title}\n`,
+    )
+    const listed = (await run(['sessions', 'list'], items)).out
+    expect(listed).toBe(
+      `a\t4\tstandard\t-\t2026-09-12T00:00:00Z\t${title}\nb\t4\tstandard\tpinned\t2026-09-13T08:00:00Z\t${title}\n`,
+    )
+    // The title is one inert line: no control character and no extra row survives.
+    expect(listed.split('\n')).toHaveLength(3)
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting their absence is the point
+    expect(listed).not.toMatch(/[\u0000-\u0008\u000b-\u001f]/)
   })
 
   // One row per verb: which RPC runs with which params, and what the user sees.
