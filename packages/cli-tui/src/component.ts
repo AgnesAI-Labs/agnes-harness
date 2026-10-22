@@ -11,6 +11,8 @@ export interface Component {
   /** Optional plain shell-history form when the fullscreen TUI exits. */
   transcript?(width: number): string[]
   handleInput?(data: string): boolean
+  /** A mouse click on the first row this component drew (a card's head); the viewport repaints after. */
+  clickHead?(): void
   invalidate(): void
 }
 

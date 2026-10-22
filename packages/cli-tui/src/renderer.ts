@@ -55,7 +55,12 @@ function reverseColumns(line: string, from: number, to: number): string {
 }
 
 /** Mouse handling the fullscreen app opts into: wheel rows to scroll by, and selected text to copy. */
-export type RendererMouse = { wheel(rows: number): void; copy(text: string): void }
+export type RendererMouse = {
+  wheel(rows: number): void
+  copy(text: string): void
+  /** A press and release on the same cell; the screen is drawn again after it either way. */
+  click?: ((row: number, col: number) => void) | undefined
+}
 type Cell = { row: number; col: number }
 
 /**
@@ -289,7 +294,10 @@ export class Renderer {
           }).join('\n')
         : ''
       if (text.trim()) mouse.copy(text)
-      else this.selection = undefined
+      else {
+        this.selection = undefined
+        if (!range) mouse.click?.(at.row, at.col)
+      }
     }
     this.requestRender()
   }

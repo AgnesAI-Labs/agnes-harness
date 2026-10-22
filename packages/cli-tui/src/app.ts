@@ -181,6 +181,7 @@ export class TuiApp {
       o.copy ?? systemCopy((s) => o.term.write(s)),
       copyTip(ansi, locale),
       () => this.stopped || this.renderer.requestRender(),
+      (row) => this.timeline.click(row),
     )
     this.welcome = new WelcomeController(o, {
       branding,

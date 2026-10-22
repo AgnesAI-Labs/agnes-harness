@@ -322,6 +322,9 @@ export class ToolCard implements Component {
     this.collapsedState = !this.collapsedState
     if (!this.collapsedState) this.onExpand()
   }
+  clickHead(): void {
+    this.toggle()
+  }
   invalidate(): void {}
   // Numbered actions only fire while the card is expanded, so a collapsed card is inert to
   // digits and the same keystroke reaches whatever else wants it (the editor, most likely).

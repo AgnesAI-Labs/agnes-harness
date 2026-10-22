@@ -736,6 +736,64 @@ it.each([
   }
 })
 
+// A click on a card's head row opens that card, whichever one it is; Ctrl-O keeps toggling the latest.
+it('toggles the clicked tool card by its head row', async () => {
+  const SID = 'agnes:local:default:cli:dm:click'
+  const tool = (n: number) => ({
+    kind: 'tool',
+    id: `t${n}`,
+    seq: n,
+    toolUseId: `c${n}`,
+    name: 'query',
+    status: 'completed',
+    summary: `rows ${n}`,
+    argsPreview: `{"n":${n}}`,
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 2,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [tool(1), tool(2)],
+    }))
+    .on('_agnes/v1/session.readToolDetail', () => {
+      throw rpcError('INTERNAL_ERROR', { reason: 'unused' })
+    })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 20 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(async () => expect((await screenOf(term, 80, 20)).join('\n')).toContain('rows 2'))
+    const click = async (label: string) => {
+      const row = (await screenOf(term, 80, 20)).findIndex((line) => line.includes(label)) + 1
+      expect(row).toBeGreaterThan(0)
+      term.feed(`\x1b[<0;5;${row}M\x1b[<0;5;${row}m`)
+    }
+    await click('rows 1') // the older card, not the latest
+    await vi.waitFor(async () => expect((await screenOf(term, 80, 20)).join('\n')).toContain('{"n":1}'))
+    expect((await screenOf(term, 80, 20)).join('\n')).not.toContain('{"n":2}')
+    await click('query') // the first card's head again closes it
+    await vi.waitFor(async () => expect((await screenOf(term, 80, 20)).join('\n')).not.toContain('{"n":1}'))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 // The plan, subagent and job tools get cards of their own, built from the projected timeline alone:
 // a subagent's state and time come from the trace spans, which change while its node does not.
 it('draws plan, subagent and job cards from the projected timeline', async () => {

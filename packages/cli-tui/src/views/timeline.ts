@@ -17,6 +17,9 @@ export class Timeline implements Component {
   private sessionId: string | undefined
   private hasEarlier = false
   private maxOffset = 0
+  // Where the last frame drew each clickable head: its row among all rows, and the first row shown.
+  private heads: Array<{ row: number; view: Component }> = []
+  private shownFrom = 0
   // How many entries there were when the user scrolled away from the bottom: anything past that is new.
   private leftAt: number | undefined
 
@@ -101,6 +104,13 @@ export class Timeline implements Component {
     return delta < 0 && this.hasEarlier && this.offset >= this.maxOffset
   }
 
+  /** A click on screen row `row` of the viewport: toggles the card whose head is drawn there. */
+  click(row: number): boolean {
+    const head = this.heads.find((h) => h.row === row + this.shownFrom)
+    head?.view.clickHead?.()
+    return head !== undefined
+  }
+
   invalidate(): void {
     this.o.top?.invalidate()
     for (const entry of this.ordered) entry.view.invalidate()
@@ -124,9 +134,11 @@ export class Timeline implements Component {
     let localIndex = 0
     const rows = (view: Component) => (plain ? view.transcript?.(width) : undefined) ?? view.render(width)
     const pushLocal = () => content.push(...rows((this.local[localIndex++] as LocalEntry).view))
+    if (!plain) this.heads = []
     for (const entry of this.ordered) {
       const seq = entry.node.seq ?? Number.POSITIVE_INFINITY
       while ((this.local[localIndex]?.afterSeq ?? Number.POSITIVE_INFINITY) < seq) pushLocal()
+      if (!plain && entry.view.clickHead) this.heads.push({ row: content.length, view: entry.view })
       content.push(...rows(entry.view))
     }
     while (localIndex < this.local.length) pushLocal()
@@ -150,6 +162,9 @@ export class Timeline implements Component {
     this.maxOffset = Math.max(0, rows.length - window)
     this.offset = Math.min(this.offset, this.maxOffset)
     const end = rows.length - this.offset
-    return rows.slice(Math.max(0, end - window), end)
+    this.shownFrom = Math.max(0, end - window)
+    const prefix = rows.length - content.length
+    for (const head of this.heads) head.row += prefix
+    return rows.slice(this.shownFrom, end)
   }
 }
