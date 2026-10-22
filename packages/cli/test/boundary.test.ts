@@ -43,7 +43,9 @@ export function violationFor(rel: string, spec: string): string | null {
     target === 'types.js' ||
     target === 'timing.js' ||
     // Owns the ajv dependency so the fenced modes layer does not import it.
-    target === 'output-schema.js'
+    target === 'output-schema.js' ||
+    // Per-run caps for -p: flag table, range checks and the daemon capability pre-flight.
+    target === 'turn-caps.js'
   )
     return null
   return 'escapes-layer'
@@ -96,6 +98,7 @@ describe('cli layering', () => {
     ['modes/print.ts', './text.js'],
     ['modes/print.ts', '../errors.js'],
     ['modes/print.ts', '../output-schema.js'],
+    ['modes/print.ts', '../turn-caps.js'],
     ['boot/local.ts', '@agnes/host'],
     ['index.ts', '@agnes/daemon'],
   ])('%s importing %s is allowed', (rel, spec) => {

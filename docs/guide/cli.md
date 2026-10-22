@@ -172,6 +172,8 @@ agh completion fish > ~/.config/fish/completions/agh.fish
 | 6 | `--output-schema`: the turn completed but its final reply did not match the schema |
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
+`agh -p --max-budget CREDITS` caps the credits one run may spend. `CREDITS` is a number greater than 0, in the same unit as a preset's per-request credit cap. It is sent with the one prompt as a hard per-turn limit and can only lower the preset's own cap, never raise it. When the turn runs out the run ends with `budget` and exit code 4. With `--continue` or `--resume` it applies to this prompt only. A value that is not a positive number, use without `-p`, or a daemon that does not advertise hard turn budgets exits 2 before the prompt is sent.
+
 A per-run step limit for `agh -p` is not available. It would need a new session or submit field in the protocol, or a change to the shared daemon's configuration, and a one-shot run may do neither. To cap a run, select or export a preset whose definition sets `budget.max_steps` to a positive integer and pass it with `--preset`; the turn then ends with `max_steps` and exit code 5 (see [configuration](../reference/configuration.md)).
 
 Implementation: [arguments and usage](../../packages/cli/src/args.ts), [exit codes](../../packages/cli/src/errors.ts), [TUI commands](../../packages/cli-tui/src/commands.ts).

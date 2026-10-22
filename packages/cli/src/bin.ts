@@ -12,6 +12,7 @@ import { commandHelp } from './command-help.js'
 import type { BranchContext } from './commands/bin-branches.js'
 import { BootError, ExitCode, SIGNAL_EXIT_CODES, type SignalName, UsageError } from './errors.js'
 import { timingMark } from './timing.js'
+import { refuseTurnCapsOutsidePrint } from './turn-caps.js'
 import type { Booted } from './types.js'
 import { versionLine } from './version-line.js'
 
@@ -421,6 +422,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       throw new UsageError(`agh ${mode} is not available in this build; use -p`)
     if (p.outputSchema !== undefined && mode !== 'print')
       throw new UsageError('--output-schema is supported only with -p')
+    refuseTurnCapsOutsidePrint(p, mode)
     // Resolve the selected mode before installing its signal ladder, so loading cannot race cancel.
     const tuiMode = mode === 'tui' ? await import('./modes/tui.js') : undefined
     const acpMode = mode === 'acp' ? await import('./modes/acp.js') : undefined

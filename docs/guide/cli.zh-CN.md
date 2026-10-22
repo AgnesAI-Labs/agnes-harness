@@ -162,6 +162,8 @@ agh completion fish > ~/.config/fish/completions/agh.fish
 | 6 | `--output-schema`：回合已完成，但最终回复不符合 schema |
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
+`agh -p --max-budget CREDITS` 限制一次运行最多花费的额度。`CREDITS` 是大于 0 的数字，单位与 preset 的单次请求额度上限相同。它随这一次提示词作为单回合硬上限发送，只能调低 preset 自身的上限，不能调高。额度用尽时该回合以 `budget` 结束，退出码为 4。与 `--continue` 或 `--resume` 一起使用时，只对这一次提示词生效。值不是正数、没有 `-p`，或 daemon 没有声明支持硬性回合预算时，在发出提示词之前以退出码 2 结束。
+
 `agh -p` 暂不支持按单次运行限制步数。它需要在协议里新增 session 或 submit 字段，或修改共享 daemon 的配置，而一次性运行两者都不应做。要限制步数，请选用或导出在定义里把 `budget.max_steps` 设为正整数的 preset，并用 `--preset` 指定；达到上限后该回合以 `max_steps` 结束，退出码为 5（见[配置参考](../reference/configuration.zh-CN.md)）。
 
 实现依据：[参数与 usage](../../packages/cli/src/args.ts)、[退出码](../../packages/cli/src/errors.ts)、[TUI 命令](../../packages/cli-tui/src/commands.ts)。

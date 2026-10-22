@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { type ParsedArgs, parseArgs, resolveMode, usage } from '../src/args.js'
 import { UsageError } from '../src/errors.js'
+import { refuseTurnCapsOutsidePrint } from '../src/turn-caps.js'
 
 const throws = (argv: string[]): UsageError => {
   try {
@@ -294,6 +295,13 @@ describe('parseArgs: every rejection says which check fired', () => {
     [['--model', '1=gateway/x'], '--model expects <slot>=<route>/<model>'],
   ])('%j is rejected with %s', (argv, message) => {
     expect(throws(argv as string[]).message).toBe(message)
+  })
+
+  it.each([['tui'], ['acp']])('--max-budget is refused outside -p (%s)', (mode) => {
+    expect(() => refuseTurnCapsOutsidePrint(parseArgs(['--max-budget', '1']), mode)).toThrow(
+      '--max-budget is supported only with -p',
+    )
+    expect(() => refuseTurnCapsOutsidePrint(parseArgs(['-p', '--max-budget', '1']), 'print')).not.toThrow()
   })
 
   it('a rejection is a UsageError and carries exit code 2', () => {

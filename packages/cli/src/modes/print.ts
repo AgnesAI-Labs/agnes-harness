@@ -12,6 +12,7 @@ import {
 } from '../errors.js'
 import { checkStructured, loadOutputSchema, schemaInstruction } from '../output-schema.js'
 import { timingMark } from '../timing.js'
+import { parseTurnCaps, requireTurnCaps } from '../turn-caps.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { readPromptInput } from './prompt-input.js'
 import { cliEventLine, cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
@@ -196,6 +197,7 @@ function errorCause(error: unknown, locale = 'en'): string {
  */
 export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Promise<number> {
   refuseWhatCannotBeHonoured(p)
+  const caps = parseTurnCaps(p)
   // Both machine modes keep stderr quiet; stream-json only adds one stdout line per event.
   const machine = p.mode === 'json' || p.mode === 'stream-json'
   // Switched off before the result line so a late row cannot land after it.
@@ -230,6 +232,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
   })
 
   try {
+    await requireTurnCaps(booted.client, caps)
     const session = await openSession(booted, p, io.cwd, io.breadcrumb)
     io.breadcrumb?.write(session.id, io.cwd)
     io.stderr.write(`Session: ${session.id}\n`)
@@ -289,7 +292,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     let threw = false
     let thrownError: unknown
     try {
-      const r = await session.prompt(blocks)
+      const r = await session.prompt(blocks, caps)
       outcome = { reason: r.reason, lastSeq: r.lastSeq, ...(r.credits ? { credits: r.credits } : {}) }
     } catch (e) {
       const reason = reasonFromThrow(e)

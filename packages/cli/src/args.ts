@@ -1,6 +1,7 @@
 import { parseAgentRef, parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol/command-line'
 import { UsageError } from './errors.js'
 import { refusePrivateHostFlags } from './private-host-flags.js'
+import { TURN_CAP_FLAGS } from './turn-caps.js'
 import type { Command, ModelSel, ParsedArgs } from './types.js'
 
 export type { Command, ModelSel, ParsedArgs } from './types.js'
@@ -111,6 +112,7 @@ export const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Objec
   '--text': 'text',
   '--params': 'params',
   '--output-schema': 'outputSchema',
+  ...TURN_CAP_FLAGS,
 })
 
 export const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
@@ -226,13 +228,11 @@ export function parseArgs(argv: string[]): ParsedArgs {
       continue
     }
     if (a === '--model') {
-      i += 1
-      p.model = parseModel(argv[i])
+      p.model = parseModel(argv[++i])
       continue
     }
     if ((a === '--include' || a === '--skip') && p.command === 'doctor') {
-      i += 1
-      const v = argv[i]
+      const v = argv[++i]
       if (v === undefined || v.length === 0 || v.startsWith('-')) throw new UsageError(`${a} needs a value`)
       const key = a === '--include' ? 'include' : 'skip'
       const values = p[key] ?? []

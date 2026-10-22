@@ -309,6 +309,48 @@ describe('runPrint in text mode', () => {
     expect((e as Error).message.startsWith(flag as string)).toBe(true)
   })
 
+  describe('--max-budget', () => {
+    const promptMeta = (ep: FakeEndpoint) =>
+      (
+        ep.calls.find((c) => c.method === 'session/prompt')?.params as
+          | { _meta?: Record<string, unknown> }
+          | undefined
+      )?._meta
+
+    it('travels as the hard credit limit on the one prompt', async () => {
+      const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true } })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '2.5']), io())).toBe(0)
+      expect(promptMeta(ep)).toEqual({ 'ai.agnes.harness': { creditLimit: 2.5 } })
+    })
+
+    it.each([['0'], ['abc'], ['1e3'], ['Infinity'], ['1.'], ['99999999999999999']])(
+      '%s is a usage error and nothing is sent',
+      async (v) => {
+        const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true } })
+        const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', v]), io()).catch(
+          (x: unknown) => x,
+        )
+        expect(e).toMatchObject({ name: 'UsageError', code: 2 })
+        expect(ep.calls.map((c) => c.method)).not.toContain('session/prompt')
+      },
+    )
+
+    it('an older daemon is refused with exit 2 before any session or prompt is sent', async () => {
+      const ep = scriptedEndpoint()
+      const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '1']), io()).catch(
+        (x: unknown) => x,
+      )
+      expect(e).toMatchObject({ name: 'UsageError', code: 2 })
+      expect((e as Error).message).toContain('does not support --max-budget')
+      expect(ep.calls.map((c) => c.method)).not.toContain('session/new')
+    })
+
+    it('a turn that runs out of credits exits 4', async () => {
+      const ep = scriptedEndpoint({ reason: 'budget', harnessCapabilities: { hardTurnBudget: true } })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '1']), io())).toBe(4)
+    })
+  })
+
   it('the two remaining refusals say two different things', async () => {
     const said: string[] = []
     for (const argv of [

@@ -188,6 +188,8 @@ export function scriptedEndpoint(
     toolCall?: { toolUseId: string; name: string; durationMs?: number; outcome?: 'ok' | 'error' | 'aborted' }
     /** The `error` a failed turn's turn/end row carries. */
     turnEndError?: { code: string; message: string }
+    /** What the handshake advertises under `agentCapabilities._meta['ai.agnes.harness']`; none by default, like an older daemon. */
+    harnessCapabilities?: { hardTurnBudget?: boolean; turnMaxSteps?: boolean }
   } = {},
 ): FakeEndpoint {
   const reply = opts.reply ?? 'hello from fake'
@@ -233,7 +235,9 @@ export function scriptedEndpoint(
   return new FakeEndpoint()
     .on('initialize', () => ({
       protocolVersion: 1,
-      agentCapabilities: {},
+      agentCapabilities: opts.harnessCapabilities
+        ? { _meta: { 'ai.agnes.harness': opts.harnessCapabilities } }
+        : {},
       _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
     }))
     .on('_agnes/v1/apis.list', () => ({

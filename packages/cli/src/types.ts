@@ -106,6 +106,8 @@ export type ParsedArgs = {
   all?: boolean
   /** `-p --output-schema`: a JSON Schema file the final reply must satisfy. */
   outputSchema?: string
+  /** `--max-budget` raw value; `-p` only, range-checked by `parseTurnCaps`. */
+  maxBudget?: string
   /** `sessions list --last`: only the most recently active session. */
   last?: boolean
   /** Private host only: also skip hooks, non-built-in plugins and MCP servers (see parseArgs for what is honoured). */
