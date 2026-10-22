@@ -12,6 +12,7 @@ import {
   usePushStack,
 } from '@agnes/web-ui'
 import React from 'react'
+import { GuideButton, GuidePanel } from './guide.js'
 import { relevant } from './lens.js'
 
 export const h = React.createElement
@@ -320,6 +321,8 @@ export function RoleHint({ gate, role, setRole, children }) {
     waiting.map((r) => h(Button, { key: r, size: 'small', onClick: () => setRole(r) }, `切换为 ${r}`)),
   )
 }
+/** Marks the element a demo-guide step can point at (see guide.js); the wrapper adds no styling. */
+export const guided = (id, node) => (node ? h('div', { 'data-guide': id }, node) : node)
 export const idLink = (open) => (id) => h(Button, { appearance: 'link', onClick: () => open(id) }, id)
 
 /** A text-and-bar meter; no chart library. */
@@ -346,7 +349,8 @@ export function Meter({ label, value, tone }) {
  * an open detail page; the header with role switch and refresh belongs to the root page.
  */
 export function Shell({ id, title, description, board, role, setRole, actions, children }) {
-  return h(
+  const jump = React.useContext(JumpContext)
+  const page = h(
     'main',
     { className: 'devboard-app', 'data-devboard-page': id },
     h(
@@ -360,27 +364,37 @@ export function Shell({ id, title, description, board, role, setRole, actions, c
       PushStack,
       { rootTitle: title, historyKey: `devboardPush-${id}` },
       h(ReturnOnReselect, { id }),
-      h(PageHeader, {
-        title,
-        description,
-        actions: h(
-          'div',
-          { className: 'devboard-toolbar' },
-          h(Select, {
-            'aria-label': '演示角色',
-            value: role,
-            onChange: setRole,
-            options: (board.data?.roles ?? [role]).map((r) => ({ value: r, label: `演示角色：${r}` })),
-            style: { minWidth: 190 },
-          }),
-          actions,
-          h(Button, { onClick: board.refresh, disabled: board.busy }, '刷新'),
-        ),
-      }),
+      guided(
+        'page-title',
+        h(PageHeader, {
+          title,
+          description,
+          actions: h(
+            'div',
+            { className: 'devboard-toolbar' },
+            h(Select, {
+              'aria-label': '演示角色',
+              value: role,
+              onChange: setRole,
+              options: (board.data?.roles ?? [role]).map((r) => ({ value: r, label: `演示角色：${r}` })),
+              style: { minWidth: 190 },
+            }),
+            h(GuideButton),
+            actions,
+            h(Button, { onClick: board.refresh, disabled: board.busy }, '刷新'),
+          ),
+        }),
+      ),
       board.data
         ? children
         : h('p', { role: 'status' }, board.error ? '暂无数据，请刷新重试。' : '正在读取看板…'),
     ),
+  )
+  return h(
+    'div',
+    { className: 'devboard-frame' },
+    page,
+    h(GuidePanel, { board, role, setRole, page: id, jump }),
   )
 }
 

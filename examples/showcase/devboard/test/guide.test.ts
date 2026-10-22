@@ -44,6 +44,17 @@ describe('demo guide data', () => {
     }
   })
 
+  it('points every target at an element the pages mark with data-guide', () => {
+    const pages = readdirSync(join(ROOT, 'client'))
+      .filter((f) => f.endsWith('.js') && !f.startsWith('guide'))
+      .map((f) => readFileSync(join(ROOT, 'client', f), 'utf8'))
+      .join('\n')
+    const targets = new Set(allSteps.flatMap((s) => [s.target ?? []].flat()))
+    expect(targets.size).toBeGreaterThan(10)
+    // Pages mark elements as `'data-guide': 'id'` or through the `guided('id', node)` wrapper.
+    for (const id of targets) expect(pages, id).toMatch(new RegExp(`['"]${id}['"]`))
+  })
+
   it('walks the 12-step main line through the live software gates', () => {
     expect(MAIN_STEPS).toHaveLength(12)
     const gates = Object.values(GATE_PROFILES.SOFTWARE as Record<string, Any>).flatMap((s) => s.gates)

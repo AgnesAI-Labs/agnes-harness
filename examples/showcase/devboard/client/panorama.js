@@ -716,7 +716,7 @@ export function Panorama({ data, role: demoRole }) {
       { className: `pano-body${sel ? ' has-drawer' : ''}` },
       h(
         'div',
-        { className: 'pano-plot', ref: wrap },
+        { className: 'pano-plot', ref: wrap, 'data-guide': 'panorama-lanes' },
         rows.length
           ? h(
               'svg',

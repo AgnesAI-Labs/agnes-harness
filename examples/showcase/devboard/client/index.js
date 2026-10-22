@@ -5,7 +5,8 @@ import { h, JumpContext, Shell, useBoard, useRole } from './board.js'
 import { Service, Trials } from './field.js'
 import { Overview, Projects } from './lifecycle.js'
 import { Panorama } from './panorama.js'
-import { Changes, Quality, Tasks, Trace } from './records.js'
+import { Changes, Quality, Tasks } from './records.js'
+import { Trace } from './trace.js'
 
 /** id → [zh title, en title, icon, view, description]; order is the navigation order. */
 const PAGES = {

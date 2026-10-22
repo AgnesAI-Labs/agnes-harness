@@ -5,6 +5,7 @@ import {
   byId,
   day,
   fact,
+  guided,
   HistoryTable,
   h,
   idLink,
@@ -88,18 +89,21 @@ export function Trials({ data, board, role, setRole }) {
     { title: '关联变更', dataIndex: 'changeId', render: (v) => v ?? '—', width: 110 },
     { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
   ]
-  const table = (caption, list, empty) =>
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption,
-      rowKey: 'id',
-      pagination: false,
-      size: 'small',
-      dataSource: list,
-      empty,
-      rowClassName: (t) => (t.result === 'FAIL' && t.state !== 'APPROVED' ? 'devboard-overdue' : ''),
-      columns,
-    })
+  const table = (caption, list, empty, guide) =>
+    guided(
+      guide,
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption,
+        rowKey: 'id',
+        pagination: false,
+        size: 'small',
+        dataSource: list,
+        empty,
+        rowClassName: (t) => (t.result === 'FAIL' && t.state !== 'APPROVED' ? 'devboard-overdue' : ''),
+        columns,
+      }),
+    )
   return h(
     React.Fragment,
     null,
@@ -129,12 +133,14 @@ export function Trials({ data, board, role, setRole }) {
         '试验（型式、例行、工厂验收）',
         rows.filter((t) => t.type !== 'FAI'),
         '没有符合条件的试验',
+        'trials-list',
       ),
     !lens.empty &&
       table(
         '首件检验（FAI）',
         rows.filter((t) => t.type === 'FAI'),
         '没有首件检验记录',
+        'trials-fai',
       ),
     item &&
       h(
@@ -232,7 +238,7 @@ function AlarmChart({ data, faults }) {
   const max = Math.max(1, ...grid.flatMap((g) => g.weeks))
   return h(
     'section',
-    { className: 'devboard-card', 'aria-label': '预警聚合' },
+    { className: 'devboard-card', 'aria-label': '预警聚合', 'data-guide': 'service-alarms' },
     h('h2', null, `预警按信号与周聚合（近 ${WEEKS} 周，每格一周，最右为本周）`),
     h(
       'ul',
@@ -313,45 +319,51 @@ export function Service({ data, board, role, setRole }) {
     lens.empty,
     !lens.empty && h(AlarmChart, { data, faults: inScope }),
     !lens.empty &&
-      h(Table, {
-        captionRepeatsHeading: true,
-        caption: '预警',
-        rowKey: 'id',
-        pagination: false,
-        size: 'small',
-        dataSource: faults,
-        empty: '没有符合条件的预警',
-        columns: [
-          { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'fault')), width: 130 },
-          { title: '信号', dataIndex: 'signal', render: (v) => data.labels.faultSignal[v], width: 100 },
-          { title: '车 / 厢 / 门', render: (_v, f) => `${f.train} / ${f.car} / ${f.door}`, width: 130 },
-          { title: '来源', dataIndex: 'source', render: (v) => data.labels.faultSource[v] ?? v, width: 90 },
-          { title: '健康分', dataIndex: 'healthScore', render: (v) => v ?? '—', width: 70 },
-          { title: '发现时间', dataIndex: 'detectedAt', render: time, width: 140 },
-          { title: '说明', dataIndex: 'detail' },
-          { title: '质量问题', dataIndex: 'problemId', render: (v) => v ?? '—', width: 120 },
-          { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
-        ],
-      }),
+      guided(
+        'service-faults',
+        h(Table, {
+          captionRepeatsHeading: true,
+          caption: '预警',
+          rowKey: 'id',
+          pagination: false,
+          size: 'small',
+          dataSource: faults,
+          empty: '没有符合条件的预警',
+          columns: [
+            { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'fault')), width: 130 },
+            { title: '信号', dataIndex: 'signal', render: (v) => data.labels.faultSignal[v], width: 100 },
+            { title: '车 / 厢 / 门', render: (_v, f) => `${f.train} / ${f.car} / ${f.door}`, width: 130 },
+            { title: '来源', dataIndex: 'source', render: (v) => data.labels.faultSource[v] ?? v, width: 90 },
+            { title: '健康分', dataIndex: 'healthScore', render: (v) => v ?? '—', width: 70 },
+            { title: '发现时间', dataIndex: 'detectedAt', render: time, width: 140 },
+            { title: '说明', dataIndex: 'detail' },
+            { title: '质量问题', dataIndex: 'problemId', render: (v) => v ?? '—', width: 120 },
+            { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
+          ],
+        }),
+      ),
     !lens.empty &&
-      h(Table, {
-        captionRepeatsHeading: true,
-        caption: '质量问题（8D）',
-        rowKey: 'id',
-        pagination: false,
-        dataSource: problems,
-        empty: lens.all ? '暂无质量问题' : '没有与我相关的质量问题',
-        columns: [
-          { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'problem')), width: 130 },
-          { title: '标题', dataIndex: 'title' },
-          { title: '等级', dataIndex: 'severity', width: 60 },
-          { title: '8D 进度', render: (_v, p) => stepChips(p), width: 300 },
-          { title: '根本原因', dataIndex: 'rootCause', render: (v) => v ?? '待分析', width: 220 },
-          { title: '关联变更', dataIndex: 'changeId', render: (v) => v ?? '—', width: 120 },
-          { title: '预警', render: (_v, p) => p.faultIds?.length ?? 0, width: 60 },
-          { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
-        ],
-      }),
+      guided(
+        'service-problems',
+        h(Table, {
+          captionRepeatsHeading: true,
+          caption: '质量问题（8D）',
+          rowKey: 'id',
+          pagination: false,
+          dataSource: problems,
+          empty: lens.all ? '暂无质量问题' : '没有与我相关的质量问题',
+          columns: [
+            { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'problem')), width: 130 },
+            { title: '标题', dataIndex: 'title' },
+            { title: '等级', dataIndex: 'severity', width: 60 },
+            { title: '8D 进度', render: (_v, p) => stepChips(p), width: 300 },
+            { title: '根本原因', dataIndex: 'rootCause', render: (v) => v ?? '待分析', width: 220 },
+            { title: '关联变更', dataIndex: 'changeId', render: (v) => v ?? '—', width: 120 },
+            { title: '预警', render: (_v, p) => p.faultIds?.length ?? 0, width: 60 },
+            { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
+          ],
+        }),
+      ),
     fault &&
       h(
         PushPage,

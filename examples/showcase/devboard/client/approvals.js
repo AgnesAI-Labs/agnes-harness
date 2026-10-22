@@ -6,6 +6,7 @@ import {
   fact,
   gateBadge,
   gateName,
+  guided,
   HistoryTable,
   h,
   NoteField,
@@ -482,44 +483,55 @@ export function MyTodo({ data, board, role, setRole }) {
     h(
       'div',
       { className: 'devboard-todo' },
-      h(TodoColumn, { title: '待我处理', items: pending, empty: `「${role}」当前没有待处理事项。`, open }),
+      guided(
+        'reviews-pending',
+        h(TodoColumn, { title: '待我处理', items: pending, empty: `「${role}」当前没有待处理事项。`, open }),
+      ),
       h(TodoColumn, { title: '我发起的', items: initiated, empty: `「${role}」没有发起过审批。`, open }),
       h(TodoColumn, { title: '已办', items: done, empty: `「${role}」还没有办理记录。`, open }),
     ),
     h('h2', { className: 'devboard-heading' }, '全部审批流程'),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '全部审批流程',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: [...data.approvals].sort(
-        (a, b) =>
-          Number(b.state === 'RUNNING') - Number(a.state === 'RUNNING') ||
-          Date.parse(b.startedAt) - Date.parse(a.startedAt),
-      ),
-      empty: '暂无审批流程',
-      rowClassName: (f) => (f.overdue ? 'devboard-overdue' : ''),
-      columns: [
-        {
-          title: '编号',
-          dataIndex: 'id',
-          render: (id) => h(Button, { appearance: 'link', onClick: () => open(id, 'approval') }, id),
-          width: 120,
-        },
-        { title: '流程', dataIndex: 'template', render: (t) => data.labels.approvalTemplate[t], width: 150 },
-        { title: '对象', render: (_v, f) => subjectLabel(data, f), width: 180 },
-        { title: '项目', dataIndex: 'projectId', width: 120 },
-        {
-          title: '当前节点',
-          render: (_v, f) =>
-            f.state === 'RUNNING'
-              ? `${currentNode(f).name}（待 ${f.waitingRoles.join('、')}）${f.overdue ? ' · 已超时' : ''}`
-              : '—',
-        },
-        { title: '发起人', render: (_v, f) => f.initiator.role, width: 120 },
-        { title: '状态', dataIndex: 'state', render: (s) => flowBadge(data, s), width: 90 },
-      ],
-    }),
+    guided(
+      'reviews-flows',
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: '全部审批流程',
+        rowKey: 'id',
+        pagination: false,
+        dataSource: [...data.approvals].sort(
+          (a, b) =>
+            Number(b.state === 'RUNNING') - Number(a.state === 'RUNNING') ||
+            Date.parse(b.startedAt) - Date.parse(a.startedAt),
+        ),
+        empty: '暂无审批流程',
+        rowClassName: (f) => (f.overdue ? 'devboard-overdue' : ''),
+        columns: [
+          {
+            title: '编号',
+            dataIndex: 'id',
+            render: (id) => h(Button, { appearance: 'link', onClick: () => open(id, 'approval') }, id),
+            width: 120,
+          },
+          {
+            title: '流程',
+            dataIndex: 'template',
+            render: (t) => data.labels.approvalTemplate[t],
+            width: 150,
+          },
+          { title: '对象', render: (_v, f) => subjectLabel(data, f), width: 180 },
+          { title: '项目', dataIndex: 'projectId', width: 120 },
+          {
+            title: '当前节点',
+            render: (_v, f) =>
+              f.state === 'RUNNING'
+                ? `${currentNode(f).name}（待 ${f.waitingRoles.join('、')}）${f.overdue ? ' · 已超时' : ''}`
+                : '—',
+          },
+          { title: '发起人', render: (_v, f) => f.initiator.role, width: 120 },
+          { title: '状态', dataIndex: 'state', render: (s) => flowBadge(data, s), width: 90 },
+        ],
+      }),
+    ),
     h('h2', { className: 'devboard-heading' }, '评审门'),
     h(
       'div',
@@ -542,43 +554,46 @@ export function MyTodo({ data, board, role, setRole }) {
         '只有门要求的审批角色能签署；会签门每个角色各签一次，最后一位签署时需关闭全部意见；编写角色不能审批。',
       ),
     ),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '评审门',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: gates,
-      empty: view === 'pending' ? '没有待决议的评审门' : '暂无已决议的评审门',
-      columns: [
-        {
-          title: '评审点',
-          render: (_v, g) =>
-            h(Button, { appearance: 'link', onClick: () => open(g.id, 'gate') }, gateName(g)),
-          width: 220,
-        },
-        {
-          title: '项目 / 阶段',
-          render: (_v, g) =>
-            `${stage(g)?.projectId} ${stageName(data, stage(g)?.projectId, stage(g)?.stage)}`,
-          width: 240,
-        },
-        { title: '审批角色', render: (_v, g) => g.approverRoles.join('、'), width: 130 },
-        { title: '会签', render: (_v, g) => signProgress(g), width: 160 },
-        { title: '未关闭意见', render: (_v, g) => g.findings.filter((f) => !f.closed).length, width: 70 },
-        { title: '决议', dataIndex: 'decision', render: (d) => gateBadge(data, d), width: 90 },
-        ...(view === 'decided'
-          ? [{ title: '时间', render: (_v, g) => time(g.decidedAt ?? g.submittedAt), width: 140 }]
-          : []),
-        {
-          title: '',
-          render: (_v, g) =>
-            g.decision !== 'PENDING' &&
-            byId(data.projects, stage(g)?.projectId)?.live &&
-            h(Button, { onClick: () => continueWork(board, { type: 'gate', id: g.id }) }, '继续推进'),
-          width: 120,
-        },
-      ],
-    }),
+    guided(
+      'reviews-gates',
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: '评审门',
+        rowKey: 'id',
+        pagination: false,
+        dataSource: gates,
+        empty: view === 'pending' ? '没有待决议的评审门' : '暂无已决议的评审门',
+        columns: [
+          {
+            title: '评审点',
+            render: (_v, g) =>
+              h(Button, { appearance: 'link', onClick: () => open(g.id, 'gate') }, gateName(g)),
+            width: 220,
+          },
+          {
+            title: '项目 / 阶段',
+            render: (_v, g) =>
+              `${stage(g)?.projectId} ${stageName(data, stage(g)?.projectId, stage(g)?.stage)}`,
+            width: 240,
+          },
+          { title: '审批角色', render: (_v, g) => g.approverRoles.join('、'), width: 130 },
+          { title: '会签', render: (_v, g) => signProgress(g), width: 160 },
+          { title: '未关闭意见', render: (_v, g) => g.findings.filter((f) => !f.closed).length, width: 70 },
+          { title: '决议', dataIndex: 'decision', render: (d) => gateBadge(data, d), width: 90 },
+          ...(view === 'decided'
+            ? [{ title: '时间', render: (_v, g) => time(g.decidedAt ?? g.submittedAt), width: 140 }]
+            : []),
+          {
+            title: '',
+            render: (_v, g) =>
+              g.decision !== 'PENDING' &&
+              byId(data.projects, stage(g)?.projectId)?.live &&
+              h(Button, { onClick: () => continueWork(board, { type: 'gate', id: g.id }) }, '继续推进'),
+            width: 120,
+          },
+        ],
+      }),
+    ),
     h('h2', { className: 'devboard-heading' }, '人工介入请求'),
     h(Table, {
       captionRepeatsHeading: true,

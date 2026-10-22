@@ -1,4 +1,4 @@
-import { Badge, Button, Field, PushPage, Select, Table, usePushStack } from '@agnes/web-ui'
+import { Badge, Button, PushPage, Table, usePushStack } from '@agnes/web-ui'
 import React from 'react'
 import { ApprovalEntry, TodoColumn } from './approvals.js'
 import {
@@ -9,6 +9,7 @@ import {
   gateBadge,
   gateLabel,
   gateName,
+  guided,
   HistoryTable,
   h,
   jumpTo,
@@ -26,6 +27,7 @@ import {
   useProject,
 } from './board.js'
 import { cardsOf, lensSummary, METRICS, relevant } from './lens.js'
+import { NewProject } from './new-project.js'
 
 const STAGE_ORDER = ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE']
 const stagesOf = (data, projectId) =>
@@ -98,97 +100,6 @@ function ServiceFacts({ data, project }) {
   )
 }
 
-function NewProject({ data, board, role, onDone }) {
-  const [name, setName] = React.useState('')
-  const [description, setDescription] = React.useState('')
-  const [projectKind, setProjectKind] = React.useState('SOFTWARE')
-  const [org, setOrg] = React.useState('')
-  const live = projectKind === 'SOFTWARE'
-  const submit = async () => {
-    const out = await board.run(
-      'devboard.create',
-      {
-        kind: 'project',
-        by: role,
-        name: name.trim(),
-        projectKind,
-        ...(org ? { org } : {}),
-        ...(description.trim() ? { description: description.trim() } : {}),
-      },
-      live ? '已新建项目，请让研发协调员继续推进' : '已新建项目记录',
-    )
-    if (out?.result?.id) onDone({ id: out.result.id, live })
-  }
-  return h(
-    'section',
-    { className: 'devboard-actions', 'aria-label': '新建项目' },
-    h(
-      Field,
-      { label: '项目名称', htmlFor: 'devboard-new-name' },
-      h('input', {
-        id: 'devboard-new-name',
-        className: 'devboard-note',
-        value: name,
-        placeholder: '例如：车门健康监测看板',
-        maxLength: 120,
-        onChange: (e) => setName(e.target.value),
-      }),
-    ),
-    h(
-      'div',
-      { className: 'devboard-buttons' },
-      h(
-        Field,
-        { label: '项目类型' },
-        h(Select, {
-          'aria-label': '项目类型',
-          value: projectKind,
-          onChange: setProjectKind,
-          options: [
-            { value: 'SOFTWARE', label: '软件平台' },
-            { value: 'NEW_BUILD', label: '订单新造' },
-            { value: 'RETROFIT', label: '订单改造' },
-          ],
-          style: { minWidth: 160 },
-        }),
-      ),
-      h(
-        Field,
-        { label: '归属技术中心' },
-        h(Select, {
-          'aria-label': '归属技术中心',
-          value: org,
-          onChange: setOrg,
-          options: [{ value: '', label: '按类型默认' }, ...data.orgs.map((o) => ({ value: o, label: o }))],
-          style: { minWidth: 200 },
-        }),
-      ),
-    ),
-    h(NoteField, {
-      id: 'devboard-new-desc',
-      label: '项目说明（可选）',
-      value: description,
-      onChange: setDescription,
-    }),
-    h(
-      'div',
-      { className: 'devboard-buttons' },
-      h(
-        Button,
-        { appearance: 'primary', disabled: board.busy || !name.trim(), onClick: submit },
-        live ? '新建现场项目' : '新建项目记录',
-      ),
-      h(
-        'span',
-        { className: 'devboard-muted' },
-        live
-          ? '软件平台项目会建工作区，由研发协调员写计划、按裁剪后的评审点推进并现场真跑。'
-          : '订单类项目只建记录与评审点档案，不建工作区。',
-      ),
-    ),
-  )
-}
-
 const kpis = (rows) =>
   h(
     'div',
@@ -212,7 +123,7 @@ function Workbench({ data, role }) {
   }
   return h(
     'section',
-    { 'aria-label': `${role}的工作台` },
+    { 'aria-label': `${role}的工作台`, 'data-guide': 'overview-workbench' },
     h('h2', { className: 'devboard-heading' }, `${role}的工作台`),
     kpis([['待我处理', pending], ...cardsOf(role).map((key) => [METRICS[key][0], counts[key]])]),
     h(TodoColumn, {
@@ -262,7 +173,7 @@ export function Overview({ data, board, role }) {
     h('div', { className: 'devboard-buttons' }, h(Button, { onClick: () => push.open('new') }, '新建项目')),
     h(
       'div',
-      { className: 'devboard-projects' },
+      { className: 'devboard-projects', 'data-guide': 'overview-portfolio' },
       data.projects.map((p) => {
         const m = p.metrics
         const gates = pending.filter((g) => g.stageId.startsWith(`${p.id}/`))
@@ -463,7 +374,7 @@ export function GatePanel({ data, gate, board, role, setRole }) {
     gate.decision === 'PENDING'
       ? h(
           'section',
-          { className: 'devboard-actions', 'aria-label': '评审决议' },
+          { className: 'devboard-actions', 'aria-label': '评审决议', 'data-guide': 'gate-decision' },
           stage?.author === role &&
             h(Badge, { tone: 'warn' }, `当前演示角色「${role}」是该阶段的编写角色，不能审批。`),
           stage?.author !== role && h(RoleHint, { gate, role, setRole }),
@@ -499,7 +410,7 @@ export function GatePanel({ data, gate, board, role, setRole }) {
           h('p', null, decided ? '已决议。现场项目请让研发协调员继续推进。' : '该评审门已决议。'),
           h(
             'div',
-            { className: 'devboard-buttons' },
+            { className: 'devboard-buttons', 'data-guide': 'gate-continue' },
             h(
               Button,
               {
@@ -642,7 +553,7 @@ export function Projects({ data, board, role, setRole }) {
     ),
     h(
       'dl',
-      { className: 'devboard-facts' },
+      { className: 'devboard-facts', 'data-guide': 'projects-info' },
       fact('客户', project.customer),
       fact('线路', project.line),
       fact('项目经理', project.manager),
@@ -677,79 +588,85 @@ export function Projects({ data, board, role, setRole }) {
         { className: 'devboard-muted', role: 'note' },
         `评审点已裁剪：跳过 ${project.tailoring.skipped.join('、')}。理由：${project.tailoring.reason}`,
       ),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '阶段时间线',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: stages,
-      rowClassName: (s) =>
-        [
-          s.state !== 'PASSED' &&
-          s.plannedEnd &&
-          Date.parse(s.plannedEnd) < Date.parse(data.now) &&
-          s.state !== 'NOT_STARTED'
-            ? 'devboard-overdue'
-            : '',
-          relevant(role, 'stage', s, data) ? 'devboard-mine' : '',
-        ]
-          .filter(Boolean)
-          .join(' '),
-      columns: [
-        {
-          title: '阶段',
-          render: (_v, s) =>
-            h(
-              Button,
-              { appearance: 'link', onClick: () => openPage('stage', s.id) },
-              stageName(data, project.id, s.stage),
-            ),
-          width: 150,
-        },
-        { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
-        { title: '计划完成', dataIndex: 'plannedEnd', render: day, width: 110 },
-        { title: '实际完成', dataIndex: 'actualEnd', render: day, width: 110 },
-        { title: '编写角色', dataIndex: 'author', width: 120 },
-        {
-          title: '评审门',
-          render: (_v, s) =>
-            gatesOf(data, s.id).map((g) =>
+    guided(
+      'projects-timeline',
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: '阶段时间线',
+        rowKey: 'id',
+        pagination: false,
+        dataSource: stages,
+        rowClassName: (s) =>
+          [
+            s.state !== 'PASSED' &&
+            s.plannedEnd &&
+            Date.parse(s.plannedEnd) < Date.parse(data.now) &&
+            s.state !== 'NOT_STARTED'
+              ? 'devboard-overdue'
+              : '',
+            relevant(role, 'stage', s, data) ? 'devboard-mine' : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+        columns: [
+          {
+            title: '阶段',
+            render: (_v, s) =>
               h(
-                React.Fragment,
-                { key: g.id },
-                relevant(role, 'gate', g, data) && [h(Badge, { key: 'mine', tone: 'warn' }, '与我相关'), ' '],
+                Button,
+                { appearance: 'link', onClick: () => openPage('stage', s.id) },
+                stageName(data, project.id, s.stage),
+              ),
+            width: 150,
+          },
+          { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
+          { title: '计划完成', dataIndex: 'plannedEnd', render: day, width: 110 },
+          { title: '实际完成', dataIndex: 'actualEnd', render: day, width: 110 },
+          { title: '编写角色', dataIndex: 'author', width: 120 },
+          {
+            title: '评审门',
+            render: (_v, s) =>
+              gatesOf(data, s.id).map((g) =>
                 h(
-                  Button,
-                  { appearance: 'link', onClick: () => openPage('gate', g.id) },
-                  `${gateName(g)} ${gateLabel(data, g.decision)}${g.decision === 'PENDING' && g.approverRoles.length > 1 ? `（会签 ${signProgress(g)}）` : ''}`,
+                  React.Fragment,
+                  { key: g.id },
+                  relevant(role, 'gate', g, data) && [
+                    h(Badge, { key: 'mine', tone: 'warn' }, '与我相关'),
+                    ' ',
+                  ],
+                  h(
+                    Button,
+                    { appearance: 'link', onClick: () => openPage('gate', g.id) },
+                    `${gateName(g)} ${gateLabel(data, g.decision)}${g.decision === 'PENDING' && g.approverRoles.length > 1 ? `（会签 ${signProgress(g)}）` : ''}`,
+                  ),
                 ),
               ),
-            ),
-          width: 260,
-        },
-        {
-          title: '交付物',
-          render: (_v, s) =>
-            data.artifacts
-              .filter((a) => a.projectId === project.id && a.stage === s.stage)
-              .map((a) =>
-                h(
-                  Button,
-                  { key: a.id, appearance: 'link', onClick: () => openPage('artifact', a.id) },
-                  `${a.title} ${a.version}`,
+            width: 260,
+          },
+          {
+            title: '交付物',
+            render: (_v, s) =>
+              data.artifacts
+                .filter((a) => a.projectId === project.id && a.stage === s.stage)
+                .map((a) =>
+                  h(
+                    Button,
+                    { key: a.id, appearance: 'link', onClick: () => openPage('artifact', a.id) },
+                    `${a.title} ${a.version}`,
+                  ),
                 ),
-              ),
-        },
-        { title: '基线', render: (_v, s) => s.baseline?.id ?? '', width: 160 },
-      ],
-    }),
+          },
+          { title: '基线', render: (_v, s) => s.baseline?.id ?? '', width: 160 },
+        ],
+      }),
+    ),
     h(
       'p',
       { className: 'devboard-muted' },
       `与「${role}」相关的阶段（编写角色）和评审门（审批角色或阶段编写角色）已高亮；本页不按角色筛选。`,
     ),
     data.configBaselines.some((b) => b.projectId === project.id) &&
-      h(BaselineTable, { data, projectId: project.id }),
+      guided('projects-baseline', h(BaselineTable, { data, projectId: project.id })),
     (project.risks?.length ?? 0) > 0 &&
       h(Table, {
         captionRepeatsHeading: true,
