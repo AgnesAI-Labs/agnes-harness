@@ -11,6 +11,7 @@ import {
   UsageError,
 } from '../errors.js'
 import { checkStructured, loadOutputSchema, schemaInstruction } from '../output-schema.js'
+import type { Breadcrumb } from '../terminal-breadcrumb.js'
 import { timingMark } from '../timing.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { readPromptInput } from './prompt-input.js'
@@ -26,6 +27,8 @@ export type PrintIO = {
   registerCancel?: (cancel: () => Promise<void>) => void
   /** Which signal, if any, has arrived. Read after the turn: an abort's exit code is the signal's. */
   signal?: () => SignalName | undefined
+  /** This terminal pane's memory of its last session; absent over --connect and without a pane id. */
+  breadcrumb?: Breadcrumb
 }
 
 /**
@@ -65,9 +68,21 @@ export function resumedSessionId(p: ParsedArgs): string | undefined {
  * orders it by recent activity; an archived session is one the user put away, so it is skipped the way
  * the Web sidebar skips it.
  */
-export async function sessionToOpen(booted: Booted, p: ParsedArgs, cwd: string): Promise<string | undefined> {
+export async function sessionToOpen(
+  booted: Booted,
+  p: ParsedArgs,
+  cwd: string,
+  breadcrumb?: Breadcrumb,
+): Promise<string | undefined> {
   const named = resumedSessionId(p)
   if (named !== undefined || !p.continue) return named
+  // The session this terminal pane used last wins over the most recent one in the directory, so two
+  // panes in one directory each get their own back. It must still exist here and not be archived.
+  const left = breadcrumb?.read(cwd)
+  if (left !== undefined) {
+    const found = await booted.client.session.list({ q: { cwd, text: left }, limit: 50 })
+    if (found.items.some((item) => item.sessionId === left && item.archived !== true)) return left
+  }
   const page = await booted.client.session.list({ q: { cwd }, limit: 50 })
   const latest = page.items.find((item) => item.archived !== true)
   if (!latest) throw new CommandError(`--continue found no session in ${cwd}; run without it to start one`)
@@ -101,7 +116,12 @@ export function refuseWhatCannotBeHonoured(p: ParsedArgs): void {
     )
 }
 
-async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<Session> {
+async function openSession(
+  booted: Booted,
+  p: ParsedArgs,
+  cwd: string,
+  breadcrumb?: Breadcrumb,
+): Promise<Session> {
   // `session/load` rather than attach: a session this daemon has not opened yet is not in its
   // registry, and attach requires one. Load opens it from the ledger and replays it, which is what
   // makes `agnes --resume <id> -p` pick up a session the previous process left behind.
@@ -110,7 +130,7 @@ async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<
   // there the cwd becomes that session's own -- sdk's default empty string put every relative path
   // a tool was handed outside the workspace root, which only a resumed run against a real model
   // showed, because a unit test on either side agreed with itself.
-  const resume = await sessionToOpen(booted, p, cwd)
+  const resume = await sessionToOpen(booted, p, cwd, breadcrumb)
   if (resume !== undefined) return booted.client.session.load(resume, { cwd })
   await booted.client.workspace.add(cwd)
   return booted.client.session.new({
@@ -204,7 +224,8 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
   })
 
   try {
-    const session = await openSession(booted, p, io.cwd)
+    const session = await openSession(booted, p, io.cwd, io.breadcrumb)
+    io.breadcrumb?.write(session.id, io.cwd)
     io.stderr.write(`Session: ${session.id}\n`)
     // Before attach/prompt, not after: setModel takes effect for the next request onward, so it has
     // to land before the one prompt this invocation is about to send, not race it.

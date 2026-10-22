@@ -1,5 +1,6 @@
 import { dirname, join } from 'node:path'
 import { ExitCode, SIGNAL_EXIT_CODES, type SignalName } from '../errors.js'
+import type { Breadcrumb } from '../terminal-breadcrumb.js'
 import { timingMark } from '../timing.js'
 import { inheritFreshSession, installKeybindings, TuiApp } from '../tui/app.js'
 import { escapeControl } from '../tui/component.js'
@@ -29,6 +30,8 @@ export async function runTui(
     historyPath?: string
     /** Personal custom slash commands (`<AGH_HOME>/commands`). */
     commandsDir?: string
+    /** This terminal pane's memory of its last session; absent over --connect and without a pane id. */
+    breadcrumb?: Breadcrumb
     /** Private scratch directory (`<AGH_HOME>/tmp`) for the Ctrl-G draft file. */
     editorTmpDir?: string
     /** The CLI's own version, shown on the welcome. */
@@ -59,7 +62,7 @@ export async function runTui(
   // a signal while the session opens gives the shell back at once.
   io.registerCancel(async () => leaveScreen())
   try {
-    const resumeId = await sessionToOpen(booted, p, io.cwd)
+    const resumeId = await sessionToOpen(booted, p, io.cwd, io.breadcrumb)
     if (resumeId === undefined) await booted.client.workspace.add(io.cwd)
     const session =
       resumeId !== undefined
@@ -114,6 +117,9 @@ export async function runTui(
       ...(io.commandsDir ? { commandsDir: io.commandsDir } : {}),
       ...(p.ignoreRules || p.safeMode ? { noCustomCommands: true } : {}),
       ...(p.safeMode ? { safeMode: true } : {}),
+      ...(io.breadcrumb
+        ? { onSessionSwitch: (sessionId: string) => io.breadcrumb?.write(sessionId, io.cwd) }
+        : {}),
       ...(io.editorTmpDir ? { externalEditor: { env: io.env, tmpDir: io.editorTmpDir } } : {}),
       ...(io.composerSelectionPath
         ? { themePreferencePath: join(dirname(io.composerSelectionPath), 'tui-theme.json') }

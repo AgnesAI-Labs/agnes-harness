@@ -441,6 +441,12 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
           composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
         })
       : undefined
+    // Remembering a pane's session only makes sense for this machine's own home: not over --connect,
+    // and not for --ephemeral, whose home is gone when the run ends.
+    const breadcrumb =
+      p.connect === undefined && !p.ephemeral
+        ? (await import('./terminal-breadcrumb.js')).terminalBreadcrumb(resolveHome(io.env), io.env)
+        : undefined
     let booted: Booted
     try {
       booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
@@ -549,10 +555,12 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                 composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
                 historyPath: join(resolveHome(io.env), 'tui-history.jsonl'),
                 commandsDir: join(home, 'commands'),
+                ...(breadcrumb ? { breadcrumb } : {}),
                 editorTmpDir: join(resolveHome(io.env), 'tmp'),
                 agnesVersion: io.agnesVersion,
               })
             : printMode!.runPrint(booted, p, {
+                ...(breadcrumb ? { breadcrumb } : {}),
                 locale: resolveLocale(io.env),
                 stdout: io.stdout,
                 stderr: io.stderr,

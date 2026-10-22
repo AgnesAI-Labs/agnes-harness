@@ -20,6 +20,8 @@ export function homeLayout(home: string, profile = 'local-dev') {
     diagnostics: join(home, 'diagnostics'),
     cache: cacheDir(home),
     tmp: join(home, 'tmp'),
+    /** One file per terminal pane naming the session last used there; created lazily, see the CLI. */
+    terminalSessions: join(home, 'terminal-sessions'),
   }
 }
 export { homeVersionMessage } from './home-message.js'

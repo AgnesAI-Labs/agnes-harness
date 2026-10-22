@@ -174,6 +174,8 @@ export class TuiApp {
       commandsDir?: string
       /** `--ignore-rules`: no personal or project custom slash commands are loaded. */
       noCustomCommands?: boolean
+      /** Called with the new session's id after /new, /resume or a picker choice made it the current one. */
+      onSessionSwitch?: (sessionId: string) => void
       /** `--safe-mode`: shown on the status bar for as long as the session runs. */
       safeMode?: boolean
       /** Ctrl-G's editor command source and temp directory (`<AGH_HOME>/tmp`); tests leave it to the defaults. */
@@ -984,6 +986,7 @@ export class TuiApp {
     this.attachmentController = new AbortController()
     this.mentions.reset()
     this.o.session = next
+    this.o.onSessionSwitch?.(next.id)
     this.previews.reset()
     this.previewEffects.length = 0
     this.projection = this.makeProjection(next)
