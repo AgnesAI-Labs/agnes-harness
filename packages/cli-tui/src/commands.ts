@@ -169,7 +169,6 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   {
     name: '/queue',
-    args: '[edit <n>|drop <n>]',
     descriptionKey: 'commands.queue',
     summaryKey: 'commands.queueSummary',
   },

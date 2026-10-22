@@ -173,7 +173,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/skill')?.args).toBe('invoke <name> [arguments]|refresh|trust ...')
     expect(slashCommand('/agents')?.args).toBe('[stop <n|id>|resume <n|id> <message>]')
     expect(slashCommand('/jobs')?.args).toBe('[stop <n|id>]')
-    expect(slashCommand('/queue')?.args).toBe('[edit <n>|drop <n>]')
+    expect(slashCommand('/queue')?.args).toBeUndefined()
     // Commands without arguments carry no shape at all, and an unknown name finds nothing.
     expect(slashCommand('/help')?.args).toBeUndefined()
     expect(slashCommand('/nope')).toBeUndefined()
@@ -475,35 +475,37 @@ describe('runSlash', () => {
     }
   })
 
-  it('/queue edit puts a queued message back in the editor, and /queue drop discards one, client-side only', async () => {
+  it('/queue lists the daemon queue, including what Alt+Enter steered in, without sending anything', async () => {
     const { app, client, ep, term } = await unstartedApp()
     try {
+      ep.on('_agnes/v1/session.controls', () => ({
+        controls: { steer: true },
+        paused: false,
+        pending: [
+          {
+            itemId: 'a',
+            target: 'next-turn',
+            kind: 'follow_up',
+            content: [{ type: 'text', text: 'first message' }],
+          },
+          {
+            itemId: 'b',
+            target: 'next-step',
+            kind: 'steer',
+            content: [{ type: 'text', text: 'second\nmessage' }],
+          },
+        ],
+      }))
       await app.start()
       const before = ep.calls.length
-      app.pendingPrompts.push(
-        [{ type: 'text', text: 'first message' }],
-        [{ type: 'text', text: 'second\nmessage' }],
-      )
       await app.runInput('/queue')
       await vi.waitFor(async () => {
         const screen = (await screenOf(term, 90, 24)).join('\n')
         expect(screen).toContain('1. first message')
         expect(screen).toContain('2. second message')
       })
-      await app.runInput('/queue edit 2')
-      await vi.waitFor(async () => {
-        const screen = (await screenOf(term, 90, 24)).join('\n')
-        expect(screen).toContain('第 2 条已放回输入框')
-        expect(screen).toMatch(/❯ second\s*$/m)
-      })
-      await app.runInput('/queue drop 1')
-      expect(app.pendingPrompts).toEqual([])
-      await vi.waitFor(async () =>
-        expect((await screenOf(term, 90, 24)).join('\n')).toContain('已丢弃第 1 条'),
-      )
-      // The queue is the client's own: no daemon call was made for any of it.
       expect(
-        ep.calls.slice(before).filter((call) => /submit|prompt|control|queue/i.test(call.method)),
+        ep.calls.slice(before).filter((call) => /submit|prompt|control$|queue/i.test(call.method)),
       ).toEqual([])
     } finally {
       await app.stop()
@@ -1302,8 +1304,8 @@ describe('app.ts wiring: key routing through the editor reaches the real command
         expect((await screenOf(term, 100, 20)).join('\n')).toContain('Request failed'),
       )
 
-      // `submit` is the only path that writes `pendingPrompts`; checking both that seam and the
-      // actual session RPC proves that no package line became a queued or submitted chat turn.
+      // Checking both the `submit` seam and the actual session RPC proves that no package line
+      // became a queued or submitted chat turn.
       expect(submit).not.toHaveBeenCalled()
       expect(chatCalls()).toEqual([])
       expect(ep.calls.filter((call) => call.method === '_agnes/v1/packages.install')).toEqual([])

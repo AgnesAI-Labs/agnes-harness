@@ -262,39 +262,33 @@ describe('/deliverables', () => {
 describe('/queue', () => {
   const text = (value: string): ContentBlock => ({ type: 'text', text: value })
   const link: ContentBlock = { type: 'resource_link', uri: 'file:///w/a.txt', name: 'a.txt' }
-  const queued = (...items: ContentBlock[][]) =>
-    ({ ...appWith({}), pendingPrompts: items }) as unknown as TuiApp & { pendingPrompts: ContentBlock[][] }
+  const item = (kind: string, content: ContentBlock[], itemId = kind) => ({
+    itemId,
+    target: kind === 'steer' ? 'next-step' : 'next-turn',
+    kind,
+    content,
+  })
+  const daemonQueue = (...pending: ReturnType<typeof item>[]) =>
+    appWith({}, { controls: async () => ({ controls: {}, paused: false, pending }) })
 
-  it('lists the client queue as inert lines, moves one back to the editor and drops another', async () => {
-    const app = queued([text('fix\nthe\u001b[2J bug')], [text('read @a.txt'), link], [text('x'.repeat(100))])
-    const rows = (await runSlash(app, '/queue')).text?.split('\n') ?? []
-    expect(rows).toEqual([
+  it('lists what waits in the daemon, follow-ups and steers alike, as inert lines', async () => {
+    const app = daemonQueue(
+      item('follow_up', [text('fix\nthe\u001b[2J bug')]),
+      item('prompt', [text('not a queued input')]),
+      item('steer', [text('read @a.txt'), link]),
+      item('follow_up', [text('x'.repeat(100))]),
+    )
+    expect(((await runSlash(app, '/queue')).text ?? '').split('\n')).toEqual([
       '1. fix the[2J bug',
       `2. read @a.txt${tt('queue.extra', 'en', { count: 1 })}`,
       `3. ${'x'.repeat(79)}…`,
     ])
-    // Edit takes the message out of the queue and hands its text to the editor.
-    expect(await runSlash(app, '/queue edit 1')).toEqual({
-      text: tt('queue.edited', 'en', { n: 1 }),
-      draft: 'fix\nthe\u001b[2J bug',
-    })
-    expect(app.pendingPrompts).toHaveLength(2)
-    // A message with attachments or file links cannot become editor text: it stays where it is.
-    expect((await runSlash(app, '/queue edit 1')).text).toBe(tt('queue.attached', 'en', { n: 1 }))
-    expect(app.pendingPrompts).toHaveLength(2)
-    expect(await runSlash(app, '/queue drop 1')).toEqual({ text: tt('queue.dropped', 'en', { n: 1 }) })
-    expect(app.pendingPrompts).toEqual([[text('x'.repeat(100))]])
+    expect((await runSlash(daemonQueue(), '/queue')).text).toBe(tt('queue.none', 'en'))
   })
 
-  it('refuses what it cannot place and never reaches the session', async () => {
-    const app = queued([text('only')])
-    for (const line of ['/queue drop', '/queue edit 1 2', '/queue move 1', '/queue drop one'])
-      expect((await runSlash(app, line)).text, line).toBe(
-        line === '/queue drop one' ? tt('queue.unknown', 'en', { key: 'one' }) : tt('queue.usage', 'en'),
-      )
-    for (const key of ['0', '2', '-1', '1.5'])
-      expect((await runSlash(app, `/queue drop ${key}`)).text).toBe(tt('queue.unknown', 'en', { key }))
-    expect(app.pendingPrompts).toHaveLength(1)
-    expect((await runSlash(queued(), '/queue')).text).toBe(tt('queue.none', 'en'))
+  it('refuses what it cannot place', async () => {
+    const app = daemonQueue(item('follow_up', [text('only')]))
+    for (const line of ['/queue drop', '/queue edit 1 2', '/queue move 1'])
+      expect((await runSlash(app, line)).text, line).toBe(tt('queue.usage', 'en'))
   })
 })

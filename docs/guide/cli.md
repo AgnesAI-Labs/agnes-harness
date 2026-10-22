@@ -47,7 +47,7 @@ Type `/` to see the current menu. Common actions:
 | Deliverables | `/deliverables` lists the files this session delivered; `/deliverables save N\|ID [PATH]` downloads one after checking size and sha256 |
 | Subagents | `/agents` lists the subagents this session can control; `/agents stop N\|ID` interrupts one and `/agents resume N\|ID MESSAGE` sends it more work. The daemon decides what is allowed and its refusal is shown |
 | Background jobs | `/jobs` lists this session's background jobs; `/jobs stop N\|ID` kills one (the daemon refuses jobs an agent owns) |
-| Queued messages | `/queue` lists the messages typed during a turn with Enter that wait for it to end; `/queue edit N` moves one back into the editor, `/queue drop N` discards it. The queue is kept by the TUI and is lost on exit. Alt+Enter during a turn still hands the message to the daemon's follow-up queue, which `/queue` does not show |
+| Queued messages | While a turn runs, Enter queues the message in the daemon and it is sent automatically when the turn ends; Alt+Enter inserts it into the running turn instead (it is queued when the turn takes no guidance). Nothing is held by the TUI, so the queue survives exiting it and every client of the session sees it. `/queue` lists the queued messages |
 | Model / preset | `/model`, `/model main ROUTE/MODEL`, `/preset NAME` |
 | Context / usage | `/context`, `/usage`, `/cost` |
 | Compaction | `/compact [instructions]`; inspect the receipt for execution, skip, or failure |
@@ -86,7 +86,7 @@ While the terminal reports focus, the TUI rings the bell once when a turn ends a
 
 `/plan`, `/plan on`, `/plan off`, and `/plan <instruction>` use the selected backend plan service in both TUI and Web. `/plan status` reports the mode; `/plan pending` shows the last submitted plan. If the backend is disabled or unavailable, the UI reports plan mode off. Existing `.agh/plan-mode.json` files are read without migration. Plan mode blocks write and execution tools even with full access; leaving through `exit_plan_mode` still requires human approval of the exact plan revision. An explicit human `/plan off` remains available.
 
-Esc during a turn interrupts it and keeps the message you were writing. With no turn running, Esc clears the draft; while the `@` file menu is open it only closes that menu. Ctrl-C still interrupts a turn, and pressing it twice within a second quits.
+Esc during a turn interrupts it and keeps the message you were writing. With no turn running, Esc clears the draft; while the `@` file menu is open it only closes that menu. Ctrl-C still interrupts a turn, and pressing it twice within a second quits. Both keys interrupt any turn the session is running, including one another client started: the daemon lets the session owner stop it and refuses anyone else.
 
 ## Schedules and triggers
 

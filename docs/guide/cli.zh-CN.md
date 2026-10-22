@@ -38,7 +38,7 @@ node agnes.mjs
 | 新任务/选择历史 | `/new [DIR]`、`/sessions`、`/resume [id\|all]`（`all` 列出所有工作区）、`/search QUERY`（需管理员连接） |
 | 子智能体 | `/agents` 列出本会话可控的子智能体；`/agents stop N\|ID` 中断一个，`/agents resume N\|ID 消息` 让它继续。能否执行由 daemon 决定，拒绝会原样显示 |
 | 后台任务 | `/jobs` 列出本会话的后台任务；`/jobs stop N\|ID` 终止一个（agent 拥有的任务会被 daemon 拒绝） |
-| 排队消息 | `/queue` 列出回合进行中按 Enter 输入、等回合结束后发送的消息；`/queue edit N` 放回输入框修改，`/queue drop N` 丢弃。队列由 TUI 保存，退出即丢失。回合中按 Alt+Enter 仍交给 daemon 的后续消息队列，`/queue` 不显示 |
+| 排队消息 | 回合进行中按 Enter，消息进入 daemon 队列，回合结束后自动发送；按 Alt+Enter 则插入正在运行的回合（该回合不接受插入时改为排队）。TUI 不保存任何队列，退出后队列仍在，会话的所有客户端都看得到。`/queue` 列出排队的消息 |
 | 模型/预设 | `/model`、`/model main ROUTE/MODEL`、`/preset NAME` |
 | 上下文/用量 | `/context`、`/usage`、`/cost` |
 | 会话整理 | `/pin`、`/unpin`、`/rename TITLE`、`/archive` |
@@ -80,7 +80,7 @@ Ctrl-O 展开最近一张工具卡，并向 daemon 读取完整的调用与结�
 
 TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都调用所选的后端计划服务。`/plan status` 查看模式，`/plan pending` 查看上次提交的计划。后端被禁用或不可用时，界面显示计划模式关闭。现有 `.agh/plan-mode.json` 文件可直接读取，无需迁移。计划模式即使在完全访问权限下也会阻止写入和执行工具；`exit_plan_mode` 仍须获得绑定当前计划版本的人工批准。用户显式输入 `/plan off` 仍可直接关闭。
 
-回合进行中按 Esc 只中断回合，保留正在写的消息。没有回合运行时 Esc 清空草稿；`@` 文件菜单打开时只关闭菜单。Ctrl-C 仍然中断回合，一秒内连按两次退出。
+回合进行中按 Esc 只中断回合，保留正在写的消息。没有回合运行时 Esc 清空草稿；`@` 文件菜单打开时只关闭菜单。Ctrl-C 仍然中断回合，一秒内连按两次退出。这两个键会中断会话正在运行的任何回合，包括别的客户端发起的：daemon 允许会话属主停止它，拒绝其他人。
 
 ## 定时任务与触发器
 
