@@ -27,7 +27,16 @@ export interface Terminal {
   readonly background?: Background | undefined
   /** Asks the terminal for its background once; resolves undefined where it cannot or does not answer. */
   queryBackground?(): Promise<Background | undefined>
+  /** Where the cursor is, 1-based, as the terminal reports it; undefined where it cannot or does not answer. */
+  queryCursor?(): Promise<{ row: number; col: number } | undefined>
 }
+
+// The cursor-position report: ESC [ row ; col R. Only read while one was asked for, because the same
+// bytes with a modifier are also what a function key sends.
+export const CURSOR_QUERY = '\x1b[6n'
+export const CURSOR_TIMEOUT_MS = 250
+// biome-ignore lint/suspicious/noControlCharactersInRegex: matching the escape is the point
+const CURSOR_REPLY = /\x1b\[(\d+);(\d+)R/
 
 // Everything is read from the environment the terminal itself sets. Asking the operating system
 // instead would answer a different question: a Windows console under ConPTY understands the same
@@ -112,6 +121,8 @@ export class FakeTerminal implements Terminal {
   caps: Capabilities
   raw = false
   background: Background | undefined
+  /** What `queryCursor` answers; a test sets where the shell left the cursor. */
+  cursor: { row: number; col: number } | undefined
   private dims: { columns: number; rows: number }
   private inputs: Array<(d: string) => void> = []
   private resizes: Array<(c: number, r: number) => void> = []
@@ -124,6 +135,9 @@ export class FakeTerminal implements Terminal {
 
   write(s: string): void {
     this.writes.push(s)
+  }
+  queryCursor(): Promise<{ row: number; col: number } | undefined> {
+    return Promise.resolve(this.cursor)
   }
   enterRaw(): void {
     this.raw = true
@@ -161,6 +175,7 @@ export class NodeTerminal implements Terminal {
   background: Background | undefined
   private asked: Promise<Background | undefined> | undefined
   private answer: ((b: Background | undefined) => void) | undefined
+  private cursorAnswer: ((at: { row: number; col: number } | undefined) => void) | undefined
   private readonly handlers = new Set<(data: string) => void>()
   // One stdin listener for every consumer, so a chunk is cleaned of terminal replies exactly once.
   private readonly filter = new BackgroundReplyFilter((b) => {
@@ -168,7 +183,13 @@ export class NodeTerminal implements Terminal {
     this.answer?.(b)
   })
   private readonly dispatch = (chunk: string | Buffer): void => {
-    const data = this.filter.push(String(chunk))
+    let text = String(chunk)
+    const reply = this.cursorAnswer ? CURSOR_REPLY.exec(text) : null
+    if (reply) {
+      text = text.replace(reply[0], '')
+      this.cursorAnswer?.({ row: Number(reply[1]), col: Number(reply[2]) })
+    }
+    const data = this.filter.push(text)
     if (data) for (const h of [...this.handlers]) h(data)
   }
 
@@ -224,6 +245,22 @@ export class NodeTerminal implements Terminal {
     })
     this.stdout.write(BACKGROUND_QUERY)
     return this.asked
+  }
+
+  /** Asks where the cursor is, waiting at most 250 ms; only a raw-mode TTY can answer. */
+  queryCursor(): Promise<{ row: number; col: number } | undefined> {
+    if (this.stdout.isTTY !== true || this.stdin.setRawMode === undefined || this.cursorAnswer)
+      return Promise.resolve(undefined)
+    return new Promise((resolve) => {
+      const done = (at: { row: number; col: number } | undefined): void => {
+        clearTimeout(timer)
+        this.cursorAnswer = undefined
+        resolve(at)
+      }
+      const timer = setTimeout(() => done(undefined), CURSOR_TIMEOUT_MS)
+      this.cursorAnswer = done
+      this.stdout.write(CURSOR_QUERY)
+    })
   }
 
   onInput(h: (d: string) => void): () => void {

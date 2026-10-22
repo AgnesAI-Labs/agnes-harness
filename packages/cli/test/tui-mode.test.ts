@@ -69,6 +69,20 @@ describe('runTui model selection', () => {
     expect(rendered).not.toContain('Agnes AI')
   })
 
+  it('--no-alt-screen keeps the shell screen: no alternate screen, no mouse reporting, no opening composer', async () => {
+    const io = tuiIO()
+    let rendered = ''
+    io.stdout.on('data', (chunk) => {
+      rendered += String(chunk)
+    })
+    await expect(runTui(await booted(scriptedEndpoint()), parseArgs(['--no-alt-screen']), io)).resolves.toBe(
+      143,
+    )
+    for (const mode of ['1049', '1002', '1006']) expect(rendered).not.toContain(`\x1b[?${mode}`)
+    expect(rendered).toContain('\x1b[?2004h')
+    expect(rendered).toContain('\x1b[?25h')
+  })
+
   it('propagates AGNES_LOCALE and LANG through runTui into the rendered status chrome', async () => {
     const renderWith = async (env: NodeJS.ProcessEnv): Promise<string> => {
       const endpoint = scriptedEndpoint().on('_agnes/v1/session.projectUI', () => ({

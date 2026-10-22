@@ -13,6 +13,16 @@ const READ_ONLY = new Set(['read', 'grep', 'find', 'ls'])
 // Nodes that draw nothing, so a read-only call on either side of them is still consecutive.
 const SILENT = new Set(['cost', 'context', 'slot', 'context-sections', 'contribute-conflict'])
 
+/** A read-only call that a following read-only call would fold into one group with it. */
+export function groupable(node: UINode): boolean {
+  return node.kind === 'tool' && READ_ONLY.has(node.name) && !node.delegatedTask
+}
+
+/** Nodes that draw nothing: a run of grouped calls stays open across them. */
+export function silentKind(node: UINode): boolean {
+  return SILENT.has(node.kind)
+}
+
 /**
  * `nodes` cut into entries: each run of two or more read-only calls is one entry, every other node
  * stands alone. Silent nodes between two calls of a run draw nothing, so they do not end it.

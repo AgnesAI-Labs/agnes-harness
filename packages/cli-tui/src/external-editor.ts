@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Editor } from './editor.js'
 import { tt } from './locale-extended.js'
-import type { Renderer } from './renderer.js'
+import type { ScreenRenderer } from './renderer.js'
 import type { NoticeTone } from './views/status-bar.js'
 
 export type ExternalEdit =
@@ -116,7 +116,7 @@ export type ExternalEditorConfig = { env: NodeJS.ProcessEnv; tmpDir: string }
 /** Ctrl-G: edits the draft in the user's own editor, replaces it on success and says why on any other outcome. */
 export async function editDraft(
   editor: Editor,
-  renderer: Renderer,
+  renderer: ScreenRenderer,
   status: { setNotice(text?: string, tone?: NoticeTone): void },
   locale: string,
   config: ExternalEditorConfig = { env: process.env, tmpDir: join(tmpdir(), 'agh-edit') },

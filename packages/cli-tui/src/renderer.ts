@@ -54,6 +54,17 @@ function reverseColumns(line: string, from: number, to: number): string {
   return inside ? `${out}\x1b[27m` : out
 }
 
+/** What the app asks of whichever renderer drives the screen: fullscreen (`Renderer`) or the split footer. */
+export interface ScreenRenderer {
+  readonly lastFrame: readonly string[]
+  start(): void
+  stop(): void
+  suspend(): () => void
+  requestRender(): void
+  renderNow(): void
+  toggleMouse(): boolean
+}
+
 /** Mouse handling the fullscreen app opts into: wheel rows to scroll by, and selected text to copy. */
 export type RendererMouse = {
   wheel(rows: number): void

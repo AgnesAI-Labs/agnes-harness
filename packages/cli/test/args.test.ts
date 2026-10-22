@@ -31,6 +31,15 @@ describe('parseArgs: the common forms', () => {
     expect(p.command).toBeUndefined()
   })
 
+  it('--no-alt-screen is a boolean flag of the interactive form, absent by default and listed in usage', () => {
+    expect(parseArgs(['hello'])).not.toHaveProperty('noAltScreen')
+    expect(parseArgs(['--no-alt-screen', 'hello'])).toMatchObject({
+      noAltScreen: true,
+      positional: ['hello'],
+    })
+    expect(usage()).toContain('--no-alt-screen')
+  })
+
   it('-p with the one-shot flags', () => {
     const p = parseArgs(['-p', 'hi', '--mode', 'json', '--ephemeral', '--standalone'])
     expect(p).toMatchObject({

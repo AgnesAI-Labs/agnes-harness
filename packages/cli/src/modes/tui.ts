@@ -45,14 +45,15 @@ export async function runTui(
   // every new invocation starts on an empty alternate screen even when opening is slow.
   const { opening } = io
   const term = opening?.term ?? new NodeTerminal(io.stdin, io.stdout, io.env)
-  if (!opening) term.write('\x1b[?1049h\x1b[H\x1b[2J')
+  // --no-alt-screen keeps the shell page: nothing is claimed up front and nothing needs giving back.
+  if (!opening && !p.noAltScreen) term.write('\x1b[?1049h\x1b[H\x1b[2J')
   let app: TuiApp | undefined
   let left = false
   const leaveScreen = (): void => {
     if (left) return
     left = true
     if (opening) opening.abandon()
-    else term.write('\x1b[?1049l\x1b[?25h')
+    else term.write(p.noAltScreen ? '\x1b[?25h' : '\x1b[?1049l\x1b[?25h')
   }
   // Until a TuiApp exists there is nothing to stop, and the ladder's hard exits skip the finally below:
   // a signal while the session opens gives the shell back at once.
@@ -122,6 +123,7 @@ export async function runTui(
       controlClient: booted.client,
       ...(io.resourceController ? { resourceController: io.resourceController } : {}),
       screenAlreadyEntered: true,
+      ...(p.noAltScreen ? { noAltScreen: true } : {}),
       cwd: io.cwd,
     })
     app = tui

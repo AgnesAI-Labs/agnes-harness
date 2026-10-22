@@ -12,6 +12,7 @@ import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
 import { type ExternalEditorConfig, editDraft } from './external-editor.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
+import { FooterRenderer } from './footer-renderer.js'
 import { formatTurnSummary } from './format-usage.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
 import { actionFor } from './keymap.js'
@@ -24,7 +25,7 @@ import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
 import { PromptHistory } from './prompt-history.js'
-import { Renderer } from './renderer.js'
+import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { ResourceCommandKind, TuiResourceController } from './resource-controller.js'
 import { type ActionItem, collectSlots } from './slots.js'
 import { pendingSurface } from './surface-prompt.js'
@@ -69,7 +70,7 @@ export class TuiApp {
   // connection outlives any one session -- so these are not re-registered per session.
   private offClientEvents: Array<() => void> = []
   /** Public so `/mouse` can switch the terminal's mouse reporting. */
-  readonly renderer: Renderer
+  readonly renderer: ScreenRenderer
   // Not readonly: `applySwitch` (a slash command that switches session -- /new, /resume, /rewind)
   // replaces it with a fresh projection built for the newly current session.
   private projection: TuiProjection
@@ -155,6 +156,8 @@ export class TuiApp {
       resourceController?: TuiResourceController
       /** The CLI has already entered its alternate screen before opening the session. */
       screenAlreadyEntered?: boolean
+      /** `--no-alt-screen`: settled turns go into the terminal's own scrollback; only the footer is redrawn. */
+      noAltScreen?: boolean
       /** Where mouse-selected text goes; defaults to the system clipboard. */
       copy?: (text: string, fail: () => void) => unknown
       /** The workspace the CLI opened its first session in (`--cwd`); defaults to `process.cwd()`. */
@@ -217,6 +220,7 @@ export class TuiApp {
       onAction: (actionId) => this.dispatchAction(actionId),
     })
     this.timeline = new Timeline({
+      split: o.noAltScreen === true,
       rows: () => o.term.size().rows,
       reservedRows: () => this.reservedRows,
       locale,
@@ -383,10 +387,11 @@ export class TuiApp {
       const below = shown.slice(at).flatMap((child) => child.render(width))
       // The input area, from the approval dialog down, sits on the bottom edge; a short
       // conversation leaves its gap above it rather than below.
-      const gap = Number.isFinite(height) ? Math.max(0, height - above.length - below.length) : 0
+      const gap =
+        Number.isFinite(height) && !o.noAltScreen ? Math.max(0, height - above.length - below.length) : 0
       const screen = [...above, ...Array.from({ length: gap }, () => ''), ...below]
       this.mouse.overlay(screen, above.length + gap - 1, width)
-      return this.theme.frame(createAnsi(o.term.caps.color), screen, width, height)
+      return o.noAltScreen ? screen : this.theme.frame(createAnsi(o.term.caps.color), screen, width, height)
     }
     const handle = root.handleInput.bind(root)
     root.handleInput = (data) => {
@@ -420,7 +425,7 @@ export class TuiApp {
         return true
       }
       if (this.timeline.jumpKey(key.name, this.editor.text !== '')) return true
-      if (action === 'timeline-page-up' || action === 'timeline-page-down') {
+      if (!o.noAltScreen && (action === 'timeline-page-up' || action === 'timeline-page-down')) {
         const page = Math.max(1, o.term.size().rows - this.reservedRows)
         this.scrollTimeline(action === 'timeline-page-up' ? -page : page)
         return true
@@ -463,7 +468,9 @@ export class TuiApp {
       this.modal,
       this.approvalCards,
     )
-    this.renderer = new Renderer(o.term, root, o.screenAlreadyEntered, this.mouse)
+    this.renderer = o.noAltScreen
+      ? new FooterRenderer(o.term, root, this.timeline)
+      : new Renderer(o.term, root, o.screenAlreadyEntered, this.mouse)
     this.projection = this.makeProjection(o.session)
   }
 

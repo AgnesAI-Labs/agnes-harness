@@ -3,12 +3,14 @@ import type { Component } from '../component.js'
 import { actionFor } from '../keymap.js'
 import type { KeyName } from '../keys.js'
 import { tt } from '../locale-extended.js'
-import { groupRuns } from '../tool-groups.js'
+import { isSettled } from '../settled.js'
+import { groupable, groupRuns, silentKind } from '../tool-groups.js'
 
 export const TIMELINE_RESERVED_ROWS = 5
 
 type Entry = { signature: string; nodes: UINode[]; view: Component }
 type LocalEntry = { afterSeq: number; view: Component }
+type Item = { key: string; view: Component; settled: boolean }
 
 /** A fullscreen viewport over core's projected nodes; it never reduces ledger events itself. */
 export class Timeline implements Component {
@@ -25,6 +27,10 @@ export class Timeline implements Component {
   private shownFrom = 0
   // How many entries there were when the user scrolled away from the bottom: anything past that is new.
   private leftAt: number | undefined
+  // Split footer: the entries already handed to native scrollback. They are never handed out again,
+  // whatever the projection does to them afterwards.
+  private written = new Set<string>()
+  private idle = true
 
   constructor(
     private readonly o: {
@@ -36,6 +42,8 @@ export class Timeline implements Component {
       groupView?(nodes: UINode[]): Component
       /** Startup banner, part of the scrollable viewport but not the exit transcript. */
       top?: Component
+      /** Split footer: settled entries leave through `takeSettled`; `render` shows only the rest. */
+      split?: boolean
     },
   ) {}
 
@@ -44,6 +52,7 @@ export class Timeline implements Component {
       this.sessionId = timeline.sessionId
       this.entries = new Map()
       this.local = []
+      this.written = new Set()
       this.toBottom()
       this.maxOffset = 0
       this.hasEarlier = false
@@ -64,6 +73,7 @@ export class Timeline implements Component {
     this.entries = next
     this.ordered = ordered
     this.upto = timeline.upto
+    this.idle = !timeline.opState
     this.hasEarlier = options.hasEarlier ?? this.hasEarlier
   }
 
@@ -95,7 +105,8 @@ export class Timeline implements Component {
   /** End jumps back to the newest rows and follows new output again; with a draft only Ctrl-End does, since End moves the cursor. */
   /** End moves the cursor inside a draft; only with an empty one does it jump to the newest row. */
   jumpKey(key: KeyName, hasDraft: boolean): boolean {
-    if (actionFor('global', key) !== 'timeline-bottom' || (key === 'end' && hasDraft)) return false
+    if (this.o.split || actionFor('global', key) !== 'timeline-bottom' || (key === 'end' && hasDraft))
+      return false
     this.toBottom()
     return true
   }
@@ -110,6 +121,7 @@ export class Timeline implements Component {
   }
 
   scroll(delta: number): boolean {
+    if (this.o.split) return false
     const before = this.offset
     if (Number.isFinite(delta)) this.offset = Math.max(0, this.offset - Math.trunc(delta))
     if (before === 0 && this.offset > 0) this.leftAt = this.size
@@ -142,20 +154,75 @@ export class Timeline implements Component {
     this.invalidate()
   }
 
-  private content(width: number, plain: boolean): string[] {
-    const content: string[] = []
+  /** Every entry in display order, connection-local ones placed by the projection seq they follow. */
+  private items(): Item[] {
+    const items: Item[] = []
     let localIndex = 0
-    const rows = (view: Component) => (plain ? view.transcript?.(width) : undefined) ?? view.render(width)
-    const pushLocal = () => content.push(...rows((this.local[localIndex++] as LocalEntry).view))
-    if (!plain) this.heads = []
-    for (const entry of this.ordered) {
+    const pushLocal = () => {
+      items.push({
+        key: `local:${localIndex}`,
+        view: (this.local[localIndex] as LocalEntry).view,
+        settled: true,
+      })
+      localIndex++
+    }
+    // A trailing run of read-only calls may still grow into a group, so it is not final while the turn runs.
+    const open = this.idle ? -1 : this.ordered.findLastIndex((e) => !e.nodes.every(silentKind))
+    this.ordered.forEach((entry, i) => {
       const seq = entry.nodes[0]?.seq ?? Number.POSITIVE_INFINITY
       while ((this.local[localIndex]?.afterSeq ?? Number.POSITIVE_INFINITY) < seq) pushLocal()
-      if (!plain && entry.view.clickHead) this.heads.push({ row: content.length, view: entry.view })
-      content.push(...rows(entry.view))
-    }
+      const growing = i === open && entry.nodes.every(groupable)
+      items.push({
+        key: (entry.nodes[0] as UINode).id,
+        view: entry.view,
+        settled: !growing && entry.nodes.every(isSettled),
+      })
+    })
     while (localIndex < this.local.length) pushLocal()
+    return items
+  }
+
+  private content(width: number, plain: boolean): string[] {
+    const content: string[] = []
+    const rows = (view: Component) => (plain ? view.transcript?.(width) : undefined) ?? view.render(width)
+    if (!plain) this.heads = []
+    const clickable = new Set(this.ordered.map((entry) => entry.view))
+    for (const item of this.items()) {
+      if (!plain && item.view.clickHead && clickable.has(item.view))
+        this.heads.push({ row: content.length, view: item.view })
+      content.push(...rows(item.view))
+    }
     return content
+  }
+
+  /**
+   * Split footer: the plain text of every entry that became final since the last call, in display
+   * order. An entry is final once it and everything before it is settled, so what is returned
+   * continues what was returned before. An entry that shows up behind one already handed out (the
+   * projection inserted it late) is dropped: scrollback is never rewritten. `all` also takes entries
+   * still in flight, for the exit.
+   */
+  takeSettled(width: number, all = false): string[] {
+    const items = this.items()
+    const last = items.findLastIndex((item) => this.written.has(item.key))
+    const out: string[] = []
+    for (const [index, item] of items.entries()) {
+      if (this.written.has(item.key)) continue
+      if (index > last && !all && !item.settled) break
+      this.written.add(item.key)
+      if (index < last) continue
+      const rows = item.view.transcript?.(width) ?? item.view.render(width)
+      if (rows.length > 0) out.push('', ...rows)
+    }
+    return out
+  }
+
+  private splitRows(width: number): string[] {
+    const pending = this.items().filter((item) => !this.written.has(item.key))
+    const rows = pending.flatMap((item) => item.view.render(width))
+    const window = Math.max(1, this.o.rows() - (this.o.reservedRows?.() ?? TIMELINE_RESERVED_ROWS))
+    const shown = this.written.size === 0 && pending.length === 0 ? (this.o.top?.render(width) ?? []) : rows
+    return shown.slice(-window)
   }
 
   /** Current loaded conversation only: no new history read, UI chrome or row-archive side effects. */
@@ -164,6 +231,7 @@ export class Timeline implements Component {
   }
 
   render(width: number): string[] {
+    if (this.o.split) return this.splitRows(width)
     const content = this.content(width, false)
     const showWelcome = content.length === 0 && !this.hasEarlier
     const rows = [

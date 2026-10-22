@@ -364,3 +364,129 @@ it('offers the way back only when output arrived while scrolled up, and End or C
   t.scroll(1)
   expect(t.newOutputHint(false)).toBeUndefined()
 })
+
+// Split footer (--no-alt-screen): what leaves for native scrollback, and when.
+const at = (seq: number, node: UINode): UINode => ({ ...node, seq }) as UINode
+const assistant = (id: string, seq: number, text: string, streaming: boolean): UINode => ({
+  kind: 'assistant',
+  id,
+  seq,
+  text,
+  streaming,
+})
+const tool = (id: string, seq: number, status: 'running' | 'completed', name = 'write'): UINode => ({
+  kind: 'tool',
+  id,
+  seq,
+  toolUseId: id,
+  name,
+  status,
+  summary: '',
+})
+const approval = (id: string, seq: number, state: 'pending' | 'decided'): UINode => ({
+  kind: 'approval',
+  id,
+  seq,
+  state,
+  summary: id,
+  risk: 'unknown',
+  options: [],
+})
+const splitTimeline = () => new Timeline({ rows: () => 20, nodeView: view, split: true })
+const idleAt = (nodes: UINode[]): UITimeline => timeline(nodes)
+const busyAt = (nodes: UINode[]): UITimeline => ({
+  ...timeline(nodes),
+  opState: { turn: 1, step: 1, phase: 'inference' } as never,
+})
+
+it('hands out each settled entry once, in projection order, and keeps the first unsettled one and its successors back', () => {
+  const t = splitTimeline()
+  t.apply(
+    busyAt([
+      at(1, user('u', 'ask')),
+      assistant('a', 2, '', true),
+      tool('t', 3, 'running'),
+      approval('p', 4, 'pending'),
+    ]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'ask'])
+  expect(t.takeSettled(30)).toEqual([])
+  // The reply settles but the tool after it has not: only the reply leaves. Nothing is repeated.
+  t.apply(
+    busyAt([
+      user('u', 'ask'),
+      assistant('a', 5, 'answer', false),
+      tool('t', 3, 'running'),
+      approval('p', 4, 'pending'),
+    ]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'answer'])
+  t.apply(
+    busyAt([
+      user('u', 'ask'),
+      assistant('a', 5, 'answer', false),
+      tool('t', 3, 'completed'),
+      approval('p', 4, 'pending'),
+    ]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'completed'])
+  expect(t.render(30)).toEqual(['pending'])
+  t.apply(
+    idleAt([
+      user('u', 'ask'),
+      assistant('a', 5, 'answer', false),
+      tool('t', 3, 'completed'),
+      approval('p', 4, 'decided'),
+    ]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'decided'])
+  expect(t.render(30)).toEqual([])
+})
+
+it('never rewrites an entry the projection changes afterwards, nor writes one that appears behind a written one', () => {
+  const t = splitTimeline()
+  t.apply(idleAt([at(1, user('u', 'ask')), tool('t', 2, 'completed')]))
+  expect(t.takeSettled(30)).toEqual(['', 'ask', '', 'completed'])
+  t.apply(idleAt([user('u', 'edited'), { ...tool('t', 2, 'completed'), summary: 'later review' } as UINode]))
+  expect(t.takeSettled(30)).toEqual([])
+  t.apply(
+    idleAt([user('early', 'late arrival'), user('u', 'edited'), tool('t', 2, 'completed'), user('n', 'new')]),
+  )
+  expect(t.takeSettled(30)).toEqual(['', 'new'])
+})
+
+it('keeps a trailing read-only call back while the turn runs, since the next one folds into its group', () => {
+  const t = new Timeline({
+    rows: () => 20,
+    nodeView: view,
+    groupView: (nodes) => new Text(`group of ${nodes.length}`),
+    split: true,
+  })
+  t.apply(busyAt([user('u', 'ask'), tool('r1', 2, 'completed', 'read')]))
+  expect(t.takeSettled(30)).toEqual(['', 'ask'])
+  t.apply(busyAt([user('u', 'ask'), tool('r1', 2, 'completed', 'read'), tool('r2', 3, 'completed', 'read')]))
+  expect(t.takeSettled(30)).toEqual([])
+  t.apply(idleAt([user('u', 'ask'), tool('r1', 2, 'completed', 'read'), tool('r2', 3, 'completed', 'read')]))
+  expect(t.takeSettled(30)).toEqual(['', 'group of 2'])
+})
+
+it('places connection-local output by the seq it follows, writes the unsettled only at exit, and starts over for another session', () => {
+  const t = splitTimeline()
+  t.apply(idleAt([at(1, user('u', 'ask')), assistant('a', 2, '', true)]))
+  t.appendLocal('s', new Text('/help output'), 1)
+  expect(t.takeSettled(30)).toEqual(['', 'ask', '', '/help output'])
+  expect(t.takeSettled(30, true)).toEqual(['', ''])
+  t.apply({ ...timeline([user('u', 'ask')]), sessionId: 'other' })
+  expect(t.takeSettled(30)).toEqual(['', 'ask'])
+})
+
+it('shows only the entries not yet written, the welcome only before anything was, and no scroll state', () => {
+  const t = new Timeline({ rows: () => 20, nodeView: view, top: new Text('BRAND'), split: true })
+  t.apply(idleAt([]))
+  expect(t.render(30)).toEqual(['BRAND'])
+  t.apply(busyAt([user('u', 'ask'), assistant('a', 2, '', true)]))
+  t.takeSettled(30)
+  expect(t.render(30)).toEqual([''])
+  expect(t.scroll(-3)).toBe(false)
+  expect(t.jumpKey('end', false)).toBe(false)
+})

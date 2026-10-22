@@ -403,8 +403,10 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const printMode = mode === 'print' ? await import('./modes/print.js') : undefined
     const { resolveLocale } = await import('./tui/locale.js')
     // The composer goes up before the daemon is reached; it keeps what is typed while that happens.
-    let opening = tuiMode
-      ? new tuiMode.TuiOpening(p, {
+    // The opening composer draws on the alternate screen, which --no-alt-screen never enters.
+    const openingMode = p.noAltScreen ? undefined : tuiMode
+    let opening = openingMode
+      ? new openingMode.TuiOpening(p, {
           stdin: io.stdin,
           stdout: io.stdout,
           stderr: io.stderr,
