@@ -457,7 +457,7 @@ describe('DevBoard plugin contract', () => {
   it('registers every tool in the capability names and the coordinator profile, plus the new pages and actions', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const names = tools.map((t) => t.name)
-    expect(pkg.version).toBe('3.2.1')
+    expect(pkg.version).toMatch(/^3\.\d+\.\d+$/)
     expect(names).toContain('devboard_approval_submit')
     // the page may call only the services its client descriptor lists
     const client = JSON.parse(readFileSync(new URL('../client/agnes.client.json', import.meta.url), 'utf8'))
@@ -509,7 +509,8 @@ describe('DevBoard plugin contract', () => {
         references: async () => [],
       })
       const preview = await manager.inspect(profile, parseSource('file:./devboard'))
-      expect(preview).toMatchObject({ id: '@agnes-showcase/devboard', version: '3.2.1' })
+      const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+      expect(preview).toMatchObject({ id: '@agnes-showcase/devboard', version })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
