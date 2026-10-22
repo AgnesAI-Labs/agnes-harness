@@ -60,120 +60,68 @@ const ALONE_OK = new Set([
   'df',
   'date',
 ])
-const PAIRS: Readonly<Record<string, ReadonlySet<string>>> = {
-  git: new Set([
-    'status',
-    'diff',
-    'log',
-    'show',
-    'branch',
-    'fetch',
-    'add',
-    'commit',
-    'push',
-    'pull',
-    'switch',
-    'checkout',
-    'restore',
-    'blame',
-    'tag',
-    'remote',
-    'rev-parse',
-    'ls-files',
-  ]),
-  npm: new Set(['test', 'ls', 'outdated']),
-  pnpm: new Set(['test', 'ls', 'outdated']),
-  yarn: new Set(['test']),
-  bun: new Set(['test']),
-  cargo: new Set(['build', 'test', 'check', 'clippy', 'fmt', 'doc', 'tree']),
-  go: new Set(['build', 'test', 'vet', 'fmt', 'list']),
-  uv: new Set(['sync', 'lock']),
-  pip: new Set(['list', 'show', 'freeze']),
-  pip3: new Set(['list', 'show', 'freeze']),
-}
 /**
- * Options a covered command may carry after an allowed pair, also allow-listed: a denylist missed
- * abbreviations (`git --ext` is `--ext-diff`), short aliases (`bun -r`) and new flags. Any other
- * option, a short-option cluster, or a word starting with `+` (a forced git refspec) is asked about
- * as usual; everything after `--` is passed through. What a granted command runs from the project
- * itself (test scripts, git hooks) is the grant's purpose and is not checked here.
+ * The program and subcommand pairs that may be granted, each with the options a covered command may
+ * carry. Options are allow-listed per pair: a denylist missed abbreviations (`git --ext` is
+ * `--ext-diff`), short aliases (`bun -r`) and new flags. Every word after the pair is checked, `--`
+ * included, because some of these programs hand the rest to another flag parser. What a granted
+ * command runs from the project itself (test scripts, git hooks) is the grant's purpose.
  */
-const PAIR_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
-  git: new Set([
-    '-s',
-    '--short',
-    '-b',
-    '--branch',
-    '--porcelain',
-    '--stat',
-    '--name-only',
-    '--name-status',
-    '--cached',
-    '--staged',
-    '-p',
-    '--patch',
-    '--oneline',
-    '-n',
-    '--graph',
-    '--decorate',
-    '--all',
-    '-a',
-    '-m',
-    '--message',
-    '--amend',
-    '--no-edit',
-    '-v',
-    '--verbose',
-    '-q',
-    '--quiet',
-    '-u',
-    '--set-upstream',
-    '--tags',
-    '--prune',
-    '--rebase',
-    '--ff-only',
-    '-c',
-    '--create',
-  ]),
-  npm: new Set(['--json', '--all', '--long', '--depth']),
-  pnpm: new Set(['--json', '--long', '--depth', '-r', '--recursive']),
-  yarn: new Set([]),
-  bun: new Set(['-t', '--timeout', '--coverage', '--bail']),
-  cargo: new Set([
-    '--release',
-    '-p',
-    '--package',
-    '--workspace',
-    '--all',
-    '--lib',
-    '--bins',
-    '--tests',
-    '--no-run',
-    '--features',
-    '--all-features',
-    '--no-default-features',
-    '-q',
-    '--quiet',
-    '-v',
-    '--verbose',
-    '--check',
-  ]),
-  go: new Set([
-    '-v',
-    '-race',
-    '-run',
-    '-count',
-    '-short',
-    '-cover',
-    '-json',
-    '-timeout',
-    '-tags',
-    '-bench',
-    '-benchmem',
-  ]),
-  uv: new Set(['--frozen', '--locked', '--all-extras', '--extra', '--dev', '--no-dev', '-q', '-v']),
-  pip: new Set(['--outdated', '--format', '--local', '--user', '-v', '-q']),
-  pip3: new Set(['--outdated', '--format', '--local', '--user', '-v', '-q']),
+const GIT_LOG = [
+  '--oneline',
+  '-n',
+  '--graph',
+  '--decorate',
+  '--all',
+  '--stat',
+  '-p',
+  '--patch',
+  '--name-only',
+]
+const PAIRS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
+  git: {
+    status: ['-s', '--short', '-b', '--branch', '--porcelain'],
+    diff: ['--stat', '--name-only', '--name-status', '--cached', '--staged'],
+    log: GIT_LOG,
+    show: ['--stat', '--name-only', '--oneline'],
+    branch: ['-a', '--all', '-v', '--verbose', '--show-current'],
+    fetch: ['--prune', '--all', '--tags', '-q', '--quiet'],
+    add: ['-p', '--patch', '-u', '--update', '-A', '--all'],
+    commit: ['-m', '--message', '--amend', '--no-edit', '-a', '--all', '-q', '--quiet'],
+    push: ['-u', '--set-upstream', '-q', '--quiet', '-v', '--verbose'],
+    pull: ['--rebase', '--ff-only', '-q', '--quiet'],
+    switch: ['-c', '--create'],
+    checkout: ['-b'],
+    restore: ['--staged', '--worktree'],
+    blame: ['-L'],
+    tag: ['-l', '--list'],
+    remote: ['-v', '--verbose'],
+    'rev-parse': ['--abbrev-ref', '--short', '--show-toplevel'],
+    'ls-files': ['--others', '--exclude-standard', '--modified'],
+  },
+  npm: { test: [], ls: ['--json', '--all', '--long'], outdated: ['--json', '--long'] },
+  pnpm: { test: [], ls: ['--json', '--long', '-r', '--recursive'], outdated: ['--json', '--long'] },
+  yarn: { test: [] },
+  bun: { test: ['--coverage', '--bail'] },
+  cargo: {
+    build: ['--release', '-p', '--package', '--workspace', '--lib', '--bins', '-q', '-v'],
+    test: ['--release', '-p', '--package', '--workspace', '--lib', '--no-run', '-q', '-v'],
+    check: ['-p', '--package', '--workspace', '--all-targets', '-q'],
+    clippy: ['-p', '--package', '--workspace', '--all-targets', '-q'],
+    fmt: ['--check', '--all'],
+    doc: ['--no-deps', '-p', '--package', '--workspace'],
+    tree: ['-p', '--package', '--depth'],
+  },
+  go: {
+    build: ['-v', '-race'],
+    test: ['-v', '-race', '-run', '-count', '-short', '-cover', '-json', '-timeout', '-bench', '-benchmem'],
+    vet: [],
+    fmt: [],
+    list: ['-m', '-json'],
+  },
+  uv: { sync: ['--frozen', '--locked', '--all-extras', '--dev', '--no-dev'], lock: ['--locked', '--check'] },
+  pip: { list: ['--outdated', '--format', '--local', '--user'], show: [], freeze: ['--local', '--user'] },
+  pip3: { list: ['--outdated', '--format', '--local', '--user'], show: [], freeze: ['--local', '--user'] },
 }
 
 const programName = (word: string): string =>
@@ -184,20 +132,22 @@ export function isBannedPrefix(tokens: readonly string[]): boolean {
   const program = tokens[0] ?? ''
   // A path (`./ls`) or another spelling names some other program than the one on the list.
   if (!program || programName(program) !== program) return true
-  if (tokens.length === 1 ? !ALONE_OK.has(program) : !PAIRS[program]?.has(tokens[1] ?? '')) return true
+  if (tokens.length === 1 ? !ALONE_OK.has(program) : !Object.hasOwn(PAIRS[program] ?? {}, tokens[1] ?? ''))
+    return true
   return tokens.some((token) => looksLikeSecret(token))
 }
 
-/** True when a part after an allowed pair carries an option or word the pair does not allow. */
+/** True when a part after an allowed pair carries an option or word that pair does not allow. */
 const deniedArgument = (words: readonly string[]): boolean => {
-  const allowed = PAIR_OPTIONS[words[0] ?? '']
-  if (!allowed || words.length < 2) return false
-  for (const word of words.slice(2)) {
-    if (word === '--') return false
-    if (word.startsWith('+')) return true
-    if (word.startsWith('-') && !allowed.has(word.split('=')[0] as string)) return true
-  }
-  return false
+  const [program = '', sub = ''] = words
+  if (words.length < 3 || !Object.hasOwn(PAIRS[program] ?? {}, sub)) return false
+  const allowed = PAIRS[program]?.[sub] ?? []
+  return words.slice(2).some(
+    (word) =>
+      (word.startsWith('-') && word !== '--' && !allowed.includes(word.split('=')[0] as string)) ||
+      // A forced (`+main`) or deleting (`:main`) refspec rewrites or removes remote history.
+      (program === 'git' && sub === 'push' && /[+:]/.test(word)),
+  )
 }
 
 /** Tokens that look like a credential: never shown in a suggestion and never part of a prefix. */

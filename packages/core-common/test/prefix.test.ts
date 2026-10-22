@@ -231,6 +231,12 @@ describe('banned runners and subcommand programs', () => {
     ['go build -o /tmp/x', ['go', 'build']],
     ['bun test -r ./x.ts', ['bun', 'test']],
     ['npm test --foo', ['npm', 'test']],
+    ['npm test -- --watch', ['npm', 'test']],
+    ['cargo build -- -Zbuild-std', ['cargo', 'build']],
+    ['go test -- -exec x', ['go', 'test']],
+    ['git status --prune', ['git', 'status']],
+    ['git push origin :main', ['git', 'push']],
+    ['git push origin main:release', ['git', 'push']],
   ])('neither offers nor covers %j, whose options are not on the pair list', (command, prefix) => {
     expect(offerPrefix(command)).toBeUndefined()
     expect(coveredByPrefixes(command, [prefix])).toBe(false)
@@ -242,9 +248,9 @@ describe('banned runners and subcommand programs', () => {
     ['git commit -m fix', ['git', 'commit']],
     ['git push -u origin main', ['git', 'push']],
     ['git log --oneline -n 5 -- src', ['git', 'log']],
-    ['cargo test -p core -- --nocapture', ['cargo', 'test']],
+    ['cargo test -p core', ['cargo', 'test']],
+    ['git push -u origin feature', ['git', 'push']],
     ['go test -run=TestX -v ./...', ['go', 'test']],
-    ['npm test -- --watch', ['npm', 'test']],
     ['grep -rn foo src', ['grep']],
   ])('covers %j with options on the pair list', (command, prefix) => {
     expect(coveredByPrefixes(command, [prefix])).toBe(true)
