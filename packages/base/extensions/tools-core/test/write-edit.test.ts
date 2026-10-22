@@ -743,6 +743,23 @@ describe('successful file review receipts', () => {
     },
   )
 
+  it('names the checkpoint the host took before the write, and omits it when the host took none', () => {
+    const base = ctxOf({ cwd: 'D:/workspace' })
+    const input = {
+      path: 'a.txt',
+      operation: 'write' as const,
+      existed: true,
+      before: new TextEncoder().encode('old'),
+      after: new TextEncoder().encode('new'),
+    }
+    const withHost = {
+      ...base,
+      fs: { ...base.fs, checkpointOf: (p: string) => (p === 'a.txt' ? 'c'.repeat(32) : undefined) },
+    }
+    expect(fileChangeReceipt(input, withHost)).toMatchObject({ checkpointId: 'c'.repeat(32) })
+    expect(fileChangeReceipt(input, base)).not.toHaveProperty('checkpointId')
+  })
+
   it.each([false, true])(
     'records workspace-relative write/edit receipts with nested cwd: %s',
     async (nested) => {

@@ -180,6 +180,8 @@ export function buildToolContext(
   const publicFetch = d.publicFetch
   // Every call gets one: a memory write and a Host-owned port can both prove a refusal before effect.
   const effects = new ToolEffectScope()
+  // The checkpoint taken before each write of this call, so a receipt can name what restores it.
+  const checkpoints = new Map<string, string>()
   const workspaceFiles: FsOps = {
     read: (path, opts) => d.fsOps.read(path, opts),
     // A write is snapshotted before it happens, so a rewind has something to go back to. An
@@ -192,6 +194,7 @@ export function buildToolContext(
       await assertNotDenied(d.fsOps, path)
       const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint)
       if (!snap.ok) throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
+      checkpoints.set(path, snap.id)
       return d.fsOps.write(path, data)
     },
     list: (path) => d.fsOps.list(path),
@@ -541,6 +544,7 @@ export function buildToolContext(
                 const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint)
                 if (!snap.ok)
                   throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
+                checkpoints.set(path, snap.id)
                 call.signal.throwIfAborted()
                 return d.fsOps.create!(path, bytes)
               }),
@@ -549,6 +553,7 @@ export function buildToolContext(
       list: (path) => files.list(path),
       stat: (path) => files.stat(path),
       ...(files.revision ? { revision: (path: string) => files.revision!(path) } : {}),
+      checkpointOf: (path) => checkpoints.get(path),
     },
     net: effects.guard(context.net),
     sandbox: effects.guard(context.sandbox, ['openProcess']),

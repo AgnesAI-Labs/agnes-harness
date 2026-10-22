@@ -18,7 +18,10 @@ const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('h
 /** Only a successful mutation supplies this receipt; the reader must still authorize the path. */
 export function fileChangeReceipt(
   input: FileChangeInput,
-  ctx: Pick<ToolContext, 'cwd' | 'session'> & Partial<Pick<ToolContext, 'platform'>>,
+  ctx: Pick<ToolContext, 'cwd' | 'session'> &
+    Partial<Pick<ToolContext, 'platform'>> & {
+      fs?: Pick<ToolContext['fs'], 'checkpointOf'>
+    },
 ) {
   const turn = ctx.session.turn
   if (typeof turn !== 'number' || !Number.isSafeInteger(turn) || turn < 1) return undefined
@@ -41,6 +44,8 @@ export function fileChangeReceipt(
   const binary = [input.before, input.after].some(
     (bytes) => !isUtf8(bytes) || bytes.subarray(0, 8192).includes(0),
   )
+  // Absent for a host that keeps no checkpoint: the turn is then not undoable, which is never guessed.
+  const checkpointId = ctx.fs?.checkpointOf?.(input.path)
   const value = {
     version: 1,
     sessionId: ctx.session.key,
@@ -51,6 +56,7 @@ export function fileChangeReceipt(
     existed: input.existed,
     beforeHash: hash(input.before),
     afterHash: hash(input.after),
+    ...(checkpointId ? { checkpointId } : {}),
     status: binary ? 'binary' : text ? 'available' : 'too-large',
     ...(!binary && text
       ? {

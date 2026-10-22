@@ -330,6 +330,8 @@ export interface ToolContext {
     stat(path: string): Promise<FsStat>
     /** Revision of a snapshot-backed read, when the filesystem supplies one. */
     revision?(path: string): Promise<string | undefined>
+    /** Id of the checkpoint taken before this call's latest write to `path`, when the host keeps one. */
+    checkpointOf?(path: string): string | undefined
   }
   readonly net: {
     fetch(url: string, init?: FetchInit): Promise<Response>
