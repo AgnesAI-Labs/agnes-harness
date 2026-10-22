@@ -1,14 +1,10 @@
 name: Web E2E
 on:
   pull_request:
-    if: ${{ inputs.visual_review_capture != true }}
   push:
-    if: ${{ inputs.visual_review_capture != true }}
     branches: [main, feat/agh-plugin-core, feat/agh-e2e-gate, feat/agh-e2e-ui-gate, fix/agh-linux, fix/agh-ci-green, fix/agh-ci-green-2]
   merge_group:
-    if: ${{ inputs.visual_review_capture != true }}
   workflow_dispatch:
-    if: ${{ inputs.visual_review_capture != true }}
     inputs:
       visual_review_capture:
         description: Capture Linux screenshots for review; does not run pixel acceptance
