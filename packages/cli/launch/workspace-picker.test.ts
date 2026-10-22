@@ -24,11 +24,14 @@ describe('native workspace picker', () => {
     })
     await expect(picker.pick(new AbortController().signal)).resolves.toEqual({ status: 'cancelled' })
     expect(run.mock.calls[0]?.[0]).toBe('/usr/bin/osascript')
-    expect(run.mock.calls[0]?.[1].at(-1)).toContain('choose folder')
-    expect(run.mock.calls[0]?.[1].at(-1)).toContain('on error number -128')
-    expect(run.mock.calls[0]?.[1].at(-1)).toContain('activate')
+    expect(run.mock.calls[0]?.[1].slice(0, 3)).toEqual(['-l', 'JavaScript', '-e'])
+    expect(run.mock.calls[0]?.[1].at(-1)).toContain('chooseFolder')
+    expect(run.mock.calls[0]?.[1].at(-1)).toContain('-128')
+    // The AppleScript `activate` command adds about 2 s before the dialog shows; native activation does not.
+    expect(run.mock.calls[0]?.[1].at(-1)).toContain('activateIgnoringOtherApps(true)')
+    expect(run.mock.calls[0]?.[1].at(-1)).not.toMatch(/^\s*activate\b/m)
     // A dialog owned by Finder survives the killed helper and leaves Finder blocked.
-    expect(run.mock.calls[0]?.[1].at(-1)).toContain('tell current application')
+    expect(run.mock.calls[0]?.[1].at(-1)).toContain('Application.currentApplication()')
     expect(run.mock.calls[0]?.[1].at(-1)).not.toContain('Finder')
     expect(run.mock.calls[0]?.[3]).not.toHaveProperty('DEEPSEEK_API_KEY')
   })
