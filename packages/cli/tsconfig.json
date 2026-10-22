@@ -25,6 +25,9 @@
       "path": "../protocol"
     },
     {
+      "path": "../core-common"
+    },
+    {
       "path": "../ai"
     },
     {

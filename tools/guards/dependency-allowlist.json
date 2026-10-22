@@ -148,6 +148,7 @@
     "@agnes/distribution"
   ],
   "@agnes/cli": [
+    "@agnes/core-common",
     "@agnes/system-node",
     "@agnes/protocol",
     "@agnes/sdk",

@@ -125,6 +125,10 @@ export type ParsedArgs = {
   /** `api`: the JSON params object (or `-` for stdin). */
   params?: string
   payload?: string
+  /** `approvals suggest`: how far back to look, the smallest count worth suggesting, and how many to show. */
+  days?: string
+  minCount?: string
+  limit?: string
   /** Explicitly permit provider doctor to issue its bounded minimal-inference probe. */
   probe: boolean
   /** Repeated Computer Use doctor check selectors. Owned by that command's grammar. */

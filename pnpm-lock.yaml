@@ -471,6 +471,9 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
+      '@agnes/core-common':
+        specifier: workspace:*
+        version: link:../core-common
       '@agnes/daemon':
         specifier: workspace:*
         version: link:../daemon

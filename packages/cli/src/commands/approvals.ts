@@ -2,6 +2,7 @@ import { grantLine } from '@agnes/cli-tui'
 import type { NodeClient } from '@agnes/sdk'
 import { ExitCode, UsageError } from '../errors.js'
 import type { ParsedArgs } from '../types.js'
+import { approvalsSuggest } from './approvals-suggest.js'
 
 type IO = { stdout: NodeJS.WritableStream; stderr: NodeJS.WritableStream }
 
@@ -12,6 +13,7 @@ type IO = { stdout: NodeJS.WritableStream; stderr: NodeJS.WritableStream }
  */
 export async function approvalsCommand(p: ParsedArgs, client: NodeClient, io: IO): Promise<number> {
   const [action, sessionId, grantId, ...extra] = p.positional
+  if (action === 'suggest') return approvalsSuggest(p, client, io)
   if (action === 'grants') {
     if (!sessionId || grantId !== undefined) throw new UsageError('approvals grants expects <sessionId>')
     const result = await client.approval.sessionGrants(sessionId)
@@ -29,5 +31,5 @@ export async function approvalsCommand(p: ParsedArgs, client: NodeClient, io: IO
     io.stdout.write(p.json ? `${JSON.stringify(revoked)}\n` : `revoked ${grantLine(revoked)}\n`)
     return ExitCode.OK
   }
-  throw new UsageError('approvals expects grants <sessionId> or revoke <sessionId> <grantId>')
+  throw new UsageError('approvals expects grants <sessionId>, revoke <sessionId> <grantId> or suggest')
 }

@@ -45,6 +45,7 @@
     "@agnes/base": "workspace:*",
     "@agnes/bridges": "workspace:*",
     "@agnes/code": "workspace:*",
+    "@agnes/core-common": "workspace:*",
     "@agnes/daemon": "workspace:*",
     "@agnes/host": "workspace:*",
     "@agnes/protocol": "workspace:*",

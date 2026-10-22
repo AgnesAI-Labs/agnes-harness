@@ -26,6 +26,7 @@
 | `agh sessions deliverables ID [--json]` / `--save N\|ID [--out PATH] [--force]` | 列出会话交付的文件/下载一个：校验 sha256 与大小，只取名称最后一段路径，目标已存在时须加 `--force` |
 | `agh sessions undo KEY [--turn N] [--yes] [--json]` | 打印撤销最近一次改过文件的轮次（或第 N 轮）会做什么；加 `--yes` 才执行。有文件在该轮之后被改动、有轮次运行中、非属主或只读会话时整轮拒绝；被拒绝或有文件未能恢复时退出码为 1。 |
 | `agh approvals grants SESSION [--json]` / `agh approvals revoke SESSION GRANT [--json]` | 列出会话生效中的审批授权/撤销一条（需管理员连接，拒绝原样输出）|
+| `agh approvals suggest [--days N] [--min-count N] [--limit N] [--json]` | 读取过去的会话，提出你常批准的命令前缀（默认 90 天、至少 2 次、显示 20 条）。只读：在审批卡上采用前缀。凭据会被屏蔽；没有管理员连接时会注明未与现有授权比对 |
 | `agh schedules [list [--session KEY] [--archived]] / show ID [--json]` | 列出定时任务（默认全部）/查看一个任务及其最近运行 |
 | `agh schedules add --prompt TEXT (--every 30m\|--cron EXPR\|--at ISO\|--daily HH:MM\|--weekly mon,wed@HH:MM) [--tz ZONE] [--title T] [--session KEY \| --new-session [--cwd DIR]] [--unattended notify\|refuse]` / `edit ID [同上]` | 新建或修改任务；`--every` 范围为 60 秒到 366 天，未给 `--session` 或 `--new-session` 时在当前目录新开会话运行，`edit` 只改动给出的参数 |
 | `agh schedules pause\|resume\|run\|archive ID [--json]` | 暂停、恢复、立即运行或归档任务（需管理员连接；拒绝时打印 code 并以 1 退出）|
