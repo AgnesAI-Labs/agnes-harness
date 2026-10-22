@@ -65,3 +65,34 @@ export function prefixGrantOf(subject: unknown): Pick<ApprovalNode, 'prefixGrant
     ? { prefixGrant: { tokens, scope: offered?.scope as string } }
     : {}
 }
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are stripped on purpose
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g
+const shown = (value: unknown, max: number): string | undefined => {
+  const text = typeof value === 'string' ? value.replace(CONTROL, ' ').trim() : ''
+  return text ? clipUtf16(text, max) : undefined
+}
+
+/**
+ * The always-allow scopes and the requester Core recorded in the subject, bounded for display
+ * (8 scopes of 256 characters, 128 per origin field). Anything malformed is left out.
+ */
+export function approvalFactsOf(subject: unknown): Pick<ApprovalNode, 'grantScopes' | 'origin'> {
+  const facts = subject as { grantScopes?: unknown; origin?: Record<string, unknown> } | null
+  const scopes = Array.isArray(facts?.grantScopes)
+    ? facts.grantScopes
+        .map((scope) => shown(scope, 256))
+        .filter((scope): scope is string => scope !== undefined)
+        .slice(0, 8)
+    : []
+  const origin = Object.fromEntries(
+    (['package', 'role', 'mcpServer'] as const).flatMap((key) => {
+      const value = shown(facts?.origin?.[key], 128)
+      return value ? [[key, value]] : []
+    }),
+  )
+  return {
+    ...(scopes.length ? { grantScopes: scopes } : {}),
+    ...(Object.keys(origin).length ? { origin } : {}),
+  }
+}

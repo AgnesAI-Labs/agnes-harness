@@ -36,6 +36,7 @@ import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState } from '../reduce/state.js'
 import {
   type ApprovalNode,
+  approvalFactsOf,
   approvalSubject,
   approvalToolReference,
   automaticToolPermission,
@@ -896,6 +897,7 @@ export class UIProjectionCell {
           // Core's command-prefix offer rides beside the options, never inside them: a client that
           // does not know it sees exactly the options it always saw.
           ...(result ? {} : prefixGrantOf(value.request.spec.subject)),
+          ...(result ? {} : approvalFactsOf(value.request.spec.subject)),
           options: value.request.spec.options.map((option) =>
             option === 'allowed-once'
               ? 'allow_once'

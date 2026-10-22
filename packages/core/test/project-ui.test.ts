@@ -5,6 +5,7 @@ import type { ApprovalVerdict, UINode } from '@agnes/protocol'
 import { validateAgainst, validateSlotPayload } from '@agnes/protocol'
 import { UITimeline } from '@agnes/protocol/gen/agnes-v1'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { approvalFactsOf } from '../../core-ledger/src/project/approval-subject.js'
 import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import type { SessionImpl } from '../src/step/session.js'
@@ -1559,4 +1560,36 @@ it('reconstructs role attribution from persisted delegation results', async () =
   expect(
     kind((await projectUI(failed, { sessionKey: 'roles' })).nodes, 'tool')[0]?.delegatedRole,
   ).toBeUndefined()
+})
+
+describe('approval card facts', () => {
+  const long = 'x'.repeat(400)
+  it.each([
+    { name: 'none', subject: {}, expected: {} },
+    {
+      name: 'scopes and origin',
+      subject: {
+        grantScopes: ['tool:a:execute'],
+        origin: { package: '@agnes/browser', role: 'reviewer', mcpServer: 'files' },
+      },
+      expected: {
+        grantScopes: ['tool:a:execute'],
+        origin: { package: '@agnes/browser', role: 'reviewer', mcpServer: 'files' },
+      },
+    },
+    {
+      name: 'bounded and sanitized',
+      subject: {
+        grantScopes: Array.from({ length: 12 }, (_, i) => (i === 0 ? long : `s${i}`)),
+        origin: { package: `a\u001b[31mb${long}`, role: 7, extra: 'x' },
+      },
+      expected: {
+        grantScopes: [long.slice(0, 256), 's1', 's2', 's3', 's4', 's5', 's6', 's7'],
+        origin: { package: `a [31mb${long}`.slice(0, 128) },
+      },
+    },
+    { name: 'malformed', subject: { grantScopes: 'x', origin: 'y' }, expected: {} },
+  ])('reads $name from the recorded subject', ({ subject, expected }) => {
+    expect(approvalFactsOf(subject)).toEqual(expected)
+  })
 })

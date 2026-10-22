@@ -3822,6 +3822,22 @@
                 "scope": { "type": "string", "maxLength": 256 }
               }
             },
+            "grantScopes": {
+              "type": "array",
+              "maxItems": 8,
+              "description": "Present on a pending tool approval: the scopes the always-allow options would store, as Core computed them. Clients show them beside those options and never derive them.",
+              "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+            },
+            "origin": {
+              "type": "object",
+              "description": "Present when Core knows who asked: the package that owns the tool, the agent role of a delegated session and the MCP server a tool came from. Display only; no field is an authorization input.",
+              "additionalProperties": false,
+              "properties": {
+                "package": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "role": { "type": "string", "minLength": 1, "maxLength": 128 },
+                "mcpServer": { "type": "string", "minLength": 1, "maxLength": 128 }
+              }
+            },
             "reconcile": {
               "type": "object",
               "description": "Present when Core asks whether a tool call whose result never arrived actually ran (decision owner core/unknown-outcome): the tool it asks about. The allowed options mean it ran; rejected means it did not.",

@@ -466,6 +466,13 @@ describe('v3 approval modes and grants', () => {
     })
     await opened.session.runToolsPhase()
     expect(grants).toHaveLength(2)
+    // Each card says what its own always-allow stores: this card's scope and no other.
+    const asked = await opened.session.decisions.list()
+    expect(asked.length).toBeGreaterThan(1)
+    for (const value of asked) {
+      const subject = value.request.spec.subject as { scope: string }
+      expect(subject).toMatchObject({ grantScopes: [subject.scope], origin: { package: expect.any(String) } })
+    }
     await opened.session.runInference()
     await opened.session.runToolsPhase()
     expect(asks).toBe(2)

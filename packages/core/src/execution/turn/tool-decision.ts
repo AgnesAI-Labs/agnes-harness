@@ -38,14 +38,19 @@ export function toolDecisionSource(
   })
 }
 
+/** The server a `mcp__<server>__<tool>` name was registered for, as the stable (sanitized) id. */
+const mcpServerOf = (name: string): string | undefined => /^mcp__(.+?)__./.exec(name)?.[1]
+
 /** Original call rows are immutable controlled content references, including oversized plans. */
 export async function requestToolDecision(
   s: SessionImpl,
   call: PlannedCall,
   offered: ApprovalRequest,
   rewrite?: AskRewrite,
+  grantScopes?: readonly string[],
 ): Promise<DecisionSnapshot> {
   const source = toolDecisionSource(s, call)
+  const mcpServer = mcpServerOf(call.name)
   const def = s.currentTools().resolve(call.name)
   if (!def || def.definitionFingerprint !== call.definitionFingerprint)
     throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
@@ -86,6 +91,13 @@ export async function requestToolDecision(
       risk: offered.risk,
       ...(offered.prefixGrant ? { prefixGrant: offered.prefixGrant } : {}),
       ...(rewrite ? { rewrite } : {}),
+      // Display facts for the card: what an always-allow would store and who asked.
+      ...(grantScopes?.length ? { grantScopes: [...grantScopes] } : {}),
+      origin: {
+        package: def.packageIdentity ?? def.source.source,
+        ...(s.d.roleDelegation ? { role: String(s.d.roleDelegation.role.ref) } : {}),
+        ...(mcpServer ? { mcpServer } : {}),
+      },
     },
     prompt: offered.summary,
     options: offered.options ?? ['allowed-once', 'allowed-session', 'rejected'],

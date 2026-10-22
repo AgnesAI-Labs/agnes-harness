@@ -197,6 +197,17 @@ export class ApprovalCard implements Component {
       ...(n.options.includes('reject_once') ? [`${chip('r')} ${t('approval.rejectReason', locale)}`] : []),
     ].join('  ')
     const rail = ansi.fg('warning', '│ ')
+    const origin = [
+      n.origin?.package && t('approval.from', locale, { value: escapeControl(n.origin.package) }),
+      n.origin?.role && t('approval.role', locale, { value: escapeControl(n.origin.role) }),
+      n.origin?.mcpServer && t('approval.mcp', locale, { value: escapeControl(n.origin.mcpServer) }),
+    ].filter(Boolean)
+    const stores = n.grantScopes?.length
+      ? wrapText(
+          t('approval.stores', locale, { value: n.grantScopes.map(escapeControl).join(', ') }),
+          width - 2,
+        )
+      : []
     return [
       fitLine(
         `${ansi.bold(ansi.fg('warning', `▲ ${t('approval.waiting', locale)}:`))} ${ansi.bold(summary)}`,
@@ -209,6 +220,7 @@ export class ApprovalCard implements Component {
         )}`,
         width,
       ),
+      ...(origin.length ? [fitLine(`${rail}${ansi.fg('faint', origin.join(' · '))}`, width)] : []),
       ...(presentation?.fields.flatMap((field) =>
         wrapText(
           escapeControl(`${field.label}: ${field.value}${field.href ? ` (${field.href})` : ''}`),
@@ -224,6 +236,7 @@ export class ApprovalCard implements Component {
       ...(n.subjectText
         ? wrapText(escapeControl(n.subjectText), width - 2).map((line) => fitLine(`${rail}${line}`, width))
         : []),
+      ...stores.map((line) => fitLine(`${rail}${ansi.fg('faint', line)}`, width)),
       this.reason !== null
         ? fitLine(
             `${rail}${ansi.fg('faint', `${t('approval.reasonPrompt', locale)}: `)}${this.reason}▏`,

@@ -210,3 +210,31 @@ describe('ApprovalCard rejection reason', () => {
     expect(sent).not.toMatch(/[\u0000-\u001f\u007f]/)
   })
 })
+
+describe('ApprovalCard facts', () => {
+  const pending = (extra: Partial<ApprovalNode>) =>
+    new ApprovalCard(
+      { ...node(['allow_once', 'allow_permanent', 'reject_once']), ...extra },
+      { ansi: PLAIN, onDecide: vi.fn() },
+    )
+
+  it('shows who asked and what an always-allow stores', () => {
+    const text = pending({
+      origin: { package: '@agnes/browser', role: 'reviewer', mcpServer: 'files' },
+      grantScopes: ['tool:browser:execute', 'cua:click'],
+    })
+      .render(120)
+      .join('\n')
+    expect(text).toContain('from @agnes/browser · role reviewer · MCP server files')
+    expect(text).toContain('Always allow stores: tool:browser:execute, cua:click')
+  })
+
+  it('shows neither line when the daemon sent neither, and strips control characters', () => {
+    expect(pending({}).render(120).join('\n')).not.toMatch(/from |stores:/)
+    const text = pending({ origin: { package: 'a\u001b[2Jb' }, grantScopes: ['s\u0007'] })
+      .render(120)
+      .join('\n')
+    expect(text).not.toContain('\u001b')
+    expect(text).not.toContain('\u0007')
+  })
+})

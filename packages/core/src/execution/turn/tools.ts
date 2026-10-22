@@ -868,7 +868,13 @@ export async function approveAndExecute(
       if (hasChildControl(storage)) await transitionChildState(storage, s.key, 'waiting_approval')
       const delivery = await deliverToolDecision(
         s,
-        await requestToolDecision(s, call, approvalRequest, rewrite),
+        await requestToolDecision(
+          s,
+          call,
+          approvalRequest,
+          rewrite,
+          options.includes('allowed-permanent') ? [scope] : undefined,
+        ),
         approvalRequest,
         o.signal ?? s.ac.signal,
       )

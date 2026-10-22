@@ -80,7 +80,9 @@ describe('shell prefix approvals', () => {
     expect(node).toMatchObject({
       options: ['allow_once', 'allow_always', 'reject_once'],
       prefixGrant: { tokens: ['git', 'status'] },
+      origin: { package: 'fixture' },
     })
+    expect(node).not.toHaveProperty('grantScopes')
     await t.answer('allow_prefix_session')
     // The next two commands start with the prefix and run unasked; the fourth does not and asks.
     expect((await t.run()).reason).toBe('parked')
