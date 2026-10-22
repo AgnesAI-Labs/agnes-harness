@@ -1991,6 +1991,7 @@ export class SessionImpl {
   async restartLoopDriver(): Promise<void> {
     const ctx = this.loopContext
     if (!ctx) throw new CoreError('E_RELATION', 'Loop context is missing')
+    renewChildLifecycle(this)
     const checkpoint = ctx.checkpoints.read() ?? this.loopDriver.checkpoint()
     await this.loopDriver.dispose()
     this.ac = new AbortController()
@@ -2066,7 +2067,9 @@ export class SessionImpl {
   ): Promise<TurnOutcome> {
     // Fresh work gets a fresh scope, unless the session is closed, in which case there is no work.
     if (!this.closing) {
-      if (this.decisions.scopeRevoked) await this.restartLoopDriver()
+      // A run already overtaken by Stop only drains its cancelled turn; it admits no fresh scope.
+      if (this.decisions.scopeRevoked && !opts.signal.aborted && this.abortRevision === abortRevision)
+        await this.restartLoopDriver()
       this.ac = new AbortController()
     }
     this.turnEndError = undefined

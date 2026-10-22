@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -62,7 +62,7 @@ async function runExampleTurn(kind: keyof typeof cases) {
   const source: RuntimePluginSnapshot = {
     snapshot: {
       packageId: spec.packageId,
-      version: spec.selection.version,
+      version: JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).version,
       snapshotId: `sha256-${'1'.repeat(64)}`,
       integrity: `sha256-${'2'.repeat(64)}`,
       treeIntegrity: hashDirectory(directory, { exclude: [] }),
@@ -84,7 +84,7 @@ async function runExampleTurn(kind: keyof typeof cases) {
         ['@agnes/ai', '@agnes/base', '@agnes/code', spec.packageId].map((id) => [
           id,
           {
-            version: id === spec.packageId ? '1.0.0' : '0.1.0',
+            version: id === spec.packageId ? source.snapshot.version : '0.1.0',
             source:
               id === spec.packageId
                 ? { type: 'file' as const, ref: 'file:fixture' }
@@ -206,7 +206,7 @@ async function openExample(kind: keyof typeof cases, provider: Provider) {
   const source: RuntimePluginSnapshot = {
     snapshot: {
       packageId: spec.packageId,
-      version: spec.selection.version,
+      version: JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')).version,
       snapshotId: `sha256-${'1'.repeat(64)}`,
       integrity: `sha256-${'2'.repeat(64)}`,
       treeIntegrity: hashDirectory(directory, { exclude: [] }),
@@ -228,7 +228,7 @@ async function openExample(kind: keyof typeof cases, provider: Provider) {
         ['@agnes/ai', '@agnes/base', '@agnes/code', spec.packageId].map((id) => [
           id,
           {
-            version: id === spec.packageId ? '1.0.0' : '0.1.0',
+            version: id === spec.packageId ? source.snapshot.version : '0.1.0',
             source:
               id === spec.packageId
                 ? { type: 'file' as const, ref: 'file:fixture' }

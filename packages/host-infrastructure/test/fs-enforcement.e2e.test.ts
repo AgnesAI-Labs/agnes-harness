@@ -213,13 +213,23 @@ const IMPLEMENTATIONS: Record<string, Impl> = {
   },
 }
 
-// These boundaries validate canonical paths but are not FsOps implementations, so they cannot run
+// These boundaries guard file access but are not FsOps implementations, so they cannot run
 // through describe.each(IMPLEMENTATIONS). Keep their dedicated behavioral test visible to this
 // repository-wide inventory instead of silently exempting their source file from the scan.
 // The checkpoint seam used to be one: it refused paths outside the workspace itself. It no longer
 // does, because the host's file fence decides what a session may reach and the seam follows it, so
 // its row is gone rather than left naming a file that refuses nothing.
-const AUXILIARY_PATH_GUARDS: Record<string, { test: string; evidence: RegExp[] }> = {}
+const AUXILIARY_PATH_GUARDS: Record<string, { test: string; evidence: RegExp[] }> = {
+  // This reader bounds bytes with E_FS_DENIED and delegates path policy to the invocation's FsOps.
+  'packages/core-effects/src/workspace/runtime.ts': {
+    test: 'packages/core/test/workspace-invocation.test.ts',
+    evidence: [
+      /reacquires delayed resource reads, enforces byte bounds and refuses a closed session/,
+      /limit: 16 \* 1024 \* 1024/,
+      /toThrow\('bounded'\)/,
+    ],
+  },
+}
 
 /** The spellings of one file under a denied directory. Each one used to reach the bytes. */
 function spellings(root: string, deny: string, file: string): Array<[string, string]> {

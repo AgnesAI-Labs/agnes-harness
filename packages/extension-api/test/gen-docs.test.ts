@@ -48,6 +48,7 @@ describe('author documentation generation', () => {
       'discoveryGroup',
       'requiresApproval',
       'isPresentational',
+      'attestsHistory',
       'invalidArgumentLimit',
       'modelVisible',
       'requiresImageInput',
