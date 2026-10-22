@@ -1,4 +1,5 @@
 import { Lexer, type Token, type Tokens } from 'marked'
+import { type CodeRun, highlight } from './highlight.js'
 import type { Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
@@ -202,15 +203,35 @@ function table(token: Tokens.Table, width: number, ansi: ThemedAnsi, base: Style
   })
 }
 
+/** One code line in the block colour, its runs in their own tones; `body` is the clipped, padded line. */
+function paintCode(body: string, runs: CodeRun[] | undefined, ansi: ThemedAnsi): string {
+  const out: CodeRun[] = []
+  let pos = 0
+  const add = (text: string, tone?: Tone) => {
+    if (text === '') return
+    const last = out.at(-1)
+    if (last && last.tone === tone) last.text += text
+    else out.push(tone ? { text, tone } : { text })
+  }
+  // The two columns of indent come first; what clipping or padding added after the runs is plain.
+  for (const run of [{ text: '  ' }, ...(runs ?? [])] as CodeRun[]) {
+    add(body.slice(pos, pos + run.text.length), run.tone)
+    pos += run.text.length
+  }
+  add(body.slice(pos))
+  return out.map((run) => ansi.fg(run.tone ?? 'surfaceFg', run.text)).join('')
+}
+
 function code(token: Tokens.Code, width: number, ansi: ThemedAnsi): string[] {
   const lang = token.lang?.trim().split(/\s/)[0] ?? ''
   const label = lang && width - displayWidth(lang) >= 10 ? ` ${lang} ` : ''
   const shaded = shades(ansi)
+  const runs = shaded ? highlight(token.text, lang) : undefined
   return token.text.split('\n').map((line, i) => {
     const tag = i === 0 ? label : ' '.repeat(displayWidth(label))
     const clipped = clip(`  ${line}`, width - displayWidth(tag))
     const body = shaded || label ? pad(clipped, width - displayWidth(tag)) : clipped
-    const text = shaded ? ansi.fg('surfaceFg', body) : ansi.dim(body)
+    const text = shaded ? paintCode(body, runs?.[i], ansi) : ansi.dim(body)
     return ansi.bg('surface', text + ansi.fg('faint', tag))
   })
 }
