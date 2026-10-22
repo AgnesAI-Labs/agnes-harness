@@ -36,7 +36,7 @@ import {
   upsertReqs,
   upsertTrial,
 } from '../domain.mjs'
-import { FILES, fastForward, GATES, levelOf, UNIT_TOTAL } from '../fastforward.mjs'
+import { FILES, fastForward, GATES, levelOf } from '../fastforward.mjs'
 import { HANDOFF_TYPES, handoff, SUMMARY_MAX } from '../handoff.mjs'
 import { GATE_PROFILES, LIVE_TAILORING, ORGS, ROLES } from '../profiles.mjs'
 import { buildSeed } from '../seed-data.mjs'
@@ -1861,10 +1861,10 @@ describe('fast-forward from the shipped sample', () => {
         expect(found.map((d: Item) => d.req)).toEqual(['SWR-002', 'SWR-003'])
         const runs = state.testRuns.filter((t: Item) => t.projectId === project.id)
         expect(runs.map((r: Item) => [r.level, r.total, r.failed])).toEqual([
-          ['UNIT', UNIT_TOTAL, 1],
-          ['UNIT', UNIT_TOTAL, 0],
-          ['INTEGRATION', 8, 0],
-          ['SYSTEM', 12, 1],
+          ['UNIT', 3, 1],
+          ['UNIT', 3, 0],
+          ['INTEGRATION', 3, 0],
+          ['SYSTEM', 2, 1],
         ])
       }
       if (tasks) {
@@ -1944,9 +1944,10 @@ describe('fast-forward from the shipped sample', () => {
       expect(entryFile(project)).toBe(`${project.workspaceDir}/server.js`)
       // the newest run of each level: the unit tests were fixed after the first failure
       expect(latestRuns(data, project.id).map((r: Item) => [r.level, r.passed, r.failed])).toEqual([
-        ['UNIT', UNIT_TOTAL, 0],
-        ['INTEGRATION', 8, 0],
-        ['SYSTEM', 11, 1],
+        ['UNIT', 3, 0],
+        // the defect scenario's interface acceptance found TC-006 failing
+        ['INTEGRATION', gate === 'TR5_DEFECT' ? 2 : 3, gate === 'TR5_DEFECT' ? 1 : 0],
+        ['SYSTEM', 1, 1],
       ])
       expect(evidenceDocs(data, project.id).map((a: Item) => a.kind)).toEqual(['TEST_REPORT', 'ACCEPTANCE'])
       // an app address appears only once it is registered
@@ -2437,6 +2438,45 @@ describe('hand-off to the coordinator', () => {
     expect(JSON.stringify(out).length).toBeLessThan(8000)
   })
 
+  it('tells the coordinator which failed test cases still need a defect', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    upsertReqs(
+      state,
+      {
+        projectId: p.id,
+        by: 'x',
+        items: [
+          { id: 'CUS-001', title: 'c', text: 'c' },
+          { id: 'SYS-001', title: 's', text: 's', parent: ['CUS-001'] },
+          { id: 'SWR-001', title: 'w', text: 'w', parent: ['SYS-001'] },
+          { id: 'TC-001', title: 't1', text: 't1', parent: ['SWR-001'] },
+          { id: 'TC-002', title: 't2', text: 't2', parent: ['SWR-001'] },
+        ],
+      },
+      NOW,
+    )
+    recordTestRun(
+      state,
+      {
+        projectId: p.id,
+        results: [
+          { tc: 'TC-001', status: 'fail' },
+          { tc: 'TC-002', status: 'fail' },
+        ],
+      },
+      NOW,
+    )
+    expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual(['TC-001', 'TC-002'])
+    create(state, { kind: 'defect', projectId: p.id, title: 'd', testCase: 'TC-001', by: 'x' }, NOW)
+    const out = handoff(state, { type: 'project', id: p.id })
+    expect(out.untrackedFailures).toEqual(['TC-002'])
+    expect(out.next.join('')).toContain('为 TC-002 建缺陷')
+    // a later passing run clears it
+    recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-002', status: 'pass' }] }, NOW + 1)
+    expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual([])
+  })
+
   it('quotes long board text clipped and marks it as data', () => {
     const state = blank()
     const p = newProject(state, 'SOFTWARE')
@@ -2448,5 +2488,201 @@ describe('hand-off to the coordinator', () => {
     const out = handoff(state, { type: 'change', id: cr.id })
     expect(out.change.reason.length).toBe(600)
     expect(out.next[0]).toContain('traceFrom')
+  })
+})
+
+describe('per-test-case results', () => {
+  /** A live project with TC-001/002 under SWR-001 and TC-003 under SWR-002, in a plain state. */
+  function withCases() {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    upsertReqs(
+      state,
+      {
+        projectId: p.id,
+        by: 'x',
+        items: [
+          { id: 'CUS-001', title: '客户', text: '客户' },
+          { id: 'SYS-001', title: '系统', text: '系统', parent: ['CUS-001'] },
+          { id: 'SWR-001', title: '软需一', text: '软需一', parent: ['SYS-001'], status: 'APPROVED' },
+          { id: 'SWR-002', title: '软需二', text: '软需二', parent: ['SYS-001'], status: 'APPROVED' },
+          { id: 'TC-001', title: '用例一', text: '用例一', parent: ['SWR-001'] },
+          { id: 'TC-002', title: '用例二', text: '用例二', parent: ['SWR-001'] },
+          { id: 'TC-003', title: '用例三', text: '用例三', parent: ['SWR-002'] },
+        ],
+      },
+      NOW,
+    )
+    const status = (id: string) => byId(state.reqs, id, p.id).status
+    const run = (results: Item[], extra: Item = {}) =>
+      recordTestRun(state, { projectId: p.id, level: 'UNIT', results, ...extra }, NOW)
+    return { state, p, status, run }
+  }
+
+  it('computes the counts from the results and verifies TCs and their SWR only when all pass', () => {
+    const { state, p, status, run } = withCases()
+    const first = run([
+      { tc: 'TC-001', status: 'pass' },
+      { tc: 'TC-003', status: 'pass' },
+    ])
+    expect(first).toMatchObject({ total: 2, passed: 2, failed: 0, skipped: 0 })
+    expect(first.results).toEqual([
+      { tc: 'TC-001', status: 'pass' },
+      { tc: 'TC-003', status: 'pass' },
+    ])
+    expect(first.effects).toMatchObject({ verifiedTcs: ['TC-001', 'TC-003'], verifiedSwrs: ['SWR-002'] })
+    expect([status('TC-001'), status('TC-002'), status('TC-003')]).toEqual(['VERIFIED', 'DRAFT', 'VERIFIED'])
+    // SWR-001 still has TC-002 unverified
+    expect([status('SWR-001'), status('SWR-002')]).toEqual(['APPROVED', 'VERIFIED'])
+    run([{ tc: 'TC-002', status: 'pass' }])
+    expect(status('SWR-001')).toBe('VERIFIED')
+    expect(state.testRuns.filter((r: Item) => r.projectId === p.id)).toHaveLength(2)
+  })
+
+  it('takes a VERIFIED case back when it fails, without making a defect', () => {
+    const { state, status, run } = withCases()
+    run([
+      { tc: 'TC-001', status: 'pass' },
+      { tc: 'TC-002', status: 'pass' },
+    ])
+    expect(status('SWR-001')).toBe('VERIFIED')
+    const failed = run([
+      { tc: 'TC-002', status: 'fail' },
+      { tc: 'TC-003', status: 'skip' },
+    ])
+    expect(failed).toMatchObject({ total: 2, passed: 0, failed: 1, skipped: 1 })
+    expect(failed.effects).toMatchObject({ revertedTcs: ['TC-002'], needsDefect: ['TC-002'] })
+    expect([status('TC-002'), status('TC-003'), status('SWR-001')]).toEqual(['APPROVED', 'DRAFT', 'APPROVED'])
+    expect(state.defects).toEqual([])
+  })
+
+  it('notes a failing run in the open defect of that test case and leaves closed ones alone', () => {
+    const { state, p, run } = withCases()
+    const open = create(
+      state,
+      { kind: 'defect', projectId: p.id, title: '开', testCase: 'TC-001', by: 'x' },
+      NOW,
+    )
+    const closed = create(
+      state,
+      { kind: 'defect', projectId: p.id, title: '闭', testCase: 'TC-002', by: 'x' },
+      NOW,
+    )
+    for (const to of ['CONFIRMED', 'FIXING', 'RETEST', 'CLOSED'])
+      transition(state, { kind: 'defect', id: closed.id, to, by: 'x' }, NOW)
+    const out = run([
+      { tc: 'TC-001', status: 'fail' },
+      { tc: 'TC-002', status: 'fail' },
+    ])
+    expect(out.effects).toMatchObject({ defectsNoted: [open.id], needsDefect: ['TC-002'] })
+    expect(byId(state.defects, open.id).history.at(-1).note).toContain(`${out.id} 中 TC-001 失败`)
+    expect(byId(state.defects, open.id).state).toBe('NEW')
+    expect(state.defects).toHaveLength(2)
+  })
+
+  it.each([
+    ['unknown TC', [{ tc: 'TC-404', status: 'pass' }], {}, '未找到测试用例 TC-404'],
+    ['an SWR id', [{ tc: 'SWR-001', status: 'pass' }], {}, '未找到测试用例 SWR-001'],
+    [
+      'a duplicate TC',
+      [
+        { tc: 'TC-001', status: 'pass' },
+        { tc: 'TC-001', status: 'fail' },
+      ],
+      {},
+      '重复',
+    ],
+    ['a bad status', [{ tc: 'TC-001', status: 'passed' }], {}, 'status'],
+    ['an empty list', [], {}, '1–500'],
+    ['501 results', Array.from({ length: 501 }, () => ({ tc: 'TC-001', status: 'pass' })), {}, '1–500'],
+    ['a wrong total', [{ tc: 'TC-001', status: 'pass' }], { total: 2 }, '自报的 total=2'],
+    ['a wrong passed', [{ tc: 'TC-001', status: 'fail' }], { passed: 1 }, '自报的 passed=1'],
+    ['a wrong skipped', [{ tc: 'TC-001', status: 'pass' }], { skipped: 1 }, '自报的 skipped=1'],
+  ])('refuses %s and changes nothing', (_name, results, extra, message) => {
+    const { state, status, run } = withCases()
+    const before = structuredClone(state)
+    expect(() => run(results as Item[], extra)).toThrow(message)
+    expect(state).toEqual(before)
+    expect(status('TC-001')).toBe('DRAFT')
+  })
+
+  it('accepts self-reported counts that agree and keeps the 3.6 behaviour without results', () => {
+    const { state, p, run } = withCases()
+    expect(
+      run([{ tc: 'TC-001', status: 'pass' }], { total: 1, passed: 1, failed: 0, skipped: 0 }),
+    ).toMatchObject({
+      total: 1,
+    })
+    const old = recordTestRun(
+      state,
+      { projectId: p.id, level: 'UNIT', total: 18, passed: 17, failed: 1 },
+      NOW,
+    )
+    expect(old).toMatchObject({ total: 18, passed: 17, failed: 1, skipped: 0 })
+    expect(old.results).toBeUndefined()
+    expect(old.effects).toBeUndefined()
+    expect(() => recordTestRun(state, { projectId: p.id, total: 5, passed: 1, failed: 1 }, NOW)).toThrow(
+      '不一致',
+    )
+    expect(byId(state.reqs, 'TC-001', p.id).status).toBe('VERIFIED')
+  })
+
+  it('checks the test case and requirement of a defect against the project, and keeps old free text readable', () => {
+    const { state, p } = withCases()
+    const make = (extra: Item) =>
+      create(state, { kind: 'defect', projectId: p.id, title: '缺陷', by: 'x', ...extra }, NOW)
+    expect(make({ testCase: 'TC-002', req: 'SWR-001' })).toMatchObject({ testCase: 'TC-002', req: 'SWR-001' })
+    expect(() => make({ testCase: 'TC-404' })).toThrow('testCase TC-404 不存在')
+    expect(() => make({ testCase: 'SWR-001' })).toThrow('需为 TC')
+    expect(() => make({ req: 'SWR-404' })).toThrow('req SWR-404 不存在')
+    expect(() => make({ req: 'TC-0\u0000' })).toThrow()
+    // a defect stored by an older board keeps its free text and still shows
+    const old = state.defects[0]
+    old.testCase = '手工用例 B-9'
+    expect(snapshot(state, NOW).defects.find((d: Item) => d.id === old.id).testCase).toBe('手工用例 B-9')
+  })
+
+  it('fast-forward verifies the passed cases and the SWRs whose cases all passed, and holds the failed ones', () => {
+    const statusAt = async (gate: string) => {
+      const store = memoryStore()
+      const files = new Map<string, string>()
+      const fs = {
+        stat: async () => {
+          throw new Error('ENOENT')
+        },
+        write: async (path: string, data: string) => void files.set(path, data),
+      }
+      await fastForward({ gate }, { store, fs, signal: new AbortController().signal })
+      const state = read(store, NOW)
+      const project = state.projects.find((x: Item) => x.live)
+      const of = (level: string) =>
+        Object.fromEntries(
+          state.reqs
+            .filter((x: Item) => x.projectId === project.id && x.level === level)
+            .map((x: Item) => [x.id, x.status]),
+        )
+      return { tc: of('TC'), swr: of('SWR') }
+    }
+    return Promise.all([statusAt('TR5'), statusAt('TR5_DEFECT'), statusAt('TR3')]).then(
+      ([tr5, defect, tr3]) => {
+        expect(Object.entries(tr5.tc).filter(([, s]) => s !== 'VERIFIED')).toEqual([
+          ['TC-007', expect.any(String)],
+        ])
+        expect(Object.entries(tr5.swr).filter(([, s]) => s !== 'VERIFIED')).toEqual([
+          ['SWR-003', expect.any(String)],
+        ])
+        expect(
+          Object.entries(defect.tc)
+            .filter(([, s]) => s !== 'VERIFIED')
+            .map(([id]) => id),
+        ).toEqual(['TC-006', 'TC-007'])
+        expect(
+          Object.entries(defect.swr)
+            .filter(([, s]) => s !== 'VERIFIED')
+            .map(([id]) => id),
+        ).toEqual(['SWR-003', 'SWR-006'])
+        expect(Object.values(tr3.tc).every((s) => s !== 'VERIFIED')).toBe(true)
+      },
+    )
   })
 })

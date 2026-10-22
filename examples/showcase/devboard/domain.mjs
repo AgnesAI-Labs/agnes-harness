@@ -1373,6 +1373,16 @@ export function faultSummary(
   }
 }
 
+/** A defect names a test case or requirement that exists in its project; free text from an older board still reads as it was. */
+function knownReq(state, project, value, name, level) {
+  const id = text(value, name, 16)
+  if (!state.reqs.some((x) => x.projectId === project.id && x.id === id && (!level || x.level === level)))
+    fail(
+      `${name} ${id} 不存在于 ${project.id}${level ? `（需为 ${level} 条目）` : ''}：先用 devboard_req_upsert 登记，或核对编号`,
+    )
+  return id
+}
+
 function createDefect(state, input, at) {
   const project = projectOf(state, text(input.projectId, 'projectId', 64))
   const n = state.defects.reduce((max, d) => Math.max(max, Number(/^DEF-(\d+)$/.exec(d.id)?.[1] ?? 0)), 0)
@@ -1383,8 +1393,8 @@ function createDefect(state, input, at) {
     title: text(input.title, 'title', 200),
     severity: oneOf(input.severity ?? 'C', Object.keys(LABELS.severity), 'severity'),
     foundIn: oneOf(input.foundIn ?? 'VERIFICATION', STAGES, 'foundIn'),
-    ...(input.testCase ? { testCase: text(input.testCase, 'testCase', 16) } : {}),
-    ...(input.req ? { req: text(input.req, 'req', 16) } : {}),
+    ...(input.testCase ? { testCase: knownReq(state, project, input.testCase, 'testCase', 'TC') } : {}),
+    ...(input.req ? { req: knownReq(state, project, input.req, 'req') } : {}),
     state: 'NEW',
     owner: optional(input.owner, 64) || '软件设计师',
     createdAt: at,
@@ -1395,32 +1405,118 @@ function createDefect(state, input, at) {
   return item
 }
 
+const TC_STATUS = ['pass', 'fail', 'skip']
+const RESULTS_LIMIT = 500
+
+/** The test cases of one run, checked against the project's registered TC items; the counts follow from them. */
+function runResults(state, project, input) {
+  const list = input.results
+  if (!Array.isArray(list) || !list.length || list.length > RESULTS_LIMIT)
+    fail(`results 需为 1–${RESULTS_LIMIT} 条 { tc, status }`)
+  const seen = new Set()
+  const results = list.map((r, i) => {
+    const tc = text(r?.tc, `results[${i}].tc`, 16)
+    const status = oneOf(r?.status, TC_STATUS, `results[${i}].status`)
+    if (seen.has(tc)) fail(`results 中 ${tc} 重复`)
+    seen.add(tc)
+    if (!state.reqs.some((x) => x.projectId === project.id && x.id === tc && x.level === 'TC'))
+      fail(`未找到测试用例 ${tc}：先用 devboard_req_upsert 登记 TC，再登记测试结果`)
+    return { tc, status }
+  })
+  const n = (k) => results.filter((r) => r.status === k).length
+  const counts = { total: results.length, passed: n('pass'), failed: n('fail'), skipped: n('skip') }
+  for (const [k, v] of Object.entries(counts))
+    if (input[k] !== undefined && Number(input[k]) !== v)
+      fail(`自报的 ${k}=${input[k]} 与 results 算出的 ${v} 不符：总数由 results 决定，请核对后重新登记`)
+  return { results, counts }
+}
+
+/**
+ * Apply a run's per-case results to the requirement chain: a passing TC is VERIFIED, a failing one that
+ * was VERIFIED goes back to APPROVED, and an SWR is VERIFIED exactly when all its TCs are. Failed cases that
+ * have an open defect get the run in the defect's history; the others are reported, never turned into defects.
+ */
+function applyResults(state, project, run, by, at) {
+  const own = state.reqs.filter((x) => x.projectId === project.id)
+  const verified = []
+  const reverted = []
+  const touched = new Set()
+  for (const { tc, status } of run.results) {
+    const item = own.find((x) => x.id === tc && x.level === 'TC')
+    if (status === 'pass' && item.status !== 'VERIFIED') {
+      item.status = 'VERIFIED'
+      verified.push(tc)
+    }
+    if (status === 'fail' && item.status === 'VERIFIED') {
+      item.status = 'APPROVED'
+      reverted.push(tc)
+    }
+    for (const parent of item.parent ?? []) touched.add(parent)
+  }
+  const swrs = []
+  for (const id of touched) {
+    const swr = own.find((x) => x.id === id && x.level === 'SWR')
+    if (!swr) continue
+    const tcs = own.filter((x) => x.level === 'TC' && x.parent?.includes(id))
+    const all = tcs.length > 0 && tcs.every((x) => x.status === 'VERIFIED')
+    if (all && swr.status !== 'VERIFIED') {
+      swr.status = 'VERIFIED'
+      swrs.push(id)
+    } else if (!all && swr.status === 'VERIFIED') swr.status = 'APPROVED'
+  }
+  const noted = []
+  const needsDefect = []
+  for (const { tc, status } of run.results) {
+    if (status !== 'fail') continue
+    const defect = state.defects.find(
+      (d) => d.projectId === project.id && d.testCase === tc && OPEN_DEFECT.includes(d.state),
+    )
+    if (defect) {
+      record(defect, at, by, defect.state, defect.state, `测试运行 ${run.id} 中 ${tc} 失败`)
+      noted.push(defect.id)
+    } else needsDefect.push(tc)
+  }
+  return {
+    verifiedTcs: verified,
+    revertedTcs: reverted,
+    verifiedSwrs: swrs,
+    defectsNoted: noted,
+    needsDefect,
+  }
+}
+
 export function recordTestRun(state, input, now = Date.now()) {
   const project = projectOf(state, text(input.projectId, 'projectId', 64))
   const level = oneOf(input.level ?? 'UNIT', Object.keys(LABELS.testLevel), 'level')
-  const [total, passed, failed, skipped] = ['total', 'passed', 'failed', 'skipped'].map((k) => {
-    const v = Number(input[k] ?? 0)
-    return Number.isInteger(v) && v >= 0 && v <= 100000 ? v : fail(`${k} 需为非负整数`)
-  })
+  const given = input.results !== undefined ? runResults(state, project, input) : undefined
+  const [total, passed, failed, skipped] = given
+    ? [given.counts.total, given.counts.passed, given.counts.failed, given.counts.skipped]
+    : ['total', 'passed', 'failed', 'skipped'].map((k) => {
+        const v = Number(input[k] ?? 0)
+        return Number.isInteger(v) && v >= 0 && v <= 100000 ? v : fail(`${k} 需为非负整数`)
+      })
   if (passed + failed + skipped !== total)
     fail(`用例数不一致：通过 ${passed} + 失败 ${failed} + 跳过 ${skipped} ≠ 总数 ${total}`)
   const short = project.id.split('-').at(-1)
   const n = state.testRuns.filter((t) => t.projectId === project.id).length + 1
+  const at = new Date(now).toISOString()
   const run = {
     id: `TR-${short}-${pad(n, 2)}`,
     projectId: project.id,
     level,
-    at: new Date(now).toISOString(),
+    at,
     total,
     passed,
     failed,
     skipped,
     ...(input.coverage ? { coverage: input.coverage } : {}),
+    ...(given ? { results: given.results } : {}),
     source: 'live',
     log: optional(input.log, 4000),
   }
   state.testRuns.push(run)
-  return run
+  // The effects of a per-case run are returned with it, never stored on it.
+  return given ? { ...run, effects: applyResults(state, project, run, input.by || '研发协调员', at) } : run
 }
 
 export function registerApp(state, { projectId, url }, now = Date.now()) {

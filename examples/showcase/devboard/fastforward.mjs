@@ -276,13 +276,27 @@ function build(state, level, now, minSeq, scenario) {
   // 验证：真实顺序是测试失败 → 登记缺陷 → 修复 → 回归
   start('VERIFICATION', 190)
   for (const { test } of groups) move('task', test.id, 'IN_PROGRESS', 192)
-  const run = (levelName, total, passed, failed, h, log) =>
-    recordTestRun(state, { projectId, level: levelName, total, passed, failed, log }, at(h))
+  // Each run reports per test case (TC); the board derives the counts and verifies the cases that passed.
+  const run = (levelName, results, h, log) =>
+    recordTestRun(
+      state,
+      {
+        projectId,
+        level: levelName,
+        results: results.map(([tc, status]) => ({ tc, status })),
+        log,
+        by: AGENT,
+      },
+      at(h),
+    )
+  const unit = (second) => [
+    ['TC-001', 'pass'],
+    ['TC-002', second ? 'pass' : 'fail'],
+    ['TC-005', 'pass'],
+  ]
   run(
     'UNIT',
-    UNIT_TOTAL,
-    UNIT_TOTAL - 1,
-    1,
+    unit(false),
     200,
     `node --test：${UNIT_TOTAL} 个用例，${UNIT_TOTAL - 1} 通过，1 失败（TC-002 等级边界）`,
   )
@@ -304,11 +318,30 @@ function build(state, level, now, minSeq, scenario) {
   )
   move('defect', minor.id, 'CONFIRMED', 201)
   move('defect', minor.id, 'FIXING', 204, '边界判断改为 ≥ 80')
-  run('UNIT', UNIT_TOTAL, UNIT_TOTAL, 0, 216, `node --test：${UNIT_TOTAL} 个用例全部通过（修复后复测）`)
+  run('UNIT', unit(true), 216, `node --test：${UNIT_TOTAL} 个用例全部通过（修复后复测）`)
   move('defect', minor.id, 'RETEST', 217)
   move('defect', minor.id, 'CLOSED', 218, '复测通过')
-  run('INTEGRATION', 8, 8, 0, 222, '真实 HTTP 请求 8 项全部通过（H-1 至 H-8）')
-  run('SYSTEM', 12, 11, 1, 232, '真实浏览器 12 步，11 通过，B-9 失败（TC-007 快速切换车辆）')
+  run(
+    'INTEGRATION',
+    [
+      ['TC-004', 'pass'],
+      ['TC-006', scenario === 'defect' ? 'fail' : 'pass'],
+      ['TC-008', 'pass'],
+    ],
+    222,
+    scenario === 'defect'
+      ? '真实 HTTP 请求 8 项，7 通过，H-6 失败（TC-006 非 GET 返回 200）'
+      : '真实 HTTP 请求 8 项全部通过（H-1 至 H-8）',
+  )
+  run(
+    'SYSTEM',
+    [
+      ['TC-003', 'pass'],
+      ['TC-007', 'fail'],
+    ],
+    232,
+    '真实浏览器 12 步，11 通过，B-9 失败（TC-007 快速切换车辆）',
+  )
   const major = create(
     state,
     {
@@ -329,7 +362,6 @@ function build(state, level, now, minSeq, scenario) {
   move('defect', major.id, 'FIXING', 236, '页面丢弃过期响应')
   move('defect', major.id, 'RETEST', 244, '修复已合入，待浏览器回归')
   // The defect scenario: a class-A defect found by TC-006 is still being fixed when TR5 is submitted.
-  const unverified = ['TC-007']
   if (scenario === 'defect') {
     const fatal = create(
       state,
@@ -349,17 +381,8 @@ function build(state, level, now, minSeq, scenario) {
     )
     move('defect', fatal.id, 'CONFIRMED', 245)
     move('defect', fatal.id, 'FIXING', 246, '路由层增加方法检查')
-    unverified.push('TC-006')
   }
-  upsertReqs(
-    state,
-    {
-      projectId,
-      items: TC.filter((t) => !unverified.includes(t.id)).map((t) => ({ id: t.id, status: 'VERIFIED' })),
-      by: AGENT,
-    },
-    at(245),
-  )
+  // The TCs that passed are VERIFIED by the runs above; TC-007 (and TC-006 in the defect scenario) failed and keep their defect open.
   for (const { test } of groups) move('task', test.id, 'COMPLETED', 246)
   docs('VERIFICATION', 248)
   gate = submit('VERIFICATION', 250)

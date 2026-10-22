@@ -510,6 +510,19 @@ export function Quality({ data, board, role }) {
             },
             { title: '失败 / 跳过', render: (_v, r) => `${r.failed} / ${r.skipped}`, width: 90 },
             {
+              title: '用例',
+              render: (_v, r) =>
+                r.results
+                  ? `${r.results.length} 个：${
+                      r.results
+                        .filter((x) => x.status !== 'pass')
+                        .map((x) => `${x.tc} ${x.status === 'fail' ? '失败' : '跳过'}`)
+                        .join('、') || '全部通过'
+                    }`
+                  : '—',
+              width: 200,
+            },
+            {
               title: '覆盖率',
               render: (_v, r) =>
                 r.coverage ? `语句 ${pct(r.coverage.statement)} · 分支 ${pct(r.coverage.branch)}` : '—',

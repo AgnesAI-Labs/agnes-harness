@@ -630,6 +630,42 @@ describe('DevBoard plugin contract', () => {
     else expect(got).toBeUndefined()
   })
 
+  it('records per-case results through the tool, refuses disagreeing counts and keeps the old form', async () => {
+    const store = memoryStore()
+    const ctx = { store, signal } as Any
+    const project = (await tool('devboard_project_create').execute({ name: '车门' }, ctx)).structured.data
+    const items = [
+      { id: 'CUS-001', title: 'c', text: 'c' },
+      { id: 'SYS-001', title: 's', text: 's', parent: ['CUS-001'] },
+      { id: 'SWR-001', title: 'w', text: 'w', parent: ['SYS-001'] },
+      { id: 'TC-001', title: 't', text: 't', parent: ['SWR-001'] },
+    ]
+    await tool('devboard_req_upsert').execute({ projectId: project.id, items }, ctx)
+    const record = (input: Any) =>
+      tool('devboard_test_record').execute({ projectId: project.id, level: 'UNIT', ...input }, ctx)
+    const schema = JSON.parse(JSON.stringify(tool('devboard_test_record').parameters))
+    expect(schema.required).toEqual(['projectId', 'level'])
+    expect(schema.properties.results.maxItems).toBe(500)
+    expect((await record({})).isError).toBe(true)
+    expect((await record({ total: 2, passed: 1, failed: 0 })).isError).toBe(true)
+    expect((await record({ results: [{ tc: 'TC-001', status: 'pass' }], total: 5 })).isError).toBe(true)
+    expect((await record({ results: [{ tc: 'TC-9', status: 'pass' }] })).isError).toBe(true)
+    expect(read(store).testRuns.filter((t: Any) => t.projectId === project.id)).toEqual([])
+    const ok = await record({ results: [{ tc: 'TC-001', status: 'pass' }], total: 1, actingRole: 'tester' })
+    expect(ok.structured.data).toMatchObject({ total: 1, passed: 1, effects: { verifiedSwrs: ['SWR-001'] } })
+    const state = read(store)
+    expect(state.reqs.find((r: Any) => r.id === 'SWR-001' && r.projectId === project.id).status).toBe(
+      'VERIFIED',
+    )
+    expect(state.activity.at(-1)).toMatchObject({
+      actor: '研发协调员 · 验证工程师',
+      entity: { kind: 'testRun' },
+    })
+    const old = await record({ total: 18, passed: 17, failed: 1 })
+    expect(old.structured.data).toMatchObject({ total: 18, failed: 1 })
+    expect(old.structured.data.results).toBeUndefined()
+  })
+
   it('registers every tool in the capability names and the coordinator profile, plus the new pages and actions', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const names = tools.map((t) => t.name)

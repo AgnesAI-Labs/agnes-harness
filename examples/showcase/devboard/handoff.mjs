@@ -156,7 +156,15 @@ function projectHandoff(state, project) {
   const pending = state.gates.filter(
     (g) => g.decision === 'PENDING' && g.stageId.startsWith(`${project.id}/`),
   )
+  // The newest per-case result of each TC; a failed one with no open defect on it still needs a defect.
+  const latest = new Map()
+  for (const run of own(state.testRuns)) for (const r of run.results ?? []) latest.set(r.tc, r.status)
+  const untracked = [...latest]
+    .filter(([tc, status]) => status === 'fail' && !defects.some((d) => d.testCase === tc))
+    .map(([tc]) => tc)
   const next = [step?.action ?? '项目的阶段已全部通过'].filter(Boolean)
+  if (untracked.length)
+    next.push(`为 ${top(untracked).join('、')} 建缺陷（devboard_defect_upsert，testCase 填 TC 编号）`)
   if (defects.length) next.push(`先处理 ${defects.length} 条未关闭缺陷（A 类会挡住 TR5 与 ADCP）`)
   return {
     project: {
@@ -181,6 +189,7 @@ function projectHandoff(state, project) {
       testCase: d.testCase,
     })),
     openChanges: top(changes).map((c) => ({ id: c.id, title: clip(c.title, 120), state: c.state })),
+    untrackedFailures: top(untracked, 20),
     counts: { openTasks: tasks.length, openDefects: defects.length, openChanges: changes.length },
     next,
     summary: [

@@ -424,24 +424,34 @@ export const tools = [
   ),
   tool(
     'devboard_test_record',
-    'Record a real test run of a project (source live): counts must add up; include a short log summary. Never record results you did not run. 登记测试运行。',
+    'Record a real test run of a project (source live). Pass results [{tc, status pass|fail|skip}] with the test cases you really ran (each tc must be a registered TC id): the counts are computed from it, a self-reported total, passed, failed or skipped that disagrees is refused, a passing TC becomes VERIFIED and an SWR becomes VERIFIED once all its TCs are; a failed TC with an open defect of that test case notes the run in the defect, otherwise the answer lists it under needsDefect and you create the defect with devboard_defect_upsert (testCase set). Without results the counts must add up as before. Include a short log summary. Never record results you did not run. 登记测试运行，按用例记录结果。',
     Type.Object(
       {
         projectId: id,
         level: keys(LABELS.testLevel),
-        total: Type.Integer({ minimum: 0, maximum: 100000 }),
-        passed: Type.Integer({ minimum: 0, maximum: 100000 }),
-        failed: Type.Integer({ minimum: 0, maximum: 100000 }),
+        total: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+        passed: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+        failed: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
         skipped: Type.Optional(Type.Integer({ minimum: 0, maximum: 100000 })),
+        results: Type.Optional(
+          Type.Array(Type.Object({ tc: short(16), status: literals(['pass', 'fail', 'skip']) }, strict), {
+            minItems: 1,
+            maxItems: 500,
+          }),
+        ),
         log: Type.Optional(Type.String({ maxLength: 4000 })),
       },
       strict,
     ),
-    (input, ctx, a) => a.mutate(ctx.store, (s) => recordTestRun(s, input)),
+    (input, ctx, a) => {
+      if (!input.results && ['total', 'passed', 'failed'].some((k) => input[k] === undefined))
+        throw new DomainError('缺少 total、passed、failed；按用例登记时改传 results')
+      return a.mutate(ctx.store, (s) => recordTestRun(s, { ...input, by: a.by }))
+    },
   ),
   tool(
     'devboard_defect_upsert',
-    'Create a defect (omit id) or move one (id + to): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. An unclosed class-A defect holds the TR5 and ADCP gates (they cannot be approved); closing it closes its system finding on a waiting gate. 登记或流转缺陷。',
+    'Create a defect (omit id) or move one (id + to): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. testCase must be a registered TC id and req a registered requirement id of the project. An unclosed class-A defect holds the TR5 and ADCP gates (they cannot be approved); closing it closes its system finding on a waiting gate. 登记或流转缺陷。',
     Type.Object(
       {
         id: Type.Optional(id),
