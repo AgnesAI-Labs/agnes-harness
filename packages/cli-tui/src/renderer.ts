@@ -83,6 +83,8 @@ export class Renderer {
   private generation = 0
   private offInput?: () => void
   private offResize?: () => void
+  // process.exit (the signal ladder, a crash) runs no finally; this still hands the terminal back.
+  private readonly onExit = (): void => this.stop()
   private lastCursorKey = ''
   // `runTui()` claims the alternate screen before it opens a session, so a slow daemon or
   // branding lookup cannot leave the previous CLI transcript visible. Unit callers normally let
@@ -114,6 +116,7 @@ export class Renderer {
     this.lastFrame = []
     this.lastCursorKey = ''
     this.paste = new PasteAssembler()
+    process.once('exit', this.onExit)
     this.term.enterRaw()
     // Save the shell screen/cursor before painting. Never clear its scrollback (ED3). `runTui`
     // may already have claimed it while opening the session; entering 1049 a second time is not
@@ -305,6 +308,7 @@ export class Renderer {
   /** Restore the shell, optionally leaving one plain transcript, never a copy of UI chrome. */
   stop(transcript: readonly string[] = []): void {
     this.suspended = false
+    process.off('exit', this.onExit)
     if (!this.active && !this.screenEntered) return
     const wasActive = this.active
     this.active = false

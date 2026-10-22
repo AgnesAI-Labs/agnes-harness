@@ -333,6 +333,23 @@ describe('Renderer bookkeeping', () => {
     expect(term.writes.at(-1)).toContain('\x1b[?2004l')
   })
 
+  // The signal ladder and a crash leave through process.exit, which runs no finally: without an exit
+  // hook the shell is left in paste, focus and mouse mode and prints ^[[I, ^[[O and 200~ markers.
+  it('gives the terminal back when the process exits without stopping it', () => {
+    const term = new FakeTerminal({ columns: 10, rows: 4 })
+    const before = process.listeners('exit')
+    const r = new Renderer(term, { render: () => ['a'], handleInput: () => false, invalidate() {} })
+    r.start()
+    const hook = process.listeners('exit').find((listener) => !before.includes(listener))
+    expect(hook).toBeDefined()
+    hook?.call(process, 1)
+    expect(term.writes.at(-1)).toContain('\x1b[?1004l\x1b[?2004l')
+    expect(process.listeners('exit')).toEqual(before)
+    r.start()
+    r.stop()
+    expect(process.listeners('exit')).toEqual(before)
+  })
+
   it('does not push a full-height fixed chrome frame into scrollback on stop', async () => {
     const term = new FakeTerminal({ columns: 20, rows: 4 })
     term.write('USER HISTORY\r\none\r\ntwo\r\nthree\r\nfour')
