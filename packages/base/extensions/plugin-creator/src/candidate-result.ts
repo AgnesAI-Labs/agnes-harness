@@ -7,6 +7,7 @@ import {
 } from '@agnes/error-sanitization'
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import type { AuthoringCandidate } from '@agnes/protocol'
+import { creatorAssets } from './generated/assets.js'
 
 // Leave room for Core's conservative JSON accounting and the bridge envelope.
 const STRUCTURED_BYTES = 240 * 1024
@@ -82,6 +83,11 @@ export async function candidateResult(
       '\nNo progress: read the diagnostics or read the candidate first. / 无进展：请先阅读诊断或读取候选。'
   if (value.tests?.state === 'failed')
     text += `\nTest failure / 测试失败:\n${authoringFailureSummary(value.tests.output ?? '')}\nFull redacted output: use run_code with tools.plugin_candidate_read({candidateId}) and inspect tests.output; assemble source pages first if returned. / 完整脱敏输出：通过 run_code 调用 plugin_candidate_read，必要时拼接分页后读取 tests.output。`
+  if (
+    value.tests?.state === 'failed' &&
+    /E_TOOLDEF_META|Test port not configured/.test(value.tests.output ?? '')
+  )
+    text += `\nRepair hint / 修复提示: ${creatorAssets.toolSafetyGuidance}`
   if (read === undefined) {
     const failed =
       ['failed', 'interrupted', 'cancelled', 'rejected'].includes(value.state) ||
