@@ -441,11 +441,12 @@ function select(
   let entry: LockEntry | undefined
   let directory: string
   if (request.selector.kind === 'installed') {
-    const row = installedPackage(request.packageId)
-    if (!row.directory) stateFailure('installed-directory-missing')
-    if (row.blockers.length) throw blocked(row.blockers)
-    entry = row.entry
-    directory = row.directory
+    // `live` came from this same synchronous call; asking again would re-hash every installed
+    // package for an identical answer.
+    if (!live.directory) stateFailure('installed-directory-missing')
+    if (live.blockers.length) throw blocked(live.blockers)
+    entry = live.entry
+    directory = live.directory
   } else {
     const current = own(lock.packages, request.packageId)
     if (!current?.previous?.treeIntegrity || !current.previous.source)

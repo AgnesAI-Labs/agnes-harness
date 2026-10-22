@@ -395,7 +395,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
   const locked = <T>(
     profileDir: string,
     fn: () => Promise<T>,
-    op: OperationOptions = {},
+    op: OperationOptions & { pin?: boolean } = {},
     ordinaryRead = false,
     // Pin bookkeeping takes the lock but leaves the lockfile and the installed trees alone.
     changesInventory = !ordinaryRead,
@@ -417,15 +417,16 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             if (existsSync(join(profileDir, '.agnes-package-transaction.json'))) {
               withoutPackageVerification(() => recoverPackageStore(storeFor(profileDir)))
             }
-            // A clean read validates the same complete snapshot set without entering recovery.
-            // Journals and abandoned temp state still take the original recovery path.
+            // A clean read validates the same complete snapshot set without entering recovery, and a pin
+            // verifies every known snapshot itself first. Journals and abandoned temp state still take
+            // the original recovery path.
             const recoveryNeeded = [
               '.agnes-runtime-transaction.json',
               '.agnes-runtime-transaction.json.tmp',
               '.agnes-runtime-snapshots.json.tmp',
             ].some((file) => lstatSync(join(profileDir, file), { throwIfNoEntry: false }) !== undefined)
             if (ordinaryRead && !recoveryNeeded) await readPins(profileDir)
-            else await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
+            else if (!op.pin || recoveryNeeded) await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
             recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
             await op.admission?.verify()
             op.admission?.assertActive()
@@ -813,7 +814,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             ceiling(lock),
           )
         },
-        {},
+        { pin: true },
         false,
         false,
       )
