@@ -50,6 +50,14 @@ export function generateReference() {
   ].sort()
   const facets = declarations(iface('plugin-context', 'PluginContextFacets'))
   const tool = iface('tool', 'ToolContext')
+  const toolMeta = declarations(iface('tool', 'ToolMeta'))
+  const policyTypes = ['ReplayPolicy', 'RiskClass'].map((name) => {
+    const definition = new RegExp(`export type ${name} = ([^\n]+)`).exec(
+      read('packages/extension-api/src/tool.ts'),
+    )
+    if (!definition) throw new Error(`Missing tool policy type ${name}`)
+    return `type ${name} = ${definition[1]}`
+  })
   const toolMembers = tool.map((m) => m.name)
   const fs = tool.find((m) => m.name === 'fs').text
   const execute = iface('tool', 'ToolDef').find((m) => m.name === 'execute').text
@@ -75,6 +83,8 @@ export function generateReference() {
     regions,
     facets,
     toolMembers,
+    toolMeta,
+    policyTypes,
     fs,
     execute,
     store,
@@ -92,7 +102,12 @@ PluginContext: apply(ctx) registers declared inject facets. No fs/readText/write
 ${code(facets.join('\n'))}
 ToolContext members / 工具调用上下文字段: ${toolMembers.join(', ')}.
 ${code(`${execute}\n${fs}`)}
+Tool safety metadata / 工具安全元数据:
+${code(`${policyTypes.join('\n')}\ninterface ToolMeta {\n${toolMeta.map((line) => `  ${line}`).join('\n')}\n}`)}
+replay: 'safe' requires isReadOnly: true. For writes/appends use isReadOnly: false, replay: 'never'; idempotent requires proven duplicate suppression, not just a timestamped filename. requiresApproval only accepts 'never', 'destructive', 'always' or omission; 'default' is not a value. Approval does not repair an invalid replay declaration. / 写入用 never 重放策略；有真实去重才能用 idempotent；审批和重放互不替代，default 不是合法审批值。
 fs.read returns bytes (Uint8Array); offset/limit are bytes. Decode text with new TextDecoder().decode(await ctx.fs.read(path)); write accepts bytes or a string. execute(args, ctx) receives the invocation context. fs is policy-controlled WORKSPACE access, never a private plugin directory. Use ctx.signal for cancellation; never bypass a denial with ambient Node I/O. / read 返回字节，offset/limit 以字节计；用 TextDecoder 解码。write 接受字节或字符串。fs 是受策略约束的工作区访问，不是插件私有存储；不得通过 Node I/O 绕过拒绝。
+
+fs.write replaces the file content; it does not append. For cumulative records, preserve existing bytes or use exclusive fs.create for independent entries. Test two successive writes and read them back through the same stateful filesystem. Supply used I/O ports with createPluginTestHost(main, { context: { fs } }); the lightweight test Host does not automatically provide a real workspace. / write 覆盖原文，不是追加；累积记录须保留原内容或独占创建独立条目；有状态 fs 测试必须验证两次写入均保留。
 
 Choose data ownership first / 先确定数据归属:
 - Workspace files: ToolContext.fs.read/write, relative to the invocation workspace (ctx.session.workspaceRoot); preserve normal authorization. / 工作区文件用工具调用的 fs，遵循工作区授权。

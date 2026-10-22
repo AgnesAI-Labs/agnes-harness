@@ -1,4 +1,4 @@
-import { authoringGuidance, verification } from './src/authoring.mjs'
+import { authoringGuidance, toolSafetyGuidance, verification } from './src/authoring.mjs'
 import { panelFiles } from './src/panel.generated.mjs'
 import { array, enumeration, object, optional, string } from './src/schema.mjs'
 import { skinFiles, skinGuidance } from './src/skin.mjs'
@@ -18,6 +18,11 @@ const result = (value, action) => {
             '未验证：请检查亮暗模式、禁用及默认外观恢复。 / Not verified: check light/dark mode, disable and restore default appearance.',
         }
       : value
+  const repairHint =
+    value.tests?.state === 'failed' &&
+    /E_TOOLDEF_META|Test port not configured/.test(value.tests.output ?? '')
+      ? toolSafetyGuidance
+      : ''
   return {
     ...(action !== 'candidate.show' &&
     (['failed', 'interrupted', 'cancelled', 'rejected'].includes(data.state) ||
@@ -27,17 +32,18 @@ const result = (value, action) => {
     content: [
       {
         type: 'text',
-        text: JSON.stringify(
-          value.candidateId
-            ? {
-                ...data,
-                tests: data.tests && {
-                  ...data.tests,
-                  output: data.tests.state === 'failed' ? data.tests.output?.slice(0, 8192) : undefined,
-                },
-              }
-            : data,
-        ),
+        text:
+          JSON.stringify(
+            value.candidateId
+              ? {
+                  ...data,
+                  tests: data.tests && {
+                    ...data.tests,
+                    output: data.tests.state === 'failed' ? data.tests.output?.slice(0, 8192) : undefined,
+                  },
+                }
+              : data,
+          ) + (repairHint ? `\nRepair hint / 修复提示: ${repairHint}` : ''),
       },
     ],
     structured: data,
