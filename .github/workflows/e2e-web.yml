@@ -1,10 +1,19 @@
 name: Web E2E
 on:
   pull_request:
+    if: ${{ inputs.visual_review_capture != true }}
   push:
+    if: ${{ inputs.visual_review_capture != true }}
     branches: [main, feat/agh-plugin-core, feat/agh-e2e-gate, feat/agh-e2e-ui-gate, fix/agh-linux, fix/agh-ci-green, fix/agh-ci-green-2]
   merge_group:
+    if: ${{ inputs.visual_review_capture != true }}
   workflow_dispatch:
+    if: ${{ inputs.visual_review_capture != true }}
+    inputs:
+      visual_review_capture:
+        description: Capture Linux screenshots for review; does not run pixel acceptance
+        type: boolean
+        default: false
 permissions: { contents: read }
 concurrency:
   group: web-e2e-${{ github.event_name }}-${{ github.ref }}
@@ -13,6 +22,7 @@ jobs:
   # Explicit file/flow lists use hosted-macOS timings, including build and quality prechecks.
   # Isolate narrow flows and candidate review; retain every scan and the ten-minute step budget.
   e2e-web:
+    if: ${{ inputs.visual_review_capture != true }}
     name: macOS Web E2E (${{ matrix.id }})
     strategy:
       fail-fast: false
@@ -70,6 +80,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   e2e-web-linux:
+    if: ${{ inputs.visual_review_capture != true }}
     name: Linux Web E2E (${{ matrix.id }})
     strategy:
       fail-fast: false
@@ -141,6 +152,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   linux-contracts:
+    if: ${{ inputs.visual_review_capture != true }}
     name: Linux tests and structural guards
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -183,6 +195,7 @@ jobs:
         if: ${{ !cancelled() && steps.native.outcome == 'success' }}
         run: pnpm exec vitest run packages/host-infrastructure/test/process-identity-linux.e2e.test.ts packages/base/extensions/sandbox/test/backend-linux.e2e.test.ts packages/host-infrastructure/test/sandbox-read-paths.e2e.test.ts packages/package-manager/test/local-watcher.slow.test.ts packages/host-infrastructure/test/adapters/storage-lock.e2e.test.ts --maxWorkers=1
   linux-fast:
+    if: ${{ inputs.visual_review_capture != true }}
     name: Linux fast tests (${{ matrix.shard }}/6)
     strategy:
       fail-fast: false
@@ -230,6 +243,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
   linux-migrated-heavy:
+    if: ${{ inputs.visual_review_capture != true }}
     name: Linux migrated heavy tests (${{ matrix.shard }}/3)
     strategy:
       fail-fast: false
@@ -256,6 +270,7 @@ jobs:
       - name: Migrated process and data-heavy tests (zero retries)
         run: node tools/ci/run-migrated-heavy.mjs --shard=${{ matrix.shard }}/3
   web-e2e-gate:
+    if: ${{ inputs.visual_review_capture != true }}
     name: Web E2E gate
     needs: [e2e-web, e2e-web-linux, linux-contracts, linux-fast, linux-migrated-heavy]
     if: always()
@@ -275,3 +290,85 @@ jobs:
           test "$CONTRACTS_RESULT" = success
           test "$FAST_RESULT" = success
           test "$MIGRATED_HEAVY_RESULT" = success
+
+  visual-review-linux:
+    if: ${{ inputs.visual_review_capture == true }}
+    name: Linux capture only (no pixel acceptance) (${{ matrix.id }})
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - { id: diagnostics, args: "diagnostics.spec.ts fact-chain.spec.ts" }
+          - { id: setup-en, args: "first-run.spec.ts --grep 'first-run en|first run Demo'" }
+          - { id: setup-zh, args: "first-run.spec.ts --grep 'first-run zh-CN'" }
+          - { id: memory, args: "memory.spec.ts prompt-trace.spec.ts" }
+          - { id: runtime, args: "runtime.spec.ts" }
+          - { id: ui-flows, args: "ui-flows.spec.ts" }
+          - { id: ui-gate, args: "ui-gate.spec.ts" }
+          - { id: workbench, args: "workbench.spec.ts" }
+          - { id: controls, args: "human-controls.spec.ts references.spec.ts intelligent-ui.spec.ts question-surfaces.spec.ts" }
+          - { id: credentials, args: "large-upload.spec.ts credentials.spec.ts observability.spec.ts" }
+          - { id: config, args: "auto-review.spec.ts feedback.spec.ts plugin-config.spec.ts plugin-purpose.spec.ts webhooks.spec.ts" }
+          - { id: business, args: "business-agents.spec.ts v3-actions.spec.ts" }
+          - { id: navigation, args: "v3-navigation.spec.ts" }
+          - { id: candidate, args: "candidate-review.spec.ts" }
+          - { id: browser, args: "browser.spec.ts tool-recovery.spec.ts base-conversation.spec.ts" }
+          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'" }
+          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'" }
+          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'" }
+          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'" }
+    # Visual baselines use this image and its explicitly provisioned font families.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .node-version, cache: pnpm }
+      - name: Native toolchain and bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev python3 bubblewrap fonts-dejavu-core fonts-dejavu-mono
+      - name: Provision actual Linux sandbox namespaces
+        run: bash tools/e2e-web/provision-linux-sandbox.sh
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run doctor:toolchain
+        id: install
+      - name: Native helpers
+        id: native
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
+      - name: Restore Chromium cache
+        id: browser-cache
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: chromium-${{ runner.os }}-${{ runner.arch }}-playwright-1.63.0
+      - name: Provision pinned Chromium and system libraries
+        id: chromium
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Build local runtime
+        id: build
+        if: ${{ !cancelled() && steps.native.outcome == 'success' }}
+        run: |
+          pnpm --filter @agnes/cli build:local
+          node --input-type=module -e 'import { sourceHash, recordBuild } from "./tools/e2e-web/build-cache.mjs"; await recordBuild(await sourceHash())'
+      - name: Capture for human review; pixel acceptance is deferred
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.chromium.outcome == 'success' }}
+        timeout-minutes: 10
+        env: { AGH_SKIP_PIXEL_SNAPSHOTS: "1" }
+        run: pnpm e2e:web --reuse-build ${{ matrix.args }} --workers=1
+      - name: Upload report, screenshots, traces and process evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: visual-review-linux-${{ matrix.id }}-${{ github.run_id }}-${{ github.run_attempt }}
+          # Only completed reports/traces; Playwright scratch files can disappear during teardown.
+          path: |
+            .agnes-tmp/e2e-web
+            !.agnes-tmp/e2e-web/**/.playwright-artifacts-*/**
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
