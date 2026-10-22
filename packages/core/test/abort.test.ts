@@ -6,7 +6,7 @@ import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { foldEvents } from '@agnes/core-ledger/reduce/reducer'
 import type { InferenceEvent, Provider } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { type HookPort, noopHooks } from '../src/step/session.js'
 import {
@@ -48,6 +48,21 @@ const slowTool = (fn: (args: unknown) => Promise<{ content: Array<{ type: 'text'
   }) as never
 
 const wait = (ms: number) => new Promise<void>((res) => setTimeout(res, ms))
+
+it('still cancels execution and refuses a new lifecycle when durable child withdrawal fails', async () => {
+  const h = await openSession({ provider: fakeProvider([textTurn('must not run')]) })
+  vi.spyOn(h.storage, 'listByParent').mockRejectedValue(new Error('withdrawal unavailable'))
+  try {
+    await expect(h.session.abort(actor)).rejects.toThrow('withdrawal unavailable')
+    expect(h.session.ac.signal.aborted).toBe(true)
+    await expect(
+      h.session.run({ until: 'turn-end', signal: new AbortController().signal }),
+    ).rejects.toMatchObject({ code: 'E_CLOSED' })
+  } finally {
+    // The failed stop remains visible to close; it still releases its own writer before rejecting.
+    await expect(h.session.close()).rejects.toThrow('withdrawal unavailable')
+  }
+})
 
 function slowRegistry(started: string[]): ToolRegistry {
   const r = new ToolRegistry()
