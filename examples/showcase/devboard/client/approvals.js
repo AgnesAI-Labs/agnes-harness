@@ -380,7 +380,7 @@ function TodoItem({ item, open }) {
   )
 }
 
-function TodoColumn({ title, items, empty, open }) {
+export function TodoColumn({ title, items, empty, open }) {
   return h(
     'section',
     { className: 'devboard-card', 'aria-label': title },

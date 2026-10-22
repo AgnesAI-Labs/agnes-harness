@@ -96,10 +96,28 @@ function useStored(key, fallback, valid) {
 /** Demo identity only: it signs actions and gates a few buttons; it is not a security boundary. */
 export const useRole = () => useStored(ROLE_KEY, '项目经理', (r) => r.length > 0 && r.length <= 32)
 
+/** A record another page asked to open ({ id, detail }); the first useDetail of the page opens it. */
+export const JumpContext = React.createContext(undefined)
+
+/** Open a record on another page (for example from the role home): the page opens its detail. */
+export function jumpTo(entry, id, detail) {
+  try {
+    homeNavigation.open(entry, { devboard: { id, detail } })
+  } catch {}
+}
+
 /** Open a detail page of a list: remember which row and push the page by id. */
 export function useDetail() {
   const push = usePushStack()
+  const jump = React.useContext(JumpContext)
   const [selected, setSelected] = React.useState('')
+  const taken = React.useRef(false)
+  React.useEffect(() => {
+    if (taken.current || typeof jump?.id !== 'string' || typeof jump.detail !== 'string') return
+    taken.current = true
+    setSelected(jump.id)
+    push.open(jump.detail)
+  }, [jump, push])
   return [
     selected,
     (id, page = 'detail') => {

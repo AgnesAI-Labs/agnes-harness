@@ -1,6 +1,6 @@
 import { Badge, Button, Field, PushPage, Select, Table, usePushStack } from '@agnes/web-ui'
 import React from 'react'
-import { ApprovalEntry } from './approvals.js'
+import { ApprovalEntry, TodoColumn } from './approvals.js'
 import {
   byId,
   continueWork,
@@ -11,6 +11,7 @@ import {
   gateName,
   HistoryTable,
   h,
+  jumpTo,
   Markdown,
   Meter,
   NoteField,
@@ -24,6 +25,7 @@ import {
   time,
   useProject,
 } from './board.js'
+import { cardsOf, lensSummary, METRICS } from './lens.js'
 
 const STAGE_ORDER = ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE']
 const stagesOf = (data, projectId) =>
@@ -187,6 +189,44 @@ function NewProject({ data, board, role, onDone }) {
   )
 }
 
+const kpis = (rows) =>
+  h(
+    'div',
+    { className: 'devboard-kpis' },
+    rows.map(([label, n]) =>
+      h(
+        'div',
+        { className: 'devboard-kpi', key: label },
+        h('strong', null, n),
+        h('span', { className: 'devboard-kpi-label' }, label),
+      ),
+    ),
+  )
+
+/** The home of the demo role: what waits for it, its open records and the most urgent ones (links to the details). */
+function Workbench({ data, role }) {
+  const { pending, counts, urgent } = lensSummary(role, data)
+  const open = (id, page) => {
+    const hit = urgent.find((u) => u.id === id && u.page === page)
+    if (hit) jumpTo(hit.entry, id, page)
+  }
+  return h(
+    'section',
+    { 'aria-label': `${role}的工作台` },
+    h('h2', { className: 'devboard-heading' }, `${role}的工作台`),
+    kpis([['待我处理', pending], ...cardsOf(role).map((key) => [METRICS[key][0], counts[key]])]),
+    h(TodoColumn, {
+      title: '与我相关的紧急事项',
+      items: urgent.map((u) => ({
+        ...u,
+        meta: `${u.meta}${Number.isFinite(u.due) ? ` · ${u.dueLabel} ${time(u.due)}` : ''}`,
+      })),
+      empty: `「${role}」当前没有紧急事项。`,
+      open,
+    }),
+  )
+}
+
 export function Overview({ data, board, role }) {
   const push = usePushStack()
   const [created, setCreated] = React.useState(null)
@@ -198,6 +238,8 @@ export function Overview({ data, board, role }) {
   return h(
     React.Fragment,
     null,
+    h(Workbench, { data, role }),
+    h('h2', { className: 'devboard-heading' }, '项目组合'),
     lateFlows.length > 0 &&
       h(
         'p',
@@ -210,24 +252,13 @@ export function Overview({ data, board, role }) {
         { className: 'devboard-alert', role: 'alert' },
         `${overdue.map((p) => `${p.id} ${stageName(data, p.id, p.metrics.currentStage)}`).join('、')} 已超出计划完成日期。`,
       ),
-    h(
-      'div',
-      { className: 'devboard-kpis' },
-      [
-        ['待决议评审门', pending.length],
-        ['审批中的流程', data.approvals.filter((a) => a.state === 'RUNNING').length],
-        ['待处理人工介入', interventions.length],
-        ['待 CCB 决议变更', ccb.length],
-        ['在研项目', data.projects.filter((p) => p.metrics.passedStages < p.metrics.stageCount).length],
-      ].map(([label, n]) =>
-        h(
-          'div',
-          { className: 'devboard-kpi', key: label },
-          h('strong', null, n),
-          h('span', { className: 'devboard-kpi-label' }, label),
-        ),
-      ),
-    ),
+    kpis([
+      ['待决议评审门', pending.length],
+      ['审批中的流程', data.approvals.filter((a) => a.state === 'RUNNING').length],
+      ['待处理人工介入', interventions.length],
+      ['待 CCB 决议变更', ccb.length],
+      ['在研项目', data.projects.filter((p) => p.metrics.passedStages < p.metrics.stageCount).length],
+    ]),
     h('div', { className: 'devboard-buttons' }, h(Button, { onClick: () => push.open('new') }, '新建项目')),
     h(
       'div',

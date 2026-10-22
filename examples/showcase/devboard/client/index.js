@@ -1,7 +1,7 @@
 import { Button } from '@agnes/web-ui'
 import React from 'react'
 import { MyTodo } from './approvals.js'
-import { h, Shell, useBoard, useRole } from './board.js'
+import { h, JumpContext, Shell, useBoard, useRole } from './board.js'
 import { Service, Trials } from './field.js'
 import { Overview, Projects } from './lifecycle.js'
 import { Panorama } from './panorama.js'
@@ -14,7 +14,7 @@ const PAGES = {
     'Portfolio',
     'activity',
     Overview,
-    '宁川装备研发项目组合：阶段进度、评审门、追溯覆盖率、缺陷、测试与风险。',
+    '当前演示角色的工作台，以及宁川装备研发项目组合：阶段进度、评审门、追溯覆盖率、缺陷、测试与风险。',
   ],
   'devboard-projects': [
     '项目',
@@ -75,7 +75,7 @@ export function apply(ctx) {
     'zh-CN': Object.fromEntries(Object.entries(PAGES).map(([id, [zh]]) => [`devboard.nav.${id}`, zh])),
   })
   Object.entries(PAGES).forEach(([id, [title, , icon, View, description]], index) => {
-    function DevBoardPage() {
+    function DevBoardPage({ context }) {
       const board = useBoard(ctx)
       const [role, setRole] = useRole()
       const roles = board.data?.roles
@@ -91,9 +91,13 @@ export function apply(ctx) {
           '重置演示数据',
         )
       return h(
-        Shell,
-        { id, title, description, board, role, setRole, actions: reset },
-        board.data && h(View, { data: board.data, board, role, setRole }),
+        JumpContext.Provider,
+        { value: context?.selection?.devboard },
+        h(
+          Shell,
+          { id, title, description, board, role, setRole, actions: reset },
+          board.data && h(View, { data: board.data, board, role, setRole }),
+        ),
       )
     }
     ctx.homeEntries.register({
