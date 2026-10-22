@@ -509,4 +509,106 @@ describe('filesystem checkpoint seam', () => {
     ).rejects.toBeTruthy()
     await expect(reopened.read(h.ids[3] as string)).resolves.toMatchObject({ manifest: { stepId: 'old-3' } })
   })
+
+  // Each row: snapshots as [owner, turn, createdAt (days), bytes]; survivors as indexes into them.
+  type Snap = [owner: string | undefined, turn: number, day: number, bytes: number]
+  const gcRows: Array<{ name: string; snaps: Snap[]; gc: Record<string, number>; survive: number[] }> = [
+    {
+      name: 'protects each owner’s last turns from keep and age, collects the rest',
+      snaps: [
+        ['a', 1, 0, 0],
+        ['b', 1, 1, 0],
+        ['a', 2, 2, 0],
+        ['b', 2, 3, 0],
+        ['a', 3, 4, 0],
+        ['b', 3, 5, 0],
+      ],
+      gc: { keep: 0, protectedTurns: 2 },
+      survive: [2, 3, 4, 5],
+    },
+    {
+      name: 'a turn with several snapshots is protected whole and counts once',
+      snaps: [
+        ['a', 1, 0, 0],
+        ['a', 2, 1, 0],
+        ['a', 2, 2, 0],
+        ['a', 3, 3, 0],
+      ],
+      gc: { keep: 0, protectedTurns: 2 },
+      survive: [1, 2, 3],
+    },
+    {
+      name: 'ownerless snapshots follow keep and age as before',
+      snaps: [
+        [undefined, 1, 0, 0],
+        [undefined, 2, 1, 0],
+        [undefined, 3, 9, 0],
+      ],
+      gc: { keep: 1, protectedTurns: 2 },
+      survive: [2],
+    },
+    {
+      name: 'over the byte cap unprotected go first, oldest first',
+      snaps: [
+        ['a', 1, 8, 10],
+        [undefined, 1, 9, 10],
+        ['a', 2, 9, 10],
+      ],
+      gc: { keep: 9, protectedTurns: 1, maxBytes: 20 },
+      survive: [1, 2],
+    },
+    {
+      name: 'still over the cap: owner idle longest loses oldest turn first',
+      snaps: [
+        ['a', 1, 1, 10],
+        ['a', 2, 2, 10],
+        ['b', 1, 3, 10],
+        ['b', 2, 4, 10],
+      ],
+      gc: { keep: 9, protectedTurns: 9, maxBytes: 20 },
+      survive: [2, 3],
+    },
+    {
+      name: 'at the cap nothing is collected',
+      snaps: [
+        ['a', 1, 1, 10],
+        ['b', 1, 2, 10],
+      ],
+      gc: { keep: 0, protectedTurns: 1, maxBytes: 20 },
+      survive: [0, 1],
+    },
+  ]
+  it.each(gcRows)(
+    'gc retention: $name, and the result survives reopening',
+    async ({ snaps, gc, survive }) => {
+      const h = await setup()
+      const id = (n: number) => n.toString(16).padStart(32, '0')
+      const mk = async () => {
+        const shadow = new ShadowGit(realFs(h.data), 'retention')
+        await shadow.init({ workspaceHash: 'b'.repeat(64) })
+        return shadow
+      }
+      const shadow = await mk()
+      const DAYMS = 24 * 60 * 60 * 1000
+      for (const [n, [owner, turn, day, bytes]] of snaps.entries()) {
+        const file = {
+          rel: `f${n}`,
+          state: 'file' as const,
+          bytes: new Uint8Array(bytes),
+          size: bytes,
+          sha256: createHash('sha256').update(new Uint8Array(bytes)).digest('hex'),
+        }
+        await shadow.create({
+          id: id(n),
+          stepId: `${turn}/1`,
+          createdAt: day * DAYMS,
+          ...(owner ? { owner } : {}),
+          files: bytes ? [file] : [],
+        })
+      }
+      await shadow.gc({ now: 10 * DAYMS, maxAgeMs: 7 * DAYMS, ...gc } as Parameters<ShadowGit['gc']>[0])
+      const alive = (await (await mk()).list()).map((m) => m.id).sort()
+      expect(alive).toEqual(survive.map(id).sort())
+    },
+  )
 })

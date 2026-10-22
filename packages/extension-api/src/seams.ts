@@ -69,7 +69,8 @@ export type CheckpointWorkspaceBinding = Readonly<{ root: string; fs: Checkpoint
 export interface CheckpointSeam {
   /** Dynamic seams fit storage and filesystem state to the session before invocation. */
   forWorkspace?(workspace: CheckpointWorkspaceBinding): CheckpointSeam | Promise<CheckpointSeam>
-  snapshot(paths: string[], stepId: string): Promise<{ id: string }>
+  /** `owner` is the session key; a seam may use it to keep each session's recent snapshots. */
+  snapshot(paths: string[], stepId: string, options?: { owner?: string }): Promise<{ id: string }>
   rewind(id: string): Promise<void>
   list(): Promise<Array<{ id: string; stepId: string }>>
 }

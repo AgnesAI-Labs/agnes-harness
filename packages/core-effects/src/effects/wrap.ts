@@ -355,13 +355,15 @@ export class SeamRuntime {
     paths: string[],
     stepId: string,
     checkpoint?: CheckpointSeam,
+    owner?: string,
   ): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+    const options = owner === undefined ? undefined : { owner }
     try {
       return {
         ok: true,
         ...(await (checkpoint
-          ? checkpoint.snapshot(paths, stepId)
-          : this.withCheckpoint((fitted) => fitted.snapshot(paths, stepId)))),
+          ? checkpoint.snapshot(paths, stepId, options)
+          : this.withCheckpoint((fitted) => fitted.snapshot(paths, stepId, options)))),
       }
     } catch (err) {
       this.fail('checkpoint', 'snapshot', err)

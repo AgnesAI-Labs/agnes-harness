@@ -23,6 +23,8 @@ export type CheckpointManifest = {
   workspaceHash: string
   stepId: string
   createdAt: number
+  /** Session key that took the snapshot; absent on snapshots from before it was recorded. */
+  owner?: string
   entries: ManifestEntry[]
 }
 export type Captured =
@@ -44,7 +46,7 @@ function validate(value: unknown, id: string, workspaceHash: string): Checkpoint
     throw fault('E_CHECKPOINT_CORRUPT', `${id} manifest`)
   const manifest = value as Partial<CheckpointManifest>
   // biome-ignore format: this is one manifest-header invariant.
-  if ((manifest.schema !== 1 && manifest.schema !== 2) || manifest.id !== id || manifest.workspaceHash !== workspaceHash || typeof manifest.stepId !== 'string' || !Number.isSafeInteger(manifest.createdAt) || !Array.isArray(manifest.entries))
+  if ((manifest.schema !== 1 && manifest.schema !== 2) || manifest.id !== id || manifest.workspaceHash !== workspaceHash || typeof manifest.stepId !== 'string' || !Number.isSafeInteger(manifest.createdAt) || !Array.isArray(manifest.entries) || (manifest.owner !== undefined && typeof manifest.owner !== 'string'))
     throw fault('E_CHECKPOINT_CORRUPT', `${id} manifest fields`)
   let previous = ''
   for (const entry of manifest.entries) {
@@ -95,7 +97,13 @@ export class ShadowGit {
       throw fault('E_CHECKPOINT_IDENTITY', `repository prefix collision at ${this.gitdir}`)
   }
 
-  async create(input: { id: string; stepId: string; createdAt: number; files: Captured[] }): Promise<void> {
+  async create(input: {
+    id: string
+    stepId: string
+    createdAt: number
+    owner?: string
+    files: Captured[]
+  }): Promise<void> {
     if (!ID.test(input.id)) throw fault('E_CHECKPOINT_ID', input.id)
     const entries: ManifestEntry[] = []
     const payloads: Array<{ path: string; oid: string }> = []
@@ -110,7 +118,7 @@ export class ShadowGit {
     }
     entries.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
     // biome-ignore format: this mirrors the compact manifest schema.
-    const manifest: CheckpointManifest = { schema: entries.some((entry) => isAbsolute(entry.rel)) ? 2 : 1, id: input.id, workspaceHash: this.workspaceHash, stepId: input.stepId, createdAt: input.createdAt, entries }
+    const manifest: CheckpointManifest = { schema: entries.some((entry) => isAbsolute(entry.rel)) ? 2 : 1, id: input.id, workspaceHash: this.workspaceHash, stepId: input.stepId, createdAt: input.createdAt, ...(input.owner === undefined ? {} : { owner: input.owner }), entries }
     // biome-ignore format: one plumbing operation.
     const manifestOid = await writeBlob({ fs: this.fs, gitdir: this.gitdir, blob: encoder.encode(JSON.stringify(manifest)) })
     // biome-ignore format: one root-tree declaration.
@@ -173,15 +181,81 @@ export class ShadowGit {
     await removeRef({ fs: this.fs, gitdir: this.gitdir, ref: `refs/agnes/checkpoints/${id}` })
   }
 
-  async gc(input: { keep: number; now: number; maxAgeMs: number }): Promise<{ deleted: string[] }> {
+  /**
+   * Deletes refs, never git objects. Order: (1) outside `keep`, older than `maxAgeMs` and not
+   * protected; (2) while live bytes exceed `maxBytes`, unprotected oldest first, then protected ones
+   * (owner with the oldest newest snapshot first, oldest turn first). Protected = an owner's last
+   * `protectedTurns` distinct turns. Any error here happens before the next delete, so it keeps refs.
+   */
+  async gc(input: {
+    keep: number
+    now: number
+    maxAgeMs: number
+    protectedTurns?: number
+    maxBytes?: number
+  }) {
+    const all = await this.list()
+    const protectedIds = protectedSet(all, input.protectedTurns ?? 0)
+    const doomed = all
+      .slice(input.keep)
+      .filter((m) => m.createdAt < input.now - input.maxAgeMs && !protectedIds.has(m.id))
+    const gone = new Set(doomed.map((m) => m.id))
+    const live = all.filter((m) => !gone.has(m.id))
+    let total = live.reduce((n, m) => n + sizeOf(m), 0)
+    for (const m of capOrder(live, protectedIds)) {
+      if (total <= (input.maxBytes ?? Number.POSITIVE_INFINITY)) break
+      total -= sizeOf(m)
+      doomed.push(m)
+    }
     const deleted: string[] = []
-    for (const manifest of (await this.list()).slice(input.keep))
-      if (manifest.createdAt < input.now - input.maxAgeMs) {
-        await this.deleteRef(manifest.id)
-        deleted.push(manifest.id)
-      }
+    for (const m of doomed) {
+      await this.deleteRef(m.id)
+      deleted.push(m.id)
+    }
     const remaining = new Set((await this.list()).map((item) => item.id))
     if (deleted.some((id) => remaining.has(id))) throw fault('E_CHECKPOINT_GC', 'deleted ref remains visible')
     return { deleted }
   }
+}
+
+const sizeOf = (m: CheckpointManifest) => m.entries.reduce((n, e) => n + (e.state === 'file' ? e.size : 0), 0)
+// A stepId is `${turn}/${step}`; an unparseable one is its own turn so it is never lost to a parse error.
+const turnOf = (m: CheckpointManifest) => m.stepId.split('/')[0] ?? m.stepId
+
+function protectedSet(all: CheckpointManifest[], turns: number): Set<string> {
+  // Runs after every snapshot, so each owner's turns are ranked in one pass, not per comparison.
+  const byOwner = new Map<string, Map<string, number>>()
+  for (const m of all) {
+    if (m.owner === undefined) continue
+    const turnsOf = byOwner.get(m.owner) ?? new Map<string, number>()
+    turnsOf.set(turnOf(m), Math.max(turnsOf.get(turnOf(m)) ?? m.createdAt, m.createdAt))
+    byOwner.set(m.owner, turnsOf)
+  }
+  const recent = new Map<string, Set<string>>()
+  for (const [owner, turnsOf] of byOwner)
+    recent.set(
+      owner,
+      new Set(
+        [...turnsOf]
+          .sort(([a, ra], [b, rb]) => rb - ra || (a < b ? 1 : -1))
+          .slice(0, turns)
+          .map(([turn]) => turn),
+      ),
+    )
+  return new Set(
+    all.filter((m) => m.owner !== undefined && recent.get(m.owner)?.has(turnOf(m))).map((m) => m.id),
+  )
+}
+
+function capOrder(live: CheckpointManifest[], protectedIds: Set<string>): CheckpointManifest[] {
+  const oldest = (a: CheckpointManifest, b: CheckpointManifest) =>
+    a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1)
+  const newest = new Map<string, number>()
+  for (const m of live) newest.set(m.owner ?? '', Math.max(newest.get(m.owner ?? '') ?? 0, m.createdAt))
+  const kept = live.filter((m) => protectedIds.has(m.id))
+  const rank = (m: CheckpointManifest) => newest.get(m.owner ?? '') ?? 0
+  return [
+    ...live.filter((m) => !protectedIds.has(m.id)).sort(oldest),
+    ...kept.sort((a, b) => rank(a) - rank(b) || (a.owner ?? '').localeCompare(b.owner ?? '') || oldest(a, b)),
+  ]
 }

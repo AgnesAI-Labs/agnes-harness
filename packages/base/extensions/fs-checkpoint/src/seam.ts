@@ -5,6 +5,10 @@ import type { HostFs, SeamFactory, SeamInitContext } from '../../../src/seam-ini
 import { type Captured, ShadowGit } from './shadow-git.js'
 
 const DAY = 24 * 60 * 60 * 1000
+/** Distinct turns per session whose snapshots are never collected by age or `keep`. */
+const PROTECTED_TURNS = 20
+/** Live snapshot bytes per workspace; above it the oldest are collected, protected ones last. */
+const MAX_WORKSPACE_BYTES = 500 * 1024 * 1024
 const sha256 = (value: Uint8Array | string): string => createHash('sha256').update(value).digest('hex')
 // biome-ignore format: error construction remains a single expression.
 const error = (code: string, message: string, details: Record<string, unknown> = {}) => Object.assign(new Error(`${code}: ${message}`), { code, ...details })
@@ -135,7 +139,7 @@ async function createBoundFsCheckpoint(
   await serial(() => shadow.init({ workspaceHash }))
   const { keep, maxBytes } = config(ctx)
   return {
-    snapshot: (paths, stepId) =>
+    snapshot: (paths, stepId, options) =>
       serial(async () => {
         const dedup = new Map<string, Captured>()
         for (const path of paths) {
@@ -144,8 +148,8 @@ async function createBoundFsCheckpoint(
         }
         const id = deps.nextId()
         const createdAt = deps.now()
-        await shadow.create({ id, stepId, createdAt, files: [...dedup.values()] })
-        await shadow.gc({ keep, now: createdAt, maxAgeMs: 7 * DAY })
+        await shadow.create({ id, stepId, createdAt, ...(options?.owner === undefined ? {} : { owner: options.owner }), files: [...dedup.values()] })
+        await shadow.gc({ keep, now: createdAt, maxAgeMs: 7 * DAY, protectedTurns: PROTECTED_TURNS, maxBytes: MAX_WORKSPACE_BYTES })
         return { id }
       }),
     rewind: (id) =>

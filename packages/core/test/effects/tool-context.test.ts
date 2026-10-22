@@ -406,14 +406,23 @@ describe('ToolContext platform view and sandbox enforcement (spec 2026-09-15 §4
 
 it('names the checkpoint taken before a write, per path', async () => {
   const ids = ['cp-a', 'cp-b']
+  const owners: unknown[] = []
   const { context } = setup(
-    fakeSeams({ checkpoint: { snapshot: async () => ({ id: ids.shift() ?? 'none' }) } }),
+    fakeSeams({
+      checkpoint: {
+        snapshot: async (_paths, _step, options) => {
+          owners.push(options?.owner)
+          return { id: ids.shift() ?? 'none' }
+        },
+      },
+    }),
   )
   expect(context.fs.checkpointOf?.('a.txt')).toBeUndefined()
   await context.fs.write('a.txt', 'x')
   await context.fs.write('b.txt', 'y')
   expect(context.fs.checkpointOf?.('a.txt')).toBe('cp-a')
   expect(context.fs.checkpointOf?.('b.txt')).toBe('cp-b')
+  expect(owners).toEqual(['parent-1', 'parent-1'])
 })
 
 it('returns an artifact only after its session registration commits and refuses cancelled or failed registration', async () => {

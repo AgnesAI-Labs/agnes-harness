@@ -198,7 +198,7 @@ export function buildToolContext(
     write: async (path, data) => {
       effects.beginEffect()
       await assertNotDenied(d.fsOps, path)
-      const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint)
+      const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint, d.sessionKey)
       if (!snap.ok) throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
       checkpoints.set(path, snap.id)
       return d.fsOps.write(path, data)
@@ -547,7 +547,12 @@ export function buildToolContext(
               effects.write(async () => {
                 const bytes = data.slice()
                 await assertNotDenied(d.fsOps, path)
-                const snap = await d.runtime.checkpointSnapshot([path], stepId, d.workspace?.checkpoint)
+                const snap = await d.runtime.checkpointSnapshot(
+                  [path],
+                  stepId,
+                  d.workspace?.checkpoint,
+                  d.sessionKey,
+                )
                 if (!snap.ok)
                   throw new CoreError('E_SEAM_MISSING', `checkpoint unavailable: ${snap.reason}`, { path })
                 checkpoints.set(path, snap.id)
