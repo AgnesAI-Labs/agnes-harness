@@ -37,6 +37,18 @@ describe('role lens', () => {
     expect(mine('工艺工程师', 'trial').every((t) => t.type === 'FAI')).toBe(true)
   })
 
+  it('gives the default role, the project manager, something on every list page', () => {
+    for (const kind of ['req', 'change', 'defect', 'trial', 'problem']) {
+      const pm = mine('项目经理', kind)
+      expect(pm.length, kind).toBeGreaterThan(0)
+      expect(pm.length, kind).toBeLessThan(data[COLLECTION[kind as keyof typeof COLLECTION]].length)
+    }
+    expect(mine('项目经理', 'req').every((r) => r.status === 'CHANGED')).toBe(true)
+    expect(
+      mine('项目经理', 'defect').every((d) => ['A', 'B'].includes(d.severity) && d.state !== 'CLOSED'),
+    ).toBe(true)
+  })
+
   it('matches whole roles, including the one that contains a space', () => {
     const handler = { handler: 'RAMS 工程师 唐力' }
     expect(relevant('RAMS 工程师', 'intervention', handler, data)).toBe(true)

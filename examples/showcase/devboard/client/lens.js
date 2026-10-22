@@ -41,34 +41,48 @@ const TASK_ROLES = {
   SECURITY_CHECK: ['质量工程师', 'RAMS 工程师'],
 }
 
+/**
+ * The project manager is the default demo role. Besides tasks it follows what moves the plan:
+ * changed requirements, changes before the CCB, severe open defects, unapproved trials, open 8Ds.
+ */
+const PM = '项目经理'
+
 /** kind → (role, item, data) => boolean. */
 const RULES = {
   stage: (role, s) => s.author === role,
   gate: (role, g, data) => g.approverRoles.includes(role) || stageOf(data, g)?.author === role,
   artifact: (role, a) => a.authorRole === role,
   req: (role, r) =>
-    Object.hasOwn(REQ_LEVELS, role) &&
-    (REQ_LEVELS[role].includes(r.level) || (Boolean(r.discipline) && r.discipline === REQ_DISCIPLINE[role])),
-  task: (role, t) =>
-    role === '项目经理' || (Object.hasOwn(TASK_ROLES, t.type) && TASK_ROLES[t.type].includes(role)),
+    (role === PM && r.status === 'CHANGED') ||
+    (Object.hasOwn(REQ_LEVELS, role) &&
+      (REQ_LEVELS[role].includes(r.level) ||
+        (Boolean(r.discipline) && r.discipline === REQ_DISCIPLINE[role]))),
+  task: (role, t) => role === PM || (Object.hasOwn(TASK_ROLES, t.type) && TASK_ROLES[t.type].includes(role)),
   change: (role, c, data) =>
     holds(role, c.raisedBy) ||
     among(role, '技术负责人', '分技术中心主任') ||
-    (DECIDERS.includes(role) && c.state === 'CCB_REVIEW') ||
+    ((role === PM || DECIDERS.includes(role)) && c.state === 'CCB_REVIEW') ||
     (role === '配置管理员' && Boolean(c.ecn)) ||
     waitingFor(role, data, 'change', c.id),
-  defect: (role, d) => holds(role, d.owner) || among(role, '质量工程师', '验证工程师'),
+  defect: (role, d) =>
+    holds(role, d.owner) ||
+    among(role, '质量工程师', '验证工程师') ||
+    (role === PM && ['A', 'B'].includes(d.severity) && d.state !== 'CLOSED'),
   testRun: (role) => among(role, '验证工程师', '质量工程师'),
   trial: (role, t) =>
     among(role, '验证工程师', '质量工程师') ||
+    (role === PM && t.state !== 'APPROVED') ||
     (role === '工艺工程师' && t.type === 'FAI') ||
     (among(role, '机械设计师', '电气设计师') && t.type === 'TYPE_TEST'),
   fault: (role, f) =>
     among(role, '诊断工程师', 'RAMS 工程师', '质量工程师') || (role === '客服工程师' && f.source === '客服'),
-  problem: (role, p) => role === '质量工程师' || Boolean(p.steps?.D1?.text?.includes(role)),
+  problem: (role, p) =>
+    role === '质量工程师' ||
+    (role === PM && p.state !== 'CLOSED') ||
+    Boolean(p.steps?.D1?.text?.includes(role)),
   configBaseline: (role) => role === '配置管理员',
   approval: (role, a) => a.nodes.some((n) => n.roles.includes(role)) || a.initiator?.role === role,
-  intervention: (role, i) => role === '项目经理' || holds(role, i.handler),
+  intervention: (role, i) => role === PM || holds(role, i.handler),
 }
 
 /** Does `item` of this `kind` concern `role`? `data` is the board snapshot (stages and approvals are looked up). */
