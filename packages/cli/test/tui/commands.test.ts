@@ -116,7 +116,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(41)
+    expect(SLASH_COMMANDS).toHaveLength(42)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -159,6 +159,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/queue',
       '/status',
       '/copy',
+      '/diff',
     ])
   })
 
@@ -177,6 +178,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/jobs')?.args).toBe('[stop <n|id>]')
     expect(slashCommand('/queue')?.args).toBe('[edit|drop|now|steer <n>]')
     expect(slashCommand('/copy')?.args).toBe('[n|code]')
+    expect(slashCommand('/diff')?.args).toBe('[turn] [path]')
     // Commands without arguments carry no shape at all, and an unknown name finds nothing.
     expect(slashCommand('/help')?.args).toBeUndefined()
     expect(slashCommand('/nope')).toBeUndefined()

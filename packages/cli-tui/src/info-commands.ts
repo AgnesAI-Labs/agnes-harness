@@ -2,6 +2,7 @@ import { dirname } from 'node:path'
 import type { TuiApp } from './app.js'
 import type { SlashResult } from './commands.js'
 import { listSessionChoices } from './commands.js'
+import { escapeControl } from './component.js'
 import { formatUsdMicros } from './format-usage.js'
 import { tt } from './locale-extended.js'
 import { waitingIn } from './queue-commands.js'
@@ -79,6 +80,52 @@ async function copySlash(app: TuiApp, args: string[]): Promise<SlashResult> {
   return {}
 }
 
+const MAX_DIFF_ROWS = 120
+const SHOWN_DIFFS = 3
+
+/** `/diff [turn] [path]`: the daemon's own unified diffs. Colouring happens in the transcript view. */
+async function diffSlash(app: TuiApp, args: string[]): Promise<SlashResult> {
+  const { locale, session: s } = app
+  const scope = args[0] === 'turn' ? 'turn' : 'session'
+  const path = (scope === 'turn' ? args.slice(1) : args).join(' ')
+  const list = await s.workspaceChanges({ scope, ...(path ? { path } : {}) })
+  if (list.files.length === 0)
+    return {
+      text:
+        tt(scope === 'turn' ? 'diff.noneTurn' : 'diff.none', locale) +
+        (list.unrecorded ? `\n${tt('diff.unrecorded', locale)}` : ''),
+    }
+  const note = { binary: 'diff.binary', 'too-large': 'diff.tooLarge', 'diff-limit': 'diff.limit' } as const
+  const total = (key: 'added' | 'removed') => list.files.reduce((sum, f) => sum + (f[key] ?? 0), 0)
+  const out = [
+    tt('diff.header', locale, { n: list.files.length, added: total('added'), removed: total('removed') }),
+  ]
+  for (const f of list.files) {
+    const why = [
+      f.diffStatus === 'available' ? '' : tt(note[f.diffStatus], locale),
+      f.freshness === 'changed' ? tt('diff.changed', locale) : '',
+    ].filter(Boolean)
+    out.push(
+      `  +${f.added ?? '?'} -${f.removed ?? '?'} ${escapeControl(f.path)}${why.length ? ` (${why.join(', ')})` : ''}`,
+    )
+  }
+  // The list carries no diff text: ask for the first few files one by one, or for the one path named.
+  const wanted = path
+    ? list.files
+    : list.files.filter((f) => f.diffStatus === 'available').slice(0, SHOWN_DIFFS)
+  for (const f of wanted) {
+    const diff = (await s.workspaceChanges({ scope, path: f.path })).selected?.diff
+    if (!diff) continue
+    const rows = escapeControl(diff).replace(/\n$/, '').split('\n')
+    out.push('', `── ${escapeControl(f.path)}`, ...rows.slice(0, path ? undefined : MAX_DIFF_ROWS))
+    if (!path && rows.length > MAX_DIFF_ROWS)
+      out.push(tt('diff.more', locale, { n: rows.length - MAX_DIFF_ROWS }))
+  }
+  if (list.truncated) out.push('', tt('diff.truncated', locale))
+  if (list.unrecorded) out.push(tt('diff.unrecorded', locale))
+  return { text: out.join('\n'), presentation: 'transcript' }
+}
+
 /** The small commands that report on the session or hand work to the agent. */
 export async function infoSlash(app: TuiApp, cmd: string, line: string): Promise<SlashResult> {
   const args = line.trim().split(/\s+/).slice(1)
@@ -87,6 +134,8 @@ export async function infoSlash(app: TuiApp, cmd: string, line: string): Promise
       return statusSlash(app)
     case '/copy':
       return copySlash(app, args)
+    case '/diff':
+      return diffSlash(app, args)
     default:
       return {}
   }

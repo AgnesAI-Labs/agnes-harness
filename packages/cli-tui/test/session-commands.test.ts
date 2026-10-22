@@ -5,10 +5,13 @@ import { join } from 'node:path'
 import { type ContentBlock, rpcError } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
+import { createAnsi } from '../src/ansi.js'
 import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
 import { deliverableBasename } from '../src/deliverable-files.js'
 import { tt } from '../src/locale-extended.js'
+import { TuiTheme } from '../src/theme.js'
+import { localCommandView } from '../src/views/local-command.js'
 
 const meta = (sessionId: string, cwd: string) => ({
   sessionId,
@@ -462,5 +465,91 @@ describe('small info commands', () => {
     expect((await runSlash(replies('plain'), '/copy code')).text).toBe(tt('copy.noCode', 'en'))
     expect((await runSlash(replies(), '/copy')).text).toBe(tt('copy.none', 'en'))
     expect(copy).not.toHaveBeenCalled()
+  })
+
+  const change = (path: string, extra: Record<string, unknown> = {}) => ({
+    path,
+    kind: 'modified',
+    added: 2,
+    removed: 1,
+    diffStatus: 'available',
+    freshness: 'current',
+    ...extra,
+  })
+  const DIFF = '@@ -1 +1,2 @@\n-old\n+new\u001b[2J\n+more\n'
+
+  it('/diff lists files, asks for their diffs, escapes control characters and explains what is missing', async () => {
+    const workspaceChanges = vi.fn(async (q: { scope: string; path?: string }) => ({
+      scope: q.scope,
+      truncated: true,
+      unrecorded: true,
+      files: [
+        change('a.ts'),
+        change('bin\u001b[1m.png', { diffStatus: 'binary' }),
+        change('c.ts', { freshness: 'changed' }),
+      ],
+      ...(q.path ? { selected: { ...change(q.path), diff: DIFF } } : {}),
+    }))
+    const app = appWith({}, { workspaceChanges })
+    const result = await runSlash(app, '/diff')
+    const text = result.text ?? ''
+    expect(result.presentation).toBe('transcript')
+    expect(text).toContain(tt('diff.header', 'en', { n: 3, added: 6, removed: 3 }))
+    expect(text).toContain('  +2 -1 bin[1m.png (binary, no diff)')
+    expect(text).toContain('  +2 -1 c.ts (changed again since)')
+    expect(text).toContain('── a.ts\n@@ -1 +1,2 @@\n-old\n+new[2J\n+more')
+    expect(text).not.toContain('\u001b')
+    expect(text).toContain(tt('diff.truncated', 'en'))
+    expect(text).toContain(tt('diff.unrecorded', 'en'))
+    // The binary file is not asked for; the available ones are.
+    expect(workspaceChanges.mock.calls.map((c) => c[0])).toEqual([
+      { scope: 'session' },
+      { scope: 'session', path: 'a.ts' },
+      { scope: 'session', path: 'c.ts' },
+    ])
+    await runSlash(app, '/diff turn')
+    expect(workspaceChanges.mock.calls[3]?.[0]).toEqual({ scope: 'turn' })
+    workspaceChanges.mockClear()
+    await runSlash(app, '/diff turn src/a b.ts')
+    expect(workspaceChanges.mock.calls[0]?.[0]).toEqual({ scope: 'turn', path: 'src/a b.ts' })
+  })
+
+  it('/diff says so when nothing changed, and keeps a long diff to its first rows', async () => {
+    const none = (unrecorded: boolean) =>
+      appWith({}, { workspaceChanges: async () => ({ files: [], truncated: false, unrecorded }) })
+    expect((await runSlash(none(false), '/diff')).text).toBe(tt('diff.none', 'en'))
+    expect((await runSlash(none(false), '/diff turn')).text).toBe(tt('diff.noneTurn', 'en'))
+    expect((await runSlash(none(true), '/diff')).text).toContain(tt('diff.unrecorded', 'en'))
+    const long = Array.from({ length: 150 }, (_, i) => `+line ${i}`).join('\n')
+    const app = appWith(
+      {},
+      {
+        workspaceChanges: async (q: { path?: string }) => ({
+          files: [change('a.ts')],
+          truncated: false,
+          unrecorded: false,
+          ...(q.path ? { selected: { ...change('a.ts'), diff: long } } : {}),
+        }),
+      },
+    )
+    const text = (await runSlash(app, '/diff')).text ?? ''
+    expect(text).toContain('+line 119')
+    expect(text).not.toContain('+line 120')
+    expect(text).toContain(tt('diff.more', 'en', { n: 30 }))
+    expect((await runSlash(app, '/diff a.ts')).text).toContain('+line 149')
+  })
+
+  it('/diff output is tinted by the diff marks, wrapped rows included, and other commands stay dim', () => {
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+    const text = '  +1 -1 a.ts\n@@ -1 +1 @@\n-old\n+new line that is long enough to wrap\n context'
+    const rows = localCommandView(ansi)('/diff', text).render(14)
+    expect(rows).toContain(ansi.fg('faint', '@@ -1 +1 @@'))
+    expect(rows).toContain(ansi.fg('danger', '-old'))
+    const green = ansi.fg('success', 'x').split('x')[0] as string
+    expect(rows.filter((r) => r.startsWith(green)).length).toBeGreaterThan(1)
+    expect(rows.find((r) => r.includes('context'))).toBe(ansi.dim('context'))
+    // Any other command keeps the dim style; a `+` there means nothing.
+    const other = localCommandView(ansi)('/status', '+not a diff').render(40)
+    expect(other).toContain(ansi.dim('+not a diff'))
   })
 })
