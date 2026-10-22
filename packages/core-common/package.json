@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./command-table/rules": "./src/command-table/rules.ts",
+    "./command-table/split": "./src/command-table/split.ts",
     "./context-diagnostics": "./src/context-diagnostics.ts",
     "./ids": "./src/ids.ts",
     "./request/sha256-node": "./src/request/sha256-node.ts",
