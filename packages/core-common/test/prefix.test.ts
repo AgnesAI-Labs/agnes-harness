@@ -223,11 +223,31 @@ describe('banned runners and subcommand programs', () => {
     ['go build -toolexec=x', ['go', 'build']],
     ['cargo test --config x', ['cargo', 'test']],
     ['npm test --script-shell=x', ['npm', 'test']],
-    ['grep -f patterns x', ['grep']],
-  ])('neither offers nor covers %j, whose options run or write something else', (command, prefix) => {
+    ['git diff --ext x', ['git', 'diff']],
+    ['git log --out=f', ['git', 'log']],
+    ['git status -sx', ['git', 'status']],
+    ['git push origin +main', ['git', 'push']],
+    ['go vet -vettool=x ./...', ['go', 'vet']],
+    ['go build -o /tmp/x', ['go', 'build']],
+    ['bun test -r ./x.ts', ['bun', 'test']],
+    ['npm test --foo', ['npm', 'test']],
+  ])('neither offers nor covers %j, whose options are not on the pair list', (command, prefix) => {
     expect(offerPrefix(command)).toBeUndefined()
     expect(coveredByPrefixes(command, [prefix])).toBe(false)
     expect(coveredByPrefixes(prefix.join(' '), [prefix])).toBe(true)
+  })
+
+  it.each<[string, string[]]>([
+    ['git status -s', ['git', 'status']],
+    ['git commit -m fix', ['git', 'commit']],
+    ['git push -u origin main', ['git', 'push']],
+    ['git log --oneline -n 5 -- src', ['git', 'log']],
+    ['cargo test -p core -- --nocapture', ['cargo', 'test']],
+    ['go test -run=TestX -v ./...', ['go', 'test']],
+    ['npm test -- --watch', ['npm', 'test']],
+    ['grep -rn foo src', ['grep']],
+  ])('covers %j with options on the pair list', (command, prefix) => {
+    expect(coveredByPrefixes(command, [prefix])).toBe(true)
   })
 
   it('never honours a banned scope that was stored earlier', () => {

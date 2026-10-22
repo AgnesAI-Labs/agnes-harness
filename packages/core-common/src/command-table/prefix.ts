@@ -81,8 +81,8 @@ const PAIRS: Readonly<Record<string, ReadonlySet<string>>> = {
     'rev-parse',
     'ls-files',
   ]),
-  npm: new Set(['test', 'ls', 'outdated', 'audit']),
-  pnpm: new Set(['test', 'ls', 'outdated', 'audit']),
+  npm: new Set(['test', 'ls', 'outdated']),
+  pnpm: new Set(['test', 'ls', 'outdated']),
   yarn: new Set(['test']),
   bun: new Set(['test']),
   cargo: new Set(['build', 'test', 'check', 'clippy', 'fmt', 'doc', 'tree']),
@@ -92,20 +92,88 @@ const PAIRS: Readonly<Record<string, ReadonlySet<string>>> = {
   pip3: new Set(['list', 'show', 'freeze']),
 }
 /**
- * Options of an allowed pair that take a command, a config override or an output file: a covered
- * command carrying one is asked about as usual. What a granted command runs from the project itself
- * (test scripts, git hooks) is the grant's purpose and is not checked here.
+ * Options a covered command may carry after an allowed pair, also allow-listed: a denylist missed
+ * abbreviations (`git --ext` is `--ext-diff`), short aliases (`bun -r`) and new flags. Any other
+ * option, a short-option cluster, or a word starting with `+` (a forced git refspec) is asked about
+ * as usual; everything after `--` is passed through. What a granted command runs from the project
+ * itself (test scripts, git hooks) is the grant's purpose and is not checked here.
  */
-const DENIED_ARGS: Readonly<Record<string, RegExp>> = {
-  git: /^(?:-c|-C|-x|-u|-O|--exec.*|--ext-diff|--textconv|--upload-pack.*|--receive-pack.*|--output.*|--open-files-in-pager.*|--config.*|--template.*|--git-dir.*|--work-tree.*)$/,
-  go: /^-(?:-?exec|-?toolexec|-?overlay|-?modfile)(?:=.*)?$/,
-  cargo: /^(?:--config.*|-Z.*)$/,
-  npm: /^--(?:script-shell|node-options|userconfig|globalconfig).*$/,
-  pnpm: /^--(?:script-shell|node-options|config\..*).*$/,
-  yarn: /^--(?:script-shell|node-options).*$/,
-  bun: /^--(?:preload|config).*$/,
-  uv: /^--(?:config-file|python).*$/,
-  grep: /^(?:-f|--file.*)$/,
+const PAIR_OPTIONS: Readonly<Record<string, ReadonlySet<string>>> = {
+  git: new Set([
+    '-s',
+    '--short',
+    '-b',
+    '--branch',
+    '--porcelain',
+    '--stat',
+    '--name-only',
+    '--name-status',
+    '--cached',
+    '--staged',
+    '-p',
+    '--patch',
+    '--oneline',
+    '-n',
+    '--graph',
+    '--decorate',
+    '--all',
+    '-a',
+    '-m',
+    '--message',
+    '--amend',
+    '--no-edit',
+    '-v',
+    '--verbose',
+    '-q',
+    '--quiet',
+    '-u',
+    '--set-upstream',
+    '--tags',
+    '--prune',
+    '--rebase',
+    '--ff-only',
+    '-c',
+    '--create',
+  ]),
+  npm: new Set(['--json', '--all', '--long', '--depth']),
+  pnpm: new Set(['--json', '--long', '--depth', '-r', '--recursive']),
+  yarn: new Set([]),
+  bun: new Set(['-t', '--timeout', '--coverage', '--bail']),
+  cargo: new Set([
+    '--release',
+    '-p',
+    '--package',
+    '--workspace',
+    '--all',
+    '--lib',
+    '--bins',
+    '--tests',
+    '--no-run',
+    '--features',
+    '--all-features',
+    '--no-default-features',
+    '-q',
+    '--quiet',
+    '-v',
+    '--verbose',
+    '--check',
+  ]),
+  go: new Set([
+    '-v',
+    '-race',
+    '-run',
+    '-count',
+    '-short',
+    '-cover',
+    '-json',
+    '-timeout',
+    '-tags',
+    '-bench',
+    '-benchmem',
+  ]),
+  uv: new Set(['--frozen', '--locked', '--all-extras', '--extra', '--dev', '--no-dev', '-q', '-v']),
+  pip: new Set(['--outdated', '--format', '--local', '--user', '-v', '-q']),
+  pip3: new Set(['--outdated', '--format', '--local', '--user', '-v', '-q']),
 }
 
 const programName = (word: string): string =>
@@ -120,10 +188,16 @@ export function isBannedPrefix(tokens: readonly string[]): boolean {
   return tokens.some((token) => looksLikeSecret(token))
 }
 
-/** True when an argument after the prefix is an option that can make the program run or write something else. */
+/** True when a part after an allowed pair carries an option or word the pair does not allow. */
 const deniedArgument = (words: readonly string[]): boolean => {
-  const denied = DENIED_ARGS[words[0] ?? '']
-  return !!denied && words.slice(1).some((word) => denied.test(word))
+  const allowed = PAIR_OPTIONS[words[0] ?? '']
+  if (!allowed || words.length < 2) return false
+  for (const word of words.slice(2)) {
+    if (word === '--') return false
+    if (word.startsWith('+')) return true
+    if (word.startsWith('-') && !allowed.has(word.split('=')[0] as string)) return true
+  }
+  return false
 }
 
 /** Tokens that look like a credential: never shown in a suggestion and never part of a prefix. */
