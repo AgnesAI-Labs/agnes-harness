@@ -3,6 +3,7 @@ import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 import { assembleRequestPrefix, discloseTools, resolveModel } from '../step/inference.js'
 import { modelVisibleTool, toolNamesForModel } from '../step/model-tools.js'
 import type { SessionImpl } from '../step/session.js'
+import { turnMaxSteps } from '../step/step-cap.js'
 
 export function freezeView<T>(value: T): T {
   if (value && typeof value === 'object') {
@@ -65,7 +66,7 @@ export async function loopTurnView(s: SessionImpl): Promise<LoopTurnView | null>
       },
       prompt: { sections: merged.sections, runtime: merged.runtimeContext },
       budget: {
-        maxSteps: s.preset.budget.maxSteps,
+        maxSteps: turnMaxSteps(s),
         stepsUsed: op.step,
         creditsUsed: s.state.creditsUsed,
         perRequestCap: s.turnBudgetCap(),

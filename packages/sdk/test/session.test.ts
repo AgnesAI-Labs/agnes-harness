@@ -605,7 +605,37 @@ describe('Session', () => {
       )
       for (const creditLimit of [-1, Infinity, NaN])
         await expect(session.prompt('invalid', { creditLimit })).rejects.toThrow('invalid turn credit limit')
+      await expect(session.prompt('capped', { maxSteps: 3 })).rejects.toThrow(
+        'server does not support turn step caps',
+      )
+      for (const maxSteps of [0, 1001, 1.5, NaN])
+        await expect(session.prompt('invalid', { maxSteps })).rejects.toThrow('invalid turn step cap')
       expect(f.calls.filter((row) => row.method === 'session/prompt')).toEqual([])
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('sends both limits on a server that advertises them', async () => {
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: { _meta: { [META_KEY]: { hardTurnBudget: true, turnMaxSteps: true } } },
+      }),
+      'session/new': () => ({ sessionId: 'caps' }),
+      'session/prompt': () => ({ stopReason: 'end_turn' }),
+    })
+    const client = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const session = await client.createSession({ cwd: '/synthetic' })
+      await session.prompt('x', { creditLimit: 2, maxSteps: 3 })
+      expect(f.calls.find((x) => x.method === 'session/prompt')?.params).toMatchObject({
+        _meta: { [META_KEY]: { creditLimit: 2, maxSteps: 3 } },
+      })
     } finally {
       await client.close()
     }

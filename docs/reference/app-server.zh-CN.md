@@ -14,6 +14,8 @@
 
 可选的 `session/prompt._meta["ai.agnes.harness"].creditLimit` 是该轮次的总 credit 上限：有限、非负且不超过 `Number.MAX_SAFE_INTEGER / 1_000_000`。SDK 对应 `session.prompt(input, { creditLimit })`，并先检查 `initialize.agentCapabilities._meta["ai.agnes.harness"].hardTurnBudget: true`，拒绝旧服务端静默降级。Core 在 inbox 接收和轮次打开时持久绑定额度，使用现有预算存储预留模型请求的保守费用上界，恢复时保留未知占用。缺少存储或目录价格上界时停止执行。有界轮次不允许预算升级、自动标题、无预留的策略模型评审或子代理派发。价格和输出 token 上限仍依赖 provider 合同；缺失或不一致的账单须核对后才能释放调用者预留。
 
+可选的 `session/prompt._meta["ai.agnes.harness"].maxSteps` 是 1 到 1000 的整数，限制这一轮的模型步数。SDK 对应 `session.prompt(input, { maxSteps })`，并先检查 `initialize.agentCapabilities._meta["ai.agnes.harness"].turnMaxSteps: true`，旧服务端不能静默忽略它。超出范围的值在入队之前以 `INVALID_PARAMS` 拒绝。Core 用两条 `ignorable` 账本行记录该上限：入队时的 `x/core/inbox-step-cap` 和开回合时的 `x/core/turn-step-cap`，所以恢复后上限仍在，旧版 core 则跳过这两行、不带上限运行。生效值取 preset 的 `budget.max_steps`（`null` 表示不限）与该上限中较小的一个，因此它只能调低。达到上限时该轮以 `max_steps` 结束。上限只属于这一轮，下一次提示词沿用 preset 的上限。
+
 声明 `clientCapabilities._meta["ai.agnes.harness"].capabilities.permission: true` 的客户端可以接收服务端 `session/request_permission` 请求。使用原请求 id 和提供的 option id 回复。拒绝、断连和超时均保持拒绝语义。客户端应执行自己的人工确认策略；学习示例默认拒绝全部审批。
 
 workspace 必须通过 `_agnes/v1/workspace.add` 登记，客户端提供 `cwd` 不会授予权限。不同传输访问同一个会话及其插件代际。

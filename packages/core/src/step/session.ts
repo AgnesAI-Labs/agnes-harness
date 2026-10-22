@@ -175,17 +175,7 @@ import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
 import { compactionSettingsFor, contextWindowFor } from './gate.js'
 import { createChildTraceCache, exportVerifiedRlaf } from './history.js'
-import {
-  budgetOverrideEvent,
-  claimFrom,
-  type EnqueueMsg,
-  INBOX_BUDGET_EVENT,
-  inboxEvent,
-  inputMessageEvents,
-  inputTainted,
-  TRIGGER,
-  TURN_BUDGET_EVENT,
-} from './inbox.js'
+import { claimFrom, type EnqueueMsg, inboxEvent, inputMessageEvents, inputTainted, TRIGGER } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { LoopScope, stepWithinLoopDeadline } from './loop-deadline.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
@@ -200,6 +190,13 @@ import {
   setSessionYolo,
 } from './session-permission-authority.js'
 import { invalidatePermissionProjection } from './session-permission-projection.js'
+import {
+  inboxOverrideEvents,
+  inboxStepCap,
+  rehydratedStepCap,
+  turnOverrideEvents,
+  validateTurnOverrides,
+} from './step-cap.js'
 import { sessionToolCatalog } from './tool-catalog.js'
 import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
@@ -573,6 +570,7 @@ export type TurnMemory = {
   compactionRequested: string | null | false
   hardBudgetCap?: number
   budgetCap?: number
+  maxStepsCap?: number
   /** Extension rows counted toward this turn's quota so far, through `countedTo`. */
   extEvents?: { triggerSeq: Seq; countedTo: Seq; count: number }
 }
@@ -1426,14 +1424,7 @@ export class SessionImpl {
         )
         if (original) return original.seq
       }
-      if (msg.hardBudget !== undefined && (msg.hardBudget !== true || msg.budget === undefined))
-        throw new CoreError('E_ENVELOPE', 'hard budget requires a credit ceiling')
-      if (msg.budget !== undefined) {
-        if (target !== 'next-turn')
-          throw new CoreError('E_ENVELOPE', 'a per-turn budget override requires next-turn input')
-        if (!Number.isFinite(msg.budget) || msg.budget < 0)
-          throw new CoreError('E_ENVELOPE', 'a per-turn budget override must be a finite non-negative number')
-      }
+      validateTurnOverrides(msg, target)
       const cur = (this.latest('inbox') as Inbox | undefined) ?? { items: [] }
       const oversized = () =>
         new CoreError(
@@ -1484,15 +1475,7 @@ export class SessionImpl {
             ...(item.kind === 'steer'
               ? [this.controls.fact('steer', 'queued', msg.actor, { itemId: item.itemId })]
               : []),
-            ...(msg.budget !== undefined
-              ? [
-                  budgetOverrideEvent(INBOX_BUDGET_EVENT, this.d.actor, {
-                    itemId: item.itemId,
-                    creditsCap: msg.budget,
-                    ...(msg.hardBudget ? { hard: true as const } : {}),
-                  }),
-                ]
-              : []),
+            ...inboxOverrideEvents(this.d.actor, item.itemId, msg),
           ],
           { beforeFullVerify: 'allow' },
         )
@@ -1619,6 +1602,7 @@ export class SessionImpl {
       const { item, rest } = claimed
       const turn = this.lastTurnNumber() + 1
       const budget = await inboxBudget(this, item.itemId)
+      const stepCap = await inboxStepCap(this, item.itemId)
       const triggerSeq = (this.lastSeq + 2) as Seq
       await this.d.log.append(
         [
@@ -1635,14 +1619,7 @@ export class SessionImpl {
           ...(item.kind === 'steer'
             ? [this.controls.fact('steer', 'delivered', item.actor, { itemId: item.itemId })]
             : []),
-          ...(budget !== undefined
-            ? [
-                budgetOverrideEvent(TURN_BUDGET_EVENT, this.d.actor, {
-                  turn,
-                  ...budget,
-                }),
-              ]
-            : []),
+          ...turnOverrideEvents(this.d.actor, turn, budget, stepCap),
         ],
         {
           expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: this.opSeq() },
@@ -1669,6 +1646,7 @@ export class SessionImpl {
         this.turn.budgetCap = budget.creditsCap
         if (budget.hard) this.turn.hardBudgetCap = budget.creditsCap
       }
+      if (stepCap !== undefined) this.turn.maxStepsCap = stepCap
       return true
     })
   }
@@ -1875,6 +1853,8 @@ export class SessionImpl {
       turn.budgetCap = budget.creditsCap
       if (budget.hard) turn.hardBudgetCap = budget.creditsCap
     }
+    const stepCap = await rehydratedStepCap(this, op)
+    if (stepCap !== undefined) turn.maxStepsCap = stepCap
     if (last?.envelopeNonce) {
       turn.nonce = last.envelopeNonce
       turn.lastHeader = last

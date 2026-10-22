@@ -22,6 +22,8 @@ export type EnqueueMsg = {
   budget?: number
   /** Enforce the override as a durable total turn ceiling, with no approval escalation. */
   hardBudget?: boolean
+  /** Caps the model steps of the one next turn opened by this item; lowers, never raises, the preset's. */
+  maxSteps?: number
 }
 
 /** Reference text is external evidence even when embedded in an authenticated human prompt. */

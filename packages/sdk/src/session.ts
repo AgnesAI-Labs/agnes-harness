@@ -1,6 +1,6 @@
 import type { ReferenceSearchResult, ReferenceSelection } from '@agnes/protocol'
 import { PermissionGate, type PermissionHandler, type PermissionRequest } from './permission.js'
-import { checkTurnCreditLimit, promptMetadata, toContentBlocks } from './prompt-budget.js'
+import { checkTurnLimits, promptMetadata, type TurnLimits, toContentBlocks } from './prompt-budget.js'
 
 export type { PermissionOption, PermissionOutcome, PermissionRequest } from './permission.js'
 export { toContentBlocks } from './prompt-budget.js'
@@ -714,13 +714,18 @@ export class Session {
       titleLocale?: 'en' | 'zh-CN'
       /** Durable total turn ceiling. Refuses servers without hard-turn budget support. */
       creditLimit?: number
+      /** Model steps this prompt may take (1 to 1000); only lowers the preset's ceiling. Refuses servers without `turnMaxSteps`. */
+      maxSteps?: number
       references?: readonly ReferenceSelection[]
     } = {},
   ): Promise<TurnResult> {
     // Captured by identity: the outcome of *this* turn is only the record that was
     // installed while the request was in flight, never one left over from a past turn.
     const before = this.lastTurnEnd
-    if (opts.creditLimit !== undefined) await checkTurnCreditLimit(this.client, opts.creditLimit, opts.signal)
+    const limits = { creditLimit: opts.creditLimit, maxSteps: opts.maxSteps }
+    // Skipped, not awaited, with no limit: an extra tick here reorders a prompt against a lazy attach.
+    if (limits.creditLimit !== undefined || limits.maxSteps !== undefined)
+      await checkTurnLimits(this.client, limits, opts.signal)
     // Best effort: the turn's own outcome is what the caller gets either way, so a
     // cancel that cannot be sent must not become an unhandled rejection. Held for the
     // whole call, including a fallback wait on quiescence: an abort during that wait
@@ -730,14 +735,7 @@ export class Session {
     }
     opts.signal?.addEventListener('abort', onAbort, { once: true })
     try {
-      return await this.requestPrompt(
-        input,
-        before,
-        false,
-        opts.titleLocale,
-        opts.references,
-        opts.creditLimit,
-      )
+      return await this.requestPrompt(input, before, false, opts.titleLocale, opts.references, limits)
     } finally {
       opts.signal?.removeEventListener('abort', onAbort)
     }
@@ -749,7 +747,7 @@ export class Session {
     restored = false,
     titleLocale?: 'en' | 'zh-CN',
     references?: readonly ReferenceSelection[],
-    creditLimit?: number,
+    limits?: TurnLimits,
   ): Promise<TurnResult> {
     try {
       // No deadline: a turn is bounded by the transport's liveness, not by a stopwatch.
@@ -758,7 +756,7 @@ export class Session {
         {
           sessionId: this.id,
           prompt: toAcpPrompt(toContentBlocks(input)),
-          ...promptMetadata(titleLocale, references, creditLimit),
+          ...promptMetadata(titleLocale, references, limits),
         },
         { timeoutMs: null },
       )
@@ -782,7 +780,7 @@ export class Session {
       // exactly once. No other failure is safe to replay here.
       if (!restored && this.workspace && this.isSessionNotFound(e)) {
         await this.restoreAfterReclaim()
-        return this.requestPrompt(input, before, true, titleLocale, references, creditLimit)
+        return this.requestPrompt(input, before, true, titleLocale, references, limits)
       }
       // The request itself failing to the transport dropping, not to a cancel or a
       // protocol error, is the one case with anything to wait for: the daemon may already

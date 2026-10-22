@@ -585,7 +585,7 @@ export function registerAcp(
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
-        _meta: { 'ai.agnes.harness': { hardTurnBudget: true, sessionOpen: true } },
+        _meta: { 'ai.agnes.harness': { hardTurnBudget: true, turnMaxSteps: true, sessionOpen: true } },
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
       _meta: {
@@ -749,6 +749,12 @@ export function registerAcp(
         creditLimit > Number.MAX_SAFE_INTEGER / 1_000_000)
     )
       throw rpcError('INVALID_PARAMS', { reason: 'invalid turn credit limit' })
+    const maxSteps = pocket(params).maxSteps
+    if (
+      maxSteps !== undefined &&
+      !(typeof maxSteps === 'number' && Number.isInteger(maxSteps) && maxSteps >= 1 && maxSteps <= 1000)
+    )
+      throw rpcError('INVALID_PARAMS', { reason: 'invalid turn step cap' })
     const titleLocale = pocket(params).titleLocale
     if (titleLocale !== undefined && titleLocale !== 'en' && titleLocale !== 'zh-CN')
       throw rpcError('SEMANTIC_REJECTED', { reason: 'unsupported title language' })
@@ -791,6 +797,7 @@ export function registerAcp(
             commandId,
             ...(titleLocale ? { titleLocale } : {}),
             ...(creditLimit !== undefined ? { budget: creditLimit as number, hardBudget: true } : {}),
+            ...(maxSteps !== undefined ? { maxSteps: maxSteps as number } : {}),
           })
           running = invocation.run(async () => {
             for (;;) {

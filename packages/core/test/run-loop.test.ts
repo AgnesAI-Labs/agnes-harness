@@ -4,6 +4,7 @@ import { defaultLoopFactory } from '@agnes/loop-default'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { turnMaxSteps } from '../src/step/step-cap.js'
 import { fakeProvider, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
@@ -180,6 +181,73 @@ describe('run loop', () => {
       expect(await log.scan({ type: 'step/start', limit: 100 })).toHaveLength(steps)
       expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason })
       expect(session.op()).toBeNull()
+    },
+  )
+
+  // The prompt's own cap only lowers the preset's ceiling: a larger one never raises it.
+  it.each([
+    { preset: null, cap: 2, steps: 2 },
+    { preset: 5, cap: 1, steps: 1 },
+    { preset: 1, cap: 9, steps: 1 },
+  ])('a prompt step cap of $cap under a preset ceiling of $preset ends after $steps steps', async (row) => {
+    const presetBase = presetDefaults()
+    const preset = { ...presetBase, budget: { ...presetBase.budget, maxSteps: row.preset } }
+    const { session, log } = await openSession({
+      provider: fakeProvider([
+        ...Array.from({ length: 12 }, (_, i) => toolTurn('read', { path: `f${i}` })),
+        textTurn('done'),
+      ]),
+      registry: withRead(),
+      preset,
+    })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor, maxSteps: row.cap })
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe('max_steps')
+    expect(await log.scan({ type: 'step/start', limit: 100 })).toHaveLength(row.steps)
+    // The cap belongs to that turn alone: the next prompt runs to its own end.
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'again' }], actor })
+    expect(turnMaxSteps(session)).toBe(row.preset)
+    expect((await session.run({ until: 'turn-end', signal: sig() })).reason).toBe(
+      row.preset === null ? 'completed' : 'max_steps',
+    )
+  })
+
+  it('keeps a prompt step cap across a restart of the open turn', async () => {
+    const storage = new MemoryStorage()
+    const provider = () =>
+      Object.assign(
+        fakeProvider([
+          ...Array.from({ length: 6 }, (_, i) => toolTurn('read', { path: `f${i}` })),
+          textTurn('done'),
+        ]),
+        { models: () => [modelRecord('default', 'm')] },
+      )
+    const first = await openSession({ provider: provider(), registry: withRead(), storage, key: 'step-cap' })
+    await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor, maxSteps: 2 })
+    expect(await first.session.step()).toMatchObject({ outcome: 'running' })
+    expect(turnMaxSteps(first.session)).toBe(2)
+    await first.log.close()
+    const reopened = await openSession({
+      provider: provider(),
+      registry: withRead(),
+      storage,
+      key: 'step-cap',
+      writerRunId: 'r2',
+    })
+    expect((await reopened.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('max_steps')
+    expect(await reopened.log.scan({ type: 'step/start', limit: 100 })).toHaveLength(2)
+  })
+
+  it.each([0, 1001, 1.5, Number.NaN])(
+    'rejects the step cap %s before changing the inbox',
+    async (maxSteps) => {
+      const { session } = await openSession({ provider: fakeProvider([]) })
+      await expect(session.enqueue('next-turn', { content: [], actor, maxSteps })).rejects.toMatchObject({
+        code: 'E_ENVELOPE',
+      })
+      await expect(session.enqueue('next-step', { content: [], actor, maxSteps: 2 })).rejects.toMatchObject({
+        code: 'E_ENVELOPE',
+      })
+      expect(session.latest('inbox')).toBeUndefined()
     },
   )
 

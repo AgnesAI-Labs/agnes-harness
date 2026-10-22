@@ -196,6 +196,40 @@ describe('local endpoint: ACP round trip', () => {
     await h.close()
   })
 
+  it.each([[0], [1001], [1.5], ['3'], [null]])(
+    'rejects the prompt step cap %j and advertises the capability',
+    async (cap) => {
+      const h = await openTestHost({ script: [say('ok')] })
+      const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+      expect(await ep.handle(init)).toMatchObject({
+        result: { agentCapabilities: { _meta: { 'ai.agnes.harness': { turnMaxSteps: true } } } },
+      })
+      await addWorkspace(ep, h.dataDir)
+      const created = (await ep.handle({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'session/new',
+        params: { cwd: h.dataDir, mcpServers: [] },
+      })) as { result: { sessionId: string } }
+      const prompt = (maxSteps: unknown, id: number) =>
+        ep.handle({
+          jsonrpc: '2.0',
+          id,
+          method: 'session/prompt',
+          params: {
+            sessionId: created.result.sessionId,
+            prompt: [{ type: 'text', text: 'hi' }],
+            _meta: { 'ai.agnes.harness': { maxSteps } },
+          },
+        })
+      expect(await prompt(cap, 3)).toMatchObject({ error: { data: { reason: 'invalid turn step cap' } } })
+      // Nothing was queued by the refusal: a valid cap on the same session still runs the turn.
+      expect(await prompt(5, 4)).toMatchObject({ result: { stopReason: 'end_turn' } })
+      await ep.close()
+      await h.close()
+    },
+  )
+
   it('accepts the permission capability from clientCapabilities._meta', async () => {
     const h = await openTestHost()
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })

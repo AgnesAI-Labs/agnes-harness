@@ -18,6 +18,7 @@ import type {
   StopGateReplacementOutput,
   TurnEndReason,
 } from '../../step/session.js'
+import { turnMaxSteps } from '../../step/step-cap.js'
 import { turnVerifyInput } from '../../step/verify-input.js'
 import { discloseTools, estimateTokens, resolveModel } from './inference.js'
 
@@ -166,7 +167,8 @@ function admittedStep(s: SessionImpl): number {
 
 async function evaluateBudgetPreflight(s: SessionImpl): Promise<'ok' | { reason: TurnEndReason }> {
   const op = s.op() as OpStateObj
-  if (s.preset.budget.maxSteps !== null && admittedStep(s) > s.preset.budget.maxSteps) {
+  const maxSteps = turnMaxSteps(s)
+  if (maxSteps !== null && admittedStep(s) > maxSteps) {
     await s.endTurn('max_steps')
     return { reason: 'max_steps' }
   }
@@ -203,7 +205,8 @@ export async function builtinBudgetPreflight(
   const op = s.op()
   if (!op) throw new CoreError('E_RELATION', 'Budget admission requires an accepted input')
   if (mandatoryOnly && s.turnBudgetCap() === null) {
-    if (s.preset.budget.maxSteps !== null && admittedStep(s) > s.preset.budget.maxSteps) {
+    const maxSteps = turnMaxSteps(s)
+    if (maxSteps !== null && admittedStep(s) > maxSteps) {
       await s.endTurn('max_steps')
       return { reason: 'max_steps' }
     }
@@ -231,7 +234,7 @@ export async function budgetPreflight(s: SessionImpl): Promise<'ok' | { reason: 
     s.operationContext(),
     {
       nextStep: op.step + 1,
-      maxSteps: s.preset.budget.maxSteps,
+      maxSteps: turnMaxSteps(s),
       creditsUsed: s.state.creditsUsed,
       creditsCap: s.turnBudgetCap(),
     },
