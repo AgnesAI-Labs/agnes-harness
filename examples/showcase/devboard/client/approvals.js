@@ -2,7 +2,6 @@ import { Badge, Button, PushPage, Segmented, Select, Table, usePushStack } from 
 import React from 'react'
 import {
   byId,
-  continueWork,
   fact,
   gateBadge,
   gateName,
@@ -10,6 +9,7 @@ import {
   HistoryTable,
   h,
   NoteField,
+  openWork,
   signedRoles,
   signProgress,
   stageName,
@@ -18,7 +18,9 @@ import {
   time,
   useDetail,
 } from './board.js'
+import { workOf } from './entries.js'
 import { GatePanel } from './lifecycle.js'
+import { WorkButton } from './work.js'
 
 const FLOW_TONE = { RUNNING: 'warn', APPROVED: 'ok', REJECTED: 'bad', WITHDRAWN: 'off' }
 const NODE_TONE = { WAITING: 'off', ACTIVE: 'warn', DONE: 'ok', RETURNED: 'bad', SKIPPED: 'off' }
@@ -586,9 +588,16 @@ export function MyTodo({ data, board, role, setRole }) {
           {
             title: '',
             render: (_v, g) =>
-              g.decision !== 'PENDING' &&
+              workOf('continueGate', g) &&
               byId(data.projects, stage(g)?.projectId)?.live &&
-              h(Button, { onClick: () => continueWork(board, { type: 'gate', id: g.id }) }, '继续推进'),
+              h(
+                Button,
+                {
+                  onClick: () =>
+                    openWork(board, workOf('continueGate', g).action, workOf('continueGate', g).object),
+                },
+                workOf('continueGate', g).label,
+              ),
             width: 120,
           },
         ],
@@ -656,6 +665,17 @@ export function MyTodo({ data, board, role, setRole }) {
             fact('处理人', intervention.handler),
             fact('处理结论', intervention.resolution),
           ),
+          workOf('interventionContinue', intervention) &&
+            h(
+              WorkButton,
+              {
+                board,
+                ...workOf('interventionContinue', intervention),
+                appearance: 'primary',
+                guide: 'intervention-agent-continue',
+              },
+              workOf('interventionContinue', intervention).label,
+            ),
           hidden.length > 0 &&
             intervention.state !== 'CLAIMED' &&
             h(Badge, { tone: 'warn' }, '工程师角色不能认领介入请求，请切换演示角色。'),

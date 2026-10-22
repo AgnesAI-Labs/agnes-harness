@@ -26,6 +26,7 @@ import {
   useProject,
 } from './board.js'
 import { CustomerChange } from './customer-change.js'
+import { workOf } from './entries.js'
 import { cardsOf, lensSummary, METRICS, relevant } from './lens.js'
 import { NewProject } from './new-project.js'
 import { ArtifactPreview, DeliveryCard } from './result.js'
@@ -269,8 +270,7 @@ export function Overview({ data, board, role }) {
                   WorkButton,
                   {
                     board,
-                    action: 'continue',
-                    object: { type: 'project', id: created.id },
+                    ...workOf('continueProject', created),
                     appearance: 'primary',
                   },
                   '让研发协调员继续推进',
@@ -417,8 +417,7 @@ export function GatePanel({ data, gate, board, role, setRole }) {
             WorkButton,
             {
               board,
-              action: 'continue',
-              object: { type: 'gate', id: gate.id },
+              ...workOf('continueGate', { ...gate, decision: 'APPROVED' }),
               appearance: decided ? 'primary' : 'secondary',
               guide: 'gate-continue',
               title: '打开研发协调员会话，草稿由你点发送',
@@ -557,7 +556,18 @@ export function Projects({ data, board, role, setRole }) {
     ),
     project.service && h(ServiceInfo, { project }),
     h(StageBar, { data, projectId: project.id }),
-    h(CustomerChange, { board, project }),
+    h(
+      WorkButton,
+      {
+        board,
+        ...workOf('projectProgress', project),
+
+        guide: 'projects-agent-progress',
+        title: '打开研发协调员并预填请求：读取这个项目的交接内容并汇报进度，只汇报不修改',
+      },
+      workOf('projectProgress', project).label,
+    ),
+    h(CustomerChange, { board, project, role }),
     project.tailoring?.skipped?.length > 0 &&
       h(
         'p',

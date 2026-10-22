@@ -20,7 +20,9 @@ import {
   useLens,
   useProject,
 } from './board.js'
+import { workOf } from './entries.js'
 import { ImpactTree } from './impact-tree.js'
+import { WorkButton } from './work.js'
 
 export const stateLabels = (data, kind) =>
   Object.fromEntries(Object.keys(data.machines[kind]).map((s) => [s, data.labels.state[s]]))
@@ -351,6 +353,17 @@ export function Changes({ data, board, role, setRole }) {
           ),
           h(ImpactTree, { data, change: item }),
           item.retrofit && h(RetrofitBar, { change: item, board, role }),
+          workOf('changeImpact', item) &&
+            h(
+              WorkButton,
+              {
+                board,
+                ...workOf('changeImpact', item),
+                guide: 'change-agent-impact',
+                title: '打开研发协调员并预填请求：补齐影响分析并提交 CCB，决议仍由人做',
+              },
+              workOf('changeImpact', item).label,
+            ),
           h(ApprovalEntry, { data, board, role, setRole, type: 'change', id: item.id }),
           h(TransitionBar, { key: item.id, data, kind: 'change', item, board, role, hidden: ['APPROVED'] }),
           h(HistoryTable, { data, history: item.history }),

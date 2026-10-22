@@ -2,6 +2,7 @@ import { Table } from '@agnes/web-ui'
 import React from 'react'
 import { fact, guided, h, Markdown, time } from './board.js'
 import { entryFile, evidenceDocs, latestRuns, showDelivery } from './delivery.js'
+import { workOf } from './entries.js'
 import { WorkButton } from './work.js'
 
 /** The Markdown body of a deliverable: seed documents ship in the package, live ones are the cached copy. */
@@ -77,7 +78,7 @@ export function DeliveryCard({ data, board, project }) {
         ),
         fact('运行地址', app),
       ),
-      h(WorkButton, { board, action: 'run-app', object: { type: 'project', id: project.id } }, '启动并打开'),
+      h(WorkButton, { board, ...workOf('runApp', project) }, workOf('runApp', project).label),
       h(Table, {
         captionRepeatsHeading: true,
         caption: '最近一次各级测试',

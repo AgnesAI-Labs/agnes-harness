@@ -18,7 +18,9 @@ import {
   useLens,
   useProject,
 } from './board.js'
+import { workOf } from './entries.js'
 import { inProject, stateLabels } from './records.js'
+import { WorkButton } from './work.js'
 
 const DAY = 86_400_000
 const resultBadge = (data, result) =>
@@ -50,15 +52,26 @@ function DraftChange({ trial, board, role }) {
   return h(
     'section',
     { className: 'devboard-actions', 'aria-label': '起草变更' },
-    h('p', null, '该试验不合格且尚未关联变更：可直接起草一份来源为型式试验的变更申请。'),
+    h('p', null, '该试验不合格且尚未关联变更：可让智能体起草，或手工起草一份来源为型式试验的变更申请。'),
+    h(
+      WorkButton,
+      {
+        board,
+        ...workOf('trialChange', trial),
+        appearance: 'primary',
+        guide: 'trial-agent-change',
+        title: '打开研发协调员并预填请求：读取试验与基线，起草来源为型式试验的变更，点发送后由智能体执行',
+      },
+      workOf('trialChange', trial).label,
+    ),
     h(
       'div',
       { className: 'devboard-buttons' },
-      h(Button, { appearance: 'primary', disabled: board.busy, onClick: draft }, '起草变更'),
+      h(Button, { disabled: board.busy, onClick: draft }, '手工起草'),
       h(
         'span',
         { className: 'devboard-muted' },
-        '原因分析与影响分析由研发协调员补齐，批准后才能放行该试验。',
+        '手工起草只登记一条空壳变更；原因分析与影响分析由研发协调员补齐，批准后才能放行该试验。',
       ),
     ),
   )
@@ -386,6 +399,12 @@ export function Service({ data, board, role, setRole }) {
             fact('发现时间', time(fault.detectedAt)),
             fact('质量问题', fault.problemId),
           ),
+          workOf('faultEightD', fault) &&
+            h(
+              WorkButton,
+              { board, ...workOf('faultEightD', fault), guide: 'fault-agent-8d' },
+              workOf('faultEightD', fault).label,
+            ),
           h(TransitionBar, { key: fault.id, data, kind: 'fault', item: fault, board, role }),
           h(HistoryTable, { data, history: fault.history }),
         ),
@@ -441,6 +460,12 @@ export function Service({ data, board, role, setRole }) {
             { className: 'devboard-muted' },
             '进入措施前必须有根本原因且 D4 完成；关闭前 D8 完成，且关联变更已关闭，或写明无需变更的理由。',
           ),
+          workOf('problemEightD', problem) &&
+            h(
+              WorkButton,
+              { board, ...workOf('problemEightD', problem), guide: 'problem-agent-8d' },
+              workOf('problemEightD', problem).label,
+            ),
           h(ApprovalEntry, { data, board, role, setRole, type: 'problem', id: problem.id }),
           h(TransitionBar, {
             key: problem.id,

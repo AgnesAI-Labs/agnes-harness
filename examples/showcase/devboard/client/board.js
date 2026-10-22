@@ -200,9 +200,6 @@ export function openWork(board, actionId, object) {
   }
 }
 
-/** The "continue" action; the object names the gate or project. */
-export const continueWork = (board, object) => openWork(board, 'continue', object)
-
 const VERBS = {
   REFINED: (from) => (from === 'RAW' ? '细化' : '退回细化'),
   RAW: () => '打回',

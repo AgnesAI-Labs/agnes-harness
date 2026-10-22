@@ -16,8 +16,10 @@ import {
   parseSource,
   writeLock,
 } from '../../../../packages/package-manager/src/index.js'
+import { ENTRIES, workOf } from '../client/entries.js'
 import { create, read, seed, update, upsertReqs } from '../domain.mjs'
 import { FILES, GATES } from '../fastforward.mjs'
+import { HANDOFF_TYPES } from '../handoff.mjs'
 import { main } from '../index.mjs'
 import { buildSeed } from '../seed-data.mjs'
 
@@ -516,6 +518,31 @@ describe('DevBoard plugin contract', () => {
     })
   })
 
+  it('registers the customer change a presenter typed and hands that very change over', async () => {
+    const store = memoryStore()
+    const ctx = { store, signal } as Any
+    const project = (
+      await service('devboard.create').handler({ kind: 'project', by: '项目经理', name: '车门' }, ctx)
+    ).result
+    const typed = {
+      kind: 'change',
+      by: '项目经理',
+      projectId: project.id,
+      title: '预警排行默认条数改为 20',
+      reason: '客户：现场每次都要手动改条数',
+      source: { type: 'CUSTOMER', ref: 'TA §3.2' },
+    }
+    const made = await service('devboard.create').handler(typed, ctx)
+    expect(made).toMatchObject({ ok: true, result: { state: 'SUBMITTED', title: typed.title } })
+    const out = await service('devboard.handoff').handler({ type: 'change', id: made.result.id }, { store })
+    expect(out.change).toMatchObject({ title: typed.title, source: { type: 'CUSTOMER', ref: 'TA §3.2' } })
+    expect(out.summary).toContain('TA §3.2')
+    // a form with no reason is refused by the board, not sent on
+    expect(await service('devboard.create').handler({ ...typed, reason: '' }, ctx)).toMatchObject({
+      ok: false,
+    })
+  })
+
   it('tells the coordinator to read the hand-off first in every action that carries an object', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const actions = pkg.agnes.application.workbench.actions
@@ -538,6 +565,69 @@ describe('DevBoard plugin contract', () => {
       expect(actions.find((a: Any) => a.id === id).prompt['zh-CN']).not.toContain('devboard_handoff')
     expect(pkg.files).toContain('handoff.mjs')
     expect(pkg.scripts.build).toContain('handoff.mjs')
+  })
+
+  it.each(Object.entries(ENTRIES))(
+    'opens the %s button with a declared action and a hand-off type',
+    (_name, entry) => {
+      const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+      const action = pkg.agnes.application.workbench.actions.find((a: Any) => a.id === entry.action)
+      expect(action, entry.action).toBeDefined()
+      expect(HANDOFF_TYPES).toContain(entry.type)
+      // the platform accepts a work object like this one
+      expect({ type: entry.type, id: 'X-1' }.type).toMatch(/^[A-Za-z][A-Za-z0-9.-]{0,63}$/)
+      expect(entry.label).toMatch(/[\u4e00-\u9fff]/u)
+    },
+  )
+
+  it.each([
+    [
+      'faultEightD',
+      { id: 'FA-1', state: 'NEW' },
+      { action: 'phm-8d', object: { type: 'fault', id: 'FA-1' } },
+    ],
+    ['faultEightD', { id: 'FA-1', state: 'CLOSED' }, undefined],
+    [
+      'problemEightD',
+      { id: 'QP-1', state: 'OPEN' },
+      { action: 'phm-8d', object: { type: 'problem', id: 'QP-1' } },
+    ],
+    ['problemEightD', { id: 'QP-1', state: 'CLOSED' }, undefined],
+    [
+      'trialChange',
+      { id: 'TT-1', state: 'REPORTED' },
+      { action: 'trial-change', object: { type: 'trial', id: 'TT-1' } },
+    ],
+    [
+      'changeImpact',
+      { id: 'CR-1', state: 'SUBMITTED' },
+      { action: 'change', object: { type: 'change', id: 'CR-1' } },
+    ],
+    [
+      'changeImpact',
+      { id: 'CR-1', state: 'ANALYZED' },
+      { action: 'change', object: { type: 'change', id: 'CR-1' } },
+    ],
+    ['changeImpact', { id: 'CR-1', state: 'CCB_REVIEW' }, undefined],
+    [
+      'interventionContinue',
+      { id: 'HI-1', state: 'RESOLVED' },
+      { action: 'interventions', object: { type: 'intervention', id: 'HI-1' } },
+    ],
+    ['interventionContinue', { id: 'HI-1', state: 'OPEN' }, undefined],
+    ['projectProgress', { id: 'PRJ-1' }, { action: 'progress', object: { type: 'project', id: 'PRJ-1' } }],
+    ['customerChange', { id: 'CR-9' }, { action: 'customer-change', object: { type: 'change', id: 'CR-9' } }],
+    [
+      'continueGate',
+      { id: 'G-1', decision: 'APPROVED' },
+      { action: 'continue', object: { type: 'gate', id: 'G-1' } },
+    ],
+    ['continueGate', { id: 'G-1', decision: 'PENDING' }, undefined],
+    ['runApp', { id: 'PRJ-1' }, { action: 'run-app', object: { type: 'project', id: 'PRJ-1' } }],
+  ])('offers %s for %j as %j', (name, item, expected) => {
+    const got = workOf(name, item)
+    if (expected) expect(got).toMatchObject(expected)
+    else expect(got).toBeUndefined()
   })
 
   it('registers every tool in the capability names and the coordinator profile, plus the new pages and actions', () => {
