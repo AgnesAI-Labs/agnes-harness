@@ -1,7 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync, symlinkSync } from 'node:fs'
+import { join, relative } from 'node:path'
 import type { ApprovalRequest } from '@agnes/core'
 import { expect, it, vi } from 'vitest'
+import { scratch } from '../assemble/plugin-extension-fixture.js'
 import { roleHuman, setupRoleEscalation } from './role-escalation-fixture.js'
 
 it.each(['allow', 'deny', 'agent', 'system', 'absent', 'deadline'] as const)(
@@ -168,6 +169,55 @@ it('keeps unattended role gates refused even when a human adapter exists', async
     await fixture.host.close()
   }
 }, 30000)
+
+it.each([false, true])(
+  'security5: role writes keep the workspace fence with parent full access=%s',
+  async (fullAccess) => {
+    const outside = scratch()
+    const paths: string[] = []
+    const fixture = await setupRoleEscalation(
+      async () => {
+        throw new Error('A filesystem denial must not become a permission card')
+      },
+      {
+        calls: (_key, step) =>
+          paths[step] ? [{ name: 'write', args: { path: paths[step], content: 'SCOPED_ROLE_WRITE' } }] : [],
+      },
+    )
+    try {
+      paths.push(
+        'inside-positive.md',
+        join(outside, 'absolute.md'),
+        relative(fixture.dataDir, join(outside, 'traversal.md')),
+        'escape/symlink.md',
+      )
+      symlinkSync(outside, join(fixture.dataDir, 'escape'), 'junction')
+      await fixture.parent.setYolo(fullAccess, roleHuman)
+      const handle = await fixture.parent.d.children.createWithKind!('spawn', {
+        parent: fixture.parent.key,
+        cwd: fixture.dataDir,
+        role: fixture.refs[0]!,
+        input: 'Write within scope',
+        resident: true,
+      })
+      await handle.run('Write within scope')
+      const child = fixture.host.kernel.get(handle.key)!
+      expect(child.currentTools().resolve('write')).toBeDefined()
+      expect(child.yolo).toBe(false)
+      expect(readFileSync(join(fixture.dataDir, paths[0]!), 'utf8')).toBe('SCOPED_ROLE_WRITE')
+      const rows = await child.scan({ type: 'tool/result', limit: 100 })
+      expect(rows).toHaveLength(paths.length)
+      expect(rows[0]!.data).not.toMatchObject({ isError: true })
+      for (const row of rows.slice(1)) expect(row.data).toMatchObject({ isError: true, code: 'E_FS_DENIED' })
+      for (const file of ['absolute.md', 'traversal.md', 'symlink.md'])
+        expect(existsSync(join(outside, file))).toBe(false)
+      expect(await child.decisions.list()).toEqual([])
+    } finally {
+      await fixture.host.close()
+    }
+  },
+  30000,
+)
 
 it('security: parent, sibling, agent and system cannot answer the child decision', async () => {
   const questions: ApprovalRequest[] = []
@@ -384,7 +434,7 @@ it.each([false, true])(
         fixture.parent.d.children.createWithKind!('spawn', {
           parent: 'parent-prefix-sibling',
           cwd: fixture.dataDir,
-          role: fixture.refs[0],
+          role: fixture.refs[0]!,
           input: 'forged',
         }),
       ).rejects.toThrow('parent mismatch')
@@ -476,7 +526,7 @@ it.each(['allow', 'deny', 'require_approval'] as const)(
       const child = await fixture.parent.d.children.createWithKind!('spawn', {
         parent: 'parent',
         cwd: fixture.dataDir,
-        role: fixture.refs[0],
+        role: fixture.refs[0]!,
         input: 'Write',
         resident: true,
       })

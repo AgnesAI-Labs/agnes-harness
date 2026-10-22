@@ -16,7 +16,7 @@ import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, noTimers, testFsOps, writeTool } from './helpers/open-session.js'
+import { actor, noTimers, testFsOps, testWorkspaceInvocation, writeTool } from './helpers/open-session.js'
 
 const options = { actor, resolvedProfileHash: 'review', cwd: '/w', writerRunId: 'review' }
 const captured = (): RoleDelegation => ({
@@ -33,7 +33,11 @@ const captured = (): RoleDelegation => ({
   sandboxRequired: true,
   filesystem: fakeSeams().sandbox.fsPolicy(),
 })
-const make = (storage = new MemoryStorage(), provider = fakeProvider([textTurn('done')])) =>
+const make = (
+  storage = new MemoryStorage(),
+  provider = fakeProvider([textTurn('done')]),
+  extra: Partial<Parameters<typeof Kernel.create>[0]> = {},
+) =>
   Kernel.create({
     loops: defaultLoops(),
     storage,
@@ -63,6 +67,7 @@ const make = (storage = new MemoryStorage(), provider = fakeProvider([textTurn('
     netFetch: async () => new Response(''),
     timers: noTimers,
     logger: { debug() {}, info() {}, warn() {}, error() {} },
+    ...extra,
   })
 
 it('keeps default selections and literal ceilings distinct at the type boundary', () => {
@@ -495,3 +500,190 @@ it('recheck-role: a trusted tombstone never restores a role or silently opens an
     await second.close()
   }
 })
+
+it.each(['missing', 'undefined', 'empty'] as const)(
+  'i01: %s resource fields never restore as default selection',
+  async (mode) => {
+    const storage = new MemoryStorage()
+    const first = make(storage)
+    const snapshot: RoleDelegation = {
+      ...captured(),
+      ...(mode === 'empty' ? { resources: { mcp: [], skills: [] } } : {}),
+    }
+    if (mode === 'undefined') {
+      await expect(
+        first.session('child', {
+          ...options,
+          roleDelegation: { ...snapshot, resources: undefined } as unknown as RoleDelegation,
+        }),
+      ).rejects.toMatchObject({
+        code: 'E_ENVELOPE',
+      })
+      await first.close()
+      return
+    }
+    const child = await first.session('child', { ...options, roleDelegation: snapshot })
+    expect(child.roleAuthority!.resources.mcp.ids).toEqual([])
+    expect(child.roleAuthority!.resources.skills.ids).toEqual([])
+    expect(child.currentTools().list()).toEqual([])
+    await first.close()
+    const second = make(storage)
+    try {
+      const restored = await second.session('child', options)
+      await restored.setYolo(true, actor)
+      expect(restored.roleAuthority!.resources.mcp.ids).toEqual([])
+      expect(restored.roleAuthority!.resources.skills.ids).toEqual([])
+      expect(restored.currentTools().list()).toEqual([])
+      expect(restored.permissionContext.policy).toBe('read-only')
+    } finally {
+      await second.close()
+    }
+  },
+)
+
+it.each([
+  { tools: undefined },
+  { resources: { mcp: undefined, skills: [] } },
+  { resources: { mcp: [], skills: undefined } },
+  { permission: undefined },
+  { sandboxRequired: undefined },
+  { filesystem: undefined },
+])('i01: incomplete persisted authority refuses reopen: %j', async (patch) => {
+  const storage = new MemoryStorage()
+  const first = make(storage)
+  const child = await first.session('child', options)
+  await child.append([
+    child.ev(ROLE_DELEGATION, JSON.parse(JSON.stringify({ ...captured(), ...patch })), {
+      register: ROLE_DELEGATION,
+      ignorable: true,
+    }),
+  ])
+  await first.close()
+  const second = make(storage)
+  try {
+    await expect(second.session('child', options)).rejects.toThrow()
+  } finally {
+    await second.close()
+  }
+})
+
+it('i01: mutating the capture input after admission cannot widen any live authority gate', async () => {
+  const k = make(new MemoryStorage(), fakeProvider([toolTurn('write_note', {}), textTurn('done')]))
+  const snapshot = { ...captured(), resources: { mcp: [] as string[], skills: [] as string[] } }
+  const effect = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'unexpected effect' }] }))
+  k.tools.add(writeTool(effect), { source: 'fixture', trust: 'trusted' })
+  try {
+    const child = await k.session('child', { ...options, roleDelegation: snapshot })
+    expect(child.currentTools().list()).toEqual([])
+    snapshot.tools.push('write_note')
+    snapshot.resources.mcp.push('mcp/private')
+    snapshot.resources.skills.push('skill/private')
+    snapshot.permission = 'workspace-write'
+    await child.setYolo(true, actor)
+    expect(child.currentTools().list()).toEqual([])
+    expect(child.roleAuthority!.resources).toEqual({
+      mcp: { kind: 'ceiling', ids: [] },
+      skills: { kind: 'ceiling', ids: [] },
+    })
+    expect(child.permissionContext.policy).toBe('read-only')
+    await child.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'Write beyond the captured empty ceiling' }],
+      actor,
+    })
+    await child.run({ until: 'turn-end', signal: AbortSignal.timeout(5000) })
+    expect(effect).not.toHaveBeenCalled()
+  } finally {
+    await k.close()
+  }
+})
+
+it.each([false, undefined])(
+  'security5: cold role dispatch preserves explicit clean or absent legacy taint (%s)',
+  async (parentTainted) => {
+    const storage = new MemoryStorage()
+    const { parentTainted: _removed, ...base } = captured()
+    const legacy: RoleDelegation = {
+      ...base,
+      permission: 'workspace-write',
+      tools: ['write_note'],
+      commandTable: [{ tool: 'write_note', argv: '.*', action: 'allow' }],
+      ...(parentTainted === undefined ? {} : { parentTainted }),
+    }
+    let first!: Kernel
+    first = make(storage, fakeProvider([textTurn('unused')]), {
+      childRoles: {
+        list: async () => [legacy.role],
+        resolve: async () => ({
+          role: legacy.role,
+          open: (key, opts) => first.session(key, { ...options, ...opts, roleDelegation: legacy }),
+        }),
+      },
+    })
+    first.tools.add(writeTool(), { source: 'fixture', trust: 'trusted' })
+    const parent = await first.session('parent', options)
+    const handle = await parent.d.children.createWithKind!('spawn', {
+      parent: 'parent',
+      cwd: '/w',
+      role: legacy.role.ref,
+      input: 'Write',
+      resident: true,
+    })
+    // Release the crashed writers without an explicit parent/child stop; SIGKILL is
+    // covered by the Host e2e case. Kernel.close() would intentionally revoke this task.
+    await first.get(handle.key)!.d.log.close()
+    await parent.d.log.close()
+    const effect = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'written' }] }))
+    const prompts: string[] = []
+    const restoredSeams = fakeSeams({
+      approval: {
+        ask: async (request) => {
+          prompts.push(request.summary)
+          return { verdict: 'rejected', answeredBy: actor }
+        },
+      },
+    })
+    let second!: Kernel
+    second = make(storage, fakeProvider([toolTurn('write_note', {}), textTurn('done')]), {
+      seams: restoredSeams,
+      childRoles: {
+        list: async () => [legacy.role],
+        resolve: async () => {
+          throw new Error('Cold resume must use the pinned role')
+        },
+        reopen: (key, opts) =>
+          second.session(key, {
+            ...options,
+            ...opts,
+            workspaceInvocation: testWorkspaceInvocation(testFsOps(), restoredSeams),
+          }),
+      },
+    })
+    second.tools.add(writeTool(effect), { source: 'fixture', trust: 'trusted' })
+    try {
+      const owner = await second.session('parent', options)
+      const resumed = await owner.d.children.resume!(handle.key)
+      const restored = second.get(handle.key)!
+      expect(restored.currentTools().resolve('write_note')).toBeDefined()
+      expect(restored.d.roleDelegation?.parentTainted).toBe(parentTainted)
+      await vi.waitFor(async () => {
+        const status = await resumed.status()
+        expect(status.state !== 'running' || status.idle === true).toBe(true)
+      })
+      expect(
+        effect,
+        JSON.stringify({ prompts, results: await restored.scan({ type: 'tool/result', limit: 10 }) }),
+      ).toHaveBeenCalledTimes(parentTainted === false ? 1 : 0)
+      expect(prompts).toHaveLength(parentTainted === false ? 0 : 1)
+      if (parentTainted === undefined) {
+        expect(prompts[0]).toMatch(/taint/i)
+        expect((await restored.decisions.list())[0]).toMatchObject({
+          result: { reason: 'answered', response: { option: 'rejected' } },
+          consumption: { effectId: null },
+        })
+      }
+    } finally {
+      await second.close()
+      await first.close()
+    }
+  },
+)
