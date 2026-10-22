@@ -443,8 +443,7 @@ it('shows the retry only once the session is live and wires it to the host', asy
   }
   await act(async () => root.render(createElement(FailedTurn)))
   expect(host.querySelector('.turn-error')?.textContent).toBe('连接模型服务失败。状态 500')
-  const findRetry = () =>
-    [...host.querySelectorAll('button')].find((button) => button.textContent === '重试')
+  const findRetry = () => [...host.querySelectorAll('button')].find((button) => button.textContent === '重试')
   // A session that is still connecting cannot carry the retry.
   expect(findRetry()).toBeUndefined()
   await act(async () => session.setReadiness('ready', 'session'))

@@ -300,9 +300,7 @@ function ScopedConversationMessages({
     session ? session.readiness.subscribe.bind(session.readiness) : noSessionSubscription,
     () => session?.readiness.getSnapshot().status,
   )
-  const sessionRunning = (turns ?? []).some(
-    (turn) => turn.status === 'running' || turn.status === 'waiting',
-  )
+  const sessionRunning = (turns ?? []).some((turn) => turn.status === 'running' || turn.status === 'waiting')
   const retryDisabledReason = sessionRunning
     ? translate('turn.error.action.running')
     : readiness === 'connecting'
