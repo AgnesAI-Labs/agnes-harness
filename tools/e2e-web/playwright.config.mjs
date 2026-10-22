@@ -29,6 +29,7 @@ export default defineConfig({
     'plugin-purpose.spec.ts',
     'ui-gate.spec.ts',
     'ui-flows.spec.ts',
+    'mcp-management.spec.ts',
     'candidate-review.spec.ts',
     'first-run.spec.ts',
     'business-agents.spec.ts',
