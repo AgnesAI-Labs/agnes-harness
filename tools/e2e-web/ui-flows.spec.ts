@@ -819,3 +819,28 @@ test('Removing an enabled MCP server says to disable it first and keeps the serv
   // The refused removal changed nothing.
   expect(await runtime.cli(['mcp', 'get', 'e2e'])).toContain('revision=')
 })
+
+test('Plugins page add-MCP form scrolls with the wheel after the advanced fold opens', async ({
+  page,
+  runtime,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await preferences(page, 'en')
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime, 'en')
+  await fresh(page, 'en')
+  await settings(page, 'en')
+  await section(page, 'mcp')
+  await page.getByTestId('mcp-create').click()
+  await page.locator('#mcp-method-local').click()
+  await page.locator('#mcp-advanced button.agh-disclosure-summary').click()
+  const last = page.locator('#mcp-tools')
+  const inView = () =>
+    last.evaluate((node) => node.getBoundingClientRect().bottom <= document.documentElement.clientHeight)
+  // The open fold outgrows the viewport, so the last field starts below the fold.
+  expect(await inView()).toBe(false)
+  // The wheel over the form must reach the page's scroller instead of being held by the form.
+  await page.locator('#mcp-connection-fields').hover()
+  await page.mouse.wheel(0, 3000)
+  await expect.poll(inView).toBe(true)
+})
