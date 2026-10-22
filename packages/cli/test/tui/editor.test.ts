@@ -911,3 +911,100 @@ it('preserves joined emoji and keeps even one-column rendering and placeholders 
   }
   expect(editor.text).toBe('👩‍💻x')
 })
+
+describe('Editor readline keys', () => {
+  const at = (text: string, cursor = text.length) => {
+    const e = new Editor({ onSubmit() {} })
+    e.setText(text)
+    e.cursor = cursor
+    return e
+  }
+  const CTRL = { a: '\x01', b: '\x02', e: '\x05', f: '\x06', k: '\x0b', u: '\x15', w: '\x17', y: '\x19' }
+
+  it('reads the control and alt forms of the keys', () => {
+    expect(parseKey('\x0b', false).name).toBe('ctrl-k')
+    expect(parseKey('\x1b[107;5u', false).name).toBe('ctrl-k')
+    expect(parseKey('\x1bb', false).name).toBe('word-left')
+    expect(parseKey('\x1b[1;5C', false).name).toBe('word-right')
+    expect(parseKey('\x1b\x7f', false).name).toBe('word-delete-back')
+    expect(parseKey('\x1bd', false).name).toBe('word-delete')
+    expect(parseKey('\x1b[1;5F', false).name).toBe('ctrl-end')
+    expect(parseKey('\x1b[4~', false).name).toBe('end')
+  })
+
+  it('Ctrl-A/E/B/F move to the line ends and by one character', () => {
+    const e = at('one\ntwo', 5)
+    e.handleInput(CTRL.a)
+    expect(e.cursor).toBe(4)
+    e.handleInput(CTRL.e)
+    expect(e.cursor).toBe(7)
+    e.handleInput(CTRL.b)
+    expect(e.cursor).toBe(6)
+    e.handleInput(CTRL.f)
+    expect(e.cursor).toBe(7)
+  })
+
+  it('Alt-B/F and Ctrl-arrows move by word, Chinese included', () => {
+    const e = at('hello world')
+    e.handleInput('\x1bb')
+    expect(e.cursor).toBe(6)
+    e.handleInput('\x1b[1;5D')
+    expect(e.cursor).toBe(0)
+    e.handleInput('\x1bf')
+    expect(e.cursor).toBe(5)
+    e.handleInput('\x1b[1;5C')
+    expect(e.cursor).toBe(11)
+    const zh = at('今天天气很好')
+    zh.handleInput('\x1bb')
+    expect(zh.cursor).toBe(4)
+    zh.handleInput('\x1bb')
+    expect(zh.cursor).toBe(2)
+    zh.handleInput('\x1bf')
+    expect(zh.cursor).toBe(4)
+  })
+
+  it('cuts to the end or start of the line, a word back or a word forward, and Ctrl-Y puts it back', () => {
+    const e = at('foo bar baz', 4)
+    e.handleInput(CTRL.k)
+    expect([e.text, e.cursor]).toEqual(['foo ', 4])
+    e.handleInput(CTRL.y)
+    expect(e.text).toBe('foo bar baz')
+    e.handleInput(CTRL.u)
+    expect([e.text, e.cursor]).toEqual(['', 0])
+    e.handleInput(CTRL.y)
+    expect(e.text).toBe('foo bar baz')
+    e.handleInput(CTRL.w)
+    expect(e.text).toBe('foo bar ')
+    e.handleInput('\x1b\x7f')
+    expect(e.text).toBe('foo ')
+    e.cursor = 0
+    e.handleInput('\x1bd')
+    expect(e.text).toBe(' ')
+    const zh = at('你好世界 foo', 2)
+    zh.handleInput(CTRL.w)
+    expect(zh.text).toBe('世界 foo')
+  })
+
+  it('every cut replaces the buffer, a cut with nothing in it keeps it, and Ctrl-K at a line end joins lines', () => {
+    const e = at('aa bb')
+    e.handleInput(CTRL.w)
+    e.handleInput(CTRL.u)
+    e.handleInput(CTRL.u)
+    e.handleInput(CTRL.y)
+    expect(e.text).toBe('aa ')
+    const lines = at('ab\ncd', 2)
+    lines.handleInput(CTRL.k)
+    expect(lines.text).toBe('abcd')
+    lines.handleInput(CTRL.u)
+    // Already at the start of the line: nothing to cut, and the buffer still holds the last cut.
+    lines.handleInput(CTRL.u)
+    lines.handleInput(CTRL.y)
+    expect(lines.text).toBe('abcd')
+  })
+
+  it('leaves Ctrl-C and Ctrl-D to the application', () => {
+    const e = at('x')
+    expect(e.handleInput('\x03')).toBe(false)
+    expect(e.handleInput('\x04')).toBe(false)
+  })
+})

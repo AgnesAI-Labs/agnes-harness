@@ -54,6 +54,8 @@ node agnes.mjs
 
 发送过的消息（包括斜杠命令）保存在 `<AGH_HOME>/tui-history.jsonl`（仅本人可读，保留最近 500 条，相邻重复不记），重启后按 ↑ 仍能找到。Ctrl-R 进入反向搜索：输入以缩小范围，再按 Ctrl-R 找更早的匹配，Enter 把匹配项放进输入框但不发送，Esc 退出搜索并恢复草稿。文件无法读写时，历史只在本次运行内有效。
 
+编辑键与 readline 一致。Ctrl-A、Ctrl-E 跳到行首、行尾，Ctrl-B、Ctrl-F 左右移一个字符，Alt-B、Alt-F 或 Ctrl-←、Ctrl-→ 按词移动（中文按词切分）。Ctrl-K 删到行尾，Ctrl-U 删到行首，Ctrl-W 或 Alt-Backspace 删光标前一个词，Alt-D 删后一个词；Ctrl-Y 粘回最近一次删掉的文本。删除内容只存在运行中的 TUI 的一个缓冲区里，每次删除都会覆盖它，不碰系统剪贴板。
+
 TUI `/package` 与 shell `package` 的子命令集合不完全相同，例如更新可以从 TUI/Web 发起，shell `package update` 当前没有实现。以[生命周期指南](packages.zh-CN.md)为准。
 
 退出 TUI 时终端原样恢复到进入前的样子，不会重新打印对话。如果本次运行在当前会话里至少发过一条消息，且输出是终端，会留下一行 `agh --resume ID`，用来回到该会话。

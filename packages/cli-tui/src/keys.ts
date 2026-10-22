@@ -7,6 +7,22 @@ export type KeyName =
   | 'ctrl-d'
   | 'ctrl-o'
   | 'ctrl-r'
+  | 'ctrl-a'
+  | 'ctrl-b'
+  | 'ctrl-e'
+  | 'ctrl-f'
+  | 'ctrl-g'
+  | 'ctrl-k'
+  | 'ctrl-u'
+  | 'ctrl-w'
+  | 'ctrl-y'
+  | 'ctrl-z'
+  | 'ctrl-shift-z'
+  | 'ctrl-end'
+  | 'word-left'
+  | 'word-right'
+  | 'word-delete'
+  | 'word-delete-back'
   | 'up'
   | 'down'
   | 'left'
@@ -42,6 +58,26 @@ const SEQ = new Map<string, KeyName>([
   ['\x04', 'ctrl-d'],
   ['\x0f', 'ctrl-o'],
   ['\x12', 'ctrl-r'],
+  ['\x01', 'ctrl-a'],
+  ['\x02', 'ctrl-b'],
+  ['\x05', 'ctrl-e'],
+  ['\x06', 'ctrl-f'],
+  ['\x07', 'ctrl-g'],
+  ['\x0b', 'ctrl-k'],
+  ['\x15', 'ctrl-u'],
+  ['\x17', 'ctrl-w'],
+  ['\x19', 'ctrl-y'],
+  ['\x1a', 'ctrl-z'],
+  // Word keys: Alt-B/F/D and Alt-Backspace arrive as an escape prefix, Ctrl/Alt with an arrow as a modified CSI.
+  ['\x1bb', 'word-left'],
+  ['\x1b[1;5D', 'word-left'],
+  ['\x1b[1;3D', 'word-left'],
+  ['\x1bf', 'word-right'],
+  ['\x1b[1;5C', 'word-right'],
+  ['\x1b[1;3C', 'word-right'],
+  ['\x1bd', 'word-delete'],
+  ['\x1b\x7f', 'word-delete-back'],
+  ['\x1b[1;5F', 'ctrl-end'],
   ['\t', 'tab'],
   ['\x7f', 'backspace'],
   ['\b', 'backspace'],
@@ -53,6 +89,12 @@ const SEQ = new Map<string, KeyName>([
   ['\x1b[6~', 'pgdn'],
   ['\x1b[H', 'home'],
   ['\x1b[F', 'end'],
+  ['\x1bOH', 'home'],
+  ['\x1bOF', 'end'],
+  ['\x1b[1~', 'home'],
+  ['\x1b[4~', 'end'],
+  ['\x1b[7~', 'home'],
+  ['\x1b[8~', 'end'],
   ['\x1bOP', 'f1'],
   ['\x1bOQ', 'f2'],
   ['\x1bOR', 'f3'],
@@ -112,6 +154,7 @@ export function parseKey(data: string, kitty: boolean): Key {
     const mods = (Number(m[2] ?? '1') - 1) & 7
     if (code === 13 && kitty) return { name: mods === 1 ? 'shift-enter' : mods === 2 ? 'alt-enter' : 'enter' }
     if (code === 27 && mods === 0) return { name: 'esc' }
+    if (code === 122 && mods === 5) return { name: 'ctrl-shift-z' }
     const ctrl = mods === 4 && code >= 97 && code <= 122 ? SEQ.get(String.fromCharCode(code - 96)) : undefined
     if (ctrl) return { name: ctrl }
   }

@@ -60,6 +60,8 @@ Choose what a new session may do when you start it, for example `node agnes.mjs 
 
 Messages you send, slash commands included, are kept in `<AGH_HOME>/tui-history.jsonl` (readable only by you, the newest 500, immediate repeats skipped), so ↑ still finds them after a restart. Ctrl-R opens a reverse search: type to narrow, press Ctrl-R again for an older match, Enter puts the match in the input box without sending it, and Esc leaves the search and brings back the draft. If the file cannot be read or written, history lasts only for the current run.
 
+Editing keys follow readline. Ctrl-A and Ctrl-E go to the start and end of the line, Ctrl-B and Ctrl-F move one character, and Alt-B, Alt-F or Ctrl-Left, Ctrl-Right move by word (Chinese text is cut into words). Ctrl-K cuts to the end of the line, Ctrl-U to its start, Ctrl-W or Alt-Backspace the word before the cursor and Alt-D the word after it; Ctrl-Y pastes the last cut back. There is one cut buffer inside the running TUI, each cut replaces it, and it never touches the system clipboard.
+
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
 Leaving the TUI gives the terminal back exactly as it was before; the conversation is not printed again. If this run sent at least one message in the current session and the output is a terminal, one line is left behind, `agh --resume ID`, to return to that session.

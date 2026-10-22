@@ -1,5 +1,6 @@
 import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
+import { lineStartOf, nextWordEnd, prevWordStart } from './edit-motion.js'
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
 import { type Key, parseKey } from './keys.js'
 import { tt } from './locale-extended.js'
@@ -119,6 +120,8 @@ export class Editor implements Component {
   // Chip text to the pasted text it stands for; lives only as long as this process.
   private readonly pastes = new Map<string, string>()
   private pasteCount = 0
+  // The last text cut by Ctrl-K, Ctrl-U, Ctrl-W or Alt-D: one buffer, replaced by each cut, never the system clipboard.
+  private killed = ''
 
   constructor(private readonly o: EditorOptions) {
     this.store = o.history ?? new PromptHistory()
@@ -156,6 +159,10 @@ export class Editor implements Component {
   handleInput(data: string): boolean {
     const k = parseKey(data, this.kitty)
     if (this.search) return this.searching(k, data)
+    return this.handleKey(k)
+  }
+
+  private handleKey(k: Key): boolean {
     const menu = this.openMenu()
     const choices = menu?.labels.length ?? 0
     switch (k.name) {
@@ -191,7 +198,6 @@ export class Editor implements Component {
         const before = this.text.slice(0, this.cursor)
         const chip = [...this.pastes.keys()].find((c) => before.endsWith(c))
         if (chip) {
-          this.pastes.delete(chip)
           this.text = before.slice(0, before.length - chip.length) + this.text.slice(this.cursor)
           this.cursor -= chip.length
           return true
@@ -204,17 +210,21 @@ export class Editor implements Component {
         return true
       }
       case 'left':
+      case 'ctrl-b':
         this.cursor = this.prevBoundary()
         return true
       case 'right':
+      case 'ctrl-f':
         this.cursor = this.nextBoundary()
         return true
       // Per line, not per buffer. Every terminal editor moves to the ends of the line the cursor is
       // on; a jump to the ends of a multi-line draft would be a surprise with no key to undo it.
       case 'home':
+      case 'ctrl-a':
         this.cursor = this.lineStart()
         return true
       case 'end':
+      case 'ctrl-e':
         this.cursor = this.lineEnd()
         return true
       case 'up':
@@ -274,8 +284,48 @@ export class Editor implements Component {
       case 'unknown':
         return true
       default:
+        return this.readlineKey(k)
+    }
+  }
+
+  // The emacs keys beyond plain cursor moves: word motion, cuts and Ctrl-Y, undo and redo, Ctrl-G.
+  private readlineKey(k: Key): boolean {
+    switch (k.name) {
+      case 'word-left':
+        this.cursor = prevWordStart(this.text, this.cursor)
+        return true
+      case 'word-right':
+        this.cursor = nextWordEnd(this.text, this.cursor)
+        return true
+      case 'ctrl-k': {
+        // At the end of a line the cut takes the newline, so lines can be joined.
+        const end = this.lineEnd()
+        this.kill(this.cursor, end > this.cursor ? end : Math.min(this.text.length, end + 1))
+        return true
+      }
+      case 'ctrl-u':
+        this.kill(this.lineStart(), this.cursor)
+        return true
+      case 'ctrl-w':
+      case 'word-delete-back':
+        this.kill(prevWordStart(this.text, this.cursor), this.cursor)
+        return true
+      case 'word-delete':
+        this.kill(this.cursor, nextWordEnd(this.text, this.cursor))
+        return true
+      case 'ctrl-y':
+        if (this.killed) this.insert(this.killed)
+        return true
+      default:
         return false
     }
+  }
+
+  private kill(from: number, to: number): void {
+    if (to <= from) return
+    this.killed = this.text.slice(from, to)
+    this.text = this.text.slice(0, from) + this.text.slice(to)
+    this.cursor = from
   }
 
   // Keys while Ctrl-R search is open. Enter takes the match into the draft without sending it; esc puts
@@ -342,7 +392,7 @@ export class Editor implements Component {
   }
 
   private lineStart(): number {
-    return this.text.lastIndexOf('\n', this.cursor - 1) + 1
+    return lineStartOf(this.text, this.cursor)
   }
 
   private lineEnd(): number {
