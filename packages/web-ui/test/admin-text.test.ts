@@ -140,3 +140,25 @@ it('renders schema-owned rejection reasons and actions in both locales without t
     appServerErrorMessage({ data: { code: 'UNKNOWN_DENIED', publicReason: 'private' } }, 'en'),
   ).toBeUndefined()
 })
+
+it('shows the diagnostic ID that the unconfirmed-operation copy tells the person to use', () => {
+  const id = '474ff098-190d-4aab-8ebf-4fc5aee12097'
+  const error = {
+    code: -32603,
+    message: 'INTERNAL_ERROR',
+    data: { code: 'E_ADMIN_BACKEND', messageKey: 'appServer.errors.internal', diagnosticId: id },
+  }
+  expect(appServerErrorMessage(error, 'en')).toBe(
+    `The operation could not be confirmed. Inspect its status using the diagnostic ID. Diagnostic ID: ${id}`,
+  )
+  expect(appServerErrorMessage(error, 'zh-CN')).toBe(
+    `无法确认操作结果。 请使用诊断 ID 检查状态。 诊断 ID：${id}`,
+  )
+  // A malformed ID is never echoed, and classes that do not point at an ID stay unchanged.
+  expect(
+    appServerErrorMessage({ ...error, data: { ...error.data, diagnosticId: 'x<b>' } }, 'en'),
+  ).not.toContain('x<b>')
+  expect(
+    appServerErrorMessage({ data: { code: 'APPROVAL_REJECTED', diagnosticId: id } }, 'en'),
+  ).not.toContain(id)
+})
