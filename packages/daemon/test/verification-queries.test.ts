@@ -367,6 +367,15 @@ it('a package status read does not start a worker to decorate inventory', async 
   expect(acquireSharedWorker).not.toHaveBeenCalled()
 })
 
+it('review: the live status read does not wait for a busy worker for the whole startup budget', async () => {
+  const command = vi.fn(async () => ({ plugins: [] }))
+  const pool = { businessWorker: () => ({ link: { alive: true, command } }) }
+  await readRunningGenerationStatus(pool as never, 30_000)
+  expect(command).toHaveBeenCalledWith('pluginGenerations.status', {}, { timeoutMs: 3000 })
+  await readRunningGenerationStatus(pool as never, 1000)
+  expect(command).toHaveBeenLastCalledWith('pluginGenerations.status', {}, { timeoutMs: 1000 })
+})
+
 it.each([false, true])(
   'review: package list observes whether a worker is actually starting (%s)',
   async (starting) => {
