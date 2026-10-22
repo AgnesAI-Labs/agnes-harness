@@ -1801,7 +1801,7 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     // Local command output recedes to muted text.
     term.feed('help')
     term.feed('\r')
-    await vi.waitFor(() => expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}/context`))
+    await vi.waitFor(() => expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}/status`))
   } finally {
     await app?.stop()
     await client.close()

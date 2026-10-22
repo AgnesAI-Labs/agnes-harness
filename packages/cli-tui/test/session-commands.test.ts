@@ -19,12 +19,18 @@ const meta = (sessionId: string, cwd: string) => ({
   cwd,
 })
 
-function appWith(client: Record<string, unknown>, session: Record<string, unknown> = {}) {
+function appWith(
+  client: Record<string, unknown>,
+  session: Record<string, unknown> = {},
+  extra: Record<string, unknown> = {},
+) {
   return {
     cwd: '/w/a',
     locale: 'en',
     refuseSwitch: () => false,
+    o: {},
     session: { id: 'cur', client, ...session },
+    ...extra,
   } as unknown as TuiApp
 }
 
@@ -371,5 +377,59 @@ describe('/queue', () => {
     )
     refuse(new Error('boom'))
     await expect(runSlash(app, '/queue drop 1')).rejects.toThrow('boom')
+  })
+})
+
+describe('small info commands', () => {
+  const usage = {
+    model: { route: 'deepseek', id: 'v4', thinking: 'high' },
+    context: { tokens: 1000, window: 10000 },
+    cost: { usdMicros: 1_500_000 },
+  }
+  const status = (o: Record<string, unknown>, opening: unknown, controls: unknown, list: unknown = []) =>
+    appWith(
+      { session: { list: async () => ({ items: list }) } },
+      { projectUIOpening: async () => opening, controls: async () => controls },
+      { o },
+    )
+
+  it('/status shows every field, and `-` for a source that fails', async () => {
+    const app = status(
+      { commandsDir: '/h/commands' },
+      { timeline: { usage, yolo: true } },
+      { pending: [{ kind: 'follow_up' }, { kind: 'steer' }, { kind: 'prompt' }] },
+      [{ ...meta('cur', '/w/a'), title: 'My\u001b[31m title' }],
+    )
+    const rows = Object.fromEntries(
+      ((await runSlash(app, '/status')).text ?? '')
+        .split('\n')
+        .map((r) => r.split(/\s{2,}/) as [string, string]),
+    )
+    expect(rows).toMatchObject({
+      Session: 'cur · My[31m title',
+      Preset: 'standard',
+      Model: 'deepseek/v4 (high)',
+      Workspace: '/w/a',
+      AGH_HOME: '/h',
+      Connection: 'local daemon',
+      Context: '1000 / 10000 (10.0%)',
+      Cost: '$1.500',
+      'Queued inputs': '2',
+      YOLO: 'on',
+    })
+    // Over --connect the local home is not the daemon's, and a failing source does not hide the rest.
+    const broken = appWith(
+      { session: { list: async () => Promise.reject(new Error('x')) } },
+      {
+        projectUIOpening: async () => Promise.reject(new Error('x')),
+        controls: async () => Promise.reject(new Error('x')),
+      },
+      { o: { remote: true, commandsDir: '/h/commands' } },
+    )
+    const text = (await runSlash(broken, '/status')).text ?? ''
+    expect(text).toContain('remote daemon')
+    expect(text).toMatch(/AGH_HOME\s+-$/m)
+    expect(text).toMatch(/Model\s+-$/m)
+    expect(text).toMatch(/Queued inputs\s+-$/m)
   })
 })

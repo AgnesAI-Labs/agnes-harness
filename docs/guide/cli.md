@@ -50,6 +50,7 @@ Type `/` to see the current menu. Common actions:
 | Queued messages | While a turn runs, Enter queues the message in the daemon and it is sent automatically when the turn ends; Alt+Enter inserts it into the running turn instead (it is queued when the turn takes no guidance). Nothing is held by the TUI, so the queue survives exiting it and every client of the session sees it. `/queue` lists the queued messages and manages them by number: `/queue edit N` takes one back into the editor (its attachments are sent with the next message), `/queue drop N` discards it, `/queue now N` stops the running turn and sends it first, and `/queue steer N` turns it into guidance for the running turn. Alt+Up takes the newest queued message back into an empty editor. An action on a message that was already sent or removed says so |
 | Model / preset | `/model`, `/model main ROUTE/MODEL`, `/preset NAME` |
 | Context / usage | `/context`, `/usage`, `/cost` |
+| Status | `/status` shows the session, preset, model, workspace, `AGH_HOME`, connection (local daemon or `--connect`), context use, cost, queued inputs and YOLO on one screen; a value that cannot be read shows `-` |
 | Compaction | `/compact [instructions]`; inspect the receipt for execution, skip, or failure |
 | Fork | `/rewind` opens a picker of completed turns; `/rewind SEQ` forks at a sequence number. Either creates a new session and does not roll back the filesystem |
 | Plugins | `/packages`, `/install SOURCE`, `/package ...` |

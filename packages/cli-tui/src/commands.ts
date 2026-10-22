@@ -13,6 +13,7 @@ import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { deliverablesSlash } from './deliverable-files.js'
 import { grantsSlash } from './grant-commands.js'
+import { infoSlash } from './info-commands.js'
 import { jobsSlash } from './job-commands.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { queueSlash } from './queue-commands.js'
@@ -173,6 +174,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.queue',
     summaryKey: 'commands.queueSummary',
   },
+  { name: '/status', descriptionKey: 'commands.status', summaryKey: 'commands.statusSummary' },
 ]
 
 export function slashCommand(name: string): SlashCommand | undefined {
@@ -460,6 +462,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return jobsSlash(app, line)
     case '/queue':
       return queueSlash(app, line)
+    case '/status':
+      return infoSlash(app, cmd, line)
     case '/pin':
     case '/unpin':
     case '/rename':
