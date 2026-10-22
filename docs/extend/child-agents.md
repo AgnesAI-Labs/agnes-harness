@@ -131,6 +131,8 @@ delegable by exact ref; the display budget does not narrow backend authority.
 - `subagent_collect` reads the current result on demand. It is not needed to learn that a child finished; see Completion notices.
 - `subagent_cancel` stops a spawned child and its subtree.
 
+Web localizes the role and child labels, built-in effect titles and taint reason through its language catalog. Child-list state labels use the same selected language; role references, session IDs, plugin-authored purposes and recorded execution evidence remain unchanged.
+
 Continuable children also accept:
 
 - `subagent_list` lists in-process children and external children tracked for the session.

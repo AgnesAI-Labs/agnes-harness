@@ -1,5 +1,6 @@
 import type { RefObject } from 'react'
 import type { Translate } from '../../locales/index.js'
+import { childListOutput } from '../../tool-presentation.js'
 import { Disclosure } from '../../ui/disclosure.js'
 import { Tag } from '../../ui/tag.js'
 import type { ToolNode } from './context.js'
@@ -59,7 +60,9 @@ export function ToolOutput({
       ) : output ? (
         <section>
           <p>{section}</p>
-          <pre data-testid="tool-output-text">{output}</pre>
+          <pre data-testid="tool-output-text">
+            {node.name === 'subagent_list' ? childListOutput(output, t) : output}
+          </pre>
         </section>
       ) : null}
       {environment && (
