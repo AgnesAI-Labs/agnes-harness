@@ -495,6 +495,16 @@ describe('DevBoard plugin contract', () => {
     expect(runApp.prompt['zh-CN']).toContain('devboard_app_register')
   })
 
+  it('adds traceFrom to the change tool without a new tool name or capability', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    const caps = pkg.agnes.plugins[0].capabilities
+    expect(caps.tools.names).toHaveLength(20)
+    expect(Object.keys(caps).sort()).toEqual(['filesystem', 'store', 'tools', 'ui'])
+    const schema = JSON.parse(JSON.stringify(tool('devboard_change_upsert').parameters))
+    expect(schema.properties.traceFrom).toMatchObject({ type: 'boolean' })
+    expect(schema.required ?? []).not.toContain('traceFrom')
+  })
+
   it('takes only the gate enum as input and writes only below the new project directory', async () => {
     const def = tool('devboard_fastforward')
     const schema = JSON.parse(JSON.stringify(def.parameters))

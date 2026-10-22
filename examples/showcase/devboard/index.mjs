@@ -456,7 +456,7 @@ export const tools = [
   ),
   tool(
     'devboard_change_upsert',
-    'Create a change request (omit id), edit its impact analysis (reqs, artifacts, tests, items with revisions, fleet), source, root cause, retrofit total or verification, and/or move it: SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED only by an approved ECR flow (start it with devboard_approval_submit; it generates the ECN, and releasing the ECN adds the as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Record rationale in note; it remains in change history even without a state move. Leave CCB decisions to people unless told otherwise. 登记或推进变更，note 依据保留在变更留痕。',
+    'Create a change request (omit id), edit its impact analysis (reqs, artifacts, tests, items with revisions, fleet), source, root cause, retrofit total or verification, and/or move it. Set traceFrom: true to complete the impact from the requirement chain: impact.reqs are the starting points, and every downstream requirement, design item, test case and deliverable is added to what you gave (nothing you gave is removed). SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED only by an approved ECR flow (start it with devboard_approval_submit; it generates the ECN, and releasing the ECN adds the as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Record rationale in note; it remains in change history even without a state move. Leave CCB decisions to people unless told otherwise. 登记或推进变更，note 依据保留在变更留痕。',
     Type.Object(
       {
         id: Type.Optional(id),
@@ -466,6 +466,7 @@ export const tools = [
         source: changeSource,
         rootCause,
         impact,
+        traceFrom: Type.Optional(Type.Boolean()),
         retrofit,
         verification: Type.Optional(
           Type.Object({ result: literals(['PASS', 'FAIL']), trialId: Type.Optional(short(32)) }, strict),

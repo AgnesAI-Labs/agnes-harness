@@ -25,6 +25,7 @@ import {
   snapshot,
   submitApproval,
   submitGate,
+  traceImpact,
   transition,
   update,
   updateChange,
@@ -1987,4 +1988,87 @@ describe('fast-forward from the shipped sample', () => {
       expect(byId(state.projects, project.id).actualEnd).toBeDefined()
     },
   )
+})
+
+describe('tracing a change down the requirement chain', () => {
+  const sample = async () => {
+    const store = memoryStore()
+    const fs = { stat: async () => Promise.reject(new Error('ENOENT')), write: async () => undefined }
+    const { data } = (await fastForward(
+      { gate: 'TR3' },
+      { store, fs, signal: new AbortController().signal },
+    )) as Item
+    return { state: read(store), projectId: data.projectId as string }
+  }
+
+  it('finds the downstream items, deliverables and code modules of a customer clause', async () => {
+    const { state, projectId } = await sample()
+    expect(traceImpact(state, projectId, ['CUS-002'])).toEqual({
+      reqs: ['CUS-002', 'DES-001', 'DES-003', 'SWR-004', 'SYS-003'],
+      tests: ['TC-004', 'TC-008'],
+      artifacts: [
+        `DOC-${projectId.split('-').at(-1)}-RTM`,
+        `DOC-${projectId.split('-').at(-1)}-SAD`,
+        `DOC-${projectId.split('-').at(-1)}-SRS`,
+        // no test report exists yet at TR3, so none is named
+      ].sort(),
+      modules: ['src/app.js', 'src/health.js'],
+    })
+    // a leaf traces to itself and a test case to the report; an unknown item is refused
+    expect(traceImpact(state, projectId, ['TC-004']).tests).toEqual(['TC-004'])
+    expect(() => traceImpact(state, projectId, ['SWR-999'])).toThrow('未找到')
+  })
+
+  it('merges traceFrom into what the caller gave, on create and on a later update', async () => {
+    const { state, projectId } = await sample()
+    const cr = create(
+      state,
+      {
+        kind: 'change',
+        projectId,
+        title: '预警排行条数',
+        reason: '客户变更',
+        source: { type: 'CUSTOMER' },
+        impact: { reqs: ['CUS-002'], tests: ['TC-001'], safety: true, effortDays: 2 },
+        traceFrom: true,
+        by: '研发协调员',
+      },
+      NOW,
+    )
+    expect(cr.impact.reqs).toEqual(['CUS-002', 'SYS-003', 'SWR-004', 'DES-001', 'DES-003'].sort())
+    // what the caller named stays, the traced test cases join it
+    expect(cr.impact.tests.sort()).toEqual(['TC-001', 'TC-004', 'TC-008'])
+    expect(cr.impact).toMatchObject({ safety: true, effortDays: 2 })
+    // it is also visible, traced live, on the snapshot
+    expect(byId(snapshot(state).changes, cr.id).trace.modules).toEqual(['src/app.js', 'src/health.js'])
+    // without traceFrom nothing is added; traceFrom with no starting point is refused
+    const plain = create(
+      state,
+      { kind: 'change', projectId, title: 'b', reason: 'b', impact: { reqs: ['CUS-001'] }, by: 'x' },
+      NOW,
+    )
+    expect(plain.impact.reqs).toEqual(['CUS-001'])
+    // an id that does not exist is accepted as before and must not break the read model
+    const stray = create(
+      state,
+      {
+        kind: 'change',
+        projectId,
+        title: 'd',
+        reason: 'd',
+        impact: { reqs: ['SWR-999', 'CUS-002'] },
+        by: 'x',
+      },
+      NOW,
+    )
+    expect(byId(snapshot(state).changes, stray.id).trace.reqs).toEqual(
+      traceImpact(state, projectId, ['CUS-002']).reqs,
+    )
+    expect(() =>
+      create(state, { kind: 'change', projectId, title: 'c', reason: 'c', traceFrom: true, by: 'x' }, NOW),
+    ).toThrow('traceFrom')
+    // an update traces from the requirements the change already names
+    updateChange(state, { id: plain.id, traceFrom: true, by: 'x' }, NOW)
+    expect(byId(state.changes, plain.id).impact.reqs).toEqual(traceImpact(state, projectId, ['CUS-001']).reqs)
+  })
 })

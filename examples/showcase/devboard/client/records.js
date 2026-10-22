@@ -20,6 +20,7 @@ import {
   useLens,
   useProject,
 } from './board.js'
+import { ImpactTree } from './impact-tree.js'
 
 export const stateLabels = (data, kind) =>
   Object.fromEntries(Object.keys(data.machines[kind]).map((s) => [s, data.labels.state[s]]))
@@ -348,6 +349,7 @@ export function Changes({ data, board, role, setRole }) {
             { className: 'devboard-muted' },
             '进入 CCB 评审前必须完成影响分析（现场或型式试验来源还需失效原因分析）；CCB 批准只能经 ECR 审批流程（专业会签 → CCB 决议），批准后生成 ECN，ECN 发布流程批准后生成设计态基线；研发中项目的受影响阶段自动返工，在役项目不返工；关闭前需验证记录。',
           ),
+          h(ImpactTree, { data, change: item }),
           item.retrofit && h(RetrofitBar, { change: item, board, role }),
           h(ApprovalEntry, { data, board, role, setRole, type: 'change', id: item.id }),
           h(TransitionBar, { key: item.id, data, kind: 'change', item, board, role, hidden: ['APPROVED'] }),

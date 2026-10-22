@@ -739,6 +739,57 @@ export function coverage(state, projectId) {
   }
 }
 
+/** Deliverable kinds each trace level touches: requirements → SRS/RTM, design → SAD, test cases → test report. */
+const LEVEL_KINDS = {
+  CUS: ['SRS', 'RTM'],
+  SYS: ['SRS', 'RTM'],
+  SWR: ['SRS', 'RTM'],
+  DES: ['SAD'],
+  TC: ['TEST_REPORT'],
+}
+
+/**
+ * Everything downstream of the given requirement-level items, found through the `parent` links:
+ * `reqs` the start items and their downstream CUS/SYS/SWR/DES items, `tests` the test cases, `artifacts`
+ * the project's deliverables of the kinds those levels touch, `modules` the code modules of the DES items.
+ * All lists are sorted and unique.
+ */
+export function traceImpact(state, projectId, reqIds) {
+  projectOf(state, projectId)
+  const all = state.reqs.filter((r) => r.projectId === projectId)
+  const children = new Map()
+  for (const r of all) for (const p of r.parent ?? []) children.set(p, [...(children.get(p) ?? []), r])
+  const seen = new Map()
+  const walk = (r) => {
+    if (seen.has(r.id)) return
+    seen.set(r.id, r)
+    for (const c of children.get(r.id) ?? []) walk(c)
+  }
+  for (const id of reqIds ?? [])
+    walk(all.find((r) => r.id === id) ?? fail(`未找到 ${projectId} 的条目 ${id}`))
+  const found = [...seen.values()]
+  const sorted = (list) => [...new Set(list)].sort()
+  const kinds = new Set(found.flatMap((r) => LEVEL_KINDS[r.level] ?? []))
+  return {
+    reqs: sorted(found.filter((r) => r.level !== 'TC').map((r) => r.id)),
+    tests: sorted(found.filter((r) => r.level === 'TC').map((r) => r.id)),
+    artifacts: sorted(
+      state.artifacts.filter((a) => a.projectId === projectId && kinds.has(a.kind)).map((a) => a.id),
+    ),
+    modules: sorted(found.filter((r) => r.module).map((r) => r.module)),
+  }
+}
+
+/** `traceFrom`: the impact's requirements are starting points; what lies downstream is added, nothing given is removed. */
+function traced(state, projectId, impact, traceFrom) {
+  if (!traceFrom) return impact
+  const start = impact?.reqs ?? []
+  if (!start.length) fail('traceFrom 需要 impact.reqs 作为追溯起点')
+  const found = traceImpact(state, projectId, start)
+  const merge = (key) => [...new Set([...(impact[key] ?? []), ...found[key]])]
+  return { ...impact, reqs: merge('reqs'), artifacts: merge('artifacts'), tests: merge('tests') }
+}
+
 const onlyOn = (item, levels, name) =>
   levels.includes(item.level) ? true : fail(`${item.id} 不能设置 ${name}：仅 ${levels.join('/')} 条目可用`)
 
@@ -977,7 +1028,7 @@ function createChange(state, input, at, now) {
     raisedBy: by,
     source: sourceOf(input.source),
     ...(input.rootCause ? { rootCause: text(input.rootCause, 'rootCause', 2000) } : {}),
-    impact: impactOf(input.impact, state, project.id),
+    impact: impactOf(traced(state, project.id, input.impact, input.traceFrom), state, project.id),
     ...(input.retrofit
       ? { retrofit: { done: 0, total: intIn(input.retrofit.total, 'retrofit.total', 1_000_000) } }
       : {}),
@@ -995,10 +1046,10 @@ function createChange(state, input, at, now) {
 const EDITABLE_CHANGE = ['SUBMITTED', 'ANALYZED']
 
 /** Edit a change's impact analysis while it is still before CCB review. */
-export function updateImpact(state, { id, impact }) {
+export function updateImpact(state, { id, impact, traceFrom }) {
   const cr = find(state, 'change', id)
   if (!EDITABLE_CHANGE.includes(cr.state)) fail(`${cr.id} 已进入 ${cr.state}，影响分析不可再改`)
-  cr.impact = impactOf(impact, state, cr.projectId)
+  cr.impact = impactOf(traced(state, cr.projectId, impact, traceFrom), state, cr.projectId)
   return cr
 }
 
@@ -1008,7 +1059,8 @@ export function updateImpact(state, { id, impact }) {
  */
 export function updateChange(state, input, now = Date.now()) {
   const cr = find(state, 'change', input.id)
-  if (input.impact) updateImpact(state, input)
+  // traceFrom without an impact traces from the requirements the change already names.
+  if (input.impact || input.traceFrom) updateImpact(state, { ...input, impact: input.impact ?? cr.impact })
   const early = (name) =>
     EDITABLE_CHANGE.includes(cr.state) ? true : fail(`${cr.id} 已进入 ${cr.state}，${name}不可再改`)
   if (input.source !== undefined && early('来源')) cr.source = sourceOf(input.source)
@@ -1657,7 +1709,14 @@ export function snapshot(state, now = Date.now(), projectId) {
     gates,
     artifacts: pick(state.artifacts),
     reqs: pick(state.reqs),
-    changes: pick(state.changes),
+    // The impact tree is traced live, so it follows the requirement links as they are now. Ids a change
+    // names that do not exist (impact.reqs is free text) are left out so one bad id cannot break the read model.
+    changes: pick(state.changes).map((c) => {
+      const known = (c.impact?.reqs ?? []).filter((id) =>
+        state.reqs.some((r) => r.id === id && r.projectId === c.projectId),
+      )
+      return known.length ? { ...c, trace: traceImpact(state, c.projectId, known) } : c
+    }),
     defects: pick(state.defects),
     testRuns: pick(state.testRuns),
     trials: pick(state.trials),

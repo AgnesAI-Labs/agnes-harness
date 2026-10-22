@@ -63,6 +63,29 @@
     justify-content: space-between;
     padding: 4px 0;
   }
+  /* The impact tree of a change: nested lists, one indent per level of the requirement chain. */
+  .devboard-impact {
+    padding: 12px 16px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .devboard-impact h2 {
+    margin: 0 0 8px;
+    font-size: 15px;
+  }
+  .devboard-impact ul {
+    margin: 0;
+    padding: 0 0 0 18px;
+    list-style: none;
+  }
+  .devboard-impact ul ul {
+    border-left: 1px solid var(--agnes-line-primary);
+    margin-left: 4px;
+  }
+  .devboard-impact li {
+    padding: 3px 0;
+  }
   /* One row of state columns; narrow windows scroll inside the board instead of wrapping. */
   .devboard-columns {
     display: grid;
