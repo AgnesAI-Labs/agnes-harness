@@ -194,6 +194,44 @@ describe('toContentBlocks', () => {
 })
 
 describe('Session', () => {
+  it('undoes a turn with a stable commandId and previews without one', async () => {
+    const seen: Array<{ method: string; params: Record<string, unknown> }> = []
+    const f = fakeEndpoint({
+      initialize: init,
+      'session/new': () => ({ sessionId: 's' }),
+      '_agnes/v1/session.undo.preview': (params: unknown) => {
+        seen.push({ method: 'preview', params: params as Record<string, unknown> })
+        return {
+          sessionId: 's',
+          busy: false,
+          undoable: false,
+          blockedBy: 'none',
+          laterTurns: [],
+          shellChanges: false,
+          files: [],
+        }
+      },
+      '_agnes/v1/session.undo': (params: unknown) => {
+        seen.push({ method: 'undo', params: params as Record<string, unknown> })
+        return { sessionId: 's', turn: 2, seq: 9, restored: ['a.txt'], failed: [], conflicts: [] }
+      },
+    })
+    const c = createClient({ transport: { kind: 'inproc', endpoint: f.endpoint }, authProviders: providers })
+    const s = await c.session.new({ cwd: '/w' })
+    await s.undoPreview(2)
+    await s.undo(2, { commandId: 'retry-1' })
+    await s.undo(2, { commandId: 'retry-1' })
+    await s.undo(2)
+    expect(seen[0]).toEqual({ method: 'preview', params: { sessionId: 's', turn: 2 } })
+    expect(seen.slice(1, 3).map((call) => call.params)).toEqual([
+      { sessionId: 's', turn: 2, commandId: 'retry-1' },
+      { sessionId: 's', turn: 2, commandId: 'retry-1' },
+    ])
+    expect(seen[3]?.params.commandId).toEqual(expect.any(String))
+    expect(seen[3]?.params.commandId).not.toBe('retry-1')
+    await c.close()
+  })
+
   it.each([
     ['controls', '_agnes/v1/session.controls', { controls: {}, paused: false, pending: [] }],
     [

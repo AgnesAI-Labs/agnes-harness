@@ -28,6 +28,8 @@ import {
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
+  type SessionUndoPreviewResult,
+  type SessionUndoResult,
   type SessionWorkspaceChangesParams,
   type SessionWorkspaceChangesResult,
   type SessionWorkspaceListResult,
@@ -542,6 +544,26 @@ export class Session {
     input: Omit<SessionWorkspaceChangesParams, 'sessionId'> = {},
   ): Promise<SessionWorkspaceChangesResult> {
     return this.reads.read('_agnes/v1/session.workspace.changes', { ...input, sessionId: this.id })
+  }
+
+  /** What undoing a turn's file changes would do (the latest file-changing turn when `turn` is omitted). Read-only. */
+  undoPreview(turn?: number): Promise<SessionUndoPreviewResult> {
+    return this.client.call<SessionUndoPreviewResult>('_agnes/v1/session.undo.preview', {
+      sessionId: this.id,
+      ...(turn === undefined ? {} : { turn }),
+    })
+  }
+
+  /**
+   * Put a turn's file changes back. Owner only; refused while a turn runs and, as a whole, when a file
+   * changed after the turn. A retry with the same `commandId` returns the first attempt's result.
+   */
+  undo(turn: number, opts: { commandId?: string } = {}): Promise<SessionUndoResult> {
+    return this.client.call<SessionUndoResult>('_agnes/v1/session.undo', {
+      sessionId: this.id,
+      turn,
+      commandId: opts.commandId ?? crypto.randomUUID(),
+    })
   }
 
   workspaceList(path = ''): Promise<SessionWorkspaceListResult> {
