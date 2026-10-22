@@ -28,7 +28,8 @@ export function registerJobsClientContribution(): () => void {
 export function bindJobsClient(input: {
   client: Client
   current(): string | undefined
-  newTaskTitle(): string
+  /** The name the sidebar gives a session whose stored title is still empty. */
+  untitled(id: string, createdAt: string): string
 }): () => void {
   const stopJobsClient = registerJobsClientContribution()
   const stopJobsSessions = bindJobsSessions({
@@ -42,12 +43,16 @@ export function bindJobsClient(input: {
         rows.push(...page.items)
         cursor = page.next
       } while (cursor)
-      return rows.map((row) => ({
-        id: row.sessionId,
-        title: row.title || input.newTaskTitle(),
-        workspace: row.cwd?.split(/[\\/]/).filter(Boolean).at(-1) ?? '',
-        createdAt: row.createdAt,
-      }))
+      // The sidebar hides archived sessions and names untitled ones from their first message; the
+      // picker offers the same sessions under the same names.
+      return rows
+        .filter((row) => !row.archived)
+        .map((row) => ({
+          id: row.sessionId,
+          title: row.title || input.untitled(row.sessionId, row.createdAt),
+          workspace: row.cwd?.split(/[\\/]/).filter(Boolean).at(-1) ?? '',
+          createdAt: row.createdAt,
+        }))
     },
   })
   return () => {

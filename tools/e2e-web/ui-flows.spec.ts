@@ -20,6 +20,7 @@ import {
   selectValue,
   send,
   settings,
+  sidebar,
   turn,
   workbenchTab,
 } from './ui.js'
@@ -787,4 +788,29 @@ test('Checking a source with no plugin manifest explains that it is not a plugin
   await source.getByRole('button', { name: 'Check source', exact: true }).click()
   await expect(page.locator('#source-error')).toContainText('A Skill (SKILL.md) is not a plugin')
   await expect(page.getByText('The plugin operation could not complete.')).toHaveCount(0)
+})
+
+test('Settings jobs session picker lists the same sessions as the sidebar', async ({ page, runtime }) => {
+  test.setTimeout(180_000)
+  await open(page, runtime)
+  const ids: string[] = []
+  for (const text of ['say one', 'say two', 'say three']) {
+    await turn(page, text)
+    ids.push(new URL(page.url()).searchParams.get('session') ?? '')
+    if (text !== 'say three') await fresh(page)
+  }
+  const client = await runtime.connect()
+  await client.session.archive(ids[0]!, true)
+  await page.reload()
+  await sidebar(page)
+  const rows = await page.locator('.session-row').allTextContents()
+  await settings(page)
+  await page.getByTestId('settings-nav-background-jobs').click()
+  await page.getByRole('button', { name: /^Session:/ }).click()
+  const picker = page.getByTestId('jobs-session')
+  await picker.click()
+  const options = await page.locator('.ant-select-item-option').allTextContents()
+  // Same sessions, same names: the archived one is not offered, untitled ones read as in the sidebar.
+  expect(options).toHaveLength(rows.length)
+  for (const row of rows) expect(options.some((option) => option.startsWith(row.trim()))).toBe(true)
 })
