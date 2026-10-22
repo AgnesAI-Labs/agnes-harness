@@ -29,7 +29,7 @@ The direct in-process provider refuses worktree isolation because it does not pr
 The host defines the `child-agent` kind with `defineKind`. `ctx.providers` is the shared registration facade. Register from an ordinary Cordis plugin that injects `providers`:
 
 ```ts
-import type { ProviderPluginContext } from '@agnes/extension-api'
+import { childAgentKind, type ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({
@@ -68,6 +68,8 @@ continuable and release their slot. Continuing them must atomically reacquire a 
 retaining a child or collecting its result does not spend a lifetime quota. Already queued follow-up
 work retains its reservation until drained. Approval waits retain the configured timeout; an unanswered
 request reports its actual unavailable reason.
+
+The default concurrent child cap is **4**, controlled by the selected preset’s `subagent.max_fan_out`; `subagent.max_depth` bounds nesting. The application roster limit of **64** `delegableAgents` is a catalogue limit, not permission to run 64 children concurrently.
 
 ## Tools
 

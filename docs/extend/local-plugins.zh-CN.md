@@ -6,6 +6,8 @@
 
 Daemon 在启动时扫描 `<AGH_HOME>/plugins/<name>/` 和 `<workspace>/.agh/plugins/<name>/`，并监听变更。这里的 home 是实际配置的运行目录（CLI 使用 `AGH_HOME`）；workspace 是 daemon 的启动工作区。目录名使用小写字母、数字、点、下划线和连字符。
 
+全新 home 应先用 `agh daemon start` 在目录为空时初始化，再创建其中的 `plugins/`。home 根插件通过发现及既有重新扫描／重载控件管理。`agh dev FOLDER` 目前要求目录位于 daemon 启动工作区内；使用该命令请按[工作区教程](quickstart.zh-CN.md)操作，指向工作区外的 home 插件会被拒绝。
+
 目录可以包含正常包的 `package.json`，声明 `agnes.plugins` 与源码入口：
 
 ```json

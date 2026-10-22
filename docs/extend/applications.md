@@ -101,8 +101,7 @@ Role children capture one authority snapshot: the role intersected with the pare
 Skills, files, network, sandbox and read-only authority. Capture uses the same workspace resource view as
 actual reads; tools must match both definition and execution binding. Empty captured ceilings grant
 nothing, while empty composition selections retain defaults. The child's ledger restores this authority
-without a live parent; later parent changes do not propagate. Operations requiring approval or a business signature are refused and must return
-to the main assistant, including when the parent uses Full access. The delegation card and completion
+without a live parent; later parent changes do not widen the captured ceiling. Tool effects needing human approval wait on the child's decision, shown on the parent's human card and Web **Approvals** tab. Only an authenticated human can allow once or reject; no human surface means refusal. Parent or ancestor stop/close withdraws pending requests and allowances. Business signatures remain refused and must return to the main assistant, including when the parent uses Full access. The delegation card and completion
 notice retain the backend-recorded role attribution across reload. Plain spawns keep their existing behavior.
 
 ## Choose one interface implementation

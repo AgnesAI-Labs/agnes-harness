@@ -11,7 +11,7 @@ An engine chooses when to compact and how to replace older conversation context.
 Implement [CompactionEngine](../../packages/extension-api/src/compaction-engine.ts) through public package exports. Its `create()` returns an instance with `shouldCompact(budget)` and asynchronous `compact(input, { signal, model })`. Register it from an ordinary Cordis plugin that injects `providers`:
 
 ```ts
-import type { ProviderPluginContext } from '@agnes/extension-api'
+import { compactionKind, type ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({

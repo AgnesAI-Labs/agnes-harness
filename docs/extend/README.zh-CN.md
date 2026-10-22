@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-[文档](../README.zh-CN.md) · [按角色选择类型](choose-a-plugin-type.zh-CN.md) · [五分钟入门](quickstart.zh-CN.md) · [测试你的插件](testing.zh-CN.md) · [导入选择图](imports.zh-CN.md)
+[文档](../README.zh-CN.md) · [按角色选择类型](choose-a-plugin-type.zh-CN.md) · [五步工具教程](quickstart.zh-CN.md) · [测试你的插件](testing.zh-CN.md) · [导入选择图](imports.zh-CN.md)
 
 插件是完全受信任的代码，以用户权限运行。能力声明用于准入审核，不限制任意 JavaScript，也不强制 hook 白名单。`ctx.hooks.register` 接受受支持的 observe、transform、intercept hooks，不按声明的 `hooks` 列表限制注册。只授权你愿意执行的代码。
 
@@ -66,7 +66,6 @@ Host 必须提供对应注册服务，循环或适配器插件才能加载。安
 
 ## 待实现提案
 
-[提案：插件用途 metadata 与页面卡片](plugin-presentation/DESIGN.zh-CN.md) 定义可选的作者用途说明与运行时派生贡献事实，历史设计；现行规则以元数据合同为准。
 
 [用途元数据](plugin-metadata.zh-CN.md)定义可选的插件用途双语文案。
 

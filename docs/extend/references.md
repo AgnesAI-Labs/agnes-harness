@@ -9,7 +9,7 @@ Type `@` in the composer to open the picker. `@file query` searches workspace pa
 Register a provider from an in-process plugin row through the public author API:
 
 ```ts
-import type { ReferenceResolver } from '@agnes/extension-api'
+import { referenceResolverKind, type ReferenceResolver } from '@agnes/extension-api'
 import { definePlugin, defineProvider } from '@agnes/plugin-runtime'
 
 const source = defineProvider('reference-resolver', {

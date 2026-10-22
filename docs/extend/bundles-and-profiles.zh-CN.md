@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [插件类型](README.zh-CN.md) · [包管理](../guide/packages.zh-CN.md)
 
-部署执行 Profile 从插件装配运行能力；Bundle 把可复用的 profile 补丁和权限方案（Preset）打包成静态数据。应用展示由管理员另行采纳，本期不提供执行 Profile 模板采纳。安装组合包不会执行入口模块，也不会授予权限。安装、完整性校验、信任与启用仍是独立步骤。
+部署执行 Profile 从插件装配运行能力；Bundle 把可复用的 profile 补丁和执行配方（Preset）打包成静态数据。应用展示由管理员另行采纳，本期不提供执行 Profile 模板采纳。安装组合包不会执行入口模块，也不会授予权限。安装、完整性校验、信任与启用仍是独立步骤。
 
 ## 会话工具可见范围
 
@@ -16,7 +16,30 @@ Web 设置 → 高级 → 运行配置 → 技术详情 → 所有对话附加�
 
 ## 格式与选择
 
-在 `package.json` 声明 `agnes.provides: ["bundle"]` 和 `agnes.bundles`。标识为 `<package-id>#<bundle-name>`，名称以小写字母开头，可包含小写字母、数字和连字符。每个文档接受 `extends`、`profile` 和 `presets`。参见 [research 示例](../../examples/bundles/research/README.md)；英文格式示例可通过页首语言切换查看。
+在 `package.json` 声明 `agnes.provides: ["bundle"]` 和 `agnes.bundles`。标识为 `<package-id>#<bundle-name>`，名称以小写字母开头，可包含小写字母、数字和连字符。每个文档接受 `extends`、`profile` 和 `presets`。参见 [research 示例](../../examples/bundles/research/README.md)。
+
+```json
+{
+  "name": "acme/research",
+  "version": "1.0.0",
+  "agnes": {
+    "provides": ["bundle"],
+    "bundles": {
+      "base": { "profile": { "toolPolicy": { "readOnly": true } } },
+      "research": {
+        "extends": ["acme/research#base"],
+        "profile": {
+          "providers": {
+            "loop": { "provider": "example.dag", "version": "1.0.0" },
+            "compaction": { "provider": "sliding-window" }
+          }
+        },
+        "presets": { "research": { "name": "research", "extends": "standard" } }
+      }
+    }
+  }
+}
+```
 
 在用户 profile 中选择：
 
@@ -101,4 +124,4 @@ Surface listener 根据默认 preset 在部署启动时选择。`surfaces: []` �
 
 回执自进入终态起保留七天，且至少保留到审阅票据失效。中断的 running 操作在票据失效后转为 unknown，再保留七天。没有完成时间的已有终态记录从首次观察起获得七天窗口。prepare/start 写入和读取回执时的机会性清理沿用已有状态锁，每次最多扫描 10,000 条操作。启动或激活持有写锁期间，智能体和示例回执仍可读取。若保留时间戳会让日志超过 16 MiB，则将时间戳写入上限 2 MiB 的 `.dates` 伴随文件，并绑定各条记录的精确内容；复制存储时应同时保留伴随文件。写入中断最多保守延长保留期，不会套用不匹配的时间戳。10,000 条操作的准入上限保持不变；保留记录占满存储时仍以 `OVERLOADED` 拒绝新操作。回执清理后，重试对应的过期票据会被拒绝；新操作需要重新审阅。
 
-开发者示例见[五个机制教学包](../../examples/fde/README.zh-CN.md)。产品演示使用 [showcase 应用](../guide/demos.zh-CN.md)，将在同一版本提供。
+开发者示例见[五个机制教学包](../../examples/fde/README.zh-CN.md)。产品演示使用 [showcase 应用](../guide/demos.zh-CN.md)。

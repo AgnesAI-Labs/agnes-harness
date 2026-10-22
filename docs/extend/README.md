@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-[Documentation](../README.md) · [Choose a type by role](choose-a-plugin-type.md) · [Five-minute quickstart](quickstart.md) · [Test your plugin](testing.md) · [Import map](imports.md)
+[Documentation](../README.md) · [Choose a type by role](choose-a-plugin-type.md) · [Five-step tool tutorial](quickstart.md) · [Test your plugin](testing.md) · [Import map](imports.md)
 
 Plugins are fully trusted code running with the user's rights. Capability declarations are reviewed at admission; they do not restrict arbitrary JavaScript or enforce a hook allowlist. `ctx.hooks.register` accepts the supported observe, transform and intercept hooks regardless of the declared `hooks` list. Use only code you intend to authorize.
 
@@ -82,7 +82,6 @@ Drop a source plugin into the [local plugins folder](local-plugins.md), or [buil
 
 ## Proposals
 
-[Proposed plugin metadata and purpose cards](plugin-presentation/DESIGN.md) defines optional author-owned descriptions and runtime-derived contribution facts; it is historical; use the current purpose metadata contract below.
 
 [Purpose metadata](plugin-metadata.md) defines optional localized plugin purpose text.
 

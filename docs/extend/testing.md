@@ -41,6 +41,8 @@ This lightweight fixture mounts a verified third-party row through the productio
 
 For durable policy, approvals and ledger facts, use the full session fixture below. The lightweight fixture invokes the tool directly and does not manufacture session approvals or ledger events.
 
+For stateful tools, pass `packageDir` to read the actual manifest capabilities and an isolated `storeDir` to enable the owner/profile store. The manifest must declare `capabilities.store: true`; a directory alone grants nothing. Dispose and recreate `createPluginTestHost(main, { packageDir, storeDir })` with that same directory to test retention. `invokeProfileService(name, value)` exercises declared query/effect handlers and their schemas, but not native decisions or the operation journal. For filesystem, network or process I/O, supply only the explicit `context` ports your test needs; missing I/O must fail. Extend assertions for the requested behavior, invalid input, cancellation, refusal and cleanup. The [panel starter test](../../templates/tool-with-panel/test/plugin.test.mjs) demonstrates store retention, missing-store refusal and tool/service agreement.
+
 ## Real sessions, approvals, ledger and upgrades
 
 ```js

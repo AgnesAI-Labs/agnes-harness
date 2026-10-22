@@ -16,7 +16,7 @@ Core 冷打开检查序号/链结构并只哈希尾部，随后自动后台哈�
 
 默认用量计费、refine 提案、MCP 索引、审批授权和锁定包操作回执均使用按所有者隔离的 metadata。包 seam 使用 `adapters.storage.namespace(name)`；Host 绑定所有者，包不能通过该句柄选择其他所有者。值必须可序列化为 JSON，读取返回独立副本。`transaction(fn)` 同步且原子，抛错或返回 Promise 会回滚。子任务身份和树预算仍归 `childControl`，过期租约及操作状态检查归 `reclaim`。
 
-包 seam 必须收到 `adapters.storage.namespace(name)`：Host 始终提供，手工构造的 seam 视图也必须提供。包状态保存在该命名空间的 metadata 中，没有 SQL 回退（`storage.sql` 已在扩展 API 5.0.0 中移除，见[变更记录](../../packages/extension-api/docs/CHANGELOG.md)）。`adapters.storage.table(name)` 仅保留给声明 SQL 支持的扩展，非 SQL 后端会明确拒绝。SQLite 内置 provider 的账本和子任务格式保持不变。不再从旧表复制任何数据：用量、refine、审批授权和锁定包操作回执只从 metadata 读取，MCP 索引启动时重建。存储发现旧布局时会拒绝打开，并在报错中指明需要删除或重置的对象，而不是迁移。旧数据不会被转换，删除前请先备份。
+包 seam 必须收到 `adapters.storage.namespace(name)`：Host 始终提供，手工构造的 seam 视图也必须提供。包状态保存在该命名空间的 metadata 中，没有 SQL 回退（`storage.sql` 已在扩展 API 5.0.0 中移除，见[变更记录](../../packages/extension-api/docs/CHANGELOG.md)）。`adapters.storage.table(name)` 仅保留给声明 SQL 支持的扩展，非 SQL 后端会明确拒绝。SQLite 内置 provider 在 `sessions.db` 的 `PRAGMA user_version` 中统一标记数据目录格式，覆盖账本、子任务控制与插件表。不兼容存储在打开前以 `E_DATA_DIR_STALE` 或 `E_DATA_DIR_NEWER` 拒绝；见[重置与升级](../guide/install.zh-CN.md#数据格式与升级)。不再从旧表复制任何数据：用量、refine、审批授权和锁定包操作回执只从 metadata 读取，MCP 索引启动时重建。存储发现旧布局时会拒绝打开，并在报错中指明需要删除或重置的对象，而不是迁移。旧数据不会被转换，删除前请先备份。
 
 运行 `@agnes/extension-api/testkit/persistence-contract` 的 `persistenceContract` 和 `persistenceHostContract`，仅声明 SQL 时运行 `persistenceSqliteContract`。还需通过真实 Host 注册端口运行 `persistenceConformance`，验证完整回合和冷恢复。持久化方法没有 `AbortSignal`，应明确标记不支持取消，同时验证卸载等待在途操作结束。
 

@@ -31,7 +31,7 @@ mkdir -p .agh/plugins
 node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/hello-tool --local
 ```
 
-The package exports `./src/index.ts`. AGH transpiles it with jiti and provides the public author SDK imports, including TypeBox. You can also place it in `$AGH_HOME/plugins/hello-tool`; use the same configured home in every terminal. Local folders opt into trusted execution; use `agh dev` to activate the folder and put only code you intend to run there.
+The package exports `./src/index.ts`. AGH transpiles it with jiti and provides the public author SDK imports, including TypeBox. Keep this tutorial’s plugin below the daemon startup workspace: `dev` refuses paths outside it. Local folders opt into trusted execution; use `agh dev` to activate the folder and put only code you intend to run there.
 
 The tool starter declares `agnes.provides: ["tool"]` and a `capabilities: {}` on its plugin entry so inspection can show its type and requested capability scope without executing it. Update these declarations when adding functionality or side effects; the panel starter declares UI and owner-store access and the loop starter declares model access. See [capability declarations](../guide/packages.md#capabilities) for the field format and examples; the empty object suits this pure echo tool. Declare the actual scope before adding file, network or process access.
 
@@ -99,7 +99,7 @@ To compile a starter or run its author tests, build the preview SDK declarations
 ```sh
 AGH_PLUGIN="$PWD/.agh/plugins/hello-tool"
 cd "$AGH_SOURCE"
-nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
+mise exec -- node tools/toolchain/run.mjs exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
 node templates/link-local.mjs "$AGH_PLUGIN"
 npm --prefix "$AGH_PLUGIN" run build
 npm --prefix "$AGH_PLUGIN" test

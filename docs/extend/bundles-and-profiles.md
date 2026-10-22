@@ -4,7 +4,7 @@ English | [简体中文](bundles-and-profiles.zh-CN.md)
 
 [Documentation](../README.md) · [Plugin kinds](README.md) · [Package management](../guide/packages.md)
 
-A deployment execution profile assembles runtime capabilities from plugins. A Bundle packages reusable profile patches and permission profiles (Presets) as static data. Application presentation is adopted separately; this release does not adopt execution profile templates. Installing a bundle does not execute an entry module or grant permissions. Installation, integrity verification, trust and enablement remain separate steps.
+A deployment execution profile assembles runtime capabilities from plugins. A Bundle packages reusable profile patches and execution recipes (Presets) as static data. Application presentation is adopted separately; this release does not adopt execution profile templates. Installing a bundle does not execute an entry module or grant permissions. Installation, integrity verification, trust and enablement remain separate steps.
 
 ## Session tool visibility
 
@@ -127,4 +127,4 @@ Ordinary agent launches and the restricted example-management facade use review 
 
 Receipts are retained for seven days after reaching a terminal state, and at least until the review ticket expires. An interrupted running operation becomes unknown once its ticket expires and is then retained for seven days. Existing terminal records without a completion timestamp receive a seven-day window from their first observation. Prepare/start writes and opportunistic receipt reads prune eligible records under the existing state lock, scanning at most 10,000 operations per call. Agent and example receipt reads remain available while a start or activation holds that lock. When retention timestamps would overflow the 16 MiB journal, they are persisted in a bounded 2 MiB `.dates` companion, bound to each exact record; keep the companion with the journal when copying the store. Interrupted writes can conservatively extend retention, never apply an unmatched timestamp. The 10,000-operation admission limit still refuses new work with `OVERLOADED` if retained records fill the store. Once a receipt is pruned, retrying its expired ticket is refused; prepare a new review for a new operation.
 
-Developer examples are the [five mechanism teaching packages](../../examples/fde/README.md). Product demos use [showcase applications](../guide/demos.md), coming in the same release.
+Developer examples are the [five mechanism teaching packages](../../examples/fde/README.md). Product demos use [showcase applications](../guide/demos.md).

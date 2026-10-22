@@ -31,7 +31,7 @@ mkdir -p .agh/plugins
 node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/hello-tool --local
 ```
 
-包入口是 `./src/index.ts`。AGH 用 jiti 按需转译，并提供公共作者 SDK 和 TypeBox。也可以放到 `$AGH_HOME/plugins/hello-tool`，每个终端使用同一个配置 home。本地目录意味着选择信任并执行其中代码，只放你愿意运行的插件。
+包入口是 `./src/index.ts`。AGH 用 jiti 按需转译，并提供公共作者 SDK 和 TypeBox。本教程将插件保留在 daemon 启动工作区内；`dev` 拒绝工作区外的路径。每个终端使用同一 home。本地目录意味着选择信任并执行其中代码，只放你愿意运行的插件。
 
 工具模板声明 `agnes.provides: ["tool"]` 与 插件条目上的 `capabilities: {}`，预览无需执行代码即可展示类型与请求的能力范围。新增功能或副作用时请更新这些声明；面板模板声明 UI 与 owner store 能力，Loop 模板声明模型能力。能力字段的完整格式和示例见[声明能力](../guide/packages.zh-CN.md#能力声明)；空对象适合此纯回声工具，增加文件、网络或进程访问前应按实际范围声明。
 
@@ -99,7 +99,7 @@ node "$AGH_SOURCE/agnes.mjs" plugins reload hello-tool --profile local-dev
 ```sh
 AGH_PLUGIN="$PWD/.agh/plugins/hello-tool"
 cd "$AGH_SOURCE"
-nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
+mise exec -- node tools/toolchain/run.mjs exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
 node templates/link-local.mjs "$AGH_PLUGIN"
 npm --prefix "$AGH_PLUGIN" run build
 npm --prefix "$AGH_PLUGIN" test

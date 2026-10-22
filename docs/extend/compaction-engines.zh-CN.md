@@ -11,7 +11,7 @@
 通过公开包出口实现 [CompactionEngine](../../packages/extension-api/src/compaction-engine.ts)。`create()` 返回实例，提供 `shouldCompact(budget)` 与异步的 `compact(input, { signal, model })`。在注入 `providers` 的普通 Cordis 插件中注册：
 
 ```ts
-import type { ProviderPluginContext } from '@agnes/extension-api'
+import { compactionKind, type ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({

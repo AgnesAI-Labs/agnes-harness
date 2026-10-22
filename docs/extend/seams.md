@@ -23,7 +23,7 @@ The contracts live in `@agnes/extension-api/seams`. `sandbox` is the existing [s
 Register from an ordinary Cordis plugin that injects `providers`, exactly like any other provider:
 
 ```ts
-import type { ProviderPluginContext } from '@agnes/extension-api'
+import { checkpointKind, type ProviderPluginContext } from '@agnes/extension-api'
 import type { CheckpointProvider } from '@agnes/extension-api/seams'
 
 const checkpoint: CheckpointProvider = {

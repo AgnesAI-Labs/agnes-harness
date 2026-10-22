@@ -23,7 +23,7 @@ seam 是内核以单个类型化对象消费的必要运行时能力：审批投
 在注入 `providers` 的普通 Cordis 插件里注册，与其它 provider 完全一样：
 
 ```ts
-import type { ProviderPluginContext } from '@agnes/extension-api'
+import { checkpointKind, type ProviderPluginContext } from '@agnes/extension-api'
 import type { CheckpointProvider } from '@agnes/extension-api/seams'
 
 const checkpoint: CheckpointProvider = {

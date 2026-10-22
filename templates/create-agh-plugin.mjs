@@ -45,7 +45,7 @@ The preview Agnes SDK packages are not on npm. Use an installed source checkout 
 AGH_SOURCE="/absolute/path/to/agnes-harness"
 AGH_PLUGIN="/absolute/path/to/${leaf}"
 cd "$AGH_SOURCE"
-nice -n 10 pnpm exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
+mise exec -- node tools/toolchain/run.mjs exec tsc -b packages/plugin-runtime packages/protocol packages/resource-control-runtime
 node templates/link-local.mjs "$AGH_PLUGIN"
 npm --prefix "$AGH_PLUGIN" run build
 node "$AGH_SOURCE/agnes.mjs" plugin test "$AGH_PLUGIN"

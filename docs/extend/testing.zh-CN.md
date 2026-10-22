@@ -40,6 +40,8 @@ try {
 
 轻量 fixture 直接执行工具，不生成会话审批或 ledger。需要持久化策略、审批和效果事实时使用下面的完整会话工具。
 
+有状态工具测试应传入 `packageDir` 以读取真实清单能力，并用隔离 `storeDir` 启用 owner/profile 存储。清单必须声明 `capabilities.store: true`，仅有目录不授予能力。销毁后使用同一目录重建 `createPluginTestHost(main, { packageDir, storeDir })`，检查状态保留。`invokeProfileService(name, value)` 验证声明的 query/effect handler 与 schema，不模拟原生裁决或 operation journal。文件、网络或进程 I/O 只提供测试实际需要的 `context` 端口；缺少 I/O 必须失败。断言应覆盖请求行为、无效参数、取消、拒绝和清理。[面板模板测试](../../templates/tool-with-panel/test/plugin.test.mjs)展示了存储保留、无 store 拒绝以及工具与服务的数据一致性。
+
 ## 真实会话、审批、ledger 与热升级
 
 ```js

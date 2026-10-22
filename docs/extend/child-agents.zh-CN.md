@@ -29,7 +29,7 @@
 Host 用 `defineKind` 定义 `child-agent` 类型。`ctx.providers` 是统一注册入口。从注入 `providers` 的普通 Cordis 插件注册：
 
 ```ts
-import type { ProviderPluginContext } from '@agnes/extension-api'
+import { childAgentKind, type ProviderPluginContext } from '@agnes/extension-api'
 import { defineAgnesPlugin, type Context } from '@agnes/plugin-runtime'
 
 export const main = defineAgnesPlugin({
@@ -66,6 +66,8 @@ Fan-out 限制统计并发预约：创建、执行、等待人类和恢复占用
 停止后为 `interrupted`；仍可继续，但释放名额。再次执行须原子重新取得父方/root 名额；保留子任务
 或收集结果不会消耗终身配额。已有排队续作时，预约保留至队列处理完。审批等待仍遵守配置的
 超时；无人回答时如实报告不可用原因。
+
+默认并发子任务上限为 **4**，由所选预设的 `subagent.max_fan_out` 控制，`subagent.max_depth` 限制嵌套深度。应用最多 **64** 个 `delegableAgents` 是目录上限，不代表可以同时运行 64 个子任务。
 
 ## 工具
 

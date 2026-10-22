@@ -6,6 +6,8 @@ English | [简体中文](local-plugins.zh-CN.md)
 
 The daemon discovers immediate plugin directories under `<AGH_HOME>/plugins/<name>/` and `<workspace>/.agh/plugins/<name>/`. `<AGH_HOME>` means the configured runtime home (the CLI uses `AGH_HOME`); the workspace is the daemon startup workspace, not every session cwd. Folder names use lowercase letters, digits, dots, underscores and hyphens.
 
+For a fresh home, let `agh daemon start` initialize it while empty before creating its `plugins/` folder. Home-root plugins use discovery and the existing rescan/reload controls. `agh dev FOLDER` currently requires a folder below the daemon startup workspace, so use the [workspace tutorial](quickstart.md) for that command; pointing it at an external home plugin is refused.
+
 A folder can contain a normal package with `package.json`, `agnes.plugins` and a source entry:
 
 ```json
