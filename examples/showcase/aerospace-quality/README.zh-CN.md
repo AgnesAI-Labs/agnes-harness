@@ -43,7 +43,7 @@ Demo 模型可用显式调用：`call aero_investigate {"anomalyId":"AN-027"}`�
 
 技能成长先通过 `aero_rule_propose` 产生未启用领域候选，再用 `aero_skill_candidate` prepare/commit 提交真实宿主 Skill 安装提议；commit 需要原生人工批准，下一轮生效。另由人通过 `aero_decide(kind=rule)` 批准项目内筛选策略，下一次更改分析会显示 v1 及追加筛选要求。不会自动发布代码。
 
-页面只通过声明的 profile services 读写，业务数据归属 owner/profile store。操作 ID 与原回执持久保存，按档案、激活和客户端修订隔离；重开只查询原操作，不以新 ID 重试不确定操作。数据修订变化拒绝旧审批，浏览器存储失败阻止发送。角色预设选择包内公开 `aero-human-review` 工具策略，保留普通工具权限。业务签名独立请求人工、仅本次，绑定对象与项目修订；会话/永久工具授权及完全访问模式不能免除业务签名。工具核验宿主证明，事务再次比较当前修订。UI 标签不能授权；受信 JS 不等于沙箱。
+页面只通过声明的 profile services 读写，业务数据归属 owner/profile store。操作 ID 与原回执持久保存，按档案、激活和客户端修订隔离；重开只查询原操作，不以新 ID 重试不确定操作。数据修订变化拒绝旧审批，浏览器存储失败阻止发送。角色预设选择包内公开 `aero-human-review` 工具策略，保留普通工具权限。业务签名独立请求人工、仅本次，绑定对象与项目修订；会话/永久工具授权不能替代业务裁决；完全访问下由 Host 代表主会话真人自动确认符合合同的业务签署，其他权限由人确认。工具核验宿主证明，事务再次比较当前修订。UI 标签不能授权；受信 JS 不等于沙箱。
 
 `aero_report` 在授权工作区 `aero-output/` 创建唯一 Markdown / 可打印 HTML 文件，再调用 `present` 转为持久交付物。HTML 转义内容，不使用 artifact URL 作为 present 输入。执行记录 / 来源视图显示工具输入、审批、effects、包完整性与会话 pin。升级后在途会话保留后端绑定，档案页面跟随当前激活；应用采纳不会改变执行身份。
 
@@ -62,13 +62,13 @@ pnpm gen:check
 
 Host 测试覆盖持久数据、重启、拒绝、取消、修订漂移、审批事实与 pin；公开面板测试覆盖双语页面、筛选和原操作恢复。显式 `test/acceptance.e2e.mjs` 验收脚本覆盖隔离 home 的安装/检查/采纳、截图、真实模型和自动化；不进入快速测试。付费模式请遵循脚本头说明，禁止输出或保存密钥。[领域说明](DOMAIN-NOTES.md) 记录标准参考和建模边界。`/?admin` 或 `agh app clear` 可恢复宿主呈现；只停止本次试用的 daemon。
 
-领域策略允许 `aero_report` 进行有界证据导出：输入仅限报告类型/语言白名单，在 `aero-output/` 创建新文件并通过 `present` 交付。这使带来源污点的调度提示能够生成报告；MRB、技术状态、规则启用与归零关闭仍逐次要求准确的人工决定。
+领域策略允许 `aero_report` 进行有界证据导出：输入仅限报告类型/语言白名单，在 `aero-output/` 创建新文件并通过 `present` 交付。这使带来源污点的调度提示能够生成报告；MRB、技术状态、规则启用与归零关闭仍逐次要求精确业务裁决，符合合同的完全访问请求由 Host 自动确认。
 
 ## 业务签名
 
 MRB 处置、技术状态更改、规则启用与归零关闭属于业务签署。工具以 `business.confirm` 绑定精确参数、对象、版本、证据及签名含义。完全访问下，宿主代表选择该权限的会话真人提交声明的批准值，不出现待审卡片；回执、审计及放行证书／关闭记录明确标注 **完全访问下自动确认**，不能冒充人工点击或模型签名。其他权限保留人工签署、拒绝、取消和过期语义。宿主单次消费原决策，私有凭证在存储事务内复核当前 epoch、取消及有效期，提交前收窄权限会阻止写入。批准合同缺失或歧义时仍请求人工。页面 effect 保留宿主人工确认与修订校验。
 
-真实模型投资者演示：仓根通过工具链入口执行 `exec node --import tsx examples/showcase/scripts/presentation.mjs aerospace-quality --real`，外层使用 heavy-lock 和 web-gate-lock，按任务要求从 keychain 命令级注入密钥。截图与费用默认保存在隔离运行目录；`AGH_SHOWCASE_SHOTS` 可指定外部报告目录，`AGH_SHOWCASE_PRIOR_USD` 将此前付费尝试计入每应用 $3 总额。原验收脚本的 `--real` 也转交此自然对话流程。
+可选真实模型验收：仓根通过工具链入口执行 `exec node --import tsx examples/showcase/scripts/presentation.mjs aerospace-quality --real`，外层使用 heavy-lock 和 web-gate-lock，仅为该命令安全提供 `AGH_DEMO_API_KEY`。截图与费用默认保存在隔离运行目录；`AGH_SHOWCASE_SHOTS` 可指定外部报告目录，`AGH_SHOWCASE_PRIOR_USD` 将此前付费尝试计入每应用 $3 总额。原验收脚本的 `--real` 也转交此自然对话流程。
 
 签署卡按当前界面语言展示业务对象、审阅版本、精确签名含义及证据链接；宿主答复必须返回该展示版本绑定的原文。回执和审计保存所见含义；仅返回旧式空答复不能完成新签署。
 
