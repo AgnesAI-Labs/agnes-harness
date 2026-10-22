@@ -68,6 +68,7 @@ it.each(['revoked', 'narrowed', 'closed', 'cancelled', 'expired', 'actor-changed
         () => undefined,
         () => s.request(),
         async () => current,
+        () => current,
       )
       await withPermissionContext(
         context,
@@ -84,6 +85,7 @@ it.each(['revoked', 'narrowed', 'closed', 'cancelled', 'expired', 'actor-changed
             controller.signal,
           ),
         async () => current,
+        () => current,
       )
       if (reason === 'revoked' || reason === 'narrowed')
         current = { ...context, epoch: 1, policy: 'workspace-write' }
@@ -462,6 +464,13 @@ it.each(['full-access', 'workspace-write'])(
         policy,
         actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
       }),
+      () => ({
+        sessionKey: 'session',
+        sessionId: 'fixture-backend',
+        epoch: 0,
+        policy,
+        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      }),
     )
     expect(s.ask).toHaveBeenCalledTimes(policy === 'full-access' ? 0 : 2)
     if (policy === 'full-access') {
@@ -573,12 +582,14 @@ async function skillLeaseBoundary(boundary: string, stage: string) {
       () => undefined,
       () => s.request(),
       async () => current,
+      () => current,
     )
     await withPermissionContext(
       context,
       () => undefined,
       () => s.request({ action: 'commit', proposalId: prepared.proposalId }),
       async () => current,
+      () => current,
     )
     const terminal = await vi.waitUntil(
       async () => {

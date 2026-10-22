@@ -209,3 +209,65 @@ it('stamps session policy outside tool params and persists automatic decision ev
   await expect(failed).rejects.toMatchObject({ code: 'E_REQUEST' })
   expect(evidence).toContainEqual({ reason: 'full-access', failed: true })
 })
+
+it('retains the revocation handshake after a background submission settles, until the session releases', async () => {
+  const context = {
+    sessionKey: 'owner',
+    sessionId: 'instance',
+    epoch: 0,
+    policy: 'full-access',
+    actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+  }
+  let revoke: (() => Promise<void>) | undefined
+  const sent: Array<{ method: string; requestId: string }> = []
+  const channel = new SharedSessionChannel(
+    (raw) => {
+      const frame = raw as { method: string; requestId: string }
+      sent.push(frame)
+      if (frame.method === 'permission-revoke')
+        queueMicrotask(() =>
+          channel.settle({ kind: 'reply', sessionKey: 'owner', requestId: frame.requestId, result: null }),
+        )
+    },
+    {
+      context: () => context,
+      record: async () => undefined,
+      beforeChange: (_key, listener) => {
+        revoke = listener
+        return () => {
+          revoke = undefined
+        }
+      },
+    },
+  )
+  const submitted = channel.run('owner', () =>
+    channel.request('skill-install', {}, new AbortController().signal),
+  )
+  channel.settle({
+    kind: 'reply',
+    sessionKey: 'owner',
+    requestId: sent[0]!.requestId,
+    result: { state: 'submitted' },
+  })
+  expect(await submitted).toEqual({ state: 'submitted' })
+  expect(channel.hasPending('owner')).toBe(false)
+  if (!revoke) throw new Error('Missing revocation subscription')
+  await revoke()
+  expect(sent.at(-1)).toMatchObject({
+    method: 'permission-revoke',
+    params: { sessionId: 'instance', epoch: 0 },
+  })
+  channel.releaseSession('owner')
+  expect(revoke).toBeUndefined()
+  channel.closeAll()
+})
+
+it('rejects new authority requests immediately after worker transport closure', async () => {
+  const channel = new SharedSessionChannel(() => {
+    throw new Error('must not send')
+  })
+  channel.closeAll()
+  await expect(
+    channel.run('closed', () => channel.request('permission-revoke', {}, new AbortController().signal)),
+  ).rejects.toThrow('worker channel closed')
+})

@@ -30,6 +30,7 @@ type PermissionScope = {
   context: PermissionContext
   record(evidence: AutomaticPermissionEvidence): unknown
   verify(): Promise<PermissionContext | undefined>
+  current?: (() => PermissionContext | undefined) | undefined
   grants: Map<string, AutomaticPermissionEvidence>
 }
 const scope = new AsyncLocalStorage<PermissionScope>()
@@ -44,9 +45,10 @@ export function withPermissionContext<T>(
   record: (evidence: AutomaticPermissionEvidence) => unknown,
   work: () => T,
   verify: () => Promise<PermissionContext | undefined>,
+  current?: () => PermissionContext | undefined,
 ): T {
   const owned = structuredClone(context)
-  return scope.run({ context: owned, record, verify, grants: new Map() }, work)
+  return scope.run({ context: owned, record, verify, current, grants: new Map() }, work)
 }
 export async function assertCurrentPermission(): Promise<void> {
   const current = scope.getStore()
@@ -103,6 +105,7 @@ export async function acquirePermissionLease(
     assertBound: () => {
       if (
         !grant ||
+        !samePermissionContext(current.context, current.current?.()) ||
         current.grants.get(grant.requestId) !== grant ||
         grant.sessionId !== current.context.sessionId ||
         grant.epoch !== current.context.epoch

@@ -104,6 +104,9 @@ export function createWorkerRequests(
           return skillInstallRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
         },
         () => verifyPermission(sessionKey),
+        f.permissionContext
+          ? pool.businessWorker()?.link.permissionFence.bind(f.permissionContext)
+          : undefined,
       )
     if (f.method === 'plugin-manage-abort')
       return pluginManageRequests(sessionKey, f.requestId, f.method, f.params, workerSignal)
@@ -132,6 +135,9 @@ export function createWorkerRequests(
           resourceControlDirectory,
           () => prompter.ask(request, { signal: AbortSignal.any([workerSignal, controller.signal]) }),
           () => verifyPermission(sessionKey),
+          f.permissionContext
+            ? pool.businessWorker()?.link.permissionFence.bind(f.permissionContext)
+            : undefined,
         )
       } finally {
         permissionRequests.delete(permissionKey)

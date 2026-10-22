@@ -106,6 +106,13 @@ it('review: full-access publication cannot publish a different session candidate
         policy: 'full-access',
         actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
       }),
+      () => ({
+        sessionKey: 'different-session',
+        sessionId: 'other-backend',
+        epoch: 0,
+        policy: 'full-access',
+        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      }),
     ),
   ).rejects.toBeDefined()
   expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
@@ -276,6 +283,13 @@ async function setup(candidateTestPolicy?: 'allow' | 'ask') {
           run,
 
           async () => ({
+            sessionKey: 'session',
+            sessionId: 'fixture-backend',
+            epoch: 0,
+            policy: 'full-access',
+            actor: { id: ownerId, org: 'local', role: 'owner', deptPath: [], attrs: {} },
+          }),
+          () => ({
             sessionKey: 'session',
             sessionId: 'fixture-backend',
             epoch: 0,

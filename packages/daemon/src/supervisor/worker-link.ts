@@ -19,6 +19,7 @@ import type {
 import { parseWorkerHello } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
 import { packageManageReplyError } from './package-manage-error.js'
+import { PermissionFence } from './permission-fence.js'
 import { PermissionRequestFailure } from './permission-requests.js'
 import { skillInstallReplyError } from './skill-install-error.js'
 
@@ -96,6 +97,7 @@ export class WorkerSessionChannel {
 
 /** One process-wide connection. Session routing remains explicit on every session frame. */
 export class WorkerLink {
+  readonly permissionFence = new PermissionFence()
   private readonly requestsLifetime = new AbortController()
   private readonly sessionRequests = new Map<string, AbortController>()
   readonly hello: Promise<WorkerHello>
@@ -243,6 +245,7 @@ export class WorkerLink {
   }
 
   private failSession(sessionKey: string, error: unknown): void {
+    this.permissionFence.closeSession(sessionKey)
     this.failedSessions.add(sessionKey)
     this.sessionRequests.get(sessionKey)?.abort('stopped')
     this.sessionRequests.delete(sessionKey)
@@ -335,6 +338,14 @@ export class WorkerLink {
       if (replySessionKey) this.options.onActivity?.(replySessionKey)
       return
     }
+    if (frame.method === 'permission-revoke') {
+      const context = frame.params as { sessionId?: unknown; epoch?: unknown } | null
+      if (typeof context?.sessionId !== 'string' || typeof context.epoch !== 'number')
+        throw new Error('Invalid permission revocation')
+      this.permissionFence.revoke(frame.sessionKey, context.sessionId, context.epoch)
+      this.send({ kind: 'reply', sessionKey: frame.sessionKey, requestId: frame.requestId, result: null })
+      return
+    }
     let sessionLifetime = this.sessionRequests.get(frame.sessionKey)
     if (!sessionLifetime) {
       sessionLifetime = new AbortController()
@@ -381,6 +392,7 @@ export class WorkerLink {
   private markDead(): void {
     if (!this.alive) return
     this.alive = false
+    this.permissionFence.close()
     this.requestsLifetime.abort('stopped')
     for (const requestId of [...this.pending.keys()])
       this.settle(requestId, (pending) => pending.reject(new Error('worker link closed')))
@@ -445,6 +457,7 @@ export class WorkerLink {
     options: WorkerCommandOptions = {},
   ): Promise<SessionOpenResult> {
     if (!this.alive) return Promise.reject(new Error('worker link closed'))
+    this.permissionFence.openSession(sessionKey)
     const requestId = `s${this.nextId++}`
     const signal = options.historySignal
     const cancel = () => {
@@ -482,6 +495,7 @@ export class WorkerLink {
   }
 
   async closeSession(sessionKey: string, reason: string, options: WorkerCommandOptions = {}): Promise<void> {
+    this.permissionFence.closeSession(sessionKey)
     this.revokeSessionRequests(sessionKey)
     try {
       await this.sendSessionLifecycle('session.close', sessionKey, { reason }, options)

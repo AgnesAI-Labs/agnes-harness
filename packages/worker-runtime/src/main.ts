@@ -16,7 +16,7 @@ import { requestPluginManage } from './plugin-manage.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { runtimeSkillView } from './skill-view.js'
-import { connectSupervisor } from './supervisor-connection.js'
+import { connectSupervisor, observeSupervisorClosure } from './supervisor-connection.js'
 import { workerDomainFailure } from './worker-errors.js'
 
 export { scanSkills } from '@agnes/resource-control-worker'
@@ -647,6 +647,7 @@ export async function runWorker(
       return
     }
     if (frame.kind === 'close') {
+      sharedChannel.closeAll()
       await shutdown(0)
       return
     }
@@ -854,8 +855,7 @@ export async function runWorker(
     }
     void dispatchFrames(frames as SupervisorToWorker[]).catch(() => shutdown(1))
   })
-  link.on('close', () => void shutdown(0))
-  link.on('error', () => void shutdown(1))
+  observeSupervisorClosure(link, () => sharedChannel.closeAll(), shutdown)
 
   const hello: WorkerHello = {
     kind: 'hello',

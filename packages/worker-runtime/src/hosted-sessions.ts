@@ -406,6 +406,7 @@ export class HostedSessions {
       } finally {
         this.options.host.kernel.sessions.delete(key)
         this.options.channel.closeSession(key)
+        this.options.channel.releaseSession(key)
       }
       this.log(key, 'info', `session hibernated in ${this.clock() - started} ms`)
     })().finally(() => this.hibernating.delete(key))
@@ -598,6 +599,7 @@ export class HostedSessions {
         // map. Always release the kernel registration as well, otherwise no owner remains that can
         // clean the stale key and a later session.open for the same key fails with E_LANE_BUSY.
         this.options.host.kernel.sessions.delete(sessionKey)
+        this.options.channel.releaseSession(sessionKey)
       }
     })().finally(() => {
       if (this.closing.get(sessionKey) === closing) this.closing.delete(sessionKey)

@@ -547,3 +547,109 @@ it.each(['standard', 'full-access'])(
     }
   },
 )
+
+it.each(['yolo', 'preset', 'close', 'revoke', 'rebind'] as const)(
+  'waits for the backend revocation fence before acknowledging %s',
+  async (operation) => {
+    const f = await fixture('workspace-write')
+    await f.session.setYolo(true, actor)
+    const epoch = f.session.permissionContext.epoch
+    let release!: () => void,
+      enter!: () => void,
+      acknowledged = false
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const off = f.session.onBeforePermissionChange(async () => {
+      enter()
+      await held
+    })
+    const operator = structuredClone(actor)
+    const changing = (
+      operation === 'yolo'
+        ? f.session.setYolo(false, operator)
+        : operation === 'preset'
+          ? f.session.setPreset(presetDefaults())
+          : operation === 'revoke'
+            ? f.session.revokeAutomaticPermissions()
+            : operation === 'rebind'
+              ? f.session.inheritAutomaticPermissions(undefined)
+              : f.session.close()
+    ).then(() => {
+      acknowledged = true
+    })
+    operator.id = 'changed-after-call'
+    try {
+      await entered
+      expect(acknowledged).toBe(false)
+      release()
+      await changing
+      expect(acknowledged).toBe(true)
+      expect(f.session.permissionContext.epoch).toBeGreaterThan(epoch)
+      if (operation === 'yolo') {
+        const [row] = await f.session.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 })
+        expect(row?.actor.id).toBe(actor.id)
+      }
+      if (operation !== 'preset' && operation !== 'revoke')
+        expect(f.session.permissionContext.policy).not.toBe('full-access')
+    } finally {
+      release()
+      off()
+      await changing
+      await f.session.close()
+    }
+  },
+)
+
+it('refuses a permission switch when the remote fence is unavailable', async () => {
+  const f = await fixture('full-access')
+  const off = f.session.onBeforePermissionChange(async () => {
+    throw new Error('fence unavailable')
+  })
+  try {
+    await expect(f.session.setYolo(false, actor)).rejects.toThrow('fence unavailable')
+    expect(await f.session.scan({ type: 'x/core/yolo-switch', limit: 10 })).toEqual([])
+  } finally {
+    off()
+    await f.session.close()
+  }
+})
+
+it('waits for descendant effect owners before acknowledging a parent downgrade', async () => {
+  const parent = await fixture('workspace-write'),
+    child = await fixture('workspace-write')
+  await parent.session.setYolo(true, actor)
+  await child.session.inheritAutomaticPermissions(parent.session)
+  let release!: () => void,
+    enter!: () => void,
+    acknowledged = false
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const entered = new Promise<void>((resolve) => {
+    enter = resolve
+  })
+  const off = child.session.onBeforePermissionChange(async () => {
+    enter()
+    await held
+  })
+  const changing = parent.session.setYolo(false, actor).then(() => {
+    acknowledged = true
+  })
+  try {
+    await entered
+    expect(acknowledged).toBe(false)
+    release()
+    await changing
+    expect(child.session.permissionContext.policy).not.toBe('full-access')
+  } finally {
+    release()
+    off()
+    await changing
+    await child.session.close()
+    await parent.session.close()
+  }
+})

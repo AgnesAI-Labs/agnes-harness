@@ -194,7 +194,11 @@ import { continueParked } from './parked.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
-import { permissionOperator, SessionPermissionAuthority } from './session-permission-authority.js'
+import {
+  permissionOperator,
+  SessionPermissionAuthority,
+  setSessionYolo,
+} from './session-permission-authority.js'
 import { invalidatePermissionProjection } from './session-permission-projection.js'
 import { sessionToolCatalog } from './tool-catalog.js'
 import { effectiveToolPolicy } from './tool-policy.js'
@@ -717,20 +721,24 @@ export class SessionImpl {
   onPermissionChange(listener: () => void): () => void {
     return this.authorization.subscribe(listener)
   }
-  revokeAutomaticPermissions(): void {
+  onBeforePermissionChange(listener: () => Promise<void>): () => void {
+    return this.authorization.beforeChange(listener)
+  }
+  preparePermissionRevocation(): Promise<void> {
+    return this.authorization.prepare()
+  }
+  revokeAutomaticPermissions(): Promise<void> {
+    const revocation = this.preparePermissionRevocation()
     this.authorization.revoke()
+    return revocation
   }
 
   /** The live parent permission is bound to; `false` until the first binding, which happens at open. */
   private permissionParent: SessionImpl | undefined | false = false
 
-  /**
-   * Backend child admission binds permission to the live parent, including later revocation. The
-   * projection notice is appended only when this changes the binding of a session that was bound
-   * before: the first binding happens as the session opens, when no reader is watching it, and a
-   * reader that attaches later reads the projection as it stands.
-   */
-  inheritAutomaticPermissions(parent: SessionImpl | undefined): void {
+  /** The first binding happens before readers attach; only a later rebind needs a projection notice. */
+  inheritAutomaticPermissions(parent: SessionImpl | undefined): Promise<void> {
+    const revocation = this.preparePermissionRevocation()
     const rebound = this.permissionParent !== false && this.permissionParent !== parent
     this.permissionParent = parent
     this.authorization.inherit(
@@ -742,8 +750,10 @@ export class SessionImpl {
               invalidatePermissionProjection(this)
             })
         : undefined,
+      parent ? (listener) => parent.onBeforePermissionChange(listener) : undefined,
     )
     if (rebound) invalidatePermissionProjection(this)
+    return revocation
   }
 
   constructor(deps: SessionDeps) {
@@ -2270,29 +2280,7 @@ export class SessionImpl {
     if (enabled && this.preset.permission === 'read-only')
       throw new CoreError('E_ENVELOPE', 'full access requires a new session outside read-only isolation')
     const actor = permissionOperator(operator)
-    // A projection triggered by the committed event must wait for the matching live flag.
-    const seq = await this.exclusively(async () => {
-      const r = await this.d.log.append([
-        sysEvent(
-          { actor, lane: this.lane },
-          'x/core/yolo-switch',
-          {
-            version: 2,
-            to: enabled,
-            operatorId: actor.id,
-            sessionKey: this.key,
-            lane: this.lane,
-            profileHash: this.d.resolvedProfileHash,
-            sessionOwner: { id: this.d.actor.id, org: this.d.actor.org },
-          },
-          { ignorable: true },
-        ),
-      ])
-      this.authorization.select(enabled, actor)
-      const invalidations = this.decisions.revokedAutomaticEvents()
-      if (invalidations.length) await this.d.log.append(invalidations)
-      return r.firstSeq
-    })
+    const seq = await this.exclusively(() => setSessionYolo(this, this.authorization, enabled, actor))
     await this.decisions.list()
     return seq
   }
@@ -2709,6 +2697,8 @@ export class SessionImpl {
     this.closing = true
     revokeChildLifecycle(this)
     this.d.log.cancelHistoryVerification()
+    const revocation = this.preparePermissionRevocation()
+    void revocation.catch(() => undefined)
     this.authorization.detach()
     this.decisions.detach()
     const draining = this.activeWork.size > 0
@@ -2725,6 +2715,7 @@ export class SessionImpl {
           failures.push(error)
         }
       }
+      await attempt(() => revocation)
       await attempt(() => persistChildLifecycleStop(this))
       await attempt(() => this.loopDriver?.cancel())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
