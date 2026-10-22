@@ -430,6 +430,11 @@ export class TuiApp {
         }
         return true
       }
+      // Alt+Up takes the newest queued message back into an empty editor.
+      if (key.name === 'alt-up' && !this.editor.text) {
+        void this.runInput('/queue edit last')
+        return true
+      }
       if (key.name === 'ctrl-c') {
         this.interrupts.press(
           () => this.cancel(),
@@ -877,6 +882,7 @@ export class TuiApp {
       }
     }
     if (r.draft !== undefined) this.editor.setText(r.draft)
+    if (r.keep) this.busyInput.keep(r.keep)
     if (r.modelChoices) {
       this.statusBar.setNotice(undefined)
       this.modelPicker.show(r.modelChoices)
@@ -1023,7 +1029,10 @@ export class TuiApp {
       this.renderer.requestRender()
       return
     }
-    await this.submitBlocks(attachmentsFrom(text, this.cwd, this.o.remote), text)
+    await this.submitBlocks(
+      [...attachmentsFrom(text, this.cwd, this.o.remote), ...this.busyInput.takeKept()],
+      text,
+    )
   }
 
   /** Sends one input: a prompt when idle; while a turn runs it goes to the daemon queue, or into the turn with `steer`. */

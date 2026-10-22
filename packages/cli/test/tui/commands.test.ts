@@ -173,7 +173,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/skill')?.args).toBe('invoke <name> [arguments]|refresh|trust ...')
     expect(slashCommand('/agents')?.args).toBe('[stop <n|id>|resume <n|id> <message>]')
     expect(slashCommand('/jobs')?.args).toBe('[stop <n|id>]')
-    expect(slashCommand('/queue')?.args).toBeUndefined()
+    expect(slashCommand('/queue')?.args).toBe('[edit|drop|now|steer <n>]')
     // Commands without arguments carry no shape at all, and an unknown name finds nothing.
     expect(slashCommand('/help')?.args).toBeUndefined()
     expect(slashCommand('/nope')).toBeUndefined()

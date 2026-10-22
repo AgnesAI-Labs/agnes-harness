@@ -38,7 +38,7 @@ node agnes.mjs
 | 新任务/选择历史 | `/new [DIR]`、`/sessions`、`/resume [id\|all]`（`all` 列出所有工作区）、`/search QUERY`（需管理员连接） |
 | 子智能体 | `/agents` 列出本会话可控的子智能体；`/agents stop N\|ID` 中断一个，`/agents resume N\|ID 消息` 让它继续。能否执行由 daemon 决定，拒绝会原样显示 |
 | 后台任务 | `/jobs` 列出本会话的后台任务；`/jobs stop N\|ID` 终止一个（agent 拥有的任务会被 daemon 拒绝） |
-| 排队消息 | 回合进行中按 Enter，消息进入 daemon 队列，回合结束后自动发送；按 Alt+Enter 则插入正在运行的回合（该回合不接受插入时改为排队）。TUI 不保存任何队列，退出后队列仍在，会话的所有客户端都看得到。`/queue` 列出排队的消息 |
+| 排队消息 | 回合进行中按 Enter，消息进入 daemon 队列，回合结束后自动发送；按 Alt+Enter 则插入正在运行的回合（该回合不接受插入时改为排队）。TUI 不保存任何队列，退出后队列仍在，会话的所有客户端都看得到。`/queue` 列出排队的消息，并按序号管理：`/queue edit N` 放回输入框修改（附件随下一条消息发送），`/queue drop N` 丢弃，`/queue now N` 停止当前回合并先发送这一条，`/queue steer N` 把它变成对当前回合的插入。输入框为空时按 Alt+↑ 取回最新的一条排队消息。对已发送或已删除的消息操作会提示这一点 |
 | 模型/预设 | `/model`、`/model main ROUTE/MODEL`、`/preset NAME` |
 | 上下文/用量 | `/context`、`/usage`、`/cost` |
 | 会话整理 | `/pin`、`/unpin`、`/rename TITLE`、`/archive` |

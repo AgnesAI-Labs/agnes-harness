@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ContentBlock } from '@agnes/protocol'
+import { type ContentBlock, rpcError } from '@agnes/protocol'
+import { JsonRpcError } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
@@ -290,5 +291,85 @@ describe('/queue', () => {
     const app = daemonQueue(item('follow_up', [text('only')]))
     for (const line of ['/queue drop', '/queue edit 1 2', '/queue move 1'])
       expect((await runSlash(app, line)).text, line).toBe(tt('queue.usage', 'en'))
+    for (const key of ['0', '2', '-1', '1.5', 'one'])
+      expect((await runSlash(app, `/queue drop ${key}`)).text).toBe(tt('queue.unknown', 'en', { key }))
+    expect((await runSlash(daemonQueue(), '/queue edit last')).text).toBe(tt('queue.none', 'en'))
+  })
+
+  const actions = (controls: Record<string, boolean>, ...pending: ReturnType<typeof item>[]) => {
+    const calls: Array<[string, string, { commandId: string }]> = []
+    const act = (name: string) =>
+      vi.fn(async (itemId: string, opts: { commandId: string }) => {
+        calls.push([name, itemId, opts])
+        return 1
+      })
+    const session = {
+      controls: async () => ({ controls, paused: false, pending }),
+      removeQueued: act('removeQueued'),
+      sendNow: act('sendNow'),
+      promoteQueued: act('promoteQueued'),
+    }
+    return { calls, session, app: appWith({}, session) }
+  }
+
+  it('edit moves a message back to the editor, keeping its attachments aside, and drop discards one', async () => {
+    const { calls, app } = actions(
+      {},
+      item('follow_up', [text('fix\nthe\u001b[2J bug')], 'a'),
+      item('steer', [text('read @a.txt'), link], 'b'),
+    )
+    expect(await runSlash(app, '/queue edit 1')).toEqual({
+      text: tt('queue.edited', 'en', { n: 1 }),
+      draft: 'fix\nthe\u001b[2J bug',
+    })
+    // The attachment cannot become editor text: it is handed on to ride with the next message.
+    expect(await runSlash(app, '/queue edit last')).toEqual({
+      text: tt('queue.edited', 'en', { n: 2 }) + tt('queue.extra', 'en', { count: 1 }),
+      draft: 'read @a.txt',
+      keep: [link],
+    })
+    expect(await runSlash(app, '/queue drop 1')).toEqual({ text: tt('queue.dropped', 'en', { n: 1 }) })
+    expect(calls.map(([name, id]) => [name, id])).toEqual([
+      ['removeQueued', 'a'],
+      ['removeQueued', 'b'],
+      ['removeQueued', 'a'],
+    ])
+    // Every action is its own command with its own id.
+    expect(new Set(calls.map(([, , opts]) => opts.commandId)).size).toBe(3)
+  })
+
+  it('now and steer call the matching action only when the turn allows it', async () => {
+    const allowed = actions({ interrupt: true, steer: true }, item('follow_up', [text('x')], 'a'))
+    expect((await runSlash(allowed.app, '/queue now 1')).text).toBe(tt('queue.sentNow', 'en', { n: 1 }))
+    expect((await runSlash(allowed.app, '/queue steer 1')).text).toBe(tt('queue.steered', 'en', { n: 1 }))
+    expect(allowed.calls.map(([name, id]) => [name, id])).toEqual([
+      ['sendNow', 'a'],
+      ['promoteQueued', 'a'],
+    ])
+    expect(allowed.calls.every(([, , opts]) => opts.commandId.length > 0)).toBe(true)
+    const refused = actions({}, item('follow_up', [text('x')], 'a'))
+    expect((await runSlash(refused.app, '/queue now 1')).text).toBe(
+      tt('queue.unavailable', 'en', { verb: 'now' }),
+    )
+    expect((await runSlash(refused.app, '/queue steer 1')).text).toBe(
+      tt('queue.unavailable', 'en', { verb: 'steer' }),
+    )
+    expect(refused.calls).toEqual([])
+  })
+
+  it('says why the daemon refused an action, and lets any other failure through', async () => {
+    const { session, app } = actions({}, item('follow_up', [text('x')], 'a'))
+    const refuse = (error: unknown) => session.removeQueued.mockRejectedValueOnce(error)
+    const wire = (...args: Parameters<typeof rpcError>) => new JsonRpcError(rpcError(...args))
+    refuse(wire('SEMANTIC_REJECTED', { code: 'QUEUED_INPUT_GONE' }))
+    expect((await runSlash(app, '/queue drop 1')).text).toBe(tt('queue.gone', 'en'))
+    refuse(wire('CAPABILITY_DENIED', {}))
+    expect((await runSlash(app, '/queue drop 1')).text).toBe(tt('queue.denied', 'en'))
+    refuse(wire('SEMANTIC_REJECTED', { code: 'E_SOMETHING' }))
+    expect((await runSlash(app, '/queue drop 1')).text).toBe(
+      tt('queue.rejected', 'en', { code: 'E_SOMETHING' }),
+    )
+    refuse(new Error('boom'))
+    await expect(runSlash(app, '/queue drop 1')).rejects.toThrow('boom')
   })
 })

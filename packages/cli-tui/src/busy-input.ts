@@ -9,8 +9,14 @@ export const codeOf = (error: unknown): string | undefined => {
   return typeof code === 'string' ? code : undefined
 }
 
+/** The reason code of a command core rejected, as the daemon reports it: SEMANTIC_REJECTED carrying `code`. */
+export const rejectedCode = (error: unknown): string | undefined =>
+  (error as { rpc?: { message?: unknown } } | null)?.rpc?.message === 'SEMANTIC_REJECTED'
+    ? codeOf(error)
+    : undefined
+
 export const textOf = (blocks: readonly ContentBlock[]): string =>
-  blocks.map((b) => (b.type === 'text' ? b.text : '')).join('\n')
+  blocks.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n')
 
 /**
  * Cancels the session's running turn, whichever client started it: the daemon only checks that the caller
@@ -24,8 +30,8 @@ export async function cancelTurn(session: Session, locale: string): Promise<stri
     // The turn ended between the keypress and the daemon seeing it: nothing is left to cancel.
     if (code === 'CONTROL_NOT_RUNNING') return undefined
     if (code === 'CAPABILITY_DENIED') return tt('busy.cancelDenied', locale)
-    if ((error as { rpc?: { message?: unknown } } | null)?.rpc?.message === 'SEMANTIC_REJECTED' && code)
-      return tt('busy.cancelRejected', locale, { code })
+    const rejected = rejectedCode(error)
+    if (rejected) return tt('busy.cancelRejected', locale, { code: rejected })
     throw error
   }
   return undefined
@@ -52,7 +58,18 @@ const unsure = (error: unknown): boolean =>
 export class BusyInput {
   private hinted = false
 
+  private kept: ContentBlock[] = []
+
   constructor(private readonly host: BusyHost) {}
+
+  /** Attachments of a queued message taken back into the editor: they travel with the next message. */
+  keep(blocks: ContentBlock[]): void {
+    this.kept = blocks
+  }
+
+  takeKept(): ContentBlock[] {
+    return this.kept.splice(0)
+  }
 
   /** An idle prompt. A daemon that refuses it as busy did not record it, so it is queued instead. */
   async prompt(blocks: ContentBlock[], draft: string): Promise<void> {

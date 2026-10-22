@@ -253,6 +253,12 @@ describe('Editor input', () => {
     expect(e.handleInput('\x0f')).toBe(false)
   })
 
+  it('strips control characters from any draft put in whole, keeping newlines', () => {
+    const e = new Editor({ onSubmit: () => {} })
+    e.setText('a\u001b[2J\u0007b\nc\td')
+    expect(e.text).toBe('a[2Jb\nc  d')
+  })
+
   it('swallows an unrecognised escape sequence instead of typing it', () => {
     const e = new Editor({ onSubmit: () => {} })
     type(e, 'ab')

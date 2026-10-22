@@ -1179,6 +1179,50 @@ it('retries a failed queue submit once under the same command id, then returns t
   }
 })
 
+it('Alt+Up takes the newest queued message back into an empty editor, and its attachment goes out with the next one', async () => {
+  const link = { type: 'resource_link', uri: 'file:///w/a.txt', name: 'a.txt' }
+  const h = await busyHarness()
+  h.endpoint.on('_agnes/v1/session.controls', () => ({
+    controls: {},
+    paused: false,
+    pending: [
+      { itemId: 'one', target: 'next-turn', kind: 'follow_up', content: [{ type: 'text', text: 'older' }] },
+      {
+        itemId: 'two',
+        target: 'next-turn',
+        kind: 'follow_up',
+        content: [{ type: 'text', text: 'newer\u001b[2J\u0007\nline2' }, link],
+      },
+    ],
+  }))
+  try {
+    h.term.feed('half typed')
+    h.term.feed('\x1b[1;3A')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    // A draft is never overwritten.
+    expect(h.submits).toEqual([])
+    h.term.feed('\x15') // Ctrl-U clears the draft
+    h.term.feed('\x1b[1;3A')
+    await vi.waitFor(() =>
+      expect(h.submits.map((s) => [s.kind, s.payload.itemId])).toEqual([['removeQueued', 'two']]),
+    )
+    expect(h.submits[0]?.commandId).toBeTruthy()
+    await vi.waitFor(async () => {
+      const screen = await h.shown()
+      expect(screen).toMatch(/❯ newer\[2J\s*$/m)
+      expect(screen).toContain('line2')
+    })
+    h.term.feed('\r')
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1))
+    const prompt = h.endpoint.calls.find((c) => c.method === 'session/prompt')?.params as {
+      prompt: Array<{ type: string }>
+    }
+    expect(prompt.prompt.map((b) => b.type)).toEqual(['text', 'resource_link'])
+  } finally {
+    await h.dispose()
+  }
+})
+
 it('queues a prompt the daemon refused as busy exactly once, and shows any other refusal as it comes', async () => {
   const lagging = await busyHarness({ promptError: rpcError('SESSION_BUSY', {}) })
   try {

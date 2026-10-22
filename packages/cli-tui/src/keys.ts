@@ -1,6 +1,7 @@
 export type KeyName =
   | 'enter'
   | 'alt-enter'
+  | 'alt-up'
   | 'shift-enter'
   | 'esc'
   | 'ctrl-c'
@@ -82,6 +83,8 @@ const SEQ = new Map<string, KeyName>([
   ['\x7f', 'backspace'],
   ['\b', 'backspace'],
   ['\x1b[A', 'up'],
+  ['\x1b[1;3A', 'alt-up'],
+  ['\x1b\x1b[A', 'alt-up'],
   ['\x1b[B', 'down'],
   ['\x1b[C', 'right'],
   ['\x1b[D', 'left'],

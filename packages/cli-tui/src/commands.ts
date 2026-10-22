@@ -169,6 +169,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   {
     name: '/queue',
+    args: '[edit|drop|now|steer <n>]',
     descriptionKey: 'commands.queue',
     summaryKey: 'commands.queueSummary',
   },
@@ -215,6 +216,8 @@ export type SlashResult = {
   details?: boolean
   /** Text to put in the editor, replacing what it holds (the line that ran the command is already gone). */
   draft?: string
+  /** Attachment blocks of a message taken back into the editor: they are sent with the next message. */
+  keep?: ContentBlock[]
   /** Long-lived local output belongs in the transcript; omitted text is a short status notice. */
   presentation?: 'transcript'
   title?: string
