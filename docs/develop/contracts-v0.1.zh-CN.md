@@ -131,6 +131,8 @@ v0.1 不指定这些兼容码的删除日期。Provider errors 保持 experiment
 
 ## 固定代码，实时资源
 
+`PluginGenerationStatus.plugins` 汇总各当前会话组合的就绪状态；保留版本的失败仍在 `generations` 中携带公开错误码。可选的 `generations[].current` 布尔值独立于激活结果，标明各组合的当前版本；退役组合将其置为 false。读取旧响应时可回退到 `currentGenerationId`。状态读取不改变信任、准入、持久 pins 或恢复校验。
+
 会话同时持久化 code generation 与 composition。只要精确 snapshot 与兼容部署可用，包、Loop 身份、provider/工具实现、按 generation 路由的 client modules 在 close、休眠、冷重启后仍保持绑定。新会话使用当前发布 generation。禁用代码停止新绑定；旧代码在耐久 pins 释放后排空。禁用代码与撤销当前资源/授权是不同操作，pin 不赋予持续权限。
 
 MCP definitions、Skills 是 live 资源，按会话 composition 与 trust 过滤。变化在**下一轮**可见，当前轮保留快照。禁用/移除 MCP server 后，旧会话后续轮也不再看到它。同一 worker、opener/policy/credential 边界内，相同有效 MCP transport 配置共享引用计数连接；不承诺跨 worker/凭据 scope 共享。冷恢复读取 pinned code 与当前资源，并以有界超时等待初始 MCP catalog 同步（当前 20 秒）。历史资源归档只是证据，不是 live 读取来源。

@@ -20,6 +20,7 @@ export { nodeArtifactGcPreparationRuntime } from './artifact-gc-preparation.js'
 
 import { dirname, isAbsolute, join, parse, resolve, toNamespacedPath } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { replacePublishedFileSync } from './durable-replace.js'
 import { syncTreeBatched } from './tree-sync.js'
 import type { PipeReservation } from './windows-pipe-listener.js'
 import type { OwnedPipe } from './windows-pipe-stream.js'
@@ -661,7 +662,7 @@ export function publishFileDurablySync(
   const temporary = `${path}.${randomUUID()}.tmp`
   try {
     writeFileSync(temporary, bytes, { mode: options.mode ?? 0o600, flag: 'wx', flush: true })
-    if (options.replace) renameSync(temporary, path)
+    if (options.replace) replacePublishedFileSync(temporary, path, windows)
     else
       try {
         linkSync(temporary, path)

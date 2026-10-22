@@ -89,6 +89,8 @@ Older installed packages without this declaration remain visible with an `incomp
 
 Failed plugin states carry a short fix hint and a documentation link. In plugin details, use the **Fix guide** link; CLI failures also print the hint.
 
+The plugin's primary state describes its current version. A failed retained generation does not block a healthy current version. Under **Versions**, retained failures are shown with their version and a public error code; runtime diagnostics retain the affected session bindings. Current failures, trust revocation, policy blockers and restart requirements keep their normal refusal behavior.
+
 | Failure | Fix |
 | --- | --- |
 | Missing export | Export the function named by `agnes.plugins`; verify `package.json.exports`. |

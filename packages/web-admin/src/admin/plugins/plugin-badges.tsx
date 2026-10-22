@@ -108,7 +108,10 @@ export function GenerationDrainSummary({
   const generations =
     status?.generations.filter(
       (generation) =>
-        (generation.state === 'draining' || generation.state === 'historical') &&
+        !(generation.current ?? generation.id === status.currentGenerationId) &&
+        (generation.state === 'draining' ||
+          generation.state === 'historical' ||
+          generation.state === 'failed') &&
         generation.boundSessions > 0 &&
         generation.packages.some((item) => plugins.some((plugin) => plugin.id === item.id)),
     ) ?? []
@@ -118,6 +121,7 @@ export function GenerationDrainSummary({
     (sum, generation) => sum + Math.max(0, generation.boundSessions - generation.openSessions),
     0,
   )
+  const failed = generations.filter((generation) => generation.state === 'failed')
   return (
     <div className="plugin-drain-notice">
       <p data-testid="plugin-drain-summary">
@@ -142,6 +146,11 @@ export function GenerationDrainSummary({
           {t('drain.historicalSummary', { sessions: historical })}
         </p>
       )}
+      {failed.length > 0 && (
+        <p role="status" data-testid="plugin-retained-failures">
+          {t('drain.failedSummary', { versions: failed.length })}
+        </p>
+      )}
       <Disclosure
         variant="plain"
         data-testid="plugin-drain-details"
@@ -157,16 +166,18 @@ export function GenerationDrainSummary({
                     .filter((item) => item.id === plugin.id)
                     .map((item) => (
                       <li key={generation.id}>
-                        {t(generation.state === 'historical' ? 'drain.historicalVersion' : 'drain.version', {
+                        {t(generation.openSessions === 0 ? 'drain.historicalVersion' : 'drain.version', {
                           version: item.version,
                           sessions:
-                            generation.state === 'historical'
+                            generation.openSessions === 0
                               ? generation.boundSessions
                               : generation.openSessions,
                         })}
+                        {generation.state === 'failed' && <Tag tone="bad">{t('drain.failedVersion')}</Tag>}
                         <SettingsTechnicalDetails>
                           <code>
                             {plugin.id} · {generation.id}
+                            {generation.error ? ` · ${generation.error}` : ''}
                           </code>
                           <PluginDetailCopy
                             value={JSON.stringify({ packageId: plugin.id, generationId: generation.id })}

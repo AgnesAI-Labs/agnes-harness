@@ -56,22 +56,26 @@ describe('the shipped sample project', () => {
     expect((await fetch(`${url}api/ranking?limit=0`)).status).toBe(400)
   })
 
-  it('takes over the listener handed in AGH_LOOPBACK_FD and prints AGH_LOOPBACK_URL', async () => {
-    const listener = createServer()
-    servers.push(listener)
-    await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve))
-    const port = (listener.address() as { port: number }).port
-    const fd = (listener as Any)._handle.fd as number
-    const env = { ...clean(), AGH_LOOPBACK_FD: '3', AGH_LOOPBACK_URL: `http://127.0.0.1:${port}/` }
-    const child = spawn(process.execPath, ['server.js'], {
-      cwd: ROOT,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe', fd],
-    })
-    children.push(child)
-    expect(await announced(child)).toBe(env.AGH_LOOPBACK_URL)
-    const page = await fetch(env.AGH_LOOPBACK_URL)
-    expect(page.status).toBe(200)
-    expect(await page.text()).toContain('车门健康监测看板')
-  })
+  // Node cannot inherit listening socket descriptors on Windows; the --port case runs on every OS.
+  it.skipIf(process.platform === 'win32')(
+    'takes over the listener handed in AGH_LOOPBACK_FD and prints AGH_LOOPBACK_URL',
+    async () => {
+      const listener = createServer()
+      servers.push(listener)
+      await new Promise<void>((resolve) => listener.listen(0, '127.0.0.1', resolve))
+      const port = (listener.address() as { port: number }).port
+      const fd = (listener as Any)._handle.fd as number
+      const env = { ...clean(), AGH_LOOPBACK_FD: '3', AGH_LOOPBACK_URL: `http://127.0.0.1:${port}/` }
+      const child = spawn(process.execPath, ['server.js'], {
+        cwd: ROOT,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe', fd],
+      })
+      children.push(child)
+      expect(await announced(child)).toBe(env.AGH_LOOPBACK_URL)
+      const page = await fetch(env.AGH_LOOPBACK_URL)
+      expect(page.status).toBe(200)
+      expect(await page.text()).toContain('车门健康监测看板')
+    },
+  )
 })

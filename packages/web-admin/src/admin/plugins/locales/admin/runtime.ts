@@ -9,6 +9,9 @@ export const runtimeCatalog: LocaleCatalog = {
       '{sessions} saved sessions use older plugin versions. Use “Migrate session to current plugins” in runtime settings to migrate eligible sessions.',
     'drain.historicalDetails': 'Historical sessions',
     'drain.historicalVersion': 'Version {version} · {sessions} historical sessions',
+    'drain.failedSummary':
+      'Retained version failures: {versions}. Expand the version details to inspect them.',
+    'drain.failedVersion': 'Retained version failed',
     'drain.pluginOne': 'plugin',
     'drain.pluginMany': 'plugins',
     'drain.sessionOne': 'session',
@@ -78,6 +81,8 @@ export const runtimeCatalog: LocaleCatalog = {
       '{sessions} 个历史会话保留旧版插件。可在运行时设置中使用“将会话迁移到当前插件”迁移符合条件的会话。',
     'drain.historicalDetails': '历史会话',
     'drain.historicalVersion': '版本 {version} · {sessions} 个历史会话',
+    'drain.failedSummary': '{versions} 个保留版本失败，请展开版本详情查看。',
+    'drain.failedVersion': '保留版本失败',
     'drain.pluginOne': '插件',
     'drain.pluginMany': '插件',
     'drain.sessionOne': '会话',

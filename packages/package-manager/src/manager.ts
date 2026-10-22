@@ -279,7 +279,7 @@ function workspacePath(profileDir: string, deployDir: string): { deployDir: stri
 }
 
 export function createPackageManager(options: ManagerOptions): PackageManager {
-  const inventoryVerifications: InventoryVerificationCache = new Map()
+  const verificationCache: InventoryVerificationCache = new Map()
   const inventoryReads = new Map<string, { boundary: string; promise: Promise<InstalledInventory> }>()
   // The last complete read per profile, for `settled` callers only. `inventoryEpoch` counts every
   // event that may change an inventory's content; a read registers itself only if none happened
@@ -391,6 +391,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     ...(options.checkpoint ? { checkpoint: options.checkpoint } : {}),
     ...(options.runtimeCheckpoint ? { runtimeCheckpoint: options.runtimeCheckpoint } : {}),
   })
+  const readPins = (dir: string) => listRuntimePinsStoreAsync(storeFor(dir), undefined, verificationCache)
   const locked = <T>(
     profileDir: string,
     fn: () => Promise<T>,
@@ -423,7 +424,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
               '.agnes-runtime-transaction.json.tmp',
               '.agnes-runtime-snapshots.json.tmp',
             ].some((file) => lstatSync(join(profileDir, file), { throwIfNoEntry: false }) !== undefined)
-            if (ordinaryRead && !recoveryNeeded) await listRuntimePinsStoreAsync(storeFor(profileDir))
+            if (ordinaryRead && !recoveryNeeded) await readPins(profileDir)
             else await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
             recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
             await op.admission?.verify()
@@ -752,7 +753,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
                 ceiling: ceiling(lock),
                 // Static manifest interpretation is reusable only after this read verifies
                 // every file again. Fresh admission still has its own digest boundary.
-                verificationCache: inventoryVerifications,
+                verificationCache,
               }),
             )
           } finally {
@@ -793,7 +794,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
         store: storeFor(profileDir),
         load: () => load(profileDir),
         ceiling,
-        verificationCache: inventoryVerifications,
+        verificationCache,
       })
     },
     async pinRuntimeSnapshot(profileDir, request) {
@@ -854,7 +855,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       )
     },
     async listRuntimePins(profileDir) {
-      return locked(profileDir, async () => listRuntimePinsStoreAsync(storeFor(profileDir)), {}, true)
+      return locked(profileDir, async () => readPins(profileDir), {}, true)
     },
     async setEnabled(profileDir, id, enabled, opts) {
       return manager.enable(profileDir, id, enabled, opts)

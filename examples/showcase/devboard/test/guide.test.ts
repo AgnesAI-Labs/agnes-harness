@@ -121,7 +121,11 @@ describe('demo guide data', () => {
     const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16)
     const hits: string[] = []
     // the shipped sample project is scanned as well
-    expect(sourceFiles(ROOT).filter((f) => f.includes('/assets/fastforward/')).length).toBeGreaterThan(10)
+    expect(
+      sourceFiles(ROOT).filter((f) =>
+        relative(ROOT, f).replaceAll('\\', '/').startsWith('assets/fastforward/'),
+      ).length,
+    ).toBeGreaterThan(10)
     for (const file of sourceFiles(ROOT)) {
       const text = readFileSync(file, 'utf8')
       for (const [len, hashes] of Object.entries(forbidden)) {

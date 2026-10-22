@@ -158,9 +158,11 @@ export function GenerationsPanel({
     setMessage('')
   }, [api, canSave])
   const supported = !!api
+  const isCurrent = (generation: PluginGenerationStatus['generations'][number]) =>
+    generation.current ?? generation.id === status?.currentGenerationId
   const stale =
     status?.generations
-      .filter((generation) => generation.id !== status.currentGenerationId)
+      .filter((generation) => !isCurrent(generation))
       .flatMap((generation) =>
         (generation.sessions ?? []).map((session) => ({ ...session, generation: generation.id })),
       ) ?? []
@@ -207,12 +209,8 @@ export function GenerationsPanel({
               title={
                 <>
                   <code title={generation.id}>{short(generation.id)}</code>{' '}
-                  <Badge tone={generation.id === status.currentGenerationId ? 'ok' : 'off'}>
-                    {t(
-                      generation.id === status.currentGenerationId
-                        ? 'currentGeneration'
-                        : `generationState.${generation.state}`,
-                    )}
+                  <Badge tone={generation.state === 'failed' ? 'bad' : isCurrent(generation) ? 'ok' : 'off'}>
+                    {t(isCurrent(generation) ? 'currentGeneration' : `generationState.${generation.state}`)}
                   </Badge>
                 </>
               }

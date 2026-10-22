@@ -19,6 +19,7 @@ export type PluginGenerationStatus = Readonly<{
   blocked?: readonly Readonly<{ file: string; reason: string }>[]
   generations: readonly Readonly<{
     id: string
+    current?: boolean
     state: 'active' | 'draining' | 'historical' | 'failed'
     boundSessions: number
     openSessions: number
@@ -76,19 +77,25 @@ export function describeGenerationStatus(input: {
   const generations: PluginGenerationStatus['generations'][number][] = []
   for (const [id, snapshot] of snapshots) {
     const boundSessions = counts.get(id) ?? 0
+    const extensions = errors.has(id) ? [] : (live.get(id)?.host.extensions() ?? [])
+    const retainedFailure =
+      id === current?.snapshot.id ? undefined : extensions.find((entry) => entry.error)?.error
+    const generationError =
+      errors.get(id)?.code ?? (retainedFailure ? generationFailure(retainedFailure).code : undefined)
     const openSessions = [...(live.get(id)?.host.kernel.sessions.values() ?? [])].filter(
       (session) => pinsByKey.get(session.key) === id,
     ).length
     generations.push({
       id,
-      state: errors.has(id)
+      current: id === current?.snapshot.id,
+      state: generationError
         ? 'failed'
         : id === current?.snapshot.id
           ? 'active'
           : openSessions > 0
             ? 'draining'
             : 'historical',
-      ...(errors.has(id) ? { error: errors.get(id)!.code } : {}),
+      ...(generationError ? { error: generationError } : {}),
       boundSessions,
       openSessions,
       live: live.has(id),
@@ -100,23 +107,24 @@ export function describeGenerationStatus(input: {
         previous = plugins.get(packageId)
       const failed = errors.has(id)
         ? undefined
-        : live
-            .get(id)
-            ?.host.extensions()
-            .find((entry) => entry.package === packageId && entry.error)
-      const error = (failed?.error ? generationFailure(failed.error) : errors.get(id))?.code
+        : extensions.find((entry) => entry.package === packageId && entry.error)
+      // Plugin readiness describes the current head. Retained failures remain
+      // attached to their generation and must not poison a healthy replacement.
+      const error =
+        id === current?.snapshot.id
+          ? (failed?.error ? generationFailure(failed.error) : errors.get(id))?.code
+          : previous?.error
       plugins.set(packageId, {
         id: packageId,
-        state:
-          error || previous?.state === 'failed'
-            ? 'failed'
-            : requiresRestart(current?.host ?? initial, packageId)
-              ? 'restart-required'
-              : active.has(packageId)
-                ? 'active'
-                : openSessions > 0 || previous?.state === 'draining'
-                  ? 'draining'
-                  : 'historical',
+        state: error
+          ? 'failed'
+          : requiresRestart(current?.host ?? initial, packageId)
+            ? 'restart-required'
+            : active.has(packageId)
+              ? 'active'
+              : openSessions > 0 || previous?.state === 'draining'
+                ? 'draining'
+                : 'historical',
         boundSessions: (previous?.boundSessions ?? 0) + boundSessions,
         drainingSessions:
           (previous?.drainingSessions ?? 0) + (id === current?.snapshot.id ? 0 : boundSessions),

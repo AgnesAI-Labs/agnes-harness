@@ -474,6 +474,7 @@ export class RuntimeGenerationSnapshotStore {
       if (!pin) throw new Error('E_GENERATION_PIN_MISSING: session is not bound')
       if (pin.loop && (pin.loop.id !== loop.id || pin.loop.version !== loop.version))
         throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: session loop differs from its generation pin')
+      if (pin.loop) return
       this.#replacePin({ ...pin, loop })
     })
   }

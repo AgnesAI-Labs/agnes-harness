@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { pinHostCapabilities, pinHostCapabilitiesAsync } from '../../src/assemble/host-grants.js'
 import { type PackageModule, readNamedExports } from '../../src/assemble/packages.js'
 
+const directoryLinkType = process.platform === 'win32' ? 'junction' : 'dir'
+
 const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -73,7 +75,7 @@ describe('verified ext: row privilege grants', () => {
     expect(h.authority.extension('@acme/package', ids[0], { id: '@acme/package' })).toEqual({})
     expect(h.authority.extension(h.pkg.id, ids[0], { id: h.pkg.id })).toEqual({})
     expect(h.authority.extension(h.pkg.id, ids[0], undefined)).toEqual({})
-    symlinkSync(h.directory, join(h.directory, 'data-link'))
+    symlinkSync(h.directory, join(h.directory, 'data-link'), directoryLinkType)
     const linked = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, h.directory]]))
     linked.bind(h.modules)
     expect(linked.extension(h.pkg.id, ids[0], h.module)).toEqual({})
@@ -231,12 +233,12 @@ describe('verified ext: row privilege grants', () => {
     const h = fixture()
     const replacement = fixture()
     const link = join(h.directory, 'load-path')
-    symlinkSync(replacement.directory, link)
+    symlinkSync(replacement.directory, link, directoryLinkType)
     const authority = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, link]]))
     authority.bind(h.modules)
     expect(authority.extension(h.pkg.id, ids[2], h.module)).toEqual({})
     unlinkSync(link)
-    symlinkSync(h.directory, link)
+    symlinkSync(h.directory, link, directoryLinkType)
     expect(authority.extension(h.pkg.id, ids[2], h.module)).toEqual({})
   })
 

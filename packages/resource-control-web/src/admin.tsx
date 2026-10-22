@@ -35,7 +35,7 @@ import {
   type UiLocaleSource,
   unmountRegion,
 } from '@agnes/web-ui'
-import { $ } from './admin-dom.js'
+import { $, type ResourceNotice, renderNotice } from './admin-dom.js'
 import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
 import {
@@ -144,12 +144,7 @@ class ResourceAdminPage {
   #loadMorePromise: Promise<void> | undefined
   #loadedTab: Tab | undefined
   #loadedWorkspace: string | undefined
-  #notice: {
-    key?: string
-    vars?: Readonly<Record<string, string | number>>
-    raw?: string
-    kind: string
-  } = { raw: '', kind: '' }
+  #notice: ResourceNotice = { raw: '', kind: '' }
 
   constructor(workspaceId?: string, tab: Tab = 'skills', locale?: UiLocaleSource) {
     this.#workspaceId = normalizeWorkspaceId(workspaceId)
@@ -208,13 +203,6 @@ class ResourceAdminPage {
   setNotice(key: string | undefined, kind = '', vars?: Readonly<Record<string, string | number>>): void {
     this.#notice = key ? { key, ...(vars ? { vars } : {}), kind } : { raw: '', kind }
     this.render()
-  }
-
-  /** What an open detail page shows for a refused action: the list's notice line is covered by it. */
-  #failureText(): string | undefined {
-    if (this.#notice.kind !== 'error') return undefined
-    const text = this.#notice.key ? this.#t(this.#notice.key, this.#notice.vars) : this.#notice.raw
-    return text || undefined
   }
 
   setRawNotice(raw: string, kind = ''): void {
@@ -440,11 +428,7 @@ class ResourceAdminPage {
   render(): void {
     if (activePage !== this) return
     if (!surface) renderSettingsChrome(this.#tab, this.#t)
-    notice.textContent = this.#notice.key
-      ? this.#t(this.#notice.key, this.#notice.vars)
-      : (this.#notice.raw ?? '')
-    notice.dataset.kind = this.#notice.kind
-    notice.hidden = !!surface && !notice.textContent
+    const failure = renderNotice(notice, this.#notice, this.#t, !!surface)
     refreshButton.hidden = true
     const busy = this.#reloadPromise !== undefined || this.#loadMorePromise !== undefined
     refreshButton.disabled = !this.writable() || busy
@@ -516,7 +500,7 @@ class ResourceAdminPage {
             disabled={!this.writable() || this.#activeOperation !== undefined}
             actions={this.#detailActions(selected)}
             progress={progress}
-            failure={this.#failureText()}
+            failure={failure}
             onAction={(action) => void this.#runAction(action)}
             onPrioritySave={(next) => void this.#savePriority(selected, next)}
             onClose={() => this.closeDetail()}
@@ -532,7 +516,7 @@ class ResourceAdminPage {
             disabled={!this.writable()}
             actions={this.#detailActions(selected)}
             progress={progress}
-            failure={this.#failureText()}
+            failure={failure}
             onAction={(action) => void this.#runAction(action)}
             onStatus={async () => {
               const value = await this.api().mcpStatus(selected.serverId)

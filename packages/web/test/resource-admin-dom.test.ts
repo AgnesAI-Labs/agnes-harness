@@ -755,9 +755,13 @@ it('preserves a failed operation notice after catalog reload', async () => {
     'The connection failed. Check its configuration and try again.',
   )
   expect(byId('resource-notice').textContent).not.toContain('连接已断开')
+  expect(byId('resource-detail').textContent).toContain(
+    'The connection failed. Check its configuration and try again.',
+  )
   document.documentElement.lang = 'zh-CN'
   window.dispatchEvent(new Event('agnes:locale-changed'))
   await vi.waitFor(() => expect(byId('resource-notice').textContent).toBe('连接失败。请检查配置后重试。'))
+  expect(byId('resource-detail').textContent).toContain('连接失败。请检查配置后重试。')
   expect(byId('resource-notice').dataset.kind).toBe('error')
 })
 

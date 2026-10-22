@@ -1,5 +1,17 @@
+import { snapshotHash } from './integrity.js'
 import type { LockEntry } from './lockfile.js'
 import type { SnapshotRecord } from './runtime-snapshot-types.js'
+
+export function runtimeSnapshotId(value: {
+  packageId: string
+  version: string
+  integrity: string
+  treeIntegrity: string
+  capabilityHash: string
+  recordVersion: 2
+}): string {
+  return `sha256-${snapshotHash(value)}`
+}
 
 export function contributionCeiling(record: SnapshotRecord): string[] {
   return [

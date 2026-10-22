@@ -364,6 +364,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     )
     expect(failed?.boundSessions).toBe(0)
     const status = required(host.pluginGenerationStatus?.())
+    expect(status.plugins.find((entry) => entry.id === 'acme/generation')).toMatchObject({ state: 'active' })
     expect(
       status.generations.find((entry) => entry.id === status.currentGenerationId)?.packages,
     ).toContainEqual({ id: 'acme/generation', version: '2.0.0' })
@@ -788,6 +789,10 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     expect((await required(host.pluginGenerationStatusAsync)()).generations).toContainEqual(
       expect.objectContaining({ id: secondId, state: 'failed', boundSessions: 1 }),
     )
+    expect(
+      required(host.pluginGenerationStatus?.()).plugins.find((entry) => entry.id === 'acme/generation')
+        ?.state,
+    ).not.toBe('failed')
     writeFileSync(file, saved)
     const recovered = await host.createSession({ key: 'session-b', cwd: root })
     expect(recovered.pluginGenerationId).toBe(secondId)

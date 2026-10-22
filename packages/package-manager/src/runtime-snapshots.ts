@@ -20,6 +20,7 @@ import {
 } from './integrity.js'
 import {
   type InstalledPackage,
+  type InventoryVerificationCache,
   isSnapshotPackageEligible,
   verifyHashedPackageDirectory,
   verifyPackageDirectory,
@@ -27,7 +28,7 @@ import {
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { assertCurrentPackageFormat } from './package-format.js'
 import { assertCurrentBinding, hasSnapshotTrust } from './runtime-snapshot-binding.js'
-import { contributionCeiling, recordEntry } from './runtime-snapshot-entry.js'
+import { contributionCeiling, recordEntry, runtimeSnapshotId } from './runtime-snapshot-entry.js'
 import type {
   CreateJournal,
   GcJournal,
@@ -262,16 +263,6 @@ function writeState(s: RuntimeSnapshotStore, state: RuntimeState): void {
   writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
   renameWriteThroughSync(resolve(tmp), resolve(file))
 }
-function runtimeSnapshotId(value: {
-  packageId: string
-  version: string
-  integrity: string
-  treeIntegrity: string
-  capabilityHash: string
-  recordVersion: 2
-}): string {
-  return `sha256-${snapshotHash(value)}`
-}
 function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
   if (!entry.treeIntegrity || !entry.contributions) integrityFailure('snapshot-migration-required')
   const hash = capabilityHash(entry)
@@ -307,6 +298,7 @@ function* verifyRecordSteps(
   s: RuntimeSnapshotStore,
   record: SnapshotRecord,
   directory: string,
+  verificationCache?: InventoryVerificationCache,
 ): ReadSteps<RuntimeSnapshot> {
   const checkedRecord = validateRecord(record)
   let root: string, actual: string
@@ -328,12 +320,15 @@ function* verifyRecordSteps(
   if (treeIntegrity !== checkedRecord.treeIntegrity) integrityFailure('runtime-tree-mismatch')
   const source = parseSource(checkedRecord.source.ref)
   if (canonical(source) !== canonical(checkedRecord.source)) integrityFailure('runtime-source-mismatch')
+  // Reuse only static interpretation after this read has verified every byte. The cache key
+  // includes the record, canonical directory, digest and ceiling; execution/recovery omit it.
   verifyHashedPackageDirectory(
     checkedRecord.packageId,
     recordEntry(checkedRecord),
     actual,
     contributionCeiling(checkedRecord),
     treeIntegrity,
+    verificationCache,
   )
   return freezeData({
     snapshotId: checkedRecord.snapshotId,
@@ -762,13 +757,14 @@ export function listRuntimePinsStore(s: RuntimeSnapshotStore): RuntimePin[] {
 export async function listRuntimePinsStoreAsync(
   s: RuntimeSnapshotStore,
   lock?: Lockfile,
+  verificationCache?: InventoryVerificationCache,
 ): Promise<RuntimePin[]> {
   const state = readState(s)
   assertRuntimeDirectoryEntries(s, state)
   // Independent immutable trees may overlap IO. The existing pool bounds work and settles every
   // started validator on failure; all paths, bytes, identities and bindings are still verified.
   const snapshots = await mapFileChecks(Object.values(state.snapshots), (record) =>
-    collectReadAsync(verifyRecordSteps(s, record, snapshotDir(s, record.snapshotId))),
+    collectReadAsync(verifyRecordSteps(s, record, snapshotDir(s, record.snapshotId), verificationCache)),
   )
   const verified = new Map(snapshots.map((snapshot) => [snapshot.snapshotId, snapshot]))
   return Object.values(state.pins).map((pin) =>

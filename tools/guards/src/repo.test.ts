@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -105,8 +105,20 @@ describe('repo', () => {
         mkdirSync(join(path, '..'), { recursive: true })
         writeFileSync(path, '')
       }
-      symlinkSync(join(fixture, 'packages/src/main.ts'), join(fixture, 'tools/linked.ts'))
-      symlinkSync(join(fixture, 'packages/fixtures'), join(fixture, 'tools/linked-dir'))
+      const source = join(fixture, 'packages/src/main.ts'),
+        linked = join(fixture, 'tools/linked.ts')
+      try {
+        symlinkSync(source, linked, 'file')
+      } catch (error) {
+        if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error
+        // Unprivileged Windows can create same-volume hard links; retain every path assertion.
+        linkSync(source, linked)
+      }
+      symlinkSync(
+        join(fixture, 'packages/fixtures'),
+        join(fixture, 'tools/linked-dir'),
+        process.platform === 'win32' ? 'junction' : 'dir',
+      )
       const tsSources = [
         'packages/fixtures/source.tsx',
         'packages/src/main.cts',
