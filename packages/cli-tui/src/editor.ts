@@ -84,6 +84,8 @@ export type EditorOptions = {
   locale?: string
   onSubmit(text: string): void
   onCancelKey?(): void
+  /** Ctrl-G: the app hands the draft to the user's own editor and writes the result back with `replaceDraft`. */
+  onExternalEdit?(): void
   /** Sent prompts, kept across runs when it has a file; without it history lasts this editor's lifetime. */
   history?: PromptHistory
   /** True while a turn runs: esc then interrupts it and leaves the draft alone. */
@@ -150,6 +152,13 @@ export class Editor implements Component {
     this.histIdx = -1
     this.pastes.clear()
     this.undo.clear()
+  }
+
+  /** Swaps the whole draft for `t` as one undoable step. */
+  replaceDraft(t: string): void {
+    this.undo.record({ text: this.text, cursor: this.cursor }, false)
+    this.setText(t)
+    this.histIdx = -1
   }
 
   /** Forgets what Ctrl-Z could undo, for when the draft no longer belongs to what is on screen (a session switch). */
@@ -348,6 +357,9 @@ export class Editor implements Component {
         }
         return true
       }
+      case 'ctrl-g':
+        this.o.onExternalEdit?.()
+        return true
       default:
         return false
     }

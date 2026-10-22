@@ -23,6 +23,8 @@ export async function runTui(
     resourceController?: TuiResourceController
     composerSelectionPath?: string
     historyPath?: string
+    /** Private scratch directory (`<AGH_HOME>/tmp`) for the Ctrl-G draft file. */
+    editorTmpDir?: string
     /** The CLI's own version, shown on the welcome. */
     agnesVersion?: string
   },
@@ -91,6 +93,7 @@ export async function runTui(
       ...(inherited?.notice ? { initialNotice: inherited.notice } : {}),
       ...(io.composerSelectionPath ? { composerSelectionPath: io.composerSelectionPath } : {}),
       ...(io.historyPath ? { historyPath: io.historyPath } : {}),
+      ...(io.editorTmpDir ? { externalEditor: { env: io.env, tmpDir: io.editorTmpDir } } : {}),
       ...(io.composerSelectionPath
         ? { themePreferencePath: join(dirname(io.composerSelectionPath), 'tui-theme.json') }
         : {}),

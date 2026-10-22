@@ -552,6 +552,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                   ...(resourceController ? { resourceController } : {}),
                   composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
                   historyPath: join(resolveHome(io.env), 'tui-history.jsonl'),
+                  editorTmpDir: join(resolveHome(io.env), 'tmp'),
                   agnesVersion: io.agnesVersion,
                 })
               : runPrint(booted, p, {

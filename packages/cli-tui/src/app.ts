@@ -9,8 +9,10 @@ import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
+import { type ExternalEditorConfig, editDraft } from './external-editor.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { formatTurnSummary } from './format-usage.js'
+import { DoubleCtrlC } from './interrupt.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
@@ -113,7 +115,7 @@ export class TuiApp {
   // and the SDK would still re-dial on the next call, so input is refused rather than run unseen.
   private closedNotice: string | undefined
   private localTurn = false
-  private lastInterrupt: number | undefined
+  private readonly interrupts = new DoubleCtrlC()
   // A client-local, per-connection counter -- never a ledger seq, never `UINode.seq`, and never
   // the slot fill's own `requestSeq`. It is minted fresh at the moment of a real click, so the
   // server's (requestSeq, action) idempotency check sees a genuinely new pair every time, even
@@ -154,6 +156,8 @@ export class TuiApp {
       themePreferencePath?: string
       /** Where sent prompts persist between runs; without it history lasts this run only. */
       historyPath?: string
+      /** Ctrl-G's editor command source and temp directory (`<AGH_HOME>/tmp`); tests leave it to the defaults. */
+      externalEditor?: ExternalEditorConfig
       /** What the launcher knows for the welcome, and what tests pin (see `WelcomeOptions`). */
       welcome?: WelcomeOptions
       /** Shown once on the status bar after a fresh session inherits a model or full permission. */
@@ -280,6 +284,8 @@ export class TuiApp {
       onSubmit: (text) => {
         void this.runInput(text)
       },
+      onExternalEdit: () =>
+        void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor),
       onCancelKey: () => {
         void this.cancel().catch((error) => this.showError(error))
       },
@@ -420,15 +426,12 @@ export class TuiApp {
         }
         return true
       }
-      if (parseKey(data, o.term.caps.kittyKeyboard).name === 'ctrl-c') {
-        const now = Date.now()
-        const quit = this.lastInterrupt !== undefined && now - this.lastInterrupt <= 1_000
-        this.lastInterrupt = quit ? undefined : now
-        void this.cancel()
-          .catch((error) => this.showError(error))
-          .finally(() => {
-            if (quit) this.onQuit()
-          })
+      if (key.name === 'ctrl-c') {
+        this.interrupts.press(
+          () => this.cancel(),
+          () => this.onQuit(),
+          (error) => this.showError(error),
+        )
         return true
       }
       if (parseKey(data, o.term.caps.kittyKeyboard).name === 'ctrl-d' && !this.editor.text && !this.busy) {

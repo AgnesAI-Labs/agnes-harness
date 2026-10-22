@@ -87,6 +87,7 @@ export class Renderer {
   private selection: { anchor: Cell; head: Cell } | undefined
   private dragging = false
   private mouseOn = false
+  private suspended = false
   private paste = new PasteAssembler()
 
   constructor(
@@ -137,6 +138,24 @@ export class Renderer {
     } catch (error) {
       this.stop()
       throw error
+    }
+  }
+
+  /**
+   * Gives the terminal back as it was before the TUI (main screen, cooked mode, no mouse or paste mode)
+   * so a child process can use it, and returns the call that takes it over again with the same mouse state.
+   */
+  suspend(): () => void {
+    if (!this.active) return () => {}
+    const mouseWas = this.mouseOn
+    this.stop()
+    this.suspended = true
+    return () => {
+      // A stop() while suspended (the app quit) means the terminal is not ours to take back.
+      if (!this.suspended) return
+      this.suspended = false
+      this.start()
+      if (this.mouse && mouseWas !== this.mouseOn) this.toggleMouse()
     }
   }
 
@@ -277,6 +296,7 @@ export class Renderer {
 
   /** Restore the shell, optionally leaving one plain transcript, never a copy of UI chrome. */
   stop(transcript: readonly string[] = []): void {
+    this.suspended = false
     if (!this.active && !this.screenEntered) return
     const wasActive = this.active
     this.active = false

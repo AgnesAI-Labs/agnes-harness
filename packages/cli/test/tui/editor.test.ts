@@ -1132,3 +1132,19 @@ describe('Editor multi-line navigation', () => {
     expect(e.text).toBe('older')
   })
 })
+
+describe('Editor external edit', () => {
+  it('Ctrl-G asks the app to edit the draft, and the edited draft replaces it as one undoable step', () => {
+    let asked = 0
+    const e = new Editor({ onSubmit() {}, onExternalEdit: () => asked++ })
+    type(e, 'draft')
+    expect(e.handleInput('\x07')).toBe(true)
+    expect(asked).toBe(1)
+    expect(e.text).toBe('draft')
+    e.replaceDraft('rewritten\nin vim')
+    expect([e.text, e.cursor]).toEqual(['rewritten\nin vim', 16])
+    e.handleInput('\x1a')
+    expect(e.text).toBe('draft')
+    expect(new Editor({ onSubmit() {} }).handleInput('\x07')).toBe(true)
+  })
+})

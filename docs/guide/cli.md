@@ -66,6 +66,8 @@ Ctrl-Z undoes the last edit in the input box and Ctrl-Shift-Z redoes it (redo ne
 
 In a draft of several lines, ↑ and ↓ first move the cursor between the lines and keep its column; history is walked only when ↑ is pressed on the first line or ↓ on the last.
 
+Ctrl-G edits the draft in your own editor: `$VISUAL`, else `$EDITOR` (the command may carry arguments, such as `code -w`; it is started directly, not through a shell). The draft goes to a file only you can read under `<AGH_HOME>/tmp/`, the TUI gives the terminal to the editor, and when the editor exits with status 0 the file replaces the draft. A non-zero status keeps the draft and shows a Cancelled notice. The file is deleted afterwards. With neither variable set, Ctrl-G says how to set one and does not guess an editor. This also works over `--connect`, since the editor runs on your machine and only your local draft changes.
+
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
 Leaving the TUI gives the terminal back exactly as it was before; the conversation is not printed again. If this run sent at least one message in the current session and the output is a terminal, one line is left behind, `agh --resume ID`, to return to that session.
