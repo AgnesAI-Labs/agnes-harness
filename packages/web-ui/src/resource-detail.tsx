@@ -88,6 +88,7 @@ export function SkillDetailContent({
   disabled,
   actions,
   progress,
+  failure,
   onAction,
   onPrioritySave,
   onClose,
@@ -96,6 +97,8 @@ export function SkillDetailContent({
   disabled: boolean
   actions: readonly ResourceDetailAction[]
   progress?: ResourceProgress | undefined
+  /** The last action's refusal, shown here because the list's notice line is covered by this page. */
+  failure?: string | undefined
   onAction(action: ResourceDetailAction): void
   onPrioritySave(next: number): void
   onClose(): void
@@ -194,6 +197,11 @@ export function SkillDetailContent({
             )}
           </div>
         )}
+        {failure && (
+          <p className="plugin-form-error" role="alert">
+            {failure}
+          </p>
+        )}
       </div>
       <div className="admin-detail-actions">
         {actions.map((action) => (
@@ -240,6 +248,7 @@ export function McpDetailContent({
   disabled,
   actions,
   progress,
+  failure,
   onAction,
   onStatus,
   onTools,
@@ -251,6 +260,8 @@ export function McpDetailContent({
   disabled: boolean
   actions: readonly ResourceDetailAction[]
   progress?: ResourceProgress | undefined
+  /** The last action's refusal, shown here because the list's notice line is covered by this page. */
+  failure?: string | undefined
   onAction(action: ResourceDetailAction): void
   onStatus(): Promise<StatusPanel>
   onTools(cursor?: string): Promise<ToolCatalog>
@@ -385,6 +396,11 @@ export function McpDetailContent({
               </Button>
             )}
           </div>
+        )}
+        {failure && (
+          <p className="plugin-form-error" role="alert">
+            {failure}
+          </p>
         )}
       </div>
       <div className="admin-detail-actions">

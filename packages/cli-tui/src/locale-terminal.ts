@@ -22,6 +22,14 @@ export const TERMINAL_KEYS = [
   'picker.filter',
   'scroll.newBelow',
   'scroll.newBelowCtrl',
+  'busy.cancelDenied',
+  'busy.cancelRejected',
+  'busy.hint',
+  'busy.queued',
+  'busy.steered',
+  'busy.steerFallback',
+  'busy.kept',
+  'busy.unsure',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -47,6 +55,15 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'picker.filter': 'Filter: {q} ({n}/{total})',
     'scroll.newBelow': '↓ New output below · End to jump back',
     'scroll.newBelowCtrl': '↓ New output below · Ctrl-End to jump back',
+    'busy.cancelDenied': 'Only the session owner can cancel this turn',
+    'busy.cancelRejected': 'Cancel refused ({code})',
+    'busy.hint':
+      'Queued: {text} · sent when the turn ends · Alt+Enter steers the running turn · /queue manages',
+    'busy.queued': 'Queued: {text}',
+    'busy.steered': 'Sent to the running turn: {text}',
+    'busy.steerFallback': 'This turn takes no guidance: queued instead',
+    'busy.kept': 'Not sent: the draft is back in the editor',
+    'busy.unsure': 'Not sure the daemon took it: check /queue before sending it again',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -65,5 +82,13 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'picker.filter': '过滤：{q}（{n}/{total}）',
     'scroll.newBelow': '↓ 有新内容 · End 回到底部',
     'scroll.newBelowCtrl': '↓ 有新内容 · Ctrl-End 回到底部',
+    'busy.cancelDenied': '只有会话属主能取消这一轮',
+    'busy.cancelRejected': '取消被拒绝（{code}）',
+    'busy.hint': '已排队：{text} · 回合结束后发送 · Alt+Enter 插入当前回合 · /queue 管理',
+    'busy.queued': '已排队：{text}',
+    'busy.steered': '已插入当前回合：{text}',
+    'busy.steerFallback': '当前回合不接受插入，已排队',
+    'busy.kept': '未发送，草稿已保留在输入框',
+    'busy.unsure': '不确定 daemon 是否收到：重新发送前请先看 /queue',
   },
 }

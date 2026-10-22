@@ -1,3 +1,15 @@
+/** Two Esc presses within half a second, on an idle editor with nothing typed, ask for the rewind picker. */
+export class DoubleEsc {
+  private last: number | undefined
+
+  press(armed: boolean, fire: () => void): void {
+    const now = Date.now()
+    const twice = armed && this.last !== undefined && now - this.last <= 500
+    this.last = armed && !twice ? now : undefined
+    if (twice) fire()
+  }
+}
+
 /** Ctrl-C cancels the turn in flight; a second press within a second quits. */
 export class DoubleCtrlC {
   private last: number | undefined

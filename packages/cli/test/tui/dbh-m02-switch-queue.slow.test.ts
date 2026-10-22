@@ -2,18 +2,19 @@
 // a failure on the unfixed code is the reproduction.
 //
 // Oracle: packages/cli-tui/src/app.ts applySwitch comment ("Reset turn-lifecycle state to exactly
-// what a freshly-constructed TuiApp looks like") and submit()'s comment (the local queue stands in
-// for the daemon's per-session followUp queue). A turn and its queued follow-ups belong to the
-// session they were typed into; nothing typed against s1 may be dispatched to / cancel s2.
-// Product decision (2026-09-17): while this client's own turn or queued prompts are pending, /new,
-// /resume, /rewind and the session picker refuse to switch instead of re-homing that work.
+// what a freshly-constructed TuiApp looks like") and the daemon's per-session followUp queue. A turn
+// and its queued follow-ups belong to the session they were typed into; nothing typed against s1 may
+// be dispatched to / cancel s2.
+// Product decision (2026-09-17): while this client's own turn is pending, /new, /resume, /rewind and
+// the session picker refuse to switch instead of re-homing that work. Input typed meanwhile is queued
+// in the daemon under s1 (2026-10-22), so it is not held here and never follows a switch.
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { stampFor } from '@agnes/ai/testkit'
 import { createLocalEndpoint } from '@agnes/daemon/local'
 import { createTestHost } from '@agnes/host/testkit'
-import { type RequestBody, rpcError } from '@agnes/protocol'
+import type { RequestBody } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
 import { TuiApp } from '../../src/tui/app.js'
@@ -24,7 +25,7 @@ import { screenOf } from './harness.js'
 
 const SID = (n: number) => `agnes:local:default:cli:dm:s${n}`
 const OTHER = 'agnes:local:default:cli:session:other'
-const REFUSED = 'Turn or queued prompt pending'
+const REFUSED = 'Turn pending'
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 function hold() {
@@ -35,7 +36,7 @@ function hold() {
   return { gate, release }
 }
 
-function gatedEndpoint(opts: { holdOpen?: boolean; refuseT2?: boolean } = {}) {
+function gatedEndpoint(opts: { holdOpen?: boolean } = {}) {
   let sessions = 0
   let s1Prompts = 0
   const turn = hold()
@@ -85,17 +86,12 @@ function gatedEndpoint(opts: { holdOpen?: boolean; refuseT2?: boolean } = {}) {
       turns: [],
       nodes: [],
     }))
-    .on('_agnes/v1/submit', (params) => {
-      expect(params).toMatchObject({ kind: 'control', payload: { action: 'cancel' } })
-      return { seq: 1, replayed: false }
-    })
+    .on('_agnes/v1/submit', () => ({ seq: 1, replayed: false }))
     .on('_agnes/v1/submit.ack', () => ({}))
     .on('session/prompt', async (params) => {
       const p = params as { sessionId: string; prompt: Array<{ text?: string }> }
       // Only the very first prompt on s1 is held open: it is the "turn in flight".
       if (p.sessionId === SID(1) && ++s1Prompts === 1) await turn.gate
-      // Refused before it is recorded, so the TUI keeps it queued and retries (M-08).
-      if (opts.refuseT2 && p.prompt[0]?.text === 't2') throw rpcError('SESSION_BUSY', {})
       return { stopReason: 'end_turn' }
     })
   const count = (method: string) => endpoint.calls.filter((call) => call.method === method).length
@@ -115,7 +111,13 @@ function gatedEndpoint(opts: { holdOpen?: boolean; refuseT2?: boolean } = {}) {
           (call.params as { payload: { action: string } }).payload.action === 'cancel',
       )
       .map((call) => (call.params as { payload: { sessionId: string } }).payload.sessionId)
-  return { endpoint, release: turn.release, releaseOpen: opening.release, count, prompts, cancels }
+  const followUps = () =>
+    endpoint.calls
+      .filter(
+        (call) => call.method === '_agnes/v1/submit' && (call.params as { kind: string }).kind === 'followUp',
+      )
+      .map((call) => (call.params as { payload: { sessionId: string } }).payload.sessionId)
+  return { endpoint, followUps, release: turn.release, releaseOpen: opening.release, count, prompts, cancels }
 }
 
 async function withApp(
@@ -148,33 +150,31 @@ const screen = async (term: FakeTerminal) => (await screenOf(term, 80, 24)).join
 
 async function scenario(opts: { switchSession: boolean; ctrlC: boolean }) {
   const e = gatedEndpoint()
-  let seen = { prompts: e.prompts(), cancels: e.cancels() }
+  let seen = { prompts: e.prompts(), cancels: e.cancels(), followUps: e.followUps() }
   await withApp(e, async (app, term) => {
     await startTurn(e, app, term)
     term.feed('t2')
-    term.feed('\r') // queued locally behind t1
+    term.feed('\r') // queued in the daemon behind t1
     // The editor's own entry for a slash line; it settles once the switch is applied or refused.
     if (opts.switchSession) await app.command('/new')
     if (opts.ctrlC) {
       term.feed('\x03')
       await vi.waitFor(() => expect(e.cancels().length).toBeGreaterThanOrEqual(1))
     }
+    await vi.waitFor(() => expect(e.followUps()).toHaveLength(1))
     e.release()
-    await vi.waitFor(() => expect(e.prompts().length).toBeGreaterThanOrEqual(2))
     await vi.waitFor(() => expect(app.busy).toBe(false))
     await sleep(200)
-    seen = { prompts: e.prompts(), cancels: e.cancels() }
+    seen = { prompts: e.prompts(), cancels: e.cancels(), followUps: e.followUps() }
   })
   return seen
 }
 
-it('[control] without a session switch, Ctrl-C and the queued prompt both target s1', async () => {
+it('[control] without a session switch, Ctrl-C and the queued input both target s1', async () => {
   const seen = await scenario({ switchSession: false, ctrlC: true })
   expect(seen.cancels).toEqual([SID(1)])
-  expect(seen.prompts).toEqual([
-    { sessionId: SID(1), text: 't1' },
-    { sessionId: SID(1), text: 't2' },
-  ])
+  expect(seen.followUps).toEqual([SID(1)])
+  expect(seen.prompts).toEqual([{ sessionId: SID(1), text: 't1' }])
 })
 
 it('[M-02a] Ctrl-C after /new while the s1 turn is in flight cancels that turn, not a new session', async () => {
@@ -182,12 +182,10 @@ it('[M-02a] Ctrl-C after /new while the s1 turn is in flight cancels that turn, 
   expect(seen.cancels, JSON.stringify(seen)).toEqual([SID(1)])
 })
 
-it('[M-02b] a prompt queued against s1 is sent to s1, not to a session created by /new', async () => {
+it('[M-02b] an input queued against s1 is queued in s1, not in a session created by /new', async () => {
   const seen = await scenario({ switchSession: true, ctrlC: false })
-  expect(seen.prompts, JSON.stringify(seen)).toEqual([
-    { sessionId: SID(1), text: 't1' },
-    { sessionId: SID(1), text: 't2' },
-  ])
+  expect(seen.followUps, JSON.stringify(seen)).toEqual([SID(1)])
+  expect(seen.prompts, JSON.stringify(seen)).toEqual([{ sessionId: SID(1), text: 't1' }])
 })
 
 it('[M-02] /new during the turn says why it stays put, opens nothing, and switches once idle', async () => {
@@ -258,20 +256,20 @@ it('[M-02c] a prompt submitted while a picked session loads keeps the TUI on s1'
   })
 })
 
-it('[M-02d] a queued prompt the daemon keeps refusing still holds the switch while no turn runs', async () => {
-  const e = gatedEndpoint({ refuseT2: true })
+it('[M-02d] an input already queued in the daemon does not hold the switch once the turn ends', async () => {
+  const e = gatedEndpoint()
   await withApp(e, async (app, term) => {
     await startTurn(e, app, term)
     term.feed('t2')
     term.feed('\r')
+    await vi.waitFor(() => expect(e.followUps()).toEqual([SID(1)]))
     e.release()
-    await vi.waitFor(() =>
-      expect(e.prompts().filter((p) => p.text === 't2').length).toBeGreaterThanOrEqual(1),
-    )
+    await vi.waitFor(() => expect(app.busy).toBe(false))
     await app.command('/new')
-    expect(app.session.id).toBe(SID(1))
-    expect(e.count('session/new')).toBe(1)
+    expect(app.session.id).toBe(SID(2))
     await sleep(250)
+    // The queued input stays with s1 in the daemon: nothing was sent for s2.
+    expect(e.followUps()).toEqual([SID(1)])
     expect(e.prompts().filter((p) => p.sessionId !== SID(1))).toEqual([])
   })
 })
@@ -364,9 +362,10 @@ async function realScenario(switchSession: boolean) {
     await vi.waitFor(() => expect(started).toBe(1))
     term.feed('t2')
     term.feed('\r')
+    // Refused while t1 runs; t2 waits in the daemon queue of s1 whatever the TUI does meanwhile.
     if (switchSession) await app.command('/new')
     const s2 = app.session
-    // Let the slow s1 turn finish on its own and the queue drain.
+    // Let the slow s1 turn finish on its own: the daemon then runs the queued input by itself.
     await vi.waitFor(() => expect(started).toBe(2), { timeout: 6_000 })
     await vi.waitFor(() => expect(app?.busy).toBe(false), { timeout: 6_000 })
     const users = async (s: typeof s1) =>
@@ -385,12 +384,12 @@ async function realScenario(switchSession: boolean) {
   }
 }
 
-it('[control/real] without a switch the queued prompt lands in s1 ledger', async () => {
+it('[control/real] without a switch the queued input runs in s1 once the turn ends', async () => {
   const seen = await realScenario(false)
   expect(seen.s1).toEqual(['t1', 't2'])
 }, 15_000)
 
-it('[M-02b/real] a prompt queued against s1 lands in the s1 ledger, not in a /new session', async () => {
+it('[M-02b/real] an input queued against s1 runs in s1, not in a /new session', async () => {
   const seen = await realScenario(true)
   expect(seen.s2, JSON.stringify(seen)).not.toContain('t2')
   expect(seen.s1, JSON.stringify(seen)).toEqual(['t1', 't2'])

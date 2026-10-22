@@ -237,7 +237,15 @@ describe('Editor input', () => {
   it('esc clears and reports, ctrl-c and ctrl-d are left to the application', () => {
     let cancels = 0
     let busy = false
-    const e = new Editor({ onSubmit: () => {}, onCancelKey: () => cancels++, busy: () => busy })
+    const drafts: boolean[] = []
+    const e = new Editor({
+      onSubmit: () => {},
+      onCancelKey: (hadDraft) => {
+        cancels++
+        drafts.push(hadDraft)
+      },
+      busy: () => busy,
+    })
     type(e, 'draft')
     // Mid-turn, esc only interrupts: the half-written message stays.
     busy = true
@@ -248,9 +256,18 @@ describe('Editor input', () => {
     expect(e.handleInput('\x1b')).toBe(true)
     expect(e.text).toBe('')
     expect(cancels).toBe(2)
+    // The key tells the app whether it found a draft, so an empty editor can mean something else.
+    expect(e.handleInput('\x1b')).toBe(true)
+    expect(drafts).toEqual([true, true, false])
     expect(e.handleInput('\x03')).toBe(false)
     expect(e.handleInput('\x04')).toBe(false)
     expect(e.handleInput('\x0f')).toBe(false)
+  })
+
+  it('strips control characters from any draft put in whole, keeping newlines', () => {
+    const e = new Editor({ onSubmit: () => {} })
+    e.setText('a\u001b[2J\u0007b\nc\td')
+    expect(e.text).toBe('a[2Jb\nc  d')
   })
 
   it('swallows an unrecognised escape sequence instead of typing it', () => {

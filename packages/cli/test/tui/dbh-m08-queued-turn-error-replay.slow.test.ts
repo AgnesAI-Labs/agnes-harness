@@ -5,7 +5,9 @@
 // SESSION_NOT_FOUND]. No other failure is safe to replay here."); packages/cli/src/modes/print.ts
 // reasonFromThrow (TURN_ERROR is how daemon reports a turn that ran and ended in `error`);
 // packages/daemon/src/local/methods/acp.ts session/prompt (user message enqueued and turn run before
-// TURN_ERROR is thrown). A queued prompt whose turn was accepted and ran must not be sent again.
+// TURN_ERROR is thrown). A queued input whose turn was accepted and ran must not be sent again.
+// Input typed while a turn runs goes to the daemon's followUp queue under one command id; this client
+// keeps no queue of its own, so nothing here can replay it.
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -23,8 +25,9 @@ import { FakeEndpoint } from '../fake-endpoint.js'
 const SID = 'agnes:local:default:cli:dm:m08'
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function fakeScenario(laterPrompts: 'turn-error' | 'ok') {
-  let prompts = 0
+async function fakeScenario(firstPrompt: 'turn-error' | 'ok') {
+  const prompts: string[] = []
+  const followUps: unknown[] = []
   let release!: () => void
   const gate = new Promise<void>((resolve) => {
     release = resolve
@@ -46,15 +49,19 @@ async function fakeScenario(laterPrompts: 'turn-error' | 'ok') {
       turns: [],
       nodes: [],
     }))
-    .on('session/prompt', async () => {
-      const n = ++prompts
-      if (n === 1) {
+    .on('_agnes/v1/submit', (params) => {
+      followUps.push((params as { payload: { content: unknown } }).payload.content)
+      return { seq: 1, replayed: false }
+    })
+    .on('_agnes/v1/submit.ack', () => ({}))
+    .on('session/prompt', async (params) => {
+      prompts.push((params as { prompt: Array<{ text?: string }> }).prompt[0]?.text ?? '')
+      if (prompts.length === 1) {
         await gate
-        return { stopReason: 'end_turn' }
+        // Same shape daemon's acp.ts raises after the turn was enqueued, run and ended in `error`.
+        if (firstPrompt === 'turn-error')
+          throw rpcError('INTERNAL_ERROR', { code: 'TURN_ERROR', turnEnd: { reason: 'error' } })
       }
-      // Same shape daemon's acp.ts raises after the turn was enqueued, run and ended in `error`.
-      if (laterPrompts === 'turn-error')
-        throw rpcError('INTERNAL_ERROR', { code: 'TURN_ERROR', turnEnd: { reason: 'error' } })
       return { stopReason: 'end_turn' }
     })
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
@@ -66,18 +73,23 @@ async function fakeScenario(laterPrompts: 'turn-error' | 'ok') {
     await app.start()
     term.feed('a')
     term.feed('\r')
-    await vi.waitFor(() => expect(prompts).toBe(1))
+    await vi.waitFor(() => expect(prompts).toEqual(['a']))
     expect(app.busy).toBe(true)
     term.feed('b')
-    term.feed('\r') // queued
+    term.feed('\r') // queued in the daemon
+    await vi.waitFor(() => expect(followUps).toHaveLength(1))
     release()
-    await vi.waitFor(() => expect(prompts).toBeGreaterThanOrEqual(2))
+    await vi.waitFor(() => expect(app?.busy).toBe(false))
     const samples: number[] = []
     for (let i = 0; i < 4; i++) {
       await sleep(500)
-      samples.push(prompts)
+      samples.push(prompts.length + followUps.length)
     }
-    return { total: prompts, samples }
+    // Input after the failed turn still goes out as an ordinary prompt.
+    term.feed('c')
+    term.feed('\r')
+    await vi.waitFor(() => expect(prompts).toEqual(['a', 'c']))
+    return { prompts, followUps: followUps.length, samples }
   } finally {
     await app?.stop()
     await client.close()
@@ -85,15 +97,23 @@ async function fakeScenario(laterPrompts: 'turn-error' | 'ok') {
   }
 }
 
-it('[control] a queued prompt that succeeds is sent exactly once', async () => {
+it('[control] a queued input that succeeds is sent exactly once', async () => {
   const seen = await fakeScenario('ok')
-  expect(seen.total, JSON.stringify(seen)).toBe(2)
+  expect(seen, JSON.stringify(seen)).toMatchObject({
+    prompts: ['a', 'c'],
+    followUps: 1,
+    samples: [2, 2, 2, 2],
+  })
 })
 
-it('[M-08] a queued prompt rejected with TURN_ERROR (already accepted and run) is not re-sent', async () => {
+it('[M-08] a turn that ended in TURN_ERROR leaves the queued input sent once and later input still sends', async () => {
   const seen = await fakeScenario('turn-error')
-  // Correct: `a` once + `b` once. Anything above 2 replays an executed turn.
-  expect(seen.total, JSON.stringify(seen)).toBeLessThanOrEqual(2)
+  // Correct: `a` once, `b` queued once, `c` once. Anything more replays an executed turn.
+  expect(seen, JSON.stringify(seen)).toMatchObject({
+    prompts: ['a', 'c'],
+    followUps: 1,
+    samples: [2, 2, 2, 2],
+  })
 })
 
 // Second, independent dynamic source: real SDK + local daemon endpoint + core + test host. The first
@@ -174,8 +194,7 @@ async function realScenario(failLater: boolean) {
       .flatMap((node) => (node.kind === 'user' ? node.content : []))
       .map((block) => (block.type === 'text' ? block.text : `[${block.type}]`))
     const turns = (await session.projectUI()).turns.map((turn) => turn.status)
-    const pending = (app as unknown as { pendingPrompts: unknown[] }).pendingPrompts.length
-    // Once the chain stalls, `b` is still queued: the user's next ordinary submission drains it again.
+    // The user's next submission must neither replay `b` nor be lost.
     const bBefore = users.filter((text) => text === 'b').length
     const callsBeforeNext = calls
     const rpcBeforeNext = promptRpc.length
@@ -203,7 +222,6 @@ async function realScenario(failLater: boolean) {
         return acc
       }, {}),
       cRowsAfterNext: usersAfterNext.filter((text) => text === 'c').length,
-      pendingAtEnd: pending,
       users,
       bCount: users.filter((text) => text === 'b').length,
       turns,
@@ -217,16 +235,19 @@ async function realScenario(failLater: boolean) {
   }
 }
 
-it('[control/real] a queued prompt that succeeds is recorded and inferred once', async () => {
+it('[control/real] a queued input that succeeds is recorded and inferred once', async () => {
   const seen = await realScenario(false)
   expect(seen.bCount, JSON.stringify(seen)).toBe(1)
   expect(seen.providerCalls, JSON.stringify(seen)).toBe(2)
   expect(seen.bAfterNextSubmit, JSON.stringify(seen)).toBe(0)
+  expect(seen.cRowsAfterNext, JSON.stringify(seen)).toBe(1)
 }, 20_000)
 
-it('[M-08/real] a queued prompt whose turn ends in error is executed once, not replayed', async () => {
+it('[M-08/real] a queued input whose turn ends in error is executed once, not replayed', async () => {
   const seen = await realScenario(true)
   // Correct: the ledger records user message `b` exactly once and the provider is asked twice.
   expect(seen.bCount, JSON.stringify(seen)).toBe(1)
   expect(seen.providerCalls, JSON.stringify(seen)).toBeLessThanOrEqual(2)
+  expect(seen.bAfterNextSubmit, JSON.stringify(seen)).toBe(0)
+  expect(seen.cRowsAfterNext, JSON.stringify(seen)).toBe(1)
 }, 20_000)
