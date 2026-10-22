@@ -628,7 +628,10 @@ it.each([false, undefined])(
       input: 'Write',
       resident: true,
     })
-    await first.close()
+    // Release the crashed writers without an explicit parent/child stop; SIGKILL is
+    // covered by the Host e2e case. Kernel.close() would intentionally revoke this task.
+    await first.get(handle.key)!.d.log.close()
+    await parent.d.log.close()
     const effect = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'written' }] }))
     const prompts: string[] = []
     const restoredSeams = fakeSeams({
@@ -639,19 +642,33 @@ it.each([false, undefined])(
         },
       },
     })
-    const second = make(storage, fakeProvider([toolTurn('write_note', {}), textTurn('done')]), {
+    let second!: Kernel
+    second = make(storage, fakeProvider([toolTurn('write_note', {}), textTurn('done')]), {
       seams: restoredSeams,
+      childRoles: {
+        list: async () => [legacy.role],
+        resolve: async () => {
+          throw new Error('Cold resume must use the pinned role')
+        },
+        reopen: (key, opts) =>
+          second.session(key, {
+            ...options,
+            ...opts,
+            workspaceInvocation: testWorkspaceInvocation(testFsOps(), restoredSeams),
+          }),
+      },
     })
     second.tools.add(writeTool(effect), { source: 'fixture', trust: 'trusted' })
     try {
-      await second.session('parent', options)
-      const restored = await second.session(handle.key, {
-        ...options,
-        workspaceInvocation: testWorkspaceInvocation(testFsOps(), restoredSeams),
-      })
+      const owner = await second.session('parent', options)
+      const resumed = await owner.d.children.resume!(handle.key)
+      const restored = second.get(handle.key)!
       expect(restored.currentTools().resolve('write_note')).toBeDefined()
       expect(restored.d.roleDelegation?.parentTainted).toBe(parentTainted)
-      await restored.run({ until: 'turn-end', signal: AbortSignal.timeout(5000) })
+      await vi.waitFor(async () => {
+        const status = await resumed.status()
+        expect(status.state !== 'running' || status.idle === true).toBe(true)
+      })
       expect(
         effect,
         JSON.stringify({ prompts, results: await restored.scan({ type: 'tool/result', limit: 10 }) }),
@@ -666,6 +683,7 @@ it.each([false, undefined])(
       }
     } finally {
       await second.close()
+      await first.close()
     }
   },
 )
