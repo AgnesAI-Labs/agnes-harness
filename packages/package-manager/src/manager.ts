@@ -66,7 +66,7 @@ import {
 import {
   collectRuntimeSnapshotsStore,
   listRuntimePinsStoreAsync,
-  pinRuntimeSnapshotStore,
+  pinRuntimeSnapshotsStore,
   type RuntimePin,
   type RuntimeSnapshotCollection,
   type RuntimeSnapshotPinRequest,
@@ -143,6 +143,12 @@ export interface PackageManager {
   runtimePluginSnapshots(profileDir: string): Promise<readonly RuntimePluginSnapshot[]>
   recover(profileDir: string): Promise<void>
   pinRuntimeSnapshot(profileDir: string, request: RuntimeSnapshotPinRequest): Promise<RuntimePin>
+  /** Pin in order under one lock, manifest read and snapshot verification; a failure keeps earlier pins. */
+  pinRuntimeSnapshots(
+    profileDir: string,
+    requests: readonly RuntimeSnapshotPinRequest[],
+    op?: OperationOptions,
+  ): Promise<RuntimePin[]>
   resolveRuntimePin(
     profileDir: string,
     request: Readonly<{ pinId: string; expectedSnapshotId?: string }>,
@@ -437,6 +443,12 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       ),
     ).finally(cut)
   }
+  // Pin bookkeeping takes the lock but leaves the lockfile and the installed trees alone.
+  const lockedPins = <T>(
+    profileDir: string,
+    fn: () => Promise<T>,
+    op: OperationOptions & { pin?: boolean } = {},
+  ) => locked(profileDir, fn, op, false, false)
   if (options.auditActor !== undefined && !/^[a-zA-Z0-9_.-]{1,128}$/.test(options.auditActor))
     throw new TypeError('invalid audit actor')
   const commitLegacyStage = async (
@@ -799,14 +811,18 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       })
     },
     async pinRuntimeSnapshot(profileDir, request) {
-      const frozen = structuredClone(request)
-      return locked(
+      return ((await manager.pinRuntimeSnapshots(profileDir, [request])) as [RuntimePin])[0]
+    },
+    async pinRuntimeSnapshots(profileDir, requests, op = {}) {
+      if (!requests.length) return []
+      const frozen = structuredClone([...requests])
+      return lockedPins(
         profileDir,
         async () => {
           const lock = load(profileDir),
             store = storeFor(profileDir)
           writable(lock)
-          return pinRuntimeSnapshotStore(
+          return pinRuntimeSnapshotsStore(
             store,
             lock,
             frozen,
@@ -814,46 +830,26 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             ceiling(lock),
           )
         },
-        { pin: true },
-        false,
-        false,
+        { ...op, pin: true },
       )
     },
     async resolveRuntimePin(profileDir, request) {
       const frozen = { ...request }
-      return locked(
-        profileDir,
-        async () => {
-          const lock = load(profileDir)
-          const inventory = readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) })
-          return resolveRuntimePinStore(storeFor(profileDir), frozen, lock, (id) => {
-            const row = inventory.packages.find((candidate) => candidate.id === id)
-            return row?.trusted === true && row.blockers.length === 0
-          })
-        },
-        {},
-        false,
-        false,
-      )
+      return lockedPins(profileDir, async () => {
+        const lock = load(profileDir)
+        const inventory = readInventory(lock, { ...storeFor(profileDir), ceiling: ceiling(lock) })
+        return resolveRuntimePinStore(storeFor(profileDir), frozen, lock, (id) => {
+          const row = inventory.packages.find((candidate) => candidate.id === id)
+          return row?.trusted === true && row.blockers.length === 0
+        })
+      })
     },
     async releaseRuntimePin(profileDir, request) {
       const frozen = { ...request }
-      await locked(
-        profileDir,
-        async () => releaseRuntimePinStore(storeFor(profileDir), frozen),
-        {},
-        false,
-        false,
-      )
+      await lockedPins(profileDir, async () => releaseRuntimePinStore(storeFor(profileDir), frozen))
     },
     async collectRuntimeSnapshots(profileDir) {
-      return locked(
-        profileDir,
-        async () => collectRuntimeSnapshotsStore(storeFor(profileDir)),
-        {},
-        false,
-        false,
-      )
+      return lockedPins(profileDir, async () => collectRuntimeSnapshotsStore(storeFor(profileDir)))
     },
     async listRuntimePins(profileDir) {
       return locked(profileDir, async () => readPins(profileDir), {}, true)

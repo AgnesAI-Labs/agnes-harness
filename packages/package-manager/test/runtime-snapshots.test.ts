@@ -652,3 +652,82 @@ it('listRuntimePins enumerates every pin regardless of purpose', async () => {
   })
   expect((await m.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['active-v1'])
 })
+
+// Batched pins: two installed packages so a batch contains two real snapshot-creating transactions.
+const idTwo = 'acme/runtime-snapshot-two'
+async function installBoth() {
+  const m = await installTrusted(),
+    dirTwo = join(root, 'source-two')
+  mkdirSync(dirTwo, { recursive: true })
+  for (const file of readdirSync(sourceDir))
+    writeFileSync(
+      join(dirTwo, file),
+      readFileSync(join(sourceDir, file), 'utf8').replaceAll('acme/runtime-snapshot', idTwo),
+    )
+  const sourceTwo = parseSource('file:./source-two'),
+    preview = await m.inspect(profile, sourceTwo)
+  await m.install(profile, sourceTwo, { expectedIntegrity: preview.integrity })
+  const rows = (await m.inventory(profile)).packages
+  for (const row of rows)
+    if (row.id === idTwo)
+      await m.trust(profile, idTwo, { integrity: row.entry.integrity, capabilityHash: row.capabilityHash })
+  const request = (packageId: string, pinId: string) => {
+    const row = rows.find((candidate) => candidate.id === packageId)
+    if (!row?.entry.treeIntegrity) throw new Error('missing package identity')
+    return {
+      pinId,
+      operationId: pinId,
+      packageId,
+      purpose: 'active' as const,
+      selector: {
+        kind: 'installed' as const,
+        expectedIntegrity: row.entry.integrity,
+        expectedTreeIntegrity: row.entry.treeIntegrity,
+      },
+    }
+  }
+  return { m, request }
+}
+
+it.each([0, 1, 3])('pins a batch of %i requests exactly like sequential pins', async (count) => {
+  const { m, request } = await installBoth(),
+    // The last request repeats the first pin id, so it must see the state the first pin committed.
+    requests = [request(id, 'pin-a'), request(idTwo, 'pin-b'), request(id, 'pin-a')].slice(0, count)
+  const sequential = []
+  for (const each of requests) sequential.push(await m.pinRuntimeSnapshot(profile, each))
+  const sequentialState = await m.listRuntimePins(profile)
+  for (const pin of sequentialState)
+    await m.releaseRuntimePin(profile, { pinId: pin.pinId, expectedSnapshotId: pin.snapshot.snapshotId })
+  await m.collectRuntimeSnapshots(profile)
+  expect(await m.listRuntimePins(profile)).toEqual([])
+  expect(await m.pinRuntimeSnapshots(profile, requests)).toEqual(sequential)
+  expect(await m.listRuntimePins(profile)).toEqual(sequentialState)
+})
+
+it('keeps the pins committed before a failing batch member and does not attempt later ones', async () => {
+  const { m, request } = await installBoth(),
+    bad = request(idTwo, 'pin-b')
+  bad.selector.expectedTreeIntegrity = `sha256-${'f'.repeat(64)}`
+  await expect(
+    m.pinRuntimeSnapshots(profile, [request(id, 'pin-a'), bad, request(id, 'pin-c')]),
+  ).rejects.toThrow()
+  expect((await m.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['pin-a'])
+})
+
+it('recovers a journal left between two batched pins like sequential pins', async () => {
+  const { request } = await installBoth()
+  let prepared = 0
+  const crashing = manager({
+    runtimeCheckpoint: (seen) => {
+      if (seen === 'runtime-prepared' && ++prepared === 2) throw new Error('crash')
+    },
+  })
+  await expect(
+    crashing.pinRuntimeSnapshots(profile, [request(id, 'pin-a'), request(idTwo, 'pin-b')]),
+  ).rejects.toThrow('crash')
+  expect(existsSync(join(profile, '.agnes-runtime-transaction.json'))).toBe(true)
+  const fresh = manager()
+  await fresh.recover(profile)
+  expect((await fresh.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['pin-a'])
+  expect((await fresh.pinRuntimeSnapshots(profile, [request(idTwo, 'pin-b')]))[0]?.pinId).toBe('pin-b')
+})

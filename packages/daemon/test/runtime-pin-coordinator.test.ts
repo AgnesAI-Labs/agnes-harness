@@ -68,26 +68,28 @@ function fixture() {
         }) as unknown as InstalledInventory,
     ),
     listRuntimePins: vi.fn(async () => [...active.values()]),
-    pinRuntimeSnapshot: vi.fn(async (_dir: string, request: { pinId: string }) => {
-      const pin = {
-        pinId: request.pinId,
-        operationId: request.pinId,
-        purpose: 'active',
-        snapshot: {
-          snapshotId: `sha256-${'d'.repeat(64)}`,
-          profile: 'default',
-          packageId,
-          integrity,
-          treeIntegrity,
-          version: '1.0.0',
-          capabilityHash: revision,
-          directory: '/immutable/snapshot',
-          contributions: [],
-        },
-      } as RuntimePin
-      active.set(pin.pinId, pin)
-      return pin
-    }),
+    pinRuntimeSnapshots: vi.fn(async (_dir: string, requests: readonly { pinId: string }[]) =>
+      requests.map((request) => {
+        const pin = {
+          pinId: request.pinId,
+          operationId: request.pinId,
+          purpose: 'active',
+          snapshot: {
+            snapshotId: `sha256-${'d'.repeat(64)}`,
+            profile: 'default',
+            packageId,
+            integrity,
+            treeIntegrity,
+            version: '1.0.0',
+            capabilityHash: revision,
+            directory: '/immutable/snapshot',
+            contributions: [],
+          },
+        } as RuntimePin
+        active.set(pin.pinId, pin)
+        return pin
+      }),
+    ),
     releaseRuntimePin: vi.fn(async (_dir: string, request: { pinId: string }) => {
       active.delete(request.pinId)
     }),
@@ -122,6 +124,7 @@ describe('runtime active pin coordinator', () => {
       expect(f.store.desired()).toEqual(value)
       expect(f.store.pins()).toEqual([])
       expect(f.active.size).toBe(1)
+      expect(f.manager.pinRuntimeSnapshots).toHaveBeenCalledTimes(1)
       const recovered = createRuntimePinCoordinator({
         store: f.store,
         manager: f.manager,
@@ -310,33 +313,34 @@ describe('concurrent reconcile publication', () => {
     const manager = {
       inventory: async () => inventory,
       listRuntimePins: async () => [...active.values()],
-      pinRuntimeSnapshot: async (
+      pinRuntimeSnapshots: async (
         _directory: string,
-        request: {
+        requests: readonly {
           pinId: string
           packageId: string
           selector: { expectedIntegrity: string; expectedTreeIntegrity: string }
-        },
-      ) => {
-        const pin = {
-          pinId: request.pinId,
-          operationId: request.pinId,
-          purpose: 'active',
-          snapshot: {
-            snapshotId: request.selector.expectedIntegrity,
-            profile: 'default',
-            packageId: request.packageId,
-            integrity: request.selector.expectedIntegrity,
-            treeIntegrity: request.selector.expectedTreeIntegrity,
-            version: '1.0.0',
-            capabilityHash: 'capability',
-            directory: '/immutable/snapshot',
-            contributions: [],
-          },
-        } as unknown as RuntimePin
-        active.set(pin.pinId, pin)
-        return pin
-      },
+        }[],
+      ) =>
+        requests.map((request) => {
+          const pin = {
+            pinId: request.pinId,
+            operationId: request.pinId,
+            purpose: 'active',
+            snapshot: {
+              snapshotId: request.selector.expectedIntegrity,
+              profile: 'default',
+              packageId: request.packageId,
+              integrity: request.selector.expectedIntegrity,
+              treeIntegrity: request.selector.expectedTreeIntegrity,
+              version: '1.0.0',
+              capabilityHash: 'capability',
+              directory: '/immutable/snapshot',
+              contributions: [],
+            },
+          } as unknown as RuntimePin
+          active.set(pin.pinId, pin)
+          return pin
+        }),
       releaseRuntimePin: async (_directory: string, request: { pinId: string }) => {
         active.delete(request.pinId)
       },

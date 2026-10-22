@@ -5,6 +5,7 @@ import {
   isSnapshotPackageEligible,
   type PackageManager,
   type RuntimePin,
+  type RuntimeSnapshotPinRequest,
   type RuntimeSnapshotSelector,
 } from '@agnes/package-manager'
 import {
@@ -89,6 +90,7 @@ export function createRuntimePinCoordinator(
   const ensure = async (artifact: RuntimeTargetArtifact): Promise<string> => {
     const inventory = await input.manager.inventory(input.profileDirectory)
     const existing = new Map((await pins()).map((pin) => [pin.pinId, pin]))
+    const missing: RuntimeSnapshotPinRequest[] = []
     for (const ref of references(artifact)) {
       const id = activeRuntimePinId(ref)
       input.store.pin(id)
@@ -107,7 +109,7 @@ export function createRuntimePinCoordinator(
         continue
       }
       if (!source) throw new Error(`E_RUNTIME_TARGET_SNAPSHOT_MISSING: ${ref.packageId}`)
-      await input.manager.pinRuntimeSnapshot(input.profileDirectory, {
+      missing.push({
         pinId: id,
         operationId: id,
         packageId: ref.packageId,
@@ -115,6 +117,8 @@ export function createRuntimePinCoordinator(
         selector: source,
       })
     }
+    // One locked pass pins every missing snapshot, as on a fresh home's first boot.
+    if (missing.length) await input.manager.pinRuntimeSnapshots(input.profileDirectory, missing)
     return inventory.hash
   }
   return Object.freeze({
