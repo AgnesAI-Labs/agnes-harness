@@ -28,7 +28,9 @@ export function localizeToolSummary(summary: string, t: Translate, name?: string
   const replace =
     lead === name ||
     lead === 'Run tool' ||
-    [...Object.values(baseToolCatalog.en), ...Object.values(baseToolCatalog['zh-CN'])].includes(lead) ||
+    [baseToolCatalog.en, baseToolCatalog['zh-CN']].some((catalog) =>
+      Object.entries(catalog).some(([key, title]) => key.startsWith('baseTool.') && title === lead),
+    ) ||
     Object.hasOwn(legacy, lead)
   return replace ? [title + leadWithReason.slice(lead.length), ...rest].join(' · ') : summary
 }
