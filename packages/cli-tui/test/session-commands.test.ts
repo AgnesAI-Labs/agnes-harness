@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { type ContentBlock, rpcError } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
@@ -147,7 +147,7 @@ describe('session slash commands', () => {
     })
     const app = appWith({ session: { new: created } })
     await expect(runSlash(app, '/new ../b')).rejects.toThrow('workspace not authorised')
-    expect(created).toHaveBeenCalledWith(expect.objectContaining({ cwd: '/w/b' }))
+    expect(created).toHaveBeenCalledWith(expect.objectContaining({ cwd: resolve(app.cwd, '../b') }))
   })
 })
 

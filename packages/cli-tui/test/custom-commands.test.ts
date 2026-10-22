@@ -97,7 +97,12 @@ describe('custom slash commands', () => {
     mine('Bad_Name.md', 'x')
     mine('big.md', 'x'.repeat(32 * 1024 + 1))
     mine('ok-1.md', 'fine')
-    symlinkSync(join(cwd, 'proj-secret'), join(personal, 'link.md'))
+    // Unprivileged Windows uses a directory junction; both links must be refused without reading them.
+    symlinkSync(
+      process.platform === 'win32' ? cwd : join(cwd, 'proj-secret'),
+      join(personal, 'link.md'),
+      process.platform === 'win32' ? 'junction' : 'file',
+    )
     const app = appFor()
     const help = (await runSlash(app, '/help')).text ?? ''
     expect(help).toContain(tt('custom.skipped', 'en'))
