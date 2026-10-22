@@ -193,6 +193,43 @@ describe('banned runners and subcommand programs', () => {
     expect(offerPrefix('uv sync')?.tokens).toEqual(['uv', 'sync'])
   })
 
+  it.each(['rg', 'sort', 'uniq', 'tree', 'diff', 'file', './ls', '/bin/ls', 'LS'])(
+    'does not let %s stand alone',
+    (program) => {
+      expect(offerPrefix(program)).toBeUndefined()
+      expect(isBannedPrefix([program])).toBe(true)
+    },
+  )
+
+  it.each([
+    'git rebase',
+    'git config',
+    'cargo install',
+    'go generate',
+    'npm install',
+    'pip install',
+    'make build',
+  ])('offers only listed program and subcommand pairs, not %s', (prefix) => {
+    expect(offerPrefix(`${prefix} x`)).toBeUndefined()
+    expect(isBannedPrefix(prefix.split(' '))).toBe(true)
+  })
+
+  it.each<[string, string[]]>([
+    ['git diff --ext-diff', ['git', 'diff']],
+    ['git push --receive-pack=x origin', ['git', 'push']],
+    ['git fetch --upload-pack x', ['git', 'fetch']],
+    ['git log --output=f', ['git', 'log']],
+    ['go test -exec x ./...', ['go', 'test']],
+    ['go build -toolexec=x', ['go', 'build']],
+    ['cargo test --config x', ['cargo', 'test']],
+    ['npm test --script-shell=x', ['npm', 'test']],
+    ['grep -f patterns x', ['grep']],
+  ])('neither offers nor covers %j, whose options run or write something else', (command, prefix) => {
+    expect(offerPrefix(command)).toBeUndefined()
+    expect(coveredByPrefixes(command, [prefix])).toBe(false)
+    expect(coveredByPrefixes(prefix.join(' '), [prefix])).toBe(true)
+  })
+
   it('never honours a banned scope that was stored earlier', () => {
     for (const tokens of [['ssh', 'host'], ['git'], ['bash'], ['npm', 'run'], ['gh', 'api']]) {
       const scope = prefixScope(tokens)

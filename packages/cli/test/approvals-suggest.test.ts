@@ -79,11 +79,11 @@ describe('suggestPrefixes', () => {
   })
 
   it('shows a prefix without an example once any command in the group looks like it carries a credential', () => {
-    const found = suggestPrefixes(['deploy app', 'deploy app API_KEY=hunter2', 'deploy app'], {
+    const found = suggestPrefixes(['git push', 'git push API_KEY=hunter2', 'git push'], {
       minCount: 2,
       limit: 5,
     })
-    expect(found).toEqual([{ prefix: ['deploy', 'app'], count: 3 }])
+    expect(found).toEqual([{ prefix: ['git', 'push'], count: 3 }])
     expect(JSON.stringify(found)).not.toContain('hunter2')
   })
 })

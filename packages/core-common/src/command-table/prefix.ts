@@ -40,132 +40,10 @@ export function parsePrefixScope(scope: string): string[] | undefined {
   return scope === prefixScope(tokens as string[]) ? (tokens as string[]) : undefined
 }
 
-const SHELLS = ['sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'csh', 'tcsh', 'pwsh', 'powershell', 'cmd']
-const INTERPRETERS = [
-  'node',
-  'nodejs',
-  'deno',
-  'ruby',
-  'perl',
-  'php',
-  'lua',
-  'osascript',
-  'awk',
-  'gawk',
-  'mawk',
-]
-/** Programs that run an arbitrary other program or payload. */
-const RUNNERS = [
-  'env',
-  'sudo',
-  'doas',
-  'su',
-  'xargs',
-  'find',
-  'nohup',
-  'timeout',
-  'nice',
-  'time',
-  'watch',
-  'setsid',
-  'command',
-  'builtin',
-  'exec',
-  'eval',
-  'source',
-  '.',
-  'npx',
-  'bunx',
-  'curl',
-  'wget',
-  // Remote, container and wrapper runners: they execute whatever follows them somewhere else.
-  'ssh',
-  'scp',
-  'sftp',
-  'rsync',
-  'docker',
-  'podman',
-  'nerdctl',
-  'kubectl',
-  'helm',
-  'chroot',
-  'unshare',
-  'nsenter',
-  'flock',
-  'stdbuf',
-  'ionice',
-  'chrt',
-  'taskset',
-  'script',
-  'parallel',
-  'busybox',
-  'toybox',
-  'gh',
-  'nc',
-  'ncat',
-  'netcat',
-  'socat',
-  'tmux',
-  'screen',
-  'at',
-  'pkexec',
-  'runuser',
-  'setpriv',
-  'systemd-run',
-  'launchctl',
-  'sandbox-exec',
-  'bwrap',
-  'firejail',
-  'proot',
-  'fakeroot',
-  'gdb',
-  'lldb',
-  'strace',
-  'ltrace',
-  'caffeinate',
-  'sshpass',
-  'open',
-  'xdg-open',
-]
-/** Interpreters, editors and query shells that run code or commands given as ordinary arguments. */
-const CODE_RUNNERS = [
-  'tsx',
-  'ts-node',
-  'java',
-  'jshell',
-  'rscript',
-  'r',
-  'julia',
-  'swift',
-  'kotlin',
-  'scala',
-  'groovy',
-  'irb',
-  'pry',
-  'ghci',
-  'tclsh',
-  'wish',
-  'expect',
-  'sqlite3',
-  'psql',
-  'mysql',
-  'vim',
-  'vi',
-  'nvim',
-  'emacs',
-  'ed',
-  'ex',
-  'less',
-  'more',
-  'man',
-  'sed',
-  'uvx',
-  'pipx',
-]
-const BANNED_FIRST = new Set([...SHELLS, ...INTERPRETERS, ...RUNNERS, ...CODE_RUNNERS])
 /**
- * A prefix of the program alone grants it with any arguments, so only read-only programs whose
- * arguments cannot name a command to run may stand alone. Everything else needs a subcommand.
+ * Prefix grants are allow-listed: a denylist of "programs that can run code" kept leaking (`rg --pre`,
+ * `sort --compress-program`, `cargo run`, `uv run`). A program alone is granted only when no argument
+ * can make it run or write anything; a program with a subcommand only for the pairs below.
  */
 const ALONE_OK = new Set([
   'ls',
@@ -174,51 +52,78 @@ const ALONE_OK = new Set([
   'tail',
   'wc',
   'grep',
-  'rg',
   'pwd',
   'echo',
   'which',
-  'file',
   'stat',
   'du',
   'df',
-  'tree',
-  'diff',
-  'sort',
-  'uniq',
-  'cut',
   'date',
 ])
-/** Second words that hand the rest of the command line to something else to run, for any program. */
-const RUN_SUBCOMMANDS = new Set([
-  'run',
-  'run-script',
-  'exec',
-  'x',
-  'dlx',
-  'create',
-  'init',
-  'foreach',
-  'eval',
-  'shell',
-  'repl',
-  'console',
-  'debug',
-  'tool',
-  'with',
-  'script',
-])
+const PAIRS: Readonly<Record<string, ReadonlySet<string>>> = {
+  git: new Set([
+    'status',
+    'diff',
+    'log',
+    'show',
+    'branch',
+    'fetch',
+    'add',
+    'commit',
+    'push',
+    'pull',
+    'switch',
+    'checkout',
+    'restore',
+    'blame',
+    'tag',
+    'remote',
+    'rev-parse',
+    'ls-files',
+  ]),
+  npm: new Set(['test', 'ls', 'outdated', 'audit']),
+  pnpm: new Set(['test', 'ls', 'outdated', 'audit']),
+  yarn: new Set(['test']),
+  bun: new Set(['test']),
+  cargo: new Set(['build', 'test', 'check', 'clippy', 'fmt', 'doc', 'tree']),
+  go: new Set(['build', 'test', 'vet', 'fmt', 'list']),
+  uv: new Set(['sync', 'lock']),
+  pip: new Set(['list', 'show', 'freeze']),
+  pip3: new Set(['list', 'show', 'freeze']),
+}
+/**
+ * Options of an allowed pair that take a command, a config override or an output file: a covered
+ * command carrying one is asked about as usual. What a granted command runs from the project itself
+ * (test scripts, git hooks) is the grant's purpose and is not checked here.
+ */
+const DENIED_ARGS: Readonly<Record<string, RegExp>> = {
+  git: /^(?:-c|-C|-x|-u|-O|--exec.*|--ext-diff|--textconv|--upload-pack.*|--receive-pack.*|--output.*|--open-files-in-pager.*|--config.*|--template.*|--git-dir.*|--work-tree.*)$/,
+  go: /^-(?:-?exec|-?toolexec|-?overlay|-?modfile)(?:=.*)?$/,
+  cargo: /^(?:--config.*|-Z.*)$/,
+  npm: /^--(?:script-shell|node-options|userconfig|globalconfig).*$/,
+  pnpm: /^--(?:script-shell|node-options|config\..*).*$/,
+  yarn: /^--(?:script-shell|node-options).*$/,
+  bun: /^--(?:preload|config).*$/,
+  uv: /^--(?:config-file|python).*$/,
+  grep: /^(?:-f|--file.*)$/,
+}
 
 const programName = (word: string): string =>
   (word.split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.(?:exe|cmd|bat|com)$/, '')
 
 /** A prefix that must never be offered or granted, whatever the user would like. */
 export function isBannedPrefix(tokens: readonly string[]): boolean {
-  const name = programName(tokens[0] ?? '')
-  if (!name || BANNED_FIRST.has(name) || /^python[\d.]*$/.test(name)) return true
-  if (tokens.length === 1 && !ALONE_OK.has(name)) return true
-  if (RUN_SUBCOMMANDS.has((tokens[1] ?? '').toLowerCase())) return true
+  const program = tokens[0] ?? ''
+  // A path (`./ls`) or another spelling names some other program than the one on the list.
+  if (!program || programName(program) !== program) return true
+  if (tokens.length === 1 ? !ALONE_OK.has(program) : !PAIRS[program]?.has(tokens[1] ?? '')) return true
   return tokens.some((token) => looksLikeSecret(token))
+}
+
+/** True when an argument after the prefix is an option that can make the program run or write something else. */
+const deniedArgument = (words: readonly string[]): boolean => {
+  const denied = DENIED_ARGS[words[0] ?? '']
+  return !!denied && words.slice(1).some((word) => denied.test(word))
 }
 
 /** Tokens that look like a credential: never shown in a suggestion and never part of a prefix. */
@@ -264,7 +169,9 @@ export function coveredByPrefixes(command: string, prefixes: readonly (readonly 
   const parts = splitShellCommand(command)
   const usable = prefixes.filter((prefix) => !isBannedPrefix(prefix))
   if (!parts) return false
-  return parts.every((words) => usable.some((prefix) => startsWithPrefix(words, prefix)))
+  return parts.every(
+    (words) => !deniedArgument(words) && usable.some((prefix) => startsWithPrefix(words, prefix)),
+  )
 }
 
 /**
@@ -282,7 +189,7 @@ export function offerPrefix(
   const first = uncovered[0]
   if (!first) return undefined
   const tokens = commandPrefix(first)
-  if (!tokens || isBannedPrefix(tokens)) return undefined
+  if (!tokens || isBannedPrefix(tokens) || uncovered.some(deniedArgument)) return undefined
   if (!uncovered.every((words) => startsWithPrefix(words, tokens))) return undefined
   const scope = prefixScope(tokens)
   if (scope.length > MAX_PREFIX_SCOPE_LENGTH) return undefined
