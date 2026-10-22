@@ -4,8 +4,7 @@ import {
   Button,
   createCatalogTranslator,
   Disclosure,
-  Icon,
-  ListRow,
+  IconTile,
   renderRegion,
   SettingsCheckbox,
   SettingsInput,
@@ -103,33 +102,34 @@ function McpDialogScaffold() {
       <p className="dialog-intro">{t('shell.dialog.description')}</p>
       <p id="mcp-step" className="dialog-step" role="status"></p>
       <section className="agnes-settings-stack" id="mcp-methods" aria-label={t('wizard.choose')}>
-        <ListRow
-          icon={<Icon name="terminal" size={20} />}
-          title={
-            <Button id="mcp-method-local" htmlType="button" appearance="secondary">
-              {t('wizard.local')}
-            </Button>
-          }
-          description={t('wizard.localHelp')}
-        />
-        <ListRow
-          icon={<Icon name="globe" size={20} />}
-          title={
-            <Button id="mcp-method-remote" htmlType="button" appearance="secondary">
-              {t('wizard.remote')}
-            </Button>
-          }
-          description={t('wizard.remoteHelp')}
-        />
-        <ListRow
-          icon={<Icon name="bot" size={20} />}
-          title={
-            <Button id="mcp-method-agent" href="/?new=1" appearance="secondary">
-              {t('wizard.agent')}
-            </Button>
-          }
-          description={t('wizard.agentHelp')}
-        />
+        {(
+          [
+            ['local', 'terminal'],
+            ['remote', 'globe'],
+            ['agent', 'bot'],
+          ] as const
+        ).map(([method, icon]) => (
+          <Button
+            key={method}
+            id={`mcp-method-${method}`}
+            className="mcp-method-card"
+            htmlType="button"
+            {...(method === 'agent' ? { href: '/?new=1' } : {})}
+            appearance="secondary"
+            aria-labelledby={`mcp-method-${method}-title`}
+            aria-describedby={`mcp-method-${method}-description`}
+          >
+            <IconTile name={icon} />
+            <span className="mcp-method-copy">
+              <span id={`mcp-method-${method}-title`} className="mcp-method-title">
+                {t(`wizard.${method}`)}
+              </span>
+              <span id={`mcp-method-${method}-description`} className="mcp-method-description">
+                {t(`wizard.${method}Help`)}
+              </span>
+            </span>
+          </Button>
+        ))}
       </section>
       <section className="agnes-settings-stack" id="mcp-connection-fields" hidden>
         <label id="mcp-url-row" className="form-field" hidden htmlFor="mcp-url">
