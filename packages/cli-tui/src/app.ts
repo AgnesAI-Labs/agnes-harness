@@ -86,7 +86,7 @@ export class TuiApp {
   private currentTurn = 0
   private ticker: ReturnType<typeof setInterval> | undefined
   private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
-  private readonly mouse: TuiMouse
+  readonly mouse: TuiMouse
   private readonly statusBar: StatusBar
   private readonly hints: Hints
   private hintActions: ActionItem[] = []

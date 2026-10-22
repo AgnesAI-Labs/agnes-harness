@@ -432,4 +432,35 @@ describe('small info commands', () => {
     expect(text).toMatch(/Model\s+-$/m)
     expect(text).toMatch(/Queued inputs\s+-$/m)
   })
+
+  const replies = (...texts: string[]) =>
+    appWith(
+      {},
+      {
+        projectUIOpening: async () => ({
+          timeline: {
+            nodes: [{ kind: 'user', text: 'q' }, ...texts.map((text) => ({ kind: 'assistant', text }))],
+          },
+        }),
+      },
+      { mouse: { copy: vi.fn() } },
+    )
+
+  it('/copy takes the nth reply from the end, or its last code block, and refuses bad input', async () => {
+    const app = replies('first', 'a\n```ts\none\n```\nb\n```\ntwo\nlines\n```\n')
+    const copy = (app as unknown as { mouse: { copy: ReturnType<typeof vi.fn> } }).mouse.copy
+    expect(await runSlash(app, '/copy')).toEqual({})
+    expect(copy).toHaveBeenLastCalledWith('a\n```ts\none\n```\nb\n```\ntwo\nlines\n```\n')
+    await runSlash(app, '/copy 2')
+    expect(copy).toHaveBeenLastCalledWith('first')
+    await runSlash(app, '/copy code')
+    expect(copy).toHaveBeenLastCalledWith('two\nlines')
+    copy.mockClear()
+    expect((await runSlash(app, '/copy 3')).text).toBe(tt('copy.range', 'en', { n: 2 }))
+    expect((await runSlash(app, '/copy 0')).text).toBe(tt('copy.usage', 'en'))
+    expect((await runSlash(app, '/copy x y')).text).toBe(tt('copy.usage', 'en'))
+    expect((await runSlash(replies('plain'), '/copy code')).text).toBe(tt('copy.noCode', 'en'))
+    expect((await runSlash(replies(), '/copy')).text).toBe(tt('copy.none', 'en'))
+    expect(copy).not.toHaveBeenCalled()
+  })
 })

@@ -52,11 +52,41 @@ async function statusSlash(app: TuiApp): Promise<SlashResult> {
   }
 }
 
+/** The assistant replies of the open session, oldest first (streamed text is not in the projection yet). */
+async function replies(app: TuiApp): Promise<string[]> {
+  const { timeline } = await app.session.projectUIOpening({ surface: 'tui' })
+  return timeline.nodes.flatMap((node) => (node.kind === 'assistant' && node.text ? [node.text] : []))
+}
+
+// ponytail: only ``` fences; a ~~~ fence is copied as part of the reply, add it when someone asks.
+const lastCodeBlock = (text: string): string | undefined =>
+  [...text.matchAll(/^```[^\n]*\n([\s\S]*?)^```/gm)].at(-1)?.[1]?.replace(/\n$/, '')
+
+/** `/copy [n|code]`: hands the text to the same clipboard path a mouse selection uses, which shows its own tip. */
+async function copySlash(app: TuiApp, args: string[]): Promise<SlashResult> {
+  const { locale } = app
+  const arg = args[0]
+  if (args.length > 1 || (arg !== undefined && arg !== 'code' && !/^[1-9]\d{0,5}$/.test(arg)))
+    return { text: tt('copy.usage', locale) }
+  const all = await replies(app)
+  const n = arg === undefined || arg === 'code' ? 1 : Number(arg)
+  if (all.length === 0) return { text: tt('copy.none', locale) }
+  if (n > all.length) return { text: tt('copy.range', locale, { n: all.length }) }
+  const reply = all[all.length - n] as string
+  const text = arg === 'code' ? lastCodeBlock(reply) : reply
+  if (text === undefined) return { text: tt('copy.noCode', locale) }
+  app.mouse.copy(text)
+  return {}
+}
+
 /** The small commands that report on the session or hand work to the agent. */
-export async function infoSlash(app: TuiApp, cmd: string, _line: string): Promise<SlashResult> {
+export async function infoSlash(app: TuiApp, cmd: string, line: string): Promise<SlashResult> {
+  const args = line.trim().split(/\s+/).slice(1)
   switch (cmd) {
     case '/status':
       return statusSlash(app)
+    case '/copy':
+      return copySlash(app, args)
     default:
       return {}
   }

@@ -42,6 +42,7 @@ node agnes.mjs
 | 模型/预设 | `/model`、`/model main ROUTE/MODEL`、`/preset NAME` |
 | 上下文/用量 | `/context`、`/usage`、`/cost` |
 | 状态 | `/status` 一屏显示会话、预设、模型、工作区、`AGH_HOME`、连接方式（本机 daemon 或 `--connect`）、上下文用量、花费、排队输入和 YOLO；读不到的值显示 `-` |
+| 复制 | `/copy` 把最近一条回复复制到剪贴板，`/copy N` 复制倒数第 N 条，`/copy code` 复制最近一条回复里的最后一个代码块 |
 | 会话整理 | `/pin`、`/unpin`、`/rename TITLE`、`/archive` |
 | 审批授权 | `/grants` 列出本会话中无需询问即可运行工具的授权（「本会话」与「总是」）；`/grants revoke N\|ID` 撤销一条（需管理员连接） |
 | 交付物 | `/deliverables` 列出本会话交付的文件；`/deliverables save N\|ID [PATH]` 校验大小与 sha256 后下载 |

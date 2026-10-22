@@ -175,6 +175,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.queueSummary',
   },
   { name: '/status', descriptionKey: 'commands.status', summaryKey: 'commands.statusSummary' },
+  { name: '/copy', args: '[n|code]', descriptionKey: 'commands.copy', summaryKey: 'commands.copySummary' },
 ]
 
 export function slashCommand(name: string): SlashCommand | undefined {
@@ -463,6 +464,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/queue':
       return queueSlash(app, line)
     case '/status':
+    case '/copy':
       return infoSlash(app, cmd, line)
     case '/pin':
     case '/unpin':

@@ -47,6 +47,12 @@ export const TERMINAL_KEYS = [
   'status.yolo',
   'status.on',
   'status.off',
+  'commands.copy',
+  'commands.copySummary',
+  'copy.usage',
+  'copy.none',
+  'copy.range',
+  'copy.noCode',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -98,6 +104,12 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'status.yolo': 'YOLO',
     'status.on': 'on',
     'status.off': 'off',
+    'commands.copy': 'Copy the last reply (or the nth from the end, or its last code block) to the clipboard',
+    'commands.copySummary': 'Copy a reply',
+    'copy.usage': 'usage: /copy [n|code]',
+    'copy.none': 'There is no reply to copy yet',
+    'copy.range': 'Only {n} replies so far',
+    'copy.noCode': 'No code block in that reply',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -141,5 +153,11 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'status.yolo': 'YOLO',
     'status.on': '开',
     'status.off': '关',
+    'commands.copy': '复制最近一条回复（或倒数第 n 条，或其中最后一个代码块）到剪贴板',
+    'commands.copySummary': '复制回复',
+    'copy.usage': '用法：/copy [n|code]',
+    'copy.none': '还没有可复制的回复',
+    'copy.range': '目前只有 {n} 条回复',
+    'copy.noCode': '该回复里没有代码块',
   },
 }

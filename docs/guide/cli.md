@@ -51,6 +51,7 @@ Type `/` to see the current menu. Common actions:
 | Model / preset | `/model`, `/model main ROUTE/MODEL`, `/preset NAME` |
 | Context / usage | `/context`, `/usage`, `/cost` |
 | Status | `/status` shows the session, preset, model, workspace, `AGH_HOME`, connection (local daemon or `--connect`), context use, cost, queued inputs and YOLO on one screen; a value that cannot be read shows `-` |
+| Copy | `/copy` copies the last reply to the clipboard, `/copy N` the Nth from the end, `/copy code` the last code block of the last reply |
 | Compaction | `/compact [instructions]`; inspect the receipt for execution, skip, or failure |
 | Fork | `/rewind` opens a picker of completed turns; `/rewind SEQ` forks at a sequence number. Either creates a new session and does not roll back the filesystem |
 | Plugins | `/packages`, `/install SOURCE`, `/package ...` |
