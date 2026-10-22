@@ -20,10 +20,15 @@ export type KeyName =
   | 'f2'
   | 'f3'
   | 'f4'
+  | 'paste'
   | 'char'
   | 'unknown'
 
 export type Key = { name: KeyName; ch?: string }
+
+/** Bracketed paste (mode 2004): the terminal wraps pasted text in these, so it cannot pass for typing. */
+export const PASTE_START = '\x1b[200~'
+export const PASTE_END = '\x1b[201~'
 
 // A Map rather than an object: an object lookup would answer for inherited names, so pasting the
 // word "constructor" would parse as something other than text.
@@ -93,6 +98,12 @@ export function parseMouse(data: string): MouseEvent[] | undefined {
 export function parseKey(data: string, kitty: boolean): Key {
   const known = SEQ.get(data)
   if (known) return { name: known }
+  if (
+    data.startsWith(PASTE_START) &&
+    data.endsWith(PASTE_END) &&
+    data.length >= PASTE_START.length + PASTE_END.length
+  )
+    return { name: 'paste', ch: data.slice(PASTE_START.length, data.length - PASTE_END.length) }
   const m = CSI_U.exec(data)
   if (m) {
     const code = Number(m[1])
@@ -103,7 +114,7 @@ export function parseKey(data: string, kitty: boolean): Key {
     if (ctrl) return { name: ctrl }
   }
   // An unrecognised escape sequence is a key or a report this build has no meaning for -- a mouse
-  // event, a bracketed-paste bracket, a cursor-position reply. Reporting it as text is how a
+  // event, a stray paste bracket, a cursor-position reply. Reporting it as text is how a
   // terminal that starts sending mouse events fills the prompt with things like "[<35;40;12M".
   if (data.startsWith('\x1b')) return { name: 'unknown' }
   return { name: 'char', ch: data }

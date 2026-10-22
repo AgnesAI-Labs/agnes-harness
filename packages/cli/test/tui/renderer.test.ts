@@ -317,6 +317,22 @@ describe('Renderer bookkeeping', () => {
     expect(term.writes.length).toBe(after)
   })
 
+  it('turns bracketed paste on and off, and hands a paste split across chunks over whole', () => {
+    const term = new FakeTerminal({ columns: 10, rows: 4 })
+    const seen: string[] = []
+    const r = new Renderer(term, {
+      render: () => ['a'],
+      handleInput: (d) => seen.push(d) > 0,
+      invalidate() {},
+    })
+    r.start()
+    expect(term.writes.join('')).toContain('\x1b[?2004h')
+    for (const chunk of ['k\x1b[200~one\r', 'two\x1b[20', '1~z']) term.feed(chunk)
+    expect(seen).toEqual(['k', '\x1b[200~one\rtwo\x1b[201~', 'z'])
+    r.stop()
+    expect(term.writes.at(-1)).toContain('\x1b[?2004l')
+  })
+
   it('does not push a full-height fixed chrome frame into scrollback on stop', async () => {
     const term = new FakeTerminal({ columns: 20, rows: 4 })
     term.write('USER HISTORY\r\none\r\ntwo\r\nthree\r\nfour')

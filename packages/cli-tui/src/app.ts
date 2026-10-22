@@ -269,6 +269,7 @@ export class TuiApp {
     this.editor = new Editor({
       maxRows: () => Math.max(1, Math.floor(o.term.size().rows / 3)),
       placeholder: tt('app.composerPlaceholder', locale),
+      locale,
       ansi,
       onSubmit: (text) => {
         void this.runInput(text)
@@ -408,7 +409,7 @@ export class TuiApp {
       // below). Busy, it means something else: send the current draft as a followUp queued behind
       // the turn in flight, rather than a newline nobody is here to keep composing around.
       if (key.name === 'alt-enter' && this.busy) {
-        const text = this.editor.text
+        const text = this.editor.expanded()
         if (text.trim()) {
           this.editor.clear()
           void this.o.session

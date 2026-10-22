@@ -180,6 +180,27 @@ describe('Editor input', () => {
     expect(e.text).toBe('')
   })
 
+  it('takes a paste as text: newlines normalised, tabs widened, a long one folded into a chip until it is sent', () => {
+    const sub: string[] = []
+    const e = new Editor({ onSubmit: (t) => sub.push(t) })
+    const wrap = (s: string) => `\x1b[200~${s}\x1b[201~`
+    expect(parseKey(wrap('a\rb'), false)).toEqual({ name: 'paste', ch: 'a\rb' })
+    e.handleInput(wrap('a\r\nb\rc\td\x07'))
+    expect(e.text).toBe('a\nb\nc  d')
+    e.clear()
+    const long = Array.from({ length: 30 }, (_, i) => `line ${i}`).join('\r')
+    e.handleInput(wrap(long))
+    expect(e.text).toBe('[Pasted #1 · 30 lines]')
+    // A chip at the cursor goes in one backspace; a second one is a separate paste.
+    e.handleInput('\x7f')
+    expect(e.text).toBe('')
+    e.handleInput(wrap('x'.repeat(1001)))
+    type(e, ' tail')
+    expect(e.text).toBe('[Pasted #2 · 1 lines] tail')
+    e.handleInput('\r')
+    expect(sub).toEqual([`${'x'.repeat(1001)} tail`])
+  })
+
   it('esc clears and reports, ctrl-c and ctrl-d are left to the application', () => {
     let cancels = 0
     const e = new Editor({ onSubmit: () => {}, onCancelKey: () => cancels++ })

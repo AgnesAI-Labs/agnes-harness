@@ -1,6 +1,7 @@
 import { ANSI_RE, defang } from './ansi.js'
 import { type Component, CURSOR_MARKER } from './component.js'
 import { type MouseEvent, parseMouse } from './keys.js'
+import { PasteAssembler } from './paste.js'
 import { displayWidth, type Terminal } from './terminal.js'
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
@@ -85,6 +86,7 @@ export class Renderer {
   // Screen cells, not content: what is copied is what the screen shows when the button comes up.
   private selection: { anchor: Cell; head: Cell } | undefined
   private dragging = false
+  private paste = new PasteAssembler()
 
   constructor(
     private readonly term: Terminal,
@@ -104,6 +106,7 @@ export class Renderer {
     this.generation++
     this.lastFrame = []
     this.lastCursorKey = ''
+    this.paste = new PasteAssembler()
     this.term.enterRaw()
     // Save the shell screen/cursor before painting. Never clear its scrollback (ED3). `runTui`
     // may already have claimed it while opening the session; entering 1049 a second time is not
@@ -113,6 +116,8 @@ export class Renderer {
       this.term.write('\x1b[?1049h\x1b[H\x1b[2J')
       this.screenEntered = true
     }
+    // Bracketed paste (2004): a paste arrives wrapped, so it cannot be mistaken for typing.
+    this.term.write('\x1b[?2004h')
     // 1002 reports presses, releases and motion while a button is held; 1006 gives SGR coordinates.
     if (this.mouse) this.term.write('\x1b[?1002h\x1b[?1006h')
     this.offResize = this.term.onResize(() => {
@@ -122,14 +127,7 @@ export class Renderer {
       this.renderNow()
     })
     this.offInput = this.term.onInput((d) => {
-      const events = this.mouse ? parseMouse(d) : undefined
-      if (events) return this.handleMouse(events)
-      if (this.selection) {
-        this.selection = undefined
-        this.dragging = false
-        this.requestRender()
-      }
-      if (this.root.handleInput?.(d)) this.requestRender()
+      for (const part of this.paste.push(d)) this.input(part)
     })
     try {
       this.renderNow()
@@ -137,6 +135,20 @@ export class Renderer {
       this.stop()
       throw error
     }
+  }
+
+  private input(d: string): void {
+    const events = this.mouse ? parseMouse(d) : undefined
+    if (events) {
+      this.handleMouse(events)
+      return
+    }
+    if (this.selection) {
+      this.selection = undefined
+      this.dragging = false
+      this.requestRender()
+    }
+    if (this.root.handleInput?.(d)) this.requestRender()
   }
 
   // Many events can land in one turn of the event loop; coalescing them means one repaint per turn
@@ -258,7 +270,7 @@ export class Renderer {
     try {
       this.selection = undefined
       this.dragging = false
-      this.term.write(`${this.mouse ? '\x1b[?1006l\x1b[?1002l' : ''}\x1b[?1049l\x1b[?25h`)
+      this.term.write(`\x1b[?2004l${this.mouse ? '\x1b[?1006l\x1b[?1002l' : ''}\x1b[?1049l\x1b[?25h`)
       this.screenEntered = false
       const columns = this.term.size().columns
       for (const line of transcript)

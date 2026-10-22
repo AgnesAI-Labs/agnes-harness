@@ -2,6 +2,7 @@ import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
 import { parseKey } from './keys.js'
+import { tt } from './locale-extended.js'
 import type { Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
@@ -20,6 +21,10 @@ function boundaries(text: string): number[] {
   for (const s of GRAPHEMES.segment(text)) out.push(s.index + s.segment.length)
   return out
 }
+
+// A paste past either bound shows as one chip in the buffer and goes out in full on submit.
+const PASTE_FOLD_LINES = 10
+const PASTE_FOLD_CHARS = 1000
 
 const PROMPT = '❯ '
 const CONTINUATION = '  '
@@ -73,6 +78,7 @@ function wrapLine(line: string, width: number): string[] {
 export type EditorOptions = {
   maxRows?(): number
   placeholder?: string
+  locale?: string
   onSubmit(text: string): void
   onCancelKey?(): void
   complete?(prefix: string): string[]
@@ -104,6 +110,9 @@ export class Editor implements Component {
   // The text before the cursor when Esc closed the `@` menu: it stays closed until that changes.
   private dismissed: string | undefined
   private mentionQuery: string | undefined
+  // Chip text to the pasted text it stands for; lives only as long as this process.
+  private readonly pastes = new Map<string, string>()
+  private pasteCount = 0
 
   constructor(private readonly o: EditorOptions) {}
 
@@ -119,6 +128,14 @@ export class Editor implements Component {
   clear(): void {
     this.setText('')
     this.histIdx = -1
+    this.pastes.clear()
+  }
+
+  /** The draft with every paste chip replaced by the text it stands for: what a submit sends. */
+  expanded(): string {
+    let out = this.text
+    for (const [chip, text] of this.pastes) out = out.replaceAll(chip, () => text)
+    return out
   }
 
   invalidate(): void {}
@@ -146,7 +163,7 @@ export class Editor implements Component {
           return true
         }
         if (!this.text.trim()) return true
-        const t = this.text
+        const t = this.expanded()
         this.history.unshift(t)
         this.clear()
         this.o.onSubmit(t)
@@ -157,6 +174,14 @@ export class Editor implements Component {
         this.insert('\n')
         return true
       case 'backspace': {
+        const before = this.text.slice(0, this.cursor)
+        const chip = [...this.pastes.keys()].find((c) => before.endsWith(c))
+        if (chip) {
+          this.pastes.delete(chip)
+          this.text = before.slice(0, before.length - chip.length) + this.text.slice(this.cursor)
+          this.cursor -= chip.length
+          return true
+        }
         const from = this.prevBoundary()
         if (from < this.cursor) {
           this.text = this.text.slice(0, from) + this.text.slice(this.cursor)
@@ -219,6 +244,9 @@ export class Editor implements Component {
         this.cursor += first.length - token.length + 1
         return true
       }
+      case 'paste':
+        this.paste(k.ch ?? '')
+        return true
       case 'char': {
         const s = (k.ch ?? '').replace(CONTROL, '')
         if (s) this.insert(s)
@@ -231,6 +259,20 @@ export class Editor implements Component {
       default:
         return false
     }
+  }
+
+  // Terminals paste a newline as a carriage return; tabs would not survive the renderer, and every
+  // other control byte is dropped as it is from typed text.
+  private paste(raw: string): void {
+    const text = raw.replace(/\r\n?/g, '\n').replaceAll('\t', '  ').replace(CONTROL, '')
+    const lines = text.split('\n').length
+    if (lines <= PASTE_FOLD_LINES && text.length <= PASTE_FOLD_CHARS) {
+      this.insert(text)
+      return
+    }
+    const chip = tt('paste.chip', this.o.locale ?? 'en', { n: ++this.pasteCount, lines })
+    this.pastes.set(chip, text)
+    this.insert(chip)
   }
 
   private insert(s: string): void {
