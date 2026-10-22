@@ -336,6 +336,9 @@ export function mergeGenerationStatus(
             ? 'draining'
             : 'historical',
     boundSessions: Math.max(previous.boundSessions, item.boundSessions),
+    ...(previous.current !== undefined || item.current !== undefined
+      ? { current: previous.current === true || item.current === true }
+      : {}),
     openSessions,
     live: previous.live || item.live,
     ...(previous.sessions || item.sessions ? { sessions: [...sessions.values()] } : {}),
@@ -411,10 +414,12 @@ export function projectGenerationStatus(
   draining: boolean | undefined,
 ): GenerationStatus {
   if (!draining) return status
+  const { currentGenerationId: _current, ...retained } = status
   return {
-    ...status,
+    ...retained,
     generations: status.generations.map((item) => ({
       ...item,
+      current: false,
       state: item.state === 'active' ? (item.openSessions > 0 ? 'draining' : 'historical') : item.state,
     })),
     plugins: status.plugins.map((item) => ({

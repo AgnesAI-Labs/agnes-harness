@@ -278,6 +278,54 @@ it('shows declared kinds and observable states without guessing draining or rest
     'New sessions use only enabled plugins',
   )
   expect(historyBadge.querySelector('[role=note]')?.getAttribute('tabindex')).toBe('0')
+  for (const locale of ['en', 'zh-CN'] as const) {
+    const retained = await mount(
+      createElement(GenerationDrainSummary, {
+        installed: [item],
+        t: (key, params) =>
+          (pluginAdminLocaleCatalog[locale][key] ?? key).replace(/\{(\w+)\}/g, (_, name) =>
+            String(params?.[name] ?? name),
+          ),
+        status: {
+          ...historicalStatus,
+          currentGenerationId: 'current',
+          generations: [
+            ...historicalStatus.generations,
+            {
+              ...historicalStatus.generations[0]!,
+              id: 'failed-old',
+              state: 'failed',
+              error: 'E_SEAM_INIT',
+              packages: [{ id: item.id, version: '0.7.0' }],
+            },
+            {
+              ...historicalStatus.generations[0]!,
+              id: 'current',
+              current: true,
+              state: 'failed',
+              error: 'E_PROVIDER_INVALID',
+              packages: [{ id: item.id, version: '1.0.0' }],
+            },
+            {
+              ...historicalStatus.generations[0]!,
+              id: 'role-current',
+              current: true,
+              state: 'failed',
+              error: 'E_PROVIDER_UNAVAILABLE',
+              packages: [{ id: item.id, version: '1.0.0' }],
+            },
+          ],
+        },
+      }),
+    )
+    expect(retained.querySelector('[data-testid=plugin-retained-failures]')?.textContent).toContain(
+      locale === 'en' ? 'Retained version failures: 1' : '1 个保留版本失败',
+    )
+    expect(retained.textContent).toContain('0.7.0')
+    expect(retained.textContent).toContain('E_SEAM_INIT')
+    expect(retained.textContent).not.toContain('E_PROVIDER_INVALID')
+    expect(retained.textContent).not.toContain('E_PROVIDER_UNAVAILABLE')
+  }
   const builtins = await mount(
     createElement(GenerationDrainSummary, {
       installed: [],
@@ -787,6 +835,14 @@ it('offers the sessions still on an earlier plugin version for migration, by con
         plugins: [],
         generations: [
           { ...generation, id: current, state: 'active', sessions: [{ key: 'on-current', open: true }] },
+          {
+            ...generation,
+            id: '33333333-3333-4333-8333-333333333333',
+            current: true,
+            state: 'failed',
+            error: 'E_SEAM_INIT',
+            sessions: [{ key: 'on-role-current', open: false }],
+          },
           {
             ...generation,
             id: earlier,

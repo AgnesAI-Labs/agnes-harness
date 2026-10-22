@@ -1,5 +1,10 @@
 import type { ProviderCatalogEntry } from '@agnes/extension-api'
-import { type SessionCapabilitySet, SessionRuntimeDescriptor, validateAgainst } from '@agnes/protocol'
+import {
+  type SessionCapabilitySet,
+  SessionRuntimeDescriptor,
+  validateAgainst,
+  validatePackageAdminData,
+} from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import {
   coldHeadId,
@@ -11,6 +16,8 @@ import {
   readGenerationStatusAsync,
   type SessionRuntimeInput,
 } from '../../src/runtime/generation/runtime-descriptor.js'
+import { describeGenerationStatus } from '../../src/runtime/generation/status.js'
+import { mergeCompositionStatuses } from '../../src/runtime/profile/composition-status.js'
 
 const source = { layer: 'default', name: 'test' } as const
 const items: SessionCapabilitySet['tools'] = []
@@ -388,3 +395,126 @@ it('merges composition open facts while counting sessions beyond the bounded dis
     state: 'historical',
   })
 })
+
+it.each([false, true])(
+  'keeps current plugin failures separate from retained generations (reverse: %s)',
+  (reverse) => {
+    const currentId = '11111111-1111-4111-8111-111111111111'
+    const oldId = '22222222-2222-4222-8222-222222222222'
+    const snapshot = (id: string, version: string) => ({ id, packages: [{ id: 'p', version }] })
+    const host = { kernel: { sessions: new Map(), get: () => undefined }, extensions: () => [] }
+    let retainedError: Error | undefined
+    const current = { snapshot: snapshot(currentId, '2'), host }
+    const historical = {
+      snapshot: snapshot(oldId, '1'),
+      host: { ...host, extensions: () => (retainedError ? [{ package: 'p', error: retainedError }] : []) },
+    }
+    const input = {
+      pins: [
+        { sessionKey: 'saved', generationId: oldId },
+        { sessionKey: 'fresh', generationId: currentId },
+      ],
+      read: () => historical.snapshot,
+      failures: new Map([[oldId, { code: 'E_SEAM_INIT', message: 'fixture retained failure' }]]),
+      live: new Map(
+        reverse
+          ? [
+              [oldId, historical],
+              [currentId, current],
+            ]
+          : [
+              [currentId, current],
+              [oldId, historical],
+            ],
+      ),
+      failedSnapshots: new Map(),
+      basePackages: new Set(),
+      current,
+      initial: host,
+      requiresRestart: () => false,
+      store: { scanDamage: () => [] },
+      profileDir: '/fixture',
+    } as unknown as Parameters<typeof describeGenerationStatus>[0]
+    const before = describeGenerationStatus(input)
+    expect(validatePackageAdminData('PluginGenerationStatus', before).ok).toBe(true)
+    expect(
+      validatePackageAdminData('PluginGenerationStatus', {
+        ...before,
+        generations: before.generations.map(({ current: _current, ...generation }) => generation),
+      }).ok,
+    ).toBe(true)
+    expect(
+      validatePackageAdminData('PluginGenerationStatus', {
+        ...before,
+        generations: [{ ...before.generations[0], current: 'yes' }],
+      }).ok,
+    ).toBe(false)
+    expect(before.plugins).toEqual([
+      { id: 'p', state: 'active', boundSessions: 2, drainingSessions: 1, historicalSessions: 1 },
+    ])
+    expect(before.generations.find((generation) => generation.id === oldId)).toMatchObject({
+      state: 'failed',
+      error: 'E_SEAM_INIT',
+    })
+    const retired = {
+      ...projectGenerationStatus(before, true),
+      plugins: [{ ...before.plugins[0]!, state: 'failed' as const, error: 'E_PROVIDER_INCOMPATIBLE' }],
+    }
+    expect(retired.currentGenerationId).toBeUndefined()
+    const merge = (statuses: (typeof before)[], failures = new Map<string, string>()) =>
+      mergeCompositionStatuses(statuses, [], failures)
+    for (const statuses of [
+      [before, retired],
+      [retired, before],
+    ]) {
+      expect(merge(statuses).plugins).toEqual(before.plugins)
+      expect(merge(statuses).generations.find((generation) => generation.id === oldId)).toMatchObject({
+        state: 'failed',
+        error: 'E_SEAM_INIT',
+      })
+      expect(merge(statuses).currentGenerationId).toBe(currentId)
+      expect(merge(statuses, new Map([[currentId, 'E_SEAM_INIT']])).plugins[0]).toMatchObject({
+        state: 'failed',
+        error: 'E_SEAM_INIT',
+      })
+    }
+    input.failures = new Map([[currentId, { code: 'E_SEAM_INIT', message: 'fixture current failure' }]])
+    const failed = describeGenerationStatus(input)
+    expect(failed.plugins[0]).toMatchObject({ state: 'failed', error: 'E_SEAM_INIT' })
+    expect(merge([failed, retired]).plugins[0]).toMatchObject({
+      state: 'failed',
+      error: 'E_SEAM_INIT',
+      drainingSessions: 1,
+      historicalSessions: 1,
+    })
+    const roleId = '33333333-3333-4333-8333-333333333333'
+    const role = {
+      ...failed,
+      currentGenerationId: roleId,
+      generations: failed.generations.map((generation) =>
+        generation.id === currentId ? { ...generation, id: roleId } : generation,
+      ),
+    }
+    for (const statuses of [
+      [before, role],
+      [role, before],
+    ])
+      expect(merge(statuses).plugins[0]).toMatchObject({ state: 'failed', error: 'E_SEAM_INIT' })
+    input.failures = new Map()
+    retainedError = Object.assign(new Error('Private diagnostic text must stay local'), {
+      code: 'E_PROVIDER_INVALID',
+    })
+    const retainedFailure = describeGenerationStatus(input)
+    expect(retainedFailure.plugins[0]).toMatchObject({ state: 'active' })
+    expect(retainedFailure.generations.find((generation) => generation.id === oldId)).toMatchObject({
+      current: false,
+      state: 'failed',
+      error: 'E_PROVIDER_INVALID',
+    })
+    expect(JSON.stringify(retainedFailure)).not.toContain('Private diagnostic')
+    input.requiresRestart = () => true
+    expect(merge([describeGenerationStatus(input), retired]).plugins[0]).toMatchObject({
+      state: 'restart-required',
+    })
+  },
+)

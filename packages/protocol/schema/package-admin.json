@@ -1794,6 +1794,10 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "current": {
+                "type": "boolean",
+                "description": "Whether this generation is a current head of a non-retired session composition; independent of activation success."
+              },
               "id": {
                 "type": "string",
                 "pattern": "^[a-f0-9-]{36}$"

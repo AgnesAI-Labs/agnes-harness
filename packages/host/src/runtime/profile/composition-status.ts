@@ -24,8 +24,11 @@ export function mergeCompositionStatuses(
   const blocked = [
     ...new Map(statuses.flatMap((status) => status.blocked ?? []).map((item) => [item.file, item])).values(),
   ]
+  const current = statuses.filter((status) => status.currentGenerationId !== undefined)
+  const currentIds = new Set(current.map((status) => status.currentGenerationId))
   return {
     ...first,
+    ...(current[0]?.currentGenerationId ? { currentGenerationId: current[0].currentGenerationId } : {}),
     ...(blocked.length ? { blocked } : {}),
     generations: [...all.values()],
     plugins: [
@@ -33,32 +36,49 @@ export function mergeCompositionStatuses(
         statuses.flatMap((status) => status.plugins.map((item) => [item.id, item] as const)),
       ).values(),
     ].map((plugin) => {
-      if (plugin.state === 'failed' || plugin.state === 'restart-required') return plugin
       const relevant = [...all.values()].filter((generation) =>
         generation.packages.some((pkg) => pkg.id === plugin.id),
       )
-      const failed = relevant.find((generation) => generation.state === 'failed')
+      const heads = current.filter((status) =>
+        status.generations.some(
+          (generation) =>
+            generation.id === status.currentGenerationId &&
+            generation.packages.some((pkg) => pkg.id === plugin.id),
+        ),
+      )
+      const readiness = heads.flatMap((status) => status.plugins.filter((item) => item.id === plugin.id))
+      const failed = readiness.find((item) => item.state === 'failed')
+      const openingError = relevant.find((generation) =>
+        heads.some(
+          (status) => status.currentGenerationId === generation.id && openingFailures.has(generation.id),
+        ),
+      )?.error
+      const error = openingError ?? failed?.error
       return {
-        ...plugin,
-        ...(failed?.error ? { error: failed.error } : {}),
-        state: failed
-          ? ('failed' as const)
-          : relevant.some((generation) => generation.state === 'active')
-            ? ('active' as const)
-            : relevant.some((generation) => generation.openSessions > 0)
-              ? ('draining' as const)
-              : ('historical' as const),
+        id: plugin.id,
+        ...(error ? { error } : {}),
+        state:
+          failed || openingError
+            ? ('failed' as const)
+            : readiness.some((item) => item.state === 'restart-required') ||
+                (!heads.length && plugin.state === 'restart-required')
+              ? ('restart-required' as const)
+              : readiness.some((item) => item.state === 'active')
+                ? ('active' as const)
+                : relevant.some((generation) => generation.openSessions > 0)
+                  ? ('draining' as const)
+                  : ('historical' as const),
         boundSessions: relevant.reduce((count, generation) => count + generation.boundSessions, 0),
         historicalSessions: relevant.reduce(
           (count, generation) =>
             count +
-            (generation.state === 'active'
+            (currentIds.has(generation.id)
               ? 0
               : Math.max(0, generation.boundSessions - generation.openSessions)),
           0,
         ),
         drainingSessions: relevant.reduce(
-          (count, generation) => count + (generation.state !== 'active' ? generation.boundSessions : 0),
+          (count, generation) => count + (currentIds.has(generation.id) ? 0 : generation.boundSessions),
           0,
         ),
       }
