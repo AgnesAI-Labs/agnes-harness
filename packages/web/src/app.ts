@@ -10,7 +10,7 @@ import {
   reportSuccess,
   searchParamRoute,
 } from '@agnes/web-ui'
-import { settingsRoute, sortSessionsByRecency } from '@agnes/web-units/shell'
+import { settingsRoute, sortSessionsByRecency, untitledSessionLabel } from '@agnes/web-units/shell'
 import { createAppearanceController } from './app/appearance-controller.js'
 import { type ApplySessionControls, createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
@@ -677,7 +677,9 @@ onPageHide(
   bindJobsClient({
     client,
     current: () => sessionBinding.session?.id,
-    newTaskTitle: () => t('app.status.newTask'),
+    untitled: (id, createdAt) =>
+      sessionLabels.get(id) ||
+      untitledSessionLabel(t('nav.sessionFallback'), createdAt, document.documentElement.lang || 'en'),
   }),
 )
 let intentionalClose = false
