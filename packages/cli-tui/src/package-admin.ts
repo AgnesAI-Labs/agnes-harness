@@ -46,7 +46,7 @@ export function parsePackageSource(value: string): PackageSource {
     value.startsWith('../') ||
     /\.(zip|tgz|tar|tar\.gz)$/i.test(value)
   )
-    return { type: 'file', ref: 'file:' + resolve(value) }
+    return { type: 'file', ref: `file:${resolve(value)}` }
   throw new TuiUsageError('Use a git HTTPS URL, folder/archive path, or npm:package@version')
 }
 

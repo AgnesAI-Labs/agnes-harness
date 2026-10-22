@@ -22,8 +22,9 @@ const node: Extract<UINode, { kind: 'tool' }> = {
 }
 it('collapses by default and expands current protocol details without inventing missing values', () => {
   const card = new ToolCard(node)
-  expect(card.render(40)).toHaveLength(1)
+  expect(card.render(40)).toHaveLength(2)
   expect(card.render(40)[0]).toContain('◆ read  read a file')
+  expect(card.render(40)[1]).toContain('    contents')
   card.toggle()
   const output = card.render(40).join('\n')
   expect(output).toContain('Arguments: {"path":"中.txt"}')
@@ -51,7 +52,7 @@ it('keeps the default collapsed headline to one bounded and escaped summary row'
     summary: `first\nsecond ${'very-long '.repeat(20)}\x1b[2J`,
   })
   const output = card.render(48)
-  expect(output).toHaveLength(1)
+  expect(output).toHaveLength(2) // the headline row, then the one-line result preview
   expect(displayWidth(output[0] as string)).toBe(48)
   expect(output[0]).toContain('◆ read  first second')
   expect(output[0]).not.toContain('\n')
@@ -411,4 +412,53 @@ it('reads a subagent state and run time from the trace spans of the projected tu
   expect(facts.get('b')).toEqual({ status: 'failed', durationMs: 900 })
   expect(facts.size).toBe(2)
   expect(childFacts(turn(undefined)).size).toBe(0)
+})
+
+const editNode = (args: unknown, over: Partial<typeof node> = {}): typeof node => ({
+  ...node,
+  name: 'edit',
+  summary: 'edit a.ts',
+  argsPreview: JSON.stringify(args),
+  resultPreview: '{"path":"a.ts","bytes":3}',
+  ...over,
+})
+const editArgs = { path: 'a.ts', edits: [{ oldText: 'one\ntwo', newText: 'one\n2\nthree' }] }
+
+it('previews a result by screen rows: wide characters wrap first, then three rows and a remainder', () => {
+  const wide = '中'.repeat(30) // 60 columns: three rows at width 24 (inner 20)
+  const rows = new ToolCard(
+    { ...node, resultPreview: `${wide}\nsecond\n\nthird\nfourth` },
+    { locale: 'zh-CN' },
+  ).render(24)
+  expect(rows).toHaveLength(5)
+  expect(rows.slice(1, 4).map((r) => r.trimEnd())).toEqual([
+    `    ${'中'.repeat(10)}`,
+    `    ${'中'.repeat(10)}`,
+    `    ${'中'.repeat(10)}`,
+  ])
+  expect(rows[4]?.trim()).toBe('… 还有 3 行')
+  expect(rows.every((r) => displayWidth(r) === 24)).toBe(true)
+  expect(new ToolCard({ ...node, resultPreview: 'a\nb\nc' }).render(40)).toHaveLength(4) // exactly three: no remainder row
+  expect(new ToolCard({ ...node, resultPreview: 'x\x1b[2Jy' }).render(40).join('')).not.toContain('\x1b')
+})
+
+it('shows +a -b after an edit title and no preview, then the diff when expanded', () => {
+  const card = new ToolCard(editNode(editArgs))
+  const collapsed = card.render(60)
+  expect(collapsed).toHaveLength(1)
+  expect(collapsed[0]).toContain('◆ edit +2 -1  edit a.ts')
+  card.toggle()
+  const expanded = card.render(60).join('\n')
+  expect(expanded).toContain('a.ts +2 -1')
+  expect(expanded).toContain('2 - two')
+  expect(expanded).toContain('3 + three')
+  expect(expanded).not.toContain('Arguments:')
+  expect(expanded).toContain('Result:')
+  // The fetched record replaces a preview that was cut off.
+  const cut = editNode(editArgs, { argsPreview: '{"path":"a.ts","edits":[{"oldT' })
+  expect(new ToolCard(cut, { collapsed: false }).render(60).join('\n')).toContain('Arguments:')
+  const fetched: ToolDetailState = { state: 'ready', args: JSON.stringify(editArgs) }
+  expect(new ToolCard(cut, { collapsed: false, detail: () => fetched }).render(60).join('\n')).toContain(
+    '3 + three',
+  )
 })
