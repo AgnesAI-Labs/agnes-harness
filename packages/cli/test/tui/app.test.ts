@@ -291,41 +291,6 @@ it('keeps an unknown error generic without exposing the raw failure message', as
   }
 })
 
-it('dispatches input queued while the prompt RPC is settling as the next real turn', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-queued-'))
-  const { host } = await createTestHost({ dataDir: dir, provider: slowProvider(20) })
-  const endpoint = createLocalEndpoint(host, { pollMs: 5 })
-  const client = createClient({ transport: { kind: 'inproc', endpoint } })
-  let app: TuiApp | undefined
-  try {
-    await client.workspace.add(dir)
-    const session = await client.session.new({ cwd: dir })
-    app = new TuiApp({ session, term: new FakeTerminal({ columns: 80, rows: 24 }), header: 'Agnes' })
-    await app.start()
-
-    const first = app.submit('first prompt')
-    expect(app.busy).toBe(true)
-    await app.submit('second prompt')
-    await first
-
-    await vi.waitFor(async () => {
-      const users = (await session.projectUI()).nodes
-        .filter((node) => node.kind === 'user')
-        .flatMap((node) => node.content)
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text)
-      expect(users).toEqual(['first prompt', 'second prompt'])
-    })
-    await vi.waitFor(() => expect(app?.busy).toBe(false))
-  } finally {
-    await app?.stop()
-    await client.close()
-    await endpoint.close()
-    await host.close()
-    rmSync(dir, { recursive: true, force: true })
-  }
-})
-
 it('Ctrl-C cancels actual core inference and restores an idle editor', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-cancel-'))
   const { host } = await createTestHost({ dataDir: dir, provider: slowProvider(60_000) })
@@ -388,6 +353,63 @@ it('Esc cancels actual core inference and keeps the half-written draft', async (
     await endpoint.close()
     await host.close()
     rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+type Submitted = { kind: string; commandId: string; payload: Record<string, unknown> }
+
+/** fakeSessionEndpoint that records every `_agnes/v1/submit` and answers it like a daemon that accepted it. */
+function submitEndpoint(answer: (params: Submitted) => unknown = () => ({ seq: 1, replayed: false })) {
+  const base = fakeSessionEndpoint()
+  const submits: Submitted[] = []
+  base.endpoint
+    .on('_agnes/v1/submit', (params) => {
+      submits.push(params as Submitted)
+      return answer(params as Submitted)
+    })
+    .on('_agnes/v1/submit.ack', () => ({}))
+  return { ...base, submits }
+}
+
+it.each([
+  ['sends the cancel', undefined, undefined],
+  [
+    'says only the owner can cancel when the daemon refuses it',
+    rpcError('CAPABILITY_DENIED', {}),
+    'Only the session owner can cancel this turn',
+  ],
+  [
+    'names the code of a rejected cancel',
+    rpcError('SEMANTIC_REJECTED', { code: 'LOOP_CONTROL_UNSUPPORTED' }),
+    'Cancel refused (LOOP_CONTROL_UNSUPPORTED)',
+  ],
+])('treats a turn another client started as busy, and Ctrl-C %s', async (_name, refusal, shown) => {
+  const { endpoint, submits } = submitEndpoint(() => {
+    if (refusal) throw refusal
+    return { seq: 1, replayed: false }
+  })
+  endpoint.on('_agnes/v1/session.projectUI', () => ({
+    ...EMPTY_TIMELINE,
+    opState: { turn: 1, step: 1, phase: 'tools' },
+  }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(() => expect(app?.busy).toBe(true))
+    term.feed('\x03')
+    await vi.waitFor(() =>
+      expect(submits.map((s) => [s.kind, s.payload.action])).toEqual([['control', 'cancel']]),
+    )
+    if (shown)
+      await vi.waitFor(async () => expect((await screenOf(term, 80, 24)).join('\n')).toContain(shown))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
   }
 })
 
@@ -567,9 +589,7 @@ it("mints a fresh requestSeq for every real action click, never the slot fill's 
     sessionId: SID,
     upto: 1,
     generation: 1,
-    // A late historical projection may still advertise a running turn. It is display state, not
-    // permission to trap the next editor submission in a local queue.
-    opState: { turn: 7, step: 1, phase: 'tools' },
+    opState: null,
     turns: [],
     nodes: [
       {
@@ -729,6 +749,64 @@ it.each([
     term.feed('\x0f')
     term.feed('\x0f')
     await vi.waitFor(() => expect(reads).toHaveLength(refuse ? 2 : 1))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+// A click on a card's head row opens that card, whichever one it is; Ctrl-O keeps toggling the latest.
+it('toggles the clicked tool card by its head row', async () => {
+  const SID = 'agnes:local:default:cli:dm:click'
+  const tool = (n: number) => ({
+    kind: 'tool',
+    id: `t${n}`,
+    seq: n,
+    toolUseId: `c${n}`,
+    name: 'query',
+    status: 'completed',
+    summary: `rows ${n}`,
+    argsPreview: `{"n":${n}}`,
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 2,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [tool(1), tool(2)],
+    }))
+    .on('_agnes/v1/session.readToolDetail', () => {
+      throw rpcError('INTERNAL_ERROR', { reason: 'unused' })
+    })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 20 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(async () => expect((await screenOf(term, 80, 20)).join('\n')).toContain('rows 2'))
+    const click = async (label: string) => {
+      const row = (await screenOf(term, 80, 20)).findIndex((line) => line.includes(label)) + 1
+      expect(row).toBeGreaterThan(0)
+      term.feed(`\x1b[<0;5;${row}M\x1b[<0;5;${row}m`)
+    }
+    await click('rows 1') // the older card, not the latest
+    await vi.waitFor(async () => expect((await screenOf(term, 80, 20)).join('\n')).toContain('{"n":1}'))
+    expect((await screenOf(term, 80, 20)).join('\n')).not.toContain('{"n":2}')
+    await click('query') // the first card's head again closes it
+    await vi.waitFor(async () => expect((await screenOf(term, 80, 20)).join('\n')).not.toContain('{"n":1}'))
   } finally {
     await app?.stop()
     await client.close()
@@ -959,43 +1037,271 @@ it('keeps a pending approval at its usual page height when nothing below the dia
   }
 })
 
-it.each(['SESSION_BUSY', 'OVERLOADED'] as const)(
-  'keeps a queued prompt the daemon refused with %s before admitting it, and sends it again',
-  async (code) => {
-    const { endpoint } = fakeSessionEndpoint()
-    const prompts: string[] = []
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    endpoint.on('session/prompt', async (params) => {
-      prompts.push((params as { prompt: Array<{ text?: string }> }).prompt[0]?.text ?? '')
-      if (prompts.length === 1) await gate
-      // Refused before the input is recorded (daemon acp.ts: activation barrier / another in-flight prompt).
-      if (prompts.length === 2) throw rpcError(code, {})
-      return { stopReason: 'end_turn' }
-    })
-    const client = createClient({ transport: { kind: 'inproc', endpoint } })
-    let app: TuiApp | undefined
-    try {
-      const session = await client.session.new({ cwd: '/tmp' })
-      const term = new FakeTerminal({ columns: 80, rows: 24 })
-      app = new TuiApp({ session, term, header: 'Agnes' })
-      await app.start()
-      term.feed('a')
-      term.feed('\r')
-      await vi.waitFor(() => expect(prompts).toEqual(['a']))
-      term.feed('b')
-      term.feed('\r')
+/** An app whose first prompt stays in flight until `release()`, so everything typed after it arrives busy. */
+async function busyHarness(
+  opts: { answer?: (params: Submitted) => unknown; steer?: boolean; promptError?: unknown } = {},
+) {
+  const { endpoint, submits } = submitEndpoint(opts.answer)
+  const prompts: string[] = []
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  endpoint.on('_agnes/v1/session.controls', () => ({
+    controls: { steer: opts.steer ?? true },
+    paused: false,
+    pending: [],
+  }))
+  endpoint.on('session/prompt', async (params) => {
+    prompts.push((params as { prompt: Array<{ text?: string }> }).prompt[0]?.text ?? '')
+    if (opts.promptError) throw opts.promptError
+    if (prompts.length === 1) await gate
+    return { stopReason: 'end_turn' }
+  })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns: 100, rows: 24 })
+  const app = new TuiApp({ session, term, header: 'Agnes' })
+  await app.start()
+  return {
+    app,
+    term,
+    endpoint,
+    submits,
+    prompts,
+    release,
+    shown: async () => (await screenOf(term, 100, 24)).join('\n'),
+    type: (text: string, key = '\r') => {
+      term.feed(text)
+      term.feed(key)
+    },
+    async dispose() {
       release()
-      await vi.waitFor(() => expect(prompts).toEqual(['a', 'b', 'b']))
-    } finally {
-      await app?.stop()
+      await app.stop()
       await client.close()
       await endpoint.close()
+    },
+  }
+}
+
+it('Enter while a turn runs queues the input in the daemon under its own command id, hinting once', async () => {
+  const h = await busyHarness()
+  try {
+    h.type('a')
+    await vi.waitFor(() => expect(h.prompts).toEqual(['a']))
+    h.type('b')
+    await vi.waitFor(() => expect(h.submits).toHaveLength(1))
+    await vi.waitFor(async () => expect(await h.shown()).toContain('Alt+Enter steers the running turn'))
+    h.type('c')
+    await vi.waitFor(() => expect(h.submits).toHaveLength(2))
+    await vi.waitFor(async () => expect(await h.shown()).toContain('Queued: c'))
+    expect(await h.shown()).not.toContain('Alt+Enter steers')
+    expect(h.submits.map((s) => [s.kind, s.payload.content])).toEqual([
+      ['followUp', [{ type: 'text', text: 'b' }]],
+      ['followUp', [{ type: 'text', text: 'c' }]],
+    ])
+    expect(new Set(h.submits.map((s) => s.commandId)).size).toBe(2)
+    // Nothing is held here: the daemon owns the queue, and no second prompt was sent.
+    h.release()
+    await vi.waitFor(() => expect(h.app.busy).toBe(false))
+    expect(h.prompts).toEqual(['a'])
+  } finally {
+    await h.dispose()
+  }
+})
+
+it('Alt+Enter while a turn runs steers it, and queues instead when the turn takes no guidance', async () => {
+  const steering = await busyHarness()
+  try {
+    steering.type('a')
+    await vi.waitFor(() => expect(steering.prompts).toEqual(['a']))
+    steering.type('look at b', '\x1b\r')
+    await vi.waitFor(() => expect(steering.submits.map((s) => s.kind)).toEqual(['steer']))
+    expect(steering.submits[0]?.commandId).toBeTruthy()
+    await vi.waitFor(async () =>
+      expect(await steering.shown()).toContain('Sent to the running turn: look at b'),
+    )
+  } finally {
+    await steering.dispose()
+  }
+  const refusing = await busyHarness({ steer: false })
+  try {
+    refusing.type('a')
+    await vi.waitFor(() => expect(refusing.prompts).toEqual(['a']))
+    refusing.type('b', '\x1b\r')
+    await vi.waitFor(() => expect(refusing.submits.map((s) => s.kind)).toEqual(['followUp']))
+    await vi.waitFor(async () => expect(await refusing.shown()).toContain('queued instead'))
+  } finally {
+    await refusing.dispose()
+  }
+})
+
+it('retries a failed queue submit once under the same command id, then returns the draft to the editor', async () => {
+  let failures = 1
+  const retried = await busyHarness({
+    answer: () => {
+      if (failures-- > 0) throw rpcError('INTERNAL_ERROR', {})
+      return { seq: 1, replayed: false }
+    },
+  })
+  try {
+    retried.type('a')
+    await vi.waitFor(() => expect(retried.prompts).toEqual(['a']))
+    retried.type('b')
+    await vi.waitFor(() => expect(retried.submits).toHaveLength(2))
+    expect(retried.submits[1]?.commandId).toBe(retried.submits[0]?.commandId)
+    await vi.waitFor(async () => expect(await retried.shown()).toContain('Queued: b'))
+  } finally {
+    await retried.dispose()
+  }
+  const failing = await busyHarness({
+    answer: () => {
+      throw rpcError('INTERNAL_ERROR', {})
+    },
+  })
+  try {
+    failing.type('a')
+    await vi.waitFor(() => expect(failing.prompts).toEqual(['a']))
+    failing.type('keep me')
+    await vi.waitFor(() => expect(failing.submits).toHaveLength(2))
+    expect(failing.submits[1]?.commandId).toBe(failing.submits[0]?.commandId)
+    await vi.waitFor(async () => {
+      const screen = await failing.shown()
+      expect(screen).toContain('Not sent: the draft is back in the editor')
+      expect(screen).toMatch(/❯ keep me\s*$/m)
+    })
+    failing.release()
+    await vi.waitFor(() => expect(failing.app.busy).toBe(false))
+    // No local replay: the only prompt this client ever sent is the first one.
+    expect(failing.prompts).toEqual(['a'])
+  } finally {
+    await failing.dispose()
+  }
+})
+
+it('Alt+Up takes the newest queued message back into an empty editor, and its attachment goes out with the next one', async () => {
+  const link = { type: 'resource_link', uri: 'file:///w/a.txt', name: 'a.txt' }
+  const h = await busyHarness()
+  h.endpoint.on('_agnes/v1/session.controls', () => ({
+    controls: {},
+    paused: false,
+    pending: [
+      { itemId: 'one', target: 'next-turn', kind: 'follow_up', content: [{ type: 'text', text: 'older' }] },
+      {
+        itemId: 'two',
+        target: 'next-turn',
+        kind: 'follow_up',
+        content: [{ type: 'text', text: 'newer\u001b[2J\u0007\nline2' }, link],
+      },
+    ],
+  }))
+  try {
+    h.term.feed('half typed')
+    h.term.feed('\x1b[1;3A')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    // A draft is never overwritten.
+    expect(h.submits).toEqual([])
+    h.term.feed('\x15') // Ctrl-U clears the draft
+    h.term.feed('\x1b[1;3A')
+    await vi.waitFor(() =>
+      expect(h.submits.map((s) => [s.kind, s.payload.itemId])).toEqual([['removeQueued', 'two']]),
+    )
+    expect(h.submits[0]?.commandId).toBeTruthy()
+    await vi.waitFor(async () => {
+      const screen = await h.shown()
+      expect(screen).toMatch(/❯ newer\[2J\s*$/m)
+      expect(screen).toContain('line2')
+    })
+    h.term.feed('\r')
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1))
+    const prompt = h.endpoint.calls.find((c) => c.method === 'session/prompt')?.params as {
+      prompt: Array<{ type: string }>
     }
-  },
-)
+    expect(prompt.prompt.map((b) => b.type)).toEqual(['text', 'resource_link'])
+  } finally {
+    await h.dispose()
+  }
+})
+
+it('Esc Esc on an empty idle editor opens the rewind picker, and does not when a draft is there', async () => {
+  const { endpoint } = fakeSessionEndpoint()
+  endpoint.on('_agnes/v1/session.projectUI', () => ({
+    ...EMPTY_TIMELINE,
+    upto: 12,
+    turns: [
+      {
+        id: 't1',
+        turn: 1,
+        startSeq: 10,
+        endSeq: 12,
+        startedAt: '2026-10-03T00:00:00Z',
+        status: 'completed',
+        nodeIds: ['u1'],
+        usage: {
+          totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+          reasoningComplete: true,
+          billingComplete: true,
+          calls: [],
+        },
+        inherited: false,
+        forkable: true,
+      },
+    ],
+    nodes: [{ kind: 'user', id: 'u1', seq: 10, content: [{ type: 'text', text: 'earlier question' }] }],
+  }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const shown = async () => (await screenOf(term, 80, 24)).join('\n')
+    // The first Esc clears the draft; it takes a later pair on the empty editor to ask for the picker.
+    term.feed('half typed')
+    term.feed('\x1b')
+    term.feed('\x1b')
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(await shown()).not.toContain('Rewind To Turn')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    term.feed('\x1b')
+    term.feed('\x1b')
+    await vi.waitFor(async () => {
+      const screen = await shown()
+      expect(screen).toContain('Rewind To Turn')
+      expect(screen).toContain('#1 earlier question')
+    })
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
+it('queues a prompt the daemon refused as busy exactly once, and shows any other refusal as it comes', async () => {
+  const lagging = await busyHarness({ promptError: rpcError('SESSION_BUSY', {}) })
+  try {
+    lagging.type('x')
+    await vi.waitFor(() =>
+      expect(lagging.submits.map((s) => [s.kind, s.payload.content])).toEqual([
+        ['followUp', [{ type: 'text', text: 'x' }]],
+      ]),
+    )
+    await vi.waitFor(() => expect(lagging.app.busy).toBe(false))
+    expect(lagging.prompts).toEqual(['x'])
+  } finally {
+    await lagging.dispose()
+  }
+  const overloaded = await busyHarness({ promptError: rpcError('OVERLOADED', {}) })
+  try {
+    overloaded.type('x')
+    await vi.waitFor(async () => expect(await overloaded.shown()).toContain('Request failed'))
+    expect(overloaded.submits).toEqual([])
+    expect(overloaded.prompts).toEqual(['x'])
+  } finally {
+    await overloaded.dispose()
+  }
+})
 
 it('paints the startup welcome and editor surface once across /new', async () => {
   const { endpoint, sessions } = fakeSessionEndpoint()
@@ -1713,6 +2019,8 @@ async function daemonRestartHarness(
     .on('_agnes/v1/session.detach', () => ({}))
     .on('_agnes/v1/session.projectUI', () => timeline({ turn: 1, step: 1, phase: 'tools' }, options.nodes))
     .on('session/prompt', () => (options.hangPrompt ? new Promise(() => {}) : { stopReason: 'end_turn' }))
+    .on('_agnes/v1/submit', () => ({ seq: 2, replayed: false }))
+    .on('_agnes/v1/submit.ack', () => ({}))
   const newDaemon = new FakeEndpoint()
     .on('initialize', init)
     .on('session/load', () => ({}))
@@ -1792,13 +2100,13 @@ it('after a terminal close, a padded /quit quits locally instead of being sent a
   }
 })
 
-it('a terminal close cancels the queued-prompt wake so nothing re-dials in the background', async () => {
+it('input queued in the daemon leaves nothing behind that re-dials after a terminal close', async () => {
   const h = await daemonRestartHarness({ hangPrompt: true })
   try {
     h.term.feed('first')
     h.term.feed('\r')
     await vi.waitFor(async () => expect(await h.screen()).toMatch(spinnerFrames))
-    // Busy with a prompt in flight: this one is queued and arms the 100ms wake poll.
+    // Busy with a prompt in flight: this one goes to the daemon queue, and this client keeps no timer for it.
     h.term.feed('second')
     h.term.feed('\r')
     await vi.waitFor(async () => expect(await h.screen()).toContain('Queued: second'))

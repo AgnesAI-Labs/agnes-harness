@@ -12,8 +12,8 @@ import {
   SettingsDrill,
   SettingsInput,
   SettingsItem,
+  SettingsPickerSelect,
   SettingsPresetSelect,
-  SettingsSelect,
   StateSwitch,
   secondPresets,
   trackPageRequest,
@@ -215,9 +215,10 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
           >
             <SettingsBlock>
               <SettingsItem label={t('modelSlot')} info={t('profileHelp')}>
-                <SettingsSelect
+                <SettingsPickerSelect
                   id="auto-review-model"
                   data-testid="auto-review-model"
+                  label={t('modelSlot')}
                   aria-label={t('modelSlot')}
                   value={slot}
                   disabled={locked}
@@ -228,7 +229,7 @@ export function AutoReviewPanel({ canSave }: { canSave: boolean }) {
                       {modelName(name) ? `${t(name)} · ${modelName(name)}` : t(name)}
                     </option>
                   ))}
-                </SettingsSelect>
+                </SettingsPickerSelect>
               </SettingsItem>
             </SettingsBlock>
             {reviewer && optionsState !== 'ready' && (

@@ -9,7 +9,7 @@ import {
   SettingsBlock,
   SettingsDrill,
   SettingsItem,
-  SettingsSelect,
+  SettingsPickerSelect,
   SettingsTextArea,
   trackPageRequest,
   useUiText,
@@ -32,6 +32,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
   const lifetime = useRef<AbortController | undefined>(undefined)
   const [workspaces, setWorkspaces] = useState<{ path: string; available: boolean }[]>([])
   const [cwd, setCwd] = useState('')
+  const selectedCwd = useRef('')
   const [snapshot, setSnapshot] = useState<AdminMemoryResult>()
   const [file, setFile] = useState<MemoryFile>()
   const [content, setContent] = useState('')
@@ -54,8 +55,11 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
       .then(async ({ workspaces }) => {
         if (abort.signal.aborted) return
         setWorkspaces(workspaces)
-        const path = workspaces.find((workspace) => workspace.available)?.path
+        const path =
+          workspaces.find((workspace) => workspace.available && workspace.path === selectedCwd.current)
+            ?.path ?? workspaces.find((workspace) => workspace.available)?.path
         if (!path) return
+        selectedCwd.current = path
         setCwd(path)
         const value = await memoryRequest({ cwd: path }, abort.signal)
         if (!abort.signal.aborted) setSnapshot(value)
@@ -120,14 +124,16 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
         <SettingsItem label={t('noWorkspace')} data-testid="memory-no-workspace" />
       ) : (
         <SettingsItem label={t('workspace')} info={t('workspaceHelp')}>
-          <SettingsSelect
+          <SettingsPickerSelect
             id="memory-workspace"
             data-testid="memory-workspace"
+            label={t('workspace')}
             aria-label={t('workspace')}
             value={cwd}
             disabled={busy}
             onChange={(event) => {
               const path = event.target.value
+              selectedCwd.current = path
               setCwd(path)
               setFile(undefined)
               void request({ cwd: path })
@@ -139,7 +145,7 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
                 {workspace.path}
               </option>
             ))}
-          </SettingsSelect>
+          </SettingsPickerSelect>
         </SettingsItem>
       )}
       {inspection && mode && (

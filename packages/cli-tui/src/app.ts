@@ -3,6 +3,7 @@ import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '
 import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
+import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
@@ -12,11 +13,10 @@ import { formatTuiErrorNotice } from './error-notice.js'
 import { type ExternalEditorConfig, editDraft } from './external-editor.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { formatTurnSummary } from './format-usage.js'
-import { DoubleCtrlC } from './interrupt.js'
+import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
-import { renderMarkdown } from './markdown.js'
 import { copyTip, systemCopy, TuiMouse } from './mouse.js'
 import { nodeText } from './node-text.js'
 import { PackageController } from './package-controller.js'
@@ -31,6 +31,7 @@ import type { Terminal } from './terminal.js'
 import { TerminalSignals } from './terminal-signals.js'
 import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
 import { readTheme, saveTheme } from './theme-preference.js'
+import { assistantView, LiveView } from './thinking.js'
 import { ToolCards } from './tool-cards.js'
 import { ApprovalCard } from './views/approval-card.js'
 import { Composer } from './views/composer.js'
@@ -78,17 +79,13 @@ export class TuiApp {
   private reservedRows = TIMELINE_RESERVED_ROWS
   // Rows rendered under the permission modal, measured before the modal itself renders each frame.
   private belowModal = 0
-  private readonly live = new Text('')
+  private readonly live: LiveView
   private readonly loader: Loader
   private turnActive = false
   private turnStartedAt: number | undefined
   private currentTurn = 0
   private ticker: ReturnType<typeof setInterval> | undefined
-  /** Messages typed during a turn, sent in order once it ends; /queue lists, edits and drops them. */
-  readonly pendingPrompts: ContentBlock[][] = []
   private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
-  private flushingQueued = false
-  private queuedWake: ReturnType<typeof setTimeout> | undefined
   private readonly mouse: TuiMouse
   private readonly statusBar: StatusBar
   private readonly hints: Hints
@@ -116,6 +113,16 @@ export class TuiApp {
   private closedNotice: string | undefined
   private localTurn = false
   private readonly interrupts = new DoubleCtrlC()
+  private readonly escapes = new DoubleEsc()
+  private readonly busyInput = new BusyInput({
+    session: () => this.o.session,
+    locale: () => this.locale,
+    notice: (text, tone) => {
+      this.statusBar.setNotice(text, tone)
+      this.renderer.requestRender()
+    },
+    restore: (draft) => this.editor.setText(draft),
+  })
   // A client-local, per-connection counter -- never a ledger seq, never `UINode.seq`, and never
   // the slot fill's own `requestSeq`. It is minted fresh at the moment of a real click, so the
   // server's (requestSeq, action) idempotency check sees a genuinely new pair every time, even
@@ -174,6 +181,7 @@ export class TuiApp {
     const locale = o.locale ?? 'en'
     this.hints = new Hints(ansi, () => this.timeline.newOutputHint(this.editor.text !== ''))
     this.loader = new Loader('', ansi)
+    this.live = new LiveView(ansi, locale)
     this.localCommandView = localCommandView(ansi)
     this.statusBar = new StatusBar(ansi, locale)
     this.mouse = new TuiMouse(
@@ -181,6 +189,7 @@ export class TuiApp {
       o.copy ?? systemCopy((s) => o.term.write(s)),
       copyTip(ansi, locale),
       () => this.stopped || this.renderer.requestRender(),
+      (row) => this.timeline.click(row),
     )
     this.welcome = new WelcomeController(o, {
       branding,
@@ -207,6 +216,7 @@ export class TuiApp {
       // switch (`/new`, `/resume`, `/rewind`) reuses it. It scrolls inside the fullscreen
       // viewport, never into the shell's history.
       top: this.welcome.banner,
+      groupView: (nodes) => this.cards.group(nodes),
       nodeView: (node) => {
         if (node.kind === 'tool') return this.cards.view(node)
         if (node.kind === 'approval') {
@@ -232,12 +242,7 @@ export class TuiApp {
           this.approvalCards.set(node.id, card)
           return card
         }
-        if (node.kind === 'assistant')
-          return {
-            render: (width) => ['', ...renderMarkdown(nodeText(node), width, ansi)],
-            transcript: (width) => renderMarkdown(nodeText(node), width, ansi),
-            invalidate() {},
-          }
+        if (node.kind === 'assistant') return assistantView(node, ansi, locale)
         if (node.kind === 'user') {
           const text = nodeText(node)
           return new UserMessage(
@@ -286,8 +291,10 @@ export class TuiApp {
       },
       onExternalEdit: () =>
         void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor),
-      onCancelKey: () => {
+      onCancelKey: (hadDraft) => {
+        const idle = !this.busy
         void this.cancel().catch((error) => this.showError(error))
+        this.escapes.press(idle && !hadDraft, () => void this.runInput('/rewind'))
       },
       complete: completeToken,
       mentions: this.mentions,
@@ -415,16 +422,20 @@ export class TuiApp {
         return true
       }
       // Idle Alt+Enter inserts a newline (the editor's own default, reached via `handle(data)`
-      // below). Busy, it means something else: send the current draft as a followUp queued behind
-      // the turn in flight, rather than a newline nobody is here to keep composing around.
+      // below). Busy, it steers the draft into the turn in flight, where Enter queues it behind.
       if (key.name === 'alt-enter' && this.busy) {
         const text = this.editor.expanded()
-        if (text.trim()) {
+        if (text.trim() && !this.refuseClosed()) {
           this.editor.clear()
-          void this.o.session
-            .followUp(attachmentsFrom(text, this.cwd, this.o.remote))
-            .catch((error) => this.showError(error))
+          void this.submitBlocks(attachmentsFrom(text, this.cwd, this.o.remote), text, true).catch((error) =>
+            this.showError(error),
+          )
         }
+        return true
+      }
+      // Alt+Up takes the newest queued message back into an empty editor.
+      if (key.name === 'alt-up' && !this.editor.text) {
+        void this.runInput('/queue edit last')
         return true
       }
       if (key.name === 'ctrl-c') {
@@ -453,18 +464,18 @@ export class TuiApp {
   }
 
   get busy(): boolean {
-    // A projection is presentation data and can arrive behind the ledger (or be a historical cut
-    // during attach). It must never turn an idle editor into a local queue. This client owns one
-    // prompt at a time, so its actual in-flight RPC is the authoritative interaction gate.
-    return this.localTurn
+    // A turn counts whoever started it: the projection shows turns of other clients, and the
+    // local flag covers the window before the projection catches up with this client's own prompt.
+    return this.localTurn || this.turnActive
   }
 
-  /** Refuses, with a notice, while this client's own turn or queued prompts still belong to the current
-   * session: a switch would send those prompts, and Ctrl-C's cancel, to the next session instead. */
+  /** Refuses, with a notice, while this client's own prompt still belongs to the current session: a
+   * switch would send Ctrl-C's cancel to the next session instead. */
   refuseSwitch(): boolean {
-    const refused = this.busy || this.pendingPrompts.length > 0
-    if (refused)
-      this.statusBar.setNotice('Turn or queued prompt pending: finish or Ctrl-C before switching.', 'warning')
+    // Only this client's own in-flight prompt belongs to the session: a turn the projection shows
+    // is the daemon's, and the cancel it needs goes by session, not by what this client displays.
+    const refused = this.localTurn
+    if (refused) this.statusBar.setNotice('Turn pending: finish or Ctrl-C before switching.', 'warning')
     return refused
   }
 
@@ -552,7 +563,7 @@ export class TuiApp {
         opening = false
       },
       preview: (p) => {
-        if (p.stream !== 'text' || !this.previews.add(p)) return
+        if (!this.previews.add(p)) return
         if (!this.previewEffects.includes(p.effectId)) this.previewEffects.push(p.effectId)
         this.renderLive()
       },
@@ -631,14 +642,9 @@ export class TuiApp {
   }
 
   // 'closed' is terminal: the projection's event stream has ended, so the closing `opState: null`
-  // tick that would stop the spinner never arrives. Queued drafts are dropped for the same reason
-  // input is refused: sending them would run a turn nobody can see.
+  // tick that would stop the spinner never arrives.
   private handleClosed(): void {
     this.closedNotice = t('notice.closed', this.o.locale ?? 'en', { id: escapeControl(this.o.session.id) })
-    this.pendingPrompts.length = 0
-    // Timers armed before the close would still call resync()/projectUI and re-dial.
-    if (this.queuedWake) clearTimeout(this.queuedWake)
-    this.queuedWake = undefined
     void this.projection.stop()
     this.resetTurn()
     this.refuseClosed()
@@ -728,7 +734,6 @@ export class TuiApp {
     })
     // Keep the existing tail-relative offset when older rows are prepended. That moves the
     // viewport into the newly loaded page without a second PageUp jump over it.
-    if (value.opState === null && this.pendingPrompts.length > 0) void this.flushQueuedPrompts()
     // A node that stopped streaming carries its final text; its preview is finished with.
     this.previews.apply(value)
     this.renderLive()
@@ -831,8 +836,7 @@ export class TuiApp {
   private renderLive(): void {
     for (let i = this.previewEffects.length - 1; i >= 0; i--)
       if (this.previews.text(this.previewEffects[i] ?? '') === undefined) this.previewEffects.splice(i, 1)
-    const text = this.previewEffects.map((effectId) => this.previews.text(effectId)?.text ?? '').join('')
-    this.live.set(escapeControl(text))
+    this.live.set(this.previewEffects.flatMap((effectId) => this.previews.text(effectId) ?? []))
     this.renderer.requestRender()
   }
 
@@ -881,6 +885,7 @@ export class TuiApp {
       }
     }
     if (r.draft !== undefined) this.editor.setText(r.draft)
+    if (r.keep) this.busyInput.keep(r.keep)
     if (r.modelChoices) {
       this.statusBar.setNotice(undefined)
       this.modelPicker.show(r.modelChoices)
@@ -1027,89 +1032,33 @@ export class TuiApp {
       this.renderer.requestRender()
       return
     }
-    await this.submitBlocks(attachmentsFrom(text, this.cwd, this.o.remote))
+    await this.submitBlocks(
+      [...attachmentsFrom(text, this.cwd, this.o.remote), ...this.busyInput.takeKept()],
+      text,
+    )
   }
 
-  private async submitBlocks(blocks: import('@agnes/protocol').ContentBlock[]): Promise<void> {
+  /** Sends one input: a prompt when idle; while a turn runs it goes to the daemon queue, or into the turn with `steer`. */
+  private async submitBlocks(blocks: ContentBlock[], draft = textOf(blocks), steer = false): Promise<void> {
     this.prompted.add(this.o.session.id)
-    if (this.busy) {
-      // The daemon's followUp endpoint durably enqueues input, but this TUI has no background
-      // turn runner to wake that queue after the current turn ends. Keep the draft locally and
-      // dispatch it as an ordinary prompt on the first idle projection instead.
-      this.pendingPrompts.push(blocks)
-      this.statusBar.setNotice(
-        `Queued: ${escapeControl(
-          blocks
-            .filter((b) => b.type === 'text')
-            .map((b) => b.text)
-            .join(' ') || 'attachment',
-        )}`,
-      )
-      this.renderer.requestRender()
-      this.wakeQueuedPrompt()
-      return
-    }
+    if (this.busy) return this.busyInput.queue(blocks, draft, steer ? 'steer' : 'followUp')
     this.localTurn = true
     try {
-      await this.o.session.prompt(blocks)
+      await this.busyInput.prompt(blocks, draft)
     } finally {
       this.localTurn = false
-      // The idle projection can arrive before the prompt RPC itself settles. In that ordering the
-      // projection-side flush sees localTurn=true and correctly backs off, but there may be no
-      // later projection to wake it. The RPC settlement is the other authoritative idle edge.
-      if (this.pendingPrompts.length > 0) void this.flushQueuedPrompts()
     }
-  }
-
-  private async flushQueuedPrompts(): Promise<void> {
-    if (this.flushingQueued || this.stopped || this.busy || this.pendingPrompts.length === 0) return
-    this.flushingQueued = true
-    try {
-      while (!this.stopped && !this.busy && this.pendingPrompts.length > 0) {
-        const next = this.pendingPrompts.shift()
-        if (!next) break
-        this.statusBar.setNotice(undefined)
-        this.localTurn = true
-        try {
-          await this.o.session.prompt(next)
-        } catch (error) {
-          // Only a prompt the daemon refused before recording it may be sent again. Any other failure
-          // can arrive after the input was written and the turn ran (TURN_ERROR is exactly that), and
-          // sending it again repeats the message, the model call and whatever the turn's tools did.
-          // The notice showError writes replaces any notice set here, so none is set.
-          const code = (error as { data?: { code?: unknown } } | null)?.data?.code
-          if (code === 'SESSION_BUSY' || code === 'OVERLOADED') this.pendingPrompts.unshift(next)
-          this.showError(error)
-          return
-        } finally {
-          this.localTurn = false
-        }
-      }
-    } finally {
-      this.flushingQueued = false
-      // Whatever is still queued when this returns needs a live wake path. The refusal branch above
-      // puts its prompt back and returns, and the idle projection edge that would otherwise retry
-      // only ticks on a new ledger event -- which a refused prompt never produced. Re-arming here is
-      // idempotent: wakeQueuedPrompt() no-ops on an empty queue, a stopped app or a live timer.
-      this.wakeQueuedPrompt()
-    }
-  }
-
-  /** Poll once per short interval while queued input exists, covering a missed idle projection. */
-  private wakeQueuedPrompt(): void {
-    if (this.queuedWake || this.stopped || this.pendingPrompts.length === 0) return
-    this.queuedWake = setTimeout(() => {
-      this.queuedWake = undefined
-      void this.resync().finally(() => {
-        if (this.pendingPrompts.length > 0) this.wakeQueuedPrompt()
-      })
-    }, 100)
   }
 
   async cancel(): Promise<void> {
     this.attachmentController.abort()
     this.attachmentController = new AbortController()
-    if (this.busy) await this.o.session.cancel()
+    if (!this.busy) return
+    const refused = await cancelTurn(this.o.session, this.locale)
+    if (refused) {
+      this.statusBar.setNotice(refused, 'error')
+      this.renderer.requestRender()
+    }
   }
 
   async stop(): Promise<void> {
@@ -1117,8 +1066,6 @@ export class TuiApp {
     this.stopped = true
     this.mentions.dispose()
     this.attachmentController.abort()
-    if (this.queuedWake) clearTimeout(this.queuedWake)
-    this.queuedWake = undefined
     this.mouse.dispose()
     this.stopTicker()
     this.offPermission?.()

@@ -546,7 +546,9 @@ it('lists the other provider slots as rows that state what is in effect, the rar
   // Two memory providers are installed: the row lists both and its ⓘ says why it cannot be changed.
   const memory = host.querySelector('[data-testid="session-default-slot-memory"]')
   expect(memory?.querySelector('.ant-select-disabled')).not.toBeNull()
-  expect(memory?.querySelector('.agnes-settings-info')?.getAttribute('title')).toBe(t('defaults.slot-fixed'))
+  expect(memory?.querySelector('.agnes-settings-info')?.getAttribute('aria-label')).toBe(
+    t('defaults.slot-fixed'),
+  )
   // One child-agent provider: the row simply names it.
   const child = host.querySelector('[data-testid="session-default-slot-child-agent"]')
   expect(child?.querySelector('[role="combobox"]')).toBeNull()

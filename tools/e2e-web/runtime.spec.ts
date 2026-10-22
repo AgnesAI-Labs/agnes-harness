@@ -69,9 +69,11 @@ test('consented role takeover and host-only recovery hand back the same session 
   }
   page.on('request', record)
   await page.goto(`${runtime.url}/?admin`)
-  await expect(page.getByRole('heading', { name: 'Application recovery', exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('heading', { level: 1, name: 'Application recovery', exact: true }),
+  ).toBeVisible()
   await expect(page.getByRole('main')).toContainText(id)
-  await page.getByRole('button', { name: 'Clear application and interface choices', exact: true }).click()
+  await page.getByRole('button', { name: 'Restore official interface', exact: true }).click()
   await expect.poll(async () => (await application()).status).toBe('host')
   const cleared = await application()
   expect(cleared.selection).toBeNull()
@@ -146,9 +148,8 @@ test('session admission keeps history readable, drafts editable and sending gate
   await input.press('Enter')
   await expect(input).toHaveValue('/plan Local draft A')
   await expect(page.locator('#send')).toBeDisabled()
-  await expect(
-    page.getByRole('status').filter({ hasText: 'History preview (not yet verified)' }),
-  ).toBeVisible()
+  // The pending recorded history is a read-only preview until admission: the composer says so.
+  await expect(input).toHaveAttribute('placeholder', /read-only/i)
   await expect(page.getByTestId('attachment-file-input')).toBeDisabled()
   await page.getByText('Admission B', { exact: true }).first().click()
   await input.fill('Local draft B')

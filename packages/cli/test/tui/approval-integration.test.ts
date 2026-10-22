@@ -89,11 +89,13 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         term.feed('\x1b[A')
         await Promise.resolve()
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          'allow_always',
+          '❯ 2. Always allow in this session',
         )
         term.feed('\x1b[A')
         await Promise.resolve()
-        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain('allow_once')
+        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
+          '❯ 1. Allow once',
+        )
       } else {
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
           '"path": "receipt.txt"',
@@ -121,7 +123,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       if (mode === 'allow') {
         await vi.waitFor(async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            '◆ write  write',
+            '◆ write +1 -0  write',
           ),
         )
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
@@ -130,17 +132,17 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         term.feed('\x0f')
         await vi.waitFor(async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'Arguments:',
+            'receipt.txt whole file, replaces it if it exists +1 -0',
           ),
         )
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          'receipt.txt',
+          '1 + approved',
         )
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain('Result:')
         term.feed('\x0f')
         await vi.waitFor(async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
-            'Arguments:',
+            'whole file',
           ),
         )
       }

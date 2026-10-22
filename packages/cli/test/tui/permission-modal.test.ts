@@ -1,7 +1,11 @@
+import { diffWork } from '@agnes/cli-tui'
 import type { PermissionRequest } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
+import { createAnsi } from '../../src/tui/ansi.js'
 import { PermissionModal } from '../../src/tui/permission-modal.js'
 import { displayWidth } from '../../src/tui/terminal.js'
+import { TuiTheme } from '../../src/tui/theme.js'
+import { ApprovalCard } from '../../src/tui/views/approval-card.js'
 
 const request: PermissionRequest = {
   sessionId: 's',
@@ -153,4 +157,92 @@ it.each([
   expect(text).not.toContain('synthetic fallback')
   modal.close()
   expect(await pending).toEqual({ unanswered: 'detached' })
+})
+
+const editInput = {
+  path: 'a.ts',
+  edits: [{ oldText: 'one\ntwo', newText: 'one\n2' }],
+}
+const editRequest: PermissionRequest = {
+  sessionId: 's',
+  toolCall: {
+    title: 'Edit a.ts',
+    rawInput: editInput,
+    _meta: { 'ai.agnes.harness': { tool: 'edit' } },
+  },
+  options: [
+    { optionId: 'o', name: 'allow_once', kind: 'allow_once' },
+    { optionId: 'a', name: 'allow_always', kind: 'allow_always' },
+    { optionId: 'r', name: 'reject_once', kind: 'reject_once' },
+  ],
+}
+
+it('shows the change of an edit first, the raw input after it, and scope-stating option labels', async () => {
+  const modal = new PermissionModal(vi.fn(), { locale: 'zh-CN' })
+  const pending = modal.ask(editRequest, { signal: new AbortController().signal })
+  const text = modal.render(80).join('\n')
+  const work = diffWork.hunks
+  modal.render(60)
+  expect(diffWork.hunks).toBe(work) // drawing again does not diff again
+  expect(text).toContain('edit')
+  expect(text).toContain('a.ts +1 -1')
+  expect(text).toContain('2 - two')
+  expect(text.indexOf('2 - two')).toBeLessThan(text.indexOf('"oldText"'))
+  expect(text).toContain('原始输入')
+  expect(text).toContain('2. 本会话内总是允许')
+  expect(text).toContain('❯ 3. 拒绝') // the default is still the rejection
+  modal.handleInput('\r')
+  expect(await pending).toEqual({ optionId: 'r' })
+})
+
+it('lets scrolling reach every option when they do not all fit, even before the next paint', async () => {
+  const modal = new PermissionModal(vi.fn(), { maxRows: () => 5 })
+  const pending = modal.ask(editRequest, { signal: new AbortController().signal })
+  modal.render(60)
+  modal.handleInput('1') // option 1 is off screen: only the rejection can be hit by number
+  modal.handleInput('\x1b[A')
+  modal.handleInput('\x1b[A') // the keys land before any repaint
+  modal.handleInput('\r')
+  expect(await pending).toEqual({ optionId: 'o' })
+})
+
+it('gives the modal and the parked card the same body for the same request', () => {
+  const ansi = new TuiTheme('mono').ansi(createAnsi('none'))
+  const card = new ApprovalCard(
+    {
+      kind: 'approval',
+      id: 'a',
+      seq: 1,
+      state: 'pending',
+      summary: 'Edit a.ts',
+      risk: 'always',
+      toolName: 'edit',
+      options: ['allow_once', 'reject_once'],
+      decisionRef: { sessionId: 's', id: 'tk', revision: 1 },
+      subjectText: JSON.stringify({ call: { name: 'edit', args: editInput } }),
+    },
+    { ansi, onDecide: async () => {} },
+  )
+  const body = (rows: string[]) =>
+    rows.map((r) => r.replace(/^[ │]+/, '').replace(/[ │]+$/, '')).filter(Boolean)
+  const cardRows = body(card.render(80))
+  const modal = new PermissionModal(vi.fn())
+  void modal.ask(editRequest, { signal: new AbortController().signal })
+  const modalRows = body(modal.render(80))
+  for (const row of ['edit', 'a.ts +1 -1', '1   one', '2 - two', '2 + 2']) expect(cardRows).toContain(row)
+  for (const row of ['edit', 'a.ts +1 -1', '1   one', '2 - two', '2 + 2']) expect(modalRows).toContain(row)
+  const card80 = cardRows.join('\n') // the raw subject stays, below the diff, under its own heading
+  expect(card80.indexOf('oldText')).toBeGreaterThan(card80.indexOf('── Raw input ──'))
+  expect(card80.indexOf('── Raw input ──')).toBeGreaterThan(card80.indexOf('2 + 2'))
+  modal.close()
+})
+
+it('names a request without a title by its plain arguments', () => {
+  const modal = new PermissionModal(vi.fn())
+  void modal.ask(
+    { ...request, toolCall: { rawInput: { path: 'a b.txt', content: { nested: true }, n: 3 } } },
+    { signal: new AbortController().signal },
+  )
+  expect(modal.render(80)[0]).toContain('Approval: path=a b.txt, n=3')
+  modal.close()
 })

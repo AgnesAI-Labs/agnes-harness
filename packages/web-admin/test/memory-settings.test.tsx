@@ -217,3 +217,38 @@ it.each(['saved', 'failed', 'read'] as const)(
     }
   },
 )
+
+it('keeps the selected workspace when save permission arrives after the first read', async () => {
+  const workspaces = [
+    { path: '/work/default', available: true },
+    { path: '/work/selected', available: true },
+  ]
+  const changes: unknown[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/context') return Response.json(context(workspaces))
+      const body = JSON.parse(String(init?.body ?? '{}'))
+      if (body.settings) changes.push(body)
+      return Response.json({ workspaces, inspection: inspection(body.settings?.mode ?? 'off') })
+    }),
+  )
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const draw = (canSave: boolean) => act(async () => root.render(createElement(MemoryPanel, { canSave })))
+  try {
+    await draw(false)
+    const workspace = host.querySelector<HTMLSelectElement>('[data-testid="memory-workspace"]')!
+    await act(async () => {
+      workspace.value = '/work/selected'
+      workspace.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(workspace.value).toBe('/work/selected')
+    await draw(true)
+    expect(workspace.value).toBe('/work/selected')
+    await act(async () => radio(host, 'auto')?.click())
+    expect(changes).toEqual([{ cwd: '/work/selected', settings: { mode: 'auto' } }])
+  } finally {
+    await act(async () => root.unmount())
+  }
+})

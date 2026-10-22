@@ -128,11 +128,14 @@ it('saves the General page instructions by themselves, maps the reply styles, an
     expect(writes.at(-1)?.config.replyStyle).toBe('brief, plain words')
     await choose('default')
     expect(writes.at(-1)?.config).toEqual({ personaPrefix: 'lead with the conclusion' })
-    // The closing instruction is a subpage of its own.
+    // The closing instruction opens in place.
     expect(field('personaSuffix')).toBeNull()
-    const closing = host.querySelector<HTMLButtonElement>('[data-testid="custom-instructions-closing"]')
+    const closing = host.querySelector<HTMLButtonElement>(
+      '[data-testid="custom-instructions-closing-toggle"]',
+    )
     expect(closing?.textContent).toContain('Not set')
     await act(async () => closing?.click())
+    expect(field('personaSuffix')).not.toBeNull()
     await input('personaSuffix', 'list the next steps')
     await blur('personaSuffix')
     expect(writes.at(-1)?.config).toEqual({

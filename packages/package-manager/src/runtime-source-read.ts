@@ -25,6 +25,8 @@ export function createRuntimeSourceReader() {
         'plugin-capabilities.json',
         'package-sources.json',
         '.agnes-runtime-snapshots.json',
+        '.agnes-package-transaction.json',
+        '.agnes-runtime-transaction.json',
       ])
       const prior = pending.get(profileDir)
       if (prior?.boundary === boundary) return prior.promise
@@ -68,6 +70,7 @@ export async function readRuntimePluginSnapshots(
   for (let attempt = 0; attempt < 3; attempt++) {
     if (attempt) invalidatePackageVerification()
     const boundary = committed()
+    let writerObserved = transacting()
     try {
       const beforeLock = load()
       // Both reads use the same captured lock and have no publication side effects.
@@ -80,6 +83,7 @@ export async function readRuntimePluginSnapshots(
         }),
         listRuntimePinsStoreAsync(store, beforeLock),
       ])
+      writerObserved ||= transacting()
       if (inventoryRead.status === 'rejected') throw inventoryRead.reason
       if (pinsRead.status === 'rejected') throw pinsRead.reason
       const before = inventoryRead.value,
@@ -90,7 +94,8 @@ export async function readRuntimePluginSnapshots(
         ceiling: ceiling(afterLock),
         verificationCache,
       })
-      if (before.hash === after.hash && committed() === boundary && !transacting()) {
+      writerObserved ||= transacting()
+      if (before.hash === after.hash && committed() === boundary && !writerObserved) {
         const pinned = runtimePluginSnapshotsFromPins(after, pins)
         const identities = new Set(
           pinned.map(({ snapshot }) => `${snapshot.packageId}\0${snapshot.integrity}`),
@@ -102,9 +107,12 @@ export async function readRuntimePluginSnapshots(
           ),
         ])
       }
+      // A verified read can still straddle an announced write. Give that writer the same
+      // backoff as the exception path, rather than consuming every retry while it is active.
+      if (writerObserved || committed() !== boundary) await delay(50 * (attempt + 1))
     } catch (error) {
       // A failure no writer explains is tampering and stays fatal; otherwise let the writer finish.
-      if (!transacting() && committed() === boundary) throw error
+      if (!writerObserved && !transacting() && committed() === boundary) throw error
       invalidatePackageVerification()
       await delay(50 * (attempt + 1))
     }

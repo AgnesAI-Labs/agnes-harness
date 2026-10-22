@@ -132,9 +132,9 @@ On narrow screens, select timeline events from the record list. The chart remain
 
 ## Everyday management
 
-The session-list filter **Unarchived** shows sessions with `archived=false`, including idle and completed sessions. It does not indicate that a task is executing.
+The sidebar's **View options** menu groups sessions by workspace or shows one flat list, and filters them to hide archived sessions, show all conversations, or show archived sessions only. Choose **Archived only** under **Filter sessions** to show archived sessions by themselves. These filters show idle and completed sessions alongside running ones; they do not indicate that a task is executing.
 
-Settings manages model accounts, plugins, Skills/MCP, appearance, and Computer Use. Available actions depend on backend capabilities and permissions. Installed plugins still require trust and enablement; see [plugin management](packages.md). Reopen history from the sidebar, or use the archive view for archived tasks. Archiving does not delete session history.
+Settings manages model accounts, plugins, Skills/MCP, appearance, and Computer Use. Available actions depend on backend capabilities and permissions. Installed plugins still require trust and enablement; see [plugin management](packages.md). Reopen history from the sidebar, or choose **Archived only** under **View options** for archived tasks. Archiving does not delete session history.
 
 Computer Use shows driver status, system permissions, diagnostics, and maintenance progress. Switching settings pages keeps progress monitoring active. When the pane is replaced or reloaded, it reads the latest operation without resubmitting it. Removing the pane stops local monitoring; use Cancel explicitly to request backend cancellation and wait for confirmation. A connection error or a long wait does not confirm completion or cancellation.
 

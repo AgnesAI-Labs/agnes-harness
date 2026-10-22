@@ -124,6 +124,14 @@ export async function sidebar(page: Page) {
   await expect(settings).toBeVisible()
 }
 
+/** The view menu owns both the grouping and the archived filter; its items carry stable test ids. */
+export async function chooseView(page: Page, filter: 'active' | 'all' | 'archived') {
+  await sidebar(page)
+  await page.locator('#session-view').click()
+  await page.getByTestId(`session-view-filter-${filter}`).click()
+  await expect(page.locator('#session-view')).toHaveAttribute('aria-expanded', 'false')
+}
+
 export async function homePage(page: Page, id: string, tab?: string) {
   if (await settingsVisible(page)) await dismissSettings(page)
   const dock = page.getByTestId('workbench-right-toggle')
@@ -269,10 +277,8 @@ export async function section(page: Page, id: string) {
     if (await settingsVisible(page)) await dismissSettings(page)
     if (id === 'history') await page.keyboard.press('Meta+k')
     else {
-      await sidebar(page)
-      await page.locator('#session-filter').click()
-      await page.getByTestId('session-filter-archived').click()
-      await expect(page.locator('#session-filter')).toHaveAttribute('data-filter', 'archived')
+      if (!(await page.getByTestId('session-inventory').isVisible())) await chooseView(page, 'archived')
+      await expect(page.getByTestId('session-inventory')).toBeVisible()
     }
     return
   }
@@ -377,9 +383,9 @@ export async function closeSettings(page: Page, _locale = 'en') {
     await sidebar(page)
     const id = new URL(page.url()).searchParams.get('session')
     if (id) {
-      if ((await page.locator('#session-filter').getAttribute('data-filter')) === 'archived') {
-        await page.locator('#session-filter').click()
-        await page.getByTestId('session-filter-unarchived').click()
+      if (await page.getByTestId('session-inventory').isVisible()) {
+        await chooseView(page, 'active')
+        await expect(page.getByTestId('session-inventory')).toBeHidden()
       }
       await page.locator(`.session[data-session="${id}"]`).click()
     } else await page.locator('#new').click()

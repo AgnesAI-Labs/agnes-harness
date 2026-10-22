@@ -7,16 +7,17 @@ import {
   reportSuccess,
   Segmented,
   SettingsBlock,
-  SettingsDrill,
+  SettingsExpand,
   SettingsInput,
   SettingsItem,
   SettingsTextArea,
   UiLocaleProvider,
   type UiLocaleSource,
   useAutosave,
+  useSettingsSubpages,
   useUiText,
 } from '@agnes/web-ui'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { MemoryPanel } from './memory.js'
 import {
   browserPromptApi,
@@ -91,6 +92,14 @@ export function CustomInstructions({
   }
   const style = customOpen ? 'custom' : replyStyleChoice(value.replyStyle)
   const suffix = value.personaSuffix?.trim()
+  const subpages = useSettingsSubpages()
+  const [closingOpen, setClosingOpen] = useState(false)
+  // An old deep link still names the closing-instructions subpage; show the row in place instead.
+  useEffect(() => {
+    if (!subpages.stack.includes('closing-instructions')) return
+    subpages.back()
+    setClosingOpen(true)
+  }, [subpages.stack, subpages.back])
   return (
     <div ref={ref} id="settings-subsection-custom-instructions" tabIndex={-1}>
       {replaced && (
@@ -166,12 +175,15 @@ export function CustomInstructions({
             />
           </SettingsItem>
         )}
-        <SettingsDrill
-          id="closing-instructions"
+        <SettingsExpand
+          id="settings-subsection-closing-instructions"
+          data-settings-expand
           data-testid="custom-instructions-closing"
           label={t('suffix')}
+          hint={t('suffixHelp')}
           value={suffix ? <span className="agnes-settings-value-text">{suffix}</span> : t('notSet')}
-          description={t('suffixHelp')}
+          open={closingOpen}
+          onOpenChange={setClosingOpen}
         >
           <SettingsTextArea
             id="custom-instructions-closing"
@@ -186,7 +198,7 @@ export function CustomInstructions({
             onBlur={config.flush}
           />
           {snapshot && !canSave && !replaced && <p className="agnes-settings-note">{t('readOnly')}</p>}
-        </SettingsDrill>
+        </SettingsExpand>
       </SettingsBlock>
       {snapshot && !canSave && !replaced && <p className="agnes-settings-note">{t('readOnly')}</p>}
     </div>

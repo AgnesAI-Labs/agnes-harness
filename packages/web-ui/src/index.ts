@@ -225,6 +225,10 @@ export { Menu, type MenuItem, type MenuProps } from './ui/menu.js'
 export { type NotificationItem, Notifications, type NotificationsProps } from './ui/notifications.js'
 export { useReducedMotion } from './ui/overlay.js'
 export { PageHeader, type PageHeaderProps } from './ui/page-header.js'
+export {
+  SettingsPickerSelect,
+  type SettingsPickerSelectProps,
+} from './ui/picker-select.js'
 export { Popover } from './ui/popover.js'
 export {
   PushCrumbs,

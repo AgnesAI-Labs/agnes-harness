@@ -4,6 +4,7 @@ import { Disclosure } from '../../ui/disclosure.js'
 import { Bubble } from '../../x/index.js'
 import { interactionToolPresentation } from '../interaction-result.js'
 import { useInteractionSnapshot } from '../markdown-snapshot.js'
+import { TurnErrorRow } from '../turn-error-row.js'
 import { turnVerificationStatus } from '../turn-status.js'
 import { ActivityIcon, ActivityRow, type ActivityState } from './activity-row.js'
 import type { AssistantNode, ConversationMessagesProps, ToolNode } from './context.js'
@@ -136,6 +137,14 @@ function TurnView({
   const statusText = duration
     ? `${status}${t(active ? 'turn.runningSuffix' : 'turn.elapsedSuffix', { duration })}`
     : status
+  // A failed turn always states what happened; the process summary then stops repeating it.
+  const failed = turn.status === 'failed' && !verification
+  const processStatusText =
+    failed && duration
+      ? `${t('turn.error.processLabel')}${t('turn.elapsedSuffix', { duration })}`
+      : failed
+        ? t('turn.error.processLabel')
+        : statusText
   // A thought a reader is selecting or focused in stays a step until they let go, even when a
   // terminal replacement drops that part of the node.
   const thoughtIds = others
@@ -270,10 +279,12 @@ function TurnView({
         data-agnes-dynamic="turn-process"
         data-active={processActive ? 'true' : undefined}
         // A finished turn with nothing to unfold says how long it took in its action bar only.
-        hidden={hasProcess || turn.status === 'completed'}
+        // A failed turn keeps its status line: it is the one place that says the run failed.
+        hidden={turn.status === 'completed' || (hasProcess && !failed)}
       >
         {statusText}
       </p>
+      {failed && <TurnErrorRow turn={turn} t={t} actions={props.turnErrorActions} />}
       <Disclosure
         className="turn-process"
         open={processOpen}
@@ -287,7 +298,7 @@ function TurnView({
         summary={
           <span className="process-row">
             <span className="process-label" data-agnes-dynamic="turn-process" data-testid="turn-timing">
-              {statusText}
+              {processStatusText}
             </span>
             <svg className="icon process-chevron" viewBox="0 0 24 24" aria-hidden="true">
               <path d="m6 9 6 6 6-6" />
@@ -295,15 +306,6 @@ function TurnView({
           </span>
         }
       />
-      {turn.status === 'failed' && !verification && (
-        <p className="turn-error" role="alert">
-          {turn.error
-            ? t('turn.error.codeJoin', { code: turn.error.code, message: turn.error.message })
-            : t('turn.error.noDetail', {
-                reason: turn.reason ?? t('turn.error.unknownReason'),
-              })}
-        </p>
-      )}
       {verification && (
         <Disclosure
           variant="plain"

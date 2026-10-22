@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { afterEach, expect, it, vi } from 'vitest'
 import { forgetInventory } from '../src/admin/plugins/admin/inventory-cache.js'
+import { OperationBackoff, withOperationDesired } from '../src/admin/plugins/admin/operation-refresh.js'
 import { PluginAdminPage } from '../src/admin/plugins/admin/page.js'
 import { PluginAdminApi } from '../src/admin/plugins/api.js'
 import { visibleRefresh } from '../src/visible-refresh.js'
@@ -207,4 +208,29 @@ it('reuses optional feeds while every refresh obtains a fresh verified overview'
   } finally {
     page.dispose()
   }
+})
+
+it('notices a slow operation within a few seconds of it finishing', () => {
+  const backoff = new OperationBackoff(new Map())
+  const waits = Array.from({ length: 12 }, () => backoff.next('op', 1200, 3000))
+  expect(waits.slice(0, 3)).toEqual([1200, 2400, 3000])
+  expect(Math.max(...waits)).toBe(3000)
+  const reconnect = new OperationBackoff(new Map())
+  expect(Array.from({ length: 8 }, () => reconnect.next('op', 3000)).at(-1)).toBe(30_000)
+})
+
+it('shows a completed disable on the plugin row before the inventory is read again', () => {
+  const row = (id: string, desired: string) => ({ id, desired }) as never
+  const installed = [row('@agnes/a', 'enabled'), row('@agnes/b', 'enabled')]
+  const done = (operation: string, state: string, desired: string) =>
+    ({ operation, state, installed: row('@agnes/a', desired) }) as never
+  expect(withOperationDesired(installed, done('disable', 'completed', 'installed-disabled'))).toEqual([
+    row('@agnes/a', 'installed-disabled'),
+    row('@agnes/b', 'enabled'),
+  ])
+  for (const other of [
+    done('disable', 'failed', 'installed-disabled'),
+    done('update', 'completed', 'installed-disabled'),
+  ])
+    expect(withOperationDesired(installed, other)).toBe(installed)
 })

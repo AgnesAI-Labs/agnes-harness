@@ -421,6 +421,7 @@ export async function handleCommand(
       let releaseResources: (() => void) | undefined
       try {
         releaseResources = await admitResourceRun(o, ac.signal)
+        await o.resources?.mcpRows?.prepareTurn?.(ac.signal)
         await noticeConnectingMcp(session, o.resources?.mcpRows)
         // A run cancelled while it waited for admission still reaches the core, with its signal
         // already aborted: the prompt it was sent for is queued, and the core ends that turn as

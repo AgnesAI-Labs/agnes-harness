@@ -4,6 +4,7 @@ import { formatTuiErrorNotice } from './error-notice.js'
 import { oneLine } from './session-commands.js'
 import type { ThemedAnsi } from './theme.js'
 import { type ToolDetailState, toolDetailText } from './tool-detail.js'
+import { ToolGroupCard } from './tool-groups.js'
 import { type CardFacts, childFacts } from './views/special-card.js'
 import { ToolCard } from './views/tool-card.js'
 
@@ -20,6 +21,8 @@ export class ToolCards {
   private readonly details = new Map<string, { key: string; view: ToolDetailState }>()
   /** Subagent status and run time by child key; they change without their spawning node changing. */
   private children = new Map<string, CardFacts>()
+  /** Runs of read-only calls drawn as one card, by the id of their first call; open/closed outlives a rebuild. */
+  private readonly groups = new Map<string, ToolGroupCard>()
   private latest: string | undefined
 
   constructor(
@@ -52,6 +55,18 @@ export class ToolCards {
     return card
   }
 
+  group(nodes: UINode[]): ToolGroupCard {
+    const tools = nodes.filter((node) => node.kind === 'tool')
+    const id = tools[0]?.id ?? ''
+    const group = new ToolGroupCard(
+      tools,
+      tools.map((node) => this.view(node)),
+      { ansi: this.o.ansi, locale: this.o.locale, collapsed: this.groups.get(id)?.collapsed ?? true },
+    )
+    this.groups.set(id, group)
+    return group
+  }
+
   /** Asks the daemon for the whole record once per call/result pair; a failure is retried on the next expand. */
   private load(node: ToolNode): void {
     if (this.o.closed()) return
@@ -82,6 +97,7 @@ export class ToolCards {
     const ids = new Set(tools.map((node) => node.id))
     for (const id of this.cards.keys()) if (!ids.has(id)) this.cards.delete(id)
     for (const id of this.details.keys()) if (!ids.has(id)) this.details.delete(id)
+    for (const id of this.groups.keys()) if (!ids.has(id)) this.groups.delete(id)
     this.latest = tools.at(-1)?.id
     this.children = childFacts(value)
   }
@@ -91,7 +107,12 @@ export class ToolCards {
     return (this.latest !== undefined && this.cards.get(this.latest)?.handleInput(data)) === true
   }
 
+  /** Ctrl-O: the latest card, or the group it sits in, which is what the screen shows. */
   toggleLatest(): void {
-    if (this.latest !== undefined) this.cards.get(this.latest)?.toggle()
+    if (this.latest === undefined) return
+    const latest = this.latest
+    const group = [...this.groups.values()].find((g) => g.has(latest))
+    if (group) group.toggle()
+    else this.cards.get(latest)?.toggle()
   }
 }

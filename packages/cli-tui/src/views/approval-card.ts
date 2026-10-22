@@ -2,7 +2,10 @@ import type { UINode } from '@agnes/protocol'
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { type Locale, type LocaleKey, t } from '../locale.js'
+import { tt } from '../locale-extended.js'
 import { paintsColour, type ThemedAnsi } from '../theme.js'
+import { approvalBody, approvalHeadline, subjectOf } from './approval-body.js'
+import { diffInput } from './diff.js'
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]
@@ -101,7 +104,8 @@ export class ApprovalCard implements Component {
     const n = this.n
     const ansi = this.o.ansi
     const presentation = n.presentation?.[this.o.locale ?? 'en'] ?? n.presentation?.en
-    const summary = escapeControl(presentation?.title ?? n.summary)
+    const subject = subjectOf(n)
+    const summary = escapeControl(approvalHeadline(presentation?.title ?? n.summary, subject.args))
     const resolved = (tone: 'success' | 'danger', glyph: string) => [
       fitLine(
         `${ansi.fg(tone, glyph)} ${summary} ${ansi.fg('faint', '->')} ${ansi.fg(tone, escapeControl(this.note))}`,
@@ -138,6 +142,12 @@ export class ApprovalCard implements Component {
           width - 2,
         ).map((line) => fitLine(`${rail}${line}`, width)),
       ) ?? []),
+      ...approvalBody(subject, width - 2, ansi, locale).map((line) => fitLine(`${rail}${line}`, width)),
+      // The diff is a reading aid, not the record: the raw subject is what is being approved, so it
+      // always stays on the card, set apart under its own heading when a diff came first.
+      ...(n.subjectText && subject.tool && diffInput(subject.tool, subject.args)
+        ? [fitLine(`${rail}${ansi.fg('faint', `── ${tt('approval.details', locale)} ──`)}`, width)]
+        : []),
       ...(n.subjectText
         ? wrapText(escapeControl(n.subjectText), width - 2).map((line) => fitLine(`${rail}${line}`, width))
         : []),

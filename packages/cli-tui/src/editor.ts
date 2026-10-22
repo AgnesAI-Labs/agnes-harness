@@ -83,7 +83,8 @@ export type EditorOptions = {
   placeholder?: string
   locale?: string
   onSubmit(text: string): void
-  onCancelKey?(): void
+  /** `hadDraft`: the key found text in the editor (idle, it then cleared it). */
+  onCancelKey?(hadDraft: boolean): void
   /** Ctrl-G: the app hands the draft to the user's own editor and writes the result back with `replaceDraft`. */
   onExternalEdit?(): void
   /** Sent prompts, kept across runs when it has a file; without it history lasts this editor's lifetime. */
@@ -142,7 +143,9 @@ export class Editor implements Component {
     this.kitty = v
   }
 
-  setText(t: string): void {
+  /** Every draft source (queue, external editor, history, a failed send) lands here: nothing it holds may act on the terminal. */
+  setText(raw: string): void {
+    const t = raw.replace(/\r\n?/g, '\n').replaceAll('\t', '  ').replace(CONTROL, '')
     this.text = t
     this.cursor = t.length
   }
@@ -277,14 +280,16 @@ export class Editor implements Component {
           }
         }
         return true
-      case 'esc':
+      case 'esc': {
         if (menu && !menu.slash) {
           this.dismissed = this.text.slice(0, this.cursor)
           return true
         }
+        const hadDraft = this.text !== ''
         if (!this.o.busy?.()) this.clear()
-        this.o.onCancelKey?.()
+        this.o.onCancelKey?.(hadDraft)
         return true
+      }
       case 'tab': {
         if (menu) {
           if (choices) menu.accept(this.menuIndex)
@@ -313,6 +318,7 @@ export class Editor implements Component {
       // Swallowed rather than passed on: an unrecognised escape sequence is not text and is not a
       // command, so the only correct thing to do with it is nothing.
       case 'unknown':
+      case 'alt-up':
         return true
       default:
         return this.readlineKey(k)

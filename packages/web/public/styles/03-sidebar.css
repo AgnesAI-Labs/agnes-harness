@@ -421,6 +421,12 @@
     padding-left: var(--s8);
     margin: var(--s12) 0 var(--s2);
   }
+  /* The heading's tools sit together at the end of the row instead of spreading out. */
+  .sidebar-section-heading .sidebar-session-tools {
+    display: flex;
+    align-items: center;
+    gap: 0.125rem;
+  }
   /* The heading's tools are small and quiet: 24px buttons, 14px icons, muted until pointed at. */
   .sidebar-section-heading .agh-btn--icon {
     width: 1.5rem;

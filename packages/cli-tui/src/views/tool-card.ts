@@ -7,6 +7,7 @@ import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
 import { paintsColour, type ThemedAnsi, TuiTheme } from '../theme.js'
 import type { ToolDetailState } from '../tool-detail.js'
+import { type DiffInput, diffFromArgsText, renderDiff, statsMark } from './diff.js'
 import {
   type CardFacts,
   type CardKind,
@@ -80,6 +81,8 @@ const STEP_MARK: Record<PlanStep['status'], [string, Tone]> = {
 }
 // A collapsed plan card shows this many steps; Ctrl-O shows them all.
 const COLLAPSED_STEPS = 10
+// A collapsed card previews this many screen rows of its result.
+const PREVIEW_ROWS = 3
 const STATUS_KEYS: Record<
   string,
   | 'tool.status.completed'
@@ -134,6 +137,10 @@ export class ToolCard implements Component {
   private readonly onAction: (actionId: string) => void
   private readonly onExpand: () => void
   private readonly more: string
+  /** `+a -b` after the title of an edit or write whose change is known. */
+  private stats: () => string = () => ''
+  /** The result preview of a collapsed card, painted and fitted to the width. */
+  private preview: (width: number) => string[] = () => []
 
   constructor(
     node: ToolNode,
@@ -218,6 +225,46 @@ export class ToolCard implements Component {
       const detail = options.detail?.()
       return detail?.state === 'ready' ? detail : undefined
     }
+    // An edit or write shows what it changes instead of raw arguments: from the fetched record, or from
+    // the argument preview while that still parses.
+    const changes = node.name === 'edit' || node.name === 'write'
+    let parsed: { text: string | undefined; input: DiffInput | undefined } | undefined
+    const diff = (): DiffInput | undefined => {
+      if (!changes) return undefined
+      const text = fetched()?.args ?? node.argsPreview
+      if (parsed?.text !== text) parsed = { text, input: diffFromArgsText(node.name, text) }
+      return parsed?.input
+    }
+    this.stats = () => {
+      const input = diff()
+      return input ? ` ${statsMark(input, ansi)}` : ''
+    }
+    let shown: { width: number; rows: string[] } | undefined
+    this.preview = (width) => {
+      const text = changes ? undefined : node.resultPreview
+      if (!text || kind !== undefined) return []
+      if (shown?.width !== width) {
+        const rows = wrapIndented(escapeControl(text), width - 4).filter((row) => row.trim() !== '')
+        shown = {
+          width,
+          rows: [
+            ...rows.slice(0, PREVIEW_ROWS),
+            ...(rows.length > PREVIEW_ROWS
+              ? [tt('card.moreLines', locale, { n: rows.length - PREVIEW_ROWS })]
+              : []),
+          ],
+        }
+      }
+      return shown.rows.map((row) => fitLine(`    ${ansi.dim(row)}`, width))
+    }
+    let drawn: { input: DiffInput; width: number; rows: string[] } | undefined
+    this.rail.push((width) => {
+      const input = diff()
+      if (!input) return []
+      if (drawn?.input !== input || drawn.width !== width)
+        drawn = { input, width, rows: renderDiff(input, width, ansi, locale) }
+      return drawn.rows
+    })
     this.rail.push((width) => {
       const detail = options.detail?.()
       if (detail?.state === 'loading') return [ansi.dim(tt('tool.detail.loading', locale))]
@@ -230,7 +277,7 @@ export class ToolCard implements Component {
     const fields: Array<[string, () => string | undefined]> = [
       ['Task', () => node.delegatedTask?.task],
       ['Child', () => node.delegatedTask?.childKey],
-      ['Arguments', () => fetched()?.args ?? node.argsPreview],
+      ['Arguments', () => (diff() ? undefined : (fetched()?.args ?? node.argsPreview))],
       ['Result', () => fetched()?.result ?? node.resultPreview],
       [
         'Enforcement',
@@ -275,6 +322,9 @@ export class ToolCard implements Component {
     this.collapsedState = !this.collapsedState
     if (!this.collapsedState) this.onExpand()
   }
+  clickHead(): void {
+    this.toggle()
+  }
   invalidate(): void {}
   // Numbered actions only fire while the card is expanded, so a collapsed card is inert to
   // digits and the same keystroke reaches whatever else wants it (the editor, most likely).
@@ -295,7 +345,8 @@ export class ToolCard implements Component {
     if (this.collapsedState) {
       const hidden = this.stepRows.length - COLLAPSED_STEPS
       return [
-        spread(`${head}${this.summary}`, this.right(false), width),
+        spread(`${head}${this.stats()}${this.summary}`, this.right(false), width),
+        ...this.preview(width),
         ...this.stepRows.slice(0, COLLAPSED_STEPS).map((row) => fitLine(`    ${row}`, width)),
         ...(hidden > 0 ? [fitLine(`    ${this.more}`, width)] : []),
       ]
@@ -303,7 +354,7 @@ export class ToolCard implements Component {
     const inner = Math.max(1, width - 3)
     const rail = look.paint('│')
     return [
-      spread(head, this.right(true), width),
+      spread(`${head}${this.stats()}`, this.right(true), width),
       ...this.rail.flatMap((rows) => rows(inner)).map((line) => fitLine(` ${rail} ${line}`, width)),
       fitLine(look.closing, width),
     ]

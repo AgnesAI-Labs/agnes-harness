@@ -108,3 +108,72 @@ it('handles empty content and rejects non-finite dimensions', () => {
   expect(renderMarkdown('abc', 0, none)).toEqual(['a', 'b', 'c'])
   expect(() => renderMarkdown('x', Number.NaN, none)).toThrow('invalid markdown width')
 })
+
+const dark = new TuiTheme('dark').ansi(createAnsi('256'))
+const fence = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``
+
+it('colours strings, comments, numbers and keywords of a code block and nothing else', () => {
+  const [line] = renderMarkdown(fence('js', 'const n = 42 // "x"'), 60, dark)
+  expect(line).toContain(dark.fg('accent', 'const'))
+  expect(line).toContain(dark.fg('warning', '42'))
+  expect(line).toContain(dark.fg('faint', '// "x"')) // a string inside a comment is comment
+  const [text] = renderMarkdown(fence('py', 's = "a#b" # c'), 60, dark)
+  expect(text).toContain(dark.fg('success', '"a#b"'))
+  expect(text).toContain(dark.fg('faint', '# c'))
+  // A block comment spans lines; an unknown language label is coloured the same way.
+  const rows = renderMarkdown(fence('klingon', '/* a\nreturn */ return 1'), 40, dark)
+  expect(rows[0]).toContain(dark.fg('faint', '/* a'))
+  expect(rows[1]).toContain(dark.fg('faint', 'return */'))
+  expect(rows[1]).toContain(dark.fg('accent', 'return'))
+})
+
+it('keeps the code text exactly: stripping the colours gives the uncoloured block', () => {
+  const sources = [
+    "const s = `a\n{b}` + 'it\\'s' + \"unterminated",
+    'fn main() { println!("中文 {}", 1.5e3); } // 注释',
+    '/* open\nstill open',
+    'x = """doc\nstring"""\n\treturn None',
+    '#!/bin/sh\nif [ -z "$1" ]; then echo 0x1F; fi',
+    'a'.repeat(200),
+  ]
+  for (const lang of ['', 'js', 'python', 'sql', 'whatever'])
+    for (const width of [6, 24, 80])
+      for (const src of sources) {
+        const colour = renderMarkdown(fence(lang, src), width, dark).map((row) =>
+          stripVTControlCharacters(row).trimEnd(),
+        )
+        const plainRows = renderMarkdown(
+          fence(lang, src),
+          width,
+          new TuiTheme('dark').ansi(createAnsi('none')),
+        ).map((row) => row.trimEnd())
+        expect(colour).toEqual(plainRows)
+      }
+})
+
+it('draws a block of more than 2000 lines in the block colour only', () => {
+  const big = Array.from({ length: 2001 }, () => 'return 1').join('\n')
+  const rows = renderMarkdown(fence('js', big), 30, dark)
+  expect(rows).toHaveLength(2001)
+  expect(rows.some((row) => row.includes(dark.fg('accent', 'return')))).toBe(false)
+  expect(renderMarkdown(fence('js', 'return 1'), 30, dark)[0]).toContain(dark.fg('accent', 'return'))
+})
+
+it('leaves oversize or pathological code uncoloured and finishes quickly', () => {
+  const start = Date.now()
+  for (const body of [
+    'x'.repeat(200_001),
+    '/*'.repeat(100_000),
+    '`"\''.repeat(30_000),
+    '"a'.repeat(90_000),
+  ]) {
+    const rows = renderMarkdown(fence('js', body), 40, dark)
+    expect(rows.map((row) => stripVTControlCharacters(row).trim()).join('')).toContain(
+      body.slice(0, 20).trim(),
+    )
+  }
+  expect(Date.now() - start).toBeLessThan(5000)
+  expect(renderMarkdown(fence('js', `${'x'.repeat(200_001)} return`), 40, dark)[0]).not.toContain(
+    dark.fg('accent', 'return'),
+  )
+})
