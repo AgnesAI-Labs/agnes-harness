@@ -44,3 +44,12 @@ it.each([{}, { network: 'allow' as const }, { loopbackServe: true }])(
     else expect(args[2]).toContain('(deny network*)')
   },
 )
+
+it('omits only the terminal job-control grant when asked, and keeps every other rule', () => {
+  const policy = { allowPaths: ['/w'], denyPaths: ['/w/secret'] }
+  const full = seatbeltDenyNetworkArgv(['true'], policy)[2] ?? ''
+  const compat = seatbeltDenyNetworkArgv(['true'], { ...policy, jobControl: false })[2] ?? ''
+  expect(full).toContain('(ioctl-command TIOCSPGRP)')
+  expect(compat).not.toContain('TIOCSPGRP')
+  expect(compat.split('\n')).toEqual(full.split('\n').filter((line) => !line.includes('TIOCSPGRP')))
+})

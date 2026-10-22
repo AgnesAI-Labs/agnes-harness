@@ -60,6 +60,45 @@ describe('runtime backend detection', () => {
     expect(calls[1]?.[2]).toContain('(deny network*)')
   })
 
+  it('retries Seatbelt without the job-control grant when the OS refuses that rule, and keeps every deny', async () => {
+    const calls: string[][] = []
+    const refused = {
+      ...result(65),
+      stderr: 'sandbox-exec: <input string>:1:95: unbound variable: TIOCSPGRP',
+    }
+    const backend = await detectBackend(
+      input(
+        async (argv) => {
+          calls.push(argv)
+          return argv[2]?.includes('TIOCSPGRP') ? refused : result(0, 'agnes-sandbox-probe-v1')
+        },
+        { platform: 'darwin' },
+      ),
+    )
+    expect(calls).toHaveLength(2)
+    expect(calls[0]?.[2]).toContain('(ioctl-command TIOCSPGRP)')
+    expect(calls[1]?.[2]).not.toContain('TIOCSPGRP')
+    expect(backend.name).toBe('seatbelt')
+    expect(backend.enforcement).toEqual({ level: 'full', scope: ['file', 'network', 'process'] })
+    const confined = backend.confine(['echo', 'x'], options)
+    expect(confined[2]).not.toContain('TIOCSPGRP')
+    expect(confined[2]).toContain('(deny network*)')
+    expect(confined[2]).toContain('(allow file-write* (subpath "/work/proj"))')
+  })
+
+  it('keeps the full Seatbelt profile, with job control, when the OS accepts it', async () => {
+    const probe = vi.fn<BackendProbeExec>(async () => result(0, 'agnes-sandbox-probe-v1'))
+    const backend = await detectBackend(input(probe, { platform: 'darwin' }))
+    expect(probe).toHaveBeenCalledTimes(1)
+    expect(backend.confine(['echo', 'x'], options)[2]).toContain('(ioctl-command TIOCSPGRP)')
+  })
+
+  it('reports none when Seatbelt fails with and without the job-control grant', async () => {
+    const probe = vi.fn<BackendProbeExec>(async () => result(65))
+    expect(await detectBackend(input(probe, { platform: 'darwin' }))).toBe(NONE_BACKEND)
+    expect(probe).toHaveBeenCalledTimes(2)
+  })
+
   it('reports none after both real invocations fail and never returns raw argv from none', async () => {
     const backend = await detectBackend(input(async () => result(127)))
     expect(backend).toBe(NONE_BACKEND)

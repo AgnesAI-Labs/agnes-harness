@@ -82,6 +82,17 @@ export const SEATBELT_BACKEND: RuntimeBackend = Object.freeze({
   confine: seatbeltConfine,
 })
 
+/**
+ * The same boundary without the terminal job-control grant, for a macOS whose `sandbox-exec`
+ * refuses that rule (macOS 12: `unbound variable: TIOCSPGRP`). Selected only after the full
+ * profile failed its probe and this one passed; everything else the profile denies is unchanged.
+ */
+export const SEATBELT_COMPAT_BACKEND: RuntimeBackend = Object.freeze({
+  name: 'seatbelt',
+  enforcement: FULL_ENFORCEMENT,
+  confine: (argv, options) => seatbeltConfine(argv, options, false),
+})
+
 const PROBE_TOKEN = 'agnes-sandbox-probe-v1'
 
 async function runsBoundary(input: DetectBackendInput, backend: RuntimeBackend): Promise<boolean> {
@@ -106,8 +117,17 @@ async function runsBoundary(input: DetectBackendInput, backend: RuntimeBackend):
       maxOutputBytes: 4_096,
       ...(input.signal === undefined ? {} : { signal: input.signal }),
     })
-    return !result.timedOut && result.code === 0 && result.stdout === PROBE_TOKEN
-  } catch {
+    const ok = !result.timedOut && result.code === 0 && result.stdout === PROBE_TOKEN
+    if (!ok)
+      input.log.info('sandbox probe failed', {
+        name: backend.name,
+        code: result.code,
+        timedOut: result.timedOut,
+        stderr: result.stderr.slice(0, 300),
+      })
+    return ok
+  } catch (error) {
+    input.log.info('sandbox probe failed', { name: backend.name, error: String(error).slice(0, 300) })
     return false
   }
 }
@@ -130,11 +150,11 @@ export async function detectBackend(input: DetectBackendInput): Promise<RuntimeB
 
   const candidates =
     input.platform === undefined
-      ? [BWRAP_BACKEND, SEATBELT_BACKEND]
+      ? [BWRAP_BACKEND, SEATBELT_BACKEND, SEATBELT_COMPAT_BACKEND]
       : input.platform === 'linux'
         ? [BWRAP_BACKEND]
         : input.platform === 'darwin'
-          ? [SEATBELT_BACKEND]
+          ? [SEATBELT_BACKEND, SEATBELT_COMPAT_BACKEND]
           : []
   for (const backend of candidates) {
     if (await runsBoundary(input, backend)) {

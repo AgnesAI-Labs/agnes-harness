@@ -10,6 +10,8 @@ export function seatbeltDenyNetworkArgv(
     readPaths?: string[]
     network?: 'deny' | 'allow'
     loopbackServe?: boolean
+    /** Grant foreground-group changes on the controlling terminal. Default on; older macOS cannot parse it. */
+    jobControl?: boolean
   },
 ): string[] {
   const invalid = () => new Error('invalid sandbox policy')
@@ -55,8 +57,12 @@ export function seatbeltDenyNetworkArgv(
       (path) => `(allow file-read* (literal ${quote(path)}))`,
     ),
     // Job control changes only the foreground group of the caller's controlling terminal
-    // (the kernel enforces session ownership). No other ioctls are granted.
-    '(allow file-ioctl (require-all (regex #"^/dev/tty(s[0-9]+)?$") (ioctl-command TIOCSPGRP)))',
+    // (the kernel enforces session ownership). No other ioctls are granted. macOS 12 does not
+    // define TIOCSPGRP for this filter and refuses the whole profile, so a caller that finds that
+    // out omits the rule with `jobControl: false`.
+    ...(policy.jobControl === false
+      ? []
+      : ['(allow file-ioctl (require-all (regex #"^/dev/tty(s[0-9]+)?$") (ioctl-command TIOCSPGRP)))']),
     ...(policy.readPaths
       ? [
           ...[...parents].map((path) => `(allow file-read-metadata (literal ${quote(path)}))`),
