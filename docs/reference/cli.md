@@ -74,6 +74,7 @@ Print output is chosen with `--mode text|json|stream-json`. Waiting for approval
 | `agh doctor provider --probe` | Explicit minimal inference; may incur charges |
 | `agh doctor subagents [--repair] --json` | Subagent checks; repair changes state |
 | `agh consent DISABLED\|LOCAL\|ANON\|FULL` | Save a telemetry consent level; does not establish all external collection has been verified |
+| `agh completion bash\|zsh\|fish` | Print a shell completion script to stdout (see the [CLI guide](../guide/cli.md#shell-completion)); the hidden `agh __complete sessions [PREFIX]` is its helper and never starts a daemon |
 | `agh stats deviation --json` | Deviation statistics |
 | `agh conformance gateway --json` | Gateway conformance entry point |
 

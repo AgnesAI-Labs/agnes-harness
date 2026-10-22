@@ -134,6 +134,21 @@ These commands mirror the Web admin pages and need an admin connection. `agh plu
 
 `agh api METHOD [--params JSON|-] [--json]` calls one protocol method with the connection the CLI already has; it adds no permission. `METHOD` is a name from the protocol table, with or without the `_agnes/v1/` prefix; `agh api --help` lists every callable method with its tier (`client` or `admin`), generated from that table. `--params` is the JSON params object (`-` reads stdin, default `{}`) and is checked against the protocol schema locally: a bad field is named and nothing is sent. An unknown method is refused with the closest names. The result is printed as JSON on stdout (`--json` for one line); a daemon refusal, including an admin method without an admin connection, goes to stderr as `error: CODE: message` and exits 1. Streaming and attach methods (`session.attach`, `participant.join`, ...) and command-class methods (`submit`, `session.control`, `session.fork`, ...) are refused because they need a command id and the pending journal: use `agh queue` or the matching subcommand. The ACP session calls (`session/prompt`, ...) are not offered either.
 
+<a id="shell-completion"></a>
+
+## Shell completion
+
+`agh completion bash|zsh|fish` prints a completion script to stdout and changes nothing else; you load it yourself. Commands, subcommand verbs, global flags and the values of enumerated flags (`--mode`, `--permission`, ...) are completed from a fixed table. Session keys (after `--resume`, `agh resume`, and `agh sessions show|pin|archive|...`) are completed from the running local daemon through a hidden helper, `agh __complete sessions [PREFIX]`, which prints `KEY<TAB>TITLE` lines. The helper never starts a daemon, gives up after 300 ms, prints nothing when no daemon is running or anything fails, and strips control characters from titles. PowerShell is not supported yet.
+
+```sh
+# bash (add to ~/.bashrc); eval works on macOS's bash 3.2, where source <(...) does not
+eval "$(agh completion bash)"
+# zsh (add to ~/.zshrc, after compinit)
+eval "$(agh completion zsh)"
+# fish (save once)
+agh completion fish > ~/.config/fish/completions/agh.fish
+```
+
 <a id="退出码"></a>
 
 ## Exit codes

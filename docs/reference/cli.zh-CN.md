@@ -68,6 +68,7 @@ Print 输出用 `--mode text|json|stream-json` 选择；等待审批是配置项
 | `agh doctor provider --probe` | 明确发起最小推理，可能计费 |
 | `agh doctor subagents [--repair] --json` | 子 agent 检查；repair 会修改状态 |
 | `agh consent DISABLED\|LOCAL\|ANON\|FULL` | 保存遥测同意档位；不等于已验证所有外部采集 |
+| `agh completion bash\|zsh\|fish` | 把 shell 补全脚本打印到 stdout（见 [CLI 指南](../guide/cli.zh-CN.md#shell-补全)）；隐藏命令 `agh __complete sessions [前缀]` 是它的辅助，从不启动 daemon |
 | `agh stats deviation --json` | 偏差统计 |
 | `agh conformance gateway --json` | 网关一致性检查入口 |
 

@@ -37,7 +37,6 @@ export type Command =
   | 'plugins'
   | 'package'
   | 'packages'
-  | 'plugins'
   | 'dev'
   | 'install'
   | 'resources'
@@ -53,6 +52,7 @@ export type Command =
   | 'web'
   | 'start'
   | 'acp'
+  | 'completion'
 
 export type ParsedArgs = {
   command?: Command

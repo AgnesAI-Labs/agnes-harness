@@ -102,6 +102,18 @@ function ephemeralHome(
  * package loader. It is not a general escape hatch: nothing else about the run is injectable here.
  */
 export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDeps> = {}): Promise<number> {
+  // Hidden callback for shell completion scripts. It runs before any home, profile or daemon work so
+  // that a TAB never pays for (or causes) a startup.
+  if (argv[0] === '__complete') {
+    if (argv[1] === 'sessions') {
+      const { completeSessions, daemonSessionReader } = await import('./commands/complete.js')
+      // The 300 ms deadline bounds the daemon exchange; loading its modules comes first and is not counted.
+      const read = await daemonSessionReader(io.env, io.cwd).catch(() => async () => [])
+      const lines = await completeSessions(argv[2] ?? '', () => read(250))
+      if (lines.length > 0) io.stdout.write(`${lines.join('\n')}\n`)
+    }
+    return ExitCode.OK
+  }
   let p: ReturnType<typeof prepareCommandArgs>
   try {
     p = prepareCommandArgs(argv, io.cwd)
@@ -121,6 +133,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     io.stdout.write(`${help}\n`)
     return ExitCode.OK
   }
+
+  if (p.command === 'completion')
+    return (await import('./commands/completion.js')).completionCommand(p.positional, io)
 
   if (p.command === 'plugin') {
     try {

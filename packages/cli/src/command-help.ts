@@ -22,6 +22,8 @@ export function commandHelp(command?: Command, locale = 'en'): string {
       return BATCH_USAGE
     case 'run':
       return RUN_USAGE
+    case 'completion':
+      return 'Usage: agh completion bash|zsh|fish\nPrint a completion script for the shell to stdout; it changes nothing. bash: eval "$(agh completion bash)". zsh: eval "$(agh completion zsh)" after compinit. fish: agh completion fish | source. Session keys are completed from a running daemon; it is never started for a TAB.'
     case 'diagnostics':
       return 'Usage: agh diagnostics export [--session <id>] --out <file>\nExport redacted runtime metadata and diagnostic IDs for issue reports.'
     case 'tools':

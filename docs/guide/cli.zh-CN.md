@@ -128,6 +128,19 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 
 `agh api METHOD [--params JSON|-] [--json]` 用 CLI 已有的连接调用一个协议方法，不新增任何权限。`METHOD` 是协议方法表里的名字，可带或不带 `_agnes/v1/` 前缀；`agh api --help` 列出所有可调用方法及其层级（`client` 或 `admin`），由协议方法表生成。`--params` 是 JSON 参数对象（`-` 从 stdin 读，默认 `{}`），发送前先在本地按协议 schema 校验：有问题的字段会被指出，并且不会发送。方法名不存在时拒绝并给出最接近的名字。结果以 JSON 打印到 stdout（`--json` 为单行）；daemon 的拒绝（包括没有 admin 连接时调用 admin 方法）以 `error: CODE: message` 打印到 stderr 并以 1 退出。流式和 attach 方法（`session.attach`、`participant.join` 等）以及命令类方法（`submit`、`session.control`、`session.fork` 等）会被拒绝，因为它们需要 commandId 和 pending journal：请用 `agh queue` 或对应子命令。ACP 会话调用（`session/prompt` 等）同样不提供。
 
+## Shell 补全
+
+`agh completion bash|zsh|fish` 把补全脚本打印到 stdout，不做其他任何事，由你自己加载。命令、子命令词、全局 flag 和枚举型 flag 的取值（`--mode`、`--permission` 等）来自固定的表。会话 key（`--resume`、`agh resume`、`agh sessions show|pin|archive|...` 之后）通过隐藏命令 `agh __complete sessions [前缀]` 向正在运行的本机 daemon 查询，输出 `KEY<TAB>标题` 行。这个命令从不启动 daemon，300 毫秒内没结果就放弃，没有 daemon 或出错时什么都不输出，标题里的控制字符会被过滤。暂不支持 PowerShell。
+
+```sh
+# bash（写进 ~/.bashrc）；用 eval，因为 macOS 自带的 bash 3.2 不支持 source <(...)
+eval "$(agh completion bash)"
+# zsh（写进 ~/.zshrc，放在 compinit 之后）
+eval "$(agh completion zsh)"
+# fish（保存一次）
+agh completion fish > ~/.config/fish/completions/agh.fish
+```
+
 ## 退出码
 
 | 码 | 意义 |

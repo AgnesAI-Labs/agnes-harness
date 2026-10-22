@@ -4,7 +4,7 @@ import type { Command, ModelSel, ParsedArgs } from './types.js'
 
 export type { Command, ModelSel, ParsedArgs } from './types.js'
 
-const COMMANDS = new Set<string>([
+export const COMMANDS = new Set<string>([
   'app',
   'home',
   'app-server',
@@ -32,7 +32,6 @@ const COMMANDS = new Set<string>([
   'plugins',
   'package',
   'packages',
-  'plugins',
   'dev',
   'install',
   'resources',
@@ -48,6 +47,7 @@ const COMMANDS = new Set<string>([
   'web',
   'start',
   'acp',
+  'completion',
 ])
 
 /** These hand their tail on to another program or another grammar; we do not read it. */
@@ -74,7 +74,7 @@ const FORWARDED = new Set<string>([
 // ordinary prompt word look like a flag: it would swallow the next argument as its value and then
 // write it under an inherited name. Either half stops that on its own; the test pins the property,
 // not either half, so removing just one of them stays green.
-const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
+export const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
   '--profile': 'profile',
   '--preset': 'preset',
   '--permission': 'permission',
@@ -112,7 +112,7 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
   '--output-schema': 'outputSchema',
 })
 
-const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
+export const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
   '-p': 'print',
   '--print': 'print',
   '--continue': 'continue',
@@ -141,7 +141,7 @@ const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create
   '-v': 'version',
 })
 
-const ENUMS: Record<string, string[]> = Object.assign(Object.create(null), {
+export const ENUMS: Record<string, string[]> = Object.assign(Object.create(null), {
   mode: ['text', 'json', 'stream-json', 'acp'],
   format: ['agnes', 'sharegpt', 'claude-code'],
   from: ['claude-code', 'codex', 'pi', 'auto'],

@@ -49,6 +49,7 @@ export function usage(locale = 'en'): string {
     'agh packages pins inspect | release <pinId...> [--profile <p>]',
     'agh resources list|get|operation|cancel|enable|disable ...   agh skills list|refresh|trust ...',
     'agh mcp list|get|add|update|remove|test|enable|disable|status|reconnect|tools ...',
+    'agh completion bash|zsh|fish        Print a shell completion script',
     'agh consent DISABLED|LOCAL|ANON|FULL',
     'agh stats deviation [--json]        agh config [--connect <t>]        agh conformance gateway [--json]',
     'agh web [--port <n>] [--home <dir>] [--profile <p>] [--cwd <dir>]   agh start (same stack)',
