@@ -3,7 +3,6 @@ import { loopKind } from '@agnes/extension-api'
 import { parse } from 'yaml'
 import { refineOperation } from '../extensions/refine/src/operation.js'
 import { RefineQueue } from '../extensions/refine/src/queue.js'
-import { packageStorage } from './package-metadata.js'
 import type { SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed package asset by the CLI SEA build. */
@@ -168,6 +167,7 @@ export {
   validateLockedPackageArchive,
 } from './computer-use/locked-package-archive.js'
 export {
+  childControlWorktreePersist,
   createEcosystemExtensions,
   ecosystem,
   type HooksRunnerEcosystemDeps,
@@ -177,12 +177,11 @@ export { isolatedEcosystem } from './hooks-isolation.js'
 export { catalogInfoOf, type McpCatalogInfo } from './mcp/catalog-info.js'
 export type { McpServerConfig } from './mcp/config.js'
 export { connectMcp, type McpSdkDeps } from './mcp/connect.js'
-export {
-  SqliteToolIndex,
-  type ToolIndex,
-  type ToolIndexHit,
-  type ToolIndexReader,
-  type ToolIndexRow,
+export type {
+  ToolIndex,
+  ToolIndexHit,
+  ToolIndexReader,
+  ToolIndexRow,
 } from './mcp/index-table.js'
 export {
   isMcpServerRowId,
@@ -212,6 +211,7 @@ export {
   READ_MCP_RESOURCE,
 } from './mcp/resources.js'
 export type {
+  ChildWorktreePort,
   HostExec,
   HostExecResult,
   HostFs,
@@ -226,18 +226,13 @@ export type {
   TableHandle,
 } from './seam-init.js'
 export { BASE_SEAM_PROVIDERS, seamProvidersPlugin } from './seam-providers.js'
-export { packageStorage, RefineQueue }
+export { RefineQueue }
 
 /** Host operation factories consume the same durable queue as the fitted harness and tool. */
 export const operations = {
   refine: (deps: Pick<SeamInitContext, 'adapters' | 'profile'>) =>
     refineOperation({
-      queue: new RefineQueue(
-        packageStorage(deps.adapters.storage, 'refine_queue', {
-          select: 'SELECT * FROM refine_queue',
-          key: (r) => String(r.proposal_id),
-        }),
-      ),
+      queue: new RefineQueue(deps.adapters.storage.namespace('refine_queue')),
       preset: deps.profile.preset,
     }),
 } as const

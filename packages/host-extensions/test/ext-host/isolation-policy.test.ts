@@ -21,7 +21,7 @@ function select(mode: 'off' | 'preferred' | 'required', supports?: ('in-process'
       bundledPackageJson({
         id,
         version: '1.0.0',
-        apiRange: '^4.0.0',
+        apiRange: '^5.0.0',
         entry: './index.js',
         capabilities: {},
         ...(supports ? { runtime: { supports } } : {}),
@@ -91,7 +91,7 @@ it('preserves release-owned embedded manifest selection without filesystem disco
           id,
           ecosystem: { [id]: prepare },
           embeddedExtensions: [
-            { id, version: '1.0.0', apiRange: '^4.0.0', entry: './index.js', capabilities: {} },
+            { id, version: '1.0.0', apiRange: '^5.0.0', entry: './index.js', capabilities: {} },
           ],
         },
       ],

@@ -3,6 +3,7 @@ import { freezeData } from './integrity.js'
 /** Release assembly policy. These are Host-private inputs, never author manifest permissions. */
 export type HostCapabilityGrant = Readonly<{
   sessionTasks?: true
+  childControl?: true
   searchProvider?: true
   trustedHookCommands?: true
   skillDiscovery?: true
@@ -26,7 +27,7 @@ export type HostGrantDeclaration = Readonly<{
 export const HOST_CAPABILITY_GRANTS: readonly HostGrantDeclaration[] = freezeData([
   {
     packageId: '@agnes/base',
-    package: { sessionTasks: true },
+    package: { sessionTasks: true, childControl: true },
     extensions: {
       'agnes/tools-web': { searchProvider: true },
       'agnes/hooks-runner': {

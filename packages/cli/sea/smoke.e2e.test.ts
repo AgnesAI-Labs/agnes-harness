@@ -96,7 +96,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       cpSync(new URL('./fixtures/hello-ext/', import.meta.url), sourceDirectory, { recursive: true })
       expect(JSON.parse(readFileSync(join(sourceDirectory, 'package.json'), 'utf8'))).toMatchObject({
         name: 'test/hello',
-        agnes: { plugins: [{ id: 'ext:test/hello', export: 'default', apiRange: '^4.0.0' }] },
+        agnes: { plugins: [{ id: 'ext:test/hello', export: 'default', apiRange: '^5.0.0' }] },
       })
       writeLock(profileDir, {
         ...emptyLock('local-dev', '0.0.0'),

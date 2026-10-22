@@ -248,7 +248,7 @@ const providerRow = (id: string, exportName: string, kind: unknown, value: unkno
   declaration: {
     id,
     export: exportName,
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     default: true,
     inject: ['providers'],
     provide: [],

@@ -46,18 +46,25 @@ describe('verified ext: row privilege grants', () => {
   it('keeps the complete official distribution grant set in one declaration', () => {
     const h = fixture()
     expect(h.grants()).toEqual([
-      { sessionTasks: true, searchProvider: true, hookRank: 3 },
+      { sessionTasks: true, childControl: true, searchProvider: true, hookRank: 3 },
       {
         sessionTasks: true,
+        childControl: true,
         trustedHookCommands: true,
         contextBlocking: true,
         isolatedHooks: true,
         governanceHooks: true,
         hookRank: 15,
       },
-      { sessionTasks: true, computerUse: true, hookRank: 13 },
-      { sessionTasks: true, privacyTrajectory: true, governanceHooks: true, hookRank: 16 },
-      { sessionTasks: true, skillDiscovery: true, hookRank: 18 },
+      { sessionTasks: true, childControl: true, computerUse: true, hookRank: 13 },
+      {
+        sessionTasks: true,
+        childControl: true,
+        privacyTrajectory: true,
+        governanceHooks: true,
+        hookRank: 16,
+      },
+      { sessionTasks: true, childControl: true, skillDiscovery: true, hookRank: 18 },
     ])
     expect(h.authority.seam(h.pkg.id, 'artifacts', h.modules.get(h.pkg.id))).toEqual({
       privateArtifactStore: true,
@@ -85,6 +92,7 @@ describe('verified ext: row privilege grants', () => {
     other.bind(alternate.modules)
     expect(other.extension(alternate.pkg.id, ids[2], alternate.module)).toEqual({
       sessionTasks: true,
+      childControl: true,
       computerUse: true,
       hookRank: 13,
     })

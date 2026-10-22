@@ -42,10 +42,27 @@ export function acquireManagedLease(directory: string, key: string) {
     throw new ManagedServiceError('REFUSED')
   const db = new DatabaseSync(file)
   try {
-    db.exec(`PRAGMA busy_timeout=0; PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE;
-      CREATE TABLE IF NOT EXISTS instance (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS process_owner (id INTEGER PRIMARY KEY CHECK(id=1), pid INTEGER NOT NULL, start_id TEXT);
-      CREATE TABLE IF NOT EXISTS diagnostics (seq INTEGER PRIMARY KEY, reason TEXT NOT NULL);
+    db.exec('PRAGMA busy_timeout=0; PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE;')
+    // The lease file holds runtime state only: a file left by an older layout is rebuilt, not migrated.
+    const tables = new Set(
+      db
+        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`)
+        .all()
+        .map((row) => String(row.name)),
+    )
+    const current =
+      !tables.has('process_owner') &&
+      !tables.has('diagnostics') &&
+      (!tables.has('instance') ||
+        db
+          .prepare('PRAGMA table_info(instance)')
+          .all()
+          .some((column) => column.name === 'pid'))
+    if (!current)
+      db.exec(
+        'DROP TABLE IF EXISTS instance; DROP TABLE IF EXISTS process_owner; DROP TABLE IF EXISTS diagnostics;',
+      )
+    db.exec(`CREATE TABLE IF NOT EXISTS instance (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL, pid INTEGER, start_id TEXT);
       COMMIT;`)
     const previous = db.prepare('SELECT state FROM instance WHERE id=1').get()?.state
     if (previous !== undefined && previous !== 'active' && previous !== 'stopped' && previous !== 'unknown')
@@ -55,37 +72,25 @@ export function acquireManagedLease(directory: string, key: string) {
       id,
       previous,
       owner() {
-        const row = db.prepare('SELECT pid, start_id FROM process_owner WHERE id=1').get()
+        const row = db.prepare('SELECT pid, start_id FROM instance WHERE id=1').get()
         return row && typeof row.pid === 'number' && typeof row.start_id === 'string'
           ? { pid: row.pid, startId: row.start_id }
           : undefined
       },
       recordOwner(pid: number, startId: string | null) {
-        db.prepare('INSERT OR REPLACE INTO process_owner VALUES(1,?,?)').run(pid, startId)
+        db.prepare('UPDATE instance SET pid = ?, start_id = ? WHERE id = 1').run(pid, startId)
       },
       record(state: 'active' | 'stopped' | 'unknown') {
-        db.exec('BEGIN EXCLUSIVE')
-        try {
-          // An active marker without its own identity must never inherit an old process identity.
-          if (state === 'active') db.exec('DELETE FROM process_owner')
+        // An active marker without its own identity must never inherit an old process identity.
+        if (state === 'active')
+          db.exec(
+            `INSERT INTO instance (id, state, pid, start_id) VALUES (1, 'active', NULL, NULL)
+              ON CONFLICT(id) DO UPDATE SET state = excluded.state, pid = NULL, start_id = NULL`,
+          )
+        else
           db.prepare(
-            'INSERT INTO instance VALUES(1,?) ON CONFLICT(id) DO UPDATE SET state=excluded.state',
+            'INSERT INTO instance (id, state) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state',
           ).run(state)
-          db.exec('COMMIT')
-        } catch (error) {
-          db.exec('ROLLBACK')
-          throw error
-        }
-      },
-      diagnose(reason: string) {
-        db.prepare('INSERT INTO diagnostics(reason) VALUES(?)').run(reason)
-        db.exec('DELETE FROM diagnostics WHERE seq <= (SELECT COALESCE(MAX(seq),0)-100 FROM diagnostics)')
-      },
-      diagnostics(): readonly string[] {
-        return db
-          .prepare('SELECT reason FROM diagnostics ORDER BY seq')
-          .all()
-          .map((row) => String(row.reason))
       },
       release() {
         if (!released) {

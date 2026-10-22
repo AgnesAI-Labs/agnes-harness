@@ -18,7 +18,7 @@ const localEntry = (license = 'MIT'): LockEntry => ({
 const manifest = (over: Partial<ExtensionManifest> = {}): ExtensionManifest => ({
   id: 'acme/pkg',
   version: '1.0.0',
-  apiRange: '^4.0.0',
+  apiRange: '^5.0.0',
   entry: './index.js',
   capabilities: { tools: { prefix: 'pkg_', names: ['pkg_echo'] } },
   ...over,

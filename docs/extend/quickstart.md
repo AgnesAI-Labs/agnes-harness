@@ -116,7 +116,7 @@ Templates declare their SDK requirements in `package.json`:
   "agnes": {
     "hostProvidedExternals": {
       "@agnes/plugin-runtime": "0.0.0",
-      "@agnes/extension-api": "^4.0.0",
+      "@agnes/extension-api": "^5.0.0",
       "@sinclair/typebox": "~0.34.0"
     }
   }

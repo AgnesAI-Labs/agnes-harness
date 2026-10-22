@@ -98,7 +98,7 @@ describe('refine after-core operation', () => {
 
   it('receives the real verifier result through the Core after-core delivery path', async () => {
     const init = fakeSeamInit({ preset: rawPreset })
-    const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
+    const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
     queue.push(proposal())
     const operation = refineOperation({ queue, preset: rawPreset })
     const { session } = await openSession({
@@ -123,7 +123,7 @@ describe('refine after-core operation', () => {
 
   it('applies after a passing verifier and enforces cooldown', async () => {
     const init = fakeSeamInit({ preset: rawPreset })
-    const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
+    const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
     queue.push(proposal())
     const { session } = await openSession({ provider: fakeProvider([]) })
     const operation = refineOperation({ queue, preset: rawPreset })
@@ -155,7 +155,7 @@ describe('refine after-core operation', () => {
       const seams: SeamImplementations = { ...fakeSeams(), approval: { ...fakeSeams().approval, ask } }
       const { session } = await openSession({ provider: fakeProvider([]), seams })
       const init = fakeSeamInit({ preset: rawPreset })
-      const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
+      const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
       queue.push(proposal({ edits: [{ op: 'upsert', entry: entry('global', 'global') }] }))
       const operation = refineOperation({ queue, preset: rawPreset })
 
@@ -194,7 +194,7 @@ describe('refine after-core operation', () => {
     const { session } = await openSession({ provider: fakeProvider([]) })
     await session.append([session.ev('x/agnes/refine/compact-trigger', {})])
     const init = fakeSeamInit({ preset: rawPreset })
-    const queue = new RefineQueue(init.adapters.storage.table('refine_queue'))
+    const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
     queue.push(proposal())
     const operation = refineOperation({ queue, preset: rawPreset })
 

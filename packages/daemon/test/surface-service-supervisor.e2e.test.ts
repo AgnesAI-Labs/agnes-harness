@@ -157,7 +157,7 @@ it('runs a Surface effect through startSupervisor WebSocket and acknowledges it 
       type: 'module',
       exports: './index.mjs',
       agnes: {
-        plugins: [{ apiRange: '^4.0.0', id: serviceRowId, export: 'main', services: [capability.name] }],
+        plugins: [{ apiRange: '^5.0.0', id: serviceRowId, export: 'main', services: [capability.name] }],
       },
     }),
   )
@@ -356,7 +356,7 @@ it('runs a Portal request through Surface routes, the SDK relay and client, WSS,
       type: 'module',
       exports: './index.mjs',
       agnes: {
-        plugins: [{ apiRange: '^4.0.0', id: serviceRowId, export: 'main', services: [capability.name] }],
+        plugins: [{ apiRange: '^5.0.0', id: serviceRowId, export: 'main', services: [capability.name] }],
       },
     }),
   )
@@ -431,7 +431,7 @@ it('runs a Portal request through Surface routes, the SDK relay and client, WSS,
         integrity: `sha256-${'a'.repeat(64)}`,
         descriptor: {
           id: 'portal',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           artifact: { kind: 'node', entry: './server.js' },
           healthPath: '/healthz',
           requires: {

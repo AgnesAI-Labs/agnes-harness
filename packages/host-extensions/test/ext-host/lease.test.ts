@@ -12,7 +12,7 @@ const options = () => ({
 const manifest = () => ({
   id: 'agnes/test',
   version: '1.0.0',
-  apiRange: '^4.0.0',
+  apiRange: '^5.0.0',
   entry: './index.ts',
   capabilities: {},
 })

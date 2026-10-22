@@ -1,6 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 import type { ExtensionFactory } from '@agnes/extension-api/host'
 import { gitWorktreeKind } from '@agnes/git-worktree-contract'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
@@ -41,8 +40,7 @@ import toolsSearchExtension from '../extensions/tools-search/src/index.js'
 import { createToolsWebExtension } from '../extensions/tools-web/src/index.js'
 import { createOfficialSearchProvider } from '../extensions/tools-web/src/search/index.js'
 import workflowExtension from '../extensions/workflow/src/index.js'
-import { packageStorage } from './package-metadata.js'
-import type { SeamInitContext } from './seam-init.js'
+import type { ChildWorktreePort, SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed generated asset by the CLI SEA build. */
 declare const AGNES_CC_HOOK_MAP_TEXT: string | undefined
@@ -112,12 +110,7 @@ export function createEcosystemExtensions(init: SeamInitContext): {
         ...(deps.http === undefined ? {} : { http: deps.http }),
       }),
     refine: () => {
-      const queue = new RefineQueue(
-        packageStorage(init.adapters.storage, 'refine_queue', {
-          select: 'SELECT * FROM refine_queue',
-          key: (r) => String(r.proposal_id),
-        }),
-      )
+      const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
       const rawMax = (init.profile.preset.harness as { queue_max?: unknown } | undefined)?.queue_max ?? 20
       if (!Number.isSafeInteger(rawMax) || (rawMax as number) < 0)
         throw new Error('harness.queue_max must be a non-negative safe integer')
@@ -128,60 +121,28 @@ export function createEcosystemExtensions(init: SeamInitContext): {
   }
 }
 
-const darwin = process.platform === 'darwin' // guards-allow-platform: F_FULLFSYNC is darwin-only.
-
-function sqliteWorktreePersist(dataDir: string): {
+/**
+ * Subagent worktree binding through the Host child-control port. Nothing is loaded back: `bind`
+ * follows `create` in the same tool call, and `finish` goes through the Host git registry.
+ */
+export function childControlWorktreePersist(port: ChildWorktreePort | undefined): {
   load(): Map<string, WorktreeEntry>
   save(entries: Map<string, WorktreeEntry>): void
-  bind(childKey: string, entry: WorktreeEntry): void
+  bind(childKey: string, entry: WorktreeEntry): Promise<void>
 } {
-  const dbPath = join(dataDir, 'sessions.db')
-  const open = (): DatabaseSync | null => {
-    if (!existsSync(dbPath)) return null
-    const db = new DatabaseSync(dbPath)
-    // A write here can checkpoint the WAL ledger; on darwin only F_FULLFSYNC makes that durable.
-    if (darwin) db.exec('PRAGMA checkpoint_fullfsync = ON')
-    return db
-  }
   return {
-    load() {
-      const db = open()
-      const out = new Map<string, WorktreeEntry>()
-      if (!db) return out
-      try {
-        const rows = db
-          .prepare(
-            `SELECT path, root, branch, phase FROM child_workspaces WHERE isolation = 'worktree' AND path IS NOT NULL`,
-          )
-          .all() as Array<{ path: string; root: string | null; branch: string | null; phase: string }>
-        for (const row of rows) {
-          if (!row.root || !row.branch) continue
-          out.set(row.path, {
-            root: row.root,
-            path: row.path,
-            branch: row.branch,
-            stage: row.phase === 'worktree_removed' ? 'worktree-removed' : 'attached',
-          })
-        }
-      } finally {
-        db.close()
-      }
-      return out
-    },
-    save() {
-      // bind() is the durable write; save keeps the in-memory map consistent for finish.
-    },
-    bind(childKey, entry) {
-      const db = open()
-      if (!db) return
-      try {
-        db.prepare(
-          `UPDATE child_workspaces SET path = ?, phase = 'attached', root = ?, branch = ? WHERE child_key = ?`,
-        ).run(entry.path, entry.root, entry.branch, childKey)
-        db.prepare(`UPDATE child_tasks SET cwd = ? WHERE child_key = ?`).run(entry.path, childKey)
-      } finally {
-        db.close()
-      }
+    load: () => new Map(),
+    save: () => undefined,
+    async bind(childKey, entry) {
+      if (!port) throw new Error('worktree isolation requires the Host child-control port')
+      const task = await port.lookupByKey(childKey)
+      if (!task?.workspaceId) throw new Error('worktree binding requires a child workspace')
+      await port.updateWorkspace(task.workspaceId, {
+        phase: 'attached',
+        path: entry.path,
+        root: entry.root,
+        branch: entry.branch,
+      })
     },
   }
 }
@@ -209,7 +170,7 @@ function defineSubagentExtension(init: SeamInitContext): BundledPlugin {
         limits,
         worktrees: gitWorktrees({
           events: ctx.eventLog,
-          persist: sqliteWorktreePersist(init.profile.dataDir),
+          persist: childControlWorktreePersist(init.childControl),
           open: () => ctx.providers.bindOwn(gitWorktreeKind),
         }),
       }).apply(ctx)
@@ -265,11 +226,29 @@ const bundled = {
     createSessionQueryExtension({ dataDir: init.profile.dataDir }),
 } as const
 
-/** Trusted factories keyed by the manifest id the host is about to admit. */
-export const ecosystem: { [K in keyof typeof bundled]: (init: SeamInitContext) => ExtensionFactory } =
-  Object.fromEntries(
-    Object.entries(bundled).map(([id, make]) => [
+/**
+ * Host grants the child-control port to every `@agnes/base`-owned context. For factories mounted
+ * through `mountEcosystem` (the `ecosystem` map), only agnes/subagent (worktree binding) keeps it;
+ * every other factory gets the context without it.
+ */
+export function ecosystemInitFor(id: string, init: SeamInitContext): SeamInitContext {
+  if (id === 'agnes/subagent' || !('childControl' in init)) return init
+  const { childControl: _port, ...rest } = init
+  return rest
+}
+
+/** Mounts each bundled factory as an extension factory, narrowing its context by id first. */
+export function mountEcosystem<T extends Record<string, (init: SeamInitContext) => BundledPlugin>>(
+  table: T,
+): { [K in keyof T]: (init: SeamInitContext) => ExtensionFactory } {
+  return Object.fromEntries(
+    Object.entries(table).map(([id, make]) => [
       id,
-      (init: SeamInitContext) => extensionFactoryOf((make as (init: SeamInitContext) => BundledPlugin)(init)),
+      (init: SeamInitContext) => extensionFactoryOf(make(ecosystemInitFor(id, init))),
     ]),
   ) as never
+}
+
+/** Trusted factories keyed by the manifest id the host is about to admit. */
+export const ecosystem: { [K in keyof typeof bundled]: (init: SeamInitContext) => ExtensionFactory } =
+  mountEcosystem(bundled)

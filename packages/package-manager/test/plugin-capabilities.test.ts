@@ -37,7 +37,7 @@ function fixture() {
         hostProvidedExternals: { '@agnes/plugin-runtime': '0.0.0' },
         plugins: [
           {
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             export: 'main',
             capabilities: { network: ['api.example.com'], exec: ['node'] },
           },
@@ -120,8 +120,8 @@ it('reviews transport declarations as authority and binds descriptor changes to 
     file = join(f.source, 'package.json'),
     manifest = JSON.parse(readFileSync(file, 'utf8'))
   manifest.agnes.plugins = [
-    { apiRange: '^4.0.0', export: 'main', capabilities: declarations },
-    { apiRange: '^4.0.0', export: 'sibling', capabilities: { device: true, store: false, wake: false } },
+    { apiRange: '^5.0.0', export: 'main', capabilities: declarations },
+    { apiRange: '^5.0.0', export: 'sibling', capabilities: { device: true, store: false, wake: false } },
   ]
   writeFileSync(file, JSON.stringify(manifest))
   expect(readPluginCapabilities(f.source, 'main')).toEqual(declarations)
@@ -234,7 +234,7 @@ it('pins an unqualified git URL in the preview without executing the plugin', as
           JSON.stringify({
             name: 'git-tool',
             version: '1.0.0',
-            agnes: { plugins: [{ apiRange: '^4.0.0', export: 'main' }] },
+            agnes: { plugins: [{ apiRange: '^5.0.0', export: 'main' }] },
           }),
         )
       }

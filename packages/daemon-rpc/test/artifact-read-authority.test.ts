@@ -76,98 +76,95 @@ describe('durable artifact read authority index', () => {
     }
   })
 
-  it.each([1, 2])(
-    'migrates v%i and reopens through the production package-table adapter without PRAGMA',
-    async (version) => {
-      const directory = await mkdtemp(join(tmpdir(), 'agnes-artifact-authority-host-'))
-      const open = () =>
-        createSqliteStorage({
-          file: join(directory, 'sessions.sqlite'),
-          tablesDir: join(directory, 'tables'),
-        })
-      let storage = open()
-      try {
-        const legacyArtifact = { ...first, mime: `${'a'.repeat(64)}/${'b'.repeat(127)}` }
-        const expected = binding(legacyArtifact)
-        const legacy = storage
-          .tables('@agnes/daemon/artifact-read-authority-test')
-          .table('artifact_read_authority')
-        legacy.exec(
-          'CREATE TABLE artifact_read_authority_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)',
-        )
-        legacy.exec(
-          `CREATE TABLE artifact_read_authority_v1 (session_id TEXT NOT NULL, lane_id TEXT NOT NULL, owner_id TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL, PRIMARY KEY (session_id, lane_id, sha256${version === 2 ? ', mime' : ''}))`,
-        )
-        legacy.exec(
-          'CREATE INDEX artifact_read_authority_v1_lane ON artifact_read_authority_v1 (session_id, lane_id)',
-        )
-        legacy.run('INSERT INTO artifact_read_authority_meta (id, version) VALUES (?, ?)', [1, version])
-        legacy.run('INSERT INTO artifact_read_authority_v1 VALUES (?, ?, ?, ?, ?, ?)', [
-          'session-a',
-          'lane-a',
-          'owner-a',
-          first.sha256,
-          first.size,
-          legacyArtifact.mime,
-        ])
-        legacy.run('UPDATE artifact_read_authority_v1 SET size = ?', [-1])
-        expect(() => new PersistentArtifactReadAuthorityIndex(adaptHostTable(legacy))).toThrow(
-          'artifact read authority index unavailable',
-        )
-        expect(legacy.get<{ version: number }>('SELECT version FROM artifact_read_authority_meta')).toEqual({
-          version,
-        })
-        legacy.run('UPDATE artifact_read_authority_v1 SET size = ?', [first.size])
-        const adapter = adaptHostTable(legacy)
-        expect(
-          () =>
-            new PersistentArtifactReadAuthorityIndex({
-              ...adapter,
-              exec(sql, params) {
-                if (sql.startsWith('INSERT INTO artifact_read_authority_v1 ('))
-                  throw new Error('synthetic migration interruption')
-                adapter.exec(sql, params)
-              },
-            }),
-        ).toThrow('artifact read authority index unavailable')
-        expect(legacy.get<{ version: number }>('SELECT version FROM artifact_read_authority_meta')).toEqual({
-          version,
-        })
-        expect(legacy.get<{ size: number }>('SELECT size FROM artifact_read_authority_v1')).toEqual({
-          size: first.size,
-        })
-        const initial = new PersistentArtifactReadAuthorityIndex(adapter)
-        expect(initial.resolve('session-a', 'lane-a', first.sha256, legacyArtifact.mime)).toEqual(expected)
-        expect(initial.append(writer('append'), expected)).toEqual({ ok: true, code: 'already_present' })
-        await storage.close()
+  it.each([1, 2])('refuses a v%i store without rewriting it', async (version) => {
+    const directory = await mkdtemp(join(tmpdir(), 'agnes-artifact-authority-host-'))
+    const storage = createSqliteStorage({
+      file: join(directory, 'sessions.sqlite'),
+      tablesDir: join(directory, 'tables'),
+    })
+    try {
+      const legacy = storage
+        .tables('@agnes/daemon/artifact-read-authority-test')
+        .table('artifact_read_authority')
+      legacy.exec(
+        'CREATE TABLE artifact_read_authority_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)',
+      )
+      legacy.exec(
+        `CREATE TABLE artifact_read_authority_v1 (session_id TEXT NOT NULL, lane_id TEXT NOT NULL, owner_id TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL, PRIMARY KEY (session_id, lane_id, sha256${version === 2 ? ', mime' : ''}))`,
+      )
+      legacy.exec(
+        'CREATE INDEX artifact_read_authority_v1_lane ON artifact_read_authority_v1 (session_id, lane_id)',
+      )
+      legacy.run('INSERT INTO artifact_read_authority_meta (id, version) VALUES (?, ?)', [1, version])
+      legacy.run('INSERT INTO artifact_read_authority_v1 VALUES (?, ?, ?, ?, ?, ?)', [
+        'session-a',
+        'lane-a',
+        'owner-a',
+        first.sha256,
+        first.size,
+        `${'a'.repeat(64)}/${'b'.repeat(127)}`,
+      ])
+      expect(() => new PersistentArtifactReadAuthorityIndex(adaptHostTable(legacy))).toThrow(
+        'artifact read authority index unavailable',
+      )
+      expect(legacy.get<{ version: number }>('SELECT version FROM artifact_read_authority_meta')).toEqual({
+        version,
+      })
+      expect(legacy.get<{ n: number }>('SELECT COUNT(*) AS n FROM artifact_read_authority_v1')).toEqual({
+        n: 1,
+      })
+      expect(
+        legacy.get("SELECT name FROM sqlite_master WHERE name = 'artifact_read_authority_migration'"),
+      ).toBeUndefined()
+    } finally {
+      await storage.close()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
 
-        storage = open()
-        const owner = storage
-          .tables('@agnes/daemon/artifact-read-authority-test')
-          .table('artifact_read_authority')
-        const reopened = new PersistentArtifactReadAuthorityIndex(adaptHostTable(owner))
-        expect(reopened.resolve('session-a', 'lane-a', first.sha256)).toEqual(expected)
-        owner.exec(
-          `CREATE TEMP TRIGGER artifact_read_authority_temp_mutate
+  it('reopens a fresh store through the production package-table adapter without PRAGMA', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'agnes-artifact-authority-host-'))
+    const open = () =>
+      createSqliteStorage({
+        file: join(directory, 'sessions.sqlite'),
+        tablesDir: join(directory, 'tables'),
+      })
+    let storage = open()
+    try {
+      const expected = binding({ ...first, mime: `${'a'.repeat(64)}/${'b'.repeat(127)}` })
+      const fresh = storage
+        .tables('@agnes/daemon/artifact-read-authority-test')
+        .table('artifact_read_authority')
+      const initial = new PersistentArtifactReadAuthorityIndex(adaptHostTable(fresh))
+      expect(initial.append(writer('append'), expected)).toEqual({ ok: true, code: 'appended' })
+      await storage.close()
+
+      storage = open()
+      const owner = storage
+        .tables('@agnes/daemon/artifact-read-authority-test')
+        .table('artifact_read_authority')
+      const reopened = new PersistentArtifactReadAuthorityIndex(adaptHostTable(owner))
+      expect(reopened.resolve('session-a', 'lane-a', first.sha256)).toEqual(expected)
+      owner.exec(
+        `CREATE TEMP TRIGGER artifact_read_authority_temp_mutate
          AFTER DELETE ON artifact_read_authority_v1
          BEGIN UPDATE artifact_read_authority_v1 SET owner_id = 'attacker'; END`,
-        )
-        expect(reopened.replace(writer('replace'), binding(), binding(second))).toEqual({
-          ok: false,
-          code: 'storage_unavailable',
-        })
-        expect(
-          owner.get<{ owner_id: unknown; sha256: unknown }>(
-            'SELECT owner_id, sha256 FROM artifact_read_authority_v1 WHERE session_id = ? AND lane_id = ?',
-            ['session-a', 'lane-a'],
-          ),
-        ).toEqual({ owner_id: 'owner-a', sha256: first.sha256 })
-      } finally {
-        await storage.close()
-        await rm(directory, { recursive: true, force: true })
-      }
-    },
-  )
+      )
+      expect(reopened.replace(writer('replace'), binding(), binding(second))).toEqual({
+        ok: false,
+        code: 'storage_unavailable',
+      })
+      expect(
+        owner.get<{ owner_id: unknown; sha256: unknown }>(
+          'SELECT owner_id, sha256 FROM artifact_read_authority_v1 WHERE session_id = ? AND lane_id = ?',
+          ['session-a', 'lane-a'],
+        ),
+      ).toEqual({ owner_id: 'owner-a', sha256: first.sha256 })
+    } finally {
+      await storage.close()
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
 
   it('enforces append and replace authority without crossing session, lane, or owner', () => {
     const tables = sqliteTables()

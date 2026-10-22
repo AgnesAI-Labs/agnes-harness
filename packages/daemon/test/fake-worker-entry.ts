@@ -62,7 +62,7 @@ async function permissionFixture(dataDir: string): Promise<Partial<TestHostOptio
           {
             export: 'main',
             id: 'ext:@fixture/permission/main',
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             default: true,
             inject: ['tools'],
             provide: [],

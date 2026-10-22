@@ -116,6 +116,62 @@ describe('Host-backed gitWorktrees', () => {
     await h.manager.bind?.('child', entry.path)
     expect(h.bindings).toEqual([['child', entry]])
   })
+  it('waits for an asynchronous persistent bind before recording the fact', async () => {
+    const facts: Array<[string, unknown]> = []
+    const manager = gitWorktrees({
+      events: {
+        append: async (name, data) => {
+          facts.push([name, data])
+          return facts.length
+        },
+      },
+      persist: {
+        load: () => new Map([[entry.path, entry]]),
+        save: () => undefined,
+        bind: async () => {
+          throw new Error('bind refused')
+        },
+      },
+    })
+    await expect(manager.bind?.('child', entry.path)).rejects.toThrow('bind refused')
+    expect(facts).toEqual([])
+  })
+  it('finishes a worktree bound before a restart', async () => {
+    const finished: string[] = []
+    const port = service()
+    port.finish = async (path) => {
+      finished.push(path)
+      return { action: 'removed' }
+    }
+    const facts: Array<[string, unknown]> = []
+    const bindings: unknown[] = []
+    const ctx = fakeToolContext({ cwd: entry.root })
+    const deps = {
+      open: async () => port,
+      events: {
+        append: async (name: string, data: unknown) => {
+          facts.push([name, data])
+          return facts.length
+        },
+      },
+      // As in production: nothing is loaded back after a restart; Host's git registry owns the entry.
+      persist: {
+        load: () => new Map<string, WorktreeEntry>(),
+        save: () => undefined,
+        bind: async (childKey: string, value: WorktreeEntry) => {
+          bindings.push([childKey, value])
+        },
+      },
+    }
+    const first = gitWorktrees(deps)
+    await expect(first.create(ctx)).resolves.toMatchObject({ path: entry.path })
+    await first.bind?.('parent/wt', entry.path)
+    expect(bindings).toEqual([['parent/wt', entry]])
+    const second = gitWorktrees(deps)
+    expect(await second.finish(ctx, 'parent/wt', entry.path)).toMatchObject({ action: 'removed' })
+    expect(finished).toEqual([entry.path])
+    expect(facts.at(-1)).toEqual(['worktree-removed', { childKey: 'parent/wt', path: entry.path }])
+  })
   it('maps a closed binding the same way as a missing service', async () => {
     const facts: Array<[string, unknown]> = []
     const ctx = fakeToolContext({

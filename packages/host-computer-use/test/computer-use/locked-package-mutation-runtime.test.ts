@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createSqliteStorage, type SqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import { sqlitePersistenceProvider } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createHostLockedPackageMutationRuntime,
@@ -10,7 +10,7 @@ import {
   type HostLockedPackageMutationOptions,
 } from '../../src/computer-use/locked-package-mutation-runtime.js'
 import {
-  createSqliteLockedPackageOperationReceiptPort,
+  createMetadataLockedPackageOperationReceiptPort,
   type HostLockedPackageActivationRecord,
 } from '../../src/computer-use/locked-package-receipts-sqlite.js'
 
@@ -21,8 +21,11 @@ const temp = (): string => {
   roots.push(root)
   return root
 }
-const storage = (root: string): SqliteStorage =>
-  createSqliteStorage({ file: join(root, 'sessions.db'), tablesDir: join(root, 'tables') })
+async function storage(root: string) {
+  const s = await sqlitePersistenceProvider.open({ dataDir: root })
+  if (!s.metadata) throw new Error('metadata port missing')
+  return { metadata: s.metadata, close: () => s.close() }
+}
 const record: HostLockedPackageActivationRecord = {
   schemaVersion: 1,
   packageId: 'computer-use-driver',
@@ -56,7 +59,7 @@ afterEach(() => {
 describe('Host locked-package mutation runtime', () => {
   it('keeps mutation blocked without trusted dependencies', async () => {
     const root = temp()
-    const db = storage(root)
+    const db = await storage(root)
     try {
       const runtime = await createHostLockedPackageMutationRuntime(db)
       expect(runtime.status()).toEqual({
@@ -85,7 +88,7 @@ describe('Host locked-package mutation runtime', () => {
   it('never admits pathname-only ports, even after ancestor replacement', async () => {
     const databaseRoot = temp()
     const root = temp()
-    const db = storage(databaseRoot)
+    const db = await storage(databaseRoot)
     const credential = 'Bearer secret-do-not-leak'
     const activate = vi.fn(async () => {
       throw new Error(credential)
@@ -128,8 +131,8 @@ describe('Host locked-package mutation runtime', () => {
 
   it('reconciles committed/prepared receipts conservatively and per session', async () => {
     const root = temp()
-    const db = storage(root)
-    const receipts = createSqliteLockedPackageOperationReceiptPort(db)
+    const db = await storage(root)
+    const receipts = createMetadataLockedPackageOperationReceiptPort(db.metadata)
     const committedId = scoped(root, 'session-a', 'same-operation')
     const preparedId = scoped(root, 'session-b', 'same-operation')
     for (const id of [committedId, preparedId]) {
@@ -166,8 +169,8 @@ describe('Host locked-package mutation runtime', () => {
 
   it('rejects committed and prepared receipts bound to another store', async () => {
     const root = temp()
-    const db = storage(root)
-    const receipts = createSqliteLockedPackageOperationReceiptPort(db)
+    const db = await storage(root)
+    const receipts = createMetadataLockedPackageOperationReceiptPort(db.metadata)
     for (const [session, committed] of [
       ['session-committed', true],
       ['session-prepared', false],
@@ -204,20 +207,17 @@ describe('Host locked-package mutation runtime', () => {
     }
   })
 
-  it('still boots when receipt tables cannot open', async () => {
+  it('still boots when the receipt metadata store cannot open', async () => {
     const root = temp()
-    const db = storage(root)
-    const tables = db.tables.bind(db)
-    Object.defineProperty(db, 'tables', {
-      configurable: true,
-      enumerable: true,
-      writable: true,
-      value: () => {
+    const db = await storage(root)
+    const metadata = db.metadata
+    db.metadata = {
+      namespace: () => {
         throw Object.assign(new Error('E_LOCKED_PACKAGE_RECEIPT_OPEN_FAILED'), {
           name: 'ReceiptStoreError',
         })
       },
-    })
+    }
     try {
       const runtime = await createHostLockedPackageMutationRuntime(db)
       expect(runtime.status().activationReady).toBe(false)
@@ -228,18 +228,13 @@ describe('Host locked-package mutation runtime', () => {
       ).rejects.toMatchObject({ code: 'BLOCKED' })
       await runtime.close()
     } finally {
-      Object.defineProperty(db, 'tables', {
-        configurable: true,
-        enumerable: true,
-        writable: true,
-        value: tables,
-      })
+      db.metadata = metadata
       await db.close()
     }
   })
 
   it('rejects configuration accessors without invoking them', async () => {
-    const db = storage(temp())
+    const db = await storage(temp())
     try {
       const get = vi.fn(() => engine())
       const hostile = Object.defineProperty({}, 'engine', { enumerable: true, get })

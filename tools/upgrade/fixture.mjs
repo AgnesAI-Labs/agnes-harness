@@ -53,7 +53,7 @@ export async function writePackage(root, managed = true, identityProbe, legacyMe
           {
             id: `ext:${extension}`,
             export: 'main',
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             runtime: 'in-process',
             inject: managed ? ['services', 'profileRuntime'] : [],
             capabilities: {

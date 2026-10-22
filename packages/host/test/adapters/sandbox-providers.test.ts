@@ -469,7 +469,7 @@ describe('sandbox providers', () => {
               declaration: {
                 id: 'loop:agnes.default',
                 export: 'defaultLoopPlugin',
-                apiRange: '^4.0.0',
+                apiRange: '^5.0.0',
                 default: true,
                 inject: ['loops'],
                 provide: [],
@@ -481,7 +481,7 @@ describe('sandbox providers', () => {
               declaration: {
                 id: 'tool-policy:default',
                 export: 'toolPolicyPlugin',
-                apiRange: '^4.0.0',
+                apiRange: '^5.0.0',
                 default: true,
                 inject: ['providers'],
                 provide: [],

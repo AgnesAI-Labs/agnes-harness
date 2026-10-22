@@ -65,7 +65,7 @@ function fixture(
       agnes: {
         plugins: [
           {
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             export: 'panel',
             id: rowId,
             runtime: options.runtime ?? 'in-process',
@@ -77,7 +77,7 @@ function fixture(
           ...(options.streams === 'foreign'
             ? [
                 {
-                  apiRange: '^4.0.0',
+                  apiRange: '^5.0.0',
                   export: 'other',
                   id: 'ext:example/other',
                   capabilities: { streams: [stream(options.scope)] },

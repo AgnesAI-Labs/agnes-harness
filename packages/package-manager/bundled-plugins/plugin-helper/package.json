@@ -1,6 +1,6 @@
 {
   "name": "@agnes/plugin-helper",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "description": "Draft, test and submit AGH plugins for human review",
   "type": "module",
   "license": "Apache-2.0",
@@ -18,7 +18,7 @@
     "plugins": [
       {
         "export": "pluginHelper",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "id": "ext:plugin-helper/main",
         "inject": [
           "tools"

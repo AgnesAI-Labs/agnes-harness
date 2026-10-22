@@ -19,7 +19,7 @@ function fixture(
   const manifest: ExtensionManifest = {
     id: 'fixture/service',
     version: '1.0.0',
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     entry: './index.js',
     capabilities: { services: [cap], network: ['allowed.test:443', 'only-manifest.test'] },
   }

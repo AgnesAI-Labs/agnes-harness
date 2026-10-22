@@ -295,7 +295,7 @@ export async function isolatedRuntime(
               {
                 export: 'textStatsTool',
                 id: 'ext:e2e-version',
-                apiRange: '^4.0.0',
+                apiRange: '^5.0.0',
                 inject: ['tools', 'hooks', 'self'],
               },
             ],

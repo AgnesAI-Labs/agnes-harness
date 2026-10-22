@@ -131,7 +131,7 @@ describe('createJitiPackageLoader', () => {
         agnes: {
           plugins: [
             {
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               export: 'runtime',
               metadata: {
                 displayName: 'Legacy package',

@@ -66,7 +66,7 @@ async function setup() {
     const manifest: ExtensionManifest = {
       id,
       version: '1.0.0',
-      apiRange: '^4.0.0',
+      apiRange: '^5.0.0',
       entry: './index.ts',
       capabilities: {
         projections: ['count', 'other'].map((name) => ({

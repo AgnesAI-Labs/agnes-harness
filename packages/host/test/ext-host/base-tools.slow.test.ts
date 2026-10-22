@@ -229,6 +229,45 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       await host.close()
     }
   })
+  it('gives the child-control port to @agnes/base only, and Base forwards it only to agnes/subagent', async () => {
+    const observed = new Map<string, boolean>()
+    const { host } = await createTestHost({
+      dataDir: scratch(),
+      packageDirs: {
+        '@agnes/base': baseDir,
+        '@agnes/code': fileURLToPath(new URL('../../../code', import.meta.url)),
+      },
+      packages: {
+        '@agnes/code': {
+          ecosystem: {
+            'agnes/code-mode': (context) => {
+              observed.set('agnes/code-mode', context.childControl !== undefined)
+              return async () => undefined
+            },
+          },
+        },
+        '@agnes/base': {
+          ecosystem: {
+            ...baseEcosystem,
+            'agnes/subagent': (context) => {
+              observed.set('agnes/subagent', context.childControl !== undefined)
+              return baseEcosystem['agnes/subagent'](context)
+            },
+          },
+        },
+      },
+    })
+    try {
+      expect(observed).toEqual(
+        new Map([
+          ['agnes/subagent', true],
+          ['agnes/code-mode', false],
+        ]),
+      )
+    } finally {
+      await host.close()
+    }
+  })
 
   it('runs ledger goals across separate turns, bounds continuation, and applies human controls without inference', async () => {
     const dataDir = scratch()
@@ -980,7 +1019,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       manifest: {
         id: extensionId,
         version: '0.1.0',
-        apiRange: '^4.0.0',
+        apiRange: '^5.0.0',
         entry: './index.mjs',
         capabilities: { tools: { prefix: 'mcp_' }, resources: ['mcp' as const] },
       },
@@ -1080,7 +1119,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         manifest: {
           id: extensionId,
           version: '0.1.0',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           entry: './index.mjs',
           capabilities: { tools: { prefix: 'mcp_' }, resources: ['mcp' as const] },
         },

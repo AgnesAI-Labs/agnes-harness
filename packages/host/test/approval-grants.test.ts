@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type ApprovalGrantsPort, presetDefaults, SeamRuntime } from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
-import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import { sqlitePersistenceProvider } from '@agnes/host-infrastructure/adapters/storage-provider'
 import type { ApprovalGrant } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -41,28 +41,18 @@ const grant: ApprovalGrant = {
   policyBinding: 'e'.repeat(64),
   createdAt: '2026-09-17T00:00:00.000Z',
 }
-const GRANTS_DDL =
-  'CREATE TABLE approval_grants (' +
-  'grant_id TEXT PRIMARY KEY, policy_digest TEXT NOT NULL, actor_id TEXT NOT NULL, actor_org TEXT NOT NULL, ' +
-  'tool_id TEXT NOT NULL, scope TEXT NOT NULL, policy_version TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT, ' +
-  'source_decision_id TEXT NOT NULL, issuer TEXT NOT NULL, definition_fingerprint TEXT NOT NULL, policy_binding TEXT NOT NULL)'
-const META_DDL =
-  'CREATE TABLE approval_grant_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)'
-const INDEX_DDL =
-  'CREATE INDEX approval_grants_binding ON approval_grants ' +
-  '(policy_digest, actor_id, actor_org, tool_id, scope, policy_version, revoked_at)'
-
-function open(root: string) {
-  const storage = createSqliteStorage({ file: join(root, 'sessions.db'), tablesDir: join(root, 'tables') })
-  const tables = storage.tables('@agnes/host')
+async function open(root: string) {
+  const session = await sqlitePersistenceProvider.open({ dataDir: root })
+  if (!session.metadata) throw new Error('metadata port missing')
+  const ns = session.metadata.namespace('@agnes/host/approval-grants', 'grants')
   return {
-    storage,
-    store: createApprovalGrantStore(tables),
-    grants: createApprovalGrantControlPlane(tables).port,
+    storage: { close: () => session.close() },
+    store: createApprovalGrantStore(ns),
+    grants: createApprovalGrantControlPlane(ns).port,
   }
 }
 
-async function activate(opened: ReturnType<typeof open>, value: ApprovalGrant): Promise<void> {
+async function activate(opened: Awaited<ReturnType<typeof open>>, value: ApprovalGrant): Promise<void> {
   await opened.grants.put(value)
 }
 
@@ -71,16 +61,18 @@ describe('Host approval grant store', () => {
     const publicHost = await import('@agnes/host')
     expect(publicHost).not.toHaveProperty('createApprovalGrantControlPlane')
     expect(publicHost).toHaveProperty('createApprovalGrantStore')
+    expect(publicHost).not.toHaveProperty('createSqliteComputerUseEffectStore')
+    expect(publicHost).not.toHaveProperty('createSqliteLockedPackageOperationReceiptPort')
   })
 
   it('persists across reopen and matches every binding dimension exactly', async () => {
     const root = temp()
-    const first = open(root)
+    const first = await open(root)
     await activate(first, grant)
     await activate(first, grant)
-    first.storage.close()
+    await first.storage.close()
 
-    const second = open(root)
+    const second = await open(root)
     try {
       expect(second.store.list(query)).toEqual([grant])
       for (const changed of [
@@ -115,14 +107,14 @@ describe('Host approval grant store', () => {
       second.store.revoke({ ...query, toolId: 'other-tool' }, 'grant-2', '2026-09-19T00:00:00.000Z')
       expect(second.store.listHolder(holder)).toEqual([grant])
     } finally {
-      second.storage.close()
+      await second.storage.close()
     }
   })
 
   it('supports two open stores and keeps exact recovery puts idempotent', async () => {
     const root = temp()
-    const left = open(root)
-    const right = open(root)
+    const left = await open(root)
+    const right = await open(root)
     try {
       await activate(left, grant)
       await activate(right, grant)
@@ -131,117 +123,34 @@ describe('Host approval grant store', () => {
         /id collision/,
       )
     } finally {
-      left.storage.close()
-      right.storage.close()
+      await left.storage.close()
+      await right.storage.close()
     }
   })
 
-  it('requires a reset for unversioned, old or future grant schemas', async () => {
-    const compatibleRoot = temp()
-    const compatibleStorage = createSqliteStorage({
-      file: join(compatibleRoot, 'sessions.db'),
-      tablesDir: join(compatibleRoot, 'tables'),
-    })
-    const compatibleTables = compatibleStorage.tables('@agnes/host')
-    compatibleTables.table('approval_grants').exec(GRANTS_DDL)
-    expect(() => createApprovalGrantStore(compatibleTables).list(query)).toThrow(/reset-required/)
-    compatibleStorage.close()
-
-    const missingRoot = temp()
-    const missingStorage = createSqliteStorage({
-      file: join(missingRoot, 'sessions.db'),
-      tablesDir: join(missingRoot, 'tables'),
-    })
-    const missingTables = missingStorage.tables('@agnes/host')
-    missingTables
-      .table('approval_grants')
-      .exec('CREATE TABLE approval_grants (grant_id TEXT PRIMARY KEY, policy_digest TEXT NOT NULL)')
-    expect(() => createApprovalGrantStore(missingTables).list(query)).toThrow(/reset-required/)
-    missingStorage.close()
-
-    const futureRoot = temp()
-    const futureStorage = createSqliteStorage({
-      file: join(futureRoot, 'sessions.db'),
-      tablesDir: join(futureRoot, 'tables'),
-    })
-    const futureTables = futureStorage.tables('@agnes/host')
-    const future = futureTables.table('approval_grants')
-    future.exec(
-      'CREATE TABLE approval_grant_meta (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)',
-    )
-    future.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 99)')
-    future.exec(GRANTS_DDL)
-    future.exec(INDEX_DDL)
-    expect(() => createApprovalGrantStore(futureTables).list(query)).toThrow(/reset-required/)
-    futureStorage.close()
-  })
-
-  it('rejects malformed current-version table and metadata DDL', () => {
-    const malformedRoot = temp()
-    const malformedStorage = createSqliteStorage({
-      file: join(malformedRoot, 'sessions.db'),
-      tablesDir: join(malformedRoot, 'tables'),
-    })
-    const malformedTables = malformedStorage.tables('@agnes/host')
-    const malformed = malformedTables.table('approval_grants')
-    malformed.exec(META_DDL)
-    malformed.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
-    malformed.exec(
-      'CREATE TABLE approval_grants (' +
-        'grant_id TEXT, policy_digest TEXT, actor_id TEXT, actor_org TEXT, tool_id TEXT, scope TEXT, ' +
-        'policy_version TEXT, created_at TEXT, revoked_at TEXT)',
-    )
-    malformed.exec(INDEX_DDL)
-    expect(() => createApprovalGrantStore(malformedTables).list(query)).toThrow(/reset-required/)
-    malformedStorage.close()
-
-    const malformedMetaRoot = temp()
-    const malformedMetaStorage = createSqliteStorage({
-      file: join(malformedMetaRoot, 'sessions.db'),
-      tablesDir: join(malformedMetaRoot, 'tables'),
-    })
-    const malformedMetaTables = malformedMetaStorage.tables('@agnes/host')
-    const malformedMeta = malformedMetaTables.table('approval_grants')
-    malformedMeta.exec('CREATE TABLE approval_grant_meta (id INTEGER, version INTEGER)')
-    malformedMeta.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
-    malformedMeta.exec(GRANTS_DDL)
-    malformedMeta.exec(INDEX_DDL)
-    expect(() => createApprovalGrantStore(malformedMetaTables).list(query)).toThrow(/reset-required/)
-    malformedMetaStorage.close()
-  })
-
-  it('rejects missing or malformed binding indexes', () => {
-    const missingIndexRoot = temp()
-    const missingIndexStorage = createSqliteStorage({
-      file: join(missingIndexRoot, 'sessions.db'),
-      tablesDir: join(missingIndexRoot, 'tables'),
-    })
-    const missingIndexTables = missingIndexStorage.tables('@agnes/host')
-    const missingIndex = missingIndexTables.table('approval_grants')
-    missingIndex.exec(META_DDL)
-    missingIndex.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
-    missingIndex.exec(GRANTS_DDL)
-    expect(() => createApprovalGrantStore(missingIndexTables).list(query)).toThrow(/reset-required/)
-    missingIndexStorage.close()
-
-    const malformedIndexRoot = temp()
-    const malformedIndexStorage = createSqliteStorage({
-      file: join(malformedIndexRoot, 'sessions.db'),
-      tablesDir: join(malformedIndexRoot, 'tables'),
-    })
-    const malformedIndexTables = malformedIndexStorage.tables('@agnes/host')
-    const malformedIndex = malformedIndexTables.table('approval_grants')
-    malformedIndex.exec(META_DDL)
-    malformedIndex.run('INSERT INTO approval_grant_meta (id, version) VALUES (1, 2)')
-    malformedIndex.exec(GRANTS_DDL)
-    malformedIndex.exec('CREATE INDEX approval_grants_binding ON approval_grants (grant_id)')
-    expect(() => createApprovalGrantStore(malformedIndexTables).list(query)).toThrow(/reset-required/)
-    malformedIndexStorage.close()
+  it('requires a reset for a metadata store of another version or with grants but no version', async () => {
+    const session = await sqlitePersistenceProvider.open({ dataDir: temp() })
+    try {
+      if (!session.metadata) throw new Error('metadata port missing')
+      const future = session.metadata.namespace('@agnes/host/approval-grants', 'future')
+      future.set('version', 99)
+      expect(() => createApprovalGrantStore(future).list(query)).toThrow(
+        /reset-required: E_APPROVAL_GRANT_SCHEMA_VERSION/,
+      )
+      const unversioned = session.metadata.namespace('@agnes/host/approval-grants', 'unversioned')
+      unversioned.set('grant:x', { ...grant, grantId: 'x' })
+      expect(() => createApprovalGrantStore(unversioned).list(query)).toThrow(
+        /reset-required: unversioned approval grant metadata/,
+      )
+      expect(unversioned.get('version')).toBeUndefined()
+    } finally {
+      await session.close()
+    }
   })
 
   it('strictly rejects extra fields and impossible calendar dates', async () => {
     const root = temp()
-    const opened = open(root)
+    const opened = await open(root)
     try {
       await expect(activate(opened, { ...grant, extra: true } as unknown as ApprovalGrant)).rejects.toThrow(
         /invalid approval grant fields/,
@@ -274,14 +183,14 @@ describe('Host approval grant store', () => {
       expect('revokeById' in opened.store).toBe(false)
       expect(opened.store.list(query)).toEqual([])
     } finally {
-      opened.storage.close()
+      await opened.storage.close()
     }
   })
 
   it('requires the full binding to revoke and makes revocation visible on the next uncached read', async () => {
     const root = temp()
-    const opened = open(root)
-    const second = open(root)
+    const opened = await open(root)
+    const second = await open(root)
     try {
       await activate(opened, grant)
       expect(
@@ -304,23 +213,22 @@ describe('Host approval grant store', () => {
       await expect(activate(opened, grant)).rejects.toThrow(/id collision/)
       expect(opened.store.list(query)).toEqual([])
     } finally {
-      opened.storage.close()
-      second.storage.close()
+      await opened.storage.close()
+      await second.storage.close()
     }
   })
 
   it('fans a durable bound revoke out to active seams and independent readers immediately', async () => {
     const root = temp()
-    const firstStorage = createSqliteStorage({
-      file: join(root, 'sessions.db'),
-      tablesDir: join(root, 'tables'),
-    })
-    const secondStorage = createSqliteStorage({
-      file: join(root, 'sessions.db'),
-      tablesDir: join(root, 'tables'),
-    })
-    const first = createApprovalGrantControlPlane(firstStorage.tables('@agnes/host/approval-grants'))
-    const second = createApprovalGrantControlPlane(secondStorage.tables('@agnes/host/approval-grants'))
+    const firstStorage = await sqlitePersistenceProvider.open({ dataDir: root })
+    const secondStorage = await sqlitePersistenceProvider.open({ dataDir: root })
+    if (!firstStorage.metadata || !secondStorage.metadata) throw new Error('metadata port missing')
+    const first = createApprovalGrantControlPlane(
+      firstStorage.metadata.namespace('@agnes/host/approval-grants', 'grants'),
+    )
+    const second = createApprovalGrantControlPlane(
+      secondStorage.metadata.namespace('@agnes/host/approval-grants', 'grants'),
+    )
     await first.port.put(grant)
     const grants: ApprovalGrant[] = []
     const offManagement = first.management.onRevoked((value) => grants.push(value))
@@ -364,24 +272,27 @@ describe('Host approval grant store', () => {
     } finally {
       offManagement()
       offReentrant()
-      firstStorage.close()
-      secondStorage.close()
+      await firstStorage.close()
+      await secondStorage.close()
     }
 
-    const reopened = open(root)
+    const reopened = await open(root)
     try {
       expect(reopened.store.list(query)).toEqual([])
     } finally {
-      reopened.storage.close()
+      await reopened.storage.close()
     }
   })
 
   it('turns store failures into Core fail-closed answers', async () => {
     const root = temp()
-    const storage = createSqliteStorage({ file: join(root, 'sessions.db'), tablesDir: join(root, 'tables') })
+    const session = await sqlitePersistenceProvider.open({ dataDir: root })
+    if (!session.metadata) throw new Error('metadata port missing')
     const failures: string[] = []
-    const port = createApprovalGrantControlPlane(storage.tables('@agnes/host')).port
-    await storage.close()
+    const port = createApprovalGrantControlPlane(
+      session.metadata.namespace('@agnes/host/approval-grants', 'grants'),
+    ).port
+    await session.close()
     const runtime = new SeamRuntime(fakeSeams(), presetDefaults(), {
       clock: () => 0,
       onFailure: (failure) => failures.push(`${failure.seam}.${failure.op}`),
@@ -411,17 +322,12 @@ describe('Host approval grant store', () => {
 
   it('wires the Host store into the Kernel grants port and preserves grants across Host reopen', async () => {
     const dataDir = temp()
-    const legacy = createSqliteStorage({
-      file: join(dataDir, 'sessions.db'),
-      tablesDir: join(dataDir, 'tables'),
-    })
-    await createApprovalGrantControlPlane(legacy.tables('@agnes/host/approval-grants')).port.put(grant)
-    await legacy.close()
     const first = await createTestHost({ dataDir, disableSessionTitle: true })
     try {
-      expect(first.host.approvalGrants.list(query)).toEqual([grant])
       const port = (first.host.kernel as unknown as { o: { approvalGrants: ApprovalGrantsPort } }).o
         .approvalGrants
+      await port.put(grant)
+      expect(first.host.approvalGrants.list(query)).toEqual([grant])
       await port.put(grant)
       expect(first.host.approvalGrants.list(query)).toEqual([grant])
     } finally {

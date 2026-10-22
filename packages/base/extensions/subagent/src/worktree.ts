@@ -26,7 +26,7 @@ export type GitWorktreeDeps = {
   persist?: {
     load(): Map<string, WorktreeEntry>
     save(entries: Map<string, WorktreeEntry>): void
-    bind?(childKey: string, entry: WorktreeEntry): void
+    bind?(childKey: string, entry: WorktreeEntry): void | Promise<void>
   }
   inUse?: (path: string) => boolean
 }
@@ -100,7 +100,7 @@ export function gitWorktrees(deps: GitWorktreeDeps): WorktreeManager {
     async bind(childKey, path) {
       const entry = entries.get(path) ?? deps.persist?.load().get(path)
       if (!entry) throw new Error('worktree binding requires a created entry')
-      deps.persist?.bind?.(childKey, entry)
+      await deps.persist?.bind?.(childKey, entry)
       await deps.events.append('worktree-bound', { childKey, path, root: entry.root, branch: entry.branch })
     },
     async finish(ctx, childKey, path) {

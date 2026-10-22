@@ -137,7 +137,7 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
             declaration: {
               id: 'system-prompt:default',
               export: 'systemPromptPlugin',
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               inject: ['providers'],
               runtime: 'in-process',
               default: true,

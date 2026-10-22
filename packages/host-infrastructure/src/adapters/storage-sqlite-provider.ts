@@ -69,28 +69,6 @@ function sqliteMetadata(
       table.exec(
         'CREATE TABLE IF NOT EXISTS persistence_kv (namespace TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (namespace, key))',
       )
-      table.exec('CREATE TABLE IF NOT EXISTS persistence_kv_migrations (namespace TEXT PRIMARY KEY)')
-      table.transaction(() => {
-        if (table.get('SELECT namespace FROM persistence_kv_migrations WHERE namespace = ?', [namespaceKey]))
-          return
-        // Older versions kept KV beside the owner's SQL tables. Copy once, including deletions.
-        const legacy = tables(owner).table('persistence_kv')
-        if (
-          !name.includes('\u0000') &&
-          legacy.get("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", ['persistence_kv'])
-        ) {
-          for (const row of legacy.all<{ key: string; value: string }>(
-            'SELECT key, value FROM persistence_kv WHERE namespace = ?',
-            [name],
-          ))
-            table.run('INSERT OR IGNORE INTO persistence_kv (namespace, key, value) VALUES (?, ?, ?)', [
-              namespaceKey,
-              JSON.stringify(row.key),
-              row.value,
-            ])
-        }
-        table.run('INSERT INTO persistence_kv_migrations (namespace) VALUES (?)', [namespaceKey])
-      })
       return {
         get(key) {
           const row = table.get<{ value: string }>(

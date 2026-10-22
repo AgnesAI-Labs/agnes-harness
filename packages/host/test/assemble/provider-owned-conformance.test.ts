@@ -49,7 +49,7 @@ async function fixture(dataDir: string, apply?: (ctx: Context) => void) {
             declaration: {
               id: 'providers:owned-conformance',
               export: 'main',
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               runtime: 'in-process',
               default: true,
               inject: ['providers', 'childAgents', 'sandboxProviders', 'loops'],

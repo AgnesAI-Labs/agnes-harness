@@ -14,8 +14,8 @@ import {
 } from './text.js'
 
 const APPLICATION_ID = 0x41474858
-// Version the derived title projection too; the next search rebuilds from unchanged source facts.
-const SCHEMA_VERSION = 2
+// v3 adds external-content FTS and sessions.principal; the next search rebuilds from unchanged source facts.
+const SCHEMA_VERSION = 3
 const TITLE_SEQ = -1
 
 export type HistoryAccess =
@@ -166,14 +166,11 @@ export function openHistoryIndex(indexPath: string): HistoryIndex {
       workspace TEXT NOT NULL,
       title TEXT NOT NULL,
       created_at TEXT NOT NULL,
-      parent_id TEXT
+      parent_id TEXT,
+      principal TEXT
     )`)
     db.exec('CREATE INDEX IF NOT EXISTS sessions_workspace ON sessions(workspace)')
-    db.exec(`CREATE TABLE IF NOT EXISTS readers (
-      session_id TEXT NOT NULL,
-      principal TEXT NOT NULL,
-      PRIMARY KEY (session_id, principal)
-    )`)
+    db.exec('CREATE INDEX IF NOT EXISTS sessions_parent ON sessions(parent_id, session_id)')
     db.exec(`CREATE TABLE IF NOT EXISTS docs (
       rowid INTEGER PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -186,11 +183,10 @@ export function openHistoryIndex(indexPath: string): HistoryIndex {
       truncated INTEGER NOT NULL DEFAULT 0,
       UNIQUE(session_id, seq)
     )`)
-    db.exec('CREATE INDEX IF NOT EXISTS docs_session ON docs(session_id, seq)')
     db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(
-      session_id UNINDEXED,
-      seq UNINDEXED,
       text,
+      content = 'docs',
+      content_rowid = 'rowid',
       tokenize = 'unicode61'
     )`)
     return new HistoryIndex(db, indexPath)
@@ -227,21 +223,18 @@ export class HistoryIndex {
 
   principals(): string[] {
     this.live()
-    const rows = this.db.prepare(`SELECT DISTINCT principal FROM readers ORDER BY principal`).all() as Array<{
-      principal: string
-    }>
+    const rows = this.db
+      .prepare(`SELECT DISTINCT principal FROM sessions WHERE principal IS NOT NULL ORDER BY principal`)
+      .all() as Array<{ principal: string }>
     return rows.map((row) => row.principal)
   }
 
   principalOf(sessionId: string): string {
     this.live()
-    const rows = this.db
-      .prepare(`SELECT principal FROM readers WHERE session_id = ?`)
-      .all(sessionId) as Array<{
-      principal: string
-    }>
-    if (rows.length !== 1) return ''
-    return rows[0]?.principal ?? ''
+    const row = this.db.prepare(`SELECT principal FROM sessions WHERE session_id = ?`).get(sessionId) as
+      | { principal: string | null }
+      | undefined
+    return row?.principal ?? ''
   }
 
   rebuild(corpus: HistoryCorpus): { generation: number; rebuilt: boolean } {
@@ -251,25 +244,18 @@ export class HistoryIndex {
     const generation = this.generation() + 1
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      this.db.exec('DELETE FROM docs_fts')
+      this.db.exec(`INSERT INTO docs_fts(docs_fts) VALUES('delete-all')`)
       this.db.exec('DELETE FROM docs')
-      this.db.exec('DELETE FROM readers')
       this.db.exec('DELETE FROM sessions')
       const insertSession = this.db.prepare(
-        `INSERT INTO sessions (session_id, workspace, title, created_at, parent_id) VALUES (?, ?, ?, ?, ?)`,
-      )
-      const insertReader = this.db.prepare(
-        `INSERT OR IGNORE INTO readers (session_id, principal) VALUES (?, ?)`,
+        `INSERT INTO sessions (session_id, workspace, title, created_at, parent_id, principal) VALUES (?, ?, ?, ?, ?, ?)`,
       )
       const insertEvent = this.db.prepare(
         `INSERT INTO docs (session_id, seq, ts, type, text, body, sources, truncated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      const insertFts = this.db.prepare(
-        `INSERT INTO docs_fts(rowid, session_id, seq, text) VALUES (?, ?, ?, ?)`,
-      )
-      for (const session of corpus.sessions)
-        this.insertSession(insertSession, insertReader, insertEvent, insertFts, session)
-      for (const event of corpus.events) this.insertEvent(insertEvent, insertFts, event)
+      for (const session of corpus.sessions) this.insertSession(insertSession, insertEvent, session)
+      for (const event of corpus.events) this.insertEvent(insertEvent, event)
+      this.db.exec(`INSERT INTO docs_fts(docs_fts) VALUES('rebuild')`)
       this.putMeta('source_stamp', corpus.stamp)
       this.putMeta('generation', String(generation))
       this.db.exec('COMMIT')
@@ -422,7 +408,7 @@ export class HistoryIndex {
     const minSeq = request.sessionId ? 1 : TITLE_SEQ
     const params: Array<string | number> = [phrase, minSeq, ...visible.params]
     let sql = `SELECT e.session_id AS sessionId, e.seq AS seq, e.ts AS ts, e.type AS type, e.text AS text,
-      snippet(docs_fts, 2, '[', ']', '…', 12) AS snippet,
+      snippet(docs_fts, 0, '[', ']', '…', 12) AS snippet,
       s.title AS title, s.workspace AS workspace
       FROM docs_fts
       JOIN docs e ON e.rowid = docs_fts.rowid
@@ -632,9 +618,7 @@ export class HistoryIndex {
 
   private insertSession(
     insertSession: ReturnType<DatabaseSync['prepare']>,
-    insertReader: ReturnType<DatabaseSync['prepare']>,
     insertEvent: ReturnType<DatabaseSync['prepare']>,
-    insertFts: ReturnType<DatabaseSync['prepare']>,
     session: LedgerSession,
   ): void {
     insertSession.run(
@@ -643,10 +627,10 @@ export class HistoryIndex {
       session.title,
       session.createdAt,
       session.parentId,
+      session.principal,
     )
-    for (const principal of session.principals) insertReader.run(session.sessionId, principal)
     if (!session.title.trim()) return
-    this.insertEvent(insertEvent, insertFts, {
+    this.insertEvent(insertEvent, {
       sessionId: session.sessionId,
       seq: TITLE_SEQ,
       ts: session.createdAt,
@@ -658,12 +642,8 @@ export class HistoryIndex {
     })
   }
 
-  private insertEvent(
-    insertEvent: ReturnType<DatabaseSync['prepare']>,
-    insertFts: ReturnType<DatabaseSync['prepare']>,
-    event: LedgerEvent,
-  ): void {
-    const result = insertEvent.run(
+  private insertEvent(insertEvent: ReturnType<DatabaseSync['prepare']>, event: LedgerEvent): void {
+    insertEvent.run(
       event.sessionId,
       event.seq,
       event.ts,
@@ -673,8 +653,6 @@ export class HistoryIndex {
       JSON.stringify(event.sources),
       event.truncated ? 1 : 0,
     )
-    if (!event.text.trim()) return
-    insertFts.run(Number(result.lastInsertRowid), event.sessionId, event.seq, event.text)
   }
 
   private meta(key: string): string | undefined {
@@ -700,16 +678,12 @@ export class HistoryIndex {
 function visibility(access: HistoryAccess): { sql: string; params: string[] } {
   if (access.kind === 'local') {
     return {
-      sql: `(NOT EXISTS (SELECT 1 FROM readers r WHERE r.session_id = s.session_id)
-        OR EXISTS (SELECT 1 FROM readers r WHERE r.session_id = s.session_id AND r.principal = ?))`,
+      sql: '(s.principal IS NULL OR s.principal = ?)',
       params: [access.principal],
     }
   }
   return {
-    sql: `(s.session_id = ?
-      OR (? <> '' AND s.workspace = ?
-        AND (NOT EXISTS (SELECT 1 FROM readers r WHERE r.session_id = s.session_id)
-          OR EXISTS (SELECT 1 FROM readers r WHERE r.session_id = s.session_id AND r.principal = ?))))`,
+    sql: `(s.session_id = ? OR (? <> '' AND s.workspace = ? AND (s.principal IS NULL OR s.principal = ?)))`,
     params: [access.self, access.workspace, access.workspace, access.principal],
   }
 }

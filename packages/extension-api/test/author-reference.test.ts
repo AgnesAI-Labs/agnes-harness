@@ -51,7 +51,7 @@ it('advertises exactly the tokens accepted by the install validator, including t
   const manifest = {
     id: 'author/reference',
     version: '1.0.0',
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     entry: './index.mjs',
     capabilities: { ui: true },
     contributes: {

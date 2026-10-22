@@ -269,7 +269,7 @@ describe('concurrent reconcile publication', () => {
     const directory = mkdtempSync(join(tmpdir(), 'agnes-concurrent-reconcile-'))
     directories.push(directory)
     const plugins = [
-      { apiRange: '^4.0.0', export: 'main', id: `ext:${id}`, runtime: 'in-process', default: true },
+      { apiRange: '^5.0.0', export: 'main', id: `ext:${id}`, runtime: 'in-process', default: true },
     ]
     writeFileSync(
       join(directory, 'package.json'),

@@ -1,11 +1,10 @@
-import { DatabaseSync } from 'node:sqlite'
 import { presetDefaults, ToolRegistry } from '@agnes/core'
 import { actor, fakeProvider, openSession, readTool, textTurn, toolTurn } from '@agnes/core/testkit'
 import { checkToolDef, type ToolDef } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
-import { SqliteToolIndex, type ToolIndex } from '../../../src/mcp/index-table.js'
+import { MetadataToolIndex, type ToolIndex } from '../../../src/mcp/index-table.js'
 import { MemFts } from '../../../testkit/mem-fts.js'
-import { MemTable } from '../../../testkit/mem-table.js'
+import { MemNamespace } from '../../../testkit/seam-init.js'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createWebSearchTool } from '../../tools-web/src/search.js'
 import { toolDescribeTool, toolSearchTool } from '../src/search-tools.js'
@@ -55,25 +54,33 @@ describe('MemFts', () => {
   })
 })
 
-describe('SqliteToolIndex', () => {
-  it('falls back to a persistent ordinary table when virtual tables are denied', () => {
-    const table = new MemTable('tool_index')
-    const one = new SqliteToolIndex(table)
-    expect(one.mode).toBe('portable')
-    one.upsert(rows)
-    one.upsert([{ name: 'mcp_gh_merge', description: 'updated', schema: '{"n":1}' }])
-    expect(one.search('pull', 5).map((hit) => hit.name)).toEqual(['mcp_gh_list_prs'])
-    expect(one.get('mcp_gh_merge')).toEqual({
+describe('MetadataToolIndex', () => {
+  it('replaces a row on upsert and ranks with the portable scorer', () => {
+    const index = new MetadataToolIndex(new MemNamespace())
+    index.upsert(rows)
+    index.upsert([{ name: 'mcp_gh_merge', description: 'updated', schema: '{"n":1}' }])
+    expect(index.search('pull', 5).map((hit) => hit.name)).toEqual(['mcp_gh_list_prs'])
+    expect(index.search('销售', 5)).toEqual([{ name: 'mcp_db_query', score: 1 }])
+    expect(index.get('mcp_gh_merge')).toEqual({
       name: 'mcp_gh_merge',
       description: 'updated',
       schema: '{"n":1}',
     })
-    expect(new SqliteToolIndex(table).get('mcp_gh_list_prs')).toEqual(rows[0])
+  })
+
+  it('ranks an exact tool-name match above a row that only repeats the terms in its description', () => {
+    const index = new MetadataToolIndex(new MemNamespace())
+    index.upsert([
+      { name: 'ui_render', description: 'Render a bounded surface', schema: '{}' },
+      { name: 'render_card', description: 'ui_render render detail card UI', schema: '{}' },
+    ])
+    expect(index.search('UI_RENDER render detail card UI', 1).map((hit) => hit.name)).toEqual(['ui_render'])
+    // Without an exact name term the description-heavy row wins on plain substring score.
+    expect(index.search('render detail card', 2).map((hit) => hit.name)).toEqual(['render_card', 'ui_render'])
   })
 
   it('delete removes exactly the named rows and leaves the rest untouched', () => {
-    const table = new MemTable('tool_index')
-    const index = new SqliteToolIndex(table)
+    const index = new MetadataToolIndex(new MemNamespace())
     index.upsert(rows)
     index.delete(['mcp_gh_list_prs'])
     expect(index.get('mcp_gh_list_prs')).toBeUndefined()
@@ -81,51 +88,6 @@ describe('SqliteToolIndex', () => {
     // A name the index never held is a no-op, not an error.
     index.delete(['never-existed'])
     expect(index.get('mcp_gh_merge')).toEqual(rows[1])
-  })
-
-  it('executes real FTS5 term queries with canonical ranking and preserves two-character Chinese search', () => {
-    const db = new DatabaseSync(':memory:')
-    const table = {
-      name: 'tool_index',
-      exec: (sql: string) => db.exec(sql),
-      run: (sql: string, params: readonly unknown[] = []) => ({
-        changes: Number(db.prepare(sql).run(...(params as never[])).changes),
-      }),
-      all: <T>(sql: string, params: readonly unknown[] = []) =>
-        db.prepare(sql).all(...(params as never[])) as T[],
-      get: <T>(sql: string, params: readonly unknown[] = []) =>
-        db.prepare(sql).get(...(params as never[])) as T | undefined,
-      transaction: <T>(fn: () => T) => {
-        db.exec('BEGIN')
-        try {
-          const value = fn()
-          db.exec('COMMIT')
-          return value
-        } catch (error) {
-          db.exec('ROLLBACK')
-          throw error
-        }
-      },
-    }
-    try {
-      const index = new SqliteToolIndex(table)
-      expect(index.mode).toBe('fts5')
-      index.upsert([...rows, { name: 'mcp_pull_exact', description: 'miscellaneous action', schema: '{}' }])
-      expect(index.search('pull', 5).map((hit) => hit.name)).toEqual([
-        'mcp_pull_exact',
-        'mcp_gh_list_prs',
-        'mcp_gh_merge',
-      ])
-      expect(index.search('销售', 5)).toEqual([{ name: 'mcp_db_query', score: 1 }])
-      index.upsert([
-        { name: 'ui_render', description: 'Render a surface', schema: '{}' },
-        { name: 'render_card', description: 'ui_render render detail card UI', schema: '{}' },
-      ])
-      for (const query of ['ui_render render detail card UI', 'ui_render render detail card'])
-        expect(index.search(query, 1).map((hit) => hit.name)).toEqual(['ui_render'])
-    } finally {
-      db.close()
-    }
   })
 })
 

@@ -165,7 +165,7 @@ it('scaffolds complete inert text through the host rather than reading virtual a
       expect(input.files.some((file) => file.path === 'index.mjs')).toBe(false)
       continue
     }
-    expect(pkg.agnes.plugins[0].apiRange).toBe('^4.0.0')
+    expect(pkg.agnes.plugins[0].apiRange).toBe('^5.0.0')
     if (template === 'tool-with-panel') {
       const descriptor = JSON.parse(
         input.files.find((file) => file.path === 'client/agnes.client.json')!.content,

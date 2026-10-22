@@ -1,5 +1,5 @@
 import { isMcpServerRowId, mcpPublicToolName, mcpStablePrefix } from '@agnes/base'
-import { MemTable } from '@agnes/base/testkit'
+import { MemNamespace, MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import * as workerResources from '@agnes/resource-control-worker'
 import { describe, expect, it, vi } from 'vitest'
@@ -146,9 +146,10 @@ describe('mcpServerRowsFromDefinitions', () => {
       ctx: { log: { debug() {}, info() {}, warn() {}, error() {} } },
     }
     const table = new MemTable('tool_index')
+    const ns = new MemNamespace()
     const fakeCtx = {
       signal: new AbortController().signal,
-      adapters: { storage: { table: () => table } },
+      adapters: { storage: { table: () => table, namespace: () => ns } },
       secrets: () => '',
       profile: {},
       log: { debug() {}, info() {}, warn() {}, error() {} },
@@ -215,9 +216,10 @@ it('reconstructs a cold generation MCP factory from SecretRefs and refuses unkno
     const cold = await restore(structuredClone(row.generation))
     const log = { debug() {}, info() {}, warn() {}, error() {} }
     const table = new MemTable('tool_index')
+    const ns = new MemNamespace()
     const factory = await cold.factory({
       signal: new AbortController().signal,
-      adapters: { storage: { table: () => table } },
+      adapters: { storage: { table: () => table, namespace: () => ns } },
       profile: {},
       log,
     } as never)

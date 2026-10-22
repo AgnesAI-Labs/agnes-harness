@@ -1,6 +1,6 @@
 {
   "name": "@agnes/jev-loop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Agent loop in which TypeSafe Jev chooses each step",
   "type": "module",
   "license": "Apache-2.0",
@@ -23,7 +23,7 @@
           "providers"
         ],
         "runtime": "in-process",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "configReload": "next-session",
         "configSchema": {
           "type": "object",
@@ -163,7 +163,7 @@
       "loop"
     ],
     "hostProvidedExternals": {
-      "@agnes/extension-api": "^4.0.0"
+      "@agnes/extension-api": "^5.0.0"
     }
   }
 }

@@ -714,10 +714,6 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
     }
   }
 
-  async lookupWorkspaceByPath(path: string): Promise<PlannedWorkspace | null> {
-    return [...this.workspaces.values()].find((row) => row.path === path) ?? null
-  }
-
   async reserve(req: ReserveRequest): Promise<ReserveResult> {
     this.assertWritableFormat()
     if (req.qMicro < 0n) return { ok: false, reason: 'invalid', message: 'reservation is negative' }

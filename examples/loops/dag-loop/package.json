@@ -1,6 +1,6 @@
 {
   "name": "@agnes-example/dag-loop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "license": "Apache-2.0",
   "exports": "./index.mjs",
@@ -13,7 +13,7 @@
       {
         "id": "ext:example-dag",
         "export": "plugin",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "default": true,
         "inject": [
           "providers"

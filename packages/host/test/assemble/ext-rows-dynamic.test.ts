@@ -97,7 +97,7 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
           manifest: {
             id,
             version: '0.1.0',
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             entry: './index.mjs',
             capabilities: {},
           },
@@ -116,6 +116,7 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
       expect(context).toBeDefined()
       for (const field of [
         'sessionTasks',
+        'childControl',
         'searchProvider',
         'trustedHookCommands',
         'skillDiscovery',

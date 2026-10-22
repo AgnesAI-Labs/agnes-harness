@@ -44,7 +44,7 @@ function writeVersion(version: string, engine: string): void {
       exports: './index.mjs',
       agnes: {
         plugins: [
-          { apiRange: '^4.0.0', export: 'runtime', id: 'ext:acme/runtime-snapshot', runtime: 'in-process' },
+          { apiRange: '^5.0.0', export: 'runtime', id: 'ext:acme/runtime-snapshot', runtime: 'in-process' },
         ],
       },
     }),

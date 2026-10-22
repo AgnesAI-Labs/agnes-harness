@@ -12,7 +12,7 @@ export type LedgerSession = {
   title: string
   createdAt: string
   parentId: string | null
-  principals: string[]
+  principal: string | null
 }
 
 export type LedgerEvent = {
@@ -252,7 +252,7 @@ export function readLedgerDirectory(dataDir: string): HistoryCorpus {
         title,
         createdAt: parent?.createdAt || firstTs.get(sessionId) || '',
         parentId: parent?.parentId ?? null,
-        principals: principal ? [principal] : [],
+        principal: principal ?? null,
       })
     }
     return { stamp, sessions, events }

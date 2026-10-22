@@ -6,7 +6,14 @@ import type {
   SandboxSeam,
   Verdict,
 } from '@agnes/core'
-import type { FsEntry, FsStat, Logger, PersistenceMetadataNamespace, SessionRef } from '@agnes/extension-api'
+import type {
+  ChildControlStore,
+  FsEntry,
+  FsStat,
+  Logger,
+  PersistenceMetadataNamespace,
+  SessionRef,
+} from '@agnes/extension-api'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
 import type { EgressGate } from '../extensions/privacy/src/index.js'
@@ -112,9 +119,8 @@ export type SeamAdaptersView = {
   platform: PlatformSeam
   storage: {
     table(name: string): TableHandle
-    /** Owner-scoped metadata. Optional only for legacy seam embedders. */
-    namespace?(name: string): PersistenceMetadataNamespace
-    sql?: { table(name: string): TableHandle }
+    /** Owner-scoped metadata. */
+    namespace(name: string): PersistenceMetadataNamespace
   }
   prompter?: Prompter
 }
@@ -150,6 +156,12 @@ export interface SessionTasks {
     signal: AbortSignal,
   ): Promise<string | undefined>
 }
+
+/** The two primary-key child-control calls a subagent worktree binding needs, and nothing else. */
+export type ChildWorktreePort = Readonly<{
+  lookupByKey: ChildControlStore['lookupByKey']
+  updateWorkspace: NonNullable<ChildControlStore['updateWorkspace']>
+}>
 
 export type SeamInitContext = {
   sessionTasks?: SessionTasks
@@ -194,6 +206,11 @@ export type SeamInitContext = {
   /** Supplied only to the exact trusted computer-use extension after platform driver admission. */
   computerUseBackendProvider?: ComputerUseBackendProvider
   computerUseOptions?: ComputerUseToolOptions
+  /** Host-owned child-control port, supplied to every `@agnes/base`-owned context. Base strips it
+   *  from every factory mounted through its `ecosystem` map except agnes/subagent (see
+   *  `mountEcosystem`). The MCP server row context and the isolated hooks-runner preparation are
+   *  Base-owned contexts that receive it unnarrowed and do not read it. */
+  childControl?: ChildWorktreePort
   /** Present only after seam assembly; ecosystem extensions must not substitute adapters.exec. */
   sandbox?: SandboxSeam
 }

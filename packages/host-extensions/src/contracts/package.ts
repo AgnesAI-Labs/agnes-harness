@@ -10,6 +10,7 @@ import type {
   WorkspaceHookSandbox,
 } from '@agnes/core'
 import type {
+  ChildControlStore,
   CompactionEngine,
   ExtensionManifest,
   HookInvocationSnapshot,
@@ -109,6 +110,11 @@ export type SeamInitContext = {
     maxBytesPerImage?: number
     maxCapturesPerHour?: number
     maxRecentPerSession?: number
+  }>
+  /** Primary-key child-control calls for subagent worktree binding, supplied only to `@agnes/base`. */
+  childControl?: Readonly<{
+    lookupByKey: ChildControlStore['lookupByKey']
+    updateWorkspace: NonNullable<ChildControlStore['updateWorkspace']>
   }>
   /** Available to ecosystem extensions after the seam phase, never a raw exec substitute. */
   sandbox?: SandboxSeam
