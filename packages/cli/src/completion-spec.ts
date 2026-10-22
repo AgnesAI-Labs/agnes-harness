@@ -10,7 +10,7 @@ export type Shell = (typeof SHELLS)[number]
  */
 export const SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
   app: ['clear', 'show', 'preview', 'adopt'],
-  approvals: ['grants', 'revoke'],
+  approvals: ['grants', 'revoke', 'suggest'],
   completion: [...SHELLS],
   'computer-use': ['status', 'install', 'restart', 'rescue', 'operation', 'cancel', 'permissions'],
   credentials: ['list', 'rename', 'delete'],
