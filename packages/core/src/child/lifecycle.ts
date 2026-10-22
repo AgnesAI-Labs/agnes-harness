@@ -1,12 +1,17 @@
+import { requireChildControl } from '@agnes/core-child-control/child/store'
+import { isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { CoreError } from '@agnes/core-common/types'
 import { sessionIdentity } from '../loop/scope.js'
 import type { SessionImpl } from '../step/session.js'
+import { stopChildAdmissions } from './stop-admissions.js'
 
 type Epoch = {
   controller: AbortController
   root: SessionImpl
   parent?: Epoch
   detach?: () => void
+  stopping?: Promise<void>
+  stopped?: boolean
 }
 
 const lifecycles = new WeakMap<object, Epoch>()
@@ -23,8 +28,11 @@ function epoch(session: SessionImpl): Epoch {
 }
 
 /** A live backend binding, separate from the child's immutable captured policy and durable ancestry. */
-export function bindChildLifecycle(child: SessionImpl, parent: SessionImpl): void {
+export async function bindChildLifecycle(child: SessionImpl, parent: SessionImpl): Promise<void> {
   child = sessionIdentity(child) as SessionImpl
+  const record = await requireChildControl(child.d.log.storage).lookupByKey(child.key)
+  if (!record || isTerminalChildState(record.state) || record.state === 'cancelling')
+    throw new CoreError('E_CLOSED', 'Child admission has terminated')
   const owner = epoch(parent)
   const value = epoch(child)
   if (value.parent) {
@@ -61,10 +69,21 @@ export function revokeChildLifecycle(session: SessionImpl): void {
   value.controller.abort('stopped')
 }
 
+/** Join the durable stop before releasing the owning writer or admitting a new lifecycle. */
+export function persistChildLifecycleStop(session: SessionImpl): Promise<void> {
+  const value = epoch(session)
+  value.stopping ??= stopChildAdmissions(session).then(() => {
+    value.stopped = true
+  })
+  return value.stopping
+}
+
 /** Explicit new work can renew its own epoch, never the epoch captured from a stopped ancestor. */
 export function renewChildLifecycle(session: SessionImpl): void {
   const value = epoch(session)
   if (session.closingOrClosed || value.parent?.controller.signal.aborted) return
+  if (value.stopping && !value.stopped)
+    throw new CoreError('E_CLOSED', 'Child lifecycle cancellation has not committed')
   if (value.controller.signal.aborted) {
     const next = { controller: new AbortController(), root: value.root }
     lifecycles.set(sessionIdentity(session), next)
