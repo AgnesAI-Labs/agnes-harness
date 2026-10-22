@@ -236,6 +236,10 @@ jobs:
       - run: pnpm run doctor:toolchain
       - run: pnpm --filter @agnes/cli build:runtime
       - run: pnpm --filter @agnes/daemon build:runtime
+      # This source-level Host test loads native seams outside the packaged extension runner.
+      - name: build source native module for assembly acceptance
+        if: runner.os == 'macOS'
+        run: pnpm --filter @agnes/system-node build:native
       - name: exercise opt-in assembly with packaged runtime
         if: runner.os == 'macOS'
         run: pnpm exec vitest run packages/host/test/assemble/enabled-packages.test.ts

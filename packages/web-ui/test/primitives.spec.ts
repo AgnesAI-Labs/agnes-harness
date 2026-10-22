@@ -2,12 +2,18 @@ import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import AxeBuilder from '@axe-core/playwright'
-import { expect, type Page, test } from '@playwright/test'
+import { expect, type Locator, type Page, test } from '@playwright/test'
 import { build } from 'esbuild'
 import { inCssLayer, readWebStyleSource, readWebUiStyleSource } from '../../../tools/web-style-source.mjs'
 import { tabsAria } from '../../../tools/web-tabs-aria.mjs'
 
 const root = resolve(import.meta.dirname, '../../..')
+async function keyboardFocus(page: Page, target: Locator) {
+  await target.focus()
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('Shift+Tab')
+  await expect(target).toBeFocused()
+}
 async function settled(page: Page) {
   await expect
     .poll(() =>
@@ -256,7 +262,7 @@ test('native drawer is modal, closes on Escape and restores focus', async ({ pag
   await dialog.getByRole('menuitem', { name: 'Show notification', exact: true }).click()
   const notice = dialog.getByRole('status').filter({ hasText: 'Nested notification' })
   await expect(notice).toBeVisible()
-  await dialog.getByRole('button', { name: 'Explain nested action', exact: true }).focus()
+  await keyboardFocus(page, dialog.getByRole('button', { name: 'Explain nested action', exact: true }))
   await expect(dialog.getByRole('tooltip').filter({ hasText: 'Explain nested action' })).toBeVisible()
   await settled(page)
   const scan = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze()
@@ -264,6 +270,7 @@ test('native drawer is modal, closes on Escape and restores focus', async ({ pag
   // Open the menu again while the notification remains in the same modal scope.
   await menu.focus()
   await menu.click()
+  await expect(dialog.getByRole('menuitem', { name: 'Show notification', exact: true })).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(notice).toBeVisible()
   await expect(dialog).toBeVisible()
@@ -313,22 +320,25 @@ test('narrow icon hit area, focus tooltip and draggable bottom sheet', async ({ 
   const icon = page.getByRole('button', { name: 'Refresh', exact: true })
   await expect(icon).toHaveCSS('width', '28px')
   await expect(icon).toHaveCSS('height', '28px')
-  await icon.focus()
-  await expect(page.getByRole('tooltip')).toHaveText('Refresh')
-  await expect(page.getByRole('tooltip')).toHaveCSS('pointer-events', 'none')
+  await keyboardFocus(page, icon)
+  await expect(page.getByRole('tooltip', { name: 'Refresh', exact: true })).toHaveText('Refresh')
+  await expect(page.getByRole('tooltip', { name: 'Refresh', exact: true })).toHaveCSS(
+    'pointer-events',
+    'none',
+  )
   for (const width of [375, 390]) {
     await page.setViewportSize({ width, height: 844 })
     for (const edge of ['left', 'right'] as const) {
       await icon.blur()
-      await expect(page.getByRole('tooltip')).toBeHidden()
+      await expect(page.getByRole('tooltip', { name: 'Refresh', exact: true })).toBeHidden()
       await icon.evaluate((node, edge) => {
         const anchor = node.closest<HTMLElement>('.agh-tooltip-anchor')!
         anchor.style.cssText = `position:fixed;top:12px;${edge}:4px`
       }, edge)
-      await icon.focus()
-      await expect(page.getByRole('tooltip')).toBeVisible()
+      await keyboardFocus(page, icon)
+      await expect(page.getByRole('tooltip', { name: 'Refresh', exact: true })).toBeVisible()
       await settled(page)
-      const bounds = await page.getByRole('tooltip').boundingBox()
+      const bounds = await page.getByRole('tooltip', { name: 'Refresh', exact: true }).boundingBox()
       if (!bounds) throw new Error('The focused icon must show its explanation')
       expect(bounds.x).toBeGreaterThanOrEqual(-1)
       expect(bounds.x + bounds.width).toBeLessThanOrEqual(width + 1)
@@ -476,11 +486,14 @@ for (const theme of ['light', 'dark'])
       }
       for (const selector of ['.workspace-name', '.session-title']) {
         expect(
-          await page.locator(selector).evaluate((node) => ({
-            ellipsis: getComputedStyle(node).textOverflow,
-            nowrap: getComputedStyle(node).whiteSpace,
-            clipped: node.scrollWidth > node.clientWidth,
-          })),
+          await page.locator(selector).evaluate((node) => {
+            const label = node.querySelector('.navigation-label-start') ?? node
+            return {
+              ellipsis: getComputedStyle(label).textOverflow,
+              nowrap: getComputedStyle(label).whiteSpace,
+              clipped: label.scrollWidth > label.clientWidth,
+            }
+          }),
         ).toEqual({ ellipsis: 'ellipsis', nowrap: 'nowrap', clipped: true })
       }
     })
