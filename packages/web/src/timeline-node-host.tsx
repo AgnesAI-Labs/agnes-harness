@@ -29,7 +29,17 @@ export interface TimelineNodeHostProps {
 
 /** The transcript root is the sole owner of every node article and history control. */
 export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostProps>(function TimelineNodeHost(
-  { registry, claim, newContentButton, session, locale, resources, onFork, turnErrorActions, markdownRenderer },
+  {
+    registry,
+    claim,
+    newContentButton,
+    session,
+    locale,
+    resources,
+    onFork,
+    turnErrorActions,
+    markdownRenderer,
+  },
   ref,
 ) {
   const content = useRef<HTMLDivElement>(null)
