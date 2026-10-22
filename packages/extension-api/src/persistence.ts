@@ -211,10 +211,13 @@ export interface PersistenceIntegrityPort {
     key: string,
     query: { fromSeq: number; toSeq: number; limit: number },
   ): Promise<PersistenceIntegrityRow[]>
-  /** Optional verified-head optimization. Without it Core verifies the complete history in the foreground. */
+  /** Optional verified-head optimization. Without it Core checks the tail on open and hashes the prefix in the background. */
   readVerifiedHead?(key: string): Promise<PersistenceVerifiedHead | undefined>
   writeVerifiedHead?(head: PersistenceVerifiedHead, options?: { force?: boolean }): Promise<void>
   deleteVerifiedHead?(key: string): Promise<void>
+  /** Proven corruption is retained across reload; absence never asserts verification. */
+  readIntegrityFailure?(key: string): Promise<{ seq?: number } | undefined>
+  writeIntegrityFailure?(key: string, failure: { seq?: number }): Promise<void>
   integrityDigestAt?(key: string, seq: number): Promise<string | null | undefined>
   ledgerStats?(key: string): Promise<{ storedBytes: number; maxRowBytes: number }>
 }

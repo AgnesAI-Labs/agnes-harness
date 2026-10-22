@@ -129,7 +129,8 @@ it.each([
 
 it('keeps startup failures closed while sharing their codes with the public contract', async () => {
   const { workerBootFailureCode } = await import('../src/boot-failure.js')
-  expect(workerBootFailureCode('E_SEAM_INIT')).toBe('E_SEAM_INIT')
+  for (const code of ['E_SEAM_INIT', 'E_SECRET_UNRESOLVED', 'E_PACKAGE_INTEGRITY'])
+    expect(workerBootFailureCode(code)).toBe(code)
   expect(workerBootFailureCode('E_BUDGET')).toBeUndefined()
   expect(workerBootFailureCode('UNKNOWN_DENIED')).toBeUndefined()
 })

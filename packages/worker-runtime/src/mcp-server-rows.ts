@@ -6,9 +6,11 @@ import {
   mcpCatalogHubFor,
   mcpServerConfigFromDefinition,
   mcpServerExtension,
+  mcpServerExtensionId,
   mcpStablePrefix,
 } from '@agnes/base'
 import type { DynamicExtension } from '@agnes/host'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import {
   type DesiredState,
@@ -39,18 +41,6 @@ export type McpServerRowsResult = Readonly<{
   skipped: readonly Readonly<{ serverId: string; reason: string }>[]
 }>
 
-const SLUG_MAX = 40
-/** `ext:agnes/mcp-<slug>-<hash8>` (design doc §3.1). `slug` is cosmetic (a human can recognize which
- * server a row is), `hash8` is what actually disambiguates -- two servers whose ids collide only
- * after slugging still get distinct rows, and slugging is otherwise lossy (case, most punctuation). */
-function slugOf(serverId: string): string {
-  const slug = serverId
-    .toLocaleLowerCase()
-    .replace(/[^a-z0-9-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, SLUG_MAX)
-  return slug || 'server'
-}
 function hash8(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex').slice(0, 8)
 }
@@ -117,14 +107,14 @@ export function mcpServerRowsFromDefinitions(
       skipped.push({ serverId, reason: 'oauth secretBinding is not supported (D105/D109)' })
       continue
     }
-    const extensionId = `agnes/mcp-${slugOf(definition.serverId)}-${hash8(definition.serverId)}`
+    const extensionId = mcpServerExtensionId(definition.serverId)
     const cfg = mcpServerConfigFromDefinition(definition)
     rows.push(
       Object.freeze({
         generation: { kind: 'mcp-server', data: entry as unknown as import('@agnes/protocol').JsonValue },
         spec: Object.freeze({
           id: extensionId,
-          package: '@agnes/base',
+          package: RELEASE_DEFAULTS.extensionOwner,
           packageVersion: '0.0.0',
           dir: '',
           trust: 'builtin' as const,

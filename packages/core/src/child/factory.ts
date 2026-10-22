@@ -369,7 +369,6 @@ export class KernelChildren implements ChildrenFactory {
     let handle: ChildHandle | undefined
     let workspace: ChildWorkspaceLifecycle | undefined
     try {
-      while (!parent.d.log.historyVerified) await parent.d.log.fullVerified()
       const historyCheck = parent.d.log.forkCheck()
       const checkParent = () => {
         historyCheck()

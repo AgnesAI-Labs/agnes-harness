@@ -12,7 +12,7 @@ import {
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { hasPrivateDaclSync } from '@agnes/system-node'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { isHostError } from '../src/errors.js'
 import { initializeHome, initializeHomeLocked } from '../src/home-initialize.js'
 import { homeLayout, inspectHome } from '../src/home-layout.js'
@@ -80,20 +80,24 @@ describe('agnesHome', () => {
     expect(agnesHome({ AGH_HOME: resolve('/srv/agh'), HOME: '/ignored' })).toBe(resolve('/srv/agh'))
   })
 
-  it('still honours the legacy AGNES_HOME when AGH_HOME is unset', () => {
-    expect(agnesHome({ AGNES_HOME: resolve('/srv/agnes'), HOME: '/ignored' })).toBe(resolve('/srv/agnes'))
-  })
-
-  it('prefers AGH_HOME over AGNES_HOME when both are set', () => {
-    expect(agnesHome({ AGH_HOME: resolve('/srv/agh'), AGNES_HOME: resolve('/srv/agnes') })).toBe(
-      resolve('/srv/agh'),
+  it.each([
+    { AGNES_HOME: resolve('/srv/agnes') },
+    { AGNES_HOME: 'relative/agnes' },
+    { AGH_HOME: resolve('/srv/agh'), AGNES_HOME: resolve('/srv/agnes') },
+  ])('refuses retired AGNES_HOME instead of silently selecting a home: %j', (env) => {
+    expect(() => agnesHome(env)).toThrow(
+      expect.objectContaining({
+        code: 'E_HOME_INVALID',
+        detail: { variable: 'AGNES_HOME', reason: 'clean-home-required' },
+      }),
     )
+    expect(() => agnesHome(env)).toThrow('AGNES_HOME is no longer supported')
   })
 
   // The regression this module exists to make impossible to reintroduce silently: a relative
   // home used to resolve against whatever the process's cwd happened to be, so a daemon and a
   // one-shot CLI invocation with different working directories would quietly pick different homes.
-  it.each(['AGH_HOME', 'AGNES_HOME'])('refuses a relative %s and names that variable', (variable) => {
+  it.each(['AGH_HOME'])('refuses a relative %s and names that variable', (variable) => {
     const e = (() => {
       try {
         agnesHome({ [variable]: 'relative/agnes' })
@@ -112,48 +116,6 @@ describe('agnesHome', () => {
       expect(() => agnesHome({ AGH_HOME: bad }), bad).toThrow(/E_HOME_INVALID/)
       expect(() => agnesHome({ AGNES_HOME: bad }), bad).toThrow(/E_HOME_INVALID/)
     }
-  })
-})
-
-describe('the AGNES_HOME deprecation notice', () => {
-  // The notice is once per process, so each case loads its own copy of the module; the copy imported
-  // at the top of this file has already seen AGNES_HOME in the cases above.
-  const freshAgnesHome = async () => {
-    vi.resetModules()
-    return (await import('../src/paths.js')).agnesHome
-  }
-  const spyWarnings = () => vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined)
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('is emitted exactly once per process when the legacy AGNES_HOME is the one in use', async () => {
-    const warnings = spyWarnings()
-    const fresh = await freshAgnesHome()
-    const legacy = resolve('/srv/legacy')
-    expect(fresh({ AGNES_HOME: legacy })).toBe(legacy)
-    expect(fresh({ AGNES_HOME: legacy })).toBe(legacy)
-    expect(warnings).toHaveBeenCalledTimes(1)
-    expect(String(warnings.mock.calls[0]?.[0])).toMatch(/AGNES_HOME is deprecated; set AGH_HOME instead/)
-    expect(warnings.mock.calls[0]?.[1]).toMatchObject({
-      type: 'DeprecationWarning',
-      code: 'AGH_DEP_AGNES_HOME',
-    })
-  })
-
-  it('is not emitted when AGH_HOME is set, even alongside AGNES_HOME, nor when neither is set', async () => {
-    const warnings = spyWarnings()
-    const fresh = await freshAgnesHome()
-    fresh({ AGH_HOME: resolve('/srv/agh'), AGNES_HOME: resolve('/srv/legacy') })
-    fresh({ HOME: scratch() })
-    expect(warnings).not.toHaveBeenCalled()
-  })
-
-  it('is not emitted for an AGNES_HOME that is refused', async () => {
-    const warnings = spyWarnings()
-    const fresh = await freshAgnesHome()
-    expect(() => fresh({ AGNES_HOME: 'relative' })).toThrow(/E_HOME_INVALID/)
-    expect(warnings).not.toHaveBeenCalled()
   })
 })
 

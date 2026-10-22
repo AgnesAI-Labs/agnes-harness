@@ -28,6 +28,7 @@ function installDom(): void {
   fixtureWindow = new Window()
   vi.stubGlobal('window', fixtureWindow)
   vi.stubGlobal('document', fixtureWindow.document)
+  fixtureWindow.document.documentElement.lang = 'zh-CN'
   vi.stubGlobal('getComputedStyle', fixtureWindow.getComputedStyle.bind(fixtureWindow))
   fixtureWindow.document.body.innerHTML = '<dialog id="config"></dialog>'
   disposeMarkup = renderSettingsMarkup(
@@ -413,23 +414,17 @@ describe('settings controller', () => {
   })
 
   it.each([
+    ['CONFIG_CREDENTIAL_PERMISSIONS', '无法保存凭据。 请检查存储权限。'],
     [
       'CONFIG_CREDENTIAL_PERMISSIONS',
-      '凭据存储权限不符合要求。请确认 AGH_HOME 及 secrets/auth 目录属于当前用户，目录权限为 0700、文件权限为 0600；具体路径见 data/audit/configuration.jsonl。',
-    ],
-    [
-      'CONFIG_CREDENTIAL_PERMISSIONS',
-      '凭据存储权限不符合要求。请确认 AGH_HOME 及 secrets/auth 目录属于当前用户，目录权限为 0700、文件权限为 0600；具体路径见 data/audit/configuration.jsonl。 · 凭据锁目录 · 当前权限: 0644 · 所需权限: 0600',
+      '无法保存凭据。 请检查存储权限。',
       { part: 'locks', check: 'mode', mode: '0644', expectedMode: '0600', path: '/private/do-not-render' },
     ],
-    ['CONFIG_CREDENTIAL_READ_ONLY', '凭据存储位于只读文件系统。请将 AGH_HOME 移至可写的本地目录并重启。'],
-    [
-      'CONFIG_CREDENTIAL_INVALID',
-      '凭据存储存在不安全路径或无效数据。请检查 data/audit/configuration.jsonl，恢复私有的普通目录和文件。',
-    ],
-    ['CONFIG_CREDENTIAL_NO_SPACE', '凭据存储所在磁盘空间不足。请释放 AGH_HOME 所在磁盘的空间后重试。'],
-    ['CONFIG_REVISION_CONFLICT', '配置已被其他客户端修改，请重新打开设置后再试。'],
-    ['CONFIG_CREDENTIAL_REJECTED', '服务商拒绝了 API key 或其访问权限。请检查密钥与账号权限后重试。'],
+    ['CONFIG_CREDENTIAL_READ_ONLY', '无法保存凭据。 请检查存储权限。'],
+    ['CONFIG_CREDENTIAL_INVALID', '无法保存凭据。 请检查存储权限。'],
+    ['CONFIG_CREDENTIAL_NO_SPACE', '无法保存凭据。 请检查存储权限。'],
+    ['CONFIG_REVISION_CONFLICT', '资源已变更。 请重新载入最新状态后重试。'],
+    ['CONFIG_CREDENTIAL_REJECTED', '凭据被拒绝。 请检查后重试。'],
   ])(
     'translates %s into an actionable settings error',
     async (reason, message, metadata: Record<string, unknown> = {}) => {
@@ -455,6 +450,7 @@ describe('settings controller', () => {
       const reported = onError.mock.calls[0]?.[0]
       expect(reported).toBeInstanceOf(Error)
       expect((reported as Error).message).toBe(message)
+      expect(node('config-error').textContent).not.toContain('/private/do-not-render')
     },
   )
 

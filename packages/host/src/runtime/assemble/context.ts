@@ -1,4 +1,4 @@
-import type { Kernel, SeamImplementations } from '@agnes/core'
+import type { Kernel } from '@agnes/core'
 import { ProviderError } from '@agnes/extension-api'
 import { HostError, type HostErrorCode } from '@agnes/host-common/errors'
 import { withAssemblyIsolation } from '@agnes/host-common/profile/isolation'
@@ -16,6 +16,7 @@ import {
   readProviderSelections,
 } from '@agnes/host-providers/assemble/provider-selection'
 import { RuntimeMutationGate } from '@agnes/host-providers/runtime-mutation-gate'
+import { PackageError } from '@agnes/package-manager'
 import { Rollback } from '../lifecycle/lifecycle.js'
 import type { Assembled } from './assembled.js'
 import type { AssembleDeps } from './assembly-deps.js'
@@ -150,14 +151,22 @@ export async function failAssembly(ctx: AssemblyContext, error: unknown): Promis
   const err =
     error instanceof HostError
       ? error
-      : new HostError('E_SEAM_INIT', msg, {
-          detail: {
-            step: ctx.step,
-            ...(error instanceof ProviderError
-              ? { reason: error.code.slice(2).toLowerCase().replaceAll('_', '-') }
-              : {}),
-          },
-        })
+      : error instanceof PackageError &&
+          error.code === 'E_PACKAGE_INTEGRITY' &&
+          error.detail.reason === 'clean-home-required'
+        ? new PackageError(
+            'E_LOCK_MISMATCH',
+            'Retired package format; select a new, empty AGH_HOME (clean home).',
+            { detail: { reason: 'clean-home-required' } },
+          )
+        : new HostError('E_SEAM_INIT', msg, {
+            detail: {
+              step: ctx.step,
+              ...(error instanceof ProviderError
+                ? { reason: error.code.slice(2).toLowerCase().replaceAll('_', '-') }
+                : {}),
+            },
+          })
   ctx.say('startup.failed', { step: ctx.step, code: err.code, message: err.message, rollbackFailed: failed })
   throw err
 }

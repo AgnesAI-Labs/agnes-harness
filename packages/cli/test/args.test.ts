@@ -70,6 +70,8 @@ describe('parseArgs: the common forms', () => {
       repair: false,
       upgrade: false,
       resolved: false,
+      archived: false,
+      force: false,
       probe: false,
     })
   })

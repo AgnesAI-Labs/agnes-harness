@@ -79,7 +79,8 @@ async function permissionFixture(dataDir: string): Promise<Partial<TestHostOptio
       ctx.tools.register({
         name: 'permission_probe',
         description: 'Plain permission test tool',
-        parameters: ConfigEmptyParams,
+        // The probe has no arguments; the RPC import also carries hundreds of unrelated $defs.
+        parameters: ConfigEmptyParams.$defs.ConfigEmptyParams,
         meta: {
           isReadOnly: false,
           isDestructive: true,

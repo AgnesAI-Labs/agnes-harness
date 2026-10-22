@@ -31,6 +31,19 @@ function isModelResponseFact(value: unknown): value is ModelResponseFact {
   )
 }
 
+/** A review receipt must agree with the policy result it records. */
+function validateReview(permission: ToolPolicyDecision): void {
+  if (!permission.review) return
+  if (
+    !validateAgainst(ToolReviewFact, permission.review).ok ||
+    !(permission.allowedBy === 'command-policy' && permission.effect === 'allow'
+      ? permission.review.decision !== 'deny'
+      : permission.effect ===
+        (permission.review.decision === 'escalate' ? 'ask' : permission.review.decision))
+  )
+    throw new Error('Invalid policy review fact')
+}
+
 const counters = new WeakMap<object, number>()
 /** Generic policy execution. Policy algorithms and review consistency belong to plugins. */
 export async function decideToolPolicy(
@@ -226,14 +239,8 @@ export async function decideToolPolicy(
       },
     )
   if (permission.review) {
-    if (
-      !validateAgainst(ToolReviewFact, permission.review).ok ||
-      !(permission.allowedBy === 'command-policy' && permission.effect === 'allow'
-        ? permission.review.decision !== 'deny'
-        : permission.effect ===
-          (permission.review.decision === 'escalate' ? 'ask' : permission.review.decision))
-    )
-      throw new Error('Invalid policy review fact')
+    await s.requireVerifiedHistory()
+    validateReview(permission)
     await s.transition(
       [
         s.ev(

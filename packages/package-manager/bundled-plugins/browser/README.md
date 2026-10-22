@@ -19,7 +19,7 @@ manually removing only the named lock and retrying. Lock age never permits takeo
 Legacy browser.enabled values are ignored, while an explicit package disable remains
 disabled across restart.
 
-Use the Browser workbench panel or ask AGH to open an http(s) URL. Start local
+Use the Browser panel or ask AGH to open an http(s) URL, workspace path or file URL. Start local
 projects with the existing shell/Jobs tools first. A URL's localhost belongs to the
 AGH backend machine, which may differ from the machine displaying WebUI.
 
@@ -46,8 +46,9 @@ sent to a website. Browser shutdown does not stop project Jobs. Closing the pane
 
 ## Fallback and existing conversations
 
-When off, browser GUI tasks prefer existing computer_use **if configured and
-authorized**. The plugin does not enable the Computer Use driver or grant OS
+The model chooses tools according to the task, availability and permissions. Explicit user
+browser/tool requests take precedence; unavailable specified tools are reported rather than
+silently substituted. Existing computer_use is an option **if configured and authorized**. The plugin does not enable the Computer Use driver or grant OS
 permissions. Explicit requests for a personal browser/window/login or native app
 continue to use the appropriate external tools. The two browsers do not share
 cookies, login or unsent form state.
@@ -66,7 +67,8 @@ before claiming a release tested there; archive availability is not a runtime te
 The dedicated browser uses Chromium sandboxing and an allowlist of environment
 variables, has no personal browser profile, and exposes no CDP endpoint to WebUI.
 Service workers, automatic downloads, raw evaluate, arbitrary executable paths,
-file URLs and browser extensions are not exposed. Known AGH management targets
+unrestricted file access and user browser extensions are not exposed. The pinned built-in
+PDF viewer and its internal static assets are admitted for PDF documents only. Known AGH management targets
 and metadata endpoints are blocked. Application routing is not an OS-level egress
 sandbox; this is a trusted local development browser, not a VM for hostile code.
 
@@ -92,3 +94,19 @@ their CSP. Office files retain the existing download/local application workflow.
 The normal CLI build performs runtime preparation. An independently packed copy
 must also contain the prepared dist runtime; packing does not execute install scripts.
 The plugin never installs an npm @latest package on a user's machine.
+
+## Authorized file previews and display quality
+
+Workspace paths and file URLs open through tab-owned authenticated loopback resources.
+The default asset root is the file directory; `previewRoot` can select a wider directory
+inside the workspace. Every bounded byte read reacquires current session authority.
+Private paths and aliases are denied. HTTP byte ranges stream large media without
+whole-file buffering; close/disable releases the owned listeners. Chromium chooses
+rendering from native content types; unsupported downloads are reported. Same-origin/CORS-authorized HTML media sound shares the admitted display channel,
+starts after a local user gesture and stops on navigation, disconnect or panel closure.
+No desktop audio is captured.
+
+The logical viewport remains 1280x800, with 2x raster density. Live frames target
+up to 60 fps and adapt detail within the existing media budget. Idle PNG frames
+preserve text edges; oversized images fall back to bounded JPEG. Input retains
+CSS coordinates. Manual tab selection does not follow model activity.

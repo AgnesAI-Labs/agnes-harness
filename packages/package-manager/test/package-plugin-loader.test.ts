@@ -9,12 +9,14 @@ import {
   createPackageSnapshotVerifier,
   installedRuntimeSnapshotId,
   loadPackagePlugins,
+  preflightPackagePluginsAsync,
   runtimePluginDataSourcesFromInventory,
   runtimePluginSnapshotsFromInventory,
   runtimePluginSnapshotsFromPins,
 } from '../src/package-plugin-loader.js'
 import type { RuntimePin, RuntimeSnapshot } from '../src/runtime-snapshots.js'
 import { hashDirectory } from '../src/sources.js'
+import { withPackageVerification } from '../src/verification-operation.js'
 
 const roots: string[] = []
 
@@ -268,14 +270,25 @@ describe('package plugin loader', () => {
 
   it('rejects stale input and a package mutation during dynamic loading', async () => {
     const stale = packageSnapshot([{ apiRange: '^5.0.0', export: 'main' }])
-    writeFileSync(join(stale.directory, 'changed.txt'), 'changed')
+    await withPackageVerification(async () => {
+      const input = { snapshot: stale.snapshot, generation: 1 }
+      await preflightPackagePluginsAsync(input)
+      writeFileSync(join(stale.directory, 'changed.txt'), 'changed')
+      const importModule = vi.fn(async () => ({ main: () => {} }))
+      // An earlier descriptive preflight must never authorize importing modified bytes.
+      await expect(loadPackagePlugins({ ...input, importModule })).rejects.toMatchObject({
+        legacyCode: 'E_LOCK_MISMATCH',
+        detail: { reason: 'snapshot-stale' },
+      })
+      expect(importModule).not.toHaveBeenCalled()
+    })
+    // No completed read observation survives into the next independent query.
     await expect(
-      loadPackagePlugins({
-        snapshot: stale.snapshot,
-        generation: 1,
-        importModule: async () => ({ main: () => {} }),
-      }),
-    ).rejects.toMatchObject({ legacyCode: 'E_LOCK_MISMATCH', detail: { reason: 'snapshot-stale' } })
+      preflightPackagePluginsAsync({ snapshot: stale.snapshot, generation: 1 }),
+    ).rejects.toMatchObject({
+      legacyCode: 'E_LOCK_MISMATCH',
+      detail: { reason: 'snapshot-stale' },
+    })
 
     const changed = packageSnapshot([{ apiRange: '^5.0.0', export: 'main' }])
     await expect(

@@ -22,6 +22,11 @@ const docs: Record<string, PresetDoc> = Object.fromEntries(
   ),
 )
 docs['app-role'] = { name: 'app-role', extends: 'standard', approval: { command_policy: [] } }
+docs.confined = {
+  name: 'confined',
+  extends: 'standard',
+  sandbox: { level: 'L1', required: true, on_unavailable: 'deny' },
+}
 docs.default = { name: 'default', extends: 'standard' }
 const recipes = Object.keys(docs).filter((name) => !name.startsWith('permission-'))
 
@@ -199,23 +204,45 @@ describe('a session opens under a recipe and a permission, and keeps both', () =
     await host.close()
   })
 
-  it('keeps the level across a recipe switch and refuses a level change on a live session', async () => {
-    const { host, dataDir } = await open()
-    const session = await host.createSession({ cwd: dataDir, preset: 'ptc', permission: 'read-only' })
-    const next = host.validatePresetSwitch('standard', session.key)
-    expect(next.permission).toBe('read-only')
-    expect((next.doc.providers as { 'tool-policy': { provider: string } })['tool-policy'].provider).toBe(
-      'read-only',
-    )
-    expect(() => host.validatePresetSwitch('workspace-write', session.key)).toThrow(
-      'Retired permission-as-preset alias',
-    )
-    expect(() => host.validatePresetSwitch('full-access', session.key)).toThrow(
-      'Retired permission-as-preset alias',
-    )
-    await session.close()
-    await host.close()
-  })
+  it.each(['read-only', 'full-access'] as const)(
+    'keeps %s across a recipe switch and refuses a live level change through Host',
+    async (permission) => {
+      const { host, dataDir, options } = await open()
+      const session = await host.createSession({ cwd: dataDir, preset: 'ptc', permission })
+      const key = session.key
+      const next = host.validatePresetSwitch('standard', key)
+      expect(next.permission).toBe(permission)
+      expect((next.doc.providers as { 'tool-policy': { provider: string } })['tool-policy'].provider).toBe(
+        permission,
+      )
+      await host.setSessionPreset(key, 'standard')
+      const before = session.permissionContext
+      const seq = session.lastSeq
+      for (const target of ['workspace-write', permission === 'read-only' ? 'full-access' : 'read-only']) {
+        expect(() => host.validatePresetSwitch(target, key)).toThrow('Retired permission-as-preset alias')
+        await expect(host.setSessionPreset(key, target)).rejects.toThrow('Retired permission-as-preset alias')
+        expect(session.permissionContext).toEqual(before)
+        expect(session.preset).toMatchObject({ name: 'standard', permission })
+        expect(session.lastSeq).toBe(seq)
+      }
+      await expect(host.setSessionPreset(key, 'confined')).rejects.toMatchObject({
+        code: 'E_PRESET_UNSUPPORTED',
+        detail: { reason: 'workspace-sandbox-change' },
+      })
+      expect(session.permissionContext).toEqual(before)
+      expect(session.lastSeq).toBe(seq)
+      await session.close()
+      await host.close()
+      const reopenedHost = (await createTestHost(options)).host
+      try {
+        const reopened = await reopenedHost.createSession({ key, cwd: dataDir })
+        expect(reopened.preset).toMatchObject({ name: 'standard', permission })
+        expect(reopened.permissionContext.policy).toBe(permission)
+      } finally {
+        await reopenedHost.close()
+      }
+    },
+  )
 })
 
 describe('sessionSelection', () => {

@@ -272,7 +272,7 @@ describe('shared daemon scope', () => {
     expect(scope.dataDir).toBe(join(await canonicalPath(home), 'data'))
   })
 
-  it.each(['AGH_HOME', 'AGNES_HOME'])(
+  it.each(['AGH_HOME'])(
     'refuses a relative %s from the environment instead of resolving it against process.cwd()',
     async (variable) => {
       const workspace = await root('agnes-scope-relative-home-')
@@ -287,26 +287,30 @@ describe('shared daemon scope', () => {
     },
   )
 
-  it.each([
-    { set: 'only AGH_HOME', env: (a: string, _b: string) => ({ AGH_HOME: a }), winner: 'a' },
-    { set: 'only the legacy AGNES_HOME', env: (_a: string, b: string) => ({ AGNES_HOME: b }), winner: 'b' },
-    {
-      set: 'both set, where AGH_HOME wins',
-      env: (a: string, b: string) => ({ AGH_HOME: a, AGNES_HOME: b }),
-      winner: 'a',
-    },
-  ])('resolves the home from the environment with $set', async ({ env, winner }) => {
-    const a = await root('agh-scope-env-a-')
-    const b = await root('agh-scope-env-b-')
+  it('resolves the home from the current AGH_HOME setting', async () => {
+    const home = await root('agh-scope-env-')
     const workspace = await root('agh-scope-env-work-')
     const osHome = await root('agh-scope-env-os-')
     const scope = await resolveDaemonScope({
-      env: { ...env(a, b), HOME: osHome },
+      env: { AGH_HOME: home, HOME: osHome },
       workspace,
       profile: 'local-dev',
       dataDir: join(workspace, 'state'),
     })
-    expect(scope.home).toBe(await canonicalPath(winner === 'a' ? a : b))
+    expect(scope.home).toBe(await canonicalPath(home))
+  })
+
+  it.each([false, true])('refuses retired AGNES_HOME, including alongside AGH_HOME (%s)', async (current) => {
+    const workspace = await root('agh-scope-retired-home-')
+    await expect(
+      resolveDaemonScope({
+        env: { AGNES_HOME: 'relative/agnes', ...(current ? { AGH_HOME: workspace } : {}), HOME: workspace },
+        workspace,
+      }),
+    ).rejects.toMatchObject({
+      code: 'E_HOME_INVALID',
+      detail: { variable: 'AGNES_HOME', reason: 'clean-home-required' },
+    })
   })
 
   it('defaults the home to <HOME>/.agh when neither AGH_HOME nor AGNES_HOME is set', async () => {

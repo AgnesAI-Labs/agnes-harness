@@ -137,7 +137,6 @@ describe('createJitiPackageLoader', () => {
                 displayName: 'Legacy package',
                 summary: 'Synthetic fixture',
                 description: 'Persisted plugin-core row',
-                category: 'tools',
               },
             },
           ],

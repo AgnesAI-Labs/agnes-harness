@@ -9,8 +9,8 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 
 // Copy the production ESM unchanged; only the reviewed payload and engine are synthetic.
-async function fixture() {
-  const root = await mkdtemp(join(tmpdir(), 'agh-browser-install-'))
+async function fixture(packagedLock = true) {
+  const root = await mkdtemp(join(tmpdir(), 'agh-browser-install-中文 #%-'))
   const plugin = join(root, 'plugin')
   const key = process.platform + '-' + process.arch
   const info = { revision: 'fixture', executable: 'chromium', url: 'https://invalid.test/browser.zip' }
@@ -26,10 +26,16 @@ async function fixture() {
       join(plugin, 'src', name),
     )
   const require = createRequire(import.meta.url)
-  await copyFile(
-    require.resolve('@agnes/system-node/owner-lock'),
-    join(plugin, 'dist/runtime/owner-lock.mjs'),
-  )
+  const lockModule = packagedLock
+    ? join(plugin, 'dist/runtime/owner-lock.mjs')
+    : join(plugin, 'dist/runtime/playwright/node_modules/@agnes/system-node/owner-lock.mjs')
+  await mkdir(join(lockModule, '..'), { recursive: true })
+  if (!packagedLock)
+    await writeFile(
+      join(lockModule, '../package.json'),
+      JSON.stringify({ name: '@agnes/system-node', exports: { './owner-lock': './owner-lock.mjs' } }),
+    )
+  await copyFile(require.resolve('@agnes/system-node/owner-lock'), lockModule)
   const engine = join(plugin, 'dist/runtime/playwright/node_modules/playwright-core')
   await mkdir(join(engine, 'lib'), { recursive: true })
   await writeFile(join(plugin, 'dist/runtime/playwright/package.json'), '{}')
@@ -50,6 +56,8 @@ async function fixture() {
   async function worker() {
     const child = fork(join(root, 'worker.mjs'), [], {
       execArgv: [],
+      // pnpm's NODE_PATH must not supply dependencies absent from the relocated payload.
+      env: { ...process.env, NODE_PATH: undefined },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     })
     children.push(child)
@@ -87,25 +95,28 @@ async function fixture() {
   }
 }
 
-it('recovers a dead owner and completes installation without network access', async () => {
-  const f = await fixture()
-  try {
-    const old = await f.worker()
-    const exited = once(old.child, 'exit')
-    old.child.kill('SIGKILL')
-    await exited
-    await writeFile(f.lock, JSON.stringify({ pid: old.child.pid, token: 'dead' }))
-    const next = await f.worker()
-    next.child.send('prepare')
-    await next.wait('downloading')
-    next.child.send('continue')
-    await next.wait('state', 'ready')
-    expect(await f.downloads()).toBe(1)
-    await expect.poll(() => existsSync(f.lock)).toBe(false)
-  } finally {
-    await f.close()
-  }
-})
+it.each([true, false])(
+  'recovers a dead owner without network access (packaged lock: %s)',
+  async (packaged) => {
+    const f = await fixture(packaged)
+    try {
+      const old = await f.worker()
+      const exited = once(old.child, 'exit')
+      old.child.kill('SIGKILL')
+      await exited
+      await writeFile(f.lock, JSON.stringify({ pid: old.child.pid, token: 'dead' }))
+      const next = await f.worker()
+      next.child.send('prepare')
+      await next.wait('downloading')
+      next.child.send('continue')
+      await next.wait('state', 'ready')
+      expect(await f.downloads()).toBe(1)
+      await expect.poll(() => existsSync(f.lock)).toBe(false)
+    } finally {
+      await f.close()
+    }
+  },
+)
 
 it.each(['live', 'unknown-liveness', 'unreadable', 'legacy-directory'])(
   'refuses a %s owner and gives the exact recovery path',
@@ -196,38 +207,48 @@ it('keeps a replacement owner lock when an installer finishes', async () => {
   }
 })
 
-it.each(['checksum', 'undersize', 'oversize'])(
+it.each(['checksum', 'undersize', 'oversize', 'missing-installer'])(
   'rejects a payload with invalid %s, releases the lock and permits retry',
   async (damage) => {
     const f = await fixture()
     try {
       const file = join(f.root, 'payload')
       const original = await readFile(file)
+      const installer = join(f.root, 'plugin/dist/runtime/owner-lock.mjs')
+      const installerSource = await readFile(installer)
       const corrupt = Buffer.from(original)
       corrupt[0] = corrupt[0]! ^ 1
-      await writeFile(
-        file,
-        damage === 'checksum'
-          ? corrupt
-          : damage === 'undersize'
-            ? original.subarray(0, -1)
-            : Buffer.concat([original, Buffer.from('!')]),
-      )
+      if (damage === 'missing-installer') await rm(installer)
+      else
+        await writeFile(
+          file,
+          damage === 'checksum'
+            ? corrupt
+            : damage === 'undersize'
+              ? original.subarray(0, -1)
+              : Buffer.concat([original, Buffer.from('!')]),
+        )
       const first = await f.worker()
       first.child.send('prepare')
-      await first.wait('downloading')
-      first.child.send('continue')
+      if (damage !== 'missing-installer') {
+        await first.wait('downloading')
+        first.child.send('continue')
+      }
       const result = await first.wait('state', 'failed')
-      expect(result.error).toMatch(/reviewed (manifest|size)/)
+      if (damage === 'missing-installer') {
+        expect(result.error).toContain('@agnes/system-node/owner-lock')
+        expect(existsSync(join(f.root, 'downloads'))).toBe(false)
+      } else expect(result.error).toMatch(/reviewed (manifest|size)/)
       await expect.poll(() => existsSync(f.lock)).toBe(false)
       expect(await readdir(join(f.root, 'cache'))).toEqual([])
       await writeFile(file, original)
+      await writeFile(installer, installerSource)
       const next = await f.worker()
       next.child.send('prepare')
       await next.wait('downloading')
       next.child.send('continue')
       await next.wait('state', 'ready')
-      expect(await f.downloads()).toBe(2)
+      expect(await f.downloads()).toBe(damage === 'missing-installer' ? 1 : 2)
     } finally {
       await f.close()
     }

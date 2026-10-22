@@ -8,12 +8,9 @@ import type { StorageAdapter } from './storage.js'
 export const VERIFIED_HEAD_ALGORITHM = 'agnes-ledger-checkpoint-v1' as const
 
 /**
- * The chain head this ledger had when the checkpoint was written. It records a position, never folded
- * state, and does not claim the prefix before it was hashed: that is what an explicit full verification
- * (`verifyHistory({ rehashPrefix: true })`) does, and `verifiedFullAtMs` says when one last did.
- *
- * It is not a security boundary of its own: anyone who can rewrite the ledger can rewrite this too.
- * It only lets an open skip hashing the rows before it and read just the tail after it.
+ * A hash-verified prefix followed only by locally hashed appends. A checkpoint accelerates open;
+ * every process rehashes the prefix in the background before using history as evidence.
+ * It cannot defend against an attacker rewriting both ledger and checkpoint; external anchors are separate.
  */
 export type VerifiedHead = PersistenceVerifiedHead
 

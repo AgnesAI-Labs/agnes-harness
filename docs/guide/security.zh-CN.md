@@ -166,7 +166,7 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 作者声明 `capabilities: { ledger: true, ... }`，并显式提供 `metadata`、`childControl`、`reclaim` 和 `scanIntegrity`。SQLite 账本和子任务文件保持兼容。授权和回执只存放在 metadata 中；旧授权及回执 SQL 表既不读取也不复制，版本不同的 metadata 命名空间会被拒绝并需要重置。撤权先持久化后通知。
 
-实现依据：[默认 profile](../../packages/host-common/templates/local-dev.yaml)、[普通行 API](../../packages/host-extensions/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。
+实现依据：[默认 profile](../../packages/package-manager/templates/local-dev.yaml)、[普通行 API](../../packages/host-extensions/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。
 
 <a id="package-provenance-and-source-policy"></a>
 
@@ -177,6 +177,8 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 安装时验证下载内容；加载安装包和不可变代际快照时重新计算文件树摘要。摘要不一致拒绝加载（`E_PACKAGE_INTEGRITY`）；无效来源证据使用 `E_PACKAGE_PROVENANCE`。旧锁记录继续可读，但不会自动获得已验证发布者身份。npm 有 attestation 时通过 Sigstore 验证，并核对精确包名、版本及实际下载档案摘要；证据缺失显示未验证，证据无效则拒绝安装。
 
 管理端来源记录包含已声明来源的解析位置。诊断消息仍使用固定的安全摘要，不暴露无关本地路径。
+
+官方 Host 能力还要求经过验证的加载器绑定。文件型包恢复时，该所有者的每条保留扩展行都必须携带受支持的 SHA256 修订，且与当前代码树一致；缺失或自定义修订无法证明保留代码，不会获得授权。正常发行升级会为新会话建立新的 pin，旧 pin 不会授权变化后的代码树。打包可执行代码使用 Host 加载器的代码映像身份，不依赖可变的数据目录。
 
 管理员配置 `<AGH_HOME>/profiles/<profile>/package-sources.json`：
 

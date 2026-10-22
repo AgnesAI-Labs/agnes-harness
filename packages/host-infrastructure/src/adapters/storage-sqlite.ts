@@ -78,6 +78,8 @@ export type CrashReclaimStore = {
   ): { opState: { seq: number; data: unknown } | undefined; seq: number } | null
 }
 export interface SqliteStorage extends StorageAdapter, ChildControlStore {
+  readIntegrityFailure(key: string): Promise<{ seq?: number } | undefined>
+  writeIntegrityFailure(key: string, failure: { seq?: number }): Promise<void>
   scanLean: NonNullable<StorageAdapter['scanLean']>
   /** Always kept here, in `ledger_verified_head_v1`. */
   readVerifiedHead(key: SessionKey): Promise<VerifiedHead | undefined>

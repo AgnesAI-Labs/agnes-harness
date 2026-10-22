@@ -65,6 +65,7 @@ function tool<S extends TSchema>(
       isOpenWorld: false,
       replay: mode === 'read' ? 'safe' : 'never',
       requiresApproval: mode === 'decision' ? 'always' : 'never',
+      ...(mode === 'report' ? { attestsHistory: true } : {}),
     },
     async execute(input, ctx) {
       ctx.signal.throwIfAborted()

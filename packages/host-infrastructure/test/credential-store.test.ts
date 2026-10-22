@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   type CredentialFileEnforcement,
@@ -432,7 +433,9 @@ it.each(
       lose()
     },
   }
-  const home = mkdtempSync(join(tmpdir(), 'agh-credential-proof-'))
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'agh-credential-proof-'))
+  const home = join(fixtureRoot, 'home')
+  createPrivateDirectorySync(home)
   const ref = 'secret://generic/11111111-1111-4111-8111-111111111111'
   const metadata = { label: 'Synthetic', createdAt: '2026-10-21T00:00:00.000Z' }
   const store = createCredentialStore({ root: home })
@@ -454,6 +457,6 @@ it.each(
       readdirSync(dirname(resolveCredentialFile(home, ref, 'api-key'))).some((name) => name.includes('.tmp')),
     ).toBe(false)
   } finally {
-    rmSync(home, { recursive: true, force: true })
+    rmSync(fixtureRoot, { recursive: true, force: true })
   }
 })

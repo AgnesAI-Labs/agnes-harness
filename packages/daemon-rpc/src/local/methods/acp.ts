@@ -49,6 +49,7 @@ import type { SessionEntry } from '../sessions.js'
 // from this file is `import type`, which the compiler erases entirely, so nothing here ever has to
 // load agnes.ts back at runtime in the other direction.
 import { mapCore } from './agnes.js'
+import { registerSessionIntegrity } from './session-integrity.js'
 import { throwWorkspaceRpcError } from './workspaces.js'
 
 export type LocalContext = {
@@ -727,6 +728,7 @@ export function registerAcp(
   })
 
   registerSessionLoading(ep, cx, feedFor, requireOwner, throwSessionOpenRpcError)
+  registerSessionIntegrity(ep, cx, requireOwner)
 
   ep.register('session/prompt', async (params, c) => {
     const p = params as { sessionId: string; prompt: unknown[] }

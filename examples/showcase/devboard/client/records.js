@@ -1,10 +1,9 @@
 import { Badge, Button, Field, PushPage, Segmented, Select, Table, usePushStack } from '@agnes/web-ui'
 import React from 'react'
+import { ApprovalEntry } from './approvals.js'
 import {
   byId,
-  continueWork,
   fact,
-  gateBadge,
   HistoryTable,
   h,
   idLink,
@@ -16,31 +15,20 @@ import {
   stateBadge,
   TransitionBar,
   time,
+  useDetail,
   useProject,
 } from './board.js'
-import { GatePanel } from './lifecycle.js'
 
-const stateLabels = (data, kind) =>
+export const stateLabels = (data, kind) =>
   Object.fromEntries(Object.keys(data.machines[kind]).map((s) => [s, data.labels.state[s]]))
-const inProject = (projectId) => (x) => !projectId || x.projectId === projectId
+export const inProject = (projectId) => (x) => !projectId || x.projectId === projectId
 const ProjectCell = (id) => id ?? '—'
-
-function useDetail() {
-  const push = usePushStack()
-  const [selected, setSelected] = React.useState('')
-  return [
-    selected,
-    (id, page = 'detail') => {
-      setSelected(id)
-      push.open(page)
-    },
-  ]
-}
 
 // ── Requirements and traceability ──────────────────────────────────────────────────────────────
 
 function TraceMatrix({ data, projectId }) {
   const [level, setLevel] = React.useState('SWR')
+  const [discipline, setDiscipline] = React.useState('')
   const [selected, open] = useDetail()
   const project = byId(data.projects, projectId)
   const cov = project.metrics.coverage
@@ -52,8 +40,9 @@ function TraceMatrix({ data, projectId }) {
     ...cov.cusSys.missing,
     ...cov.sysSwr.missing,
   ])
-  const rows = reqs.filter((r) => r.level === level)
+  const rows = reqs.filter((r) => r.level === level && (!discipline || r.discipline === discipline))
   const item = reqs.find((r) => r.id === selected)
+  const disc = (d) => data.labels.discipline[d] ?? '—'
   const children = (id) => reqs.filter((r) => r.parent?.includes(id))
   return h(
     React.Fragment,
@@ -89,6 +78,13 @@ function TraceMatrix({ data, projectId }) {
           label: `${l} ${data.labels.level[l]}（${reqs.filter((r) => r.level === l).length}）`,
         })),
       }),
+      h(Select, {
+        'aria-label': '按专业过滤',
+        value: discipline,
+        onChange: setDiscipline,
+        options: options(data.labels.discipline, '全部专业'),
+        style: { minWidth: 130 },
+      }),
     ),
     h(Table, {
       captionRepeatsHeading: true,
@@ -102,6 +98,30 @@ function TraceMatrix({ data, projectId }) {
       columns: [
         { title: '编号', dataIndex: 'id', render: idLink(open), width: 100 },
         { title: '标题', dataIndex: 'title' },
+        ...(level === 'SWR' || level === 'DES'
+          ? [{ title: '专业', dataIndex: 'discipline', render: disc, width: 70 }]
+          : []),
+        ...(level === 'DES'
+          ? [
+              {
+                title: '物料号 / 图号 / 模块',
+                render: (_v, r) => [r.partNo, r.drawingNo, r.module].filter(Boolean).join(' / ') || '—',
+                width: 230,
+              },
+            ]
+          : []),
+        ...(level === 'CUS'
+          ? [
+              { title: '协议条款', dataIndex: 'clause', render: (v) => v ?? '—', width: 140 },
+              {
+                title: '应答',
+                dataIndex: 'compliance',
+                render: (v) =>
+                  v ? h(Badge, { tone: v === 'COMPLY' ? 'ok' : 'warn' }, data.labels.compliance[v]) : '—',
+                width: 80,
+              },
+            ]
+          : []),
         { title: '上游', dataIndex: 'parent', render: (p) => (p?.length ? p.join('、') : '—'), width: 180 },
         {
           title: level === 'SWR' ? '验证用例' : '下游',
@@ -139,6 +159,13 @@ function TraceMatrix({ data, projectId }) {
             'dl',
             { className: 'devboard-facts' },
             fact('层级', data.labels.level[item.level]),
+            item.discipline && fact('专业', disc(item.discipline)),
+            item.partNo && fact('物料号', item.partNo),
+            item.drawingNo && fact('图号', item.drawingNo),
+            item.module && fact('软件模块', item.module),
+            item.clause && fact('协议条款', item.clause),
+            item.compliance && fact('应答', data.labels.compliance[item.compliance]),
+            item.responseNote && fact('应答说明', item.responseNote),
             fact('状态', stateBadge(data, item.status)),
             fact('上游', item.parent?.join('、') || '—'),
             fact(
@@ -152,6 +179,66 @@ function TraceMatrix({ data, projectId }) {
           ),
         ),
       ),
+  )
+}
+
+/** 技术协议应答: the deviation table of the customer clauses with the SYS items that answer them. */
+function TechResponse({ data, projectId }) {
+  const [compliance, setCompliance] = React.useState('')
+  const reqs = data.reqs.filter((r) => r.projectId === projectId)
+  const rows = reqs.filter(
+    (r) => r.level === 'CUS' && r.clause && (!compliance || r.compliance === compliance),
+  )
+  const count = (c) => reqs.filter((r) => r.level === 'CUS' && r.compliance === c).length
+  return h(
+    React.Fragment,
+    null,
+    h(
+      'div',
+      { className: 'devboard-filters' },
+      h(Select, {
+        'aria-label': '按应答过滤',
+        value: compliance,
+        onChange: setCompliance,
+        options: options(data.labels.compliance, '全部应答'),
+        style: { minWidth: 140 },
+      }),
+      h(
+        'span',
+        { className: 'devboard-muted' },
+        `满足 ${count('COMPLY')} · 偏离 ${count('DEVIATE')} · 澄清 ${count('CLARIFY')}`,
+      ),
+    ),
+    h(Table, {
+      captionRepeatsHeading: true,
+      caption: '技术协议应答（偏离表）',
+      rowKey: 'id',
+      pagination: false,
+      size: 'small',
+      dataSource: rows,
+      empty: '该项目没有技术协议条款',
+      rowClassName: (r) => (r.compliance === 'DEVIATE' ? 'devboard-overdue' : ''),
+      columns: [
+        { title: '条款', dataIndex: 'clause', width: 150 },
+        { title: '客户条款', render: (_v, r) => `${r.id} ${r.title}`, width: 240 },
+        {
+          title: '应答',
+          dataIndex: 'compliance',
+          render: (v) => h(Badge, { tone: v === 'COMPLY' ? 'ok' : 'warn' }, data.labels.compliance[v] ?? v),
+          width: 80,
+        },
+        { title: '说明', dataIndex: 'responseNote', render: (v) => v ?? '—' },
+        {
+          title: '对应 SYS',
+          render: (_v, r) =>
+            reqs
+              .filter((c) => c.level === 'SYS' && c.parent?.includes(r.id))
+              .map((c) => c.id)
+              .join('、') || '—',
+          width: 180,
+        },
+      ],
+    }),
   )
 }
 
@@ -236,13 +323,16 @@ export function Trace({ data, board, role }) {
         onChange: setView,
         options: [
           { value: 'matrix', label: '追溯矩阵' },
+          { value: 'ta', label: '技术协议应答' },
           { value: 'board', label: '研发需求条目' },
         ],
       }),
     ),
     view === 'matrix'
       ? h(TraceMatrix, { key: projectId, data, projectId })
-      : h(BoardRequirements, { data, board, role, projectId }),
+      : view === 'ta'
+        ? h(TechResponse, { key: projectId, data, projectId })
+        : h(BoardRequirements, { data, board, role, projectId }),
   )
 }
 
@@ -407,7 +497,48 @@ function NewChange({ data, board, role, projectId }) {
   )
 }
 
-export function Changes({ data, board, role }) {
+/** Advance the retrofit count of an approved change; progress only goes up, the last door closes the gap. */
+function RetrofitBar({ change, board, role }) {
+  const rf = change.retrofit
+  const [done, setDone] = React.useState('')
+  const locked = !['APPROVED', 'IMPLEMENTED'].includes(change.state)
+  const submit = async () => {
+    const ok = await board.run(
+      'devboard.transition',
+      { kind: 'retrofit', id: change.id, done: Number(done), by: role },
+      `${change.id} 整改进度已更新`,
+    )
+    if (ok) setDone('')
+  }
+  return h(
+    'section',
+    { className: 'devboard-actions', 'aria-label': '整改进度' },
+    h(Meter, {
+      label: `整改 ${rf.done}/${rf.total}`,
+      value: rf.total ? Math.round((rf.done / rf.total) * 1000) / 10 : 0,
+    }),
+    h(
+      'div',
+      { className: 'devboard-buttons' },
+      h('input', {
+        className: 'devboard-note',
+        style: { width: 160 },
+        type: 'number',
+        min: rf.done + 1,
+        max: rf.total,
+        'aria-label': '整改完成数',
+        placeholder: `大于 ${rf.done}，至多 ${rf.total}`,
+        value: done,
+        onChange: (e) => setDone(e.target.value),
+      }),
+      h(Button, { disabled: board.busy || locked || done === '', onClick: submit }, '更新整改进度'),
+      h(Button, { disabled: board.busy || locked, onClick: () => setDone(String(rf.total)) }, '填入全部'),
+      locked && h('span', { className: 'devboard-muted' }, '批准后才能更新整改进度。'),
+    ),
+  )
+}
+
+export function Changes({ data, board, role, setRole }) {
   const [selected, open] = useDetail()
   const [projectId, setProjectId] = useProject(data, true)
   const rows = data.changes.filter(inProject(projectId))
@@ -433,7 +564,17 @@ export function Changes({ data, board, role }) {
         { title: '编号', dataIndex: 'id', render: idLink(open), width: 120 },
         { title: '标题', dataIndex: 'title' },
         { title: '项目', dataIndex: 'projectId', width: 120 },
-        { title: '提出人', dataIndex: 'raisedBy', width: 140 },
+        {
+          title: '来源',
+          render: (_v, r) => data.labels.changeSource[r.source?.type] ?? '—',
+          width: 80,
+        },
+        { title: 'ECN', dataIndex: 'ecn', render: (v) => v ?? '—', width: 120 },
+        {
+          title: '整改',
+          render: (_v, r) => (r.retrofit ? `${r.retrofit.done}/${r.retrofit.total}` : '—'),
+          width: 90,
+        },
         {
           title: '安全影响',
           render: (_v, r) => (r.impact?.safety ? h(Badge, { tone: 'warn' }, '涉及') : '否'),
@@ -461,6 +602,25 @@ export function Changes({ data, board, role }) {
             fact('状态', stateBadge(data, item.state)),
             fact('项目', item.projectId),
             fact('提出人', item.raisedBy),
+            fact(
+              '变更来源',
+              `${data.labels.changeSource[item.source?.type] ?? '—'}${item.source?.ref ? `（${item.source.ref}）` : ''}`,
+            ),
+            fact('失效原因分析', item.rootCause),
+            fact(
+              '受影响物料版本',
+              item.impact?.items?.length
+                ? item.impact.items.map((i) => `${i.itemId} ${i.fromRev} → ${i.toRev}`).join('；')
+                : '—',
+            ),
+            item.impact?.fleet &&
+              fact('在役影响', `${item.impact.fleet.doors} 扇门：${item.impact.fleet.plan}`),
+            fact('ECN', item.ecn),
+            item.verification &&
+              fact(
+                '验证',
+                `${item.verification.result}（${item.verification.by}，${time(item.verification.at)}${item.verification.trialId ? `，${item.verification.trialId}` : ''}）`,
+              ),
             fact('受影响需求', item.impact?.reqs?.join('、') || '—'),
             fact('受影响交付物', item.impact?.artifacts?.join('、') || '—'),
             fact('受影响用例', item.impact?.tests?.join('、') || '—'),
@@ -478,9 +638,11 @@ export function Changes({ data, board, role }) {
           h(
             'p',
             { className: 'devboard-muted' },
-            '进入 CCB 评审前必须完成影响分析；CCB 批准后受影响需求标记为已变更，已通过的受影响阶段自动返工。',
+            '进入 CCB 评审前必须完成影响分析（现场或型式试验来源还需失效原因分析）；CCB 批准只能经 ECR 审批流程（专业会签 → CCB 决议），批准后生成 ECN，ECN 发布流程批准后生成设计态基线；研发中项目的受影响阶段自动返工，在役项目不返工；关闭前需验证记录。',
           ),
-          h(TransitionBar, { key: item.id, data, kind: 'change', item, board, role }),
+          item.retrofit && h(RetrofitBar, { change: item, board, role }),
+          h(ApprovalEntry, { data, board, role, setRole, type: 'change', id: item.id }),
+          h(TransitionBar, { key: item.id, data, kind: 'change', item, board, role, hidden: ['APPROVED'] }),
           h(HistoryTable, { data, history: item.history }),
         ),
       ),
@@ -653,136 +815,3 @@ export function Quality({ data, board, role }) {
 }
 
 // ── Reviews: gates and human interventions ─────────────────────────────────────────────────────
-
-export function Reviews({ data, board, role }) {
-  const [selected, open] = useDetail()
-  const [view, setView] = React.useState('pending')
-  const stage = (g) => byId(data.stages, g.stageId)
-  const gates = data.gates
-    .filter((g) => (view === 'pending' ? g.decision === 'PENDING' : g.decision !== 'PENDING'))
-    .sort(
-      (a, b) => Date.parse(b.decidedAt ?? b.submittedAt ?? 0) - Date.parse(a.decidedAt ?? a.submittedAt ?? 0),
-    )
-  const gate = byId(data.gates, selected)
-  const intervention = byId(data.interventions, selected)
-  const hidden = /工程师$/.test(role) ? ['CLAIMED'] : []
-  return h(
-    React.Fragment,
-    null,
-    h(
-      'div',
-      { className: 'devboard-filters' },
-      h(Segmented, {
-        label: '评审门',
-        value: view,
-        onChange: setView,
-        options: [
-          {
-            value: 'pending',
-            label: `待决议（${data.gates.filter((g) => g.decision === 'PENDING').length}）`,
-          },
-          { value: 'decided', label: '已决议' },
-        ],
-      }),
-      h(
-        'span',
-        { className: 'devboard-muted' },
-        '批准需关闭全部意见，审批角色不能是编写角色，阶段须在评审中。',
-      ),
-    ),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '评审门',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: gates,
-      empty: view === 'pending' ? '没有待决议的评审门' : '暂无已决议的评审门',
-      columns: [
-        {
-          title: '编号',
-          dataIndex: 'id',
-          render: (id) => h(Button, { appearance: 'link', onClick: () => open(id, 'gate') }, id),
-          width: 280,
-        },
-        { title: '阶段', render: (_v, g) => data.labels.stage[stage(g)?.stage], width: 90 },
-        { title: '编写角色', render: (_v, g) => stage(g)?.author, width: 120 },
-        { title: '审批角色', dataIndex: 'approverRole', width: 100 },
-        { title: '未关闭意见', render: (_v, g) => g.findings.filter((f) => !f.closed).length, width: 90 },
-        { title: '决议', dataIndex: 'decision', render: (d) => gateBadge(data, d), width: 90 },
-        { title: '时间', render: (_v, g) => time(g.decidedAt ?? g.submittedAt), width: 140 },
-        {
-          title: '',
-          render: (_v, g) =>
-            g.decision !== 'PENDING' &&
-            byId(data.projects, stage(g)?.projectId)?.live &&
-            h(Button, { onClick: () => continueWork(board, { type: 'gate', id: g.id }) }, '继续推进'),
-          width: 110,
-        },
-      ],
-    }),
-    h('h2', { className: 'devboard-heading' }, '人工介入请求'),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '人工介入请求',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: data.interventions,
-      rowClassName: (r) => (r.state === 'EXPIRED' ? 'devboard-overdue' : ''),
-      columns: [
-        {
-          title: '编号',
-          dataIndex: 'id',
-          render: (id) => h(Button, { appearance: 'link', onClick: () => open(id, 'intervention') }, id),
-          width: 90,
-        },
-        { title: '类型', dataIndex: 'type', render: (t) => data.labels.interventionType[t], width: 90 },
-        { title: '问题', dataIndex: 'ask' },
-        { title: '项目', dataIndex: 'projectId', render: ProjectCell, width: 120 },
-        { title: '截止', dataIndex: 'dueAt', render: time, width: 140 },
-        { title: '处理人', dataIndex: 'handler', render: (v) => v ?? '—', width: 100 },
-        { title: '状态', dataIndex: 'state', render: (s) => stateBadge(data, s), width: 90 },
-      ],
-    }),
-    gate &&
-      h(PushPage, { id: 'gate', title: gate.id }, h(GatePanel, { key: gate.id, data, gate, board, role })),
-    intervention &&
-      h(
-        PushPage,
-        {
-          id: 'intervention',
-          title: `${intervention.id} ${data.labels.interventionType[intervention.type]}`,
-          description: intervention.ask,
-        },
-        h(
-          'div',
-          { className: 'devboard-detail' },
-          intervention.state === 'EXPIRED' &&
-            h('p', { className: 'devboard-alert', role: 'alert' }, '该请求已超过截止时间。'),
-          h(
-            'dl',
-            { className: 'devboard-facts' },
-            fact('状态', stateBadge(data, intervention.state)),
-            fact('关联', intervention.entity.id),
-            fact('发起人', intervention.requestedBy),
-            fact('截止时间', time(intervention.dueAt)),
-            fact('处理人', intervention.handler),
-            fact('处理结论', intervention.resolution),
-          ),
-          hidden.length > 0 &&
-            intervention.state !== 'CLAIMED' &&
-            h(Badge, { tone: 'warn' }, '工程师角色不能认领介入请求，请切换演示角色。'),
-          h(TransitionBar, {
-            key: intervention.id,
-            data,
-            kind: 'intervention',
-            item: intervention,
-            board,
-            role,
-            hidden,
-            noteLabel: '处理结论 / 备注',
-          }),
-          h(HistoryTable, { data, history: intervention.history }),
-        ),
-      ),
-  )
-}

@@ -22,9 +22,16 @@ export function trackRunningGenerations(generations: ReadonlyMap<string, unknown
   return () => void runningInProcess.delete(generations)
 }
 
+/** Internal policy: boot may share a head; publication must fence all live containers. */
+export enum GenerationReuseMode {
+  None = 'none',
+  Head = 'head',
+  EquivalentArchive = 'equivalent-archive',
+}
+
 /**
  * A recorded generation a new snapshot from `expected` can take over. Workers of one composition share
- * a recorded head instead of each snapshotting the same target. A publication (`identical`) takes a
+ * a recorded head instead of each snapshotting the same target. A publication (`EquivalentArchive`) takes a
  * generation recorded from the same inputs that no Host in this process runs and the caller never saw
  * fail.
  */
@@ -32,10 +39,11 @@ export function reusableSnapshot(
   store: RuntimeGenerationSnapshotStore,
   compositionKey: string,
   expected: GenerationReuseInputs,
-  reuse: boolean | 'identical',
+  reuse: GenerationReuseMode,
   failed: Iterable<string>,
 ): PluginGenerationSnapshot | undefined {
-  if (reuse !== 'identical') return reuse ? store.reusableHead(compositionKey, expected) : undefined
+  if (reuse === GenerationReuseMode.None) return undefined
+  if (reuse === GenerationReuseMode.Head) return store.reusableHead(compositionKey, expected)
   const running = [...runningInProcess].flatMap((generations) => [...generations.keys()])
   return store.reusableGeneration(compositionKey, expected, new Set([...running, ...failed]))
 }

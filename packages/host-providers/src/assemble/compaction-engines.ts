@@ -1,5 +1,4 @@
 import { type Context, Service } from '@agnes/cordis'
-import { CompactionRunner } from '@agnes/core'
 import type {
   CompactionEngine,
   CompactionEngineCatalogEntry,
@@ -12,8 +11,7 @@ import {
   type ProviderRegistry,
   providerSource,
 } from '@agnes/host-common/assemble/provider-registry'
-import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
-import { normalizePluginExport, type RowOriginLookup } from '@agnes/plugin-runtime/host'
+import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -54,7 +52,7 @@ export class CompactionEngineRegistry extends Service {
       entry: Object.freeze({
         id: engine.id,
         version: engine.version,
-        sourcePackage: providerSource(owner, this.origins, sourcePackage, '@agnes/base'),
+        sourcePackage: providerSource(owner, this.origins, sourcePackage),
       }),
       lifetime: new ProviderLifetime('compaction', engine.id),
     }
@@ -132,52 +130,6 @@ export class CompactionEngineRegistry extends Service {
 
 export function installCompactionEngines(root: Context, origins?: RowOriginLookup): CompactionEngineRegistry {
   return new CompactionEngineRegistry(root, origins)
-}
-
-/** Supply Base's default through the same ordinary row and registry as community engines. */
-export function withBuiltinCompactionEngines(
-  modules: ReadonlyMap<string, PackageModule>,
-): ReadonlyMap<string, PackageModule> {
-  const builtin = modules.get('@agnes/base')
-  if (
-    !builtin?.buildCompactionPlan ||
-    builtin.plugins?.some((row) => row.declaration.id === 'compaction-engine:default')
-  )
-    return modules
-  const plan = builtin.buildCompactionPlan
-  const defaultEngine: CompactionEngine = builtin.createDefaultCompactionEngine?.(plan) ?? {
-    id: 'default',
-    version: '1.0.0',
-    create: () =>
-      new CompactionRunner({
-        plan: async (payload, config) => plan(payload, config),
-        onCompact: async () => undefined,
-      }),
-  }
-  const result = new Map(modules)
-  result.set('@agnes/base', {
-    ...builtin,
-    plugins: [
-      ...(builtin.plugins ?? []),
-      {
-        declaration: {
-          id: 'compaction-engine:default',
-          export: 'compactionEnginePlugin',
-          default: true,
-          inject: ['providers'],
-          provide: [],
-          runtime: 'in-process',
-        },
-        entry: normalizePluginExport({
-          inject: ['providers'],
-          apply(ctx: Context) {
-            ctx.providers.registerHost(compactionKind, '@agnes/host-providers', defaultEngine)
-          },
-        }),
-      },
-    ],
-  })
-  return result
 }
 
 export function compactionEngineCatalog(root: Context): readonly CompactionEngineCatalogEntry[] {

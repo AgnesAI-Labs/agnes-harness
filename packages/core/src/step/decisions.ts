@@ -47,6 +47,8 @@ export interface DecisionAuthority {
     SessionLogImpl,
     'append' | 'observeCommitted' | 'claimLease' | 'leaseRemainingMs' | 'faulted'
   >
+  beforeAttestation?(): Promise<void>
+  historyVerified?(): boolean
   readDecisions(): ReadonlyMap<string, { value: DecisionSnapshot; seq: Seq }>
   clock(): number
   id(): string
@@ -146,6 +148,19 @@ export class DecisionCommands {
   private event(value: DecisionSnapshot): EventInput {
     return this.s.event(value)
   }
+  private async attesting<T>(work: () => Promise<T>): Promise<T> {
+    await this.s.beforeAttestation?.()
+    return this.s.transact(work)
+  }
+  private automaticAnswer(spec: DecisionSpec, permission: boolean) {
+    return automaticPermissionDecision(
+      this.s.permissionContext,
+      spec.purpose,
+      spec.options,
+      permission ? 'permission' : 'question',
+      spec.presentation,
+    )
+  }
   private async write(
     value: DecisionSnapshot,
     recheck: () => void | Promise<void> = () => undefined,
@@ -171,6 +186,7 @@ export class DecisionCommands {
           : []),
       ],
       {
+        beforeFullVerify: 'refuse',
         expectedRegisterSeq: { register: 'decision/state', key: value.handle.id, seq: cell?.seq ?? null },
         beforeCommit: recheck,
         commitCheck: () => {
@@ -193,15 +209,10 @@ export class DecisionCommands {
     )
   }
   private async automatic(value: DecisionSnapshot, source?: DecisionSource): Promise<DecisionSnapshot> {
+    if (this.s.historyVerified?.() === false) return value
     if (value.result || value.invalidation || value.consumption || this.s.cancelled || this.due(value))
       return value
-    const answer = automaticPermissionDecision(
-      this.s.permissionContext,
-      value.request.spec.purpose,
-      value.request.spec.options,
-      value.request.category === 'permission' ? 'permission' : 'question',
-      value.request.spec.presentation,
-    )
+    const answer = this.automaticAnswer(value.request.spec, value.request.category === 'permission')
     if (!answer) {
       await this.recordAutomaticSkip(value, 'ambiguous-business-confirmation', source)
       return value
@@ -359,7 +370,7 @@ export class DecisionCommands {
       admit: (handle: DecisionHandle) => this.admit(handle, source),
     })
   }
-  private request(input: DecisionSpec, source: DecisionSource): Promise<DecisionHandle> {
+  private async request(input: DecisionSpec, source: DecisionSource): Promise<DecisionHandle> {
     const json = inspectJsonData(input, 131072)
     if (!json.ok) return Promise.reject(new CoreError('E_ENVELOPE', 'Decision spec must be bounded JSON'))
     if (!validateAgainst<DecisionSpec>(SpecSchema, json.value).ok)
@@ -369,6 +380,8 @@ export class DecisionCommands {
       if (!inspectJsonData(spec.responseSchema, 32768).ok) fail('SCHEMA_SIZE')
       compilePluginConfig(spec.responseSchema)
     }
+    if (!this.s.refuseApprovals && this.automaticAnswer(spec, source.permission === true))
+      await this.s.beforeAttestation?.()
     return this.s.transact(async () => {
       this.live(source)
       this.execution()
@@ -432,13 +445,7 @@ export class DecisionCommands {
       }
       const automatic = this.s.refuseApprovals
         ? undefined
-        : automaticPermissionDecision(
-            this.s.permissionContext,
-            spec.purpose,
-            spec.options,
-            source.permission ? 'permission' : 'question',
-            spec.presentation,
-          )
+        : this.automaticAnswer(spec, source.permission === true)
       if (
         automatic &&
         spec.purpose !== 'business.confirm' &&
@@ -483,6 +490,7 @@ export class DecisionCommands {
   }
   /** One decision, one consumption, and a private lease checked inside the effect transaction. */
   private async admit(handle: DecisionHandle, source: DecisionSource) {
+    await this.s.beforeAttestation?.()
     const context = this.s.permissionContext
     const value = await this.s.transact(async () => {
       this.live(source)
@@ -585,7 +593,17 @@ export class DecisionCommands {
       return true
     })
   }
-  get(handle: DecisionHandle, source?: DecisionSource): Promise<DecisionSnapshot> {
+  async get(handle: DecisionHandle, source?: DecisionSource): Promise<DecisionSnapshot> {
+    const pending = this.read(handle, source)
+    // Restored answers can authorize effects; wait before taking the shared writer gate.
+    if (
+      !pending.invalidation &&
+      !pending.consumption &&
+      (pending.result?.reason === 'answered' ||
+        (!pending.result &&
+          this.automaticAnswer(pending.request.spec, pending.request.category === 'permission')))
+    )
+      await this.s.beforeAttestation?.()
     return this.s.transact(async () => {
       this.live()
       return detached(await this.automatic(await this.expire(this.read(handle, source), source), source))
@@ -618,7 +636,7 @@ export class DecisionCommands {
     )
       fail('INVALID_ANSWER')
     const digest = sha256Hex(canonicalJson(command))
-    return this.s.transact(async () => {
+    return this.attesting(async () => {
       this.live()
       const original = this.read(command.handle)
       await context.authorize(detached(original))
@@ -735,6 +753,8 @@ export class DecisionCommands {
     effectId: string | null,
   ): EventInput[] {
     if (handles.length === 0) return []
+    if (this.s.historyVerified?.() === false)
+      throw new CoreError('E_LANE_BUSY', 'verifying history; retry decision consumption after verification')
     this.live(source)
     this.execution()
     if (this.s.cancelled) fail('STOPPED')

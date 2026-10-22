@@ -14,7 +14,7 @@ it('lists the optional Jev loop in the built-in catalog with its run-mode tag an
       sourceId: 'builtin-plugins',
       source: { type: 'file', ref: 'file:./bundled-plugins/jev-loop' },
       provides: ['loop'],
-      metadata: { displayName: 'Jev Agent Loop', locales: { 'zh-CN': { displayName: 'Jev Agent Loop' } } },
+      metadata: { displayName: 'Jev Agent Loop', locales: { 'zh-CN': { displayName: 'Jev 运行方式' } } },
     })
   } finally {
     rmSync(root, { recursive: true, force: true })

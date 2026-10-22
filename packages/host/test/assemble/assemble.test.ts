@@ -22,7 +22,12 @@ import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
 import { buildOrdinaryRows, type OrdinaryPluginLayers } from '@agnes/host-providers/assemble/ordinary-rows'
-import { hashDirectory, type RuntimePluginSnapshot, type RuntimeSnapshot } from '@agnes/package-manager'
+import {
+  assertCurrentPackageFormat,
+  hashDirectory,
+  type RuntimePluginSnapshot,
+  type RuntimeSnapshot,
+} from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { Actor, ModelRecord, RouteDecl } from '@agnes/protocol'
 import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
@@ -1715,6 +1720,20 @@ describe('assemble', () => {
     // Cordis owns plugin cleanup and reports disposer failures through its logger while continuing
     // to tear down sibling rows. The Host rollback therefore completes instead of retaining the
     // legacy per-seam rollback label.
+    expect(events(d).at(-1)?.detail?.rollbackFailed).toEqual([])
+  })
+  it('keeps a retired package format actionable while unwinding Host assembly', async () => {
+    const p = await profileFor()
+    const d = deps(allModules(), {
+      providerFactory: () => {
+        assertCurrentPackageFormat({ metadata: { category: 'private-log' } })
+        return new ScriptedProvider({ scripts: [] })
+      },
+    })
+    await expect(assemble(p, d)).rejects.toMatchObject({
+      code: 'E_PACKAGE_INTEGRITY',
+      detail: { reason: 'clean-home-required' },
+    })
     expect(events(d).at(-1)?.detail?.rollbackFailed).toEqual([])
   })
   it('seam factory timeout is E_SEAM_INIT with reason timeout', async () => {

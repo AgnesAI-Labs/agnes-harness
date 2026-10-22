@@ -503,9 +503,7 @@ it('round4: a memory file awaiting its approved response cannot write after the 
     dataDir: home,
     workspaceRoot: workspace,
     allowed: ['standard'],
-    presets: {
-      'permission-full-access': loadPreset('permission-full-access'),
-    },
+    presets: { 'permission-workspace-write': loadPreset('permission-workspace-write') },
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     packages: { '@agnes/base': { plugins } },
     approval: async () => {
@@ -529,8 +527,10 @@ it('round4: a memory file awaiting its approved response cannot write after the 
     const session = await host.createSession({
       cwd: workspace,
       preset: 'standard',
-      permission: 'full-access',
+      permission: 'workspace-write',
     })
+    await session.setYolo(true, session.d.actor)
+    expect(session.permissionContext.policy).toBe('full-access')
     const memory = session.d.memory
     if (!memory) throw new Error('Session memory unavailable')
     const wrapped: typeof memory = {
@@ -555,7 +555,8 @@ it('round4: a memory file awaiting its approved response cannot write after the 
     const decision = (await session.decisions.list()).find((row) => row.request.spec.purpose === 'memory')
     expect(decision?.result).toMatchObject({ code: 'full-access' })
     expect(decision?.consumption).not.toBeNull()
-    await session.setPreset({ ...session.preset, name: 'standard', permission: 'workspace-write' })
+    // Use the live permission switch used by Web/TUI; a preset cannot refit Host isolation.
+    await session.setYolo(false, session.d.actor)
     expect(session.permissionContext.policy).toBe('workspace-write')
     release()
     await run

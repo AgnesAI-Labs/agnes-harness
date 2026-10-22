@@ -326,6 +326,32 @@ export class RemoteSession {
     ) as Promise<number>
   }
 
+  integrityStatus(): Promise<import('@agnes/protocol').SessionIntegrityStatus> {
+    return this.link.command('integrityStatus', {}) as Promise<
+      import('@agnes/protocol').SessionIntegrityStatus
+    >
+  }
+
+  async auditHistory(signal?: AbortSignal): Promise<import('@agnes/protocol').SessionIntegrityStatus> {
+    signal?.throwIfAborted()
+    const work = this.link.command('auditHistory', {}, { timeoutMs: 600_000 })
+    let abort: (() => void) | undefined
+    const stopped = new Promise<never>((_, reject) => {
+      abort = () => reject(signal?.reason ?? new Error('audit wait cancelled'))
+      signal?.addEventListener('abort', abort, { once: true })
+      if (signal?.aborted) abort()
+    })
+    try {
+      return (await Promise.race([work, stopped])) as import('@agnes/protocol').SessionIntegrityStatus
+    } finally {
+      if (abort) signal?.removeEventListener('abort', abort)
+    }
+  }
+
+  async requireVerifiedHistory(): Promise<void> {
+    await this.link.command('requireVerifiedHistory', {}, { timeoutMs: 600_000 })
+  }
+
   async scan(q: unknown): Promise<EventEnvelope[]> {
     const query = q as Record<string, unknown>
     try {

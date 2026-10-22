@@ -51,6 +51,8 @@ const cases = [
     'namespace destructured default',
     `import * as core from '@agnes/core'; const { DEFAULT_LOOP: choice } = core;`,
   ],
+  ['daemon peer import', `import type { PublishChildEngines } from '@agnes/daemon-rpc/local/methods/config'`],
+  ['daemon peer name branch', `if (owner === '@agnes/daemon-admin') bind()`],
   [
     'typed capabilities',
     `const declaration = { kind: 'child-agent', capabilities: { tools: true, artifacts: true }, owner: community };`,
@@ -69,13 +71,21 @@ const cases = [
   ],
 ] as const
 const paths = cases.map(([, source], index) => {
-  const file = join(scratch, `case-${index}${CODE_EXTENSIONS[index % CODE_EXTENSIONS.length]}`)
+  const extension = /\b(?:import\s+type|type\s+\w+\s*=)/.test(source)
+    ? '.ts'
+    : CODE_EXTENSIONS[index % CODE_EXTENSIONS.length]
+  const file = join(scratch, `case-${index}${extension}`)
   writeFileSync(file, source)
   return file
 })
-const results = withSourceTrees(paths, (trees) =>
-  trees.map((tree) => hostFindings(tree, 'packages/host/src/example.ts', catalogue)),
-)
+const classified = withSourceTrees(paths, (trees) => ({
+  host: trees.map((tree) => hostFindings(tree, 'packages/host/src/example.ts', catalogue)),
+  core: trees.map((tree) => hostFindings(tree, 'packages/core/src/registry/tools.ts', catalogue)),
+  daemon: trees.map((tree) =>
+    hostFindings(tree, 'packages/daemon/src/supervisor/assembly-runtime.ts', catalogue),
+  ),
+}))
+const results = classified.host
 
 describe('Host excludes official business identities/implementations; reviewed legacy only shrinks', () => {
   it('checks production sources, templates and dependency manifests', () => {
@@ -104,7 +114,9 @@ describe('Host excludes official business identities/implementations; reviewed l
   it.each(cases.map(([name], index) => [name, index] as const))(
     '%s is classified correctly',
     (_name, index) => {
-      expect((results[index]?.length ?? 0) > 0).toBe(index < 16)
+      expect((results[index]?.length ?? 0) > 0).toBe(index < 18)
+      expect((classified.core[index]?.length ?? 0) > 0).toBe(index < 18)
+      expect((classified.daemon[index]?.length ?? 0) > 0).toBe(index < 16 || index === 17)
     },
   )
   it('rejects occurrence growth, a new comparison branch, moved symbols, stale/additional/enlarged allowances', () => {
@@ -126,6 +138,15 @@ describe('Host excludes official business identities/implementations; reviewed l
     expect(hostViolations([finding], [{ ...entry, path: 'packages/host/**' }], [])).not.toEqual([])
   })
   it('a wire namespace does not conceal an additional business identity in the same string', () => {
+    const file = join(scratch, 'mixed-peer.ts')
+    writeFileSync(file, "import '@agnes/daemon-admin/@agnes/base'")
+    expect(
+      withSourceTrees([file], (trees) =>
+        trees.flatMap((tree) =>
+          hostFindings(tree, 'packages/daemon/src/supervisor/assembly-runtime.ts', catalogue),
+        ),
+      ),
+    ).toHaveLength(1)
     expect(
       templateFindings('id: "x/agnes/intelligent-ui/action @agnes/base"', 'template.yaml', catalogue),
     ).toHaveLength(1)
@@ -164,5 +185,80 @@ describe('Host excludes official business identities/implementations; reviewed l
     mkdirSync(hidden, { recursive: true })
     writeFileSync(join(hidden, 'package.json'), JSON.stringify({ name: '@agnes/host-hidden' }))
     expect(() => assertHostPackageCoverage(scratch)).toThrow(/Unclassified Host package/)
+  })
+  it.each([
+    ['concatenated package', "if (owner === '@agnes/' + 'base') grant()"],
+    ['joined extension', "if (id === ['agnes', 'computer-use'].join('/')) grant()"],
+    [
+      'computed default',
+      "import * as api from '@agnes/core'; if (loop === api['DEFAULT_' + 'LOOP']) grant()",
+    ],
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: source fixture for a constant template
+    ['constant template', "if (owner === `@${'agnes'}/${'base'}`) grant()"],
+    ['computed join', "if (owner === ['@agnes', ('base')]['jo' + 'in']('/')) grant()"],
+    [
+      'nested default',
+      "import * as api from '@agnes/core'; if (loop === api[['DEFAULT', 'LOOP'].join('_')]) grant()",
+    ],
+    [
+      'computed binding',
+      "import * as api from '@agnes/core'; const { ['DEFAULT_' + 'LOOP']: selected } = api; if (loop === selected) grant()",
+    ],
+  ])('rejects computed official identities: %s', (_name, source) => {
+    const file = join(scratch, 'computed-identity.ts')
+    writeFileSync(file, source)
+    // The producer is also scanned: forwarding a default must not make its consumer invisible.
+    const producer = join(scratch, 'release-selection.ts')
+    writeFileSync(producer, "export { DEFAULT_LOOP as selection } from '@agnes/core'")
+    const findings = withSourceTrees([producer, file], (trees) =>
+      trees.map((tree, index) =>
+        hostFindings(
+          tree,
+          index === 0 ? 'packages/host/src/release-selection.ts' : 'packages/core/src/registry/tools.ts',
+          catalogue,
+        ),
+      ),
+    )
+    expect(findings[0]?.length).toBeGreaterThan(0)
+    for (const path of [
+      'packages/host/src/example.ts',
+      'packages/core/src/registry/tools.ts',
+      'packages/daemon/src/supervisor/assembly-runtime.ts',
+      'packages/daemon-admin/src/packages/builtin-client-services.ts',
+    ]) {
+      const entries = withSourceTrees([file], (trees) => hostFindings(trees[0]!, path, catalogue))
+      expect(entries.length, path).toBeGreaterThan(0)
+    }
+  })
+
+  it.each([
+    "const choice = '@agnes/' + unknown",
+    "const choice = ['@agnes', getName()].join('/')",
+    "const choice = ['@agnes', ...names].join('/')",
+    "const choice = build('@agnes/', 'base')",
+    `const choice = ${'('.repeat(40)}'@agnes/'${')'.repeat(40)} + 'base'`,
+    `const choice = '${'x'.repeat(4097)}' + '@agnes/' + 'base'`,
+  ])('does not evaluate dynamic or over-budget syntax: %s', (source) => {
+    const file = join(scratch, 'unevaluated.ts')
+    writeFileSync(file, source)
+    expect(
+      withSourceTrees([file], (trees) =>
+        trees.flatMap((tree) => hostFindings(tree, 'packages/host/src/example.ts', catalogue)),
+      ),
+    ).toEqual([])
+  })
+
+  it('rejects the producer of an aliased re-export even when its consumer uses a local alias', () => {
+    const producer = join(scratch, 'forward-default.ts')
+    const consumer = join(scratch, 'consume-default.ts')
+    writeFileSync(producer, "export { DEFAULT_LOOP as selection } from '@agnes/core'")
+    writeFileSync(
+      consumer,
+      "import { selection } from './forward-default.js'; if (loop === selection) grant()",
+    )
+    const findings = withSourceTrees([producer, consumer], (trees) =>
+      trees.flatMap((tree) => hostFindings(tree, 'packages/core/src/registry/tools.ts', catalogue)),
+    )
+    expect(findings.length).toBeGreaterThan(0)
   })
 })

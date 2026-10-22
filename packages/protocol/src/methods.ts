@@ -43,6 +43,7 @@ import {
   SchedulesUpsertResult,
 } from './schedules.js'
 import { validateExtensionCall } from './services.js'
+import { SessionIntegrityParams, SessionIntegrityStatus } from './session-integrity.js'
 import { SessionRuntimeDescriptor, SessionRuntimeParams } from './session-runtime.js'
 import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
@@ -141,6 +142,7 @@ export type MethodName =
   | '_agnes/v1/session.revealWorkspace'
   | '_agnes/v1/session.runtime'
   | '_agnes/v1/agents.resolve'
+  | '_agnes/v1/session.integrity'
   | '_agnes/v1/session.tools'
   | '_agnes/v1/session.jobs.read'
   | '_agnes/v1/session.jobs.control'
@@ -370,6 +372,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   ),
   '_agnes/v1/agents.resolve': clientRequest(AgentResolveParams, AgentPlan),
   '_agnes/v1/session.runtime': clientRequest(SessionRuntimeParams, SessionRuntimeDescriptor),
+  '_agnes/v1/session.integrity': clientRequest(SessionIntegrityParams, SessionIntegrityStatus),
   '_agnes/v1/session.tools': clientRequest(SessionToolsParams, SessionToolsResult),
   '_agnes/v1/session.jobs.read': clientRequest(A.SessionJobsReadParams, A.SessionJobsReadResult),
   '_agnes/v1/session.jobs.control': clientRequest(A.SessionJobsControlParams, A.SessionJobsControlResult),

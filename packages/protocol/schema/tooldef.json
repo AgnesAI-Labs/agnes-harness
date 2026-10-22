@@ -87,6 +87,10 @@
           "maximum": 5,
           "description": "Consecutive invalid argument failures before disabling this tool for the rest of the turn. Default 2. Valid arguments reset the count before exhaustion; exhausted tools cannot be re-enabled within the turn."
         },
+        "attestsHistory": {
+          "type": "boolean",
+          "description": "Optional. Evidence exports and reports wait for full session history verification before dispatch. Omission means ordinary execution; it does not attest ledger integrity."
+        },
         "isPresentational": {
           "type": "boolean",
           "description": "Optional. The effect only publishes display state to the user and has no external side effect. It cannot be combined with isDestructive or isOpenWorld. Tainted-call policy does not escalate this flag; requiresApproval always and a destructive band still ask."

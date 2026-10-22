@@ -20,7 +20,24 @@
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | 普通运行选项，不是所有转发子命令均支持。`LEVEL` 为 `read-only`、`workspace-write`、`full-access` 或 `default`（部署默认），只作用于新会话 |
 | `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话 |
 | `agh resume ID [-p prompt]` | 恢复入口 |
-| `agh sessions [list --cwd DIR] --json` / `agh sessions show ID` | 列表/详情 |
+| `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | 列表（置顶行带标记，`--archived` 只看已归档）/详情 |
+| `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | 会话偏好；`--json` 输出已保存的偏好 |
+| `agh sessions deliverables ID [--json]` / `--save N\|ID [--out PATH] [--force]` | 列出会话交付的文件/下载一个：校验 sha256 与大小，只取名称最后一段路径，目标已存在时须加 `--force` |
+| `agh approvals grants SESSION [--json]` / `agh approvals revoke SESSION GRANT [--json]` | 列出会话生效中的审批授权/撤销一条（需管理员连接，拒绝原样输出）|
+| `agh schedules [list [--session KEY] [--archived]] / show ID [--json]` | 列出定时任务（默认全部）/查看一个任务及其最近运行 |
+| `agh schedules add --prompt TEXT (--every 30m\|--cron EXPR\|--at ISO\|--daily HH:MM\|--weekly mon,wed@HH:MM) [--tz ZONE] [--title T] [--session KEY \| --new-session [--cwd DIR]] [--unattended notify\|refuse]` / `edit ID [同上]` | 新建或修改任务；`--every` 范围为 60 秒到 366 天，未给 `--session` 或 `--new-session` 时在当前目录新开会话运行，`edit` 只改动给出的参数 |
+| `agh schedules pause\|resume\|run\|archive ID [--json]` | 暂停、恢复、立即运行或归档任务（需管理员连接；拒绝时打印 code 并以 1 退出）|
+| `agh triggers [list] [--json]` / `agh triggers remove RULE` | 列出 webhook 触发规则和监听配置/删除一条规则 |
+| `agh triggers add --file RULE.json\|-` / `edit RULE --file RULE.json\|-` / `configure --file CONFIG.json\|-` | 用 JSON 保存规则或配置（`-` 读标准输入）；发送前先按协议 schema 校验 |
+| `agh triggers test RULE [--payload FILE\|-]` | 用模拟投递跑一次规则；投递未被接受时打印状态并以 1 退出。`deliver` 仅限 webhook 入站，CLI 不提供 |
+| `agh settings [--json]` | 列出全部设置 section 及一行说明 |
+| `agh settings SECTION [get] [--json]` | 每个值一行输出一个 section（`model-slots`、`child-engines`、`auto-review`、`system-prompt`、`memory`、`observability`、`search`、`session-defaults`），`--json` 输出 daemon 返回；`memory` 使用 `--cwd` |
+| `agh settings SECTION set --file FILE\|-` | 用 JSON 保存 section（`-` 读标准输入）；发送前先按协议 schema 校验。`system-prompt` 还接受 `--text TEXT`（替换整个提示词，需要 `--yes`；为空则移除） |
+| `agh settings search test --text QUERY [PROVIDER]` | 用某个提供商（默认用默认提供商）跑一次搜索；测试失败时打印原因并以 1 退出 |
+| `agh credentials [list] [--json]` / `agh credentials rename ID NAME...` | 列出通用凭据（id、名称、类型、创建时间、引用；从不含密钥）/改名 |
+| `agh credentials delete ID [--yes] [--force]` | 不带 `--yes` 只显示将删除的对象且不发请求；仍被使用的凭据还需要 `--force` |
+| `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | 按会话搜索历史（需管理员连接，拒绝原样输出）/会话分组 |
+| `agh sessions verify ID [--json]` | 重新完整校验历史，报告已验证序号/时间或失败序号；失败返回非零退出码。 |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | 导出；另有 `--html`、`--raw` |
 | `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | 转换导入 |
 | `agh --connect TARGET` | 只连接目标，失败不回退 |
@@ -51,7 +68,7 @@ Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[
 
 ## 包、资源与 Computer Use
 
-包：`package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel`；`install SOURCE` 是 add 别名；`packages pins inspect|release` 管理保留引用。更新走 Web、TUI `/package update ID SOURCE INTEGRITY` 或 SDK；TUI update 直接提交所指定摘要，先 inspect，不声称它有额外 preview/confirm 向导。
+包：`package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel|source-policy`（最后一个显示允许的包来源）；`install SOURCE` 是 add 别名；`packages pins inspect|release` 管理保留引用。更新走 Web、TUI `/package update ID SOURCE INTEGRITY` 或 SDK；TUI update 直接提交所指定摘要，先 inspect，不声称它有额外 preview/confirm 向导。
 
 资源：`resources list|get|operation|cancel|enable|disable`；`skills refresh|trust`；`mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools`。变更操作通常要求 expected revision 与交互确认，详见[Skills](../guide/skills.zh-CN.md)、[MCP](../guide/mcp.zh-CN.md)。
 
@@ -76,9 +93,15 @@ Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`�
 | `agh plugins add SOURCE [--yes]` / `pack FOLDER [OUTPUT]` | 审阅后获取；不执行代码地打包分发 |
 | `agh dev FOLDER` / `plugins reload [ID]` | 授权本地开发 / 向新会话发布修改后的本地代码 |
 | `agh plugins candidates list\|show\|approve\|reject` | 读取与审阅 Agent 候选；批准/拒绝绑定候选与审阅摘要 |
+| `agh plugins config get ID [--json]` | 显示插件配置行：当前值、schema 摘要和是否有效。secret 与凭据字段显示为 `[redacted]`，`--json` 也一样 |
+| `agh plugins config validate ID [ROW] --file VALUE.json\|-` / `set ID [ROW] --file VALUE.json\|-` | 只校验一行的值/校验后保存；校验失败时逐条列出且不保存（退出码 1）。插件只有一行时可省略 ROW |
+| `agh plugins tree [list]` / `tree show` / `plugins generations [--json]` | 读取插件树（`show --json` 含 artifact）/运行代（generation） |
+| `agh plugins tree apply --file ARTIFACT.json\|- [--yes]` / `tree rollback [--yes]` | 应用一个插件树 artifact/回滚到上一个；不带 `--yes` 只打印将要做什么，不发请求 |
 | `agh plugins provenance ID [--json]` | 读取安装来源及信任证据 |
 | `agh plugins publication-status [--json]` | 查看每个容器的发布收敛结果 |
 | `agh sessions migrate KEY [--json]` | 显式迁移已关闭且兼容的会话，拒绝打开中的会话 |
+| `agh app show [--json]` / `app preview 插件#应用` | 显示当前应用与候选/采纳前的同意预览 |
+| `agh app adopt 插件#应用 [--yes]` | 采纳应用；不带 `--yes` 只打印预览，不发请求 |
 | `agh app clear [--profile NAME] [--json]` | 在插件启动前清除当前应用及全部界面角色选择，复用配置 CAS |
 | `agh app-server --stdio` / `schema --out DIR` | 桥接共享 daemon / 不启动服务地导出生成合同 |
 | `agh doctor --json` / `doctor --probe --json` | 本地检查 / 显式账号测试，可能产生费用 |

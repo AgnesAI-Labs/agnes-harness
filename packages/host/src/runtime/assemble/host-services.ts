@@ -57,6 +57,7 @@ export function createHostServices(
     audit: deps.audit,
     signal: ctx.abort.signal,
     context: serviceContext({
+      workspaceInvocationFor: ctx.workspaceInvocationFor,
       authorizeProcess: (identity, cwd) =>
         authorizeServiceProcess(kernel.get(identity.session?.key ?? ''), identity, cwd),
       seams,

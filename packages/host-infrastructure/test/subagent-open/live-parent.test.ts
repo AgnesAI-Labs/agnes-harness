@@ -169,53 +169,51 @@ describe('delegated child creation on SQLite: what is still detected', () => {
   })
 })
 
-describe('delegated child creation on SQLite: what is no longer detected (approved)', () => {
-  it('a tool call rewritten at or before the fork point: child and parent both read it; an explicit full verification refuses it', async () => {
+describe('independent verification of a delegated child on SQLite', () => {
+  it('detects a rewritten inherited tool call and retains parent and child seals after cold reopen', async () => {
     const l = ledger()
     const storage = l.open()
-    const provider = script()
-    const { k, parent, c } = await parentReady(storage, provider)
+    const { k, parent, c } = await parentReady(storage, script())
     const [call] = await storage.scan('parent', { type: 'tool/call', toSeq: c, limit: 1 })
     rewrite(l.file, 'parent', (call as Event).seq, (data) => ({
       ...(data as object),
       args: { path: 'tampered' },
     }))
-    const handle = await createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'x' })
-    const childKey = handle.key
-    const before = provider.requests.length
-    await handle.run('x')
-    expect(JSON.stringify(provider.requests.slice(before))).toContain('tampered')
-    expect((await parent.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
-    expect(JSON.stringify(provider.requests.at(-1))).toContain('tampered')
+    // Independent verification can seal the child before or after its handle is published.
+    const creation = await createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'x' }).then(
+      (handle) => ({ handle }),
+      (error) => ({ error }),
+    )
+    const records = await storage.listByParent('parent')
+    expect(records).toHaveLength(1)
+    const childKey = records[0]!.childKey
+    if ('handle' in creation) {
+      const child = k.get(creation.handle.key) as SessionImpl
+      await expect(child.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      await expect(
+        child.enqueue('next-turn', { content: [{ type: 'text', text: 'refused' }], actor }),
+      ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    } else expect(creation.error).toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await expect(parent.auditHistory()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await expect(
+      parent.enqueue('next-turn', { content: [{ type: 'text', text: 'refused' }], actor }),
+    ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await k.close()
-    // Closing wrote each session's verified-head checkpoint, so a cold open does not hash the prefix;
-    // the explicit full verification refuses the row and seals the session.
-    const reopened = l.open()
-    const again = kernel(reopened, fakeProvider([]))
-    for (const [key, writerRunId] of [
-      ['parent', 'r3'],
-      [childKey, 'r4'],
-    ] as const) {
-      const session = await again.session(key, { ...sessionOpts, writerRunId })
-      await session.d.log.verifyHistory({ rehashPrefix: true })
-      await expect(session.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await storage.close()
+    // Both independent seals survive two fresh adapter/kernel lifetimes.
+    for (const run of [3, 5]) {
+      const reopened = l.open()
+      const again = kernel(reopened, fakeProvider([]))
+      for (const [key, writerRunId] of [
+        ['parent', `r${run}`],
+        [childKey, `r${run + 1}`],
+      ] as const)
+        await expect(again.session(key, { ...sessionOpts, writerRunId })).rejects.toMatchObject({
+          code: 'E_LEDGER_INTEGRITY',
+        })
+      await again.close()
+      await reopened.close()
     }
-    await again.close()
-    await reopened.close()
-    // The failure dropped both checkpoints. A later cold open has none to use and does not hash the
-    // prefix either, so it opens; the explicit full verification still refuses the row.
-    const fresh = l.open()
-    const third = kernel(fresh, fakeProvider([]))
-    for (const [key, writerRunId] of [
-      ['parent', 'r5'],
-      [childKey, 'r6'],
-    ] as const) {
-      const session = await third.session(key, { ...sessionOpts, writerRunId })
-      await session.d.log.verifyHistory({ rehashPrefix: true })
-      await expect(session.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
-    }
-    await third.close()
-    await fresh.close()
   })
 })
 

@@ -46,6 +46,7 @@ it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
     const fetched = await fetchSource(parseSource(helper.ref), into, { cwd, exec })
     const metadata = JSON.parse(readFileSync(join(into, 'package.json'), 'utf8'))
     expect(metadata.name).toBe(helper.id)
+    expect(metadata.version).toBe(helper.version)
     expect(metadata.version).not.toBe('0.0.0')
     {
       // An offline runtime payload must carry domain dependencies; only public Host SDKs are external.

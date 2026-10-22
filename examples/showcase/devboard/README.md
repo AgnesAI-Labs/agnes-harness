@@ -1,63 +1,73 @@
-# DevBoard R&D lifecycle workbench
+# DevBoard R&D and quality workbench
 
 English | [简体中文](README.zh-CN.md)
 
-A full-lifecycle R&D workbench demo for a rail-equipment company: requirements → architecture → development → test acceptance. **The company "Ningchuan Transportation Equipment Co., Ltd." (宁川交通装备股份有限公司), its customers, metro lines and people are fictional, and all data is simulated**; no external system (PLM, ERP, QIS, MES …) is contacted. Anything about safety integrity is stated as an assumption under EN 50126 / EN 50716 (formerly EN 50128).
+An R&D and quality workbench demo for a rail door-system manufacturer: review gates that follow the project kind, multi-discipline traceability, type tests and first-article inspection, and the loop from field alarms back to design. **The company "Ningchuan Transportation Equipment Co., Ltd." (宁川交通装备股份有限公司), its customers, metro lines, trains, parts and people are fictional, and all data is simulated**; no external system (PLM, ERP, QIS, SLM, MES …) is contacted. Gate names, limits and safety-integrity statements are assumptions ("inferred" or "project specification assumption"), not any real company's process.
 
-After installing and adopting DevBoard 2.1.0 on the Agents page, the workbench shows seven pages and an **R&D Coordinator** agent. Three projects are seeded at different stages:
+After installing and adopting DevBoard 3.2.1 on the Agents page, the workbench shows ten pages and an **R&D Coordinator** agent. Four projects are seeded:
 
-| Project | Kind | Stage | Shows |
-| --- | --- | --- | --- |
-| PRJ-2025-042 Ningchuan Metro Line 9 vehicle door system | New build | Verification (overdue) | CUS/SYS/SWR/DES/TC traceability with an uncovered SWR-025 and a sourceless TC-038; an approved change that sent design to rework; a change awaiting the CCB |
-| PRJ-2026-008 Ningchuan Metro Line 2 platform screen door retrofit | Retrofit | Design in review | A design gate with two open findings: no approval until they are closed |
-| PRJ-2025-019 Door system O&M platform V2.0 | Software | Released | Every stage passed, with full history and baselines |
+| Project | Kind | Shows |
+| --- | --- | --- |
+| PRJ-2025-042 Ningchuan Metro Line 9 vehicle door system | New build | Mechanical, electrical and software requirements with customer clauses and responses (two deviations, one clarification); in Verification with the type-test gate waiting; a low-temperature clamping-force type test that failed and raised a change |
+| PRJ-2026-008 Ningchuan Metro Line 2 platform screen door retrofit | Retrofit | Design in review at design liaison 2: a co-signed gate with open findings and one role already signed |
+| PRJ-2025-019 Door system O&M platform V2.0 | Software | Full IPD history: CDCP, TR1–TR6, PDCP, ADCP |
+| PRJ-2023-011 Ningchuan Metro Line 5 vehicle door system | New build, in service | Warranty period: about 40 PHM alarms, a closed 8D chain (alarm → problem → change → ECN → retrofit → baselines level) and one still being analysed |
 
 | Page | What it shows |
 | --- | --- |
-| Portfolio | Project cards: stage bar, gates, three coverage figures, defects, test pass rate, changes and risks; global to-dos; new project; reset demo data |
-| Projects | Stage timeline: deliverables, gates, baselines, authoring roles, planned and actual dates; Markdown preview of deliverables; risks; "open app" for live projects |
-| Traceability | Matrix by level (CUS/SYS/SWR/DES/TC), three coverage figures, highlighted orphans; board requirement items |
-| Tasks | Task board, filterable by project |
-| Changes | Change requests: impact analysis, CCB decision, transitions and rework |
-| Defects & tests | Defect transitions, eight-week opened/closed trend, test runs |
-| Reviews | Pending and decided gates (approve, reject, close findings, continue); human-intervention requests |
+| Portfolio | Project cards: kind, owning technology centre, gate code, stage bar, coverage, defects, changes; in-service cards add alarms, open quality problems, retrofit progress and baseline gap |
+| Projects | Stage timeline with gates as "code · name" and co-signing status, tailoring note, deliverables, configuration baselines (part × as-designed / as-built / as-maintained), service information |
+| Traceability | Matrix by level (CUS/SYS/SWR/DES/TC) with a discipline column, part and drawing numbers, customer clause responses |
+| Tasks | Task board |
+| Changes | Source, root cause, affected parts and revisions, fleet impact, ECN, retrofit progress, verification |
+| Defects & tests | Software defects and test runs |
+| R&D panorama | One lane per project (grouped by technology centre) with stages, gates, change / quality-problem / trial-retest branches and a timeline; switch to lanes by blocking role or by discipline; summary of blockers by role, filters, detail drawer |
+| Trials & first article | Type, routine, FAT and FAI records with standard, sample, lab, report number, result, deviations and the change they raised |
+| Service & quality | PHM alarms by signal and time, quality problems with 8D progress, root cause and linked change |
+| My to-dos | Three columns: waiting for me (approval nodes, gates and human-intervention requests for the demo role), started by me, handled; the approval detail shows the node graph, the actions and the full trace; below are all approval flows, gates and intervention requests. Only a role the node or gate names can act; any other role reads and can switch role in one click |
 
-The board polls every 10 seconds. The demo-role switch only signs decisions; it is not a login or a security boundary. First article inspection, site acceptance, independent safety assessment and FMEA/FTA happen outside this workbench and are not modelled.
+The board polls every 10 seconds. The demo-role switch only signs decisions; it is not a login or a security boundary.
 
 ## Rules
 
 Every write goes through one set of functions in `domain.mjs`, shared by pages and agent tools.
 
-- **Stages**: NOT_STARTED → IN_PROGRESS → IN_REVIEW → PASSED; IN_REVIEW → REWORK → IN_PROGRESS. A stage starts only after the previous one passed.
-- **Review gates** (refusals read `评审门不满足：…`): only a stage in review can be decided; the approving role must not be the stage's authoring role; every finding must be closed before approval. Approval passes the stage, baselines its deliverables and records a baseline; rejection needs a comment and sends the stage to rework. Implementation has no human gate and passes once all code-review findings are closed.
-- **Traceability**: CUS→SYS, SYS→SWR and SWR→TC coverage; submitting the requirements stage with CUS→SWR below 100% adds a finding automatically.
-- **Changes**: SUBMITTED → ANALYZED (needs an impact analysis) → CCB_REVIEW → APPROVED / REJECTED → IMPLEMENTED → CLOSED. Approval marks impacted requirements CHANGED and sends impacted passed stages to rework.
-- **Defects**: NEW → CONFIRMED → FIXING → RETEST → CLOSED, or DEFERRED.
-- The v1 requirement, task and human-intervention machines and their linkage are unchanged.
+Document release excludes the author's canonical role from proofreading, including labels such as `软件设计师（架构）` or a role followed by a person's name. An explicitly unknown author role must be corrected before starting the flow. Change-request rationale supplied in `note` remains in the history even when no state transition is requested.
+
+- **Gate profiles** (`profiles.mjs`) are looked up by project kind: order projects (new build, retrofit, maintenance) run contract review, design liaison 1 and 2, design freeze, prototype review, type-test review, first-article approval and delivery acceptance; software projects run the IPD points CDCP, TR1–TR6, PDCP and ADCP. A stage can hold several gates, taken in order: approving a gate that is not the last returns the stage to in-progress with a history note ("TR2 已通过，进入 TR3"); the last one passes the stage and records a baseline.
+- **Tailoring**: `project.tailoring.skipped` removes gates. A software project created on the board skips TR2, TR6 and PDCP by default; the seeded IPD project is untailored. Gate ids are `GATE-<project>-<code>-<n>`.
+- **Approvers**: the decider's role must be one the gate names, otherwise `评审门不满足：本门需由 X 审批`; the authoring role of the stage can never approve. A co-signed gate takes one signature per role, is approved only when every role signed and every finding is closed, and any role rejecting rejects it (a comment is required). TR4 is marked `auto` and passes once its code-review findings are closed.
+- **Trials**: PLANNED → IN_PROGRESS → REPORTED → APPROVED (REPORTED → IN_PROGRESS for a retest). REPORTED needs a report number and a result; a failed trial is approved only when its change is approved. Submitting the type-test or FAI gate adds a finding for every trial of that kind not yet approved.
+- **Field loop**: faults NEW → DISPATCHED → HANDLED → CLOSED; quality problems OPEN → ANALYZING → ACTION → VERIFYING → CLOSED (ACTION needs a root cause and D4; closing needs D8 and a closed change or a stated reason). A change from the field or a type test needs a root cause before analysis; approval issues the ECN and a new as-designed baseline and, for a project in service, does not send stages back to rework; verification is required before closing; retrofit progress only increases and completing it creates an as-maintained baseline.
+- **Approval flows** (`approvals.mjs`, `approval-templates.mjs`): five templates (document release, ECR, ECN release, quality-problem closing, trial report) whose nodes are SERIAL, ALL (every role agrees once) or ANY. Only a role the current node names can act, otherwise `审批不满足：当前节点需由 X 处理`. Actions: agree; reject (comment required, the object returns to an editable state); send back (to the previous node, a named earlier node or the initiator; earlier agreements are voided but kept as trace); transfer (to another person of the same role); add a signer (a SERIAL node after the current one); comment; withdraw (initiator only, before anyone handled the first node). A node past its time limit is overdue, derived from the clock and never stored; the portfolio and the to-do page mark it red. One running flow per object.
+  - Object states move only through their flow: CCB_REVIEW → APPROVED of a change only by an approved ECR (a direct move says `需走 ECR 审批`) and an ECR rejection rejects the change; the as-designed baseline is created when the ECN release flow is approved; a quality problem is CLOSED only by its closing flow and a trial REPORTED → APPROVED only by its report flow; a deliverable is baselined when its release flow is approved, a gate submitted while the stage still has a deliverable with an unapproved release flow gets a finding, and that deliverable is not baselined by the stage passing. Gate co-signing is unchanged.
+  - The agent can only start flows with `devboard_approval_submit`, and only for objects it drafted; it has no handling actions. People handle them on My to-dos.
+- **Traceability**: SWR-level items may be `SWR-`, `MER-` or `EER-` (software, mechanical, electrical) with a discipline; CUS→SYS, SYS→SWR and SWR→TC coverage; a requirements gate with CUS→SWR below 100% gets a finding automatically.
+- **Changes**: SUBMITTED → ANALYZED (needs an impact analysis) → CCB_REVIEW → APPROVED / REJECTED → IMPLEMENTED → CLOSED. **Defects**: NEW → CONFIRMED → FIXING → RETEST → CLOSED, or DEFERRED.
+- The v1 requirement, task and human-intervention machines are unchanged. Store schema is 4; a schema 3 store loads unchanged (no approvals yet), a store of another schema reads as the seed and is replaced on the first write (reads never write).
 
 ## Agent and live project
 
-`coordinator` carries all 15 `devboard_*` tools, file and shell tools, `tool_search` / `tool_describe`, `subagent_spawn` / `subagent_collect` and the `devboard-playbook` skill (lifecycle, role prompts, file layout, gate rules). Its `devboard` preset pre-approves edits and writes inside the workspace; every shell command (including `node --test` and `node server.js`) asks for approval, because it runs code the agents wrote. Five declared delegable agents (`requirements`, `architect`, `developer`, `reviewer`, `tester`) run as fresh role children with the parent’s shared working directory and a role ∩ parent capability snapshot. The reviewer is read-only; the other specialists can edit project files. Specialists have no shell or board tools and cannot approve or sign. They return commands to the coordinator for human approval and execution. All roles narrate in Chinese unless the user chooses another language, and use business labels instead of raw status enums.
+`coordinator` carries all 19 `devboard_*` tools, file and shell tools, `tool_search` / `tool_describe`, `subagent_spawn` / `subagent_list` / `subagent_collect` and the `devboard-playbook` skill (lifecycle, field loop, gate codes and co-signing rules). Its `devboard` preset pre-approves edits and writes inside the workspace; every shell command (including `node --test` and `node server.js`) asks for approval, because it runs code the agents wrote. Eleven declared roles run as fresh role children with the parent’s shared working directory and a role ∩ parent capability snapshot: Systems Designer (Requirements) `requirements`, Software Designer (Architecture) `architect`, Software Designer (Development) `developer`, Code Reviewer `reviewer`, Verification Engineer `tester`, and Mechanical Designer `mechanical`, Electrical Designer `electrical`, Diagnostics Engineer `diagnostics`, RAMS Engineer `rams`, Quality Engineer `quality`, Configuration Manager `config`. The code reviewer, quality engineer and configuration manager are read-only; the others can edit files. Mechanical, electrical, diagnostics and RAMS roles write under `devboard-projects/<project id>/analysis/<object id>/`, never registered as deliverables; the read-only quality and configuration roles return numbered findings in their answers without creating files. The field loop dispatches diagnostics, then RAMS, then quality review; a failed type test dispatches the mechanical or electrical designer for an impact note, then the configuration manager for a baseline check. All eleven are listed in `delegableAgents`; use a platform build whose package inspection accepts this complete list before adopting the application. Specialists have no shell or board tools and cannot approve or sign. They return commands to the coordinator for human approval and execution. All roles narrate in Chinese unless the user chooses another language, and use business labels instead of raw status enums.
+
+A software project created on the board (the default kind) follows the SOFTWARE profile with the default tailoring, is written under `devboard-projects/<project id>/` and is run by the coordinator; order kinds only create records. Role child agents only write files; only the coordinator writes to the board. After submitting each gate the coordinator ends its turn; a person decides on the board, then presses "Continue", which opens a coordinator draft carrying the gate id for the person to send.
+
+In the field loop the coordinator only drafts: it reads alarm aggregates (`devboard_fault_list`) and trials, drafts D2–D4 and the change impact analysis citing alarm and trial ids, and never closes a problem, approves a trial or decides a change.
 
 Explicitly named, authorized tools are offered directly, including the declared subagent and job tools; no search/describe round trip is required. `tool_describe` remains available for authorized deferred schemas, without granting access to tools outside the coordinator's allowlist.
 
 The preset explicitly requests reviewed `sandbox.loopback_serve` under L1 enforcement with `on_unavailable: deny` and no external network allowlist. Command approval remains mandatory. The supported macOS Host binds the loopback socket and passes `AGH_LOOPBACK_FD` and `AGH_LOOPBACK_URL`; the generated Node server must use `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` and print the supplied URL once ready. Keep the normal `127.0.0.1` / `--port` branch only for deployments without activation. Fresh binds and initiated connections remain denied; unsupported sandbox backends refuse this capability rather than falling back. Use a platform build supporting this capability before the live demo.
 
-The live project "Door health monitoring dashboard" is a dependency-free Node web app written under `devboard-projects/<project id>/` in the workspace. Role child agents only work on workspace files; only the coordinator writes to the board. After submitting each gate the coordinator ends its turn; a person decides on the board, then presses "Continue", which opens a coordinator draft carrying the gate id for the person to send.
-
 ### Demo script and checkpoints
 
-1. Portfolio: three projects, one pending gate, PRJ-2025-042 overdue.
-2. Reviews → GATE-PRJ-2026-008-DESIGN-1: approving as 技术负责人 is refused for two open findings; approving as 软件架构师 is refused because that is the authoring role; approving a decided gate is refused as not in review. Close both findings with notes and approve as 技术负责人: the stage passes with baseline BL-008-SAD-V1.0.
-3. Traceability: PRJ-2025-042 SWR→TC is 96%, with SWR-025 and TC-038 highlighted.
-4. Changes: approving CR-2026-031 at the CCB sends PRJ-2025-042's requirements and design stages to rework.
-5. Live project: workbench action "Create and start an R&D project". After each submitted gate the board shows the stage in review with its new deliverable and the workspace holds the file; decide, then press "Continue".
-   - Gate 1 initiation (研发总监): `docs/PROJECT-PLAN.md`.
-   - Gate 2 requirements (项目经理): a typed `requirements` task card and child-authored `docs/SRS.md`, `docs/RTM.md`; CUS/SYS/SWR appear in traceability.
-   - Gate 3 design (技术负责人): a typed `architect` child; `docs/SAD.md`; DES linked to SWR.
-   - Implementation: typed `developer` and separate read-only `reviewer` children; `src/`, `server.js`, `test/`; pass only after findings are resolved and independently rechecked.
-   - Gate 4 verification (质量负责人): typed `tester` writes independent tests from the SRS and public HTTP contract. The coordinator runs unit tests, then the presenter executes the tester’s public HTTP/page checks from a real browser outside the command sandbox against the activated listener; record command, cwd, counts and remaining gaps under Defects & tests and in `docs/TEST-REPORT.md`. Internal handler calls do not satisfy acceptance.
-   - Gate 5 acceptance (质量负责人): `docs/RELEASE-NOTE.md`; HTTP readiness and real browser checks of the line → vehicle → door view and fault ranking pass, then register the actual `AGH_LOOPBACK_URL`. "Open app" appears on the project page. Keep the background job id and stop it after the demo.
+0. **Update Agnes first, then replace DevBoard**: use a platform build whose package inspection accepts the complete declared role list; an older build may refuse it. To replace 2.x (2.0.0/2.1.0), 3.1.0 or 3.2.0 with **3.2.1**, on the Agents page disable DevBoard, uninstall the old version, install 3.2.1, trust and enable it, then adopt it. Installing over an existing version fails in the confirmed 2.x case; use this replacement path for 3.1.0 and 3.2.0 as well. Whether old data survives uninstall is not yet confirmed; 3.2.1 ships seed data, and **重置演示数据** (reset demo data) on Portfolio restores the demo state.
+1. Portfolio: four projects with gate codes and owning centres; PRJ-2023-011 shows alarms, open problems, retrofit progress and baseline gap.
+2. Reviews → the design liaison 2 gate of PRJ-2026-008: signing as 质量工程师 is refused with "本门需由 … 审批"; signing as a role the gate names records one signature and leaves the gate pending; the last signature is refused while findings are open; close them and sign the remaining role to pass the gate and move on to design freeze.
+3. Trials & first article: the failed low-temperature clamping-force trial of PRJ-2025-042 points at its change; submitting the type-test gate adds a finding for every trial not yet approved.
+4. Service & quality: PRJ-2023-011 alarms by signal and week; the closed buffer-wear chain (8D → CR → ECN → 1920/1920 doors → baselines level) and the open resistance problem. Workbench action "Analyze PHM alarms and draft an 8D": the coordinator drafts D2–D4 and a change, citing alarm ids, then stops for you.
+5. Workbench action "Failed type test → draft a change": mechanical/electrical writes an impact note under the full workspace-relative `devboard-projects/<project id>/analysis/<trial id>/` prefix, even for an order project without workspaceDir. The coordinator passes full requirement/DES, material-revision and baseline facts to read-only config, which returns numbered findings in its answer. Draft a trial-sourced change with root cause and evidence-based impact items; missing facts remain gaps, and people decide the CCB and trial approval.
+6. Live software project: workbench action "Create and start an R&D project". With default tailoring the gates are CDCP (IPMT), TR1 (技术负责人), TR3 (技术负责人), TR4 (automatic), TR5 (质量工程师) and ADCP (IPMT); after each submit the board shows the stage in review and the workspace holds the file; decide, then press "Continue".
+   - Each stage is done by the declared role children (`requirements`, `architect`, `developer`, `reviewer`, `tester`); TR5 and ADCP need real HTTP and browser acceptance evidence, see the presenter checklist below.
 
 A real model may need tens of minutes for the whole flow.
 
@@ -65,24 +75,47 @@ Run commands from the correct directory: shell defaults to the workspace root. P
 
 If role delegation fails, mark role independence as unmet and keep the quality finding open; coordinator self-review cannot replace an independent role. Listener or browser failures remain acceptance blockers. Do not close a finding merely by moving it to a later stage, or register an unverified URL.
 
+Long documents are written in sections: create a heading, outline and section placeholders with `write`, then append or replace one section at a time with `edit` (roughly 2–4 KiB per operation). Read each section back before reporting it complete. For this small project, keep SAD around 8–12 KiB; split a long section further instead of sending a whole document in one model output. A truncated output is an incomplete deliverable, never a successful write.
+
+Before any `subagent_collect`, call `subagent_list` and copy the real child id exactly from that result. This also applies when `subagent_spawn(wait=true)` returns a running task; never invent or reconstruct an id. Verify both completion and the actual files.
+
 ### Presenter checklist
 
 - Use an isolated home and workspace, a configured real model, the Host-allocated loopback URL (or a free fallback port for ordinary deployment) and one or two browser tabs. Review the installed package version and permissions before adopting it.
-- Rehearse all five gates with typed role task cards and verify parent/child file visibility. Check Chinese progress narration and business state labels.
+- Start a fresh browser context with locale **`zh-CN`** (for Playwright: `browser.newContext({ locale: 'zh-CN' })`), or set Simplified Chinese as the browser’s preferred language before opening the workbench. Also select **简体中文** in the platform settings language picker: a fresh platform preference defaults to English independently of the browser locale. Check the actual navigation, role task cards and platform labels in Chinese; record any labels that remain English. Chinese model narration does not set either preference.
+- Rehearse all gates with typed role task cards and verify parent/child file visibility. Check Chinese progress narration and business state labels.
 - Review each command and cwd before approval. Avoid unnecessary shell probes such as `node --version`; commands execute generated code. Tainted results can also require approval for later writes or board operations; read the action title and evidence.
 - Before gates 4–5, require real HTTP test logs and browser evidence, resolve findings, verify the registered URL, and retain timing per gate. Confirm how to stop the background job.
 
+## To confirm with the customer
+
+Everything below is an assumption in this demo and should be confirmed before real use:
+
+1. Names and tailoring rules of the review points in the IPD process.
+2. Order-project milestones and the number of design liaison meetings.
+3. Safety integrity level and document set of the door controller.
+4. Key limits: clamping force, door open/close time, obstacle size, MDBF.
+5. Whether quality problems use 8D or an in-house format, and the fields of the quality and service systems.
+6. Which system maintains the three baselines (PLM, ERP, service-lifecycle system).
+7. Job titles and division of work for the role agents, and the dispatch order of the field loop.
+8. The `devboard-projects/<project id>/analysis/<object id>/` working directory and the rule that analysis files are not registered as deliverables.
+9. R&D panorama blockers (inferred): the role named for each kind (stage author for open findings and overdue stages, 质量工程师 for a failed trial without a change, 项目经理 for a change in CCB review, 配置管理员 for a lagging maintained baseline), the 7-day limit for a quality problem in ANALYZING, and the mapping of roles to the five disciplines (the rest read as "General").
+10. Approval node names, roles and time limits (all inferred): document release = proofreading (24 h, design roles other than the author) → review (technical lead, 48 h) → standardization check (standardization engineer, 48 h) → approval (sub-centre director, 24 h); ECR = discipline co-signing (mechanical, electrical, software, process and quality all agree, 72 h) → CCB decision (technical lead or sub-centre director, either one, 48 h), approval issues the ECN; ECN release = configuration check (configuration manager, 24 h) → approval (sub-centre director, 24 h) → release (configuration manager, 24 h); quality-problem closing = quality review (quality engineer, 48 h) → approval (sub-centre director, 24 h); trial report = quality review (quality engineer, 48 h) → approval (technical lead, 24 h). The roles 标准化工程师 (standardization engineer) and 工艺工程师 (process engineer) are new demo roles; an added signer node has a 24 h limit.
+
 ## Layout
 
-- `domain.mjs`: stages, gates, traceability, changes, defects, tests and the v1 machines; metrics; storage (chunked under the 64 KiB value cap).
+- `profiles.mjs`: roles, organisations, gate profiles and the default live tailoring.
+- `approval-templates.mjs`, `approvals.mjs`: the five approval flow templates (pure data) and the flow rules (agree, reject, send back, transfer, add signer, comment, withdraw, derived timeout); the link to object states is in `domain.mjs`.
+- `blockers.mjs`: derives the blockers (never stored) that the snapshot and the R&D panorama page show.
+- `domain.mjs`: stages, gates, traceability, changes, defects, trials, faults, problems, baselines, tests, the v1 machines, metrics and storage (chunked under the 64 KiB value cap).
 - `seed-data.mjs`, `seed-docs/`: the fictional portfolio and its document bodies.
-- `index.mjs`: profile services `devboard.snapshot`, `devboard.artifact`, `devboard.transition`, `devboard.create`, `devboard.gate`, `devboard.reset`, agent tools and the skill.
+- `index.mjs`: profile services `devboard.snapshot`, `devboard.artifact`, `devboard.transition` (also trial, fault, problem and retrofit), `devboard.create`, `devboard.gate`, `devboard.approval` (start and handle approvals), `devboard.reset`, agent tools and the skill.
 - `skills/devboard-playbook.md`: the coordinator skill.
-- `client/`: seven pages built with `@agnes/web-ui`.
-- `test/`: domain rule and seed data tests.
+- `client/`: the pages built with `@agnes/web-ui`.
+- `test/`: domain rule, plugin contract and seed data tests.
 
 ```sh
 pnpm exec vitest run examples/showcase/devboard/test --maxWorkers=1
 ```
 
-Upgrading from 1.0.0: stored v1 data (schema 1) reads as the seed and is replaced on the first write. To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.
+Upgrading: stored data of schema 1 or 2 reads as the seed and is replaced on the first write, schema 3 and 4 data is kept (a schema 3 store starts with no approvals); update Agnes first, then disable and uninstall the old DevBoard before replacing 2.x, 3.1.0 or 3.2.0 with 3.2.1 (see step 0 of the demo script). To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.

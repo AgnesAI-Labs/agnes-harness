@@ -16,10 +16,19 @@ import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createOperationFeedback } from './operation-feedback.js'
 import type { ReconnectPhase } from './reconnect.js'
 
-type RecoveryNotice = { message: string; error: string; disabled: boolean; retry(): void; create(): void }
+export type NoticeText = string | (() => string)
+const noticeText = (value: NoticeText): string => (typeof value === 'function' ? value() : value)
+
+type RecoveryNotice = {
+  message: NoticeText
+  error: NoticeText
+  disabled: boolean
+  retry(): void
+  create(): void
+}
 type NoticeAction = { label: string; run(): void }
 type NoticeSnapshot = {
-  text: string
+  text: NoticeText
   kind: string
   recovery?: RecoveryNotice
   repair?: () => void
@@ -31,7 +40,7 @@ const feedback = operationFeedback.store
 installFeedbackSink(operationFeedback.sink)
 const dismissFeedback = operationFeedback.dismiss
 const store = createExternalStore<NoticeSnapshot>({ text: '', kind: '' })
-const errors = createExternalStore<readonly { id: number; message: string }[]>([])
+const errors = createExternalStore<readonly { id: number; message: NoticeText }[]>([])
 let nextError = 0
 const dismissError = (id: number) => errors.set(errors.getSnapshot().filter((item) => item.id !== id))
 type ReadOnlyNoticeView = {
@@ -56,10 +65,10 @@ export const appNotice = {
   clearErrors() {
     errors.set([])
   },
-  error(message: string) {
+  error(message: NoticeText) {
     errors.set([...errors.getSnapshot(), { id: ++nextError, message }].slice(-5))
   },
-  setText(text: string) {
+  setText(text: NoticeText) {
     store.set({ text, kind: store.getSnapshot().kind })
   },
   setKind(kind: string) {
@@ -145,14 +154,16 @@ export function AppNotice() {
           </StatusMessage>
         ))}
       <Notifications
-        items={notifications}
+        items={notifications.map((item) => ({ ...item, message: noticeText(item.message) }))}
         onDismiss={dismissError}
         closeLabel={t('app.notification.close')}
       />
       <p id="notice" role="alert" data-kind={view.kind}>
         {view.recovery ? (
           <>
-            <span data-recovery-message="">{t('app.recovery.hint', { message: view.recovery.message })}</span>
+            <span data-recovery-message="">
+              {t('app.recovery.hint', { message: noticeText(view.recovery.message) })}
+            </span>
             <Button
               data-recovery-action="retry"
               disabled={view.recovery.disabled}
@@ -167,10 +178,12 @@ export function AppNotice() {
             >
               {t('app.recovery.create')}
             </Button>
-            <span data-recovery-error="">{view.recovery.error ? ` ${view.recovery.error}` : ''}</span>
+            <span data-recovery-error="">
+              {view.recovery.error ? ` ${noticeText(view.recovery.error)}` : ''}
+            </span>
           </>
         ) : (
-          view.text
+          noticeText(view.text)
         )}
         {view.repair && (
           <>

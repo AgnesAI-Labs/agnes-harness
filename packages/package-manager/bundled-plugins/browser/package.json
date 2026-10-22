@@ -1,6 +1,6 @@
 {
   "name": "@agnes/browser",
-  "version": "0.1.5",
+  "version": "0.1.9",
   "type": "module",
   "license": "Apache-2.0",
   "exports": "./index.mjs",
@@ -137,6 +137,12 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 100
+                  },
+                  "displayVersion": {
+                    "type": "integer",
+                    "enum": [
+                      2
+                    ]
                   }
                 },
                 "required": [
@@ -263,6 +269,11 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 8192
+                  },
+                  "previewRoot": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
                   }
                 },
                 "required": [
@@ -502,6 +513,12 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 100
+                  },
+                  "displayVersion": {
+                    "type": "integer",
+                    "enum": [
+                      2
+                    ]
                   }
                 },
                 "required": [

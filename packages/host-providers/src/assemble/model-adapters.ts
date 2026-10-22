@@ -1,11 +1,10 @@
-import { createApiKeyProviderConfigs, modelAdaptersPlugin, WireAdapter } from '@agnes/ai'
+import { WireAdapter } from '@agnes/ai'
 import { type Context, Service } from '@agnes/cordis'
 import type {
   ModelAdapter,
   ModelAdapterCatalogEntry,
   ModelAdapterConfig,
   ModelAdapterInstance,
-  ProviderPluginContext,
 } from '@agnes/extension-api'
 import { modelAdapterKind, ProviderError } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
@@ -14,12 +13,7 @@ import {
   type ProviderRegistry,
   providerSource,
 } from '@agnes/host-common/assemble/provider-registry'
-import type { ResolvedProfile } from '@agnes/host-common/profile/types'
-import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
-import { scriptedAdapter } from '@agnes/model-adapters'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
-import { normalizePluginExport } from '@agnes/plugin-runtime/host'
-import type { ModelRecord, RouteDecl } from '@agnes/protocol'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -167,7 +161,7 @@ export class ModelAdapterRegistry extends Service {
         id: adapter.id,
         wireApi: adapter.wireApi,
         version: adapter.version,
-        sourcePackage: providerSource(owner, this.origins, sourcePackage, '@agnes/ai'),
+        sourcePackage: providerSource(owner, this.origins, sourcePackage),
         capabilities: Object.freeze({ ...adapter.capabilities }),
       }),
       lifetime: new ProviderLifetime('model-adapter', adapter.id),
@@ -269,89 +263,9 @@ export class ModelAdapterRegistry extends Service {
   }
 }
 
-export const builtinModelAdaptersPlugin = {
-  inject: ['providers'],
-  apply(ctx: ProviderPluginContext) {
-    modelAdaptersPlugin.apply(ctx)
-    ctx.providers.register(modelAdapterKind, scriptedAdapter)
-  },
-}
-
-/**
- * The builtin registrations as the catalog lists them, read without a Host by letting the plugin
- * register into a recorder. What each takes is declared on its registration, so a process that holds
- * no adapter registry can still tell, for example, that `typesafe-systemone` answers payloads only.
- */
-export function builtinModelAdapterCatalog(
-  profile?: Pick<ResolvedProfile, 'packages'>,
-): readonly ModelAdapterCatalogEntry[] {
-  // Resolved profiles have already checked this closed release identity against the running
-  // build. An installed package with the same name must use current-source filtering instead.
-  if (
-    profile &&
-    !profile.packages.some(
-      (pkg) =>
-        pkg.id === '@agnes/ai' &&
-        pkg.enabled &&
-        pkg.trust === 'builtin' &&
-        pkg.source === 'builtin' &&
-        pkg.integrity === `builtin:${pkg.version}`,
-    )
-  )
-    return []
-  const found: ModelAdapterCatalogEntry[] = []
-  // The companion is installed code: only its current verified publication/active rows can
-  // describe it. Its presence also suppresses the Host's scripted fallback, as in assembly.
-  const plugin = profile?.packages.some((pkg) => pkg.id === '@agnes/model-adapters' && pkg.enabled)
-    ? modelAdaptersPlugin
-    : builtinModelAdaptersPlugin
-  plugin.apply({
-    providers: {
-      register: (_kind: unknown, adapter: ModelAdapter) =>
-        void found.push({
-          id: adapter.id,
-          version: adapter.version,
-          sourcePackage: '@agnes/ai',
-          wireApi: adapter.wireApi,
-          capabilities: adapter.capabilities,
-        }),
-    },
-  } as never)
-  return [...new Map(found.map((entry) => [entry.id, entry])).values()]
-}
-
 /** Builtins use exactly the same registration contract as community plugin rows. */
 export function installModelAdapters(root: Context, origins?: RowOriginLookup): ModelAdapterRegistry {
   return new ModelAdapterRegistry(root, origins)
-}
-
-/** Build the builtin supplier as an ordinary package-owned plugin row. */
-export function withBuiltinModelAdapters(
-  modules: ReadonlyMap<string, PackageModule>,
-): ReadonlyMap<string, PackageModule> {
-  const builtin = modules.get('@agnes/ai')
-  if (!builtin) return modules
-  const result = new Map(modules)
-  result.set('@agnes/ai', {
-    ...builtin,
-    plugins: [
-      ...(builtin.plugins ?? []).filter((plugin) => plugin.declaration.id !== 'model-adapters:pi'),
-      {
-        declaration: {
-          id: 'model-adapters:pi',
-          export: 'modelAdaptersPlugin',
-          default: true,
-          inject: ['providers'],
-          provide: [],
-          runtime: 'in-process',
-        },
-        entry: normalizePluginExport(
-          modules.has('@agnes/model-adapters') ? modelAdaptersPlugin : builtinModelAdaptersPlugin,
-        ),
-      },
-    ],
-  })
-  return result
 }
 
 /** Read-only admin metadata, without config, credentials or factories. */
@@ -359,27 +273,8 @@ export function modelAdapterCatalog(root: Context): readonly ModelAdapterCatalog
   return root.modelAdapters.catalog()
 }
 
-/** Static release metadata and configured routes; does not instantiate adapters, import community
- * code, bind credentials, or prepare a session. Keep catalog filtering identical to buildProvider. */
-export async function builtinModelSelectionData(profile: ResolvedProfile): Promise<{
-  adapters: readonly ModelAdapterCatalogEntry[]
-  routes: readonly Pick<RouteDecl, 'route' | 'api'>[]
-  models: readonly Pick<ModelRecord, 'id' | 'route' | 'api'>[]
-}> {
-  const adapters = builtinModelAdapterCatalog(profile)
-  const declared = profile.provider.routes ?? []
-  if (!declared.length) return { adapters, routes: [], models: [] }
-  const choice = profile.composition?.providers?.['model-adapter']?.provider
-  const selected = typeof choice === 'string' ? [choice] : choice
-  const claimed = new Set(declared.map((r) => r.route))
-  const configs = (await createApiKeyProviderConfigs()).filter((config) =>
-    config.routes.every(
-      (r) =>
-        (!selected?.length || selected.includes(r.api)) &&
-        !claimed.has(r.route) &&
-        (profile.provider.catalog === undefined || profile.provider.catalog.include.includes(r.route)),
-    ),
-  )
-  const routes = [...declared, ...configs.flatMap((c) => c.routes)]
-  return { adapters, routes, models: routes.flatMap((r) => r.models ?? []) }
-}
+export {
+  builtinModelAdapterCatalog,
+  builtinModelAdaptersPlugin,
+  builtinModelSelectionData,
+} from '@agnes/distribution'

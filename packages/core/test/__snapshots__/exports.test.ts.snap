@@ -88,6 +88,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "createAuxiliaryVisionEffectPort",
   "createChildEventQueue",
   "createEnvelopeCache",
+  "createSessionFileReader",
   "createWorkspaceInvocationPort",
   "decideCheckpoint",
   "decideFsPath",

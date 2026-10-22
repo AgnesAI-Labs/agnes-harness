@@ -175,7 +175,7 @@ The persistence contract separates ledger, metadata/KV, durable child-control, r
 
 Provider authors declare `capabilities: { ledger: true, ... }` and expose `metadata`, `childControl`, `reclaim` and `scanIntegrity` explicitly. SQLite ledger/child files remain compatible. Grants and receipts live only in metadata; legacy grant and receipt SQL tables are neither read nor copied, and a metadata namespace of another version is refused and must be reset. Revocations remain durable before observers are notified.
 
-Implementation: [default profile](../../packages/host-common/templates/local-dev.yaml), [ordinary row API](../../packages/host-extensions/src/ext-host/row-extension-api.ts), [MCP argument policy](../../packages/resource-control-cli/src/resources.ts), [Web server](../../packages/web-server/src/server.ts).
+Implementation: [default profile](../../packages/package-manager/templates/local-dev.yaml), [ordinary row API](../../packages/host-extensions/src/ext-host/row-extension-api.ts), [MCP argument policy](../../packages/resource-control-cli/src/resources.ts), [Web server](../../packages/web-server/src/server.ts).
 
 ## Package provenance and source policy
 
@@ -184,6 +184,8 @@ New installations record the resolved source and version, packed tree SHA256, pu
 Install verifies downloaded bytes; loading installed packages and immutable generation snapshots rehashes the tree. A mismatch fails closed (`E_PACKAGE_INTEGRITY`); invalid provenance evidence uses `E_PACKAGE_PROVENANCE`. Existing lock records remain readable but gain no verified publisher identity automatically. npm attestations, when present, are verified with Sigstore and must name the exact pinned package/version and packed archive digest. Missing evidence remains visibly unverified; invalid evidence refuses installation.
 
 Administrative provenance includes the declared resolved source location. Diagnostic messages remain fixed safe summaries and do not disclose unrelated local paths.
+
+Official Host capabilities also require a verified loader binding. For file-backed packages, every retained extension row for that owner must carry a supported SHA256 revision matching the current code tree. A missing or custom revision cannot attest retained code and receives no grant. A normal release establishes fresh pins for new sessions; an old pin never authorizes a changed tree. Packaged executable code uses the Host loader's code-image identity instead of mutable data directories.
 
 Administrators configure `<AGH_HOME>/profiles/<profile>/package-sources.json`:
 

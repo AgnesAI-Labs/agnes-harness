@@ -1357,7 +1357,7 @@ const sessionActions = createSessionActions({
   },
   archived: (id) => {
     if (archivedSessions.getSnapshot().filter === 'archived') void archivedSessions.reload()
-    notice.setText(t('home.archived.notice'))
+    notice.setText(() => t('home.archived.notice'))
     notice.offer({
       label: t('home.archived.undo'),
       run: () => {
@@ -1417,7 +1417,7 @@ onSurfaceEvent('agnes:compose-suggestion', (event) => {
   composerRuntime.setDraft(event.detail)
   composerRuntime.focus()
 })
-let sessionRecovery: { id: string; message: string } | undefined
+let sessionRecovery: { id: string; error: unknown } | undefined
 function errorMessage(error: unknown): string {
   const attachment = attachmentErrorMessage(error, t)
   if (attachment) return attachment
@@ -1450,7 +1450,7 @@ function errorMessage(error: unknown): string {
   )
 }
 function showError(error: unknown): void {
-  const message = errorMessage(error)
+  const message = () => errorMessage(error)
   const persistent =
     error &&
     typeof error === 'object' &&
@@ -1463,7 +1463,7 @@ function showError(error: unknown): void {
     notice.setText(message)
     notice.setKind('error')
   } else notice.error(message)
-  if (workspaceController.dialog.open) workspaceController.dialog.update({ error: message })
+  if (workspaceController.dialog.open) workspaceController.dialog.update({ error: message() })
   const data =
     error && typeof error === 'object' && 'data' in error
       ? (error.data as { code?: unknown; modelRoute?: unknown })
@@ -1485,25 +1485,24 @@ function run(op: () => Promise<void>): void {
   void op().catch(showError)
 }
 function showSessionRecovery(error: unknown, id: string): void {
-  const data = error && typeof error === 'object' && 'data' in error ? error.data : undefined
-  sessionRecovery = {
-    id,
-    message:
-      data && typeof data === 'object' && 'code' in data && data.code === 'SESSION_PROFILE_MISSING'
-        ? t('app.recovery.profileMissing')
-        : data && typeof data === 'object' && 'reason' in data && data.reason === 'legacy-ledger-format'
-          ? errorMessage(error)
-          : t('app.recovery.openFailed', { detail: errorMessage(error) }),
-  }
+  sessionRecovery = { id, error }
   renderSessionRecovery()
+}
+function sessionRecoveryMessage(error: unknown): string {
+  const data = error && typeof error === 'object' && 'data' in error ? error.data : undefined
+  return data && typeof data === 'object' && 'code' in data && data.code === 'SESSION_PROFILE_MISSING'
+    ? t('app.recovery.profileMissing')
+    : data && typeof data === 'object' && 'reason' in data && data.reason === 'legacy-ledger-format'
+      ? errorMessage(error)
+      : t('app.recovery.openFailed', { detail: errorMessage(error) })
 }
 function recoveryDisabled(): boolean {
   return !connected || submissions.sending || sessionPending || workspaceController.creating
 }
-function renderSessionRecovery(message = ''): void {
+function renderSessionRecovery(message: string | (() => string) = ''): void {
   if (!sessionRecovery) return
   notice.recover({
-    message: sessionRecovery.message,
+    message: () => (sessionRecovery ? sessionRecoveryMessage(sessionRecovery.error) : ''),
     error: message,
     disabled: recoveryDisabled(),
     retry() {
@@ -1718,7 +1717,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   try {
     const stopped = await stopWithTimeout(stop)
     if (!stopped) {
-      notice.setText(t('app.notice.oldSessionClosing'))
+      notice.setText(() => t('app.notice.oldSessionClosing'))
       notice.setKind('warning')
     }
   } catch (error) {
@@ -1802,7 +1801,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     draftPermission = mode
     syncDraftPermission()
     rememberWebComposer({ permission: mode })
-    notice.setText(t('app.permission.draftNotice', { mode: permissionLabel(mode) }))
+    notice.setText(() => t('app.permission.draftNotice', { mode: permissionLabel(mode) }))
     notice.setKind('')
     renderControls()
     return true
@@ -1837,7 +1836,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     if (permissionMode !== mode) {
       // A different level needs a new session. Say so, and offer the path that works.
       const label = permissionLabel(mode)
-      notice.setText(
+      notice.setText(() =>
         t('app.permission.newSessionsOnly', { mode: label, current: permissionLabel(permissionMode) }),
       )
       notice.setKind('')
@@ -1944,7 +1943,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     else if (!sameModel) draftModelSettingsEdited = false
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
-    notice.setText(t('app.notice.newSessionModel'))
+    notice.setText(() => t('app.notice.newSessionModel'))
     notice.setKind('')
     renderControls()
     return true
@@ -1992,12 +1991,13 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
       entry.route === (saved.provider?.route ?? saved.provider?.id) && entry.id === saved.provider?.model,
   )
   if (!saved.configured && !savedModels.length) {
-    notice.setText(t('app.model.noAccounts'))
+    notice.setText(() => t('app.model.noAccounts'))
     return
   }
   if (saved.effect === 'restart-required' || !published) {
     // The account owner reports the authoritative restart consequence.
-    if (!published && saved.effect !== 'restart-required') notice.setText(t('app.model.savedNotEffective'))
+    if (!published && saved.effect !== 'restart-required')
+      notice.setText(() => t('app.model.savedNotEffective'))
     return
   }
 }
@@ -2095,7 +2095,7 @@ const forCurrent = (payload: unknown): boolean =>
   (payload as { sessionId?: unknown } | undefined)?.sessionId === sessionBinding.session.id
 client.on('gap', (payload) => {
   if (!forCurrent(payload)) return
-  const message = t('app.gap.partial')
+  const message = () => t('app.gap.partial')
   if (sessionRecovery) renderSessionRecovery(message)
   else notice.setText(message)
   void sessionBinding.live?.resync().catch(showError)
@@ -2115,7 +2115,7 @@ client.on('notice', (payload) => {
   const incoming = payload as { kind?: unknown; detail?: unknown }
   if (incoming.kind === 'automation_attention') {
     notice.setKind('warning')
-    notice.setText(t('app.automation.needsAttention'))
+    notice.setText(() => t('app.automation.needsAttention'))
     return
   }
   if (incoming.kind !== 'packages_changed' && incoming.kind !== 'tree_changed') return
@@ -2262,7 +2262,7 @@ run(async () => {
   const showModelNotice = () => {
     // A link to a session that is gone keeps its own notice.
     if (!modelNotice || configured || missingSession) return
-    notice.setText(t('app.model.noneUsable'))
+    notice.setText(() => t('app.model.noneUsable'))
     notice.offer({
       label: t('app.model.openSettings'),
       run: () =>
@@ -2337,7 +2337,7 @@ run(async () => {
     } else {
       missingSession = true
       scheduleClientRosterRead(true)
-      notice.setText(t('app.session.notFound'))
+      notice.setText(() => t('app.session.notFound'))
       renderControls()
     }
   } else if (first) await open(first.sessionId)

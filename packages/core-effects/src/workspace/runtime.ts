@@ -51,6 +51,33 @@ export interface WorkspaceInvocationPort {
   run<T>(invoke: (view: WorkspaceInvocationView) => Promise<T>): Promise<T>
 }
 
+/** Delayed resources never retain one invocation's filesystem or prolong its lease. */
+export function createSessionFileReader(port: WorkspaceInvocationPort, assertCurrent = () => {}) {
+  return Object.freeze({
+    read(path: string, opts: { offset?: number; limit?: number } = {}) {
+      assertCurrent()
+      const limit = opts.limit ?? 8 * 1024 * 1024
+      if (!Number.isSafeInteger(limit) || limit < 0 || limit > 8 * 1024 * 1024)
+        throw Object.assign(new Error('Resource reads must be bounded to 8 MiB.'), { code: 'E_FS_DENIED' })
+      return port.run(async (view) => {
+        assertCurrent()
+        const bytes = await view.fs().read(path, { ...opts, limit })
+        assertCurrent()
+        return bytes
+      })
+    },
+    stat(path: string) {
+      assertCurrent()
+      return port.run(async (view) => {
+        assertCurrent()
+        const result = await view.fs().stat(path)
+        assertCurrent()
+        return result
+      })
+    },
+  })
+}
+
 /** Host-injected publication admission; Core stays independent of the publication implementation. */
 export interface WorkspacePublicationDispatch {
   workspace<T>(

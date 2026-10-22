@@ -1,11 +1,9 @@
-import { DEFAULT_LOOP } from '@agnes/core'
 import type {
   CompactionEngineCatalogEntry,
   LoopCatalogEntry,
   ModelAdapterCatalogEntry,
 } from '@agnes/extension-api'
-import { DEFAULT_PERSISTENCE_PROVIDER_ID, LOCAL_SANDBOX_PROVIDER_ID } from '@agnes/extension-api'
-import { parsePackageBundleContract } from '@agnes/package-manager'
+import { parsePackageBundleContract, RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { BundleLaunch, JsonValue, LoopSelection } from '@agnes/protocol'
 import { inspectJsonData } from '@agnes/protocol'
 import { HostError } from '../errors.js'
@@ -487,14 +485,14 @@ export function resolveComposition(
   const sessionBundles = options.sessionBundles ?? profile.sessionComposition?.bundles
   if (!profile.presets.allowed.includes(preset)) fail(`preset ${preset} is not allowed`)
   let selection: ResolvedCompositionSelection = {
-    loop: profile.loop ?? DEFAULT_LOOP,
+    loop: profile.loop ?? RELEASE_DEFAULTS.loop,
     compaction:
       profile.compaction ??
       (options.catalog && !options.catalog.compactionEngines.some((entry) => entry.id === 'default')
         ? null
         : { engine: 'default' }),
-    persistence: profile.persistence ?? { provider: DEFAULT_PERSISTENCE_PROVIDER_ID },
-    sandbox: profile.sandbox ?? { provider: LOCAL_SANDBOX_PROVIDER_ID },
+    persistence: profile.persistence ?? { provider: RELEASE_DEFAULTS.persistenceProvider },
+    sandbox: profile.sandbox ?? { provider: RELEASE_DEFAULTS.sandboxProvider },
     packages: profile.packages.map(({ id, source, version, enabled }) => ({ id, source, version, enabled })),
     modelAdapters: [],
     toolPolicy: {},
@@ -569,15 +567,15 @@ export function resolveComposition(
   if (options.rows)
     for (const id of Object.keys(selection.plugins ?? {}))
       if (!rows.some((row) => row.id === id)) fail(`unknown plugin row ${id}`)
-  if (selection.loop?.id === 'default' && selection.loop.version === DEFAULT_LOOP.version)
-    selection.loop = { ...DEFAULT_LOOP }
+  if (selection.loop?.id === 'default' && selection.loop.version === RELEASE_DEFAULTS.loop.version)
+    selection.loop = { ...RELEASE_DEFAULTS.loop }
   if (options.catalog) validateComposition(selection, options.catalog)
   const entries = Object.values(profile.bundleCatalog ?? {})
   const selectedBundles = expandBundles(bundles, profile.bundleCatalog ?? {})
   // The existing loop picker is also an explicit composition choice. Match the full identity.
   const loopBundles = entries.filter(
     (entry) =>
-      selection.loop?.id !== DEFAULT_LOOP.id &&
+      selection.loop?.id !== RELEASE_DEFAULTS.loop.id &&
       entry.document.profile?.providers?.loop?.provider === selection.loop?.id &&
       entry.document.profile?.providers?.loop?.version === selection.loop?.version,
   )

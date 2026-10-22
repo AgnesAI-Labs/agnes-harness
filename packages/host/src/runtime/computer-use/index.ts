@@ -13,8 +13,8 @@ import { createComputerUseHostDispatchPort } from '@agnes/host-computer-use/comp
 import { createLazyComputerUseRuntime } from '@agnes/host-computer-use/computer-use/lazy-runtime'
 import type { HostComputerUseStatusSource } from '@agnes/host-computer-use/computer-use/status'
 import type { ComputerUseBackendProvider } from '@agnes/host-computer-use/computer-use/windows-driver-backend'
-import { extensionRowGrantFor } from '@agnes/host-extensions/assemble/ext-rows'
 import type { SeamInitContext } from '@agnes/host-extensions/assemble/packages'
+import type { HostCapabilityGrant } from '@agnes/package-manager'
 import { privateArtifactDeleteAvailable } from '@agnes/system-node'
 import type { Rollback } from '../lifecycle/lifecycle.js'
 import type { ComputerUseArtifactSink, ComputerUsePlatform } from './platform.js'
@@ -36,10 +36,8 @@ type HostPlatform = Readonly<{ os: string; snapshot(): { arch: string } }>
 export type ComputerUseArtifactRetention = Readonly<{
   /** True when the feature is on or screenshots have ever been written, so the writer and collector are kept. */
   required: boolean
-  /** Extra seam-context fields for the artifacts seam of `@agnes/base`, or none. */
   contextFor(
-    owner: string,
-    seamName: string,
+    grant: HostCapabilityGrant,
   ): Pick<SeamInitContext, 'privateArtifactStore'> | Record<string, never>
   /** Starts the screenshot collector on a platform whose private artifact delete is enforced. */
   startCollector(
@@ -79,9 +77,9 @@ export function inspectComputerUseArtifacts(input: {
   return {
     required,
     metadataPresent,
-    contextFor: (owner, seamName) => {
+    contextFor: (grant) => {
       const os = retentionPlatform(platform, nativePlatform)
-      return owner === '@agnes/base' && seamName === 'artifacts' && os
+      return grant.privateArtifactStore && os
         ? { privateArtifactStore: createPrivateArtifactStore(dataDir, os) }
         : {}
     },
@@ -130,7 +128,7 @@ export type ComputerUseHost = Readonly<{
   /** The Kernel's dispatch port for Computer Use tool calls; absent exactly when `backend` is. */
   hostToolDispatch: HostToolDispatchPort | undefined
   /** Seam-context fields for an extension row that holds the Computer Use grant, or none. */
-  extensionContext(owner: string, extensionId: string): Partial<SeamInitContext>
+  extensionContext(grant: HostCapabilityGrant): Partial<SeamInitContext>
   /** The live collector, once one has been started. */
   artifactGc(): ComputerUseArtifactGcRuntime | undefined
 }>
@@ -178,8 +176,8 @@ export function mountComputerUse(input: {
     status: lazy.controls,
     hostToolDispatch: backend ? createComputerUseHostDispatchPort() : undefined,
     artifactGc: () => collector,
-    extensionContext: (owner, extensionId) =>
-      extensionRowGrantFor(owner, extensionId)?.computerUse && backend
+    extensionContext: (grant) =>
+      grant.computerUse && backend
         ? {
             // Extension unload calls provider.dispose(). The lazy runtime's dispose closes the
             // host-lifetime driver, so a row reload would make later sessions fail closed.

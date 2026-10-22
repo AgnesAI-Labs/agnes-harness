@@ -121,7 +121,7 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
       expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
       expect(log.historyVerified).toBe(false)
       // Issued while the verification is still running: held, then refused, and nothing lands.
-      const held = log.append([input('model-side write')])
+      const held = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
       await expect(log.fullVerified()).rejects.toMatchObject({
         code: 'E_LEDGER_INTEGRITY',
         detail: { seq: 10 },
@@ -135,38 +135,30 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
       expect(rowCount(file, 'ledger_verified_head_v1')).toBe(0)
       await log.close()
       expect(rowCount(file, 'ledger_verified_head_v1')).toBe(0)
-      // No checkpoint is left, and a cold open hashes only the last 32 rows of 50: it opens, and the
-      // changed row 10 is found again only by a full verification.
-      const next = await SessionLogImpl.open(options(storage, 'r2'))
-      await next.verifyHistory({ rehashPrefix: true })
-      await expect(next.fullVerified()).rejects.toMatchObject({
+      await expect(SessionLogImpl.open(options(storage, 'r2'))).rejects.toMatchObject({
         code: 'E_LEDGER_INTEGRITY',
         detail: { seq: 10 },
       })
-      await next.close()
     },
   )
 
-  it('reopening a live log and cold-opening it skip the prefix: a changed old row is found only by a full verification', async () => {
+  it('a live reload schedules prefix verification and retains its seal on cold reload', async () => {
     const file = await built()
     const storage = sqlite(file)
     const live = await SessionLogImpl.open(options(storage, 'r1'))
     await live.fullVerified()
     raw(file, TAMPER, 'k', 10)
     await expect(live.verifyHistory()).resolves.toBe(50)
-    await live.fullVerified()
-    expect(live.faulted).toBe(false)
-    await expect(live.append([input('model-side write')])).resolves.toMatchObject({ firstSeq: 51 })
-    await live.close()
-    const cold = await SessionLogImpl.open(options(storage, 'r2'))
-    await cold.fullVerified()
-    expect(cold.faulted).toBe(false)
-    await cold.verifyHistory({ rehashPrefix: true })
-    await expect(cold.fullVerified()).rejects.toMatchObject({
+    await expect(live.fullVerified()).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
       detail: { seq: 10 },
     })
-    await cold.close()
+    await expect(live.append([input('after seal')])).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await live.close()
+    await expect(SessionLogImpl.open(options(storage, 'r2'))).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+      detail: { seq: 10 },
+    })
   })
 
   it('a row changed after the checkpoint: the unverified tail is hashed at open, which fails', async () => {
@@ -277,6 +269,7 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     await parent.fullVerified()
     const child = await parent.forkInto(30, 'child', opener)
     expect(child.lastSeq).toBeGreaterThan(30)
+    await child.fullVerified()
     await child.close()
     await parent.close()
     expect((await storage.readVerifiedHead('child'))?.throughSeq).toBe(child.lastSeq)
@@ -440,7 +433,7 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     await expect(log.append([input('typed')], { beforeFullVerify: 'allow' })).resolves.toMatchObject({
       firstSeq: 51,
     })
-    const waiting = log.append([input('model-side')])
+    const waiting = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
     release()
     await expect(waiting).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     expect(rowCount(file, 'events')).toBe(51)
@@ -468,7 +461,7 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     const log = await SessionLogImpl.open(options(held, 'r1'))
     await log.verifyHistory({ rehashPrefix: true })
     await log.append([input('typed')], { beforeFullVerify: 'allow' })
-    const waiting = log.append([input('model-side')])
+    const waiting = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
     const closing = log.close()
     release()
     await closing
@@ -512,22 +505,16 @@ describe('perf3-review: live SQLite provider checkpoints', () => {
           await storage.writeVerifiedHead!({ ...other, sessionKey: 'k' }, { force: true })
         }
       }
-      const opening = log.verifyHistory({ rehashPrefix: true }).then(
+      await expect(log.verifyHistory({ rehashPrefix: true })).resolves.toBe(change === 'tail' ? 51 : 50)
+      const append = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }]).then(
         (value) => ({ value }),
         (error) => ({ error }),
       )
-      const append = log.append([input('must not commit')]).then(
-        (value) => ({ value }),
-        (error) => ({ error }),
-      )
-      const fork = log.forkInto(5, 'review-child', opener).then(
-        (value) => ({ value }),
-        (error) => ({ error }),
-      )
-      expect(await opening).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
       await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
       expect(await append).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
-      expect(await fork).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
+      await expect(log.forkInto(5, 'review-child', opener)).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+      })
       expect(log.faulted).toBe(true)
       expect(rowCount(file, 'events')).toBe(change === 'tail' ? 51 : 50)
       expect(rowCount(file, 'events', 'review-child')).toBe(0)

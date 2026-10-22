@@ -33,6 +33,7 @@
 | 标准工具/接缝 | [base extensions](../../packages/base/extensions)、[base](../../packages/base/src) | [base tests](../../packages/base/test) |
 | Code 工作流 | [code](../../packages/code/src) | [code tests](../../packages/code/test) |
 | Cordis 生命周期 | [cordis](../../packages/cordis/src)、[cordis-loader](../../packages/cordis-loader/src)、[plugin-runtime](../../packages/plugin-runtime/src) | [增量调和](../../packages/host/test/assemble/incremental-apply.slow.test.ts) |
+| 发行装配 | [distribution](../../packages/distribution/src)、[发行策略及内置载荷](../../packages/package-manager/src/release-policy.ts)、[profile 模板](../../packages/package-manager/templates) | [Host 装配测试](../../packages/host/test/assemble) |
 | 包治理 | [package-manager](../../packages/package-manager/src)、[package-isolation](../../packages/package-isolation/src) | [package-manager tests](../../packages/package-manager/test) |
 | 资源治理 | [resource-control-store](../../packages/resource-control-store/src)、[resource-control-runtime](../../packages/resource-control-runtime/src)、[resource-control-worker](../../packages/resource-control-worker/src) | [Skills Cordis](../../packages/resource-control-runtime/test/skills-cordis.test.ts) |
 | 资源 CLI/Web | [resource-control-cli](../../packages/resource-control-cli/src)、[resource-control-web](../../packages/resource-control-web/src) | [资源 CLI 测试](../../packages/resource-control-cli/test) |

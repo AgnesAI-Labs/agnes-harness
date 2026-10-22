@@ -1,0 +1,39 @@
+import type { SessionApprovalGrant } from '@agnes/protocol'
+import type { TuiApp } from './app.js'
+import type { SlashResult } from './commands.js'
+import { tt } from './locale-extended.js'
+import { oneLine } from './session-commands.js'
+
+/** One inert line per grant: tool and scope text come from tools and plugins, never trusted. */
+export function grantLine(g: SessionApprovalGrant): string {
+  return [
+    oneLine(g.grantId),
+    oneLine(g.toolId),
+    g.lifetime,
+    oneLine(g.createdAt),
+    oneLine(g.scope),
+    ...(g.revokedAt ? ['revoked'] : []),
+  ].join('\t')
+}
+
+/** /grants lists what lets this session's tools run unasked; /grants revoke <n|grantId> withdraws one. */
+export async function grantsSlash(app: TuiApp, line: string): Promise<SlashResult> {
+  const locale = app.locale
+  const s = app.session
+  const [verb, key, ...extra] = line.trim().split(/\s+/).slice(1)
+  // admin tier: a refusal from the daemon is thrown to the caller and shown as it comes.
+  const { grants } = await s.client.approval.sessionGrants(s.id)
+  if (verb === undefined) {
+    return {
+      text: grants.length
+        ? grants.map((g, i) => `${i + 1}\t${grantLine(g)}`).join('\n')
+        : tt('grants.none', locale),
+    }
+  }
+  if (verb !== 'revoke' || key === undefined || extra.length > 0) return { text: tt('grants.usage', locale) }
+  const target =
+    grants.find((g) => g.grantId === key) ?? (/^\d+$/.test(key) ? grants[Number(key) - 1] : undefined)
+  if (!target) return { text: tt('grants.unknown', locale, { key: oneLine(key) }) }
+  const revoked = await s.client.approval.revokeSessionGrant(s.id, target.grantId)
+  return { text: tt('grants.revoked', locale, { grant: grantLine(revoked) }) }
+}

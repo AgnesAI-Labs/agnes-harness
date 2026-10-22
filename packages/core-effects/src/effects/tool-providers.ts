@@ -63,6 +63,6 @@ export class ToolRuntimeRegistry extends Providers<ToolRuntimeProvider> implemen
 export class ToolPolicyRegistry extends Providers<ToolPolicy> implements ToolPolicyRegistryPort {
   constructor(withDefault = true) {
     super('tool-policy')
-    if (withDefault) this.register('@agnes/base', defaultToolPolicy)
+    if (withDefault) this.register('@agnes/core', defaultToolPolicy)
   }
 }

@@ -271,6 +271,13 @@ it('saves and runs a hot-installed agent through the current worker catalog, ref
       },
     },
   })
+  const publishSources = async () => {
+    const target = host.runtimeTargetSnapshot?.()
+    if (!target || !host.applyRuntimeTarget) throw new Error('runtime publication unavailable')
+    // Installer changes publish before the worker's descriptive catalog is read.
+    const result = await host.applyRuntimeTarget(target)
+    expect(result.publication?.ok).toBe(true)
+  }
   const opened: Awaited<ReturnType<typeof host.createSession>>[] = []
   const client = vi.spyOn(sdk, 'createClient').mockImplementation(
     () =>
@@ -314,6 +321,7 @@ it('saves and runs a hot-installed agent through the current worker catalog, ref
   try {
     expect((await catalog()).bundles).toEqual([])
     sources = [source]
+    await publishSources()
     const plan = await host.resolveAgent!('@acme/hot#work')
     expect((await catalog()).bundles).toContainEqual({ id: plan.ref, sourcePackage: manifest.name })
     const input = {
@@ -339,6 +347,7 @@ it('saves and runs a hot-installed agent through the current worker catalog, ref
       snapshot: { ...source.snapshot, treeIntegrity: hashDirectory(directory, { exclude: [] }) },
     }
     sources = [changed]
+    await publishSources()
     await expect(host.resolveAgent!(plan.ref)).rejects.toThrow('unknown agent')
     now += 60_000
     const job = repo.claimDue(now, 'synthetic', 1000, 1)[0]
@@ -348,6 +357,8 @@ it('saves and runs a hot-installed agent through the current worker catalog, ref
     expect(opened[0]!.currentTools().resolve('read')).toBeDefined()
     for (const revoked of [[{ ...changed, enabled: false }], [{ ...changed, trusted: false }], []]) {
       sources = revoked
+      await publishSources()
+      expect((await catalog()).bundles).toEqual([])
       await expect(tasks.upsert(input)).rejects.toMatchObject({ code: 'bundle_unavailable' })
       await expect(tasks.hooks.prepare(job)).rejects.toThrow('bundle_unavailable')
     }

@@ -1,3 +1,5 @@
+import type { ToolDetailState } from '@agnes/cli-tui'
+import { childFacts } from '@agnes/cli-tui'
 import type { UINode, UITimeline } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
@@ -247,4 +249,166 @@ it('collects status.line and sidebar.action across tool-attached and standalone 
   // sidebar.action carries no requestSeq: the field belongs to the slot fill, not to the
   // client-minted value a real click sends.
   expect(s.actions).toEqual([{ id: 'rerun', label: '重跑本月' }])
+})
+
+it('shows the fetched record in place of the previews, and keeps them while it loads or when it fails', () => {
+  let detail: ToolDetailState | undefined
+  let opened = 0
+  const card = new ToolCard(node, { detail: () => detail, onExpand: () => opened++ })
+  card.toggle()
+  expect(opened).toBe(1)
+  detail = { state: 'loading' }
+  let rows = card.render(60).join('\n')
+  expect(rows).toContain('Loading the full record…')
+  expect(rows).toContain('Result: contents')
+  detail = { state: 'failed', reason: 'Request failed (X)' }
+  rows = card.render(90).join('\n')
+  expect(rows).toContain('Full record unavailable (Request failed (X)); showing the preview.')
+  expect(rows).toContain('Result: contents')
+  // Pretty-printed arguments keep their indentation under the label.
+  detail = { state: 'ready', args: '{\n  "path": "x"\n}' }
+  expect(card.render(50).join('\n')).toContain(`│ ${' '.repeat(13)}  "path": "x"`)
+  // The record is external text: controls are dropped and every row keeps to the width.
+  detail = { state: 'ready', args: '{\n  "path": "中.txt"\n}', result: `full\x1b[2J${'x'.repeat(100)}` }
+  const lines = card.render(30)
+  rows = lines.join('\n')
+  expect(rows).toContain('"中.txt"')
+  expect(rows).not.toContain('contents')
+  expect(rows).not.toContain('\x1b')
+  expect(lines.every((line) => displayWidth(line) === 30)).toBe(true)
+  card.toggle()
+  expect(opened).toBe(1)
+})
+
+const tool = (over: Partial<Extract<UINode, { kind: 'tool' }>>): Extract<UINode, { kind: 'tool' }> => ({
+  kind: 'tool',
+  id: 'c',
+  seq: 1,
+  toolUseId: 'u',
+  status: 'completed',
+  summary: '',
+  name: 'x',
+  ...over,
+})
+
+it('draws a plan as one row per step with its state, and shows only the first rows until opened', () => {
+  const plan = (steps: unknown) => tool({ name: 'update_plan', argsPreview: JSON.stringify(steps) })
+  const card = new ToolCard(
+    plan({
+      plan: [
+        { step: 'read the spec', status: 'completed' },
+        { step: 'write\nthe\x1b[2J parser', status: 'in_progress' },
+        { step: 'ship it', status: 'pending' },
+        { step: 'nope', status: 'constructor' },
+        { text: 'wait on review', status: 'blocked' },
+      ],
+    }),
+  )
+  expect(card.render(50)).toEqual([
+    ' ◆ Plan  1/5 done'.padEnd(50),
+    '    [x] read the spec'.padEnd(50),
+    '    [>] write the[2J parser'.padEnd(50),
+    '    [ ] ship it'.padEnd(50),
+    '    [ ] nope'.padEnd(50),
+    '    [!] wait on review'.padEnd(50),
+  ])
+  // The plan tool this repository ships names its steps `content` under `items`.
+  const todo = tool({
+    name: 'todo',
+    argsPreview: JSON.stringify({ items: [{ content: 'a', status: 'completed' }] }),
+  })
+  expect(new ToolCard(todo).render(30)[1]).toBe('    [x] a'.padEnd(30))
+  // A long plan shows the first rows and says how many more; opening shows every step.
+  const long = plan({
+    items: Array.from({ length: 13 }, (_, i) => ({ content: `s${i}`, status: 'pending' })),
+  })
+  const collapsed = new ToolCard(long).render(40)
+  expect(collapsed).toHaveLength(12)
+  expect(collapsed.at(-1)).toBe('    … 3 more'.padEnd(40))
+  const open = new ToolCard(long, { collapsed: false }).render(40).join('\n')
+  expect(open).toContain('[ ] s12')
+  // Cut-off or foreign arguments leave the plain card.
+  for (const argsPreview of ['{"plan":[{"step":"a","sta…', '{"plan":"nope"}', '{"plan":[]}'])
+    expect(
+      new ToolCard(tool({ name: 'update_plan', argsPreview, summary: 'plan updated' })).render(40),
+    ).toEqual([' ◆ Plan  plan updated'.padEnd(40)])
+  const coloured = new ToolCard(plan({ plan: [{ step: 's', status: 'in_progress' }] }), {
+    ansi: new TuiTheme('dark').ansi(createAnsi('256')),
+  })
+  expect(coloured.render(30)[1]).toContain(new TuiTheme('dark').ansi(createAnsi('256')).fg('accent', '[>]'))
+})
+
+it('draws subagent, job and workflow cards with their name, state, run time and a one-line summary', () => {
+  // The headline with its state right-aligned, as the card lays it out.
+  const row = (left: string, right: string, width: number) =>
+    `${left.padEnd(width - right.length - 2)}  ${right}`
+  let facts: { status?: string; durationMs?: number } | undefined
+  const spawn = tool({
+    name: 'subagent_spawn',
+    summary: 'spawned',
+    delegatedRole: { ref: 'reviewer', title: { en: 'Reviewer', 'zh-CN': '审阅者' } },
+    delegatedTask: { childKey: 'child-1', task: 'review the\ndiff\x1b[2J carefully', status: 'running' },
+  })
+  const agent = new ToolCard(spawn, { facts: () => facts })
+  expect(agent.render(60)).toEqual([row(' ◈ Subagent Reviewer  review the diff[2J carefully', 'running', 60)])
+  // The child's state and time arrive without the spawning node changing, and the same card shows them.
+  facts = { status: 'completed', durationMs: 12_345 }
+  expect(agent.render(70)).toEqual([
+    row(' ◆ Subagent Reviewer  review the diff[2J carefully', 'done · 12.3s', 70),
+  ])
+  expect(new ToolCard(spawn, { locale: 'zh-CN' }).render(60)[0]).toContain('子智能体 审阅者')
+  agent.toggle()
+  const open = agent.render(70).join('\n')
+  expect(open).toContain('Task: review the')
+  expect(open).toContain('diff[2J carefully')
+  expect(open).toContain('Child: child-1')
+  expect(open).not.toContain('\x1b')
+
+  const job = tool({ name: 'job_kill', status: 'running', summary: 'killing dev' })
+  expect(new ToolCard(job).render(50)).toEqual([row(' ◈ Job job_kill  killing dev', 'running', 50)])
+  const background = tool({ name: 'shell', resultPreview: 'background job j1 started; use job_output' })
+  expect(new ToolCard(background).render(60)[0]).toContain('Job shell')
+  expect(new ToolCard(tool({ name: 'shell', resultPreview: 'ok' })).render(60)[0]).not.toContain('Job')
+  const workflow = tool({ name: 'workflow_status', summary: '2 of 3 steps' })
+  expect(new ToolCard(workflow).render(50)).toEqual([
+    row(' ◆ Workflow workflow_status  2 of 3 steps', 'done', 50),
+  ])
+})
+
+it('reads a subagent state and run time from the trace spans of the projected turns', () => {
+  const span = (over: Record<string, unknown>) => ({
+    id: 's',
+    kind: 'other',
+    name: 'n',
+    status: 'completed',
+    children: [],
+    ...over,
+  })
+  const turn = (trace: unknown) => ({ turns: [{ trace }] }) as unknown as UITimeline
+  const facts = childFacts(
+    turn(
+      span({
+        kind: 'turn',
+        children: [
+          span({ kind: 'subagent', status: 'running', childSessionKey: 'a', children: [] }),
+          span({
+            kind: 'step',
+            children: [
+              span({
+                kind: 'subagent',
+                status: 'completed',
+                durationMs: 900,
+                childSessionKey: 'b',
+                children: [span({ kind: 'turn', status: 'failed', durationMs: 5 })],
+              }),
+            ],
+          }),
+        ],
+      }),
+    ),
+  )
+  expect(facts.get('a')).toEqual({ status: 'running' })
+  expect(facts.get('b')).toEqual({ status: 'failed', durationMs: 900 })
+  expect(facts.size).toBe(2)
+  expect(childFacts(turn(undefined)).size).toBe(0)
 })

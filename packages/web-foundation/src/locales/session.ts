@@ -3,6 +3,16 @@ import type { LocaleCatalog } from '@agnes/web-client'
 /** 侧栏导航、会话菜单与重命名/归档面板。命令式渲染时取词。 */
 export const sessionLocaleCatalog: LocaleCatalog = {
   en: {
+    'session.integrity.title': 'History integrity',
+    'session.integrity.legacy': 'Legacy rows through seq {seq} have no hash protection.',
+    'session.integrity.verifying':
+      'Verifying history… Approvals, audit views and evidence exports wait for completion.',
+    'session.integrity.verified': 'Verified through seq {seq} · {time}',
+    'session.integrity.failedUnknown': 'History verification could not finish. Session sealed.',
+    'session.integrity.failed': 'History integrity failed at seq {seq}. Session sealed.',
+    'session.integrity.unknown': 'Verification status unavailable',
+    'session.integrity.verify': 'Run full verification',
+
     'nav.noWorkspaceTitle': 'History sessions without a workspace',
     'nav.sessionFallback': 'New session',
     'nav.loadMore': 'Load more tasks',
@@ -147,6 +157,15 @@ export const sessionLocaleCatalog: LocaleCatalog = {
       'Archived, but the list failed to refresh; reload the page: {detail}',
   },
   'zh-CN': {
+    'session.integrity.title': '历史完整性',
+    'session.integrity.legacy': '序号 {seq} 及之前的 legacy 行没有哈希保护。',
+    'session.integrity.verifying': '正在校验历史…审批、审计视图和证据导出等待校验完成。',
+    'session.integrity.verified': '已校验至序号 {seq} · {time}',
+    'session.integrity.failedUnknown': '历史校验未能完成，会话已封存。',
+    'session.integrity.failed': '历史完整性校验失败，序号 {seq}。会话已封存。',
+    'session.integrity.unknown': '校验状态暂不可用',
+    'session.integrity.verify': '运行完整校验',
+
     'session.rename.saved': '会话名称已保存。',
     'session.archivedNotice': '会话已归档。',
     'nav.noWorkspaceTitle': '没有工作区归属的历史会话',

@@ -106,6 +106,10 @@ describe('conversation projection store', () => {
       turns: [turn(['role'], 'completed', 'completed')],
     }
     await mount(createConversationProjectionStore(projection))
+    for (const hint of host.querySelectorAll('.delegation-card p'))
+      expect(hint.textContent).not.toContain('subagent_send_message')
+    expect(host.querySelector('.delegation-card pre')?.textContent).toBe(node.resultPreview)
+    expect(host.textContent).toContain('跟进时请引用此任务编号。')
     expect(host.textContent).toContain('由 读者 处理')
     expect(host.querySelector('[data-testid="delegation-card"]')?.getAttribute('data-status')).toBe('running')
     expect(host.querySelector('.delegation-card button')?.textContent).toBe('查看子任务')

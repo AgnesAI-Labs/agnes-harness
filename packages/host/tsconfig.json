@@ -78,6 +78,9 @@
     },
     {
       "path": "../intelligent-ui-contract"
+    },
+    {
+      "path": "../distribution"
     }
   ]
 }

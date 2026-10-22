@@ -9,7 +9,7 @@ import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
-import { attachmentsFrom, FileMentionSource, listWorkspaceFiles } from './file-mentions.js'
+import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { formatTurnSummary } from './format-usage.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
@@ -27,16 +27,17 @@ import { pendingSurface } from './surface-prompt.js'
 import type { Terminal } from './terminal.js'
 import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
 import { readTheme, saveTheme } from './theme-preference.js'
+import { ToolCards } from './tool-cards.js'
 import { ApprovalCard } from './views/approval-card.js'
 import { Composer } from './views/composer.js'
 import { Hints } from './views/hints.js'
+import { localCommandView } from './views/local-command.js'
 import { UserMessage } from './views/message.js'
 import { ModelPicker, type ModelSelection } from './views/model-picker.js'
 import { SessionPicker } from './views/session-picker.js'
 import { StatusBar } from './views/status-bar.js'
 import { ThemePicker } from './views/theme-picker.js'
 import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
-import { ToolCard } from './views/tool-card.js'
 import { UsagePanel } from './views/usage-panel.js'
 import { WelcomeController, type WelcomeOptions } from './welcome-controller.js'
 import { readWorkspaceInfo, tildePath, type WorkspaceProbe, workspaceRefresher } from './workspace-info.js'
@@ -66,8 +67,7 @@ export class TuiApp {
   private projection: TuiProjection
   private readonly timeline: Timeline
   private readonly welcome: WelcomeController
-  private readonly toolCards = new Map<string, ToolCard>()
-  private latestTool: string | undefined
+  private readonly cards: ToolCards
   private readonly approvalCards = new Map<string, ApprovalCard>()
   private latestApproval: string | undefined
   private reservedRows = TIMELINE_RESERVED_ROWS
@@ -79,7 +79,8 @@ export class TuiApp {
   private turnStartedAt: number | undefined
   private currentTurn = 0
   private ticker: ReturnType<typeof setInterval> | undefined
-  private readonly pendingPrompts: ContentBlock[][] = []
+  /** Messages typed during a turn, sent in order once it ends; /queue lists, edits and drops them. */
+  readonly pendingPrompts: ContentBlock[][] = []
   private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
   private flushingQueued = false
   private queuedWake: ReturnType<typeof setTimeout> | undefined
@@ -88,7 +89,7 @@ export class TuiApp {
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
   private readonly editor: Editor
-  private readonly mentions: FileMentionSource
+  private readonly mentions: ReferenceMentionSource
   private readonly composer: Composer
   private readonly theme: TuiTheme
   private readonly themePicker: ThemePicker
@@ -140,6 +141,8 @@ export class TuiApp {
       copy?: (text: string) => void
       /** The workspace the CLI opened its first session in (`--cwd`); defaults to `process.cwd()`. */
       cwd?: string
+      /** True over `--connect`: `@` completion then never falls back to this machine's disk. */
+      remote?: boolean
       /** Last model and permission for the next fresh session. Omitted in tests that do not inherit. */
       composerSelectionPath?: string
       themePreferencePath?: string
@@ -159,18 +162,7 @@ export class TuiApp {
     const locale = o.locale ?? 'en'
     this.hints = new Hints(ansi)
     this.loader = new Loader('', ansi)
-    this.localCommandView = (command, output, quiet = true) => {
-      const echo = new Text(
-        `${ansi.bold(ansi.fg('accent', '›'))} ${ansi.bold(escapeControl(command.trim()))}`,
-      )
-      const text = escapeControl(output)
-      const styled = new VStack([
-        echo,
-        quiet ? new Text(text, { style: (s) => ansi.dim(s) }) : new Text(text),
-      ])
-      const plain = new VStack([echo, new Text(text)])
-      return { render: (w) => styled.render(w), transcript: (w) => plain.render(w), invalidate() {} }
-    }
+    this.localCommandView = localCommandView(ansi)
     this.statusBar = new StatusBar(ansi, locale)
     this.mouse = new TuiMouse(
       (rows) => this.scrollTimeline(rows),
@@ -187,6 +179,14 @@ export class TuiApp {
       shows: () => !this.stopped && !this.turnActive && this.timeline.showsWelcome(),
       repaint: () => this.stopped || this.renderer.requestRender(),
     })
+    this.cards = new ToolCards({
+      ansi,
+      locale,
+      session: () => this.o.session,
+      closed: () => this.closedNotice !== undefined,
+      changed: () => this.stopped || this.renderer.requestRender(),
+      onAction: (actionId) => this.dispatchAction(actionId),
+    })
     this.timeline = new Timeline({
       rows: () => o.term.size().rows,
       reservedRows: () => this.reservedRows,
@@ -196,16 +196,7 @@ export class TuiApp {
       // viewport, never into the shell's history.
       top: this.welcome.banner,
       nodeView: (node) => {
-        if (node.kind === 'tool') {
-          const card = new ToolCard(node, {
-            collapsed: this.toolCards.get(node.id)?.collapsed ?? true,
-            ansi,
-            locale: this.o.locale ?? 'en',
-            onAction: (actionId) => this.dispatchAction(actionId),
-          })
-          this.toolCards.set(node.id, card)
-          return card
-        }
+        if (node.kind === 'tool') return this.cards.view(node)
         if (node.kind === 'approval') {
           const card = new ApprovalCard(node, {
             ansi,
@@ -265,12 +256,16 @@ export class TuiApp {
         },
       },
     )
-    this.mentions = new FileMentionSource(
-      () => listWorkspaceFiles(this.cwd),
-      () => {
+    // Asks whichever session is current; applySwitch resets the cached answers.
+    this.mentions = createMentionSource({
+      session: { searchReferences: (query) => this.session.searchReferences(query) },
+      cwd: this.cwd,
+      remote: o.remote ?? false,
+      locale,
+      changed: () => {
         if (!this.stopped) this.renderer.requestRender()
       },
-    )
+    })
     this.editor = new Editor({
       maxRows: () => Math.max(1, Math.floor(o.term.size().rows / 3)),
       placeholder: tt('app.composerPlaceholder', locale),
@@ -393,10 +388,10 @@ export class TuiApp {
       // Numbered actions inside the most recently projected tool card, tried before the digit
       // reaches anything else. A collapsed card (or one with no matching action) declines, and
       // the keystroke falls through to the editor like any other character.
-      if (!inert && this.latestTool && this.toolCards.get(this.latestTool)?.handleInput(data)) return true
+      if (!inert && this.cards.handleInput(data)) return true
       const key = parseKey(data, o.term.caps.kittyKeyboard)
       if (key.name === 'ctrl-o') {
-        if (this.latestTool) this.toolCards.get(this.latestTool)?.toggle()
+        this.cards.toggleLatest()
         return true
       }
       if (key.name === 'f1' || key.name === 'f2' || key.name === 'f3' || key.name === 'f4') {
@@ -417,7 +412,7 @@ export class TuiApp {
         if (text.trim()) {
           this.editor.clear()
           void this.o.session
-            .followUp(attachmentsFrom(text, this.cwd))
+            .followUp(attachmentsFrom(text, this.cwd, this.o.remote))
             .catch((error) => this.showError(error))
         }
         return true
@@ -707,10 +702,7 @@ export class TuiApp {
 
   private apply(value: UITimeline, options: { opening?: boolean; window?: TuiProjectionWindow } = {}): void {
     void this.syncSurfaces()
-    const tools = value.nodes.filter((node) => node.kind === 'tool')
-    const ids = new Set(tools.map((node) => node.id))
-    for (const id of this.toolCards.keys()) if (!ids.has(id)) this.toolCards.delete(id)
-    this.latestTool = tools.at(-1)?.id
+    this.cards.sync(value)
     const approvals = value.nodes.filter((node) => node.kind === 'approval')
     const approvalIds = new Set(approvals.map((node) => node.id))
     for (const id of this.approvalCards.keys()) if (!approvalIds.has(id)) this.approvalCards.delete(id)
@@ -873,13 +865,14 @@ export class TuiApp {
         this.statusBar.setNotice(r.text)
       }
     }
+    if (r.draft !== undefined) this.editor.setText(r.draft)
     if (r.modelChoices) {
       this.statusBar.setNotice(undefined)
       this.modelPicker.show(r.modelChoices)
     }
     if (r.sessionChoices) {
       this.statusBar.setNotice(undefined)
-      this.sessionPicker.show(r.sessionChoices)
+      this.sessionPicker.show(r.sessionChoices, r.sessionPickerTitle)
     }
     if (r.switchSession) await this.applySwitch(r.switchSession)
     if (r.quit) this.onQuit()
@@ -921,6 +914,7 @@ export class TuiApp {
     this.surfaceReadAgain = false
     this.attachmentController.abort()
     this.attachmentController = new AbortController()
+    this.mentions.reset()
     this.o.session = next
     this.previews.reset()
     this.previewEffects.length = 0
@@ -963,9 +957,20 @@ export class TuiApp {
       if (this.refuseSwitch()) return this.renderer.requestRender()
       this.statusBar.setNotice(`Loading session ${escapeControl(choice.sessionId)}…`)
       this.renderer.requestRender()
-      const next = await this.o.session.client.session.load(choice.sessionId, { cwd: this.cwd })
+      // A rewind row forks the open session at its completed-turn boundary; any other row resumes.
+      const next =
+        choice.forkAt === undefined
+          ? await this.o.session.client.session.load(choice.sessionId, { cwd: this.cwd })
+          : await this.o.session.client.session.fork(choice.sessionId, choice.forkAt)
       if (await this.applySwitch(next))
-        this.statusBar.setNotice(`Resumed ${escapeControl(choice.sessionId)}`, 'success')
+        this.statusBar.setNotice(
+          choice.forkAt === undefined
+            ? `Resumed ${escapeControl(choice.sessionId)}`
+            : tt('session.rewound', this.locale, {
+                turn: choice.title?.match(/^#(\d+)/)?.[1] ?? choice.forkAt,
+              }),
+          'success',
+        )
       if (!this.stopped) this.renderer.requestRender()
     } catch (error) {
       this.showError(error)
@@ -1006,7 +1011,7 @@ export class TuiApp {
       this.renderer.requestRender()
       return
     }
-    await this.submitBlocks(attachmentsFrom(text, this.cwd))
+    await this.submitBlocks(attachmentsFrom(text, this.cwd, this.o.remote))
   }
 
   private async submitBlocks(blocks: import('@agnes/protocol').ContentBlock[]): Promise<void> {

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { CoreError } from '@agnes/core'
+import { type CoreError, defaultIds, SessionLogImpl } from '@agnes/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ev } from '../../../host/test/adapters/events.js'
 import { createSqliteStorage, DATA_DIR_VERSION } from '../../src/adapters/storage-sqlite.js'
@@ -79,6 +79,64 @@ describe('data directory version', () => {
       await s2.close()
     }
   })
+
+  it.each(['before', 'after'])(
+    'opens and continues real ledger fixtures from %s the integrity merge',
+    async (build) => {
+      rawCreate(
+        file,
+        readFileSync(new URL(`../fixtures/ledger-upgrade/${build}.sql`, import.meta.url), 'utf8'),
+      )
+      const storage = open()
+      const options = (key: string) => ({
+        storage,
+        key,
+        writerRunId: 'tip',
+        ttlMs: 60_000,
+        ids: defaultIds(),
+        clock: Date.now,
+      })
+      try {
+        for (const [key, lastSeq] of [
+          ['upgrade-parent', 2],
+          ['upgrade-child', 3],
+        ] as const) {
+          const log = await SessionLogImpl.open(options(key))
+          try {
+            expect(log.lastSeq).toBe(lastSeq)
+            expect((await storage.scan(key, { fromSeq: 1, limit: 10 })).map((event) => event.data)).toEqual([
+              { content: [{ type: 'text', text: 'before restart' }] },
+              { content: [{ type: 'text', text: 'saved history' }] },
+              ...(key === 'upgrade-child' ? [{ content: [{ type: 'text', text: 'child history' }] }] : []),
+            ])
+            await log.verifyHistory()
+            await log.append([
+              {
+                actor: { id: 'synthetic', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+                origin: 'principal',
+                trust: 'trusted',
+                type: 'user/message',
+                data: { content: [{ type: 'text', text: 'continued at tip' }] },
+              },
+            ])
+            expect(log.lastSeq).toBe(lastSeq + 1)
+            expect(await storage.readIntegrityFailure(key)).toBeUndefined()
+          } finally {
+            await log.close()
+          }
+          const reopened = await SessionLogImpl.open(options(key))
+          try {
+            expect(reopened.lastSeq).toBe(lastSeq + 1)
+            await reopened.verifyHistory()
+          } finally {
+            await reopened.close()
+          }
+        }
+      } finally {
+        await storage.close()
+      }
+    },
+  )
 
   it('refuses a sessions.db from an older build and changes nothing', () => {
     rawCreate(file, 'CREATE TABLE events (x)')

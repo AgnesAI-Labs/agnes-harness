@@ -220,6 +220,13 @@ export async function runPackageCommand(
       io.write(`${formatOperation(await directOperation(client, profile, action, id, reviewedIntegrity))}\n`)
       return
     }
+    case 'source-policy': {
+      const policy = await client.call<{ allowedSources: string }>('_agnes/v1/packages.sourcePolicy', {
+        profile,
+      })
+      io.write(p.json ? JSON.stringify(policy) : `allowed sources: ${policy.allowedSources}`)
+      return
+    }
     case 'operation': {
       const id = requireArg(args, 1, 'agh package operation <operationId>')
       io.write(`${formatOperation(await client.packages.operation.get({ profile, operationId: id }))}\n`)

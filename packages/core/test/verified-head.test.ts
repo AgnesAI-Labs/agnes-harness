@@ -10,9 +10,11 @@ import {
 } from '@agnes/core-ledger/log/session-log'
 import type { StorageAdapter } from '@agnes/core-ledger/log/storage'
 import { decideCheckpoint, makeVerifiedHead, type VerifiedHead } from '@agnes/core-ledger/log/verified-head'
+import type { ToolDef } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
-import { fakeProvider, textTurn } from './helpers/fake-provider.js'
-import { openSession } from './helpers/open-session.js'
+import { ToolRegistry } from '../src/registry/tools.js'
+import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
+import { openSession, readTool } from './helpers/open-session.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 const timers = { setTimeout: () => 0, clearTimeout: () => undefined }
@@ -33,10 +35,7 @@ const options = (storage: StorageAdapter, writerRunId = 'w'): OpenLogOptions => 
   timers,
 })
 
-/**
- * A cold open no longer hashes the prefix, so the background verification these tests exercise is the
- * explicit full one: it hashes the prefix behind the same execution gate.
- */
+/** Exercise the automatic background prefix check and the explicit recheck through the same seam. */
 async function openRehashed(o: OpenLogOptions): Promise<SessionLogImpl> {
   const log = await SessionLogImpl.open(o)
   await log.verifyHistory({ rehashPrefix: true })
@@ -86,7 +85,7 @@ describe('verified head checkpoint', () => {
     expect(await decideCheckpoint(storage, 'k', 10)).toEqual({ use: false, reason: 'algorithm' })
   })
 
-  it('holds non-input writes until the background verify passes, and lets user input through', async () => {
+  it('admits ordinary writes while evidence waits for background verification', async () => {
     const storage = await seeded(600)
     const first = await SessionLogImpl.open(options(storage, 'a'))
     await first.fullVerified()
@@ -104,7 +103,7 @@ describe('verified head checkpoint', () => {
     }
     const log = await openRehashed(options(slow, 'b'))
     const userInput = log.append([input('typed while verifying')], { beforeFullVerify: 'allow' })
-    const turn = log.append([input('a model-side write')])
+    const turn = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
     await expect(userInput).resolves.toMatchObject({ firstSeq: 601 })
     expect(log.lastSeq).toBe(601)
     release()
@@ -183,7 +182,7 @@ function held(
   let folded = false
   const wrapped: StorageAdapter = Object.create(storage)
   wrapped.scanIntegrity = async (key, q) => {
-    if (q.fromSeq === 1 && folded && holding) {
+    if (key === 'k' && q.fromSeq === 1 && folded && holding) {
       arrive()
       await gate
     }
@@ -230,57 +229,17 @@ describe('warm checkpoint rechecks', () => {
     },
   )
 
-  it('checks the tail before returning and keeps waiting writes behind a newer recheck', async () => {
+  it('ordinary appends and forks proceed while an audit waits; evidence does not', async () => {
     const storage = await seeded(10)
     const slow = held(storage, false)
-    let checkingAgain = false
-    let releaseAgain!: () => void
-    const secondGate = new Promise<void>((resolve) => {
-      releaseAgain = resolve
-    })
-    let reachedAgain!: () => void
-    const secondRead = new Promise<void>((resolve) => {
-      reachedAgain = resolve
-    })
-    const wrapped: StorageAdapter = Object.create(slow.storage)
-    wrapped.scanIntegrity = async (key, query) => {
-      if (checkingAgain && query.fromSeq === 1) {
-        reachedAgain()
-        await secondGate
-      }
-      return slow.storage.scanIntegrity(key, query)
-    }
-    const log = await SessionLogImpl.open(options(wrapped, 'warm'))
+    const log = await SessionLogImpl.open(options(slow.storage, 'warm'))
     await log.fullVerified()
-    await log.append([input('tail')])
     slow.arm()
-    const progress: number[] = []
-    expect(
-      await log.verifyHistory({ rehashPrefix: true, onProgress: (p) => progress.push(p.verifiedSeq) }),
-    ).toBe(11)
-    expect(progress).toEqual([10, 11])
+    await log.verifyHistory({ rehashPrefix: true })
     await slow.reached
-    expect(log.historyVerified).toBe(false)
-    await expect(log.append([input('queued')], { beforeFullVerify: 'allow' })).resolves.toMatchObject({
-      firstSeq: 12,
-    })
-    let rechecked = false
-    // An earlier waiter starts a new recheck before the writer's await continuation resumes.
-    const again = log
-      .fullVerified()
-      .then(() =>
-        log.verifyHistory({
-          rehashPrefix: true,
-          onProgress: () => {
-            checkingAgain = true
-          },
-        }),
-      )
-      .then(() => {
-        rechecked = true
-      })
-    const write = log.append([input('model-side')])
-    const fork = log.forkInto(5, 'child', {
+    const waiting = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
+    await expect(log.append([input('model-side')])).resolves.toMatchObject({ firstSeq: 11 })
+    const child = await log.forkInto(5, 'child', {
       actor,
       agnesVersion: '0.0.1',
       preset: 'standard',
@@ -288,19 +247,11 @@ describe('warm checkpoint rechecks', () => {
       writerRunId: 'child-run',
       lane: 'main',
     })
-    expect(log.lastSeq).toBe(12)
-    expect(rechecked).toBe(false)
+    expect(child.lastSeq).toBeGreaterThan(5)
+    expect(log.lastSeq).toBe(11)
     slow.release()
-    await again
-    await secondRead
-    expect(log.historyVerified).toBe(false)
-    expect(log.lastSeq).toBe(12)
-    expect((storage as unknown as Books).books.has('child')).toBe(false)
-    releaseAgain()
-    await log.fullVerified()
-    await expect(write).resolves.toBeDefined()
-    await (await fork).close()
-    expect(log.historyVerified).toBe(true)
+    await waiting
+    await child.close()
     await log.close()
   })
 
@@ -321,7 +272,8 @@ describe('warm checkpoint rechecks', () => {
       writerRunId: 'child-run',
       lane: 'main',
     })
-    expect((storage as unknown as Books).books.has('child')).toBe(false)
+    void fork.catch(() => undefined)
+    expect((await storage.scan('child', { fromSeq: 6, limit: 100 })).length).toBe(0)
     slow.release()
     await expect(fork).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY', detail: { seq: 2 } })
@@ -333,35 +285,134 @@ describe('warm checkpoint rechecks', () => {
     await log.close()
   })
 
-  it('cancels an opening observer while the background check keeps the step gate closed', async () => {
+  it.each([false, true])(
+    'cancels an observer while ordinary steps run; tool attestsHistory=%s is fenced',
+    async (attestsHistory) => {
+      const storage = new MemoryStorage()
+      const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
+      await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+      await first.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      await first.session.close()
+      const slow = held(storage, false)
+      const provider = fakeProvider([toolTurn('read', {}), textTurn('two')])
+      const execute = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'read evidence' }] }))
+      const tool: ToolDef = readTool(execute)
+      const registry = new ToolRegistry()
+      registry.add({ ...tool, meta: { ...tool.meta, attestsHistory } }, { source: 'test', trust: 'builtin' })
+      const second = await openSession({
+        storage: slow.storage as MemoryStorage,
+        provider,
+        registry,
+        writerRunId: 'warm',
+      })
+      await second.log.fullVerified()
+      slow.arm()
+      const controller = new AbortController()
+      await second.session.verifyHistory({ rehashPrefix: true, signal: controller.signal })
+      await slow.reached
+      // A second observer waiting for that same live log can leave without releasing its gate.
+      const cancelled = second.session.auditHistory(controller.signal)
+      controller.abort()
+      await expect(cancelled).rejects.toMatchObject({ code: 'E_CLOSED' })
+      await second.session.enqueue('next-turn', { content: [{ type: 'text', text: 'second' }], actor })
+      const run = second.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      await vi.waitFor(() => expect(provider.calls).toBeGreaterThanOrEqual(1))
+      if (attestsHistory) expect(execute).not.toHaveBeenCalled()
+      else await vi.waitFor(() => expect(execute).toHaveBeenCalledTimes(1))
+      slow.release()
+      await run
+      expect(provider.calls).toBe(2)
+      expect(execute).toHaveBeenCalledTimes(1)
+      await second.session.close()
+    },
+  )
+
+  it('waits for an approval outside the session writer lock while ordinary input proceeds', async () => {
     const storage = new MemoryStorage()
     const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
-    await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
+    await first.session.close()
+    const slow = held(storage)
+    const second = await openSession({
+      storage: slow.storage as MemoryStorage,
+      provider: fakeProvider([textTurn('two')]),
+      writerRunId: 'approval',
+    })
+    try {
+      await slow.reached
+      const handle = await second.session.decisions
+        .port({
+          owner: 'review',
+          operationId: 'review',
+          sourcePackage: '@fixture/review',
+          packageVersion: '1.0.0',
+          alive() {},
+        })
+        .request({
+          key: 'review',
+          purpose: 'business.confirm',
+          subject: {},
+          prompt: 'Review?',
+          options: ['continue', 'reject'],
+        })
+      let answered = false
+      const answer = second.session.decisions
+        .answer(
+          {
+            handle,
+            revision: 1,
+            commandId: 'answer',
+            response: { option: 'continue', value: null },
+          },
+          { actor, category: 'human', authorize() {} },
+        )
+        .then(() => {
+          answered = true
+        })
+      await second.session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'ordinary input' }],
+        actor,
+      })
+      expect(answered).toBe(false)
+      slow.release()
+      await answer
+      expect(answered).toBe(true)
+    } finally {
+      slow.release()
+      await second.session.close()
+    }
+  })
+
+  it('closing a session cancels verification before draining a turn waiting at its evidence gate', async () => {
+    const storage = new MemoryStorage()
+    const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
+    await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'seed' }], actor })
     await first.session.run({ until: 'turn-end', signal: new AbortController().signal })
     await first.session.close()
-    const slow = held(storage, false)
+    const slow = held(storage)
     const provider = fakeProvider([textTurn('two')])
     const second = await openSession({
       storage: slow.storage as MemoryStorage,
       provider,
-      writerRunId: 'warm',
+      writerRunId: 'closing',
     })
-    await second.log.fullVerified()
-    slow.arm()
-    const controller = new AbortController()
-    await second.session.verifyHistory({ rehashPrefix: true, signal: controller.signal })
-    await slow.reached
-    // A second observer waiting for that same live log can leave without releasing its gate.
-    const cancelled = second.session.verifyHistory({ rehashPrefix: true, signal: controller.signal })
-    controller.abort()
-    await expect(cancelled).rejects.toMatchObject({ code: 'E_CLOSED' })
-    await second.session.enqueue('next-turn', { content: [{ type: 'text', text: 'second' }], actor })
-    const run = second.session.run({ until: 'turn-end', signal: new AbortController().signal })
-    expect(provider.calls).toBe(0)
-    slow.release()
-    await run
-    expect(provider.calls).toBe(1)
-    await second.session.close()
+    let closing: Promise<void> | undefined
+    try {
+      await second.session.enqueue('next-turn', { content: [{ type: 'text', text: 'second' }], actor })
+      const run = second.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      void run.catch(() => undefined)
+      await vi.waitFor(() => expect(provider.calls).toBe(1))
+      let closed = false
+      closing = second.session.close().then(() => {
+        closed = true
+      })
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      expect(closed).toBe(true)
+      await run
+    } finally {
+      slow.release()
+      await closing
+      await second.session.close()
+    }
   })
 
   it('closing during a warm background check refuses waiting writes without advancing the checkpoint', async () => {
@@ -373,7 +424,7 @@ describe('warm checkpoint rechecks', () => {
     slow.arm()
     await log.verifyHistory({ rehashPrefix: true })
     await slow.reached
-    const waiting = log.append([input('model-side')])
+    const waiting = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
     await log.close()
     slow.release()
     await expect(waiting).rejects.toMatchObject({ code: 'E_CLOSED' })
@@ -383,7 +434,7 @@ describe('warm checkpoint rechecks', () => {
   })
 
   it.each(['cancel', 'close'] as const)(
-    '%s during the foreground tail read preserves the integrity gate',
+    '%s during a tail read does not admit work after close',
     async (action) => {
       const storage = await seeded(10)
       let hold = false
@@ -410,20 +461,20 @@ describe('warm checkpoint rechecks', () => {
       const controller = new AbortController()
       const opening = log.verifyHistory({ signal: controller.signal })
       await reading
-      const waiting = log.append([input('model-side')])
+      const waiting = log.append([input('ordinary')])
+      await expect(waiting).resolves.toMatchObject({ firstSeq: 12 })
       if (action === 'cancel') controller.abort()
       else await log.close()
       await expect(opening).rejects.toMatchObject({ code: 'E_CLOSED' })
-      expect(log.historyVerified).toBe(false)
-      expect(log.lastSeq).toBe(11)
+      expect(log.historyVerified).toBe(action === 'cancel')
+      expect(log.lastSeq).toBe(12)
       release()
       if (action === 'cancel') {
         await log.fullVerified()
         await expect(waiting).resolves.toMatchObject({ firstSeq: 12 })
       } else {
-        await expect(waiting).rejects.toMatchObject({ code: 'E_CLOSED' })
         await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_CLOSED' })
-        expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(10)
+        expect((await storage.readVerifiedHead('k'))?.throughSeq).toBeLessThanOrEqual(12)
       }
       await log.close()
     },
@@ -451,33 +502,25 @@ describe('reopening a live log this process already verified', () => {
       for (const text of ['a', 'b', 'c']) await log.append([input(text)])
       rows = 0
       await expect(log.verifyHistory()).resolves.toBe(1203)
-      expect(log.historyVerified).toBe(true)
-      await log.fullVerified()
+      expect(log.historyVerified).toBe(false)
       expect(rows).toBe(3)
+      await log.fullVerified()
       await log.close()
     },
   )
 
-  it('no longer notices a changed row before the checkpoint; only an explicit full verification does', async () => {
+  it('a warm reload schedules a prefix recheck and seals changed stored history', async () => {
     const storage = await seeded(10)
     const log = await SessionLogImpl.open(options(storage, 'live'))
     await log.fullVerified()
     tamper(storage, 'k', 2)
     await expect(log.verifyHistory()).resolves.toBe(10)
-    await log.fullVerified()
-    expect(log.faulted).toBe(false)
-    await expect(log.append([input('model-side')])).resolves.toMatchObject({ firstSeq: 11 })
+    await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY', detail: { seq: 2 } })
+    await expect(log.append([input('after seal')])).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await log.close()
-    const cold = await SessionLogImpl.open(options(storage, 'cold'))
-    // A cold open does not hash the prefix either; the explicit full verification finds the row.
-    await cold.fullVerified()
-    expect(cold.faulted).toBe(false)
-    await cold.verifyHistory({ rehashPrefix: true })
-    await expect(cold.fullVerified()).rejects.toMatchObject({
+    await expect(SessionLogImpl.open(options(storage, 'cold'))).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
-      detail: { seq: 2 },
     })
-    await cold.close()
   })
 })
 
@@ -516,7 +559,7 @@ describe('verified head checkpoint under attack', () => {
     const reports: FullVerifyReport[] = []
     const log = await openRehashed({ ...options(storage, 'b'), onFullVerify: (r) => reports.push(r) })
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 30 })
-    const write = log.append([input('model-side')])
+    const write = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
     await expect(write).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY', detail: { seq: 12 } })
     expect(log.lastSeq).toBe(30)
     expect(log.faulted).toBe(true)
@@ -572,10 +615,10 @@ describe('verified head checkpoint under attack', () => {
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 10 })
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await log.close()
-    // Nothing was wrong with the ledger itself: the next open has no checkpoint to use and succeeds.
-    const next = await SessionLogImpl.open(options(storage, 'c'))
-    expect(next.openStats.checkpoint).toEqual({ used: false, reason: 'absent' })
-    await next.close()
+    // A proven mismatch remains sealed across reload; recovery must preserve the evidence.
+    await expect(SessionLogImpl.open(options(storage, 'c'))).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
   })
 
   it('a checkpoint that names no protected row, or another session, is not used', async () => {
@@ -597,7 +640,8 @@ describe('verified head checkpoint under attack', () => {
     }
     const log = await SessionLogImpl.open(options(failing, 'b'))
     expect(log.openStats.checkpoint).toEqual({ used: false, reason: 'unsupported' })
-    expect(log.historyVerified).toBe(true)
+    expect(log.historyVerified).toBe(false)
+    await log.fullVerified()
     await log.close()
   })
 
@@ -614,7 +658,7 @@ describe('verified head checkpoint under attack', () => {
     })
   })
 
-  it('a fork waits for the background verify and is refused when it fails', async () => {
+  it('a cold fork checks its own tail while the parent prefix verification is pending', async () => {
     const storage = await seeded(10)
     tamper(storage, 'k', 2)
     const { storage: slow, release } = held(storage)
@@ -627,11 +671,12 @@ describe('verified head checkpoint under attack', () => {
       writerRunId: 'child-run',
       lane: 'main',
     })
+    void fork.catch(() => undefined)
     await new Promise((r) => setTimeout(r, 5))
-    expect((storage as unknown as Books).books.has('child')).toBe(false)
+    expect((await storage.scan('child', { fromSeq: 6, limit: 100 })).length).toBe(0)
     release()
     await expect(fork).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
-    expect((storage as unknown as Books).books.has('child')).toBe(false)
+    expect((await storage.scan('child', { fromSeq: 6, limit: 100 })).length).toBe(0)
     await log.close()
   })
 
@@ -640,7 +685,7 @@ describe('verified head checkpoint under attack', () => {
     const { storage: slow, release } = held(storage)
     const log = await openRehashed(options(slow, 'b'))
     await log.append([input('typed')], { beforeFullVerify: 'allow' })
-    const waiting = log.append([input('model-side')])
+    const waiting = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
     await log.close()
     release()
     await expect(waiting).rejects.toMatchObject({ code: 'E_CLOSED' })
@@ -655,7 +700,7 @@ describe('verified head checkpoint under attack', () => {
     const { storage: slow, release, reached } = held(storage)
     const log = await openRehashed(options(slow, 'b'))
     await reached
-    const waiting = log.append([input('model-side')])
+    const waiting = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
     const closing = log.close()
     release()
     await closing
@@ -678,7 +723,7 @@ describe('verified head checkpoint under attack', () => {
     expect(await storage.readVerifiedHead('k')).toEqual(before)
   })
 
-  it('no step starts before the history is verified, and none after it fails', async () => {
+  it('an ordinary idle step proceeds while history is pending; a seal prevents later steps', async () => {
     const storage = new MemoryStorage()
     const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
@@ -704,12 +749,14 @@ describe('verified head checkpoint under attack', () => {
       settled = true
     })
     await new Promise((r) => setTimeout(r, 10))
-    expect(settled).toBe(false)
+    expect(settled).toBe(true)
+    await step
+    expect(snapshots).toEqual([1])
     release()
-    await expect(step).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await expect(second.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     // Once the verification has failed, a step is refused before any of it runs.
     await expect(second.session.step()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
-    expect(snapshots).toEqual([])
+    expect(snapshots).toEqual([1])
     await second.session.close()
   })
 
@@ -778,7 +825,7 @@ describe('verified head checkpoint under attack', () => {
     await log.close()
   })
 
-  it('a turn on a session opened from a checkpoint sends nothing to the model until the history is verified', async () => {
+  it('a turn can call its model while the final gate waits for verified history', async () => {
     const storage = new MemoryStorage()
     const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
@@ -794,15 +841,15 @@ describe('verified head checkpoint under attack', () => {
     expect(second.log.lastSeq).toBe(before + 1)
     const run = second.session.run({ until: 'turn-end', signal: new AbortController().signal })
     await new Promise((r) => setTimeout(r, 10))
-    expect(provider.calls).toBe(0)
-    expect(second.log.lastSeq).toBe(before + 1)
+    expect(provider.calls).toBe(1)
+    expect(second.log.lastSeq).toBeGreaterThan(before + 1)
     release()
     await run
     await vi.waitFor(() => expect(provider.calls).toBe(1))
     await second.session.close()
   })
 
-  it('a turn on a session whose history fails the background verify never reaches the model', async () => {
+  it('a turn already running fails at its evidence gate when background verification finds corruption', async () => {
     const storage = new MemoryStorage()
     const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'first' }], actor })
@@ -816,10 +863,11 @@ describe('verified head checkpoint under attack', () => {
     await second.session.verifyHistory({ rehashPrefix: true })
     await second.session.enqueue('next-turn', { content: [{ type: 'text', text: 'second' }], actor })
     const run = second.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    await vi.waitFor(() => expect(provider.calls).toBe(1))
     release()
     // The run reports the failure as its outcome; the model was never asked.
     await expect(run).resolves.toMatchObject({ reason: 'error', error: { code: 'E_LEDGER_INTEGRITY' } })
-    expect(provider.calls).toBe(0)
+    expect(provider.calls).toBe(1)
     expect(second.log.faulted).toBe(true)
     await second.session.close()
   })
@@ -899,18 +947,16 @@ describe('perf3-review: live checkpoint regression matrix', () => {
       (value) => ({ value }),
       (error) => ({ error }),
     )
-    const append = log.append([input('non-input write')]).then(
-      (value) => ({ value }),
-      (error) => ({ error }),
-    )
-    const fork = log.forkInto(5, 'review-child', reviewOpener).then(
+    const append = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }]).then(
       (value) => ({ value }),
       (error) => ({ error }),
     )
     await checked
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     expect(await append).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
-    expect(await fork).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
+    await expect(log.forkInto(5, 'review-child', reviewOpener)).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+    })
     expect(log.lastSeq).toBe(change === 'tail' ? 11 : 10)
     expect((storage as unknown as Books).books.has('review-child')).toBe(false)
     expect(log.faulted).toBe(true)
@@ -959,7 +1005,7 @@ describe('perf3-review: live checkpoint regression matrix', () => {
     },
   )
 
-  it('drains already admitted appends, fixes the head, and allows only queued input past that cut', async () => {
+  it('audits a committed snapshot while admitted appends continue and evidence waits', async () => {
     const storage = await seeded(10),
       slow = held(storage, false)
     const log = await SessionLogImpl.open(options(slow.storage, 'review-live'))
@@ -983,16 +1029,18 @@ describe('perf3-review: live checkpoint regression matrix', () => {
     expect(log.historyVerified).toBe(false)
     release()
     await expect(admitted).resolves.toMatchObject({ firstSeq: 11 })
-    await expect(checking).resolves.toBe(11)
+    await expect(checking).resolves.toBe(10)
     await slow.reached
     await expect(log.append([input('queued user')], { beforeFullVerify: 'allow' })).resolves.toMatchObject({
       firstSeq: 12,
     })
     let completed = false
-    const normal = log.append([input('after cut')]).then((value) => {
-      completed = true
-      return value
-    })
+    const normal = log
+      .append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
+      .then((value) => {
+        completed = true
+        return value
+      })
     await Promise.resolve()
     expect(completed).toBe(false)
     expect(log.lastSeq).toBe(12)
@@ -1015,15 +1063,11 @@ describe('perf3-review: live checkpoint regression matrix', () => {
       await log.verifyHistory({ rehashPrefix: true })
       await slow.reached
       const controller = new AbortController()
-      const next = log.verifyHistory({ rehashPrefix: true, signal: controller.signal }).then(
+      const next = log.auditHistory(controller.signal).then(
         (value) => ({ value }),
         (error) => ({ error }),
       )
-      const append = log.append([input('blocked')]).then(
-        (value) => ({ value }),
-        (error) => ({ error }),
-      )
-      const fork = log.forkInto(5, 'review-child', reviewOpener).then(
+      const append = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }]).then(
         (value) => ({ value }),
         (error) => ({ error }),
       )
@@ -1035,14 +1079,14 @@ describe('perf3-review: live checkpoint regression matrix', () => {
       const code = action === 'abort' ? 'E_LEDGER_INTEGRITY' : 'E_CLOSED'
       expect(await next).toMatchObject({ error: { code: action === 'abort' ? 'E_CLOSED' : code } })
       expect(await append).toMatchObject({ error: { code } })
-      expect(await fork).toMatchObject({ error: { code } })
+      await expect(log.forkInto(5, 'review-child', reviewOpener)).rejects.toMatchObject({ code })
       if (action === 'abort') expect(await storage.readVerifiedHead('k')).toBeUndefined()
       else expect(await storage.readVerifiedHead('k')).toEqual(head)
       await log.close()
     },
   )
 
-  it('a warm recheck stops a real step before any model snapshot when the stored prefix fails', async () => {
+  it('a warm recheck permits a step snapshot and seals later work on prefix failure', async () => {
     const storage = new MemoryStorage()
     const first = await openSession({ storage, provider: fakeProvider([textTurn('one')]) })
     await first.session.enqueue('next-turn', { content: [{ type: 'text', text: 'seed' }], actor })
@@ -1070,10 +1114,12 @@ describe('perf3-review: live checkpoint regression matrix', () => {
         (error) => ({ error }),
       )
       await Promise.resolve()
-      expect(snapshots).toEqual([])
+      expect(snapshots).toEqual(['effect'])
+      expect(await stepping).toHaveProperty('value')
       slow.release()
-      expect(await stepping).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
-      expect(snapshots).toEqual([])
+      await expect(second.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      await expect(second.session.step()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      expect(snapshots).toEqual(['effect'])
       expect(await storage.readVerifiedHead('k')).toBeUndefined()
     } finally {
       slow.release()
@@ -1116,11 +1162,11 @@ it('perf3-review: an older delayed checkpoint write cannot resurrect a checkpoin
     await reached
     expect(log.historyVerified).toBe(true)
     tamper(storage, 'k', 2)
-    await log.verifyHistory().catch(() => undefined)
-    expect(log.faulted).toBe(true)
-    expect(await storage.readVerifiedHead('k')).toBeUndefined()
+    const failing = log.verifyHistory().catch(() => undefined)
+    await vi.waitFor(() => expect(log.faulted).toBe(true))
     release()
     await written
+    await failing
     await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await log.close()
     expect(await storage.readVerifiedHead('k')).toBeUndefined()

@@ -42,6 +42,7 @@ export type BuiltinRowHostOptions = Readonly<{
 export type BuiltinRowLoad = Readonly<{
   /** The `ext:` row that supplies the extension. */
   rowId: string
+  hostGrants?: () => import('@agnes/package-manager').HostCapabilityGrant
   executionBinding?: ToolExecutionBinding
   spec: ExtensionSpec
   /** A manifest compiled into the release; without it the manifest is read from `spec.dir`. */
@@ -244,6 +245,7 @@ export function createBuiltinRowHost(options: BuiltinRowHostOptions) {
             }
           : {}),
         manifest,
+        ...(input.hostGrants ? { hostGrants: input.hostGrants() } : {}),
         packageIdentity: spec.package,
         packageVersion: spec.packageVersion,
         ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),

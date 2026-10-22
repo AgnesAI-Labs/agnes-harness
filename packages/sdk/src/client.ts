@@ -498,6 +498,12 @@ export class Client {
   }
 
   readonly session = {
+    integrity: (id: string, verify = false): Promise<import('@agnes/protocol').SessionIntegrityStatus> =>
+      this.call(
+        '_agnes/v1/session.integrity',
+        { sessionId: id, verify },
+        { timeoutMs: verify ? 600_000 : this.timeouts.request },
+      ),
     runtime: (id: string): Promise<SessionRuntimeDescriptor> =>
       this.call('_agnes/v1/session.runtime', { sessionId: id }),
     new: async (o: {

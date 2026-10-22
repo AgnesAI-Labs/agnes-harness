@@ -14,19 +14,6 @@ import React from 'react'
 
 export const h = React.createElement
 const POLL_MS = 10_000
-/** Demo signatures: approvers first, then the stage authors (signing as an author shows rule 2). */
-export const ROLES = [
-  '项目经理',
-  '研发总监',
-  '技术负责人',
-  '质量负责人',
-  '客户代表',
-  '需求工程师',
-  '软件架构师',
-  '软件开发工程师',
-  '测试工程师',
-  '配置管理员',
-]
 const ROLE_KEY = 'devboard.demoRole'
 const PROJECT_KEY = 'devboard.project'
 const message = (error) => (error instanceof Error ? error.message : String(error))
@@ -107,7 +94,20 @@ function useStored(key, fallback, valid) {
 }
 
 /** Demo identity only: it signs actions and gates a few buttons; it is not a security boundary. */
-export const useRole = () => useStored(ROLE_KEY, ROLES[0], (r) => ROLES.includes(r))
+export const useRole = () => useStored(ROLE_KEY, '项目经理', (r) => r.length > 0 && r.length <= 32)
+
+/** Open a detail page of a list: remember which row and push the page by id. */
+export function useDetail() {
+  const push = usePushStack()
+  const [selected, setSelected] = React.useState('')
+  return [
+    selected,
+    (id, page = 'detail') => {
+      setSelected(id)
+      push.open(page)
+    },
+  ]
+}
 
 /** The project selected on one page stays selected on the others in this tab. */
 export function useProject(data, allowAll = false) {
@@ -168,7 +168,21 @@ const VERBS = {
   RETEST: () => '提交回归',
   DEFERRED: () => '延期处理',
 }
-export const verb = (from, to) => VERBS[to]?.(from) ?? to
+const KIND_VERBS = {
+  trial: {
+    IN_PROGRESS: (from) => (from === 'REPORTED' ? '补试' : '开始试验'),
+    REPORTED: () => '出具报告',
+    APPROVED: () => '批准试验',
+  },
+  fault: { DISPATCHED: () => '派工', HANDLED: () => '处理完成', CLOSED: () => '关闭' },
+  problem: {
+    ANALYZING: () => '开始分析',
+    ACTION: (from) => (from === 'VERIFYING' ? '退回措施' : '进入措施'),
+    VERIFYING: () => '提交验证',
+    CLOSED: () => '关闭问题',
+  },
+}
+export const verb = (from, to, kind) => KIND_VERBS[kind]?.[to]?.(from) ?? VERBS[to]?.(from) ?? to
 
 const TONES = {
   COMPLETED: 'ok',
@@ -196,6 +210,15 @@ const TONES = {
   REWORK: 'bad',
   REJECTED: 'bad',
   NEW: 'bad',
+  REPORTED: 'warn',
+  DISPATCHED: 'warn',
+  HANDLED: 'warn',
+  ANALYZING: 'warn',
+  ACTION: 'warn',
+  VERIFYING: 'warn',
+  PASS: 'ok',
+  FAIL: 'bad',
+  CONDITIONAL: 'warn',
 }
 export const stateBadge = (data, state) =>
   h(Badge, { tone: TONES[state] ?? 'off' }, data.labels.state[state] ?? state)
@@ -213,6 +236,33 @@ export const options = (map, all = '全部') => [
   ...Object.entries(map).map(([value, label]) => ({ value, label })),
 ]
 export const byId = (list, id) => list.find((item) => item.id === id)
+/** A gate always reads as "code · name", for example "DL2 · 设计联络（二）". */
+export const gateName = (g) => `${g.code} · ${g.name}`
+/** A stage shows its project's profile label (订单项目、软件平台 and 改造 each name them differently). */
+export const stageName = (data, projectId, stage) =>
+  data.profiles?.[byId(data.projects, projectId)?.kind]?.[stage]?.label ?? data.labels.stage[stage] ?? stage
+export const signedRoles = (gate) => (gate.signatures ?? []).map((s) => s.role)
+/** "1/2 已签：项目经理" — the co-sign progress of a gate. */
+export const signProgress = (gate) =>
+  `${signedRoles(gate).length}/${gate.approverRoles.length}${signedRoles(gate).length ? ` 已签：${signedRoles(gate).join('、')}` : ''}`
+
+/**
+ * Who may decide a pending gate: the demo role must be one of the gate's approver roles and not yet
+ * have signed. Every other role sees who has to approve and a one-click switch per unsigned role.
+ */
+export function RoleHint({ gate, role, setRole, children }) {
+  const waiting = gate.approverRoles.filter((r) => !signedRoles(gate).includes(r))
+  if (gate.decision !== 'PENDING') return null
+  if (waiting.includes(role)) return children ?? null
+  return h(
+    'span',
+    { className: 'devboard-buttons' },
+    signedRoles(gate).includes(role)
+      ? h(Badge, { tone: 'ok' }, `「${role}」已签署`)
+      : h(Badge, { tone: 'warn' }, `需由 ${waiting.join('、')} 审批`),
+    waiting.map((r) => h(Button, { key: r, size: 'small', onClick: () => setRole(r) }, `切换为 ${r}`)),
+  )
+}
 export const idLink = (open) => (id) => h(Button, { appearance: 'link', onClick: () => open(id) }, id)
 
 /** A text-and-bar meter; no chart library. */
@@ -263,7 +313,7 @@ export function Shell({ id, title, description, board, role, setRole, actions, c
             'aria-label': '演示角色',
             value: role,
             onChange: setRole,
-            options: ROLES.map((r) => ({ value: r, label: `演示角色：${r}` })),
+            options: (board.data?.roles ?? [role]).map((r) => ({ value: r, label: `演示角色：${r}` })),
             style: { minWidth: 190 },
           }),
           actions,
@@ -334,20 +384,50 @@ export const NoteField = ({ id, label, value, onChange, rows = 2 }) =>
  * Legal moves as buttons, plus a free target picker so the refusal of an illegal move can be shown.
  * The server decides; the page never filters what it sends.
  */
-export function TransitionBar({ data, kind, item, board, role, hidden = [], noteLabel = '备注（可选）' }) {
+export function TransitionBar({
+  data,
+  kind,
+  item,
+  board,
+  role,
+  hidden = [],
+  noteLabel = '备注（可选）',
+  fields = [],
+}) {
   const from = item.state
   const legal = (data.machines[kind][from] ?? []).filter((to) => !hidden.includes(to))
   const [note, setNote] = React.useState('')
   const [target, setTarget] = React.useState('')
+  const [extra, setExtra] = React.useState({})
   const go = async (to) => {
     const ok = await board.run(
       'devboard.transition',
-      { kind, id: item.id, to, by: role, ...(note.trim() ? { note: note.trim() } : {}) },
-      `${item.id} 已${verb(from, to)}`,
+      {
+        kind,
+        id: item.id,
+        to,
+        by: role,
+        ...(note.trim() ? { note: note.trim() } : {}),
+        ...Object.fromEntries(
+          fields
+            .filter((f) => (extra[f.key] ?? '').trim())
+            .map((f) => [
+              f.key,
+              f.lines
+                ? extra[f.key]
+                    .split('\n')
+                    .map((l) => l.trim())
+                    .filter(Boolean)
+                : extra[f.key].trim(),
+            ]),
+        ),
+      },
+      `${item.id} 已${verb(from, to, kind)}`,
     )
     if (ok) {
       setNote('')
       setTarget('')
+      setExtra({})
     }
   }
   const others = Object.keys(data.machines[kind]).filter(
@@ -356,6 +436,39 @@ export function TransitionBar({ data, kind, item, board, role, hidden = [], note
   return h(
     'section',
     { className: 'devboard-actions', 'aria-label': '状态流转' },
+    fields.map((f) =>
+      f.options
+        ? h(
+            Field,
+            { key: f.key, label: f.label },
+            h(Select, {
+              'aria-label': f.label,
+              value: extra[f.key] ?? '',
+              onChange: (v) => setExtra({ ...extra, [f.key]: v }),
+              options: [{ value: '', label: '不填写' }, ...f.options],
+              style: { minWidth: 200 },
+            }),
+          )
+        : f.lines
+          ? h(NoteField, {
+              key: f.key,
+              id: `devboard-${f.key}-${item.id}`,
+              label: f.label,
+              value: extra[f.key] ?? '',
+              onChange: (v) => setExtra({ ...extra, [f.key]: v }),
+            })
+          : h(
+              Field,
+              { key: f.key, label: f.label, htmlFor: `devboard-${f.key}-${item.id}` },
+              h('input', {
+                id: `devboard-${f.key}-${item.id}`,
+                className: 'devboard-note',
+                value: extra[f.key] ?? '',
+                maxLength: 500,
+                onChange: (e) => setExtra({ ...extra, [f.key]: e.target.value }),
+              }),
+            ),
+    ),
     h(NoteField, { id: `devboard-note-${item.id}`, label: noteLabel, value: note, onChange: setNote }),
     h(
       'div',
@@ -370,7 +483,7 @@ export function TransitionBar({ data, kind, item, board, role, hidden = [], note
                 disabled: board.busy,
                 onClick: () => go(to),
               },
-              verb(from, to),
+              verb(from, to, kind),
             ),
           )
         : h('span', { className: 'devboard-muted' }, '当前状态没有可直接执行的流转。'),

@@ -1,13 +1,10 @@
+import { assembleDistributionPackages } from '@agnes/distribution'
 import { SEAM_KINDS, type SeamKind } from '@agnes/extension-api/seams'
 import type { HostBuiltinRowClaim } from '@agnes/host-extensions/assemble/seams-cordis'
-import { withBuiltinCompactionEngines } from '@agnes/host-providers/assemble/compaction-engines'
-import { withBuiltinModelAdapters } from '@agnes/host-providers/assemble/model-adapters'
 import { buildOrdinaryRows } from '@agnes/host-providers/assemble/ordinary-rows'
 import { buildPresetRows } from '@agnes/host-providers/assemble/preset-rows'
 import { buildSeamBindingRows, type SeamBinding } from '@agnes/host-providers/assemble/seam-rows'
-import { withBuiltinToolPolicies } from '@agnes/host-providers/assemble/tool-providers'
 import type { EntryRow } from '@agnes/plugin-runtime/host'
-import { withBuiltinChildAgents } from './child-agents.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
 import type { PresetCatalog } from './presets.js'
@@ -61,9 +58,7 @@ export function buildBootRows(
   const builtPresets = buildPresetRows(presets.presets)
   const ordinaryModules = new Map(modules)
   for (const [id, loaded] of runtimePackages) ordinaryModules.set(id, loaded.module)
-  const compositionModules = withBuiltinChildAgents(
-    withBuiltinToolPolicies(withBuiltinCompactionEngines(withBuiltinModelAdapters(ordinaryModules))),
-  )
+  const compositionModules = assembleDistributionPackages(ordinaryModules)
   const compositionOwners = new Map(
     [...compositionModules.values()].flatMap((module) =>
       (module.plugins ?? []).map((plugin) => [plugin.declaration.id, module.id] as const),

@@ -671,7 +671,7 @@ export { errorMessageKey, httpRpcError, normalizeRpcError } from './error-envelo
 export * from './errors.js'
 export * from './file-upload.js'
 export * from './hooks.js'
-export { JcsByteLimitError, jcs, jcsWrite } from './jcs.js'
+export { JcsByteLimitError, jcs, jcsChunks, jcsWrite } from './jcs.js'
 export { DEFAULT_JSON_DATA_MAX_BYTES, inspectJsonData } from './json-data.js'
 export * from './loop-selection.js'
 export * from './meta.js'
@@ -729,6 +729,7 @@ export {
 } from './session-artifacts.js'
 export * from './session-capabilities.js'
 export { parseAgentRef, parseSessionBundles } from './session-composition.js'
+export * from './session-integrity.js'
 export * from './session-runtime.js'
 export * from './session-tools.js'
 export type {

@@ -1,9 +1,9 @@
-import { type ChildRolePort, intersectCapabilities, type RoleDelegation, sha256Hex } from '@agnes/core'
+import { type ChildRolePort, intersectCapabilities, type RoleDelegation } from '@agnes/core'
 import type { ChildRole } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
-import { canonicalJson } from '@agnes/host-common/profile/canonical'
 import type { ConfigurationService } from '@agnes/host-infrastructure/configuration'
 import type { CompositionBinding } from '@agnes/host-providers/profile/composition-state'
+import { applicationConsentSnapshot } from '@agnes/package-manager'
 import { parseAgentRef } from '@agnes/protocol'
 import type { Host, HostSession } from '../lifecycle/host.js'
 import type { createAgentResolver, sessionAdmission } from './agent-plan.js'
@@ -22,19 +22,8 @@ export function createRoleChildren(deps: {
 }): ChildRolePort {
   const catalogue = async (): Promise<readonly ChildRole[]> => {
     const selection = (await deps.configuration.application?.())?.selection
-    const snapshot = selection?.consentSnapshot
+    const snapshot = applicationConsentSnapshot(selection)
     if (!selection || !snapshot) return []
-    const { consentDigest, ...content } = snapshot
-    if (
-      snapshot.packageId !== selection.packageId ||
-      snapshot.integrity !== selection.integrity ||
-      snapshot.declaration.id !== selection.applicationId ||
-      snapshot.declarationDigest !== selection.declarationDigest ||
-      sha256Hex(canonicalJson(snapshot.declaration)) !== selection.declarationDigest ||
-      consentDigest !== selection.consentDigest ||
-      sha256Hex(canonicalJson(content)) !== consentDigest
-    )
-      return []
     const { current } = await deps.admission()
     if (
       !current.packages.some(

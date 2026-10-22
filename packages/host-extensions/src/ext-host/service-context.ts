@@ -1,5 +1,6 @@
 import {
   childBackend,
+  createSessionFileReader,
   externalChild,
   externalChildren,
   platformView,
@@ -17,6 +18,7 @@ export function serviceContext(deps: {
   seams: SeamImplementations
   networkAllow: readonly string[]
   log: Logger
+  workspaceInvocationFor?: (sessionKey: string) => import('@agnes/core').WorkspaceInvocationPort
   authorizeProcess?: (
     identity: Pick<ServiceContext, 'actor' | 'session' | 'requestId' | 'signal'>,
     cwd: string,
@@ -39,6 +41,13 @@ export function serviceContext(deps: {
     }
     return Object.freeze({
       ...identity,
+      ...(identity.session && deps.workspaceInvocationFor
+        ? {
+            sessionFiles: createSessionFileReader(deps.workspaceInvocationFor(identity.session.key), () =>
+              entry.assertRunning(),
+            ),
+          }
+        : {}),
       actor: Object.freeze(identity.actor),
       cwd: workspace.root,
       ...(identity.session

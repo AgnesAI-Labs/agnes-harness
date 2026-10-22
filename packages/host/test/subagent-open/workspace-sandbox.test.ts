@@ -54,10 +54,12 @@ class RoutedProvider implements Provider {
     this.parent = new ScriptedProvider({
       models,
       scripts: [
-        ...['subagent_fork', 'subagent_spawn', 'subagent_collect'].map((name) => (req: RequestBody) => {
-          expect(req.tools.some((tool) => tool.name === 'tool_describe')).toBe(true)
-          return toolCall('tool_describe', { name })
-        }),
+        ...['subagent_fork', 'subagent_spawn', 'subagent_list', 'subagent_collect'].map(
+          (name) => (req: RequestBody) => {
+            expect(req.tools.some((tool) => tool.name === 'tool_describe')).toBe(true)
+            return toolCall('tool_describe', { name })
+          },
+        ),
         ...parent,
       ],
       onExhausted: 'error',
@@ -129,9 +131,19 @@ async function toolResults(session: HostSession): Promise<ToolResult[]> {
   )
   const results = rows.map((row) => row.data as ToolResult)
   const descriptions = results.filter((result) => discoveryIds.has(result.toolUseId ?? ''))
-  expect(descriptions).toHaveLength(3)
+  expect(descriptions).toHaveLength(4)
   for (const result of descriptions) expect(result.isError).not.toBe(true)
-  return results.filter((result) => !discoveryIds.has(result.toolUseId ?? ''))
+  const listIds = new Set(
+    calls.flatMap((row) => {
+      const call = row.data as { toolUseId: string; name: string }
+      return call.name === 'subagent_list' ? [call.toolUseId] : []
+    }),
+  )
+  for (const result of results.filter((result) => listIds.has(result.toolUseId ?? '')))
+    expect(result.isError).not.toBe(true)
+  return results.filter(
+    (result) => !discoveryIds.has(result.toolUseId ?? '') && !listIds.has(result.toolUseId ?? ''),
+  )
 }
 
 const textOf = (result: ToolResult | undefined): string =>
@@ -149,10 +161,21 @@ async function childRecord(dataDir: string, childKey: string) {
   }
 }
 
-function collectStarted(req: RequestBody): InferenceEvent[] {
-  const childKey = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)?.[1]
-  if (!childKey) throw new Error('missing started child key')
-  return toolCall('subagent_collect', { childKey, wait: true })
+const listChildren = toolCall('subagent_list', {})
+
+function listedChild(req: RequestBody): string {
+  // Read only model-visible tool content, never Host state or UI-only receipt details.
+  const result = req.messages.filter((message) => message.role === 'tool_result').at(-1)
+  expect(result?.isError).toBe(false)
+  const listed = result?.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('')
+  // A deferred worktree child is collectable while its follow-up controls are still starting.
+  const childKey = listed?.match(/^(subagent-parent\/[A-Z0-9]+) \w+(?: continuable)?$/m)?.[1]
+  if (!childKey) throw new Error(`subagent_list did not expose a child: ${listed}`)
+  return childKey
+}
+
+function collectListed(req: RequestBody): InferenceEvent[] {
+  return toolCall('subagent_collect', { childKey: listedChild(req), wait: true })
 }
 
 describe('subagents in a workspace-bound Host session', () => {
@@ -160,7 +183,8 @@ describe('subagents in a workspace-bound Host session', () => {
     const provider = new RoutedProvider(
       [
         toolCall('subagent_fork', { question: 'summarise the workspace', isolation: 'shared' }),
-        collectStarted,
+        listChildren,
+        collectListed,
         text('parent done'),
       ],
       [text('child answer')],
@@ -189,9 +213,9 @@ describe('subagents in a workspace-bound Host session', () => {
     const provider = new RoutedProvider(
       [
         toolCall('subagent_spawn', { task: 'count the files', isolation: 'shared' }),
+        listChildren,
         (req) => {
-          const spawned = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)
-          childKey = spawned?.[1] ?? ''
+          childKey = listedChild(req)
           return toolCall('subagent_collect', { childKey, wait: true })
         },
         text('parent collected'),
@@ -237,9 +261,9 @@ describe('subagents in a workspace-bound Host session', () => {
     const provider = new RoutedProvider(
       [
         toolCall('subagent_spawn', { task: 'work in a worktree', isolation: 'worktree' }),
+        listChildren,
         (req) => {
-          const spawned = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)
-          childKey = spawned?.[1] ?? ''
+          childKey = listedChild(req)
           return toolCall('subagent_collect', { childKey, wait: true })
         },
         text('parent collected'),
@@ -312,8 +336,9 @@ describe('subagents in a workspace-bound Host session', () => {
           })
           return toolCall('subagent_spawn', { task: 'queued work', isolation: 'shared' })
         },
+        listChildren,
         (req) => {
-          childKey = JSON.stringify(req.messages).match(/started (subagent-parent\/[A-Z0-9]+)/)?.[1] ?? ''
+          childKey = listedChild(req)
           return text('parent done')
         },
       ],
@@ -342,7 +367,8 @@ describe('subagents in a workspace-bound Host session', () => {
         [
           toolCall('write', { path: escapePath, content: 'parent' }),
           toolCall('subagent_fork', { question: 'write two files', isolation: 'shared' }),
-          collectStarted,
+          listChildren,
+          collectListed,
           text('parent done'),
         ],
         [

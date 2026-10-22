@@ -58,7 +58,7 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 
 配置档在一张表里选择所有 provider：`providers.<kind>: { provider, version? }`，覆盖七个 seam 种类以及 `loop`、`compaction`、`model-adapter`、`persistence`、`sandbox`、`tool-runtime`、`tool-policy`、`child-agent`、`memory`。配置档里没有别的选择位置：`seams`、顶层 `persistence` / `sandbox.provider` / `memory` / `child-agent`、配置档的 `composition.<kind>` 和包的 `config.<kind>` 都会被拒绝，报错会指向这张表。`model-adapter.provider` 可选单个注册/来源包或唯一列表。Preset、bundle patch 以及 admin、session 层使用同一张 `providers.<kind>` 表，Loop 要求精确版本；preset 的表还接受 `tool-runtime` 和 `tool-policy`。`model.system_prompt.provider` 是唯一例外，因为它位于与用户设置共用的提示词配置对象中。
 
-完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host-common/src/profile/types.ts)、[local-dev 模板](../../packages/host-common/templates/local-dev.yaml)及[enterprise 模板](../../packages/host-common/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
+完整字段以[Profile Schema](../../packages/protocol/schema/profile.json)、[实际类型](../../packages/host-common/src/profile/types.ts)、[local-dev 模板](../../packages/package-manager/templates/local-dev.yaml)及[enterprise 模板](../../packages/package-manager/templates/enterprise.yaml)核对。Schema 合法只是第一步，策略与装配可能进一步拒绝。
 
 `limits` 中的 `worker.generation_idle_close_ms` 控制没有打开会话的旧插件容器在内存中保留多久（默认 60,000 毫秒）。它接受非负整数，0 表示立即回收，不会使持久 pin 或磁盘快照过期。
 

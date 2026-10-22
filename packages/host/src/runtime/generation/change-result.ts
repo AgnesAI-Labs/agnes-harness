@@ -43,7 +43,7 @@ export type ChangeResult = Readonly<{
   }>[]
   /** Inputs that changed and need a restart before they take effect. */
   restartRequired: readonly string[]
-  failures: readonly Readonly<{ stage: string; code: string; message: string }>[]
+  failures: readonly Readonly<{ stage: string; code: string; message: string; reason?: string }>[]
   /** True when a failed publish left the previous generation exactly as it was. */
   recovered: boolean
 }>

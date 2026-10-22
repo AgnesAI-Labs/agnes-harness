@@ -11,6 +11,7 @@
       "devboard.transition",
       "devboard.create",
       "devboard.gate",
+      "devboard.approval",
       "devboard.reset"
     ],
     "projections": [],
@@ -91,12 +92,48 @@
         "id": "devboard-reviews",
         "placement": "primary",
         "navigation": {
-          "title": "Reviews",
+          "title": "My to-dos",
           "titles": {
-            "zh-CN": "评审待办"
+            "zh-CN": "我的待办"
           },
           "icon": "shield",
           "order": 16
+        }
+      },
+      {
+        "id": "panorama",
+        "placement": "primary",
+        "navigation": {
+          "title": "R&D panorama",
+          "titles": {
+            "zh-CN": "研发全景"
+          },
+          "icon": "git-branch",
+          "order": 17
+        }
+      },
+      {
+        "id": "trials",
+        "placement": "primary",
+        "navigation": {
+          "title": "Trials & FAI",
+          "titles": {
+            "zh-CN": "试验与首件"
+          },
+          "icon": "shield-check",
+          "order": 18
+        }
+      },
+      {
+        "id": "service",
+        "placement": "primary",
+        "navigation": {
+          "title": "Service & quality",
+          "titles": {
+            "zh-CN": "运维与质量"
+          },
+          "icon": "triangle-alert",
+          "order": 19
         }
       }
     ]

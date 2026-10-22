@@ -339,6 +339,9 @@
     },
     {
       "path": "packages/package-manager/bundled-plugins/browser/tsconfig.sources.json"
+    },
+    {
+      "path": "packages/distribution"
     }
   ]
 }

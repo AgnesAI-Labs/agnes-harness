@@ -620,14 +620,14 @@ it('keeps tab capacity and session closure effective while new pages are being c
 
 it('displays the final frame of a burst and cancels delayed frames when the viewer leaves', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
-  const { runtime, cdp, session } = fixture()
+  const { runtime, cdp, session, pages } = fixture()
   const abort = new AbortController()
   try {
     const opened = await runtime.act(session, { action: 'open', url: 'http://127.0.0.1:5173/' })
     const frames: Uint8Array[] = []
     await showPage(
       runtime,
-      { pageId: opened.pageId },
+      { pageId: opened.pageId, displayVersion: 2 },
       {
         scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
         signal: abort.signal,
@@ -650,6 +650,52 @@ it('displays the final frame of a burst and cancels delayed frames when the view
     await vi.advanceTimersByTimeAsync(100)
     const latest = Buffer.from(frames.at(-1)!)
     expect(latest.subarray(latest.readUInt32BE() + 4).toString()).toBe('final')
+    let firstCapture = true
+    Object.assign(pages[0]!, {
+      screenshot: async (options: { type: string }) => {
+        if (firstCapture) {
+          firstCapture = false
+          throw new Error('Transient frame unavailable')
+        }
+        cdp.emit('Page.screencastFrame', {
+          sessionId: 1,
+          data: Buffer.from('screenshot-repaint').toString('base64'),
+        })
+        return options.type === 'png' ? Buffer.alloc(1_000_001) : Buffer.from('sharp-jpeg-fallback')
+      },
+    })
+    emit('before-sharpening')
+    await vi.advanceTimersByTimeAsync(900)
+    const sharp = Buffer.from(frames.at(-1)!)
+    const headerSize = sharp.readUInt32BE()
+    expect(JSON.parse(sharp.subarray(4, headerSize + 4).toString()).frameMime).toBe('image/jpeg')
+    expect(sharp.subarray(headerSize + 4).toString()).toBe('sharp-jpeg-fallback')
+    const observedRevision = JSON.parse(sharp.subarray(4, headerSize + 4).toString()).agentRevision
+    runtime.get(session, opened.pageId).agentRevision++
+    runtime.notify()
+    const cached = Buffer.from(frames.at(-1)!)
+    expect(JSON.parse(cached.subarray(4, cached.readUInt32BE() + 4).toString()).agentRevision).toBe(
+      observedRevision,
+    )
+
+    // A screenshot's temporary raster and exact restoration must retain the
+    // sharp image; a real asynchronous scene change still publishes normally.
+    emit('temporary-screenshot-raster')
+    await vi.advanceTimersByTimeAsync(10)
+    emit('screenshot-repaint')
+    await vi.advanceTimersByTimeAsync(70)
+    expect(Buffer.from(frames.at(-1)!)).toEqual(cached)
+    emit('asynchronous-scene-change')
+    await vi.advanceTimersByTimeAsync(70)
+    const changed = Buffer.from(frames.at(-1)!)
+    expect(changed.subarray(changed.readUInt32BE() + 4).toString()).toBe('asynchronous-scene-change')
+
+    cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.alloc(1_000_001).toString('base64') })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cdp.send).toHaveBeenCalledWith(
+      'Page.startScreencast',
+      expect.objectContaining({ maxWidth: 1920, quality: 65 }),
+    )
     emit('after-close')
     const count = frames.length
     abort.abort()
@@ -660,6 +706,54 @@ it('displays the final frame of a burst and cancels delayed frames when the view
     vi.useRealTimers()
   }
 })
+
+it.each([false, true])(
+  'releases capture after display startup fails (page unavailable: %s)',
+  async (unavailable) => {
+    const { runtime, cdp, session, pages } = fixture()
+    const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+    let audioEnabled = false,
+      attached = true
+    const page = pages[0]!
+    const listeners = page.listenerCount('domcontentloaded')
+    Object.assign(page, {
+      exposeBinding: async () => {},
+      evaluate: async (_fn: unknown, input: { enabled: boolean }) => {
+        audioEnabled = input.enabled
+        if (!input.enabled && unavailable) throw new Error('Page context unavailable')
+      },
+    })
+    cdp.send.mockImplementation(async (method) => {
+      if (method === 'Page.startScreencast') throw new Error('Display unavailable')
+    })
+    cdp.detach.mockImplementation(async () => {
+      attached = false
+    })
+    const abort = new AbortController()
+    try {
+      await expect(
+        showPage(
+          runtime,
+          { pageId: opened.pageId, displayVersion: 2 },
+          {
+            scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+            signal: abort.signal,
+            stream: { send() {}, close() {}, onDisconnect() {} },
+          },
+        ),
+      ).rejects.toThrow('Display unavailable')
+      expect(audioEnabled).toBe(false)
+      expect(attached).toBe(false)
+      expect(page.listenerCount('domcontentloaded')).toBe(listeners)
+      page.emit('domcontentloaded')
+      await Promise.resolve()
+      expect(audioEnabled).toBe(false)
+    } finally {
+      abort.abort()
+      await runtime.close()
+    }
+  },
+)
 
 it('keeps long addresses intact and retries the latest static pixels after backpressure', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
@@ -810,10 +904,11 @@ it('rejects unsafe schemes, credentials and protected endpoints without blocking
     'http://localhost:3000/_agnes/plugin-stream',
   ])
     expect(() => browserUrl(url)).toThrow()
-  expect(browserInstructions({ enabled: false })).toContain(
-    'prefer computer_use when available and authorized',
+  expect(browserInstructions({ enabled: false })).toContain("consistent with the user's specified tool")
+  expect(browserInstructions({ enabled: true, state: 'ready' })).toContain(
+    "always respect the user's explicitly specified browser/tool",
   )
-  expect(browserInstructions({ enabled: true, state: 'ready' })).toContain('Prefer browser')
+  expect(browserInstructions({ enabled: true, state: 'ready' })).not.toContain('Prefer browser')
   expect(browserInstructions({ enabled: true, state: 'failed' })).toContain('Do not silently replay')
   expect(browserUrl('http://localhost:5173/')).toBe('http://localhost:5173/')
   const protectedOrigins = new Set(['http://localhost:3000'])

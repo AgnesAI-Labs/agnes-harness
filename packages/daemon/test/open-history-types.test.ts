@@ -76,7 +76,7 @@ describe('history types each consumer is read for', () => {
   })
 
   it('hands the daemon registry a consumer for each list', () => {
-    const text = source('daemon/src/supervisor/runtime.ts')
+    const text = source('daemon/src/supervisor/assembly-workers.ts')
     for (const list of [
       'SESSION_REQUEST_EVENT_TYPES',
       'RUN_PROGRESS_EVENT_TYPES',

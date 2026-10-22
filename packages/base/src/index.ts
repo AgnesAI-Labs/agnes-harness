@@ -184,7 +184,9 @@ export type {
   ToolIndexRow,
 } from './mcp/index-table.js'
 export {
+  isMcpServerRowId,
   mcpPublicToolName,
+  mcpServerExtensionId,
   mcpStablePrefix,
 } from './mcp/naming.js'
 export {
