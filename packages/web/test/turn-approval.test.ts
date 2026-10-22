@@ -726,6 +726,8 @@ it.each([
     '运行命令 · Count words in brief.md to verify the script',
   ],
   ['Review the chosen report', undefined, 'Review the chosen report'],
+  ['running', undefined, 'running'],
+  ['continuable', undefined, 'continuable'],
   ['shell python3 script.py cwd="private"', undefined, '运行命令'],
 ])(
   'keeps human intent in live approval headers and raw commands in details (%s)',
