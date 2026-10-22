@@ -2,6 +2,34 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/un.h>
+
+/* The sandbox denies writes to the Host's reserved path. The child gets an accept-only descriptor. */
+static napi_value open_unix_listener(napi_env env, napi_callback_info info) {
+  size_t argc = 1, length = 0;
+  napi_value args[1];
+  struct sockaddr_un address = {0};
+  if (napi_get_cb_info(env, info, &argc, args, NULL, NULL) != napi_ok || argc != 1 ||
+      napi_get_value_string_utf8(env, args[0], NULL, 0, &length) != napi_ok ||
+      length == 0 || length >= sizeof(address.sun_path))
+    return fail(env, "Unix listener path", EINVAL);
+  napi_get_value_string_utf8(env, args[0], address.sun_path, sizeof(address.sun_path), &length);
+  if (address.sun_path[0] != '/' || strlen(address.sun_path) != length)
+    return fail(env, "Unix listener path", EINVAL);
+  address.sun_len = sizeof(address); address.sun_family = AF_UNIX;
+  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (fd < 0) return fail(env, "Unix listener socket", errno);
+  if (fcntl(fd, F_SETFD, FD_CLOEXEC) < 0 || fcntl(fd, F_SETFL, O_NONBLOCK) < 0 ||
+      bind(fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+    int error = errno; close(fd); return fail(env, "bind Unix listener", error);
+  }
+  if (chmod(address.sun_path, 0600) < 0 || listen(fd, 128) < 0) {
+    int error = errno; close(fd); unlink(address.sun_path); return fail(env, "listen Unix socket", error);
+  }
+  napi_value descriptor;
+  napi_create_int32(env, fd, &descriptor);
+  return descriptor;
+}
 
 static napi_value open_loopback_listener(napi_env env, napi_callback_info info) {
   size_t argc = 1;

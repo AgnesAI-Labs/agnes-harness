@@ -25,7 +25,13 @@ export type RoleDelegation = {
   permission: 'read-only' | 'workspace-write'
   approvalPolicy: 'never'
   parentPolicy: string
+  /** Captured before admission awaits; absent legacy evidence is conservatively tainted. */
+  parentTainted?: boolean
+  /** Scheduled/unattended ancestors cannot acquire an interactive human surface. */
+  humanApprovals?: boolean
   commandTable?: PresetView['approval']['commandTable']
+  /** Retained ancestor floors for nested roles; each table keeps its own decision order. */
+  policyCeilings?: Array<{ policy: string; commandTable?: PresetView['approval']['commandTable'] }>
   sandboxRequired: boolean
   /** Opaque seam snapshot: Core persists it; the Host filesystem enforces it. */
   filesystem: ReturnType<SandboxSeam['fsPolicy']>
@@ -37,6 +43,8 @@ export type ResolvedChildRole = {
   open(key: string, options: SessionOptions): Promise<SessionImpl>
 }
 export type ChildRolePort = {
+  /** Reopen an existing child's pinned composition and captured authority; never resolve afresh. */
+  reopen?(key: string, options: SessionOptions): Promise<SessionImpl>
   list(parent: SessionImpl): Promise<readonly ChildRole[]>
   resolve(parent: SessionImpl, ref: string): Promise<ResolvedChildRole>
 }
@@ -66,26 +74,40 @@ export async function recordedChildRole(
 export function roleToolSnapshot(snapshot: RegistrySnapshot, roles: readonly ChildRole[]): RegistrySnapshot {
   const original = snapshot.byName.get('subagent_spawn')
   if (!original || !roles.length) return snapshot
-  let description = `${original.description}
-Available application roles (choose role by exact ref). A role starts fresh with its own persona and tools. Do not combine role with model or fork. Approval/signature actions must return to the main assistant:`
-  const room = Math.max(
-    0,
-    Math.floor(
-      (3800 - description.length - roles.reduce((size, role) => size + role.ref.length + 5, 0)) /
-        roles.length,
-    ),
-  )
+  const heading =
+    '\nAvailable application roles (choose role by exact ref). A role starts fresh with its own persona and tools. Do not combine role with model or fork. Tool effects needing approval wait for a human in the owning session; business signatures must return to the main assistant:'
+  const overflow = '\nAdditional roles remain available by exact ref from the adopted application.'
+  let description = original.description
   const localized = (value: ChildRole['title'] | undefined, limit: number) => {
     if (!value) return ''
     const half = value['zh-CN'] ? Math.max(0, Math.floor((limit - 3) / 2)) : limit
     return [value.en.slice(0, half), value['zh-CN']?.slice(0, half)].filter(Boolean).join(' / ')
   }
-  for (const role of roles) {
-    const titleLimit = Math.min(100, Math.floor(room / 2))
-    const title = localized(role.title, titleLimit)
-    const purpose = localized(role.description, Math.min(160, room - titleLimit))
-    description += `
-${role.ref}: ${title}. ${purpose}`.replace(/[\r\t]/g, ' ')
+  // Bound the display, not the roster. Never truncate the original tool contract.
+  if (description.length + heading.length + overflow.length <= 3800) {
+    description += heading
+    const limit = 3800 - overflow.length
+    const room = Math.max(
+      0,
+      Math.floor(
+        (limit - description.length - roles.reduce((size, role) => size + role.ref.length + 5, 0)) /
+          roles.length,
+      ),
+    )
+    for (const role of roles) {
+      const titleLimit = Math.min(100, Math.floor(room / 2))
+      const title = localized(role.title, titleLimit)
+      const purpose = localized(role.description, Math.min(160, room - titleLimit))
+      const line = `\n${role.ref}${title ? `: ${title}` : ''}${purpose ? `. ${purpose}` : ''}`.replace(
+        /[\r\t]/g,
+        ' ',
+      )
+      if (description.length + line.length > limit) {
+        description += overflow
+        break
+      }
+      description += line
+    }
   }
   const tool = Object.freeze({
     ...original,

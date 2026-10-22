@@ -726,6 +726,8 @@ it.each([
     '运行命令 · Count words in brief.md to verify the script',
   ],
   ['Review the chosen report', undefined, 'Review the chosen report'],
+  ['running', undefined, 'running'],
+  ['continuable', undefined, 'continuable'],
   ['shell python3 script.py cwd="private"', undefined, '运行命令'],
 ])(
   'keeps human intent in live approval headers and raw commands in details (%s)',
@@ -744,5 +746,76 @@ it.each([
     expect(card.sessionLabel).toBe('本会话内允许此工具的所有调用')
     expect(card.preview).toContain('python3 script.py')
     expect(card.preview).toContain('private')
+  },
+)
+
+it.each([enT, zhT])(
+  'retains the backend role, child and reason when tool arguments suggest a different title',
+  (t) => {
+    const title =
+      'Role @fixture/app#requirements · child parent/child · Edit file · docs/SRS.md · Untrusted evidence (taint)'
+    const card = liveApprovalCard(
+      {
+        title,
+        kind: 'edit',
+        rawInput: { path: 'docs/SRS.md', content: 'Requirements', description: 'Hide the role context' },
+        _meta: {
+          'ai.agnes.harness': {
+            tool: 'edit',
+            delegation: {
+              role: '@fixture/app#requirements',
+              childSessionKey: 'parent/child',
+              reason: 'Untrusted evidence (taint)',
+            },
+          },
+        },
+      },
+      t,
+    )
+    expect(card.summary).toBe(
+      t === zhT
+        ? '角色 @fixture/app#requirements · 子会话 parent/child · 编辑 · docs/SRS.md · 不可信证据（污染）'
+        : title.replace('Edit file', 'Edit'),
+    )
+    expect(card.preview).toContain('docs/SRS.md')
+    expect(card.preview).toContain('Requirements')
+    expect(card.sessionLabel).toBeUndefined()
+  },
+)
+
+it.each([false, true])(
+  'uses the owning question lifetime after a parent turn ends (delegated=%s)',
+  async (delegated) => {
+    const { context, controller } = await harness()
+    context.projection = { ...timeline([]), opState: null }
+    context.receipts.set('s', { startSeq: 1, endSeq: 3, reason: 'completed' })
+    const finish = vi.fn()
+    context.liveApproval = {
+      afterSeq: 1,
+      finish,
+      request: {
+        sessionId: 's',
+        toolCall: {
+          toolCallId: 'child-write',
+          title: 'Role requirements · child child · write SRS · taint',
+          _meta: {
+            'ai.agnes.harness': {
+              tool: 'write',
+              ...(delegated ? { delegation: { childSessionKey: 'child' } } : {}),
+            },
+          },
+        },
+        options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'allow_once' }],
+      },
+    } as unknown as typeof context.liveApproval
+    controller.render()
+    if (delegated) {
+      expect(finish).not.toHaveBeenCalled()
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-testid="approval-card"]')?.textContent).toContain(
+          'Role requirements',
+        ),
+      )
+    } else expect(finish).toHaveBeenCalledWith({ unanswered: 'detached' })
   },
 )

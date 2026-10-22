@@ -12,6 +12,20 @@ function object(value: unknown): value is Record<string, unknown> {
 const strings = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === 'string' && item.length > 0)
 
+function commandTable(value: unknown): boolean {
+  return (
+    value === undefined ||
+    (Array.isArray(value) &&
+      value.every(
+        (entry) =>
+          object(entry) &&
+          typeof entry.tool === 'string' &&
+          typeof entry.argv === 'string' &&
+          ['allow', 'require_approval', 'deny'].includes(String(entry.action)),
+      ))
+  )
+}
+
 /** Validate the backend fact, not the disposable materialized register cache. */
 function snapshot(value: unknown): RoleDelegation {
   if (
@@ -32,18 +46,17 @@ function snapshot(value: unknown): RoleDelegation {
     !['read-only', 'workspace-write'].includes(String(value.permission)) ||
     value.approvalPolicy !== 'never' ||
     typeof value.parentPolicy !== 'string' ||
+    (value.parentTainted !== undefined && typeof value.parentTainted !== 'boolean') ||
+    (value.humanApprovals !== undefined && typeof value.humanApprovals !== 'boolean') ||
     typeof value.sandboxRequired !== 'boolean' ||
     !object(value.filesystem) ||
     (value.resources !== undefined &&
       (!object(value.resources) || !strings(value.resources.mcp) || !strings(value.resources.skills))) ||
-    (value.commandTable !== undefined &&
-      (!Array.isArray(value.commandTable) ||
-        value.commandTable.some(
-          (entry) =>
-            !object(entry) ||
-            typeof entry.tool !== 'string' ||
-            typeof entry.argv !== 'string' ||
-            !['allow', 'require_approval', 'deny'].includes(String(entry.action)),
+    !commandTable(value.commandTable) ||
+    (value.policyCeilings !== undefined &&
+      (!Array.isArray(value.policyCeilings) ||
+        value.policyCeilings.some(
+          (entry) => !object(entry) || typeof entry.policy !== 'string' || !commandTable(entry.commandTable),
         )))
   )
     throw new CoreError('E_ENVELOPE', 'Invalid trusted role delegation snapshot')

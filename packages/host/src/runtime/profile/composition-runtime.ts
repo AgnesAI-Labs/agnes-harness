@@ -270,6 +270,7 @@ export async function createCompositionHost(
               resolve: prepareAgent,
               containers,
               sessionOwners,
+              read: (key) => store.readIfValid(key),
               pin: (binding) => store.pin(binding),
               open,
             })),

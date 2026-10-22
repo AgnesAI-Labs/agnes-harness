@@ -394,7 +394,7 @@ it('validates application identity and explicit agent, page and role references'
   const many = parsePackageBundleContract(
     'acme/kit',
     Object.fromEntries(
-      Array.from({ length: 13 }, (_, index) => [
+      Array.from({ length: 64 }, (_, index) => [
         `role${index}`,
         {
           launch: { title: { en: `Role ${index}` }, description: { en: 'Role' }, preset: 'safe' },
@@ -403,18 +403,18 @@ it('validates application identity and explicit agent, page and role references'
       ]),
     ),
   )
-  const manyRefs = Array.from({ length: 13 }, (_, index) => `acme/kit#role${index}`)
+  const manyRefs = Array.from({ length: 64 }, (_, index) => `acme/kit#role${index}`)
   expect(
     parseApplicationContract(
-      { id: 'acme', agents: manyRefs, delegableAgents: manyRefs.slice(0, 12) },
+      { id: 'acme', agents: manyRefs, delegableAgents: manyRefs },
       'acme/kit',
       many,
       {},
     ).application?.delegableAgents,
-  ).toHaveLength(12)
+  ).toEqual(manyRefs)
   expect(() =>
     parseApplicationContract(
-      { id: 'acme', agents: manyRefs, delegableAgents: manyRefs },
+      { id: 'acme', agents: manyRefs, delegableAgents: [...manyRefs, 'acme/kit#role64'] },
       'acme/kit',
       many,
       {},

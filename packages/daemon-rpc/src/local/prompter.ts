@@ -169,7 +169,7 @@ export class PrompterRouter implements Prompter {
       return this.done(req.requestId, 'malformed', { verdict: 'unavailable', reason: 'invalid-answer' })
     if (deadline <= this.o.clock())
       return this.done(req.requestId, 'timeout', { verdict: 'unavailable', reason: 'deadline' })
-    const automatic = await automaticRequestDecision(req)
+    const automatic = req.delegation ? undefined : await automaticRequestDecision(req)
     if (automatic) {
       if (opts.signal.aborted) return interrupted()
       if (deadline <= this.o.clock())
@@ -225,6 +225,7 @@ export class PrompterRouter implements Prompter {
         _meta: {
           'ai.agnes.harness': {
             ...(req.tool ? { tool: req.tool.name } : {}),
+            ...(req.delegation ? { delegation: req.delegation } : {}),
             category:
               isPermissionPurpose(req.kind === 'tool' ? 'permission' : req.kind) &&
               req.tool?.name !== 'exit_plan_mode'

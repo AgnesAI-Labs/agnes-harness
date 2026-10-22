@@ -1,3 +1,5 @@
+import { LOOPBACK_GATE_PATH_PREFIX } from '@agnes/system-node'
+
 /** Closed-network Seatbelt compiler. Selection, path resolution and enforcement reporting belong
  * to the assembling seam; this leaf does not claim a backend is available. */
 export function seatbeltDenyNetworkArgv(
@@ -80,11 +82,16 @@ export function seatbeltDenyNetworkArgv(
       ? ['(allow network*)']
       : policy.loopbackServe
         ? [
-            // Default deny still blocks outbound, UDP, Unix sockets and wildcard binds.
-            // Host supplies an already-bound loopback listener. Never grant bind: Seatbelt's
+            // Default deny still blocks outbound (including Unix peers), UDP and all binds.
+            // Host supplies an already-bound private listener behind its TCP gate. Never grant bind: Seatbelt's
             // localhost inbound filter also matches wildcard/LAN addresses on this host.
             '(allow network-inbound (local tcp "localhost:*"))',
+            '(allow network-inbound (local unix-socket))',
             '(deny network-bind)',
+            // The transport path cannot be replaced with a symlink to an unrelated Unix peer,
+            // even for a workspace that includes the Host's temporary directory.
+            `(deny file-write* (regex #"^${LOOPBACK_GATE_PATH_PREFIX}[^/]+(/|$)"))`,
+            '(deny file-write-unlink (literal "/private/tmp") (literal "/private"))',
           ]
         : ['(deny network*)']),
   ].join('\n')

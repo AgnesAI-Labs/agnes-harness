@@ -1,6 +1,8 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { CreateDelegatedChildInput } from '@agnes/core'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createSqliteStorage, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 
@@ -22,10 +24,99 @@ describe('sqlite child control', () => {
     expect(s.coreTableNames()).not.toContain('child_control_meta')
   })
 
+  it.each(
+    (['memory', 'sqlite'] as const).flatMap((backend) =>
+      [false, true].map((spawnFirst) => ({ backend, spawnFirst })),
+    ),
+  )(
+    'security: $backend fences readmission versus spawn/recovery and terminal revival (spawnFirst=$spawnFirst)',
+    async ({ backend, spawnFirst }) => {
+      const store = backend === 'memory' ? new MemoryStorage() : s
+      const peer =
+        backend === 'memory'
+          ? store
+          : createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
+      const input = (id: string): CreateDelegatedChildInput => ({
+        childKey: `parent/${id}`,
+        parentKey: 'parent',
+        boundarySeq: 0,
+        creationId: id,
+        kind: 'spawn',
+        rootTaskId: 'root',
+        runtimeOwnerSessionKey: 'parent',
+        generationDepth: 1,
+        generationLimit: 2,
+        maxFanOut: 1,
+        inputHash: id,
+        inputText: 'bounded',
+        cwd: '/w',
+        actorId: 'u',
+        isolation: 'shared',
+        workspaceId: `ws:${id}`,
+        treeCapMicro: 10000000n,
+        childCapMicro: null,
+        writerRunId: `writer:${id}`,
+      })
+      try {
+        await store.open('parent', { writerRunId: 'parent-writer', ttlMs: 1000 })
+        await store.ensureRootScope('root', 10000000n)
+        await store.createDelegatedChild(input('idle'))
+        let idle = (await store.lookupByKey('parent/idle'))!
+        await store.casState(idle.childKey, idle.stateRevision, 'idle')
+        idle = (await store.lookupByKey(idle.childKey))!
+        const resume = () => store.casState(idle.childKey, idle.stateRevision, 'running', { maxFanOut: 1 })
+        const spawn = () => peer.createDelegatedChild(input('fresh'))
+        const raced = await Promise.allSettled(spawnFirst ? [spawn(), resume()] : [resume(), spawn()])
+        expect(
+          raced.filter(
+            (result) =>
+              result.status === 'fulfilled' &&
+              (result.value === true ||
+                (typeof result.value === 'object' && result.value.status === 'created')),
+          ),
+        ).toHaveLength(1)
+        for (const result of raced) {
+          if (result.status === 'rejected') expect(result.reason).toMatchObject({ code: 'E_CHILD_LIMIT' })
+          else if (typeof result.value === 'object' && result.value.status === 'refused')
+            expect(result.value.reason).toBe('fan_out')
+        }
+        const active = (await store.listByRoot('root')).filter((row) =>
+          ['creating', 'running'].includes(row.state),
+        )
+        expect(active).toHaveLength(1)
+        const recovery = active[0]!
+        await store.casState(recovery.childKey, recovery.stateRevision, 'recovery_pending')
+        await expect(peer.createDelegatedChild(input('during-recovery'))).resolves.toMatchObject({
+          status: 'refused',
+          reason: 'fan_out',
+        })
+        const live = (await store.lookupByKey(recovery.childKey))!
+        await store.casState(live.childKey, live.stateRevision, 'running')
+        for (const terminal of ['completed', 'failed', 'cancelled'] as const) {
+          const row = (await store.lookupByKey(live.childKey))!
+          if (terminal === 'completed') await store.casState(row.childKey, row.stateRevision, terminal)
+          else {
+            await store.createDelegatedChild(input(terminal))
+            const created = (await store.lookupByKey(`parent/${terminal}`))!
+            await store.casState(created.childKey, created.stateRevision, terminal)
+          }
+          const ended = (await store.lookupByKey(
+            terminal === 'completed' ? live.childKey : `parent/${terminal}`,
+          ))!
+          expect(await peer.casState(ended.childKey, ended.stateRevision, 'running', { maxFanOut: 1 })).toBe(
+            false,
+          )
+        }
+      } finally {
+        if (peer !== store) await peer.close()
+      }
+    },
+  )
+
   it('persists a child identity and refuses a second overlapping reservation', async () => {
     await s.open('parent', { writerRunId: 'r1', ttlMs: 1000 })
     await s.ensureRootScope('root', 10_000_000n)
-    const created = await s.createDelegatedChild({
+    const input = {
       childKey: 'parent/child',
       parentKey: 'parent',
       boundarySeq: 1,
@@ -45,30 +136,48 @@ describe('sqlite child control', () => {
       treeCapMicro: 10_000_000n,
       childCapMicro: null,
       writerRunId: 'r1/child',
-    })
+    } satisfies CreateDelegatedChildInput
+    const created = await s.createDelegatedChild(input)
     expect(created.status).toBe('created')
     const again = await s.createDelegatedChild({
+      ...input,
       childKey: 'parent/other',
-      parentKey: 'parent',
-      boundarySeq: 1,
-      creationId: 'parent:main:direct:1',
-      kind: 'spawn',
-      rootTaskId: 'root',
-      runtimeOwnerSessionKey: 'parent',
-      generationDepth: 1,
-      generationLimit: 2,
-      maxFanOut: 4,
-      inputHash: 'abc',
-      inputText: 'task',
-      cwd: '/w',
-      actorId: 'u',
-      isolation: 'shared',
       workspaceId: 'ws:other',
-      treeCapMicro: 10_000_000n,
-      childCapMicro: null,
-      writerRunId: 'r1/child',
     })
     expect(again.status).toBe('existing')
+    if (created.status !== 'created') throw new Error('missing child')
+    const current = (await s.lookupByKey('parent/child'))!
+    expect(await s.casState(current.childKey, current.stateRevision, 'idle')).toBe(true)
+    const idle = (await s.lookupByKey(current.childKey))!
+    expect(await s.casState(idle.childKey, idle.stateRevision, 'running')).toBe(false)
+    await expect(
+      s.casState(idle.childKey, idle.stateRevision, 'running', { maxFanOut: 0 }),
+    ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+    expect((await s.lookupByKey(idle.childKey))!.state).toBe('idle')
+    const other = await s.createDelegatedChild({
+      ...input,
+      childKey: 'parent/other',
+      creationId: 'parent:main:direct:2',
+      workspaceId: 'ws:other',
+    })
+    expect(other.status).toBe('created')
+    const otherRecord = (await s.lookupByKey('parent/other'))!
+    await s.casState(otherRecord.childKey, otherRecord.stateRevision, 'interrupted')
+    const otherIdle = (await s.lookupByKey(otherRecord.childKey))!
+    const competing = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
+    try {
+      const results = await Promise.allSettled([
+        s.casState(idle.childKey, idle.stateRevision, 'running', { maxFanOut: 1 }),
+        competing.casState(otherIdle.childKey, otherIdle.stateRevision, 'running', { maxFanOut: 1 }),
+      ])
+      expect(results.filter((result) => result.status === 'fulfilled' && result.value)).toHaveLength(1)
+      expect(results.find((result) => result.status === 'rejected')).toMatchObject({
+        status: 'rejected',
+        reason: { code: 'E_CHILD_LIMIT' },
+      })
+    } finally {
+      await competing.close()
+    }
     const first = await s.reserve({
       rootTaskId: 'root',
       scopeIds: ['root:root'],

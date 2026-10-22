@@ -21,7 +21,7 @@ const dimensions = (columns: number, rows: number) => {
 }
 /** Raw Host spawner. Only the policy-bound sandbox provider may call it. */
 export async function openLocalProcess(
-  request: SandboxProcessRequest & { loopbackFd?: number },
+  request: SandboxProcessRequest & { loopbackFd?: number; onExit?: () => void },
 ): Promise<SandboxProcess> {
   request.signal?.throwIfAborted()
   if (!request.argv.length) throw new Error('process argv is empty')
@@ -61,6 +61,7 @@ export async function openLocalProcess(
   let ended = false
   let stoppedProcesses: number | undefined, cleanupError: Error | undefined
   child.once('exit', () => {
+    request.onExit?.()
     if (windows || request.pty || !child.pid) return
     try {
       stoppedProcesses = stopProcessGroup(child.pid)
@@ -83,7 +84,10 @@ export async function openLocalProcess(
   })
   await new Promise<void>((resolve, reject) => {
     child.once('spawn', resolve)
-    child.once('error', reject)
+    child.once('error', (error) => {
+      request.onExit?.()
+      reject(error)
+    })
   })
   const write = (stream: NodeJS.WritableStream, text: string) =>
     new Promise<void>((resolve, reject) => {

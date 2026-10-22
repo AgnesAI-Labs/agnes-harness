@@ -6,12 +6,13 @@ import { continueParked } from '../src/step/parked.js'
 import { answerToolDecision } from './helpers/decision.js'
 import { fakeProvider, type Script, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, openSession, shellTool } from './helpers/open-session.js'
+import { actor, openSession, openWorldTool, shellTool, writeTool } from './helpers/open-session.js'
 
 const approver = { ...actor, id: 'approver' }
 async function setup(
   scripts: Script[] = [toolTurn('shell', { command: 'echo ok' }), textTurn('finished')],
   policy: 'notify' | 'refuse' = 'notify',
+  taintOnly = false,
 ) {
   let now = 1_757_203_200_000,
     asks = 0,
@@ -20,13 +21,12 @@ async function setup(
   const clock = () => now,
     storage = new MemoryStorage(),
     registry = new ToolRegistry()
-  registry.add(
-    shellTool(async (args) => {
-      executions++
-      return { content: [{ type: 'text', text: `ran:${JSON.stringify(args)}` }] }
-    }),
-    { source: 'test', trust: 'builtin' },
-  )
+  const execute = async (args: unknown) => {
+    executions++
+    return { content: [{ type: 'text' as const, text: `ran:${JSON.stringify(args)}` }] }
+  }
+  registry.add(taintOnly ? writeTool(execute) : shellTool(execute), { source: 'test', trust: 'builtin' })
+  if (taintOnly) registry.add(openWorldTool(), { source: 'test', trust: 'builtin' })
   const receipts = new Map<string, { requestId: string; bindingHash: string; expiresAt: string }>()
   const seams = fakeSeams({
     principals: {
@@ -44,7 +44,9 @@ async function setup(
       },
     },
   })
-  const provider = fakeProvider(scripts)
+  const provider = fakeProvider(
+    taintOnly ? [toolTurn('fetch_page', {}), toolTurn('write_note', {}), textTurn('finished')] : scripts,
+  )
   const h = await openSession({ storage, clock, registry, seams, provider })
   await h.session.enqueue('next-turn', {
     actor: { ...actor, attrs: { unattendedApproval: policy } },
@@ -91,27 +93,76 @@ describe('single-tool parked continuation', () => {
       await h.session.close()
     }
   })
-  it.each(['allowed-once', 'rejected'] as const)(
-    'continues %s through core and feeds the real result to the next request',
-    async (verdict) => {
-      const h = await setup()
+  it.each([
+    { verdict: 'allowed-once', taintOnly: false },
+    { verdict: 'rejected', taintOnly: false },
+    { verdict: 'allowed-once', taintOnly: true },
+    { verdict: 'rejected', taintOnly: true },
+  ] as const)(
+    'continues $verdict (taint-only=$taintOnly) through core and feeds the real result to the next request',
+    async ({ verdict, taintOnly }) => {
+      const h = await setup(undefined, 'notify', taintOnly)
       await answerToolDecision(h.session, 1, verdict, approver)
       expect((await run(h)).reason).toBe('completed')
       expect(h.asks()).toBe(1)
       expect(h.executions()).toBe(verdict === 'allowed-once' ? 1 : 0)
-      expect(h.authorizations()).toBe(1) // The fitted authorization runtime caches its decision for 60s.
-      expect(h.provider.calls).toBe(2)
-      const result = (await h.log.scan({ type: 'tool/result', toSeq: h.log.lastSeq }))[0]
+      expect(h.authorizations()).toBe(taintOnly ? 2 : 1) // Authorization is cached per tool for 60s.
+      expect(h.provider.calls).toBe(taintOnly ? 3 : 2)
+      const result = (await h.log.scan({ type: 'tool/result', toSeq: h.log.lastSeq })).at(-1)
       expect(result?.data).toMatchObject({ isError: verdict !== 'allowed-once' })
-      const text = JSON.stringify(h.provider.requests[1]?.messages)
+      const text = JSON.stringify(h.provider.requests.at(-1)?.messages)
       expect(text).toContain(verdict === 'allowed-once' ? 'ran:' : 'the user rejected this action')
       expect((await h.session.decisions.list()).filter((item) => item.consumption)).toHaveLength(1)
+      if (verdict === 'allowed-once') {
+        const consumed = (await h.session.decisions.list())[0]?.consumption
+        const intent = (await h.log.scan({ type: 'effect/intent', toSeq: h.log.lastSeq })).find(
+          (row) => (row.data as { effectId: string }).effectId === consumed?.effectId,
+        )
+        expect(intent?.data).toMatchObject({
+          kind: 'tool',
+          tool: { toolUseId: (await h.session.decisions.list())[0]?.request.operationId },
+        })
+        expect(consumed?.effectId).toBeTruthy()
+      }
       expect(h.session.pendingEffects()).toEqual([])
+      expect(h.session.op()).toBeNull()
+      expect((await h.session.projectUI()).opState).toBeNull()
       const seq = h.log.lastSeq
       await run(h)
       expect(h.log.lastSeq).toBe(seq)
     },
   )
+  it("consumes a reopened taint-only continuation's original answer exactly once", async () => {
+    const h = await setup(undefined, 'notify', true)
+    const handle = (await h.session.decisions.list())[0]?.handle
+    if (!handle) throw new Error('missing parked decision')
+    await h.session.close()
+    const reopened = await openSession({
+      storage: h.storage,
+      clock: h.clock,
+      registry: h.registry,
+      seams: h.seams,
+      provider: fakeProvider([textTurn('finished')]),
+    })
+    try {
+      expect(h.executions()).toBe(0)
+      expect((await reopened.session.decisions.list()).map((item) => item.handle)).toEqual([handle])
+      await answerToolDecision(reopened.session, 1, 'allowed-once', approver)
+      expect((await run(reopened)).reason).toBe('completed')
+      expect(h.executions()).toBe(1)
+      expect((await reopened.session.decisions.get(handle)).consumption?.effectId).toBeTruthy()
+      expect((await reopened.session.projectUI()).opState).toBeNull()
+      const consumptions = (
+        await reopened.log.scan({ type: 'decision/state', toSeq: reopened.log.lastSeq })
+      ).filter((row) => (row.data as { consumption?: unknown }).consumption)
+      expect(consumptions).toHaveLength(1)
+      await run(reopened)
+      expect(h.executions()).toBe(1)
+      expect((await reopened.session.projectUI()).opState).toBeNull()
+    } finally {
+      await reopened.session.close()
+    }
+  })
   it('refuses an unattended approval without parking or inventing a human answer', async () => {
     const h = await setup(undefined, 'refuse')
     try {

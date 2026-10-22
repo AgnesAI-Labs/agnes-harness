@@ -10,7 +10,7 @@ import {
   type IdMinter,
   type Seq,
 } from '@agnes/core-common/types'
-import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
+import { isPending } from '@agnes/core-effects/effects/approval-answer'
 import { EffectRuntime } from '@agnes/core-effects/effects/effect'
 import { type ExecuteAttempt, ExecutePermitRegistry } from '@agnes/core-effects/effects/execute-permits'
 import { type NestedToolLease, NestedToolScheduler } from '@agnes/core-effects/effects/scheduler'
@@ -29,7 +29,7 @@ import {
   type HostToolDispatchPort,
 } from '@agnes/core-effects/effects/tool-dispatch'
 import { ToolPolicyRegistry, ToolRuntimeRegistry } from '@agnes/core-effects/effects/tool-providers'
-import { type SeamRuntime, settlesWithin } from '@agnes/core-effects/effects/wrap'
+import type { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 import type { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { SessionLogImpl, Timers } from '@agnes/core-ledger/log/session-log'
@@ -109,6 +109,13 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
+import {
+  childLifecycle,
+  childLifecycleRevoked,
+  persistChildLifecycleStop,
+  renewChildLifecycle,
+  revokeChildLifecycle,
+} from '../child/lifecycle.js'
 import { roleAuthority } from '../child/role-authority.js'
 import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
@@ -153,7 +160,15 @@ import type {
 import type { HumanAnswerCommand, HumanAnswerContext } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
-import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
+import {
+  type AbortResult,
+  abortSession,
+  cancelSessionRuntimes,
+  closeTurn,
+  drainClosingWork,
+  finishAborted,
+} from './control.js'
+import { askApprovalAnswer } from './decision-delivery.js'
 import { DecisionCommands, type DecisionSource } from './decisions.js'
 import { assertCurrentDomainDecisions } from './domain-decision.js'
 import { sysEvent } from './events.js'
@@ -182,8 +197,10 @@ import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { permissionOperator, SessionPermissionAuthority } from './session-permission-authority.js'
 import { invalidatePermissionProjection } from './session-permission-projection.js'
 import { sessionToolCatalog } from './tool-catalog.js'
+import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
+import { rehydratedCallState } from './turn-restore.js'
 
 type OperationCommon = {
   name: string
@@ -585,8 +602,6 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
   }
 }
 
-const DEFAULT_CLOSE_DRAIN_MS = 30_000
-
 export class SessionImpl {
   /** Identity comes from the Host binding; standalone Core uses its fixed session root. */
   readonly workspaceRoot: string
@@ -756,13 +771,16 @@ export class SessionImpl {
         return session.closingOrClosed || deps.log.isClosed
       },
       get cancelled() {
-        return session.op()?.control.status === 'cancel_requested'
+        return session.op()?.control.status === 'cancel_requested' || childLifecycleRevoked(session)
       },
       get actor() {
         return session.authorization.actor
       },
       get permissionContext() {
         return session.permissionContext
+      },
+      get delegatedToolApprovals() {
+        return session.roleAuthority?.humanApprovals !== false
       },
       get refuseApprovals() {
         return session.d.roleDelegation !== undefined
@@ -926,16 +944,9 @@ export class SessionImpl {
     (tool) => this.turn?.snapshot.byName.get(tool)?.meta.commandArg,
     (input, signal) => this.d.commandPathScope?.(input, signal) ?? Promise.resolve(undefined),
   )
-  /** The selected policy inside this session's command floor: its own preset's table, read per call. */
+  /** The selected policy inside this session's effective command and captured role floors. */
   toolPolicy(selection?: string) {
-    const own = this.commandFloor(
-      this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default'),
-      this.preset.approval.commandTable,
-    )
-    const captured = this.roleAuthority
-    if (!captured) return own
-    const parent = this.commandFloor(this.toolPolicies.resolve(captured.parentPolicy), captured.commandTable)
-    return captured.toolPolicy(own, parent)
+    return effectiveToolPolicy(this, this.toolPolicies, this.commandFloor, selection)
   }
 
   loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {
@@ -1776,16 +1787,7 @@ export class SessionImpl {
   }
 
   async askApprovalAnswer(request: ApprovalRequest, signal: AbortSignal): Promise<ApprovalAnswer | Pending> {
-    signal = AbortSignal.any([signal, this.ac.signal])
-    const offered = structuredClone(request)
-    const raw = this.d.segments?.Approval
-      ? await runCoreReplacement(this, 'Approval', this.operationContext(), { request, signal }, () =>
-          this.d.runtime.approvalAsk(request, signal),
-        )
-      : await this.d.runtime.approvalAsk(request, signal)
-    // A replacement that answers outside the set is refused like a seam that does.
-    if (signal.aborted) return { verdict: 'cancelled', reason: 'stopped' }
-    return normalizeApproval(raw, offered) ?? { verdict: 'unavailable', reason: 'invalid-answer' }
+    return askApprovalAnswer(this, request, signal)
   }
 
   async executeTool(
@@ -1800,7 +1802,9 @@ export class SessionImpl {
     // the sequence returned by the append that durably wrote effect/intent; authority itself stays
     // process-local and is consumed before either the built-in or a replacement is entered.
     this.assertToolDispatchAvailable(dispatch.executionDomain)
+    const lifecycle = childLifecycle(this)
     const runtime = await this.toolRuntime()
+    lifecycle.assertActive()
     this.loopScope.assertAlive()
     const binding = { ...started, owner: this.executePermitOwner, attempt: dispatch.attempt }
     const permit = this.executePermits.issue(binding)
@@ -1815,6 +1819,7 @@ export class SessionImpl {
       concurrencySafe: this.turn?.snapshot.byName.get(name)?.meta.isConcurrencySafe === true,
       ...(this.d.hostToolDispatch ? { hostPort: this.d.hostToolDispatch } : {}),
       invoke: () => {
+        lifecycle.assertActive()
         if (!this.d.segments?.ToolExecution) return builtin()
         return runCoreReplacement(
           this,
@@ -1851,14 +1856,7 @@ export class SessionImpl {
   async rehydrateTurn(op: OpStateObj): Promise<void> {
     await this.restoreGrants()
     await restoreToolDisclosure(this)
-    const range = { fromSeq: op.meta.triggerSeq, toSeq: this.lastSeq, lane: this.lane }
-    const [lastRow] = await this.d.log.scan({ ...range, type: 'request/header', order: 'desc', limit: 1 })
-    const last = lastRow?.data as RequestHeaderData | undefined
-    let calls = 0
-    for await (const page of scanPages((q) => this.d.log.scan(q), { ...range, type: 'tool/call' }))
-      calls += page.length
-    const ordinal =
-      op.phase.kind === 'tools' ? Math.max(calls, ...op.phase.batch.calls.map((c) => c.ordinal + 1)) : calls
+    const { lastRow, last, ordinal } = await rehydratedCallState(this, op)
     const turn = this.freshTurn(ordinal, op.meta.triggerSeq)
     const budget = await rehydratedBudget(this, op)
     if (budget !== undefined) {
@@ -2010,18 +2008,11 @@ export class SessionImpl {
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
     this.abortRevision++
-    return abortSession(this, by).then((result) => {
-      // This is a cancellation request, not a drain: a tool may await this very call.
-      // Runtime cancel/dispose still drain their work; close owns final cleanup.
-      void Promise.all([
-        Promise.resolve().then(() => this.loopDriver?.cancel()),
-        ...this.runtimeInstances.map((instance) => Promise.resolve().then(() => instance.runtime.cancel())),
-      ]).catch((error: unknown) => {
-        void this.diag('invariant', { kind: 'loop-cancel-failed', message: String(error) }).catch(
-          () => undefined,
-        )
-      })
-      return result
+    return abortSession(this, by).finally(() => {
+      cancelSessionRuntimes(this, [
+        () => this.loopDriver?.cancel(),
+        ...this.runtimeInstances.map((instance) => () => instance.runtime.cancel()),
+      ])
     })
   }
 
@@ -2039,6 +2030,10 @@ export class SessionImpl {
           !(outcome.reason === 'parked' && this.op() && !(await this.controls.paused()))
         )
           return outcome
+      }
+      if (!opts.signal.aborted && this.abortRevision === abortRevision) {
+        renewChildLifecycle(this)
+        await this.d.children.recover?.()
       }
       this.availableRoles = (await this.d.childRoles?.list(this).catch(() => [])) ?? []
       return this.runTurns(opts, abortRevision)
@@ -2712,6 +2707,7 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
+    revokeChildLifecycle(this)
     this.d.log.cancelHistoryVerification()
     this.authorization.detach()
     this.decisions.detach()
@@ -2729,18 +2725,13 @@ export class SessionImpl {
           failures.push(error)
         }
       }
+      await attempt(() => persistChildLifecycleStop(this))
       await attempt(() => this.loopDriver?.cancel())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
       await attempt(() => this.loopChildren?.close())
       // Keep hooks, log and lease alive while producers settle effects and final checkpoints. Work
       // that ignores its cancellation is left behind: it must not hold the log and the lease open.
-      const drainMs = this.d.closeDrainMs ?? DEFAULT_CLOSE_DRAIN_MS
-      if (!(await settlesWithin(Promise.allSettled([...this.activeWork]), drainMs)))
-        this.d.logger.warn('session closed with work still in flight', {
-          sessionKey: this.key,
-          pending: this.activeWork.size,
-          drainMs,
-        })
+      await drainClosingWork(this, this.activeWork)
       await attempt(() => this.loopDriver?.dispose())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.dispose())))
       if (this.loopContext) disposeLoopContext(this.loopContext)

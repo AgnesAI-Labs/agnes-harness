@@ -6,6 +6,8 @@ import { flushSync } from 'react-dom'
 import { expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
 import { registerJobsClientContribution } from '../src/client-modules/jobs.js'
+import { registerSessionApprovalPanel } from '../src/workbench/approval-panel.js'
+import { workbenchApproval } from '../src/workbench/approval-store.js'
 import { Dock, renderWorkbench, unmountWorkbench, unmountWorkbenchSoon } from '../src/workbench/dock.js'
 import { RIGHT_DEFAULT } from '../src/workbench/dock-size.js'
 import { cycleTaskFocus } from '../src/workbench/focus.js'
@@ -484,4 +486,49 @@ it('defers a session-switch unmount past the current task and cancels it when th
     unmountWorkbench(host)
     document.body.replaceChildren()
   }
+})
+
+it('shows an approval dock without application tabs and focuses the sole conversation gate', () => {
+  document.body.innerHTML =
+    '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div><div id="approval-content"><div data-approval-key="child-gate"><button data-approval-action="allow">Allow once</button></div></div>'
+  const host = document.getElementById('controls')!
+  const release = registerSessionApprovalPanel()
+  try {
+    renderWorkbench(host, { t: (key) => key, data: { session: { id: 'parent' } } })
+    flushSync(() => host.querySelector<HTMLButtonElement>('[data-edge="right"]')?.click())
+    expect(document.getElementById('workbench-tab-approvals')).toBeNull()
+    const confirm = vi.fn()
+    flushSync(() =>
+      workbenchApproval.set({
+        key: 'child-gate',
+        title: 'Human approval',
+        summary: 'Role requirements · child parent/child · write docs/SRS.md · taint',
+        impact: 'Write file',
+        actions: [{ id: 'live:allow_once', label: 'Allow once', onSelect: confirm }],
+        disabled: false,
+      }),
+    )
+    const tab = document.getElementById('workbench-tab-approvals')!
+    expect(tab).not.toBeNull()
+    flushSync(() => tab.click())
+    const panel = document.getElementById('workbench-right-content')!
+    expect(panel.textContent).toContain('Role requirements · child parent/child · write docs/SRS.md · taint')
+    expect(panel.querySelector('[data-approval-action]')).toBeNull()
+    flushSync(() =>
+      [...panel.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent === 'Go to confirmation')!
+        .click(),
+    )
+    expect(document.activeElement).toBe(document.querySelector('[data-approval-action]'))
+    expect(confirm).not.toHaveBeenCalled()
+    flushSync(() => workbenchApproval.set(undefined))
+    expect(document.getElementById('workbench-tab-approvals')).toBeNull()
+  } finally {
+    unmountWorkbench(host)
+    release()
+    workbenchApproval.set(undefined)
+    localStorage.clear()
+    document.body.replaceChildren()
+  }
+  expect(workbenchPanels.get('approvals')).toBeUndefined()
 })

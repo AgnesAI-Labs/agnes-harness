@@ -79,14 +79,22 @@ describe('author hook return boundary', () => {
     },
   )
 
-  it.each(['tool', 'argv', 'argvHash', 'actor', 'decisionId'])(
-    'refuses an approval patch changing bound field %s',
-    (key) => {
-      expect(() => authorHookReturn('approval_request', { request: { [key]: 'forged' } })).toThrow(
-        'invalid author hook return',
-      )
-    },
-  )
+  it.each([
+    'tool',
+    'argv',
+    'argvHash',
+    'actor',
+    'decisionId',
+    'verdict',
+    'answeredBy',
+    'sessionKey',
+    'delegation',
+    'options',
+  ])('refuses an approval patch changing bound field %s', (key) => {
+    expect(() => authorHookReturn('approval_request', { request: { [key]: 'forged' } })).toThrow(
+      'invalid author hook return',
+    )
+  })
 
   it('retains approval summary without coercing it into context or the binding', () => {
     expect(authorHookReturn('approval_request', { request: { summary: 'review', context: 'why' } })).toEqual({

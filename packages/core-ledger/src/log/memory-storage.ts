@@ -12,7 +12,6 @@ import {
   type CostOriginBinding,
   type CreateDelegatedChildInput,
   type CreateDelegatedChildResult,
-  canTransitionChildState,
   type DeferCreatingChildInput,
   type DeferredChildFact,
   isActiveChildState,
@@ -24,6 +23,7 @@ import {
   type TreeUsage,
 } from '@agnes/core-child-control/child/types'
 import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '@agnes/core-common/types'
+import { transitionMemoryChild } from './memory-child-state.js'
 import { MemoryStorageBase } from './memory-storage-base.js'
 import {
   type CommitReceipt,
@@ -511,13 +511,9 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
     childKey: SessionKey,
     expectedRevision: number,
     next: ChildTaskRecord['state'],
+    admission?: { maxFanOut: number },
   ): Promise<boolean> {
-    const row = this.childTasks.get(childKey)
-    if (!row || row.stateRevision !== expectedRevision) return false
-    if (!canTransitionChildState(row.state, next)) return false
-    row.state = next
-    row.stateRevision += 1
-    return true
+    return transitionMemoryChild(this.childTasks, childKey, expectedRevision, next, admission)
   }
 
   async nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number> {

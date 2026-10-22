@@ -164,6 +164,33 @@ describe('sandbox providers', () => {
     const stopped = await pending
     expect(stopped.signal).toBe('SIGKILL')
     await instance.dispose()
+    const late = new AbortController()
+    let closed = false
+    const opening = await createLocalSandboxProvider(
+      {
+        ...exec,
+        async openProcess() {
+          late.abort(new Error('cancelled during open'))
+          return {
+            enforcement,
+            exited: Promise.resolve({ code: 0 }),
+            onOutput: () => () => {},
+            write: async () => {},
+            resize: async () => {},
+            signal: async () => {},
+            close: async () => {
+              closed = true
+            },
+          }
+        },
+      },
+      process.platform,
+    ).create({ workspaceRoot: cwd })
+    await expect(
+      opening.openProcess!({ argv: ['fixture'], cwd, policy, enforcement, signal: late.signal }),
+    ).rejects.toThrow('cancelled during open')
+    expect(closed).toBe(true)
+    await opening.dispose()
   })
 
   it('refuses a configured provider when nothing has registered one', async () => {
@@ -368,6 +395,25 @@ describe('sandbox providers', () => {
       loopbackDispatch.run(['echo'], { cwd, sandbox: { ...binding, policy: loopback } }),
     ).resolves.toMatchObject({ stdout: 'bound-listener' })
     expect(calls).toHaveLength(1)
+    for (const os of ['linux', 'win32', 'darwin']) {
+      const unavailable = await createLocalSandboxProvider(
+        {
+          run: async () => {
+            throw new Error('unexpected unconfined spawn')
+          },
+          killAll: async () => {},
+        },
+        os,
+      ).create({ workspaceRoot: cwd })
+      const actual =
+        os === 'darwin'
+          ? enforcement
+          : { level: 'full' as const, scope: ['file', 'network', 'process'] as const }
+      await expect(
+        unavailable.exec({ argv: ['echo'], cwd, policy: loopback, enforcement: actual }),
+      ).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
+      await unavailable.dispose()
+    }
     await expect(instance.exec({ argv: ['echo'], cwd })).rejects.toThrow(/bound execution policy/)
     const peerRoot = join(cwd, 'peer')
     const peer = await provider.create({ workspaceRoot: peerRoot })

@@ -87,10 +87,17 @@ export function createSkillState(ctx: AssemblyContext, proc: ProcessServices): S
       : undefined,
   }
   const readContext = { homeDir: deps.homeDir ?? homedir(), agnesHome: dirname(dataDir), dataDir }
-  proc.skillReadRoots.current = () =>
-    safeSkillReadRoots(state.preload?.readRoots?.() ?? [], {
+  proc.skillReadRoots.current = (sessionKey) => {
+    // The filesystem handle owns this identity; Skill discovery's separate async scope is
+    // absent on ordinary read/list/stat calls. Roles use the resource-gated read/readFile APIs.
+    if (sessionKey) {
+      const session = ctx.live.kernel.peek()?.get(sessionKey)
+      if (!session || session.roleAuthority) return []
+    }
+    return safeSkillReadRoots(state.preload?.readRoots?.() ?? [], {
       ...readContext,
       generationRoot: join(deps.profileDir, '.runtime-generations'),
     })
+  }
   return state
 }

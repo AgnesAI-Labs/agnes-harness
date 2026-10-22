@@ -553,6 +553,7 @@ export async function approveAndExecute(
     if (permission.effect === 'deny')
       return { result: await refuse(s, call.toolUseId, 'POLICY_DENIED', permission.reason, decisionId) }
     const humanOnly = permission.approval !== undefined
+    const onceOnly = humanOnly || s.roleAuthority !== undefined
     if (
       humanOnly &&
       (permission.effect !== 'ask' ||
@@ -566,6 +567,9 @@ export async function approveAndExecute(
       call.name === 'exit_plan_mode' ? 'plan.exit' : 'tool.permission',
     )
     const needsAsk =
+      // A continuation still owes its original gate a validated, effect-bound consumption even
+      // when the fresh turn's policy would allow the call (for example after turn taint resets).
+      (await approvalContinuation(s))?.toolUseId === call.toolUseId ||
       (automatic !== undefined &&
         (policy.requiresApproval === 'always' ||
           (policy.requiresApproval === 'destructive' && policy.isDestructive) ||
@@ -658,7 +662,7 @@ export async function approveAndExecute(
             }
           : undefined
       const durableGrants =
-        !humanOnly && durableBinding
+        !onceOnly && durableBinding
           ? (
               await s.d.runtime.approvalGrants(
                 {
@@ -706,7 +710,7 @@ export async function approveAndExecute(
         ...(permission.approval ? { approval: permission.approval } : {}),
       })
       if (
-        humanOnly &&
+        onceOnly &&
         recorded &&
         (recorded.verdict === 'allowed-session' || recorded.verdict === 'allowed-permanent')
       )
@@ -838,16 +842,16 @@ export async function approveAndExecute(
           ),
         }
       }
-      if (!humanOnly && s.sessionAllows.has(grantKey)) continue
-      if (!humanOnly && durableGrants.length > 0) {
+      if (!onceOnly && s.sessionAllows.has(grantKey)) continue
+      if (!onceOnly && durableGrants.length > 0) {
         recheckGrant()
         continue
       }
       let requestId = s.d.ids.requestId()
       const options = [
         'allowed-once' as const,
-        ...(!humanOnly ? (['allowed-session'] as const) : []),
-        ...(!humanOnly && durableBinding ? (['allowed-permanent'] as const) : []),
+        ...(!onceOnly ? (['allowed-session'] as const) : []),
+        ...(!onceOnly && durableBinding ? (['allowed-permanent'] as const) : []),
         'rejected' as const,
       ]
       const asked = {
@@ -868,6 +872,9 @@ export async function approveAndExecute(
       const { asked: finalAsked, rewrite } = await hookedAsk(s, call.name, call.args as JsonValue, asked)
       const approvalRequest = {
         ...finalAsked,
+        ...(s.roleAuthority
+          ? { context: [permission.reason, finalAsked.context].filter(Boolean).join('\n') }
+          : {}),
         deadline: new Date(s.d.clock() + s.preset.approval.timeoutMs).toISOString(),
         sessionKey: s.key,
         stepId,
@@ -1104,7 +1111,11 @@ export async function approveAndExecute(
         events: [started.intent],
         next: (cur) => {
           chain[1]!.events.push(
-            ...s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call), started.effectId),
+            ...s.decisions.consumptionEvents(
+              approvalRefs,
+              toolDecisionSource(s, call, true),
+              started.effectId,
+            ),
           )
           return updateCall(cur, call.toolUseId, {
             status: 'dispatch_pending',
@@ -1129,7 +1140,7 @@ export async function approveAndExecute(
     const [, startedSeqs] = await s.transitionChain(chain, {
       beforeCommit: () => recheckPermission?.(),
       commitCheck: () => {
-        s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call), started.effectId)
+        s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call, true), started.effectId)
       },
     })
     for (const key of sessionActivations) s.sessionAllows.add(key)

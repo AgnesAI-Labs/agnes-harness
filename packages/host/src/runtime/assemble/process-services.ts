@@ -30,7 +30,7 @@ export type ProcessServices = Readonly<{
   /** The sandbox provider registry of the tree that is current, filled in by the runtime-target stage. */
   sandboxProviderSlot: SandboxProviderSlot
   /** Set once the Skill generation exists; the fs fence asks through it on every read. */
-  skillReadRoots: { current: () => readonly string[] }
+  skillReadRoots: { current: (sessionKey?: string) => readonly string[] }
   gitWorktrees: ReturnType<typeof createSessionGitWorktreeService>
   lockedPackageMutations: HostLockedPackageMutationRuntime
   secrets(ref: string): string
@@ -48,10 +48,10 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
   const { modules } = pkgs
   const backend = deps.platform ? { platform: deps.platform } : {}
   const sandboxProviderSlot: SandboxProviderSlot = {}
-  const skillReadRoots = { current: (): readonly string[] => [] }
+  const skillReadRoots = { current: (_sessionKey?: string): readonly string[] => [] }
   const adapters = await openAdapters(ctx.profile, {
     dataDir,
-    skillReadRoots: () => skillReadRoots.current(),
+    skillReadRoots: (sessionKey) => skillReadRoots.current(sessionKey),
     fullAccessReadOnlyRoots: () =>
       ownStateRoots({
         profileDir: deps.profileDir,

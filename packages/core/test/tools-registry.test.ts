@@ -2,6 +2,7 @@ import { CoreError } from '@agnes/core-common/types'
 import type { ToolDef } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
+import { ToolRegistryView } from '../src/registry/tool-allow.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 
 const meta = {
@@ -58,6 +59,17 @@ describe('ToolRegistry', () => {
     const captured = structuredClone(binding)
     binding.configDigest = 'b'.repeat(64)
     expect(registry.resolve('proved')?.executionBinding).toEqual(captured)
+    for (const snapshot of [
+      registry.snapshot(0),
+      new ToolRegistryView(registry, ['proved'], ['proved']).snapshot(0),
+    ]) {
+      expect(snapshot.byName.get('proved')).toMatchObject({
+        packageIdentity: '@fixture/tools',
+        packageVersion: '1.0.0',
+        executionBinding: captured,
+        definitionFingerprint: registry.resolve('proved')?.definitionFingerprint,
+      })
+    }
     expect(Object.isFrozen(registry.resolve('proved')?.executionBinding)).toBe(true)
   })
 
