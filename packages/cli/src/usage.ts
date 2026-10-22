@@ -20,6 +20,7 @@ export function usage(locale = 'en'): string {
     'agh schedules add|edit [<id>] --prompt <text> (--every <30m> | --cron <expr> | --at <iso> | --daily <HH:MM> | --weekly <days@HH:MM>) [--tz <zone>] [--title <t>] [--session <key> | --new-session [--cwd <dir>]] [--unattended notify|refuse] [--json]',
     'agh triggers [list] | add --file <f|-> | edit <ruleId> --file <f|-> | remove <ruleId> | test <ruleId> [--payload <f|->] | configure --file <f|-> [--json]',
     'agh settings [<section> [get | set (--file <f|-> | --text <t>) | test --text <query> [<provider>]]] [--json]',
+    'agh agents [--all] [--json]',
     'agh credentials [list] | rename <id> <name...> | delete <id> [--yes [--force]] [--json]',
     'agh export <id> [--format agnes|sharegpt|claude-code] [--html] [--raw] [-o|--out <file>]',
     'agh import <file> [--from claude-code|codex|pi|auto] [--key <sessionKey>]',

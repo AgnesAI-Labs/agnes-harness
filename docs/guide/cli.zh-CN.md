@@ -105,6 +105,10 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 
 `agh credentials` 列出通用 API 密钥凭据（id、名称、创建时间、被谁使用），`rename ID 名称...` 改名，`delete ID --yes` 删除；不带 `--yes` 只显示将删除的对象，仍被使用的凭据还需要 `--force`。密钥值从不显示。新增或替换密钥请用 `agh config`，命令行不接收密钥。
 
+## 会话总览
+
+`agh agents` 列出 daemon 里的会话及其状态和队列：key、标题、loop（或 preset）、状态、排队条数和最近活动。默认显示最近活动的 50 个未归档会话，`--all` 不设上限，`--json` 输出供脚本使用的稳定字段。状态来自逐个会话的只读 `session.controls` 调用（并发上限 8）：`paused`（暂停）、`queued`（输入排在当前 turn 之后）、`open`（daemon 中在线、没有排队；daemon 不向客户端提供忙碌标志，所以 turn 仍可能在运行）、`closed`（daemon 中未在线）、`unknown`（该会话读取失败，不影响其他行）。`agh sessions list` 是归档和分组视图，`agh agents` 是运行和队列视图。
+
 ## 退出码
 
 | 码 | 意义 |

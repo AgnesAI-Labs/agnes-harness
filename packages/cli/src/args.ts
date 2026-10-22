@@ -19,6 +19,7 @@ const COMMANDS = new Set<string>([
   'triggers',
   'settings',
   'credentials',
+  'agents',
   'export',
   'import',
   'doctor',

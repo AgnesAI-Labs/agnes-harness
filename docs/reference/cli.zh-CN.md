@@ -36,6 +36,7 @@
 | `agh settings search test --text QUERY [PROVIDER]` | 用某个提供商（默认用默认提供商）跑一次搜索；测试失败时打印原因并以 1 退出 |
 | `agh credentials [list] [--json]` / `agh credentials rename ID NAME...` | 列出通用凭据（id、名称、类型、创建时间、引用；从不含密钥）/改名 |
 | `agh credentials delete ID [--yes] [--force]` | 不带 `--yes` 只显示将删除的对象且不发请求；仍被使用的凭据还需要 `--force` |
+| `agh agents [--all] [--json]` | 会话及其状态（`paused`、`queued`、`open`、`closed`、`unknown`）、排队条数和最近活动；默认最近 50 个未归档会话，`--all` 不设上限；每个会话一次只读 `session.controls` |
 | `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | 按会话搜索历史（需管理员连接，拒绝原样输出）/会话分组 |
 | `agh sessions verify ID [--json]` | 重新完整校验历史，报告已验证序号/时间或失败序号；失败返回非零退出码。 |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | 导出；另有 `--html`、`--raw` |

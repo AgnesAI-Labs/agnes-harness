@@ -111,6 +111,10 @@ These commands mirror the Web admin pages and need an admin connection. `agh plu
 
 `agh credentials` lists the generic API-key credentials (id, name, creation time, what uses them), renames one (`rename ID NAME...`) and deletes one (`delete ID --yes`; without `--yes` it only shows what would be deleted, and a credential that is still in use also needs `--force`). A secret value is never shown. Adding or replacing a value is done with `agh config`, not on the command line.
 
+## Sessions at a glance
+
+`agh agents` lists the daemon's sessions with their state and queue: key, title, loop (or preset), state, queued inputs and last activity. By default it shows the 50 most recent unarchived sessions; `--all` lifts the limit and `--json` prints stable fields for scripts. The state comes from one read-only `session.controls` call per session (at most 8 at a time): `paused`, `queued` (inputs wait behind the current turn), `open` (live in the daemon, nothing queued; a turn may still be running, because the daemon gives clients no busy flag), `closed` (not live in the daemon) or `unknown` (that session could not be read; the others are unaffected). `agh sessions list` is the archive and grouping view; `agh agents` is the run and queue view.
+
 <a id="退出码"></a>
 
 ## Exit codes

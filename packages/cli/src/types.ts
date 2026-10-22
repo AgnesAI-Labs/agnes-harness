@@ -28,6 +28,7 @@ export type Command =
   | 'triggers'
   | 'settings'
   | 'credentials'
+  | 'agents'
   | 'computer-use'
   | 'profile'
   | 'plugin'
