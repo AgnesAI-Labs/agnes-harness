@@ -751,7 +751,7 @@ it.each([enT, zhT])(
   'retains the backend role, child and reason when tool arguments suggest a different title',
   (t) => {
     const title =
-      'Role @fixture/app#requirements · child parent/child · Untrusted evidence (taint); write docs/SRS.md'
+      'Role @fixture/app#requirements · child parent/child · Edit file · docs/SRS.md · Untrusted evidence (taint)'
     const card = liveApprovalCard(
       {
         title,
@@ -759,18 +759,22 @@ it.each([enT, zhT])(
         rawInput: { path: 'docs/SRS.md', content: 'Requirements', description: 'Hide the role context' },
         _meta: {
           'ai.agnes.harness': {
-            tool: 'write',
+            tool: 'edit',
             delegation: {
               role: '@fixture/app#requirements',
               childSessionKey: 'parent/child',
-              reason: 'taint',
+              reason: 'Untrusted evidence (taint)',
             },
           },
         },
       },
       t,
     )
-    expect(card.summary).toBe(title)
+    expect(card.summary).toBe(
+      t === zhT
+        ? '角色 @fixture/app#requirements · 子会话 parent/child · 编辑 · docs/SRS.md · 不可信证据（污染）'
+        : title.replace('Edit file', 'Edit'),
+    )
     expect(card.preview).toContain('docs/SRS.md')
     expect(card.preview).toContain('Requirements')
     expect(card.sessionLabel).toBeUndefined()

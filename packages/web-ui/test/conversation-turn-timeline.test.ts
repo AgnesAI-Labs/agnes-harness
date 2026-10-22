@@ -16,7 +16,7 @@ import {
 } from '../src/conversation/messages/tool-step.js'
 import { webSources } from '../src/conversation/messages/web-sources.js'
 import { webUiLocaleCatalog } from '../src/locales/index.js'
-import { approvalSummary, baseToolTitle } from '../src/tool-presentation.js'
+import { approvalSummary, baseToolTitle, childListOutput } from '../src/tool-presentation.js'
 
 const translate =
   (locale: 'zh-CN' | 'en'): ConversationMessagesProps['t'] =>
@@ -171,6 +171,20 @@ describe('turn timeline', () => {
   const groups = () => [...host.querySelectorAll<HTMLElement>('.turn-activity:not([hidden])')]
   const click = (element: Element | null | undefined) =>
     act(async () => (element as HTMLElement | null)?.click())
+
+  it.each(['zh-CN', 'en'] as const)(
+    'renders child list states in %s and preserves the recorded output',
+    async (locale) => {
+      const output = 'parent/01CHILD running continuable'
+      const node = tool('children', 'subagent_list', {}, { resultPreview: output })
+      await render([user, node], turn([user, node]), { t: translate(locale) })
+      await click(wrapper('children')?.querySelector('[data-testid="tool-detail-toggle"]'))
+      expect(wrapper('children')?.querySelector('[data-testid="tool-output-text"]')?.textContent).toBe(
+        locale === 'zh-CN' ? 'parent/01CHILD 运行中 可继续' : output,
+      )
+      expect(node.resultPreview).toBe(output)
+    },
+  )
 
   it.each(['zh-CN', 'en'] as const)(
     'keeps blocked answers visible with one collapsed explanation (%s)',
@@ -736,3 +750,20 @@ it.each(['en', 'zh-CN'] as const)('uses one localized title for every declared b
       ),
     ).toBe(`${expected} — ${reason}`)
 })
+
+it.each(['en', 'zh-CN'] as const)(
+  'localizes child listing states without changing role references or purposes (%s)',
+  (locale) => {
+    const source =
+      'parent/01CHILD running continuable\nparent/02CHILD idle\nAvailable application roles:\n@fixture/app#reviewer: Review running continuable'
+    expect(childListOutput(source, translate(locale))).toBe(
+      locale === 'zh-CN'
+        ? 'parent/01CHILD 运行中 可继续\nparent/02CHILD 空闲\n可委派的应用角色：\n@fixture/app#reviewer: Review running continuable'
+        : source,
+    )
+    expect(childListOutput('no child agents', translate(locale))).toBe(
+      locale === 'zh-CN' ? '暂无子代理' : 'no child agents',
+    )
+    expect(childListOutput('raw custom output', translate(locale))).toBe('raw custom output')
+  },
+)

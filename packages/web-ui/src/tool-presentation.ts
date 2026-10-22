@@ -47,3 +47,26 @@ export function approvalSummary(node: Extract<UINode, { kind: 'approval' }>, t: 
   }
   return localizeToolSummary(node.summary, t, name)
 }
+
+/** Localize only the base list receipt grammar; role descriptions and unknown output stay literal. */
+export function childListOutput(output: string, t: Translate): string {
+  const [listing = '', ...roles] = output.split('\nAvailable application roles:\n')
+  const text =
+    listing === 'no child agents'
+      ? t('tool.child.empty')
+      : listing
+          .split('\n')
+          .map((line) => {
+            const row =
+              /^(\S+) (starting|running|idle|completed|failed|cancelled|interrupted)( continuable)?$/.exec(
+                line,
+              )
+            return row
+              ? `${row[1]} ${t(`tool.child.${row[2]}`)}${row[3] ? ` ${t('tool.child.continuable')}` : ''}`
+              : line
+          })
+          .join('\n')
+  return roles.length
+    ? `${text}\n${t('tool.child.roles')}\n${roles.join('\nAvailable application roles:\n')}`
+    : text
+}

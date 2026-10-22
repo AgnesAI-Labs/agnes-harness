@@ -45,6 +45,40 @@ export function approvalIsDelegated(toolCall: Record<string, unknown>): boolean 
   return isRecord(harness) && isRecord(harness.delegation)
 }
 
+/** Translate delivery labels around backend identity and purpose; arguments never supply them. */
+function delegatedSummary(
+  toolCall: Record<string, unknown>,
+  title: string,
+  t: Translate,
+  tool?: string,
+): string {
+  const meta = toolCall._meta
+  const harness = isRecord(meta) ? meta['ai.agnes.harness'] : undefined
+  const delegation = isRecord(harness) ? harness.delegation : undefined
+  if (!isRecord(delegation)) return localizeToolSummary(title, t, tool)
+  const { role, childSessionKey, reason } = delegation
+  if (typeof role !== 'string' || typeof childSessionKey !== 'string' || typeof reason !== 'string')
+    return localizeToolSummary(title, t, tool)
+  const prefix = `Role ${role} · child ${childSessionKey} · `
+  if (!title.startsWith(prefix)) return localizeToolSummary(title, t, tool)
+  let body = title.slice(prefix.length)
+  const suffix = ` · ${reason}`
+  const hasReason = body.endsWith(suffix)
+  if (hasReason) body = body.slice(0, -suffix.length)
+  return [
+    t('approval.delegation.role', { role }),
+    t('approval.delegation.child', { id: childSessionKey }),
+    localizeToolSummary(body, t, tool),
+    ...(hasReason
+      ? [
+          reason === 'Untrusted evidence (taint)'
+            ? t('approval.delegation.taint')
+            : localizeToolSummary(reason, t, tool),
+        ]
+      : []),
+  ].join(' · ')
+}
+
 function leadingFirst(input: unknown): unknown {
   if (!isRecord(input)) return input
   const keys = Object.keys(input)
@@ -95,7 +129,7 @@ export function liveApprovalCard(toolCall: Record<string, unknown>, t: Translate
   const delegated = approvalIsDelegated(toolCall)
   const summary =
     delegated && humanTitle
-      ? localizeToolSummary(humanTitle, t, tool)
+      ? delegatedSummary(toolCall, humanTitle, t, tool)
       : isRecord(input) && typeof input.description === 'string' && input.description.trim()
         ? [baseToolTitle(tool ?? '', t), input.description].filter(Boolean).join(' · ')
         : (humanTitle ? localizeToolSummary(humanTitle, t, tool) : baseToolTitle(tool ?? '', t)) || impact
