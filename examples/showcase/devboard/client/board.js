@@ -6,11 +6,13 @@ import {
   Field,
   PageHeader,
   PushStack,
+  Segmented,
   Select,
   Table,
   usePushStack,
 } from '@agnes/web-ui'
 import React from 'react'
+import { relevant } from './lens.js'
 
 export const h = React.createElement
 const POLL_MS = 10_000
@@ -125,6 +127,43 @@ export function useDetail() {
       push.open(page)
     },
   ]
+}
+
+/**
+ * The role lens of a list page: "only mine" by default, back to it when the demo role changes. `scope`
+ * maps a record kind to the page's records before its own filters. `pick` narrows one list; `empty`
+ * replaces the tables when nothing in scope concerns the role. A lens is a view, it never gates actions.
+ */
+export function useLens(role, data, scope) {
+  const [state, setState] = React.useState({ role, all: false })
+  const all = state.role === role && state.all
+  const setAll = (next) => setState({ role, all: next })
+  const concerns = (kind) => (item) => relevant(role, kind, item, data)
+  const lists = Object.entries(scope)
+  const mine = lists.reduce((n, [kind, list]) => n + list.filter(concerns(kind)).length, 0)
+  const total = lists.reduce((n, [, list]) => n + list.length, 0)
+  return {
+    all,
+    pick: (kind, list) => (all ? list : list.filter(concerns(kind))),
+    toggle: h(Segmented, {
+      label: '角色视角',
+      value: all ? 'all' : 'mine',
+      onChange: (value) => setAll(value === 'all'),
+      options: [
+        { value: 'mine', label: `只看与我相关（${mine}）` },
+        { value: 'all', label: `全部（${total}）` },
+      ],
+    }),
+    empty:
+      !all && total > 0 && mine === 0
+        ? h(
+            'section',
+            { className: 'devboard-card', role: 'status' },
+            h('p', null, `${role}在本页没有直接相关的记录`),
+            h(Button, { onClick: () => setAll(true) }, '看全部'),
+          )
+        : null,
+  }
 }
 
 /** The project selected on one page stays selected on the others in this tab. */

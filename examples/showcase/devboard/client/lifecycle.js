@@ -25,7 +25,7 @@ import {
   time,
   useProject,
 } from './board.js'
-import { cardsOf, lensSummary, METRICS } from './lens.js'
+import { cardsOf, lensSummary, METRICS, relevant } from './lens.js'
 
 const STAGE_ORDER = ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE']
 const stagesOf = (data, projectId) =>
@@ -684,12 +684,17 @@ export function Projects({ data, board, role, setRole }) {
       pagination: false,
       dataSource: stages,
       rowClassName: (s) =>
-        s.state !== 'PASSED' &&
-        s.plannedEnd &&
-        Date.parse(s.plannedEnd) < Date.parse(data.now) &&
-        s.state !== 'NOT_STARTED'
-          ? 'devboard-overdue'
-          : '',
+        [
+          s.state !== 'PASSED' &&
+          s.plannedEnd &&
+          Date.parse(s.plannedEnd) < Date.parse(data.now) &&
+          s.state !== 'NOT_STARTED'
+            ? 'devboard-overdue'
+            : '',
+          relevant(role, 'stage', s, data) ? 'devboard-mine' : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
       columns: [
         {
           title: '阶段',
@@ -710,9 +715,14 @@ export function Projects({ data, board, role, setRole }) {
           render: (_v, s) =>
             gatesOf(data, s.id).map((g) =>
               h(
-                Button,
-                { key: g.id, appearance: 'link', onClick: () => openPage('gate', g.id) },
-                `${gateName(g)} ${gateLabel(data, g.decision)}${g.decision === 'PENDING' && g.approverRoles.length > 1 ? `（会签 ${signProgress(g)}）` : ''}`,
+                React.Fragment,
+                { key: g.id },
+                relevant(role, 'gate', g, data) && [h(Badge, { key: 'mine', tone: 'warn' }, '与我相关'), ' '],
+                h(
+                  Button,
+                  { appearance: 'link', onClick: () => openPage('gate', g.id) },
+                  `${gateName(g)} ${gateLabel(data, g.decision)}${g.decision === 'PENDING' && g.approverRoles.length > 1 ? `（会签 ${signProgress(g)}）` : ''}`,
+                ),
               ),
             ),
           width: 260,
@@ -733,6 +743,11 @@ export function Projects({ data, board, role, setRole }) {
         { title: '基线', render: (_v, s) => s.baseline?.id ?? '', width: 160 },
       ],
     }),
+    h(
+      'p',
+      { className: 'devboard-muted' },
+      `与「${role}」相关的阶段（编写角色）和评审门（审批角色或阶段编写角色）已高亮；本页不按角色筛选。`,
+    ),
     data.configBaselines.some((b) => b.projectId === project.id) &&
       h(BaselineTable, { data, projectId: project.id }),
     (project.risks?.length ?? 0) > 0 &&

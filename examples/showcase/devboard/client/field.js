@@ -14,6 +14,7 @@ import {
   TransitionBar,
   time,
   useDetail,
+  useLens,
   useProject,
 } from './board.js'
 import { inProject, stateLabels } from './records.js'
@@ -67,9 +68,11 @@ export function Trials({ data, board, role, setRole }) {
   const [projectId, setProjectId] = useProject(data, true)
   const [type, setType] = React.useState('')
   const [state, setState] = React.useState('')
-  const rows = data.trials.filter(
-    (t) => inProject(projectId)(t) && (!type || t.type === type) && (!state || t.state === state),
-  )
+  const scoped = data.trials.filter(inProject(projectId))
+  const lens = useLens(role, data, { trial: scoped })
+  const rows = lens
+    .pick('trial', scoped)
+    .filter((t) => (!type || t.type === type) && (!state || t.state === state))
   const item = byId(data.trials, selected)
   const changeOf = (t) => (t.changeId ? byId(data.changes, t.changeId) : undefined)
   const columns = [
@@ -118,17 +121,21 @@ export function Trials({ data, board, role, setRole }) {
         options: options(stateLabels(data, 'trial'), '全部状态'),
         style: { minWidth: 140 },
       }),
+      lens.toggle,
     ),
-    table(
-      '试验（型式、例行、工厂验收）',
-      rows.filter((t) => t.type !== 'FAI'),
-      '没有符合条件的试验',
-    ),
-    table(
-      '首件检验（FAI）',
-      rows.filter((t) => t.type === 'FAI'),
-      '没有首件检验记录',
-    ),
+    lens.empty,
+    !lens.empty &&
+      table(
+        '试验（型式、例行、工厂验收）',
+        rows.filter((t) => t.type !== 'FAI'),
+        '没有符合条件的试验',
+      ),
+    !lens.empty &&
+      table(
+        '首件检验（FAI）',
+        rows.filter((t) => t.type === 'FAI'),
+        '没有首件检验记录',
+      ),
     item &&
       h(
         PushPage,
@@ -270,11 +277,14 @@ export function Service({ data, board, role, setRole }) {
   const [projectId, setProjectId] = useProject(data, true)
   const [signal, setSignal] = React.useState('')
   const [state, setState] = React.useState('')
-  const inScope = data.faults.filter(inProject(projectId))
+  const scopedFaults = data.faults.filter(inProject(projectId))
+  const scopedProblems = data.problems.filter(inProject(projectId))
+  const lens = useLens(role, data, { fault: scopedFaults, problem: scopedProblems })
+  const inScope = lens.pick('fault', scopedFaults)
   const faults = inScope
     .filter((f) => (!signal || f.signal === signal) && (!state || f.state === state))
     .sort((a, b) => Date.parse(b.detectedAt) - Date.parse(a.detectedAt))
-  const problems = data.problems.filter(inProject(projectId))
+  const problems = lens.pick('problem', scopedProblems)
   const fault = byId(data.faults, selected)
   const problem = byId(data.problems, selected)
   return h(
@@ -298,46 +308,50 @@ export function Service({ data, board, role, setRole }) {
         options: options(stateLabels(data, 'fault'), '全部状态'),
         style: { minWidth: 140 },
       }),
+      lens.toggle,
     ),
-    h(AlarmChart, { data, faults: inScope }),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '预警',
-      rowKey: 'id',
-      pagination: false,
-      size: 'small',
-      dataSource: faults,
-      empty: '没有符合条件的预警',
-      columns: [
-        { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'fault')), width: 130 },
-        { title: '信号', dataIndex: 'signal', render: (v) => data.labels.faultSignal[v], width: 100 },
-        { title: '车 / 厢 / 门', render: (_v, f) => `${f.train} / ${f.car} / ${f.door}`, width: 130 },
-        { title: '来源', dataIndex: 'source', render: (v) => data.labels.faultSource[v] ?? v, width: 90 },
-        { title: '健康分', dataIndex: 'healthScore', render: (v) => v ?? '—', width: 70 },
-        { title: '发现时间', dataIndex: 'detectedAt', render: time, width: 140 },
-        { title: '说明', dataIndex: 'detail' },
-        { title: '质量问题', dataIndex: 'problemId', render: (v) => v ?? '—', width: 120 },
-        { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
-      ],
-    }),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '质量问题（8D）',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: problems,
-      empty: '暂无质量问题',
-      columns: [
-        { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'problem')), width: 130 },
-        { title: '标题', dataIndex: 'title' },
-        { title: '等级', dataIndex: 'severity', width: 60 },
-        { title: '8D 进度', render: (_v, p) => stepChips(p), width: 300 },
-        { title: '根本原因', dataIndex: 'rootCause', render: (v) => v ?? '待分析', width: 220 },
-        { title: '关联变更', dataIndex: 'changeId', render: (v) => v ?? '—', width: 120 },
-        { title: '预警', render: (_v, p) => p.faultIds?.length ?? 0, width: 60 },
-        { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
-      ],
-    }),
+    lens.empty,
+    !lens.empty && h(AlarmChart, { data, faults: inScope }),
+    !lens.empty &&
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: '预警',
+        rowKey: 'id',
+        pagination: false,
+        size: 'small',
+        dataSource: faults,
+        empty: '没有符合条件的预警',
+        columns: [
+          { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'fault')), width: 130 },
+          { title: '信号', dataIndex: 'signal', render: (v) => data.labels.faultSignal[v], width: 100 },
+          { title: '车 / 厢 / 门', render: (_v, f) => `${f.train} / ${f.car} / ${f.door}`, width: 130 },
+          { title: '来源', dataIndex: 'source', render: (v) => data.labels.faultSource[v] ?? v, width: 90 },
+          { title: '健康分', dataIndex: 'healthScore', render: (v) => v ?? '—', width: 70 },
+          { title: '发现时间', dataIndex: 'detectedAt', render: time, width: 140 },
+          { title: '说明', dataIndex: 'detail' },
+          { title: '质量问题', dataIndex: 'problemId', render: (v) => v ?? '—', width: 120 },
+          { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
+        ],
+      }),
+    !lens.empty &&
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: '质量问题（8D）',
+        rowKey: 'id',
+        pagination: false,
+        dataSource: problems,
+        empty: lens.all ? '暂无质量问题' : '没有与我相关的质量问题',
+        columns: [
+          { title: '编号', dataIndex: 'id', render: idLink((id) => open(id, 'problem')), width: 130 },
+          { title: '标题', dataIndex: 'title' },
+          { title: '等级', dataIndex: 'severity', width: 60 },
+          { title: '8D 进度', render: (_v, p) => stepChips(p), width: 300 },
+          { title: '根本原因', dataIndex: 'rootCause', render: (v) => v ?? '待分析', width: 220 },
+          { title: '关联变更', dataIndex: 'changeId', render: (v) => v ?? '—', width: 120 },
+          { title: '预警', render: (_v, p) => p.faultIds?.length ?? 0, width: 60 },
+          { title: '状态', dataIndex: 'state', render: (v) => stateBadge(data, v), width: 90 },
+        ],
+      }),
     fault &&
       h(
         PushPage,

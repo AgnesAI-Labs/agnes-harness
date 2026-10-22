@@ -271,18 +271,22 @@ function Node({ x, y, shape = 'circle', r = 7, cls, title, onPick, selected }) {
   )
 }
 
-export function Panorama({ data }) {
+export function Panorama({ data, role: demoRole }) {
   const [view, setView] = React.useState('project')
   const [range, setRange] = React.useState('all')
   const [kind, setKind] = React.useState('')
   const [org, setOrg] = React.useState('')
   const [onlyBlocked, setOnlyBlocked] = React.useState(false)
-  const [role, setRole] = React.useState('')
+  const blockers = data.blockers ?? []
+  // The blocker role filter starts at the demo role (none when it has no blockers) and again when the demo role changes.
+  const fallback = blockers.some((b) => b.role === demoRole) ? demoRole : ''
+  const [picked, setPicked] = React.useState({ demo: demoRole, role: fallback })
+  const role = picked.demo === demoRole ? picked.role : fallback
+  const setRole = (next) => setPicked({ demo: demoRole, role: next })
   const [open, setOpen] = React.useState({})
   const [sel, setSel] = React.useState(null)
   const [wrap, width] = useWidth()
   const now = Date.parse(data.now)
-  const blockers = data.blockers ?? []
   const scoped = data.projects.filter((p) => (!kind || p.kind === kind) && (!org || p.org === org))
   const scopedIds = new Set(scoped.map((p) => p.id))
   const inScope = blockers.filter((b) => scopedIds.has(b.projectId))

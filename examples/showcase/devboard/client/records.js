@@ -16,6 +16,7 @@ import {
   TransitionBar,
   time,
   useDetail,
+  useLens,
   useProject,
 } from './board.js'
 
@@ -23,16 +24,25 @@ export const stateLabels = (data, kind) =>
   Object.fromEntries(Object.keys(data.machines[kind]).map((s) => [s, data.labels.state[s]]))
 export const inProject = (projectId) => (x) => !projectId || x.projectId === projectId
 const ProjectCell = (id) => id ?? '—'
+/** A customer clause with its technical-agreement answer. */
+const isClause = (r) => r.level === 'CUS' && r.clause
 
 // ── Requirements and traceability ──────────────────────────────────────────────────────────────
 
-function TraceMatrix({ data, projectId }) {
-  const [level, setLevel] = React.useState('SWR')
+function TraceMatrix({ data, projectId, role, lens }) {
+  const [picked, setPicked] = React.useState({ role, level: '' })
   const [discipline, setDiscipline] = React.useState('')
   const [selected, open] = useDetail()
   const project = byId(data.projects, projectId)
   const cov = project.metrics.coverage
   const reqs = data.reqs.filter((r) => r.projectId === projectId)
+  const shown = lens.pick('req', reqs)
+  // Until a level is picked the matrix opens on the first level that has records for the role.
+  const level =
+    (picked.role === role && picked.level) ||
+    ['SWR', 'CUS', 'SYS', 'DES', 'TC'].find((l) => shown.some((r) => r.level === l)) ||
+    'SWR'
+  const setLevel = (next) => setPicked({ role, level: next })
   const flagged = new Set([
     ...cov.swrTc.missing,
     ...cov.noSource,
@@ -40,7 +50,7 @@ function TraceMatrix({ data, projectId }) {
     ...cov.cusSys.missing,
     ...cov.sysSwr.missing,
   ])
-  const rows = reqs.filter((r) => r.level === level && (!discipline || r.discipline === discipline))
+  const rows = shown.filter((r) => r.level === level && (!discipline || r.discipline === discipline))
   const item = reqs.find((r) => r.id === selected)
   const disc = (d) => data.labels.discipline[d] ?? '—'
   const children = (id) => reqs.filter((r) => r.parent?.includes(id))
@@ -66,88 +76,91 @@ function TraceMatrix({ data, projectId }) {
           .filter(Boolean)
           .join('；'),
       ),
-    h(
-      'div',
-      { className: 'devboard-filters' },
-      h(Segmented, {
-        label: '层级',
-        value: level,
-        onChange: setLevel,
-        options: ['CUS', 'SYS', 'SWR', 'DES', 'TC'].map((l) => ({
-          value: l,
-          label: `${l} ${data.labels.level[l]}（${reqs.filter((r) => r.level === l).length}）`,
-        })),
+    lens.empty,
+    !lens.empty &&
+      h(
+        'div',
+        { className: 'devboard-filters' },
+        h(Segmented, {
+          label: '层级',
+          value: level,
+          onChange: setLevel,
+          options: ['CUS', 'SYS', 'SWR', 'DES', 'TC'].map((l) => ({
+            value: l,
+            label: `${l} ${data.labels.level[l]}（${shown.filter((r) => r.level === l).length}）`,
+          })),
+        }),
+        h(Select, {
+          'aria-label': '按专业过滤',
+          value: discipline,
+          onChange: setDiscipline,
+          options: options(data.labels.discipline, '全部专业'),
+          style: { minWidth: 130 },
+        }),
+      ),
+    !lens.empty &&
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: `${data.labels.level[level]}追溯`,
+        rowKey: 'id',
+        pagination: false,
+        size: 'small',
+        dataSource: rows,
+        empty: '该层级暂无条目',
+        rowClassName: (r) => (flagged.has(r.id) ? 'devboard-overdue' : ''),
+        columns: [
+          { title: '编号', dataIndex: 'id', render: idLink(open), width: 100 },
+          { title: '标题', dataIndex: 'title' },
+          ...(level === 'SWR' || level === 'DES'
+            ? [{ title: '专业', dataIndex: 'discipline', render: disc, width: 70 }]
+            : []),
+          ...(level === 'DES'
+            ? [
+                {
+                  title: '物料号 / 图号 / 模块',
+                  render: (_v, r) => [r.partNo, r.drawingNo, r.module].filter(Boolean).join(' / ') || '—',
+                  width: 230,
+                },
+              ]
+            : []),
+          ...(level === 'CUS'
+            ? [
+                { title: '协议条款', dataIndex: 'clause', render: (v) => v ?? '—', width: 140 },
+                {
+                  title: '应答',
+                  dataIndex: 'compliance',
+                  render: (v) =>
+                    v ? h(Badge, { tone: v === 'COMPLY' ? 'ok' : 'warn' }, data.labels.compliance[v]) : '—',
+                  width: 80,
+                },
+              ]
+            : []),
+          { title: '上游', dataIndex: 'parent', render: (p) => (p?.length ? p.join('、') : '—'), width: 180 },
+          {
+            title: level === 'SWR' ? '验证用例' : '下游',
+            render: (_v, r) =>
+              (level === 'SWR'
+                ? [
+                    ...new Set([
+                      ...(r.verifiedBy ?? []),
+                      ...children(r.id)
+                        .filter((c) => c.level === 'TC')
+                        .map((c) => c.id),
+                    ]),
+                  ]
+                : children(r.id).map((c) => c.id)
+              ).join('、') || '—',
+            width: 220,
+          },
+          {
+            title: '安全',
+            dataIndex: 'safety',
+            render: (v) => (v ? h(Badge, { tone: 'warn' }, '安全相关') : ''),
+            width: 90,
+          },
+          { title: '状态', dataIndex: 'status', render: (v) => stateBadge(data, v), width: 90 },
+        ],
       }),
-      h(Select, {
-        'aria-label': '按专业过滤',
-        value: discipline,
-        onChange: setDiscipline,
-        options: options(data.labels.discipline, '全部专业'),
-        style: { minWidth: 130 },
-      }),
-    ),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: `${data.labels.level[level]}追溯`,
-      rowKey: 'id',
-      pagination: false,
-      size: 'small',
-      dataSource: rows,
-      empty: '该层级暂无条目',
-      rowClassName: (r) => (flagged.has(r.id) ? 'devboard-overdue' : ''),
-      columns: [
-        { title: '编号', dataIndex: 'id', render: idLink(open), width: 100 },
-        { title: '标题', dataIndex: 'title' },
-        ...(level === 'SWR' || level === 'DES'
-          ? [{ title: '专业', dataIndex: 'discipline', render: disc, width: 70 }]
-          : []),
-        ...(level === 'DES'
-          ? [
-              {
-                title: '物料号 / 图号 / 模块',
-                render: (_v, r) => [r.partNo, r.drawingNo, r.module].filter(Boolean).join(' / ') || '—',
-                width: 230,
-              },
-            ]
-          : []),
-        ...(level === 'CUS'
-          ? [
-              { title: '协议条款', dataIndex: 'clause', render: (v) => v ?? '—', width: 140 },
-              {
-                title: '应答',
-                dataIndex: 'compliance',
-                render: (v) =>
-                  v ? h(Badge, { tone: v === 'COMPLY' ? 'ok' : 'warn' }, data.labels.compliance[v]) : '—',
-                width: 80,
-              },
-            ]
-          : []),
-        { title: '上游', dataIndex: 'parent', render: (p) => (p?.length ? p.join('、') : '—'), width: 180 },
-        {
-          title: level === 'SWR' ? '验证用例' : '下游',
-          render: (_v, r) =>
-            (level === 'SWR'
-              ? [
-                  ...new Set([
-                    ...(r.verifiedBy ?? []),
-                    ...children(r.id)
-                      .filter((c) => c.level === 'TC')
-                      .map((c) => c.id),
-                  ]),
-                ]
-              : children(r.id).map((c) => c.id)
-            ).join('、') || '—',
-          width: 220,
-        },
-        {
-          title: '安全',
-          dataIndex: 'safety',
-          render: (v) => (v ? h(Badge, { tone: 'warn' }, '安全相关') : ''),
-          width: 90,
-        },
-        { title: '状态', dataIndex: 'status', render: (v) => stateBadge(data, v), width: 90 },
-      ],
-    }),
     item &&
       h(
         PushPage,
@@ -183,62 +196,65 @@ function TraceMatrix({ data, projectId }) {
 }
 
 /** 技术协议应答: the deviation table of the customer clauses with the SYS items that answer them. */
-function TechResponse({ data, projectId }) {
+function TechResponse({ data, projectId, lens }) {
   const [compliance, setCompliance] = React.useState('')
   const reqs = data.reqs.filter((r) => r.projectId === projectId)
-  const rows = reqs.filter(
-    (r) => r.level === 'CUS' && r.clause && (!compliance || r.compliance === compliance),
-  )
+  const rows = lens
+    .pick('req', reqs.filter(isClause))
+    .filter((r) => !compliance || r.compliance === compliance)
   const count = (c) => reqs.filter((r) => r.level === 'CUS' && r.compliance === c).length
   return h(
     React.Fragment,
     null,
-    h(
-      'div',
-      { className: 'devboard-filters' },
-      h(Select, {
-        'aria-label': '按应答过滤',
-        value: compliance,
-        onChange: setCompliance,
-        options: options(data.labels.compliance, '全部应答'),
-        style: { minWidth: 140 },
-      }),
+    lens.empty,
+    !lens.empty &&
       h(
-        'span',
-        { className: 'devboard-muted' },
-        `满足 ${count('COMPLY')} · 偏离 ${count('DEVIATE')} · 澄清 ${count('CLARIFY')}`,
+        'div',
+        { className: 'devboard-filters' },
+        h(Select, {
+          'aria-label': '按应答过滤',
+          value: compliance,
+          onChange: setCompliance,
+          options: options(data.labels.compliance, '全部应答'),
+          style: { minWidth: 140 },
+        }),
+        h(
+          'span',
+          { className: 'devboard-muted' },
+          `满足 ${count('COMPLY')} · 偏离 ${count('DEVIATE')} · 澄清 ${count('CLARIFY')}`,
+        ),
       ),
-    ),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '技术协议应答（偏离表）',
-      rowKey: 'id',
-      pagination: false,
-      size: 'small',
-      dataSource: rows,
-      empty: '该项目没有技术协议条款',
-      rowClassName: (r) => (r.compliance === 'DEVIATE' ? 'devboard-overdue' : ''),
-      columns: [
-        { title: '条款', dataIndex: 'clause', width: 150 },
-        { title: '客户条款', render: (_v, r) => `${r.id} ${r.title}`, width: 240 },
-        {
-          title: '应答',
-          dataIndex: 'compliance',
-          render: (v) => h(Badge, { tone: v === 'COMPLY' ? 'ok' : 'warn' }, data.labels.compliance[v] ?? v),
-          width: 80,
-        },
-        { title: '说明', dataIndex: 'responseNote', render: (v) => v ?? '—' },
-        {
-          title: '对应 SYS',
-          render: (_v, r) =>
-            reqs
-              .filter((c) => c.level === 'SYS' && c.parent?.includes(r.id))
-              .map((c) => c.id)
-              .join('、') || '—',
-          width: 180,
-        },
-      ],
-    }),
+    !lens.empty &&
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: '技术协议应答（偏离表）',
+        rowKey: 'id',
+        pagination: false,
+        size: 'small',
+        dataSource: rows,
+        empty: '该项目没有技术协议条款',
+        rowClassName: (r) => (r.compliance === 'DEVIATE' ? 'devboard-overdue' : ''),
+        columns: [
+          { title: '条款', dataIndex: 'clause', width: 150 },
+          { title: '客户条款', render: (_v, r) => `${r.id} ${r.title}`, width: 240 },
+          {
+            title: '应答',
+            dataIndex: 'compliance',
+            render: (v) => h(Badge, { tone: v === 'COMPLY' ? 'ok' : 'warn' }, data.labels.compliance[v] ?? v),
+            width: 80,
+          },
+          { title: '说明', dataIndex: 'responseNote', render: (v) => v ?? '—' },
+          {
+            title: '对应 SYS',
+            render: (_v, r) =>
+              reqs
+                .filter((c) => c.level === 'SYS' && c.parent?.includes(r.id))
+                .map((c) => c.id)
+                .join('、') || '—',
+            width: 180,
+          },
+        ],
+      }),
   )
 }
 
@@ -309,6 +325,13 @@ function BoardRequirements({ data, board, role, projectId }) {
 export function Trace({ data, board, role }) {
   const [projectId, setProjectId] = useProject(data)
   const [view, setView] = React.useState('matrix')
+  const reqs = data.reqs.filter((r) => r.projectId === projectId)
+  // The development requirement items of the board view have no lens rule, so that view has no toggle.
+  const lens = useLens(
+    role,
+    data,
+    view === 'board' ? {} : { req: view === 'ta' ? reqs.filter(isClause) : reqs },
+  )
   if (!byId(data.projects, projectId)) return h('p', null, '暂无项目')
   return h(
     React.Fragment,
@@ -327,11 +350,12 @@ export function Trace({ data, board, role }) {
           { value: 'board', label: '研发需求条目' },
         ],
       }),
+      view !== 'board' && lens.toggle,
     ),
     view === 'matrix'
-      ? h(TraceMatrix, { key: projectId, data, projectId })
+      ? h(TraceMatrix, { key: projectId, data, projectId, role, lens })
       : view === 'ta'
-        ? h(TechResponse, { key: projectId, data, projectId })
+        ? h(TechResponse, { key: projectId, data, projectId, lens })
         : h(BoardRequirements, { data, board, role, projectId }),
   )
 }
@@ -364,9 +388,11 @@ export function Tasks({ data, board, role }) {
   const [state, setState] = React.useState('')
   const [type, setType] = React.useState('')
   const [view, setView] = React.useState('list')
-  const rows = data.tasks.filter(
-    (t) => inProject(projectId)(t) && (!state || t.state === state) && (!type || t.type === type),
-  )
+  const scoped = data.tasks.filter(inProject(projectId))
+  const lens = useLens(role, data, { task: scoped })
+  const rows = lens
+    .pick('task', scoped)
+    .filter((t) => (!state || t.state === state) && (!type || t.type === type))
   const item = byId(data.tasks, selected)
   const columns = Object.keys(data.machines.task).filter((s) => !state || s === state)
   return h(
@@ -399,31 +425,33 @@ export function Tasks({ data, board, role }) {
           { value: 'board', label: '看板' },
         ],
       }),
+      lens.toggle,
     ),
-    view === 'list'
-      ? h(TaskTable, { data, rows, open })
-      : h(
-          'div',
-          { className: 'devboard-columns' },
-          columns.map((s) =>
-            h(
-              'section',
-              { className: 'devboard-column', key: s, 'aria-label': data.labels.state[s] },
-              h('h3', null, stateBadge(data, s), ` ${rows.filter((t) => t.state === s).length}`),
-              rows
-                .filter((t) => t.state === s)
-                .map((t) =>
-                  h(
-                    'button',
-                    { type: 'button', className: 'devboard-tile', key: t.id, onClick: () => open(t.id) },
-                    h('span', { className: 'devboard-muted' }, `${t.id} · ${data.labels.taskType[t.type]}`),
-                    h('span', null, t.title),
-                    h('span', { className: 'devboard-muted' }, t.owner),
+    lens.empty ??
+      (view === 'list'
+        ? h(TaskTable, { data, rows, open })
+        : h(
+            'div',
+            { className: 'devboard-columns' },
+            columns.map((s) =>
+              h(
+                'section',
+                { className: 'devboard-column', key: s, 'aria-label': data.labels.state[s] },
+                h('h3', null, stateBadge(data, s), ` ${rows.filter((t) => t.state === s).length}`),
+                rows
+                  .filter((t) => t.state === s)
+                  .map((t) =>
+                    h(
+                      'button',
+                      { type: 'button', className: 'devboard-tile', key: t.id, onClick: () => open(t.id) },
+                      h('span', { className: 'devboard-muted' }, `${t.id} · ${data.labels.taskType[t.type]}`),
+                      h('span', null, t.title),
+                      h('span', { className: 'devboard-muted' }, t.owner),
+                    ),
                   ),
-                ),
+              ),
             ),
-          ),
-        ),
+          )),
     item &&
       h(
         PushPage,
@@ -541,7 +569,9 @@ function RetrofitBar({ change, board, role }) {
 export function Changes({ data, board, role, setRole }) {
   const [selected, open] = useDetail()
   const [projectId, setProjectId] = useProject(data, true)
-  const rows = data.changes.filter(inProject(projectId))
+  const scoped = data.changes.filter(inProject(projectId))
+  const lens = useLens(role, data, { change: scoped })
+  const rows = lens.pick('change', scoped)
   const item = byId(data.changes, selected)
   const push = usePushStack()
   return h(
@@ -552,38 +582,40 @@ export function Changes({ data, board, role, setRole }) {
       { className: 'devboard-filters' },
       h(ProjectSelect, { data, value: projectId, onChange: setProjectId, allowAll: true }),
       h(Button, { onClick: () => push.open('new') }, '提交变更申请'),
+      lens.toggle,
     ),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '变更申请',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: rows,
-      empty: '暂无变更申请',
-      columns: [
-        { title: '编号', dataIndex: 'id', render: idLink(open), width: 120 },
-        { title: '标题', dataIndex: 'title' },
-        { title: '项目', dataIndex: 'projectId', width: 120 },
-        {
-          title: '来源',
-          render: (_v, r) => data.labels.changeSource[r.source?.type] ?? '—',
-          width: 80,
-        },
-        { title: 'ECN', dataIndex: 'ecn', render: (v) => v ?? '—', width: 120 },
-        {
-          title: '整改',
-          render: (_v, r) => (r.retrofit ? `${r.retrofit.done}/${r.retrofit.total}` : '—'),
-          width: 90,
-        },
-        {
-          title: '安全影响',
-          render: (_v, r) => (r.impact?.safety ? h(Badge, { tone: 'warn' }, '涉及') : '否'),
-          width: 90,
-        },
-        { title: '工作量', render: (_v, r) => `${r.impact?.effortDays ?? 0} 人日`, width: 80 },
-        { title: '状态', dataIndex: 'state', render: (s) => stateBadge(data, s), width: 100 },
-      ],
-    }),
+    lens.empty ??
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: '变更申请',
+        rowKey: 'id',
+        pagination: false,
+        dataSource: rows,
+        empty: '暂无变更申请',
+        columns: [
+          { title: '编号', dataIndex: 'id', render: idLink(open), width: 120 },
+          { title: '标题', dataIndex: 'title' },
+          { title: '项目', dataIndex: 'projectId', width: 120 },
+          {
+            title: '来源',
+            render: (_v, r) => data.labels.changeSource[r.source?.type] ?? '—',
+            width: 80,
+          },
+          { title: 'ECN', dataIndex: 'ecn', render: (v) => v ?? '—', width: 120 },
+          {
+            title: '整改',
+            render: (_v, r) => (r.retrofit ? `${r.retrofit.done}/${r.retrofit.total}` : '—'),
+            width: 90,
+          },
+          {
+            title: '安全影响',
+            render: (_v, r) => (r.impact?.safety ? h(Badge, { tone: 'warn' }, '涉及') : '否'),
+            width: 90,
+          },
+          { title: '工作量', render: (_v, r) => `${r.impact?.effortDays ?? 0} 人日`, width: 80 },
+          { title: '状态', dataIndex: 'state', render: (s) => stateBadge(data, s), width: 100 },
+        ],
+      }),
     h(
       PushPage,
       { id: 'new', title: '提交变更申请' },
@@ -692,10 +724,13 @@ export function Quality({ data, board, role }) {
   const [projectId, setProjectId] = useProject(data, true)
   const [severity, setSeverity] = React.useState('')
   const [state, setState] = React.useState('')
-  const defects = data.defects.filter(
-    (d) => inProject(projectId)(d) && (!severity || d.severity === severity) && (!state || d.state === state),
-  )
-  const runs = data.testRuns.filter(inProject(projectId)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+  const scoped = data.defects.filter(inProject(projectId))
+  const scopedRuns = data.testRuns.filter(inProject(projectId))
+  const lens = useLens(role, data, { defect: scoped, testRun: scopedRuns })
+  const defects = lens
+    .pick('defect', scoped)
+    .filter((d) => (!severity || d.severity === severity) && (!state || d.state === state))
+  const runs = lens.pick('testRun', scopedRuns).sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
   const item = byId(data.defects, selected)
   const projects = data.projects
     .filter(inProject(projectId))
@@ -721,73 +756,78 @@ export function Quality({ data, board, role }) {
         options: options(stateLabels(data, 'defect'), '全部状态'),
         style: { minWidth: 130 },
       }),
+      lens.toggle,
     ),
-    h(
-      'div',
-      { className: 'devboard-cards' },
-      projects.map((p) => h(Trend, { key: p.id, project: p })),
-    ),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '缺陷',
-      rowKey: 'id',
-      pagination: false,
-      dataSource: defects,
-      empty: '没有符合条件的缺陷',
-      rowClassName: (d) => (d.severity === 'A' && d.state !== 'CLOSED' ? 'devboard-overdue' : ''),
-      columns: [
-        { title: '编号', dataIndex: 'id', render: idLink(open), width: 100 },
-        { title: '标题', dataIndex: 'title' },
-        { title: '项目', dataIndex: 'projectId', width: 120 },
-        { title: '严重度', dataIndex: 'severity', render: (s) => data.labels.severity[s], width: 80 },
-        { title: '发现阶段', dataIndex: 'foundIn', render: (s) => data.labels.stage[s], width: 90 },
-        {
-          title: '用例 / 需求',
-          render: (_v, d) => [d.testCase, d.req].filter(Boolean).join(' / ') || '—',
-          width: 140,
-        },
-        { title: '负责人', dataIndex: 'owner', width: 140 },
-        { title: '状态', dataIndex: 'state', render: (s) => stateBadge(data, s), width: 90 },
-      ],
-    }),
-    h(Table, {
-      captionRepeatsHeading: true,
-      caption: '测试运行记录',
-      rowKey: 'id',
-      pagination: false,
-      size: 'small',
-      dataSource: runs,
-      empty: '暂无测试运行',
-      columns: [
-        { title: '编号', dataIndex: 'id', width: 100 },
-        { title: '项目', dataIndex: 'projectId', width: 120 },
-        { title: '级别', dataIndex: 'level', render: (l) => data.labels.testLevel[l], width: 70 },
-        { title: '时间', dataIndex: 'at', render: time, width: 140 },
-        {
-          title: '通过率',
-          render: (_v, r) =>
-            h(Meter, {
-              label: `${r.passed}/${r.total}`,
-              value: r.total ? Math.round((r.passed / r.total) * 1000) / 10 : null,
-            }),
-          width: 260,
-        },
-        { title: '失败 / 跳过', render: (_v, r) => `${r.failed} / ${r.skipped}`, width: 90 },
-        {
-          title: '覆盖率',
-          render: (_v, r) =>
-            r.coverage ? `语句 ${pct(r.coverage.statement)} · 分支 ${pct(r.coverage.branch)}` : '—',
-          width: 170,
-        },
-        {
-          title: '来源',
-          dataIndex: 'source',
-          render: (s) => (s === 'live' ? h(Badge, { tone: 'ok' }, '现场运行') : '历史'),
-          width: 90,
-        },
-        { title: '说明', dataIndex: 'log', render: (v) => v ?? '' },
-      ],
-    }),
+    lens.empty,
+    !lens.empty &&
+      h(
+        'div',
+        { className: 'devboard-cards' },
+        projects.map((p) => h(Trend, { key: p.id, project: p })),
+      ),
+    !lens.empty &&
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: '缺陷',
+        rowKey: 'id',
+        pagination: false,
+        dataSource: defects,
+        empty: '没有符合条件的缺陷',
+        rowClassName: (d) => (d.severity === 'A' && d.state !== 'CLOSED' ? 'devboard-overdue' : ''),
+        columns: [
+          { title: '编号', dataIndex: 'id', render: idLink(open), width: 100 },
+          { title: '标题', dataIndex: 'title' },
+          { title: '项目', dataIndex: 'projectId', width: 120 },
+          { title: '严重度', dataIndex: 'severity', render: (s) => data.labels.severity[s], width: 80 },
+          { title: '发现阶段', dataIndex: 'foundIn', render: (s) => data.labels.stage[s], width: 90 },
+          {
+            title: '用例 / 需求',
+            render: (_v, d) => [d.testCase, d.req].filter(Boolean).join(' / ') || '—',
+            width: 140,
+          },
+          { title: '负责人', dataIndex: 'owner', width: 140 },
+          { title: '状态', dataIndex: 'state', render: (s) => stateBadge(data, s), width: 90 },
+        ],
+      }),
+    !lens.empty &&
+      h(Table, {
+        captionRepeatsHeading: true,
+        caption: '测试运行记录',
+        rowKey: 'id',
+        pagination: false,
+        size: 'small',
+        dataSource: runs,
+        empty: lens.all ? '暂无测试运行' : '没有与我相关的测试运行',
+        columns: [
+          { title: '编号', dataIndex: 'id', width: 100 },
+          { title: '项目', dataIndex: 'projectId', width: 120 },
+          { title: '级别', dataIndex: 'level', render: (l) => data.labels.testLevel[l], width: 70 },
+          { title: '时间', dataIndex: 'at', render: time, width: 140 },
+          {
+            title: '通过率',
+            render: (_v, r) =>
+              h(Meter, {
+                label: `${r.passed}/${r.total}`,
+                value: r.total ? Math.round((r.passed / r.total) * 1000) / 10 : null,
+              }),
+            width: 260,
+          },
+          { title: '失败 / 跳过', render: (_v, r) => `${r.failed} / ${r.skipped}`, width: 90 },
+          {
+            title: '覆盖率',
+            render: (_v, r) =>
+              r.coverage ? `语句 ${pct(r.coverage.statement)} · 分支 ${pct(r.coverage.branch)}` : '—',
+            width: 170,
+          },
+          {
+            title: '来源',
+            dataIndex: 'source',
+            render: (s) => (s === 'live' ? h(Badge, { tone: 'ok' }, '现场运行') : '历史'),
+            width: 90,
+          },
+          { title: '说明', dataIndex: 'log', render: (v) => v ?? '' },
+        ],
+      }),
     item &&
       h(
         PushPage,

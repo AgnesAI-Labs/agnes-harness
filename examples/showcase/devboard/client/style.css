@@ -320,6 +320,13 @@
   .devboard-lag td {
     background: var(--agnes-status-warning-bg);
   }
+  /* Role lens: the stages of the demo role on the project timeline. */
+  .devboard-mine td {
+    background: var(--agnes-bg-page);
+  }
+  .devboard-mine td:first-child {
+    box-shadow: inset 3px 0 0 var(--agnes-brand-focus-ring);
+  }
   .devboard-list {
     margin: 0;
     padding-inline-start: 18px;
