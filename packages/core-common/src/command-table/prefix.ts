@@ -137,6 +137,8 @@ export function isBannedPrefix(tokens: readonly string[]): boolean {
   return tokens.some((token) => looksLikeSecret(token))
 }
 
+const REFSPEC_SUBCOMMANDS = new Set(['fetch', 'pull', 'push'])
+
 /** True when a part after an allowed pair carries an option or word that pair does not allow. */
 const deniedArgument = (words: readonly string[]): boolean => {
   const [program = '', sub = ''] = words
@@ -145,8 +147,8 @@ const deniedArgument = (words: readonly string[]): boolean => {
   return words.slice(2).some(
     (word) =>
       (word.startsWith('-') && word !== '--' && !allowed.includes(word.split('=')[0] as string)) ||
-      // A forced (`+main`) or deleting (`:main`) refspec rewrites or removes remote history.
-      (program === 'git' && sub === 'push' && /[+:]/.test(word)),
+      // A forced (`+main`) or deleting (`:main`) refspec rewrites or removes history on either side.
+      (program === 'git' && REFSPEC_SUBCOMMANDS.has(sub) && /[+:]/.test(word)),
   )
 }
 

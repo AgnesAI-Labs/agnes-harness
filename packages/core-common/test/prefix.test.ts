@@ -237,6 +237,9 @@ describe('banned runners and subcommand programs', () => {
     ['git status --prune', ['git', 'status']],
     ['git push origin :main', ['git', 'push']],
     ['git push origin main:release', ['git', 'push']],
+    ['git fetch origin +main:main', ['git', 'fetch']],
+    ['git pull origin +main', ['git', 'pull']],
+    ['git fetch origin main:local', ['git', 'fetch']],
   ])('neither offers nor covers %j, whose options are not on the pair list', (command, prefix) => {
     expect(offerPrefix(command)).toBeUndefined()
     expect(coveredByPrefixes(command, [prefix])).toBe(false)
