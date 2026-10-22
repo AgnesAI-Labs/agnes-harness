@@ -5,7 +5,7 @@ import type { ResolvedPackage } from '@agnes/host-common/profile/types'
 import { HOST_CAPABILITY_GRANTS } from '@agnes/package-manager'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
-import { pinHostCapabilities } from '../../src/assemble/host-grants.js'
+import { pinHostCapabilities, pinHostCapabilitiesAsync } from '../../src/assemble/host-grants.js'
 import { type PackageModule, readNamedExports } from '../../src/assemble/packages.js'
 
 const roots: string[] = []
@@ -123,7 +123,10 @@ describe('verified ext: row privilege grants', () => {
     expect(h.grants()).toEqual(ids.map(() => ({})))
     expect(h.authority.seam(h.pkg.id, 'artifacts', original)).toEqual({})
   })
-  it('uses retained generation revisions and refuses a replaced package directory', () => {
+  it.each([
+    { name: 'sync', pin: pinHostCapabilities },
+    { name: 'async', pin: pinHostCapabilitiesAsync },
+  ])('uses retained revisions and refuses a replaced directory ($name)', async ({ pin }) => {
     const h = fixture()
     const official = h.grants()
     const digest = h.authority.integrity(h.pkg.id)
@@ -138,10 +141,10 @@ describe('verified ext: row privilege grants', () => {
       mountRevision: 'host-ext-row:v1',
     }
     const retained = createPluginRow(rowInput)
-    const cold = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, h.directory]]), [retained])
+    const cold = await pin([h.pkg], new Map([[h.pkg.id, h.directory]]), [retained])
     cold.bind(h.modules)
     expect(ids.map((id) => cold.extension(h.pkg.id, id, h.module))).toEqual(official)
-    const mixed = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, h.directory]]), [
+    const mixed = await pin([h.pkg], new Map([[h.pkg.id, h.directory]]), [
       retained,
       createPluginRow({ ...rowInput, id: 'ext:agnes/hooks-runner', entryRevision: 'custom' }),
     ])
@@ -149,19 +152,19 @@ describe('verified ext: row privilege grants', () => {
     expect(ids.map((id) => mixed.extension(h.pkg.id, id, h.module))).toEqual(ids.map(() => ({})))
     expect(mixed.seam(h.pkg.id, 'artifacts', h.module)).toEqual({})
     writeFileSync(join(h.directory, 'index.js'), 'export const identity = 2\n')
-    const restored = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, h.directory]]), [retained])
+    const restored = await pin([h.pkg], new Map([[h.pkg.id, h.directory]]), [retained])
     restored.bind(h.modules)
     expect(restored.extension(h.pkg.id, ids[0], h.modules.get(h.pkg.id))).toEqual({})
     // A normal release starts a new authority; old generations cannot attest the upgraded tree.
     Object.assign(h.pkg, { version: '2.0.0', integrity: 'builtin:2.0.0' })
-    const upgrade = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, h.directory]]))
+    const upgrade = await pin([h.pkg], new Map([[h.pkg.id, h.directory]]))
     upgrade.bind(h.modules)
     expect(ids.map((id) => upgrade.extension(h.pkg.id, id, h.module))).toEqual(official)
     const upgradedDigest = upgrade.integrity(h.pkg.id)
     if (!upgradedDigest) throw new Error('missing upgraded release tree digest')
     expect(upgradedDigest).not.toBe(digest)
     const upgradedRow = createPluginRow({ ...rowInput, entryRevision: upgradedDigest })
-    const restarted = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, h.directory]]), [upgradedRow])
+    const restarted = await pin([h.pkg], new Map([[h.pkg.id, h.directory]]), [upgradedRow])
     restarted.bind(h.modules)
     expect(ids.map((id) => restarted.extension(h.pkg.id, id, h.module))).toEqual(official)
     renameSync(h.directory, `${h.directory}-retired`)

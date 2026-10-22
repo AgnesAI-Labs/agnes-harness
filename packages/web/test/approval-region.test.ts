@@ -210,6 +210,24 @@ it.each(['en', 'zh-CN'] as const)(
     let listUnavailable = false
     let blockedList: Promise<void> | undefined
     let blockedAnswer: Promise<void> | undefined
+    const triggerFetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      Response.json({
+        snapshot: {
+          rules: [{ id: 'private-rule-id', event: 'Issue opened' }],
+          deliveries: automationPending
+            ? [
+                { sessionId: 'trigger-session', ruleId: 'private-rule-id', status: 'needs_attention' },
+                {
+                  sessionId: 'deleted-rule-session',
+                  ruleId: 'deleted-rule-id',
+                  status: 'waiting_approval',
+                },
+                { sessionId: 'finished-session', status: 'ran' },
+              ]
+            : [],
+        },
+      }),
+    )
     const call = vi.fn(async (method: string, input?: { handle: typeof handle }) => {
       if (method === '_agnes/v1/schedules.list')
         return {
@@ -235,23 +253,6 @@ it.each(['en', 'zh-CN'] as const)(
               },
             },
           ],
-        }
-      if (method === '_agnes/v1/admin.triggers')
-        return {
-          snapshot: {
-            rules: [{ id: 'private-rule-id', event: 'Issue opened' }],
-            deliveries: automationPending
-              ? [
-                  { sessionId: 'trigger-session', ruleId: 'private-rule-id', status: 'needs_attention' },
-                  {
-                    sessionId: 'deleted-rule-session',
-                    ruleId: 'deleted-rule-id',
-                    status: 'waiting_approval',
-                  },
-                  { sessionId: 'finished-session', status: 'ran' },
-                ]
-              : [],
-          },
         }
       if (method === '_agnes/v1/profile.decisions.list') {
         const snapshot = [...pending]
@@ -494,6 +495,7 @@ it.each(['en', 'zh-CN'] as const)(
       await vi.waitFor(() => expect(row()).toBeNull())
     } finally {
       inventory.mockRestore()
+      triggerFetch.mockRestore()
       await runtime?.dispose()
       expect(listeners.size).toBe(0)
       visibility.mockRestore()
@@ -545,10 +547,12 @@ it.each(['saved', 'failed'] as const)(
     const action = () => document.querySelector<HTMLButtonElement>('[data-testid="approval-action"]')!
     try {
       await draw(first)
+      await vi.waitFor(() => expect(toggle()).not.toBeNull(), committed)
       await act(async () => toggle().click())
       await act(async () => action().click())
       await act(async () => toggle().click())
       await draw(next)
+      await vi.waitFor(() => expect(toggle()).not.toBeNull(), committed)
       await act(async () => toggle().click())
       await act(async () => action().click())
       expect(action().disabled).toBe(true)

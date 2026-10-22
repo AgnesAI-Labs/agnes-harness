@@ -313,7 +313,7 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
     expect(ctx.resources).toMatchObject({ staleMarks: 0, reloadedMarks: 0 })
   })
 
-  it('names a server still connecting once per session when a turn starts without it', async () => {
+  it('joins cold composition attempts and names a still-connecting server once per session', async () => {
     const notices: unknown[] = []
     const runs: string[] = []
     const session = {
@@ -327,6 +327,11 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
     } as unknown as HostSession
     let connecting = [{ serverId: 'slow', displayName: 'Slow Server' }]
     const rows = recordingRows()
+    let preparing = false
+    let release!: () => void
+    const ready = new Promise<void>((resolve) => {
+      release = resolve
+    })
     const ctx: Parameters<typeof handleCommand>[2] = {
       host: {} as unknown as Host,
       aborts: new Map(),
@@ -334,7 +339,14 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
         generation: undefined,
         staleMarks: 0,
         reloadedMarks: 0,
-        mcpRows: { ...rows.runtime, connecting: () => connecting },
+        mcpRows: {
+          ...rows.runtime,
+          connecting: () => connecting,
+          prepareTurn: async () => {
+            preparing = true
+            await ready
+          },
+        },
       },
     }
     const run = (id: string) =>
@@ -343,6 +355,14 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
         { kind: 'command', requestId: id, method: 'run', params: { runId: id, until: 'turn-end' } },
         ctx,
       )
+    const first = run('cold')
+    await expect.poll(() => preparing).toBe(true)
+    expect(runs).toEqual([])
+    connecting = []
+    release()
+    await first
+    expect(notices).toEqual([])
+    connecting = [{ serverId: 'slow', displayName: 'Slow Server' }]
     await run('r1')
     await run('r2')
     expect(notices).toEqual([
@@ -354,7 +374,7 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
     connecting = [{ serverId: 'slow', displayName: 'Slow Server' }]
     await run('r4')
     expect(notices).toHaveLength(2)
-    expect(runs).toHaveLength(4)
+    expect(runs).toHaveLength(5)
   })
 
   it('waits for every active session run and blocks later runs while reloading', async () => {

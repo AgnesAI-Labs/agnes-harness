@@ -1,7 +1,7 @@
 import { HostError } from '@agnes/host-common/errors'
 import {
   type HostCapabilityAuthority,
-  pinHostCapabilities,
+  pinHostCapabilitiesAsync,
 } from '@agnes/host-extensions/assemble/host-grants'
 import type { LoadedRuntimePackage, PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { loadRuntimePackage } from '@agnes/host-extensions/assemble/packages'
@@ -78,7 +78,7 @@ export async function loadPackages(ctx: AssemblyContext): Promise<PackageSet> {
   for (const [name, pkg] of Object.entries(profile.seams))
     if (typeof pkg === 'string' && name !== 'platform' && !dirs.has(pkg))
       refuse('E_DEP_MISSING', `seam ${name} names ${pkg}, not enabled`, { seam: name, package: pkg })
-  const grants = pinHostCapabilities(
+  const grants = await pinHostCapabilitiesAsync(
     enabled.filter((pkg) => !runtimePackageIds.has(pkg.id) && !managedExtensionPackages.has(pkg.id)),
     dirs,
     deps.generationBuiltinRows,

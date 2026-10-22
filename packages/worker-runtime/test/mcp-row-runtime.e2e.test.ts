@@ -646,6 +646,9 @@ describe('createMcpRowRuntime first connection attempts (design §3.8, D120)', (
     expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeUndefined()
     // The turn that applied it starts without its tools; the worker names it in a session notice.
     expect(runtime.connecting?.()).toEqual([{ serverId: 'alpha', displayName: 'alpha' }])
+    const expired = Date.now()
+    await runtime.prepareTurn?.()
+    expect(Date.now() - expired).toBeLessThan(100)
     await expect(runtime.waitForStatus('alpha', 1)).resolves.toMatchObject({
       connectionState: 'unavailable',
       lastSafeError: { code: 'MCP_CONNECT_TIMEOUT' },
