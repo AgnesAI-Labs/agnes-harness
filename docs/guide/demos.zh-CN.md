@@ -2,7 +2,7 @@
 
 [English](demos.md) | 简体中文
 
-产品演示为 [制药 GMP](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/pharma-gmp/README.zh-CN.md)和[航空质量](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/aerospace-quality/README.zh-CN.md) showcase 应用，将在同一版本提供。概念验证应用 [DevBoard](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/devboard/README.zh-CN.md) 把工作台变成研发多智能体协作任务看板：需求、任务与人工介入请求，数据均为虚构，并配有「研发协调员」智能体。智能体页只推广 showcase，缺包时不会显示占位卡。开发者从[五个教学示例](../../examples/fde/README.zh-CN.md)学习工具、面板、审批、交付和定时自动化。下面三个脚本用于验证平台机制。
+智能体画廊展示三个已随源码提供的旗舰应用：[DevBoard 3.6.0](../../examples/showcase/devboard/README.zh-CN.md)、[制药 GMP](../../examples/showcase/pharma-gmp/README.zh-CN.md)和[航空质量](../../examples/showcase/aerospace-quality/README.zh-CN.md)。DevBoard 是轨道门系统研发与质量工作台，包含项目评审门、追溯、试验、服务质量闭环和研发协调员。三个应用均使用虚构数据。画廊只推广这些旗舰，缺包时不显示占位或教学示例替补；[五个教学示例](../../examples/fde/README.zh-CN.md)仍可主动安装。下面三个脚本演示平台机制。
 
 亲手验证业务 Agent 即插件、热升级保留进行中的工作，以及 Agent 构建可复用能力。每个脚本都在新的临时 `AGH_HOME` 中运行真实 daemon 和 worker，只使用合成数据，无需模型账号或浏览器。
 
@@ -11,8 +11,8 @@
 需要 Node.js 24.10+、pnpm 10.34.5 和平台对应的原生构建工具（见[安装](install.zh-CN.md)）。在仓库根目录运行：
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/cli build:local
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 node examples/demos/business-agent/run.mjs
 node examples/demos/hot-upgrade/run.mjs
 node examples/demos/growing-skills/run.mjs
@@ -39,7 +39,7 @@ node examples/demos/growing-skills/run.mjs
 构建本地 CLI 并准备 Playwright Chromium 后，运行重型浏览器验收：
 
 ```sh
-pnpm exec vitest run tools/e2e-web/agent-sweep.e2e.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/e2e-web/agent-sweep.e2e.test.ts --maxWorkers=1
 ```
 
 测试枚举所有带 `launch` 的示例 Bundle，通过 Web UI 安装、信任、启用，检查模型、权限、来源包和草稿审阅，确认草稿入框且未发送，再显式提交每个示例提示词。默认使用离线 Demo 模型。测试检查持久化工具结果、完成状态和报告卡片，并通过正常控件回答模拟业务问题及工具授权。
@@ -54,7 +54,7 @@ pnpm exec vitest run tools/e2e-web/agent-sweep.e2e.test.ts --maxWorkers=1
 node examples/demos/business-agent/run.mjs --check
 node examples/demos/hot-upgrade/run.mjs --check
 node examples/demos/growing-skills/run.mjs --check
-pnpm exec vitest run examples/demos/test/demos.e2e.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs exec vitest run examples/demos/test/demos.e2e.test.ts --maxWorkers=1
 ```
 
 测试启动真实进程，文件属于 heavy tier，`pnpm test:heavy` 会包含它。运行测试前须构建本地 CLI。

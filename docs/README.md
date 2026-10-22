@@ -15,12 +15,16 @@ English | [简体中文](README.zh-CN.md)
 Minimal tool plugin: from a built source checkout, add an echo tool in an isolated home. No agent or application declaration is required.
 
 ```sh
+export AGH_SOURCE="$PWD"
 export AGH_HOME="$(mktemp -d /tmp/agh-hello.XXXXXX)"
 export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
 export AGNES_PROFILE=local-dev
-node templates/create-agh-plugin.mjs tool hello-tool "$AGH_HOME/plugins/hello-tool" --local
-node agnes.mjs dev "$AGH_HOME/plugins/hello-tool"
-node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
+AGH_WORKSPACE="$(mktemp -d /tmp/agh-hello-workspace.XXXXXX)"
+cd "$AGH_WORKSPACE"
+mkdir -p .agh/plugins
+node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/hello-tool --local
+node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-tool
+node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"}'
 ```
 
 [Five-step tool tutorial](extend/quickstart.md) · [Four-step Loop tutorial](extend/first-loop.md) · [Acme reference application](../examples/acme/README.md)
@@ -76,6 +80,8 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 | [Troubleshooting](guide/troubleshooting.md) | Use error codes and runtime state to choose the next diagnostic step |
 
 ## Deployment administrator
+
+[Data-format recovery](guide/install.md#data-format-and-upgrade) · [Application and interface choices](extend/applications.md) · [Stateful author tests](extend/testing.md)
 
 [Plugin lifecycle](guide/packages.md) · [Models and accounts](guide/getting-started.md) · [Network deployment](guide/deployment.md) · [Security and trust](guide/security.md) · [Application adoption and recovery](extend/applications.md)
 

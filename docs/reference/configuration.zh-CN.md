@@ -44,8 +44,8 @@ builtin 模板是基础，用户 profile 与 Host configuration overlay 合并�
 | `adapters` | storage/fs/exec/platform/secrets 选择 |
 | `transports` | stdio/unix/ws-tls，远程配置另需证书与认证 |
 | `dataDir`, `cacheDir` | 数据/缓存位置；规范化 home 的运行中 daemon 拒绝不兼容的配置档或数据目录配置 |
-| `presets` | 默认与允许的配方；默认必须在允许集合中。旧名 `read-only`、`workspace-write`、`full-access` 仍可用，表示该权限下的 `standard` |
-| `permissions` | 默认与允许的权限级别（`read-only`、`workspace-write`、`full-access`）；默认必须在允许集合中。缺少此项时由 `presets.allowed` 推导允许的级别；某一层只写了 `presets` 而没写 `permissions` 时，下层的 `permissions` 不再保留，见[权限与预设](../guide/security.zh-CN.md#permissions-and-presets) |
+| `presets` | 默认与允许的配方；默认必须在允许集合中。旧的权限配方名（`read-only`、`workspace-write`、`full-access`）已拒绝；使用 `standard` 等配方并独立选择权限 |
+| `permissions` | 默认与允许的权限级别（`read-only`、`workspace-write`、`full-access`）；默认必须在允许集合中。缺少此项时只允许 `workspace-write`；配方与权限白名单互相独立，见[权限与预设](../guide/security.zh-CN.md#permissions-and-presets) |
 | `approvals.mode` | manual/off/auto-review |
 | `reconcile` | immediate/turn/step；maxWaitMs 仅适用 turn/step |
 | `policy.capabilityCeiling` | 能力上限；当前 local-dev 与 enterprise 模板包含 services |

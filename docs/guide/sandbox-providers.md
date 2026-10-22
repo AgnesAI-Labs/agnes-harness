@@ -23,7 +23,7 @@ The choice is fixed for the life of the process. `catalog()` marks every entry `
 
 ## Remote providers
 
-A provider whose commands run on another machine exports a `sandboxProvider` from its package. Build it with `defineRemoteSandboxProvider({ id, version, openTransport })` from `@agnes/sandbox-remote`, then select it with `sandbox: { provider: <id> }` and put the channel settings in that package's config (`rootTemplate`, `keepOnClose`, `providerTtlMs`, plus whatever `openTransport` reads). The Host opens the channel once at startup and runs its own exec gate, file policy and workspace fence over it, so the provider instance never carries a command itself. Only the selected remote provider's channel is opened. A remote workspace cannot select another provider.
+A provider whose commands run on another machine exports a `sandboxProvider` from its package. Build it with `defineRemoteSandboxProvider({ id, version, openTransport })` from `@agnes/sandbox-remote`, then select it with `providers.sandbox: { provider: <id> }` and put the channel settings in that package's config (`rootTemplate`, `keepOnClose`, `providerTtlMs`, plus whatever `openTransport` reads). The Host opens the channel once at startup and runs its own exec gate, file policy and workspace fence over it, so the provider instance never carries a command itself. Only the selected remote provider's channel is opened. A remote workspace cannot select another provider.
 
 ## Capabilities
 

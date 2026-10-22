@@ -14,7 +14,7 @@
 | Child agent | 子代理 | 属于会话的子任务执行 |
 | Running mode (Loop) | 运行方式（Loop） | 有多项可选时才显示，技术名称保留在括号里 |
 | Bundle (advanced) | 组合（高级） | 可复用配置；智能体须有自己的 launch |
-| Permission profile (Preset in technical details) | 权限方案（技术详情中为 Preset） | 命名的权限或配置方案 |
+| Preset | 预设 | 执行配方：工具、提示、模型槽位和预算；权限单独选择 |
 | Updating | 更新中 | 可行动的更新状态；保留版本放入详情 |
 | Saved credential | 已保存的凭据 | 通过选择器选择；内部 `secretRef` 字段名不改动 |
 | New session | 新会话 | 修改默认值或启用插件后创建的会话 |

@@ -14,7 +14,7 @@ Web 渲染器消费生成的 Intelligent UI 协议。真实业务流程需要后
 
 命令尚未解决时，command id 和不可变请求保存在会话范围的浏览器存储中。**恢复提交** 先读取原回执，仅在回执不存在时重发同一个命令，不创建新决定。过期或关闭拒绝显示 **数据已变化，请重新确认**。查看当前数据会读取最新版本，丢弃旧草稿和旧确认；仅当界面仍打开且未锁定时，才允许新的明确决定。
 
-目录位于 `packages/web-ui/src/intelligent-ui`；客户端与两处注册位于 `packages/web/src/intelligent-ui`。SVG 图表提供包含数值的明细表，不推断货币单位。控件具有英文和简体中文目录、原生键盘操作、回执实时播报和稳定 test ids。两条 Web 构建路径将目录样式追加到已有 `/style.css` 资源。
+目录位于 `packages/web-ui/src/intelligent-ui`；客户端与两处注册位于 `packages/web-conversation/src/intelligent-ui`。SVG 图表提供包含数值的明细表，不推断货币单位。控件具有英文和简体中文目录、原生键盘操作、回执实时播报和稳定 test ids。两条 Web 构建路径将目录样式追加到已有 `/style.css` 资源。
 
 单元测试使用假 App Server。`tools/e2e-web/intelligent-ui.spec.ts` 启动隔离的浏览器 fixture，使用真实目录、共享客户端、工作台 dock 和审批组件，覆盖行选择、表单编辑、双位置共享、重复点击、审批中刷新、成功后版本更新和过期后的再次确认。它不能证明后端授权、业务工具校验或效果恢复；这些需要与插件验收套件联调。
 

@@ -12,12 +12,12 @@ Verify the same revision as the source and documentation you are using. These en
 
 ## Environment and prerequisites
 
-Run from the repository root. Node/pnpm versions are defined in [package.json](../../package.json):
+Run from the repository root. Run `mise trust` and `mise install` first. The exact development Node patch comes from [`.node-version`](../../.node-version), supported user range and pnpm pin from [package.json](../../package.json). Use one entry for installs, builds and checks; it prints actual `process.version` and `process.execPath` and verifies a child runtime:
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/host build:native
-pnpm --filter @agnes/system-node build:native
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
 ```
 
 <a id="静态与自动化检查"></a>
@@ -25,11 +25,11 @@ pnpm --filter @agnes/system-node build:native
 ## Static and automated checks
 
 ```sh
-node tools/public-docs/verify.mjs
-pnpm typecheck
-pnpm lint
-pnpm gen:check
-pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs exec node tools/public-docs/verify.mjs
+mise exec -- node tools/toolchain/run.mjs typecheck
+mise exec -- node tools/toolchain/run.mjs lint
+mise exec -- node tools/toolchain/run.mjs gen:check
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWorkers=1
 ```
 
 The [repository guard guide](../../tools/guards/README.md) distinguishes the report-only scope
@@ -59,7 +59,7 @@ The serial `packages/host-infrastructure/test/adapters/table-reads.slow.test.ts`
 The package-load gate is the **gates real immutable package preparation** case in `tools/plugin-performance.slow.test.ts`. Run it serially on a performance runner with Node 24:
 
 ```sh
-pnpm exec vitest run tools/plugin-performance.slow.test.ts --project heavy --maxWorkers=1 -t 'gates real immutable package preparation'
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/plugin-performance.slow.test.ts --project heavy --maxWorkers=1 -t 'gates real immutable package preparation'
 ```
 
 It installs, trusts and pins 20 synthetic packages, each with 200 × 1 KiB payload files plus a module, manifest and two 32 KiB client assets. Three runs measure cold/warm inventory, immutable snapshots, the real Host package-assembly stage (before native/provider startup), readonly client roster/assets, and Surface change-event publication during package IO. Cold uses new readers and empty loader/client disk caches; it does not flush OS caches. Surface transport uses a synthetic SDK response with the production subscription and route lookup; this does not verify daemon IPC or browser rendering.
@@ -70,26 +70,16 @@ On Windows, tests that exercise symlink escapes require permission to create sym
 
 ## Previous-build upgrade gate
 
-```sh
-pnpm exec vitest run tools/upgrade/previous-build.e2e.test.ts --project heavy --maxWorkers=1
-```
+The [previous-build test](../../tools/upgrade/previous-build.e2e.test.ts) is **suspended by default**, including in the heavy CI tier. Its pinned baselines predate Extension API 5.0 and the SQLite data-directory gate: their fixture plugin/API ranges and persisted formats are incompatible. A skipped test is not upgrade acceptance.
 
-Retired pre-unification plugin metadata is a refusal case: the current build must fail with a clean-home hint and keep lock, snapshot, pin and trust bytes unchanged. Only a baseline with supported current formats exercises continuation; this gate no longer injects old metadata or carries its trust into a new snapshot.
-
-This standing heavy-tier gate builds real distributions from the working tree and pinned plugin-core commits in [distributions.mjs](../../tools/upgrade/distributions.mjs). The recent baseline predates the client-normalization and bundled-default fixes; a second, older baseline predates ledger append watermarks. It creates private synthetic homes with a loopback model account, chat/tool/attachment/deliverable/fork/queued history, trusted packages, settings, a schedule and a trigger. Each baseline upgrades after both clean shutdown and process loss; the crash path waits for the previous writer lease to expire naturally (at most 60 seconds), without deleting claims. The legacy writer supplies the existing-fork fixture: the recent baseline itself rejects valid null inbox resets during new-fork creation. Current must read and continue the earlier fork, including those reset records. Assertions cover unchanged historical events, writable history, retained authorization, refreshed bundled bytes, and managed recovery through native decisions when needed. No home conversion or old-product migration runs. History rendering uses the Web timeline projection; browser layout has its own gate. Managed recovery permits one additional current-distribution cold start only after `MANAGED_RESOURCE_NOT_RECOVERABLE` during default publication; the subsequent native approval and health check must succeed. This known publication limitation is logged explicitly.
-
-Use `AGH_UPGRADE_PREVIOUS_REF=<commit>` to select another recent baseline. Git must contain both pinned commits (`git fetch --unshallow` for a shallow clone). Optional absolute `AGH_UPGRADE_PREVIOUS_DIST`, `AGH_UPGRADE_LEDGER_DIST` and `AGH_UPGRADE_CURRENT_DIST` directories reuse complete builds; their bytes must match the selected source revisions. The default build stamps the recent previous/current distributions as `1.0.0`/`1.1.0` to exercise release-owned default updates. `AGH_UPGRADE_KEEP=1` retains successful scratch output; failures always retain it and print its location. Build dependencies require registry access; model traffic stays on loopback and uses only a dummy key. Launcher environments omit operator credentials and use private homes. Run serially with enough disk space for three distributions and the installation guide's native toolchains.
-
-For diagnosis, `AGH_UPGRADE_CASE=recent|legacy` and `AGH_UPGRADE_VARIANT=clean|unclean` narrow the run. Leave both unset for the complete gate.
-
-The existing CI heavy job runs this automatically on Linux for PRs and on Linux/macOS for main, nightly and manual runs, with full Git history. Windows explicitly skips this gate: native crash/process-tree acceptance remains a colleague's follow-up; a POSIX pass is not Windows evidence.
+Only after choosing compatible API-5.0 baselines with a supported data format may a maintainer opt in with `AGH_UPGRADE_GATE=1` and `AGH_UPGRADE_PREVIOUS_REF`. The test is intended to cover clean shutdown, process loss, preserved history/pins and refusal of retired metadata; Windows remains skipped. Baselines and optional distribution inputs are declared in [distributions.mjs](../../tools/upgrade/distributions.mjs). Do not force old data through the gate or convert its trust bytes. For end-user recovery use [data-format recovery](../guide/install.md#data-format-and-upgrade); no runtime-data migration is provided.
 
 <a id="构建与真实本地进程"></a>
 
 ## Build and real local processes
 
 ```sh
-pnpm --filter @agnes/cli build:local
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 node agnes.mjs --help
 node --import tsx tools/public-docs/smoke.mjs
 ```

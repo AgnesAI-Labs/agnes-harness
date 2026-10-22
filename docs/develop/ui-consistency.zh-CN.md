@@ -4,7 +4,7 @@
 
 [文档](../README.zh-CN.md) · [前端](frontend.zh-CN.md) · [皮肤](skins.zh-CN.md) · [UI 覆盖](ui-coverage.zh-CN.md)
 
-本文规定现有 Web 界面的呈现方式，复用 `@agnes/web-ui` 的公开出口和既有主题，不改变导航、后端决策、表单值或权限。[源码清单与实施顺序](ui-consistency-audit.zh-CN.md) 区分现有能力与待完成工作。
+本文规定现有 Web 界面的呈现方式，复用 `@agnes/web-ui` 的公开出口和既有主题，不改变导航、后端决策、表单值或权限。当前界面与验证边界见 [UI 覆盖](ui-coverage.zh-CN.md)，归属模块见[源码导航](source-map.zh-CN.md)。
 
 工作台布局由 `AppShell` 渲染。controller 快照和可替换 slot 区域共享一个 React root 与一个 antd `ConfigProvider`。controller 持有的挂载点使用 `mountRegion` / `renderRegion` / `unmountRegion`；这些接口渲染应用内 portal，不创建额外 root。组件直接渲染翻译文案；切换语言必须保留草稿、焦点和 controller 绑定的节点 ID。浮层共享壳容器；从原生 dialog 打开的 popup 留在该 dialog 的顶层中。
 

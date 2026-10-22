@@ -2,7 +2,7 @@
 
 English | [简体中文](demos.zh-CN.md)
 
-The product demos are the [Pharma GMP](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/pharma-gmp/README.md) and [Aerospace quality](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/aerospace-quality/README.md) showcase applications, coming in the same release. The [DevBoard](https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/examples/showcase/devboard/README.md) proof of concept turns the workbench into a task board for multi-agent software delivery: requirements, tasks and human-intervention requests on fictional data, with an R&D Coordinator agent. The gallery promotes showcase content and tolerates missing packages without placeholders. Developers can learn tools, panels, approvals, deliverables and scheduling from the [five teaching examples](../../examples/fde/README.md). The three scripts below demonstrate platform mechanisms.
+The gallery features three shipped showcase applications: [DevBoard 3.6.0](../../examples/showcase/devboard/README.md), [Pharma GMP](../../examples/showcase/pharma-gmp/README.md) and [Aerospace quality](../../examples/showcase/aerospace-quality/README.md). DevBoard is a rail door-system R&D and quality workbench with project gates, traceability, trials, service-quality feedback and an R&D Coordinator. All three use fictional data. Only these flagships are promoted; missing packages produce no placeholders or teaching-example fallback. The [five teaching examples](../../examples/fde/README.md) remain available for deliberate installation. The three scripts below demonstrate platform mechanisms.
 
 See business agents as plugins, upgrades that preserve work, and an agent that builds a reusable capability. Each script runs a real daemon and workers against synthetic data in a fresh temporary `AGH_HOME`. No model account or browser is required.
 
@@ -11,8 +11,8 @@ See business agents as plugins, upgrades that preserve work, and an agent that b
 Use Node.js 24.10+ and pnpm 10.34.5 with your platform's native build prerequisites ([installation](install.md)). From the repository root:
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/cli build:local
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 node examples/demos/business-agent/run.mjs
 node examples/demos/hot-upgrade/run.mjs
 node examples/demos/growing-skills/run.mjs
@@ -39,7 +39,7 @@ Do not put credentials in command arguments, committed files or shared transcrip
 After building the local CLI and provisioning Playwright Chromium, run the heavy browser acceptance:
 
 ```sh
-pnpm exec vitest run tools/e2e-web/agent-sweep.e2e.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/e2e-web/agent-sweep.e2e.test.ts --maxWorkers=1
 ```
 
 It enumerates all example Bundle declarations with `launch`, deliberately installs/trusts/enables teaching packages through plugin source review in the Web UI, checks the model/permissions/package sources/draft review, confirms without sending, then explicitly submits each sample prompt. The default uses the offline Demo model. It checks durable tool results, completion and report cards, and answers synthetic business questions and tool approvals through their normal controls.
@@ -54,7 +54,7 @@ Real inference requires explicit `AGH_REAL_AGENT_SWEEP=1` plus `AGH_DEMO_API_KEY
 node examples/demos/business-agent/run.mjs --check
 node examples/demos/hot-upgrade/run.mjs --check
 node examples/demos/growing-skills/run.mjs --check
-pnpm exec vitest run examples/demos/test/demos.e2e.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs exec vitest run examples/demos/test/demos.e2e.test.ts --maxWorkers=1
 ```
 
 The test file belongs to the heavy tier because it starts real processes; `pnpm test:heavy` includes it. Build the local CLI before running it.

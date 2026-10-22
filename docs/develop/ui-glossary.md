@@ -14,7 +14,7 @@ Use these terms in labels, help, accessible names, confirmations and error messa
 | Child agent | 子代理 | Session-owned child execution |
 | Running mode (Loop) | 运行方式（Loop） | Show only when there is a choice; keep the technical name in parentheses |
 | Bundle (advanced) | 组合（高级） | Reusable configuration; an agent requires its own launch |
-| Permission profile (Preset in technical details) | 权限方案（技术详情中为 Preset） | Named permission/configuration settings |
+| Preset | 预设 | Execution recipe: tools, prompts, model slots and budgets; permission is a separate choice |
 | Updating | 更新中 | Actionable update status; retained versions belong in details |
 | Saved credential | 已保存的凭据 | Choose a saved credential; retain `secretRef` only as a protocol field |
 | New session | 新会话 | A session created after changing defaults or enabling a package |

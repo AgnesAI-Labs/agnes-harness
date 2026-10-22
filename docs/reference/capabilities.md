@@ -22,7 +22,7 @@ capability ID; it also rejects stale source markers and drift between this table
 | `artifacts.background-jobs` | Artifact background jobs | stub | Local artifact reads/writes exist, but asynchronous artifact jobs do not. | Requires job execution | `packages/base/extensions/artifacts-local/src/jobs.ts` |
 | `cli.onboarding.account` | Agnes account sign-in at first run | stub | The API-key path is wired end to end; the account path needs the platform's PKCE/token/refresh and subscription-catalogue contract, which this build does not carry. The selector offers it and refuses rather than opening a flow that cannot finish. | Requires account integration | `packages/cli/src/onboarding/tui.ts`, `packages/cli-tui/src/locale-extended.ts` |
 | `profile.additional-layers` | Workspace, local, flags, and managed profile layers | partial | Verified workspace overlays and isolation-only local/flags/managed overlays resolve; other local/flags/managed fields still fail closed to keep the profile hash honest. | Additional configuration layers | `packages/host-common/src/profile/isolation.ts` |
-| `sandbox.host-filtered-network` | Host allowlist network enforcement | partial | Closed networking works, but a non-empty host allowlist requires a filtering proxy that does not exist. | Requires network filtering | `packages/base/extensions/sandbox/src/seam.ts`<br>`packages/base/extensions/sandbox/src/backends/shared.ts` |
+| `sandbox.host-filtered-network` | Host allowlist network enforcement | partial | Closed networking works, but a non-empty host allowlist requires a filtering proxy that does not exist. | Requires network filtering | `packages/host-infrastructure/src/sandbox-seam.ts`<br>`packages/base/extensions/sandbox/src/backends/shared.ts` |
 | `windows.runtime-enforcement` | Windows sandbox and credential protection | partial | Native private credential ACL enforcement is implemented and refuses when the native capability is unavailable. Restricted-token sandboxing and network isolation remain unavailable; forced isolation must refuse. Full Windows acceptance is incomplete. | Windows compatibility acceptance; no OS sandbox in current scope | `packages/host-infrastructure/src/adapters/platform-win32.ts`<br>`packages/host-infrastructure/src/adapters/credential-files.ts`<br>`packages/base/extensions/sandbox/src/workspace-probe.ts`<br>`packages/web-ui/src/locales/config-form.ts` |
 | `cli.remote-and-extra-modes` | Remote CLI transport and non-print/TUI modes | partial | Local print/TUI and ACP work; explicit `--connect` uses the shared daemon. Remaining management commands retain their documented local/refused scope. | Mode-specific implementation | `packages/cli/src/bin.ts` |
 | `sdk.optional-build-capabilities` | Optional SDK transport/auth construction | wired | `Unsupported` is the intended typed boundary when an entry point omits an optional transport or auth implementation. | Complete; keep fail-closed | `packages/sdk/src/errors.ts` |
@@ -30,7 +30,7 @@ capability ID; it also rejects stale source markers and drift between this table
 
 ## Session command transport
 
-The protocol has 186 methods. These capabilities use the same durable submit path; SDK methods remain available.
+The [protocol tier list](protocol-tiers.md) enumerates the current client and admin methods. These capabilities use the same durable submit path; SDK methods remain available.
 
 | Capability | SDK method | Native request |
 |---|---|---|

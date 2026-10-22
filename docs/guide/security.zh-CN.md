@@ -42,9 +42,9 @@ Web「工作区内修改」将文件访问限制在所选工作区内，执行�
 
 ### 自动审查
 
-自动审查是在“每个风险调用都手动批准”和“跳过批准”之间的选择。在 Web **设置 → 安全** 中启用策略卡，选择已配置的 `fast`（默认低成本档位）或 `verifier` 模型。它只审查默认策略原本会询问人工的调用；自定义和只读策略继续独立裁决。完全权限与 `off` 保持原有语义，缺少审查模型不会偷偷改用主模型。可信用户 profile 也可配置 `approvals.mode: auto-review`，工作区配置不能启用它。
+自动审查是在“每个风险调用都手动批准”和“跳过批准”之间的选择。在 Web **设置 → 权限与安全** 中启用策略卡，选择已配置的 `fast`（默认低成本档位）或 `verifier` 模型。它只审查默认策略原本会询问人工的调用；自定义和只读策略继续独立裁决。完全权限与 `off` 保持原有语义，缺少审查模型不会偷偷改用主模型。可信用户 profile 也可配置 `approvals.mode: auto-review`，工作区配置不能启用它。
 
-无需编写代码：打开 **设置 → 模型账户 → 辅助模型**，或点击自动审查卡的 **配置辅助模型**。从已有目录选择 `fast` 和／或 `verifier` 的路由与模型，然后保存。区域显示当前选择或 **未设置**，不可用的旧选择仍可见。这些 profile 默认值适用于 **新会话**。在 **设置 → 安全** 选择同一审查档位，卡片会显示该 profile 默认值是否可用。
+无需编写代码：打开 **设置 → 模型 → 辅助模型**，或点击自动审查卡的 **配置辅助模型**。从已有目录选择 `fast` 和／或 `verifier` 的路由与模型，然后保存。区域显示当前选择或 **未设置**，不可用的旧选择仍可见。这些 profile 默认值适用于 **新会话**。在 **设置 → 权限与安全** 选择同一审查档位，卡片会显示该 profile 默认值是否可用。
 
 已有会话可从输入区的模型选择器打开 **辅助模型（高级）**，显式选择路由与模型，再为当前会话保存对应档位。此操作复用会话模型接口，重新打开会话后仍保留，不改变主模型或 profile 默认值。清除 profile 档位只影响新会话；已有会话保留已保存的选择。切换会话预设仍按既有行为重置模型覆盖。未设置或不可用的审查模型会转交人工，绝不静默借用付费主模型。配置本身不调用模型，后续实际审查可能产生供应商费用。
 
@@ -89,7 +89,7 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 
 本地与企业模板都带这两项（企业模板允许 `standard` 和 `ptc`）。配方与权限各自授权：收窄 `presets` 不改变 `permissions`；没有配置权限块时，内置默认值是 `workspace-write`。省略权限、`--permission default` 与 `permission: 'default'` 均跟随部署默认值，包括明确指定配方的请求。
 
-旧的配方别名 `read-only`、`workspace-write`、`full-access` 已拒绝，`presets.allowed` 中也不能使用。请将 `agh --preset read-only` 改为 `agh --preset standard --permission read-only`。旧 profile 与持久格式须使用新的空 `AGH_HOME`，不会转换旧字节或沿用旧信任摘要。`--agent` 不能与 `--permission` 组合，由智能体自己的 launch 决定。
+旧的配方别名 `read-only`、`workspace-write`、`full-access` 已拒绝，`presets.allowed` 中也不能使用。请将 `agh --preset read-only` 改为 `agh --preset standard --permission read-only`。已退役 profile 须使用新的空 `AGH_HOME`，不会转换旧字节或沿用旧信任摘要。SQLite 格式拒绝另按[数据目录恢复](install.zh-CN.md#数据格式与升级)处理，保留 profiles。`--agent` 不能与 `--permission` 组合，由智能体自己的 launch 决定。
 
 已打开的会话保持原有权限。`/preset NAME` 切换预设并保留权限；会改变沙箱约束的切换（包括任何权限变化）会被拒绝，须新建会话。自定义预设若自行写入沙箱或命令审批设置，就固定了自己的权限，会拒绝 `--permission` 选择。
 

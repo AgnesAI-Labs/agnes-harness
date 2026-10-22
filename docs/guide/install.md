@@ -31,7 +31,7 @@ npx @agnes/harness web
 Do not run that command against the registry until the package is published. A packed tarball contains the native prebuild for the platform that built it (`dist/prebuilds/<platform>-<arch>/`), plus the bundled daemon, worker, Web assets, bundled plugins, LICENSE, and NOTICE. It has no workspace dependencies. Build the candidate from a source checkout with:
 
 ```sh
-pnpm --filter @agnes/cli pack:npx
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli pack:npx
 ```
 
 The command prints the directory to pass to `npm pack`. The workspace package name stays `@agnes/cli`.
@@ -64,14 +64,15 @@ If you already have a checkout, enter that directory. Run the following commands
 Start with these commands at the repository root:
 
 ```sh
-node --version
-corepack pnpm --version
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/cli build:local
-node agnes.mjs --help
+mise trust
+mise install
+mise exec -- node tools/toolchain/run.mjs
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
+mise exec -- node agnes.mjs --help
 ```
 
-If `pnpm` is unavailable, substitute `corepack pnpm` in the following commands. There is no root `pnpm build` script. The CLI package's `build:local` creates the complete local distribution.
+Install mise and use the repository-local configuration above. The exact development Node patch is owned by [`.node-version`](../../.node-version); `engines.node` is the supported user runtime range. The entry verifies Node, pinned pnpm and a child runtime before each build/check, without changing your global shell or existing daemon. There is no root `pnpm build` script. The CLI package's `build:local` creates the complete local distribution.
 
 Output is written to `packages/cli/dist/local/`, including `agnes.mjs`, daemon, worker, Web, and platform resources. Move the entire directory when relocating a build. `@agnes/web build` builds only the Web package and cannot replace the full local distribution.
 
@@ -86,10 +87,10 @@ Use Node with its matching `include/node/node_api.h` headers, a C/C++ toolchain,
 ```sh
 sudo apt-get update
 sudo apt-get install -y build-essential libssl-dev python3 git bubblewrap
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/host build:native
-pnpm --filter @agnes/system-node build:native
-pnpm --filter @agnes/cli build:local
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 node agnes.mjs doctor
 ```
 
@@ -102,8 +103,8 @@ Credentials use private owned directories (`0700`) and files (`0600`); a desktop
 For the local Web gate, provision the pinned browser and libraries once, then run the offline fixture suite:
 
 ```sh
-pnpm exec playwright install --with-deps chromium
-pnpm e2e:web
+mise exec -- node tools/toolchain/run.mjs exec playwright install --with-deps chromium
+mise exec -- node tools/toolchain/run.mjs e2e:web
 ```
 
 Provisioning uses the network; the gate uses cached Chromium, a fresh isolated home and local synthetic services. Reviewed Linux baselines are separate from macOS baselines. See the [maintained gate](../../tools/e2e-web/README.md).
@@ -112,13 +113,13 @@ Provisioning uses the network; the gate uses cached Chromium, a fresh isolated h
 
 ## Build on Windows
 
-Install dependencies first, then run the following in the same PowerShell session:
+Install dependencies first. Start a PowerShell with `mise exec -- powershell -NoProfile`, then run the following in that same shell so header preparation and the build use the pinned Node:
 
 ```powershell
 $ErrorActionPreference = 'Stop'
 & .\.github\scripts\prepare-windows-native.ps1 -CacheRoot "$env:LOCALAPPDATA\node-gyp\Cache"
 if ($LASTEXITCODE -ne 0) { throw 'Node headers unavailable' }
-pnpm.cmd --filter @agnes/cli build:local
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 node .\packages\cli\dist\local\agnes.mjs --help
 ```
@@ -153,6 +154,17 @@ For regular use, you may leave `AGH_HOME` unset; the default is `~/.agh`. A cano
 
 <a id="重建与版本切换"></a>
 
+## Data format and upgrade
+
+AGH does not migrate runtime data. The home-layout gate (`E_HOME_VERSION`) and SQLite data-directory gate are separate. An unsupported home layout requires a new empty private `AGH_HOME`; do not add a marker to an old folder.
+
+For a supported home layout, SQLite checks the data format before opening storage:
+
+- `E_DATA_DIR_STALE`: an older or unversioned format, retired tables, or package tables without their ledger. Stop AGH and back up the data directory named in the error. Delete only its `sessions.db`, `sessions.db-wal`, `sessions.db-shm` and `tables/`. Keep `profiles/`, including `<AGH_HOME>/profiles/` with model/account configuration. This reset loses sessions, schedules, workspace bindings and plugin settings; reinstall plugins you installed yourself.
+- `E_DATA_DIR_NEWER`: a newer AGH wrote the directory. Upgrade AGH to a build that supports it; do not reset or downgrade its version stamp.
+
+Both refusals leave existing data unchanged. The default ledger is `<AGH_HOME>/data/sessions.db`; a configured data-directory override changes the target, so use the exact paths in the error. Nothing is converted, and old session pins or trust metadata do not make an incompatible database reusable.
+
 ## Rebuild or switch versions
 
 Do not overwrite a running distribution, particularly while Windows has a native DLL open. Build to a new output directory first.
@@ -161,7 +173,7 @@ Run from the source repository root. `--output-dir` must be absolute: pnpm's `--
 
 ```sh
 AGH_BUILD_ROOT="$(mktemp -d /tmp/agh-build.XXXXXX)"
-corepack pnpm --filter @agnes/cli build:local --output-dir "$AGH_BUILD_ROOT/runtime"
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local --output-dir "$AGH_BUILD_ROOT/runtime"
 node "$AGH_BUILD_ROOT/runtime/agnes.mjs" --help
 ```
 
@@ -171,7 +183,7 @@ In PowerShell, also from the source repository root:
 $aghBuildRoot = Join-Path ([IO.Path]::GetTempPath()) ('agh-build-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $aghBuildRoot | Out-Null
 $aghBuildOutput = Join-Path $aghBuildRoot 'runtime'
-corepack.cmd pnpm --filter @agnes/cli build:local --output-dir $aghBuildOutput
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local --output-dir $aghBuildOutput
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 node (Join-Path $aghBuildOutput 'agnes.mjs') --help
 ```

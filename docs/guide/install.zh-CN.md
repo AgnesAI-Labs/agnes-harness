@@ -29,7 +29,7 @@ npx @agnes/harness web
 在发布之前，不要对注册表执行这条命令。安装包带有打包平台的原生预编译文件（`dist/prebuilds/<platform>-<arch>/`），以及打好的 daemon、worker、Web 资源、内置插件、LICENSE 和 NOTICE，安装时没有 workspace 依赖。在源码目录中构建候选包：
 
 ```sh
-pnpm --filter @agnes/cli pack:npx
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli pack:npx
 ```
 
 命令会打印交给 `npm pack` 的目录。仓库里的工作区包名仍是 `@agnes/cli`。
@@ -58,14 +58,15 @@ cd agnes-harness
 在仓库根先检查：
 
 ```sh
-node --version
-corepack pnpm --version
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/cli build:local
-node agnes.mjs --help
+mise trust
+mise install
+mise exec -- node tools/toolchain/run.mjs
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
+mise exec -- node agnes.mjs --help
 ```
 
-没有可用的 `pnpm` 命令时，把下文 `pnpm` 换成 `corepack pnpm`。根目录没有 `pnpm build` 脚本；完整运行目录由 CLI 包的 `build:local` 构建。
+安装 mise 并使用上述仓库本地配置。[`.node-version`](../../.node-version) 固定开发 Node 补丁版本，`engines.node` 表示用户运行时支持范围。入口在构建／检查前校验 Node、固定 pnpm 和子进程运行时，不改全局 shell 或已有 daemon。根目录没有 `pnpm build`；`@agnes/cli build:local` 生成完整本地分发。
 
 输出位于 `packages/cli/dist/local/`，包括 `agnes.mjs`、daemon、worker、Web 与平台所需辅助资源。搬运时保持整个目录，不要只复制入口文件。`@agnes/web build` 仅构建 Web，不能替代完整本地分发。
 
@@ -80,10 +81,10 @@ Linux 可由系统包管理器安装 bubblewrap（例如 Debian/Ubuntu 的 `apt 
 ```sh
 sudo apt-get update
 sudo apt-get install -y build-essential libssl-dev python3 git bubblewrap
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/host build:native
-pnpm --filter @agnes/system-node build:native
-pnpm --filter @agnes/cli build:local
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 node agnes.mjs doctor
 ```
 
@@ -96,21 +97,21 @@ Linux L1 命令隔离使用 bubblewrap，并验证文件、进程与网络的完
 本地 Web gate 首次使用前安装固定版本浏览器及系统库，再运行离线 fixture 套件：
 
 ```sh
-pnpm exec playwright install --with-deps chromium
-pnpm e2e:web
+mise exec -- node tools/toolchain/run.mjs exec playwright install --with-deps chromium
+mise exec -- node tools/toolchain/run.mjs e2e:web
 ```
 
 准备依赖时使用网络；gate 使用缓存 Chromium、全新隔离 home 和本地模拟服务。已评审 Linux 基线与 macOS 基线分别保存，详见[维护中的 gate](../../tools/e2e-web/README.md)。
 
 ## Windows 构建
 
-先安装依赖，在同一个 PowerShell 会话中运行：
+先安装依赖，再用 `mise exec -- powershell -NoProfile` 启动 PowerShell，在该 shell 内运行以下命令，使 header 准备和构建使用同一固定 Node：
 
 ```powershell
 $ErrorActionPreference = 'Stop'
 & .\.github\scripts\prepare-windows-native.ps1 -CacheRoot "$env:LOCALAPPDATA\node-gyp\Cache"
 if ($LASTEXITCODE -ne 0) { throw 'Node headers unavailable' }
-pnpm.cmd --filter @agnes/cli build:local
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 node .\packages\cli\dist\local\agnes.mjs --help
 ```
@@ -141,6 +142,17 @@ Windows 下请让 AGH 创建新 home，确保目录、布局标记和初始化�
 
 普通长期使用可以不设置 `AGH_HOME`，默认是 `~/.agh`。每个规范化 AGH_HOME 只有一个后台；配置档和 dataDir 必须与运行实例一致。不同项目目录不是自动隔离的账号或后台。Unix socket 路径有限，实验 home 尽量短。默认 socket 路径过长时，后台会选择经过身份与权限校验的短临时目录；显式指定的 socket 路径过长时仍会拒绝启动。
 
+## 数据格式与升级
+
+AGH 不迁移运行数据。home 布局闸门（`E_HOME_VERSION`）与 SQLite 数据目录闸门相互独立。不支持的 home 布局必须改用新的私有空 `AGH_HOME`；不要给旧目录补写标记。
+
+home 布局受支持时，SQLite 会在打开存储前检查数据格式：
+
+- `E_DATA_DIR_STALE`：旧版或未标记格式、已退役的表，或只有插件表而没有账本。停止 AGH，备份错误指出的数据目录，只删除其中的 `sessions.db`、`sessions.db-wal`、`sessions.db-shm` 和 `tables/`。保留 `profiles/`，包括保存模型和账号配置的 `<AGH_HOME>/profiles/`。重置会丢失会话、日程、工作区绑定和插件设置；自行安装的插件需要重新安装。
+- `E_DATA_DIR_NEWER`：目录由较新的 AGH 写入。升级到支持该格式的 AGH；不要重置目录或调低版本标记。
+
+两种拒绝都不改动已有数据。默认账本为 `<AGH_HOME>/data/sessions.db`；配置 dataDir 覆盖后目标不同，应以错误中的精确路径为准。不转换任何数据，旧会话 pin 或信任元数据也不能使不兼容数据库继续使用。
+
 ## 重建与版本切换
 
 不要覆盖正在运行的分发目录，尤其是 Windows 原生 DLL 被占用时。可以先在新的输出目录构建：
@@ -149,7 +161,7 @@ Windows 下请让 AGH 创建新 home，确保目录、布局标记和初始化�
 
 ```sh
 AGH_BUILD_ROOT="$(mktemp -d /tmp/agh-build.XXXXXX)"
-corepack pnpm --filter @agnes/cli build:local --output-dir "$AGH_BUILD_ROOT/runtime"
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local --output-dir "$AGH_BUILD_ROOT/runtime"
 node "$AGH_BUILD_ROOT/runtime/agnes.mjs" --help
 ```
 
@@ -159,7 +171,7 @@ PowerShell（同样从源码仓库根执行）：
 $aghBuildRoot = Join-Path ([IO.Path]::GetTempPath()) ('agh-build-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $aghBuildRoot | Out-Null
 $aghBuildOutput = Join-Path $aghBuildRoot 'runtime'
-corepack.cmd pnpm --filter @agnes/cli build:local --output-dir $aghBuildOutput
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local --output-dir $aghBuildOutput
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 node (Join-Path $aghBuildOutput 'agnes.mjs') --help
 ```

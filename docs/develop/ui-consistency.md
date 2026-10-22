@@ -4,7 +4,7 @@ English | [简体中文](ui-consistency.zh-CN.md)
 
 [Documentation](../README.md) · [Frontend](frontend.md) · [Skins](skins.md) · [UI coverage](ui-coverage.md)
 
-This is a presentation contract for the existing Web interface. It reuses `@agnes/web-ui`, its public exports and the existing theme. It keeps backend decisions, form values and permissions with their owning modules. The [source inventory and implementation sequence](ui-consistency-audit.md) distinguish existing components from work still needed.
+This is a presentation contract for the existing Web interface. It reuses `@agnes/web-ui`, its public exports and the existing theme. It keeps backend decisions, form values and permissions with their owning modules. See [UI coverage](ui-coverage.md) for current surfaces and verification boundaries, and the [source map](source-map.md) for owners.
 
 The workbench layout belongs to `AppShell`. Its controller snapshots and replaceable slot surfaces share one React root and one antd `ConfigProvider`. Use `mountRegion` / `renderRegion` / `unmountRegion` for a controller-owned host: these render application portals, and never create another root. Render translated text in components; locale changes must preserve draft values, focus and controller-bound node IDs. Overlays share the shell container; popups opened from native dialogs stay within their dialog's top layer.
 

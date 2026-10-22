@@ -27,6 +27,9 @@ When exporting a Web diagnostic ZIP with logs selected, `logs/daemon-runtime.jso
 | Symptom | Check and next action |
 | --- | --- |
 | Old Node / SQLite module error | Confirm Node >=24.10; your default shell and build may use different Node installations |
+| `E_HOME_VERSION` | Unsupported home layout: preserve it and select a new empty private `AGH_HOME` |
+| `E_DATA_DIR_STALE` | Stop AGH, back up the named data directory, delete only `sessions.db`, its `-wal`/`-shm` files and `tables/`, keeping `profiles/`. Sessions, schedules, workspace bindings and plugin settings are lost; reinstall your plugins. Nothing is migrated; see [recovery](install.md#data-format-and-upgrade) |
+| `E_DATA_DIR_NEWER` | Upgrade AGH to support this data format; the refusal changes nothing |
 | Missing `dist/local/agnes.mjs` | Run the complete `build:local` from the repository root; stopping the daemon will not create a missing build |
 | Missing or incompatible native helper | Keep the full distribution and rebuild for the current OS/architecture/Node; do not copy a single binary from another platform |
 | `listen EPERM` | The execution environment prohibits sockets/loopback listeners; tests need the appropriate environment permissions without bypassing product security policy |

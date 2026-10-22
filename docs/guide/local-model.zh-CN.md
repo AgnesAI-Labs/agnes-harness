@@ -24,8 +24,8 @@
 packages:
   - id: "@agnes/model-adapters"
     source: "file:./model-adapters"
-    config:
-      model-adapter: { provider: local-openai }
+providers:
+  model-adapter: { provider: local-openai }
 provider:
   package: "@agnes/ai"
   catalog: { include: [] }

@@ -50,8 +50,8 @@ Saving or testing an existing account with a changed endpoint requires an explic
 | `adapters` | storage/fs/exec/platform/secrets selection |
 | `transports` | stdio/unix/ws-tls; remote configuration also needs certificates and authentication |
 | `dataDir`, `cacheDir` | Data/cache locations; a running canonical-home daemon rejects incompatible profile/data-directory configuration |
-| `presets` | default and allowed recipes; the default must be allowed. The older names `read-only`, `workspace-write` and `full-access` are still accepted and mean `standard` under that permission |
-| `permissions` | default and allowed permission levels (`read-only`, `workspace-write`, `full-access`); the default must be allowed. Without this block the allowed levels are derived from `presets.allowed`, and a profile layer that sets `presets` without `permissions` drops the permissions of the layers below it; see [permissions and presets](../guide/security.md#permissions-and-presets) |
+| `presets` | default and allowed recipes; the default must be allowed. Retired permission-as-preset names (`read-only`, `workspace-write`, `full-access`) are refused; use a recipe such as `standard` with a separate permission |
+| `permissions` | default and allowed permission levels (`read-only`, `workspace-write`, `full-access`); the default must be allowed. Without this block only `workspace-write` is allowed; recipe and permission allowlists are independent; see [permissions and presets](../guide/security.md#permissions-and-presets) |
 | `approvals.mode` | manual/off/auto-review |
 | `reconcile` | immediate/turn/step; maxWaitMs applies only to turn/step |
 | `policy.capabilityCeiling` | Capability ceiling; current local-dev and enterprise templates include services |

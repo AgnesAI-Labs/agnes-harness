@@ -25,6 +25,9 @@ Web 诊断 ZIP 勾选日志后，`logs/daemon-runtime.jsonl` 包含当前及上�
 | 现象 | 核对与处理 |
 | --- | --- |
 | Node 太旧/SQLite 模块错误 | 确认 Node >=24.10；默认 shell 与构建使用的 Node 可能不同 |
+| `E_HOME_VERSION` | home 布局不受支持：保留原目录，另选新的私有空 `AGH_HOME` |
+| `E_DATA_DIR_STALE` | 停止 AGH，备份错误指出的数据目录，只删除 `sessions.db`、其 `-wal`/`-shm` 文件及 `tables/`，保留 `profiles/`。会丢失会话、日程、工作区绑定和插件设置，自装插件须重装；不迁移数据，见[恢复步骤](install.zh-CN.md#数据格式与升级) |
+| `E_DATA_DIR_NEWER` | 升级 AGH 以支持该格式；拒绝不会修改数据 |
 | 缺少 `dist/local/agnes.mjs` | 在仓库根运行完整 `build:local`；不是 daemon stop 能修复的问题 |
 | native helper 缺失/不兼容 | 保留完整分发，按当前 OS/架构/Node 重建；不复制其他平台的单文件 |
 | `listen EPERM` | 执行环境禁止 socket/回环监听；测试需允许相应权限，不通过修改产品安全策略绕过 |

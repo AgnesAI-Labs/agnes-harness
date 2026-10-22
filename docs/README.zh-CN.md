@@ -13,12 +13,16 @@
 最小工具插件：从已构建的源码仓运行以下命令，把一个回显工具加入隔离环境；无需声明智能体或应用。
 
 ```sh
+export AGH_SOURCE="$PWD"
 export AGH_HOME="$(mktemp -d /tmp/agh-hello.XXXXXX)"
 export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
 export AGNES_PROFILE=local-dev
-node templates/create-agh-plugin.mjs tool hello-tool "$AGH_HOME/plugins/hello-tool" --local
-node agnes.mjs dev "$AGH_HOME/plugins/hello-tool"
-node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
+AGH_WORKSPACE="$(mktemp -d /tmp/agh-hello-workspace.XXXXXX)"
+cd "$AGH_WORKSPACE"
+mkdir -p .agh/plugins
+node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/hello-tool --local
+node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-tool
+node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"}'
 ```
 
 [五步工具教程](extend/quickstart.zh-CN.md) · [四步 Loop 教程](extend/first-loop.zh-CN.md) · [Acme 参考应用](../examples/acme/README.zh-CN.md)
@@ -70,6 +74,8 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 | [排错](guide/troubleshooting.zh-CN.md) | 从错误码和运行状态定位下一步 |
 
 ## 部署管理员
+
+[数据格式恢复](guide/install.zh-CN.md#数据格式与升级) · [应用与界面选择](extend/applications.zh-CN.md) · [有状态作者测试](extend/testing.zh-CN.md)
 
 [插件生命周期](guide/packages.zh-CN.md) · [模型与账号](guide/getting-started.zh-CN.md) · [网络部署](guide/deployment.zh-CN.md) · [安全与信任](guide/security.zh-CN.md) · [应用采纳与恢复](extend/applications.zh-CN.md)
 

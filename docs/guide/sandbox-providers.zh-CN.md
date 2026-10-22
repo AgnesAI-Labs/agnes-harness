@@ -23,7 +23,7 @@ providers:
 
 ## 远程提供者
 
-命令在另一台机器上运行的提供者，从自己的包里导出 `sandboxProvider`。用 `@agnes/sandbox-remote` 的 `defineRemoteSandboxProvider({ id, version, openTransport })` 构造，然后用 `sandbox: { provider: <id> }` 选中，通道设置写在该包的配置里（`rootTemplate`、`keepOnClose`、`providerTtlMs`，以及 `openTransport` 自己读取的内容）。宿主在启动时打开一次通道，并在其上运行自己的执行门、文件策略和工作区围栏，所以提供者实例本身从不承载命令。只有被选中的远程提供者才会打开通道。远程工作区不能再选择另一个提供者。
+命令在另一台机器上运行的提供者，从自己的包里导出 `sandboxProvider`。用 `@agnes/sandbox-remote` 的 `defineRemoteSandboxProvider({ id, version, openTransport })` 构造，然后用 `providers.sandbox: { provider: <id> }` 选中，通道设置写在该包的配置里（`rootTemplate`、`keepOnClose`、`providerTtlMs`，以及 `openTransport` 自己读取的内容）。宿主在启动时打开一次通道，并在其上运行自己的执行门、文件策略和工作区围栏，所以提供者实例本身从不承载命令。只有被选中的远程提供者才会打开通道。远程工作区不能再选择另一个提供者。
 
 ## 能力
 

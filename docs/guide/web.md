@@ -71,6 +71,8 @@ In a new conversation, the workspace chip below the composer opens a searchable 
 
 The sidebar lists **New conversation**, **Plugins**, **Agents**, **Automation**, then workspaces and conversation history. In the official UI, the footer shows only **Settings**; applications remain available from **Agents** and **Settings → Application**. When an app is adopted, the host-owned **Return to official UI** and **Switch application** entries remain available. Agents come from explicit plugin launch declarations; the built-in **General assistant** lets you choose a **Running mode** directly. Plugins use one inventory with **Source** and **Capability** filters, with separate **Skills** and **Connections (MCP)** tabs. Plugin rows explain their purpose and current status; registration details are collapsed under technical details. Settings groups are **General / Models / Permissions / Application / Advanced**; **Models → Run configuration** retains the execution configuration, including **Additional combinations for all conversations**. Application settings let you preview, adopt or clear an application. The Agents page follows the effective application’s visible-agent list and places its default agent first; execution bindings of existing sessions stay unchanged.
 
+**Settings → Application** keeps application and interface previews on the same settings page; review their identity, visible changes, agents and permissions before adopting. The standard sidebar footer opens **Settings**; application recovery is available there and through Agents. **Settings → General** has separate palette, skin, font-size and language controls. Skin and language use keyboard-accessible pickers; palette offers System, Light and Dark. A saved skin choice survives a temporarily missing plugin and returns when that skin is available again; the host appearance is used in the meantime.
+
 In **Settings → Application → Advanced interface choices**, preview and choose individual navigation,
 conversation, composer, goal, interaction or deliverables implementations from trusted enabled plugins.
 Rows show **Default / Application / Your choice**. **Restore default** removes just one role override.
@@ -85,6 +87,8 @@ On the new-session home, an empty composer types sample tasks from the agent cat
 
 The first message proceeds once the new session is ready; refreshing the sidebar does not block sending. A sidebar refresh failure is reported separately and does not restore an already submitted message as a draft.
 Resource updates discovered during startup are prepared while the worker is idle. Updates discovered during a running turn remain deferred until before the next turn. Repeated Skill scans with unchanged resources do not trigger another worker reload.
+
+A failed turn shows a localized explanation and any safe HTTP status/request ID. Transient failures offer **Retry**; rejected credentials or missing models offer account/model settings instead. Retry submits that turn's original user content through the normal send path, without replacing the current draft. It is unavailable while offline, opening, stopping or already running. Context, workspace, budget and step-limit failures require the indicated correction. Expand **Technical details** to copy the recorded code, reason, message and turn/session identifiers.
 
 ### Attach files and images
 

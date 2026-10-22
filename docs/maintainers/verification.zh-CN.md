@@ -8,22 +8,22 @@
 
 ## 环境与前置步骤
 
-从仓库根目录执行，Node/pnpm 版本见 [package.json](../../package.json)：
+从仓库根目录执行，先运行 `mise trust` 和 `mise install`。开发 Node 补丁版本由 [`.node-version`](../../.node-version) 固定，用户支持范围和 pnpm pin 见 [package.json](../../package.json)。安装、构建和检查统一走同一入口；它打印实际 `process.version`、`process.execPath` 并核验子进程运行时：
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/host build:native
-pnpm --filter @agnes/system-node build:native
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
 ```
 
 ## 静态与自动化检查
 
 ```sh
-node tools/public-docs/verify.mjs
-pnpm typecheck
-pnpm lint
-pnpm gen:check
-pnpm exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs exec node tools/public-docs/verify.mjs
+mise exec -- node tools/toolchain/run.mjs typecheck
+mise exec -- node tools/toolchain/run.mjs lint
+mise exec -- node tools/toolchain/run.mjs gen:check
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/guards/src tools/public-docs/examples.test.ts --maxWorkers=1
 ```
 
 [仓库门禁指南](../../tools/guards/README.zh-CN.md) 区分只报告的 scope 行数、硬性文件上限、
@@ -52,7 +52,7 @@ heavy 层 `packages/cli/test/startup-perf.e2e.test.ts` 通过 `AGNES_LOCAL_CLI` 
 包加载性能门位于 `tools/plugin-performance.slow.test.ts` 的 **gates real immutable package preparation** 用例。在性能测试机器上使用 Node 24 串行运行：
 
 ```sh
-pnpm exec vitest run tools/plugin-performance.slow.test.ts --project heavy --maxWorkers=1 -t 'gates real immutable package preparation'
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/plugin-performance.slow.test.ts --project heavy --maxWorkers=1 -t 'gates real immutable package preparation'
 ```
 
 它安装、信任并固定 20 个合成包，每包包含 200 × 1 KiB 负载文件、模块、清单和两个 32 KiB 客户端资源。三轮分别测量冷/热 inventory、不可变快照、真实 Host 包装配阶段（在 native/provider 启动前停止）、只读客户端列表/资源，以及包 IO 期间 Surface 变更事件的路由发布时间。冷读使用新的 reader 和空的 loader/client 磁盘缓存，不清空操作系统缓存。Surface 传输使用合成 SDK 响应，订阅与路由查询使用生产代码；不代表已验证 daemon IPC 或浏览器渲染。
@@ -63,26 +63,16 @@ pnpm exec vitest run tools/plugin-performance.slow.test.ts --project heavy --max
 
 ## 前一构建升级门
 
-统一前的旧插件元数据现在必须明确拒绝并提示使用干净 home，lock、快照、pin 与信任字节保持不变。只有格式仍受支持的基线才验证续跑；闸门不再注入旧元数据或将旧信任转入新快照。
+[前一构建测试](../../tools/upgrade/previous-build.e2e.test.ts) **默认暂停**，包括 CI heavy 层。固定基线早于扩展 API 5.0 和 SQLite 数据目录闸门，夹具插件的 API 范围与持久格式均不兼容。跳过不代表升级验收通过。
 
-```sh
-pnpm exec vitest run tools/upgrade/previous-build.e2e.test.ts --project heavy --maxWorkers=1
-```
-
-此常设重型门从当前工作树和 [distributions.mjs](../../tools/upgrade/distributions.mjs) 固定的 plugin-core 提交构建真实发行包。较新基线早于客户端规范化与内置默认包修复；另一条更早基线早于账本追加水位线。测试在隔离私有 home 中创建回环模型账号、普通/工具/附件/交付物/分叉/队列历史、可信插件、设置、日程和触发器；每条基线均覆盖正常停机与进程丢失后升级；崩溃路径等待旧 writer 租约自然到期（最多 60 秒），不删除占用记录。已有分叉夹具由较早构建创建：较新基线在创建分叉时会错误拒绝合法的 null inbox 清空记录；当前构建必须读取并继续较早分叉，包括这些清空记录。断言原历史事件不变、历史可读可续写、授权不扩张、内置包字节随发行包更新，以及必要时通过原生决策恢复托管服务。不运行 home 转换或旧产品迁移。历史呈现检查使用 Web 时间线投影，浏览器布局由独立门验证。默认包发布期间出现 `MANAGED_RESOURCE_NOT_RECOVERABLE` 时，托管恢复最多额外冷启动一次当前发行包，随后原生审批及健康检查必须成功；这一已知发布限制会明确记录。
-
-使用 `AGH_UPGRADE_PREVIOUS_REF=<commit>` 可选择另一较新基线。Git 必须包含两个固定提交，浅克隆先执行 `git fetch --unshallow`。可选绝对目录 `AGH_UPGRADE_PREVIOUS_DIST`、`AGH_UPGRADE_LEDGER_DIST`、`AGH_UPGRADE_CURRENT_DIST` 可复用完整构建，字节须对应所选源码。默认构建将较新的前版/当前发行包版本指定为 `1.0.0`/`1.1.0`，实际触发内置包随发行升级。`AGH_UPGRADE_KEEP=1` 保留成功运行的临时产物；失败始终保留并打印位置。安装构建依赖需要访问包注册表；模型流量仅访问回环地址并使用假密钥。启动环境不继承操作者凭据，使用私有 home。串行运行，预留三套发行包的磁盘空间，并按安装指南准备原生工具链。
-
-排障时可用 `AGH_UPGRADE_CASE=recent|legacy`、`AGH_UPGRADE_VARIANT=clean|unclean` 缩小范围；完整门应不设置这两项。
-
-现有 CI heavy 任务自动执行：PR 覆盖 Linux，main、定时和手动运行覆盖 Linux/macOS，并获取完整 Git 历史。Windows 显式跳过此门，原生崩溃及进程树验收留待同事跟进；POSIX 通过不代表 Windows 已验证。
+维护者须先选择 API 5.0 且数据格式受支持的兼容基线，才可用 `AGH_UPGRADE_GATE=1` 和 `AGH_UPGRADE_PREVIOUS_REF` 显式启用。测试意图覆盖正常停机、进程丢失、历史／pin 保留及旧元数据拒绝；Windows 仍跳过。基线与可选分发输入见 [distributions.mjs](../../tools/upgrade/distributions.mjs)。不要强行接纳旧数据或转换信任字节。用户恢复按[数据格式恢复](../guide/install.zh-CN.md#数据格式与升级)处理，不提供运行数据迁移。
 
 <a id="构建与真实本地进程"></a>
 
 ## 构建与真实本地进程
 
 ```sh
-pnpm --filter @agnes/cli build:local
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
 node agnes.mjs --help
 node --import tsx tools/public-docs/smoke.mjs
 ```

@@ -24,8 +24,8 @@ Add a route to the existing profile's provider configuration. Preserve its provi
 packages:
   - id: "@agnes/model-adapters"
     source: "file:./model-adapters"
-    config:
-      model-adapter: { provider: local-openai }
+providers:
+  model-adapter: { provider: local-openai }
 provider:
   package: "@agnes/ai"
   catalog: { include: [] }

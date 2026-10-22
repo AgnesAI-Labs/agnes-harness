@@ -37,9 +37,9 @@
 ## 文档检查
 
 ```sh
-node tools/public-docs/verify.mjs
-pnpm exec vitest run tools/public-docs/examples.test.ts --maxWorkers=1
-pnpm gen:check
+mise exec -- node tools/toolchain/run.mjs exec node tools/public-docs/verify.mjs
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/public-docs/examples.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs gen:check
 ```
 
 检查覆盖根目录入口、中英文配对、语言切换、链接与锚点、常见敏感信息模式，以及[源码核对清单](../../tools/public-docs/source-checks.json)。它不抓取外部网址，也不能替代教程执行、浏览器验收或发行审核。包内生成文档应先修改生成器，再重新生成。

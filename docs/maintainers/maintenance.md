@@ -45,9 +45,9 @@ Root [README.md](../../README.md) is the default English project overview; [READ
 ## Documentation checks
 
 ```sh
-node tools/public-docs/verify.mjs
-pnpm exec vitest run tools/public-docs/examples.test.ts --maxWorkers=1
-pnpm gen:check
+mise exec -- node tools/toolchain/run.mjs exec node tools/public-docs/verify.mjs
+mise exec -- node tools/toolchain/run.mjs exec vitest run tools/public-docs/examples.test.ts --maxWorkers=1
+mise exec -- node tools/toolchain/run.mjs gen:check
 ```
 
 The checker verifies root entry points, translation pairs, language switches, links and anchors, common sensitive-data patterns, and the [source-check manifest](../../tools/public-docs/source-checks.json). It does not fetch external URLs or replace tutorial execution, browser acceptance, or distribution review. Modify generators before regenerating package documentation.

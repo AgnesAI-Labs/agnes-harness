@@ -13,12 +13,16 @@
 最小工具插件：从已构建的源码仓运行以下命令，把一个回显工具加入隔离环境；无需声明智能体或应用。
 
 ```sh
+export AGH_SOURCE="$PWD"
 export AGH_HOME="$(mktemp -d /tmp/agh-hello.XXXXXX)"
 export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
 export AGNES_PROFILE=local-dev
-node templates/create-agh-plugin.mjs tool hello-tool "$AGH_HOME/plugins/hello-tool" --local
-node agnes.mjs dev "$AGH_HOME/plugins/hello-tool"
-node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
+AGH_WORKSPACE="$(mktemp -d /tmp/agh-hello-workspace.XXXXXX)"
+cd "$AGH_WORKSPACE"
+mkdir -p .agh/plugins
+node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/hello-tool --local
+node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-tool
+node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"}'
 ```
 
 [快速开始](docs/guide/quickstart.zh-CN.md) · [文档](docs/README.zh-CN.md) · [构建插件](docs/extend/quickstart.zh-CN.md) · [Acme 应用](examples/acme/README.zh-CN.md)
@@ -57,18 +61,22 @@ node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
 
 ## 新产品与旧环境
 
-本版本以全新的插件架构作为新产品交付，不迁移或继续使用插件架构之前旧产品的运行数据。下述干净 home 规则也适用于持久格式已退役的早期 plugin-core 构建：遇到旧格式会明确拒绝并提示使用新的空 home，不转换数据或沿用旧信任摘要。如果你曾使用插件架构之前的旧产品，请在启动新版本前删除或移走旧运行目录：默认是 `~/.agh`，设置过 `AGH_HOME` 时则是该变量指向的目录。也可以保留旧目录，并把 `AGH_HOME` 设置为另一个新的私有空目录。新版本会在新目录中创建自己的环境；模型账号和插件需要重新配置。检测到旧布局时，启动会被拒绝，程序不会自动删除或转换旧数据。
+本版本基于插件架构作为新产品交付，不迁移或沿用旧产品运行数据与信任摘要。旧版或未标记的 home 布局以 `E_HOME_VERSION` 拒绝：保留原目录，并将 `AGH_HOME` 指向新的私有空目录（默认 home 为 `~/.agh`），在其中重新配置账号和插件。启动不会删除或转换旧 home。
 
 如需保留旧会话，请先复制该文件夹。
 
+已有受支持 home 遇到 `E_DATA_DIR_STALE` 时，只需按错误重置指定 SQLite 账本与 `tables/`，保留 `profiles/`；`E_DATA_DIR_NEWER` 则须升级 AGH。不迁移任何数据。精确路径和数据损失见[数据格式恢复](docs/guide/install.zh-CN.md#数据格式与升级)。
+
 ## 从源码开始
 
-准备 Node.js **24.10+**、固定 pnpm **10.34.5** 与平台原生工具链（[安装指南](docs/guide/install.zh-CN.md)）。克隆仓库，在根目录运行：
+运行时支持 Node.js **24.10+**；源码构建和检查须通过 mise 使用 [`.node-version`](.node-version) 固定的开发补丁版本、pnpm **10.34.5** 与平台原生工具链（[安装指南](docs/guide/install.zh-CN.md)）。克隆仓库，在根目录运行：
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/cli build:local
-node agnes.mjs serve
+mise trust
+mise install
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
+mise exec -- node agnes.mjs serve
 ```
 
 打开终端打印的本机地址。[首次运行指南](docs/guide/getting-started.zh-CN.md)带你配置账号、选择模型并创建会话，每一步都可跳过。模型测试和真实模型对话可能产生费用。没有密钥也可以体验[本地 Demo](docs/extend/quickstart.zh-CN.md)，或运行[开发者机制脚本](docs/guide/demos.zh-CN.md)。

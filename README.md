@@ -13,12 +13,16 @@ English | [简体中文](README.zh-CN.md)
 Minimal tool plugin: from a built source checkout, add an echo tool in an isolated home. No agent or application declaration is required.
 
 ```sh
+export AGH_SOURCE="$PWD"
 export AGH_HOME="$(mktemp -d /tmp/agh-hello.XXXXXX)"
 export AGH_HOME="$(cd "$AGH_HOME" && pwd -P)"
 export AGNES_PROFILE=local-dev
-node templates/create-agh-plugin.mjs tool hello-tool "$AGH_HOME/plugins/hello-tool" --local
-node agnes.mjs dev "$AGH_HOME/plugins/hello-tool"
-node agnes.mjs --new -p 'call plugin_hello_tool {"message":"hello"}'
+AGH_WORKSPACE="$(mktemp -d /tmp/agh-hello-workspace.XXXXXX)"
+cd "$AGH_WORKSPACE"
+mkdir -p .agh/plugins
+node "$AGH_SOURCE/templates/create-agh-plugin.mjs" tool hello-tool .agh/plugins/hello-tool --local
+node "$AGH_SOURCE/agnes.mjs" dev .agh/plugins/hello-tool
+node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"}'
 ```
 
 [Quickstart](docs/guide/quickstart.md) · [Documentation](docs/README.md) · [Build a plugin](docs/extend/quickstart.md) · [Acme application](examples/acme/README.md)
@@ -57,18 +61,22 @@ The screenshots illustrate trust and version behavior using synthetic browser fi
 
 ## New product and old environments
 
-This version ships as a new product built on the new plugin architecture. The clean-home policy also applies to earlier plugin-core builds whose persisted formats have been retired; they are refused with a clean-home hint, without conversion or reuse of their trust digests. It does not migrate or reuse runtime data from the old AGH product. If you used that old product, remove or move its home directory before starting this version: `~/.agh` by default, or the directory selected by `AGH_HOME`. You can also keep the old directory and set `AGH_HOME` to a different, new, empty private directory. This version creates its own environment there; configure your model accounts and plugins again. Startup refuses an old-layout home and does not automatically delete or convert its data.
+This version ships as a new product built on the plugin architecture. It does not migrate or reuse the old product’s runtime data or trust digests. An old or unversioned home layout is refused with `E_HOME_VERSION`: preserve it and select a new, empty private `AGH_HOME` (`~/.agh` is the default). Configure accounts and plugins again there. Startup never deletes or converts the old home.
 
 Copy the folder first if you want to keep old sessions.
 
+For an existing supported home, `E_DATA_DIR_STALE` instead requires resetting only the named SQLite ledger and `tables/`, keeping `profiles/`; `E_DATA_DIR_NEWER` requires upgrading AGH. Nothing is migrated. See [data-format recovery](docs/guide/install.md#data-format-and-upgrade) for exact paths and data loss.
+
 ## Start from source
 
-Prepare Node.js **24.10+**, pinned pnpm **10.34.5**, and your platform's native toolchain ([installation](docs/guide/install.md)). Clone this repository and run from its root:
+The runtime supports Node.js **24.10+**; source builds and checks use the exact development patch in [`.node-version`](.node-version) through mise, with pinned pnpm **10.34.5** and your platform's native toolchain ([installation](docs/guide/install.md)). Clone this repository and run from its root:
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm --filter @agnes/cli build:local
-node agnes.mjs serve
+mise trust
+mise install
+mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
+mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
+mise exec -- node agnes.mjs serve
 ```
 
 Open the local URL printed by the terminal. The [first-run guide](docs/guide/getting-started.md) walks through account setup, model selection and your first session; every step can be skipped. Model tests and real-model conversations may incur charges. Try the [local Demo](docs/extend/quickstart.md) without a key, or run the [developer mechanism scripts](docs/guide/demos.md).
