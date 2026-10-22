@@ -1,7 +1,12 @@
 import { Terminal as Xterm } from '@xterm/headless'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CURSOR_MARKER, Text, VStack } from '../../src/tui/component.js'
-import { FooterRenderer, type ScrollMode, scrollModeFor } from '../../src/tui/footer-renderer.js'
+import {
+  FooterRenderer,
+  rewrapsFooter,
+  type ScrollMode,
+  scrollModeFor,
+} from '../../src/tui/footer-renderer.js'
 import { FakeTerminal } from '../../src/tui/terminal.js'
 import { emulate } from './harness.js'
 
@@ -381,4 +386,37 @@ it('takes the standard margin path unless the terminal is known to mishandle it 
   expect(scrollModeFor({ ZELLIJ: '0', AGH_SPLIT_FOOTER_SCROLL: 'region' })).toBe('region')
   expect(scrollModeFor({ AGH_SPLIT_FOOTER_SCROLL: 'full' })).toBe('full')
   expect(scrollModeFor({ AGH_SPLIT_FOOTER_SCROLL: 'bogus' })).toBe('region')
+})
+
+describe('FooterRenderer finds its first row after a resize from the cursor', () => {
+  // The footer is three rows, the first as wide as the screen, the cursor in the second. Once the terminal
+  // is 12 wide it answers that the cursor is on row 9: whether the wide row took three rows or still one
+  // decides where the footer starts, and erasing from too high a row would take conversation with it.
+  it.each([
+    [true, 6],
+    [false, 8],
+  ])('rewrapping terminal: %s, erases from row %i', async (rewraps, top) => {
+    const term = new FakeTerminal({ columns: 30, rows: 10 })
+    term.cursor = { row: 1, col: 1 }
+    const rows = new VStack([
+      new Text('x'.repeat(28), { wrap: false }),
+      new Text(`> ${CURSOR_MARKER}`),
+      new Text('status'),
+    ])
+    const renderer = new FooterRenderer(term, rows, new Source(), 'region', rewraps)
+    live.push(renderer)
+    renderer.start()
+    await tick()
+    const before = term.writes.length
+    term.cursor = { row: 9, col: 3 }
+    term.resize(12, 10)
+    await tick()
+    expect(term.writes.slice(before).join('')).toContain(`\x1b[${top};1H\x1b[J`)
+  })
+
+  it('treats only Zellij as a terminal that cuts old rows off instead of wrapping them', () => {
+    expect(rewrapsFooter({})).toBe(true)
+    expect(rewrapsFooter({ TMUX: '/tmp/tmux-1/default,1,0' })).toBe(true)
+    expect(rewrapsFooter({ ZELLIJ: '0' })).toBe(false)
+  })
 })

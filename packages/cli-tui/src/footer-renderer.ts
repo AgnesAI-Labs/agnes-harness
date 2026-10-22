@@ -20,6 +20,14 @@ export function scrollModeFor(env: NodeJS.ProcessEnv): ScrollMode {
   return env.ZELLIJ !== undefined ? 'full' : 'region'
 }
 
+/**
+ * Whether the terminal wraps the rows it already holds when it gets narrower. tmux and xterm.js do;
+ * Zellij cuts them off instead, so the footer keeps its height there. Others are assumed to behave like tmux.
+ */
+export function rewrapsFooter(env: NodeJS.ProcessEnv): boolean {
+  return env.ZELLIJ === undefined
+}
+
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching the escape is the point
 const SGR_SPLIT = /(\x1b\[[0-9;]*m)/
@@ -98,6 +106,7 @@ export class FooterRenderer implements ScreenRenderer {
     private readonly root: Component,
     private readonly source: FooterSource,
     private readonly mode: ScrollMode = scrollModeFor(process.env),
+    private readonly rewraps: boolean = rewrapsFooter(process.env),
   ) {}
 
   start(): void {
@@ -165,7 +174,8 @@ export class FooterRenderer implements ScreenRenderer {
     }
     this.locate((at) => {
       const { columns, rows } = this.term.size()
-      const wrapped = (line: string) => Math.max(1, Math.ceil(displayWidth(line) / Math.max(1, columns)))
+      const wrapped = (line: string) =>
+        this.rewraps ? Math.max(1, Math.ceil(displayWidth(line) / Math.max(1, columns))) : 1
       const above = this.lastFrame.slice(0, this.parked.line).reduce((n, line) => n + wrapped(line), 0)
       const guess =
         rows -
@@ -174,9 +184,8 @@ export class FooterRenderer implements ScreenRenderer {
           this.lastFrame.reduce((n, line) => n + wrapped(line), 0),
         ) +
         1
-      const top = at
-        ? Math.max(1, Math.min(rows, at.row - above - Math.floor(this.parked.col / columns)))
-        : guess
+      const across = this.rewraps ? Math.floor(this.parked.col / columns) : 0
+      const top = at ? Math.max(1, Math.min(rows, at.row - above - across)) : guess
       this.columns = columns
       this.rows = rows
       this.slack = Math.min(this.slack, top - 1)

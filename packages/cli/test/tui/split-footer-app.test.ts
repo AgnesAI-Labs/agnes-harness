@@ -161,24 +161,18 @@ it('--no-alt-screen commits a long streamed reply block by block: every paragrap
     term.feed('tell me')
     term.feed('\r')
     let committedWhileRunning = false
+    const repeats: string[] = []
     const count = (screen: { scrollback: string[]; lines: string[] }, marker: string) =>
       [...screen.scrollback, ...screen.lines].filter((line) => line.includes(marker)).length
-    await vi.waitFor(
-      async () => {
-        const screen = await emulate(term, COLS, ROWS)
-        if (
-          app?.busy &&
-          count(screen, 'Paragraph 0') > 0 &&
-          screen.scrollback.join('').includes('Paragraph 0')
-        )
-          committedWhileRunning = true
-        for (const marker of paragraphs.map((_, i) => `Paragraph ${i} `))
-          expect(count(screen, marker)).toBeLessThanOrEqual(1)
-        expect(count(screen, 'Paragraph 8 ')).toBe(1)
-        expect(app?.busy).toBe(false)
-      },
-      { timeout: 15_000, interval: 10 },
-    )
+    // Every frame the turn passes through, not only the last: no paragraph is ever on the screen twice.
+    for (const deadline = Date.now() + 20_000; Date.now() < deadline; ) {
+      const frame = await emulate(term, COLS, ROWS)
+      if (app.busy && frame.scrollback.join('').includes('Paragraph 0')) committedWhileRunning = true
+      for (const marker of paragraphs.map((_, i) => `Paragraph ${i} `))
+        if (count(frame, marker) > 1) repeats.push(`${marker}x${count(frame, marker)}`)
+      if (!app.busy && count(frame, 'Paragraph 8 ') === 1) break
+    }
+    expect(repeats).toEqual([])
     const screen = await emulate(term, COLS, ROWS)
     const text = [...screen.scrollback, ...screen.lines]
     const order = paragraphs.map((_, i) => text.findIndex((line) => line.includes(`Paragraph ${i} `)))

@@ -66,22 +66,26 @@ export function assistantView(
 
 /** What the streaming inferences have said so far, drawn under the conversation. */
 export class LiveView implements Component {
-  private streams: Array<{ text: string; thinking: string }> = []
+  private streams: () => Array<{ text: string; thinking: string }> = () => []
 
   constructor(
     private readonly ansi: ThemedAnsi,
     private readonly locale: string,
   ) {}
 
-  set(streams: Array<{ text: string; thinking: string }>): void {
-    this.streams = streams
+  /** The streams to draw: a list, or a function read at every draw for text that is still being written out. */
+  set(
+    streams: Array<{ text: string; thinking: string }> | (() => Array<{ text: string; thinking: string }>),
+  ): void {
+    this.streams = typeof streams === 'function' ? streams : () => streams
   }
 
   invalidate(): void {}
 
   render(width: number): string[] {
-    const text = this.streams.map((s) => s.text).join('')
-    const thinking = this.streams.map((s) => s.thinking).join('')
+    const streams = this.streams()
+    const text = streams.map((s) => s.text).join('')
+    const thinking = streams.map((s) => s.thinking).join('')
     const rows = thinkingRows(thinking, {
       answering: text !== '',
       width,

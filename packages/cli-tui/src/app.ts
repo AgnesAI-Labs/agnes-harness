@@ -872,7 +872,8 @@ export class TuiApp {
   private renderLive(): void {
     for (let i = this.previewEffects.length - 1; i >= 0; i--)
       if (this.previews.text(this.previewEffects[i] ?? '') === undefined) this.previewEffects.splice(i, 1)
-    this.live.set(
+    // Read when drawn, not now: the frame may write more of this text into scrollback first.
+    this.live.set(() =>
       this.previewEffects.flatMap((id) => {
         const s = this.previews.text(id)
         return s ? [{ ...s, text: this.timeline.pending(id, s.text) }] : []
