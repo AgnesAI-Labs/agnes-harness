@@ -405,28 +405,33 @@ describe('tools phase', () => {
     },
   )
 
-  it('an abort while the approval is open is cancelled for the stop, not rejected', async () => {
-    let abort!: () => void
-    const t = await atTools(
-      [toolTurn('shell', { command: 'rm' })],
-      withTool(shellTool()),
-      fakeSeams({
-        approval: {
-          ask: () => {
-            queueMicrotask(abort)
-            return new Promise(() => undefined)
+  it.each([false, true])(
+    'an abort while the approval is open is cancelled for the stop, not rejected (late answer=%s)',
+    async (lateAnswer) => {
+      let abort!: () => void
+      const t = await atTools(
+        [toolTurn('shell', { command: 'rm' })],
+        withTool(shellTool()),
+        fakeSeams({
+          approval: {
+            ask: () => {
+              queueMicrotask(abort)
+              if (lateAnswer) return Promise.resolve({ verdict: 'allowed-once' as const, answeredBy: actor })
+              return new Promise(() => undefined)
+            },
           },
-        },
-      }),
-    )
-    abort = () => void t.session.abort(actor)
-    await expect(t.session.runToolsPhase()).rejects.toBe('stopped')
-    await t.session.run({ until: 'turn-end', signal: new AbortController().signal })
-    expect((await t.session.decisions.list())[0]?.result).toMatchObject({ reason: 'stopped' })
-    expect((await t.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
-      code: 'CANCELLED',
-    })
-  })
+        }),
+      )
+      abort = () => void t.session.abort(actor)
+      await expect(t.session.runToolsPhase()).rejects.toBe('stopped')
+      await t.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect((await t.session.decisions.list())[0]?.result).toMatchObject({ reason: 'stopped' })
+      expect((await t.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
+        code: 'CANCELLED',
+      })
+      expect(await t.log.scan({ type: 'effect/dispatched', limit: 5 })).toEqual([])
+    },
+  )
 
   it('an approvalRequest hook can raise the risk/summary an approver is shown', async () => {
     let seenRequest: unknown

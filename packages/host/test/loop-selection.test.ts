@@ -94,7 +94,7 @@ async function fixture(
   const source: RuntimePluginSnapshot = {
     snapshot: {
       packageId: childModule ? 'acme/child-loop' : template ? 'tiny-loop' : '@agnes-example/dag-loop',
-      version: loopSelection.version,
+      version: manifest.version,
       snapshotId: `sha256-${'1'.repeat(64)}`,
       integrity: `sha256-${'2'.repeat(64)}`,
       treeIntegrity: hashDirectory(directory, { exclude: [] }),
@@ -135,7 +135,7 @@ async function fixture(
         ].map((id) => [
           id,
           {
-            version: id === source.snapshot.packageId ? '1.0.0' : '0.1.0',
+            version: id === source.snapshot.packageId ? source.snapshot.version : '0.1.0',
             source:
               id === source.snapshot.packageId
                 ? { type: 'file' as const, ref: 'file:fixture' }

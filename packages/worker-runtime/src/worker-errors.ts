@@ -7,18 +7,26 @@ import {
   rpcError,
 } from '@agnes/protocol'
 
-/** The worker link carries fixed public text and declared reasons, never exception messages or detail. */
+// The ledger's bounded scan diagnostic contains only counts, sequence bounds and an order enum.
+const scanDiagnostic =
+  /^E_SCAN_TRUNCATED: scan matched more than ([1-9]\d{0,15}) rows \(pageMax=\1 requested=(?:all|[1-9]\d{0,15}) fromSeq=(?:start|\d{1,16}) toSeq=(?:end|\d{1,16}) order=(?:asc|desc)\)$/
+
+/** Only fixed public text, declared reasons and the closed numeric scan diagnostic cross the link. */
 export function workerDomainFailure(error: unknown) {
   const attachment = attachmentErrorCode(error)
   if (attachment) return rpcError('INVALID_PARAMS', { code: attachment })
   let raw: unknown
+  let message: unknown
   try {
     raw =
       error && typeof error === 'object' ? Object.getOwnPropertyDescriptor(error, 'code')?.value : undefined
+    if (raw === 'E_SCAN_TRUNCATED') message = Object.getOwnPropertyDescriptor(error, 'message')?.value
   } catch {
     /* A malformed exception remains a generic worker failure. */
   }
   const code = typeof raw === 'string' && raw.length > 0 ? raw : 'E_WORKER'
+  if (code === 'E_SCAN_TRUNCATED' && typeof message === 'string' && scanDiagnostic.test(message))
+    return { code, message }
   const reason = publicErrorReason(error)
   if (code === 'E_PRESET_UNSUPPORTED') {
     if (reason === 'bundle-unavailable')

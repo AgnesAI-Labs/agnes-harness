@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { domainFailureFromUnknown, REDACTED_ERROR_MESSAGE } from '@agnes/error-sanitization'
 import { createSqliteStorage } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
+import { workerDomainFailure } from '../src/worker-errors.js'
 
 describe('domainFailureFromUnknown at the worker seam', () => {
   it('keeps a public reason and drops the rest of detail', () => {
@@ -50,6 +51,7 @@ describe('E_SCAN_TRUNCATED at the worker seam', () => {
           'E_SCAN_TRUNCATED: scan matched more than 500 rows (pageMax=500 requested=all fromSeq=start toSeq=1234 order=asc)',
       })
       expect(failure.message).not.toBe(`E_SCAN_TRUNCATED: ${REDACTED_ERROR_MESSAGE}`)
+      expect(workerDomainFailure(raised)).toEqual(failure)
     } finally {
       await storage.close()
       rmSync(dir, { recursive: true, force: true })
@@ -138,6 +140,17 @@ it('keeps startup failures closed while sharing their codes with the public cont
 it('keeps unknown worker failures generic even when exception accessors throw', async () => {
   const { workerDomainFailure } = await import('../src/worker-errors.js')
   const failures = [
+    { code: 'E_SCAN_TRUNCATED', message: 'private scan failure', detail: { secret: 'private' } },
+    {
+      code: 'E_SCAN_TRUNCATED',
+      message:
+        'E_SCAN_TRUNCATED: scan matched more than 500 rows (pageMax=500 requested=all fromSeq=start toSeq=1234 order=asc) private',
+    },
+    Object.defineProperty({ code: 'E_SCAN_TRUNCATED' }, 'message', {
+      get() {
+        throw new Error('private scan getter')
+      },
+    }),
     Object.defineProperty({ code: 'UNKNOWN_DENIED' }, 'message', {
       get() {
         throw new Error('private log')

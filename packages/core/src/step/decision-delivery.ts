@@ -40,6 +40,7 @@ export async function deliverDecision(
       throw new CoreError('E_RELATION', 'DECISION_SOURCE_CHANGED')
   },
 ): Promise<{ snapshot: DecisionSnapshot; park?: EventInput; pending?: boolean }> {
+  signal = AbortSignal.any([signal, s.ac.signal])
   if (!snapshot.result && !snapshot.invalidation) {
     const lifecycle = childLifecycle(s)
     lifecycle.assertActive()
@@ -54,7 +55,9 @@ export async function deliverDecision(
     if (!request) return { snapshot: await s.decisions.withdraw(snapshot.handle, source, 'no-approver') }
     offered = request
     const local = new AbortController()
-    const deliverySignal = AbortSignal.any([signal, local.signal, lifecycle.signal])
+    // Own stops publish cancellation before pulling the execution signal; ancestor revocation
+    // pulls descendant execution signals synchronously. Keep epoch checks at answer/commit gates.
+    const deliverySignal = AbortSignal.any([signal, local.signal])
     lifecycle.assertActive()
     const delivery = s
       .askApprovalAnswer(

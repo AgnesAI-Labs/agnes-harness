@@ -15,6 +15,7 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 - `_agnes/v1/auth.claim`
 - `_agnes/v1/agents.resolve`
 - `session/new`
+- `_agnes/v1/session.open`
 - `session/load`
 - `session/set_mode`
 - `_agnes/v1/session.attach`
