@@ -38,6 +38,7 @@
 | `agh credentials delete ID [--yes] [--force]` | 不带 `--yes` 只显示将删除的对象且不发请求；仍被使用的凭据还需要 `--force` |
 | `agh agents [--all] [--json]` | 会话及其状态（`paused`、`queued`、`open`、`closed`、`unknown`）、排队条数和最近活动；默认最近 50 个未归档会话，`--all` 不设上限；每个会话一次只读 `session.controls` |
 | `agh queue KEY [--steer] [--json] 文本...\|-` | 通过 SDK 命令路径往已有会话注入 follow-up（默认，当前 turn 之后执行）或 `--steer`（引导当前 turn）；`-` 读 stdin；拒绝打印 `refused: CODE: message`（退出码 1）；结果未确认时提示且不重发 |
+| `agh api METHOD [--params JSON\|-] [--json]` | 调用一个协议方法，先在本地校验 params schema；`agh api --help` 列出可调用方法和层级；流式、attach 和命令类方法会被拒绝（请用 `agh queue`）；daemon 拒绝输出到 stderr（退出码 1） |
 | `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | 按会话搜索历史（需管理员连接，拒绝原样输出）/会话分组 |
 | `agh sessions verify ID [--json]` | 重新完整校验历史，报告已验证序号/时间或失败序号；失败返回非零退出码。 |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | 导出；另有 `--html`、`--raw` |

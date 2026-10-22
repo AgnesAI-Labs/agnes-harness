@@ -55,6 +55,7 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
   if (p.command === 'settings') return settingsCommand(p, client, io)
   if (p.command === 'credentials') return credentialsCommand(p, client, io)
   if (p.command === 'agents') return (await import('./agents.js')).agentsCommand(p, client, io)
+  if (p.command === 'api') return (await import('./api.js')).apiCommand(p, client, io)
   if (p.command === 'queue') return (await import('./queue.js')).queueCommand(p, client, io)
   const action = p.positional[0] ?? 'list'
   if (action === 'verify') {

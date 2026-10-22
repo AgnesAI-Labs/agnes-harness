@@ -111,6 +111,8 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 
 `agh queue KEY [--steer] [--json] 文本...|-` 从另一个 shell 往已有会话注入一条消息。默认是 follow-up：等当前 turn 结束后再执行；`--steer` 则在当前 turn 中引导。`-` 从 stdin 读取消息，消息以连字符开头时在前面加 `--`。它和 TUI、Web 走同一条命令路径（commandId 和 pending journal），成功时打印 `queued followUp (seq N)`。daemon 拒绝（不是你的会话、会话已关闭、不支持）时打印 `refused: CODE: message` 并以 1 退出。如果 daemon 无法确认结果，命令会提示 `unconfirmed`、以 1 退出，并且不会重发；重试前先用 `agh sessions show KEY` 核对。
 
+`agh api METHOD [--params JSON|-] [--json]` 用 CLI 已有的连接调用一个协议方法，不新增任何权限。`METHOD` 是协议方法表里的名字，可带或不带 `_agnes/v1/` 前缀；`agh api --help` 列出所有可调用方法及其层级（`client` 或 `admin`），由协议方法表生成。`--params` 是 JSON 参数对象（`-` 从 stdin 读，默认 `{}`），发送前先在本地按协议 schema 校验：有问题的字段会被指出，并且不会发送。方法名不存在时拒绝并给出最接近的名字。结果以 JSON 打印到 stdout（`--json` 为单行）；daemon 的拒绝（包括没有 admin 连接时调用 admin 方法）以 `error: CODE: message` 打印到 stderr 并以 1 退出。流式和 attach 方法（`session.attach`、`participant.join` 等）以及命令类方法（`submit`、`session.control`、`session.fork` 等）会被拒绝，因为它们需要 commandId 和 pending journal：请用 `agh queue` 或对应子命令。ACP 会话调用（`session/prompt` 等）同样不提供。
+
 ## 退出码
 
 | 码 | 意义 |

@@ -114,7 +114,11 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     return ExitCode.OK
   }
   if (p.help) {
-    io.stdout.write(`${commandHelp(p.command, io.env.AGNES_LOCALE)}\n`)
+    const help =
+      p.command === 'api'
+        ? (await import('./commands/api.js')).apiHelp()
+        : commandHelp(p.command, io.env.AGNES_LOCALE)
+    io.stdout.write(`${help}\n`)
     return ExitCode.OK
   }
 
@@ -295,8 +299,10 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    // approvals, schedules, triggers, settings, credentials, agents and queue share sessions' boot and entry point.
-    if (/^(sessions|approvals|schedules|triggers|settings|credentials|agents|queue)$/.test(p.command ?? '')) {
+    // approvals, schedules, triggers, settings, credentials, agents, queue and api share sessions' boot and entry point.
+    if (
+      /^(sessions|approvals|schedules|triggers|settings|credentials|agents|queue|api)$/.test(p.command ?? '')
+    ) {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { sessionsCommand } = await import('./commands/sessions.js')

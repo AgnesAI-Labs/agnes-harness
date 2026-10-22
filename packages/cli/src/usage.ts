@@ -21,6 +21,7 @@ export function usage(locale = 'en'): string {
     'agh triggers [list] | add --file <f|-> | edit <ruleId> --file <f|-> | remove <ruleId> | test <ruleId> [--payload <f|->] | configure --file <f|-> [--json]',
     'agh settings [<section> [get | set (--file <f|-> | --text <t>) | test --text <query> [<provider>]]] [--json]',
     'agh agents [--all] [--json]',
+    'agh api <method> [--params <json|->] [--json]',
     'agh queue <key> [--steer] [--json] <text...|->',
     'agh credentials [list] | rename <id> <name...> | delete <id> [--yes [--force]] [--json]',
     'agh export <id> [--format agnes|sharegpt|claude-code] [--html] [--raw] [-o|--out <file>]',

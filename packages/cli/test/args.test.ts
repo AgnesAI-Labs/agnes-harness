@@ -229,6 +229,12 @@ describe('parseArgs: subcommands', () => {
     expect(late.rest).toEqual([])
   })
 
+  it('a lone dash is stdin data: a value for --file and --params, a positional otherwise', () => {
+    expect(parseArgs(['triggers', 'add', '--file', '-']).file).toBe('-')
+    expect(parseArgs(['api', 'session.list', '--params', '-']).params).toBe('-')
+    expect(parseArgs(['queue', 'k', '-']).positional).toEqual(['k', '-'])
+  })
+
   it('-- stops parsing and passes the remainder through as positionals', () => {
     expect(parseArgs(['-p', '--', '--not-a-flag', '-x']).positional).toEqual(['--not-a-flag', '-x'])
   })

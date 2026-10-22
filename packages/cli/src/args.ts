@@ -21,6 +21,7 @@ const COMMANDS = new Set<string>([
   'credentials',
   'agents',
   'queue',
+  'api',
   'export',
   'import',
   'doctor',
@@ -103,6 +104,7 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
   '--payload': 'payload',
   '--file': 'file',
   '--text': 'text',
+  '--params': 'params',
 })
 
 const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {
@@ -234,7 +236,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       const v = argv[i]
       // A value that looks like a flag is treated as a missing value rather than consumed: every
       // value this grammar takes is a name, a path or a session key, none of which start with a dash.
-      if (v === undefined || v.startsWith('-')) throw new UsageError(`${a} needs a value`)
+      if (v === undefined || (v.startsWith('-') && v !== '-')) throw new UsageError(`${a} needs a value`)
       const allowed = Object.hasOwn(ENUMS, key) ? (ENUMS[key] as string[]) : null
       if (allowed && !allowed.includes(v)) throw new UsageError(`${a} must be one of ${allowed.join('|')}`)
       write(key, v)

@@ -42,6 +42,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh credentials delete ID [--yes] [--force]` | Without `--yes`, show what would be deleted and send nothing; a credential still in use also needs `--force` |
 | `agh agents [--all] [--json]` | Sessions with state (`paused`, `queued`, `open`, `closed`, `unknown`), queued inputs and last activity; the 50 most recent unarchived sessions unless `--all`; one read-only `session.controls` per session |
 | `agh queue KEY [--steer] [--json] TEXT...\|-` | Send a follow-up (default, runs after the current turn) or, with `--steer`, a steer into an existing session through the SDK command path; `-` reads stdin; a refusal prints `refused: CODE: message` (exit 1); an unconfirmed outcome is reported and never resent |
+| `agh api METHOD [--params JSON\|-] [--json]` | Call one protocol method with local params-schema checks; `agh api --help` lists callable methods and tiers; streaming, attach and command-class methods are refused (use `agh queue`); a daemon refusal goes to stderr (exit 1) |
 | `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | Search history by session (admin connection; a refusal is printed as the daemon sends it) / session groups |
 | `agh sessions verify ID [--json]` | Run a fresh full history audit; reports verified sequence/time or the failing sequence and exits nonzero on failure. |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | Export; also supports `--html` and `--raw` |

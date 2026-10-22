@@ -30,6 +30,7 @@ export type Command =
   | 'credentials'
   | 'agents'
   | 'queue'
+  | 'api'
   | 'computer-use'
   | 'profile'
   | 'plugin'
@@ -117,6 +118,8 @@ export type ParsedArgs = {
   file?: string
   /** `settings`: the system prompt replacement, or the search test query. */
   text?: string
+  /** `api`: the JSON params object (or `-` for stdin). */
+  params?: string
   payload?: string
   /** Explicitly permit provider doctor to issue its bounded minimal-inference probe. */
   probe: boolean
