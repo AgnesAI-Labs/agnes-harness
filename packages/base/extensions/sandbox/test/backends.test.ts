@@ -115,7 +115,7 @@ describe('closed-network backend compilers', () => {
       '(deny file-read* file-write* (subpath "/work/quote\\" and \\\\ slash/secret"))',
     )
     expect(profile).toContain('(deny network*)')
-    expect(profile).not.toContain('/private/tmp')
+    expect(profile).not.toContain('(allow file-write* (subpath "/private/tmp"))')
     expect(profile).toContain('(ioctl-command TIOCSPGRP)')
     expect(profile).toContain('(allow file-read* file-write* (literal "/dev/null"))')
     for (const device of ['zero', 'random', 'urandom']) {

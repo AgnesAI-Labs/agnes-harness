@@ -1,4 +1,4 @@
-import { closeSync, mkdtempSync, rmSync } from 'node:fs'
+import { type BigIntStats, closeSync, lstatSync, mkdtempSync, rmSync } from 'node:fs'
 import { createConnection, createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { LOOPBACK_GATE_PATH_PREFIX, openLoopbackListener, openUnixListener } from '@agnes/system-node'
@@ -11,8 +11,21 @@ export function openLoopbackGate() {
   let fd: number | undefined
   let tcpFd: number | undefined
   let closed = false
+  let identities: BigIntStats[] = []
+  const paths = [directory, path]
+  const intact = () => {
+    try {
+      return paths.every((value, index) => {
+        const current = lstatSync(value, { bigint: true })
+        const original = identities[index]
+        return original !== undefined && current.dev === original.dev && current.ino === original.ino
+      })
+    } catch {
+      return false
+    }
+  }
   const server = createServer({ allowHalfOpen: true }, (incoming) => {
-    if (closed) {
+    if (closed || !intact()) {
       incoming.destroy()
       return
     }
@@ -27,7 +40,16 @@ export function openLoopbackGate() {
         connections.delete(socket)
       })
     }
-    incoming.pipe(upstream).pipe(incoming)
+    upstream.once('connect', () => {
+      // Seatbelt prevents sandbox path mutation. Also fail closed on a replaced/missing
+      // transport, without releasing buffered request or response bytes before validation.
+      if (closed || incoming.destroyed || !intact()) {
+        incoming.destroy()
+        upstream.destroy()
+        return
+      }
+      incoming.pipe(upstream).pipe(incoming)
+    })
   })
   const close = () => {
     if (closed) return
@@ -45,6 +67,7 @@ export function openLoopbackGate() {
   server.on('error', close)
   try {
     fd = openUnixListener(path)
+    identities = paths.map((value) => lstatSync(value, { bigint: true }))
     const listener = openLoopbackListener()
     tcpFd = listener.fd
     server.listen({ fd: tcpFd })

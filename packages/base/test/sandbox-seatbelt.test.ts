@@ -9,28 +9,38 @@ it.each(['relative', '/bad\npath', '/bad\0path', '/bad\x7fpath'])(
     )
   },
 )
-it('grants only standard device literals and preserves explicit denies and workspace writes', () => {
-  const args = seatbeltDenyNetworkArgv(['echo', 'a b'], {
-    allowPaths: ['/w'],
-    denyPaths: ['/w/secret', '/dev/null'],
-    readPaths: ['/w'],
-  })
-  expect(args[0]).toBe('/usr/bin/sandbox-exec')
-  expect(args.slice(-2)).toEqual(['echo', 'a b'])
-  expect(args[2]).toContain('(deny file-read* file-write* (subpath "/w/secret"))')
-  expect(args[2]).not.toContain('/private/tmp')
-  expect(args[2]).toContain('(ioctl-command TIOCSPGRP)')
-  expect(args[2]).toContain('(allow file-read* file-write* (literal "/dev/null"))')
-  for (const device of ['zero', 'random', 'urandom']) {
-    expect(args[2]).toContain(`(allow file-read* (literal "/dev/${device}"))`)
-  }
-  const deviceGrants = args[2]
-    ?.split('\n')
-    .filter((line) => line.startsWith('(allow file-') && line.includes('/dev/'))
-  expect(deviceGrants).toHaveLength(5) // Four exact device grants and the existing TTY ioctl.
-  expect(deviceGrants?.join('\n')).not.toMatch(/\(subpath "\/dev(?:\/|"|\))/)
-  expect(args[2]).not.toContain('(allow file-read*)')
-  expect(args[2]).toContain('(allow file-write* (subpath "/w"))')
-  expect(args[2]).toContain('(deny file-read* file-write* (subpath "/dev/null"))')
-  expect(args[2]).toContain('(deny network*)')
-})
+it.each([{}, { network: 'allow' as const }, { loopbackServe: true }])(
+  'preserves reserved paths, explicit denies and workspace writes with network policy %j',
+  (network) => {
+    const args = seatbeltDenyNetworkArgv(['echo', 'a b'], {
+      ...network,
+      allowPaths: ['/w'],
+      denyPaths: ['/w/secret', '/dev/null'],
+      readPaths: ['/w'],
+    })
+    expect(args[0]).toBe('/usr/bin/sandbox-exec')
+    expect(args.slice(-2)).toEqual(['echo', 'a b'])
+    expect(args[2]).toContain('(deny file-read* file-write* (subpath "/w/secret"))')
+    expect(args[2]).not.toContain('(allow file-write* (subpath "/private/tmp"))')
+    expect(args[2]).toContain('(deny file-write* (regex #"^/private/tmp/agh-loopback-[^/]*(/|$)"))')
+    expect(args[2]).toContain(
+      '(deny file-write-unlink (literal "/") (literal "/private") (literal "/private/tmp"))',
+    )
+    expect(args[2]).toContain('(ioctl-command TIOCSPGRP)')
+    expect(args[2]).toContain('(allow file-read* file-write* (literal "/dev/null"))')
+    for (const device of ['zero', 'random', 'urandom']) {
+      expect(args[2]).toContain(`(allow file-read* (literal "/dev/${device}"))`)
+    }
+    const deviceGrants = args[2]
+      ?.split('\n')
+      .filter((line) => line.startsWith('(allow file-') && line.includes('/dev/'))
+    expect(deviceGrants).toHaveLength(5) // Four exact device grants and the existing TTY ioctl.
+    expect(deviceGrants?.join('\n')).not.toMatch(/\(subpath "\/dev(?:\/|"|\))/)
+    expect(args[2]).not.toContain('(allow file-read*)')
+    expect(args[2]).toContain('(allow file-write* (subpath "/w"))')
+    expect(args[2]).toContain('(deny file-read* file-write* (subpath "/dev/null"))')
+    if ('network' in network) expect(args[2]).toContain('(allow network*)')
+    else if ('loopbackServe' in network) expect(args[2]).toContain('(deny network-bind)')
+    else expect(args[2]).toContain('(deny network*)')
+  },
+)

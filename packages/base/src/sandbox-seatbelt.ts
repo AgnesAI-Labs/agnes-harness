@@ -78,6 +78,10 @@ export function seatbeltDenyNetworkArgv(
         }),
       ),
     ].map((path) => `(deny file-write-unlink (literal ${quote(path)}))`),
+    // Every confined command must preserve other sessions' Host-owned transports,
+    // regardless of its own network grant or broad temporary-directory write access.
+    `(deny file-write* (regex #"^${LOOPBACK_GATE_PATH_PREFIX}[^/]*(/|$)"))`,
+    '(deny file-write-unlink (literal "/") (literal "/private") (literal "/private/tmp"))',
     ...(policy.network === 'allow'
       ? ['(allow network*)']
       : policy.loopbackServe
@@ -88,10 +92,6 @@ export function seatbeltDenyNetworkArgv(
             '(allow network-inbound (local tcp "localhost:*"))',
             '(allow network-inbound (local unix-socket))',
             '(deny network-bind)',
-            // The transport path cannot be replaced with a symlink to an unrelated Unix peer,
-            // even for a workspace that includes the Host's temporary directory.
-            `(deny file-write* (regex #"^${LOOPBACK_GATE_PATH_PREFIX}[^/]+(/|$)"))`,
-            '(deny file-write-unlink (literal "/private/tmp") (literal "/private"))',
           ]
         : ['(deny network*)']),
   ].join('\n')
