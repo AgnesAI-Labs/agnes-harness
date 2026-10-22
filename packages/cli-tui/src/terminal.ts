@@ -176,6 +176,7 @@ export class NodeTerminal implements Terminal {
   private asked: Promise<Background | undefined> | undefined
   private answer: ((b: Background | undefined) => void) | undefined
   private cursorAnswer: ((at: { row: number; col: number } | undefined) => void) | undefined
+  private cursorLine: Promise<void> = Promise.resolve()
   private readonly handlers = new Set<(data: string) => void>()
   // One stdin listener for every consumer, so a chunk is cleaned of terminal replies exactly once.
   private readonly filter = new BackgroundReplyFilter((b) => {
@@ -247,20 +248,26 @@ export class NodeTerminal implements Terminal {
     return this.asked
   }
 
-  /** Asks where the cursor is, waiting at most 250 ms; only a raw-mode TTY can answer. */
+  /**
+   * Asks where the cursor is, waiting at most 250 ms; only a raw-mode TTY can answer. Questions are
+   * asked one at a time, so each answer describes the screen as it was when its own question was sent.
+   */
   queryCursor(): Promise<{ row: number; col: number } | undefined> {
-    if (this.stdout.isTTY !== true || this.stdin.setRawMode === undefined || this.cursorAnswer)
-      return Promise.resolve(undefined)
-    return new Promise((resolve) => {
-      const done = (at: { row: number; col: number } | undefined): void => {
-        clearTimeout(timer)
-        this.cursorAnswer = undefined
-        resolve(at)
-      }
-      const timer = setTimeout(() => done(undefined), CURSOR_TIMEOUT_MS)
-      this.cursorAnswer = done
-      this.stdout.write(CURSOR_QUERY)
-    })
+    if (this.stdout.isTTY !== true || this.stdin.setRawMode === undefined) return Promise.resolve(undefined)
+    const ask = (): Promise<{ row: number; col: number } | undefined> =>
+      new Promise((resolve) => {
+        const done = (at: { row: number; col: number } | undefined): void => {
+          clearTimeout(timer)
+          this.cursorAnswer = undefined
+          resolve(at)
+        }
+        const timer = setTimeout(() => done(undefined), CURSOR_TIMEOUT_MS)
+        this.cursorAnswer = done
+        this.stdout.write(CURSOR_QUERY)
+      })
+    const answer = this.cursorLine.then(ask)
+    this.cursorLine = answer.then(() => undefined)
+    return answer
   }
 
   onInput(h: (d: string) => void): () => void {

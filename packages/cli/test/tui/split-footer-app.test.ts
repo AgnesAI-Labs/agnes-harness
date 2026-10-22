@@ -75,3 +75,51 @@ it('--no-alt-screen writes finished turns once, in order, into scrollback above 
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+it('--no-alt-screen opens and closes the slash menu above the prompt without disturbing written turns', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-split-footer-'))
+  const { host } = await createTestHost({ dataDir: dir, script: [say('menu answer')] })
+  const endpoint = createLocalEndpoint(host, { pollMs: 5 })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    await client.workspace.add(dir)
+    const session = await client.session.new({ cwd: dir })
+    const term = new FakeTerminal({ columns: COLS, rows: ROWS })
+    term.cursor = { row: 1, col: 1 }
+    app = new TuiApp({ session, term, header: 'Agnes', noAltScreen: true })
+    await app.start()
+    term.feed('hello')
+    term.feed('\r')
+    await vi.waitFor(async () => {
+      const screen = await emulate(term, COLS, ROWS)
+      expect([...screen.scrollback, ...screen.lines].join('\n')).toContain('menu answer')
+      expect(app?.busy).toBe(false)
+    })
+    const before = await emulate(term, COLS, ROWS)
+    term.feed('/')
+    await vi.waitFor(async () => {
+      const open = await emulate(term, COLS, ROWS)
+      expect(open.lines.length).toBe(ROWS)
+      expect(open.lines.join('\n')).toContain('/help')
+    })
+    term.feed('\x1b')
+    await vi.waitFor(async () => {
+      const closed = await emulate(term, COLS, ROWS)
+      expect(closed.lines.join('\n')).not.toContain('/help')
+    })
+    const after = await emulate(term, COLS, ROWS)
+    const kept = (screen: { scrollback: string[]; lines: string[] }) =>
+      [...screen.scrollback, ...screen.lines].filter(
+        (line) => line.includes('hello') || line.includes('menu answer'),
+      )
+    expect(kept(after)).toEqual(kept(before))
+    expect(after.lines.at(-1)).toContain('session')
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+    await host.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

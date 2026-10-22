@@ -1,6 +1,7 @@
+import { Terminal as Xterm } from '@xterm/headless'
 import { afterEach, describe, expect, it } from 'vitest'
 import { CURSOR_MARKER, Text, VStack } from '../../src/tui/component.js'
-import { FooterRenderer, type ScrollMode } from '../../src/tui/footer-renderer.js'
+import { FooterRenderer, type ScrollMode, scrollModeFor } from '../../src/tui/footer-renderer.js'
 import { FakeTerminal } from '../../src/tui/terminal.js'
 import { emulate } from './harness.js'
 
@@ -172,4 +173,198 @@ describe('FooterRenderer', () => {
     const screen = await emulate(t.term, t.cols, t.rows)
     expect(written(screen)).toEqual(['kept'])
   })
+})
+
+// A FakeTerminal wired to one live emulator, so a resize reaches the emulator the way it reaches a real
+// terminal: it reflows what it holds, and the footer is drawn again on top of that.
+class LiveTerminal extends FakeTerminal {
+  answers = true
+  readonly xterm: Xterm
+  private pending: Promise<void> = Promise.resolve()
+  constructor(columns: number, rows: number) {
+    super({ columns, rows })
+    this.xterm = new Xterm({ cols: columns, rows, scrollback: 500, allowProposedApi: true })
+  }
+  override write(s: string): void {
+    super.write(s)
+    this.pending = this.pending.then(() => new Promise<void>((resolve) => this.xterm.write(s, resolve)))
+  }
+  // The emulator answers as a real terminal would, once everything written so far has been drawn.
+  override async queryCursor(): Promise<{ row: number; col: number } | undefined> {
+    await this.pending
+    if (!this.answers) return undefined
+    const { cursorY, cursorX } = this.xterm.buffer.active
+    return { row: cursorY + 1, col: cursorX + 1 }
+  }
+  override resize(columns: number, rows: number): void {
+    this.pending = this.pending.then(() => this.xterm.resize(columns, rows))
+    super.resize(columns, rows)
+  }
+  async everything(): Promise<{ lines: string[]; screen: string[] }> {
+    await this.pending
+    const buffer = this.xterm.buffer.active
+    const lines: string[] = []
+    for (let i = 0; i < buffer.length; i++) lines.push(buffer.getLine(i)?.translateToString(true) ?? '')
+    return { lines, screen: lines.slice(buffer.baseY) }
+  }
+}
+
+describe('FooterRenderer resize and growth', () => {
+  it.each(['region', 'full'] as const)(
+    'keeps the footer on the bottom row and loses no written line across width and height changes (%s)',
+    async (mode) => {
+      const term = new LiveTerminal(30, 10)
+      term.cursor = { row: 1, col: 1 }
+      const source = new Source()
+      const footer = new Text(`> ${CURSOR_MARKER}`)
+      const renderer = new FooterRenderer(term, new VStack([footer, new Text('status')]), source, mode)
+      live.push(renderer)
+      renderer.start()
+      await tick()
+      const all: string[] = []
+      const send = (n: number): void => {
+        const batch = Array.from({ length: n }, (_, i) => `msg ${all.length + i}`)
+        all.push(...batch)
+        source.push(...batch)
+        renderer.renderNow()
+      }
+      send(14)
+      for (const [columns, rows, more] of [
+        [12, 10, 3],
+        [40, 10, 2],
+        [40, 6, 4],
+        [25, 14, 2],
+        [25, 14, 5],
+      ] as const) {
+        term.resize(columns, rows)
+        await tick()
+        send(more)
+        const { screen } = await term.everything()
+        expect(screen.at(-1)).toBe('status')
+        expect(screen.at(-2)).toBe('> ')
+      }
+      const { lines } = await term.everything()
+      expect(lines.filter((line) => /^msg \d+$/.test(line))).toEqual(all)
+      const writes = term.writes.join('')
+      expect(writes).not.toContain('\x1b[3J')
+      expect(writes).not.toContain('\x1b[2J')
+    },
+  )
+
+  it('re-lays the footer when its own lines wrap at a narrower width, without touching the rows above', async () => {
+    const term = new LiveTerminal(30, 8)
+    term.cursor = { row: 1, col: 1 }
+    const source = new Source()
+    const renderer = new FooterRenderer(
+      term,
+      new VStack([
+        new Text('status line that is quite wide', { wrap: false }),
+        new Text(`> ${CURSOR_MARKER}`),
+      ]),
+      source,
+    )
+    live.push(renderer)
+    renderer.start()
+    await tick()
+    source.push('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h')
+    renderer.renderNow()
+    term.resize(12, 8)
+    await tick()
+    renderer.renderNow()
+    const { lines, screen } = await term.everything()
+    expect(screen.at(-1)).toBe('> ')
+    expect(lines.filter((line) => line.length === 1 && line >= 'a' && line <= 'h')).toEqual([
+      'a',
+      'b',
+      'c',
+      'd',
+      'e',
+      'f',
+      'g',
+      'h',
+    ])
+  })
+
+  it.each(['region', 'full'] as const)('wraps wide characters and keeps a link whole (%s)', async (mode) => {
+    const t = await started({ mode, cols: 10, rows: 8 })
+    const link = `https://example.com/${'a'.repeat(30)}`
+    t.source.push('你好世界你好世界你好', link, '😀😀😀😀😀😀', 'end')
+    t.renderer.renderNow()
+    const screen = await emulate(t.term, t.cols, t.rows)
+    const text = [...screen.scrollback, ...screen.lines].filter(
+      (line) => line !== '' && line !== '> ' && line !== 'status',
+    )
+    expect(text.slice(0, 2)).toEqual(
+      ['你好世界你好', '世界你好'].length === 2 ? ['你好世界你', '好世界你好'] : [],
+    )
+    expect(text.slice(2, 7).join('')).toBe(link)
+    expect(text.slice(7)).toEqual(['😀😀😀😀😀', '😀', 'end'])
+  })
+})
+
+describe('FooterRenderer resize without a cursor report', () => {
+  it('assumes the footer stayed on the bottom rows and keeps every written line', async () => {
+    const term = new LiveTerminal(30, 10)
+    term.cursor = { row: 1, col: 1 }
+    const source = new Source()
+    const renderer = new FooterRenderer(
+      term,
+      new VStack([new Text(`> ${CURSOR_MARKER}`), new Text('status')]),
+      source,
+    )
+    live.push(renderer)
+    renderer.start()
+    await tick()
+    term.answers = false
+    const all = Array.from({ length: 16 }, (_, i) => `msg ${i}`)
+    source.push(...all)
+    renderer.renderNow()
+    for (const [columns, rows] of [
+      [18, 10],
+      [44, 10],
+      [30, 10],
+    ] as const) {
+      term.resize(columns, rows)
+      await tick()
+      renderer.renderNow()
+    }
+    const { lines, screen } = await term.everything()
+    expect(screen.slice(-2)).toEqual(['> ', 'status'])
+    expect(lines.filter((line) => /^msg \d+$/.test(line))).toEqual(all)
+  })
+
+  it('answers only for the newest of several quick resizes', async () => {
+    const term = new LiveTerminal(30, 10)
+    term.cursor = { row: 1, col: 1 }
+    const source = new Source()
+    const renderer = new FooterRenderer(
+      term,
+      new VStack([new Text(`> ${CURSOR_MARKER}`), new Text('status')]),
+      source,
+    )
+    live.push(renderer)
+    renderer.start()
+    await tick()
+    const all = Array.from({ length: 12 }, (_, i) => `msg ${i}`)
+    source.push(...all)
+    renderer.renderNow()
+    term.resize(20, 10)
+    term.resize(26, 12)
+    term.resize(34, 9)
+    await tick()
+    await tick()
+    renderer.renderNow()
+    const { lines, screen } = await term.everything()
+    expect(screen.slice(-2)).toEqual(['> ', 'status'])
+    expect(lines.filter((line) => /^msg \d+$/.test(line))).toEqual(all)
+  })
+})
+
+it('takes the standard margin path unless the terminal is known to mishandle it or the user says otherwise', () => {
+  expect(scrollModeFor({})).toBe('region')
+  expect(scrollModeFor({ TMUX: '/tmp/tmux-1/default,1,0', TERM: 'screen-256color' })).toBe('region')
+  expect(scrollModeFor({ ZELLIJ: '0' })).toBe('full')
+  expect(scrollModeFor({ ZELLIJ: '0', AGH_SPLIT_FOOTER_SCROLL: 'region' })).toBe('region')
+  expect(scrollModeFor({ AGH_SPLIT_FOOTER_SCROLL: 'full' })).toBe('full')
+  expect(scrollModeFor({ AGH_SPLIT_FOOTER_SCROLL: 'bogus' })).toBe('region')
 })

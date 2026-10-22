@@ -82,6 +82,10 @@ export class FooterRenderer implements ScreenRenderer {
   private lastCursorKey = ''
   private suspended = false
   private paste = new PasteAssembler()
+  // Bumped by every question put to the terminal about where the cursor is; only the newest answer counts.
+  private epoch = 0
+  // Where the cursor was parked in the last footer: a row of its frame and a column.
+  private parked = { line: 0, col: 0 }
   private columns = 0
   private rows = 0
   // Rows the footer occupies on the screen, at the bottom.
@@ -101,28 +105,43 @@ export class FooterRenderer implements ScreenRenderer {
     this.active = true
     this.ready = false
     this.generation++
-    const generation = this.generation
     this.lastFrame = []
     this.lastCursorKey = ''
     this.height = 0
+    this.columns = 0
     this.paste = new PasteAssembler()
     process.once('exit', this.onExit)
     this.term.enterRaw()
     // No alternate screen and no mouse reporting: the shell page stays, and the terminal keeps the wheel
     // and text selection. Bracketed paste and focus reporting are the same as the fullscreen app.
     this.term.write('\x1b[?2004h\x1b[?1004h')
-    this.offResize = this.term.onResize(() => this.renderNow())
+    this.offResize = this.term.onResize(() => this.resized())
     this.offInput = this.term.onInput((d) => {
       for (const part of this.paste.push(d)) if (this.root.handleInput?.(part)) this.requestRender()
     })
-    // The footer starts under whatever the shell left; without an answer the screen counts as full.
-    void (this.term.queryCursor?.() ?? Promise.resolve(undefined)).then((at) => {
-      if (!this.active || generation !== this.generation) return
+    this.anchor()
+  }
+
+  /** The footer starts under whatever the shell left; without an answer the screen counts as full. */
+  private anchor(): void {
+    this.locate((at) => {
       const { columns, rows } = this.term.size()
       this.columns = columns
       this.rows = rows
       const end = at ? Math.min(rows, at.col > 1 ? at.row : at.row - 1) : rows
       this.slack = Math.max(0, rows - end)
+      this.height = 0
+      this.lastFrame = []
+    })
+  }
+
+  /** Asks the terminal where its cursor is, and runs `then` with the answer unless a newer question or a stop came first. */
+  private locate(then: (at: { row: number; col: number } | undefined) => void): void {
+    this.ready = false
+    const epoch = ++this.epoch
+    void (this.term.queryCursor?.() ?? Promise.resolve(undefined)).then((at) => {
+      if (!this.active || epoch !== this.epoch) return
+      then(at)
       this.ready = true
       try {
         this.renderNow()
@@ -130,6 +149,41 @@ export class FooterRenderer implements ScreenRenderer {
         this.stop()
         throw error
       }
+    })
+  }
+
+  /**
+   * The terminal changed size. It reflows what it holds on its own, and what it does with the rows
+   * under the cursor differs between terminals, so the cursor (parked in the footer) says where the
+   * footer is now. Everything from the footer's first row down is erased; the conversation above it,
+   * scrollback included, is left alone.
+   */
+  private resized(): void {
+    if (this.columns === 0) {
+      this.anchor()
+      return
+    }
+    this.locate((at) => {
+      const { columns, rows } = this.term.size()
+      const wrapped = (line: string) => Math.max(1, Math.ceil(displayWidth(line) / Math.max(1, columns)))
+      const above = this.lastFrame.slice(0, this.parked.line).reduce((n, line) => n + wrapped(line), 0)
+      const guess =
+        rows -
+        Math.min(
+          rows,
+          this.lastFrame.reduce((n, line) => n + wrapped(line), 0),
+        ) +
+        1
+      const top = at
+        ? Math.max(1, Math.min(rows, at.row - above - Math.floor(this.parked.col / columns)))
+        : guess
+      this.columns = columns
+      this.rows = rows
+      this.slack = Math.min(this.slack, top - 1)
+      this.height = rows - top + 1
+      this.lastFrame = []
+      this.lastCursorKey = ''
+      this.term.write(`\x1b[${top};1H\x1b[J`)
     })
   }
 
@@ -165,8 +219,6 @@ export class FooterRenderer implements ScreenRenderer {
     if (!this.active || !this.ready) return
     const { columns, rows } = this.term.size()
     let out = ''
-    if (columns !== this.columns || rows !== this.rows) out += this.reflow(columns, rows)
-
     const history = this.source.takeSettled(columns).flatMap((line) => physicalRows(defang(line), columns))
     const raw = this.root.render(columns)
     const room = Math.max(1, rows - MIN_HISTORY_ROWS)
@@ -214,6 +266,7 @@ export class FooterRenderer implements ScreenRenderer {
       cursorRow >= 0
         ? `\x1b[${top + cursorRow};${cursorCol + 1}H\x1b[?25h`
         : `\x1b[${top + frame.length - 1};1H`
+    this.parked = cursorRow >= 0 ? { line: cursorRow, col: cursorCol } : { line: frame.length - 1, col: 0 }
     const cursorKey = `${cursorRow}:${cursorCol}:${top}`
     this.lastFrame = frame
     if (out === '' && cursorKey === this.lastCursorKey) return
@@ -263,11 +316,7 @@ export class FooterRenderer implements ScreenRenderer {
     return out
   }
 
-  /**
-   * The terminal changed size. It reflows what it holds on its own, and the footer, pinned to the
-   * bottom, is assumed to stay there at whatever height the new width gives it. Only that is erased;
-   * the conversation above, scrollback included, is left alone.
-   */
+  /** Resize with no cursor answer to go by: the footer is assumed to have stayed on the bottom rows. */
   private reflow(columns: number, rows: number): string {
     const wrapped = this.lastFrame.reduce(
       (n, line) => n + Math.max(1, Math.ceil(displayWidth(line) / Math.max(1, columns))),
