@@ -87,9 +87,9 @@ presets: { default: standard, allowed: [standard, minimal, ptc] }
 permissions: { default: workspace-write, allowed: [read-only, workspace-write, full-access] }
 ```
 
-本地与企业模板都带这两项（企业模板允许 `standard` 和 `ptc`）。没有 `permissions` 的 profile 由 `presets.allowed` 推导允许的权限级别；用户或工作区层只写了 `presets` 而没写 `permissions` 时，内置模板的 `permissions` 不再保留，因此收窄 `presets` 也会收窄权限。`--permission default` 或 `permission: 'default'` 表示跟随部署默认值。
+本地与企业模板都带这两项（企业模板允许 `standard` 和 `ptc`）。配方与权限各自授权：收窄 `presets` 不改变 `permissions`；没有配置权限块时，内置默认值是 `workspace-write`。省略权限、`--permission default` 与 `permission: 'default'` 均跟随部署默认值，包括明确指定配方的请求。
 
-旧的预设名 `read-only`、`workspace-write`、`full-access` 仍可用作 `--preset` 值和 `presets.allowed` 条目，各自表示该权限下的 `standard` 预设，因此 `agh --preset read-only` 等同于 `agh --preset standard --permission read-only`。把它们与不同的 `--permission` 组合会报错。只指定预设的请求（如 `--preset ptc`）继续以 `workspace-write` 运行，即使管理员之后修改了默认权限，已有脚本和计划任务的行为也不变。`--agent` 不能与 `--permission` 组合，由智能体自己的 launch 决定。
+旧的配方别名 `read-only`、`workspace-write`、`full-access` 已拒绝，`presets.allowed` 中也不能使用。请将 `agh --preset read-only` 改为 `agh --preset standard --permission read-only`。旧 profile 与持久格式须使用新的空 `AGH_HOME`，不会转换旧字节或沿用旧信任摘要。`--agent` 不能与 `--permission` 组合，由智能体自己的 launch 决定。
 
 已打开的会话保持原有权限。`/preset NAME` 切换预设并保留权限；会改变沙箱约束的切换（包括任何权限变化）会被拒绝，须新建会话。自定义预设若自行写入沙箱或命令审批设置，就固定了自己的权限，会拒绝 `--permission` 选择。
 
@@ -115,13 +115,16 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 
 自动权限结果绑定后端会话身份和授权 epoch。切换预设会撤销待处理的自动授权与未消费结果；已消费的副作用回执保留为历史。后端在日志持久化后和副作用准入前再次校验 epoch。候选自动发布还要求候选来源会话与当前会话一致。私有 `permission-decisions.jsonl` 授权日志保留精确的非秘密会话、调用、范围、哈希、操作者、时间与消费状态，省略自由文本摘要；通用审计脱敏规则不变。扩展的普通问题（`decisions.request`）和未知用途不会因按钮形状而成为权限；业务确认遵循下述明确合同。ask_user、计划退出、事实核对及作者自由提问仍需人工内容。
 
+私有效果准入统一使用后端证明载体（`@agnes/protocol` 的 `permissionEffectAdmission`）。异步验证与最终同步提交或 CAS 内的 `assertActive()` 保持分离；载体保留取消、过期、会话 epoch 和上游准入检查，任一检查失败后永久失效。各业务模块继续核对自己的对象、版本与持久消费状态：memory 文件摘要、候选及包摘要、凭据引用、Skill 行及业务决策。一次发布可以包含多个获准提交；该载体不替代持久重放检查，也不承诺外部效果恰好发生一次。
+
+
 候选作者测试在 macOS/Linux 保留 Host OS 沙箱，只运行独立候选副本；POSIX 沙箱缺失时仍拒绝执行。Windows 仍无隔离。完全访问下所有平台自动允许精确哈希的测试决定；`workspace-write` 权限 仍展示包名、哈希、执行方式、风险和范围，要求一次确认。哈希变化后拒绝旧授权。决定保存在 `candidate-test-audit.jsonl`；测试本身不发布。完全访问下提交通过测试的候选，会自动完成现有安装、信任、启用和运行时激活事务。
 
 受监管电子签名属于业务行为，独立于工具权限。示范应用通过公开决策端口以 `business.confirm` 请求质量记录、GMP 放行、MRB 处置、技术状态更改、规则启用与归零关闭签名，绑定审阅参数、修订与签名含义。完全访问包含这些业务确认：宿主代表选择该权限的会话真人提交声明的精确 `presentation.responseValue`，明确记录 **完全访问下自动确认**，不得冒充人工点击或模型／系统签名。Core 授权日志（`decision/state`）、业务回执、审计与放行证书／关闭记录均保留该身份、模式及原决策绑定。只有明确的单次 `allowed-once`／`rejected` 合同及声明的签名值可自动确认（优先 en，其余语言键按码点排序）；缺失、歧义或不符合响应 schema 的合同保留人工请求并记录原因。其他权限仍须真人回答。单次消费和私有写入凭证在事务提交前保留原 sessionId、epoch、取消及有效期校验，提交前收窄权限会阻止写入。嵌套业务写入会把全部准入凭证保留到最外层事务，真实提交前逐一复核，包括已成功返回的内层调用凭证。拒绝、取消、过期及旧修订仍不能签署。
 
 `ask_user` 等用户问题、用户明确选择的计划／只读模式、对 AGH 私有 `secrets/`、`auth/`、`profiles/` 的普通文件工具硬拒绝，以及 edit/write 的先读后改和过期读取检查保持有效。选择完全访问本身可以保留一次授权确认。未知外部效果的事实核对不是权限授权，不能自动断言已经发生。
 
-需要允许工作区外文件时，显式使用 `agh --permission full-access`（旧写法 `agh --preset full-access` 仍可用）。macOS/Linux 没有可用 L1 时，受控文件工具仍可用，但记忆 provider 会拒绝未隔离命令。Windows 使用可信本机后端的“未实现”例外，保留记忆 API 权限。可在 profile 中设为新会话默认：
+需要允许工作区外文件时，显式使用 `agh --permission full-access`。macOS/Linux 没有可用 L1 时，受控文件工具仍可用，但记忆 provider 会拒绝未隔离命令。Windows 使用可信本机后端的“未实现”例外，保留记忆 API 权限。可在 profile 中设为新会话默认：
 
 ```yaml
 permissions:
@@ -130,6 +133,12 @@ permissions:
 ```
 
 若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`，这样的配方固定自己的权限设置；没有已安装 provider 要求私有文件隔离，或可信 Windows 本机后端声明未实现时，才可执行未隔离命令。L0 不允许搭配新条件值。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
+
+经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅支持本机 macOS Seatbelt。命令批准后，Host 将 TCP listener 绑定到数值地址 `127.0.0.1`，再通过继承的文件描述符交给该命令。应用获得 `AGH_LOOPBACK_FD` 与真实的 `AGH_LOOPBACK_URL`。Node 应使用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 并在监听后打印该 URL；无 socket activation 的部署仍走原有端口分支。不支持继承 listener 的程序不能使用此能力。沙箱拒绝一切新建 IP 监听（含回环和通配地址）、UDP 和主动连接。Seatbelt 的 `localhost` 过滤也覆盖本机其他地址，不能用它证明仅回环绑定，因此由 Host 预先提供已经绑定的 socket。
+
+此声明不能与 `network_allow`、完全访问或无沙箱降级组合。Linux、Windows、远端和外部 provider 明确拒绝；macOS native helper 缺失或过旧也会拒绝。preset 的命令策略仍应要求每条 shell 命令人审；批准仅授权在此边界内运行命令，不开放出站网络。沙箱外浏览器可打开真实监听地址，沙箱内 `curl` 无法主动连接自己的服务。Host 在进程启动/结束或失败时关闭自己的描述符副本；原有 job 取消及工作区清理负责停止持有它的子进程。
+
+本轮工具输出含不可信内容时，后续修改可能需要确认。审批卡保留工具声明的动作标题/说明、目标标识及审批原因；作者应使用用户语言填写 `meta.presentation`。工具参数和输出不能为后续动作授予权限。
 
 本地 Web 的安全边界是回环监听及精确 Origin/Host 校验，不是互联网用户认证。不要直接把它暴露到公网。手动 `--connect` 必须明确指定目标；Windows 命名管道还核对所属进程与发现记录。
 
@@ -149,7 +158,7 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 `AGH_HOME` 包含会话、配置、授权、审计和缓存。日志经过限缩不代表会话正文没有敏感信息；导出、截图或公开错误时仍要检查用户输入、工具参数与路径。不要提交 `secrets/`、`auth/`、完整 home、真实 trace 或凭据文件。`publicConfig` 会到浏览器，绝不能装入密钥或 secret 引用。
 
-文件工具与沙箱保护工作区 `.agh/secrets`。Linux 上 Host 在编译命令沙箱前准备祖先 `.agh`：缺失时只以普通权限创建这个 AGH 自有空目录，不跟随符号链接；若已是链接或非目录，以 `E_SANDBOX_WORKSPACE`（`workspace-ancestor-not-directory`）精确拒绝。祖先保留真实挂载锚点，命令不能通过重命名它暴露凭据。`.agnes/secrets` 属于其他产品，不再享有 AGH 隐式防护，也不自动迁移。不要把 AGH 的 home 指到其他产品的数据目录；旧 `AGNES_HOME` 是兼容项，没有自动迁移。
+文件工具与沙箱保护工作区 `.agh/secrets`。Linux 上 Host 在编译命令沙箱前准备祖先 `.agh`：缺失时只以普通权限创建这个 AGH 自有空目录，不跟随符号链接；若已是链接或非目录，以 `E_SANDBOX_WORKSPACE`（`workspace-ancestor-not-directory`）精确拒绝。祖先保留真实挂载锚点，命令不能通过重命名它暴露凭据。`.agnes/secrets` 属于其他产品，不再享有 AGH 隐式防护，也不自动迁移。不要把 AGH 的 home 指到其他产品的数据目录；`AGNES_HOME` 已移除：取消该变量，用 `AGH_HOME` 指向干净的 home。
 
 恢复未知副作用前先核对目标系统，再决定重试。后台数据库恢复并不能撤销已发出的邮件、网络写入或物理设备动作。
 
@@ -157,7 +166,7 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 作者声明 `capabilities: { ledger: true, ... }`，并显式提供 `metadata`、`childControl`、`reclaim` 和 `scanIntegrity`。SQLite 账本和子任务文件保持兼容。旧授权及回执 schema 先严格校验，再复制到 metadata；撤权先持久化后通知。旧 SQL 表保留用于回退核验，新 metadata 更新不反写旧表。
 
-实现依据：[默认 profile](../../packages/host-common/templates/local-dev.yaml)、[普通行 API](../../packages/host-extensions/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。
+实现依据：[默认 profile](../../packages/package-manager/templates/local-dev.yaml)、[普通行 API](../../packages/host-extensions/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。
 
 <a id="package-provenance-and-source-policy"></a>
 
@@ -168,6 +177,8 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 安装时验证下载内容；加载安装包和不可变代际快照时重新计算文件树摘要。摘要不一致拒绝加载（`E_PACKAGE_INTEGRITY`）；无效来源证据使用 `E_PACKAGE_PROVENANCE`。旧锁记录继续可读，但不会自动获得已验证发布者身份。npm 有 attestation 时通过 Sigstore 验证，并核对精确包名、版本及实际下载档案摘要；证据缺失显示未验证，证据无效则拒绝安装。
 
 管理端来源记录包含已声明来源的解析位置。诊断消息仍使用固定的安全摘要，不暴露无关本地路径。
+
+官方 Host 能力还要求经过验证的加载器绑定。文件型包恢复时，该所有者的每条保留扩展行都必须携带受支持的 SHA256 修订，且与当前代码树一致；缺失或自定义修订无法证明保留代码，不会获得授权。正常发行升级会为新会话建立新的 pin，旧 pin 不会授权变化后的代码树。打包可执行代码使用 Host 加载器的代码映像身份，不依赖可变的数据目录。
 
 管理员配置 `<AGH_HOME>/profiles/<profile>/package-sources.json`：
 

@@ -53,12 +53,22 @@ describe('page yields while a ledger is verified and replayed', () => {
     const storage = await seeded()
     const probe = counting()
     try {
-      await verifyLedger(storage, 'k', 1_234)
+      // Hashing every row: three integrity pages.
+      await verifyLedger(storage, 'k', 1_234, undefined, undefined, {}, undefined, true)
       expect(probe.count()).toBe(0)
       let passed = 0
-      await verifyLedger(storage, 'k', 1_234, () => {
-        passed++
-      })
+      await verifyLedger(
+        storage,
+        'k',
+        1_234,
+        () => {
+          passed++
+        },
+        undefined,
+        {},
+        undefined,
+        true,
+      )
       expect(passed).toBe(2)
     } finally {
       probe.restore()

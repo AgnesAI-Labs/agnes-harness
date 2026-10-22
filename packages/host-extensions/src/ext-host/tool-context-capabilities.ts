@@ -48,6 +48,9 @@ export function capabilityToolContext(manifest: ExtensionManifest, context: Tool
     }),
     tools: Object.freeze({
       list: () => context.tools.list(),
+      ...(context.tools?.availability
+        ? { availability: (name: string) => context.tools.availability!(name) }
+        : {}),
       ...(context.tools?.disclose ? { disclose: (name: string) => context.tools.disclose!(name) } : {}),
       invoke(name, args, opts) {
         if (caps['tools.invoke'] !== true) refuse(id, 'tools.invoke')

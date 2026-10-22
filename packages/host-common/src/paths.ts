@@ -22,24 +22,21 @@ function nonEmpty(value: string | undefined): string | undefined {
   return value !== undefined && value.trim() !== '' ? value : undefined
 }
 
-let legacyHomeNoticeSent = false
-
 /**
- * The Agnes home root: AGH_HOME when set, else the legacy AGNES_HOME, else `<os home>/.agh`. A
- * relative value is refused rather than resolved against the current working directory -- a daemon
- * and the one-shot CLI invocations that talk to it rarely share a cwd, so a relative value would
- * silently pick a different home depending on where a process happened to start. This is rejected
- * to prevent configuration divergence.
- *
- * AGNES_HOME still works during the rename but says so once per process. Nothing here ever falls
- * back to `~/.agnes`: that directory may belong to another product, so it is reached only when a
- * user names it explicitly.
+ * The Agnes home root: AGH_HOME when set, otherwise `<os home>/.agh`.
+ * Relative paths are refused so clients and daemons cannot select different homes by cwd.
+ * The retired AGNES_HOME variable is rejected even when AGH_HOME is also set.
  */
 export function agnesHome(env: Readonly<Record<string, string | undefined>>): string {
-  const current = nonEmpty(env.AGH_HOME)
-  const explicit = current ?? nonEmpty(env.AGNES_HOME)
+  if (nonEmpty(env.AGNES_HOME) !== undefined)
+    throw new HostError(
+      'E_HOME_INVALID',
+      'AGNES_HOME is no longer supported; unset it and set AGH_HOME to a new, empty private directory (clean home).',
+      { detail: { variable: 'AGNES_HOME', reason: 'clean-home-required' } },
+    )
+  const explicit = nonEmpty(env.AGH_HOME)
   const selected = explicit ?? nonEmpty(env.HOME) ?? homedir()
-  const variable = current !== undefined ? 'AGH_HOME' : explicit !== undefined ? 'AGNES_HOME' : 'HOME'
+  const variable = explicit !== undefined ? 'AGH_HOME' : 'HOME'
   // On Windows /foo is rooted but still depends on the launching process's current drive.
   const invalidWindowsHome = sep === '\\' && (!isAbsolute(selected) || parse(selected).root.length <= 1)
   if (invalidWindowsHome || (explicit !== undefined && !isAbsolute(explicit)))
@@ -50,13 +47,6 @@ export function agnesHome(env: Readonly<Record<string, string | undefined>>): st
         detail: { variable, value: selected },
       },
     )
-  if (variable === 'AGNES_HOME' && !legacyHomeNoticeSent) {
-    legacyHomeNoticeSent = true
-    process.emitWarning(`AGNES_HOME is deprecated; set AGH_HOME instead (using ${selected}).`, {
-      type: 'DeprecationWarning',
-      code: 'AGH_DEP_AGNES_HOME',
-    })
-  }
   return explicit ?? join(selected, AGH_DIR)
 }
 

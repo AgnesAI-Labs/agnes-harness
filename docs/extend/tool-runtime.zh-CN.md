@@ -48,7 +48,11 @@ Core 在 hook、授权和副作用之前拒绝无效工具参数，并返回指�
 
 自动延迟还要求目录中存在模型可见、直接披露的 `tool_search` 与 `tool_describe`；仅支持图像输入或自身延迟披露的发现工具不满足条件。缺少这对发现工具时，所有 auto 工具保持可见，包括第三方 auto 工具；显式 `true`、`false` 声明不变。官方后台任务/PTY、子代理、计划任务、工作流和目标工具采用 auto 模式，交付物工具 `present`、日常工具与发现工具保持直接披露。
 
+智能体非空的 `profile.tools` 选择或会话显式的 `tools.allow`，是直接提供 schema 的工作集：即使工具全局声明 `true` 或 `auto` 延迟加载，名单内工具也从首次请求提供。不隐式加入发现工具，名单外工具仍不可访问。未设置选择时继续使用普通延迟规则。空 `profile.tools` 保留既有的默认选择语义；会话显式的空 `tools.allow` 仍不暴露任何工具。模型可见性、图像能力、自定义 Loop 选择、参数验证与审批独立生效。角色子智能体只取得角色与父工具快照的交集，此规则不扩大权限。
+
 设置 `meta.discoveryGroup` 为一行标签（最多 120 个字符），同属一组的延迟工具在列表中合为一行并显示数量，例如 `"Earlier sessions (search, read and trace past sessions)"`。`tool_search` 也会匹配这个标签。不设置时每个延迟工具单独一行。
+
+导出证据或生成声称会话历史完整性的报告工具，应声明 `meta.attestsHistory: true`。Core 在调度（含嵌套调用）前等待完整后台哈希校验；普通工具和 artifact 字节存储仍可在校验期间使用。该标记纳入快照和定义指纹，不授予授权，也不验证外部业务数据。
 
 可选的 `meta.isPresentational: true` 表示效果只向用户公布展示状态，没有外部副作用。它不能与 `isDestructive` 或 `isOpenWorld` 同时为真。默认工具策略不会仅因 turn 被污染而升级一个非只读的 presentational 工具。`requiresApproval: always` 和破坏性审批档仍然询问。省略该标志时，工具仍受污染写入的审批约束。[工具元数据参考](../../packages/extension-api/docs/tools-meta.md) 与其他元数据键一起列出该标志。
 

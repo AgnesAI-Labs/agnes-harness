@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { jcs, jcsWrite } from '../src/jcs.js'
+import { jcs, jcsChunks, jcsWrite } from '../src/jcs.js'
 
 it('sorts raw UTF-16 keys recursively and preserves array order and Unicode', () => {
   const value = { '\ufb33': 1, '😀': 2, z: [{ b: 1, a: 2 }], '10': 10, '2': 2, a: 'e\u0301' }
@@ -10,6 +10,8 @@ it('uses JSON number and escape spelling without lossy Unicode normalization', (
     '[0,1e+21,1e-7,4.5,null,true,false,"\\"\\\\\\n\\t\\u000f"]',
   )
   expect(jcs('e\u0301')).not.toBe(jcs('é'))
+  const large = ['x'.repeat(65535) + '😀' + 'é'.repeat(70000), { 'a\n': '\\' }]
+  expect([...jcsChunks(large)].join('')).toBe(jcs(large))
   const value = ['😀', '"\\\n', { b: 'é', a: 1 }]
   const encoded = jcs(value)
   const bytes = new TextEncoder().encode(encoded).length
@@ -34,12 +36,15 @@ it.each(
   ].map((value) => ({ value })),
 )('rejects non-JSON or invalid Unicode input $value', ({ value }) => {
   expect(() => jcs(value)).toThrow(/^invalid JCS input$/)
+  expect(() => [...jcsChunks(value)]).toThrow(/^invalid JCS input$/)
 })
 it('refuses nested invalid values, holes, cycles and lone-surrogate keys', () => {
   const cycle: Record<string, unknown> = {}
   cycle.self = cycle
-  for (const value of [{ n: NaN }, { u: undefined }, new Array(1), cycle, { '\ud800': 1 }])
+  for (const value of [{ n: NaN }, { u: undefined }, new Array(1), cycle, { '\ud800': 1 }]) {
     expect(() => jcs(value)).toThrow(/^invalid JCS input$/)
+    expect(() => [...jcsChunks(value)]).toThrow(/^invalid JCS input$/)
+  }
 })
 it('does not execute accessors or toJSON and allows shared acyclic JSON objects', () => {
   let calls = 0
@@ -78,7 +83,9 @@ it('serializes and refuses exactly as the bounded encoder does, and its chunks a
   }
   const candidate = (value: unknown): string | Error => {
     try {
-      return jcs(value)
+      const encoded = jcs(value)
+      expect([...jcsChunks(value)].join('')).toBe(encoded)
+      return encoded
     } catch (error) {
       return error as Error
     }

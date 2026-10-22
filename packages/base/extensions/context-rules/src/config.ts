@@ -28,7 +28,11 @@ export type ContextConfig = {
   customSkillRoots: string[]
 }
 export function contextHome(): string {
-  const explicit = process.env.AGH_HOME?.trim() || process.env.AGNES_HOME?.trim()
+  if (process.env.AGNES_HOME?.trim())
+    throw new Error(
+      'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).',
+    )
+  const explicit = process.env.AGH_HOME?.trim() || undefined
   if (explicit && !isAbsolute(explicit)) throw new Error('context home must be absolute')
   return explicit ?? join(process.env.HOME || homedir(), AGH_DIR)
 }

@@ -1,11 +1,12 @@
 import {
-  LOCAL_SANDBOX_PROVIDER_ID,
   type SandboxCapabilities,
   type SandboxPlatform,
   type SandboxProvider,
   sandboxUnavailable,
 } from '@agnes/extension-api'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { ExecAdapter } from './exec.js'
+import { loopbackActivation } from './loopback-activation.js'
 
 function platformOf(os: string): readonly SandboxPlatform[] {
   if (os === 'darwin' || os === 'linux' || os === 'win32') return Object.freeze([os])
@@ -34,7 +35,7 @@ export function createLocalSandboxProvider(
     ...(platform.length > 0 ? {} : { unavailableReason: `unsupported platform ${os}` }),
   })
   return {
-    id: LOCAL_SANDBOX_PROVIDER_ID,
+    id: RELEASE_DEFAULTS.sandboxProvider,
     version: '0.0.0',
     capabilities,
     create(config, signal) {
@@ -44,7 +45,7 @@ export function createLocalSandboxProvider(
       const processes = new Set<import('@agnes/extension-api').SandboxProcess>()
       const pending = new Set<Promise<Awaited<ReturnType<ExecAdapter['run']>>>>()
       return {
-        id: LOCAL_SANDBOX_PROVIDER_ID,
+        id: RELEASE_DEFAULTS.sandboxProvider,
         capabilities,
         async openProcess(request) {
           if (disposed || !exec.openProcess)
@@ -63,12 +64,19 @@ export function createLocalSandboxProvider(
             required.scope.some((scope) => !actual.scope.includes(scope))
           )
             throw sandboxUnavailable('interactive execution cannot enforce this policy')
-          const handle = await exec.openProcess([...request.argv], {
-            cwd: request.cwd,
-            ...(request.env ? { env: { ...request.env } } : {}),
-            ...(request.pty ? { pty: request.pty } : {}),
-            ...(request.signal ? { signal: request.signal } : {}),
-          })
+          const activation = loopbackActivation(request.policy, actual, os)
+          let handle: import('@agnes/extension-api').SandboxProcess
+          try {
+            handle = await exec.openProcess([...request.argv], {
+              cwd: request.cwd,
+              ...(request.env || activation ? { env: { ...request.env, ...activation?.env } } : {}),
+              ...(activation ? { loopbackFd: activation.fd } : {}),
+              ...(request.pty ? { pty: request.pty } : {}),
+              ...(request.signal ? { signal: request.signal } : {}),
+            })
+          } finally {
+            activation?.close()
+          }
           const bound = { ...handle, enforcement: actual }
           processes.add(bound)
           void bound.exited.then((result) => {
@@ -93,7 +101,7 @@ export function createLocalSandboxProvider(
             )
           if (config.workspaceRoot && request.policy.workspaceRoot !== config.workspaceRoot)
             throw sandboxUnavailable('the execution policy names a different workspace')
-          if (request.network && request.policy.network.mode === 'deny')
+          if (request.network && ['deny', 'loopback-serve'].includes(request.policy.network.mode))
             throw sandboxUnavailable('the local sandbox provider does not grant network access')
           const actual = request.enforcement
           const required = request.policy.requiredEnforcement
@@ -102,19 +110,32 @@ export function createLocalSandboxProvider(
             required.scope.some((scope) => !actual.scope.includes(scope))
           )
             throw sandboxUnavailable('the local OS sandbox cannot enforce this policy')
+          const activation = loopbackActivation(request.policy, actual, os)
           const controller = new AbortController()
           controllers.add(controller)
-          const invocation = exec.run([...request.argv], {
-            cwd: request.cwd,
-            ...(request.env === undefined ? {} : { env: { ...request.env } }),
-            ...(request.stdin === undefined ? {} : { stdin: request.stdin }),
-            ...(request.bridge ? { bridge: request.bridge } : {}),
-            signal: request.signal ? AbortSignal.any([request.signal, controller.signal]) : controller.signal,
-            ...(request.limits?.timeoutMs === undefined ? {} : { timeoutMs: request.limits.timeoutMs }),
-            ...(request.limits?.maxOutputBytes === undefined
-              ? {}
-              : { maxOutputBytes: request.limits.maxOutputBytes }),
-          })
+          let invocation: Promise<Awaited<ReturnType<ExecAdapter['run']>>>
+          try {
+            invocation = exec
+              .run([...request.argv], {
+                cwd: request.cwd,
+                ...(request.env || activation ? { env: { ...request.env, ...activation?.env } } : {}),
+                ...(activation ? { loopbackFd: activation.fd } : {}),
+                ...(request.stdin === undefined ? {} : { stdin: request.stdin }),
+                ...(request.bridge ? { bridge: request.bridge } : {}),
+                signal: request.signal
+                  ? AbortSignal.any([request.signal, controller.signal])
+                  : controller.signal,
+                ...(request.limits?.timeoutMs === undefined ? {} : { timeoutMs: request.limits.timeoutMs }),
+                ...(request.limits?.maxOutputBytes === undefined
+                  ? {}
+                  : { maxOutputBytes: request.limits.maxOutputBytes }),
+              })
+              .finally(() => activation?.close())
+          } catch (error) {
+            controllers.delete(controller)
+            activation?.close()
+            throw error
+          }
           pending.add(invocation)
           let result: Awaited<typeof invocation>
           try {

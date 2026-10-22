@@ -447,9 +447,13 @@
             {
               "const": "E_PACKAGE_INTEGRITY",
               "x-public-error": {
+                "boot": true,
                 "rpc": "SEMANTIC_REJECTED",
                 "messageKey": "appServer.errors.rejected",
-                "copy": "rejected"
+                "copy": "rejected",
+                "reasons": {
+                  "clean-home-required": "cleanHome"
+                }
               }
             },
             {
@@ -691,7 +695,8 @@
                 "reasons": {
                   "permission-axis": "permissionAxis",
                   "bundle-unavailable": "unavailable",
-                  "preset-not-allowed": "preset"
+                  "preset-not-allowed": "preset",
+                  "clean-home-required": "cleanHome"
                 }
               }
             },
@@ -1504,7 +1509,8 @@
                 "reasons": {
                   "authority-revoked": "permissionRevoked",
                   "not-consumable": "permissionGrant",
-                  "human-required": "approval"
+                  "human-required": "approval",
+                  "clean-home-required": "cleanHome"
                 }
               }
             },
@@ -1770,9 +1776,10 @@
             {
               "const": "E_SECRET_UNRESOLVED",
               "x-public-error": {
+                "boot": true,
                 "rpc": "SEMANTIC_REJECTED",
                 "messageKey": "appServer.errors.unavailable",
-                "copy": "unavailable"
+                "copy": "credentialRequired"
               }
             },
             {
@@ -1831,7 +1838,10 @@
               "x-public-error": {
                 "rpc": "SEMANTIC_REJECTED",
                 "messageKey": "appServer.errors.invalidParams",
-                "copy": "invalidParams"
+                "copy": "invalidParams",
+                "reasons": {
+                  "clean-home-required": "cleanHome"
+                }
               }
             },
             {
@@ -1888,6 +1898,30 @@
                 "rpc": "SEMANTIC_REJECTED",
                 "messageKey": "appServer.errors.unavailable",
                 "copy": "sandboxUnavailable"
+              }
+            },
+            {
+              "const": "E_RESOURCE_UNSUPPORTED",
+              "x-public-error": {
+                "rpc": "INTERNAL_ERROR",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "unavailable"
+              }
+            },
+            {
+              "const": "REVISION_CONFLICT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.conflict",
+                "copy": "conflict"
+              }
+            },
+            {
+              "const": "WORKSPACE_PATH_DENIED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.forbidden",
+                "copy": "forbidden"
               }
             }
           ]
@@ -4212,6 +4246,16 @@
       "zh-CN": {
         "reason": "必需的执行隔离不可用。",
         "action": "请选择可用的沙箱，或复核必需隔离设置。"
+      }
+    },
+    "cleanHome": {
+      "en": {
+        "reason": "This home or request uses a retired preview format.",
+        "action": "Select a new, empty private AGH_HOME, configure it again, and use explicit recipe and permission fields. No data conversion or old trust is carried over."
+      },
+      "zh-CN": {
+        "reason": "该 home 或请求使用了已退役的预览格式。",
+        "action": "请使用新的空私有 AGH_HOME，重新配置，并分别指定配方与权限。不会转换旧数据或沿用旧信任。"
       }
     }
   }

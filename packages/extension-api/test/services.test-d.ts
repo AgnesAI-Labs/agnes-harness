@@ -26,6 +26,7 @@ describe('service context surface', () => {
       | 'cwd'
       | 'exec'
       | 'fs'
+      | 'sessionFiles'
       | 'net'
       | 'artifacts'
       | 'authorize'

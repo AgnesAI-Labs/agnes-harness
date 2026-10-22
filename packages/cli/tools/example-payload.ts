@@ -24,6 +24,7 @@ export async function copyExamplePayload(source: string, destination: string): P
         'NOTICE',
         'mcp',
         'dag',
+        'seed-docs',
         'provider.example.json',
       ].includes(file) ||
       file.startsWith('README') ||

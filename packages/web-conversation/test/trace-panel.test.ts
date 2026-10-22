@@ -161,11 +161,11 @@ describe('trace panel', () => {
     expect(text).toContain('User')
     expect(text).toContain('你好')
     expect(text).toContain('Context')
-    expect(text).toContain('Current runtime context')
+    expect(text).not.toContain('Current runtime context')
     expect(text).toContain('Assistant')
     expect(text).toContain('我先看一下工作目录')
     expect(text).toContain('Tool')
-    expect(text).toContain('Run command ls')
+    expect(text).toContain('Run command')
     expect(text).toContain('Input')
     expect(text).toContain('Model')
     expect(text).toContain('Duration')
@@ -206,13 +206,14 @@ describe('trace panel', () => {
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
     expect(root.querySelector<HTMLElement>('.trace-inspector')?.hidden).toBe(false)
-    // One tab row per kind: a tool reads Arguments / Result / Source; debug views are in ⋯.
-    expect([...root.querySelectorAll('.trace-tab')].map((tab) => tab.textContent)).toEqual([
+    // The tool exposes each reader view; debug views remain in ⋯.
+    expect([...root.querySelectorAll('.trace-tab')].map((tab) => tab.textContent).sort()).toEqual([
       'Arguments',
       'Result',
       'Source',
     ])
-    expect(root.querySelector('.trace-inspector-title')?.textContent).toBe('Run command ls')
+    expect(root.querySelector('.trace-inspector-title')?.textContent).toBe('Run command')
+    root.querySelector<HTMLButtonElement>('[data-pane="args"]')?.click()
     expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('"command":"ls"')
     root.querySelector<HTMLButtonElement>('[data-pane="source"]')?.click()
     expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('Tool · bash')
@@ -246,7 +247,8 @@ describe('trace panel', () => {
       sessionId: 'session-one',
     })
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
-    // Opening a tool reads its full record for the Arguments tab.
+    root.querySelector<HTMLButtonElement>('[data-pane="args"]')?.click()
+    // Arguments remain available after opening on the recorded result.
     await vi.waitFor(() =>
       expect(readToolDetail).toHaveBeenCalledWith('session-one', 4, 5, expect.any(AbortSignal)),
     )
@@ -324,7 +326,7 @@ describe('trace panel', () => {
     })
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
     ;[...root.querySelectorAll<HTMLButtonElement>('.trace-tab')]
-      .find((tab) => tab.textContent === 'Full input')
+      .find((tab) => tab.textContent === 'Arguments')
       ?.click()
     await vi.waitFor(() => expect(readToolDetail).toHaveBeenCalledTimes(1))
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])], {
@@ -336,14 +338,14 @@ describe('trace panel', () => {
     expect(root.querySelector('.trace-inspector')?.hasAttribute('hidden')).toBe(true)
     root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
     ;[...root.querySelectorAll<HTMLButtonElement>('.trace-tab')]
-      .find((tab) => tab.textContent === 'Full input')
+      .find((tab) => tab.textContent === 'Arguments')
       ?.click()
     await vi.waitFor(() => expect(readToolDetail).toHaveBeenCalledTimes(2))
     resolveOld?.({
       call: { toolUseId: 'call-1', name: 'bash', args: { command: 'old session' }, ordinal: 0 },
     })
     const input = [...root.querySelectorAll<HTMLButtonElement>('.trace-tab')].find(
-      (tab) => tab.textContent === 'Full input',
+      (tab) => tab.textContent === 'Arguments',
     )
     input?.click()
     await vi.waitFor(() =>
@@ -368,7 +370,7 @@ describe('trace panel', () => {
     expect(row.children[3]?.classList.contains('trace-row-end')).toBe(true)
     // A tool row reads as words with its status and duration on the right; no raw JSON.
     const tool = root.querySelector('[data-trace-row-id="t1"]')
-    expect(tool?.querySelector('.trace-row-text')?.textContent).toBe('Run command ls')
+    expect(tool?.querySelector('.trace-row-text')?.textContent).toBe('Run command')
     expect(tool?.querySelector('.trace-preview-raw')).toBeNull()
     expect(tool?.querySelector('.trace-row-status')?.getAttribute('data-status')).toBe('completed')
     expect(tool?.querySelector('.trace-row-duration')?.textContent).toBe('20 ms')
@@ -552,11 +554,14 @@ describe('trace panel', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
     const shell = nodes[3] as Extract<UINode, { kind: 'tool' }>
-    // A tool without a readable form keeps its recorded summary and shows its arguments muted.
+    // A readable recorded summary stays in the row; exact arguments remain in the inspector.
     panel.render([{ ...shell, name: 'custom_tool' }], [turn(sampleTrace, ['t1'])])
     const tool = root.querySelector('[data-trace-row-id="t1"]')
-    expect(tool?.querySelector('.trace-row-text')?.textContent).toBe('custom_tool · 列出文件')
-    expect(tool?.querySelector('.trace-preview-raw')?.textContent).toBe('{"command":"ls"}')
+    expect(tool?.querySelector('.trace-row-text')?.textContent).toBe('列出文件')
+    expect(tool?.querySelector('.trace-preview-raw')).toBeNull()
+    root.querySelector<HTMLButtonElement>('[data-trace-row-id="t1"]')?.click()
+    root.querySelector<HTMLButtonElement>('[data-pane="args"]')?.click()
+    expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('"command":"ls"')
   })
 
   it('preserves user and context tones in the input gantt lane', () => {

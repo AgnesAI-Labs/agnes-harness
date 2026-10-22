@@ -11,6 +11,7 @@ import type { VerifiedHead } from './verified-head.js'
 export abstract class MemoryStorageBase {
   protected readonly clock: Clock
   protected controlFormat: number
+  private readonly integrityFailures = new Map<string, { seq?: number }>()
   private readonly verifiedHeads = new Map<SessionKey, VerifiedHead>()
 
   constructor(opts: { clock?: Clock; childControlFormat?: number } = {}) {
@@ -36,6 +37,15 @@ export abstract class MemoryStorageBase {
       if (size > maxRowBytes) maxRowBytes = size
     }
     return { storedBytes, maxRowBytes }
+  }
+
+  async readIntegrityFailure(key: string): Promise<{ seq?: number } | undefined> {
+    const failure = this.integrityFailures.get(key)
+    return failure && { ...failure }
+  }
+
+  async writeIntegrityFailure(key: string, failure: { seq?: number }): Promise<void> {
+    this.integrityFailures.set(key, { ...failure })
   }
 
   async readVerifiedHead(key: SessionKey): Promise<VerifiedHead | undefined> {

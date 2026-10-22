@@ -17,7 +17,7 @@ Configuration files and model credentials are separate. Prefer CLI `config` or W
 | Location / variable | Meaning |
 | --- | --- |
 | `AGH_HOME` | Absolute home root, default `~/.agh`; relative paths are rejected |
-| `AGNES_HOME` | Legacy compatibility variable with a deprecation warning; AGH_HOME takes precedence, with no automatic migration |
+| `AGNES_HOME` | Retired and refused; unset it and use `AGH_HOME` with a new, empty private directory |
 | `AGNES_PROFILE` / `--profile` | Profile selection, usually `local-dev` |
 | `AGH_HOME/profiles/NAME/profile.yaml` | User profile layer |
 | `AGH_HOME/profiles/NAME/configuration.json` | Accounts, default model, auxiliary slot defaults, and references managed by the Host configuration service; not a manual configuration template |
@@ -63,7 +63,7 @@ Saving or testing an existing account with a changed endpoint requires an explic
 
 A profile selects every provider in one table, `providers.<kind>: { provider, version? }`: the seven seam kinds and `loop`, `compaction`, `model-adapter`, `persistence`, `sandbox`, `tool-runtime`, `tool-policy`, `child-agent` and `memory`. Nothing else in a profile carries a selection: `seams`, top-level `persistence` / `sandbox.provider` / `memory` / `child-agent`, profile `composition.<kind>` and package `config.<kind>` are refused with the sentence that names the table. `model-adapter.provider` accepts one registration/source package or a unique list. Presets, bundle patches and the admin and session layers use the same table, `providers.<kind>`, with an exact loop version; a preset's table also takes `tool-runtime` and `tool-policy`. `model.system_prompt.provider` is the one exception, because it lives in the prompt configuration object shared with user settings.
 
-Check the full [profile schema](../../packages/protocol/schema/profile.json), [implementation types](../../packages/host-common/src/profile/types.ts), [local-dev template](../../packages/host-common/templates/local-dev.yaml), and [enterprise template](../../packages/host-common/templates/enterprise.yaml). Valid schema is only the first gate; policy and assembly can still refuse a configuration.
+Check the full [profile schema](../../packages/protocol/schema/profile.json), [implementation types](../../packages/host-common/src/profile/types.ts), [local-dev template](../../packages/package-manager/templates/local-dev.yaml), and [enterprise template](../../packages/package-manager/templates/enterprise.yaml). Valid schema is only the first gate; policy and assembly can still refuse a configuration.
 
 <a id="模型与密钥"></a>
 

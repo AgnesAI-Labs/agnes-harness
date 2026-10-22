@@ -226,3 +226,38 @@ for (const locale of ['en', 'zh-CN'])
       }
     })
   }
+
+test('browser locale initializes the shell and a saved choice wins after reload', async ({
+  browser,
+  runtime,
+}, info) => {
+  for (const locale of ['zh-CN', 'fr-FR']) {
+    const context = await browser.newContext({ locale })
+    const page = await context.newPage()
+    try {
+      await page.goto(runtime.url)
+      await expect(page.locator('html')).toHaveAttribute('lang', locale === 'zh-CN' ? 'zh-CN' : 'en')
+      expect(await page.evaluate(() => navigator.language)).toBe(locale)
+      expect(await page.evaluate(() => localStorage.getItem('agnes-locale'))).toBeNull()
+      if (locale === 'zh-CN') {
+        await expect(page.locator('#new')).toContainText('新对话')
+        await info.attach('browser-zh-CN.png', { body: await page.screenshot(), contentType: 'image/png' })
+        await info.attach('browser-locale.json', {
+          body: JSON.stringify(
+            await page.evaluate(() => ({
+              browser: navigator.language,
+              document: document.documentElement.lang,
+              saved: localStorage.getItem('agnes-locale'),
+            })),
+          ),
+          contentType: 'application/json',
+        })
+        await page.evaluate(() => localStorage.setItem('agnes-locale', 'en'))
+        await page.reload()
+        await expect(page.locator('html')).toHaveAttribute('lang', 'en')
+      }
+    } finally {
+      await context.close()
+    }
+  }
+})

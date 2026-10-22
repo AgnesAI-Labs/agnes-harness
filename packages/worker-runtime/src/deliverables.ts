@@ -30,21 +30,17 @@ export async function readDeliverablesPage(
 ): Promise<DeliverablesReadResult> {
   const head = session.lastSeq
   if (input.afterSeq > head) return { ok: false, reason: 'after-seq-out-of-range' }
-  const sources = await projectDeliverableSources((q) => session.scan(q), {
-    lane: session.lane,
-    afterSeq: input.afterSeq,
-    toSeq: head,
-  })
-  let bytes = encodedBytes({ sessionId: session.key, upto: head, items: [], nextAfterSeq: head })
-  const items: SessionDeliverableSource[] = []
-  for (const source of sources) {
-    const size = encodedBytes(source) + (items.length > 0 ? 1 : 0)
-    if (items.length === input.limit || bytes + size > TOOL_DETAIL_PAGE_BYTES) break
-    bytes += size
-    items.push(source)
-  }
-  const last = items.at(-1)
-  if (items.length === sources.length) return { ok: true, page: { upto: head, items } }
-  if (!last) return { ok: false, reason: 'deliverable-too-large' }
-  return { ok: true, page: { upto: last.resultSeq, items, nextAfterSeq: last.resultSeq } }
+  // Reserve the envelope at the head, whose seq fields are at least as wide as any page cut.
+  const envelope = encodedBytes({ sessionId: session.key, upto: head, items: [], nextAfterSeq: head })
+  const { upto, items } = await projectDeliverableSources(
+    (q) => session.scan(q),
+    { lane: session.lane, afterSeq: input.afterSeq, toSeq: head },
+    {
+      limit: input.limit,
+      fits: (items) => envelope + encodedBytes(items) - 2 <= TOOL_DETAIL_PAGE_BYTES,
+    },
+  )
+  if (upto === head) return { ok: true, page: { upto, items } }
+  if (items.length === 0) return { ok: false, reason: 'deliverable-too-large' }
+  return { ok: true, page: { upto, items, nextAfterSeq: upto } }
 }

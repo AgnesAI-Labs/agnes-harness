@@ -1,7 +1,12 @@
 import type { ProviderCatalogEntry } from '@agnes/extension-api'
 import type { PluginGenerationSnapshot, RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
-import type { SessionCapabilitySet, SessionRuntimeDescriptor } from '@agnes/protocol'
+import {
+  publicErrorContract,
+  type SessionCapabilitySet,
+  type SessionRuntimeDescriptor,
+} from '@agnes/protocol'
 import type { Host } from '../lifecycle/host.js'
+import { type GenerationFailure, generationFailure } from './failure.js'
 
 type Provider = SessionRuntimeDescriptor['providers'][number]
 type Pending = NonNullable<Provider['pending']>
@@ -338,6 +343,7 @@ export function mergeGenerationStatus(
 }
 
 type GenerationStatus = ReturnType<NonNullable<Host['pluginGenerationStatus']>>
+type GenerationDescription = Pick<PluginGenerationSnapshot, 'id' | 'packages'>
 
 export function addBasePackageStatus(
   plugins: Map<string, GenerationStatus['plugins'][number]>,
@@ -360,10 +366,10 @@ export function generationStatusSnapshots(
   ids: Iterable<string>,
   live: ReadonlyMap<string, { snapshot: PluginGenerationSnapshot }>,
   failed: ReadonlyMap<string, PluginGenerationSnapshot>,
-  errors: Map<string, string>,
-  read: (id: string) => PluginGenerationSnapshot,
-): Map<string, PluginGenerationSnapshot> {
-  const snapshots = new Map([
+  errors: Map<string, GenerationFailure>,
+  read: (id: string) => GenerationDescription,
+): Map<string, GenerationDescription> {
+  const snapshots = new Map<string, GenerationDescription>([
     ...failed,
     ...[...live].map(([id, generation]) => [id, generation.snapshot] as const),
   ])
@@ -372,20 +378,25 @@ export function generationStatusSnapshots(
     try {
       snapshots.set(id, read(id))
     } catch (error) {
-      errors.set(id, String(error))
+      errors.set(id, generationFailure(error))
     }
   }
   return snapshots
 }
 
-/** Freeze the public view and redact exception text identically for sync and cooperative reads. */
+/** Freeze the public view; only schema-owned error identifiers may leave the Host. */
 export function freezeGenerationStatus(status: GenerationStatus): GenerationStatus {
-  const safe = <T extends { error?: string }>(item: T) => ({
-    ...item,
-    ...(item.error
-      ? { error: item.error.match(/E_[A-Z0-9_]+/)?.[0] ?? 'Plugin generation failed; inspect local logs.' }
-      : {}),
-  })
+  const safe = <T extends { error?: string }>(item: T) =>
+    Object.freeze({
+      ...item,
+      ...(item.error
+        ? {
+            error: publicErrorContract(item.error)
+              ? item.error
+              : 'Plugin generation failed; inspect local logs.',
+          }
+        : {}),
+    })
   return Object.freeze({
     ...status,
     ...(status.blocked ? { blocked: Object.freeze(status.blocked.slice(0, 256)) } : {}),
@@ -428,12 +439,12 @@ export function projectGenerationStatus(
   }
 }
 
-/** Verify cold generations cooperatively without blocking unrelated worker requests. */
+/** Read historical descriptions; resume/migration separately verify the executable archive. */
 export async function readGenerationStatusAsync(
-  store: Pick<RuntimeGenerationSnapshotStore, 'sessions' | 'readAsync'>,
+  store: Pick<RuntimeGenerationSnapshotStore, 'sessions' | 'describe'>,
   describe: (
     pins: ReturnType<RuntimeGenerationSnapshotStore['sessions']>,
-    read: (id: string) => PluginGenerationSnapshot,
+    read: (id: string) => GenerationDescription,
   ) => GenerationStatus,
   loaded: readonly ReadonlyMap<string, unknown>[],
 ): Promise<GenerationStatus> {
@@ -441,23 +452,15 @@ export async function readGenerationStatusAsync(
   const ids = [...new Set(pins.map((pin) => pin.generationId))].filter(
     (id) => !loaded.some((snapshots) => snapshots.has(id)),
   )
-  const snapshots = new Map<string, PluginGenerationSnapshot>()
+  const snapshots = new Map<string, GenerationDescription>()
   const errors = new Map<string, unknown>()
-  let next = 0
-  await Promise.all(
-    Array.from({ length: Math.min(4, ids.length) }, async () => {
-      while (next < ids.length) {
-        const id = ids[next]
-        next++
-        if (id === undefined) break
-        try {
-          snapshots.set(id, await store.readAsync(id))
-        } catch (error) {
-          errors.set(id, error)
-        }
-      }
-    }),
-  )
+  for (const id of ids) {
+    try {
+      snapshots.set(id, store.describe(id))
+    } catch (error) {
+      errors.set(id, error)
+    }
+  }
   return describe(pins, (id) => {
     const snapshot = snapshots.get(id)
     if (!snapshot) throw errors.get(id) ?? new Error('E_GENERATION_SNAPSHOT_MISSING')

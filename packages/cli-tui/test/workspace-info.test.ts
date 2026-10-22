@@ -33,6 +33,14 @@ mkdirSync(join(lane, 'packages', 'web'), { recursive: true })
 const detachedLane = join(home, 'lanes', 'detached')
 git(repo, 'worktree', 'add', '--quiet', '--detach', detachedLane)
 const short = git(repo, 'rev-parse', '--short', 'HEAD')
+const tracked = join(home, 'tracked')
+mkdirSync(tracked)
+git(tracked, 'init', '--quiet', '--initial-branch=main')
+git(tracked, 'commit', '--quiet', '--allow-empty', '-m', 'one')
+git(home, 'init', '--quiet', '--bare', join(home, 'remote.git'))
+git(tracked, 'remote', 'add', 'origin', join(home, 'remote.git'))
+git(tracked, 'push', '--quiet', '-u', 'origin', 'main')
+git(tracked, 'commit', '--quiet', '--allow-empty', '-m', 'two')
 const plain = join(home, 'notes')
 mkdirSync(plain)
 
@@ -60,6 +68,11 @@ describe('workspace info for the composer rail', () => {
       'repository without commits still has its branch',
       fresh,
       { root: '~/fresh', subpath: '', branch: 'main' },
+    ],
+    [
+      'a branch ahead of its upstream counts the commits',
+      tracked,
+      { root: '~/tracked', subpath: '', branch: 'main', ahead: 1 },
     ],
     ['outside git only the directory', plain, { root: '~/notes', subpath: '' }],
     [

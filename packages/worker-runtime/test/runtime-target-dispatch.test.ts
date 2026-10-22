@@ -202,8 +202,14 @@ describe('runWorker runtime.stale production dispatch', () => {
         ),
       )
       await expect
-        .poll(() => written.some((frame) => JSON.stringify(frame).includes('runtime boot is not ready')))
+        .poll(() =>
+          written.some((frame) => {
+            const reply = frame as { requestId?: string; error?: { code?: string } }
+            return reply.requestId === 'open-1' && reply.error?.code === 'E_WORKER'
+          }),
+        )
         .toBe(true)
+      expect(JSON.stringify(written)).not.toContain('runtime boot is not ready')
       link.push(Buffer.from(encodeFrame(stale(a))))
       await expect
         .poll(() => written.some((frame) => (frame as { type?: string }).type === 'runtime.boot_ready'))

@@ -2,6 +2,44 @@ import { open } from 'node:fs/promises'
 import { basename, extname, resolve } from 'node:path'
 import { type Session, uploadAttachment } from '@agnes/sdk'
 
+/**
+ * Extension to MIME type, as a browser reports it for the same file in the Web composer. The daemon
+ * takes any well-formed type (and refuses one outside its configured allow-list, which reaches the
+ * user verbatim), so an extension not listed travels as `application/octet-stream`, as on the Web.
+ */
+const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.pdf': 'application/pdf',
+  '.txt': 'text/plain',
+  '.md': 'text/markdown',
+  '.csv': 'text/csv',
+  '.html': 'text/html',
+  '.json': 'application/json',
+  '.xml': 'application/xml',
+  '.yaml': 'application/yaml',
+  '.yml': 'application/yaml',
+  '.zip': 'application/zip',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.mp4': 'video/mp4',
+}
+
+export function attachmentMime(path: string): string {
+  return MIME_BY_EXTENSION[extname(path).toLowerCase()] ?? 'application/octet-stream'
+}
+
 /** A local user-selected original, sliced through one stable file descriptor. */
 export async function uploadLocalAttachment(
   session: Session,
@@ -14,16 +52,7 @@ export async function uploadLocalAttachment(
     const original = await file.stat()
     if (!original.isFile() || original.size > 100 * 1024 * 1024)
       throw Object.assign(new Error('ATTACHMENT_BYTES'), { code: 'ATTACHMENT_BYTES' })
-    const mime =
-      (
-        {
-          '.png': 'image/png',
-          '.jpg': 'image/jpeg',
-          '.jpeg': 'image/jpeg',
-          '.pdf': 'application/pdf',
-          '.txt': 'text/plain',
-        } as Record<string, string>
-      )[extname(path).toLowerCase()] ?? 'application/octet-stream'
+    const mime = attachmentMime(path)
     return await uploadAttachment(
       session.client,
       { sessionId: session.id, laneId: 'main' },

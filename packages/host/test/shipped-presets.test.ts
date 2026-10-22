@@ -121,7 +121,7 @@ describe('the shipped presets, loaded from disk', () => {
       })
       // The same platform, an explicit L0 recipe: it opens. Without this the case would
       // also pass if the host refused every session on that platform.
-      const s = await t.host.createSession({ cwd: dataDir, preset: 'full-access' })
+      const s = await t.host.createSession({ cwd: dataDir, preset: 'standard', permission: 'full-access' })
       expect(s.key).toBeDefined()
     } finally {
       await t.host.close()

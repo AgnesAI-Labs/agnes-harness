@@ -1,12 +1,17 @@
 import {
+  ceilingAllows,
   childAgentRefusal,
-  DEFAULT_LOOP,
+  defaultSelection,
+  mcpToolAllowed,
   modelAllowsTool,
   type PresetView,
+  type ResourceCeilings,
+  type RoleAuthority,
+  resourceCeilings,
+  selectionAllows,
   type ToolRegistry,
 } from '@agnes/core'
 import type { ChildAgentAllowlist } from '@agnes/extension-api'
-import { mcpStablePrefix } from '@agnes/extension-api/mcp-naming'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { toPresetView } from '@agnes/host-common/presets/view'
 import {
@@ -20,7 +25,11 @@ import {
 } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { materializeRoutes } from '@agnes/host-providers/assemble/routes'
-import { clientModuleRowIdForContribution, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import {
+  clientModuleRowIdForContribution,
+  RELEASE_DEFAULTS,
+  type RuntimePluginSnapshot,
+} from '@agnes/package-manager'
 import type { LoopSelection, RouteTable, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
 
 export type { CapabilityReason, SessionCapability, SessionCapabilitySet } from '@agnes/protocol'
@@ -56,6 +65,9 @@ export type SessionCapabilityInput = {
   childAllowlist?: ChildAgentAllowlist
   childRequest?: { providerId?: string; model?: string }
   resourceRequest?: { kind: 'mcp' | 'skills'; id: string }
+  authority?: RoleAuthority
+  /** Snapshot upper bound. These arrays are literal allowlists, including empty denial. */
+  resourceScope?: ResourceCeilings | { mcp: readonly string[]; skills: readonly string[] }
   installed?: {
     plugins?: readonly { id: string; enabled: boolean; packageId?: string | undefined }[]
     tools?: readonly CapabilityTool[]
@@ -137,8 +149,10 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
   const packageEnabled = (id?: string) =>
     !selection.packages?.some((pkg) => pkg.id === id && pkg.enabled === false)
   const listAllows = (list: readonly string[] | undefined, ids: readonly string[]) =>
-    !list?.length || ids.some((id) => list.includes(id))
-  const resourceIds = (kind: 'mcp' | 'skills', item: CapabilityResource) => [
+    selectionAllows(defaultSelection(list), ids)
+  const resourcesCeiling =
+    input.authority?.resources ?? (input.resourceScope ? resourceCeilings(input.resourceScope) : undefined)
+  const resourceSelectionAliases = (kind: 'mcp' | 'skills', item: CapabilityResource) => [
     item.id,
     item.name ?? '',
     item.packageId ?? '',
@@ -147,21 +161,27 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
   const resource = (kind: 'mcp' | 'skills', item: CapabilityResource) =>
     decision(item.id, [
       [packageEnabled(item.packageId), 'package-enabled', source('packages')],
-      [listAllows(selection[kind], resourceIds(kind, item)), `${kind}-selection`, source(kind)],
+      [listAllows(selection[kind], resourceSelectionAliases(kind, item)), `${kind}-selection`, source(kind)],
+      [
+        resourcesCeiling === undefined || ceilingAllows(resourcesCeiling[kind], item.id),
+        'role-resource-snapshot',
+        { layer: 'session', name: 'role-delegation' },
+      ],
     ])
   const resources = (kind: 'mcp' | 'skills') => {
     const live = input.live?.[kind] ?? []
     const actual = live.map((item) => resource(kind, item))
     if (input.live?.[kind] !== undefined)
       for (const id of selection[kind] ?? []) {
-        if (!live.some((item) => resourceIds(kind, item).includes(id)))
+        if (!live.some((item) => resourceSelectionAliases(kind, item).includes(id)))
           actual.push(
             decision(id, [[false, 'resource-unavailable', { layer: 'session', name: 'live-resources' }]]),
           )
       }
     return actual
   }
-  const mcpPrefixes = (selection.mcp ?? []).map((id) => mcpStablePrefix(id.replace(/^mcp\//, '')))
+  const readOnly = selection.toolPolicy?.readOnly === true || input.authority?.permission === 'read-only'
+  const mcpSelection = defaultSelection(selection.mcp)
   const tools = (input.installed?.tools ?? []).map((tool) =>
     decision(tool.name, [
       [packageEnabled(tool.packageId), 'package-enabled', source('packages')],
@@ -179,7 +199,12 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         'bundle-ownership',
         { layer: 'profile', name: 'bundle-scope' },
       ],
-      [!selection.toolPolicy?.readOnly || tool.readOnly, 'read-only', source('toolPolicy.readOnly')],
+      [
+        !input.authority || ceilingAllows(input.authority.tools, tool.name),
+        'role-tool-snapshot',
+        { layer: 'session', name: 'role-delegation' },
+      ],
+      [!readOnly || tool.readOnly, 'read-only', source('toolPolicy.readOnly')],
       [listAllows(selection.tools, [tool.name]), 'tool-selection', source('tools')],
       [
         selection.toolPolicy?.allow === undefined || selection.toolPolicy.allow.includes(tool.name),
@@ -187,13 +212,11 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         source('toolPolicy.allow'),
       ],
       [!selection.toolPolicy?.deny?.includes(tool.name), 'policy-deny', source('toolPolicy.deny')],
+      [mcpToolAllowed(mcpSelection, tool.name, tool.packageId), 'mcp-selection', source('mcp')],
       [
-        !tool.name.startsWith('mcp_') ||
-          !selection.mcp?.length ||
-          selection.mcp.includes(tool.packageId ?? '') ||
-          mcpPrefixes.some((prefix) => tool.name.startsWith(prefix)),
-        'mcp-selection',
-        source('mcp'),
+        resourcesCeiling === undefined || mcpToolAllowed(resourcesCeiling.mcp, tool.name),
+        'role-resource-snapshot',
+        { layer: 'session', name: 'role-delegation' },
       ],
     ]),
   )
@@ -238,7 +261,7 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         toBound(input.admin?.composition ?? {}).loop ??
         selection.loop)) ??
     preset?.loop ??
-    DEFAULT_LOOP
+    RELEASE_DEFAULTS.loop
   const routes =
     input.routes ??
     (input.profile && preset ? materializeRoutes(preset, input.profile, input.adapterCatalog) : undefined)
@@ -277,13 +300,13 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         preset: presetSource.name,
         policy: preset?.approval.policy ?? 'default',
         toolRuntime: preset?.tools.runtime ?? 'default',
-        readOnly: selection.toolPolicy?.readOnly === true,
+        readOnly,
         ...(input.profile ? { approvalMode: input.profile.approvals.mode } : {}),
         source: presetSource,
       },
       sandbox: {
         provider: selection.sandbox?.provider ?? input.profile?.sandbox?.provider ?? 'local',
-        onUnavailable: preset?.sandbox.onUnavailable ?? 'deny',
+        onUnavailable: input.authority?.sandboxRequired ? 'deny' : (preset?.sandbox.onUnavailable ?? 'deny'),
         source: source('sandbox'),
       },
       compaction: {
@@ -319,7 +342,9 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
             resourceRequest: resource(
               input.resourceRequest.kind,
               input.live?.[input.resourceRequest.kind]?.find((item) =>
-                resourceIds(input.resourceRequest!.kind, item).includes(input.resourceRequest!.id),
+                resourceSelectionAliases(input.resourceRequest!.kind, item).includes(
+                  input.resourceRequest!.id,
+                ),
               ) ?? { id: input.resourceRequest.id },
             ),
           }

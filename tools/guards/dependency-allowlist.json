@@ -121,7 +121,8 @@
     "@agnes/host-extensions",
     "@agnes/host-providers",
     "@agnes/intelligent-ui-contract",
-    "@agnes/observability"
+    "@agnes/observability",
+    "@agnes/distribution"
   ],
   "@agnes/sdk": ["@agnes/protocol", "@agnes/system-node"],
   "@agnes/daemon": [
@@ -143,7 +144,8 @@
     "@agnes/daemon-admin",
     "@agnes/daemon-rpc",
     "@agnes/observability",
-    "@agnes/sdk"
+    "@agnes/sdk",
+    "@agnes/distribution"
   ],
   "@agnes/cli": [
     "@agnes/system-node",
@@ -227,7 +229,8 @@
     "@agnes/protocol",
     "@agnes/sandbox-remote",
     "@agnes/system-node",
-    "@agnes/core-ledger"
+    "@agnes/core-ledger",
+    "@agnes/package-manager"
   ],
   "@agnes/host-computer-use": [
     "@agnes/core",
@@ -270,11 +273,11 @@
     "@agnes/host-common",
     "@agnes/host-extensions",
     "@agnes/host-infrastructure",
-    "@agnes/model-adapters",
     "@agnes/package-manager",
     "@agnes/plugin-runtime",
     "@agnes/protocol",
-    "@agnes/history-index"
+    "@agnes/history-index",
+    "@agnes/distribution"
   ],
   "@agnes/daemon-foundation": [
     "@agnes/base",
@@ -367,5 +370,15 @@
   "@agnes/interaction-ui": ["@agnes/web-client", "@agnes/web-conversation", "@agnes/web-ui"],
   "@agnes/mcp-helper": [],
   "@agnes/plugin-helper": [],
-  "@agnes/skill-helper": []
+  "@agnes/skill-helper": [],
+  "@agnes/distribution": [
+    "@agnes/ai",
+    "@agnes/core",
+    "@agnes/extension-api",
+    "@agnes/model-adapters",
+    "@agnes/package-manager",
+    "@agnes/plugin-runtime",
+    "@agnes/protocol",
+    "@agnes/cordis"
+  ]
 }

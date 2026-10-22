@@ -59,6 +59,7 @@ export class ProviderRegistry<T extends ProviderIdentity> {
     string,
     {
       provider: T
+      owner?: Context
       lease: symbol
       entry: Omit<ProviderCatalogEntry, 'active' | 'selectedFor'>
       dispose?: () => Promise<void>
@@ -91,11 +92,13 @@ export class ProviderRegistry<T extends ProviderIdentity> {
       throw this.error('E_PROVIDER_DUPLICATE', `duplicate ${this.label}: ${key}`, 'register', provider.id)
     const record: {
       provider: T
+      owner?: Context
       lease: symbol
       entry: Omit<ProviderCatalogEntry, 'active' | 'selectedFor'>
       dispose?: () => Promise<void>
     } = {
       provider,
+      ...(owner ? { owner } : {}),
       lease: Symbol(key),
       entry: Object.freeze({
         kind: this.definition.kind,
@@ -223,6 +226,10 @@ export class ProviderRegistry<T extends ProviderIdentity> {
   lease(selection: ProviderSelection): symbol {
     this.resolve(selection)
     return this.entries.get(this.key(selection))!.lease
+  }
+  owner(selection: ProviderSelection): Context | undefined {
+    this.resolve(selection)
+    return this.entries.get(this.key(selection))!.owner
   }
   private error(
     code: ConstructorParameters<typeof ProviderError>[0],
@@ -365,6 +372,26 @@ export class ProvidersService extends Service implements ProvidersCatalogPort, P
   /** Host-only binding guard; never exposed through the author registration port. */
   lease<T extends ProviderIdentity>(kind: ProviderKind<T>, selection: ProviderSelection): symbol {
     return this.lookup(kind, 'bind').lease(selection)
+  }
+  /** Host-only provenance; a profile name cannot promote an installed registration to builtin. */
+  builtinRegistration<T extends ProviderIdentity>(
+    kind: ProviderKind<T>,
+    selection: ProviderSelection,
+    ownerPackage: string,
+  ): boolean {
+    const owner = this.lookup(kind, 'bind').owner(selection)
+    if (!this.origins) return true
+    if (!owner) return false
+    for (let fiber = owner.fiber; fiber !== fiber.parent.fiber; fiber = fiber.parent.fiber) {
+      const origin = this.origins.lookup(fiber)
+      if (origin)
+        return (
+          origin.trustTier === 'builtin' &&
+          origin.packageId === 'builtin' &&
+          origin.ownerPackage === ownerPackage
+        )
+    }
+    return owner.fiber === this.ctx.root.fiber
   }
   /** The author path and configuration cannot touch a kind the Host owns; Host code holds the registry itself. */
   private refuseHostKind(

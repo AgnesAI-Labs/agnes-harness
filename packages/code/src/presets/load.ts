@@ -17,9 +17,6 @@ declare const AGNES_CODE_MINIMAL_SHA256: string | undefined
  */
 export const PRESET_NAMES = [
   'standard',
-  'read-only',
-  'workspace-write',
-  'full-access',
   'claw',
   'channel',
   'minimal-rl',
@@ -50,6 +47,11 @@ export function parsePreset(text: string, name: string): PresetDoc {
 }
 
 export function loadPreset(name: string): PresetDoc {
+  if (['read-only', 'workspace-write', 'full-access'].includes(name))
+    throw new Error(
+      `Retired permission-as-preset alias ${name}; use standard with an explicit permission and a new, empty AGH_HOME (clean home).`,
+    )
+
   if (!isPresetName(name)) throw new Error(`unknown preset: ${name}`)
   const text =
     typeof AGNES_CODE_PRESET_TEXTS === 'undefined'

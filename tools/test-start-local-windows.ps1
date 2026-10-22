@@ -11,18 +11,24 @@ $profileDir = 'C:\Users\u'
 $homes = @(
     @('default home', $null, $null, [IO.Path]::Combine($profileDir, '.agh\data')),
     @('AGH_HOME', 'D:\AghData', $null, [IO.Path]::Combine('D:\AghData', 'data')),
-    @('legacy AGNES_HOME', $null, 'D:\AgnesData', [IO.Path]::Combine('D:\AgnesData', 'data')),
-    @('AGH_HOME over AGNES_HOME', 'D:\AghData', 'D:\AgnesData', [IO.Path]::Combine('D:\AghData', 'data')),
-    @('blank AGH_HOME', ' ', 'D:\AgnesData', [IO.Path]::Combine('D:\AgnesData', 'data')),
     @('UNC AGH_HOME', '\\server\share\agh', $null, [IO.Path]::Combine('\\server\share\agh', 'data')),
-    @('HOME over USERPROFILE', $null, $null, [IO.Path]::Combine('D:\HomeDir', '.agh\data'), 'D:\HomeDir'),
-    @('AGNES_HOME over HOME', $null, 'D:\AgnesData', [IO.Path]::Combine('D:\AgnesData', 'data'), 'D:\HomeDir')
+    @('HOME over USERPROFILE', $null, $null, [IO.Path]::Combine('D:\HomeDir', '.agh\data'), 'D:\HomeDir')
 )
 foreach ($case in $homes) {
     $actual = Resolve-LocalDataDir -AghHome $case[1] -AgnesHome $case[2] -OsHome $case[4] -UserProfile $profileDir
     if ($actual -ne $case[3]) { throw "Failed: $($case[0]) resolved $actual" }
 }
 $refusals = 0
+foreach ($current in @($null, ' ', 'D:\AghData')) {
+    $refused = $false
+    try { $null = Resolve-LocalDataDir -AghHome $current -AgnesHome 'D:\AgnesData' -UserProfile $profileDir }
+    catch {
+        if ($_.Exception.Message -notmatch 'AGNES_HOME.*clean home') { throw }
+        $refused = $true
+    }
+    if (-not $refused) { throw 'Retired AGNES_HOME was accepted' }
+    $refusals++
+}
 foreach ($relative in @('relative\home', '\rooted-on-current-drive', 'D:drive-relative')) {
     foreach ($variable in @('AghHome', 'AgnesHome', 'OsHome')) {
         $arguments = @{ AghHome = $null; AgnesHome = $null; OsHome = $null; UserProfile = $profileDir }

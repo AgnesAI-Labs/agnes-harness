@@ -168,7 +168,7 @@ it('carries real Host permission-axis and revoked full-access denials through wo
   const refusals = [
     {
       code: 'E_PRESET_UNSUPPORTED',
-      reason: 'permission-axis',
+      reason: 'clean-home-required',
       raise: () =>
         resolvePreset('full-access', { 'full-access': { name: 'full-access' } }, { permission: 'read-only' }),
     },
@@ -188,6 +188,14 @@ it('carries real Host permission-axis and revoked full-access denials through wo
           assertCurrentPermission,
           async () => undefined,
         ),
+    },
+    {
+      code: 'E_PACKAGE_INTEGRITY',
+      reason: 'clean-home-required',
+      raise: async () => {
+        const { assertCurrentPackageFormat } = await import('@agnes/package-manager')
+        assertCurrentPackageFormat({ metadata: { category: 'private authoring log' } })
+      },
     },
     {
       code: 'E_PACKAGE_BLOCKED',
@@ -250,7 +258,10 @@ it('carries real Host permission-axis and revoked full-access denials through wo
       expect(error).toBeInstanceOf(JsonRpcError)
       const rpc = error as InstanceType<typeof JsonRpcError>
       expect(rpc.data).toMatchObject({ code: row.code, diagnosticId: expect.any(String) })
-      expect(JSON.stringify(rpc.data)).not.toContain('private')
+      expect(rpc.data).not.toHaveProperty('cause.detail')
+      expect(JSON.stringify(rpc.data)).not.toMatch(
+        /"token"|private (?:authoring|native or authoring|publication policy) log/,
+      )
       if (row.code === 'INTERNAL') {
         expect(rpc.code).toBe(-32603)
         expect(rpc.data).not.toHaveProperty('cause')

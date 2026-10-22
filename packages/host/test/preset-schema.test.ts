@@ -45,17 +45,14 @@ describe('delivered preset schema conformance', () => {
       'base',
       'channel',
       'claw',
-      'full-access',
       'minimal',
       'minimal-rl',
       'permission-full-access',
       'permission-read-only',
       'permission-workspace-write',
       'ptc',
-      'read-only',
       'standard',
       'standard-windows',
-      'workspace-write',
     ])
     for (const [name, doc] of Object.entries(docs)) {
       const before = JSON.stringify(doc)

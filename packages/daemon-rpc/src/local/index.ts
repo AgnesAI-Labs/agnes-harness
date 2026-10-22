@@ -72,6 +72,7 @@ import { registerDiagnostics } from './methods/diagnostics.js'
 import { registerExtensions } from './methods/extensions.js'
 import { registerFactChain } from './methods/fact-chain.js'
 import { registerProfileServices } from './methods/profile-services.js'
+import { requireSessionHistory } from './methods/session-integrity.js'
 import { copyForkBookmarks, registerSessionPreferences } from './methods/session-preferences.js'
 import { registerSessionRuntime } from './methods/session-runtime.js'
 import {
@@ -430,7 +431,9 @@ export function createLocalEndpoint(
   const lister = withSessionPreferences(opts.lister ?? new RegistryLister(registry), preferences)
   registerSessionPreferences(ep, lister, preferences)
   registerConfiguration(ep, opts.configuration)
-  registerSessionRuntime(ep, host, requireSessionOwner(cx))
+  registerSessionRuntime(ep, host, requireSessionOwner(cx), (key) =>
+    registry.get(key)?.session.integrityStatus(),
+  )
   registerSessionWorkspaceReveal(ep, workspaces, requireSessionOwner(cx), {
     local: cx.auth.config.transport === 'unix' || cx.auth.config.localWeb === true,
   })
@@ -528,6 +531,7 @@ export function createLocalEndpoint(
     attached,
   )
   registerFactChain(ep, {
+    verifyHistory: (key) => requireSessionHistory(cx, key),
     requireSessionOwner: requireSessionOwner(cx),
     scan: (key) => (query) => host.kernel.o.storage.scan(key, query),
     ...(opts.dataDir ? { traces: new RequestTraceStore(opts.dataDir, host.profile.name) } : {}),

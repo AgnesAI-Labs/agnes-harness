@@ -182,14 +182,14 @@ it('projects the actual core timeline with generation and historical cuts throug
   const s = await service({ script: [say('project first'), say('project second')] })
   const session = await s.client.session.new({ cwd: s.h.dataDir })
   await session.prompt('first question')
-  const first = await session.projectUI()
+  const first = await session.projectUI(undefined, { surface: 'tui' })
   expect(first.sessionId).toBe(session.id)
   expect(first.generation).toBe(1)
   expect(first.upto).toBeGreaterThan(0)
   expect(JSON.stringify(first.nodes)).toContain('project first')
   expect(JSON.stringify(first.nodes)).toContain('first question')
   await session.prompt('second question')
-  const update = await session.projectUIPatch(first.upto)
+  const update = await session.projectUIPatch(first.upto, undefined, { surface: 'tui' })
   expect(update.kind).toBe('patch')
   if (update.kind !== 'patch') throw new Error('expected projection patch')
   expect(update.patch.from).toBe(first.upto)
@@ -213,7 +213,7 @@ it('projects the actual core timeline with generation and historical cuts throug
       totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
       reasoningComplete: false,
       billingComplete: false,
-      context: { tokens: 0, window: 128000, autoCompact: true, source: 'estimated' },
+      context: { tokens: 0, window: 128000, autoCompact: true, source: 'estimated', compactAt: 111616 },
       model: { route: 'gw', id: 'm1', thinking: 'off', settings: { contextWindow: 128000 } },
     },
     yolo: false,

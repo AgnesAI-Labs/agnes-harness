@@ -408,42 +408,13 @@ describe('main', () => {
     expect(existsSync(join(dir, '.agnes'))).toBe(false)
   })
 
-  // Legacy compatibility: AGNES_HOME alone still selects the home, and says once that it is
-  // deprecated. No earlier test in this file resolves AGNES_HOME, and each test file gets its own
-  // module graph, so this is the first legacy resolution and the once-per-module notice shows here.
-  it('an environment with only the legacy AGNES_HOME still boots there and warns that it is deprecated', async () => {
+  it('refuses AGNES_HOME before booting or creating a home', async () => {
     const dir = scratch()
     const legacy = join(dir, 'legacy')
-    vi.stubEnv('AGH_HOME', undefined)
-    vi.stubEnv('AGNES_HOME', undefined)
-    vi.stubEnv('HOME', dir)
-    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined)
     const h = harness(dir, {}, { AGNES_HOME: legacy, HOME: dir })
-    const dataDirs: string[] = []
-    const code = await main(['-p', 'hello'], h.io, {
-      ...h.boot,
-      createHostImpl: async (profile) => {
-        dataDirs.push(profile.dataDir)
-        return (await createTestHost({ dataDir: dir, script: [say('main says hi')] })).host
-      },
-    })
-    expect(code, h.err()).toBe(0)
-    expect(h.out()).toBe('main says hi\n')
-    expect(dataDirs).toEqual([join(legacy, 'data')])
-    // Linux prepares an empty workspace sandbox anchor; it must not become a second home.
-    expect(existsSync(join(dir, '.agh', 'data'))).toBe(false)
-    expect(existsSync(join(dir, '.agh', 'config'))).toBe(false)
-    if (existsSync(join(dir, '.agh'))) expect(readdirSync(join(dir, '.agh'))).toEqual([])
-    const notices = warn.mock.calls.filter(
-      ([, options]) => (options as { code?: string })?.code === 'AGH_DEP_AGNES_HOME',
-    )
-    expect(notices).toEqual([
-      [
-        `AGNES_HOME is deprecated; set AGH_HOME instead (using ${legacy}).`,
-        { type: 'DeprecationWarning', code: 'AGH_DEP_AGNES_HOME' },
-      ],
-    ])
-  }, 30_000)
+    await expect(main(['-p', 'hello'], h.io, h.boot)).rejects.toThrow(/AGNES_HOME.*AGH_HOME.*clean home/)
+    expect(existsSync(legacy)).toBe(false)
+  })
 
   // Not a TTY on either end is what makes the default form print rather than draw.
   it('a redirected stdout picks the print form even without -p', async () => {
@@ -646,23 +617,19 @@ describe('main', () => {
       }
     }
 
-    it.each([
-      ['only AGH_HOME', (planted: string, _other: string) => ({ AGH_HOME: planted })],
-      ['only the legacy AGNES_HOME', (planted: string, _other: string) => ({ AGNES_HOME: planted })],
-      [
-        'AGH_HOME over a different AGNES_HOME',
-        (planted: string, other: string) => ({ AGH_HOME: planted, AGNES_HOME: other }),
-      ],
-    ])('with %s set', async (_name, envFor) => {
-      const dir = scratch()
-      const planted = join(dir, 'planted')
-      const other = join(dir, 'other')
-      await plantLiveOwner(planted)
-      vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined)
-      const h = harness(dir, {}, { ...envFor(planted, other), HOME: join(dir, 'os-home') })
-      expect(await main(['daemon', 'status'], h.io, h.boot), h.err()).toBe(0)
-      expect(JSON.parse(h.out())).toMatchObject({ running: true, owner: { pid: process.pid } })
-    })
+    it.each([['only AGH_HOME', (planted: string, _other: string) => ({ AGH_HOME: planted })]])(
+      'with %s set',
+      async (_name, envFor) => {
+        const dir = scratch()
+        const planted = join(dir, 'planted')
+        const other = join(dir, 'other')
+        await plantLiveOwner(planted)
+        vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined)
+        const h = harness(dir, {}, { ...envFor(planted, other), HOME: join(dir, 'os-home') })
+        expect(await main(['daemon', 'status'], h.io, h.boot), h.err()).toBe(0)
+        expect(JSON.parse(h.out())).toMatchObject({ running: true, owner: { pid: process.pid } })
+      },
+    )
 
     it('reports not running for a home that holds no owner record', async () => {
       const dir = scratch()

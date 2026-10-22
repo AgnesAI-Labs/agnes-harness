@@ -316,3 +316,62 @@ it.each([
     }
   },
 )
+
+it.each(['revocation', 'abort', 'expiry', 'epoch', 'stale-proof'])(
+  'shared proof: refuses Skill journal %s at final publication',
+  async (loss) => {
+    const { permissionEffectAdmission } = await import('@agnes/protocol')
+    let active = true,
+      now = 0,
+      epoch = 0,
+      version = 1
+    const controller = new AbortController()
+    const proof = permissionEffectAdmission({
+      signals: [controller.signal],
+      expiresAt: 10,
+      clock: () => now,
+      unavailable: () => Error('permission unavailable'),
+      assertBound: () => {
+        if (!active || epoch !== 0 || version !== 1) throw Error('permission unavailable')
+      },
+    })
+    const lose = () => {
+      if (loss === 'revocation') active = false
+      if (loss === 'abort') controller.abort()
+      if (loss === 'expiry') now = 10
+      if (loss === 'epoch') epoch++
+      if (loss === 'stale-proof') version++
+    }
+    directory = await mkdtemp(join(tmpdir(), 'agh-skill-proof-'))
+    const store = new SkillJournalStore(directory, scope)
+    await seedJournal(directory, [])
+    const file = join(directory, `${profile}.skills.json`)
+    const before = await readFile(file, 'utf8')
+    // Inject loss only after the durability boundary, after the final async verifier returns.
+    let flushed = false
+    persistence.afterFlush = () => {
+      flushed = true
+    }
+    const finalAdmission = {
+      ...proof,
+      verify: async () => {
+        await proof.verify()
+        if (flushed) lose()
+      },
+    }
+    await expect(
+      store.transact(
+        profile,
+        (journal) => ({
+          next: { ...journal, removed: ['skill/reviewed'] },
+          result: undefined,
+        }),
+        finalAdmission,
+      ),
+    ).rejects.toThrow('permission unavailable')
+    expect(await readFile(file, 'utf8')).toBe(before)
+    expect((await readdir(directory)).filter((name) => name.endsWith('.tmp'))).toEqual([])
+    // Refusal leaves durable operation rows unchanged.
+    expect(await store.read(profile, (journal) => journal.operations)).toEqual([])
+  },
+)

@@ -344,7 +344,7 @@ describe('installation errors across worker frames', () => {
   it.each([
     ['E_PACKAGE_SOURCE', 'E_PACKAGE_SOURCE'],
     ['E_PACKAGE_PREVIEW_STALE', 'E_PACKAGE_PREVIEW_STALE'],
-    ['private path and token', 'HELPER_MANAGEMENT_FAILED'],
+    ['private path and token', 'SEMANTIC_REJECTED'],
   ])('preserves only declared package reasons: %s', async (reason, code) => {
     const socket = new FakeSocket()
     const link = new WorkerLink(socket as unknown as Socket, {

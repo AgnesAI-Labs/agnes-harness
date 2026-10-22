@@ -2,12 +2,12 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { attachmentLink } from '@agnes/protocol'
+import { attachmentLink, rpcError } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { resourceCapabilityMissing } from '../../src/commands/resources.js'
 import { type Colour, createAnsi } from '../../src/tui/ansi.js'
-import { TuiApp } from '../../src/tui/app.js'
+import { formatTuiErrorNotice, TuiApp } from '../../src/tui/app.js'
 import {
   attachmentsFrom,
   completeToken,
@@ -16,7 +16,7 @@ import {
   slashCommand,
   slashCommandFor,
 } from '../../src/tui/commands.js'
-import { FakeTerminal } from '../../src/tui/terminal.js'
+import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
 import { TuiTheme } from '../../src/tui/theme.js'
 import { scriptedEndpoint } from '../fake-endpoint.js'
 import { screenOf } from './harness.js'
@@ -115,13 +115,18 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(27)
+    expect(SLASH_COMMANDS).toHaveLength(37)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
       '/new',
       '/resume',
       '/sessions',
+      '/pin',
+      '/unpin',
+      '/rename',
+      '/archive',
+      '/search',
       '/cost',
       '/usage',
       '/computer-use',
@@ -134,6 +139,8 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/theme',
       '/model',
       '/yolo',
+      '/grants',
+      '/deliverables',
       '/attach',
       '/export',
       '/refine',
@@ -144,12 +151,15 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/skill',
       '/mcp',
       '/context',
+      '/agents',
+      '/jobs',
+      '/queue',
     ])
   })
 
   it('carries an args shape for commands that take one and a description for all', () => {
-    expect(slashCommand('/resume')?.args).toBe('[id]')
-    expect(slashCommand('/rewind')?.args).toBe('<seq>')
+    expect(slashCommand('/resume')?.args).toBe('[id|all]')
+    expect(slashCommand('/rewind')?.args).toBe('[seq]')
     expect(slashCommand('/compact')?.args).toBe('[instructions]')
     expect(slashCommand('/plan')?.args).toBe('[on|off|status|pending|instruction]')
     expect(slashCommand('/preset')?.args).toBe('<name>')
@@ -158,11 +168,23 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/install')?.args).toBe('<source>|confirm|cancel')
     expect(slashCommand('/package')?.args).toContain('rollback')
     expect(slashCommand('/skill')?.args).toBe('invoke <name> [arguments]|refresh|trust ...')
+    expect(slashCommand('/agents')?.args).toBe('[stop <n|id>|resume <n|id> <message>]')
+    expect(slashCommand('/jobs')?.args).toBe('[stop <n|id>]')
+    expect(slashCommand('/queue')?.args).toBe('[edit <n>|drop <n>]')
     // Commands without arguments carry no shape at all, and an unknown name finds nothing.
     expect(slashCommand('/help')?.args).toBeUndefined()
     expect(slashCommand('/nope')).toBeUndefined()
     for (const c of SLASH_COMMANDS)
       expect(slashCommandFor(c.name, 'zh-CN')?.description.length).toBeGreaterThan(0)
+    // Every command carries a one-line summary in both locales: <= 28 columns, args-free.
+    for (const locale of ['en', 'zh-CN'])
+      for (const c of SLASH_COMMANDS) {
+        const summary = slashCommandFor(c.name, locale)?.summary ?? ''
+        expect(summary.length, `${locale} ${c.name}`).toBeGreaterThan(0)
+        expect(displayWidth(summary), `${locale} ${c.name}`).toBeLessThanOrEqual(28)
+        expect(summary, `${locale} ${c.name}`).not.toContain('<')
+        if (locale === 'zh-CN') expect([...summary].length, c.name).toBeLessThanOrEqual(14)
+      }
   })
 })
 
@@ -272,6 +294,188 @@ describe('runSlash', () => {
       await client.close()
     }
   })
+  it('/agents reads session.controls and sends stop and resume as child controls on the wire', async () => {
+    const { app, client, ep } = await unstartedApp()
+    const child = (id: string, status: string, controls = { stop: true, continue: true }) => ({
+      id,
+      parentId: 'cur',
+      providerId: 'codex',
+      status,
+      controls,
+      durationMs: 12_345,
+      totalTokens: null,
+    })
+    ep.on('_agnes/v1/session.controls', () => ({
+      controls: {},
+      paused: false,
+      pending: [],
+      children: [
+        child('child-a', 'running'),
+        child('child\u001b[31m-b', 'idle', { stop: false, continue: true }),
+      ],
+    }))
+    try {
+      const listed = await runSlash(app, '/agents')
+      expect(listed.text).toBe(
+        [
+          '1. child-a [running] codex · 12.3s · - Token · stop resume',
+          '2. child[31m-b [idle] codex · 12.3s · - Token · resume',
+        ].join('\n'),
+      )
+      // Stop and resume take a list number or an id; the resume message keeps its inner whitespace.
+      await runSlash(app, '/agents stop 1')
+      await runSlash(app, '/agents resume child-a  keep going\nplease')
+      const sent = ep.calls.filter((call) => call.method === '_agnes/v1/submit').map((call) => call.params)
+      expect(sent).toMatchObject([
+        { kind: 'control', payload: { action: 'child-stop', childId: 'child-a' } },
+        {
+          kind: 'control',
+          payload: { action: 'child-continue', childId: 'child-a', text: 'keep going\nplease' },
+        },
+      ])
+      // Usage mistakes and unknown targets never reach the daemon.
+      const before = ep.calls.length
+      for (const line of ['/agents stop', '/agents stop 1 extra', '/agents resume 1', '/agents jump 1'])
+        expect((await runSlash(app, line)).text).toBe(
+          '用法：/agents [stop <序号|id> | resume <序号|id> <消息>]',
+        )
+      expect(ep.calls.length).toBe(before)
+      expect((await runSlash(app, '/agents stop 9')).text).toBe('没有子智能体 9')
+      expect(ep.calls.filter((call) => call.method === '_agnes/v1/submit')).toHaveLength(2)
+    } finally {
+      await client.close()
+      await ep.close()
+    }
+  })
+
+  it('/jobs reads session.jobs.read and kills through session.jobs.control, showing refusals', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    const job = (id: string, over: Record<string, unknown> = {}) => ({
+      id,
+      owner: 'human',
+      ownerSessionId: 'cur',
+      kind: 'shell',
+      command: `npm run \u001b[31m${id}\n${'x'.repeat(100)}`,
+      cwd: '/tmp',
+      status: 'running',
+      code: null,
+      truncated: false,
+      ...over,
+    })
+    const jobs = [job('dev'), job('lint', { status: 'completed', code: 0, owner: 'agent' })]
+    ep.on('_agnes/v1/session.jobs.read', () => ({ jobs, completions: [] }))
+    ep.on('_agnes/v1/session.jobs.control', (params) => {
+      if ((params as { jobId?: string }).jobId === 'lint')
+        throw rpcError('CAPABILITY_DENIED', { code: 'CAPABILITY_DENIED' })
+      return { output: job('dev', { status: 'killed', code: null }) }
+    })
+    try {
+      const rows = (await runSlash(app, '/jobs')).text?.split('\n') ?? []
+      expect(rows).toHaveLength(2)
+      expect(rows[0]).toMatch(/^1\. npm run \[31mdev x{63}… \[running\] · shell · human$/)
+      expect(rows[1]).toMatch(/\[completed\] · shell · agent · 退出码 0$/)
+      expect((await runSlash(app, '/jobs stop 1')).text).toBe('已请求终止任务 dev')
+      expect((await runSlash(app, '/jobs stop dev')).text).toBe('已请求终止任务 dev')
+      const controls = ep.calls.filter((call) => call.method === '_agnes/v1/session.jobs.control')
+      expect(controls.map((call) => call.params)).toMatchObject([
+        { operation: 'kill', jobId: 'dev', sessionId: app.session.id },
+        { operation: 'kill', jobId: 'dev', sessionId: app.session.id },
+      ])
+      expect(ep.calls.find((call) => call.method === '_agnes/v1/session.jobs.read')?.params).toEqual({
+        sessionId: app.session.id,
+      })
+      for (const line of ['/jobs stop', '/jobs kill 1', '/jobs stop 1 2'])
+        expect((await runSlash(app, line)).text).toBe('用法：/jobs [stop <序号|id>]')
+      expect((await runSlash(app, '/jobs stop 0')).text).toBe('没有任务 0')
+      expect(ep.calls.filter((call) => call.method === '_agnes/v1/session.jobs.control')).toHaveLength(2)
+      // The daemon refuses a job an agent owns; the refusal surfaces as the standard error notice.
+      await app.start()
+      await app.runInput('/jobs stop lint')
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 100, 24)).join('\n')).toContain(
+          formatTuiErrorNotice(rpcError('CAPABILITY_DENIED', { code: 'CAPABILITY_DENIED' }), 'zh-CN'),
+        ),
+      )
+      ep.on('_agnes/v1/session.jobs.read', () => ({ jobs: [], completions: [] }))
+      expect((await runSlash(app, '/jobs')).text).toBe('没有后台任务')
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
+  it('/queue edit puts a queued message back in the editor, and /queue drop discards one, client-side only', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    try {
+      await app.start()
+      const before = ep.calls.length
+      app.pendingPrompts.push(
+        [{ type: 'text', text: 'first message' }],
+        [{ type: 'text', text: 'second\nmessage' }],
+      )
+      await app.runInput('/queue')
+      await vi.waitFor(async () => {
+        const screen = (await screenOf(term, 90, 24)).join('\n')
+        expect(screen).toContain('1. first message')
+        expect(screen).toContain('2. second message')
+      })
+      await app.runInput('/queue edit 2')
+      await vi.waitFor(async () => {
+        const screen = (await screenOf(term, 90, 24)).join('\n')
+        expect(screen).toContain('第 2 条已放回输入框')
+        expect(screen).toMatch(/❯ second\s*$/m)
+      })
+      await app.runInput('/queue drop 1')
+      expect(app.pendingPrompts).toEqual([])
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 90, 24)).join('\n')).toContain('已丢弃第 1 条'),
+      )
+      // The queue is the client's own: no daemon call was made for any of it.
+      expect(
+        ep.calls.slice(before).filter((call) => /submit|prompt|control|queue/i.test(call.method)),
+      ).toEqual([])
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
+  it('/agents shows a daemon refusal through the standard error notice and changes nothing else', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    const refusal = rpcError('SEMANTIC_REJECTED', { code: 'CONTROL_NOT_RUNNING' })
+    ep.on('_agnes/v1/session.controls', () => ({
+      controls: {},
+      paused: false,
+      pending: [],
+      children: [
+        {
+          id: 'child-a',
+          parentId: 'cur',
+          providerId: 'codex',
+          status: 'completed',
+          controls: { stop: true, continue: false },
+          durationMs: null,
+          totalTokens: 7,
+        },
+      ],
+    })).on('_agnes/v1/submit', () => {
+      throw refusal
+    })
+    try {
+      await app.start()
+      await app.runInput('/agents stop child-a')
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 100, 24)).join('\n')).toContain(formatTuiErrorNotice(refusal, 'zh-CN')),
+      )
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
   it('/help lists the command table with descriptions; /quit signals quit; unknown names say so', async () => {
     const { app, client, ep } = await unstartedApp()
     try {
@@ -611,11 +815,11 @@ describe('runSlash', () => {
     }
   })
 
-  it('/yolo takes no args and switches through the real setYolo call', async () => {
+  it('/yolo switches on through the real setYolo call', async () => {
     const { app, ep, client } = await unstartedApp()
     try {
       expect((await runSlash(app, '/yolo')).text).toBe(
-        'routine approvals skipped from seq 7; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. No TUI disable command.',
+        'routine approvals skipped from seq 7; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. /yolo off asks again.',
       )
       expect(ep.calls.find((entry) => entry.method === '_agnes/v1/session.setYolo')?.params).toEqual({
         sessionId: app.session.id,
@@ -718,7 +922,7 @@ describe('completeToken', () => {
     // full table.
     expect(completeToken('/zzzz')).toEqual([])
     // A prefix shared by several commands returns all of them, not one arbitrarily.
-    expect(completeToken('/re')).toEqual(['/resume', '/rewind', '/refine'])
+    expect(completeToken('/re')).toEqual(['/resume', '/rename', '/rewind', '/refine'])
     // '@' mentions have their own menu; a plain word has nothing to complete against.
     expect(completeToken('@REA')).toEqual([])
     expect(completeToken('plain')).toEqual([])
@@ -743,6 +947,8 @@ describe('attachmentsFrom', () => {
         { type: 'resource_link', uri: pathToFileURL(join(dir, 'a.txt')).href, name: 'a.txt' },
         { type: 'resource_link', uri: pathToFileURL(join(dir, 'b', 'c.txt')).href, name: 'b/c.txt' },
       ])
+      // Over --connect the local disk is not the workspace: the text goes as typed, with no file:// link.
+      expect(attachmentsFrom('look at @a.txt', dir, true)).toEqual([{ type: 'text', text: 'look at @a.txt' }])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -1054,6 +1260,7 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       mime: 'text/plain',
     }
     const calls: import('@agnes/protocol').FileUploadRequest[] = []
+    let started = { name: 'a file.txt', mime: 'text/plain' }
     const app = {
       cwd: dir,
       session: {
@@ -1061,10 +1268,13 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
         client: {
           call: async (_method: string, input: import('@agnes/protocol').FileUploadRequest) => {
             calls.push(input)
-            if (input.operation === 'start') return { offset: 0 }
+            if (input.operation === 'start') {
+              started = { name: input.name, mime: input.mimeType }
+              return { offset: 0 }
+            }
             if (input.operation === 'chunk') return { offset: bytes.length }
             return {
-              attachment: attachmentLink(artifact, 'a file.txt', {
+              attachment: attachmentLink({ ...artifact, mime: started.mime }, started.name, {
                 receiptId: '00000000-0000-4000-8000-000000000001',
               }),
             }
@@ -1080,6 +1290,28 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       ['chunk', 'original', 'main'],
       ['finish', 'original', 'main'],
     ])
+    // Newly supported types carry their own MIME; an unlisted extension travels as the generic type.
+    for (const [name, mime] of [
+      ['pic.webp', 'image/webp'],
+      ['sheet.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+      ['blob.xyz', 'application/octet-stream'],
+    ] as const) {
+      await writeFile(join(dir, name), bytes)
+      calls.length = 0
+      await runSlash(app, `/attach ${name}`)
+      expect((calls[0] as { mimeType?: string }).mimeType).toBe(mime)
+    }
+    // The daemon's own refusal (for example an allow-list miss) reaches the user verbatim, with no bytes sent.
+    calls.length = 0
+    const refuse = Object.assign(new Error('ATTACHMENT_MIME'), { data: { reason: 'ATTACHMENT_MIME' } })
+    const real = app.session.client.call
+    app.session.client.call = async (_m: string, input: import('@agnes/protocol').FileUploadRequest) => {
+      calls.push(input)
+      throw refuse
+    }
+    await expect(runSlash(app, '/attach blob.xyz')).rejects.toBe(refuse)
+    expect(calls.map((call) => call.operation)).toEqual(['start'])
+    app.session.client.call = real
     const error = Object.assign(new Error('refused'), { data: { reason: 'ATTACHMENT_QUOTA' } })
     app.session.client.call = async () => {
       throw error

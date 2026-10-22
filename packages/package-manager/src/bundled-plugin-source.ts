@@ -23,14 +23,14 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.3',
+    version: '0.2.9',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
   ...['goal-ui', 'interaction-ui', 'navigation-ui', 'conversation-ui'].map((name) => ({
     name,
     id: `@agnes/${name}`,
-    version: '0.1.0',
+    version: name === 'goal-ui' || name === 'interaction-ui' ? '0.1.1' : '0.1.0',
     license: 'Apache-2.0',
     ref: `file:./bundled-plugins/${name}`,
     optionalUnderCeiling: true,
@@ -38,7 +38,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'deliverables-ui',
     id: '@agnes/deliverables-ui',
-    version: '0.1.0',
+    version: '0.1.2',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/deliverables-ui',
     optionalUnderCeiling: true,
@@ -53,7 +53,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'browser',
     id: '@agnes/browser',
-    version: '0.1.0',
+    version: '0.1.7',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/browser',
     optionalUnderCeiling: true,
@@ -74,7 +74,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
   {
     name: 'jev-loop',
     id: '@agnes/jev-loop',
-    version: '0.1.0',
+    version: '0.1.1',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/jev-loop',
     // index.mjs is generated from packages/loop-jev and is not committed.
@@ -148,6 +148,7 @@ export const BUNDLED_EXAMPLES = Object.freeze(
     { family: 'showcase', name: 'pharma-gmp' },
     ...['tool-panel', 'mcp-skills', 'dag-loop-adapter'].map((name) => ({ family: 'community', name })),
     { family: 'showcase', name: 'aerospace-quality' },
+    { family: 'showcase', name: 'devboard' },
   ].map((example) => ({ ...example, ref: `file:./bundled-examples/${example.family}/${example.name}` })),
 )
 

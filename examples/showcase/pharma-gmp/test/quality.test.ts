@@ -19,6 +19,56 @@ import { sign } from '../src/signature.js'
 
 const packageDir = fileURLToPath(new URL('../', import.meta.url)),
   batch = 'B-2410-017'
+it('review-role: the real pharma record and profile service cannot write using a role child decision port', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agh-role-pharma-'))
+  const { host } = await createTestHost({ dataDir: home, disableSessionTitle: true })
+  let plugin: Awaited<ReturnType<typeof createPluginTestHost>> | undefined
+  try {
+    const parent = await host.createSession({ key: 'parent', cwd: home })
+    await parent.setYolo(true, parent.d.actor)
+    const workspace = parent.commandSandboxPolicy?.()
+    if (!workspace) throw new Error('fixture lacks workspace policy')
+    const child = await host.createSession({
+      key: 'child',
+      cwd: home,
+      roleDelegation: {
+        role: { ref: '@fixture/pharma#reviewer', title: { en: 'Reviewer' } },
+        parentKey: parent.key,
+        actor: parent.d.actor,
+        permission: 'workspace-write',
+        tools: [],
+        approvalPolicy: 'never',
+        parentPolicy: 'default',
+        generationLimit: 1,
+        maxFanOut: 1,
+        sandboxRequired: false,
+        filesystem: workspace.policy,
+      },
+    })
+    await child.setYolo(true, child.d.actor)
+    await mkdir(join(home, 'domain-store'))
+    plugin = await createPluginTestHost(main, {
+      packageDir,
+      storeDir: join(home, 'domain-store'),
+      services: { skills: { register: () => () => {} }, providers: { register: () => () => {} } },
+      context: { decisions: child.decisions.port(child.loopDecisionSource()) },
+    })
+    const before = await plugin.invokeProfileService('pharma.snapshot', {})
+    const args = { action: 'investigate', batch, expectedRevision: 0 }
+    const outcome = await plugin.invoke('pharma_record', args)
+    expect(outcome.isError).toBe(true)
+    expect(JSON.stringify(outcome)).toContain('hand this action back')
+    await expect(plugin.invokeProfileService('pharma.change', args)).rejects.toThrow('approval proof')
+    expect(await plugin.invokeProfileService('pharma.snapshot', {})).toEqual(before)
+    expect((await child.decisions.list()).map((row) => row.result)).toEqual([
+      expect.objectContaining({ reason: 'unavailable', code: 'delegated-approval-refused' }),
+    ])
+  } finally {
+    await plugin?.dispose()
+    await host.close()
+    await rm(home, { recursive: true, force: true })
+  }
+})
 it('models original OOS, independent signatures, alert-vs-action and retrospective equipment risk', async () => {
   for (const [args, effect] of [
     [{ kind: 'em', locale: 'zh-CN' }, 'allow'],
@@ -240,13 +290,9 @@ it('requires real Core human approval; preserves original OOS through CAPA/retes
         packageId: '@test/quality-application',
         version: '1.0.0',
         capabilities: { store: true },
-        preset: base,
+        preset: 'standard',
+        permission: base === 'standard' ? 'default' : base,
         presets: {
-          'workspace-write': { name: 'workspace-write', extends: 'standard' },
-          'full-access': {
-            name: 'full-access',
-            extends: 'standard',
-          },
           'permission-full-access': {
             name: 'permission-full-access',
             providers: { 'tool-policy': { provider: 'full-access' } },
@@ -469,9 +515,9 @@ it.each(['epoch', 'deadline'] as const)(
     await mkdir(dbDir)
     const { host } = await createTestHost({
       dataDir: home,
-      allowed: ['standard', 'full-access'],
+      allowed: ['standard', 'nested-review'],
       presets: {
-        'full-access': { name: 'full-access', extends: 'standard', approval: { pending_ttl_ms: 1000 } },
+        'nested-review': { name: 'nested-review', extends: 'standard', approval: { pending_ttl_ms: 1000 } },
         'permission-full-access': {
           name: 'permission-full-access',
           providers: { 'tool-policy': { provider: 'full-access' } },
@@ -491,7 +537,11 @@ it.each(['epoch', 'deadline'] as const)(
       const store = storeOf()
 
       const before = read(store)
-      const session = await host.createSession({ cwd: home, preset: 'full-access' })
+      const session = await host.createSession({
+        cwd: home,
+        preset: 'nested-review',
+        permission: 'full-access',
+      })
       let now = Date.now()
       Object.assign(session.d, { clock: () => now })
       const decisions = session.decisions.port({

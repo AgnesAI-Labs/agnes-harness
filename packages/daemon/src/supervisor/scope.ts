@@ -306,6 +306,23 @@ export async function resolveDaemonScope(options: DaemonScopeOptions = {}): Prom
   }
 }
 
+/** Boot recovery keeps a damaged package lock intact and propagates other resolution errors. */
+export function daemonProfileLoader(scope: DaemonScope, resolver: typeof resolveDaemonProfile) {
+  return async (
+    options: Parameters<typeof resolveDaemonProfile>[1] = {},
+  ): Promise<Awaited<ReturnType<typeof resolveDaemonProfile>>> => {
+    try {
+      return await resolver(scope, options)
+    } catch (error) {
+      // Preserve a corrupt package lock as recovery evidence. Host can still resolve the configured
+      // profile with an empty lock overlay; PackageManager remains the authoritative lock reader and
+      // exposes the profile as read-only rather than replacing its bytes during boot.
+      if (!(error instanceof HostError) || error.code !== 'E_LOCK_MISMATCH') throw error
+      return await resolveDaemonProfile(scope, { ...options, ignorePackageLock: true })
+    }
+  }
+}
+
 /** Resolve the Host profile associated with an already resolved scope. */
 export async function resolveDaemonProfile(
   scope: DaemonScope,

@@ -22,6 +22,12 @@ const docs: Record<string, PresetDoc> = Object.fromEntries(
   ),
 )
 docs['app-role'] = { name: 'app-role', extends: 'standard', approval: { command_policy: [] } }
+docs.confined = {
+  name: 'confined',
+  extends: 'standard',
+  sandbox: { level: 'L1', required: true, on_unavailable: 'deny' },
+}
+docs.default = { name: 'default', extends: 'standard' }
 const recipes = Object.keys(docs).filter((name) => !name.startsWith('permission-'))
 
 const roots: string[] = []
@@ -171,17 +177,16 @@ describe('a session opens under a recipe and a permission, and keeps both', () =
     await second.close()
   })
 
-  it('keeps pre-split requests where they were', async () => {
+  it('follows the deployment permission for real recipes, including a recipe named default', async () => {
     const { host, dataDir } = await open()
     const cases = [
-      ['read-only', 'read-only'],
-      ['full-access', 'full-access'],
-      ['workspace-write', 'workspace-write'],
+      ['default', 'workspace-write'],
       ['ptc', 'workspace-write'],
       ['minimal', 'workspace-write'],
     ] as const
     for (const [preset, permission] of cases) {
-      const session = await host.createSession({ key: `legacy-${preset}`, cwd: dataDir, preset })
+      const session = await host.createSession({ key: `recipe-${preset}`, cwd: dataDir, preset })
+      expect(session.preset.name).toBe(preset)
       expect(session.preset.permission, preset).toBe(permission)
       expect(session.permissionContext.policy, preset).toBe(permission)
       await session.close()
@@ -189,60 +194,78 @@ describe('a session opens under a recipe and a permission, and keeps both', () =
     await host.close()
   })
 
-  it('refuses a permission-level name combined with a different level', async () => {
+  it('refuses retired permission-level recipe aliases with any permission selection', async () => {
     const { host, dataDir } = await open()
-    await expect(
-      host.createSession({ cwd: dataDir, preset: 'read-only', permission: 'full-access' }),
-    ).rejects.toMatchObject({ code: 'E_PRESET_UNSUPPORTED' })
+    for (const preset of ['read-only', 'workspace-write', 'full-access'])
+      for (const permission of [undefined, preset, 'full-access'])
+        await expect(
+          host.createSession({ cwd: dataDir, preset, ...(permission === undefined ? {} : { permission }) }),
+        ).rejects.toThrow(/Retired.*clean home/)
     await host.close()
   })
 
-  it('keeps the level across a recipe switch and refuses a level change on a live session', async () => {
-    const { host, dataDir } = await open()
-    const session = await host.createSession({ cwd: dataDir, preset: 'ptc', permission: 'read-only' })
-    const next = host.validatePresetSwitch('standard', session.key)
-    expect(next.permission).toBe('read-only')
-    expect((next.doc.providers as { 'tool-policy': { provider: string } })['tool-policy'].provider).toBe(
-      'read-only',
-    )
-    expect(() => host.validatePresetSwitch('workspace-write', session.key)).toThrow(
-      'changing sandbox permissions requires a new session',
-    )
-    expect(() => host.validatePresetSwitch('full-access', session.key)).toThrow(
-      'changing sandbox permissions requires a new session',
-    )
-    await session.close()
-    await host.close()
-  })
+  it.each(['read-only', 'full-access'] as const)(
+    'keeps %s across a recipe switch and refuses a live level change through Host',
+    async (permission) => {
+      const { host, dataDir, options } = await open()
+      const session = await host.createSession({ cwd: dataDir, preset: 'ptc', permission })
+      const key = session.key
+      const next = host.validatePresetSwitch('standard', key)
+      expect(next.permission).toBe(permission)
+      expect((next.doc.providers as { 'tool-policy': { provider: string } })['tool-policy'].provider).toBe(
+        permission,
+      )
+      await host.setSessionPreset(key, 'standard')
+      const before = session.permissionContext
+      const seq = session.lastSeq
+      for (const target of ['workspace-write', permission === 'read-only' ? 'full-access' : 'read-only']) {
+        expect(() => host.validatePresetSwitch(target, key)).toThrow('Retired permission-as-preset alias')
+        await expect(host.setSessionPreset(key, target)).rejects.toThrow('Retired permission-as-preset alias')
+        expect(session.permissionContext).toEqual(before)
+        expect(session.preset).toMatchObject({ name: 'standard', permission })
+        expect(session.lastSeq).toBe(seq)
+      }
+      await expect(host.setSessionPreset(key, 'confined')).rejects.toMatchObject({
+        code: 'E_PRESET_UNSUPPORTED',
+        detail: { reason: 'workspace-sandbox-change' },
+      })
+      expect(session.permissionContext).toEqual(before)
+      expect(session.lastSeq).toBe(seq)
+      await session.close()
+      await host.close()
+      const reopenedHost = (await createTestHost(options)).host
+      try {
+        const reopened = await reopenedHost.createSession({ key, cwd: dataDir })
+        expect(reopened.preset).toMatchObject({ name: 'standard', permission })
+        expect(reopened.permissionContext.policy).toBe(permission)
+      } finally {
+        await reopenedHost.close()
+      }
+    },
+  )
 })
 
 describe('sessionSelection', () => {
-  const profile = { presets: { default: 'workspace-write', allowed: [] } } as unknown as ResolvedProfile
+  const profile = { presets: { default: 'standard', allowed: [] } } as unknown as ResolvedProfile
   it('lets a child inherit both from its parent', () => {
     expect(
       sessionSelection(profile, { parent: { name: 'ptc', permission: 'read-only' }, preset: 'minimal' }),
     ).toEqual({ name: 'ptc', permission: 'read-only' })
   })
-  it('leaves a legacy request to the resolver and gives a bare request both defaults', () => {
-    expect(sessionSelection(profile, { preset: 'ptc' })).toEqual({ name: 'ptc' })
-    expect(sessionSelection(profile, {})).toEqual({ name: 'workspace-write', fallback: 'workspace-write' })
-  })
-  it('treats a permission-level default recipe as the default permission, which an administrator can override', () => {
-    const legacy = {
-      presets: { default: 'read-only', allowed: ['read-only', 'full-access', 'standard'] },
-    } as unknown as ResolvedProfile
-    expect(sessionSelection(legacy, {})).toEqual({ name: 'read-only', fallback: 'read-only' })
-    expect(sessionSelection(legacy, { defaultPermission: 'full-access' })).toEqual({
-      name: 'full-access',
-      fallback: 'full-access',
+  it('uses the deployment default for an omitted permission whether or not a recipe is named', () => {
+    expect(sessionSelection(profile, { preset: 'ptc', defaultPermission: 'read-only' })).toEqual({
+      name: 'ptc',
+      fallback: 'read-only',
     })
-    const narrow = {
-      presets: { default: 'read-only', allowed: ['read-only', 'standard'] },
-    } as unknown as ResolvedProfile
-    expect(sessionSelection(narrow, { defaultPermission: 'workspace-write' })).toEqual({
-      name: 'standard',
+    expect(sessionSelection(profile, {})).toEqual({ name: 'standard', fallback: 'workspace-write' })
+    expect(sessionSelection(profile, { preset: 'default', permission: 'default' })).toEqual({
+      name: 'default',
       fallback: 'workspace-write',
     })
+  })
+  it.each(['read-only', 'workspace-write', 'full-access'])('refuses a retired default recipe %s', (name) => {
+    const old = { presets: { default: name, allowed: [name] } } as unknown as ResolvedProfile
+    expect(() => sessionSelection(old, {})).toThrow(/Retired.*clean home/)
   })
   it('turns the follow-default marker into the deployment default and refuses unknown levels', () => {
     expect(

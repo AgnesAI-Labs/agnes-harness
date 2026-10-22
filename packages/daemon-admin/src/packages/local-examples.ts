@@ -6,14 +6,14 @@ import {
   createCatalog,
   createLocalExamplesCatalog,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
-  hashDirectory,
+  hashDirectoryAsync,
   type LocalExamplesCatalog,
   OPTIONAL_BUNDLED_PACKAGES,
   staticCatalogSource,
 } from '@agnes/package-manager'
 
 /** Read the actual shipped payload; never advertise an unavailable Git fallback. */
-function helperEntry(
+async function helperEntry(
   helper: Pick<(typeof DEFAULT_ENABLED_BUNDLED_PACKAGES)[number], 'id' | 'license' | 'ref'>,
 ) {
   const source = bundledPluginSource(helper.ref)
@@ -31,7 +31,7 @@ function helperEntry(
     id: pkg.name,
     version: pkg.version,
     source: { type: 'file' as const, ref: helper.ref },
-    integrity: hashDirectory(directory),
+    integrity: await hashDirectoryAsync(directory),
     license: pkg.license,
     contributions: [],
     ...(pkg.agnes?.metadata ? { metadata: pkg.agnes.metadata } : {}),
@@ -46,7 +46,9 @@ export async function discoverLocalExamples(workspace: string): Promise<LocalExa
     staticCatalogSource('builtin-plugins', async () => ({
       issuedAt: new Date().toISOString(),
       ttlMs: 86_400_000,
-      entries: [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map(helperEntry),
+      entries: await Promise.all(
+        [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].map(helperEntry),
+      ),
     })),
     staticCatalogSource('official-examples', async (signal) => ({
       issuedAt: new Date().toISOString(),
@@ -58,7 +60,9 @@ export async function discoverLocalExamples(workspace: string): Promise<LocalExa
     sources.push(
       staticCatalogSource('local-examples', async (signal) => {
         const examples = await createLocalExamplesCatalog({ workspace, signal })
-        const result = await examples.read({ signal })
+        // Creation already verified and warmed this exact catalog. A second online read
+        // would inspect/hash every repository example again during the same discovery.
+        const result = await examples.read({ offline: true, signal })
         return {
           issuedAt: new Date().toISOString(),
           ttlMs: 86_400_000,

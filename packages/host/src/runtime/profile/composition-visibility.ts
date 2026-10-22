@@ -1,9 +1,10 @@
-import { createHash } from 'node:crypto'
-import { canonicalJson, sha256Hex, type ToolRegistry } from '@agnes/core'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { sha256Hex, type ToolRegistry, ToolRegistryView } from '@agnes/core'
 import type { CompositionPatch, ResolvedComposition } from '@agnes/host-common/profile/composition'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import type { CompositionToolGroup } from '@agnes/host-providers/profile/composition-state'
 import type { RuntimePluginSnapshot } from '@agnes/package-manager'
+import type { SessionCapabilityInput } from './session-capabilities.js'
 import {
   capabilityEnabled,
   capabilityToolCatalog,
@@ -16,14 +17,6 @@ type VisibilitySelection = Pick<
   'packages' | 'toolPolicy' | 'tools' | 'mcp' | 'skills' | 'uiModules' | 'shell' | 'surfaces'
 >
 
-function visibilitySelection(selection: VisibilitySelection | undefined): VisibilitySelection {
-  return Object.fromEntries(
-    Object.entries(selection ?? {}).filter(([key]) =>
-      ['packages', 'toolPolicy', 'tools', 'mcp', 'skills', 'uiModules', 'shell', 'surfaces'].includes(key),
-    ),
-  )
-}
-
 /** A read facade; registration and leases stay owned by the generation's original registry. */
 export function compositionTools(
   tools: ToolRegistry,
@@ -34,41 +27,18 @@ export function compositionTools(
   const capabilities = () =>
     resolve?.(tools) ??
     resolveSessionCapabilities({
-      selection: visibilitySelection(selection),
+      selection,
       scope,
       installed: { tools: capabilityToolCatalog(tools) },
     })
-  const visible = () => {
-    const set = capabilities()
-    return tools.list().filter((tool) => capabilityEnabled(set.tools, tool.name))
-  }
-  const allowed = (set: SessionCapabilitySet, name: string): boolean => capabilityEnabled(set.tools, name)
-  return new Proxy(tools, {
-    get(target, property) {
-      if (property === 'list') return () => visible()
-      if (property === 'resolve')
-        return (name: string) => (allowed(capabilities(), name) ? target.resolve(name) : undefined)
-      if (property === 'size') return visible().length
-      if (property === 'snapshot')
-        return (seq: Parameters<ToolRegistry['snapshot']>[0]) => {
-          const original = target.snapshot(seq)
-          const set = capabilities()
-          const defs = original.defs.filter((tool) => allowed(set, tool.name))
-          if (defs.length === original.defs.length) return original
-          const byName = new Map([...original.byName].filter(([name]) => allowed(set, name)))
-          return Object.freeze({
-            ...original,
-            defs,
-            byName,
-            hash: sha256Hex(
-              canonicalJson(defs.map((tool) => ({ name: tool.name, parameters: tool.parameters }))),
-            ),
-          })
-        }
-      const value = Reflect.get(target, property, target)
-      return typeof value === 'function' ? value.bind(target) : value
-    },
-  })
+  return new ToolRegistryView(
+    tools,
+    () =>
+      capabilities()
+        .tools.filter((tool) => tool.enabled)
+        .map((tool) => tool.id),
+    selection.tools ?? [],
+  )
 }
 
 /** Describe the actual filtered catalog, without exposing plugin configuration. */
@@ -114,12 +84,16 @@ export function compositionSkills(
   input: SkillRuntimeInput | undefined,
   selection: VisibilitySelection,
   owners: ReadonlyMap<string, string> = new Map(),
+  resourceScope?: (sessionKey?: string) => SessionCapabilityInput['resourceScope'],
 ): SkillRuntimeInput | undefined {
   if (!input) return input
-  if (!selection.skills?.length && !selection.packages?.some((pkg) => pkg.enabled === false)) return input
-  const capabilities = (skills = input.list()) =>
+  const restricted = !!selection.skills?.length || selection.packages?.some((pkg) => pkg.enabled === false)
+  if (!restricted && !resourceScope) return input
+  const workspace = new AsyncLocalStorage<string>()
+  const capabilities = (skills = input.list(), sessionKey = workspace.getStore()) =>
     resolveSessionCapabilities({
-      selection: visibilitySelection(selection),
+      selection,
+      ...(resourceScope?.(sessionKey) ? { resourceScope: resourceScope(sessionKey)! } : {}),
       live: {
         skills: skills.map((skill) => ({
           id: skill.resourceId,
@@ -128,7 +102,8 @@ export function compositionSkills(
         })),
       },
     }).skills
-  const visible = (id: string) => capabilityEnabled(capabilities(), id)
+  const visible = (id: string, sessionKey: string) =>
+    capabilityEnabled(capabilities(input.list(), sessionKey), id)
   return Object.freeze({
     ...input,
     list: () => {
@@ -137,13 +112,19 @@ export function compositionSkills(
       return skills.filter((skill) => capabilityEnabled(set, skill.resourceId))
     },
     read: (id, session) =>
-      visible(id) ? input.read(id, session) : { ok: false, code: 'UNAUTHORIZED' as const },
+      visible(id, session.sessionKey)
+        ? input.read(id, session)
+        : { ok: false, code: 'UNAUTHORIZED' as const },
     readFile: (id, revision, path, session) =>
-      visible(id)
+      visible(id, session.sessionKey)
         ? input.readFile(id, revision, path, session)
         : { ok: false, code: 'UNAUTHORIZED' as const },
     // Restricted reads go through read/readFile. Do not grant the broad user Skill file fence.
-    readRoots: () => [],
+    readRoots: () => (restricted || resourceScope?.(workspace.getStore()) ? [] : (input.readRoots?.() ?? [])),
+    scopeWorkspace: (root, sessionKey, invoke) =>
+      workspace.run(sessionKey, () =>
+        input.scopeWorkspace ? input.scopeWorkspace(root, sessionKey, invoke) : invoke(),
+      ),
   })
 }
 
@@ -157,9 +138,7 @@ export function compositionSkillOwners(
       if (contribution.kind !== 'skill') continue
       // Package resource identity is the persisted scope/root/location digest contract.
       const location = source.snapshot.packageId + '\0' + contribution.id + '\0' + contribution.path
-      const digest = createHash('sha256')
-        .update('package\0package\0' + location)
-        .digest('hex')
+      const digest = sha256Hex('package\0package\0' + location)
       const id = ['skill', 'package', 'package', digest].join('/')
       owners.set(id, source.snapshot.packageId)
     }
@@ -170,10 +149,7 @@ export function compositionSurfaceAllowed(
   selection: VisibilitySelection | undefined,
   surface: 'web' | 'acp' | 'http',
 ): boolean {
-  return capabilityEnabled(
-    resolveSessionCapabilities({ selection: visibilitySelection(selection) }).surfaces,
-    surface,
-  )
+  return capabilityEnabled(resolveSessionCapabilities({ selection }).surfaces, surface)
 }
 
 export function compositionModuleAllowed(
@@ -182,7 +158,7 @@ export function compositionModuleAllowed(
 ): boolean {
   return capabilityEnabled(
     resolveSessionCapabilities({
-      selection: visibilitySelection(selection),
+      selection,
       installed: { uiModules: [module] },
     }).uiModules,
     module.id,

@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 import { presentationRoles } from '@agnes/web-client'
+import { tr } from '@agnes/web-foundation/locale-bridge'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
@@ -141,5 +142,43 @@ it('expires transient errors while preserving actionable notices and clears erro
     await act(async () => root.unmount())
     host.remove()
     vi.useRealTimers()
+  }
+})
+
+it('retranslates retained errors and recovery details when the language changes', async () => {
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  document.documentElement.lang = 'en'
+  const message = () => tr('app.recovery.openFailed', { detail: 'DIAG-123' })
+  try {
+    await act(async () => {
+      root.render(createElement(AppNotice))
+      appNotice.error(message)
+      appNotice.recover({ message, error: message, disabled: false, retry() {}, create() {} })
+    })
+    expect(host.textContent).toContain('Opening the task failed.')
+    await act(async () => {
+      document.documentElement.lang = 'zh-CN'
+    })
+    expect(host.querySelector('[data-recovery-message]')?.textContent).toContain('历史任务打开失败。')
+    expect(host.querySelector('[data-recovery-error]')?.textContent).toContain('历史任务打开失败。')
+    expect(document.querySelector('.agh-notification')?.textContent).toContain('历史任务打开失败。')
+    expect(host.textContent).not.toContain('Opening the task failed.')
+    expect(host.textContent).toContain('DIAG-123')
+    await act(async () => appNotice.setText(message))
+    await act(async () => {
+      document.documentElement.lang = 'en'
+    })
+    expect(host.querySelector('#notice')?.textContent).toContain('Opening the task failed.')
+  } finally {
+    await act(async () => {
+      appNotice.clearErrors()
+      appNotice.setText('')
+      root.unmount()
+    })
+    document.documentElement.lang = 'en'
+    host.remove()
   }
 })

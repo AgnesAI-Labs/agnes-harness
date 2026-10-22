@@ -58,10 +58,12 @@ describe('runTui model selection', () => {
       rendered += String(chunk)
     })
 
-    await expect(runTui(await booted(endpoint), parseArgs([]), io)).resolves.toBe(143)
-    expect(rendered).toContain('Acme Workbench ·ᴗ·')
-    expect(rendered).toContain('local-dev · (default)')
-    expect(rendered).toContain('acme ·ᴗ·  local-dev · (default)')
+    await expect(
+      runTui(await booted(endpoint), parseArgs([]), { ...io, agnesVersion: '1.2.3' }),
+    ).resolves.toBe(143)
+    expect(rendered).toContain('Acme Workbench')
+    // The version rides along from the launcher into the welcome.
+    expect(rendered).toContain('v1.2.3')
     expect(rendered).not.toContain('Agnes AI')
   })
 

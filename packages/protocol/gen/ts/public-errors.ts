@@ -429,6 +429,16 @@ const PUBLIC_ERROR_COPY = {
       "reason": "必需的执行隔离不可用。",
       "action": "请选择可用的沙箱，或复核必需隔离设置。"
     }
+  },
+  "cleanHome": {
+    "en": {
+      "reason": "This home or request uses a retired preview format.",
+      "action": "Select a new, empty private AGH_HOME, configure it again, and use explicit recipe and permission fields. No data conversion or old trust is carried over."
+    },
+    "zh-CN": {
+      "reason": "该 home 或请求使用了已退役的预览格式。",
+      "action": "请使用新的空私有 AGH_HOME，重新配置，并分别指定配方与权限。不会转换旧数据或沿用旧信任。"
+    }
   }
 } as const
 export const PUBLIC_ERROR_CONTRACT = {
@@ -483,7 +493,7 @@ export const PUBLIC_ERROR_CONTRACT = {
   "E_GENERATION_SKILLS": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.generation", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["generation"], reasons: {  } },
   "E_GENERATION_TARGET_MISSING": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.generation", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["generation"], reasons: {  } },
   "E_MCP_SANDBOX_UNAVAILABLE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
-  "E_PACKAGE_INTEGRITY": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: {  } },
+  "E_PACKAGE_INTEGRITY": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: { "clean-home-required": PUBLIC_ERROR_COPY["cleanHome"] } },
   "E_PACKAGE_PROVENANCE": { rpc: "CAPABILITY_DENIED", messageKey: "appServer.errors.forbidden", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["publication"], reasons: {  } },
   "E_PACKAGE_SOURCE_POLICY": { rpc: "CAPABILITY_DENIED", messageKey: "appServer.errors.forbidden", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["publication"], reasons: {  } },
   "E_PROVIDER_DUPLICATE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.provider", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["provider"], reasons: {  } },
@@ -512,7 +522,7 @@ export const PUBLIC_ERROR_CONTRACT = {
   "SEARCH_RATE_LIMITED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: {  } },
   "SEARCH_ROUTE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: {  } },
   "SEARCH_TIMEOUT": { rpc: "REQUEST_TIMEOUT", messageKey: "appServer.errors.timeout", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["timeout"], reasons: {  } },
-  "E_PRESET_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: { "permission-axis": PUBLIC_ERROR_COPY["permissionAxis"], "bundle-unavailable": PUBLIC_ERROR_COPY["unavailable"], "preset-not-allowed": PUBLIC_ERROR_COPY["preset"] } },
+  "E_PRESET_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: { "permission-axis": PUBLIC_ERROR_COPY["permissionAxis"], "bundle-unavailable": PUBLIC_ERROR_COPY["unavailable"], "preset-not-allowed": PUBLIC_ERROR_COPY["preset"], "clean-home-required": PUBLIC_ERROR_COPY["cleanHome"] } },
   "E_PRESET_UNRESOLVED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: { "no-routes": PUBLIC_ERROR_COPY["unavailable"], "no-models": PUBLIC_ERROR_COPY["unavailable"], "pin-without-route": PUBLIC_ERROR_COPY["unavailable"], "unknown-slot": PUBLIC_ERROR_COPY["unavailable"], "unknown-route": PUBLIC_ERROR_COPY["unavailable"], "model-undeclared": PUBLIC_ERROR_COPY["unavailable"], "no-primary": PUBLIC_ERROR_COPY["unavailable"], "route-unserved": PUBLIC_ERROR_COPY["unavailable"], "model-unserved": PUBLIC_ERROR_COPY["unavailable"], "route-not-assembled": PUBLIC_ERROR_COPY["unavailable"], "route-duplicate": PUBLIC_ERROR_COPY["unavailable"], "reserved-route-name": PUBLIC_ERROR_COPY["unavailable"], "bedrock-region-conflict": PUBLIC_ERROR_COPY["unavailable"] } },
   "E_MODEL_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: {  } },
   "E_MODEL_UNKNOWN": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: {  } },
@@ -605,7 +615,7 @@ export const PUBLIC_ERROR_CONTRACT = {
   "METHOD_NOT_FOUND": { rpc: "METHOD_NOT_FOUND", messageKey: "appServer.errors.methodNotFound", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["methodNotFound"], reasons: {  } },
   "INVALID_PARAMS": { rpc: "INVALID_PARAMS", messageKey: "appServer.errors.invalidParams", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["invalidParams"], reasons: {  } },
   "INTERNAL_ERROR": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.internal", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["internal"], reasons: {  } },
-  "E_RELATION": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: { "authority-revoked": PUBLIC_ERROR_COPY["permissionRevoked"], "not-consumable": PUBLIC_ERROR_COPY["permissionGrant"], "human-required": PUBLIC_ERROR_COPY["approval"] } },
+  "E_RELATION": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: { "authority-revoked": PUBLIC_ERROR_COPY["permissionRevoked"], "not-consumable": PUBLIC_ERROR_COPY["permissionGrant"], "human-required": PUBLIC_ERROR_COPY["approval"], "clean-home-required": PUBLIC_ERROR_COPY["cleanHome"] } },
   "E_CAS": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.conflict", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["conflict"], reasons: {  } },
   "AUTH": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.auth", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["providerAuth"], reasons: {  } },
   "RATE_LIMIT": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.busy", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rateLimit"], reasons: {  } },
@@ -638,14 +648,14 @@ export const PUBLIC_ERROR_CONTRACT = {
   "E_WORKSPACE_CLOSED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
   "E_REMOTE_WORKSPACE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
   "E_MANAGED_POLICY_CORRUPT": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
-  "E_SECRET_UNRESOLVED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
+  "E_SECRET_UNRESOLVED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["credentialRequired"], reasons: {  } },
   "E_API_RANGE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
   "E_SEAM_EXPORT_MISSING": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
   "E_EXT_LOAD": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
   "E_EXT_ISOLATION_UNAVAILABLE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
   "E_HOST_CLOSED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
   "E_GENERATION_EXECUTION_UNSETTLED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
-  "E_HOME_INVALID": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.invalidParams", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["invalidParams"], reasons: {  } },
+  "E_HOME_INVALID": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.invalidParams", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["invalidParams"], reasons: { "clean-home-required": PUBLIC_ERROR_COPY["cleanHome"] } },
   "E_WRITER_LEASE": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.internal", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["internal"], reasons: {  } },
   "E_STORAGE_FAULT": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.internal", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["internal"], reasons: {  } },
   "E_LEDGER_INTEGRITY": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.internal", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["internal"], reasons: {  } },
@@ -653,6 +663,9 @@ export const PUBLIC_ERROR_CONTRACT = {
   "PROVIDER_UNCONFIGURED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["providerUnconfigured"], reasons: {  } },
   "LOOP_MISSING": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["loopMissing"], reasons: {  } },
   "SANDBOX_UNAVAILABLE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["sandboxUnavailable"], reasons: {  } },
+  "E_RESOURCE_UNSUPPORTED": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
+  "REVISION_CONFLICT": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.conflict", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["conflict"], reasons: {  } },
+  "WORKSPACE_PATH_DENIED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.forbidden", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["forbidden"], reasons: {  } },
 } as const
 export const PUBLIC_ERROR_MESSAGES = {
   "appServer.errors.internal": PUBLIC_ERROR_COPY["internal"],

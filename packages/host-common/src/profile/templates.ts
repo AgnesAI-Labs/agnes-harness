@@ -1,21 +1,11 @@
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { RELEASE_PACKAGES, RELEASE_PROFILE_NAMES, readReleaseProfileTemplate } from '@agnes/package-manager'
 import { parse } from 'yaml'
 import { HostError, type Layer } from '../errors.js'
 import { isPermission } from '../presets/permission.js'
 import { providerSelectionProblems } from './seam-selection.js'
 import type { RouteDecl, RuntimeProfileManifest } from './types.js'
-
-export const TEMPLATE_NAMES = ['local-dev', 'enterprise'] as const
-export const BUILTIN_PACKAGES = [
-  '@agnes/base',
-  '@agnes/code',
-  '@agnes/enterprise',
-  '@agnes/connector-db',
-  '@agnes/connector-kb',
-  '@agnes/ai',
-] as const
+export const TEMPLATE_NAMES = RELEASE_PROFILE_NAMES
+export const BUILTIN_PACKAGES = RELEASE_PACKAGES
 
 // `default` is the unresolved sentinel core's presetDefaults() writes into model.route, and the one
 // the assembly layer substitutes a real route for. A profile that declares a route actually named
@@ -155,21 +145,13 @@ export function checkTemplateShape(doc: unknown, name: string): asserts doc is R
   }
 }
 
-const templatesDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'templates')
-
-/** Replaced with the reviewed template assets by the CLI SEA build. */
-declare const AGNES_PROFILE_TEMPLATE_TEXTS: Readonly<Record<string, string>> | undefined
-
 export function loadTemplate(name: string): RuntimeProfileManifest {
   if (!(TEMPLATE_NAMES as readonly string[]).includes(name))
     throw new HostError('E_DEP_MISSING', `no builtin template ${name}`, {
       source: { layer: 'builtin' },
       detail: { name },
     })
-  const text =
-    typeof AGNES_PROFILE_TEMPLATE_TEXTS === 'undefined'
-      ? readFileSync(join(templatesDir, `${name}.yaml`), 'utf8')
-      : AGNES_PROFILE_TEMPLATE_TEXTS[name]
+  const text = readReleaseProfileTemplate(name)
   if (text === undefined) throw new HostError('E_DEP_MISSING', `no bundled template ${name}`)
   const doc = parse(text) as unknown
   checkTemplateShape(doc, name)

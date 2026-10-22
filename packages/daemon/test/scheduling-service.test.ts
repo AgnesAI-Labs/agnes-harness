@@ -1,5 +1,6 @@
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { createSchedulesPort, type ScheduleDb } from '@agnes/base/schedule'
+import { memoryScheduleJobs } from '@agnes/base/testkit'
 import type { ScheduleView } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { callWorkerScheduling, createSchedulingBridge } from '../src/supervisor/scheduling-service.js'
@@ -36,6 +37,7 @@ it('exposes the daemon scheduler through all six session-scoped operations', asy
   })
   const port = createSchedulesPort(
     sql,
+    memoryScheduleJobs(),
     () => now,
     async (target) => {
       if (target.loop?.id === 'hold') await checking

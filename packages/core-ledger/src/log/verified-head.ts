@@ -8,11 +8,9 @@ import type { StorageAdapter } from './storage.js'
 export const VERIFIED_HEAD_ALGORITHM = 'agnes-ledger-checkpoint-v1' as const
 
 /**
- * How far a full integrity verification has reached. It records a position, never folded state.
- *
- * It is not a security boundary of its own: anyone who can rewrite the ledger can rewrite this too.
- * It only lets an open show history before the prefix has been hashed again; the full chain is still
- * verified in the background before anything other than user input is written (see SessionLogImpl).
+ * A hash-verified prefix followed only by locally hashed appends. A checkpoint accelerates open;
+ * every process rehashes the prefix in the background before using history as evidence.
+ * It cannot defend against an attacker rewriting both ledger and checkpoint; external anchors are separate.
  */
 export type VerifiedHead = PersistenceVerifiedHead
 
@@ -46,7 +44,7 @@ const DIGEST = /^[0-9a-f]{64}$/
 /**
  * A checkpoint is used only when all three hold: it hashes to its own digest, it does not reach past
  * the stored head, and the stored digest of its last row is the digest it names. Anything else is
- * dropped silently and the ledger is verified from the first row, as without a checkpoint.
+ * dropped silently and the ledger is opened as without a checkpoint.
  */
 export async function decideCheckpoint(
   storage: StorageAdapter,

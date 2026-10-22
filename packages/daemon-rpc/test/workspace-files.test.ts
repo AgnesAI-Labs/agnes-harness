@@ -247,7 +247,11 @@ describe('session workspace files', () => {
         expect(denied, path).toMatchObject({
           error: {
             code: -32011,
-            data: { code: 'WORKSPACE_PATH_DENIED', messageKey: 'appServer.errors.forbidden' },
+            data: {
+              code: 'WORKSPACE_PATH_DENIED',
+              cause: { code: 'WORKSPACE_PATH_DENIED' },
+              messageKey: 'appServer.errors.forbidden',
+            },
           },
         })
         expect(JSON.stringify(denied)).not.toContain('OUTSIDE_SECRET_SENTINEL')
@@ -267,7 +271,13 @@ describe('session workspace files', () => {
       })
       const escapedList = await call(10, '_agnes/v1/session.workspace.list', { sessionId, path: '../' })
       expect(escapedList).toMatchObject({
-        error: { data: { code: 'WORKSPACE_PATH_DENIED', messageKey: 'appServer.errors.forbidden' } },
+        error: {
+          data: {
+            code: 'WORKSPACE_PATH_DENIED',
+            cause: { code: 'WORKSPACE_PATH_DENIED' },
+            messageKey: 'appServer.errors.forbidden',
+          },
+        },
       })
       expect(
         await call(11, '_agnes/v1/session.workspace.read', { sessionId: 'missing', path: 'report.md' }),

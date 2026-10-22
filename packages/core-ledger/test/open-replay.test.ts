@@ -316,8 +316,8 @@ describe('verification comes before folding', () => {
         ),
       )
     await writer.close()
-    // Without a verified-head checkpoint. One lets the open fold the rows it vouches for before they
-    // are hashed again; that path is covered in verified-head.test.ts.
+    // Without a verified-head checkpoint, the open hashes the last 32 rows (669 to 700) and folds the
+    // rest without hashing. The path through a checkpoint is covered in verified-head.test.ts.
     await storage.deleteVerifiedHead('k')
     const tampered = new Proxy(storage, {
       get(target, property, receiver) {
@@ -325,7 +325,7 @@ describe('verification comes before folding', () => {
         if (property === 'scanIntegrity')
           return async (key: string, q: { fromSeq: number; toSeq: number; limit: number }) =>
             (await storage.scanIntegrity(key, q)).map((r) =>
-              r.event.seq === 600
+              r.event.seq === 690
                 ? { ...r, event: { ...r.event, data: { content: [{ type: 'text', text: 'altered' }] } } }
                 : r,
             )
@@ -342,14 +342,14 @@ describe('verification comes before folding', () => {
       replay: {
         page: (events) => {
           for (const event of events) {
-            if (event.seq === 600) throw new Error('an unverified row reached the replay consumer')
+            if (event.seq === 690) throw new Error('an unverified row reached the replay consumer')
             highest = Math.max(highest, event.seq)
           }
         },
       },
     })
     await expect(opening).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
-    expect(highest).toBeLessThanOrEqual(500)
+    expect(highest).toBeLessThanOrEqual(668)
   })
 })
 

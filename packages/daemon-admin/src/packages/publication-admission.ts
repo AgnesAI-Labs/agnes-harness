@@ -1,4 +1,9 @@
-import { type AuthoringCandidate, type PermissionEffectAdmission, rpcError } from '@agnes/protocol'
+import {
+  type AuthoringCandidate,
+  type PermissionEffectAdmission,
+  permissionEffectAdmission,
+  rpcError,
+} from '@agnes/protocol'
 import type { PackageAdminAuthority } from './permissions.js'
 
 /** One candidate-bound backend lease follows every publication transaction and runtime activation. */
@@ -28,17 +33,18 @@ export function publicationAdmission(
     await authority.authoringPermission!({ sessionKey: context.sessionKey, bindingHash: expected })
     authority.authoringSignal?.throwIfAborted()
   }
+  const parent = authority.authoringAdmission
   const admission: PermissionEffectAdmission | undefined = automatic
-    ? Object.freeze({
-        verify: async () => {
-          if (!authority.authoringAdmission) throw rpcError('CAPABILITY_DENIED')
-          await verifyPublication()
-          await authority.authoringAdmission.verify()
-        },
-        assertActive: () => {
-          if (!authority.authoringAdmission) throw rpcError('CAPABILITY_DENIED')
-          authority.authoringAdmission.assertActive()
-          authority.authoringSignal?.throwIfAborted()
+    ? permissionEffectAdmission({
+        parent,
+        ...(authority.permissionContext
+          ? { context: { expected: authority.permissionContext, current: () => authority.permissionContext } }
+          : {}),
+        signals: [authority.authoringSignal],
+        unavailable: () => rpcError('CAPABILITY_DENIED'),
+        verify: verifyPublication,
+        assertBound: () => {
+          if (!parent || authority.authoringAdmission !== parent) throw rpcError('CAPABILITY_DENIED')
           bound()
         },
       })

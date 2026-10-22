@@ -127,7 +127,7 @@ async function settle(term: FakeTerminal, scene: Scene, cols: number, rows: numb
 }
 
 async function capture(scene: Scene, variant: Variant, prefs: string): Promise<Shot> {
-  const { cols = 100, rows = 30, ready = ['Agnes AI'] } = scene
+  const { cols = 100, rows = 30, ready = ['What do you want to do?'] } = scene
   const endpoint = new FakeEndpoint()
     .on('initialize', () => ({
       protocolVersion: 1,
@@ -155,6 +155,12 @@ async function capture(scene: Scene, variant: Variant, prefs: string): Promise<S
   const app = new TuiApp({
     session,
     term,
+    // Fixed clock and dice: the greeting and the tip are part of the screen.
+    welcome: {
+      now: () => new Date(2026, 9, 21, 20, 30).getTime() + 3_600_000,
+      random: () => 0.1,
+      ...(scene.welcome ? { version: '0.9.3' } : {}),
+    },
     profile: 'local-dev',
     preset: 'standard',
     model: 'deepseek-v4-pro',

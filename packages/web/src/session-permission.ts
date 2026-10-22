@@ -1,12 +1,10 @@
 import type { RuntimeAdminSnapshot, SessionDefaults } from '@agnes/protocol'
 import type { PermissionMode } from '@agnes/web-admin/permission-picker'
-import { effectiveSessionPreset, permissionForSessionPreset } from '@agnes/web-admin/settings/session-choice'
 
 /**
  * A session has two independent choices: the preset (the recipe it runs) and the permission level
  * (what it may do). The composer's permission control picks the level and the agent options pick
- * the recipe. The three level names also exist as legacy preset aliases; the Web never offers them
- * as recipes.
+ * the recipe.
  */
 export type PermissionLevel = 'read-only' | 'workspace-write' | 'full-access'
 export const PERMISSION_LEVELS: readonly PermissionLevel[] = ['read-only', 'workspace-write', 'full-access']
@@ -26,9 +24,9 @@ export const isPermissionLevel = (value: unknown): value is PermissionLevel =>
 export const permissionLevel = (mode: PermissionMode): PermissionLevel => LEVEL[mode]
 export const permissionModeOf = (level: PermissionLevel): PermissionMode => MODE[level]
 
-/** The recipes a user may pick: the catalog without the legacy permission-level aliases. */
+/** The current recipe catalogue supplied by the backend. */
 export function recipePresets<T extends { id: string }>(presets: readonly T[] | undefined): T[] {
-  return (presets ?? []).filter((entry) => !isPermissionLevel(entry.id))
+  return [...(presets ?? [])]
 }
 
 /** The recipe a draft that names none runs: the administrator default, then the profile default. */
@@ -36,22 +34,14 @@ export function defaultRecipe(
   defaults: SessionDefaults | undefined,
   runtime: RuntimeAdminSnapshot | undefined,
 ): string | undefined {
-  if (defaults?.preset && !isPermissionLevel(defaults.preset)) return defaults.preset
+  if (defaults?.preset) return defaults.preset
   const recipes = recipePresets(runtime?.presets)
   return (recipes.find((entry) => entry.isDefault) ?? recipes.find((entry) => entry.id === 'standard'))?.id
 }
 
-/** An older Host lists no permission levels; it then speaks only the legacy preset names. */
-const levelsListed = (runtime: RuntimeAdminSnapshot | undefined): boolean =>
-  Array.isArray(runtime?.permissions)
-
-/** The levels a new session may start under. An older Host offers read-only only as a preset. */
+/** The levels the deployment explicitly allows. */
 export function allowedPermissionLevels(runtime: RuntimeAdminSnapshot | undefined): PermissionLevel[] {
-  if (levelsListed(runtime))
-    return (runtime?.permissions ?? []).map((entry) => entry.id).filter(isPermissionLevel)
-  return PERMISSION_LEVELS.filter(
-    (level) => level !== 'read-only' || runtime?.presets.some((entry) => entry.id === level) === true,
-  )
+  return (runtime?.permissions ?? []).map((entry) => entry.id).filter(isPermissionLevel)
 }
 
 /** The level a new session gets when the request names none. */
@@ -86,18 +76,7 @@ function chosenMode(input: DraftPermissionInput): PermissionMode | undefined {
 
 /** The level the draft's permission control shows. */
 export function draftPermissionMode(input: DraftPermissionInput): PermissionMode {
-  if (levelsListed(input.runtime))
-    return chosenMode(input) ?? MODE[defaultPermissionLevel(input.defaults, input.runtime)]
-  // An older Host derives the level from the preset the session will run.
-  return (
-    input.explicit ??
-    permissionForSessionPreset(
-      effectiveSessionPreset(input.preset, input.defaults, input.runtime),
-      input.runtime,
-    ) ??
-    input.remembered ??
-    'workspace'
-  )
+  return chosenMode(input) ?? MODE[defaultPermissionLevel(input.defaults, input.runtime)]
 }
 
 export type NewSessionRequest = { preset?: string; permission?: string }
@@ -105,30 +84,13 @@ export type NewSessionRequest = { preset?: string; permission?: string }
 /**
  * What `session.new` carries for the draft, or `undefined` when the selection cannot be requested
  * safely. A chosen (or remembered) level is sent as it is; an explicit recipe alone follows the
- * deployment's default level (`default`); a draft that changed nothing names neither.
+ * deployment's default level (`default`).
  */
 export function newSessionRequest(input: DraftPermissionInput): NewSessionRequest | undefined {
-  const { preset, runtime } = input
-  if (levelsListed(runtime)) {
-    const mode = chosenMode(input)
-    if (mode) {
-      if (!allowedPermissionLevels(runtime).includes(LEVEL[mode])) return undefined
-      return { ...(preset ? { preset } : {}), permission: LEVEL[mode] }
-    }
-    return preset ? { preset, permission: 'default' } : {}
-  }
-  // An older Host rejects `permission`: a chosen level travels as its legacy preset name, which a
-  // recipe cannot accompany. Approval changes follow through the yolo switch after creation.
-  const level = LEVEL[draftPermissionMode(input)]
-  const sent =
-    preset ?? (input.explicit && runtime?.presets.some((entry) => entry.id === level) ? level : undefined)
-  // Read-only must come from the preset itself: nothing after creation narrows the sandbox.
-  if (
-    level === 'read-only' &&
-    permissionForSessionPreset(effectiveSessionPreset(sent, input.defaults, runtime), runtime) !== 'view'
-  )
-    return undefined
-  return sent ? { preset: sent } : {}
+  const preset = input.preset ?? defaultRecipe(input.defaults, input.runtime)
+  const mode = chosenMode(input)
+  if (mode && !allowedPermissionLevels(input.runtime).includes(LEVEL[mode])) return undefined
+  return { ...(preset ? { preset } : {}), permission: mode ? LEVEL[mode] : 'default' }
 }
 
 type SessionRow = { sessionId: string; permission?: string; preset?: string | null } | undefined
@@ -142,8 +104,6 @@ export function sessionPermissionLevel(
   if (isPermissionLevel(row.permission)) return row.permission
   const status = runtime?.security?.workspaces.find((entry) => entry.sessionId === row.sessionId)?.permission
   if (isPermissionLevel(status)) return status
-  if (isPermissionLevel(row.preset)) return row.preset
-  // Older sessions: the recipe's own policy is the only record of the level.
   const policy = runtime?.security?.presetPolicies.find((entry) => entry.id === row.preset)?.approvalPolicy
   return policy === 'read-only' ? 'read-only' : policy === 'full-access' ? 'full-access' : undefined
 }

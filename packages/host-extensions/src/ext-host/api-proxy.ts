@@ -9,9 +9,9 @@ import {
   type ToolDef,
 } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
+import type { HostCapabilityGrant } from '@agnes/package-manager'
 import { inspectJsonData, type JsonValue, jcs, validateAgainst, validateSlotPayload } from '@agnes/protocol'
 import { ResourceEntry as ResourceSchema } from '@agnes/protocol/gen/hooks'
-import { BUILTIN_HOOK_RANKS } from '../assemble/ext-rows.js'
 import type { DisposerBag } from './disposers.js'
 import type { Lease } from './lease.js'
 import { mapResult } from './map-result.js'
@@ -29,6 +29,8 @@ type Options = {
   /** Resolved package identity/version supplied by Host inventory, never by extension code. */
   packageIdentity: string
   packageVersion: string
+  executionBinding?: RegMeta['executionBinding']
+  hostGrants?: HostCapabilityGrant
   trust: ExtensionContext['trust']
   lease: Lease
   ports: KernelPorts
@@ -52,10 +54,9 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
   const meta: RegMeta = Object.freeze({
     source: m.id,
     trust: input.trust,
-    // Only a registration this proxy itself has attested as builtin gets a fixed dispatch rank; a
-    // plugin can never reach this field (third-party-transform-directive-hooks design §3 point 3).
-    ...(input.trust === 'builtin' && BUILTIN_HOOK_RANKS.has(`ext:${m.id}`)
-      ? { hookRank: BUILTIN_HOOK_RANKS.get(`ext:${m.id}`) as number }
+    ...(input.hostGrants?.contextBlocking ? { contextBlocking: true } : {}),
+    ...(input.trust === 'builtin' && input.hostGrants?.hookRank !== undefined
+      ? { hookRank: input.hostGrants.hookRank }
       : {}),
   })
   const toolMeta: RegMeta = Object.freeze({
@@ -63,7 +64,8 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
     trust: input.trust,
     packageIdentity: input.packageIdentity,
     packageVersion: input.packageVersion,
-    ...(input.trust === 'builtin' && input.packageIdentity === '@agnes/base' && m.id === 'agnes/computer-use'
+    ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),
+    ...(input.trust === 'builtin' && input.hostGrants?.computerUse
       ? { executionDomain: 'host-computer-use' as const }
       : {}),
   })

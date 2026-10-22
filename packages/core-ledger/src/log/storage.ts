@@ -125,6 +125,9 @@ export interface StorageAdapter {
    */
   writeVerifiedHead?(head: VerifiedHead, opts?: { force?: boolean }): Promise<void>
   deleteVerifiedHead?(key: SessionKey): Promise<void>
+  /** Proven corruption is retained across reload; absence never asserts verification. */
+  readIntegrityFailure?(key: string): Promise<{ seq?: number } | undefined>
+  writeIntegrityFailure?(key: string, failure: { seq?: number }): Promise<void>
   /**
    * The stored integrity digest of one row (the parent's row for a child's prefix): undefined when
    * the row is absent, null when it is a legacy row without one.

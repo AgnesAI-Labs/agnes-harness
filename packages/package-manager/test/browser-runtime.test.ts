@@ -89,8 +89,19 @@ it('prepares interaction without takeover, rejects foreign/stale input and prese
       (await next.send({ type: 'input', pageId: page.pageId, input: { ...input, seq: 2, pageEpoch: 99 } }))
         .code,
     ).toBe('STALE_INPUT')
+    expect(
+      (await next.send({ type: 'pause', pageId: page.pageId, controlEpoch: result.controlEpoch })).status,
+    ).toBe('ok')
+    expect(runtime.get(session, page.pageId).mode).toBe('agent')
+    await expect(
+      runtime.act(session, { action: 'key', pageId: page.pageId, pageEpoch: 0, key: 'Enter' }),
+    ).rejects.toMatchObject({ code: 'STALE_TARGET' })
+    Object.assign(pages[0]!, { screenshot: async () => new Uint8Array([1]) })
+    await runtime.act(session, { action: 'screenshot', pageId: page.pageId })
+    await runtime.act(session, { action: 'key', pageId: page.pageId, pageEpoch: 0, key: 'Enter' })
+    expect(pages[0]!.keyboard.press).toHaveBeenCalledWith('Enter')
     next.abort.abort()
-    expect(runtime.get(session, page.pageId).mode).toBe('paused')
+    expect(runtime.get(session, page.pageId).mode).toBe('agent')
     await runtime.closePage(session, page.pageId)
     expect(runtime.sessions.has(session.key)).toBe(false)
     expect(foreign.runtime.sessions.has('other')).toBe(true)
@@ -98,6 +109,72 @@ it('prepares interaction without takeover, rejects foreign/stale input and prese
     first.abort.abort()
     await runtime.close()
     await foreign.runtime.close()
+  }
+})
+
+it('coordinates native human input per page without a manual return and rejects stale observations', async () => {
+  const { runtime, session, pages } = fixture()
+  let now = 1000
+  runtime.now = () => now
+  const first = await runtime.act(session, { action: 'open', url: 'http://localhost/one' })
+  const other = await runtime.act(session, { action: 'open', url: 'http://localhost/two' })
+  const actor = { id: 'viewer' }
+  const grant = await runtime.control(session, { pageId: first.pageId, mode: 'human' }, actor, {
+    grantId: 'native',
+    expiresAt: 100_000,
+  })
+  Object.assign(pages[0]!, { screenshot: async () => new Uint8Array([1]) })
+  try {
+    await runtime.humanInput(session, { ...grant, seq: 0, type: 'text', text: 'typing' }, actor)
+    // A different page remains usable while the human is actively typing.
+    await runtime.act(session, { action: 'key', pageId: other.pageId, pageEpoch: 0, key: 'Escape' })
+    expect(pages[1]!.keyboard.press).toHaveBeenCalledWith('Escape')
+    const abort = new AbortController()
+    const waiting = runtime.act(
+      session,
+      { action: 'key', pageId: first.pageId, pageEpoch: 0, key: 'Enter' },
+      abort.signal,
+    )
+    const cancelled = expect(waiting).rejects.toThrow()
+    abort.abort()
+    await cancelled
+    now += 1000
+    await expect(
+      runtime.act(session, { action: 'key', pageId: first.pageId, pageEpoch: 0, key: 'Enter' }),
+    ).rejects.toMatchObject({ code: 'STALE_TARGET' })
+    const observed = await runtime.act(session, { action: 'screenshot', pageId: first.pageId })
+    await runtime.act(session, { action: 'key', pageId: first.pageId, pageEpoch: 0, key: 'Enter' })
+    expect(pages[0]!.keyboard.press).toHaveBeenCalledWith('Enter')
+    // The human grant survives; only a gesture captured before the agent action is refused.
+    await expect(
+      runtime.humanInput(
+        session,
+        {
+          ...grant,
+          agentRevision: observed.agentRevision,
+          seq: 1,
+          type: 'click',
+          x: 10,
+          y: 10,
+        },
+        actor,
+      ),
+    ).rejects.toMatchObject({ code: 'STALE_INPUT' })
+    const current = runtime.describe(runtime.get(session, first.pageId))
+    await runtime.humanInput(
+      session,
+      {
+        ...grant,
+        agentRevision: current.agentRevision,
+        seq: 2,
+        type: 'text',
+        text: 'continue',
+      },
+      actor,
+    )
+    expect(pages[0]!.keyboard.insertText).toHaveBeenLastCalledWith('continue')
+  } finally {
+    await runtime.close()
   }
 })
 
@@ -372,9 +449,10 @@ it('uses one exact Page for navigation, display frames and human input; rejects 
   const errors = await runtime.act(session, { action: 'events', pageId: opened.pageId })
   expect(Buffer.byteLength(JSON.stringify(errors))).toBeLessThanOrEqual(65536)
   await expect(runtime.humanInput(session, input, actor)).rejects.toMatchObject({ code: 'STALE_INPUT' })
+  runtime.now = () => Date.now() + 1000
   await expect(
     runtime.act(session, { action: 'key', pageId: opened.pageId, pageEpoch: 0, key: 'Enter' }),
-  ).rejects.toMatchObject({ code: 'CONTROL_CHANGED' })
+  ).rejects.toMatchObject({ code: 'STALE_TARGET' })
   const beforeNavigation = sent.length
   original.emit('framenavigated', original.mainFrame())
   expect(sent).toHaveLength(beforeNavigation)
@@ -542,28 +620,82 @@ it('keeps tab capacity and session closure effective while new pages are being c
 
 it('displays the final frame of a burst and cancels delayed frames when the viewer leaves', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
-  const { runtime, cdp, session } = fixture()
+  const { runtime, cdp, session, pages } = fixture()
   const abort = new AbortController()
   try {
     const opened = await runtime.act(session, { action: 'open', url: 'http://127.0.0.1:5173/' })
     const frames: Uint8Array[] = []
     await showPage(
       runtime,
-      { pageId: opened.pageId },
+      { pageId: opened.pageId, displayVersion: 2 },
       {
         scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
         signal: abort.signal,
         stream: { send: (frame: Uint8Array) => frames.push(frame), close: vi.fn(), onDisconnect: vi.fn() },
       },
     )
-    const emit = (data: string) =>
-      cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.from(data).toString('base64') })
+    const sampling = cdp.send.mock.calls.find(([method]) => method === 'Page.startScreencast')?.[1] as
+      | { everyNthFrame?: number }
+      | undefined
+    let paints = 0
+    const emit = (data: string) => {
+      // Model CDP's sampling: the last paint of a static page has no successor.
+      if (++paints % (sampling?.everyNthFrame ?? 1) === 0)
+        cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.from(data).toString('base64') })
+    }
     emit('first')
+    emit('middle')
     emit('final')
     expect(frames).toHaveLength(1)
     await vi.advanceTimersByTimeAsync(100)
     const latest = Buffer.from(frames.at(-1)!)
     expect(latest.subarray(latest.readUInt32BE() + 4).toString()).toBe('final')
+    let firstCapture = true
+    Object.assign(pages[0]!, {
+      screenshot: async (options: { type: string }) => {
+        if (firstCapture) {
+          firstCapture = false
+          throw new Error('Transient frame unavailable')
+        }
+        cdp.emit('Page.screencastFrame', {
+          sessionId: 1,
+          data: Buffer.from('screenshot-repaint').toString('base64'),
+        })
+        return options.type === 'png' ? Buffer.alloc(1_000_001) : Buffer.from('sharp-jpeg-fallback')
+      },
+    })
+    emit('before-sharpening')
+    await vi.advanceTimersByTimeAsync(900)
+    const sharp = Buffer.from(frames.at(-1)!)
+    const headerSize = sharp.readUInt32BE()
+    expect(JSON.parse(sharp.subarray(4, headerSize + 4).toString()).frameMime).toBe('image/jpeg')
+    expect(sharp.subarray(headerSize + 4).toString()).toBe('sharp-jpeg-fallback')
+    const observedRevision = JSON.parse(sharp.subarray(4, headerSize + 4).toString()).agentRevision
+    runtime.get(session, opened.pageId).agentRevision++
+    runtime.notify()
+    const cached = Buffer.from(frames.at(-1)!)
+    expect(JSON.parse(cached.subarray(4, cached.readUInt32BE() + 4).toString()).agentRevision).toBe(
+      observedRevision,
+    )
+
+    // A screenshot's temporary raster and exact restoration must retain the
+    // sharp image; a real asynchronous scene change still publishes normally.
+    emit('temporary-screenshot-raster')
+    await vi.advanceTimersByTimeAsync(10)
+    emit('screenshot-repaint')
+    await vi.advanceTimersByTimeAsync(70)
+    expect(Buffer.from(frames.at(-1)!)).toEqual(cached)
+    emit('asynchronous-scene-change')
+    await vi.advanceTimersByTimeAsync(70)
+    const changed = Buffer.from(frames.at(-1)!)
+    expect(changed.subarray(changed.readUInt32BE() + 4).toString()).toBe('asynchronous-scene-change')
+
+    cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.alloc(1_000_001).toString('base64') })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cdp.send).toHaveBeenCalledWith(
+      'Page.startScreencast',
+      expect.objectContaining({ maxWidth: 1920, quality: 65 }),
+    )
     emit('after-close')
     const count = frames.length
     abort.abort()
@@ -574,6 +706,54 @@ it('displays the final frame of a burst and cancels delayed frames when the view
     vi.useRealTimers()
   }
 })
+
+it.each([false, true])(
+  'releases capture after display startup fails (page unavailable: %s)',
+  async (unavailable) => {
+    const { runtime, cdp, session, pages } = fixture()
+    const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+    let audioEnabled = false,
+      attached = true
+    const page = pages[0]!
+    const listeners = page.listenerCount('domcontentloaded')
+    Object.assign(page, {
+      exposeBinding: async () => {},
+      evaluate: async (_fn: unknown, input: { enabled: boolean }) => {
+        audioEnabled = input.enabled
+        if (!input.enabled && unavailable) throw new Error('Page context unavailable')
+      },
+    })
+    cdp.send.mockImplementation(async (method) => {
+      if (method === 'Page.startScreencast') throw new Error('Display unavailable')
+    })
+    cdp.detach.mockImplementation(async () => {
+      attached = false
+    })
+    const abort = new AbortController()
+    try {
+      await expect(
+        showPage(
+          runtime,
+          { pageId: opened.pageId, displayVersion: 2 },
+          {
+            scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+            signal: abort.signal,
+            stream: { send() {}, close() {}, onDisconnect() {} },
+          },
+        ),
+      ).rejects.toThrow('Display unavailable')
+      expect(audioEnabled).toBe(false)
+      expect(attached).toBe(false)
+      expect(page.listenerCount('domcontentloaded')).toBe(listeners)
+      page.emit('domcontentloaded')
+      await Promise.resolve()
+      expect(audioEnabled).toBe(false)
+    } finally {
+      abort.abort()
+      await runtime.close()
+    }
+  },
+)
 
 it('keeps long addresses intact and retries the latest static pixels after backpressure', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
@@ -637,19 +817,17 @@ it('does not publish an idle image captured before newer input', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] })
   const { runtime, cdp, session } = fixture()
   const abort = new AbortController()
-  let release!: (value: { data: string }) => void
-  const screenshot = new Promise<{ data: string }>((resolve) => {
+  let release!: (value: Buffer) => void
+  const screenshot = new Promise<Buffer>((resolve) => {
     release = resolve
   })
   cdp.send.mockImplementation(async (method) =>
-    method === 'Page.getLayoutMetrics'
-      ? { visualViewport: { pageX: 0, pageY: 0, scale: 1 } }
-      : method === 'Page.captureScreenshot'
-        ? screenshot
-        : undefined,
+    method === 'Page.getLayoutMetrics' ? { visualViewport: { pageX: 0, pageY: 0, scale: 1 } } : undefined,
   )
   try {
     const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+    const page = runtime.get(session, opened.pageId).page
+    Object.assign(page, { screenshot: async () => screenshot })
     const received: Uint8Array[] = []
     await showPage(
       runtime,
@@ -661,12 +839,11 @@ it('does not publish an idle image captured before newer input', async () => {
       },
     )
     await vi.advanceTimersByTimeAsync(0)
-    expect(cdp.send).toHaveBeenCalledWith('Page.captureScreenshot', expect.anything())
     cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.from('before-input').toString('base64') })
     const actor = { id: 'synthetic' }
     const control = await runtime.control(session, { pageId: opened.pageId, mode: 'human' }, actor)
     await runtime.humanInput(session, { ...control, seq: 0, type: 'scroll', x: 0, y: 100 }, actor)
-    release({ data: Buffer.from('stale-idle-image').toString('base64') })
+    release(Buffer.from('stale-idle-image'))
     await vi.advanceTimersByTimeAsync(0)
     const pixels = received.map((bytes) => {
       const frame = Buffer.from(bytes)
@@ -676,13 +853,9 @@ it('does not publish an idle image captured before newer input', async () => {
     // Drain the prior paint's idle timer before restoring history without a new paint.
     await vi.advanceTimersByTimeAsync(300)
     cdp.send.mockImplementation(async (method) =>
-      method === 'Page.getLayoutMetrics'
-        ? { visualViewport: { pageX: 0, pageY: 0, scale: 1 } }
-        : method === 'Page.captureScreenshot'
-          ? { data: Buffer.from('restored-history-pixels').toString('base64') }
-          : undefined,
+      method === 'Page.getLayoutMetrics' ? { visualViewport: { pageX: 0, pageY: 0, scale: 1 } } : undefined,
     )
-    const page = runtime.get(session, opened.pageId).page
+    Object.assign(page, { screenshot: async () => Buffer.from('restored-history-pixels') })
     page.emit('framenavigated', page.mainFrame())
     await vi.advanceTimersByTimeAsync(0)
     const restored = Buffer.from(received.at(-1)!)
@@ -731,10 +904,11 @@ it('rejects unsafe schemes, credentials and protected endpoints without blocking
     'http://localhost:3000/_agnes/plugin-stream',
   ])
     expect(() => browserUrl(url)).toThrow()
-  expect(browserInstructions({ enabled: false })).toContain(
-    'prefer computer_use when available and authorized',
+  expect(browserInstructions({ enabled: false })).toContain("consistent with the user's specified tool")
+  expect(browserInstructions({ enabled: true, state: 'ready' })).toContain(
+    "always respect the user's explicitly specified browser/tool",
   )
-  expect(browserInstructions({ enabled: true, state: 'ready' })).toContain('Prefer browser')
+  expect(browserInstructions({ enabled: true, state: 'ready' })).not.toContain('Prefer browser')
   expect(browserInstructions({ enabled: true, state: 'failed' })).toContain('Do not silently replay')
   expect(browserUrl('http://localhost:5173/')).toBe('http://localhost:5173/')
   const protectedOrigins = new Set(['http://localhost:3000'])

@@ -1,12 +1,15 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { type McpCatalogHub, mcpCatalogHubFor } from '@agnes/base'
 import { API_VERSION, type ExtensionManifest } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
+import type { SeamInitContext } from '@agnes/host-extensions/assemble/packages'
+import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
+import { codeRevision, liveResourceRow } from '../../src/runtime/generation/target-code.js'
 import { createTestHost } from '../../testkit/index.js'
 import { fixtureTool } from '../fixtures/tool.js'
 import { pluginRow, pluginSourceWith, targetOf } from './plugin-extension-fixture.js'
@@ -20,7 +23,9 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 const scratch = (): string => {
-  const d = mkdtempSync(join(tmpdir(), 'agnes-ext-rows-dynamic-'))
+  const parent = join(homedir(), 'agh-real-eval')
+  mkdirSync(parent, { recursive: true })
+  const d = mkdtempSync(join(parent, 'agnes-ext-rows-dynamic-'))
   dirs.push(d)
   return d
 }
@@ -66,6 +71,65 @@ function resourceExtension(name: string, log: string[], options: { failOpen?: bo
 }
 
 describe('dynamic ext: rows (stage 2b, D107)', () => {
+  it.each([
+    'agnes/computer-use',
+    'agnes/hooks-runner',
+    'agnes/privacy',
+    'agnes/mcp-search',
+    'agnes/tools-web',
+  ])('does not grant a dynamic extension the identity of %s even with builtin Base metadata', async (id) => {
+    const h = await createTestHost({ dataDir: scratch(), packageDirs })
+    let context: SeamInitContext | undefined
+    let registered = false
+    try {
+      const row = h.host.extensionRows.prepare({
+        extensionId: id,
+        dynamic: {
+          spec: {
+            id,
+            package: '@agnes/base',
+            packageVersion: '0.0.0',
+            dir: scratch(),
+            trust: 'builtin',
+            enabled: true,
+            revision: 'lookalike',
+          },
+          manifest: {
+            id,
+            version: '0.1.0',
+            apiRange: '^4.0.0',
+            entry: './index.mjs',
+            capabilities: {},
+          },
+          factory: (init) => {
+            context = init
+            return () => {
+              registered = true
+            }
+          },
+        },
+      })
+      await h.host.extensionRows.apply(
+        h.host.extensionRows.current().map((existing) => (existing.id === row.id ? row : existing)),
+      )
+      expect(registered).toBe(true)
+      expect(context).toBeDefined()
+      for (const field of [
+        'sessionTasks',
+        'searchProvider',
+        'trustedHookCommands',
+        'skillDiscovery',
+        'privacyTrajectory',
+        'computerUseBackendProvider',
+        'privateArtifactStore',
+      ]) {
+        expect(context, field).not.toHaveProperty(field)
+      }
+    } finally {
+      await h.host.close()
+    }
+  })
+
   it('keeps late registration on a pinned row and rejects it after its generation drains', {
     timeout: 60_000,
   }, async () => {
@@ -155,6 +219,36 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
 
   it('applying a dynamic row keeps the static builtin rows', async () => {
     const h = await createTestHost({ dataDir: scratch(), packageDirs })
+    const supplied = resourceExtension('renamed-resource', [])
+    const live = h.host.extensionRows.prepare({
+      extensionId: supplied.extensionId,
+      dynamic: { ...supplied, generation: { kind: 'mcp-server', data: {} } },
+    })
+    const lookalike = resourceExtension('lookalike', [])
+    const named = 'agnes/mcp-spoof-12345678'
+    const ordinary = h.host.extensionRows.prepare({
+      extensionId: named,
+      dynamic: {
+        ...lookalike,
+        spec: { ...lookalike.spec, id: named, package: '@agnes/base' },
+        manifest: { ...lookalike.manifest, id: named },
+      },
+    })
+    expect(liveResourceRow(live)).toBe(true)
+    expect(liveResourceRow(ordinary)).toBe(false)
+    expect(codeRevision(targetOf([live]))).toBe(codeRevision(targetOf([])))
+    expect(codeRevision(targetOf([ordinary]))).not.toBe(codeRevision(targetOf([])))
+    const copiedMarker = createPluginRow({
+      id: live.id,
+      plugin: `@acme/lookalike@sha256-${'1'.repeat(64)}/plugin`,
+      snapshotDigest: `sha256-${'1'.repeat(64)}`,
+      exportName: 'plugin',
+      entryRevision: live.entryRevision,
+      extrasRevision: 'none',
+      mountRevision: live.mountRevision,
+    })
+    expect(liveResourceRow(copiedMarker)).toBe(false)
+    expect(codeRevision(targetOf([copiedMarker]))).not.toBe(codeRevision(targetOf([])))
     const staticBefore = h.host.extensionRows.current().map((r) => r.id)
     const dynamic = resourceExtension('alpha', [])
     await h.host.extensionRows.apply([

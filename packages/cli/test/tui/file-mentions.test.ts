@@ -3,7 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { FileMentionSource, listWorkspaceFiles, mentionToken } from '../../src/tui/commands.js'
+import {
+  createMentionSource,
+  FileMentionSource,
+  listWorkspaceFiles,
+  mentionToken,
+} from '../../src/tui/commands.js'
 
 describe('mentionToken', () => {
   it('reads the mention before the cursor, quoted or bare, only at the start of a word', () => {
@@ -127,7 +132,122 @@ describe('listWorkspaceFiles', () => {
     }
   })
 
+  it('refuses a retired home variable before listing files', async () => {
+    vi.stubEnv('AGNES_HOME', '/synthetic/old')
+    try {
+      await expect(listWorkspaceFiles('/synthetic/workspace')).rejects.toThrow(/AGNES_HOME.*clean home/)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('rejects for a folder it cannot read', async () => {
     await expect(listWorkspaceFiles('/nonexistent-agnes-list')).rejects.toThrow()
+  })
+})
+
+describe('createMentionSource', () => {
+  const found = (...ids: string[]) => ({
+    items: ids.map((id) => ({ source: 'file', id, label: id })),
+    truncated: false,
+  })
+  const settle = async (
+    source: { get(q: string): { status: string } },
+    query: string,
+    changed: () => void,
+  ) => {
+    source.get(query)
+    await vi.waitFor(() => expect(changed).toHaveBeenCalled())
+  }
+
+  it('remote: asks the daemon, never the local disk, and drops entries with control characters', async () => {
+    const changed = vi.fn()
+    const search = vi.fn(async () =>
+      found(
+        'srv/a.ts',
+        'evil\u001b[2Jx.ts',
+        '../../etc/passwd',
+        '/etc/hosts',
+        '~/.ssh/id_ed25519',
+        'C:/x',
+        'a/../../b',
+      ),
+    )
+    const source = createMentionSource({
+      session: { searchReferences: search },
+      cwd: '/nonexistent/agh-b7-remote',
+      remote: true,
+      locale: 'en',
+      changed,
+    })
+    await settle(source, 'a', changed)
+    expect(search).toHaveBeenCalledWith('a')
+    expect(source.get('a')).toEqual({ status: 'ready', items: [{ id: 'srv/a.ts', directory: false }] })
+    // A session switch resets the source: the cached answer is dropped and the next `get` asks again.
+    source.reset()
+    expect(source.get('a')).toEqual({ status: 'loading', items: [] })
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+  })
+
+  it('remote: a missing method is a one-line reason, with no local fallback', async () => {
+    const changed = vi.fn()
+    const missing = Object.assign(new Error('nope'), { data: { code: 'METHOD_NOT_FOUND' } })
+    const source = createMentionSource({
+      session: { searchReferences: async () => Promise.reject(missing) },
+      cwd: '/nonexistent/agh-b7-remote',
+      remote: true,
+      locale: 'zh-CN',
+      changed,
+    })
+    await settle(source, '', changed)
+    expect(source.get('')).toEqual({
+      status: 'failed',
+      items: [],
+      reason: '此 daemon 不支持文件搜索',
+    })
+  })
+
+  it('failure reason is sanitized to one line', async () => {
+    const changed = vi.fn()
+    const source = createMentionSource({
+      session: { searchReferences: async () => Promise.reject(new Error('boom\n\u001b[31mred')) },
+      cwd: '/nonexistent',
+      remote: true,
+      locale: 'en',
+      changed,
+    })
+    await settle(source, 'q', changed)
+    expect(source.get('q').reason).toBe('Cannot search files: boom [31mred')
+  })
+
+  it('embedded: falls back to the local workspace only when the daemon lacks the method', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-b7-embedded-'))
+    try {
+      writeFileSync(join(dir, 'local-note.md'), 'x')
+      const changed = vi.fn()
+      const missing = Object.assign(new Error('nope'), { data: { code: 'CAPABILITY_DENIED' } })
+      const source = createMentionSource({
+        session: { searchReferences: async () => Promise.reject(missing) },
+        cwd: dir,
+        remote: false,
+        locale: 'en',
+        changed,
+      })
+      await settle(source, 'local', changed)
+      await vi.waitFor(() =>
+        expect(source.get('local').items).toEqual([{ id: 'local-note.md', directory: false }]),
+      )
+      // Any other error is reported, not papered over with the disk.
+      const failing = createMentionSource({
+        session: { searchReferences: async () => Promise.reject(new Error('down')) },
+        cwd: dir,
+        remote: false,
+        locale: 'en',
+        changed,
+      })
+      await vi.waitFor(() => expect(failing.get('local').status).toBe('failed'))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

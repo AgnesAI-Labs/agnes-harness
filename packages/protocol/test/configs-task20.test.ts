@@ -145,7 +145,7 @@ describe('Task20 validates actual host profile assets and resolver output', () =
   const yaml = hostRequire('yaml') as { parse(text: string): unknown }
   it.each(['local-dev', 'enterprise'])('%s raw YAML', (template) => {
     const raw = yaml.parse(
-      readFileSync(new URL(`../../host-common/templates/${template}.yaml`, import.meta.url), 'utf8'),
+      readFileSync(new URL(`../../package-manager/templates/${template}.yaml`, import.meta.url), 'utf8'),
     )
     expect(P.validateProfileManifest(raw)).toEqual({ ok: true, value: raw })
   })

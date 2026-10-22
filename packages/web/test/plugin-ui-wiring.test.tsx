@@ -42,6 +42,12 @@ it('loads exact new-session defaults and renders the selected/stale Loop accessi
   const catalog = await loadNewSessionCatalog(fetcher)
   expect(defaultLoop(catalog.defaults)).toEqual({ id: 'workflow', version: '1.2.0' })
   expect(fetcher.mock.calls[0]?.[0]).toBe('/admin/api/loops')
+  const essentials = await loadNewSessionCatalog(async (url) => {
+    if (String(url).endsWith('/composition')) return new Promise<Response>(() => {})
+    return fetcher(url)
+  }, false)
+  expect(essentials.loops).toEqual(catalog.loops)
+  expect(essentials.composition).toBeUndefined()
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)

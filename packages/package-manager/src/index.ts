@@ -18,10 +18,13 @@ export {
 export * from './capabilities.js'
 export * from './catalog.js'
 export * from './client-assets.js'
+export { demoProvider } from './demo-provider.js'
 export * from './deployment-refs.js'
 export * from './entry-path.js'
 export * from './error-message.js'
 export * from './errors.js'
+export * from './generation-equivalence.js'
+export { HOST_CAPABILITY_GRANTS, type HostCapabilityGrant, type HostGrantDeclaration } from './host-grants.js'
 export {
   capabilityHash,
   type InstalledInventory,
@@ -46,6 +49,7 @@ export * from './local-workspace-trust.js'
 export * from './lock-state.js'
 export * from './lockfile.js'
 export * from './manager.js'
+export { assertCurrentPackageFormat } from './package-format.js'
 export * from './package-plugin-loader.js'
 export * from './plugin-capabilities.js'
 export * from './plugin-manifest.js'
@@ -62,6 +66,7 @@ export {
   verifyOfficialCatalog,
 } from './provenance.js'
 export { publishModelAdapterCatalog, readPublishedModelAdapters } from './published-model-adapters.js'
+export * from './release-policy.js'
 export type {
   RuntimePin,
   RuntimePinPurpose,
@@ -80,7 +85,6 @@ export {
 export * from './skin-assets.js'
 export * from './sources.js'
 export type { PackageCommitPoint, RuntimeSnapshotCommitPoint } from './store.js'
-export { currentStoredShape } from './stored-metadata.js'
 export * from './trust-gate.js'
 export {
   invalidatePackageVerification,

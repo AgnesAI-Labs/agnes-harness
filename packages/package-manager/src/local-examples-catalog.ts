@@ -1,6 +1,7 @@
-import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, sep } from 'node:path'
+import { setImmediate } from 'node:timers/promises'
 import type { PackageCatalogDescriptor } from '@agnes/protocol'
 import { validatePackageAdminData } from '@agnes/protocol'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
@@ -8,8 +9,9 @@ import { readApplicationAssets } from './application-assets.js'
 import { BUNDLED_EXAMPLES, bundledExampleSource } from './bundled-plugin-source.js'
 import { type CatalogRead, createCatalog, staticCatalogSource } from './catalog.js'
 import { PackageError } from './errors.js'
+import { mapFileChecks } from './file-read-pool.js'
 import { inspectStaged } from './inspect.js'
-import { fetchSource, hashDirectory } from './sources.js'
+import { fetchSource, hashDirectoryAsync } from './sources.js'
 
 const SOURCE_ID = 'local-examples'
 const TTL_MS = 86_400_000
@@ -83,16 +85,35 @@ async function descriptor(
   if (typeof pkg.name !== 'string' || typeof pkg.version !== 'string' || typeof pkg.license !== 'string')
     return invalid('identity')
   const source = { type: 'file' as const, ref: sourceRef ?? `file:./${relativeDirectory}` }
-  // Source workspaces can contain pnpm links. Inspect the fetched payload, exactly as install does,
-  // rather than treating dependency links outside the distributable payload as package bytes.
-  const staging = mkdtempSync(join(tmpdir(), 'agnes-catalog-inspect-'))
+  // Discovery never executes or publishes code. Clean shipped trees can be inspected
+  // in place; workspaces containing excluded development files still need the install payload.
+  let needsPayload = ['node_modules', '.git', 'fixtures/out'].some(
+    (path) => lstatSync(join(owned, path), { throwIfNoEntry: false }) !== undefined,
+  )
+  // Install excludes these names at every depth. Do not accidentally publish a
+  // different catalog digest for a nested development dependency directory.
+  const pending = [owned]
+  while (!needsPayload && pending.length) {
+    const directory = pending.pop()!
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === 'node_modules' || entry.name === '.git') {
+        needsPayload = true
+        break
+      }
+      if (entry.isDirectory()) pending.push(join(directory, entry.name))
+    }
+  }
+  const staging = needsPayload ? mkdtempSync(join(tmpdir(), 'agnes-catalog-inspect-')) : undefined
   try {
-    const staged = join(staging, 'package')
-    await fetchSource({ type: 'file', ref: `file:./${relativeDirectory}` }, staged, {
-      cwd: workspace,
-      ...(signal ? { signal } : {}),
-    })
-    const integrity = hashDirectory(staged, { ...(signal ? { signal } : {}) })
+    const staged = staging ? join(staging, 'package') : owned
+    const integrity = staging
+      ? (
+          await fetchSource({ type: 'file', ref: `file:./${relativeDirectory}` }, staged, {
+            cwd: workspace,
+            ...(signal ? { signal } : {}),
+          })
+        ).integrity
+      : await hashDirectoryAsync(staged, { exclude: [], ...(signal ? { signal } : {}) })
     const { preview } = await inspectStaged({
       dir: staged,
       source,
@@ -126,7 +147,7 @@ async function descriptor(
     if (!validatePackageAdminData('PackageCatalogDescriptor', projected).ok) return invalid('descriptor')
     return value
   } finally {
-    rmSync(staging, { recursive: true, force: true })
+    if (staging) rmSync(staging, { recursive: true, force: true })
   }
 }
 
@@ -146,26 +167,32 @@ export async function createLocalExamplesCatalog(
     return invalid('workspace')
   }
   const now = options.now ?? Date.now
-  const source = staticCatalogSource(SOURCE_ID, async (signal) => ({
-    issuedAt: new Date(now()).toISOString(),
-    ttlMs: TTL_MS,
-    entries: await Promise.all([
+  const source = staticCatalogSource(SOURCE_ID, async (signal) => {
+    const directories = [
       ...FAMILIES.flatMap((family) =>
-        family.releases.map((release) =>
-          descriptor(workspace, `examples/packages/${family.family}/${release}`, signal),
-        ),
+        family.releases.map((release) => `examples/packages/${family.family}/${release}`),
       ),
       ...BUNDLED_EXAMPLES.filter((example) => ['fde', 'showcase'].includes(example.family))
         .filter((example) => existsSync(join(workspace, 'examples', example.family, example.name)))
-        .map((example) => descriptor(workspace, `examples/${example.family}/${example.name}`, signal)),
-      ...FLAT_PLUGIN_EXAMPLES.map((name) => descriptor(workspace, `examples/packages/${name}`, signal)),
+        .map((example) => `examples/${example.family}/${example.name}`),
+      ...FLAT_PLUGIN_EXAMPLES.map((name) => `examples/packages/${name}`),
       ...(options.includeTestOnlyBroken
-        ? FAMILIES.filter((family) => family.includeBroken).map(({ family }) =>
-            descriptor(workspace, `examples/packages/${family}/broken`, signal),
+        ? FAMILIES.filter((family) => family.includeBroken).map(
+            ({ family }) => `examples/packages/${family}/broken`,
           )
         : []),
-    ]),
-  }))
+    ]
+    const entries = await mapFileChecks(directories, async (directory) => {
+      // Bound discovery to the existing four-reader pool; yield around synchronous inspection.
+      await setImmediate()
+      return descriptor(workspace, directory, signal)
+    })
+    return {
+      issuedAt: new Date(now()).toISOString(),
+      ttlMs: TTL_MS,
+      entries,
+    }
+  })
   const catalog = createCatalog([source], { priority: [SOURCE_ID], now })
   const initial = await catalog.read(options.signal ? { signal: options.signal } : {})
   if (initial.sources[0]?.status !== 'fresh') return invalid('read')
@@ -174,22 +201,14 @@ export async function createLocalExamplesCatalog(
 
 /** Metadata only: installation still fetches, inspects, reviews, trusts and enables normally. */
 export async function bundledExamplesEntries(signal?: AbortSignal) {
-  const staging = mkdtempSync(join(tmpdir(), 'agnes-example-catalog-'))
-  try {
-    const entries: Omit<PackageCatalogDescriptor, 'sourceId' | 'retrievedAt'>[] = []
-    for (const example of BUNDLED_EXAMPLES) {
-      const source = bundledExampleSource(example.ref)
-      if (!source) return invalid('bundled-source')
-      if (!existsSync(join(source.root, source.path, 'package.json'))) continue
-      await fetchSource({ type: 'file', ref: example.ref }, join(staging, example.name), {
-        cwd: source.root,
-        ...(signal ? { signal } : {}),
-      })
-      const entry = await descriptor(nativeRealpathSync(staging), example.name, signal, example.ref)
-      entries.push(entry)
-    }
-    return entries
-  } finally {
-    rmSync(staging, { recursive: true, force: true })
-  }
+  const entries = await mapFileChecks(BUNDLED_EXAMPLES, async (example) => {
+    await setImmediate()
+    const source = bundledExampleSource(example.ref)
+    if (!source) return invalid('bundled-source')
+    if (!existsSync(join(source.root, source.path, 'package.json'))) return undefined
+    // descriptor already fetches, hashes and inspects the exact install payload.
+    // A second staging copy adds no discovery information or authorization.
+    return descriptor(nativeRealpathSync(source.root), source.path, signal, example.ref)
+  })
+  return entries.filter((entry) => entry !== undefined)
 }

@@ -1,4 +1,0 @@
-# Compatibility alias: the standard recipe under the workspace-write permission, which is also the
-# default permission (permission-workspace-write.yaml).
-name: workspace-write
-extends: standard

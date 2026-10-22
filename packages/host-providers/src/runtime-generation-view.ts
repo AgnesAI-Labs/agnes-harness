@@ -28,6 +28,7 @@ function copyRegistries(seed: GenerationRegistrySeed, owner?: string): Generatio
       ...(registered.packageIdentity === undefined ? {} : { packageIdentity: registered.packageIdentity }),
       ...(registered.packageVersion === undefined ? {} : { packageVersion: registered.packageVersion }),
       executionDomain: registered.executionDomain,
+      ...(registered.executionBinding ? { executionBinding: registered.executionBinding } : {}),
     })
   }
   const resources = new ResourceRegistry()

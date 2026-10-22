@@ -4,9 +4,9 @@ import { Loader } from '../../src/tui/components/loader.js'
 import { displayWidth } from '../../src/tui/terminal.js'
 import { TuiTheme } from '../../src/tui/theme.js'
 import { Hints } from '../../src/tui/views/hints.js'
-import { Header, StatusBar } from '../../src/tui/views/status-bar.js'
+import { StatusBar } from '../../src/tui/views/status-bar.js'
 
-const BRANDING = { accent: '#5E57FE', mark: 'agnes', selfLabel: 'Agnes AI' }
+const _BRANDING = { accent: '#5E57FE', mark: 'agnes', selfLabel: 'Agnes AI' }
 const PLAIN = new TuiTheme('mono').ansi(createAnsi('none'))
 
 describe('status bar and header (cli 稿 §9.2)', () => {
@@ -53,55 +53,6 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     expect(s.render(39)[1]).toContain('ctx ~0.2%/1M')
     s.setUsage(undefined)
     expect(s.render(100)).toHaveLength(1)
-  })
-
-  it('header shows brand, profile, preset, session tail, generation and op state', () => {
-    const h = new Header(PLAIN, BRANDING)
-    h.set({
-      profile: 'local-dev',
-      preset: 'standard',
-      sessionId: 'agnes:x:y:cli:dm:12345678',
-      generation: 2,
-      opState: { turn: 3, step: 2, phase: 'tools' },
-    })
-    expect(h.render(80)[0]).toBe(
-      'agnes ·ᴗ·  local-dev · standard · #12345678 · g2 · turn 3 step 2 tools'.padEnd(80),
-    )
-  })
-
-  it('header paints the brand in the accent colour and fades the separators on a colour tier', () => {
-    const state = {
-      profile: 'local-dev',
-      preset: 'standard',
-      sessionId: 'agnes:x:y:cli:dm:12345678',
-      generation: 1,
-    }
-    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
-    const h = new Header(ansi, BRANDING)
-    h.set(state)
-    const line = h.render(60)[0] as string
-    expect(line).toContain(ansi.bold(ansi.fg('accent', 'agnes')))
-    expect(line).toContain(`${ansi.fg('faint', ' ·ᴗ·')}  ${ansi.fg('muted', 'local-dev')}`)
-    expect(line).toContain(ansi.fg('faint', '#12345678'))
-    // Mono keeps SGR dim, so the separator must not leak dim into the field after it.
-    const mono = new Header(new TuiTheme('mono').ansi(createAnsi('256')), BRANDING)
-    mono.set(state)
-    expect(mono.render(60)[0]).toContain('\x1b[2m · \x1b[22m\x1b[2mstandard\x1b[22m')
-    // The none tier must emit zero escape sequences for the very same content.
-    const plain = new Header(PLAIN, BRANDING)
-    plain.set({ profile: 'p', preset: 's', sessionId: 'id:12345678', generation: 1 })
-    expect(plain.render(60)[0]).not.toContain('\x1b')
-  })
-
-  it('takes the compact mark and accent from the shared branding contract', () => {
-    const h = new Header(PLAIN, {
-      accent: '#00875A',
-      mark: 'acme',
-      selfLabel: 'Acme Workbench',
-    })
-    h.set({ profile: 'p', preset: 's', sessionId: 'id:12345678', generation: 1 })
-    expect(h.render(60)[0]).toContain('acme ·ᴗ·  p · s')
-    expect(h.render(60)[0]).not.toContain('agnes')
   })
 
   it('status bar colors slot levels, the budget segment, the notice and the link state', () => {
@@ -158,22 +109,15 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     expect(line).toContain('⟳ 追赶中')
   })
 
-  it('bounds header and status chrome to one row at narrow terminal widths', () => {
+  it('bounds status chrome to one row at narrow terminal widths', () => {
     const status = new StatusBar(PLAIN, 'zh-CN')
     status.setSlots([{ text: '一条很长的状态文本', level: 'warn' }])
     status.setBudget(5, 100)
     status.setParked('tk-abcdefgh')
     status.setLink('reconnecting')
-    const header = new Header(PLAIN, BRANDING)
-    header.set({
-      profile: 'local-development-profile',
-      preset: 'standard',
-      sessionId: 'agnes:x:y:cli:dm:12345678',
-      generation: 2,
-    })
 
     for (const width of [1, 2, 10, 20, 40]) {
-      for (const component of [status, header]) {
+      for (const component of [status]) {
         const lines = component.render(width)
         expect(lines).toHaveLength(1)
         expect(displayWidth(lines[0] as string)).toBeLessThanOrEqual(width)

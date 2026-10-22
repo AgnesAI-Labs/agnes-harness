@@ -4,6 +4,7 @@ import {
   type NewSessionTarget,
   type ScheduleCode,
   type ScheduleDb,
+  type ScheduleJobs,
 } from '@agnes/base/schedule'
 import type { JobRow } from '@agnes/daemon-foundation/jobs/repo'
 import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
@@ -100,6 +101,7 @@ export function scheduleSessions(
         // workspace's canonical session and every run would land in the same conversation.
         const session = await client.createSession({
           cwd: target.cwd,
+          permission: 'default',
           sessionKey: randomUUID(),
           ...(target.preset ? { preset: target.preset } : {}),
           ...(target.bundles?.length ? { bundles: target.bundles } : {}),
@@ -154,13 +156,14 @@ export function failureOf(
  */
 export function scheduledTasks(o: {
   db: ScheduleDb
+  jobs: ScheduleJobs
   clock: () => number
   socketPath: string
   serverIdentity: { pid: number; processStartId: string }
   sources: ScheduleTargetSources
 }) {
   const check = scheduleTargetCheck(o.sources)
-  const port = createSchedulesPort(o.db, o.clock, check)
+  const port = createSchedulesPort(o.db, o.jobs, o.clock, check)
   const runs = scheduleSessions(o.socketPath, o.serverIdentity)
   const newSession = (job: JobRow) => {
     const task = port.targetOf(job.idempotencyKey)

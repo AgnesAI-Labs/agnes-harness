@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { HistoryIndexError, searchHistoryDirectory } from '@agnes/history-index'
 import { rpcError } from '@agnes/protocol'
 import { afterEach, describe, expect, it } from 'vitest'
-import { handleHistorySearch } from '../src/history-route.js'
+import { defaultHistoryDataDir, handleHistorySearch } from '../src/history-route.js'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -111,4 +111,10 @@ describe('history search route', () => {
       },
     })
   })
+})
+
+it.each([undefined, '/synthetic/current'])('refuses retired history home with AGH_HOME=%s', (AGH_HOME) => {
+  expect(() => defaultHistoryDataDir({ AGH_HOME, AGNES_HOME: '/synthetic/old' })).toThrow(
+    /AGNES_HOME.*clean home/,
+  )
 })

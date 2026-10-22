@@ -5,6 +5,7 @@ import type { SeamInitContext, SeamProfileView } from '@agnes/host-extensions/as
 import { toSeamAdapters } from '../adapters/index.js'
 import { inspectComputerUseArtifacts } from '../computer-use/index.js'
 import type { AssemblyContext } from './context.js'
+import type { PackageSet } from './packages.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import { createStaticSeams } from './seams.js'
@@ -30,6 +31,7 @@ export function openSeamContexts(
   ctx: AssemblyContext,
   proc: ProcessServices,
   presets: PresetCatalog,
+  pkgs: PackageSet,
 ): SeamContexts {
   const { deps, dataDir, workspaceRoot, clock } = ctx
   const { adapters, secrets, nativePlatform } = proc
@@ -61,7 +63,7 @@ export function openSeamContexts(
   const contextFor = (owner: string, seamName: SeamName): { context: SeamInitContext; cleanup(): void } => {
     const context = {
       ...baseContext(owner),
-      ...retention.contextFor(owner, seamName),
+      ...retention.contextFor(pkgs.grants.seam(owner, seamName, pkgs.modules.get(owner))),
     }
     return { context, cleanup: () => undefined }
   }

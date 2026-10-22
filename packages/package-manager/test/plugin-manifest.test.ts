@@ -85,7 +85,7 @@ describe('package.json agnes.plugins', () => {
       parseAgnesPluginEntries('@acme/example', [
         { export: 'main', apiRange: '^4.0.0', metadata: { ...purpose, category: 'invented' } },
       ]),
-    ).toThrow('metadata')
+    ).toThrow(/Retired.*clean home/)
   })
 
   it('rejects duplicate normalized ids', () => {
@@ -387,6 +387,39 @@ it('validates application identity and explicit agent, page and role references'
   })
   const app = { id: 'acme', defaultAgent: 'acme/kit#work', agents: ['acme/kit#work'] }
   expect(parseApplicationContract(app, 'acme/kit', bundles, {}).application).toEqual(app)
+  expect(
+    parseApplicationContract({ ...app, delegableAgents: app.agents }, 'acme/kit', bundles, {}).application
+      ?.delegableAgents,
+  ).toEqual(app.agents)
+  const many = parsePackageBundleContract(
+    'acme/kit',
+    Object.fromEntries(
+      Array.from({ length: 13 }, (_, index) => [
+        `role${index}`,
+        {
+          launch: { title: { en: `Role ${index}` }, description: { en: 'Role' }, preset: 'safe' },
+          presets: { safe: { name: 'safe' } },
+        },
+      ]),
+    ),
+  )
+  const manyRefs = Array.from({ length: 13 }, (_, index) => `acme/kit#role${index}`)
+  expect(
+    parseApplicationContract(
+      { id: 'acme', agents: manyRefs, delegableAgents: manyRefs.slice(0, 12) },
+      'acme/kit',
+      many,
+      {},
+    ).application?.delegableAgents,
+  ).toHaveLength(12)
+  expect(() =>
+    parseApplicationContract(
+      { id: 'acme', agents: manyRefs, delegableAgents: manyRefs },
+      'acme/kit',
+      many,
+      {},
+    ),
+  ).toThrow()
   const workbench = {
     tabs: [
       {
@@ -436,6 +469,10 @@ it('validates application identity and explicit agent, page and role references'
     { ...app, presentation: { home: 'acme/kit#unknown' } },
     { ...app, defaultAgent: 'acme/kit#missing' },
     { ...app, agents: [] },
+    { ...app, delegableAgents: ['acme/kit#missing'] },
+    { ...app, agents: undefined, delegableAgents: app.agents },
+    { ...app, delegableAgents: Array(9).fill('acme/kit#work') },
+    { ...app, delegableAgents: [...app.agents, ...app.agents] },
     {
       ...app,
       workbench: {

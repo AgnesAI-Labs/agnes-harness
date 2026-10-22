@@ -157,7 +157,7 @@ Agent-authored candidates show their type (plugin or Skill), version, new/update
 
 “Defaults for new sessions” reads host catalogs and saves exact loop/adapter versions and a model ID using a configuration revision. Existing sessions retain their bindings. Unavailable saved choices must be replaced or cleared; a conflicting save requires reloading the catalogs. The local daemon queries its Host-bearing shared worker for catalogs; the launcher relays them over its private Unix connection. In the workbench, a new task preselects the saved Loop and model next to the existing model picker. You can change the Loop before the first message; existing sessions keep their binding. Session Trace shows the recorded Loop ID/version from session metadata, including after reopening.
 
-The fixed local admin routes are `GET /admin/api/loops` (loops plus defaults/revision), `GET /admin/api/model-adapters`, `GET /admin/api/defaults`, and `PUT /admin/api/defaults` with `{ revision, defaults: { preset?, permission?, providers?: { loop?, 'model-adapter'? }, model? } }`. `preset` is the default recipe and `permission` the default level (`read-only`, `workspace-write` or `full-access`); an older saved default preset that names one of those levels is read back as `permission`. Each `providers.<kind>` selection is `{ provider, version }`, the same shape as everywhere else; `model` names a model of the selected adapter and is only valid beside it. Writes require plugin activation permission and the same-origin admin context. The trusted launcher supplies an `AdminSessionSelection` relay to the daemon; Host composes real catalogs and existing configuration storage with `createAdminSessionSelection`. Adapter models include their configured `route` when available so the workbench selects the actual runtime model. This endpoint does not import plugin factories or accept credentials.
+The fixed local admin routes are `GET /admin/api/loops` (loops plus defaults/revision), `GET /admin/api/model-adapters`, `GET /admin/api/defaults`, and `PUT /admin/api/defaults` with `{ revision, defaults: { preset?, permission?, providers?: { loop?, 'model-adapter'? }, model? } }`. `preset` is the default recipe and `permission` the default level (`read-only`, `workspace-write` or `full-access`); retired permission-as-preset defaults are refused with a clean-home hint. Each `providers.<kind>` selection is `{ provider, version }`, the same shape as everywhere else; `model` names a model of the selected adapter and is only valid beside it. Writes require plugin activation permission and the same-origin admin context. The trusted launcher supplies an `AdminSessionSelection` relay to the daemon; Host composes real catalogs and existing configuration storage with `createAdminSessionSelection`. Adapter models include their configured `route` when available so the workbench selects the actual runtime model. This endpoint does not import plugin factories or accept credentials.
 
 ## Install the backend example
 
@@ -186,6 +186,13 @@ A package declaring `metadata.exampleOf` is managed only on its parent plugin’
 <a id="更新与回滚"></a>
 
 ## Update and roll back
+
+Management generation lists read retained descriptions, session bindings and already reported failures;
+they do not re-hash every historical executable archive. Listing a historical generation is not an
+archive health check. Resume, migration and execution still verify the selected archive and fail closed.
+Static composition and bundle views reuse resolved display metadata while configuration, package lock,
+capability policy and runtime snapshot records remain unchanged. Applying configuration and admitting a
+session always use fresh validation; editing installed source bytes directly is not an activation path.
 
 Rebuilding AGH preserves an installed package’s reviewed capability snapshot. Immutable package bytes are verified again at startup. Older client descriptors that were normalized without their declared streams remain usable with their original grants and capability hash; discovering those streams does not authorize them. Use the normal reviewed update flow, even from the same source and version, to approve the current declarations. Changed installed bytes still fail integrity verification.
 

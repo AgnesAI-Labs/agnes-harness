@@ -59,8 +59,8 @@ const memoryCases = [
   'metadata-failure',
 ] as const
 it.each(
-  ['standard', 'workspace-write', 'full-access'].flatMap((preset) =>
-    (preset === 'full-access' ? ['rejected' as const] : memoryCases).map((initialAnswer) => ({
+  ['standard', 'memory-write', 'memory-full'].flatMap((preset) =>
+    (preset === 'memory-full' ? ['rejected' as const] : memoryCases).map((initialAnswer) => ({
       preset,
       initialAnswer,
     })),
@@ -84,7 +84,7 @@ it.each(
       workspaceRoot: workspace,
       ...(nativeWindows ? { platform: createPlatform(), sandboxSeam: createSandboxSeam() } : {}),
       disableSessionTitle: true,
-      allowed: ['standard', 'workspace-write', 'full-access'],
+      allowed: ['standard', 'memory-write', 'memory-full'],
       presets: {
         standard: {
           name: 'standard',
@@ -94,8 +94,8 @@ it.each(
             command_policy: [{ tool: 'edit|write', argv: '^/.*$', action: 'allow' }],
           },
         },
-        'workspace-write': { name: 'workspace-write', extends: 'standard' },
-        'full-access': { name: 'full-access', extends: 'base' },
+        'memory-write': { name: 'memory-write', extends: 'standard' },
+        'memory-full': { name: 'memory-full', extends: 'base' },
         'permission-full-access': loadPreset('permission-full-access'),
       },
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
@@ -196,7 +196,12 @@ it.each(
     if (!memory || !provider) throw new Error('missing memory or provider')
     await memory.configure({ mode: 'ask' })
     async function turn(key: string) {
-      const session = await host.createSession({ key, cwd: workspace, preset })
+      const session = await host.createSession({
+        key,
+        cwd: workspace,
+        preset,
+        permission: preset === 'memory-full' ? 'full-access' : 'default',
+      })
       if (nativeWindows)
         expect(host.sessionRuntime?.(key).policy?.sandbox.enforcement).toEqual({
           level: 'partial',
@@ -219,7 +224,7 @@ it.each(
     }
     try {
       const rejected = await turn('rejected')
-      if (preset === 'full-access') {
+      if (preset === 'memory-full') {
         expect(rejected.results[0]?.data).toMatchObject({ isError: false })
         expect((await memory.readFile('MEMORY.md')).content).toBe('Prefer short answers.')
         expect(asked).toEqual([])
@@ -497,14 +502,8 @@ it('round4: a memory file awaiting its approved response cannot write after the 
   const { host } = await createTestHost({
     dataDir: home,
     workspaceRoot: workspace,
-    allowed: ['standard', 'full-access'],
-    presets: {
-      'full-access': {
-        name: 'full-access',
-        extends: 'standard',
-      },
-      'permission-full-access': loadPreset('permission-full-access'),
-    },
+    allowed: ['standard'],
+    presets: { 'permission-workspace-write': loadPreset('permission-workspace-write') },
     packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
     packages: { '@agnes/base': { plugins } },
     approval: async () => {
@@ -525,7 +524,13 @@ it('round4: a memory file awaiting its approved response cannot write after the 
     const inspection = host.memory(workspace, 'human')
     if (!inspection) throw new Error('Memory unavailable')
     await inspection.configure({ mode: 'ask' })
-    const session = await host.createSession({ cwd: workspace, preset: 'full-access' })
+    const session = await host.createSession({
+      cwd: workspace,
+      preset: 'standard',
+      permission: 'workspace-write',
+    })
+    await session.setYolo(true, session.d.actor)
+    expect(session.permissionContext.policy).toBe('full-access')
     const memory = session.d.memory
     if (!memory) throw new Error('Session memory unavailable')
     const wrapped: typeof memory = {
@@ -550,7 +555,8 @@ it('round4: a memory file awaiting its approved response cannot write after the 
     const decision = (await session.decisions.list()).find((row) => row.request.spec.purpose === 'memory')
     expect(decision?.result).toMatchObject({ code: 'full-access' })
     expect(decision?.consumption).not.toBeNull()
-    await session.setPreset({ ...session.preset, name: 'standard', permission: 'workspace-write' })
+    // Use the live permission switch used by Web/TUI; a preset cannot refit Host isolation.
+    await session.setYolo(false, session.d.actor)
     expect(session.permissionContext.policy).toBe('workspace-write')
     release()
     await run

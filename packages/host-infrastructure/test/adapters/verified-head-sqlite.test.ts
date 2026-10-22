@@ -147,7 +147,6 @@ describe('ledger_verified_head_v1', () => {
     await storage.discardNewSession('fresh', 'r')
     expect(count(file, 'ledger_verified_head_v1', 'fresh')).toBe(0)
     expect(count(file, 'sessions', 'fresh')).toBe(0)
-    expect(count(file, 'ledger_heads', 'fresh')).toBe(0)
     expect(count(file, 'ledger_verified_head_v1', 'k')).toBe(1)
   })
 })
@@ -249,18 +248,18 @@ describe('integrityDigestAt against SQLite', () => {
 })
 
 describe('the checkpoint beside the append watermark', () => {
-  it('is not written by an append, only by closing the log, and does not set the watermark', async () => {
+  it('advances after full verification or close, never an unverified append, and does not set the watermark', async () => {
     const { file, storage } = await built()
     const before = (await storage.readVerifiedHead('k')) as VerifiedHead
     const log = await SessionLogImpl.open(options(storage, 'k', 'w1'))
     await log.append([input('later')])
     // The append moved the ledger on; the checkpoint stays where the last full verification left it.
     expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(before.throughSeq)
+    await log.fullVerified()
     await log.close()
     expect((await storage.readVerifiedHead('k'))?.throughSeq).toBe(before.throughSeq + 1)
     // A checkpoint for a session the ledger has never seen leaves no watermark or session behind.
     await storage.writeVerifiedHead({ ...(before as VerifiedHead), sessionKey: 'ghost' })
-    expect(count(file, 'ledger_heads', 'ghost')).toBe(0)
     expect(count(file, 'sessions', 'ghost')).toBe(0)
   })
 
@@ -279,7 +278,9 @@ describe('the checkpoint beside the append watermark', () => {
   it('does not hide a removed watermark: a protected session without one still fails the open', async () => {
     const { file, storage } = await built()
     await storage.close()
-    raw(file, (db) => db.prepare('DELETE FROM ledger_heads WHERE session_key = ?').run('k'))
+    raw(file, (db) =>
+      db.prepare('UPDATE sessions SET head_seq = NULL, head_digest = NULL WHERE session_key = ?').run('k'),
+    )
     const reopened = sqlite(file)
     expect(await reopened.readVerifiedHead('k')).toBeDefined()
     await expect(reopened.open('k', { writerRunId: 'w1', ttlMs: 1000 })).rejects.toMatchObject({

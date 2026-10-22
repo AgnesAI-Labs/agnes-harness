@@ -36,34 +36,10 @@ export class WorkspaceIndex implements WorkspaceStore {
         workspace_id TEXT NOT NULL,
         revision INTEGER NOT NULL,
         registered_at TEXT NOT NULL,
-        last_used_at TEXT
+        last_used_at TEXT,
+        listed INTEGER NOT NULL DEFAULT 1
       )`,
     )
-    // Existing daemon databases predate explicit authority revisions. Migrate in place, then derive
-    // ids from the already canonical paths instead of treating any new cwd as registration.
-    try {
-      table.exec('ALTER TABLE workspace_registry ADD COLUMN workspace_id TEXT')
-    } catch {
-      // Column already exists.
-    }
-    try {
-      table.exec('ALTER TABLE workspace_registry ADD COLUMN revision INTEGER NOT NULL DEFAULT 1')
-    } catch {
-      // Column already exists.
-    }
-    try {
-      table.exec('ALTER TABLE workspace_registry ADD COLUMN listed INTEGER NOT NULL DEFAULT 1')
-    } catch (error) {
-      if (!/duplicate column name/i.test(String(error))) throw error
-    }
-    for (const row of table.all<{ path: string; workspace_id: string | null }>(
-      'SELECT path, workspace_id FROM workspace_registry',
-    ))
-      if (!row.workspace_id)
-        table.exec('UPDATE workspace_registry SET workspace_id = ? WHERE path = ?', [
-          workspaceIdFor(row.path),
-          row.path,
-        ])
   }
 
   put(directory: WorkspaceDirectory, registeredAt: string): WorkspaceRow {

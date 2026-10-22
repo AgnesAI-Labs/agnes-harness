@@ -156,8 +156,10 @@ describe('conversation leaf renderers', () => {
     card.update({ ...node, status: 'failed', resultPreview: 'Permission denied' })
     expect(element.dataset.status).toBe('failed')
     expect(element.getAttribute('aria-label')).toBe('工具 read_file：执行失败')
-    expect(element.querySelector('.tool-detail-text')?.textContent).toContain('错误详情')
-    expect(element.querySelector('.tool-detail-text')?.textContent).toContain('Permission denied')
+    expect(element.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain('错误详情')
+    expect(element.querySelector('[data-testid="tool-detail-text"]')?.textContent).toContain(
+      'Permission denied',
+    )
     expect(element.dataset.expanded).toBe('true')
     card.dispose()
     card.update({ ...node, status: 'completed' })

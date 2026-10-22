@@ -1,6 +1,7 @@
 import type { ClientContext } from '@agnes/web-client'
 import { SettingsTextArea } from '@agnes/web-ui'
 import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useRef, useState } from 'react'
+import { BrowserAudio } from './browser-audio.js'
 import type { BrowserPage } from './browser-client.js'
 import type { BrowserInteraction } from './browser-interaction.js'
 
@@ -35,6 +36,8 @@ export const BrowserScreen = forwardRef<
   ref,
 ) {
   const canvas = useRef<HTMLCanvasElement>(null)
+  const [audio] = useState(() => new BrowserAudio())
+  useEffect(() => () => audio.close(), [audio])
   const text = useRef<HTMLTextAreaElement>(null)
   const meta = useRef<BrowserPage>(page)
   const target = useRef(page.pageId)
@@ -50,8 +53,10 @@ export const BrowserScreen = forwardRef<
   requestControl.current = onRequestControl
   const pendingInput = useRef<{
     input: Record<string, string | number>
+    following: Record<string, string | number>[]
     pageId: string
     pageEpoch: number
+    agentRevision?: number
   }>()
   const [inputPoint, setInputPoint] = useState({ x: 0, y: 0 })
   const hintId = useId()
@@ -63,6 +68,7 @@ export const BrowserScreen = forwardRef<
   useEffect(() => {
     setConnected(false)
     setConnecting(true)
+    audio.reset()
     pendingInput.current = undefined
     composing.current = false
     if (text.current) text.current.value = ''
@@ -70,15 +76,16 @@ export const BrowserScreen = forwardRef<
     if (canvas.current)
       canvas.current.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height)
     selectTarget.current?.()
-  }, [page.pageId])
+  }, [page.pageId, audio])
   useEffect(() => {
     if (meta.current.pageId !== page.pageId || meta.current.pageEpoch >= page.pageEpoch) return
+    audio.reset()
     // History restores can stop the existing CDP capture. Rebind through the same
     // admitted view stream, and keep old pixels non-interactive until the new image.
     setConnected(false)
     setConnecting(true)
     selectTarget.current?.(true)
-  }, [page.pageId, page.pageEpoch])
+  }, [page.pageId, page.pageEpoch, audio])
   // biome-ignore lint/correctness/useExhaustiveDependencies: reconnect explicitly requests a new display subscription.
   useEffect(() => {
     const abort = new AbortController()
@@ -99,6 +106,7 @@ export const BrowserScreen = forwardRef<
       refresh = false
       selected = target.current
       const selection = ++revision
+      const source = current
       selecting = true
       void (
         interaction
@@ -110,10 +118,18 @@ export const BrowserScreen = forwardRef<
             )
       )
         .catch((error) => {
-          if (abort.signal.aborted || selection !== revision) return
+          if (abort.signal.aborted || selection !== revision || current !== source) return
           setConnected(false)
           setConnecting(false)
-          onError(String(error))
+          // Closing the selected tab can retire its view before the page list
+          // switches targets. Recover that read-only view before surfacing an error.
+          if (attempts >= 4) onError(String(error))
+          // A failed selection must not leave `selected` pointing at an unseen page
+          // forever. Reopen only the read-only display; never replay website input.
+          const failed = current
+          current = undefined
+          failed?.close('view-selection-failed')
+          retry()
         })
         .finally(() => {
           selecting = false
@@ -128,7 +144,9 @@ export const BrowserScreen = forwardRef<
         const frame = pending
         pending = undefined
         try {
-          const bitmap = await createImageBitmap(new Blob([frame.bytes], { type: 'image/jpeg' }))
+          const bitmap = await createImageBitmap(
+            new Blob([frame.bytes], { type: frame.description.frameMime ?? 'image/jpeg' }),
+          )
           try {
             if (
               abort.signal.aborted ||
@@ -161,6 +179,7 @@ export const BrowserScreen = forwardRef<
     }
     const retry = () => {
       if (abort.signal.aborted) return
+      audio.reset()
       pending = undefined
       ready = false
       current = undefined
@@ -184,7 +203,7 @@ export const BrowserScreen = forwardRef<
       revision = 0
       ready = false
       return ctx.sessionStreams
-        .open('browser.frames', { pageId: selected, viewId }, { signal: abort.signal })
+        .open('browser.frames', { pageId: selected, viewId, displayVersion: 2 }, { signal: abort.signal })
         .then((opened) => {
           if (abort.signal.aborted) {
             opened.close('cancelled')
@@ -213,6 +232,16 @@ export const BrowserScreen = forwardRef<
             }
             // The first image confirms that the plugin registered this view.
             // A tab may have changed while the transport was opening.
+            if (description.media === 'audio') {
+              if (
+                description.pageId === target.current &&
+                meta.current.pageId === target.current &&
+                description.pageEpoch >= expectedEpoch.current &&
+                description.pageEpoch === meta.current.pageEpoch
+              )
+                audio.push(frame.subarray(4 + size), description.sampleRate ?? 0)
+              return
+            }
             ready = true
             select()
             if (description.pageId !== target.current) return
@@ -222,7 +251,7 @@ export const BrowserScreen = forwardRef<
         })
         .catch((error) => {
           if (!abort.signal.aborted) {
-            onError(String(error))
+            if (attempts >= 4) onError(String(error))
             retry()
           }
         })
@@ -235,7 +264,7 @@ export const BrowserScreen = forwardRef<
       pending = undefined
       current?.close('view-closed')
     }
-  }, [ctx, interaction, reconnect, onError])
+  }, [ctx, interaction, reconnect, onError, audio])
 
   useEffect(() => {
     sequence.current = 0
@@ -325,6 +354,17 @@ export const BrowserScreen = forwardRef<
 
   const send = useCallback(
     (input: Record<string, string | number>) => {
+      const pending = pendingInput.current
+      if (!controlling && pending) {
+        if (connected && pending.pageId === target.current && pending.pageEpoch === meta.current.pageEpoch) {
+          if (pending.following.length < 32) pending.following.push(input)
+          else {
+            pendingInput.current = undefined
+            onError('Input connection is not ready. Buffered input was discarded; please retry.')
+          }
+        }
+        return
+      }
       if (
         !connected ||
         !controlling ||
@@ -338,6 +378,7 @@ export const BrowserScreen = forwardRef<
         seq: sequence.current++,
         pageEpoch: meta.current.pageEpoch,
         controlEpoch: control.controlEpoch,
+        ...(meta.current.agentRevision === undefined ? {} : { agentRevision: meta.current.agentRevision }),
       })
       if (accepted !== 'accepted') onError('Input was not delivered. Reconnect and inspect before retrying.')
     },
@@ -355,7 +396,16 @@ export const BrowserScreen = forwardRef<
       if (control || requesting.current || !request) return
       requesting.current = true
       setTaking(true)
-      pendingInput.current = { input, pageId: meta.current.pageId, pageEpoch: meta.current.pageEpoch }
+      pendingInput.current = {
+        input,
+        following: [],
+        pageId: meta.current.pageId,
+        pageEpoch: meta.current.pageEpoch,
+        ...(meta.current.agentRevision === undefined ? {} : { agentRevision: meta.current.agentRevision }),
+      }
+      // Focus the local IME target immediately; native admission can finish after
+      // the user has already started typing. Nothing is sent before it succeeds.
+      if (input.type === 'click' || input.type === 'key') text.current?.focus({ preventScroll: true })
       void request(meta.current.pageEpoch)
         .then((granted) => {
           if (!granted) pendingInput.current = undefined
@@ -378,11 +428,16 @@ export const BrowserScreen = forwardRef<
     if (!pending) return
     pendingInput.current = undefined
     // A handover must never apply the original click to a newly navigated document.
-    if (pending.pageId !== target.current || pending.pageEpoch !== meta.current.pageEpoch) {
+    if (
+      pending.pageId !== target.current ||
+      pending.pageEpoch !== meta.current.pageEpoch ||
+      pending.agentRevision !== meta.current.agentRevision
+    ) {
       onError(t('pageChanged'))
       return
     }
     send(pending.input)
+    for (const input of pending.following) send(input)
     if (pending.input.type === 'click' || pending.input.type === 'key')
       text.current?.focus({ preventScroll: true })
   }, [connected, controlling, control, send, onError, t])
@@ -474,6 +529,7 @@ export const BrowserScreen = forwardRef<
         }}
         onClick={(event) => {
           if (!connected) return
+          audio.resume()
           const box = event.currentTarget.getBoundingClientRect()
           const border = event.currentTarget.clientLeft
           const width = meta.current.viewportWidth ?? 1280
@@ -492,9 +548,10 @@ export const BrowserScreen = forwardRef<
         className="agh-browser-input"
         style={{ left: inputPoint.x, top: inputPoint.y }}
         rows={1}
+        tabIndex={-1}
         aria-label={t('input')}
         aria-describedby={hintId}
-        disabled={!controlling || !connected}
+        disabled={!connected}
         onCompositionStart={() => {
           composing.current = true
         }}
@@ -505,6 +562,7 @@ export const BrowserScreen = forwardRef<
         onInput={(event) => flushText(event.currentTarget)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || composing.current) return
+          audio.resume()
           // Keep native composition and layout-specific text on the input path.
           // macOS Option characters and Windows AltGr are not remote shortcuts.
           if (

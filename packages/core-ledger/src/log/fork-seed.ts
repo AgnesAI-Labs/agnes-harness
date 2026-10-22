@@ -61,8 +61,8 @@ export function batchTrigger(events: readonly Event[], op: OpWrite | undefined):
 /**
  * A delegated child opened from its live parent, waiting for its tracker: the parent's fork point,
  * the parent rows after it up to the boundary, the child's own rows as verified at open, and the rows
- * the child committed before a tracker was attached. Every row here was verified or written by this
- * process.
+ * the child committed before a tracker was attached. Inherited rows may remain provisional until
+ * the child's independent background verification finishes.
  */
 export type SeededLog = { base: ForkBase; inherited: Event[]; own: Event[]; tail: Event[] }
 export const seededLogs = new WeakMap<SessionLogImpl, SeededLog>()
@@ -71,5 +71,5 @@ export const seededLogs = new WeakMap<SessionLogImpl, SeededLog>()
 export type ForkPath = { path: 'live-parent' } | { path: 'cold-open'; reason: 'no-tracker' | 'no-fork-point' }
 export const forkPaths = new WeakMap<SessionLogImpl, ForkPath>()
 
-/** Parent verification proof retained only while a child is being constructed and published. */
+/** Parent lifecycle fence retained only while a child is being constructed and published. */
 export const forkChecks = new WeakMap<SessionLogImpl, () => void>()

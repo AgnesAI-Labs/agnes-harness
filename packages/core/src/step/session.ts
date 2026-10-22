@@ -1,4 +1,3 @@
-import { hasChildControl } from '@agnes/core-child-control/child/store'
 import { LEGACY_LOOP } from '@agnes/core-common/loop/registry'
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import { newOpState, type OpStateObj, opMark, withPhase } from '@agnes/core-common/step/op-state'
@@ -37,10 +36,10 @@ import type { SessionLogImpl, Timers } from '@agnes/core-ledger/log/session-log'
 import { SCAN_PAGE_MAX, type ScanQuery } from '@agnes/core-ledger/log/storage'
 import {
   type ChildTrace,
-  ChildTraceCache,
+  type ChildTraceCache,
   embedChildTraces,
 } from '@agnes/core-ledger/project/child-trace-cache'
-import { exportRlaf, type RlafDump, type RlafRange } from '@agnes/core-ledger/project/rlaf'
+import type { RlafRange } from '@agnes/core-ledger/project/rlaf'
 import type { SurfaceCache, SurfaceNode } from '@agnes/core-ledger/project/surface'
 import {
   attachChildTraces,
@@ -110,6 +109,8 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
+import { roleAuthority } from '../child/role-authority.js'
+import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
@@ -132,7 +133,7 @@ import type {
   RequestMediaSurfaceLimits,
 } from '../orchestrator/request-media-surface.js'
 import { ResourceRegistry } from '../registry/resources.js'
-import { onlyTools } from '../registry/tool-allow.js'
+import { ToolRegistryView } from '../registry/tool-allow.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
 import { commitSessionAttachments, queuedInputSizeFloor } from '../request/attachment-admission.js'
 import type { PromptSection } from '../request/contribute.js'
@@ -154,9 +155,11 @@ import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
 import { type AbortResult, abortSession, closeTurn, finishAborted } from './control.js'
 import { DecisionCommands, type DecisionSource } from './decisions.js'
+import { assertCurrentDomainDecisions } from './domain-decision.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
 import { compactionSettingsFor, contextWindowFor } from './gate.js'
+import { createChildTraceCache, exportVerifiedRlaf } from './history.js'
 import {
   budgetOverrideEvent,
   claimFrom,
@@ -178,9 +181,9 @@ import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } 
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
 import { permissionOperator, SessionPermissionAuthority } from './session-permission-authority.js'
 import { invalidatePermissionProjection } from './session-permission-projection.js'
+import { sessionToolCatalog } from './tool-catalog.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
-import { settleParkedCompletion } from './verifier-continuation.js'
 
 type OperationCommon = {
   name: string
@@ -401,6 +404,8 @@ export type TurnEndReason =
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
 
 export type SessionDeps = {
+  roleDelegation?: RoleDelegation
+  childRoles?: ChildRolePort
   commandPathScope?: import('../command-table/floor.js').CommandPathScope
   memory?: import('@agnes/extension-api').MemorySession
   systemPrompt?: PinnedSystemPrompt
@@ -479,6 +484,7 @@ export type SessionDeps = {
   policyDigest?: string | null
   /** Carried into a new session/start only; a reopened ledger keeps the one it has. */
   imported?: SessionStart['imported']
+  delegation?: SessionStart['delegation']
   cwd: string
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
@@ -676,6 +682,8 @@ export class SessionImpl {
    * on the counter before it pulls the signal, and `step()` ends a turn marked cancelled whichever
    * controller is current.
    */
+  // A Stop received after run admission survives replacement of the old controller.
+  private abortRevision = 0
   ac = new AbortController()
   /** `close()` is final, so a closed session must not be handed a fresh signal by the next `run()`. */
   private closing = false
@@ -686,7 +694,10 @@ export class SessionImpl {
 
   private readonly authorization: SessionPermissionAuthority
   get permissionContext(): import('@agnes/protocol').PermissionContext {
-    return this.authorization.context(this.key, this.preset.permission ?? '')
+    const context = this.authorization.context(this.key, this.preset.permission ?? '')
+    return this.roleAuthority && !this.closing
+      ? { ...context, policy: this.roleAuthority.permission }
+      : context
   }
   onPermissionChange(listener: () => void): () => void {
     return this.authorization.subscribe(listener)
@@ -743,11 +754,16 @@ export class SessionImpl {
       get permissionContext() {
         return session.permissionContext
       },
+      get refuseApprovals() {
+        return session.d.roleDelegation !== undefined
+      },
       get ttlMs() {
         return session.preset.approval.pendingTtlMs
       },
       ...(deps.timers ? { timers: deps.timers } : {}),
       log: deps.log,
+      beforeAttestation: () => deps.log.fullVerified(),
+      historyVerified: () => deps.log.historyVerified,
       readDecisions: () => session.state.registers.decisionStates,
       clock: () => deps.clock(),
       id: () => deps.ids.ulid(),
@@ -796,38 +812,25 @@ export class SessionImpl {
     this.fallbackHooks = hooks
   }
 
+  get roleAuthority() {
+    return this.d.roleDelegation ? roleAuthority(this.d.roleDelegation) : undefined
+  }
+
   /** Current tool registry used only when taking a new lookup/snapshot. */
   currentTools(): ToolRegistry {
     const tools = this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
-    const allow = this.preset.tools.allow
+    const allow = this.roleAuthority?.tools.ids ?? this.preset.tools.allow
     if (allow === undefined) return tools
     // One view per registry and list, so repeated lookups in a turn share it.
     if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
-      this.allowedTools = { source: tools, allow, view: onlyTools(tools, allow) }
+      this.allowedTools = { source: tools, allow, view: new ToolRegistryView(tools, allow, allow) }
     return this.allowedTools.view
   }
   private allowedTools?: { source: ToolRegistry; allow: readonly string[]; view: ToolRegistry }
 
   /** Read-only catalog from the same model filtering and authorized discovery as this session. */
   toolCatalog(): import('@agnes/protocol').SessionToolsResult {
-    const context = this.operationContext()
-    return {
-      sessionId: this.key,
-      tools: context.snapshot.defs.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        parameters: structuredClone(tool.parameters),
-        source: context.snapshot.byName.get(tool.name)?.source.source ?? '',
-        deferred: tool.meta.deferLoading === true,
-        readOnly: tool.meta.isReadOnly,
-      })),
-      resources: (this.hooks.resources?.() ?? []).map(({ id, kind, name, description }) => ({
-        id,
-        kind,
-        name,
-        description,
-      })),
-    }
+    return sessionToolCatalog(this)
   }
 
   /** Current resource registry used by lifecycle discovery and Host adapters. */
@@ -915,10 +918,14 @@ export class SessionImpl {
   )
   /** The selected policy inside this session's command floor: its own preset's table, read per call. */
   toolPolicy(selection?: string) {
-    return this.commandFloor(
+    const own = this.commandFloor(
       this.toolPolicies.resolve(selection ?? this.preset.approval.policy ?? 'default'),
       this.preset.approval.commandTable,
     )
+    const captured = this.roleAuthority
+    if (!captured) return own
+    const parent = this.commandFloor(this.toolPolicies.resolve(captured.parentPolicy), captured.commandTable)
+    return captured.toolPolicy(own, parent)
   }
 
   loopChildrenPort(): import('@agnes/extension-api').ChildAgentSessionService | undefined {
@@ -1013,6 +1020,7 @@ export class SessionImpl {
 
   /** Idempotent: a reopened ledger already carries its session/start and must not gain a second. */
   async start(): Promise<void> {
+    assertCurrentDomainDecisions(this)
     if (this.state.session) {
       const pinned = this.state.session.loop ?? LEGACY_LOOP
       if (pinned.id !== this.loop.id || pinned.version !== this.loop.version)
@@ -1077,6 +1085,7 @@ export class SessionImpl {
           agnesVersion: this.d.agnesVersion ?? '0.0.0',
           ...(modelSettings.length ? { modelSettings } : {}),
           ...(this.d.imported ? { imported: this.d.imported } : {}),
+          ...(this.d.delegation ? { delegation: this.d.delegation } : {}),
         },
       },
     ])
@@ -1264,6 +1273,7 @@ export class SessionImpl {
       if (state?.control.status === 'cancel_requested' && first?.control.status !== 'cancel_requested')
         rows.push(...this.decisions.stoppedEvents())
       const r = await this.d.log.append(rows, {
+        beforeFullVerify: 'refuse',
         expectedRegisterSeq: { register: 'op.state', key: this.lane, seq },
         opState: { lane: this.lane, data: state },
         ...opts,
@@ -1351,7 +1361,7 @@ export class SessionImpl {
   async enqueue(
     target: 'next-turn' | 'next-step',
     msg: EnqueueMsg,
-    options: { dedupeByCommandId?: boolean } = {},
+    options: { dedupeByCommandId?: boolean; skipIf?: () => boolean | Promise<boolean> } = {},
   ): Promise<Seq> {
     let content: ContentBlock[]
     const system = msg.system === undefined ? undefined : structuredClone(msg.system)
@@ -1366,6 +1376,8 @@ export class SessionImpl {
     }
     if (target === 'next-step' || msg.kind === 'steer') await this.controls.require('steer', msg.actor)
     return this.locked(async () => {
+      // Backend lifecycle checks must share the inbox writer lock with result collection.
+      if (await options.skipIf?.()) return this.lastSeq
       if (options.dedupeByCommandId) {
         if (!msg.commandId) throw new CoreError('E_ENVELOPE', 'input deduplication requires commandId')
         const rows = await scanAll((query) => this.scan(query), {
@@ -1702,7 +1714,7 @@ export class SessionImpl {
    */
   freshTurn(ordinal = 0, asOf: Seq = this.lastSeq): TurnMemory {
     return {
-      snapshot: this.currentTools().snapshot(asOf),
+      snapshot: roleToolSnapshot(this.currentTools().snapshot(asOf), this.availableRoles),
       nonce: this.d.ids.nonce(),
       lastHeader: null,
       lastHeaderSeq: null,
@@ -1928,10 +1940,7 @@ export class SessionImpl {
 
   /** Dispatches on the phase the ledger says the lane is in, and advances it by exactly one edge. */
   async step(): Promise<LoopStepOutcome> {
-    // Every model request, tool run and step hook starts in a step, so none starts on history that an
-    // open folded from a checkpoint until the background verification has hashed all of it, and none
-    // at all once that verification failed: `fullVerified()` then rejects with the failure.
-    while (!this.d.log.historyVerified) await this.d.log.fullVerified()
+    this.d.log.sealCheck()
     return this.active(() =>
       this.d.withModelSnapshot
         ? this.d.withModelSnapshot(() => this.stepWithModelSnapshot())
@@ -1943,10 +1952,6 @@ export class SessionImpl {
     const op = this.op()
     if (op?.control.status === 'cancel_requested') return publicOutcome(await finishAborted(this))
     if (await this.controls.boundary()) return { outcome: 'parked', phase: 'paused', reason: 'parked' }
-    if (!op) {
-      const settled = await settleParkedCompletion(this)
-      if (settled) return settled
-    }
     if (op && !this.turn) await this.rehydrateTurn(op)
     this.loopEdge++
     try {
@@ -1994,6 +1999,7 @@ export class SessionImpl {
    * that a cancellation outlives the controller that delivered it.
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
+    this.abortRevision++
     return abortSession(this, by).then((result) => {
       // This is a cancellation request, not a drain: a tool may await this very call.
       // Runtime cancel/dispose still drain their work; close owns final cleanup.
@@ -2010,6 +2016,7 @@ export class SessionImpl {
   }
 
   run(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
+    const abortRevision = this.abortRevision
     const previous = this.running
     const work = this.active(async () => {
       if (previous) {
@@ -2023,7 +2030,8 @@ export class SessionImpl {
         )
           return outcome
       }
-      return this.runTurns(opts)
+      this.availableRoles = (await this.d.childRoles?.list(this).catch(() => [])) ?? []
+      return this.runTurns(opts, abortRevision)
     })
     this.running = work
     return work.finally(() => {
@@ -2035,13 +2043,19 @@ export class SessionImpl {
     return { reason, lastSeq: this.lastSeq, ...(this.turnEndError ? { error: this.turnEndError } : {}) }
   }
 
-  private async runTurns(opts: { until: 'turn-end' | 'idle'; signal: AbortSignal }): Promise<TurnOutcome> {
+  private availableRoles: readonly import('@agnes/extension-api').ChildRole[] = []
+
+  private async runTurns(
+    opts: { until: 'turn-end' | 'idle'; signal: AbortSignal },
+    abortRevision: number,
+  ): Promise<TurnOutcome> {
     // Fresh work gets a fresh scope, unless the session is closed, in which case there is no work.
     if (!this.closing) {
       if (this.decisions.scopeRevoked) await this.restartLoopDriver()
       this.ac = new AbortController()
     }
     this.turnEndError = undefined
+    const cancelled = () => opts.signal.aborted || this.abortRevision !== abortRevision
     const onAbort = () => void this.abort().catch(() => undefined)
     opts.signal.addEventListener('abort', onAbort, { once: true })
     // A phase edge that reports where it went without writing where it went leaves step() reading
@@ -2050,21 +2064,20 @@ export class SessionImpl {
     // counter, so long tasks and large tool batches do not consume this livelock allowance.
     const maxEdges = 64
     let edges = 0
-    const progress = () => this.lastSeq
-    let cursor = progress()
+    let cursor = this.lastSeq
     try {
       // A caller whose signal was already aborted never fires the listener. Claim a queued prompt
       // before the first step: a fitted deferred queue throws on that signal before it can claim,
       // and the turn would otherwise come back aborted with the prompt still queued.
-      if (opts.signal.aborted && !this.op() && (await this.acceptInput())) {
+      if (cancelled() && !this.op() && (await this.acceptInput())) {
         await this.abort()
         const stopped = await finishAborted(this)
         return this.turnOutcome(stopped.reason ?? 'aborted')
       }
       // Nothing was queued. Pull the signal so the cancelled run does not start work.
-      if (opts.signal.aborted) onAbort()
+      if (cancelled()) onAbort()
       for (;;) {
-        const nextCursor = progress()
+        const nextCursor = this.lastSeq
         if (nextCursor !== cursor) edges = 0
         cursor = nextCursor
         if (++edges > maxEdges) {
@@ -2286,6 +2299,10 @@ export class SessionImpl {
     return this.d.log.discardNewSession()
   }
   verifyHistory = (...args: Parameters<SessionLogImpl['verifyHistory']>) => this.d.log.verifyHistory(...args)
+
+  auditHistory = (signal?: AbortSignal) => this.d.log.auditHistory(signal)
+  integrityStatus = () => this.d.log.integrityStatus()
+  requireVerifiedHistory = () => this.d.log.fullVerified()
 
   scan(q: ScanQuery): Promise<Event[]> {
     return this.d.log.scan(q)
@@ -2673,20 +2690,10 @@ export class SessionImpl {
   }
 
   private childTraces(): ChildTraceCache | undefined {
-    const storage = this.d.log.storage
-    if (!hasChildControl(storage)) return undefined
-    this.childTraceCache ??= new ChildTraceCache(this.key, {
-      lookup: (childKey) => storage.lookupByKey(childKey),
-      scan: (childKey, q) => storage.scan(childKey, q),
-    })
+    this.childTraceCache ??= createChildTraceCache(this.key, this.d.log.storage)
     return this.childTraceCache
   }
-  async exportRlaf(range: RlafRange = {}): Promise<RlafDump> {
-    // Capture one bound before the await, so concurrent appends cannot change this export's cut.
-    const upto = this.lastSeq
-    const events = await scanAll((q) => this.d.log.scan(q), { toSeq: upto })
-    return exportRlaf(events, range)
-  }
+  exportRlaf = (range: RlafRange = {}) => exportVerifiedRlaf(this.d.log, range)
   pendingEffects(): EffectTree {
     return effectTree(this.state)
   }
@@ -2695,6 +2702,7 @@ export class SessionImpl {
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise
     this.closing = true
+    this.d.log.cancelHistoryVerification()
     this.authorization.detach()
     this.decisions.detach()
     const draining = this.activeWork.size > 0

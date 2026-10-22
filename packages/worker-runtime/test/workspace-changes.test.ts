@@ -275,6 +275,8 @@ it('refuses symlinks, installation home, path escapes and old parent-session eff
   expect(
     (await readWorkspaceChanges({ ...fixture.reader, key: 'child' }, root, authority, {})).files,
   ).toEqual([])
+  vi.stubEnv('AGNES_HOME', home)
+  await expect(readWorkspaceChanges(fixture.reader, root, authority, {})).rejects.toBeDefined()
 })
 
 it('caps history, files and text, and marks unsupported successful mutations as unrecorded', async () => {

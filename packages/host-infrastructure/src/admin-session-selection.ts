@@ -1,4 +1,5 @@
 import type { LoopCatalogEntry, ModelAdapterCatalogEntry } from '@agnes/extension-api'
+import { assertRecipeName } from '@agnes/host-common/presets/permission'
 import type { AdminModelAdapter, AdminSessionSelection, ModelRecord } from '@agnes/protocol'
 import { isSessionDefaultsSnapshot } from '@agnes/protocol'
 import { ConfigurationError, type SessionDefaultsConfigurationService } from './configuration.js'
@@ -59,6 +60,7 @@ export function createAdminSessionSelection(
     async saveDefaults(input) {
       if (!isSessionDefaultsSnapshot(input)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
       const { preset, permission, providers, model } = input.defaults
+      if (preset !== undefined) assertRecipeName(preset)
       const loop = providers?.loop
       const modelAdapter = providers?.['model-adapter']
       if (preset && !(await catalog.presets?.())?.includes(preset))

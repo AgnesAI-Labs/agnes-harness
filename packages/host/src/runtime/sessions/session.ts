@@ -3,6 +3,7 @@ import {
   type ChildWorkspaceRuntimePort,
   CoreError,
   type SessionWorkspaceRuntime as CoreSessionWorkspaceRuntime,
+  roleAuthority,
   type SandboxSeam,
   type SeamImplementations,
   type Seq,
@@ -14,11 +15,10 @@ import { type CommandRule, checkCommandRule } from '@agnes/host-common/command-p
 import { HostError } from '@agnes/host-common/errors'
 import { selectionAllowed } from '@agnes/host-common/presets/admission'
 import {
-  aliasedPermission,
+  assertRecipeName,
   DEFAULT_PERMISSION,
   FOLLOW_DEFAULT_PERMISSION,
   isPermission,
-  legacyPermission,
   type Permission,
 } from '@agnes/host-common/presets/permission'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
@@ -54,6 +54,9 @@ export type SessionRecovery = Awaited<ReturnType<HostSession['resume']>>
 type PinnedSeamKind = (typeof PINNED_SEAM_KINDS)[number]
 
 export type CreateSessionOptions = {
+  /** Backend-only role admission; never part of session.new JSON. */
+  roleDelegation?: import('@agnes/core').RoleDelegation
+  delegation?: import('@agnes/core').SessionOptions['delegation']
   agent?: string
   agentDigest?: string
   strict?: boolean
@@ -281,13 +284,7 @@ function modelSwitchAllowed(...input: Parameters<typeof validateModelSwitch>): b
   }
 }
 
-/**
- * The recipe and permission a session opens under. A child inherits both from its parent. A request
- * that names a permission uses it (`default` meaning the deployment default); one that names only a
- * recipe is a pre-split request, so the recipe's own permission applies and an administrator changing
- * the default later never moves it; one that names nothing takes both deployment defaults.
- * `permission: undefined` leaves the choice to the resolver, which then applies exactly that rule.
- */
+/** A child inherits its selection; other requests use the deployment defaults for omitted axes. */
 export function sessionSelection(
   profile: ResolvedProfile,
   input: {
@@ -299,24 +296,12 @@ export function sessionSelection(
   },
 ): { name: string; permission?: Permission; fallback?: Permission } {
   const { parent, preset, permission } = input
-  const aliasLevel = preset === undefined ? aliasedPermission(profile.presets.default) : undefined
-  // A profile written before the split names a permission level as its default recipe. That level is
-  // the profile's default permission, which an administrator's default or a `permissions` block
-  // overrides; the recipe is then `standard` under that level, named by its permission-level alias
-  // where the profile allows no other spelling.
-  const defaultPermission =
-    input.defaultPermission ?? profile.permissions?.default ?? aliasLevel ?? DEFAULT_PERMISSION
+  const defaultPermission = input.defaultPermission ?? profile.permissions?.default ?? DEFAULT_PERMISSION
   if (parent) return { name: parent.name, ...(parent.permission ? { permission: parent.permission } : {}) }
-  const name =
-    aliasLevel !== undefined && aliasLevel !== defaultPermission
-      ? profile.presets.allowed.includes(defaultPermission)
-        ? defaultPermission
-        : 'standard'
-      : (preset ?? profile.presets.default)
-  // The deployment default is a fallback, not a demand: a recipe that fixes its own permission, or a
-  // permission-level name, keeps what it has instead of failing because the default differs.
-  if (permission === undefined) return preset === undefined ? { name, fallback: defaultPermission } : { name }
-  if (permission === FOLLOW_DEFAULT_PERMISSION) return { name, fallback: defaultPermission }
+  const name = preset ?? profile.presets.default
+  assertRecipeName(name)
+  if (permission === undefined || permission === FOLLOW_DEFAULT_PERMISSION)
+    return { name, fallback: defaultPermission }
   if (!isPermission(permission))
     throw new HostError('E_PRESET_UNSUPPORTED', 'unknown permission', {
       detail: { capability: 'permission', source: name },
@@ -391,7 +376,7 @@ export async function createSession(
     ...(opts.defaultPermission !== undefined ? { defaultPermission: opts.defaultPermission } : {}),
   })
   const name = selection.name
-  if (!selectionAllowed(profile, name, selection.permission ?? selection.fallback ?? legacyPermission(name)))
+  if (!selectionAllowed(profile, name, selection.permission ?? selection.fallback))
     throw new HostError('E_PRESET_UNSUPPORTED', `preset ${name} is not in presets.allowed`, {
       detail: { source: name, capability: 'preset' },
     })
@@ -434,7 +419,9 @@ export async function createSession(
     presetView: preset.view,
     adapterCatalog: a.modelAdapterCatalog(),
   }).modelRoutes.value!
+  const authority = opts.roleDelegation ? roleAuthority(opts.roleDelegation) : undefined
   let view = parentSession?.preset ?? pinPresetRoutes(preset.view, wanted)
+  if (authority) view = authority.preset(view)
   // Defaults are captured by session/start; resumed ledgers restore their own model selections.
   if (!parentSession && !opts.strict && a.sessionModelSlots) {
     const { slots, auto } = await a.sessionModelSlots()
@@ -481,7 +468,9 @@ export async function createSession(
   )
 
   // 3 the opener's Actor - host is the only caller of principals.resolve
-  const actor = await a.seams.principals.resolve(opts.credential ?? { kind: 'local' }, 'session')
+  const actor = authority
+    ? structuredClone(authority.actor)
+    : await a.seams.principals.resolve(opts.credential ?? { kind: 'local' }, 'session')
   if (parentSession) {
     const sameActor =
       parentSession.d.actor.id === actor.id &&
@@ -522,12 +511,21 @@ export async function createSession(
   // 5 open: core takes the writer lease and writes session/start. `writerRunId` is required and
   // nothing upstream mints it, so it is minted here when the caller did not bring one.
   const session = await a.kernel.session(key, {
+    ...(opts.roleDelegation
+      ? {
+          roleDelegation: { ...opts.roleDelegation, filesystem: structuredClone(sandbox.fsPolicy()) },
+          toolFilter: { allow: roleAuthority(opts.roleDelegation).tools.ids },
+        }
+      : {}),
+    ...(opts.delegation ? { delegation: opts.delegation } : {}),
     ...(a.systemPromptProvider
       ? {
           systemPrompt: {
             config: async () => ({
               ...view.model.systemPrompt,
-              ...(await new SystemPromptSettingsStore(profile.dataDir, profile.name).read()),
+              ...(!opts.roleDelegation
+                ? await new SystemPromptSettingsStore(profile.dataDir, profile.name).read()
+                : {}),
             }),
             resolve: (selection?: { id: string; version: string }) => a.systemPromptProvider!(selection),
           },

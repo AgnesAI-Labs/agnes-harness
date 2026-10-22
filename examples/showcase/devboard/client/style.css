@@ -1,0 +1,735 @@
+@layer app {
+  .devboard-app {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 1280px;
+    min-width: 0;
+    margin: 0 auto;
+    padding: 24px 32px 32px;
+    color: var(--agnes-text-primary);
+  }
+  .devboard-toolbar,
+  .devboard-filters,
+  .devboard-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .devboard-filters {
+    margin-bottom: 12px;
+  }
+  .devboard-muted {
+    color: var(--agnes-text-secondary);
+    font-size: 12px;
+  }
+  .devboard-alert {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: var(--agnes-status-danger-text);
+    border: 1px solid var(--agnes-status-danger-border);
+    background: var(--agnes-status-danger-bg);
+  }
+  .devboard-heading {
+    margin: 20px 0 8px;
+    font-size: 16px;
+  }
+  .devboard-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+  }
+  .devboard-card,
+  .devboard-column {
+    padding: 12px 16px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .devboard-card h2 {
+    margin: 0 0 8px;
+    font-size: 15px;
+  }
+  .devboard-card ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-card li {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+  }
+  /* One row of state columns; narrow windows scroll inside the board instead of wrapping. */
+  .devboard-columns {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(160px, 1fr);
+    gap: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .devboard-column {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .devboard-column h3 {
+    margin: 0;
+    font-size: 14px;
+  }
+  .devboard-columns .devboard-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+    padding: 8px 10px;
+    text-align: start;
+    font: inherit;
+    color: inherit;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 8px;
+    background: var(--agnes-bg-page);
+    cursor: pointer;
+  }
+  .devboard-columns .devboard-tile > span {
+    text-align: start;
+  }
+  .devboard-tile:focus-visible {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+  }
+  .devboard-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 0 24px;
+  }
+  .devboard-detail h3 {
+    margin: 8px 0 0;
+    font-size: 15px;
+  }
+  .devboard-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px 16px;
+    margin: 0;
+  }
+  .devboard-fact dt {
+    color: var(--agnes-text-secondary);
+    font-size: 12px;
+  }
+  .devboard-fact dd {
+    margin: 2px 0 0;
+  }
+  .devboard-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+  }
+  .devboard-note {
+    width: 100%;
+    font: inherit;
+    padding: 6px 8px;
+    color: inherit;
+    background: var(--agnes-bg-page);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 6px;
+    resize: vertical;
+  }
+  .devboard-overdue td {
+    color: var(--agnes-status-danger-text);
+  }
+  .devboard-kpis {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .devboard-kpi {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .devboard-kpi strong {
+    font-size: 24px;
+  }
+  .devboard-kpi-label {
+    color: var(--agnes-text-secondary);
+    font-size: 12px;
+  }
+  .devboard-projects {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .devboard-project {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .devboard-project header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .devboard-project h2 {
+    margin: 0;
+  }
+  .devboard-stagebar {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 4px;
+    margin: 4px 0 8px;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-stage {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 4px 6px;
+    border-top: 4px solid var(--agnes-line-primary);
+    font-size: 12px;
+  }
+  .devboard-stage-name,
+  .devboard-stage-state {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .devboard-stage-state {
+    color: var(--agnes-text-secondary);
+  }
+  .devboard-stage-PASSED {
+    border-top-color: var(--agnes-status-success-solid);
+  }
+  .devboard-stage-IN_PROGRESS,
+  .devboard-stage-IN_REVIEW {
+    border-top-color: var(--agnes-status-warning-solid);
+  }
+  .devboard-stage-REWORK {
+    border-top-color: var(--agnes-status-danger-solid);
+  }
+  .devboard-meter {
+    display: grid;
+    grid-template-columns: minmax(64px, auto) 1fr 52px;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .devboard-meter-label {
+    color: var(--agnes-text-secondary);
+  }
+  .devboard-meter-track {
+    position: relative;
+    height: 8px;
+    border-radius: 4px;
+    background: var(--agnes-bg-page);
+    border: 1px solid var(--agnes-line-primary);
+    overflow: hidden;
+  }
+  .devboard-meter-fill {
+    position: absolute;
+    inset: 0 auto 0 0;
+  }
+  .devboard-tone-ok {
+    background: var(--agnes-status-success-solid);
+  }
+  .devboard-tone-warn {
+    background: var(--agnes-status-warning-solid);
+  }
+  .devboard-tone-bad {
+    background: var(--agnes-status-danger-solid);
+  }
+  .devboard-coverage {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 8px 24px;
+    margin-bottom: 12px;
+  }
+  .devboard-trend {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-trend li {
+    display: grid;
+    grid-template-columns: 48px 1fr 1fr 64px;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+    font-size: 12px;
+  }
+  .devboard-bar {
+    display: block;
+    height: 8px;
+    min-width: 1px;
+    border-radius: 3px;
+  }
+  .devboard-md {
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .devboard-md h2,
+  .devboard-md h3,
+  .devboard-md h4 {
+    margin: 16px 0 6px;
+  }
+  .devboard-md-table {
+    overflow-x: auto;
+  }
+  .devboard-md table {
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 13px;
+  }
+  .devboard-md th,
+  .devboard-md td {
+    padding: 4px 8px;
+    border: 1px solid var(--agnes-line-primary);
+    text-align: start;
+    vertical-align: top;
+  }
+  .devboard-md-code {
+    padding: 8px 12px;
+    overflow-x: auto;
+    border-radius: 6px;
+    background: var(--agnes-bg-page);
+  }
+  .devboard-md blockquote {
+    margin: 8px 0;
+    padding-left: 12px;
+    border-left: 3px solid var(--agnes-line-primary);
+    color: var(--agnes-text-secondary);
+  }
+  .devboard-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .devboard-lag td {
+    background: var(--agnes-status-warning-bg);
+  }
+  .devboard-list {
+    margin: 0;
+    padding-inline-start: 18px;
+  }
+  .devboard-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding-inline-start: 0;
+    list-style: none;
+  }
+  /* Alarms by signal: one row per signal, one bar per week, newest on the right. */
+  .devboard-alarms {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-alarms li {
+    display: grid;
+    grid-template-columns: 110px 1fr 70px;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .devboard-spark {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    align-items: end;
+    gap: 3px;
+    height: 28px;
+  }
+  .devboard-spark-bar {
+    display: block;
+    min-height: 2px;
+    border-radius: 2px;
+  }
+  .devboard-spark-bar:not(.devboard-tone-bad) {
+    background: var(--agnes-line-primary);
+  }
+
+  /* 研发全景: SVG lanes, chips, drawer. Colors come from the shared theme tokens only. */
+  .pano {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .pano-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .pano-chip,
+  .pano-segment button {
+    padding: 3px 10px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 999px;
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-surface);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pano-chip.is-on,
+  .pano-segment button.is-on {
+    color: var(--agnes-status-danger-text);
+    border-color: var(--agnes-status-danger-solid);
+    background: var(--agnes-status-danger-bg);
+  }
+  .pano-segment button.is-on {
+    color: var(--agnes-text-primary);
+    border-color: var(--agnes-brand-focus-ring);
+    background: var(--agnes-bg-page);
+    font-weight: 600;
+  }
+  .pano-segment {
+    display: flex;
+    gap: 4px;
+  }
+  .pano-chip:focus-visible,
+  .pano-segment button:focus-visible,
+  .pano-node:focus-visible,
+  .pano-toggle:focus-visible {
+    outline: 2px solid var(--agnes-brand-focus-ring);
+    outline-offset: 2px;
+  }
+  .pano-check {
+    display: inline-flex;
+    white-space: nowrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+  }
+  .pano-check input {
+    flex: none;
+    width: 16px;
+    height: 16px;
+  }
+  .pano-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  .pano-body.has-drawer {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+  .pano-plot {
+    min-width: 0;
+    overflow-x: auto;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .pano-svg {
+    display: block;
+    font-size: 12px;
+    fill: var(--agnes-text-primary);
+  }
+  .pano-axis,
+  .pano-today,
+  .pano-trunk,
+  .pano-branch path,
+  .pano-wait line {
+    pointer-events: none;
+  }
+  .pano-axis line {
+    stroke: var(--agnes-line-primary);
+    stroke-dasharray: 2 4;
+  }
+  .pano-axis text,
+  .pano-tick-label,
+  .pano-sub,
+  .pano-id {
+    font-size: 10px;
+    fill: var(--agnes-text-secondary);
+  }
+  .pano-group {
+    font-size: 12px;
+    font-weight: 600;
+    fill: var(--agnes-text-secondary);
+  }
+  .pano-name {
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .pano-bad-text {
+    font-size: 11px;
+    fill: var(--agnes-status-danger-text);
+  }
+  .pano-branch-label {
+    font-size: 10px;
+  }
+  .pano-dim {
+    opacity: 0.35;
+  }
+  .pano-today line {
+    stroke: var(--agnes-status-danger-solid);
+    stroke-width: 1.5;
+  }
+  .pano-today text {
+    font-size: 10px;
+    fill: var(--agnes-status-danger-text);
+  }
+  .pano-trunk {
+    stroke: var(--agnes-text-secondary);
+    stroke-width: 3;
+    stroke-linecap: round;
+  }
+  .pano-trunk.is-planned {
+    stroke: var(--agnes-line-primary);
+    stroke-dasharray: 5 5;
+  }
+  .pano-node {
+    cursor: pointer;
+    stroke-width: 2;
+    stroke: var(--agnes-text-secondary);
+    fill: var(--agnes-bg-surface);
+  }
+  .pano-node.is-done {
+    stroke: var(--agnes-status-success-solid);
+    fill: var(--agnes-status-success-solid);
+  }
+  .pano-node.is-active,
+  .pano-node.is-tone-warn {
+    stroke: var(--agnes-status-warning-solid);
+    fill: var(--agnes-status-warning-bg);
+  }
+  .pano-node.is-bad,
+  .pano-node.is-tone-bad {
+    stroke: var(--agnes-status-danger-solid);
+    fill: var(--agnes-status-danger-solid);
+  }
+  .pano-node.is-tone-ok {
+    stroke: var(--agnes-status-success-solid);
+    fill: var(--agnes-status-success-solid);
+  }
+  .pano-node.is-tone-off,
+  .pano-node.is-todo {
+    stroke: var(--agnes-text-secondary);
+    fill: var(--agnes-bg-surface);
+  }
+  .pano-node.is-faded {
+    opacity: 0.45;
+  }
+  .pano-node.is-selected {
+    stroke-width: 4;
+    stroke: var(--agnes-brand-focus-ring);
+  }
+  .pano-node.is-pulse {
+    animation: pano-pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pano-pulse {
+    50% {
+      opacity: 0.45;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pano-node.is-pulse {
+      animation: none;
+    }
+  }
+  .pano-branch path,
+  .pano-wait line {
+    fill: none;
+    stroke-width: 2;
+    stroke: var(--agnes-status-warning-solid);
+  }
+  .pano-branch path.is-open,
+  .pano-wait line {
+    stroke-dasharray: 4 3;
+  }
+  .pano-branch circle {
+    fill: var(--agnes-bg-surface);
+    stroke: var(--agnes-text-secondary);
+    stroke-width: 1.5;
+  }
+  .pano-tone-ok path,
+  .pano-mark.pano-tone-ok {
+    stroke: var(--agnes-status-success-solid);
+    fill: var(--agnes-status-success-solid);
+  }
+  .pano-tone-bad path,
+  .pano-wait.pano-tone-bad line,
+  .pano-mark.pano-tone-bad {
+    stroke: var(--agnes-status-danger-solid);
+    fill: var(--agnes-status-danger-solid);
+  }
+  .pano-tone-bad path {
+    fill: none;
+  }
+  .pano-tone-warn path,
+  .pano-mark.pano-tone-warn {
+    stroke: var(--agnes-status-warning-solid);
+    fill: var(--agnes-status-warning-solid);
+  }
+  .pano-tone-off path,
+  .pano-mark.pano-tone-off {
+    stroke: var(--agnes-text-secondary);
+    fill: var(--agnes-text-secondary);
+  }
+  .pano-tone-warn path,
+  .pano-tone-off path,
+  .pano-tone-ok path {
+    fill: none;
+  }
+  .pano-toggle {
+    cursor: pointer;
+  }
+  .pano-toggle rect {
+    fill: var(--agnes-bg-page);
+    stroke: var(--agnes-line-primary);
+  }
+  .pano-toggle text {
+    font-size: 11px;
+  }
+  .pano-drawer {
+    position: sticky;
+    top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .pano-drawer-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    overflow-wrap: anywhere;
+  }
+  .pano-drawer-sub {
+    margin: 4px 0 0;
+    font-size: 13px;
+  }
+  .pano-facts {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 4px 12px;
+    margin: 0;
+    font-size: 12px;
+  }
+  .pano-facts dt {
+    color: var(--agnes-text-secondary);
+  }
+  .pano-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .pano-reasons {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    font-size: 12px;
+    list-style: none;
+  }
+  .pano-legend {
+    margin: 0;
+  }
+  @media (max-width: 900px) {
+    .pano-body.has-drawer {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .pano-drawer {
+      position: static;
+    }
+  }
+  /* Approval flows: the node graph and the three to-do columns. */
+  .devboard-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .devboard-node {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1 1 170px;
+    max-width: 260px;
+    padding: 10px 12px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
+  }
+  .devboard-node + .devboard-node::before {
+    content: "\2192";
+    position: absolute;
+    inset-inline-start: -14px;
+    top: 12px;
+    color: var(--agnes-text-secondary);
+  }
+  .devboard-node-current {
+    border-color: var(--agnes-brand-focus-ring);
+    box-shadow: 0 0 0 1px var(--agnes-brand-focus-ring);
+  }
+  .devboard-node-waiting,
+  .devboard-node-skipped {
+    opacity: 0.7;
+  }
+  .devboard-node-overdue {
+    border-color: var(--agnes-status-danger-border);
+    background: var(--agnes-status-danger-bg);
+  }
+  .devboard-overdue-text {
+    color: var(--agnes-status-danger-text);
+    font-size: 12px;
+  }
+  .devboard-inline {
+    width: 200px;
+  }
+  .devboard-todo {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+    align-items: start;
+  }
+  .devboard-todo-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .devboard-todo-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 8px;
+  }
+  .devboard-todo-overdue {
+    border-color: var(--agnes-status-danger-border);
+    background: var(--agnes-status-danger-bg);
+  }
+}

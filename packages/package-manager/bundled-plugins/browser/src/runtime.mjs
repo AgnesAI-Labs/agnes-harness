@@ -1,9 +1,27 @@
 import { randomUUID } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
+import { localFile, openFilePreview } from './files.mjs'
 import { browserUrl, failure, isBrowserRefusal } from './policy.mjs'
 
 const MAX_PAGES = 3
 const MAX_SESSIONS = 2
 const CONTROL_MS = 5 * 60_000
+// Chromium's bundled PDF viewer is part of the reviewed browser, not a user extension.
+const PDF_VIEWER_ORIGIN = 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai'
+const pdfFrame = (item, frame) => {
+  for (let current = frame; current; current = current.parentFrame())
+    if (item?.pdfFrames?.has(current)) return true
+  return false
+}
+const fileFrame = (frame, origin) => {
+  for (let current = frame; current; current = current.parentFrame()) {
+    const value = current.url()
+    if (value && new URL(value).origin === origin) return true
+    if (!['', 'about:blank', 'about:srcdoc'].includes(value) && !value.startsWith(PDF_VIEWER_ORIGIN + '/'))
+      return false
+  }
+  return false
+}
 
 /** One Page object serves tools, observations and all display/input subscribers. */
 export class BrowserRuntime {
@@ -45,7 +63,10 @@ export class BrowserRuntime {
   guard(epoch = this.epoch) {
     this.assertCurrent()
     if (!this.enabled || this.closed || epoch !== this.epoch)
-      throw failure('DISABLED', 'Built-in browser is disabled. Use authorized computer_use instead.')
+      throw failure(
+        'DISABLED',
+        "Built-in browser is disabled. Respect the user's specified tool when selecting an authorized alternative.",
+      )
     if (this.cleanupRequired)
       throw failure(
         'CLEANUP_UNCONFIRMED',
@@ -121,6 +142,7 @@ export class BrowserRuntime {
         this.guard(epoch)
         const context = await browser.newContext({
           viewport: { width: 1280, height: 800 },
+          deviceScaleFactor: 2,
           acceptDownloads: false,
           serviceWorkers: 'block',
         })
@@ -130,6 +152,49 @@ export class BrowserRuntime {
           entry.context = context
           await context.route('**/*', async (route) => {
             try {
+              const target = new URL(route.request().url())
+              const pdfExtension =
+                target.protocol === 'chrome-extension:' &&
+                target.protocol + '//' + target.host === PDF_VIEWER_ORIGIN
+              const pdfResources = target.protocol === 'chrome:' && target.hostname === 'resources'
+              if (pdfExtension || pdfResources) {
+                const frame = route.request().frame()
+                const item = entry.pages.get(frame.page())
+                if (
+                  !pdfFrame(item, frame) ||
+                  (pdfResources && !frame.url().startsWith(PDF_VIEWER_ORIGIN + '/'))
+                )
+                  throw failure('FILE_DENIED', 'Internal PDF viewer requires a PDF document.')
+                await route.continue()
+                return
+              }
+              const origin = target.origin
+              let frame,
+                owner,
+                trustedNavigation = false
+              try {
+                frame = route.request().frame()
+                owner = entry.pages.get(frame.page())
+              } catch {
+                /* Worker requests have no frame and cannot inherit file grants. */
+              }
+              if (owner && route.request().isNavigationRequest() && frame === owner.page.mainFrame()) {
+                const pending = owner.pendingNavigation
+                owner.pendingNavigation = undefined
+                if (pending) {
+                  const planned = pending === 'history' ? undefined : new URL(pending)
+                  if (planned) planned.hash = ''
+                  trustedNavigation = pending === 'history' || planned.href === target.href
+                }
+              }
+              for (const item of entry.pages.values()) {
+                const preview = item.filePreviews?.get(origin)
+                if (!preview) continue
+                if (owner !== item || (!trustedNavigation && !fileFrame(frame, origin)))
+                  throw failure('FILE_DENIED', 'Foreign file preview.')
+                await route.continue({ headers: { ...route.request().headers(), ...preview.headers } })
+                return
+              }
               browserUrl(route.request().url(), this.protectedOrigins)
               await route.continue()
             } catch {
@@ -186,6 +251,10 @@ export class BrowserRuntime {
       events: [],
       cursor: 0,
       inputVersion: 0,
+      humanRevision: 0,
+      observedHumanRevision: 0,
+      agentRevision: 0,
+      lastHumanInput: -Infinity,
       refs: new Map(),
       viewers: new Set(),
     }
@@ -207,11 +276,23 @@ export class BrowserRuntime {
     page.on('pageerror', (error) => event('pageerror', error.message))
     page.on('requestfailed', (request) => event('requestfailed', new URL(request.url()).origin))
     page.on('response', (response) => {
+      if (response.request().isNavigationRequest()) {
+        item.pdfFrames ??= new Set()
+        if (/^application\/pdf(?:;|$)/i.test(response.headers()['content-type'] ?? ''))
+          item.pdfFrames.add(response.frame())
+        else item.pdfFrames.delete(response.frame())
+      }
       if (response.status() >= 400) event('http', response.status() + ' ' + new URL(response.url()).origin)
     })
     page.on('dialog', (dialog) => {
       event('dialog', dialog.type())
       void dialog.dismiss().catch(() => {})
+    })
+    page.on('framedetached', (frame) => item.pdfFrames?.delete(frame))
+    page.on('download', (download) => {
+      item.downloaded = true
+      event('download', 'This file is not rendered by the browser. Automatic downloads are disabled.')
+      void download.cancel().catch(() => {})
     })
     page.on('crash', () => {
       item.uncertain = true
@@ -219,6 +300,7 @@ export class BrowserRuntime {
       event('crash', 'Browser page crashed. Inspect before resuming.')
     })
     page.on('close', () => {
+      for (const preview of item.filePreviews?.values() ?? []) preview.close()
       this.revoke(item)
       this.clearRefs(item)
       for (const view of item.viewers) view.close('page-closed')
@@ -247,11 +329,7 @@ export class BrowserRuntime {
     this.guard()
     if (identity?.lane !== 'main') throw failure('DENIED', 'Main session required.')
     return [...(this.sessions.get(identity.key)?.pages.values() ?? [])].map((item) => ({
-      pageId: item.id,
-      url: item.page.url(),
-      pageEpoch: item.epoch,
-      controlEpoch: item.controlEpoch,
-      mode: item.mode,
+      ...this.describe(item),
       uncertain: !!item.uncertain,
       activity: item.activity ?? 0,
     }))
@@ -269,13 +347,27 @@ export class BrowserRuntime {
     const pending = item.queue.then(async () => {
       this.guard(epoch)
       signal?.throwIfAborted()
-      if (item.controlEpoch !== controlEpoch || (human ? item.mode !== 'human' : item.mode !== 'agent'))
+      const shared = item.mode === 'human' && item.control?.nativeId
+      if (
+        item.controlEpoch !== controlEpoch ||
+        (human ? item.mode !== 'human' : item.mode !== 'agent' && !shared)
+      )
         throw failure('CONTROL_CHANGED', 'Page control changed. Inspect the current page.')
+      if (
+        !human &&
+        ((shared && this.now() - item.lastHumanInput < 600) ||
+          item.observedHumanRevision !== item.humanRevision)
+      )
+        throw failure('STALE_TARGET', 'The user is editing this page. Inspect again after their input.')
       if (item.uncertain) throw failure('UNCERTAIN', 'Inspect the page before any further operation.')
       let result
       try {
         if (!human) this.activate(item)
         item.inputVersion++
+        if (human) {
+          item.humanRevision++
+          this.clearRefs(item)
+        } else item.agentRevision++
         result = await work()
       } catch (error) {
         if (!isBrowserRefusal(error)) {
@@ -301,14 +393,66 @@ export class BrowserRuntime {
     return isBrowserRefusal(error)
   }
 
-  async act(identity, input, signal) {
+  async waitForHumanInput(item, signal) {
+    // Wait outside the page queue: typing and other tabs must keep working.
+    while (item.mode === 'human' && item.control?.nativeId && this.now() - item.lastHumanInput < 600) {
+      this.guard()
+      await delay(Math.max(1, 600 - (this.now() - item.lastHumanInput)), undefined, { signal })
+    }
+  }
+
+  async fileUrl(identity, item, value, previewRoot) {
+    if (!localFile(value)) return browserUrl(value, this.protectedOrigins)
+    const access = this.sessions.get(identity.key)?.fileAccess
+    const preview = await openFilePreview({
+      value,
+      previewRoot,
+      root: access?.root,
+      files: access?.files,
+      assertCurrent: () => {
+        this.get(identity, item.id)
+      },
+    })
+    try {
+      this.get(identity, item.id)
+    } catch (error) {
+      preview.close()
+      throw error
+    }
+    item.filePreviews ??= new Map()
+    const existing = [...item.filePreviews.values()].find((p) => p.directory === preview.directory)
+    if (existing) {
+      preview.close()
+      return existing.origin + preview.url.slice(preview.origin.length)
+    }
+    if (item.filePreviews.size >= 8) {
+      preview.close()
+      throw failure('CAPACITY', 'Close this file tab before opening more directories.')
+    }
+    item.filePreviews.set(preview.origin, preview)
+    return preview.url
+  }
+
+  async navigate(item, target, work) {
+    // One exact main-frame admission; a remote page never inherits an old file root.
+    item.pendingNavigation = target
+    try {
+      return await work()
+    } finally {
+      item.pendingNavigation = undefined
+    }
+  }
+
+  async act(identity, input, signal, fileAccess) {
     this.guard()
     signal?.throwIfAborted()
     if (input.action === 'status') return { ...this.status(), pages: this.list(identity) }
     if (input.action === 'open') {
       const epoch = this.epoch
-      const url = browserUrl(input.url, this.protectedOrigins)
+      // Validate schemes before allocating a tab. Files remain fenced by session authority.
+      if (!localFile(input.url)) browserUrl(input.url, this.protectedOrigins)
       const session = await this.session(identity)
+      if (fileAccess?.files) session.fileAccess = fileAccess
       this.guard(epoch)
       if (this.sessions.get(identity.key) !== session) throw failure('CLOSED', 'Session is closed.')
       signal?.throwIfAborted()
@@ -333,9 +477,29 @@ export class BrowserRuntime {
           session.opening--
         }
       }
+      let url
+      try {
+        url = await this.fileUrl(identity, item, input.url, input.previewRoot)
+      } catch (error) {
+        if (!input.pageId) await item.page.close().catch(() => {})
+        if (!session.pages.size && !session.opening) await this.closeSession(identity.key)
+        throw error
+      }
+      await this.waitForHumanInput(item, signal)
       await this.enqueue(
         item,
-        () => item.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 }),
+        async () => {
+          item.downloaded = false
+          try {
+            return await this.navigate(item, url, () =>
+              item.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20_000 }),
+            )
+          } catch (error) {
+            if (item.downloaded && localFile(input.url))
+              throw failure('UNSUPPORTED_FILE', 'This file type cannot be rendered by the pinned browser.')
+            throw error
+          }
+        },
         signal,
       )
       return this.describe(item)
@@ -389,6 +553,7 @@ export class BrowserRuntime {
           throw failure('STALE_TARGET', 'Page changed while observing. Inspect again.')
         }
         item.uncertain = false
+        item.observedHumanRevision = item.humanRevision
         this.activate(item)
         return { ...this.describe(item), text, elements }
       })
@@ -397,13 +562,17 @@ export class BrowserRuntime {
     }
     if (input.action === 'screenshot') {
       this.activate(item)
+      const observedHumanRevision = item.humanRevision
+      const bytes = await item.page.screenshot({ type: 'png', scale: 'css', timeout: 10_000 })
+      if (observedHumanRevision === item.humanRevision) item.observedHumanRevision = observedHumanRevision
       return {
         ...this.describe(item),
-        bytes: await item.page.screenshot({ type: 'png', scale: 'css', timeout: 10_000 }),
+        bytes,
       }
     }
     if (input.pageEpoch !== item.epoch)
       throw failure('STALE_TARGET', 'Inspect the page again before interacting.')
+    await this.waitForHumanInput(item, signal)
     const result = await this.enqueue(
       item,
       async () => {
@@ -441,13 +610,17 @@ export class BrowserRuntime {
             await item.page.getByText(input.text, { exact: true }).waitFor({ timeout: 10_000 })
             break
           case 'back':
-            await item.page.goBack({ timeout: 10_000 })
+            await this.navigate(item, 'history', () =>
+              item.page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }),
+            )
             break
           case 'forward':
-            await item.page.goForward({ timeout: 10_000 })
+            await this.navigate(item, 'history', () =>
+              item.page.goForward({ waitUntil: 'domcontentloaded', timeout: 10_000 }),
+            )
             break
           case 'reload':
-            await item.page.reload({ timeout: 10_000 })
+            await item.page.reload({ waitUntil: 'domcontentloaded', timeout: 10_000 })
             break
           case 'close': {
             await item.page.close()
@@ -474,14 +647,17 @@ export class BrowserRuntime {
   }
 
   describe(item) {
+    const url = item.page.url()
+    const preview = item.filePreviews?.get(new URL(url).origin)
     return {
       pageId: item.id,
-      url: item.page.url(),
+      url: preview ? preview.sourceUrl(url) : url,
       pageEpoch: item.epoch,
       controlEpoch: item.controlEpoch,
       mode: item.mode,
       viewportWidth: 1280,
       viewportHeight: 800,
+      agentRevision: item.agentRevision,
     }
   }
 
@@ -561,12 +737,15 @@ export class BrowserRuntime {
     if (input.pageEpoch !== item.epoch || input.controlEpoch !== item.controlEpoch)
       throw failure('STALE_INPUT', 'Refresh the page before interacting.')
     item.control.seq = input.seq
+    item.lastHumanInput = this.now()
     return this.enqueue(
       item,
       async () => {
         this.controlGrant(identity, input, actor)
         if (input.pageEpoch !== item.epoch || input.controlEpoch !== item.controlEpoch)
           throw failure('STALE_INPUT', 'Refresh the page before interacting.')
+        if (input.agentRevision !== undefined && input.agentRevision !== item.agentRevision)
+          throw failure('STALE_INPUT', 'The agent changed the page. Use the current display.')
         switch (input.type) {
           case 'click':
             if (
@@ -595,20 +774,28 @@ export class BrowserRuntime {
               throw failure('INVALID_INPUT', 'Invalid wheel delta.')
             await item.page.mouse.wheel(input.x, input.y)
             break
-          case 'navigate':
-            await item.page.goto(browserUrl(input.url, this.protectedOrigins), {
-              waitUntil: 'domcontentloaded',
-              timeout: 20_000,
-            })
+          case 'navigate': {
+            const url = await this.fileUrl(identity, item, input.url)
+            await this.navigate(item, url, () =>
+              item.page.goto(url, {
+                waitUntil: 'domcontentloaded',
+                timeout: 20_000,
+              }),
+            )
             break
+          }
           case 'reload':
             await item.page.reload({ waitUntil: 'domcontentloaded', timeout: 10_000 })
             break
           case 'back':
-            await item.page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 })
+            await this.navigate(item, 'history', () =>
+              item.page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }),
+            )
             break
           case 'forward':
-            await item.page.goForward({ waitUntil: 'domcontentloaded', timeout: 10_000 })
+            await this.navigate(item, 'history', () =>
+              item.page.goForward({ waitUntil: 'domcontentloaded', timeout: 10_000 }),
+            )
             break
           default:
             throw failure('INVALID_INPUT', 'Unsupported input.')
@@ -645,6 +832,7 @@ export class BrowserRuntime {
     if (!session) return
     this.sessions.delete(key)
     for (const item of session.pages.values()) {
+      for (const preview of item.filePreviews?.values() ?? []) preview.close()
       this.revoke(item)
       for (const view of item.viewers) view.close('session-closed')
     }

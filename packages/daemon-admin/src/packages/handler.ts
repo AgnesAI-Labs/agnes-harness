@@ -17,7 +17,6 @@ import {
   AuthoringCandidates,
   activeRuntimePinId,
   collectSkinRoster,
-  currentStoredShape,
   parseSource,
   publicPluginFailureReason,
   resolveSkinAsset,
@@ -1151,7 +1150,10 @@ class Service implements PackageAdminService {
     sessionId?: string
   }): Promise<ClientModuleListResult> {
     const directory = await this.options.profileDirectory(params.profile)
-    const inventory = await this.options.manager.inventory(directory)
+    // A display read: it may reuse the last complete inventory until a package write or a change to
+    // the lock, policy or source files, so opening a page neither waits for the package lock nor
+    // hashes every installed tree again.
+    const inventory = await this.options.manager.inventory(directory, { settled: true })
     const result = await this.clientModules.list({
       ...(params.sessionId ? { sessionId: params.sessionId } : {}),
       profile: params.profile,
@@ -1171,7 +1173,7 @@ class Service implements PackageAdminService {
     path: string
   }): Promise<ClientModuleReadResult> {
     const directory = await this.options.profileDirectory(params.profile)
-    const inventory = await this.options.manager.inventory(directory)
+    const inventory = await this.options.manager.inventory(directory, { settled: true })
     return await this.clientModules.read({
       profile: params.profile,
       profileDirectory: directory,
@@ -1336,7 +1338,7 @@ class Service implements PackageAdminService {
     // prevents one authenticated administrator from observing another administrator's operation.
     if (!found || found.identity.principalId !== authority.principalId)
       throw rpcError('SEMANTIC_REJECTED', { reason: 'PACKAGE_OPERATION_UNAVAILABLE' })
-    return operationWithHelp(currentStoredShape(found.operation) as PackageOperation)
+    return operationWithHelp(found.operation)
   }
 
   private async effect(
@@ -2105,7 +2107,7 @@ class Service implements PackageAdminService {
     })
     for (const listener of this.listeners) {
       try {
-        listener(structuredClone(currentStoredShape(value.operation)) as PackageOperation)
+        listener(structuredClone(value.operation))
       } catch {
         // Observation cannot change the durable operation result.
       }

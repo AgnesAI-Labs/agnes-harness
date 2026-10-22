@@ -103,7 +103,11 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
       deny,
     }),
     network: Object.freeze({
-      mode: policy.networkAllow.length ? ('hosts' as const) : ('deny' as const),
+      mode: policy.loopbackServe
+        ? ('loopback-serve' as const)
+        : policy.networkAllow.length
+          ? ('hosts' as const)
+          : ('deny' as const),
       hosts: policy.networkAllow,
     }),
     requiredEnforcement: workspace.enforcement,
@@ -183,6 +187,12 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
 
 async function bindWorkspace(workspace: SeamWorkspace): Promise<SandboxSeam> {
   assertWorkspace(workspace)
+  if (
+    workspace.policy.loopbackServe &&
+    (workspace.execBackend !== 'l1' ||
+      (workspace.providerId !== undefined && workspace.providerId !== 'local'))
+  )
+    throw fault('SANDBOX_UNAVAILABLE', 'loopback serving requires a local L1 backend')
   return workspace.execBackend === 'remote' ? bindRemote(workspace) : bindLocal(workspace)
 }
 

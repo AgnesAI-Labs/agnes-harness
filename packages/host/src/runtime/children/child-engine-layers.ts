@@ -1,34 +1,24 @@
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import type { OrdinaryPluginLayers } from '@agnes/host-providers/assemble/ordinary-rows'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import { RELEASE_CHILD_ENGINES } from '@agnes/package-manager'
 import {
   createPluginRow,
   decodeRuntimeTargetArtifact,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
-import {
-  CHILD_ENGINE_ROW_IDS,
-  type ChildEngineSettings,
-  childEngineRowConfig,
-  type EngineDocument,
-} from '@agnes/protocol'
-
-const EXPORTS = {
-  [CHILD_ENGINE_ROW_IDS.codex]: 'codexChildAgentsPlugin',
-  [CHILD_ENGINE_ROW_IDS.claudeCode]: 'claudeCodeChildAgentsPlugin',
-  [CHILD_ENGINE_ROW_IDS.sdk]: 'sdkChildAgentsPlugin',
-} as const
+import { type ChildEngineSettings, childEngineRowConfig, type EngineDocument } from '@agnes/protocol'
 
 function engineRow(
-  id: keyof typeof EXPORTS,
+  row: (typeof RELEASE_CHILD_ENGINES.rows)[number],
   engine: EngineDocument & { protocol?: 'sdk' | 'acp' },
   integrity: string,
 ) {
   return createPluginRow({
-    id,
-    plugin: `builtin:@agnes/base/${EXPORTS[id]}`,
+    id: row.id,
+    plugin: `builtin:${RELEASE_CHILD_ENGINES.packageId}/${row.exportName}`,
     snapshotDigest: integrity,
-    exportName: EXPORTS[id],
+    exportName: row.exportName,
     entryRevision: integrity,
     extrasRevision: 'none',
     mountRevision: 'host-ordinary-row:v1',
@@ -42,20 +32,12 @@ function engineRow(
 /** Deployment-layer overrides for the three builtin child-engine rows. */
 export function childEnginePluginLayers(settings: ChildEngineSettings): OrdinaryPluginLayers {
   return {
-    deployment: {
-      [CHILD_ENGINE_ROW_IDS.codex]: {
-        enabled: settings.codex.enabled,
-        config: childEngineRowConfig(settings.codex),
-      },
-      [CHILD_ENGINE_ROW_IDS.claudeCode]: {
-        enabled: settings.claudeCode.enabled,
-        config: childEngineRowConfig(settings.claudeCode),
-      },
-      [CHILD_ENGINE_ROW_IDS.sdk]: {
-        enabled: settings.sdk.enabled,
-        config: childEngineRowConfig(settings.sdk),
-      },
-    },
+    deployment: Object.fromEntries(
+      RELEASE_CHILD_ENGINES.rows.map((row) => [
+        row.id,
+        { enabled: settings[row.setting].enabled, config: childEngineRowConfig(settings[row.setting]) },
+      ]),
+    ),
   }
 }
 
@@ -83,7 +65,7 @@ export function overlayChildEngineTarget(
   integrity: string,
 ): RuntimeTargetArtifact {
   const decoded = decodeRuntimeTargetArtifact(previous)
-  const ids = new Set<string>(Object.values(CHILD_ENGINE_ROW_IDS))
+  const ids = new Set<string>(RELEASE_CHILD_ENGINES.rows.map((row) => row.id))
   const ordinary = decoded.tree.rows.filter((row) => !ids.has(row.id))
   const resourceRows = Object.values(decoded.resource.rows).filter(
     (row): row is NonNullable<typeof row> => row !== null,
@@ -91,9 +73,7 @@ export function overlayChildEngineTarget(
   return buildCompleteRuntimeTarget({
     rows: [
       ...ordinary,
-      engineRow(CHILD_ENGINE_ROW_IDS.codex, settings.codex, integrity),
-      engineRow(CHILD_ENGINE_ROW_IDS.claudeCode, settings.claudeCode, integrity),
-      engineRow(CHILD_ENGINE_ROW_IDS.sdk, settings.sdk, integrity),
+      ...RELEASE_CHILD_ENGINES.rows.map((row) => engineRow(row, settings[row.setting], integrity)),
       ...resourceRows,
     ],
     resources: decoded.resource.resources,

@@ -158,9 +158,14 @@ describe('persistence provider', () => {
       const reader = await SessionLogImpl.open(options)
       expect(reader.openStats.checkpoint).toEqual({ used: true, throughSeq: 1 })
       await reader.fullVerified()
+      // The recheck returns its boundary while the independent prefix verification runs.
       await reader.verifyHistory()
+      await reader.fullVerified()
+      expect(reader.historyVerified).toBe(true)
+      await reader.verifyHistory({ rehashPrefix: true })
       expect(reader.historyVerified).toBe(false)
       await reader.fullVerified()
+      expect(reader.historyVerified).toBe(true)
       await reader.close()
       await bundle.storage.deleteVerifiedHead?.('checkpoint')
       expect(await bundle.storage.readVerifiedHead?.('checkpoint')).toBeUndefined()
@@ -736,12 +741,17 @@ it('perf3-review: a legacy provider without optional methods fully verifies both
   const log = await SessionLogImpl.open(options)
   try {
     expect(log.openStats.checkpoint).toEqual({ used: false, reason: 'unsupported' })
+    await log.fullVerified()
     expect(log.historyVerified).toBe(true)
-    expect(reads).toEqual([1, 2, 3, 4, 5])
+    expect(log.integrityStatus()).toMatchObject({ state: 'verified', verifiedThroughSeq: 5, lastSeq: 5 })
+    // Folding and hashing may visit the same rows independently; neither may omit history.
+    expect([...new Set(reads)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5])
     reads.length = 0
     await log.verifyHistory()
+    await log.fullVerified()
     expect(log.historyVerified).toBe(true)
-    expect(reads).toEqual([1, 2, 3, 4, 5])
+    expect(log.integrityStatus()).toMatchObject({ state: 'verified', verifiedThroughSeq: 5, lastSeq: 5 })
+    expect([...new Set(reads)].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5])
     const db = new DatabaseSync(join(directory, 'sessions.db'))
     try {
       db.prepare(
@@ -750,8 +760,9 @@ it('perf3-review: a legacy provider without optional methods fully verifies both
     } finally {
       db.close()
     }
-    await expect(log.verifyHistory()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await expect(log.auditHistory()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     expect(log.faulted).toBe(true)
+    expect(log.integrityStatus()).toMatchObject({ state: 'failed', failureSeq: 3 })
   } finally {
     await log.close()
     await storage.close()

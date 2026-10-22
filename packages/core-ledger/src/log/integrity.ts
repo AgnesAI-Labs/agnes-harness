@@ -1,6 +1,6 @@
 import { createSha256, type Sha256Stream } from '@agnes/core-common/request/hash'
 import { CoreError, type Event, type Seq, type SessionKey } from '@agnes/core-common/types'
-import { jcsWrite } from '@agnes/protocol'
+import { jcsChunks, jcsWrite } from '@agnes/protocol'
 import type { IntegrityCommit, IntegrityMetadata, IntegrityRow, StorageAdapter } from './storage.js'
 
 export const LEDGER_INTEGRITY_ALGORITHM = 'agnes-ledger-jcs-sha256-v1' as const
@@ -85,9 +85,15 @@ function fail(message: string, seq?: Seq): never {
   throw new LedgerIntegrityFailure(message, seq === undefined ? undefined : { seq })
 }
 
+/**
+ * Walks stored rows from `initial`. With `hash` false it checks everything but the digests themselves:
+ * sequence contiguity, legacy-before-protected order, anchor placement and that each row names the
+ * digest of the row before it. A changed event body, whose stored digest is untouched, passes.
+ */
 export function verifyIntegrityRows(
   rows: readonly IntegrityRow[],
   initial: IntegrityState = EMPTY_STATE,
+  hash = true,
 ): IntegrityState {
   let state = { ...initial }
   for (const row of rows) {
@@ -99,12 +105,12 @@ export function verifyIntegrityRows(
       continue
     }
     if (!DIGEST.test(integrity.digest)) fail('malformed ledger digest', event.seq)
-    let expected: string
+    let expected = ''
     try {
       if (integrity.mode === 'anchor') {
         if (state.headDigest !== null || integrity.previousDigest !== null)
           fail('invalid ledger anchor position', event.seq)
-        expected = anchorDigest(row.sessionKey, state.legacyThroughSeq, event).digest
+        if (hash) expected = anchorDigest(row.sessionKey, state.legacyThroughSeq, event).digest
       } else if (integrity.mode === 'chain') {
         if (
           state.headDigest === null ||
@@ -113,13 +119,13 @@ export function verifyIntegrityRows(
           !sameDigest(integrity.previousDigest, state.headDigest)
         )
           fail('ledger chain predecessor mismatch', event.seq)
-        expected = chainDigest(row.sessionKey, integrity.previousDigest, event).digest
+        if (hash) expected = chainDigest(row.sessionKey, integrity.previousDigest, event).digest
       } else fail('unknown ledger integrity mode', event.seq)
     } catch (error) {
       if (error instanceof LedgerIntegrityFailure) throw error
       fail('stored event cannot be canonicalized', event.seq)
     }
-    if (!sameDigest(integrity.digest, expected)) fail('ledger digest mismatch', event.seq)
+    if (hash && !sameDigest(integrity.digest, expected)) fail('ledger digest mismatch', event.seq)
     state = { ...state, lastSeq: event.seq, headDigest: integrity.digest }
   }
   return state
@@ -135,15 +141,23 @@ export type VerificationOptions = {
 /** Where a verified-head checkpoint says a full verification reached. */
 export type CheckpointPrefix = { throughSeq: Seq; headDigest: string; legacyThroughSeq: Seq }
 
+/** Rows at the end of a ledger without a checkpoint that a cold open still hashes. */
+export const COLD_TAIL_ROWS = 32
+
 /**
  * `yieldPage`, when given, is awaited between two pages; it is never called after the last one.
  * `onPage` receives each page's events in order, only after that page has been verified.
  *
- * With a `checkpoint`, the rows up to its `throughSeq` are handed to `onPage` without being hashed, and
- * the chain is verified onward from the head it names. Contiguity is still checked row by row there: a
- * missing row fails exactly as in a full verify. The prefix is only trusted until the caller's
- * background verification has hashed it again. Without an `onPage` consumer, the vouched prefix
- * need not be read at all; only the tail is verified here.
+ * Which rows are hashed:
+ * - With a `checkpoint`, the rows up to its `throughSeq` are handed to `onPage` without being hashed, and
+ *   the chain is verified onward from the head it names. Contiguity is still checked row by row there.
+ *   Without an `onPage` consumer the vouched prefix is not read at all.
+ * - Without one, the rows before the last `COLD_TAIL_ROWS` are read and folded the same way, with their
+ *   structure checked (contiguity, order, each row naming its predecessor's digest) but no digest
+ *   recomputed; the last stored digest before the tail is adopted as the chain head there. Only the tail
+ *   is hashed. `hashPrefix` hashes every row instead, as an explicit full verification does.
+ *
+ * A prefix that was not hashed stays unverified until the background full verification hashes it.
  */
 export async function verifyLedger(
   storage: StorageAdapter,
@@ -153,6 +167,7 @@ export async function verifyLedger(
   onPage?: (events: Event[]) => void,
   options: VerificationOptions = {},
   checkpoint?: CheckpointPrefix,
+  hashPrefix = false,
 ): Promise<IntegrityState> {
   let state: IntegrityState =
     checkpoint && !onPage
@@ -164,7 +179,8 @@ export async function verifyLedger(
       : { ...EMPTY_STATE }
   // The last seq handled. It runs ahead of `state` while the checkpointed prefix is folded unhashed.
   let at = state.lastSeq
-  const foldUntil = checkpoint?.throughSeq ?? 0
+  const adopt = !checkpoint && !hashPrefix && lastSeq > COLD_TAIL_ROWS
+  const foldUntil = checkpoint?.throughSeq ?? (adopt ? lastSeq - COLD_TAIL_ROWS : 0)
   const idle = options.idleTimeoutMs ?? 30_000
   const hard = options.hardTimeoutMs ?? 600_000
   if (![idle, hard].every((ms) => Number.isSafeInteger(ms) && ms > 0))
@@ -224,7 +240,7 @@ export async function verifyLedger(
           headDigest: checkpoint.headDigest,
         }
     } else {
-      state = verifyIntegrityRows(rows, state)
+      state = verifyIntegrityRows(rows, state, !folding)
       at = state.lastSeq
     }
     if (performance.now() - pageStarted >= idle)
@@ -270,4 +286,46 @@ export function prepareIntegrity(
     state = { ...state, lastSeq: event.seq, headDigest: integrity.digest }
   }
   return { entries, state, canonicalBytes }
+}
+
+/** Same chain contract as verifyIntegrityRows, with cooperative hashing for very large event bodies. */
+export async function verifyIntegrityRowCooperatively(
+  row: IntegrityRow,
+  state: IntegrityState,
+  yieldCpu: () => void | Promise<void>,
+): Promise<IntegrityState> {
+  const next = verifyIntegrityRows([row], state, false)
+  if (!row.integrity) return next
+  const value =
+    row.integrity.mode === 'anchor'
+      ? {
+          algorithm: LEDGER_INTEGRITY_ALGORITHM,
+          sessionKey: row.sessionKey,
+          legacyThroughSeq: state.legacyThroughSeq,
+          event: row.event,
+        }
+      : {
+          algorithm: LEDGER_INTEGRITY_ALGORITHM,
+          sessionKey: row.sessionKey,
+          previousDigest: row.integrity.previousDigest,
+          event: row.event,
+        }
+  const hash = createSha256()
+  let pending = ''
+  try {
+    for (const token of jcsChunks(value)) {
+      pending += token
+      if (pending.length >= FLUSH_CHARS) {
+        hash.update(pending)
+        pending = ''
+        await yieldCpu()
+      }
+    }
+    if (pending) hash.update(pending)
+  } catch (error) {
+    if (error instanceof CoreError) throw error
+    fail('stored event cannot be canonicalized', row.event.seq)
+  }
+  if (!sameDigest(row.integrity.digest, hash.digestHex())) fail('ledger digest mismatch', row.event.seq)
+  return next
 }

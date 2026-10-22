@@ -18,7 +18,7 @@ import {
   type DecisionResponse,
   inspectJsonData,
   isPermissionPurpose,
-  samePermissionContext,
+  permissionEffectAdmission,
   validateActor,
   validateAgainst,
 } from '@agnes/protocol'
@@ -27,9 +27,11 @@ import {
   DecisionResponse as ResponseSchema,
   DecisionSpec as SpecSchema,
 } from '@agnes/protocol/gen/session-v1'
+import { ROLE_APPROVAL_REFUSAL } from '../child/roles.js'
 
 /** Minimal authority needed by the decision commands; the session supplies the writer gate. */
 export interface DecisionAuthority {
+  readonly refuseApprovals?: boolean
   readonly key: string
   /** A profile journal uses AR1 without creating a session or granting session access. */
   readonly profileId?: string
@@ -45,6 +47,8 @@ export interface DecisionAuthority {
     SessionLogImpl,
     'append' | 'observeCommitted' | 'claimLease' | 'leaseRemainingMs' | 'faulted'
   >
+  beforeAttestation?(): Promise<void>
+  historyVerified?(): boolean
   readDecisions(): ReadonlyMap<string, { value: DecisionSnapshot; seq: Seq }>
   clock(): number
   id(): string
@@ -144,16 +148,31 @@ export class DecisionCommands {
   private event(value: DecisionSnapshot): EventInput {
     return this.s.event(value)
   }
+  private async attesting<T>(work: () => Promise<T>): Promise<T> {
+    await this.s.beforeAttestation?.()
+    return this.s.transact(work)
+  }
+  private automaticAnswer(spec: DecisionSpec, permission: boolean) {
+    return automaticPermissionDecision(
+      this.s.permissionContext,
+      spec.purpose,
+      spec.options,
+      permission ? 'permission' : 'question',
+      spec.presentation,
+    )
+  }
   private async write(
     value: DecisionSnapshot,
     recheck: () => void | Promise<void> = () => undefined,
     executionCheck: () => void = () => undefined,
+    initial?: DecisionSnapshot,
   ): Promise<void> {
     const cell = this.s.readDecisions().get(value.handle.id)
     const event = this.event(value)
     const { register: _register, ...checkpoint } = event
     await this.s.log.append(
       [
+        ...(initial ? [this.event(initial)] : []),
         event,
         ...(value.consumption && !cell?.value.consumption
           ? [
@@ -167,6 +186,7 @@ export class DecisionCommands {
           : []),
       ],
       {
+        beforeFullVerify: 'refuse',
         expectedRegisterSeq: { register: 'decision/state', key: value.handle.id, seq: cell?.seq ?? null },
         beforeCommit: recheck,
         commitCheck: () => {
@@ -189,15 +209,10 @@ export class DecisionCommands {
     )
   }
   private async automatic(value: DecisionSnapshot, source?: DecisionSource): Promise<DecisionSnapshot> {
+    if (this.s.historyVerified?.() === false) return value
     if (value.result || value.invalidation || value.consumption || this.s.cancelled || this.due(value))
       return value
-    const answer = automaticPermissionDecision(
-      this.s.permissionContext,
-      value.request.spec.purpose,
-      value.request.spec.options,
-      value.request.category === 'permission' ? 'permission' : 'question',
-      value.request.spec.presentation,
-    )
+    const answer = this.automaticAnswer(value.request.spec, value.request.category === 'permission')
     if (!answer) {
       await this.recordAutomaticSkip(value, 'ambiguous-business-confirmation', source)
       return value
@@ -355,7 +370,7 @@ export class DecisionCommands {
       admit: (handle: DecisionHandle) => this.admit(handle, source),
     })
   }
-  private request(input: DecisionSpec, source: DecisionSource): Promise<DecisionHandle> {
+  private async request(input: DecisionSpec, source: DecisionSource): Promise<DecisionHandle> {
     const json = inspectJsonData(input, 131072)
     if (!json.ok) return Promise.reject(new CoreError('E_ENVELOPE', 'Decision spec must be bounded JSON'))
     if (!validateAgainst<DecisionSpec>(SpecSchema, json.value).ok)
@@ -365,6 +380,8 @@ export class DecisionCommands {
       if (!inspectJsonData(spec.responseSchema, 32768).ok) fail('SCHEMA_SIZE')
       compilePluginConfig(spec.responseSchema)
     }
+    if (!this.s.refuseApprovals && this.automaticAnswer(spec, source.permission === true))
+      await this.s.beforeAttestation?.()
     return this.s.transact(async () => {
       this.live(source)
       this.execution()
@@ -413,13 +430,22 @@ export class DecisionCommands {
         consumption: null,
         invalidation: null,
       }
-      const automatic = automaticPermissionDecision(
-        this.s.permissionContext,
-        spec.purpose,
-        spec.options,
-        source.permission ? 'permission' : 'question',
-        spec.presentation,
-      )
+      const refused =
+        this.s.refuseApprovals &&
+        (source.permission || isPermissionPurpose(spec.purpose) || spec.purpose === 'business.confirm')
+      // Persist request and refusal in one commit, following the existing decision transition contract.
+      const initial = refused ? detached(value) : undefined
+      if (refused) {
+        value.revision = 2
+        value.result = {
+          reason: 'unavailable',
+          code: 'delegated-approval-refused',
+          at: new Date(now).toISOString(),
+        }
+      }
+      const automatic = this.s.refuseApprovals
+        ? undefined
+        : this.automaticAnswer(spec, source.permission === true)
       if (
         automatic &&
         spec.purpose !== 'business.confirm' &&
@@ -450,6 +476,7 @@ export class DecisionCommands {
           this.live(source)
           this.execution()
         },
+        initial,
       )
       if (!value.result)
         await this.recordAutomaticSkip(
@@ -463,6 +490,7 @@ export class DecisionCommands {
   }
   /** One decision, one consumption, and a private lease checked inside the effect transaction. */
   private async admit(handle: DecisionHandle, source: DecisionSource) {
+    await this.s.beforeAttestation?.()
     const context = this.s.permissionContext
     const value = await this.s.transact(async () => {
       this.live(source)
@@ -490,47 +518,36 @@ export class DecisionCommands {
       )
       return value
     })
-    let revoked = false
-    const assertActive = () => {
-      try {
+    const admission = permissionEffectAdmission({
+      unavailable: () =>
+        new CoreError('E_RELATION', 'DECISION_AUTHORITY_REVOKED', { reason: 'authority-revoked' }),
+      verify: () => this.s.log.claimLease(),
+      clock: () => this.s.clock(),
+      ...(value.request.expiresAt !== null ? { expiresAt: Date.parse(value.request.expiresAt) } : {}),
+      ...(value.result?.reason === 'answered' && value.result.code === 'full-access' && context
+        ? { context: { expected: context, current: () => this.s.permissionContext } }
+        : {}),
+      assertBound: () => {
         this.live(source)
         this.execution(handle.id)
         const current = this.read(handle, source)
         this.checkAuthorization(current)
         if (
-          revoked ||
           this.s.log.faulted ||
           this.s.log.leaseRemainingMs() <= 0 ||
           this.s.cancelled ||
           this.due(current) ||
           current.invalidation ||
           !current.consumption ||
-          canonicalJson(current.result) !== canonicalJson(value.result) ||
-          (value.result?.reason === 'answered' &&
-            value.result.code === 'full-access' &&
-            (!context || !samePermissionContext(context, this.s.permissionContext)))
+          canonicalJson(current.result) !== canonicalJson(value.result)
         )
           fail('AUTHORITY_REVOKED')
-      } catch (error) {
-        revoked = true
-        throw error
-      }
-    }
-    assertActive()
-    return Object.freeze({
-      assertActive,
-      verify: async () => {
-        try {
-          assertActive()
-          await this.s.log.claimLease()
-          assertActive()
-        } catch (error) {
-          revoked = true
-          throw error
-        }
       },
     })
+    admission.assertActive()
+    return admission
   }
+
   /** Backend withdrawal never manufactures a human refusal or effect receipt. */
   withdraw(handle: DecisionHandle, source: DecisionSource, code: string): Promise<DecisionSnapshot> {
     return this.s.transact(async () => {
@@ -576,7 +593,17 @@ export class DecisionCommands {
       return true
     })
   }
-  get(handle: DecisionHandle, source?: DecisionSource): Promise<DecisionSnapshot> {
+  async get(handle: DecisionHandle, source?: DecisionSource): Promise<DecisionSnapshot> {
+    const pending = this.read(handle, source)
+    // Restored answers can authorize effects; wait before taking the shared writer gate.
+    if (
+      !pending.invalidation &&
+      !pending.consumption &&
+      (pending.result?.reason === 'answered' ||
+        (!pending.result &&
+          this.automaticAnswer(pending.request.spec, pending.request.category === 'permission')))
+    )
+      await this.s.beforeAttestation?.()
     return this.s.transact(async () => {
       this.live()
       return detached(await this.automatic(await this.expire(this.read(handle, source), source), source))
@@ -609,7 +636,7 @@ export class DecisionCommands {
     )
       fail('INVALID_ANSWER')
     const digest = sha256Hex(canonicalJson(command))
-    return this.s.transact(async () => {
+    return this.attesting(async () => {
       this.live()
       const original = this.read(command.handle)
       await context.authorize(detached(original))
@@ -726,6 +753,8 @@ export class DecisionCommands {
     effectId: string | null,
   ): EventInput[] {
     if (handles.length === 0) return []
+    if (this.s.historyVerified?.() === false)
+      throw new CoreError('E_LANE_BUSY', 'verifying history; retry decision consumption after verification')
     this.live(source)
     this.execution()
     if (this.s.cancelled) fail('STOPPED')
@@ -772,6 +801,8 @@ export class DecisionCommands {
         wake = notify
         if (ended) return { status: 'pending', handle: detached(handle), waitEndedBy: 'detached' }
         const value = await this.get(handle, source)
+        if (value.result?.code === 'delegated-approval-refused')
+          throw new CoreError('E_UNSUPPORTED', ROLE_APPROVAL_REFUSAL)
         if (value.result || value.invalidation) return { status: 'resolved', snapshot: value }
         if (ended) return { status: 'pending', handle: detached(handle), waitEndedBy: 'detached' }
         if (value.request.expiresAt !== null)

@@ -1,4 +1,4 @@
-import { relative, resolve as resolvePath } from 'node:path'
+import { resolve as resolvePath } from 'node:path'
 import { providerRestartRequired } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
@@ -7,7 +7,7 @@ import { composeExtensionRowTarget } from '@agnes/host-extensions/assemble/ext-r
 import { createExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
 import { readGitWorktreeRegistry } from '@agnes/host-infrastructure/git-worktrees'
-import { compileRunPlan, seamSelectionsOf } from '@agnes/host-providers/assemble/run-plan'
+import { compileRunPlan } from '@agnes/host-providers/assemble/run-plan'
 import { skillRowRevision } from '@agnes/host-providers/assemble/skill-row'
 import {
   CompositionSessionStore,
@@ -17,10 +17,10 @@ import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-cat
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
   developmentPluginRows,
-  generationResourcesDigest,
   type PluginGenerationSnapshot,
   type RuntimePluginSnapshot,
   readDevelopmentPlugin,
+  sameGenerationCodeAndSources,
 } from '@agnes/package-manager'
 import {
   decodeRuntimeTargetArtifact,
@@ -47,18 +47,11 @@ import { sessionHostRoutes } from '../lifecycle/session-host-routes.js'
 import { sessionKey } from '../sessions/session.js'
 import * as generationAliases from './aliases.js'
 import { type ChangeResult, type ContainerHandle, changeResult, sessionBindingOf } from './change-result.js'
+import { type GenerationFailure, generationError, generationFailure } from './failure.js'
 import { assertMigrationSettled } from './migration-state.js'
-import { openGenerationStore, reusableSnapshot, trackRunningGenerations } from './process-liveness.js'
-import { captureGenerationResources, createGenerationSkills, restoreGenerationRows } from './resources.js'
-import {
-  addBasePackageStatus,
-  describeColdSession,
-  describeHostSession,
-  freezeGenerationStatus,
-  generationSessions,
-  generationStatusSnapshots,
-  readGenerationStatusAsync,
-} from './runtime-descriptor.js'
+import { GenerationReuseMode, openGenerationStore, trackRunningGenerations } from './process-liveness.js'
+import { createGenerationSkills, restoreGenerationRows } from './resources.js'
+import { describeColdSession, describeHostSession, readGenerationStatusAsync } from './runtime-descriptor.js'
 import {
   assertPinsMatch,
   assertRepinConsented,
@@ -67,10 +60,11 @@ import {
   pinnedBindings,
   translateSessionFailure,
 } from './seam-pins.js'
+import { createGenerationSnapshotter } from './snapshotter.js'
+import { describeGenerationStatus, type PluginGenerationStatus } from './status.js'
 import {
   codeRevision,
   codeRow,
-  liveResource,
   liveResourceRow,
   pluginWorkspaceLayers,
   registryCodeRevision,
@@ -78,29 +72,7 @@ import {
 } from './target-code.js'
 import { generationAuthoringAuthority, generationSourceReader } from './trust.js'
 
-export type PluginGenerationStatus = Readonly<{
-  currentGenerationId?: string
-  /** Damaged durable records, located relative to the profile directory; collection stands down while any exists. */
-  blocked?: readonly Readonly<{ file: string; reason: string }>[]
-  generations: readonly Readonly<{
-    id: string
-    state: 'active' | 'draining' | 'historical' | 'failed'
-    boundSessions: number
-    openSessions: number
-    live: boolean
-    packages: readonly Readonly<{ id: string; version: string }>[]
-    sessions?: readonly Readonly<{ key: string; open: boolean }>[]
-    error?: string
-  }>[]
-  plugins: readonly Readonly<{
-    id: string
-    state: 'active' | 'draining' | 'historical' | 'restart-required' | 'failed'
-    boundSessions: number
-    drainingSessions: number
-    historicalSessions: number
-    error?: string
-  }>[]
-}>
+export type { PluginGenerationStatus } from './status.js'
 
 type LiveGeneration = { snapshot: PluginGenerationSnapshot; host: Host }
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
@@ -130,7 +102,7 @@ export async function createRuntimeGenerationHost(
   })
   const developmentDirectories = new Map(options.developmentPluginDirectories)
   const basePackages = new Set<string>()
-  const failures = new Map<string, string>()
+  const failures = new Map<string, GenerationFailure>()
   const failedSnapshots = new Map<string, PluginGenerationSnapshot>()
   const pendingRestart = new Set<string>()
   let lastChange: ChangeResult | undefined
@@ -193,7 +165,7 @@ export async function createRuntimeGenerationHost(
       id = generationAliases.inheritedGenerationId(key, id, host, live, (parent) => store.session(parent))
     const pin = store.pin(key, id, bound)
     if (pin.generationId !== id)
-      throw new Error('E_GENERATION_BINDING_CONFLICT: session was bound by another worker')
+      throw generationError('E_GENERATION_BINDING_CONFLICT', 'session was bound by another worker')
     if (!existing)
       options.audit?.write({
         kind: 'session.seams.pinned',
@@ -201,40 +173,15 @@ export async function createRuntimeGenerationHost(
       })
   }
   const headKey = options.compositionPin?.hash ?? 'default'
-  const snapshotTarget = (
-    target: RuntimeTarget,
-    sources: readonly RuntimePluginSnapshot[],
-    skills: SkillRuntimeInput | undefined,
-    extensionRows?: readonly ReturnType<Host['extensionRows']['prepare']>[],
-    reuse: boolean | 'identical' = false,
-  ) => {
-    const compatibility = compatibilityFor(profile),
-      packages = [
-        ...profile.packages
-          .filter((pkg) => pkg.trust === 'builtin' && pkg.enabled !== false)
-          .map((pkg) => ({ id: pkg.id, version: pkg.version })),
-        ...sources.map((source) => ({ id: source.snapshot.packageId, version: source.snapshot.version })),
-      ],
-      resources = captureGenerationResources(
-        skills,
-        [...preparedRows.values()].filter((row) =>
-          targetRows(target).some(
-            (targetRow) => !targetRow.disabled && targetRow.id === `ext:${row.extensionId}`,
-          ),
-        ),
-        (extensionRows ?? (current?.host ?? initial).extensionRows.current()).map((row) => row.id),
-      ),
-      seams = seamSelectionsOf(runPlanFor(profile))
-    const expected = {
-      artifactDigest: encodeRuntimeTargetArtifact(target).digest,
-      compatibility,
-      packages,
-      resourcesDigest: generationResourcesDigest(resources),
-      seams,
-    }
-    const reused = reusableSnapshot(store, headKey, expected, reuse, failures.keys())
-    return reused ?? store.create(target, sources, compatibility, packages, resources, seams)
-  }
+  const snapshotTarget = createGenerationSnapshotter({
+    profile: () => profile,
+    options,
+    store,
+    headKey,
+    preparedRows,
+    host: () => current?.host ?? initial,
+    failed: () => failures.keys(),
+  })
   const recordHead = (id: string): void => {
     try {
       store.setHead(headKey, id)
@@ -245,8 +192,14 @@ export async function createRuntimeGenerationHost(
   const ensureCurrent = async (): Promise<LiveGeneration> => {
     if (current) return current
     const target = initial.runtimeTargetSnapshot?.()
-    if (!target) throw new Error('E_GENERATION_TARGET_MISSING: Host has no runtime snapshot')
-    const snapshot = snapshotTarget(target, await sourcesFor(target), options.skillResources, undefined, true)
+    if (!target) throw generationError('E_GENERATION_TARGET_MISSING', 'Host has no runtime snapshot')
+    const snapshot = snapshotTarget(
+      target,
+      await sourcesFor(target),
+      options.skillResources,
+      undefined,
+      GenerationReuseMode.Head,
+    )
     recordHead(snapshot.id)
     current = { snapshot, host: initial }
     if (options.profileAuthorityPublication !== 'retained') current.host.profileServices?.publishCurrent()
@@ -262,8 +215,9 @@ export async function createRuntimeGenerationHost(
     refreshLiveConfig = true,
   ): Promise<LiveGeneration> => {
     if (snapshot.compatibility !== compatibilityFor(profile))
-      throw new Error(
-        `E_GENERATION_INCOMPATIBLE: generation ${snapshot.id} needs its original loop/adapter deployment`,
+      throw generationError(
+        'E_GENERATION_INCOMPATIBLE',
+        `generation ${snapshot.id} needs its original loop/adapter deployment`,
       )
     if (!snapshot.seams)
       throw new Error(
@@ -361,7 +315,7 @@ export async function createRuntimeGenerationHost(
         : [...(rowsByGeneration.get(snapshot.id) ?? preparedRows).values()]
       const restored = new Map(
         savedRows
-          .filter((input) => !liveResource(`ext:${input.extensionId}`))
+          .filter((input) => input.dynamic?.generation?.kind !== 'mcp-server')
           .map((input) => [input.extensionId, input]),
       )
       for (const input of preparedRows.values()) {
@@ -376,7 +330,7 @@ export async function createRuntimeGenerationHost(
         restored.set(input.extensionId, { ...input, dynamic })
       }
       for (const input of rowsByGeneration.get(snapshot.id)?.values() ?? [])
-        if (!liveResource(`ext:${input.extensionId}`)) restored.set(input.extensionId, input)
+        if (input.dynamic?.generation?.kind !== 'mcp-server') restored.set(input.extensionId, input)
       const builtins = host.extensionRows.current()
       for (const row of targetRows(target)) {
         if (!builtins.some((boot) => boot.id === row.id && boot.plugin === row.plugin)) continue
@@ -424,10 +378,10 @@ export async function createRuntimeGenerationHost(
       // explicitly selected resource rows above have already replaced their claims with live inputs.
       if (rowIds)
         await host.extensionRows.apply([
-          ...rowIds.filter((id) => !liveResource(id)).flatMap((id) => claims.get(id) ?? []),
+          ...rowIds.flatMap((id) => claims.get(id) ?? []).filter((row) => !liveResourceRow(row)),
           ...targetRows(target)
             .filter(
-              (row) => liveResource(row.id) || (!!row.liveResources?.length && !rowIds.includes(row.id)),
+              (row) => liveResourceRow(row) || (!!row.liveResources?.length && !rowIds.includes(row.id)),
             )
             .flatMap((row) => claims.get(row.id) ?? []),
         ])
@@ -460,8 +414,7 @@ export async function createRuntimeGenerationHost(
     if (pending) return pending
     const started = Promise.resolve().then(async () => {
       const snapshot = await store.readAsync(id)
-      if (!current || !generationAliases.sameGenerationCode(snapshot, current.snapshot))
-        return build(snapshot)
+      if (!current || !sameGenerationCodeAndSources(snapshot, current.snapshot)) return build(snapshot)
       await authoring.assertTrust(snapshot.sources)
       const alias = { snapshot, host: current.host }
       live.set(id, alias)
@@ -471,7 +424,7 @@ export async function createRuntimeGenerationHost(
     try {
       return await started
     } catch (error) {
-      failures.set(id, error instanceof Error ? error.message : String(error))
+      failures.set(id, generationFailure(error))
       throw error
     } finally {
       opening.delete(id)
@@ -534,7 +487,7 @@ export async function createRuntimeGenerationHost(
         errors.push(error)
         // close() seals admission even when teardown fails; cold resume must build a new container.
         for (const [id, generation] of live)
-          if (generation.host === host) failures.set(id, `E_GENERATION_DISPOSE: ${String(error)}`)
+          if (generation.host === host) failures.set(id, generationFailure(error, 'E_GENERATION_DISPOSE'))
       }
       bindings.delete(host)
       idleSince.delete(host)
@@ -565,92 +518,20 @@ export async function createRuntimeGenerationHost(
     host.providers
       .catalog()
       .some((entry) => entry.sourcePackage === id && providerRestartRequired(entry.scope))
-  const status = (pins = store.sessions(), readSnapshot = store.read.bind(store)): PluginGenerationStatus => {
-    const errors = new Map(failures)
-    const counts = new Map<string, number>()
-    const pinsByKey = new Map(pins.map((pin) => [pin.sessionKey, pin.generationId]))
-    for (const pin of pins) counts.set(pin.generationId, (counts.get(pin.generationId) ?? 0) + 1)
-    const snapshots = generationStatusSnapshots(counts.keys(), live, failedSnapshots, errors, readSnapshot)
-    const active = new Set(current?.snapshot.packages.map((pkg) => pkg.id) ?? [])
-    const plugins = new Map<string, PluginGenerationStatus['plugins'][number]>()
-    const generations: PluginGenerationStatus['generations'][number][] = []
-    for (const [id, snapshot] of snapshots) {
-      const boundSessions = counts.get(id) ?? 0
-      const openSessions = [...(live.get(id)?.host.kernel.sessions.values() ?? [])].filter(
-        (session) => pinsByKey.get(session.key) === id,
-      ).length
-      generations.push({
-        id,
-        state: errors.has(id)
-          ? 'failed'
-          : id === current?.snapshot.id
-            ? 'active'
-            : openSessions > 0
-              ? 'draining'
-              : 'historical',
-        ...(errors.has(id) ? { error: errors.get(id) as string } : {}),
-        boundSessions,
-        openSessions,
-        live: live.has(id),
-        packages: snapshot.packages,
-        sessions: generationSessions(pins, id, (key) => !!live.get(id)?.host.kernel.get(key)),
-      })
-      for (const pkg of snapshot.packages) {
-        const packageId = pkg.id,
-          previous = plugins.get(packageId)
-        const failed = errors.has(id)
-          ? undefined
-          : live
-              .get(id)
-              ?.host.extensions()
-              .find((entry) => entry.package === packageId && entry.error)
-        const error = failed?.error?.message ?? errors.get(id)
-        plugins.set(packageId, {
-          id: packageId,
-          state:
-            error || previous?.state === 'failed'
-              ? 'failed'
-              : requiresRestart(current?.host ?? initial, packageId)
-                ? 'restart-required'
-                : active.has(packageId)
-                  ? 'active'
-                  : openSessions > 0 || previous?.state === 'draining'
-                    ? 'draining'
-                    : 'historical',
-          boundSessions: (previous?.boundSessions ?? 0) + boundSessions,
-          drainingSessions:
-            (previous?.drainingSessions ?? 0) + (id === current?.snapshot.id ? 0 : boundSessions),
-          historicalSessions:
-            (previous?.historicalSessions ?? 0) +
-            (id === current?.snapshot.id ? 0 : Math.max(0, boundSessions - openSessions)),
-          ...(error ? { error } : {}),
-        })
-      }
-    }
-    addBasePackageStatus(plugins, basePackages, pins.length)
-    for (const [id, error] of errors) {
-      if (snapshots.has(id)) continue
-      generations.push({
-        id,
-        state: 'failed',
-        boundSessions: counts.get(id) ?? 0,
-        openSessions: 0,
-        live: false,
-        packages: [],
-        error,
-      })
-    }
-    const blocked = store.scanDamage().map((problem) => ({
-      file: relative(options.profileDir, problem.file),
-      reason: problem.reason.slice(0, 512),
-    }))
-    return freezeGenerationStatus({
-      ...(current ? { currentGenerationId: current.snapshot.id } : {}),
-      ...(blocked.length ? { blocked } : {}),
-      generations,
-      plugins: [...plugins.values()],
+  const status = (pins = store.sessions(), read = store.describe.bind(store)): PluginGenerationStatus =>
+    describeGenerationStatus({
+      pins,
+      read,
+      failures,
+      live,
+      failedSnapshots,
+      basePackages,
+      current,
+      initial,
+      requiresRestart,
+      store,
+      profileDir: options.profileDir,
     })
-  }
   // Keep the public Kernel coordination view valid for sessions hosted in any generation.
   const sessions = createSessionMapFacade(
     initial.kernel.sessions,
@@ -708,7 +589,7 @@ export async function createRuntimeGenerationHost(
         ],
         recovered: true,
       })
-      throw new Error(`E_GENERATION_RESTART_REQUIRED: ${id} requires restart`)
+      throw generationError('E_GENERATION_RESTART_REQUIRED', `${id} requires restart`)
     }
     const head = await ensureCurrent()
     const oldTarget =
@@ -777,7 +658,7 @@ export async function createRuntimeGenerationHost(
         await host.refreshSkillRow(skillInput ? createGenerationSkills(skillInput).input : undefined)
       const resources = resourceInputs.map((input) => host.extensionRows.prepare(input))
       await host.extensionRows.apply([
-        ...host.extensionRows.current().filter((row) => !liveResource(row.id)),
+        ...host.extensionRows.current().filter((row) => !liveResourceRow(row)),
         ...resources,
       ])
       const retained = host.runtimeTargetSnapshot?.()
@@ -796,7 +677,13 @@ export async function createRuntimeGenerationHost(
       lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
     }
-    const snapshot = snapshotTarget(target, sources, skillInput, extensionRows, 'identical')
+    const snapshot = snapshotTarget(
+      target,
+      sources,
+      skillInput,
+      extensionRows,
+      GenerationReuseMode.EquivalentArchive,
+    )
     rowsByGeneration.set(snapshot.id, new Map(preparedRows))
     try {
       const bound = store.sessions().some((pin) => live.get(pin.generationId)?.host === head.host)
@@ -826,14 +713,12 @@ export async function createRuntimeGenerationHost(
         })
       }
     } catch (error) {
-      failures.set(snapshot.id, error instanceof Error ? error.message : String(error))
-      const failure = error instanceof Error ? error.message : String(error)
+      const failure = generationFailure(error)
+      failures.set(snapshot.id, failure)
       lastChange = changeResult({
         outcome: 'rejected',
         generationId: head.snapshot.id,
-        failures: [
-          { stage: 'build', code: failure.match(/E_[A-Z0-9_]+/)?.[0] ?? 'E_GENERATION', message: failure },
-        ],
+        failures: [{ stage: 'build', ...failure }],
         recovered: true,
       })
       const { resources: _resources, sources: _sources, ...diagnostic } = snapshot
@@ -863,7 +748,7 @@ export async function createRuntimeGenerationHost(
     } catch (error) {
       for (const id of live.keys())
         if (id !== current.snapshot.id && !store.sessions().some((pin) => pin.generationId === id))
-          failures.set(id, `E_GENERATION_DISPOSE: ${String(error)}`)
+          failures.set(id, generationFailure(error, 'E_GENERATION_DISPOSE'))
     }
     return current.host.ordinaryConvergence()
   }
@@ -990,7 +875,10 @@ export async function createRuntimeGenerationHost(
         const head = await ensureCurrent()
         const pkg = profile.packages.find((pkg) => pkg.id === id)
         if (requiresRestart(head.host, id))
-          throw new Error(`E_GENERATION_RESTART_REQUIRED: ${id} owns a workspace/process provider or backend`)
+          throw generationError(
+            'E_GENERATION_RESTART_REQUIRED',
+            `${id} owns a workspace/process provider or backend`,
+          )
         const available = (await options.runtimePluginSources?.()) ?? options.runtimePluginSnapshots ?? []
         const path =
           directory ??
@@ -1038,7 +926,7 @@ export async function createRuntimeGenerationHost(
     releaseSessionGeneration: (key) =>
       enqueue(async () => {
         if (owner(key, true).kernel.get(key))
-          throw new Error('E_GENERATION_SESSION_OPEN: close the deleted session first')
+          throw generationError('E_GENERATION_SESSION_OPEN', 'close the deleted session first')
         const pin = store.session(key)
         ;(current?.host ?? initial).profileServices?.revokeWakeSession(key)
         store.releaseSession(key)
@@ -1052,19 +940,22 @@ export async function createRuntimeGenerationHost(
             (session) => session.sessionKey === key,
           )
         )
-          throw new Error('E_GENERATION_SESSION_OPEN: close the session before migration')
+          throw generationError('E_GENERATION_SESSION_OPEN', 'close the session before migration')
         const pin = store.session(key)
-        if (!pin) throw new Error('E_GENERATION_PIN_MISSING: session is not bound')
+        if (!pin) throw generationError('E_GENERATION_PIN_MISSING', 'session is not bound')
         const head = await ensureCurrent()
         // Validate both immutable archives and the exact saved loop before changing durable facts.
         if (store.read(pin.generationId).compatibility !== head.snapshot.compatibility)
-          throw new Error('E_GENERATION_INCOMPATIBLE: session migration needs a compatible deployment')
+          throw generationError(
+            'E_GENERATION_INCOMPATIBLE',
+            'session migration needs a compatible deployment',
+          )
         store.read(head.snapshot.id)
         if (pin.loop) {
           try {
             head.host.kernel.loops.resolve(pin.loop)
           } catch (cause) {
-            throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: target cannot resolve the pinned loop', {
+            throw generationError('E_GENERATION_LOOP_INCOMPATIBLE', 'target cannot resolve the pinned loop', {
               cause,
             })
           }
@@ -1098,7 +989,7 @@ export async function createRuntimeGenerationHost(
         try {
           await collect(new Set([pin.generationId]))
         } catch (error) {
-          failures.set(pin.generationId, `E_GENERATION_DISPOSE: ${String(error)}`)
+          failures.set(pin.generationId, generationFailure(error, 'E_GENERATION_DISPOSE'))
         }
         return {
           previousGenerationId: pin.generationId,
@@ -1141,7 +1032,10 @@ export async function createRuntimeGenerationHost(
             input.loop &&
             (pin.loop.id !== input.loop.id || pin.loop.version !== input.loop.version)
           )
-            throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: requested loop differs from the session pin')
+            throw generationError(
+              'E_GENERATION_LOOP_INCOMPATIBLE',
+              'requested loop differs from the session pin',
+            )
           if (pin.loop) generation.host.kernel.loops.resolve(pin.loop)
           const session = await generation.host.createSession({
             ...input,
@@ -1174,7 +1068,7 @@ export async function createRuntimeGenerationHost(
           const message = error instanceof Error ? error.message : String(error)
           if (!closed) void enqueue(collect).catch(() => undefined)
           if (message.includes('E_GENERATION_') || message.startsWith('Loop '))
-            failures.set(pin.generationId, message)
+            failures.set(pin.generationId, generationFailure(error))
           throw translateSessionFailure(error, key)
         }
       }),

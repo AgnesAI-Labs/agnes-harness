@@ -1,10 +1,9 @@
-// Crash-continuation orchestration over the lease primitives: scan `writer_claims` for
-// deadlines that have already passed, and for each one decide from the `registers` table's
-// `op.state` cell whether there was an open turn when the writer died. This module owns no SQL
-// beyond the one `registers` read below - `listExpired`/`releaseClaim` (lease.ts) already own the
-// `writer_claims` half.
-import type { TableHandle } from '../storage/table.js'
-import { claimForReclaim, listExpired, type ReclaimedClaim } from './lease.js'
+// Crash-continuation orchestration: ask the reclaim store for claims whose deadline has already
+// passed, and for each one decide from the `op.state` cell it reports whether there was an open turn
+// when the writer died. This module owns no SQL; the store behind `ReclaimStore` does.
+
+/** What a reclaim found once it held the claim: the open turn, if any lane has one. */
+export type ReclaimedClaim = { opState: { seq: number; data: unknown } | undefined; seq: number }
 
 export type ReclaimStore = {
   listExpired(now: number): Array<{
@@ -13,17 +12,8 @@ export type ReclaimStore = {
     until: number
     generation: number
   }>
-  /** See lease.ts claimForReclaim: the re-check, the op.state read and an idle delete, atomically. */
+  /** The re-check, the op.state read and an idle delete, atomically. */
   claimForReclaim(sessionKey: string, runId: string, until: number, now: number): ReclaimedClaim | null
-}
-
-/** Adapts the shared-table fixture/legacy injection point onto the production narrow port. */
-export function tableReclaimStore(claims: TableHandle, registers: TableHandle): ReclaimStore {
-  return {
-    listExpired: (now) => listExpired(claims, now),
-    claimForReclaim: (sessionKey, runId, until, now) =>
-      claimForReclaim(claims, registers, { sessionKey, runId, until, now }),
-  }
 }
 
 /**

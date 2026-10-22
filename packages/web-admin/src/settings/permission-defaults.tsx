@@ -23,13 +23,7 @@ import { captureRequest } from './async-request.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 import { useSettingsOverlay } from './overlay.js'
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
-import {
-  allowedPermissions,
-  isPermissionLevel,
-  PERMISSION_LEVELS,
-  recipePresets,
-  splitSessionDefaults,
-} from './session-choice.js'
+import { allowedPermissions, isPermissionLevel, PERMISSION_LEVELS, recipePresets } from './session-choice.js'
 
 type Snapshot = import('@agnes/protocol').SessionDefaultsSnapshot
 type Entry = { id: string; isDefault: boolean }
@@ -137,7 +131,7 @@ export function PermissionDefaults({
     window.addEventListener('agnes:session-configuration-changed', reread)
     return () => window.removeEventListener('agnes:session-configuration-changed', reread)
   }, [])
-  const allowed = allowedPermissions(permissions, presets)
+  const allowed = allowedPermissions(permissions)
   const recipes = recipePresets(presets)
   const defaultRecipe = recipes.find((preset) => preset.isDefault)?.id ?? 'standard'
   const more = recipes.map((preset) => preset.id).filter((id) => id !== defaultRecipe)
@@ -146,7 +140,7 @@ export function PermissionDefaults({
     if (choice.field === 'permission' && !allowed.some((level) => level === choice.value)) return
     if (choice.field === 'preset' && choice.value && !more.includes(choice.value)) return
     // Each choice replaces its own field only; the rest of the saved defaults is sent back as read.
-    const current = splitSessionDefaults(snapshot.defaults)
+    const current = snapshot.defaults
     const { preset: _replaced, ...withoutPreset } = current
     const defaults =
       choice.field === 'permission'
@@ -192,7 +186,7 @@ export function PermissionDefaults({
       }
     }
   }
-  const saved = snapshot && splitSessionDefaults(snapshot.defaults)
+  const saved = snapshot && snapshot.defaults
   // Only what is stored is shown as chosen; a choice in flight shows on its own card until it lands.
   const stored =
     saved?.permission ??

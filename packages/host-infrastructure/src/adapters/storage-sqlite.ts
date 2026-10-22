@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import {
@@ -29,12 +29,14 @@ import { DDL } from './ddl.js'
 import { preparedStatement } from './prepared-statements.js'
 import { assertOwnedSql, confineToOwnFile } from './sql-guard.js'
 import { syncCheckpointsToMedium } from './sqlite-durability.js'
-import { assertStoredHead, initializeStoredHeads, recordStoredHead } from './storage-sqlite-head.js'
+import { assertDataDirVersion, enableWal, prepareDataDir } from './storage-sqlite-data-dir.js'
+import { assertStoredHead, recordStoredHead } from './storage-sqlite-head.js'
 import { verifiedHeadStore } from './storage-sqlite-verified-head.js'
 
 // Re-exported from the module that uses it: a caller wanting the schema reaches for the storage
 // adapter, not for a file whose name it would have to know.
 export { DDL } from './ddl.js'
+export { DATA_DIR_VERSION } from './storage-sqlite-data-dir.js'
 
 /** The value kinds SQLite can carry in a bound parameter. */
 export type SqlParam = null | number | bigint | string | Uint8Array
@@ -76,6 +78,8 @@ export type CrashReclaimStore = {
   ): { opState: { seq: number; data: unknown } | undefined; seq: number } | null
 }
 export interface SqliteStorage extends StorageAdapter, ChildControlStore {
+  readIntegrityFailure(key: string): Promise<{ seq?: number } | undefined>
+  writeIntegrityFailure(key: string, failure: { seq?: number }): Promise<void>
   scanLean: NonNullable<StorageAdapter['scanLean']>
   /** Always kept here, in `ledger_verified_head_v1`. */
   readVerifiedHead(key: SessionKey): Promise<VerifiedHead | undefined>
@@ -278,12 +282,17 @@ export function createSqliteStorage(opts: {
   clock?: () => number
   tablesDir?: string
 }): SqliteStorage {
+  const existed = existsSync(opts.file)
   const db = new DatabaseSync(opts.file)
   try {
     return openSqliteStorage(db, opts)
   } catch (error) {
     // A refused or failed migration must not keep the file open; Windows cannot delete it then.
     db.close()
+    // A refusal must leave the directory as it found it, so a file created only to be probed goes.
+    // Any other failure may be a race with a process that is still using the file: leave it.
+    if (!existed && error instanceof CoreError && error.code.startsWith('E_DATA_DIR_'))
+      rmSync(opts.file, { force: true })
     throw error
   }
 }
@@ -296,58 +305,13 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
   // Another process (the artifact GC, a second daemon) may hold the write lock briefly: wait for it
   // instead of failing the commit. The wait is synchronous and blocks this thread for up to 5 s.
   db.exec('PRAGMA busy_timeout = 5000')
-  db.exec('PRAGMA journal_mode = WAL')
+  // Before the first write, including the switch to WAL: a refused directory stays byte-identical.
+  assertDataDirVersion(db, { file: opts.file, tablesDir })
+  enableWal(db)
   db.exec('PRAGMA synchronous = NORMAL')
   syncCheckpointsToMedium(db)
   db.exec('PRAGMA foreign_keys = ON')
-  for (const ddl of DDL) db.exec(ddl)
-  initializeStoredHeads(db)
-  const eventColumns = new Set(
-    (db.prepare('PRAGMA table_info(events)').all() as Array<{ name: string }>).map((column) => column.name),
-  )
-  for (const [name, declaration] of [
-    ['integrity_mode', 'TEXT'],
-    ['integrity_prev', 'TEXT'],
-    ['integrity_digest', 'TEXT'],
-  ] as const) {
-    if (!eventColumns.has(name)) db.exec(`ALTER TABLE events ADD COLUMN ${name} ${declaration}`)
-  }
-  const childTaskColumns = new Set(
-    (db.prepare('PRAGMA table_info(child_tasks)').all() as Array<{ name: string }>).map(
-      (column) => column.name,
-    ),
-  )
-  if (!childTaskColumns.has('input_text'))
-    db.exec(`ALTER TABLE child_tasks ADD COLUMN input_text TEXT NOT NULL DEFAULT ''`)
-  for (const [name, declaration] of [
-    ['attempt_id', 'TEXT'],
-    ['creation_phase', 'TEXT'],
-    ['creation_revision', 'INTEGER'],
-    ['attempt_started_at', 'INTEGER'],
-    ['deferred_fact', 'TEXT'],
-    ['cancelled_fact', 'TEXT'],
-  ] as const) {
-    if (!childTaskColumns.has(name)) db.exec(`ALTER TABLE child_tasks ADD COLUMN ${name} ${declaration}`)
-  }
-  db.exec(`UPDATE child_tasks
-    SET attempt_id = COALESCE(attempt_id, 'legacy:' || creation_id),
-        creation_phase = COALESCE(creation_phase, 'committed'),
-        creation_revision = COALESCE(creation_revision, 1),
-        attempt_started_at = COALESCE(attempt_started_at, 0),
-        control_format = CASE WHEN control_format < 4 THEN 4 ELSE control_format END
-    WHERE attempt_id IS NULL OR creation_phase IS NULL OR creation_revision IS NULL OR attempt_started_at IS NULL
-       OR control_format < 4`)
-  const workspaceColumns = new Set(
-    (db.prepare('PRAGMA table_info(child_workspaces)').all() as Array<{ name: string }>).map(
-      (column) => column.name,
-    ),
-  )
-  if (!workspaceColumns.has('root')) db.exec(`ALTER TABLE child_workspaces ADD COLUMN root TEXT`)
-  if (!workspaceColumns.has('branch')) db.exec(`ALTER TABLE child_workspaces ADD COLUMN branch TEXT`)
-  // The UI projection and the ledger state are rebuilt from the verified ledger on every open; their
-  // old cache tables go.
-  db.exec('DROP TABLE IF EXISTS ui_projection_cache')
-  db.exec('DROP TABLE IF EXISTS fold_cache')
+  prepareDataDir(db, { file: opts.file, tablesDir }, DDL)
   const q = {
     lease: db.prepare('SELECT run_id, until, ttl_ms FROM writer_claims WHERE session_key = ?'),
     upsertLease: db.prepare(
@@ -646,7 +610,6 @@ function openSqliteStorage(db: DatabaseSync, opts: Parameters<typeof createSqlit
         q.deleteRegisters.run(key)
         q.deleteLease.run(key, runId)
         q.deleteSession.run(key)
-        db.prepare('DELETE FROM ledger_heads WHERE session_key = ?').run(key)
         q.deleteVerifiedHead.run(key)
       })
     },

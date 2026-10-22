@@ -154,9 +154,15 @@ export const pluginHelper = {
                 text: JSON.stringify({
                   ...info,
                   templateFiles: files.map((file) => file.path),
-                  previewFiles: files.filter((file) =>
-                    ['src/index.ts', 'client/index.js', 'client/agnes.client.json'].includes(file.path),
-                  ),
+                  previewFiles: files
+                    .filter((file) =>
+                      ['src/index.ts', 'client/index.js', 'client/agnes.client.json'].includes(file.path),
+                    )
+                    .map((file) => ({
+                      path: file.path,
+                      content: file.content.slice(0, 2048),
+                      truncated: file.content.length > 2048,
+                    })),
                   templateRead:
                     'Preview only, not a complete candidate tree. Full files are in structured.files. Use plugin_helper_create once, then plugin_candidate_read to read the current hash, then mode: merge with changed files only. / 此处仅预览，不能当作完整候选写回。完整模板在 structured.files；创建一次后用 plugin_candidate_read 读取当前摘要，再用 mode: merge 只写变化文件。',
                 }),

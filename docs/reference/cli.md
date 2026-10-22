@@ -24,14 +24,31 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | Ordinary run options; not all forwarded subcommands accept them. `LEVEL` is `read-only`, `workspace-write`, `full-access` or `default` (the deployment default) and applies to a new session only |
 | `agh --continue` / `agh --resume ID` | Mutually exclusive; resume recent/specified session |
 | `agh resume ID [-p prompt]` | Resume entry point |
-| `agh sessions [list --cwd DIR] --json` / `agh sessions show ID` | List/details |
+| `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | List (pinned rows are marked; `--archived` keeps archived ones) / details |
+| `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | Session preferences; `--json` prints the stored preferences |
+| `agh sessions deliverables ID [--json]` / `--save N\|ID [--out PATH] [--force]` | List the files a session delivered / download one: sha256 and size are checked, only the name's last path segment is used, an existing file is refused without `--force` |
+| `agh approvals grants SESSION [--json]` / `agh approvals revoke SESSION GRANT [--json]` | List the approval grants in force for a session / revoke one (admin connection; a refusal is printed as the daemon sends it) |
+| `agh schedules [list [--session KEY] [--archived]] / show ID [--json]` | List scheduled tasks (all by default) / one task with its recent runs |
+| `agh schedules add --prompt TEXT (--every 30m\|--cron EXPR\|--at ISO\|--daily HH:MM\|--weekly mon,wed@HH:MM) [--tz ZONE] [--title T] [--session KEY \| --new-session [--cwd DIR]] [--unattended notify\|refuse]` / `edit ID [same flags]` | Create or change a task; `--every` runs from 60s to 366d, a task with neither `--session` nor `--new-session` opens a new session in the current directory, and `edit` changes only the flags given |
+| `agh schedules pause\|resume\|run\|archive ID [--json]` | Pause, resume, run now, or archive a task (admin connection; a refusal prints its code and exits 1) |
+| `agh triggers [list] [--json]` / `agh triggers remove RULE` | List webhook trigger rules and the listener configuration / delete a rule |
+| `agh triggers add --file RULE.json\|-` / `edit RULE --file RULE.json\|-` / `configure --file CONFIG.json\|-` | Save a rule or the configuration from JSON (`-` reads stdin); the JSON is checked against the protocol schema before anything is sent |
+| `agh triggers test RULE [--payload FILE\|-]` | Run a synthetic delivery through a rule; a delivery that is not accepted prints its status and exits 1. `deliver` is webhook-only and not offered |
+| `agh settings [--json]` | List the settings sections with a one-line description |
+| `agh settings SECTION [get] [--json]` | Print one section (`model-slots`, `child-engines`, `auto-review`, `system-prompt`, `memory`, `observability`, `search`, `session-defaults`) as one line per value, or the daemon result with `--json`; `memory` uses `--cwd` |
+| `agh settings SECTION set --file FILE\|-` | Save a section from JSON (`-` reads stdin); checked against the protocol schema before anything is sent. `system-prompt` also takes `--text TEXT` (replaces the whole prompt and needs `--yes`; empty removes it) |
+| `agh settings search test --text QUERY [PROVIDER]` | Run one search on a provider (default: the default provider); a failed test prints the reason and exits 1 |
+| `agh credentials [list] [--json]` / `agh credentials rename ID NAME...` | List generic credentials (id, name, kind, creation time, references; never a secret) / rename one |
+| `agh credentials delete ID [--yes] [--force]` | Without `--yes`, show what would be deleted and send nothing; a credential still in use also needs `--force` |
+| `agh sessions search QUERY... [--cwd DIR] --json` / `agh sessions groups` | Search history by session (admin connection; a refusal is printed as the daemon sends it) / session groups |
+| `agh sessions verify ID [--json]` | Run a fresh full history audit; reports verified sequence/time or the failing sequence and exits nonzero on failure. |
 | `agh export ID --format agnes\|sharegpt\|claude-code [-o FILE]` | Export; also supports `--html` and `--raw` |
 | `agh import FILE --from claude-code\|codex\|pi\|auto [--key KEY]` | Convert and import |
 | `agh --connect TARGET` | Connect only to that target; no fallback on failure |
 | `agh --standalone` / `agh --ephemeral` | Embedded / temporary execution |
 | `agh acp` / `agh --mode acp` | ACP protocol entry point |
 
-`--preset` selects the recipe (`standard`, `minimal`, `ptc` or another allowed preset) and `--permission` what the session may do; any allowed pair combines, for example `agh --preset ptc --permission read-only` or just `agh --permission read-only`. The older `agh --preset read-only` (also `workspace-write`, `full-access`) still means `standard` under that permission and cannot be combined with a different `--permission`. See [permissions and presets](../guide/security.md#permissions-and-presets).
+`--preset` selects the recipe (`standard`, `minimal`, `ptc` or another allowed preset) and `--permission` what the session may do; any allowed pair combines, for example `agh --preset ptc --permission read-only` or just `agh --permission read-only`. Retired permission-as-preset aliases (`read-only`, `workspace-write`, `full-access`) are refused; use an explicit recipe and permission. Omitting permission or choosing `default` follows the deployment default. See [permissions and presets](../guide/security.md#permissions-and-presets).
 
 Print options `--park`, `--chunks`, and `--meta` control waiting and output. See [CLI usage](../guide/cli.md) for exit codes. There is no `--session` or plaintext API-key flag.
 
@@ -59,7 +76,7 @@ Print options `--park`, `--chunks`, and `--meta` control waiting and output. See
 
 ## Packages, resources, and Computer Use
 
-Packages: `package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel`; `install SOURCE` aliases add, and `packages pins inspect|release` manages retained references. Updates use Web, TUI `/package update ID SOURCE INTEGRITY`, or SDK. The TUI update submits the specified hash directly: inspect first, without assuming an extra preview/confirmation wizard.
+Packages: `package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel|source-policy` (the last prints the allowed package sources); `install SOURCE` aliases add, and `packages pins inspect|release` manages retained references. Updates use Web, TUI `/package update ID SOURCE INTEGRITY`, or SDK. The TUI update submits the specified hash directly: inspect first, without assuming an extra preview/confirmation wizard.
 
 Resources: `resources list|get|operation|cancel|enable|disable`; `skills refresh|trust`; `mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools`. Writes commonly need expected revision and interactive confirmation. See [Skills](../guide/skills.md) and [MCP](../guide/mcp.md).
 
@@ -85,8 +102,14 @@ Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](..
 | `agh dev FOLDER` / `plugins reload [ID]` | Authorize local development / publish changed local code for new sessions |
 | `agh plugins candidates list\|show\|approve\|reject` | Read and review agent-authored candidates; approval/rejection binds candidate and review hashes |
 | `agh plugins provenance ID [--json]` | Read installation origin and trust evidence |
+| `agh plugins config get ID [--json]` | Show a plugin's configuration rows: value, schema summary and validity. Secret and credential fields print as `[redacted]`, also in `--json` |
+| `agh plugins config validate ID [ROW] --file VALUE.json\|-` / `set ID [ROW] --file VALUE.json\|-` | Validate a row value without saving / validate then save; an invalid value is listed and not saved (exit 1). ROW may be omitted when the plugin has one row |
+| `agh plugins tree [list]` / `tree show` / `plugins generations [--json]` | Read the plugin tree (`show --json` includes the artifact) / the runtime generations |
+| `agh plugins tree apply --file ARTIFACT.json\|- [--yes]` / `tree rollback [--yes]` | Apply a tree artifact / roll back to the previous one; without `--yes` only print what would happen and send nothing |
 | `agh plugins publication-status [--json]` | Read per-container convergence results |
 | `agh sessions migrate KEY [--json]` | Explicitly migrate a closed compatible session; refuses an open session |
+| `agh app show [--json]` / `app preview PACKAGE#APP` | Show the current application and candidates / the consent preview before adopting |
+| `agh app adopt PACKAGE#APP [--yes]` | Adopt an application; without `--yes` prints the preview and sends nothing |
 | `agh app clear [--profile NAME] [--json]` | Clear the application and all explicit interface role choices before plugin boot; uses the shared configuration CAS |
 | `agh app-server --stdio` / `schema --out DIR` | Bridge to the shared daemon / export its generated contract without starting it |
 | `agh doctor --json` / `doctor --probe --json` | Local checks / explicit account probes, which may incur charges |

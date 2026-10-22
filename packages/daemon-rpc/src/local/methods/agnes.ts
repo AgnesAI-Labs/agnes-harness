@@ -134,6 +134,9 @@ export type AgnesContext = LocalContext & {
 
 export type Family = { name: string; methods: string[]; guidance: string }
 
+/** The only event type `indexApprovalTicket` reacts to. */
+export const APPROVAL_TICKET_EVENT_TYPES: readonly string[] = ['decision/state']
+
 /** Fold only a structurally usable parked approval into the package-owned lookup. `expiresAt` is a
  * protocol string rather than a date-time today, so an invalid value is deliberately not indexed:
  * persisting it as NaN/null would turn the index into an immortal or immediately-expired lie. */
@@ -143,7 +146,7 @@ export function indexApprovalTicket(
   event: EventEnvelope,
   cwd?: string,
 ): boolean {
-  if (event.type !== 'decision/state') return false
+  if (!APPROVAL_TICKET_EVENT_TYPES.includes(event.type)) return false
   const value = event.data as import('@agnes/protocol').DecisionSnapshot
   if (
     value.handle.sessionId !== sessionKey ||
@@ -461,6 +464,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.projectUIOpening',
       'session.projectUIHistory',
       'session.tools',
+      'session.integrity',
       'session.jobs.read',
       'session.jobs.control',
       'session.workspace.list',

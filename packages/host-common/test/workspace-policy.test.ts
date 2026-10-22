@@ -1,8 +1,10 @@
 import { posix } from 'node:path'
+import { decideFsPath, validateFsPolicy } from '@agnes/core'
 import { describe, expect, it } from 'vitest'
 import { privateStateRoots } from '../src/paths.js'
 import {
   compileWorkspacePolicy,
+  intersectWorkspacePlan,
   memoryRequiresFileIsolation,
   normalizeSandboxStaticConfig,
   sandboxStaticConfigHash,
@@ -34,6 +36,19 @@ describe('Host workspace policy compiler', () => {
     expect(sandboxStaticConfigHash(a)).toBe(sandboxStaticConfigHash(b))
     expect(sandboxStaticConfigHash(a)).toMatch(/^[a-f0-9]{64}$/)
     expect(Object.isFrozen(a)).toBe(true)
+    const serving = normalizeSandboxStaticConfig({ sandbox: { level: 'L1', loopback_serve: true } })
+    expect(serving.loopbackServe).toBe(true)
+    expect(sandboxStaticConfigHash(serving)).not.toBe(
+      sandboxStaticConfigHash({ ...serving, loopbackServe: false }),
+    )
+    for (const sandbox of [
+      { level: 'L0', loopback_serve: true },
+      { level: 'L1', loopback_serve: 'true' },
+      { level: 'L1', loopback_serve: null },
+      { level: 'L1', loopback_serve: true, on_unavailable: 'allow' },
+      { level: 'L1', loopback_serve: true, network_allow: ['example.com'] },
+    ])
+      expect(() => normalizeSandboxStaticConfig({ sandbox })).toThrow('E_SANDBOX_WORKSPACE')
     const conditional = normalizeSandboxStaticConfig({
       sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
     })
@@ -135,6 +150,43 @@ describe('Host workspace policy compiler', () => {
     )
   })
 
+  it('captures file and network scope as a conjunction, retaining hard denials and read-only writes', async () => {
+    const parent = await compile('/work', {
+      sandbox: {
+        extra_paths: ['/parent', '/shared'],
+        deny_paths: ['/work/private'],
+        network_allow: ['shared.test', 'parent.test'],
+      },
+    })
+    const role = await compile('/work', {
+      sandbox: { extra_paths: ['/role', '/shared'], network_allow: ['shared.test', 'role.test'] },
+    })
+    const joined = intersectWorkspacePlan(role, parent.policy)
+    expect(() => validateFsPolicy(joined.policy)).not.toThrow()
+    for (const [path, effect] of [
+      ['/work/a', 'allow'],
+      ['/shared/a', 'allow'],
+      ['/parent/a', 'deny'],
+      ['/role/a', 'deny'],
+      ['/work/private/a', 'deny'],
+      ['/work/.git/a', 'deny'],
+    ] as const)
+      expect(decideFsPath(joined.policy, path, { caseSensitive: true }).effect).toBe(effect)
+    expect(joined.backendOptions.networkAllow).toEqual(['shared.test'])
+    expect(joined.backendOptions.fullAccess).toBeUndefined()
+    expect(joined.backendOptions.network).toBe('deny')
+    expect(joined.staticConfigHash).not.toBe(role.staticConfigHash)
+    expect(joined.staticConfigHash).toBe(sandboxStaticConfigHash(joined.staticConfig))
+    expect(intersectWorkspacePlan(role, { ...parent.policy, networkAllow: [] }).staticConfigHash).not.toBe(
+      joined.staticConfigHash,
+    )
+    const readOnly = await compile('/work', { providers: { 'tool-policy': { provider: 'read-only' } } })
+    expect(intersectWorkspacePlan(readOnly, parent.policy).backendOptions.allowPaths).toEqual([])
+    expect(() => intersectWorkspacePlan(role, { ...parent.policy, workspaceRoot: '/different' })).toThrow(
+      'root differs',
+    )
+  })
+
   it('refuses a canonical root whose identity changes during live canonicalization', async () => {
     await expect(
       compileWorkspacePolicy({
@@ -163,4 +215,15 @@ describe('Host workspace policy compiler', () => {
     const sensitive = await compile('/work')
     expect(insensitive.policy.digest).not.toBe(sensitive.policy.digest)
   })
+})
+
+it('binds loopback serving to policy identity and intersects the captured parent authority', async () => {
+  const plan = await compile('/work', { sandbox: { level: 'L1', loopback_serve: true } })
+  const closed = await compile('/work', { sandbox: { level: 'L1' } })
+  expect(plan.policy.loopbackServe).toBe(true)
+  expect(plan.backendOptions.loopbackServe).toBe(true)
+  expect(plan.policy.digest).not.toBe(closed.policy.digest)
+  expect(intersectWorkspacePlan(plan, closed.policy).policy.loopbackServe).not.toBe(true)
+  expect(intersectWorkspacePlan(plan, closed.policy).backendOptions.loopbackServe).not.toBe(true)
+  expect(intersectWorkspacePlan(plan, plan.policy).policy.loopbackServe).toBe(true)
 })

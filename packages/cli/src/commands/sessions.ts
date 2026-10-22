@@ -4,6 +4,13 @@ import type { NodeClient } from '@agnes/sdk'
 import { ExitCode, UsageError } from '../errors.js'
 import { newPackageCommandId } from '../tui/package-admin.js'
 import type { ParsedArgs } from '../types.js'
+import { approvalsCommand } from './approvals.js'
+import { credentialsCommand } from './credentials.js'
+import { deliverablesCommand } from './deliverables.js'
+import { schedulesCommand } from './schedules.js'
+import { MANAGE_ACTIONS, manageSessions, oneLine } from './sessions-manage.js'
+import { settingsCommand } from './settings.js'
+import { triggersCommand } from './triggers.js'
 
 type SessionsIO = {
   stdout: NodeJS.WritableStream
@@ -16,12 +23,10 @@ function json(page: PageSessionMeta): string {
 
 function line(item: PageSessionMeta['items'][number]): string {
   const preset = item.preset ?? 'default'
-  return `${item.sessionId}\t${item.lastSeq}\t${preset}`
+  return `${item.sessionId}\t${item.lastSeq}\t${preset}${item.pinnedAt ? '\tpinned' : ''}`
 }
 
-/** A title is model-written and a cwd is whatever the caller opened: one inert line each. */
-const inert = (text: string | undefined): string =>
-  text === undefined ? '-' : escapeControl(text).replace(/\n/g, ' ')
+const inert = oneLine
 
 function details(item: PageSessionMeta['items'][number]): string {
   const rows: Array<[string, string]> = [
@@ -42,7 +47,24 @@ function details(item: PageSessionMeta['items'][number]): string {
  * surface even for `show`: the CLI does not read sessions.db or reconstruct a second history view.
  */
 export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: SessionsIO): Promise<number> {
+  if (p.command === 'approvals') return approvalsCommand(p, client, io)
+  if (p.command === 'schedules') return schedulesCommand(p, client, io)
+  if (p.command === 'triggers') return triggersCommand(p, client, io)
+  if (p.command === 'settings') return settingsCommand(p, client, io)
+  if (p.command === 'credentials') return credentialsCommand(p, client, io)
   const action = p.positional[0] ?? 'list'
+  if (action === 'verify') {
+    const id = p.positional[1]
+    if (!id || p.positional.length !== 2) throw new UsageError('sessions verify expects <id>')
+    if (!p.json) io.stderr.write('Verifying history…\n')
+    const result = await client.session.integrity(id, true)
+    io.stdout.write(
+      p.json
+        ? `${JSON.stringify(result)}\n`
+        : `${result.state}: through seq ${result.verifiedThroughSeq}${result.verifiedAtMs === undefined ? '' : `; verified at ${new Date(result.verifiedAtMs).toISOString()}`}${result.failureSeq === undefined ? '' : `; failed at seq ${result.failureSeq}`}\n`,
+    )
+    return result.state === 'verified' ? ExitCode.OK : ExitCode.ERROR
+  }
   if (action === 'migrate') {
     const sessionId = p.positional[1]
     if (!sessionId) throw new UsageError('sessions migrate expects <key> [<pinned seam kind> ...]')
@@ -62,7 +84,13 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
     )
     return ExitCode.OK
   }
-  if (action !== 'list' && action !== 'show') throw new UsageError('sessions expects list, show or migrate')
+  if (action === 'deliverables') return deliverablesCommand(p, client, io)
+  const managed = MANAGE_ACTIONS.find((a) => a === action)
+  if (managed) return manageSessions(managed, p, client, io)
+  if (action !== 'list' && action !== 'show')
+    throw new UsageError(
+      'sessions expects list, show, pin, unpin, rename, archive, unarchive, search, groups, deliverables, verify or migrate',
+    )
 
   const id = action === 'show' ? p.positional[1] : undefined
   if (action === 'show' && (!id || p.positional.length > 2))
@@ -79,7 +107,12 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
   // different session when a daemon returns a prefix match or a fuzzy match. `show` reads the
   // daemon's full page (500): a fork child's key embeds its parent's id, and the list is ordered by
   // recent activity, so a busier child can rank ahead of the exact session being asked for.
-  const page = id ? { ...listed, items: listed.items.filter((item) => item.sessionId === id) } : listed
+  // The daemon has no archived filter, so `--archived` narrows the returned page here.
+  const page = id
+    ? { ...listed, items: listed.items.filter((item) => item.sessionId === id) }
+    : p.archived
+      ? { ...listed, items: listed.items.filter((item) => item.archived) }
+      : listed
   // An id that matches nothing is a failed lookup, not an empty listing: a script has to be able to
   // tell a typo from success, so it exits 1 whether or not --json was asked for.
   if (id && page.items.length === 0) {

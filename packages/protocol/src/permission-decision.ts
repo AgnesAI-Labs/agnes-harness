@@ -9,7 +9,8 @@ export interface PermissionContext {
   readonly sessionId: string
   readonly epoch: number
 }
-/** Private backend capability carried into the effect's transaction; never accepted from JSON. */
+/** Private backend capability carried into the effect's transaction; never accepted from JSON.
+ * Mint with permissionEffectAdmission; verify asynchronously, then assertActive inside commit/CAS. */
 export type PermissionEffectAdmission = Readonly<{
   verify(): Promise<void>
   assertActive(): void

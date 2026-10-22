@@ -21,9 +21,15 @@ function fakeStorage(initial: Record<string, string> = {}) {
 }
 
 describe('locale preference', () => {
-  it('matches the client locale resolver and defaults to English', () => {
+  it('follows the browser unless a supported preference was saved', () => {
     const storage = fakeStorage()
-    expect(readLocalePreference(storage)).toBe('en')
+    for (const language of ['zh-CN', 'zh-Hans', 'zh-Hans-CN', 'zh']) {
+      expect(readLocalePreference(storage, language)).toBe('zh-CN')
+      expect(readLocalePreference(fakeStorage({ [LOCALE_STORAGE_KEY]: 'en' }), language)).toBe('en')
+    }
+    for (const language of ['en-US', 'fr-FR', 'zh-TW', 'zh-Hant', ''])
+      expect(readLocalePreference(storage, language)).toBe('en')
+    expect(readLocalePreference(storage, 'en')).toBe('en')
     expect(readLocalePreference(storage)).toBe(resolveUiLocale(null))
     for (const value of ['en', 'zh-CN', 'fr', 'zh']) {
       const stored = fakeStorage({ [LOCALE_STORAGE_KEY]: value })
@@ -44,7 +50,9 @@ describe('locale preference', () => {
         throw new Error('denied')
       },
     }
-    expect(readLocalePreference(denied)).toBe('en')
+    expect(readLocalePreference(denied, 'en')).toBe('en')
+    expect(readLocalePreference(denied, 'zh-CN')).toBe('zh-CN')
+    expect(readLocalePreference(fakeStorage({ [LOCALE_STORAGE_KEY]: 'invalid' }), 'zh-CN')).toBe('zh-CN')
   })
 
   it('applies the document language and the language-switch copy', () => {

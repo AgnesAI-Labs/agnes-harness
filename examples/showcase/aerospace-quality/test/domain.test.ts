@@ -280,10 +280,9 @@ it('retains manual signatures under standard/workspace-write and auto-confirms f
       packageId: '@test/aerospace-signature',
       version: '1.0.0',
       capabilities: { store: true },
-      preset: base,
+      preset: 'standard',
+      permission: base === 'standard' ? 'default' : base,
       presets: {
-        'workspace-write': { name: 'workspace-write', extends: 'standard' },
-        'full-access': { name: 'full-access', extends: 'standard' },
         'permission-full-access': {
           name: 'permission-full-access',
           providers: { 'tool-policy': { provider: 'full-access' } },
@@ -429,9 +428,9 @@ it.each(['epoch', 'deadline'] as const)(
     await mkdir(dbDir)
     const { host } = await createTestHost({
       dataDir: home,
-      allowed: ['standard', 'full-access'],
+      allowed: ['standard', 'nested-review'],
       presets: {
-        'full-access': { name: 'full-access', extends: 'standard', approval: { pending_ttl_ms: 1000 } },
+        'nested-review': { name: 'nested-review', extends: 'standard', approval: { pending_ttl_ms: 1000 } },
         'permission-full-access': {
           name: 'permission-full-access',
           providers: { 'tool-policy': { provider: 'full-access' } },
@@ -456,7 +455,11 @@ it.each(['epoch', 'deadline'] as const)(
         expectedRevision: 1,
       })
       const before = read(store)
-      const session = await host.createSession({ cwd: home, preset: 'full-access' })
+      const session = await host.createSession({
+        cwd: home,
+        preset: 'nested-review',
+        permission: 'full-access',
+      })
       let now = Date.now()
       Object.assign(session.d, { clock: () => now })
       const decisions = session.decisions.port({

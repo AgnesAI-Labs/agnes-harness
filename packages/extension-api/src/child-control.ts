@@ -109,6 +109,8 @@ export type PlannedWorkspace = {
 }
 
 export type CreateDelegatedChildInput = {
+  /** Fresh ledger; the existing child task still owns lineage and budget. */
+  fresh?: boolean
   childKey: SessionKey
   parentKey: SessionKey
   boundarySeq: Seq

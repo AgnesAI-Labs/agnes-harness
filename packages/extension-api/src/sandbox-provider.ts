@@ -45,7 +45,7 @@ export type SandboxExecutionPolicy = Readonly<{
   digest: string
   fsRead: Readonly<{ allow: readonly string[]; deny: readonly string[] }>
   fsWrite: Readonly<{ allow: readonly string[]; deny: readonly string[] }>
-  network: Readonly<{ mode: 'deny' | 'allow' | 'hosts'; hosts: readonly string[] }>
+  network: Readonly<{ mode: 'deny' | 'allow' | 'hosts' | 'loopback-serve'; hosts: readonly string[] }>
   /** Minimum enforcement; a provider must refuse before execution when it cannot supply it. */
   requiredEnforcement: SandboxEnforcement
 }>
@@ -73,7 +73,8 @@ export type SandboxExecRequest = Readonly<{
    * scope must refuse. It must not run the command and claim the scope held.
    */
   fsWrite?: readonly SandboxFsWriteScope[]
-  /** Ask for network. A provider with `network: false` must refuse. */
+  /** Ask to initiate network connections. Inbound-only loopback serving is carried by policy.
+   * A provider with `network: false` must refuse this flag. */
   network?: boolean
 }>
 

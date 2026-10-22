@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import { expireProgress, observeProgress, type RunProgress, startProgress } from '@agnes/base/schedule'
+import {
+  expireProgress,
+  observeProgress,
+  RUN_PROGRESS_EVENT_TYPES,
+  type RunProgress,
+  startProgress,
+} from '@agnes/base/schedule'
 import { type WebhookTriggerProvider, webhookTriggerKind } from '@agnes/extension-api'
 import { ProviderRegistry } from '@agnes/host'
 import type { EventEnvelope } from '@agnes/protocol'
@@ -235,8 +241,7 @@ export function createWebhookService(options: {
   }
   return {
     observeSession(sessionId: string, event: EventEnvelope) {
-      if (!['decision/state', 'turn/start', 'turn/end', 'x/core/unattended-refused'].includes(event.type))
-        return false
+      if (!RUN_PROGRESS_EVENT_TYPES.includes(event.type)) return false
       const state = progress[sessionId]
       if (!state) return false
       const next = observeProgress(state, event, now())

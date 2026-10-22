@@ -116,7 +116,6 @@ describe('rebuildDesiredFromInventory', () => {
                 displayName: 'Legacy echo',
                 summary: 'Synthetic fixture',
                 description: 'Persisted plugin-core row',
-                category: 'tools',
               },
             },
           ],

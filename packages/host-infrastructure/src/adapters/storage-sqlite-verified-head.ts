@@ -4,7 +4,8 @@ import type { VerifiedHead } from '@agnes/core-ledger/log/verified-head'
 export const VERIFIED_HEAD_DDL = `CREATE TABLE IF NOT EXISTS ledger_verified_head_v1 (
   session_key TEXT PRIMARY KEY, through_seq INTEGER NOT NULL, head_digest TEXT NOT NULL,
   legacy_through_seq INTEGER NOT NULL, algorithm TEXT NOT NULL, verified_full_at_ms INTEGER NOT NULL,
-  written_at_ms INTEGER NOT NULL, checkpoint_digest TEXT NOT NULL)`
+  written_at_ms INTEGER NOT NULL, checkpoint_digest TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ledger_integrity_failure_v1 (session_key TEXT PRIMARY KEY, seq INTEGER)`
 
 type Row = {
   session_key: string
@@ -26,6 +27,8 @@ export function verifiedHeadStore(
   db: DatabaseSync,
   parentOf: (key: string) => { key: string; boundarySeq: number } | undefined,
 ) {
+  const failure = db.prepare('SELECT seq FROM ledger_integrity_failure_v1 WHERE session_key = ?')
+  const seal = db.prepare('INSERT OR IGNORE INTO ledger_integrity_failure_v1 VALUES (?, ?)')
   const read = db.prepare('SELECT * FROM ledger_verified_head_v1 WHERE session_key = ?')
   // Only forward, in the one statement, so two writers racing cannot move it back.
   const upsert = db.prepare(`INSERT INTO ledger_verified_head_v1 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -44,6 +47,13 @@ export function verifiedHeadStore(
     return parent && seq <= parent.boundarySeq ? integrityDigestAt(parent.key, seq) : undefined
   }
   return {
+    async readIntegrityFailure(key: string): Promise<{ seq?: number } | undefined> {
+      const row = failure.get(key) as { seq: number | null } | undefined
+      return row ? (row.seq === null ? {} : { seq: row.seq }) : undefined
+    },
+    async writeIntegrityFailure(key: string, value: { seq?: number }): Promise<void> {
+      seal.run(key, value.seq ?? null)
+    },
     async readVerifiedHead(key: string): Promise<VerifiedHead | undefined> {
       const r = read.get(key) as Row | undefined
       return (

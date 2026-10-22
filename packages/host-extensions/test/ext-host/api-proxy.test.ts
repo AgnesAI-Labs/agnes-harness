@@ -45,6 +45,7 @@ function setup(
     packageIdentity: string
     packageVersion: string
     trust: 'builtin' | 'trusted'
+    hostGrants?: import('@agnes/package-manager').HostCapabilityGrant
   } = { packageIdentity: '@fixture/package', packageVersion: m.version, trust: 'trusted' },
   serviceProviders?: KernelPorts['serviceProviders'],
 ) {
@@ -152,13 +153,14 @@ describe('complete extension API capability boundary', () => {
     expect((await h.bag.disposeAllAsync()).failed).toBe(0)
     expect(h.tools.size + h.slots.size + h.resources.snapshot().length).toBe(0)
   })
-  it('preserves classifiers while only Host-signing the exact built-in Computer Use domain', () => {
+  it('preserves classifiers and requires a Host grant for the Computer Use domain', () => {
     const m = manifest()
     m.id = 'agnes/computer-use'
     const h = setup(m, undefined, {
       packageIdentity: '@agnes/base',
       packageVersion: '1.0.0',
       trust: 'builtin',
+      hostGrants: { computerUse: true },
     })
     const tool = fixtureTool('fx_one')
     tool.policyVersion = 'computer-use-v1'
@@ -186,7 +188,7 @@ describe('complete extension API capability boundary', () => {
     forged.api.registerTool(fixtureTool('fx_one'))
     expect(forged.tools.resolve('fx_one')?.executionDomain).toBe('workspace')
   })
-  it('gives a builtin-trusted registration on a ranked id its fixed hookRank, but never a trusted (non-builtin) registration under the same id', () => {
+  it('uses Host-attested hookRank and refuses name-only registrations under the same id', () => {
     const m = manifest()
     m.id = 'agnes/hooks-runner'
     m.capabilities.hooks = ['session_start']
@@ -194,6 +196,7 @@ describe('complete extension API capability boundary', () => {
       packageIdentity: '@agnes/base',
       packageVersion: '1.0.0',
       trust: 'builtin',
+      hostGrants: { hookRank: 15 },
     })
     builtin.api.registerHook('session_start', () => undefined)
     const builtinRank = builtin.hooks.snapshot().entries('session_start')[0]?.meta.hookRank
@@ -209,6 +212,13 @@ describe('complete extension API capability boundary', () => {
     })
     forged.api.registerHook('session_start', () => undefined)
     expect(forged.hooks.snapshot().entries('session_start')[0]?.meta.hookRank).toBeUndefined()
+    const namedOnly = setup(m, undefined, {
+      packageIdentity: '@agnes/base',
+      packageVersion: '1.0.0',
+      trust: 'builtin',
+    })
+    namedOnly.api.registerHook('session_start', async () => undefined)
+    expect(namedOnly.hooks.snapshot().entries('session_start')[0]?.meta.hookRank).toBeUndefined()
   })
 
   it('leaves an ordinary trusted extension id with no hookRank at all', () => {
@@ -271,12 +281,26 @@ describe('complete extension API capability boundary', () => {
     h.api.registerTool(def)
     const raw = {
       net: { fetch: vi.fn() },
-      tools: { list: vi.fn(() => []), invoke: vi.fn() },
+      tools: {
+        list: vi.fn(() => []),
+        invoke: vi.fn(),
+        availability: (name: string) => ({
+          status: name === 'offered' ? 'offered' : name === 'later' ? 'deferred' : 'unavailable',
+          ...(name === 'refused' ? { reason: 'policy' } : {}),
+          message: name,
+        }),
+      },
       artifacts: { put: vi.fn(), get: vi.fn(), submitJob: vi.fn(), poll: vi.fn(), cancel: vi.fn() },
       subagent: { fork: vi.fn(), spawn: vi.fn(), collect: vi.fn() },
     } as unknown as ToolContext
     await h.tools.resolve('fx_one')?.execute({}, raw)
 
+    expect(projected?.tools.availability?.('offered')).toMatchObject({ status: 'offered' })
+    expect(projected?.tools.availability?.('later')).toMatchObject({ status: 'deferred' })
+    expect(projected?.tools.availability?.('refused')).toMatchObject({
+      status: 'unavailable',
+      reason: 'policy',
+    })
     expect(() => projected?.net.fetch('https://example.test')).toThrow('E_CAPABILITY_UNDECLARED')
     expect(() => projected?.tools.invoke('other', {})).toThrow('E_CAPABILITY_UNDECLARED')
     expect(() => projected?.artifacts.get({ sha256: 'x', size: 1, mime: 'text/plain' })).toThrow(

@@ -1148,6 +1148,72 @@ describe('client module immutable snapshots', () => {
     registry.close()
   })
 
+  it.each([
+    { declared: { ui: true }, state: 'ready', backendRevision: null },
+    { declared: undefined, state: 'blocked', reason: 'backend-revision-unavailable' },
+    {
+      declared: { ui: true, tools: { prefix: 'panel_' } },
+      state: 'blocked',
+      reason: 'backend-revision-unavailable',
+    },
+  ] as const)(
+    'publishes a descriptor row of a UI-only package without a worker report: declared $declared -> $state',
+    async ({ declared, ...expected }) => {
+      const files = fixture()
+      const base = installed({ directory: files.packageDirectory })
+      const row = {
+        ...base,
+        entry: { ...base.entry, ...(declared ? { declaredCapabilities: declared } : {}) },
+        contributions: [
+          {
+            kind: 'client' as const,
+            id: 'plugin/0123456789abcdef',
+            rowId: 'ext:acme/panel',
+            path: './agnes.client.json',
+            client: { entry: './dist/index.js', services: [], slots: ['workbench.panel'] },
+          },
+        ],
+      } as unknown as InstalledPackage
+      const web = decodeRuntimeTargetArtifact(webArtifact(row.id, row.entry.integrity)).tree.rows[0]
+      if (!web) throw new Error('missing web row')
+      const backend = createPluginRow({
+        id: 'ext:acme/panel',
+        plugin: `${row.id}@${row.entry.integrity}/panel`,
+        snapshotDigest: row.entry.integrity,
+        exportName: 'panel',
+        entryRevision: row.entry.integrity,
+        extrasRevision: 'none',
+        mountRevision: 'host-ordinary-row:v1',
+        runtime: 'in-process',
+      })
+      const artifact = encodeRuntimeTargetArtifact(
+        buildRuntimeTarget({
+          rows: [web, backend],
+          resources: { mcp: [], skills: {} },
+          resourceRevision: 'a'.repeat(64),
+          compositeRevision: 'b'.repeat(64),
+        }),
+      )
+      const registry = createClientModuleRegistry({
+        snapshotDirectory: () => files.snapshots,
+        runtimeArtifacts: () => ({ desired: artifact, lastGood: artifact }),
+      })
+      // No worker has reported anything: the answer comes from the daemon's own desired tree.
+      const roster = await registry.list({
+        profile: 'local-dev',
+        profileDirectory: files.root,
+        inventory: inventory(row),
+        actual: async () => ({ actual: 'not-running' }),
+        refreshInventory: async () => inventory(row),
+      })
+      expect(roster.statuses[0]).toMatchObject(expected)
+      expect(roster.rows?.map((item) => item.phase) ?? []).toEqual(
+        expected.state === 'ready' ? ['ready'] : [],
+      )
+      registry.close()
+    },
+  )
+
   it('encodes every asset path segment and reads names containing URL delimiters and Unicode', async () => {
     const files = fixture()
     // Question marks are URL delimiters but are not legal Windows filename characters. The
@@ -1503,6 +1569,65 @@ describe('client module immutable snapshots', () => {
       registry.close()
     },
   )
+
+  it('reads the roster and module bytes from the settled inventory, and re-checks authority fresh', async () => {
+    const files = fixture()
+    const row = installed({
+      directory: files.packageDirectory,
+      services: ['panel.search'],
+      backend: true,
+    })
+    const options: Array<{ fresh?: boolean; settled?: boolean } | undefined> = []
+    const service = createPackageAdminService({
+      manager: {
+        inventory: async (_directory: string, requested?: { fresh?: boolean; settled?: boolean }) => {
+          options.push(requested)
+          return inventory(row)
+        },
+      } as unknown as PackageManager,
+      profileDirectory: async () => files.root,
+      operations: new FilePackageOperationStore(join(files.root, 'operations')),
+      clientModules: createClientModuleRegistry({ snapshotDirectory: () => files.snapshots }),
+      activation: { actual: async () => running(row.entry.integrity) } as never,
+      clientServiceCall: (async () => ({ output: {} })) as never,
+    })
+    const authority = {
+      audience: 'admin' as const,
+      principalId: 'test',
+      clientId: 'test',
+      permissions: ['packages.read' as const],
+    }
+    const listed = (await service.call(
+      '_agnes/v1/clientModules.list',
+      { profile: 'local-dev' },
+      authority,
+    )) as { modules: { entryUrl: string }[] }
+    expect(options[0]).toEqual({ settled: true })
+    options.length = 0
+    await service.call(
+      '_agnes/v1/clientModules.read',
+      { profile: 'local-dev', path: listed.modules[0]!.entryUrl },
+      authority,
+    )
+    expect(options[0]).toEqual({ settled: true })
+    options.length = 0
+    await service
+      .call(
+        '_agnes/v1/clientModules.callService',
+        {
+          profile: 'local-dev',
+          sessionId: 'agnes:local:default:daemon:dm:s',
+          packageId: row.id,
+          extension: 'ext:acme/panel',
+          service: 'panel.search',
+          input: {},
+        },
+        authority,
+      )
+      .catch(() => undefined)
+    // The service call rebuilds its roster from a verifying read, never from the settled one.
+    expect(options.filter((requested) => requested?.settled === true)).toEqual([])
+  })
 
   it('serves list/read through the shared PackageAdmin RPC handler', async () => {
     const files = fixture()

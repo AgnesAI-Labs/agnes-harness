@@ -20,6 +20,8 @@ export async function runTui(
     signal(): SignalName | undefined
     resourceController?: TuiResourceController
     composerSelectionPath?: string
+    /** The CLI's own version, shown on the welcome. */
+    agnesVersion?: string
   },
 ): Promise<number> {
   refuseWhatCannotBeHonoured(p)
@@ -48,7 +50,7 @@ export async function runTui(
             cwd: io.cwd,
             sessionKey: freshTuiSessionKey(booted.profileName),
             ...(p.preset ? { preset: p.preset } : {}),
-            ...(p.permission ? { permission: p.permission } : {}),
+            ...(p.permission !== undefined || !p.agent ? { permission: p.permission ?? 'default' } : {}),
             ...(p.loop ? { loop: p.loop } : {}),
             ...(p.agent ? { agent: p.agent } : {}),
           })
@@ -71,6 +73,7 @@ export async function runTui(
     const tui = new TuiApp({
       session,
       term,
+      remote: p.connect !== undefined,
       profile: booted.profileName,
       branding,
       locale: resolveLocale(io.env),
@@ -87,6 +90,10 @@ export async function runTui(
       ...(io.composerSelectionPath
         ? { themePreferencePath: join(dirname(io.composerSelectionPath), 'tui-theme.json') }
         : {}),
+      welcome: {
+        motion: io.stdout.isTTY === true,
+        ...(io.agnesVersion ? { version: io.agnesVersion } : {}),
+      },
       controlClient: booted.client,
       ...(io.resourceController ? { resourceController: io.resourceController } : {}),
       screenAlreadyEntered: true,

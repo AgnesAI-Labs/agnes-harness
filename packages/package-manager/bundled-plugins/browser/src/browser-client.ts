@@ -1,10 +1,14 @@
 import type { ClientContext } from '@agnes/web-client'
 
 export type BrowserPage = {
+  media?: 'audio'
+  sampleRate?: number
+  frameMime?: 'image/jpeg' | 'image/png'
   pageId: string
   url: string
   pageEpoch: number
   controlEpoch: number
+  agentRevision?: number
   mode: 'agent' | 'human' | 'paused'
   uncertain?: boolean
   activity?: number

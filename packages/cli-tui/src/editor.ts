@@ -24,6 +24,20 @@ function boundaries(text: string): number[] {
 const PROMPT = '❯ '
 const CONTINUATION = '  '
 
+const MENU_LEFT_MAX = 30
+const MENU_SUMMARY_MIN = 8
+
+/** Cut to at most `max` columns, ending in `…` when anything was dropped; empty when it cannot fit. */
+function truncateTo(text: string, max: number): string {
+  if (displayWidth(text) <= max) return text
+  let out = ''
+  for (const ch of text) {
+    if (displayWidth(out + ch) > max - 1) break
+    out += ch
+  }
+  return max >= 2 ? `${out}…` : ''
+}
+
 /**
  * Splits one logical line into the visual lines it occupies, breaking on columns rather than on
  * characters. The cursor marker takes no column of its own but is treated as needing one when
@@ -64,8 +78,8 @@ export type EditorOptions = {
   complete?(prefix: string): string[]
   /** Styles the prompt glyph, placeholder and slash menu; width math always uses the unstyled text. */
   ansi?: ThemedAnsi
-  /** Args shape and one-line description for a slash-menu candidate (the app passes the command table). */
-  menuInfo?(name: string): { args?: string; description?: string } | undefined
+  /** Args shape and short summary for a slash-menu candidate (the app passes the command table). */
+  menuInfo?(name: string): { args?: string; summary?: string } | undefined
   /** Workspace paths for the `@` menu; without it `@` is plain text. */
   mentions?: { get(query: string): MentionState }
   /** The `@` menu's status rows, shown when it has nothing to choose. */
@@ -300,7 +314,9 @@ export class Editor implements Component {
       labels: items.map((item) => (item.directory ? `${item.id}/` : item.id)),
       slash: false,
       accept: (i) => this.acceptMention(token.start, items[i] as MentionItem),
-      ...(items.length ? {} : { note: state.status === 'ready' ? notes.empty : notes[state.status] }),
+      ...(items.length
+        ? {}
+        : { note: state.status === 'ready' ? notes.empty : (state.reason ?? notes[state.status]) }),
     }
   }
 
@@ -333,10 +349,29 @@ export class Editor implements Component {
     const selected = candidates.length ? this.menuIndex - start : -1
     const info = (name: string | undefined) =>
       slash && name !== undefined ? this.o.menuInfo?.(name) : undefined
-    const lines = shown.map((c, i) => {
-      const args = info(c)?.args
-      const body = args ? `${this.bold(c)} ${this.paint('faint', args)}` : this.bold(c)
-      return i === selected ? `${this.bold(this.paint('accent', '❯'))} ${body}` : `  ${body}`
+    // Left column per row: pointer, name and args. The name is never cut; args shrink to fit
+    // MENU_LEFT_MAX. The summary column appears only when it keeps MENU_SUMMARY_MIN columns.
+    const layout = (cap: number) =>
+      shown.map((c) => {
+        const entry = info(c)
+        const nameWidth = 2 + displayWidth(c)
+        const args = entry?.args ? truncateTo(entry.args, cap - nameWidth - 1) : ''
+        return { c, args, summary: entry?.summary, left: nameWidth + (args ? 1 + displayWidth(args) : 0) }
+      })
+    const avail = width - 2 - (width >= 5 ? 2 : 0)
+    let rows = layout(MENU_LEFT_MAX)
+    const withSummary =
+      width >= 3 &&
+      rows.some((r) => r.summary) &&
+      avail >= Math.max(0, ...rows.map((r) => r.left)) + 2 + MENU_SUMMARY_MIN
+    // Without the summary column the args keep today's untruncated layout.
+    if (!withSummary) rows = layout(Number.POSITIVE_INFINITY)
+    const leftWidth = Math.max(0, ...rows.map((r) => r.left))
+    const lines = rows.map((r, i) => {
+      const body = r.args ? `${this.bold(r.c)} ${this.paint('faint', r.args)}` : this.bold(r.c)
+      const left = i === selected ? `${this.bold(this.paint('accent', '❯'))} ${body}` : `  ${body}`
+      if (!withSummary || !r.summary) return left
+      return `${left}${' '.repeat(leftWidth - r.left + 2)}${this.paint('muted', r.summary)}`
     })
     if (note) lines.push(`  ${this.paint('faint', note)}`)
     const above = start
@@ -345,8 +380,6 @@ export class Editor implements Component {
       Boolean,
     )
     if (indicators.length) lines.push(`  ${this.paint('faint', indicators.join('  '))}`)
-    const description = info(candidates[this.menuIndex])?.description
-    if (description) lines.push(this.paint('muted', description))
     // A useful box needs two sides and at least one content column. At widths below that, keep the
     // menu readable and honour the component width contract by dropping only the decoration.
     if (width < 3) return lines.map((line) => fitLine(line, width))

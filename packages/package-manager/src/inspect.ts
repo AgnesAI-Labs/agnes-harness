@@ -19,6 +19,7 @@ import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 import { canonical, capabilityHash, freezeData, own, readStaticJson, snapshotHash } from './integrity.js'
 import type { LockEntry } from './lockfile.js'
+import { assertCurrentPackageFormat } from './package-format.js'
 import { presentPluginRows } from './package-presentation.js'
 import {
   capabilityAtoms,
@@ -36,18 +37,14 @@ import { checkCancelled } from './ports.js'
 import { resolveSkins } from './skin-assets.js'
 import { type FetchedSource, hashDirectory, type PackageSource } from './sources.js'
 
-import { currentStoredShape, legacyMetadata, validStoredMetadata } from './stored-metadata.js'
-
 function invalid(reason: string, diagnostics: unknown[] = []): never {
   throw new PackageError('E_EXT_LOAD', 'package static metadata is invalid', {
     detail: { reason, ...(diagnostics.length ? { diagnostics: safeAuthoringDiagnostics(diagnostics) } : {}) },
   })
 }
-function checkedContribution(value: unknown, stored = false): PackageContributionSummary {
-  const checked = validatePackageAdminData(
-    'PackageContributionSummary',
-    stored ? currentStoredShape(value) : value,
-  )
+function checkedContribution(value: unknown): PackageContributionSummary {
+  assertCurrentPackageFormat(value)
+  const checked = validatePackageAdminData('PackageContributionSummary', value)
   if (!checked.ok) invalid('contribution')
   return value as PackageContributionSummary
 }
@@ -135,8 +132,6 @@ type InspectionInput = {
   ceiling?: readonly string[]
   capabilityPolicy?: PluginCapabilityPolicy
   signal?: AbortSignal
-  /** Only durable trees whose recorded digest the caller has just verified. */
-  stored?: boolean
 }
 
 export async function inspectStaged(
@@ -173,7 +168,7 @@ export function inspectVerifiedTree(
 ): { preview: PackagePreview; treeIntegrity: string } {
   checkCancelled(input.signal)
   const pkg = readStaticJson(join(input.dir, 'package.json'))
-  const contribution = (value: unknown) => checkedContribution(value, input.stored)
+  const contribution = (value: unknown) => checkedContribution(value)
   const fetched = input.fetched
   if (input.source.type === 'npm') {
     const ref = input.source.ref.slice(4),
@@ -197,6 +192,7 @@ export function inspectVerifiedTree(
     })
   }
   const agnes = pkg.agnes ?? {}
+  assertCurrentPackageFormat(agnes)
   if (
     !agnes ||
     typeof agnes !== 'object' ||
@@ -211,7 +207,6 @@ export function inspectVerifiedTree(
           'surfaces',
           'clientDescriptors',
           'provides',
-          ...(input.stored ? ['kinds'] : []),
           'application',
           'bundles',
           'hostProvidedExternals',
@@ -221,23 +216,8 @@ export function inspectVerifiedTree(
     invalid('agnes-metadata')
   const metadata = agnes as Record<string, unknown>
   const displayMetadata =
-    metadata.metadata === undefined
-      ? undefined
-      : input.stored && validStoredMetadata(metadata.metadata)
-        ? { ok: true as const, value: metadata.metadata }
-        : validatePluginMetadata(metadata.metadata)
+    metadata.metadata === undefined ? undefined : validatePluginMetadata(metadata.metadata)
   if (displayMetadata && !displayMetadata.ok) invalid('plugin-metadata')
-  if (
-    input.stored &&
-    metadata.kinds !== undefined &&
-    (!Array.isArray(metadata.kinds) ||
-      metadata.kinds.length > 7 ||
-      metadata.kinds.some(
-        (kind) => !['tool', 'loop', 'model-adapter', 'mcp', 'skills', 'ui', 'bundle'].includes(kind),
-      ) ||
-      new Set(metadata.kinds).size !== metadata.kinds.length)
-  )
-    invalid('agnes-kinds')
   const bundles = metadata.bundles
   if (
     bundles !== undefined &&
@@ -253,11 +233,7 @@ export function inspectVerifiedTree(
   let plugins: ReturnType<typeof parseAgnesPluginEntries>
   try {
     provides = parseAgnesPluginProvides(metadata.provides)
-    plugins = parseAgnesPluginEntries(
-      String(pkg.name),
-      metadata.plugins,
-      input.stored ? { stored: true } : {},
-    )
+    plugins = parseAgnesPluginEntries(String(pkg.name), metadata.plugins)
     declaredCapabilities = mergePluginCapabilities(plugins.map((entry) => entry.capabilities))
   } catch (error) {
     if (isReservedPluginRowIdError(error))
@@ -415,41 +391,28 @@ export function inspectVerifiedTree(
     )
       invalid('example-page')
   }
-  const old = input.stored && (legacyMetadata(metadata.metadata) || metadata.kinds !== undefined)
-  if (old && legacyMetadata(metadata.metadata) && metadata.metadata.category === 'example') {
-    const presets = presentPluginRows(plugins, { packageId: String(pkg.name), bundles }).presets ?? []
-    for (const raw of metadata.metadata.launches ?? []) {
-      const launch = raw as { bundle: string; preset: string }
-      if (!presets.some((preset) => preset.bundle === launch.bundle && preset.id === launch.preset))
-        invalid('example-launch')
-    }
-  }
-  let preflight = old
-    ? { level: 'structural' as const, reasons: [], next: 'review-trust' as const }
-    : preflightPackageBundles({
-        packageId: String(pkg.name),
-        bundles,
-        dependencies: fetched.dependencies,
-        pages: contributions.flatMap((item) =>
-          'client' in item && item.client?.lifetime === 'profile'
-            ? [...(item.client.examplePages ?? []), ...(item.client.homeEntries ?? []).map((page) => page.id)]
-            : [],
-        ),
-        runtime: plugins,
-      })
+  let preflight = preflightPackageBundles({
+    packageId: String(pkg.name),
+    bundles,
+    dependencies: fetched.dependencies,
+    pages: contributions.flatMap((item) =>
+      'client' in item && item.client?.lifetime === 'profile'
+        ? [...(item.client.examplePages ?? []), ...(item.client.homeEntries ?? []).map((page) => page.id)]
+        : [],
+    ),
+    runtime: plugins,
+  })
   if (preflight.level === 'refused') invalid(preflight.reasons.join('; '))
-  const agents = old
-    ? []
-    : Object.values(parsePackageBundleContract(String(pkg.name), bundles))
-        .flatMap((entry) => (entry.document.launch ? [{ ref: entry.id, launch: entry.document.launch }] : []))
-        .sort((a, b) => compare(a.ref, b.ref))
+  const agents = Object.values(parsePackageBundleContract(String(pkg.name), bundles))
+    .flatMap((entry) => (entry.document.launch ? [{ ref: entry.id, launch: entry.document.launch }] : []))
+    .sort((a, b) => compare(a.ref, b.ref))
 
   let application: import('@agnes/protocol').ApplicationTemplate | undefined
   try {
     const parsed = parseApplicationContract(
       metadata.application,
       String(pkg.name),
-      old ? {} : parsePackageBundleContract(String(pkg.name), bundles),
+      parsePackageBundleContract(String(pkg.name), bundles),
       fetched.dependencies,
       contributions,
     )
@@ -545,10 +508,7 @@ export function inspectVerifiedTree(
     warnings,
     blockers,
   }
-  const result = validatePackageAdminData(
-    'PackagePreview',
-    input.stored ? currentStoredShape(preview) : preview,
-  )
+  const result = validatePackageAdminData('PackagePreview', preview)
   if (!result.ok) invalid('preview-contract')
   checkCancelled(input.signal)
   return { preview: freezeData(preview as PackagePreview), treeIntegrity }

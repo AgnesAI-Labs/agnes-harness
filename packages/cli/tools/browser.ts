@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile } from 'node:fs/promises'
+import { copyFile, cp, mkdir, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,5 +13,6 @@ export async function prepareBrowser(destination: string): Promise<void> {
   if (metadata.version !== '1.63.0') throw new Error('Unexpected browser engine version')
   const runtime = join(destination, 'dist', 'runtime', 'playwright')
   await mkdir(dirname(runtime), { recursive: true })
+  await copyFile(require.resolve('@agnes/system-node/owner-lock'), join(dirname(runtime), 'owner-lock.mjs'))
   await cp(root, runtime, { recursive: true, dereference: true, errorOnExist: true, force: false })
 }

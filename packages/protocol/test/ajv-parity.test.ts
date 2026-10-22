@@ -101,6 +101,7 @@ import {
   ScheduleTarget,
   ScheduleView,
 } from '../src/schedules.js'
+import { SessionIntegrityParams, SessionIntegrityStatus } from '../src/session-integrity.js'
 import { SessionRuntimeDescriptor, SessionRuntimeParams } from '../src/session-runtime.js'
 import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
 import { intelligentUiSamples } from './parity-intelligent-ui-samples.js'
@@ -204,6 +205,7 @@ ajv.addFormat('agnes-plugin-docs-url', (value: string) => {
     return false
   }
 })
+const SESSION_INTEGRITY_ID = 'https://agnes.dev/session-integrity'
 const SESSION_TOOLS_ID = 'https://agnes.dev/session-tools'
 const AGENTS_ID = 'https://agnes.dev/agents/schema.json'
 const SESSION_RUNTIME_ID = 'https://agnes.dev/session-runtime'
@@ -236,6 +238,7 @@ ajv.addSchema({
     SchedulesUpsertResult,
   },
 })
+ajv.addSchema({ $id: SESSION_INTEGRITY_ID, $defs: { SessionIntegrityParams, SessionIntegrityStatus } })
 ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
 ajv.addSchema({ $id: AGENTS_ID, $defs: { AgentResolveParams, AgentPlan } })
 ajv.addSchema({ $id: SESSION_RUNTIME_ID, $defs: { SessionRuntimeParams, SessionRuntimeDescriptor } })
@@ -6359,28 +6362,6 @@ const EXTENSION_SAMPLES: Record<string, Sample> = {
     invalid: [{ id: 'reports', placement: 'unknown' }, { placement: 'primary' }],
     note: 'Navigation contribution has an explicit bounded identity and placement',
   },
-  ExampleLaunchDeclaration: {
-    valid: {
-      id: 'example',
-      kind: 'business-agent',
-      title: 'Example',
-      bundle: 'acme/example',
-      preset: 'standard',
-      prompt: 'Start example',
-    },
-    invalid: [
-      { id: 'example' },
-      {
-        id: 'example',
-        kind: 'business-agent',
-        title: 'Example',
-        bundle: 'acme/example',
-        preset: 'standard',
-        prompt: '',
-      },
-    ],
-    note: 'Example launch requires the complete declarative input',
-  },
   ExtensionManifest: configSample('ExtensionManifest'),
   HookEvent: HOOKS_SAMPLES.HookEvent as Sample,
   UiSlotName: SLOTS_SAMPLES.UiSlotName as Sample,
@@ -6462,7 +6443,6 @@ const LockfileDefs: Record<string, TSchema> = {
 }
 const ExtensionManifestDefs: Record<string, TSchema> = {
   HomeContributionDeclaration: ExtensionManifestGen.HomeContributionDeclaration,
-  ExampleLaunchDeclaration: ExtensionManifestGen.ExampleLaunchDeclaration,
   UiComponentDeclaration: ExtensionManifestGen.UiComponentDeclaration,
   PluginProvide: ExtensionManifestGen.PluginProvide,
   PluginLocalizedText: ExtensionManifestGen.PluginLocalizedText,
@@ -7728,6 +7708,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SchedulesUpsertParams,
     SchedulesUpsertResult,
   },
+  [SESSION_INTEGRITY_ID]: { SessionIntegrityParams, SessionIntegrityStatus },
   [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
   [AGENTS_ID]: { AgentResolveParams, AgentPlan },
   [SESSION_RUNTIME_ID]: { SessionRuntimeParams, SessionRuntimeDescriptor },
@@ -8341,6 +8322,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: SESSION_RUNTIME_ID,
     params: 'SessionRuntimeParams',
     result: 'SessionRuntimeDescriptor',
+  },
+  '_agnes/v1/session.integrity': {
+    fileId: SESSION_INTEGRITY_ID,
+    params: 'SessionIntegrityParams',
+    result: 'SessionIntegrityStatus',
   },
   '_agnes/v1/session.tools': {
     fileId: SESSION_TOOLS_ID,
@@ -9464,6 +9450,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
     note: 'runtime descriptor parameters',
   },
+  '_agnes/v1/session.integrity': {
+    valid: { sessionId: 's', verify: true },
+    invalid: [{}, { sessionId: '' }, { sessionId: 's', verify: 'yes' }, { sessionId: 's', extra: true }],
+    note: 'owner audit and status parameters',
+  },
   '_agnes/v1/session.tools': {
     valid: { sessionId: 's' },
     invalid: [{}, { sessionId: '' }, { sessionId: 's', extra: true }],
@@ -9789,6 +9780,16 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/session.integrity': {
+    valid: { state: 'failed', verifiedThroughSeq: 0, lastSeq: 50, legacyThroughSeq: 0, failureSeq: 7 },
+    invalid: [
+      {},
+      { state: 'unknown', verifiedThroughSeq: 0, lastSeq: 50, legacyThroughSeq: 0 },
+      { state: 'failed', verifiedThroughSeq: 0, lastSeq: 50, legacyThroughSeq: 0, failureSeq: 0 },
+      { state: 'verified', verifiedThroughSeq: 50, lastSeq: 50, legacyThroughSeq: 0, extra: true },
+    ],
+    note: 'point-in-time status with the failing sequence',
+  },
   '_agnes/v1/applications.get': PackageAdminSamples.ApplicationState as Sample,
   '_agnes/v1/applications.preview': PackageAdminSamples.ApplicationPreview as Sample,
   '_agnes/v1/applications.adopt': PackageAdminSamples.ApplicationState as Sample,

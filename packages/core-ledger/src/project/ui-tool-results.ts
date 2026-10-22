@@ -45,6 +45,50 @@ export function applyToolResultEvent(
       .join(''),
     4096,
   )
+  const details = result.structured
+  if (
+    node.name === 'subagent_spawn' &&
+    !result.isError &&
+    details &&
+    typeof details === 'object' &&
+    !Array.isArray(details)
+  ) {
+    const role = details.role
+    if (
+      role &&
+      typeof role === 'object' &&
+      !Array.isArray(role) &&
+      typeof role.ref === 'string' &&
+      role.title &&
+      typeof role.title === 'object' &&
+      !Array.isArray(role.title) &&
+      typeof role.title.en === 'string'
+    )
+      node.delegatedRole = {
+        ref: role.ref,
+        title: {
+          en: role.title.en,
+          ...(typeof role.title['zh-CN'] === 'string' ? { 'zh-CN': role.title['zh-CN'] } : {}),
+        },
+      }
+  }
+  if (node.delegatedRole && details && typeof details === 'object' && !Array.isArray(details)) {
+    const { childKey } = details
+    const task = typeof details.task === 'string' ? details.task : node.summary
+    const status = details.status ?? 'running'
+    if (
+      typeof childKey === 'string' &&
+      childKey.length > 0 &&
+      childKey.length <= 512 &&
+      typeof task === 'string' &&
+      (status === 'running' ||
+        status === 'completed' ||
+        status === 'failed' ||
+        status === 'cancelled' ||
+        status === 'budget_stopped')
+    )
+      node.delegatedTask = { childKey, task: clipUtf16(task, 512), status }
+  }
   node.resultSeq = event.seq
   node.enforcement = structuredClone(result.enforcement)
   completed.push({ seq: event.seq, toolUseId: node.toolUseId })

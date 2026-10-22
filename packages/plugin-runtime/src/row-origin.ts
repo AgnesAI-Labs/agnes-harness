@@ -5,6 +5,7 @@ export interface RowOrigin {
   readonly packageId: string
   readonly snapshotId: string
   readonly rowRevision?: string
+  readonly configDigest?: string
   readonly rowId: string
   readonly exportName: string
   readonly declaredProvides: readonly string[]

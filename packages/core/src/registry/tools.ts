@@ -7,13 +7,21 @@ import { prepareToolSchema } from '../request/tool-schema.js'
 
 export type TrustTier = 'builtin' | 'trusted'
 export type ExecutionDomain = 'workspace' | 'host-computer-use'
+/** Execution provenance is set by Host registration, never by a ToolDef or model argument. */
+export type ToolExecutionBinding = Readonly<{
+  rowId: string
+  exportName: string
+  snapshotId: string
+  configDigest: string
+}>
 export type ToolSource = {
   source: string
   trust: TrustTier
   /** Host-attested package identity and manifest version; never copied from classifier output. */
   packageIdentity?: string
   packageVersion?: string
-  /** Only Host assembly may request this, and the registry still verifies the exact built-in pair. */
+  executionBinding?: ToolExecutionBinding
+  /** Only Host assembly may request this, and the registry verifies the Host attestation shape. */
   executionDomain?: ExecutionDomain
   /**
    * Fixed dispatch position among the built-in hook layer (third-party-transform-directive-hooks
@@ -23,6 +31,8 @@ export type ToolSource = {
    * registration order. Meaningless for tool registrations; only `HookRegistry` reads it.
    */
   hookRank?: number
+  /** Host-attested permission to convert context hook refusal into a blocked turn. */
+  contextBlocking?: boolean
 }
 export type RegisteredTool = ToolDef & {
   source: ToolSource
@@ -30,6 +40,7 @@ export type RegisteredTool = ToolDef & {
   packageVersion?: string
   executionDomain: ExecutionDomain
   definitionFingerprint: string
+  executionBinding?: ToolExecutionBinding | undefined
 }
 export type RegistrySnapshot = {
   readonly defs: ReadonlyArray<ToolDef>
@@ -106,6 +117,10 @@ export class ToolRegistry {
         : { packageVersion: registeredSource.packageVersion }),
       executionDomain,
       definitionFingerprint,
+      // Explicitly overwrite a same-named property smuggled into a plugin's ToolDef.
+      executionBinding: registeredSource.executionBinding
+        ? Object.freeze({ ...registeredSource.executionBinding })
+        : undefined,
     })
     prepareToolSchema(entry)
     return this.#table.add(registeredSource.source, registeredDefinition.name, entry)
@@ -232,6 +247,7 @@ function materializeToolMeta(value: unknown): unknown {
 function snapshotToolMeta(meta: ToolMeta): ToolMeta {
   const costHint = meta.costHint === undefined ? undefined : Object.freeze({ ...meta.costHint })
   return Object.freeze({
+    ...(meta.attestsHistory === true ? { attestsHistory: true } : {}),
     isReadOnly: meta.isReadOnly,
     isDestructive: meta.isDestructive,
     ...(meta.isPresentational === true ? { isPresentational: true } : {}),
@@ -304,8 +320,6 @@ function cloneFrozenSchema<T>(value: T, seen = new WeakMap<object, object>()): T
   return Object.freeze(clone) as T
 }
 
-const COMPUTER_USE_PACKAGE = '@agnes/base'
-const COMPUTER_USE_EXTENSION = 'agnes/computer-use'
 const IDENTITY_LIMIT = 256
 const VERSION_LIMIT = 128
 
@@ -321,12 +335,12 @@ function attestExecutionDomain(meta: ToolSource): ExecutionDomain {
     domain === 'host-computer-use' &&
     !(
       meta.trust === 'builtin' &&
-      meta.packageIdentity === COMPUTER_USE_PACKAGE &&
-      meta.source === COMPUTER_USE_EXTENSION &&
+      presentString(meta.packageIdentity, IDENTITY_LIMIT) &&
+      presentString(meta.source, IDENTITY_LIMIT) &&
       presentString(meta.packageVersion, VERSION_LIMIT)
     )
   )
-    throw new CoreError('E_TOOLDEF_META', 'host-computer-use requires exact built-in package attestation', {
+    throw new CoreError('E_TOOLDEF_META', 'host-computer-use requires Host execution-domain attestation', {
       source: meta.source,
       trust: meta.trust,
       packageIdentity: meta.packageIdentity,
@@ -357,6 +371,7 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
         ...(def.meta.paths ? { paths: def.meta.paths } : {}),
         ...(def.meta.requiresImageInput === true ? { requiresImageInput: true } : {}),
         ...(def.meta.modelVisible === false ? { modelVisible: false } : {}),
+        ...(def.meta.attestsHistory === true ? { attestsHistory: true } : {}),
         policyVersion: def.policyVersion,
         isConcurrencySafe: def.meta.isConcurrencySafe,
         isOpenWorld: def.meta.isOpenWorld,
@@ -374,6 +389,7 @@ function fingerprintToolDefinition(def: ToolDef, meta: ToolSource): string {
       ...(def.meta.paths ? { paths: def.meta.paths } : {}),
       ...(def.meta.requiresImageInput === true ? { requiresImageInput: true } : {}),
       ...(def.meta.modelVisible === false ? { modelVisible: false } : {}),
+      ...(def.meta.attestsHistory === true ? { attestsHistory: true } : {}),
       policyVersion: 'static-v1',
       policy: {
         isReadOnly: def.meta.isReadOnly,

@@ -5,6 +5,7 @@ export type {
   ScheduleCatalog,
   ScheduleCode,
   ScheduleDb,
+  ScheduleJobs,
   ScheduleRun,
   ScheduleSelector,
   ScheduleTarget,
@@ -15,6 +16,8 @@ export type {
 export {
   compileTarget,
   createSchedulesPort,
+  JOBS_DDL,
+  JOBS_INDEXES,
   openDaemonScheduleDb,
   openScheduleCatalog,
   ScheduleRejected,
@@ -24,6 +27,7 @@ export {
   expireProgress,
   isRunProgress,
   observeProgress,
+  RUN_PROGRESS_EVENT_TYPES,
   type RunProgress,
   startProgress,
 } from './run-progress.js'

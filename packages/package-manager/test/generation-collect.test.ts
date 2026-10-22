@@ -15,6 +15,8 @@ import { join } from 'node:path'
 import { SEAM_KINDS } from '@agnes/extension-api/seams'
 import { buildRuntimeTarget, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
+import { matchesGenerationBuildInputs, sameGenerationCodeAndSources } from '../src/generation-equivalence.js'
+import type { RuntimePluginSnapshot } from '../src/package-plugin-loader.js'
 import { RuntimeGenerationSnapshotStore } from '../src/runtime-snapshots-generations.js'
 import { generationResourcesDigest } from '../src/runtime-snapshots-resources.js'
 
@@ -192,6 +194,32 @@ describe('reusing an identical generation for a publication', () => {
     const worker = restarted(join(store.root, '..'), previous.id)
     const reused = worker.reusableGeneration('composition-a', expected('a'), new Set())
     expect(reused?.id).toBe(previous.id)
+    expect(matchesGenerationBuildInputs(previous, expected('a'))).toBe(true)
+    expect(sameGenerationCodeAndSources(previous, { ...previous, id: 'another-id' })).toBe(true)
+    const source: RuntimePluginSnapshot = {
+      snapshot: {
+        packageId: 'pkg',
+        snapshotId: 'other-source',
+        directory: '/synthetic',
+        version: '1.0.0',
+        profile: 'local-dev',
+        integrity: 'sha256-source',
+        treeIntegrity: 'tree',
+        capabilityHash: 'capabilities',
+        contributions: [],
+      },
+      generation: 1,
+      trusted: true,
+    }
+    const changedSources = { ...previous, sources: [source] }
+    expect(matchesGenerationBuildInputs(changedSources, expected('a'))).toBe(true)
+    expect(sameGenerationCodeAndSources(previous, changedSources)).toBe(false)
+    expect(
+      sameGenerationCodeAndSources(changedSources, {
+        ...changedSources,
+        sources: [{ ...source, snapshot: { ...source.snapshot, directory: '/archive' } }],
+      }),
+    ).toBe(true)
     expect(readdirSync(join(store.root, previous.id, 'adopters'))).toHaveLength(2)
   })
 

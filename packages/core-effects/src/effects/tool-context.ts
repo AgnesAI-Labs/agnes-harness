@@ -31,10 +31,14 @@ export type ChildStatus = {
   lastSeq: Seq
   text?: string
   idle?: boolean
+  /** Backend-only identity of the completed result returned by this snapshot. */
+  completionId?: string
+  completionSeq?: Seq
   receipt?: ChildResult['receipt']
 }
 export type ChildHandle = {
   key: string
+  role?: import('@agnes/extension-api').ChildRole
   worktree?: string
   run(input: string): Promise<{ text: string; lastSeq: Seq }>
   status(): Promise<ChildStatus>
@@ -44,6 +48,7 @@ export type ChildHandle = {
 export type ChildrenFactory = {
   create(opts: {
     parent: string
+    role?: import('@agnes/protocol').AgentRef
     forkAt?: Seq
     preset?: string
     cwd: string
@@ -63,9 +68,11 @@ export type ChildrenFactory = {
   ): Promise<ChildHandle>
   get?(childKey: string): ChildHandle | undefined
   inspect?(childKey: string): Promise<ChildStatus | null>
+  collected?(childKey: string, completionId: string, resultSeq: Seq): Promise<void>
   resume?(childKey: string): Promise<ChildHandle>
   cancel?(childKey: string): Promise<void>
   list?(): Promise<readonly ChildAgentListing[]>
+  roles?(): Promise<readonly import('@agnes/extension-api').ChildRole[]>
   models?(): readonly ChildAgentModel[]
   sendMessage?(childKey: string, text: string, signal: AbortSignal): Promise<{ messageId: string }>
   interrupt?(childKey: string): Promise<{ accepted: boolean }>
@@ -217,7 +224,9 @@ export function buildToolContext(
         },
       )
     : workspaceFiles
+  const sessionFiles = d.runtime.sessionFiles()
   const context: ToolContext = {
+    ...(sessionFiles ? { sessionFiles } : {}),
     decisions: d.decisions ?? unavailableDecisions,
     ...(d.approval ? { approval: structuredClone(d.approval) } : {}),
     session: {
@@ -361,6 +370,7 @@ export function buildToolContext(
       cancel: (id) => d.runtime.artifactCancel(id),
     },
     subagent: {
+      roles: () => d.children.roles?.() ?? Promise.resolve([]),
       fork: async (question, opts) => {
         const childOpts = {
           parent: d.sessionKey,
@@ -384,6 +394,7 @@ export function buildToolContext(
           cwd: opts?.cwd ?? d.cwd,
           input: task,
           parentEffectId: call.toolUseId,
+          ...(opts?.role !== undefined ? { role: opts.role } : {}),
           ...(opts?.model !== undefined ? { model: opts.model } : {}),
           ...(opts?.budget !== undefined ? { budget: opts.budget } : {}),
           ...(opts?.isolation !== undefined ? { isolation: opts.isolation } : {}),
@@ -395,7 +406,11 @@ export function buildToolContext(
           ? await d.children.createWithKind(opts?.fork ? 'fork' : 'spawn', childOpts)
           : await d.children.create(childOpts)
         if (opts?.start !== false) void child.run(task).catch(() => undefined)
-        return { childKey: child.key, ...(child.worktree ? { worktree: child.worktree } : {}) }
+        return {
+          childKey: child.key,
+          ...(child.role ? { role: child.role } : {}),
+          ...(child.worktree ? { worktree: child.worktree } : {}),
+        }
       },
       resume: async (childKey) => {
         const child = d.children.resume ? await d.children.resume(childKey) : d.children.get?.(childKey)
@@ -414,6 +429,8 @@ export function buildToolContext(
           const child = d.children.get?.(childKey)
           if (child) {
             const status = await child.status()
+            if (status.completionId)
+              await d.children.collected?.(childKey, status.completionId, status.completionSeq ?? 0)
             return {
               childKey: child.key,
               status: (status.idle
@@ -429,6 +446,8 @@ export function buildToolContext(
           }
           const snap = await d.children.inspect?.(childKey)
           if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+          if (snap.completionId)
+            await d.children.collected?.(childKey, snap.completionId, snap.completionSeq ?? 0)
           return {
             childKey,
             status: (snap.state === 'done' ? 'completed' : snap.state === 'error' ? 'failed' : 'running') as

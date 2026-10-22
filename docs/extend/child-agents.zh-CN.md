@@ -64,8 +64,29 @@ Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork
 
 这些工具保持原名：
 
-- `subagent_fork` 在后台启动继承父历史的子代理并返回 key。
-- `subagent_spawn` 在后台启动子代理并返回 key。fork 和 spawn 都保留子代理以接受后续消息。
+- `subagent_fork` 在后台启动继承父历史的子代理。
+- `subagent_spawn` 在后台启动子代理。fork 和 spawn 都保留子代理以接受后续消息。 设置 `wait: true` 可在同一次调用中等待并收取调查结论，一条用户消息即可完成后续汇总与已明确要求的主会话签署。默认后台模式仍保留异步完成通知。
+
+后台 fork/spawn 的确认文本刻意不向模型暴露子代理句柄。需要后续控制时，调用
+`subagent_list {}`，把列出的子代理 id 作为 `childKey` 交给 `subagent_collect`、
+`subagent_send_message`、`subagent_interrupt` 或 `subagent_cancel`。列表包含待启动的子代理，
+无需等到完成通知才能发现它。后台回执详情和应用任务卡用于展示；模型控制普通子代理时，
+应读取 list 的工具内容。不要在面向用户的回复中重复内部句柄。
+
+
+已采纳应用可声明 `delegableAgents`（最多十二个可启动引用，也必须在 `agents` 中）。
+`subagent_spawn` 的可选 `role` 从后端名单选择角色。角色使用自己的组合启动全新会话；工具和
+工作区权限受启动时捕获的父会话权限快照限制，快照记录在子账本中。子会话的所有审批及业务
+签署请求都会拒绝，并提示交回主助手。`role` 不能与 `fork` 或 `model` 同时使用；无效角色
+不会降级为普通子代理。
+工具除安全定义一致外，还必须由 Host 验证其包、版本、导出、代码快照及插件行配置摘要与父方绑定一致；
+无法证明的绑定会被排除，同名工具或相同 schema 指纹本身不授予访问权。MCP 与 Skill 资源使用启动时
+双方有效资源范围的交集。双方输入都使用实际工作区的读取/列举视图，按各自已发布的根和精确
+插件行实例过滤；预热的其他组合或过期发现记录不能扩大当前会话的资源范围。
+快照中的名单是字面允许名单：空交集明确拒绝，不会回退默认资源。
+共享工具、嵌套调用与 PTC 经过同一资源门禁。Core 与 Host 重开时都从子会话自己的原始账本恢复
+经过验证的可信角色事实，物化寄存器或父会话 fork 前缀不能充当授权。之后父方变化不会改变这份快照。
+采纳及归属说明见[应用](applications.zh-CN.md)。
 - `subagent_collect` 按需读取当前结果。了解子代理是否完成不需要它，见“完成通知”。
 - `subagent_cancel` 停止已启动的子任务及其子树。
 
@@ -85,7 +106,7 @@ Core 在返回 child handle 前以 `E_CHILD_LIMIT` 拒绝创建时，官方 fork
 - `data`：`{ childKey, status, continuable?, result?, truncated?, credits? }`。`status` 取 `completed`、`failed`、`cancelled` 或 `budget_stopped`。`continuable: true` 表示子代理空闲，仍可用 `subagent_send_message` 继续。`result` 是最后一条助手文本，最多 4000 个字符；完整文本用 `subagent_collect` 读取。
 - `summary`：给模型看的简短一行，带结果开头。`presentation`：`{ kind: "child-completed", status, label }`；网页显示本地化的状态行，可展开查看数据。
 
-空闲的父会话会被唤醒，循环带着这条通知继续；忙碌的父会话和处理其他输入一样排队。命令 id 是 `child-completed:<childKey>:<endSeq>:<status>`，Core 按父会话的收件箱历史去重，所以重试和重启只投递一次。父会话重新打开时，Core 会补发因崩溃或父会话已关闭而漏掉的终态子代理通知。被等待的 fork（`ctx.subagent.fork`）和循环自己持有的子代理通过调用方汇报，不发通知。工作流循环从 `LoopInput.system` 读取这条通知。
+空闲的父会话会被唤醒，循环带着这条通知继续；忙碌的父会话和处理其他输入一样排队。 当 `subagent_spawn` 的 `wait: true` 或 `subagent_collect` 返回已完成结果（包括常驻子代理的空闲回合）后，Core 持久记录该结果已收取，并撤回对应的待处理通知。之后迟到的投递或会话重开不会再为同一结果唤醒父会话，委派卡和子任务轨迹仍保留已完成状态。仍在运行的快照或等待超时不会确认收取；未收取的结果（包括常驻子代理后续回合）仍会唤醒父会话。命令 id 是 `child-completed:<childKey>:<endSeq>:<status>`，Core 按父会话的收件箱历史去重，所以重试和重启只投递一次。父会话重新打开时，Core 会补发因崩溃或父会话已关闭而漏掉的终态子代理通知。被等待的 fork（`ctx.subagent.fork`）和循环自己持有的子代理通过调用方汇报，不发通知。工作流循环从 `LoopInput.system` 读取这条通知。
 
 ## 父会话外观
 
@@ -93,7 +114,7 @@ Host/Core 调用一次 `childAgents.forSession(parent)`，把返回的 `ChildAge
 
 父作用域包含 `sessionKey`、`signal`、`cwd`，以及可选的代码 `generation`、剩余 `budget` 和 `toolFilter`。启动选项不能替换父身份或代码代际；子预算和工具名单只能收紧继承约束。每次启动检查当前模型/提供者允许名单。外观拒绝控制不归自己所有的句柄。父 signal 中止会请求取消；调用方必须等待 `dispose()`，才能确认启动和清理已结束，并观察失败。`result()` 是终态结果，不是每一轮回答；轮次状态通过事件和列表观察。
 
-Core 的旧 `runLoopChild` 出口保留为同步进程内兼容函数，不选择外部提供者。
+Loop 通过 `LoopContext.children` 启动子任务；旧的 Core `runLoopChild` 出口已移除。
 
 ## ACP 子代理
 
@@ -138,3 +159,5 @@ Honest flags live on the provider objects:Codex、Claude Code 和 SDK 模式都�
 `sdk` 使用固定的换行协议 `agnes.child-engine`：`initialize`、`run`、`text` 通知和 `cancel`。它是单轮的。协议选 `acp` 时改为注册可继续的 `acp` 提供者，并使用同一份命令允许名单。不要把它和另一个 `acp` 提供者同时挂载。这个引擎不说 DeepSeek SDK 的线路协议。
 
 提供者的 `events()` 和 `updateExternalChild` 只更新进程内的子代理列表。项目界面只在 `tool/result` 事件到达时写入子代理卡片的 `resultPreview`。`subagent_spawn` 返回开始通知。`subagent_collect` 返回最终文本。卡片在这些工具结果落地时更新。没有 `tool/progress` 事件，也没有把子代理提供者事件推到网页的 websocket，所以进程还在跑的时候卡片不会显示文本。
+
+应用角色的委派卡使用结构化角色、任务和子会话数据，状态来自持久化子任务轨迹或完成通知。卡片提供“查看子任务”，原始回执和内部编号留在“技术详情”。

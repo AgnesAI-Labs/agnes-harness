@@ -1,3 +1,0 @@
-# Compatibility alias: the standard recipe under the read-only permission (permission-read-only.yaml).
-name: read-only
-extends: standard

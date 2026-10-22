@@ -13,6 +13,8 @@ export type WorkspaceInfo = {
   branch?: string
   /** Short commit id while HEAD is detached. */
   detached?: string
+  /** Commits on the branch that its upstream does not have; absent without an upstream or on error. */
+  ahead?: number
 }
 
 export type WorkspaceProbe = (cwd: string) => Promise<WorkspaceInfo>
@@ -63,12 +65,17 @@ export async function readWorkspaceInfo(
   // Separate from rev-parse above: a repository without commits has a branch but no HEAD commit.
   const branch = (await git(cwd, ['symbolic-ref', '--quiet', '--short', 'HEAD'], signal))?.trim()
   const detached = branch ? undefined : (await git(cwd, ['rev-parse', '--short', 'HEAD'], signal))?.trim()
+  // Fixed arguments, no shell; no upstream, a timeout or any other failure leaves the field out.
+  const count = branch
+    ? Number((await git(cwd, ['rev-list', '--count', '@{upstream}..HEAD'], signal))?.trim())
+    : Number.NaN
   return {
     root: tildePath(root, home),
     subpath: prefix.replace(/\/$/, ''),
     ...(linked ? { worktree: basename(top) } : {}),
     ...(branch ? { branch } : {}),
     ...(detached ? { detached } : {}),
+    ...(Number.isSafeInteger(count) && count >= 0 ? { ahead: count } : {}),
   }
 }
 

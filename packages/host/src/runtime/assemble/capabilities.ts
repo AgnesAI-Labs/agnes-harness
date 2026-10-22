@@ -1,4 +1,4 @@
-import type { SessionImpl, ToolRegistry } from '@agnes/core'
+import type { SessionImpl, ToolRegistry, WorkspaceInvocationPort } from '@agnes/core'
 import type { ResourceEntry } from '@agnes/extension-api'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import {
@@ -6,6 +6,7 @@ import {
   type ResolvedComposition,
   resolveComposition,
 } from '@agnes/host-common/profile/composition'
+import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
 import { sandboxProviderCatalog } from '@agnes/host-providers/adapters/sandbox-providers'
 import { compactionEngineCatalog } from '@agnes/host-providers/assemble/compaction-engines'
 import { modelAdapterCatalog } from '@agnes/host-providers/assemble/model-adapters'
@@ -102,6 +103,7 @@ export function createCapabilities(
     ]
     return resolveSessionCapabilities({
       profile: ctx.profile,
+      ...(session?.roleAuthority ? { authority: session.roleAuthority } : {}),
       adapterCatalog: modelAdapterCatalog(runtimeTarget.pluginTree.root),
       composition:
         deps.compositionPin ??
@@ -160,27 +162,25 @@ export function createCapabilities(
         mcp: resources
           .filter((entry) => entry.kind === 'mcp')
           .map((entry) => ({ id: entry.id, name: entry.name })),
-        skills: [
-          ...new Map(
-            [
-              ...(skillState.available?.list() ?? []).map((skill) => ({
-                id: skill.resourceId,
-                name: skill.name,
-                packageId: skillState.owners.get(skill.resourceId),
-              })),
-              ...resources
-                .filter((entry) => entry.kind === 'skill')
-                .map((entry) => ({
-                  id: entry.id,
-                  name: entry.name,
-                  packageId: skillState.owners.get(entry.id),
-                })),
-            ].map((entry) => [entry.id, entry]),
-          ).values(),
-        ],
+        // The read/list facade owns workspace, published root and exact row-instance filtering.
+        // Discovered or worker-global entries cannot add authority to this view.
+        skills: skillState.liveInput
+          .list()
+          .filter((skill) => skill.actual === 'ready')
+          .map((skill) => ({
+            id: skill.resourceId,
+            name: skill.name,
+            packageId: skillState.owners.get(skill.resourceId),
+          })),
       },
     })
   }
   ctx.live.sessionCapabilities.set(sessionCapabilities)
-  return { compositionForPreset, sessionCapabilities }
+  const captureSessionCapabilities = (sessionKey: string, workspace: WorkspaceInvocationPort) =>
+    bindSkillRuntimeToWorkspace(
+      skillState.liveInput,
+      () => workspace,
+      ctx.gates.publicationDispatch,
+    ).runInWorkspace(sessionKey, async () => structuredClone(sessionCapabilities(sessionKey)))
+  return { compositionForPreset, sessionCapabilities, captureSessionCapabilities }
 }

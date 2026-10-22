@@ -54,11 +54,11 @@
     "@agnes/host-common": "workspace:*",
     "@agnes/host-extensions": "workspace:*",
     "@agnes/host-infrastructure": "workspace:*",
-    "@agnes/model-adapters": "workspace:*",
     "@agnes/package-manager": "workspace:*",
     "@agnes/plugin-runtime": "workspace:*",
     "@agnes/protocol": "workspace:*",
-    "@agnes/history-index": "workspace:*"
+    "@agnes/history-index": "workspace:*",
+    "@agnes/distribution": "workspace:*"
   },
   "license": "Apache-2.0 AND MIT",
   "devDependencies": {

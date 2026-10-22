@@ -13,7 +13,7 @@ import {
   type SkillInstallInvocation,
   validInstallPathPolicy,
 } from '@agnes/host'
-import { rpcError } from '@agnes/protocol'
+import { permissionEffectAdmission, rpcError } from '@agnes/protocol'
 import {
   localResourceAuthority,
   type ResourceAuthorityResolver,
@@ -109,6 +109,19 @@ export function createSkillInstallRequests(options: {
     let background = false
     let lease: Awaited<ReturnType<typeof acquirePermissionLease>>
     let approvalOutcome: AskOutcome | undefined
+    const admission = permissionEffectAdmission({
+      signals: [signal],
+      unavailable: () =>
+        signal.reason instanceof Error ? signal.reason : new Error('SKILL_INSTALL_CANCELLED'),
+      verify: async () => {
+        if (lease) await lease.verify()
+        else await assertCurrentPermission()
+      },
+      assertBound: () => {
+        assertActive()
+        lease?.assertActive()
+      },
+    })
     const prompt = new PrompterRouter({
       record: (outcome) => {
         approvalOutcome = outcome
@@ -130,18 +143,8 @@ export function createSkillInstallRequests(options: {
           profile: options.profile,
           workspaceRoot: workspace,
           agnesHome: agnesHome(process.env),
-          assertActive: () => {
-            assertActive()
-            signal.throwIfAborted()
-            lease?.assertActive()
-          },
-          verifyPermission: async () => {
-            if (lease) await lease.verify()
-            else await assertCurrentPermission()
-            lease?.assertActive()
-            assertActive()
-            signal.throwIfAborted()
-          },
+          assertActive: admission.assertActive,
+          verifyPermission: admission.verify,
           background: (task) => {
             background = true
             void task.finally(() => pending.delete(key(sessionKey, requestId)))
@@ -188,11 +191,7 @@ export function createSkillInstallRequests(options: {
             )
           },
           resources: async (method, resourceParams) => {
-            if (lease) await lease.verify()
-            else await assertCurrentPermission()
-            lease?.assertActive()
-            assertActive()
-            signal.throwIfAborted()
+            await admission.verify()
             const currentAuthority = (options.authority ?? localResourceAuthority())({ conn: live.get() })
             if (!currentAuthority || currentAuthority.principalId !== authority.principalId)
               throw rpcError('CAPABILITY_DENIED')
@@ -205,7 +204,6 @@ export function createSkillInstallRequests(options: {
               '_agnes/v1/resources.desired.set',
             ])
             if (!permitted.has(method)) throw rpcError('CAPABILITY_DENIED')
-            const permission = lease
             return options.service.call(
               method,
               {
@@ -214,22 +212,7 @@ export function createSkillInstallRequests(options: {
               },
               {
                 ...currentAuthority,
-                ...(permission
-                  ? {
-                      admission: {
-                        verify: async () => {
-                          await permission.verify()
-                          assertActive()
-                          signal.throwIfAborted()
-                        },
-                        assertActive: () => {
-                          permission.assertActive()
-                          assertActive()
-                          signal.throwIfAborted()
-                        },
-                      },
-                    }
-                  : {}),
+                ...(lease ? { admission } : {}),
               },
             )
           },

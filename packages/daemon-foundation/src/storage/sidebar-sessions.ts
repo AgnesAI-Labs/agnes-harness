@@ -190,9 +190,8 @@ export class SidebarSessions implements SidebarSessionPort {
       >(
         `SELECT s.session_key AS sessionId, s.created_at AS createdAt, s.last_seq AS lastSeq, s.generation, s.preset, s.cwd,
          COALESCE(p.title, s.title) AS title, CASE WHEN p.title IS NOT NULL THEN 'user' ELSE NULL END AS titleSource,
-         ${order} AS sortAt, p.pinned_at AS pinnedAt, s.message_at AS messageAt, s.loop_pin AS loopPin, b.ids AS bookmarkIds
+         ${order} AS sortAt, p.pinned_at AS pinnedAt, s.message_at AS messageAt, s.loop_pin AS loopPin, p.bookmarks AS bookmarkIds
          FROM session_workspaces s ${pinned ? '' : 'INDEXED BY sidebar_order'} ${joins}
-         LEFT JOIN session_bookmarks b ON b.session_key = s.session_key
          WHERE ${visible} AND ${member} ${cursor ? `AND (${order}, s.session_key) < (?, ?)` : ''}
          ORDER BY ${order} DESC, s.session_key COLLATE BINARY DESC LIMIT ?`,
         [...params, ...(cursor ? [cursor[5], cursor[6]] : []), limit + 1],
@@ -261,10 +260,15 @@ export class SidebarSessions implements SidebarSessionPort {
             [end.seq, row.key],
           )
           let sequence = row.seq
-          for (const event of batch) {
-            if (event.seq !== ++sequence || event.seq > end.seq) throw new Error('incomplete session history')
-            this.workspaces.observe(row.key, event)
+          const fold = () => {
+            for (const event of batch) {
+              if (event.seq !== ++sequence || event.seq > end.seq)
+                throw new Error('incomplete session history')
+              this.workspaces.observe(row.key, event)
+            }
           }
+          if (this.workspaces.batch) this.workspaces.batch(row.key, fold)
+          else fold()
           if (!batch.length) throw new Error('incomplete session history')
         })
       } catch {

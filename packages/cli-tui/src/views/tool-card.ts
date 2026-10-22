@@ -6,6 +6,15 @@ import { tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
 import { paintsColour, type ThemedAnsi, TuiTheme } from '../theme.js'
+import type { ToolDetailState } from '../tool-detail.js'
+import {
+  type CardFacts,
+  type CardKind,
+  cardHead,
+  cardKind,
+  type PlanStep,
+  planSteps,
+} from './special-card.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
@@ -49,6 +58,9 @@ const STATUS_TONE: Record<string, Tone> = {
   failed: 'danger',
   error: 'danger',
   planned: 'faint',
+  waiting: 'accent',
+  cancelled: 'warning',
+  budget_stopped: 'warning',
 }
 const STATUS_GLYPH: Record<string, string> = {
   completed: '◆',
@@ -60,6 +72,14 @@ const STATUS_GLYPH: Record<string, string> = {
 // Without colour the running and failed diamonds would be indistinguishable from a finished one.
 const COLOURLESS_GLYPH: Record<string, string> = { running: '◈', failed: '✗', error: '✗' }
 const LABEL_WIDTH = 'Enforcement:'.length
+const STEP_MARK: Record<PlanStep['status'], [string, Tone]> = {
+  todo: ['[ ]', 'faint'],
+  doing: ['[>]', 'accent'],
+  done: ['[x]', 'success'],
+  blocked: ['[!]', 'danger'],
+}
+// A collapsed plan card shows this many steps; Ctrl-O shows them all.
+const COLLAPSED_STEPS = 10
 const STATUS_KEYS: Record<
   string,
   | 'tool.status.completed'
@@ -82,6 +102,14 @@ const TOOL_KEYS: Record<string, 'tool.name.read' | 'tool.name.write' | 'tool.nam
     shell: 'tool.name.shell',
   }
 
+/** `wrapText` per line, keeping each line's leading indentation (pretty-printed arguments, code). */
+function wrapIndented(text: string, width: number): string[] {
+  return text.split('\n').flatMap((line) => {
+    const indent = ' '.repeat(Math.min(line.length - line.trimStart().length, Math.max(0, width - 8)))
+    return wrapText(line.trimStart(), width - indent.length).map((row) => `${indent}${row}`)
+  })
+}
+
 /** A left part clipped to leave room for a right-aligned one, or both run together when narrow. */
 function spread(left: string, right: string, width: number): string {
   if (!right) return fitLine(left, width)
@@ -89,19 +117,23 @@ function spread(left: string, right: string, width: number): string {
   return room >= 4 ? `${fitLine(left, room)}  ${right}` : fitLine(`${left}  ${right}`, width)
 }
 
+type Look = { glyph: string; status: string; paint: (s: string) => string; closing: string }
+
 export class ToolCard implements Component {
-  private readonly glyph: string
   private readonly name: string
   private readonly summary: string
-  private readonly status: string
-  private readonly showStatus: boolean
-  private readonly paint: (s: string) => string
-  private readonly closing: string
+  private readonly kind: CardKind | undefined
+  private readonly look: () => Look
+  private readonly right: (expanded: boolean) => string
+  /** A plan card's steps, painted, one per row. */
+  private readonly stepRows: string[] = []
   /** Rail contents, laid out for the width inside the rail. */
   private readonly rail: Array<(width: number) => string[]> = []
   private collapsedState: boolean
   private readonly actions: Array<{ id: string; label: string }> = []
   private readonly onAction: (actionId: string) => void
+  private readonly onExpand: () => void
+  private readonly more: string
 
   constructor(
     node: ToolNode,
@@ -109,42 +141,114 @@ export class ToolCard implements Component {
       collapsed?: boolean
       ansi?: ThemedAnsi
       onAction?(actionId: string): void
+      /** The full record fetched for this tool, read when drawn so a late answer needs no new card. */
+      detail?(): ToolDetailState | undefined
+      /** Called each time the card opens. */
+      onExpand?(): void
+      /** What the timeline knows beyond this node (a subagent's status and time), read when drawn. */
+      facts?(): CardFacts | undefined
       locale?: string
     } = {},
   ) {
     const ansi = options.ansi ?? new TuiTheme('mono').ansi(createAnsi('none'))
     this.onAction = options.onAction ?? (() => {})
+    this.onExpand = options.onExpand ?? (() => {})
     const locale = options.locale ?? 'en'
+    const kind = cardKind(node)
+    this.kind = kind
+    const special = kind ? cardHead(node, kind, locale) : undefined
     const toolKey = TOOL_KEYS[node.name]
-    this.name = ansi.bold(toolKey ? tt(toolKey, locale) : escapeControl(node.name))
-    const statusKey = STATUS_KEYS[node.status]
-    const tone = STATUS_TONE[node.status]
-    this.paint = tone === undefined ? (s: string) => s : (s: string) => ansi.fg(tone, s)
-    this.closing = ` ${this.paint('╰─')} ${ansi.fg('faint', 'ctrl+o')}`
-    this.glyph = this.paint(
-      (paintsColour(ansi) ? undefined : COLOURLESS_GLYPH[node.status]) ?? STATUS_GLYPH[node.status] ?? '·',
-    )
-    this.status = this.paint(statusKey ? tt(statusKey, locale) : escapeControl(node.status))
-    this.showStatus = node.status !== 'completed'
-    const summary = escapeControl(node.summary.replace(/\s+/g, ' ').trim())
+    this.name = special
+      ? `${ansi.bold(special.label)}${special.subject ? ` ${ansi.bold(escapeControl(special.subject))}` : ''}`
+      : ansi.bold(toolKey ? tt(toolKey, locale) : escapeControl(node.name))
+    // A subagent's real state is the child's, which the spawning call's own status does not follow.
+    const state = () => options.facts?.()?.status ?? node.delegatedTask?.status ?? node.status
+    let looked: { status: string; look: Look } | undefined
+    this.look = () => {
+      const status = state()
+      if (looked?.status === status) return looked.look
+      const statusKey = STATUS_KEYS[status]
+      const tone = STATUS_TONE[status]
+      const paint = tone === undefined ? (text: string) => text : (text: string) => ansi.fg(tone, text)
+      const look = {
+        glyph: paint(
+          (paintsColour(ansi) ? undefined : COLOURLESS_GLYPH[status]) ?? STATUS_GLYPH[status] ?? '·',
+        ),
+        status: paint(statusKey ? tt(statusKey, locale) : escapeControl(status)),
+        paint,
+        closing: ` ${paint('╰─')} ${ansi.fg('faint', 'ctrl+o')}`,
+      }
+      looked = { status, look }
+      return look
+    }
+    // Right of the headline: the state (a finished plain card says nothing) and a known run time.
+    this.right = (expanded) => {
+      const seconds = options.facts?.()?.durationMs
+      return [
+        expanded || state() !== 'completed' || (kind !== undefined && kind !== 'plan')
+          ? this.look().status
+          : '',
+        seconds === undefined ? '' : ansi.dim(`${(seconds / 1000).toFixed(1)}s`),
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    }
+    const steps = kind === 'plan' ? planSteps(node) : undefined
+    const headline = steps
+      ? tt('card.planProgress', locale, {
+          done: steps.filter((st) => st.status === 'done').length,
+          total: steps.length,
+        })
+      : (special?.summary ?? node.summary)
+    const summary = escapeControl(headline.replace(/\s+/g, ' ').trim())
     this.summary = summary ? `  ${ansi.dim(summary)}` : ''
     this.collapsedState = options.collapsed ?? true
+    for (const step of steps ?? []) {
+      const [mark, tone] = STEP_MARK[step.status]
+      this.stepRows.push(`${ansi.fg(tone, mark)} ${escapeControl(step.text.replace(/\s+/g, ' ').trim())}`)
+    }
+    this.more = ansi.dim(
+      tt('card.more', locale, { count: Math.max(0, this.stepRows.length - COLLAPSED_STEPS) }),
+    )
 
     if (node.summary) this.rail.push((width) => wrapText(escapeControl(node.summary), width))
-    const fields: Array<[string, string | undefined]> = [
-      ['Arguments', node.argsPreview],
-      ['Result', node.resultPreview],
-      ['Enforcement', node.enforcement && `${node.enforcement.level} (${node.enforcement.scope.join(', ')})`],
+    this.rail.push(() => this.stepRows)
+    // The fetched record replaces the previews; until it arrives, and when it cannot, the previews stay.
+    const fetched = () => {
+      const detail = options.detail?.()
+      return detail?.state === 'ready' ? detail : undefined
+    }
+    this.rail.push((width) => {
+      const detail = options.detail?.()
+      if (detail?.state === 'loading') return [ansi.dim(tt('tool.detail.loading', locale))]
+      return detail?.state === 'failed'
+        ? wrapText(tt('tool.detail.failed', locale, { reason: detail.reason }), width).map((line) =>
+            ansi.fg('warning', line),
+          )
+        : []
+    })
+    const fields: Array<[string, () => string | undefined]> = [
+      ['Task', () => node.delegatedTask?.task],
+      ['Child', () => node.delegatedTask?.childKey],
+      ['Arguments', () => fetched()?.args ?? node.argsPreview],
+      ['Result', () => fetched()?.result ?? node.resultPreview],
+      [
+        'Enforcement',
+        () => node.enforcement && `${node.enforcement.level} (${node.enforcement.scope.join(', ')})`,
+      ],
     ]
-    for (const [label, value] of fields) {
-      if (value === undefined) continue
+    for (const [label, read] of fields) {
       const head = ansi.dim(`${label}:`.padStart(LABEL_WIDTH))
       const indent = ' '.repeat(LABEL_WIDTH + 1)
-      this.rail.push((width) =>
-        wrapText(escapeControl(value), width - LABEL_WIDTH - 1).map(
-          (line, i) => `${i === 0 ? `${head} ` : indent}${line}`,
-        ),
-      )
+      // A fetched record can be long and the card draws on every frame: wrap it once per width.
+      let wrapped: { value: string; width: number; lines: string[] } | undefined
+      this.rail.push((width) => {
+        const value = read()
+        if (value === undefined) return []
+        if (wrapped?.value !== value || wrapped.width !== width)
+          wrapped = { value, width, lines: wrapIndented(escapeControl(value), width - LABEL_WIDTH - 1) }
+        return wrapped.lines.map((line, i) => `${i === 0 ? `${head} ` : indent}${line}`)
+      })
     }
     // `tool.card.inline` has `multi` cardinality, so a tool result can carry several fills; every
     // one of them contributes its own title/chart/actions block, in the order they arrive.
@@ -169,6 +273,7 @@ export class ToolCard implements Component {
   }
   toggle(): void {
     this.collapsedState = !this.collapsedState
+    if (!this.collapsedState) this.onExpand()
   }
   invalidate(): void {}
   // Numbered actions only fire while the card is expanded, so a collapsed card is inert to
@@ -185,15 +290,22 @@ export class ToolCard implements Component {
   }
   render(width: number): string[] {
     width = columns(width)
-    const head = ` ${this.glyph} ${this.name}`
-    if (this.collapsedState)
-      return [spread(`${head}${this.summary}`, this.showStatus ? this.status : '', width)]
+    const look = this.look()
+    const head = ` ${look.glyph} ${this.name}`
+    if (this.collapsedState) {
+      const hidden = this.stepRows.length - COLLAPSED_STEPS
+      return [
+        spread(`${head}${this.summary}`, this.right(false), width),
+        ...this.stepRows.slice(0, COLLAPSED_STEPS).map((row) => fitLine(`    ${row}`, width)),
+        ...(hidden > 0 ? [fitLine(`    ${this.more}`, width)] : []),
+      ]
+    }
     const inner = Math.max(1, width - 3)
-    const rail = this.paint('│')
+    const rail = look.paint('│')
     return [
-      spread(head, this.status, width),
+      spread(head, this.right(true), width),
       ...this.rail.flatMap((rows) => rows(inner)).map((line) => fitLine(` ${rail} ${line}`, width)),
-      fitLine(this.closing, width),
+      fitLine(look.closing, width),
     ]
   }
 }

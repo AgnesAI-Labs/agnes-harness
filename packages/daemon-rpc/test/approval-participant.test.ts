@@ -206,22 +206,23 @@ describe('participant RPC', () => {
           }),
         ).resolves.toMatchObject({ error: { code: -32602 } })
         expect(decide).not.toHaveBeenCalled()
-        await expect(
-          endpoint.handle({
-            jsonrpc: '2.0',
-            id: 3,
-            method: '_agnes/v1/approval.decide',
-            params: {
-              sessionId: session.key,
-              id: 'stale-owned',
-              revision: 1,
-              commandId: 'c',
-              response: { option: 'allowed-once', value: null },
-            },
-          }),
-        ).resolves.toMatchObject({
-          error: { code: -32009, data: { code: 'APPROVAL_REJECTED', reason: 'approval already resolved' } },
+        const rejected = await endpoint.handle({
+          jsonrpc: '2.0',
+          id: 3,
+          method: '_agnes/v1/approval.decide',
+          params: {
+            sessionId: session.key,
+            id: 'stale-owned',
+            revision: 1,
+            commandId: 'c',
+            response: { option: 'allowed-once', value: null },
+          },
         })
+        expect(rejected).toMatchObject({
+          error: { code: -32009, data: { code: 'APPROVAL_REJECTED', cause: { code: 'E_RELATION' } } },
+        })
+        expect(rejected).not.toHaveProperty('error.data.reason')
+        expect(JSON.stringify(rejected)).not.toContain('approval already resolved')
         expect(resolver).toHaveBeenCalledWith(endpoint.conn.credential, 'approval', created.result.sessionId)
       } finally {
         resolver.mockReset()
@@ -233,7 +234,7 @@ describe('participant RPC', () => {
     }
   })
 
-  it('maps an unknown decision in its owned session to APPROVAL_REJECTED', async () => {
+  it('maps unknown owned decisions to APPROVAL_REJECTED without returning backend prose', async () => {
     const opened = await openTestHost()
     const endpoint = opened.endpoint()
     try {
@@ -244,44 +245,28 @@ describe('participant RPC', () => {
         method: 'session/new',
         params: { cwd: opened.dataDir, mcpServers: [] },
       })) as { result: { sessionId: string } }
-      await expect(
-        endpoint.handle({
+      const session = opened.host.kernel.get(created.result.sessionId)!
+      const before = session.lastSeq
+      for (const option of ['allowed-once', 'allowed-permanent'] as const) {
+        const rejected = await endpoint.handle({
           jsonrpc: '2.0',
           id: 3,
           method: '_agnes/v1/approval.decide',
           params: {
-            sessionId: created.result.sessionId,
+            sessionId: session.key,
             id: 'missing',
             revision: 1,
-            commandId: 'c',
-            response: { option: 'allowed-once', value: null },
+            commandId: option,
+            response: { option, value: null },
           },
-        }),
-      ).resolves.toMatchObject({
-        error: {
-          code: -32009,
-          data: { code: 'APPROVAL_REJECTED', reason: expect.stringContaining('DECISION_NOT_FOUND') },
-        },
-      })
-      await expect(
-        endpoint.handle({
-          jsonrpc: '2.0',
-          id: 4,
-          method: '_agnes/v1/approval.decide',
-          params: {
-            sessionId: created.result.sessionId,
-            id: 'missing',
-            revision: 1,
-            commandId: 'c',
-            response: { option: 'allowed-permanent', value: null },
-          },
-        }),
-      ).resolves.toMatchObject({
-        error: {
-          code: -32009,
-          data: { code: 'APPROVAL_REJECTED', reason: expect.stringContaining('DECISION_NOT_FOUND') },
-        },
-      })
+        })
+        expect(rejected).toMatchObject({
+          error: { code: -32009, data: { code: 'APPROVAL_REJECTED', cause: { code: 'E_RELATION' } } },
+        })
+        expect(rejected).not.toHaveProperty('error.data.reason')
+        expect(JSON.stringify(rejected)).not.toContain('DECISION_NOT_FOUND')
+        expect(session.lastSeq).toBe(before)
+      }
     } finally {
       await endpoint.close()
       await opened.close()

@@ -24,7 +24,7 @@ afterEach(() => {
 })
 
 // Under the legacy name, `--home` would lose to any AGH_HOME already in the environment and make
-// every worker print the AGNES_HOME deprecation notice for a value nobody set by that name.
+// every worker reject AGNES_HOME for a value nobody set by that name.
 it('--home becomes AGH_HOME for the daemon and its workers, over one already set', async () => {
   vi.stubEnv('AGH_HOME', '/tmp/agnes-inherited-home')
   vi.stubEnv('AGNES_HOME', undefined)

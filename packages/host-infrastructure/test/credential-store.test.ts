@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   type CredentialFileEnforcement,
@@ -397,3 +398,65 @@ it.skipIf(process.platform === 'win32')(
     }
   },
 )
+
+it.each(
+  ['revocation', 'abort', 'expiry', 'epoch', 'stale-proof'].flatMap((loss) =>
+    ['put', 'remove'].map((action) => ({ loss, action })),
+  ),
+)('shared proof: refuses credential $action after $loss at final publication', async ({ loss, action }) => {
+  const { permissionEffectAdmission } = await import('@agnes/protocol')
+  let active = true,
+    now = 0,
+    epoch = 0,
+    version = 1
+  const controller = new AbortController()
+  const proof = permissionEffectAdmission({
+    signals: [controller.signal],
+    expiresAt: 10,
+    clock: () => now,
+    unavailable: () => Error('permission unavailable'),
+    assertBound: () => {
+      if (!active || epoch !== 0 || version !== 1) throw Error('permission unavailable')
+    },
+  })
+  const lose = () => {
+    if (loss === 'revocation') active = false
+    if (loss === 'abort') controller.abort()
+    if (loss === 'expiry') now = 10
+    if (loss === 'epoch') epoch++
+    if (loss === 'stale-proof') version++
+  }
+  const admission = {
+    ...proof,
+    verify: async () => {
+      await proof.verify()
+      lose()
+    },
+  }
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'agh-credential-proof-'))
+  const home = join(fixtureRoot, 'home')
+  createPrivateDirectorySync(home)
+  const ref = 'secret://generic/11111111-1111-4111-8111-111111111111'
+  const metadata = { label: 'Synthetic', createdAt: '2026-10-21T00:00:00.000Z' }
+  const store = createCredentialStore({ root: home })
+  try {
+    await store.putGeneric(ref, 'synthetic-original', metadata)
+    await expect(
+      action === 'put'
+        ? store.putGeneric(ref, 'synthetic-replacement', metadata, admission)
+        : store.remove(ref, admission),
+    ).rejects.toThrow()
+    expect(await store.read(ref)).toEqual({
+      version: 1,
+      kind: 'api-key',
+      provider: 'generic',
+      value: 'synthetic-original',
+      ...metadata,
+    })
+    expect(
+      readdirSync(dirname(resolveCredentialFile(home, ref, 'api-key'))).some((name) => name.includes('.tmp')),
+    ).toBe(false)
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true })
+  }
+})

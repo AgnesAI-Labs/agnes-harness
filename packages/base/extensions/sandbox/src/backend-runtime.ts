@@ -120,6 +120,11 @@ async function runsBoundary(input: DetectBackendInput, backend: RuntimeBackend):
  * restricted token/job/network boundary; this module never fabricates one by rewriting argv.
  */
 export async function detectBackend(input: DetectBackendInput): Promise<RuntimeBackend> {
+  if (input.options.loopbackServe && (input.level !== 'L1' || input.platform !== 'darwin'))
+    throw backendCompileFault(
+      'E_SANDBOX_BACKEND_POLICY',
+      'loopback serving requires the macOS L1 Seatbelt backend',
+    )
   if (input.level !== 'L1' || input.shell !== 'posix') return NONE_BACKEND
   requireClosedNetwork(input.options.networkAllow)
 

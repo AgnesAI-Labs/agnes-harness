@@ -74,6 +74,29 @@ describe('Host-bound sandbox seam', () => {
     })
   })
 
+  it('carries inbound-only loopback authority and refuses unconfined or external bindings', async () => {
+    const ws = workspace({ policy: { ...testFsPolicy('/work/proj'), loopbackServe: true } })
+    const seam = await createSandboxSeam().forWorkspace(ws.value)
+    await seam.exec(['/bin/true'], { cwd: ws.value.root })
+    expect(ws.exec).toHaveBeenCalledWith(
+      ['sandbox', '/bin/true'],
+      expect.objectContaining({
+        sandbox: expect.objectContaining({
+          policy: expect.objectContaining({ network: { mode: 'loopback-serve', hosts: [] } }),
+        }),
+      }),
+    )
+    for (const overrides of [
+      { execBackend: 'none' as const },
+      { execBackend: 'remote' as const },
+      { providerId: 'docker' },
+    ]) {
+      await expect(createSandboxSeam().forWorkspace({ ...ws.value, ...overrides })).rejects.toThrow(
+        'loopback serving requires a local L1 backend',
+      )
+    }
+  })
+
   it('reports enforcement only while Host confirms the same bound digest', async () => {
     const factory = createSandboxSeam()
     const ws = workspace()

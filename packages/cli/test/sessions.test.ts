@@ -11,6 +11,33 @@ afterEach(async () => {
 })
 
 describe('sessions command', () => {
+  it.each(['verified', 'failed'] as const)(
+    'reports %s audits through the SDK with an appropriate exit code',
+    async (state) => {
+      const endpoint = new FakeEndpoint()
+        .on('initialize', () => ({ protocolVersion: 1, agentCapabilities: {} }))
+        .on('_agnes/v1/session.integrity', (params) => {
+          expect(params).toEqual({ sessionId: 'k', verify: true })
+          return {
+            state,
+            lastSeq: 50,
+            verifiedThroughSeq: state === 'verified' ? 50 : 0,
+            legacyThroughSeq: 0,
+            ...(state === 'failed' ? { failureSeq: 10 } : { verifiedAtMs: 1000 }),
+          }
+        })
+      const client = createClient({ transport: { kind: 'inproc', endpoint } })
+      clients.push(client)
+      const writes: string[] = []
+      const code = await sessionsCommand(parseArgs(['sessions', 'verify', 'k', '--json']), client, {
+        stdout: { write: (value: string) => writes.push(value) } as never,
+        stderr: { write: () => true } as never,
+      })
+      expect(code).toBe(state === 'verified' ? 0 : 1)
+      expect(JSON.parse(writes.join(''))).toMatchObject({ state })
+    },
+  )
+
   it('uses the SDK list surface and filters show to the exact requested id', async () => {
     const endpoint = new FakeEndpoint()
     let params: unknown
@@ -115,6 +142,112 @@ describe('sessions command', () => {
 
   it('list with nothing to show still succeeds', async () => {
     expect(await run(['sessions', 'list'], [])).toEqual({ exit: 0, out: 'no sessions\n', err: '' })
+  })
+
+  it('list --archived keeps only archived sessions and marks pinned ones', async () => {
+    const items = [
+      { ...target, sessionId: 'a', archived: true },
+      { ...target, sessionId: 'b', pinnedAt: '2026-09-12T00:00:00Z' },
+    ]
+    expect((await run(['sessions', 'list', '--archived'], items)).out).toBe('a\t4\tstandard\n')
+    expect((await run(['sessions', 'list'], items)).out).toBe('a\t4\tstandard\nb\t4\tstandard\tpinned\n')
+  })
+
+  // One row per verb: which RPC runs with which params, and what the user sees.
+  const manage = async (argv: string[], method: string, reply: unknown | Error) => {
+    const endpoint = new FakeEndpoint()
+    endpoint
+      .on('initialize', () => ({ protocolVersion: 1, agentCapabilities: {} }))
+      .on(method, () => {
+        if (reply instanceof Error) throw reply
+        return reply
+      })
+    const client = createClient({ transport: { kind: 'inproc', endpoint } })
+    clients.push(client)
+    let out = ''
+    const promise = sessionsCommand(parseArgs(argv), client, {
+      stdout: { write: (text: string) => (out += text) } as never,
+      stderr: { write: () => true } as never,
+    })
+    const exit = await promise.catch((e: Error) => e)
+    return { exit, out, params: endpoint.calls.find((c) => c.method === method)?.params }
+  }
+
+  it.each([
+    [
+      ['sessions', 'pin', 's1'],
+      'session.pin',
+      { sessionId: 's1', pinned: true },
+      { archived: false, pinnedAt: '2026-09-12T00:00:00Z' },
+      's1: pinned\n',
+    ],
+    [
+      ['sessions', 'unpin', 's1'],
+      'session.pin',
+      { sessionId: 's1', pinned: false },
+      { archived: false },
+      's1: unpinned\n',
+    ],
+    [
+      ['sessions', 'archive', 's1'],
+      'session.archive',
+      { sessionId: 's1', archived: true },
+      { archived: true },
+      's1: archived\n',
+    ],
+    [
+      ['sessions', 'unarchive', 's1'],
+      'session.archive',
+      { sessionId: 's1', archived: false },
+      { archived: false },
+      's1: unarchived\n',
+    ],
+    [
+      ['sessions', 'rename', 's1', 'two', 'words'],
+      'session.rename',
+      { sessionId: 's1', title: 'two words' },
+      { archived: false, title: 'two words' },
+      's1: title two words\n',
+    ],
+  ])('%j calls %s and confirms in one line', async (argv, method, params, reply, text) => {
+    const r = await manage(argv, `_agnes/v1/${method}`, reply)
+    expect(r.exit).toBe(0)
+    expect(r.params).toEqual(params)
+    expect(r.out).toBe(text)
+    expect((await manage([...argv, '--json'], `_agnes/v1/${method}`, reply)).out).toBe(
+      `${JSON.stringify(reply)}\n`,
+    )
+  })
+
+  it('groups lists daemon groups, search groups hits per session on inert lines', async () => {
+    const g = await manage(['sessions', 'groups'], '_agnes/v1/session.groups', {
+      ready: true,
+      items: [{ groupId: 'pinned', total: 2, lastMessageAt: null, revision: 'r', ready: true }],
+    })
+    expect(g.out).toBe('pinned\t2\t-\n')
+    const hit = { sessionId: 's1', title: 'T\u001b[31m', workspace: '/w', snippet: 'a\nb', ts: '2026-09-12' }
+    const r = await manage(['sessions', 'search', 'foo', 'bar'], '_agnes/v1/admin.history.search', {
+      items: [hit, hit],
+      truncated: false,
+    })
+    expect(r.params).toEqual({ query: 'foo bar', title: '', workspace: '' })
+    expect(r.out).toBe('s1\tT[31m\t/w\n  2026-09-12  a b\n  2026-09-12  a b\n')
+  })
+
+  it('shows a daemon refusal as it comes and rejects missing arguments', async () => {
+    const denied = Object.assign(new Error('admin tier required'), {
+      code: -32006,
+      data: { code: 'FORBIDDEN' },
+    })
+    const r = await manage(['sessions', 'search', 'x'], '_agnes/v1/admin.history.search', denied)
+    expect(r.exit).toBeInstanceOf(Error)
+    expect((r.exit as Error).message).toContain('admin tier required')
+    for (const argv of [
+      ['sessions', 'pin'],
+      ['sessions', 'rename', 's1'],
+      ['sessions', 'search'],
+    ])
+      expect((await manage(argv, '_agnes/v1/session.pin', {})).exit).toBeInstanceOf(Error)
   })
 })
 

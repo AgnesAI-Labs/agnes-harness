@@ -149,53 +149,39 @@ describe('what creating a delegated child still detects', () => {
   })
 })
 
-describe('what creating a delegated child no longer detects (approved)', () => {
-  it('a rewritten tool call at or before the fork point: the child starts, reads it like its parent, and a cold open refuses it once the history is verified', async () => {
+describe('independent verification of a delegated child', () => {
+  it('a child independently detects a rewritten parent prefix and retains its seal on reload', async () => {
     const storage = new MemoryStorage({ clock: () => CLOCK })
-    const provider = script()
-    const { k, parent, c } = await parentReady(storage, provider)
+    const { k, parent, c } = await parentReady(storage, script())
     const call = (await storage.scan('parent', { type: 'tool/call', toSeq: c, limit: 1 }))[0] as Event
     tamper(storage, 'parent', call.seq, (e) => ({
       ...e,
       data: { ...(e.data as object), args: { path: 'tampered' } },
     }))
-    const handle = await createChild(parent, 'fork', {
-      parent: parent.key,
-      cwd: '/w',
-      input: 'x',
-    })
-    const child = k.get(handle.key) as SessionImpl
-    // The seeded, in-memory surface is the parent's own and still says what was written.
-    const seededCall: ReadonlyMap<string, unknown> | undefined = child.d.tracker.state.toolCalls
-    expect(JSON.stringify([...(seededCall?.values() ?? [])])).not.toContain('tampered')
-    const before = provider.requests.length
-    await handle.run('x')
-    expect(JSON.stringify(provider.requests.slice(before))).toContain('tampered')
-    // The parent's own next request reads the same stored row.
-    expect((await parent.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
-    expect(JSON.stringify(provider.requests.at(-1))).toContain('tampered')
-    const childKey = child.key
+    const creation = await createChild(parent, 'fork', { parent: parent.key, cwd: '/w', input: 'x' }).then(
+      (handle) => ({ handle }),
+      (error) => ({ error }),
+    )
+    const childKey = (await requireChildControl(storage).listByParent('parent'))[0]!.childKey
+    if ('handle' in creation) {
+      const child = k.get(creation.handle.key) as SessionImpl
+      await expect(child.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+      await expect(
+        child.enqueue('next-turn', { content: [{ type: 'text', text: 'refused' }], actor }),
+      ).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    } else expect(creation.error).toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    // A child's own scan seals that child. A fresh parent audit independently finds the same bytes.
+    await expect(parent.auditHistory()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     await k.close()
-    // Closing wrote each session's verified-head checkpoint, so a cold open starts before the prefix
-    // is hashed again; the background verification refuses the row and seals the session.
     const again = kernel(storage, fakeProvider([]))
     for (const [key, writerRunId] of [
       ['parent', 'r3'],
       [childKey, 'r4'],
-    ] as const) {
-      const reopened = await again.session(key, { ...sessionOpts, writerRunId })
-      await expect(reopened.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
-    }
+    ] as const)
+      await expect(again.session(key, { ...sessionOpts, writerRunId })).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+      })
     await again.close()
-    // The failure dropped both checkpoints: every later open verifies from the first row and fails.
-    const third = kernel(storage, fakeProvider([]))
-    await expect(third.session('parent', { ...sessionOpts, writerRunId: 'r5' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    await expect(third.session(childKey, { ...sessionOpts, writerRunId: 'r6' })).rejects.toMatchObject({
-      code: 'E_LEDGER_INTEGRITY',
-    })
-    await third.close()
   })
 
   it('a rewritten parent row after the boundary: outside the child, as before', async () => {
@@ -431,7 +417,8 @@ it('perf3-review: a delegated fork admitted before a recheck cannot publish chil
       ...event,
       data: { ...(event.data as object), args: { path: 'tampered-under-live-parent' } },
     }))
-    await parent.verifyHistory().catch(() => undefined)
+    // A changed prefix of a live parent is found by a full recheck.
+    await parent.verifyHistory({ rehashPrefix: true }).catch(() => undefined)
     await expect(parent.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     expect(parent.d.log.faulted).toBe(true)
     release()
@@ -464,7 +451,7 @@ it.each(
     ),
   ),
 )(
-  'retires a $path fork paused at $stage when its parent changes: $change',
+  'fences a $path fork at $stage for parent $change, allowing verification alone',
   async ({ path, stage, change }) => {
     const storage = new MemoryStorage({ clock: () => CLOCK })
     const wrapped: StorageAdapter = Object.create(storage)
@@ -561,14 +548,14 @@ it.each(
         const [call] = await storage.scan('parent', { type: 'tool/call', limit: 1 })
         if (!call) throw new Error('missing tool call')
         tamper(storage, 'parent', call.seq, (event) => ({ ...event, data: { changed: true } }))
-        await parent.verifyHistory().catch(() => undefined)
+        await parent.verifyHistory({ rehashPrefix: true }).catch(() => undefined)
         await expect(parent.d.log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
       } else if (change === 'close') {
         closing = parent.close()
         expect(parent.closingOrClosed).toBe(true)
       } else if (change === 'pending') {
         holdVerify = true
-        await parent.verifyHistory()
+        await parent.verifyHistory({ rehashPrefix: true })
         await vi.waitFor(() => expect(verificationPaused).toBe(true))
         expect(parent.d.log.historyVerified).toBe(false)
       } else {
@@ -580,10 +567,16 @@ it.each(
       }
       release()
       const result = await pending
-      expect(result).toHaveProperty('error')
-      expect((await ownRows()).length).toBe(before)
+      if (change === 'seal' || change === 'close') {
+        expect(result).toHaveProperty('error')
+        expect((await ownRows()).length).toBe(before)
+        expect(k.get(record.childKey)).toBeUndefined()
+      } else {
+        expect(result).toHaveProperty('value')
+        expect((await ownRows()).length).toBeGreaterThanOrEqual(before)
+        expect(k.get(record.childKey)).toBeDefined()
+      }
       expect(provider.calls).toBe(calls)
-      expect(k.get(record.childKey)).toBeUndefined()
       finishVerify()
       if (change === 'pending') await parent.d.log.fullVerified()
       await closing

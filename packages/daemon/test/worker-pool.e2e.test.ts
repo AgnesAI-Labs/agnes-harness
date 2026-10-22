@@ -424,6 +424,7 @@ describe('WorkerPool', () => {
   it('bounds identical pre-hello seam failures across concurrent acquirers and resets on changed inputs', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-boot-breaker-'))
     let bootCode = 'E_SEAM_INIT'
+    let bootReason: string | undefined
     let spawns = 0
     let active = 0
     let peak = 0
@@ -453,7 +454,7 @@ describe('WorkerPool', () => {
           bootCode === 'hello' ? ['--import', 'tsx', fakeWorker] : Array.isArray(args) ? args : [],
           {
             ...spawnOptions,
-            env: { ...spawnOptions.env, AGNES_TEST_BOOT_CODE: bootCode },
+            env: { ...spawnOptions.env, AGNES_TEST_BOOT_CODE: bootCode, AGNES_TEST_BOOT_REASON: bootReason },
           },
         )
         children.push(child)
@@ -532,6 +533,27 @@ describe('WorkerPool', () => {
       await clients()
       await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
       expect(spawns).toBe(20)
+      for (const [code, reason] of [
+        ['E_SECRET_UNRESOLVED', undefined],
+        ['E_PACKAGE_INTEGRITY', 'clean-home-required'],
+        ['E_PACKAGE_INTEGRITY', 'private-token'],
+      ] as const) {
+        pool.retryWorkerBoot()
+        bootCode = code
+        bootReason = reason
+        const beforeSpawns = spawns
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const results = await clients()
+          for (const result of results) {
+            expect(result).toMatchObject({ status: 'rejected', reason: { code: -32011, data: { code } } })
+            if (reason === 'clean-home-required')
+              expect(result).toMatchObject({ reason: { data: { reason } } })
+            expect(JSON.stringify(result)).not.toContain('private-token')
+          }
+        }
+        expect(spawns - beforeSpawns).toBe(3)
+      }
+
       expect(peak).toBe(1)
     } finally {
       pool.killAll()

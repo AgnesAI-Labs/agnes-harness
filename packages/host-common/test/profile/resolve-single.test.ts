@@ -74,8 +74,7 @@ describe('resolveProfile (single layer)', () => {
     expect(p.hash).toMatch(/^sha256-[0-9a-f]{64}$/)
     expect(Object.isFrozen(p)).toBe(true)
   })
-  it('derives permissions from a user layer that sets only presets, not from the builtin block', async () => {
-    // Narrowing `presets` must narrow what is granted, and a pre-split default naming a level keeps it.
+  it('keeps permission grants independent of recipe selection and refuses old profile aliases', async () => {
     const narrow = await resolveProfile(
       {
         builtin: 'local-dev',
@@ -84,18 +83,17 @@ describe('resolveProfile (single layer)', () => {
       },
       env,
     )
-    expect(narrow.permissions).toBeUndefined()
-    expect(allowedPermissions(narrow)).toEqual(['workspace-write'])
-    const legacy = await resolveProfile(
-      {
-        builtin: 'local-dev',
-        lock,
-        user: { name: 'u', presets: { default: 'read-only', allowed: ['read-only', 'standard'] } },
-      },
-      env,
-    )
-    expect(legacy.permissions).toBeUndefined()
-    expect(allowedPermissions(legacy)).toEqual(['read-only', 'workspace-write'])
+    expect(allowedPermissions(narrow)).toEqual(['read-only', 'workspace-write', 'full-access'])
+    await expect(
+      resolveProfile(
+        {
+          builtin: 'local-dev',
+          lock,
+          user: { name: 'u', presets: { default: 'read-only', allowed: ['read-only', 'standard'] } },
+        },
+        env,
+      ),
+    ).rejects.toThrow(/Retired.*clean home/)
   })
   it('lets a user layer that sets both keys choose its own permissions', async () => {
     const p = await resolveProfile(

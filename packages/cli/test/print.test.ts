@@ -353,7 +353,7 @@ describe('runPrint in text mode', () => {
       _meta: Record<string, Record<string, unknown>>
     }
     expect(params).toMatchObject({ _meta: { 'ai.agnes.harness': { preset: 'standard' } } })
-    expect(params._meta['ai.agnes.harness']).not.toHaveProperty('permission')
+    expect(params._meta['ai.agnes.harness']).toHaveProperty('permission', 'default')
   })
 
   it('--permission on a new session travels with --preset on session/new', async () => {

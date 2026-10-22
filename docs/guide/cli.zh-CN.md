@@ -34,11 +34,17 @@ node agnes.mjs
 
 | 操作 | 用法 |
 | --- | --- |
-| 新任务/选择历史 | `/new`、`/sessions`、`/resume [id]` |
+| 新任务/选择历史 | `/new [DIR]`、`/sessions`、`/resume [id\|all]`（`all` 列出所有工作区）、`/search QUERY`（需管理员连接） |
+| 子智能体 | `/agents` 列出本会话可控的子智能体；`/agents stop N\|ID` 中断一个，`/agents resume N\|ID 消息` 让它继续。能否执行由 daemon 决定，拒绝会原样显示 |
+| 后台任务 | `/jobs` 列出本会话的后台任务；`/jobs stop N\|ID` 终止一个（agent 拥有的任务会被 daemon 拒绝） |
+| 排队消息 | `/queue` 列出回合进行中按 Enter 输入、等回合结束后发送的消息；`/queue edit N` 放回输入框修改，`/queue drop N` 丢弃。队列由 TUI 保存，退出即丢失。回合中按 Alt+Enter 仍交给 daemon 的后续消息队列，`/queue` 不显示 |
 | 模型/预设 | `/model`、`/model main ROUTE/MODEL`、`/preset NAME` |
 | 上下文/用量 | `/context`、`/usage`、`/cost` |
+| 会话整理 | `/pin`、`/unpin`、`/rename TITLE`、`/archive` |
+| 审批授权 | `/grants` 列出本会话中无需询问即可运行工具的授权（「本会话」与「总是」）；`/grants revoke N\|ID` 撤销一条（需管理员连接） |
+| 交付物 | `/deliverables` 列出本会话交付的文件；`/deliverables save N\|ID [PATH]` 校验大小与 sha256 后下载 |
 | 压缩 | `/compact [instructions]`，结果可能是执行、跳过或失败，按回执判断 |
-| 分叉 | `/rewind SEQ`，创建新会话，不是文件系统回滚 |
+| 分叉 | `/rewind` 打开已完成轮次的选择器；`/rewind SEQ` 按序号分叉。都会创建新会话，不是文件系统回滚 |
 | 插件 | `/packages`、`/install SOURCE`、`/package ...` |
 | 资源 | `/skills`、`/skill refresh ...`、`/mcp ...` |
 | 显示/退出 | `/theme [light\|dark\|mono]`、`/help`、`/quit` |
@@ -47,9 +53,25 @@ node agnes.mjs
 
 TUI `/package` 与 shell `package` 的子命令集合不完全相同，例如更新可以从 TUI/Web 发起，shell `package update` 当前没有实现。以[生命周期指南](packages.zh-CN.md)为准。
 
-审批卡显示后检查工具、参数和授权范围，再选当前提供的 allow/deny/abort 等选项。`/yolo` 为当前会话启用完全权限：跳过工具审批，允许读写工作区内外的文件。策略中的明确禁令、操作系统权限和已配置的命令沙箱限制仍然有效。新会话会沿用已保存的权限选择。TUI 当前没有关闭完全权限的命令。
+Ctrl-O 展开最近一张工具卡，并向 daemon 读取完整的调用与结果；读取期间或读取失败时，卡片保留预览并说明原因。计划、子智能体、后台任务和工作流的工具调用有各自的卡片：计划每步一行并标出状态，其余显示名称、状态、时间线里有的耗时和一行摘要。
+
+审批卡显示后检查工具、参数和授权范围，再选当前提供的 allow/deny/abort 等选项。`/yolo` 为当前会话启用完全权限：跳过工具审批，允许读写工作区内外的文件。策略中的明确禁令、操作系统权限和已配置的命令沙箱限制仍然有效。新会话会沿用已保存的权限选择。`/yolo off` 恢复常规审批询问。
 
 TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都调用所选的后端计划服务。`/plan status` 查看模式，`/plan pending` 查看上次提交的计划。后端被禁用或不可用时，界面显示计划模式关闭。现有 `.agh/plan-mode.json` 文件可直接读取，无需迁移。计划模式即使在完全访问权限下也会阻止写入和执行工具；`exit_plan_mode` 仍须获得绑定当前计划版本的人工批准。用户显式输入 `/plan off` 仍可直接关闭。
+
+## 定时任务与触发器
+
+`agh schedules` 和 `agh triggers` 管理与 Web 自动化页相同的定时任务和 webhook 规则，需要管理员连接。每分钟运行一次的任务：`agh schedules add --prompt "汇总新增问题" --every 1m --cwd .`；`agh schedules run ID` 立即运行一次，`pause`、`resume` 暂停和恢复，`archive` 归档，`show ID` 列出最近的运行记录。Webhook 规则以 JSON 编写（`agh triggers add --file rule.json`），发送前先按协议 schema 校验；`agh triggers test RULE` 用模拟投递试跑。拒绝时打印 code 并以 1 退出；`--json` 原样输出 daemon 的返回。
+
+## 插件配置、插件树与应用
+
+这些命令对应 Web 管理页，需要管理员连接。`agh plugins config get ID` 列出插件的配置行及当前值、schema 摘要和是否有效；schema 标为 `x-secret`、`writeOnly` 或 `credential-reference` 的字段，以及名字像凭据的键，文本和 `--json` 都显示为 `[redacted]`。配置值只从 JSON 文件读取，不走命令行：`agh plugins config validate ID [ROW] --file value.json` 只校验，`set` 先校验，值无效时不保存并以 1 退出。`agh plugins tree` 和 `generations` 显示插件树与运行代（generation）；`tree apply --file artifact.json` 与 `tree rollback` 会改变运行态，不带 `--yes` 只打印将要做什么。`agh app show` 和 `preview 插件#应用` 读取应用状态与同意预览，`app adopt` 同样需要 `--yes`。`agh package source-policy` 显示允许的包来源。后台的拒绝原样显示并以 1 退出。
+
+## 设置与凭据
+
+`agh settings` 修改与 Web 设置页相同的设置，需要管理员连接。不带 section 时列出全部：`model-slots`、`child-engines`、`auto-review`、`system-prompt`、`memory`、`observability`、`search`、`session-defaults`。`agh settings SECTION`（或 `get`）每个值输出一行，`--json` 输出 daemon 的原始返回。`agh settings SECTION set --file settings.json` 保存 JSON（`-` 读标准输入），保存前先按协议 schema 校验；多数 section 可以把 `get --json` 的结果改一改直接作为输入。`agh settings system-prompt set --text "..."` 替换整个系统提示词（需要 `--yes`；文本为空则移除替换）。`memory` 作用于 `--cwd` 指定的目录。`agh settings search test --text "查询" [PROVIDER]` 跑一次搜索。它与 `agh config` 不同：后者用于登录账号和输出生效的运行配置。
+
+`agh credentials` 列出通用 API 密钥凭据（id、名称、创建时间、被谁使用），`rename ID 名称...` 改名，`delete ID --yes` 删除；不带 `--yes` 只显示将删除的对象，仍被使用的凭据还需要 `--force`。密钥值从不显示。新增或替换密钥请用 `agh config`，命令行不接收密钥。
 
 ## 退出码
 
@@ -65,5 +87,4 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 
 实现依据：[参数与 usage](../../packages/cli/src/args.ts)、[退出码](../../packages/cli/src/errors.ts)、[TUI 命令](../../packages/cli-tui/src/commands.ts)。
 
-
-在 TUI 中使用 `/attach <path>` 分块上传原件，并将回执作为 prompt 提交。路径可含空格。失败保留后端附件原因；回执属于当前会话，上传完成前切换会话会拒绝提交。
+在 TUI 中使用 `/attach <path>` 分块上传原件，并将回执作为 prompt 提交。路径可含空格。常见的图片、文档、压缩包和音视频扩展名按各自的 MIME 类型上传，其余扩展名按 `application/octet-stream` 上传；daemon 的白名单拒绝原样显示。失败保留后端附件原因；回执属于当前会话，上传完成前切换会话会拒绝提交。

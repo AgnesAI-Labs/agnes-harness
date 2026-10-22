@@ -7,11 +7,10 @@ import { it } from 'vitest'
 import { distributions, ledgerRef, previousRef, run } from './distributions.mjs'
 import { provider } from './provider.mjs'
 import { runtime } from './runtime.mjs'
-import { seedRuntimeSnapshotFixture, verifyRuntimeSnapshotFixture } from './runtime-snapshot-fixture.mjs'
 
 // guards-allow-platform: Windows process identity/crash acceptance is a separate platform follow-up.
 it.skipIf(process.platform === 'win32')(
-  'upgrades real previous-build homes after clean shutdown and process loss',
+  'refuses retired previous-build homes and resumes supported formats after shutdown or process loss',
   async () => {
     const repository = fileURLToPath(new URL('../../', import.meta.url))
     const scratch = await realpath(await mkdtemp(join(tmpdir(), 'agh-upgrade-gate-')))
@@ -92,12 +91,34 @@ it.skipIf(process.platform === 'win32')(
             if (!process.env.AGH_UPGRADE_PREVIOUS_REF || ref === ledgerRef)
               for (const id of presentations)
                 assert.ok(!Object.hasOwn(previousReceipt.integrity, id), `${id}: must be a new default`)
-            const capturedSnapshots = await seedRuntimeSnapshotFixture(home)
+            const oldSchema = JSON.parse(
+              await readFile(
+                join(builds.oldSource, 'packages/protocol/schema/extension-manifest.json'),
+                'utf8',
+              ),
+            )
+            if (oldSchema.$defs.PluginMetadata.properties.category) {
+              const lockFile = join(home, 'profiles/local-dev/agnes-lock.json')
+              const snapshotFile = join(home, 'profiles/local-dev/.agnes-runtime-snapshots.json')
+              const before = await Promise.all([readFile(lockFile, 'utf8'), readFile(snapshotFile, 'utf8')])
+              await assert.rejects(
+                runtime(builds.current, home, workspace),
+                /E_DATA_DIR_STALE|retired|clean.home|new, empty.*AGH_HOME/is,
+              )
+              assert.deepEqual(
+                await Promise.all([readFile(lockFile, 'utf8'), readFile(snapshotFile, 'utf8')]),
+                before,
+              )
+              // A refused worker can leave its synthetic supervisor running; stop only this home.
+              await run(process.execPath, [join(builds.current, 'agnes.mjs'), 'daemon', 'stop'], {
+                cwd: workspace,
+                env: { PATH: process.env.PATH, HOME: home, AGH_HOME: home },
+              }).catch(() => undefined)
+              console.info('Retired preview home refused without converting lock, snapshots, pins or trust')
+              continue
+            }
             daemon = await runtime(builds.current, home, workspace)
             await scenario('verify', repository)
-            await verifyRuntimeSnapshotFixture(home, capturedSnapshots)
-            await scenario('current-declarations', repository)
-            await verifyRuntimeSnapshotFixture(home, capturedSnapshots, { afterReviewedUpdate: true })
             const upgradedReceipt = JSON.parse(await readFile(receiptFile, 'utf8'))
             assert.equal(upgradedReceipt.version, 4)
             assert.equal(upgradedReceipt.phase, 'complete')

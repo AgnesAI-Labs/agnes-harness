@@ -87,7 +87,9 @@ export async function runHeadless(
     cwd: options.cwd,
     sessionKey: `agnes:headless:${globalThis.crypto.randomUUID()}`,
     ...(options.preset ? { preset: options.preset } : {}),
-    ...(options.permission ? { permission: options.permission } : {}),
+    ...(options.permission !== undefined || !options.agent
+      ? { permission: options.permission ?? 'default' }
+      : {}),
     ...(options.loop ? { loop: options.loop } : {}),
     ...(options.agent ? { agent: options.agent } : {}),
   })

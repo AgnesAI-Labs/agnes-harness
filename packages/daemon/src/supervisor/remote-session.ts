@@ -11,6 +11,13 @@ import type {
 } from '@agnes/worker-runtime'
 import type { WorkerSessionChannel } from './worker-link.js'
 
+/**
+ * The event types whose register a daemon reader takes from `latest()`: `budget.state` is read by
+ * `session.budget`. `op.state` is read too, but no ledger row carries it (the log materializes it
+ * itself), so no frame ever filled it and there is nothing to prime.
+ */
+export const REGISTER_CACHE_EVENT_TYPES: readonly string[] = ['budget.state']
+
 /** How long a viewer's live previews may wait on a worker's snapshot. */
 export const PREVIEW_SNAPSHOT_TIMEOUT_MS = 2_000
 
@@ -68,6 +75,19 @@ export class RemoteSession {
 
   observe(e: EventEnvelope): void {
     if (e.seq > this.lastSeq) this.lastSeq = e.seq
+  }
+
+  /**
+   * Fills the register cache from the ledger rather than from frames: a session that opens is not
+   * replayed its history, so the newest row of each type that feeds a cached register is read once.
+   */
+  async primeRegisters(head: number): Promise<void> {
+    if (head < 1) return
+    for (const type of REGISTER_CACHE_EVENT_TYPES) {
+      const rows = await this.scan({ toSeq: head, type, order: 'desc', limit: 1 })
+      const newest = rows[0]
+      if (newest) this.observeRegister(newest)
+    }
   }
 
   observeRegister(e: EventEnvelope): void {
@@ -304,6 +324,32 @@ export class RemoteSession {
         ...(options.onProgress ? { onHistoryProgress: options.onProgress } : {}),
       },
     ) as Promise<number>
+  }
+
+  integrityStatus(): Promise<import('@agnes/protocol').SessionIntegrityStatus> {
+    return this.link.command('integrityStatus', {}) as Promise<
+      import('@agnes/protocol').SessionIntegrityStatus
+    >
+  }
+
+  async auditHistory(signal?: AbortSignal): Promise<import('@agnes/protocol').SessionIntegrityStatus> {
+    signal?.throwIfAborted()
+    const work = this.link.command('auditHistory', {}, { timeoutMs: 600_000 })
+    let abort: (() => void) | undefined
+    const stopped = new Promise<never>((_, reject) => {
+      abort = () => reject(signal?.reason ?? new Error('audit wait cancelled'))
+      signal?.addEventListener('abort', abort, { once: true })
+      if (signal?.aborted) abort()
+    })
+    try {
+      return (await Promise.race([work, stopped])) as import('@agnes/protocol').SessionIntegrityStatus
+    } finally {
+      if (abort) signal?.removeEventListener('abort', abort)
+    }
+  }
+
+  async requireVerifiedHistory(): Promise<void> {
+    await this.link.command('requireVerifiedHistory', {}, { timeoutMs: 600_000 })
   }
 
   async scan(q: unknown): Promise<EventEnvelope[]> {

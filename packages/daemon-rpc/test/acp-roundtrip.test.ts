@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { ScriptedProvider } from '@agnes/ai/testkit'
 import { noticeParams } from '@agnes/daemon-foundation/local/attached'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
@@ -46,12 +47,78 @@ async function drain(ep: {
   for await (const n of ep.notifications) out.push(n)
   return out
 }
+function deferred(): { promise: Promise<void>; resolve(): void } {
+  let resolve!: () => void
+  const promise = new Promise<void>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
 type N = {
   method?: string
   params?: { _meta?: Record<string, { phase: string; eventSequence: number; promptTurnId: string }> }
 }
 
 describe('local endpoint: ACP round trip', () => {
+  it('audits a real SQLite session through the owner RPC, including corruption before its checkpoint', async () => {
+    const h = await openTestHost({ provider: new ScriptedProvider({ scripts: [say('evidence')] }) })
+    let ep = h.endpoint({ clock: Date.now, pollMs: 5 })
+    try {
+      await ep.handle(init)
+      await addWorkspace(ep, h.dataDir)
+      const created = (await ep.handle({
+        jsonrpc: '2.0',
+        id: 200,
+        method: 'session/new',
+        params: { cwd: h.dataDir, mcpServers: [] },
+      })) as { result: { sessionId: string } }
+      const sessionId = created.result.sessionId
+      await ep.handle({
+        jsonrpc: '2.0',
+        id: 201,
+        method: 'session/prompt',
+        params: { sessionId, prompt: [{ type: 'text', text: 'audit me' }] },
+      })
+      const audit = (verify: boolean) =>
+        ep.handle({
+          jsonrpc: '2.0',
+          id: 202,
+          method: '_agnes/v1/session.integrity',
+          params: { sessionId, verify },
+        })
+      await expect(audit(true)).resolves.toMatchObject({ result: { state: 'verified', legacyThroughSeq: 0 } })
+      await ep.close()
+      ep = h.endpoint({ clock: Date.now, pollMs: 5 })
+      await ep.handle(init)
+      await expect(audit(false)).resolves.toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
+      expect(h.host.kernel.get(sessionId)).toBeUndefined()
+      await expect(audit(true)).resolves.toMatchObject({ result: { state: 'verified', legacyThroughSeq: 0 } })
+      const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
+      const target = raw
+        .prepare(
+          "SELECT seq FROM events WHERE session_key = ? AND type = 'user/message' ORDER BY seq LIMIT 1",
+        )
+        .get(sessionId) as { seq: number }
+      raw
+        .prepare(
+          "UPDATE events SET data = json_set(data, '$.content[0].text', 'tampered audit') WHERE session_key = ? AND seq = ?",
+        )
+        .run(sessionId, target.seq)
+      raw.close()
+      await expect(audit(true)).resolves.toMatchObject({
+        result: { state: 'failed', failureSeq: target.seq },
+      })
+      await expect(audit(false)).resolves.toMatchObject({
+        result: { state: 'failed', failureSeq: target.seq },
+      })
+      expect(await h.host.kernel.o.storage.readVerifiedHead?.(sessionId)).toBeUndefined()
+    } finally {
+      await ep.close()
+      await h.close()
+    }
+  })
+
   it('requires explicit workspace.add before session/new and never grants authority from cwd', async () => {
     const h = await openTestHost()
     const ep = createLocalEndpoint(h.host, { clock: () => Date.now(), pollMs: 5 })
@@ -242,7 +309,7 @@ describe('local endpoint: ACP round trip', () => {
     expect(create.mock.calls[0]?.[0]).toMatchObject({ preset: 'standard', permission: 'full-access' })
     await open(5, { preset: 'standard', sessionKey: 'agnes:permission:b' })
     expect(create.mock.calls[1]?.[0]).toMatchObject({ preset: 'standard' })
-    expect(create.mock.calls[1]?.[0]).not.toHaveProperty('permission')
+    expect(create.mock.calls[1]?.[0]).toHaveProperty('permission', 'default')
     await ep.close()
     await h.close()
   })
@@ -319,112 +386,209 @@ describe('local endpoint: ACP round trip', () => {
   ])(
     '$method admits and verifies history (cold=$cold), replaying only for ACP load',
     async ({ method, cold }) => {
-      const h = await openTestHost({ script: [say('hi'), say('again')] })
+      const provider = new ScriptedProvider({
+        scripts: [say('hi'), say('again'), say('ordinary before verification')],
+      })
+      const infer = vi.spyOn(provider, 'infer')
+      const h = await openTestHost({ provider })
       let ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
-      await ep.handle(init)
-      await addWorkspace(ep, h.dataDir)
-      const ok = (await ep.handle({
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'session/new',
-        params: { cwd: h.dataDir, mcpServers: [] },
-      })) as { result: { sessionId: string } }
-      await ep.handle({
-        jsonrpc: '2.0',
-        id: 3,
-        method: 'session/prompt',
-        params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'x' }] },
-      })
-      await ep.handle({
-        jsonrpc: '2.0',
-        id: 6,
-        method: 'session/prompt',
-        params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'next' }] },
-      })
-      if (cold) {
-        await ep.close()
-        ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+      try {
         await ep.handle(init)
-      }
-      // Preview frames use a separate budget but share the ordered notification queue.
-      const before = ep.pending().events + ep.pendingPreviews().events
-      expect(
+        await addWorkspace(ep, h.dataDir)
+        const ok = (await ep.handle({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'session/new',
+          params: { cwd: h.dataDir, mcpServers: [] },
+        })) as { result: { sessionId: string } }
         await ep.handle({
           jsonrpc: '2.0',
-          id: 4,
-          method,
-          params: {
-            sessionId: ok.result.sessionId,
-            cwd: h.dataDir,
-            ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-1' }),
-          },
-        }),
-      ).toMatchObject({ result: {} })
-      const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
-      const turns = raw
-        .prepare("SELECT seq FROM events WHERE session_key = ? AND type = 'turn/start' ORDER BY seq")
-        .all(ok.result.sessionId) as { seq: number }[]
-      raw
-        .prepare(
-          "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
-        )
-        .run(ok.result.sessionId)
-      raw.close()
-      await expect(
-        ep.handle({
+          id: 3,
+          method: 'session/prompt',
+          params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'x' }] },
+        })
+        await ep.handle({
           jsonrpc: '2.0',
-          id: 5,
-          method,
-          params: {
-            sessionId: ok.result.sessionId,
-            cwd: h.dataDir,
-            ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-2' }),
-          },
-        }),
-      ).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
-      const replayed = (await drain(ep)).slice(before) as N[]
-      const updates = replayed
-        .filter((n) => n.method === 'session/update')
-        .map(
-          (n) =>
-            (n.params as unknown as { update: { sessionUpdate: string; content?: { text?: string } } })
-              .update,
-        )
-      const kinds = updates.map((u) => u.sessionUpdate)
-      if (method !== 'session/load') {
-        // A lagging live turn/end may still deliver its empty quiescence carrier.
-        expect(updates.filter((update) => update.content?.text !== '')).toEqual([])
-        await h.close()
-        return
-      }
-      expect(turns).toHaveLength(2)
-      for (const n of replayed.filter((n) => n.method === 'session/update')) {
-        const meta = n.params?._meta?.['ai.agnes.harness']
-        expect(meta).toBeDefined()
-        if (meta)
-          expect(meta.promptTurnId).toBe(
-            String(turns.filter((t) => t.seq <= meta.eventSequence).at(-1)?.seq ?? 0),
+          id: 6,
+          method: 'session/prompt',
+          params: { sessionId: ok.result.sessionId, prompt: [{ type: 'text', text: 'next' }] },
+        })
+        if (cold) {
+          await ep.close()
+          ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+          await ep.handle(init)
+        }
+        // Preview frames use a separate budget but share the ordered notification queue.
+        const before = ep.pending().events + ep.pendingPreviews().events
+        expect(
+          await ep.handle({
+            jsonrpc: '2.0',
+            id: 4,
+            method,
+            params: {
+              sessionId: ok.result.sessionId,
+              cwd: h.dataDir,
+              ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-1' }),
+            },
+          }),
+        ).toMatchObject({ result: {} })
+        // Finish the healthy check before editing storage; no race with its background hash pass.
+        const healthy = h.host.kernel.sessions.get(ok.result.sessionId)
+        if (!healthy) throw new Error('load did not open the session')
+        await healthy.d.log.fullVerified()
+        let coldReplay: JsonRpcMessage[] | undefined
+        if (cold) {
+          coldReplay = (await drain(ep)).slice(before)
+          ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+          await ep.handle(init)
+        } else {
+          // Without a checkpoint, a live recheck must detect corruption in the foreground.
+          await h.host.kernel.o.storage.deleteVerifiedHead?.(ok.result.sessionId)
+          expect(await h.host.kernel.o.storage.readVerifiedHead?.(ok.result.sessionId)).toBeUndefined()
+        }
+        const raw = new DatabaseSync(join(h.dataDir, 'sessions.db'))
+        const turns = raw
+          .prepare("SELECT seq FROM events WHERE session_key = ? AND type = 'turn/start' ORDER BY seq")
+          .all(ok.result.sessionId) as { seq: number }[]
+        raw
+          .prepare(
+            "UPDATE events SET data = json_set(data, '$.content[0].text', 'changed') WHERE session_key = ? AND type = 'user/message'",
           )
+          .run(ok.result.sessionId)
+        raw.close()
+        const load = () =>
+          ep.handle({
+            jsonrpc: '2.0',
+            id: 5,
+            method,
+            params: {
+              sessionId: ok.result.sessionId,
+              cwd: h.dataDir,
+              ...(method === 'session/load' ? { mcpServers: [] } : { requestId: 'open-2' }),
+            },
+          })
+        if (cold) {
+          const storage = h.host.kernel.o.storage
+          const scan = storage.scanIntegrity.bind(storage)
+          const gate = deferred()
+          const reached = deferred()
+          let folded = false
+          // Ignore single-row authority probes. Cold open folds the prefix; the explicit full verification rehashes it.
+          const hold = vi.spyOn(storage, 'scanIntegrity').mockImplementation(async (key, query) => {
+            if (key === ok.result.sessionId && query.fromSeq === 1 && query.toSeq > 1) {
+              if (folded) {
+                reached.resolve()
+                await gate.promise
+              }
+              folded = true
+            }
+            return scan(key, query)
+          })
+          try {
+            await expect(load()).resolves.toMatchObject({ result: {} })
+            const session = h.host.kernel.sessions.get(ok.result.sessionId)
+            if (!session) throw new Error('cold load did not open the session')
+            const log = session.d.log
+            expect(log.openStats.checkpoint).toMatchObject({ used: true })
+            // Cold open returns before its automatic prefix check; only attestations wait.
+            expect(log.historyVerified).toBe(false)
+            await reached.promise
+            expect(log.historyVerified).toBe(false)
+            infer.mockClear()
+            const queued = deferred()
+            const appended: string[] = []
+            const off = session.onAppended((events) => {
+              appended.push(...events.map((event) => event.type))
+              if (events.some((event) => event.type === 'inbox')) queued.resolve()
+            })
+            const prompt = () =>
+              ep.handle({
+                jsonrpc: '2.0',
+                id: 7,
+                method: 'session/prompt',
+                params: { sessionId: session.key, prompt: [{ type: 'text', text: 'must not execute' }] },
+              })
+            try {
+              // An ordinary model step can run; the final verifier gate still waits for history.
+              const pending = prompt()
+              await queued.promise
+              await vi.waitFor(() => expect(infer).toHaveBeenCalledTimes(1))
+              expect(appended).not.toContain('turn/end')
+              const verified = expect(log.fullVerified()).rejects.toMatchObject({
+                code: 'E_LEDGER_INTEGRITY',
+              })
+              gate.resolve()
+              await verified
+              expect(log.faulted).toBe(true)
+              expect(await storage.readVerifiedHead?.(session.key)).toBeUndefined()
+              await expect(pending).resolves.toMatchObject({
+                error: { data: { code: 'TURN_ERROR', error: { code: 'E_LEDGER_INTEGRITY' } } },
+              })
+              await expect(prompt()).resolves.toMatchObject({
+                error: { data: { code: 'E_LEDGER_INTEGRITY' } },
+              })
+              await expect(load()).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
+              expect(infer).toHaveBeenCalledTimes(1)
+              expect(appended).not.toContain('turn/end')
+            } finally {
+              off()
+            }
+          } finally {
+            gate.resolve()
+            hold.mockRestore()
+          }
+        } else {
+          await expect(load()).resolves.toMatchObject({ error: { data: { code: 'E_SESSION_CORRUPT' } } })
+        }
+        const remaining = await drain(ep)
+        const replayed = (coldReplay ?? remaining.slice(before)) as N[]
+        const updates = replayed
+          .filter((n) => n.method === 'session/update')
+          .map(
+            (n) =>
+              (n.params as unknown as { update: { sessionUpdate: string; content?: { text?: string } } })
+                .update,
+          )
+        const kinds = updates.map((u) => u.sessionUpdate)
+        if (method !== 'session/load') {
+          // A lagging live turn/end may still deliver its empty quiescence carrier.
+          expect(updates.filter((update) => update.content?.text !== '')).toEqual([])
+          return
+        }
+        expect(turns).toHaveLength(2)
+        for (const n of replayed.filter((n) => n.method === 'session/update')) {
+          const meta = n.params?._meta?.['ai.agnes.harness']
+          expect(meta).toBeDefined()
+          if (meta)
+            expect(meta.promptTurnId).toBe(
+              String(turns.filter((t) => t.seq <= meta.eventSequence).at(-1)?.seq ?? 0),
+            )
+        }
+        // Only the durable classes come back; chunks and turn edges are not part of a load.
+        expect(kinds).toContain('user_message_chunk')
+        expect(
+          kinds.every((k) =>
+            ['user_message_chunk', 'agent_message_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(
+              k,
+            ),
+          ),
+        ).toBe(true)
+        // Both halves of the conversation, not just the client's own. Chunks are excluded from a load,
+        // so assistant/message is the only row that can carry the answer back.
+        expect(kinds).toContain('agent_message_chunk')
+        const said = updates
+          .filter((u) => u.sessionUpdate === 'agent_message_chunk')
+          .map((u) => u.content?.text ?? '')
+          .join('')
+        // A cold connection can also receive the registry's historical live-tail backlog. Check
+        // attribution on every frame above without making duplicate delivery part of this contract.
+        if (cold) expect(said).toContain('hiagain')
+        else expect(said).toBe('hiagain')
+      } finally {
+        await ep.close()
+        infer.mockRestore()
+        await h.close()
       }
-      // Only the durable classes come back; chunks and turn edges are not part of a load.
-      expect(kinds).toContain('user_message_chunk')
-      expect(
-        kinds.every((k) =>
-          ['user_message_chunk', 'agent_message_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(k),
-        ),
-      ).toBe(true)
-      // Both halves of the conversation, not just the client's own. Chunks are excluded from a load,
-      // so assistant/message is the only row that can carry the answer back.
-      expect(kinds).toContain('agent_message_chunk')
-      const said = updates
-        .filter((u) => u.sessionUpdate === 'agent_message_chunk')
-        .map((u) => u.content?.text ?? '')
-        .join('')
-      // A cold connection can also receive the registry's historical live-tail backlog. Check
-      // attribution on every frame above without making duplicate delivery part of this contract.
-      if (cold) expect(said).toContain('hiagain')
-      else expect(said).toBe('hiagain')
-      await h.close()
     },
   )
 

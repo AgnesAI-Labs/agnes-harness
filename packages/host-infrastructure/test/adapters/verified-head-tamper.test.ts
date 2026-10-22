@@ -106,7 +106,7 @@ const TAMPER = `UPDATE events SET data = json_set(data, '$.content[0].text', 'ta
 
 describe('verified-head checkpoint against a tampered SQLite ledger', () => {
   it.each(['cold', 'warm', 'provider-warm'] as const)(
-    '%s open: a row changed before the checkpoint seals the session in the background and drops it',
+    '%s open: a row changed before the checkpoint is found by the explicit full verification, which seals the session and drops it',
     async (mode) => {
       const file = await built()
       const storage =
@@ -116,11 +116,12 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
       await live?.fullVerified()
       raw(file, TAMPER, 'k', 10)
       const log = live ?? (await SessionLogImpl.open(options(storage, 'r1')))
-      if (live) await expect(live.verifyHistory()).resolves.toBe(50)
+      // Neither a cold open nor a live log hashes the prefix; only the explicit full verification does.
+      await expect(log.verifyHistory({ rehashPrefix: true })).resolves.toBe(50)
       expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
       expect(log.historyVerified).toBe(false)
       // Issued while the verification is still running: held, then refused, and nothing lands.
-      const held = log.append([input('model-side write')])
+      const held = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
       await expect(log.fullVerified()).rejects.toMatchObject({
         code: 'E_LEDGER_INTEGRITY',
         detail: { seq: 10 },
@@ -136,9 +137,29 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
       expect(rowCount(file, 'ledger_verified_head_v1')).toBe(0)
       await expect(SessionLogImpl.open(options(storage, 'r2'))).rejects.toMatchObject({
         code: 'E_LEDGER_INTEGRITY',
+        detail: { seq: 10 },
       })
     },
   )
+
+  it('a live reload schedules prefix verification and retains its seal on cold reload', async () => {
+    const file = await built()
+    const storage = sqlite(file)
+    const live = await SessionLogImpl.open(options(storage, 'r1'))
+    await live.fullVerified()
+    raw(file, TAMPER, 'k', 10)
+    await expect(live.verifyHistory()).resolves.toBe(50)
+    await expect(live.fullVerified()).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+      detail: { seq: 10 },
+    })
+    await expect(live.append([input('after seal')])).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
+    await live.close()
+    await expect(SessionLogImpl.open(options(storage, 'r2'))).rejects.toMatchObject({
+      code: 'E_LEDGER_INTEGRITY',
+      detail: { seq: 10 },
+    })
+  })
 
   it('a row changed after the checkpoint: the unverified tail is hashed at open, which fails', async () => {
     const file = await built()
@@ -216,7 +237,7 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     raw(file, 'DELETE FROM events WHERE session_key = ? AND seq > ?', 'k', 45)
     raw(
       file,
-      'UPDATE ledger_heads SET seq = 45, digest = (SELECT integrity_digest FROM events WHERE session_key = ? AND seq = 45) WHERE session_key = ?',
+      'UPDATE sessions SET head_seq = 45, head_digest = (SELECT integrity_digest FROM events WHERE session_key = ? AND seq = 45) WHERE session_key = ?',
       'k',
       'k',
     )
@@ -241,27 +262,33 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     await log.close()
   })
 
-  it("a fork child's checkpoint does not hide a changed parent prefix from the child's background verify", async () => {
+  it("a fork child's checkpoint does not hide a changed parent prefix from the child's full verification", async () => {
     const file = await built()
     const storage = sqlite(file)
     const parent = await SessionLogImpl.open(options(storage, 'p1'))
     await parent.fullVerified()
     const child = await parent.forkInto(30, 'child', opener)
     expect(child.lastSeq).toBeGreaterThan(30)
+    await child.fullVerified()
     await child.close()
     await parent.close()
     expect((await storage.readVerifiedHead('child'))?.throughSeq).toBe(child.lastSeq)
     raw(file, TAMPER, 'k', 12)
     const reopened = await SessionLogImpl.open({ ...options(storage, 'c2'), key: 'child' })
     expect(reopened.openStats.checkpoint).toEqual({ used: true, throughSeq: child.lastSeq })
+    await reopened.verifyHistory({ rehashPrefix: true })
     await expect(reopened.fullVerified()).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
       detail: { seq: 12 },
     })
     await reopened.close()
     expect(await storage.readVerifiedHead('child')).toBeUndefined()
+    // With no checkpoint left the next cold open hashes the last 32 rows. The child is short enough,
+    // the inherited parent prefix included, for the changed row 12 to be among them.
+    expect(child.lastSeq).toBeLessThanOrEqual(43)
     await expect(SessionLogImpl.open({ ...options(storage, 'c3'), key: 'child' })).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
+      detail: { seq: 12 },
     })
   })
 
@@ -304,11 +331,12 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     const head = (await storage.readVerifiedHead('k'))!
     const forged = 'b'.repeat(64)
     raw(file, 'UPDATE events SET integrity_digest = ? WHERE session_key = ? AND seq = ?', forged, 'k', 50)
-    raw(file, 'UPDATE ledger_heads SET digest = ? WHERE session_key = ?', forged, 'k')
+    raw(file, 'UPDATE sessions SET head_digest = ? WHERE session_key = ?', forged, 'k')
     await storage.writeVerifiedHead(makeVerifiedHead({ ...head, headDigest: forged }), { force: true })
     // At the head: the checkpoint is used and the background verify finds the row.
     const log = await SessionLogImpl.open(options(storage, 'r1'))
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
+    await log.verifyHistory({ rehashPrefix: true })
     await expect(log.fullVerified()).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
       detail: { seq: 50 },
@@ -349,6 +377,7 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     raw(file, 'UPDATE events SET integrity_digest = ? WHERE session_key = ? AND seq = ?', recomputed, 'k', 10)
     const log = await SessionLogImpl.open(options(storage, 'r1'))
     expect(log.openStats.checkpoint).toEqual({ used: true, throughSeq: 50 })
+    await log.verifyHistory({ rehashPrefix: true })
     await expect(log.fullVerified()).rejects.toMatchObject({
       code: 'E_LEDGER_INTEGRITY',
       detail: { seq: 11 },
@@ -399,11 +428,12 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
     const reports: FullVerifyReport[] = []
     const faults: string[] = []
     const log = await SessionLogImpl.open(options(held, 'r1', { onFullVerify: (r) => reports.push(r) }))
+    await log.verifyHistory({ rehashPrefix: true })
     log.onFault((e) => faults.push(e.code))
     await expect(log.append([input('typed')], { beforeFullVerify: 'allow' })).resolves.toMatchObject({
       firstSeq: 51,
     })
-    const waiting = log.append([input('model-side')])
+    const waiting = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
     release()
     await expect(waiting).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
     expect(rowCount(file, 'events')).toBe(51)
@@ -429,8 +459,9 @@ describe('verified-head checkpoint against a tampered SQLite ledger', () => {
       return storage.scanIntegrity(key, q)
     }
     const log = await SessionLogImpl.open(options(held, 'r1'))
+    await log.verifyHistory({ rehashPrefix: true })
     await log.append([input('typed')], { beforeFullVerify: 'allow' })
-    const waiting = log.append([input('model-side')])
+    const waiting = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }])
     const closing = log.close()
     release()
     await closing
@@ -474,22 +505,16 @@ describe('perf3-review: live SQLite provider checkpoints', () => {
           await storage.writeVerifiedHead!({ ...other, sessionKey: 'k' }, { force: true })
         }
       }
-      const opening = log.verifyHistory().then(
+      await expect(log.verifyHistory({ rehashPrefix: true })).resolves.toBe(change === 'tail' ? 51 : 50)
+      const append = log.append([{ ...input('evidence'), type: 'x/approval/review', ignorable: true }]).then(
         (value) => ({ value }),
         (error) => ({ error }),
       )
-      const append = log.append([input('must not commit')]).then(
-        (value) => ({ value }),
-        (error) => ({ error }),
-      )
-      const fork = log.forkInto(5, 'review-child', opener).then(
-        (value) => ({ value }),
-        (error) => ({ error }),
-      )
-      expect(await opening).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
       await expect(log.fullVerified()).rejects.toMatchObject({ code: 'E_LEDGER_INTEGRITY' })
       expect(await append).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
-      expect(await fork).toMatchObject({ error: { code: 'E_LEDGER_INTEGRITY' } })
+      await expect(log.forkInto(5, 'review-child', opener)).rejects.toMatchObject({
+        code: 'E_LEDGER_INTEGRITY',
+      })
       expect(log.faulted).toBe(true)
       expect(rowCount(file, 'events')).toBe(change === 'tail' ? 51 : 50)
       expect(rowCount(file, 'events', 'review-child')).toBe(0)

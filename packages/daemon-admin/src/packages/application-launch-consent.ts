@@ -1,20 +1,11 @@
-import { createHash } from 'node:crypto'
+import { applicationConsentSnapshot } from '@agnes/package-manager'
 import { type AgentPlan, type ApplicationState, jcs } from '@agnes/protocol'
 
 /** A conservative coverage check, never a replacement for Host launch admission. */
 export function applicationLaunchConsent(state: ApplicationState | undefined, plan: AgentPlan) {
   const selection = state?.selection
-  const snapshot = selection?.consentSnapshot
+  const snapshot = applicationConsentSnapshot(selection)
   if (!selection?.adoptionGeneration || !snapshot) return 'unavailable'
-  const { consentDigest, ...body } = snapshot
-  if (
-    consentDigest !== selection.consentDigest ||
-    createHash('sha256').update(jcs(body)).digest('hex') !== consentDigest ||
-    snapshot.packageId !== selection.packageId ||
-    snapshot.integrity !== selection.integrity ||
-    snapshot.declarationDigest !== selection.declarationDigest
-  )
-    return 'unavailable'
   const refs = new Set([
     ...(snapshot.declaration.agents ?? []),
     ...(snapshot.declaration.defaultAgent ? [snapshot.declaration.defaultAgent] : []),

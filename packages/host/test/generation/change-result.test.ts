@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { SeamBinding } from '@agnes/host-providers/assemble/seam-rows'
 import { afterEach, describe, expect, it } from 'vitest'
 import { changeResult, seamChangesBetween } from '../../src/runtime/generation/change-result.js'
+import { generationError, generationFailure } from '../../src/runtime/generation/failure.js'
 import { createTestHost } from '../../testkit/index.js'
 
 const bind = (kind: string, provider: string, version = '1.0.0'): SeamBinding => ({
@@ -31,6 +32,18 @@ describe('seam changes between containers', () => {
   })
 
   it('carries a refusal as a result, with whether the previous state held', () => {
+    const structured = generationFailure(
+      Object.assign(new Error('E_LEASE_EXPIRED is diagnostic text'), {
+        code: 'E_SEAM_INIT',
+        detail: { reason: 'provider-unavailable' },
+      }),
+    )
+    expect(structured).toMatchObject({ code: 'E_SEAM_INIT', reason: 'provider-unavailable' })
+    expect(generationFailure(new Error('E_LEASE_EXPIRED is only text')).code).toBe('E_GENERATION')
+    expect(generationFailure(generationError('E_GENERATION_INCOMPATIBLE', 'old deployment')).code).toBe(
+      'E_GENERATION_INCOMPATIBLE',
+    )
+
     const rejected = changeResult({
       outcome: 'rejected',
       generationId: 'g',

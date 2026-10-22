@@ -396,6 +396,16 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
       version: packageVersion,
       packageIdentity: origin.packageId,
       packageVersion,
+      ...(origin.configDigest
+        ? {
+            executionBinding: {
+              rowId: origin.rowId,
+              exportName: origin.exportName,
+              snapshotId: origin.snapshotId,
+              configDigest: origin.configDigest,
+            },
+          }
+        : {}),
       lease,
       signal: ac.signal,
       ports: () => (record.state === 'live' ? activation?.ports : undefined),

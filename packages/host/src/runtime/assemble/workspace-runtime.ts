@@ -9,6 +9,7 @@ import { commandHookInvocationSnapshot } from '@agnes/host-common/profile-policy
 import type { WorkspaceBinding } from '@agnes/host-common/workspace-authority'
 import {
   compileWorkspacePolicy,
+  intersectWorkspacePlan,
   memoryRequiresFileIsolation,
   normalizeSandboxStaticConfig,
 } from '@agnes/host-common/workspace-policy'
@@ -30,11 +31,10 @@ import {
 } from '@agnes/host-infrastructure/workspace-seam-contexts'
 import {
   bindStartupSandboxProvider,
-  LOCAL_SANDBOX_PROVIDER_ID,
   sandboxProviderIdFrom,
 } from '@agnes/host-providers/adapters/sandbox-providers'
 import { SessionSandboxStore } from '@agnes/host-providers/profile/sandbox-state'
-import { isWorkspaceHooksTrusted } from '@agnes/package-manager'
+import { isWorkspaceHooksTrusted, RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { remoteSandboxModule } from '../adapters/index.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
@@ -67,6 +67,11 @@ function createReadinessManager(
       throw new HostError('E_SANDBOX_WORKSPACE', 'workspace readiness has no compiled policy', {
         detail: { reason: 'workspace-policy-missing' },
       })
+    if (plan.staticConfig.loopbackServe && (adapters.transport || adapters.platform.os !== 'darwin'))
+      throw new HostError(
+        'E_SANDBOX_WORKSPACE',
+        'loopback serving is available only with the local macOS L1 Seatbelt provider',
+      )
     if (adapters.transport && plan.staticConfig.onUnavailable === 'allow-if-unimplemented')
       throw new HostError(
         'E_SANDBOX_WORKSPACE',
@@ -84,7 +89,12 @@ function createReadinessManager(
         },
       })
     const providerId = sandboxProviderIdFrom(ctx.profile)
-    if (providerId !== LOCAL_SANDBOX_PROVIDER_ID) {
+    if (providerId !== RELEASE_DEFAULTS.sandboxProvider) {
+      if (plan.staticConfig.loopbackServe)
+        throw new HostError(
+          'E_SANDBOX_WORKSPACE',
+          'loopback serving requires the local macOS L1 Seatbelt provider',
+        )
       await bindStartupSandboxProvider(sandboxProviderSlot, ctx.profile, plan.policy.workspaceRoot, undefined)
       const selected = sandboxProviderSlot.selected
       if (!selected) throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox provider instance is unavailable')
@@ -220,7 +230,7 @@ function workspaceSandboxPolicy(
   const { adapters } = proc
   const requestedSandbox = normalizeSandboxStaticConfig(preset)
   const implementation =
-    !adapters.transport && sandboxProviderIdFrom(ctx.profile) === LOCAL_SANDBOX_PROVIDER_ID
+    !adapters.transport && sandboxProviderIdFrom(ctx.profile) === RELEASE_DEFAULTS.sandboxProvider
       ? localSandboxImplementation(ctx.profile, pkgs.modules, adapters.platform.os)
       : 'unknown'
   const unconfined =
@@ -254,6 +264,7 @@ export type WorkspaceRuntimeFactory = Readonly<{
     binding: WorkspaceBinding,
     preset?: PresetDoc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
+    ceiling?: import('@agnes/core').FsPolicy,
   ): Promise<SessionWorkspaceRuntime>
 }>
 
@@ -279,6 +290,7 @@ export function createWorkspaceRuntimeFactory(
     binding: WorkspaceBinding,
     preset: PresetDoc = presets.defaultPreset.doc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
+    ceiling?: import('@agnes/core').FsPolicy,
   ): Promise<SessionWorkspaceRuntime> => {
     const { implementation, unconfined, requiresFileIsolation, sandboxConfig } = workspaceSandboxPolicy(
       ctx,
@@ -343,7 +355,7 @@ export function createWorkspaceRuntimeFactory(
         const sessionFence = openedFence as SessionWorkspaceFence
         if (!adapters.transport && adapters.platform.os === 'linux')
           await prepareSandboxWorkspaceAncestor(sessionFence.root)
-        const plan = await compileWorkspacePolicy({
+        const compiled = await compileWorkspacePolicy({
           canonicalRoot: sessionFence.root,
           dataDir,
           homeDir: deps.homeDir ?? homedir(),
@@ -357,6 +369,7 @@ export function createWorkspaceRuntimeFactory(
           staticConfig: sandboxConfig,
           canonicalize: (path, options) => sessionFence.fs.canonicalize(path, options),
         })
+        const plan = ceiling ? intersectWorkspacePlan(compiled, ceiling) : compiled
         const rootIdentity = plan.semantics.caseSensitive
           ? plan.policy.workspaceRoot
           : plan.policy.workspaceRoot.toLocaleLowerCase('en-US')
@@ -431,7 +444,7 @@ export function createWorkspaceRuntimeFactory(
           execBackend: posture.execBackend,
           enforcement: posture.enforcement,
           requiredFileIsolation: requiresFileIsolation,
-          ...(providerId === LOCAL_SANDBOX_PROVIDER_ID ? {} : { providerId }),
+          ...(providerId === RELEASE_DEFAULTS.sandboxProvider ? {} : { providerId }),
           exec: fence.exec,
           openProcess: fence.openProcess,
           binding: fence.binding,

@@ -723,7 +723,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'sessions') {
+    // approvals, schedules, triggers, settings and credentials share sessions' boot and entry point.
+    if (/^(sessions|approvals|schedules|triggers|settings|credentials)$/.test(p.command ?? '')) {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { sessionsCommand } = await import('./commands/sessions.js')
@@ -743,7 +744,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     }
     if (
       (p.command === 'plugins' &&
-        !['reload', 'publication-status', 'provenance', 'candidates'].includes(p.positional[0] ?? '')) ||
+        !/^(reload|publication-status|provenance|candidates|config|tree|generations)$/.test(
+          p.positional[0] ?? '',
+        )) ||
       p.command === 'package' ||
       p.command === 'install'
     ) {
@@ -771,14 +774,12 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'plugins' || p.command === 'dev') {
+    if (p.command === 'plugins' || p.command === 'dev' || p.command === 'app') {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
-        const { runPluginDevelopmentCommand } = await import('./commands/plugins.js')
-        await runPluginDevelopmentCommand({ ...p, profile: booted.profileName }, booted.client, (text) =>
-          io.stdout.write(text),
-        )
-        return ExitCode.OK
+        const { runPluginDevelopmentCommand: run } = await import('./commands/plugins.js')
+        const w = (t: string) => io.stdout.write(t)
+        return (await run({ ...p, profile: booted.profileName }, booted.client, w)) ?? ExitCode.OK
       } finally {
         await booted.close().catch(() => undefined)
       }
@@ -953,6 +954,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                   signal: () => signal,
                   ...(resourceController ? { resourceController } : {}),
                   composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
+                  agnesVersion: io.agnesVersion,
                 })
               : runPrint(booted, p, {
                   locale: io.env.LC_ALL ?? io.env.LC_MESSAGES ?? io.env.LANG ?? 'en',

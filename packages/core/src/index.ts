@@ -1,3 +1,7 @@
+export * from './child/role-authority.js'
+export { readRoleDelegation } from './child/role-snapshot.js'
+export type { ChildRolePort, ResolvedChildRole, RoleDelegation } from './child/roles.js'
+export { ToolRegistryView } from './registry/tool-allow.js'
 // The model seam is declared in protocol, the one package both sides of it may depend on, and is
 // re-exported here so a caller assembling a session against core does not have to reach past core
 // for the single interface its step machine calls every step.
@@ -126,7 +130,7 @@ export type {
   WorkspaceInvocationView,
   WorkspacePublicationDispatch,
 } from '@agnes/core-effects/workspace/runtime'
-export { createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
+export { createSessionFileReader, createWorkspaceInvocationPort } from '@agnes/core-effects/workspace/runtime'
 export { decisionSubjectDigest, leanEvents, reduceDecision } from '@agnes/core-ledger'
 export { CORE_CHECKS } from '@agnes/core-ledger/invariants/core-checks'
 export type { InvariantCheck, Violation } from '@agnes/core-ledger/invariants/registry'
@@ -206,7 +210,7 @@ export {
 export { DEFAULT_LOOP } from '@agnes/extension-api'
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
-export { bindChildAgentSession, runLoopChild } from './child/loop-port.js'
+export { bindChildAgentSession } from './child/loop-port.js'
 export { type ChildModelScope, setChildModelScope } from './child/model-scope.js'
 export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
 export {
@@ -262,6 +266,7 @@ export type {
   ExecutionDomain,
   RegisteredTool,
   RegistrySnapshot,
+  ToolExecutionBinding,
   ToolSource,
   TrustTier,
 } from './registry/tools.js'

@@ -37,6 +37,11 @@ async function guide(kind: string) {
       'client/index.js',
       'src/index.ts',
     ])
+    for (const preview of modelGuide.previewFiles) {
+      const full = receipt.structured.files.find((file: Source) => file.path === preview.path)
+      expect(full.content.startsWith(preview.content)).toBe(true)
+      expect(preview.truncated).toBe(preview.content !== full.content)
+    }
     expect(modelGuide.files).toBeUndefined()
     expect(receipt.structured.files.map((file: Source) => file.path)).toEqual(modelGuide.templateFiles)
   }

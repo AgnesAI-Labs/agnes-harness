@@ -1,12 +1,12 @@
-import { CoreError } from '@agnes/core'
+import { CoreError, roleAuthority } from '@agnes/core'
 import { isProfileDecisionJournal, rpcError } from '@agnes/protocol'
+import { restoreRolePolicy, roleWorkspacePreset } from '../sessions/role-policy.js'
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import { type Kernel, leanEvents, type WorkspaceInvocationPort } from '@agnes/core'
+import type { Kernel, WorkspaceInvocationPort } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { presetNameAllowed, selectionAllowed } from '@agnes/host-common/presets/admission'
-import { legacyPermission } from '@agnes/host-common/presets/permission'
 import { type ResolvedPreset, resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { canonicalJson, sha256hex } from '@agnes/host-common/profile/canonical'
@@ -60,7 +60,7 @@ import {
   validatePresetSwitch,
 } from '../sessions/session-switch.js'
 import { createTitleQueue, startSessionTitle } from '../sessions/session-title.js'
-import { readSessionView } from '../sessions/session-view.js'
+import { readStoredSessionView } from '../sessions/session-view.js'
 import { adminSecurityStatus } from './admin-security-status.js'
 import type { HostConvergenceReport, HostPublicationReport } from './host-facade.js'
 import { registerHostIdle } from './host-idle.js'
@@ -95,11 +95,7 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
    *  background title generation every session otherwise gets. Production callers never set this. */
   disableSessionTitle?: boolean
   /** Host-private per-binding runtime constructor. Required for authenticated multi-workspace opens. */
-  openWorkspaceRuntime?(
-    binding: WorkspaceBinding,
-    preset?: PresetDoc,
-    invocation?: import('@agnes/core').WorkspaceInvocationPort,
-  ): Promise<SessionWorkspaceRuntime>
+  openWorkspaceRuntime?: Assembled['openWorkspaceRuntime']
 }
 
 export interface Host {
@@ -114,6 +110,8 @@ export interface Host {
   executionIdentity?(sessionKey?: string): string
   compositionSessions?(): readonly LiveCompositionSession[]
   sessionCapabilities?(sessionKey: string): import('@agnes/protocol').SessionCapabilitySet
+  /** Backend snapshot through the real workspace Skill view, including for a not-yet-open role. */
+  captureSessionCapabilities?: Assembled['captureSessionCapabilities']
   pluginGenerationStatus?(): PluginGenerationStatus
   /** Read-only status with cooperative integrity verification of historical snapshots. */
   pluginGenerationStatusAsync?(): Promise<PluginGenerationStatus>
@@ -415,26 +413,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         limit,
         order: 'asc',
       }),
-    readSessionView: (sessionKey, options) =>
-      readSessionView(
-        async (key, query) =>
-          leanEvents(
-            await (
-              a.kernel.o.storage.scanLean?.bind(a.kernel.o.storage) ??
-              a.kernel.o.storage.scan.bind(a.kernel.o.storage)
-            )(key, {
-              ...(query.fromSeq === undefined ? {} : { fromSeq: query.fromSeq }),
-              ...(query.toSeq === undefined ? {} : { toSeq: query.toSeq }),
-              limit: query.limit,
-              order: query.order ?? 'asc',
-            }),
-          ),
-        sessionKey,
-        {
-          budget: { events: 2000, bytes: 8 * 1024 * 1024, timeMs: 750 },
-          ...options,
-        },
-      ),
+    readSessionView: (sessionKey, options) => readStoredSessionView(a.kernel.o.storage, sessionKey, options),
     get provider() {
       return a.provider
     },
@@ -495,6 +474,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     },
     presets: a.presets,
     sessionCapabilities: (key) => a.sessionCapabilities(key),
+    captureSessionCapabilities: a.captureSessionCapabilities,
     resolveActor: (credential, surface) => a.seams.principals.resolve(credential, surface),
     acceptWorkspaceBinding: (envelope, expectedSessionKey) =>
       workspaceBindings.accept(envelope, expectedSessionKey),
@@ -511,6 +491,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
       })
       pendingSessionOpens.add(opening)
       try {
+        o = await restoreRolePolicy(a.adapters.storage, o)
         if (!o.parent && o.preset === undefined) {
           const existingKey = o.key ?? o.binding?.sessionKey
           const existing = existingKey
@@ -551,13 +532,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             ...(o.defaultPermission !== undefined ? { defaultPermission: o.defaultPermission } : {}),
           })
           const presetName = selection.name
-          if (
-            !selectionAllowed(
-              profile,
-              presetName,
-              selection.permission ?? selection.fallback ?? legacyPermission(presetName),
-            )
-          )
+          if (!selectionAllowed(profile, presetName, selection.permission ?? selection.fallback))
             throw new HostError('E_PRESET_UNSUPPORTED', `preset ${presetName} is not in presets.allowed`, {
               detail: { source: presetName, capability: 'preset' },
             })
@@ -628,7 +603,6 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           const openWorkspaceRuntime = opts.openWorkspaceRuntime ?? a.openWorkspaceRuntime
           const binding = o.binding as WorkspaceBinding
           const inheritedView = o.parent ? a.kernel.get(o.parent.key)?.preset : undefined
-          const inheritedPreset = inheritedView?.name
           if (!o.parent) {
             const [selection] = await a.adapters.storage.scan(binding.sessionKey, {
               type: ['session/start', 'x/core/preset-switch'],
@@ -657,13 +631,15 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             ...(o.permission !== undefined ? { permission: o.permission } : {}),
             ...(o.defaultPermission !== undefined ? { defaultPermission: o.defaultPermission } : {}),
           })
-          const runtimePreset = resolvePreset(runtimeSelection.name, a.presets, {
+          let runtimePreset = resolvePreset(runtimeSelection.name, a.presets, {
             ...a.sessionPresetLimits(),
             ...(runtimeSelection.permission ? { permission: runtimeSelection.permission } : {}),
             ...(runtimeSelection.fallback ? { carry: runtimeSelection.fallback } : {}),
           }).doc
+          const authority = o.roleDelegation ? roleAuthority(o.roleDelegation) : undefined
+          runtimePreset = roleWorkspacePreset(runtimePreset, authority)
           const runtime = await workspaceRuntimes.open(binding, (invocation) =>
-            openWorkspaceRuntime(binding, runtimePreset, invocation),
+            openWorkspaceRuntime(binding, runtimePreset, invocation, authority?.filesystem),
           )
           workspace = Object.freeze({
             runtime,

@@ -323,6 +323,7 @@ export function registerDiagnostics(
     localOwner(c)
     deps.requireSessionOwner('diagnostics.events', sessionId, c)
     const { session } = deps.registry.require(sessionId)
+    await session.requireVerifiedHistory()
     // Snapshot first, as session.attach does: rows appended after this cut belong to a later export.
     const lastSeq = session.lastSeq
     const rows = (await session.scan({ fromSeq: afterSeq + 1, limit })) as readonly EventEnvelope[]

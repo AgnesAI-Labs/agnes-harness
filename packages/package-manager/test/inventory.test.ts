@@ -138,10 +138,17 @@ it('shares an ordinary in-flight read, then verifies bytes again even without a 
   const warm = await f.manager.inventory(f.profileDir)
   expect(warm).toEqual(first)
   expect(await f.manager.inventory(f.profileDir, { fresh: true })).toEqual(first)
+  const [fresh, follower] = await Promise.all([
+    f.manager.inventory(f.profileDir, { fresh: true }),
+    f.manager.inventory(f.profileDir),
+  ])
+  expect(fresh).toBe(follower)
+  expect(fresh).toEqual(first)
   writeFileSync(join(f.directory, 'index.mjs'), 'changed bytes')
   const failures = await Promise.allSettled([
     f.manager.inventory(f.profileDir),
     f.manager.inventory(f.profileDir),
+    f.manager.inventory(f.profileDir, { fresh: true }),
   ])
   expect(failures.every((result) => result.status === 'rejected')).toBe(true)
   writeFileSync(join(f.directory, 'index.mjs'), 'export const main = () => {}\n')
@@ -165,6 +172,10 @@ it('cuts read boundaries on mutations, fresh verification and administrator poli
   const denied = f.manager.inventory(f.profileDir)
   expect(await oldPolicy).not.toBe(await denied)
   expect((await denied).packages[0]?.blockers).toContainEqual({
+    code: 'policy',
+    references: ['capability-blocked', 'ui'],
+  })
+  expect((await f.manager.inventory(f.profileDir, { fresh: true })).packages[0]?.blockers).toContainEqual({
     code: 'policy',
     references: ['capability-blocked', 'ui'],
   })
@@ -394,4 +405,88 @@ it('opens an earlier reviewed snapshot without granting newly discovered streams
   expect(() => readInventory(changed, { dataDir: f.root, profileDir: f.profileDir })).toThrow(
     'metadata differs',
   )
+})
+
+it('serves a settled read from the last complete one: no lock, no re-hash, until a write or a boundary change', async () => {
+  const f = await currentFixture()
+  const first = await f.manager.inventory(f.profileDir)
+  const index = join(f.directory, 'index.mjs')
+  const lockFile = join(f.profileDir, '.agnes-lock.lock')
+  // A live holder of the package lock and an edit to installed bytes: nothing an ordinary read tolerates.
+  writeFileSync(lockFile, String(process.pid))
+  writeFileSync(index, 'changed bytes')
+  try {
+    const settled = await Promise.race([
+      f.manager.inventory(f.profileDir, { settled: true }),
+      new Promise<'waited'>((done) => setTimeout(() => done('waited'), 2000)),
+    ])
+    expect(settled).toBe(first)
+  } finally {
+    rmSync(lockFile, { force: true })
+  }
+  // Ordinary and fresh reads keep verifying bytes: the guarantee given up is for settled readers only.
+  await expect(f.manager.inventory(f.profileDir, { fresh: true })).rejects.toBeDefined()
+  // Once a verifying read has failed, the earlier complete one is no longer served.
+  await expect(f.manager.inventory(f.profileDir, { settled: true })).rejects.toBeDefined()
+})
+
+it('stops serving the settled read after an ordinary read fails verification', async () => {
+  const f = await currentFixture()
+  const first = await f.manager.inventory(f.profileDir)
+  writeFileSync(join(f.directory, 'index.mjs'), 'changed bytes')
+  expect(await f.manager.inventory(f.profileDir, { settled: true })).toBe(first)
+  await expect(f.manager.inventory(f.profileDir)).rejects.toBeDefined()
+  await expect(f.manager.inventory(f.profileDir, { settled: true })).rejects.toBeDefined()
+})
+
+it('registers the first settled read and refreshes the settled one on every ordinary or fresh read', async () => {
+  const f = await currentFixture()
+  const first = await f.manager.inventory(f.profileDir, { settled: true })
+  expect(await f.manager.inventory(f.profileDir, { settled: true })).toBe(first)
+  const ordinary = await f.manager.inventory(f.profileDir)
+  expect(ordinary).not.toBe(first)
+  expect(await f.manager.inventory(f.profileDir, { settled: true })).toBe(ordinary)
+  const fresh = await f.manager.inventory(f.profileDir, { fresh: true })
+  expect(await f.manager.inventory(f.profileDir, { settled: true })).toBe(fresh)
+  // `fresh` wins over `settled`: a publication read is never answered from memory.
+  expect(await f.manager.inventory(f.profileDir, { fresh: true, settled: true })).not.toBe(fresh)
+})
+
+it('drops the settled read on a package write, a changed policy file, and a write that overlapped the read', async () => {
+  const f = await currentFixture()
+  const same = async () => {
+    const settled = await f.manager.inventory(f.profileDir, { settled: true })
+    // Equivalence: whatever a settled read returns is what a verifying read returns now.
+    expect(settled).toEqual(await f.manager.inventory(f.profileDir, { fresh: true }))
+    return settled
+  }
+  expect((await same()).packages[0]?.enabled).toBe(true)
+  await f.manager.enable(f.profileDir, f.id, false)
+  expect((await same()).packages[0]?.enabled).toBe(false)
+  await f.manager.enable(f.profileDir, f.id, true)
+  expect((await same()).packages[0]?.enabled).toBe(true)
+  // Another process rewriting a policy file changes the boundary, not this process's epoch.
+  await f.manager.inventory(f.profileDir, { settled: true })
+  writeFileSync(join(f.profileDir, 'plugin-capabilities.json'), JSON.stringify({ deny: ['ui'] }))
+  expect((await same()).packages[0]?.blockers).toContainEqual({
+    code: 'policy',
+    references: ['capability-blocked', 'ui'],
+  })
+  writeFileSync(join(f.profileDir, 'plugin-capabilities.json'), '{}')
+  expect((await same()).packages[0]?.blockers).toEqual([])
+  // A write that starts while a read is running, without touching the boundary files: the read's
+  // result must not become the settled one while that write is still waiting for the lock.
+  const overlapped = f.manager.inventory(f.profileDir)
+  const recovery = f.manager.recover(f.profileDir)
+  const read = await overlapped
+  expect(await f.manager.inventory(f.profileDir, { settled: true })).not.toBe(read)
+  await recovery
+})
+
+it('keeps the settled read across pin bookkeeping, which changes neither the lock nor the trees', async () => {
+  const f = await currentFixture()
+  const first = await f.manager.inventory(f.profileDir)
+  await f.manager.collectRuntimeSnapshots(f.profileDir)
+  await f.manager.listRuntimePins(f.profileDir)
+  expect(await f.manager.inventory(f.profileDir, { settled: true })).toBe(first)
 })

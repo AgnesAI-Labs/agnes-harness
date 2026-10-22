@@ -1,7 +1,7 @@
 import type { HostToolDispatchPort } from '@agnes/core'
 
 /** Host-private final hop for the one built-in Computer Use tool. Core has already consumed the
- * durable execute permit and verified the exact built-in package attestation before this runs. */
+ * durable execute permit and verified the Host execution-domain attestation before this runs. */
 export function createComputerUseHostDispatchPort(): HostToolDispatchPort {
   return Object.freeze({
     async dispatch(input) {

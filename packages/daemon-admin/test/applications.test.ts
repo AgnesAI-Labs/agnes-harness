@@ -10,13 +10,14 @@ import {
 } from '@agnes/host'
 import type { InstalledPackage } from '@agnes/package-manager'
 import {
+  applicationConsentSnapshot,
   capabilityHash,
   createPackageManager,
   emptyLock,
   parseSource,
   writeLock,
 } from '@agnes/package-manager'
-import { type AgentPlan, validatePackageAdminCall } from '@agnes/protocol'
+import { type AgentPlan, jcs, sha256Hex, validatePackageAdminCall } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { createAgentLaunches } from '../src/packages/agent-launches.js'
 import { Applications } from '../src/packages/applications.js'
@@ -55,10 +56,16 @@ async function fixture(resolveAgent?: (profile: string, ref: string) => Promise<
     },
   })
   let packages = [make('a'), make('b')]
+  const inventoryOptions: Array<{ fresh?: boolean; settled?: boolean } | undefined> = []
   const inactive = new Set<string>()
   const applications = new Applications({
     ...(resolveAgent ? { resolveAgent } : {}),
-    manager: { inventory: async () => ({ profile: 'local-dev', hash: '', packages }) },
+    manager: {
+      inventory: async (_directory, options) => {
+        inventoryOptions.push(options)
+        return { profile: 'local-dev', hash: '', packages }
+      },
+    },
     profileDirectory: async () => directory,
     active: async (_profile, id) => !inactive.has(id),
     home,
@@ -74,6 +81,7 @@ async function fixture(resolveAgent?: (profile: string, ref: string) => Promise<
     directory,
     config,
     applications,
+    inventoryOptions,
     adopt,
     packages: () => packages,
     setActive(id: string, active: boolean) {
@@ -805,7 +813,7 @@ function launchReviewPlan(): AgentPlan {
   }
 }
 
-it.each(['snapshot', 'selection', 'launch-plan'] as const)(
+it.each(['snapshot', 'selection', 'launch-plan', 'application-id', 'declaration-body'] as const)(
   'launch-review: alteration of the persisted %s cannot manufacture covered consent',
   async (change) => {
     const plan = launchReviewPlan()
@@ -819,7 +827,19 @@ it.each(['snapshot', 'selection', 'launch-plan'] as const)(
     if (change === 'selection') saved.selection!.consentDigest = 'f'.repeat(64)
     if (change === 'launch-plan')
       saved.selection!.consentSnapshot!.agentLaunches = [{ ...plan, digest: 'tampered' }]
+    if (change === 'application-id') saved.selection!.applicationId = 'other-app'
+    if (change === 'declaration-body') {
+      const snapshot = saved.selection!.consentSnapshot!
+      snapshot.declaration.brand = { name: { en: 'forged' } }
+      const { consentDigest: _digest, ...body } = snapshot
+      snapshot.consentDigest = saved.selection!.consentDigest = sha256Hex(jcs(body))
+    }
+    expect(applicationConsentSnapshot(saved.selection)).toBeUndefined()
     await f.config.saveApplication(saved)
+    expect((await f.applications.preview('local-dev', 'a')).dependencyDiff).toEqual({
+      status: 'unknown',
+      reason: 'previous-consent-unavailable',
+    })
     const facade = createAgentLaunches({
       directory: join(f.home, 'launches'),
       backend: {
@@ -841,3 +861,14 @@ it.each(['snapshot', 'selection', 'launch-plan'] as const)(
     })
   },
 )
+
+it('reads the application state from the settled inventory, but never previews or adopts from it', async () => {
+  const f = await fixture()
+  f.inventoryOptions.length = 0
+  await f.applications.get('local-dev')
+  expect(f.inventoryOptions).toEqual([{ settled: true }])
+  f.inventoryOptions.length = 0
+  await f.adopt('a')
+  // get, preview, adopt (fresh), and the get adopt returns: only the display reads are settled.
+  expect(f.inventoryOptions).toEqual([{ settled: true }, undefined, { fresh: true }, { settled: true }])
+})

@@ -680,7 +680,9 @@ describe('a process that dies around a side call', () => {
       try {
         return {
           events: raw.prepare('SELECT * FROM events WHERE session_key = ? ORDER BY seq').all(session.key),
-          head: raw.prepare('SELECT * FROM ledger_heads WHERE session_key = ?').get(session.key),
+          head: raw
+            .prepare('SELECT head_version, head_seq, head_digest FROM sessions WHERE session_key = ?')
+            .get(session.key),
           registers: raw
             .prepare('SELECT * FROM registers WHERE session_key = ? ORDER BY register, key')
             .all(session.key),

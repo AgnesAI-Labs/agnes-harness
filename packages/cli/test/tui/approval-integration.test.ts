@@ -66,7 +66,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       await vi.waitFor(
         async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'Approval: write',
+            'Approval: Write file · receipt.txt',
           ),
         { timeout: 10_000 },
       )
@@ -147,7 +147,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       if (mode !== 'stop') {
         await Promise.resolve()
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
-          'Approval: write',
+          'Approval: Write file · receipt.txt',
         )
       }
     } finally {

@@ -28,6 +28,47 @@ describe('setPreset command', () => {
   })
 })
 
+it.each(['verified', 'E_LEDGER_INTEGRITY', 'E_STORAGE_FAULT'] as const)(
+  'preserves audit results and failure sequences across the worker command boundary (%s)',
+  async (outcome) => {
+    const status =
+      outcome === 'verified'
+        ? { state: 'verified', verifiedThroughSeq: 20, lastSeq: 20, legacyThroughSeq: 0, verifiedAtMs: 1000 }
+        : {
+            state: 'failed',
+            verifiedThroughSeq: 0,
+            lastSeq: 20,
+            legacyThroughSeq: 0,
+            ...(outcome === 'E_LEDGER_INTEGRITY' ? { failureSeq: 7 } : {}),
+          }
+    const failure = Object.assign(new Error(outcome), { code: outcome })
+    const session = {
+      integrityStatus: () => status,
+      auditHistory: async () => {
+        if (outcome !== 'verified') throw failure
+        return status
+      },
+      requireVerifiedHistory: async () => {
+        if (outcome !== 'verified') throw failure
+      },
+    } as unknown as HostSession
+    const command = (method: 'integrityStatus' | 'auditHistory' | 'requireVerifiedHistory') =>
+      handleCommand(
+        session,
+        { kind: 'command', requestId: 'audit', method, params: {} },
+        {
+          host: {} as Host,
+          aborts: new Map(),
+        },
+      )
+    await expect(command('integrityStatus')).resolves.toEqual(status)
+    if (outcome === 'E_STORAGE_FAULT') await expect(command('auditHistory')).rejects.toBe(failure)
+    else await expect(command('auditHistory')).resolves.toEqual(status)
+    if (outcome === 'verified') await expect(command('requireVerifiedHistory')).resolves.toEqual({})
+    else await expect(command('requireVerifiedHistory')).rejects.toBe(failure)
+  },
+)
+
 it('exposes publication status and migration only through an assembled Host', async () => {
   const publication = {
     operation: 'models' as const,

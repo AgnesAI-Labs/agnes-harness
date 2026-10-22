@@ -4,11 +4,23 @@ import { lstat, readdir, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { AGH_DIR, type ContentBlock, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+import {
+  AGH_DIR,
+  type ContentBlock,
+  type ReferenceSearchResult,
+  WORKSPACE_SECRET_DIRS,
+} from '@agnes/protocol'
+import type { Locale } from './locale.js'
+import { tt } from './locale-extended.js'
 
 /** A workspace path the `@` menu offers, relative to the working directory. */
 export type MentionItem = { id: string; directory: boolean }
-export type MentionState = { status: 'loading' | 'ready' | 'failed'; items: readonly MentionItem[] }
+export type MentionState = {
+  status: 'loading' | 'ready' | 'failed'
+  items: readonly MentionItem[]
+  /** One line saying why a search failed; shown in place of the generic failure note. */
+  reason?: string
+}
 
 // `@` opens a mention only at the start of a word, so `a@b.com` is not one. A quoted form carries
 // paths with spaces; the quote stays open while the path is still being chosen.
@@ -61,10 +73,12 @@ const inside = (root: string, path: string): boolean => {
  * inside a repository; elsewhere a bounded walk does, without ignore files. Runs without a shell.
  */
 export async function listWorkspaceFiles(cwd: string): Promise<string[]> {
+  if (process.env.AGNES_HOME?.trim())
+    throw new Error(
+      'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).',
+    )
   const root = await realpath(cwd)
-  const home = resolve(
-    process.env.AGH_HOME || process.env.AGNES_HOME || join(process.env.HOME || homedir(), AGH_DIR),
-  )
+  const home = resolve(process.env.AGH_HOME || join(process.env.HOME || homedir(), AGH_DIR))
   const homes = [home, await realpath(home).catch(() => home)]
   const hidden = (rel: string): boolean =>
     rel.split('/').includes('.git') ||
@@ -245,6 +259,125 @@ export class FileMentionSource {
   }
 }
 
+/** Daemon text is untrusted: no control or escape characters, one line, bounded. */
+export function oneLine(text: string, max = 120): string {
+  const clean = text
+    .replace(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean
+}
+
+const noControls = (text: string): boolean => oneLine(text, Number.POSITIVE_INFINITY) === text
+
+/** A workspace-relative path: not absolute, no `~`, no `..` step out of the workspace. */
+const relativeInside = (id: string): boolean =>
+  !isAbsolute(id) && !/^[A-Za-z]:/u.test(id) && !id.startsWith('~') && !id.split(/[\\/]/u).includes('..')
+
+const unavailable = (error: unknown): boolean => {
+  const code = (error as { data?: { code?: unknown } } | null)?.data?.code
+  return code === 'METHOD_NOT_FOUND' || code === 'CAPABILITY_DENIED'
+}
+
+/**
+ * Completes `@` through the daemon's `session.references.search`, so the files offered belong to the
+ * session's workspace wherever the daemon runs. One request per distinct query, answered
+ * synchronously from the cache; while a query is in flight the previous answer stays on screen.
+ * `fallback` (local embedded daemon only) takes over for good when the daemon lacks the method; with
+ * none (a remote connection) this never reads the local disk, and the failure is the answer.
+ */
+export class ReferenceMentionSource {
+  private readonly cache = new Map<string, { at: number; state: MentionState }>()
+  private readonly inflight = new Set<string>()
+  private last: readonly MentionItem[] = []
+  private disposed = false
+
+  constructor(
+    private readonly search: (query: string) => Promise<ReferenceSearchResult>,
+    private readonly changed: () => void,
+    private readonly describe: (error: unknown) => string,
+    private readonly fallback?: { get(query: string): MentionState; dispose(): void },
+    private readonly now: () => number = Date.now,
+  ) {}
+
+  get(query: string): MentionState {
+    if (this.fallback && this.latched) return this.fallback.get(query)
+    const hit = this.cache.get(query)
+    if (hit && this.now() - hit.at <= STALE_MS) return hit.state
+    if (!this.inflight.has(query)) this.fetch(query)
+    return hit?.state ?? { status: 'loading', items: this.last }
+  }
+
+  dispose(): void {
+    this.disposed = true
+    this.fallback?.dispose()
+  }
+
+  /** Forget what the previous session answered; the next `get` asks the current one. */
+  reset(): void {
+    this.cache.clear()
+    this.last = []
+    this.latched = false
+  }
+
+  private latched = false
+
+  private fetch(query: string): void {
+    this.inflight.add(query)
+    Promise.resolve()
+      .then(() => this.search(query))
+      .then(
+        (result) => {
+          // Only workspace files are completed here; other sources have no `@path` form.
+          const items = result.items
+            .filter(
+              (item) => item.source === 'file' && item.id && noControls(item.id) && relativeInside(item.id),
+            )
+            .map((item) => ({ id: item.id, directory: false }))
+          this.last = items
+          this.store(query, { status: 'ready', items })
+        },
+        (error: unknown) => {
+          if (this.fallback && unavailable(error)) this.latched = true
+          else this.store(query, { status: 'failed', items: [], reason: oneLine(this.describe(error)) })
+        },
+      )
+      .finally(() => {
+        this.inflight.delete(query)
+        if (!this.disposed) this.changed()
+      })
+  }
+
+  private store(query: string, state: MentionState): void {
+    if (this.cache.size >= 200) this.cache.clear()
+    this.cache.set(query, { at: this.now(), state })
+  }
+}
+
+/**
+ * The `@` source for a session. `remote` is true for `--connect`: the daemon's workspace is not this
+ * machine's, so the local disk is never consulted. An embedded daemon shares the disk and may fall back.
+ */
+export function createMentionSource(o: {
+  session: { searchReferences(query: string): Promise<ReferenceSearchResult> }
+  cwd: string
+  remote: boolean
+  locale: Locale
+  changed: () => void
+}): ReferenceMentionSource {
+  const describe = (error: unknown): string => {
+    if (unavailable(error)) return tt('composer.mentionUnavailable', o.locale)
+    const message = error instanceof Error ? error.message : String(error)
+    return tt('composer.mentionFailedReason', o.locale, { reason: oneLine(message) })
+  }
+  return new ReferenceMentionSource(
+    (query) => o.session.searchReferences(query),
+    o.changed,
+    describe,
+    o.remote ? undefined : new FileMentionSource(() => listWorkspaceFiles(o.cwd), o.changed),
+  )
+}
+
 // `@` at the start of a word, then a quoted path or a run of non-space characters.
 const MENTION = /(^|\s)@(?:"([^"\n]+)"|([^\s@"]+))/gu
 
@@ -254,7 +387,10 @@ const MENTION = /(^|\s)@(?:"([^"\n]+)"|([^\s@"]+))/gu
  * strips the `@` from the text left behind. Only the location travels; nothing is read. A mention
  * that names nothing (`@alice`) stays as typed.
  */
-export function attachmentsFrom(text: string, cwd: string): ContentBlock[] {
+export function attachmentsFrom(text: string, cwd: string, remote = false): ContentBlock[] {
+  // Over --connect this machine's disk is not the session's workspace: send the text as typed, never a
+  // local file:// location.
+  if (remote) return [{ type: 'text', text }]
   const links: ContentBlock[] = []
   const cleaned = text.replace(MENTION, (match, lead: string, quoted?: string, bare?: string) => {
     const path = quoted ?? bare ?? ''

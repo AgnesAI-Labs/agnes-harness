@@ -302,6 +302,16 @@ describe('sandbox providers', () => {
     await expect(dispatch.openProcess!(['$SHELL_STDIN'], { cwd, sandbox: binding })).rejects.toThrow(
       /configured stdin shells/,
     )
+    const loopback = {
+      ...binding,
+      policy: { ...policy, network: { mode: 'loopback-serve' as const, hosts: [] } },
+    }
+    await expect(dispatch.run(['echo'], { cwd, sandbox: loopback })).rejects.toThrow(
+      'loopback serving requires the local macOS L1 provider',
+    )
+    await expect(dispatch.openProcess!(['bash'], { cwd, sandbox: loopback })).rejects.toThrow(
+      'loopback serving requires the local macOS L1 provider',
+    )
     expect(seen).toHaveLength(4)
     await slot.selected!.dispose()
     expect(await handle.exited).toEqual({ code: 137 })
@@ -333,6 +343,30 @@ describe('sandbox providers', () => {
     await expect(dispatch.run(['echo', 'ok'], { cwd, sandbox: binding })).resolves.toMatchObject({
       stdout: 'local-provider',
     })
+    const loopback = { ...policy, network: { mode: 'loopback-serve' as const, hosts: [] } }
+    const loopbackDispatch = createSandboxDispatchExec(
+      { ...createExec(), killAll: async () => {} },
+      {
+        selected: {
+          ...instance,
+          async exec(request) {
+            expect(request.network).toBe(false)
+            expect(request.policy?.network.mode).toBe('loopback-serve')
+            return {
+              code: 0,
+              stdout: 'bound-listener',
+              stderr: '',
+              truncated: false,
+              timedOut: false,
+              enforcement,
+            }
+          },
+        },
+      },
+    )
+    await expect(
+      loopbackDispatch.run(['echo'], { cwd, sandbox: { ...binding, policy: loopback } }),
+    ).resolves.toMatchObject({ stdout: 'bound-listener' })
     expect(calls).toHaveLength(1)
     await expect(instance.exec({ argv: ['echo'], cwd })).rejects.toThrow(/bound execution policy/)
     const peerRoot = join(cwd, 'peer')
@@ -352,18 +386,25 @@ describe('sandbox providers', () => {
 
   it('refuses an unavailable required sandbox at the real Host workspace boundary and permits the explicit override', async () => {
     const dataDir = mkdtempSync(join(cwd, 'host-'))
-    const selected = ['standard', 'read-only', 'workspace-write', 'full-access']
+    const selected = ['standard', 'confined']
     const testHost = await createTestHost({
       dataDir,
       disableSessionTitle: true,
       profileInputs: {
-        user: { name: 'local-dev', presets: { default: 'workspace-write', allowed: selected } },
+        user: { name: 'local-dev', presets: { default: 'standard', allowed: selected } },
       },
-      presets: Object.fromEntries(
-        [...selected, 'permission-read-only', 'permission-workspace-write', 'permission-full-access'].map(
-          (name) => [name, loadPreset(name)],
+      presets: {
+        ...Object.fromEntries(
+          ['standard', 'permission-read-only', 'permission-workspace-write', 'permission-full-access'].map(
+            (name) => [name, loadPreset(name)],
+          ),
         ),
-      ),
+        confined: {
+          name: 'confined',
+          extends: 'standard',
+          sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
+        },
+      },
       packages: {
         '@agnes/base': {
           sandboxWorkspaceProbe: (input) =>
@@ -408,21 +449,29 @@ describe('sandbox providers', () => {
     })
     try {
       await expect(testHost.host.createSession({ cwd: dataDir })).rejects.toThrow(/L1 sandbox unavailable/)
-      await expect(testHost.host.createSession({ cwd: dataDir, preset: 'read-only' })).rejects.toThrow(
-        /L1 sandbox unavailable/,
-      )
-      const full = await testHost.host.createSession({ cwd: dataDir, preset: 'full-access' })
+      await expect(
+        testHost.host.createSession({ cwd: dataDir, preset: 'standard', permission: 'read-only' }),
+      ).rejects.toThrow(/L1 sandbox unavailable/)
+      const full = await testHost.host.createSession({
+        cwd: dataDir,
+        preset: 'standard',
+        permission: 'full-access',
+      })
       expect(full.yolo).toBe(true)
-      await expect(testHost.host.setSessionPreset(full.key, 'workspace-write')).rejects.toMatchObject({
+      await expect(testHost.host.setSessionPreset(full.key, 'confined')).rejects.toMatchObject({
         code: 'E_PRESET_UNSUPPORTED',
         detail: { reason: 'workspace-sandbox-change' },
       })
       await full.setYolo(false, full.d.actor)
+      expect(
+        (await full.scan({ type: 'x/core/yolo-switch', order: 'desc', limit: 1 }))[0]?.data,
+      ).toMatchObject({ to: false })
       const key = full.key
       await full.close()
       const reopened = await testHost.host.createSession({ key, cwd: dataDir })
-      expect(reopened.preset.name).toBe('full-access')
-      expect(reopened.yolo).toBe(false)
+      expect(reopened.preset.name).toBe('standard')
+      // Turning off a live override returns to the selected full-access baseline.
+      expect(reopened.yolo).toBe(true)
       await reopened.close()
       const configuration = createConfigurationService({
         home: dataDir,
@@ -438,13 +487,19 @@ describe('sandbox providers', () => {
         },
         configuration,
       )
-      const saved = await admin.saveDefaults({ revision: 0, defaults: { preset: 'full-access' } })
+      const saved = await admin.saveDefaults({
+        revision: 0,
+        defaults: { preset: 'standard', permission: 'full-access' },
+      })
       const fromAdmin = await testHost.host.createSession({ key: 'admin-selected', cwd: dataDir })
-      expect(fromAdmin.preset.name).toBe('full-access')
+      expect(fromAdmin.preset.name).toBe('standard')
       await fromAdmin.close()
-      await admin.saveDefaults({ revision: saved.revision, defaults: { preset: 'read-only' } })
+      await admin.saveDefaults({
+        revision: saved.revision,
+        defaults: { preset: 'standard', permission: 'read-only' },
+      })
       const retained = await testHost.host.createSession({ key: 'admin-selected', cwd: dataDir })
-      expect(retained.preset.name).toBe('full-access')
+      expect(retained.preset.name).toBe('standard')
       await retained.close()
       await expect(testHost.host.createSession({ key: 'admin-new', cwd: dataDir })).rejects.toThrow(
         /L1 sandbox unavailable/,

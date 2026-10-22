@@ -118,9 +118,11 @@ export async function assertWorkspacePublicRoot(cwd: string, authority: Workspac
 
 /** The installation home is never a workbench document source, even inside an admitted workspace. */
 async function assertPublicPath(abs: string): Promise<void> {
-  const home = resolve(
-    process.env.AGH_HOME || process.env.AGNES_HOME || join(process.env.HOME || homedir(), AGH_DIR),
-  )
+  if (process.env.AGNES_HOME?.trim())
+    throw new Error(
+      'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).',
+    )
+  const home = resolve(process.env.AGH_HOME || join(process.env.HOME || homedir(), AGH_DIR))
   const canonical = await realpath(home).catch(() => home)
   if (inside(home, abs) || inside(canonical, abs)) throw denied()
 }

@@ -76,10 +76,11 @@ export function compositionPreset(profile: ResolvedProfile, name: string): Prese
 export function createCompositionAdmin(options: {
   profileDir: string
   resolveProfile(bundles?: readonly string[]): Promise<ResolvedProfile>
+  inspectProfile?(bundles?: readonly string[]): Promise<ResolvedProfile>
 }) {
   return {
     async bundles() {
-      const profile = await options.resolveProfile([])
+      const profile = await (options.inspectProfile ?? options.resolveProfile)([])
       return {
         ...readBundleSelection(options.profileDir),
         effect: 'restart-required' as const,
@@ -90,7 +91,7 @@ export function createCompositionAdmin(options: {
       }
     },
     async dump(preset?: string) {
-      const profile = await options.resolveProfile()
+      const profile = await (options.inspectProfile ?? options.resolveProfile)()
       const tree = resolveComposition(profile, {
         preset: compositionPreset(profile, preset ?? profile.presets.default),
       })

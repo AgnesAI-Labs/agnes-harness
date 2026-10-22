@@ -29,6 +29,7 @@ const scratch = (prefix: string): string => {
 function ttyIO(cwd: string) {
   let raw = false
   let rendered = ''
+  let cancel: (() => Promise<void>) | undefined
   const stdin = Object.assign(new PassThrough(), {
     setRawMode: (value: boolean) => {
       raw = value
@@ -44,8 +45,13 @@ function ttyIO(cwd: string) {
       stdout,
       env: { NO_COLOR: '1' },
       cwd,
-      registerCancel: () => undefined,
+      registerCancel: (next: () => Promise<void>) => {
+        cancel = next
+      },
       signal: () => undefined,
+    },
+    stop: async () => {
+      await cancel?.()
     },
     raw: () => raw,
     rendered: () => rendered,
@@ -91,8 +97,7 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
       await vi.waitFor(() => expect(newCalls().length).toBe(2), { timeout: 3000 })
       expect((newCalls()[1]?.params as { cwd: string } | undefined)?.cwd).toBe(workspace)
     } finally {
-      t.io.stdin.write('\x03')
-      t.io.stdin.write('\x03')
+      await t.stop()
       await running.catch(() => undefined)
       await client.close()
     }
@@ -140,7 +145,9 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
     try {
       await vi.waitFor(() => expect(t.raw()).toBe(true))
       t.type('/resume')
-      await vi.waitFor(() => expect(t.rendered()).toContain('Other work'), { timeout: 3000 })
+      // Welcome now lists recent sessions too; wait for the actual resume picker before Enter.
+      await vi.waitFor(() => expect(t.rendered()).toContain('Select Session'), { timeout: 3000 })
+      expect(t.rendered()).toContain('Other work')
       t.io.stdin.write('\r')
       const loads = () => endpoint.calls.filter((c) => c.method === 'session/load')
       await vi.waitFor(() => expect(loads().length).toBe(1), { timeout: 3000 })
@@ -148,8 +155,7 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
       expect(params.sessionId).toBe(other)
       expect(realpathSync(params.cwd)).toBe(realpathSync(workspace))
     } finally {
-      t.io.stdin.write('\x03')
-      t.io.stdin.write('\x03')
+      await t.stop()
       await running.catch(() => undefined)
       await client.close()
     }
@@ -184,6 +190,8 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
     try {
       await vi.waitFor(() => expect(t.raw()).toBe(true))
       for (const ch of '@dbh-m05-mark') t.io.stdin.write(ch)
+      // The indexed @ menu loads asynchronously; accept only after the workspace entry appears.
+      await vi.waitFor(() => expect(t.rendered()).toContain('dbh-m05-marker.txt'))
       t.io.stdin.write('\t')
       t.io.stdin.write('\r')
       const prompts = () => endpoint.calls.filter((c) => c.method === 'session/prompt')
@@ -192,8 +200,7 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
       const links = params?.prompt.filter((b) => b.type === 'resource_link').map((b) => b.name)
       expect(links).toEqual(['dbh-m05-marker.txt'])
     } finally {
-      t.io.stdin.write('\x03')
-      t.io.stdin.write('\x03')
+      await t.stop()
       await running.catch(() => undefined)
       await client.close()
     }
@@ -252,8 +259,7 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
         error: load.response.error?.data?.code ?? null,
       }).toEqual({ loadCwd: realpathSync(workspace), error: null })
     } finally {
-      t.io.stdin.write('\x03')
-      t.io.stdin.write('\x03')
+      await t.stop()
       await running?.catch(() => undefined)
       await client.close()
       await real.close()
@@ -308,8 +314,7 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
       expect(load.response.error).toBeUndefined()
       await vi.waitFor(() => expect(t.raw()).toBe(true))
     } finally {
-      t.io.stdin.write('\x03')
-      t.io.stdin.write('\x03')
+      await t.stop()
       await running?.catch(() => undefined)
       await client.close()
       await real.close()

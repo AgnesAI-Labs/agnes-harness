@@ -9,7 +9,7 @@ import {
 } from '@agnes/daemon-foundation/storage/session-preferences'
 import { createSqliteStorage } from '@agnes/host'
 import { describe, expect, it } from 'vitest'
-import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
+import { recordingTable, sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import {
   copyForkBookmarks,
   type ForkPromptScan,
@@ -47,22 +47,32 @@ describe('session preferences', () => {
       store.archive('s', false)
       expect(store.pin('s', true).pinnedAt).toMatch(/^\d{4}-\d\d-\d\dT/)
       expect(storage.coreTableNames()).not.toContain('session_preferences')
-      expect(storage.coreTableNames()).not.toContain('session_bookmarks')
     } finally {
       await storage.close()
       await rm(dir, { recursive: true, force: true })
     }
   })
 
+  it('opens session_preferences with pinned_at in its CREATE and no ALTER', async () => {
+    const tables = sqliteTables()
+    const { table, sql } = recordingTable(tables.table('session_preferences'))
+    new SessionPreferencesStore(table)
+    expect(sql.filter((s) => /ALTER TABLE/.test(s))).toEqual([])
+    expect(
+      tables
+        .table('x')
+        .all<{ name: string }>("SELECT name FROM pragma_table_info('session_preferences')")
+        .map((c) => c.name),
+    ).toEqual(['session_key', 'title', 'archived', 'pinned_at', 'bookmarks'])
+    await tables.close()
+  })
+
   it('persists through a real SQLite restart; independent field writes never erase each other', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'agnes-session-preferences-'))
     let tables = sqliteTables(join(dir, 'preferences.db'))
     try {
-      // A database from before pinning gains the column on open and keeps its rows.
-      tables.table('session_preferences').exec(`CREATE TABLE session_preferences (
-        session_key TEXT PRIMARY KEY, title TEXT, archived INTEGER NOT NULL DEFAULT 0)`)
-      tables.table('session_preferences').exec("INSERT INTO session_preferences VALUES ('old', '旧名称', 0)")
       const store = new SessionPreferencesStore(tables.table('session_preferences'), () => 1_000)
+      store.rename('old', '旧名称')
       expect(store.pin('old', true)).toEqual({
         title: '旧名称',
         archived: false,
@@ -198,6 +208,22 @@ describe('session preferences', () => {
 })
 
 describe('session bookmarks', () => {
+  it('keeps bookmarks in a session_preferences column with no side table', async () => {
+    const tables = sqliteTables()
+    const t = tables.table('session_preferences')
+    const store = new SessionPreferencesStore(t)
+    store.setBookmarks('s', ['01JTURNA'])
+    expect(t.get("SELECT name FROM sqlite_master WHERE name = 'session_bookmarks'")).toBeUndefined()
+    expect(t.get('SELECT bookmarks FROM session_preferences WHERE session_key = ?', ['s'])).toEqual({
+      bookmarks: '["01JTURNA"]',
+    })
+    expect(store.setBookmarks('s', []).bookmarks).toBeUndefined()
+    expect(t.get('SELECT bookmarks FROM session_preferences WHERE session_key = ?', ['s'])).toEqual({
+      bookmarks: null,
+    })
+    await tables.close()
+  })
+
   it('replaces the whole list, keeps the first place of a repeat, and clears with an empty list', () => {
     const store = new SessionPreferencesStore()
     store.rename('s', '名称')

@@ -82,6 +82,24 @@ describe('CompositeTargetStore', () => {
     expect(store.acknowledged()).toBeUndefined()
   })
 
+  it('creates no overlay or command tables', async () => {
+    const tables = sqliteTables()
+    new CompositeTargetStore(tables.table('composite'), 'default')
+    const names = tables
+      .table('composite')
+      .all<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'composite_target%' ORDER BY name",
+      )
+      .map((row) => row.name)
+    expect(names).toEqual([
+      'composite_target_package_failures',
+      'composite_target_pins',
+      'composite_target_reverts',
+      'composite_targets',
+    ])
+    await tables.close()
+  })
+
   it('reports current, rollback and disabled saved configurations across profiles for credential integrity', async () => {
     const tables = sqliteTables()
     const first = new CompositeTargetStore(tables.table('composite'), 'first')
@@ -92,7 +110,6 @@ describe('CompositeTargetStore', () => {
       artifact('ext:current', { credential: 'secret://generic/22222222-2222-4222-8222-222222222222' }),
     )
     second.publishDesired(artifact('ext:other', { credential: ref }))
-    second.overlay('session', { credential: ref }, 'overlay')
     tables
       .table('composite')
       .exec(
@@ -104,12 +121,6 @@ describe('CompositeTargetStore', () => {
         { kind: 'plugin', profile: 'first', configId: 'ext:rollback', value: { credential: ref } },
         { kind: 'plugin', profile: 'second', configId: 'ext:other', value: { credential: ref } },
         { kind: 'plugin', profile: 'first', configId: 'ext:disabled', value: { credential: ref } },
-        {
-          kind: 'plugin',
-          profile: 'second',
-          configId: 'session-overlay:session',
-          value: { credential: ref },
-        },
       ]),
     )
     await tables.close()
@@ -212,18 +223,9 @@ describe('CompositeTargetStore', () => {
     expect(store.pending()).toBe(true)
   })
 
-  it('remembers command ids once and restores overlay state by session key', () => {
+  it('records and sweeps pins', () => {
     const tables = sqliteTables()
     const store = new CompositeTargetStore(tables.table('composite'), 'default')
-    store.rememberCommand('cmd-1', { ok: true })
-    store.rememberCommand('cmd-1', { ok: false })
-    expect(store.commandResult('cmd-1')).toEqual({ ok: true })
-    store.overlay('session-a', { preset: 'one' }, 'digest-a')
-    expect(store.overlayOf('session-a')).toEqual({
-      sessionKey: 'session-a',
-      desired: { preset: 'one' },
-      digest: 'digest-a',
-    })
     store.pin('tree:one')
     store.pin('resource:one')
     expect(store.pins()).toEqual(['resource:one', 'tree:one'])

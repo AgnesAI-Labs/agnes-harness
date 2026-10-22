@@ -1,12 +1,28 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { afterEach, expect, it } from 'vitest'
-import { readBundleSelection } from '../../src/runtime/profile/bundle-selection.js'
+import { createCompositionAdmin, readBundleSelection } from '../../src/runtime/profile/bundle-selection.js'
 
 const homes: string[] = []
 afterEach(() => {
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
+})
+
+it('uses inspection for display but freshly validates bundle writes', async () => {
+  const profileDir = mkdtempSync(join(tmpdir(), 'agh-bundle-selection-'))
+  homes.push(profileDir)
+  const admin = createCompositionAdmin({
+    profileDir,
+    inspectProfile: async () => ({ bundleCatalog: {} }) as ResolvedProfile,
+    resolveProfile: async () => {
+      throw new Error('current sources rejected')
+    },
+  })
+  expect(await admin.bundles()).toMatchObject({ catalog: [], revision: 0 })
+  await expect(admin.saveBundles({ revision: 0, bundles: [] })).rejects.toThrow('current sources rejected')
+  expect(readBundleSelection(profileDir)).toEqual({ revision: 0, bundles: [] })
 })
 
 it('reads an absent selection as empty and a valid one as saved', () => {

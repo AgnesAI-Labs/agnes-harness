@@ -164,7 +164,7 @@ try {
     )
   } else {
     say('1. Ask the Agent to create a text statistics plugin through the installed authoring helper.')
-    const author = await rt.session({ preset: 'full-access', bundles: [] })
+    const author = await rt.session({ preset: 'standard', permission: 'full-access', bundles: [] })
     await prompt(author, 'Create a plugin that counts characters and words in text.')
     const draft = await result(author, 'plugin_helper_create')
     assert.equal(draft.state, 'draft')
@@ -223,7 +223,7 @@ try {
       id: 'my-agh-plugin',
     })
     assert.equal(provenance.installer, 'agent')
-    const next = await rt.session({ preset: 'full-access', bundles: [] })
+    const next = await rt.session({ preset: 'standard', permission: 'full-access', bundles: [] })
     await prompt(next, 'call my_text_stats {"text":"hello world"}')
     assert.deepEqual(await result(next, 'my_text_stats'), { characters: 11, words: 2 })
     say(

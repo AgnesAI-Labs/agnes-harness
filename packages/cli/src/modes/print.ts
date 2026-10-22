@@ -107,7 +107,7 @@ async function openSession(booted: Booted, p: ParsedArgs, cwd: string): Promise<
   return booted.client.session.new({
     cwd,
     ...(p.preset ? { preset: p.preset } : {}),
-    ...(p.permission ? { permission: p.permission } : {}),
+    ...(p.permission !== undefined || !p.agent ? { permission: p.permission ?? 'default' } : {}),
     ...(p.loop ? { loop: p.loop } : {}),
     ...(p.agent ? { agent: p.agent } : {}),
     ...(p.agent || p.loop || p.newSession

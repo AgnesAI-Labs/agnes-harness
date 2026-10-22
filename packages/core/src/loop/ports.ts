@@ -654,6 +654,7 @@ export async function createLoopContext(s: SessionImpl, restoreCheckpoint = fals
         if (association?.invocationIds)
           for (const id of association.invocationIds) await invocations.status(id)
         const next = structuredClone(value)
+        if (association?.decisionRefs?.length) await s.requireVerifiedHistory()
         await s.locked(() =>
           s.d.log.append(
             [

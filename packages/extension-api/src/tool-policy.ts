@@ -129,7 +129,11 @@ export const defaultToolPolicy: ToolPolicy = {
         (input.tainted && !input.policy.isReadOnly && !input.policy.isPresentational))
     return {
       effect: ask ? 'ask' : 'allow',
-      reason: ask ? 'Tool risk requires approval' : 'Default tool policy',
+      reason: ask
+        ? input.tainted && !input.policy.isReadOnly && !input.policy.isPresentational
+          ? 'This turn contains untrusted tool output; changes require approval'
+          : 'The tool declares an action requiring approval'
+        : 'Default tool policy',
     }
   },
 }

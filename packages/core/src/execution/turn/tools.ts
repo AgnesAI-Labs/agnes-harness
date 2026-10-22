@@ -37,6 +37,7 @@ import {
 import { finishAborted } from '../../step/control.js'
 import type { DecisionSource } from '../../step/decisions.js'
 import { deferredEffectId } from '../../step/deferred.js'
+import { verifiedToolMeta } from '../../step/history.js'
 import { modelAllowsTool, modelVisibleTool } from '../../step/model-tools.js'
 import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
@@ -375,7 +376,7 @@ export async function approveAndExecute(
         { ignorable: true, sourceEventSeqs: [call.argsSeq] },
       ),
     }
-  const meta = def.meta
+  const meta = await verifiedToolMeta(s.d.log, def.meta)
   const policy = call.resolvedPolicy
   const recoveredEffect = o.resumeDispatch ? s.state.pendingEffects.get(o.resumeDispatch.effectId) : undefined
   if (
@@ -853,9 +854,7 @@ export async function approveAndExecute(
         requestId,
         kind: 'tool' as const,
         toolUseId: call.toolUseId,
-        summary: permission.review
-          ? `${summarizeCall(call.name, call.args, meta.presentation)} — ${permission.reason}`
-          : summarizeCall(call.name, call.args, meta.presentation),
+        summary: `${summarizeCall(call.name, call.args, meta.presentation, def.description)} — ${permission.reason}`,
         risk: risk === 'never' ? ('unknown' as const) : risk,
         bindingHash,
         scope,
@@ -1050,6 +1049,7 @@ export async function approveAndExecute(
       ),
     }
   }
+  if (approvalRefs.length || meta.attestsHistory) await s.requireVerifiedHistory()
   const parent = o.signal ?? s.ac.signal
   let effect: Pick<EffectHandle, 'effectId' | 'settle'>
   let startSeq: Seq
@@ -1127,9 +1127,7 @@ export async function approveAndExecute(
       })
     // The intent's own seq: the only one a dispatch permit may be bound to.
     const [, startedSeqs] = await s.transitionChain(chain, {
-      beforeCommit: async () => {
-        await recheckPermission?.()
-      },
+      beforeCommit: () => recheckPermission?.(),
       commitCheck: () => {
         s.decisions.consumptionEvents(approvalRefs, toolDecisionSource(s, call), started.effectId)
       },

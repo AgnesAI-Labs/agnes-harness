@@ -162,6 +162,7 @@ describe('tools phase', () => {
         throw new Error('raw fs stat bypass')
       }),
     }
+    let delayedFiles: ToolContext['sessionFiles']
     const tool = {
       name: 'workspace_probe',
       description: 'workspace probe',
@@ -177,6 +178,7 @@ describe('tools phase', () => {
         requiresApproval: undefined,
       },
       execute: async (_args: unknown, ctx: ToolContext) => {
+        delayedFiles = ctx.sessionFiles
         events.push('tool.context')
         await Promise.all([
           ctx.fs.read('read'),
@@ -231,6 +233,8 @@ describe('tools phase', () => {
     await expect(running).resolves.toEqual({ phase: 'checkpoint' })
     expect(liveInvocations).toBe(0)
     expect(events.at(-1)).toBe('release')
+    await expect(delayedFiles!.read('read', { limit: 8 })).resolves.toEqual(new Uint8Array([1]))
+    expect(liveInvocations).toBe(0)
   })
 
   it('leases and revokes cached workspace capabilities for a host-computer-use tool', async () => {
@@ -368,7 +372,7 @@ describe('tools phase', () => {
     expect(asked).toHaveLength(1)
     expect(asked[0]?.request.spec.purpose).toBe('tool.permission')
     // The human header is separate from the complete authorization subject.
-    expect(asked[0]?.request.spec.prompt).toBe('Run command')
+    expect(asked[0]?.request.spec.prompt).toBe('Run command — The tool declares an action requiring approval')
     expect(asked[0]?.result).toMatchObject({ reason: 'answered', response: { option: 'allowed-once' } })
     const no = await atTools(
       [toolTurn('shell', { command: 'rm' })],
@@ -443,7 +447,7 @@ describe('tools phase', () => {
           argv: { command: 'rm' },
           risk: 'destructive',
           actor: expect.objectContaining({ id: 'u' }),
-          summary: 'Run command',
+          summary: 'Run command — The tool declares an action requiring approval',
         })
         return {
           request: { risk: 'always', summary: 'operator flagged this' },
@@ -458,13 +462,19 @@ describe('tools phase', () => {
     // The platform's own summary stays on the question beside the rewrite, with who rewrote it.
     expect(spec?.subject).toMatchObject({
       risk: 'always',
-      rewrite: { by: ['agnes/reviewer'], summary: 'Run command' },
+      rewrite: {
+        by: ['agnes/reviewer'],
+        summary: 'Run command — The tool declares an action requiring approval',
+      },
     })
     // The approval card is built from the same record, so the person is shown both.
     expect((await s.session.projectUI()).nodes.find((node) => node.kind === 'approval')).toMatchObject({
       summary: 'operator flagged this',
       risk: 'always',
-      rewrite: { by: ['agnes/reviewer'], summary: 'Run command' },
+      rewrite: {
+        by: ['agnes/reviewer'],
+        summary: 'Run command — The tool declares an action requiring approval',
+      },
     })
   })
 

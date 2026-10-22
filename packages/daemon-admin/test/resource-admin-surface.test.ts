@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { publicErrorCopy } from '@agnes/protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createResourceAdminSurface,
@@ -201,6 +202,9 @@ describe('local resource admin surface trust boundary', () => {
           code: 'E_RESOURCE_UNSUPPORTED',
           messageKey: 'appServer.errors.unavailable',
           diagnosticId: expect.any(String),
+          cause: { code: 'E_RESOURCE_UNSUPPORTED' },
+          publicReason: publicErrorCopy('E_RESOURCE_UNSUPPORTED').en.reason,
+          userAction: publicErrorCopy('E_RESOURCE_UNSUPPORTED').en.action,
         },
       },
     })
@@ -231,6 +235,9 @@ describe('local resource admin surface trust boundary', () => {
           code: 'REVISION_CONFLICT',
           messageKey: 'appServer.errors.conflict',
           diagnosticId: expect.any(String),
+          cause: { code: 'REVISION_CONFLICT' },
+          publicReason: publicErrorCopy('REVISION_CONFLICT').en.reason,
+          userAction: publicErrorCopy('REVISION_CONFLICT').en.action,
         },
       },
     })

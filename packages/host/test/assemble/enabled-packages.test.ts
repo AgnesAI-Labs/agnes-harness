@@ -19,11 +19,14 @@ import { WorkspaceBindingAuthority } from '@agnes/host-common/workspace-authorit
 import { readNamedExports } from '@agnes/host-extensions/assemble/packages'
 import { type AuditEvent, type AuditSink, createMemoryAudit } from '@agnes/host-infrastructure/audit'
 import { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
-import { parseAgnesPluginEntries } from '@agnes/package-manager'
+import { hashDirectory, parseAgnesPluginEntries } from '@agnes/package-manager'
 import type { RouteDecl } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { type AssembleDeps, assemble } from '../../src/runtime/assemble/assemble.js'
+import { createAssemblyContext } from '../../src/runtime/assemble/context.js'
+import { loadPackages } from '../../src/runtime/assemble/packages.js'
 import { createSession } from '../../src/runtime/sessions/session.js'
+import { pluginSourceWith } from './plugin-extension-fixture.js'
 
 const roots: string[] = []
 const packagedIsolation = it.runIf(Boolean(process.env.AGNES_TEST_RUNTIME_DIRECTORY))
@@ -191,6 +194,40 @@ async function setup(projections = false) {
     extensionMarker,
   }
 }
+
+it('never grants release capabilities to an installed snapshot shadowing the release package name', async () => {
+  const f = await setup()
+  const raw = pluginSourceWith([{ exportName: 'plugin', rowId: 'ext:acme/shadow', body: '' }], {
+    vendor: '@agnes/base',
+  })
+  const file = join(raw.snapshot.directory, 'index.js')
+  writeFileSync(
+    file,
+    readFileSync(file, 'utf8') + "\nexport const ecosystem = { 'agnes/tools-web': () => () => {} }\n",
+  )
+  const source = {
+    ...raw,
+    snapshot: { ...raw.snapshot, treeIntegrity: hashDirectory(raw.snapshot.directory, { exclude: [] }) },
+  }
+  const pkgs = await loadPackages(
+    createAssemblyContext(f.profile, {
+      ...f.deps,
+      runtimePluginSnapshots: [source],
+      extensionLoader: { import: async (file) => await import(pathToFileURL(file).href) },
+    }),
+  )
+  const loaded = pkgs.modules.get('@agnes/base')
+  expect(loaded?.ecosystem?.['agnes/tools-web']).toBeTypeOf('function')
+  for (const id of [
+    'agnes/tools-web',
+    'agnes/hooks-runner',
+    'agnes/computer-use',
+    'agnes/privacy',
+    'agnes/mcp-search',
+  ])
+    expect(pkgs.grants.extension('@agnes/base', id, loaded)).toEqual({})
+  expect(pkgs.grants.seam('@agnes/base', 'artifacts', loaded)).toEqual({})
+})
 
 it.each(['absent', 'disabled'] as const)(
   'directory for %s package grants no import, preset or extension authority',

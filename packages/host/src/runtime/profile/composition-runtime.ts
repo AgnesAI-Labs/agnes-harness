@@ -24,9 +24,9 @@ import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target
 import { RuntimeGenerationSnapshotStore, withPackageVerification } from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
-import { mergeGenerationStatus, projectGenerationStatus } from '../generation/runtime-descriptor.js'
+import { projectGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
-import { pluginWorkspaceLayers } from '../generation/target-code.js'
+import { liveResourceRow, pluginWorkspaceLayers } from '../generation/target-code.js'
 import { assertGenerationTrust } from '../generation/trust.js'
 import { combinedSecurityStatus } from '../lifecycle/admin-security-status.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
@@ -56,7 +56,9 @@ import {
   profileForComposition,
   projectCompositionRows,
 } from './composition-selection.js'
+import { mergeCompositionStatuses } from './composition-status.js'
 import { modelCatalogPublisher } from './model-catalog-publication.js'
+import { lazyRoleChildren } from './role-children.js'
 import { admitSessionBundlePresets } from './session-bundle-presets.js'
 import { resolveSessionCapabilities } from './session-capabilities.js'
 import { describeCapabilitySession } from './session-capability-view.js'
@@ -142,8 +144,6 @@ export async function createCompositionHost(
       !rows.some((row) => !row.disabled && pluginSnapshotIdentity(row.plugin)?.packageId === source)
     )
   }
-  const liveResource = (row: PluginRow) =>
-    row.plugin.startsWith('builtin:@agnes/base/') && /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(row.id)
   const project = (target: RuntimeTarget, tree: ResolvedComposition, host?: Host): RuntimeTarget => {
     const previous = host?.runtimeTargetSnapshot?.()
     // A disabled bundle has no new-session container. Retained sessions still need its exact
@@ -151,12 +151,12 @@ export async function createCompositionHost(
     if (previous && draining(target.tree.rows, tree, host))
       return buildCompleteRuntimeTarget({
         rows: [
-          ...previous.tree.rows.filter((row) => !liveResource(row)),
+          ...previous.tree.rows.filter((row) => !liveResourceRow(row)),
           ...projectRows(
             [...target.tree.rows, ...Object.values(target.resource.rows).filter((row) => row !== null)],
             tree,
             host,
-          ).filter(liveResource),
+          ).filter(liveResourceRow),
         ],
         resources: target.resource.resources,
       }).target
@@ -263,6 +263,16 @@ export async function createCompositionHost(
         (generationProfile, generationOptions) =>
           factory(generationProfile, {
             ...generationOptions,
+            childRoles: lazyRoleChildren(() => ({
+              host: () => host,
+              configuration,
+              admission,
+              resolve: prepareAgent,
+              containers,
+              sessionOwners,
+              pin: (binding) => store.pin(binding),
+              open,
+            })),
             onGenerationSessionBinding: (key) => {
               // Includes children opened by Core directly, through the same generation callback.
               store.pin({ ...binding, sessionKey: key })
@@ -334,6 +344,7 @@ export async function createCompositionHost(
     { ...options, runtimePluginSources: async () => options.runtimePluginSnapshots ?? [] },
     undefined,
   )
+  let displayedBundles = bootProfile.bundleCatalog
   const initialTree = resolveComposition(
     { ...profile, bundleCatalog: bootProfile.bundleCatalog },
     {
@@ -387,10 +398,12 @@ export async function createCompositionHost(
         ? report
         : {
             ...report,
-            rows: report.rows.filter(
-              (row) =>
-                !!host.extensionRows.current().find((entry) => entry.id === row.id)?.liveResources?.length ||
-                /^ext:agnes\/mcp-[a-z0-9-]+-[a-f0-9]{8}$/.test(row.id),
+            rows: report.rows.filter((row) =>
+              host.extensionRows
+                .current()
+                .some(
+                  (entry) => entry.id === row.id && (!!entry.liveResources?.length || liveResourceRow(entry)),
+                ),
             ),
           }
     })
@@ -458,13 +471,9 @@ export async function createCompositionHost(
     (key, coldRead = false) => owner(key, coldRead).host.kernel,
     sessions,
   )
-  const admission = () =>
-    sessionAdmission(
-      profile,
-      modelProfile,
-      options,
-      activeAgentPackages(latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? []),
-    )
+  const admission = (
+    rows = latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? [],
+  ) => sessionAdmission(profile, modelProfile, options, activeAgentPackages(rows))
   const prepareAgent = createAgentResolver({
     admission,
     host: initial.host,
@@ -472,72 +481,12 @@ export async function createCompositionHost(
     adminLoop: () => readAdminLoopDefault(configuration),
     open,
   })
-  const mergeGenerationStatuses = (statuses: readonly PluginGenerationStatus[]): PluginGenerationStatus => {
-    const first = statuses[0]
-    if (!first) throw new Error('Plugin generation status is unavailable')
-    const opened = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
-    const all = new Map<string, PluginGenerationStatus['generations'][number]>()
-    for (const status of statuses)
-      for (const item of status.generations) {
-        const previous = all.get(item.id)
-        all.set(item.id, previous ? mergeGenerationStatus(previous, item, opened.values()) : item)
-      }
-    for (const [id, error] of openingFailures) {
-      const generation = all.get(id)
-      if (generation) all.set(id, { ...generation, state: 'failed', error })
-    }
-    const blocked = [
-      ...new Map(
-        statuses.flatMap((status) => status.blocked ?? []).map((item) => [item.file, item]),
-      ).values(),
-    ]
-    return {
-      ...first,
-      ...(blocked.length ? { blocked } : {}),
-      generations: [...all.values()],
-      plugins: [
-        ...new Map(
-          statuses.flatMap((status) => status.plugins.map((item) => [item.id, item] as const)),
-        ).values(),
-      ].map((plugin) => {
-        if (plugin.state === 'failed' || plugin.state === 'restart-required') return plugin
-        const relevant = [...all.values()].filter((generation) =>
-          generation.packages.some((pkg) => pkg.id === plugin.id),
-        )
-        const failed = relevant.find((generation) => generation.state === 'failed')
-        return {
-          ...plugin,
-          ...(failed?.error ? { error: failed.error } : {}),
-          state: failed
-            ? ('failed' as const)
-            : relevant.some((generation) => generation.state === 'active')
-              ? ('active' as const)
-              : relevant.some((generation) => generation.openSessions > 0)
-                ? ('draining' as const)
-                : ('historical' as const),
-          boundSessions: relevant.reduce((count, generation) => count + generation.boundSessions, 0),
-          historicalSessions: relevant.reduce(
-            (count, generation) =>
-              count +
-              (generation.state === 'active'
-                ? 0
-                : Math.max(0, generation.boundSessions - generation.openSessions)),
-            0,
-          ),
-          drainingSessions: relevant.reduce(
-            (count, generation) => count + (generation.state !== 'active' ? generation.boundSessions : 0),
-            0,
-          ),
-        }
-      }),
-    }
-  }
+  const mergeGenerationStatuses = (statuses: readonly PluginGenerationStatus[]) =>
+    mergeCompositionStatuses(statuses, containers.values(), openingFailures)
   const overrides: HostFacadeOverrides = {
     resolveAgent: (ref) => calls.enqueue(async () => (await prepareAgent(ref)).plan),
-    // Display-only metadata captures an immutable profile/target view; actual session admission
-    // remains serialized and freshly verified. A directory scan must not occupy the mutation queue.
-    sessionBundleCatalog: () =>
-      withPackageVerification(async () => (await admission()).current.bundleCatalog),
+    // The published catalog is descriptive. Actual session admission still verifies current sources.
+    sessionBundleCatalog: async () => displayedBundles,
     ...sessionHostRoutes(
       (key, coldRead = false) => owner(key, coldRead).host,
       () => initial.host,
@@ -707,6 +656,7 @@ export async function createCompositionHost(
     applyRuntimeTarget: (target) =>
       calls.enqueue(async () => {
         await refreshTrust()
+        const { current: nextCatalog } = await admission(target.tree.rows)
         const publication = await broadcast('runtime-target', async (container) => {
           const report = await container.host.applyRuntimeTarget(
             project(target, container.tree, container.host),
@@ -716,6 +666,7 @@ export async function createCompositionHost(
         })
         if (publication.ok) {
           latestTarget = target
+          displayedBundles = nextCatalog.bundleCatalog
           latestRows = undefined
           await publishAdapters()
         }
@@ -777,23 +728,25 @@ export async function createCompositionHost(
       apply: (rows) =>
         calls.enqueue(async () => {
           await refreshTrust()
+          const { current: nextCatalog } = await admission(rows)
           latestRows = rows
           const selected = new Set(rows.map((row) => row.id))
           for (const id of prepared.keys()) if (!selected.has(`ext:${id}`)) prepared.delete(id)
-          await broadcast('extension-rows', async (container) => {
+          const publication = await broadcast('extension-rows', async (container) => {
             const projected = projectRows(rows, container.tree, container.host)
             const inactive = draining(rows, container.tree, container.host)
             const report = await container.host.extensionRows.apply(
               inactive
                 ? [
-                    ...container.host.extensionRows.current().filter((row) => !liveResource(row)),
-                    ...projected.filter(liveResource),
+                    ...container.host.extensionRows.current().filter((row) => !liveResourceRow(row)),
+                    ...projected.filter(liveResourceRow),
                   ]
                 : projected,
             )
             container.draining = inactive
             return report
           })
+          if (publication.ok) displayedBundles = nextCatalog.bundleCatalog
           return convergence()
         }),
     },

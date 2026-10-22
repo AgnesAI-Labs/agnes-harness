@@ -3,7 +3,7 @@ import { createCredentialStore, createFileAudit } from '@agnes/host'
 import {
   automaticPermissionDecision,
   type PermissionContext,
-  type PermissionEffectAdmission,
+  permissionEffectAdmission,
   rpcError,
   samePermissionContext,
   validateAgainst,
@@ -93,25 +93,13 @@ export function createCredentialAdmin(options: {
     })
     await audit.close?.()
     await checkPermission()
-    let revoked = false
-    const admission: PermissionEffectAdmission | undefined = automatic
-      ? {
-          verify: async () => {
-            try {
-              await checkPermission()
-              admission!.assertActive()
-            } catch (error) {
-              revoked = true
-              throw error
-            }
-          },
-          assertActive: () => {
-            if (revoked || Date.now() >= deadline) {
-              revoked = true
-              failed('CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED')
-            }
-          },
-        }
+    const admission = automatic
+      ? permissionEffectAdmission({
+          expiresAt: deadline,
+          unavailable: () => new CredentialAdminFailure('CONFIG_CREDENTIAL_CONFIRMATION_REQUIRED'),
+          verify: checkPermission,
+          // id and params are private owned snapshots, retained through the store's atomic replacement.
+        })
       : undefined
     if (action === 'delete') {
       await store.remove(id, admission)

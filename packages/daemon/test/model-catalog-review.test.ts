@@ -106,6 +106,20 @@ it('reads intrinsic live model metadata without verifying unrelated plugin trees
   })
   expect(await read()).toEqual([adapter])
   expect(sources).not.toHaveBeenCalled()
+  // A live installed row with the release owner's name must use current snapshot verification.
+  const shadow = readModelSelectionCatalog({
+    profile: () => f.profile,
+    profileDir: f.profileDir,
+    sources: async () => [],
+    worker: () => ({
+      alive: true,
+      command: async () => ({
+        modelAdapters: [adapter],
+        sources: [{ plugin: `${adapter.sourcePackage}@spoof/plugin`, entryRevision: 'spoof' }],
+      }),
+    }),
+  })
+  expect(await shadow()).not.toContainEqual(adapter)
 })
 
 it('fails closed on missing, future-version, wrong-profile, disabled and untrusted persisted projections', () => {
@@ -277,6 +291,10 @@ it.each(['cold', 'live'] as const)(
 )
 
 it.each([
+  ['cold', { source: 'link:./ai' }],
+  ['live', { source: 'link:./ai' }],
+  ['cold', { source: 'workspace:extensions/ai' }],
+  ['live', { source: 'workspace:extensions/ai' }],
   ['cold', { source: 'file:./ai' }],
   ['live', { source: 'file:./ai' }],
   ['cold', { integrity: 'builtin:other-release' }],
