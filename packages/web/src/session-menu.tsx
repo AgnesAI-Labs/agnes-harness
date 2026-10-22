@@ -13,6 +13,31 @@ const ITEMS: readonly (readonly [SessionAction, string, IconName])[] = [
   ['archive', 'session.menu.archive', 'archive'],
 ]
 
+/**
+ * The actions this row offers. An archived session cannot be pinned — the two states exclude each
+ * other — and its most useful action is the way back, so 「归档会话」 becomes 「恢复会话」.
+ */
+function itemsFor({
+  chats,
+  pinned,
+  archived,
+}: {
+  chats: boolean
+  pinned: boolean
+  archived: boolean
+}): readonly (readonly [SessionAction, string, IconName])[] {
+  return ITEMS.flatMap(([item, key, icon]) => {
+    if (chats && item === 'revealWorkspace') return []
+    if (archived) {
+      if (item === 'pin' || item === 'unpin') return []
+      return item === 'archive'
+        ? ([['unarchive', 'session.menu.unarchive', 'history']] as const)
+        : [[item, key, icon] as const]
+    }
+    return item === (pinned ? 'pin' : 'unpin') ? [] : [[item, key, icon] as const]
+  })
+}
+
 let activeTrigger: HTMLButtonElement | null = null
 
 export function SessionMenu({
@@ -24,9 +49,12 @@ export function SessionMenu({
   platform,
   chats = false,
   pinned = false,
+  archived = false,
 }: {
   /** Offers 「取消置顶」 in place of 「置顶」. */
   pinned?: boolean
+  /** Offers 「恢复会话」 in place of 「归档会话」 and drops the pin actions. */
+  archived?: boolean
   platform?: string | undefined
   /** A chat in the managed chats workspace has no folder of its own to show. */
   chats?: boolean
@@ -89,11 +117,9 @@ export function SessionMenu({
           tone="neutral"
           label={t('session.menu.triggerAria', { name: title })}
           trigger={button}
-          items={ITEMS.filter(
-            ([item]) => (!chats || item !== 'revealWorkspace') && item !== (pinned ? 'pin' : 'unpin'),
-          ).map(([item, key, icon]) => ({
+          items={itemsFor({ chats, pinned, archived }).map(([item, key, icon]) => ({
             id: item,
-            dividerBefore: item === 'revealWorkspace' || item === 'archive',
+            dividerBefore: item === 'revealWorkspace' || item === 'archive' || item === 'unarchive',
             label: t(
               item === 'revealWorkspace'
                 ? platform === 'darwin'

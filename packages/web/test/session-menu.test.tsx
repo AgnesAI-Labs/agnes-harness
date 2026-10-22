@@ -11,7 +11,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function renderMenu(platform?: string, chats = false, pinned = false) {
+function renderMenu(platform?: string, chats = false, pinned = false, archived = false) {
   const host = document.createElement('div')
   document.body.append(host)
   const select = vi.fn()
@@ -24,6 +24,7 @@ function renderMenu(platform?: string, chats = false, pinned = false) {
         platform={platform}
         chats={chats}
         pinned={pinned}
+        archived={archived}
         t={zhT}
         action={select}
       />
@@ -137,6 +138,22 @@ it('offers no folder to show for a chat in the managed chats workspace', async (
     '运行信息',
     '归档会话',
   ])
+})
+
+it('drops the pin actions and offers 恢复会话 for an archived session', async () => {
+  const { open, select, closed, trigger } = renderMenu('darwin', false, false, true)
+  const items = [...(await open()).querySelectorAll<HTMLElement>('[role="menuitem"]')]
+  expect(items.map((item) => item.textContent)).toEqual([
+    '重命名',
+    '分叉会话',
+    '在访达中打开',
+    '运行信息',
+    '恢复会话',
+  ])
+  items.at(-1)?.click()
+  await closed()
+  // 恢复走会话仓库的统一通道，菜单只负责派发动作。
+  expect(select).toHaveBeenCalledWith('unarchive', 'visible', '名称 visible', trigger)
 })
 
 it('offers 「取消置顶」 for a pinned session and reports it as unpin', async () => {

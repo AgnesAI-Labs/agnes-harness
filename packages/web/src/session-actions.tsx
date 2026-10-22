@@ -12,7 +12,15 @@ import {
 
 import { createRuntimeDialog } from './session-runtime-dialog.js'
 
-export type SessionAction = 'pin' | 'unpin' | 'rename' | 'fork' | 'archive' | 'runtime' | 'revealWorkspace'
+export type SessionAction =
+  | 'pin'
+  | 'unpin'
+  | 'rename'
+  | 'fork'
+  | 'archive'
+  | 'unarchive'
+  | 'runtime'
+  | 'revealWorkspace'
 
 export function forkTitle(title: string): string {
   const match = /^(.*) \((\d+)\)$/.exec(title)
