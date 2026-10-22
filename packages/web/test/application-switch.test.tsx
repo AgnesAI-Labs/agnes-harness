@@ -47,9 +47,7 @@ it('asks the host to open the settings page in place while keeping the href as t
     expect(requests[0]?.detail).toEqual({ section: 'application' })
     expect(plain.defaultPrevented).toBe(true)
     // Modifier clicks leave the href to the browser, so a new tab still opens the settings page.
-    link.dispatchEvent(
-      new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, metaKey: true }),
-    )
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, metaKey: true }))
     expect(requests).toHaveLength(1)
   } finally {
     window.removeEventListener('agnes:open-settings', hostHandler)

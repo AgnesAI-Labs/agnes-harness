@@ -679,7 +679,7 @@ onPageHide(
     current: () => sessionBinding.session?.id,
     untitled: (id, createdAt) =>
       sessionLabels.get(id) ||
-      untitledSessionLabel(t('nav.sessionFallback'), createdAt, document.documentElement.lang || 'en'),
+      untitledSessionLabel(t('nav.sessionFallback'), createdAt, clientModules.locale.getSnapshot()),
   }),
 )
 let intentionalClose = false
