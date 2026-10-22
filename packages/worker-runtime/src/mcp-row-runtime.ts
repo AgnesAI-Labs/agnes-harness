@@ -124,6 +124,8 @@ export type McpRowRuntime = Readonly<{
   /** This server's last-known status, or `undefined` if it has never been part of any applied
    *  snapshot. Read after an out-of-band status frame, or by a caller that only has a serverId. */
   status(serverId: string): McpStatus | undefined
+  /** Join first attempts started by cold composition mounts, within their original deadline. */
+  prepareTurn?(signal?: AbortSignal): Promise<void>
   /** Wait for the current row's ready/failure observation, including a generation remount. */
   waitForStatus(serverId: string, timeoutMs?: number, signal?: AbortSignal): Promise<McpStatus | undefined>
   /** A page of this server's live tool catalog, or `undefined` if it has no row, no successful sync
@@ -194,6 +196,7 @@ export function createMcpRowRuntime(
   const statusChanged = new Set<() => void>()
   const displayNames = new Map<string, string>()
   const cap = deps.firstAttemptTimeoutMs ?? FIRST_ATTEMPT_TIMEOUT_MS
+  const attempts = new Map<Promise<unknown>, number>()
   return Object.freeze({
     async apply(entries: readonly McpServerSnapshotEntry[]): Promise<McpRowApplyResult> {
       await deps.beforeApply?.(entries)
@@ -219,7 +222,12 @@ export function createMcpRowRuntime(
         return epoch === undefined ? entry : { ...entry, revision: `${entry.revision}#${epoch}` }
       })
       const { rows, skipped } = mcpServerRowsFromDefinitions(mounting, deps.opener, {
-        onFirstAttempt: (_serverId, ready) => started.push(ready),
+        onFirstAttempt: (_serverId, ready) => {
+          started.push(ready)
+          attempts.set(ready, Date.now() + cap)
+          const settled = () => attempts.delete(ready)
+          void ready.then(settled, settled)
+        },
         onStatus: (serverId, event) => {
           const revision = revisions.get(serverId)
           if (revision === undefined) return
@@ -260,6 +268,15 @@ export function createMcpRowRuntime(
         if (status) settled.set(serverId, status)
       }
       return Object.freeze({ rowIds, skipped, statuses: settled })
+    },
+    async prepareTurn(signal) {
+      // A composition can mount these factories after apply() has returned. Its first model
+      // request must join those attempts too, without restarting an expired connection budget.
+      await Promise.all(
+        [...attempts].map(([ready, deadline]) =>
+          settledWithin([ready], Math.max(0, deadline - Date.now()), signal),
+        ),
+      )
     },
     status: (serverId) => statuses.get(serverId),
     waitForStatus(serverId, timeoutMs = cap, signal) {

@@ -42,6 +42,7 @@ import { createPortal } from 'react-dom'
 import { captureRequest } from './async-request.js'
 import { contextRequest } from './context.js'
 import { useSettingsOverlay } from './overlay.js'
+import { triggersRequest } from './triggers-api.js'
 import { triggersCatalog } from './triggers-locale.js'
 
 const blank = (workspace: string): WebhookRule => ({
@@ -60,18 +61,9 @@ const blank = (workspace: string): WebhookRule => ({
   windowSeconds: 300,
   ratePerMinute: 10,
 })
-export async function triggersRequest(input: WebhookRequest, signal?: AbortSignal): Promise<WebhookResult> {
-  const response = await fetch('/api/triggers', {
-    method: 'POST',
-    credentials: 'same-origin',
-    cache: 'no-store',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-    ...(signal ? { signal } : {}),
-  })
-  if (!response.ok) throw new Error('Trigger request failed')
-  return response.json()
-}
+
+export { triggersRequest } from './triggers-api.js'
+
 const TRIGGERS_KEY = 'triggers:list'
 const TRIGGER_PAGE = 'trigger-'
 const NEW_TRIGGER = 'trigger-new'
