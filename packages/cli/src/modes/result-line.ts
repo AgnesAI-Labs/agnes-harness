@@ -10,6 +10,8 @@ export type CliResult = {
   credits?: unknown
   ticket?: string
   text?: string
+  /** `--output-schema`: the final reply parsed and validated. */
+  structured?: unknown
 }
 
 /** One line, machine-first: the last thing `--mode json` writes, and the only thing it promises. */

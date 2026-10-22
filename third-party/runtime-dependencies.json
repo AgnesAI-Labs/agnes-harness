@@ -264,6 +264,7 @@
       "rationale": "Reuse the established schema implementation; reject invalid or external references before callbacks run.",
       "consumers": [
         "packages/base",
+        "packages/cli",
         "packages/host",
         "packages/host-computer-use",
         "packages/host-extensions",

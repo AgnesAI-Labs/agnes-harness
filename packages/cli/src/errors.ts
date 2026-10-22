@@ -11,6 +11,8 @@ export const ExitCode = {
   PARKED: 3,
   BUDGET: 4,
   MAX_STEPS: 5,
+  /** `-p --output-schema`: the turn completed but its final reply did not satisfy the schema. */
+  SCHEMA_MISMATCH: 6,
   SIGINT: 130,
   SIGTERM: 143,
   SIGHUP: 129,

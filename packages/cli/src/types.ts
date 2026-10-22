@@ -104,6 +104,8 @@ export type ParsedArgs = {
   force: boolean
   /** `schedules`: list every schedule rather than one session's. */
   all?: boolean
+  /** `-p --output-schema`: a JSON Schema file the final reply must satisfy. */
+  outputSchema?: string
   /** `sessions list --last`: only the most recently active session. */
   last?: boolean
   /** Interactive mode: keep the shell screen and write finished turns into its scrollback. */

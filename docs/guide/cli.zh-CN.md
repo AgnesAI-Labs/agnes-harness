@@ -19,6 +19,8 @@ node agnes.mjs --mode stream-json "解释当前项目"
 
 `--mode json` 和 `--mode stream-json` 自动选择 print 模式。`--mode stream-json` 每收到一个会话事件就输出一行 `{"schema":"agnes-cli-event/v1","event":{…}}`（event 是会话事件信封），最后一行永远是 `--mode json` 同样的 `agnes-cli-result/v1` 结果行；退出码和 stderr 不变。两种格式都是 `v1`：可能新增字段，已有字段的含义不变。JSON 输出适合程序消费，stderr 仍可能含运行时警告。检查进程退出码，不能把收到部分文本当成功。一次性调用只有在配置里设置了 `limits."approval.park"` 时才会为等待审批而挂起；挂起后输出 `parked ticket=… session=…`，退出码为 3。命令行参数 `--park` 会被拒绝。不带可用审批交互的脚本不能自行批准危险操作。
 
+`agh -p --output-schema FILE` 要求最终回复是一个符合 `FILE` 里 JSON Schema（2020-12，最大 64 KiB）的 JSON 值：CLI 在提示词后面追加一段固定说明并附上 schema，回合结束后检查最终助手文本。回复可以被一个 ```json 代码块包住，不做其他解包，也不重试。符合时，text 模式只打印紧凑的一行 JSON，`--mode json` 与 `--mode stream-json` 在结果行里加 `structured` 字段，退出码为 0。不符合（不是 JSON，或违反 schema）时，stdout 照原样保留回复，stderr 给出前五条问题，退出码为 6。回合没有正常完成时保持原有退出码，不做校验。文件不存在、超过大小、不是 JSON，或 schema 无法编译（包括指向其他文档的 `$ref`，它不会被下载）时，在启动会话前以退出码 2 结束。不校验 `format`。该选项只用于 `-p`，TUI 会拒绝它。
+
 默认连接或启动本地共享 daemon。`--connect TARGET` 是显式连接，失败不回退；`--standalone` 为嵌入式，`--ephemeral` 为显式临时执行。ACP 入口为 `acp` 或 `--mode acp`，不能推定其生命周期与普通共享 daemon 模式一致。
 
 普通自动连接会在核对规范化的 home/profile/数据路径、进程身份、私有 socket 权限、协议与 CLI 版本，并完成认证就绪检查后复用现有 daemon；连接前不再准备本地插件快照或重复校验安装包。RPC 授权及执行前的代码校验仍由 daemon 负责。没有就绪 daemon 或其状态异常时，仍执行完整启动准备；版本不一致时需停止 daemon，再用当前 CLI 重启。Doctor、恢复、嵌入式执行与 Web 启动入口保留各自的准备路径。
@@ -136,6 +138,7 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 | 3 | 已停驻等待 |
 | 4 | 预算/阻断 |
 | 5 | 到达最大步数 |
+| 6 | `--output-schema`：回合已完成，但最终回复不符合 schema |
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
 `agh -p` 暂不支持按单次运行限制步数。它需要在协议里新增 session 或 submit 字段，或修改共享 daemon 的配置，而一次性运行两者都不应做。要限制步数，请选用或导出在定义里把 `budget.max_steps` 设为正整数的 preset，并用 `--preset` 指定；达到上限后该回合以 `max_steps` 结束，退出码为 5（见[配置参考](../reference/configuration.zh-CN.md)）。

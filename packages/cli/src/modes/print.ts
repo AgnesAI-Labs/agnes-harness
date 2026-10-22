@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto'
 import type { EffectIntent, EffectSettled, EventEnvelope, ToolCall, TurnEndReason } from '@agnes/protocol'
 import { publicErrorHelp } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
-import { CommandError, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageError } from '../errors.js'
+import {
+  CommandError,
+  ExitCode,
+  exitCodeForReason,
+  SIGNAL_EXIT_CODES,
+  type SignalName,
+  UsageError,
+} from '../errors.js'
+import { checkStructured, loadOutputSchema, schemaInstruction } from '../output-schema.js'
 import { timingMark } from '../timing.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { readPromptInput } from './prompt-input.js'
@@ -167,11 +175,14 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
   // Switched off before the result line so a late row cannot land after it.
   let streaming = p.mode === 'stream-json'
 
+  // Before anything is sent: a schema that cannot be used is a usage error, not a failed run.
+  const outputSchema = p.outputSchema === undefined ? undefined : loadOutputSchema(p.outputSchema, io.cwd)
   const blocks = await readPromptInput({
     positional: (p.command === 'resume' ? p.positional.slice(1) : p.positional).join(' '),
     stdin: io.stdin,
     stdinIsTTY: io.stdin.isTTY === true,
   })
+  if (outputSchema) blocks.push({ type: 'text', text: schemaInstruction(outputSchema, io.locale) })
   // The ladder can only cancel a turn that exists. A signal that lands before the prompt is sent --
   // while stdin is still being read, or while the session opens -- is honoured by never sending it.
   const signalledBeforePrompt = (): number | undefined => {
@@ -283,9 +294,16 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     // leaves with this same number by its own route, so the two cannot disagree -- which they did
     // while `aborted` was pinned to 130 and a SIGTERM raced it.
     const signal = io.signal?.()
-    const exitCode = signal ? SIGNAL_EXIT_CODES[signal] : exitCodeForReason(reason)
+    let exitCode: number = signal ? SIGNAL_EXIT_CODES[signal] : exitCodeForReason(reason)
     const ticket = reason === 'parked' ? findParkedTicket(events) : undefined
     const text = lastAssistantText(events)
+    // Only a turn that completed is checked; any other ending keeps its own code and prints as before.
+    const structured =
+      outputSchema && exitCode === ExitCode.OK ? checkStructured(text, outputSchema) : undefined
+    if (structured && !structured.ok) {
+      exitCode = ExitCode.SCHEMA_MISMATCH
+      for (const line of structured.errors) io.stderr.write(`agh: output schema: ${line}\n`)
+    }
     streaming = false
     if (machine) {
       // The result line is last in both machine modes; stream-json has already written the events.
@@ -298,10 +316,13 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
           ...(outcome.credits ? { credits: outcome.credits } : {}),
           ...(ticket ? { ticket } : {}),
           text,
+          ...(structured?.ok ? { structured: structured.value } : {}),
         }),
       )
     } else if (reason === 'parked') {
       io.stdout.write(`parked ticket=${ticket ?? '?'} session=${session.id}\n`)
+    } else if (structured?.ok) {
+      io.stdout.write(`${JSON.stringify(structured.value)}\n`)
     } else if (text) {
       io.stdout.write(`${text}\n`)
     }
@@ -310,7 +331,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     // retry at all -- so a wrapper reading the integer alone either retries forever or gives up on a
     // turn that would have succeeded. The word is what tells them apart. An `error` turn also names
     // its cause: without it the caller cannot tell a bad key from an unknown model from an outage.
-    if (exitCode !== 0 && !machine) {
+    if (exitCode !== 0 && exitCode !== ExitCode.SCHEMA_MISMATCH && !machine) {
       const cause = errorCause((ended?.data as { error?: unknown } | null)?.error ?? thrownError, io.locale)
       io.stderr.write(
         `agh: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}\n`,

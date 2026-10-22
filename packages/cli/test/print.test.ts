@@ -1,6 +1,9 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { createClient, memoryJournal } from '@agnes/sdk'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { runPrint } from '../src/modes/print.js'
 import { cliResultLine, findParkedTicket, lastAssistantText } from '../src/modes/result-line.js'
@@ -425,6 +428,108 @@ describe('runPrint in json mode', () => {
     const code = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', 'json']), o)
     expect(code).toBe(3)
     expect(JSON.parse(o.out())).toMatchObject({ reason: 'parked', exitCode: 3, ticket: 'tk-9' })
+  })
+})
+
+describe('runPrint with --output-schema', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+  const schema = { type: 'object', required: ['n'], properties: { n: { type: 'integer' } } }
+  const setup = (content: string | object = schema) => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-schema-'))
+    dirs.push(dir)
+    writeFileSync(join(dir, 's.json'), typeof content === 'string' ? content : JSON.stringify(content))
+    const o = io()
+    o.cwd = dir
+    return o
+  }
+  const run = async (o: ReturnType<typeof io>, extra: string[], ep = scriptedEndpoint()) =>
+    runPrint(await booted(ep), parseArgs(['-p', 'q', '--output-schema', 's.json', ...extra]), o)
+
+  it.each([
+    ['bare JSON', '{ "n": 4 }'],
+    ['a json fence', '```json\n{"n":4}\n```'],
+    ['a plain fence with surrounding space', '  ```\n{"n":4}```\n'],
+  ])('%s passes: text mode prints the compact value and exits 0', async (_n, reply) => {
+    const o = setup()
+    expect(await run(o, [], scriptedEndpoint({ reply }))).toBe(0)
+    expect(o.out()).toBe('{"n":4}\n')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+  })
+
+  it('appends the instruction and the schema to the prompt, in the locale', async () => {
+    const o = setup()
+    const ep = scriptedEndpoint({ reply: '{"n":1}' })
+    await run(o, [], ep)
+    const call = ep.calls.find((c) => c.method === 'session/prompt') as {
+      params: { prompt: Array<{ text: string }> }
+    }
+    const sent = call.params.prompt
+    expect(sent[0]?.text).toBe('q')
+    expect(sent[1]?.text).toContain(JSON.stringify(schema))
+    expect(sent[1]?.text).toContain('Reply with exactly one JSON value')
+    const zh = setup()
+    const zhEp = scriptedEndpoint({ reply: '{"n":1}' })
+    await runPrint(
+      await booted(zhEp),
+      parseArgs(['-p', 'q', '--output-schema', 's.json']),
+      Object.assign(zh, { locale: 'zh-CN' }),
+    )
+    expect(JSON.stringify(zhEp.calls)).toContain('只输出一个符合')
+  })
+
+  it.each([
+    ['text that is not JSON', 'sorry, no'],
+    ['JSON that breaks the schema', '{"n":"four"}'],
+    ['a fence around something else', '```js\n{"n":4}\n```'],
+  ])('%s exits 6, names the problem on stderr and still prints the original reply', async (_n, reply) => {
+    const o = setup()
+    expect(await run(o, [], scriptedEndpoint({ reply }))).toBe(6)
+    expect(o.out()).toBe(`${reply}\n`)
+    expect(o.err()).toMatch(/agh: output schema: /)
+    expect(o.err()).not.toContain('turn ended')
+  })
+
+  it('--mode json adds structured to the result line, and a mismatch keeps the text and exit code 6', async () => {
+    const ok = setup()
+    expect(await run(ok, ['--mode', 'json'], scriptedEndpoint({ reply: '{"n":2}' }))).toBe(0)
+    expect(JSON.parse(ok.out())).toMatchObject({ exitCode: 0, text: '{"n":2}', structured: { n: 2 } })
+    const bad = setup()
+    expect(await run(bad, ['--mode', 'json'], scriptedEndpoint({ reply: '{}' }))).toBe(6)
+    const line = JSON.parse(bad.out())
+    expect(line).toMatchObject({ reason: 'completed', exitCode: 6, text: '{}' })
+    expect(line).not.toHaveProperty('structured')
+    const streamed = setup()
+    expect(await run(streamed, ['--mode', 'stream-json'], scriptedEndpoint({ reply: '{"n":3}' }))).toBe(0)
+    expect(JSON.parse(streamed.out().trimEnd().split('\n').at(-1) as string)).toMatchObject({
+      structured: { n: 3 },
+    })
+  })
+
+  it('a turn that did not complete keeps its own exit code and is not validated', async () => {
+    const o = setup()
+    expect(await run(o, [], scriptedEndpoint({ reason: 'max_steps', reply: 'not json' }))).toBe(5)
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagh: turn ended: max_steps (exit 5)\n`)
+  })
+
+  it.each([
+    ['a missing file', undefined, /cannot read/],
+    ['a file that is not JSON', 'nope', /not valid JSON/],
+    ['JSON that is not an object', '[1]', /must hold a JSON object/],
+    ['a schema that does not compile', { type: 'nonsense' }, /not a usable schema/],
+    ['a remote $ref', { $ref: 'https://example.invalid/s.json' }, /not a usable schema/],
+    ['a file over 64 KiB', ' '.repeat(70 * 1024), /larger than 64 KiB/],
+  ])('%s is a usage error and no session is opened', async (_n, content, want) => {
+    const o = setup(content ?? '{}')
+    if (content === undefined) o.cwd = join(o.cwd, 'missing')
+    const ep = scriptedEndpoint()
+    const err = await run(o, [], ep).catch((e: Error) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).name).toBe('UsageError')
+    expect((err as Error).message).toMatch(want)
+    expect(ep.calls.some((c) => c.method === 'session/new')).toBe(false)
   })
 })
 

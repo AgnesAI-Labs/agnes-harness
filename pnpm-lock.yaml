@@ -510,6 +510,9 @@ importers:
       '@agnes/web':
         specifier: workspace:*
         version: link:../web
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
       get-east-asian-width:
         specifier: 1.6.0
         version: 1.6.0

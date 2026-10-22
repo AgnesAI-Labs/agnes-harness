@@ -109,6 +109,7 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
   '--file': 'file',
   '--text': 'text',
   '--params': 'params',
+  '--output-schema': 'outputSchema',
 })
 
 const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create(null), {

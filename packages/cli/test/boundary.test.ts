@@ -38,7 +38,14 @@ export function violationFor(rel: string, spec: string): string | null {
   if (target.startsWith('..')) return 'escapes-package'
   if (target.startsWith('tui/')) return null
   if (rel.startsWith('modes/') && target.startsWith('modes/')) return null
-  if (target === 'errors.js' || target === 'types.js' || target === 'timing.js') return null
+  if (
+    target === 'errors.js' ||
+    target === 'types.js' ||
+    target === 'timing.js' ||
+    // Owns the ajv dependency so the fenced modes layer does not import it.
+    target === 'output-schema.js'
+  )
+    return null
   return 'escapes-layer'
 }
 
@@ -88,6 +95,7 @@ describe('cli layering', () => {
     ['modes/print.ts', '../tui/render.js'],
     ['modes/print.ts', './text.js'],
     ['modes/print.ts', '../errors.js'],
+    ['modes/print.ts', '../output-schema.js'],
     ['boot/local.ts', '@agnes/host'],
     ['index.ts', '@agnes/daemon'],
   ])('%s importing %s is allowed', (rel, spec) => {

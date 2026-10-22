@@ -19,6 +19,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh run --bundle ID_OR_PATH --input FILE_OR_DASH --json [--batch]` | Fresh headless sessions and versioned JSONL; see [headless runs](../guide/headless.md) |
 | `agh [prompt]` | TUI in a TTY; print outside a TTY |
 | `agh -p [prompt]` | One-shot task with piped input support |
+| `agh -p --output-schema FILE` | Ask for a final reply that is one JSON value matching the JSON Schema (2020-12) in `FILE` (up to 64 KiB) and check it; exit code 6 when it does not match, 2 when the file is unusable |
 | `agh --mode text\|json\|stream-json` | Selects print automatically (`stream-json`: one event line per event, then the result line); ACP is separate |
 | `agh --model main=ROUTE/MODEL` | Explicit slot and route/model from the runtime catalog |
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | Ordinary run options; not all forwarded subcommands accept them. `LEVEL` is `read-only`, `workspace-write`, `full-access` or `default` (the deployment default) and applies to a new session only |

@@ -15,6 +15,7 @@
 | `agh run --bundle ID_OR_PATH --input FILE_OR_DASH --json [--batch]` | 新会话无界面运行和版本化 JSONL，见[指南](../guide/headless.zh-CN.md) |
 | `agh [prompt]` | TTY 为 TUI；非 TTY 为 print |
 | `agh -p [prompt]` | 一次性任务，读取管道输入 |
+| `agh -p --output-schema FILE` | 要求最终回复是一个符合 `FILE` 里 JSON Schema（2020-12，最大 64 KiB）的 JSON 值并加以校验；不符合时退出码 6，文件不可用时退出码 2 |
 | `agh --mode text\|json\|stream-json` | 自动 print（`stream-json`：每个事件一行，最后是结果行）；ACP 为单独模式 |
 | `agh --model main=ROUTE/MODEL` | 显式槽位与运行目录中的路由/模型 |
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | 普通运行选项，不是所有转发子命令均支持。`LEVEL` 为 `read-only`、`workspace-write`、`full-access` 或 `default`（部署默认），只作用于新会话 |

@@ -32,7 +32,7 @@ describe('exit codes', () => {
     expect(exitCodeForReason(reason)).toBe(code)
   })
 
-  it('the closed set is exactly these nine numbers under these nine names', () => {
+  it('the closed set is exactly these ten numbers under these ten names', () => {
     expect(ExitCode).toEqual({
       OK: 0,
       ERROR: 1,
@@ -40,6 +40,7 @@ describe('exit codes', () => {
       PARKED: 3,
       BUDGET: 4,
       MAX_STEPS: 5,
+      SCHEMA_MISMATCH: 6,
       SIGINT: 130,
       SIGTERM: 143,
       SIGHUP: 129,

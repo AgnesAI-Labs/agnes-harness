@@ -397,6 +397,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const mode = resolveMode(p, { stdin: io.stdin.isTTY === true, stdout: io.stdout.isTTY === true })
     if (mode !== 'print' && mode !== 'tui' && mode !== 'acp')
       throw new UsageError(`agh ${mode} is not available in this build; use -p`)
+    if (p.outputSchema !== undefined && mode !== 'print')
+      throw new UsageError('--output-schema is supported only with -p')
     // Resolve the selected mode before installing its signal ladder, so loading cannot race cancel.
     const tuiMode = mode === 'tui' ? await import('./modes/tui.js') : undefined
     const acpMode = mode === 'acp' ? await import('./modes/acp.js') : undefined
