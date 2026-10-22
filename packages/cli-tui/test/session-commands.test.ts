@@ -666,4 +666,14 @@ describe('small info commands', () => {
     expect(tt('init.new', 'en')).not.toBe(tt('init.existing', 'en'))
     expect(tt('init.new', 'zh-CN')).not.toBe(tt('init.new', 'en'))
   })
+
+  it('/review submits a fixed message, with the named scope appended when there is one', async () => {
+    const app = appWith({}, {})
+    expect(await runSlash(app, '/review')).toEqual({ prompt: tt('review.prompt', 'en') })
+    const scoped = await runSlash(app, '/review  src/auth  HEAD~2 ')
+    expect(scoped.prompt).toBe(
+      `${tt('review.prompt', 'en')}\n\n${tt('review.scoped', 'en', { scope: 'src/auth  HEAD~2' })}`,
+    )
+    expect(tt('review.prompt', 'zh-CN')).not.toBe(tt('review.prompt', 'en'))
+  })
 })

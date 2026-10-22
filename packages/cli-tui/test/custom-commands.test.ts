@@ -37,21 +37,18 @@ describe('custom slash commands', () => {
   })
 
   it('runs a personal command as a user message with no confirmation', async () => {
-    mine(
-      'review.md',
-      '---\ndescription: "Review a file"\nargument-hint: <path>\n---\nReview $1 then say $@\n',
-    )
+    mine('audit.md', '---\ndescription: "Review a file"\nargument-hint: <path>\n---\nReview $1 then say $@\n')
     const app = appFor()
-    expect(await runSlash(app, '/review src/a.ts now')).toEqual({
+    expect(await runSlash(app, '/audit src/a.ts now')).toEqual({
       prompt: 'Review src/a.ts then say src/a.ts now',
     })
-    expect(slashCommandFor('/review', 'en', app)).toMatchObject({
+    expect(slashCommandFor('/audit', 'en', app)).toMatchObject({
       args: '<path>',
       description: 'Review a file',
     })
-    expect(completeToken('/rev', app)).toEqual(['/review'])
-    expect(completeToken('/re', app).at(-1)).toBe('/review')
-    expect((await runSlash(app, '/review')).prompt).toBe('Review  then say')
+    expect(completeToken('/aud', app)).toEqual(['/audit'])
+    expect(completeToken('/au', app).at(-1)).toBe('/audit')
+    expect((await runSlash(app, '/audit')).prompt).toBe('Review  then say')
   })
 
   it('shows a project command first and sends it on the second run only', async () => {

@@ -136,6 +136,13 @@ async function initSlash(app: TuiApp): Promise<SlashResult> {
   return { prompt: tt(exists ? 'init.existing' : 'init.new', app.locale) }
 }
 
+/** `/review [scope]`: like `/init`, one fixed message; the agent runs git itself and edits nothing. */
+function reviewSlash(app: TuiApp, line: string): SlashResult {
+  const scope = line.trim().replace(/^\S+\s*/, '')
+  const base = tt('review.prompt', app.locale)
+  return { prompt: scope ? `${base}\n\n${tt('review.scoped', app.locale, { scope })}` : base }
+}
+
 /** The small commands that report on the session or hand work to the agent. */
 export async function infoSlash(app: TuiApp, cmd: string, line: string): Promise<SlashResult> {
   const args = line.trim().split(/\s+/).slice(1)
@@ -148,6 +155,8 @@ export async function infoSlash(app: TuiApp, cmd: string, line: string): Promise
       return diffSlash(app, args)
     case '/init':
       return initSlash(app)
+    case '/review':
+      return reviewSlash(app, line)
     default:
       return {}
   }
