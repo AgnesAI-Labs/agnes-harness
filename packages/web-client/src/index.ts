@@ -91,6 +91,7 @@ export type {
   ConversationPresentationPort,
   NavigationHistory,
   NavigationPresentationPort,
+  SessionListMode,
 } from './presentation-ports.js'
 export type { PresentationProvider } from './presentation-roles.js'
 export {
