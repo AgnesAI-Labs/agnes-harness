@@ -153,6 +153,20 @@ export function whatToDraw(
       return {
         blocks: [{ kind: 'text', markdown: `${node.sources.join('、')} 还在连接，本轮先不使用它` }],
       }
+    case 'workspace-undo':
+      return {
+        blocks: [
+          {
+            kind: 'text',
+            markdown:
+              node.conflicts > 0
+                ? `第 ${node.turn} 轮的撤销被拒绝：${node.conflicts} 个文件在该轮之后又被改动`
+                : node.failed > 0
+                  ? `第 ${node.turn} 轮的撤销中途停止：已恢复 ${node.restored} 个，未恢复 ${node.failed} 个`
+                  : `已撤销第 ${node.turn} 轮对文件的改动：恢复了 ${node.restored} 个文件`,
+          },
+        ],
+      }
     case 'ledger-recovery':
       return {
         blocks: [

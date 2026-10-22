@@ -129,6 +129,8 @@ describe('authenticated session ownership RPC guard', () => {
         { method: '_agnes/v1/session.workspace.list', params: { sessionId } },
         { method: '_agnes/v1/session.workspace.changes', params: { sessionId } },
         { method: '_agnes/v1/session.workspace.read', params: { sessionId, path: 'report.md' } },
+        { method: '_agnes/v1/session.undo.preview', params: { sessionId } },
+        { method: '_agnes/v1/session.undo', params: { sessionId, turn: 1, commandId: 'stranger-undo' } },
         { method: '_agnes/v1/session.fileUpload', params: { sessionId, operation: 'limits' } },
         { method: '_agnes/v1/session.fork', params: { sessionId, at: 1 } },
       ])

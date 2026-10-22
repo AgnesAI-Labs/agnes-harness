@@ -149,6 +149,20 @@ export function nativeContent(
           {t('timeline.toolSourcePending', { names: node.sources.join(t('timeline.conflictOpsJoiner')) })}
         </div>
       )
+    case 'workspace-undo':
+      return (
+        <div className="node-body" role="status" data-testid="workspace-undo-notice">
+          {node.conflicts > 0
+            ? t('timeline.workspaceUndoRefused', { turn: node.turn, count: node.conflicts })
+            : node.failed > 0
+              ? t('timeline.workspaceUndoPartial', {
+                  turn: node.turn,
+                  restored: node.restored,
+                  failed: node.failed,
+                })
+              : t('timeline.workspaceUndone', { turn: node.turn, count: node.restored })}
+        </div>
+      )
     case 'ledger-recovery':
       return (
         <div className="node-body" role="status" data-testid="ledger-tail-recovery-notice">

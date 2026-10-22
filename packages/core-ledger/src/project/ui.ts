@@ -1005,6 +1005,7 @@ export class UIProjectionCell {
         break
       }
       case 'x/core/ledger-tail-recovered':
+      case 'x/core/workspace-undo':
       case 'x/core/tool-source-pending': {
         const notice = noticeNode(event.type, id, seq, data)
         if (notice) this.pushNode(notice)

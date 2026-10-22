@@ -1305,6 +1305,40 @@ describe('context-sections and contribute-conflict projection', () => {
     ])
   })
 
+  it('projects a workspace undo fact into a count-only node and drops a malformed one', async () => {
+    const row = (seq: number, data: unknown) =>
+      ({
+        seq,
+        ts: '2026-10-22T00:00:00.000Z',
+        id: `01K00000000000000000000${seq}`,
+        type: 'x/core/workspace-undo',
+        data,
+        actor: { id: 'local', org: 'local', role: 'user', deptPath: [], attrs: {} },
+        origin: 'principal',
+        trust: 'trusted',
+        lane: 'main',
+        v: 1,
+        ignorable: true,
+      }) as Event
+    const cell = new UIProjectionCell('k', 'main')
+    cell.apply([
+      row(1, { turn: 2, restored: ['a', 'b'], failed: [{ path: 'c', reason: 'EIO' }], conflicts: [] }),
+      row(2, { turn: 0, restored: [], failed: [], conflicts: [] }),
+    ])
+    const { nodes } = await cell.view()
+    expect(nodes.filter((node) => node.kind === 'workspace-undo')).toEqual([
+      {
+        kind: 'workspace-undo',
+        id: '01K000000000000000000001',
+        seq: 1,
+        turn: 2,
+        restored: 2,
+        failed: 1,
+        conflicts: 0,
+      },
+    ])
+  })
+
   it('projects a contribute-conflict diagnostic into a contribute-conflict node', async () => {
     const cell = new UIProjectionCell('k', 'main')
     const event: Event = {

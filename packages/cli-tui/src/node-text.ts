@@ -35,6 +35,12 @@ export function nodeText(node: UINode): string {
       return ''
     case 'tool-source-pending':
       return `${node.sources.join(', ')} still connecting; this turn runs without it`
+    case 'workspace-undo':
+      return node.conflicts > 0
+        ? `Undo of turn ${node.turn} refused: ${node.conflicts} file(s) changed since the turn`
+        : node.failed > 0
+          ? `Undo of turn ${node.turn} stopped: restored ${node.restored}, not restored ${node.failed}`
+          : `Undid the file changes of turn ${node.turn}: restored ${node.restored} file(s)`
     case 'ledger-recovery':
       return `Recovered the valid log through event ${node.validThroughSeq}; damaged tail quarantined. Diagnostic ID: ${node.diagnosticId}`
     case 'context-sections':

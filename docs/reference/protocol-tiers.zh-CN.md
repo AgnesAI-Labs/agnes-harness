@@ -92,6 +92,8 @@
 - `_agnes/v1/session.workspace.list`
 - `_agnes/v1/session.workspace.read`
 - `_agnes/v1/session.workspace.changes`
+- `_agnes/v1/session.undo.preview`
+- `_agnes/v1/session.undo`
 - `_agnes/v1/session.references.search`
 - `_agnes/v1/session.fileUpload`
 - `_agnes/v1/session.projectUI`

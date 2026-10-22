@@ -172,6 +172,8 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/session.references.search': 'client',
   '_agnes/v1/session.workspace.read': 'client',
   '_agnes/v1/session.workspace.changes': 'client',
+  '_agnes/v1/session.undo.preview': 'client',
+  '_agnes/v1/session.undo': 'client',
   '_agnes/v1/session.readToolDetail': 'client',
   '_agnes/v1/session.deliverables': 'client',
   '_agnes/v1/session.fork': 'client',

@@ -41,6 +41,7 @@ import { refreshSkills } from './skills-refresh.js'
 import { readToolDetailPage } from './tool-detail.js'
 import { sessionWorkspaceChanges } from './workspace-changes.js'
 import { sessionWorkspaceFiles } from './workspace-files.js'
+import { sessionUndo, sessionUndoPreview } from './workspace-undo.js'
 
 /** Direct unit-level invocation shape. Wire frames are the stricter SessionCommandFrame union. */
 type SessionCommandInvocation = Omit<SessionCommandFrame, 'sessionKey' | 'method'> & {
@@ -345,6 +346,10 @@ export async function handleCommand(
       return sessionReferences(session, p.operation, p.input as never)
     case 'workspaceChanges':
       return sessionWorkspaceChanges(session, p as Parameters<typeof sessionWorkspaceChanges>[1])
+    case 'undoPreview':
+      return sessionUndoPreview(session, p as Parameters<typeof sessionUndoPreview>[1])
+    case 'undo':
+      return sessionUndo(session, p as Parameters<typeof sessionUndo>[1])
     case 'workspaceFiles':
       if (p.operation !== 'list' && p.operation !== 'read') throw new Error('Invalid workspace operation')
       return sessionWorkspaceFiles(session, p.operation, String(p.path ?? ''))

@@ -80,6 +80,14 @@ function renderNode(node: UINode): string {
     }
     case 'tool-source-pending':
       return `<section class="node minor">${escapeHtml(node.sources.join(', '))} still connecting; this turn runs without it</section>`
+    case 'workspace-undo':
+      return `<section class="node minor">${
+        node.conflicts > 0
+          ? `Undo of turn ${node.turn} refused · ${node.conflicts} file(s) changed since the turn`
+          : node.failed > 0
+            ? `Undo of turn ${node.turn} stopped · restored ${node.restored}, not restored ${node.failed}`
+            : `Undid the file changes of turn ${node.turn} · restored ${node.restored} file(s)`
+      }</section>`
     case 'ledger-recovery':
       return `<section class="node recovery"><div class="content">Recovered through event ${node.validThroughSeq}; damaged tail quarantined. Diagnostic ID: ${escapeHtml(node.diagnosticId)}</div></section>`
     case 'contribute-conflict':

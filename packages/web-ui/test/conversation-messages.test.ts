@@ -157,6 +157,26 @@ describe('W3b projected message DOM', () => {
     )
   })
 
+  it('says whether a turn undo restored, stopped or was refused', async () => {
+    const store = createConversationProjectionStore({
+      sessionId: 'session',
+      nodes: [
+        { kind: 'workspace-undo', id: 'u1', seq: 3, turn: 2, restored: 3, failed: 0, conflicts: 0 },
+        { kind: 'workspace-undo', id: 'u2', seq: 4, turn: 2, restored: 1, failed: 2, conflicts: 0 },
+        { kind: 'workspace-undo', id: 'u3', seq: 5, turn: 2, restored: 0, failed: 0, conflicts: 1 },
+      ],
+    })
+    await mount(store)
+    const texts = [...host.querySelectorAll('[data-testid="workspace-undo-notice"]')].map(
+      (n) => n.textContent,
+    )
+    expect(texts).toEqual([
+      t('timeline.workspaceUndone', { turn: 2, count: 3 }),
+      t('timeline.workspaceUndoPartial', { turn: 2, restored: 1, failed: 2 }),
+      t('timeline.workspaceUndoRefused', { turn: 2, count: 1 }),
+    ])
+  })
+
   it('renders ordinary message content once, in the node article', async () => {
     const store = createConversationProjectionStore({
       sessionId: 'session',

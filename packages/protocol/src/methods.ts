@@ -151,6 +151,8 @@ export type MethodName =
   | '_agnes/v1/session.references.search'
   | '_agnes/v1/session.workspace.read'
   | '_agnes/v1/session.workspace.changes'
+  | '_agnes/v1/session.undo.preview'
+  | '_agnes/v1/session.undo'
   | '_agnes/v1/session.readToolDetail'
   | '_agnes/v1/session.deliverables'
   | '_agnes/v1/session.fork'
@@ -393,6 +395,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     A.SessionWorkspaceChangesParams,
     A.SessionWorkspaceChangesResult,
   ),
+  '_agnes/v1/session.undo.preview': clientRequest(A.SessionUndoPreviewParams, A.SessionUndoPreviewResult),
+  '_agnes/v1/session.undo': clientRequest(A.SessionUndoParams, A.SessionUndoResult),
   '_agnes/v1/session.readToolDetail': clientRequest(
     A.SessionReadToolDetailParams,
     A.SessionReadToolDetailResult,

@@ -33,6 +33,8 @@ readonly fs: {
     stat(path: string): Promise<FsStat>
 
     revision?(path: string): Promise<string | undefined>
+
+    checkpointOf?(path: string): string | undefined
   }
 ```
 Tool safety metadata / 工具安全元数据:

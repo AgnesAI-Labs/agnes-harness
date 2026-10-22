@@ -19,3 +19,10 @@ export * from './tool-detail.js'
 export { workerDomainFailure } from './worker-errors.js'
 export { sessionWorkspaceChanges } from './workspace-changes.js'
 export * from './workspace-files.js'
+export {
+  sessionUndo,
+  sessionUndoPreview,
+  type UndoPreview,
+  type UndoResult,
+  undoResultFromFact,
+} from './workspace-undo.js'

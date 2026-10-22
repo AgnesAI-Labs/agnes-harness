@@ -1,11 +1,11 @@
 import type { UINode } from '@agnes/protocol'
 import { clipUtf16 as clip } from './clip.js'
 
-type NoticeNode = Extract<UINode, { kind: 'ledger-recovery' | 'tool-source-pending' }>
+type NoticeNode = Extract<UINode, { kind: 'ledger-recovery' | 'tool-source-pending' | 'workspace-undo' }>
 
 /**
- * The quiet session notices core writes as diagnostics: a recovered ledger tail, and tool sources a
- * turn started without because they were still connecting. A malformed row projects to nothing.
+ * The quiet session notices core writes as diagnostics: a recovered ledger tail, tool sources a
+ * turn started without because they were still connecting, and a turn's file changes being undone. A malformed row projects to nothing.
  */
 export function noticeNode(type: string, id: string, seq: number, data: unknown): NoticeNode | undefined {
   if (type === 'x/core/ledger-tail-recovered') {
@@ -18,6 +18,26 @@ export function noticeNode(type: string, id: string, seq: number, data: unknown)
       seq,
       diagnosticId: clip(recovery.diagnosticId, 128),
       validThroughSeq: Number(recovery.validThroughSeq),
+    }
+  }
+  if (type === 'x/core/workspace-undo') {
+    const undo = data as { turn?: unknown; restored?: unknown; failed?: unknown; conflicts?: unknown }
+    if (
+      !Number.isSafeInteger(undo.turn) ||
+      Number(undo.turn) < 1 ||
+      !Array.isArray(undo.restored) ||
+      !Array.isArray(undo.failed) ||
+      !Array.isArray(undo.conflicts)
+    )
+      return undefined
+    return {
+      kind: 'workspace-undo',
+      id,
+      seq,
+      turn: Number(undo.turn),
+      restored: undo.restored.length,
+      failed: undo.failed.length,
+      conflicts: undo.conflicts.length,
     }
   }
   const pending = data as { sources?: unknown }

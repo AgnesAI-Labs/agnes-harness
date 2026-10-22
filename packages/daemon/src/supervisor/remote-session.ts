@@ -156,6 +156,14 @@ export class RemoteSession {
     return this.link.command('workspaceChanges', input)
   }
 
+  undoPreview(input: { turn?: number }): Promise<unknown> {
+    return this.link.command('undoPreview', input)
+  }
+
+  undo(input: { turn: number; commandId: string; admissionId: string; actor: Actor }): Promise<unknown> {
+    return this.link.command('undo', input)
+  }
+
   references(operation: 'search' | 'resolve', input: unknown): Promise<unknown> {
     return this.link.command('references', { operation, input })
   }

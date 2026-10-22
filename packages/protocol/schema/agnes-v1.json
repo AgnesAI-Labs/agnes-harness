@@ -886,6 +886,104 @@
         }
       }
     },
+    "SessionUndoPreviewParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": { "type": "string", "maxLength": 512 },
+        "turn": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "SessionUndoFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "action", "undoable"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "action": { "enum": ["restore", "delete", "unchanged"] },
+        "undoable": { "type": "boolean" },
+        "reason": {
+          "enum": [
+            "legacy-receipt",
+            "no-checkpoint",
+            "checkpoint-collected",
+            "changed-since",
+            "missing",
+            "unreadable"
+          ]
+        }
+      }
+    },
+    "SessionUndoPreviewResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "busy", "undoable", "blockedBy", "laterTurns", "shellChanges", "files"],
+      "properties": {
+        "sessionId": { "type": "string", "maxLength": 512 },
+        "turn": { "type": "integer", "minimum": 1 },
+        "busy": { "type": "boolean" },
+        "undoable": { "type": "boolean" },
+        "blockedBy": {
+          "enum": ["none", "busy", "read-only", "later-turns", "already-undone", "files"]
+        },
+        "laterTurns": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "shellChanges": { "type": "boolean" },
+        "files": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/SessionUndoFile" }
+        }
+      }
+    },
+    "SessionUndoParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "turn", "commandId"],
+      "properties": {
+        "sessionId": { "type": "string", "maxLength": 512 },
+        "turn": { "type": "integer", "minimum": 1 },
+        "commandId": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "SessionUndoPathReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "reason"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "reason": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "SessionUndoResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "turn", "seq", "restored", "failed", "conflicts"],
+      "properties": {
+        "sessionId": { "type": "string", "maxLength": 512 },
+        "turn": { "type": "integer", "minimum": 1 },
+        "seq": { "type": "integer", "minimum": 1 },
+        "restored": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+        },
+        "failed": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/SessionUndoPathReason" }
+        },
+        "conflicts": {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/SessionUndoPathReason" }
+        }
+      }
+    },
     "SessionCompactParams": {
       "type": "object",
       "additionalProperties": false,
@@ -1047,6 +1145,7 @@
             "control",
             "editQueued",
             "compact",
+            "undo",
             "fork",
             "jobs.enqueue"
           ]
@@ -3428,6 +3527,21 @@
     },
     "UINode": {
       "oneOf": [
+        {
+          "description": "A turn's file changes were put back, partly put back, or refused because a file changed after the turn.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "turn", "restored", "failed", "conflicts"],
+          "properties": {
+            "kind": { "const": "workspace-undo" },
+            "id": { "type": "string" },
+            "seq": { "type": "integer" },
+            "turn": { "type": "integer", "minimum": 1 },
+            "restored": { "type": "integer", "minimum": 0 },
+            "failed": { "type": "integer", "minimum": 0 },
+            "conflicts": { "type": "integer", "minimum": 0 }
+          }
+        },
         {
           "description": "Tool sources a turn started without because they were still connecting, such as a newly enabled MCP server.",
           "type": "object",

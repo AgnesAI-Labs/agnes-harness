@@ -111,6 +111,9 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'timeline.toolSourcePending': '{names} is still connecting; this turn runs without it.',
     'timeline.ledgerRecovery':
       'Recovered the valid log through event {seq}. The damaged tail was quarantined; uncertain tool effects will not be replayed. Diagnostic ID: {diagnosticId}',
+    'timeline.workspaceUndone': 'Undid turn {turn} file changes: {count} restored.',
+    'timeline.workspaceUndoPartial': 'Undo of turn {turn} stopped: {restored} restored, {failed} not.',
+    'timeline.workspaceUndoRefused': 'Undo of turn {turn} refused: {count} file(s) changed since.',
     'timeline.conflictJoiner': ': ',
     'timeline.conflictOpsJoiner': ', ',
     'timeline.loadEarlier': 'Load earlier records',
@@ -509,6 +512,9 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'timeline.toolSourcePending': '{names} 还在连接，本轮先不使用它',
     'timeline.ledgerRecovery':
       '已恢复至有效日志事件 {seq}。损坏尾部已隔离，不会重放结果不确定的工具操作。诊断编号：{diagnosticId}',
+    'timeline.workspaceUndone': '已撤销第 {turn} 轮的文件改动：恢复 {count} 个。',
+    'timeline.workspaceUndoPartial': '第 {turn} 轮撤销中途停止：恢复 {restored} 个，未恢复 {failed} 个。',
+    'timeline.workspaceUndoRefused': '第 {turn} 轮撤销被拒绝：{count} 个文件之后又被改动。',
     'timeline.conflictJoiner': '：',
     'timeline.conflictOpsJoiner': '、',
     'timeline.loadEarlier': '加载更早的记录',

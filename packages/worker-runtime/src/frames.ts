@@ -44,6 +44,8 @@ export type SessionMethod =
   | 'workspaceFiles'
   | 'fileUpload'
   | 'workspaceChanges'
+  | 'undoPreview'
+  | 'undo'
   | 'append'
   | 'setPreset'
   | 'setModel'

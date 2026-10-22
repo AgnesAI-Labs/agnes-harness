@@ -65,6 +65,7 @@ import {
   SessionEditQueuedParams,
   SessionRemoveQueuedParams,
   SessionSendNowParams,
+  SessionUndoParams,
 } from '@agnes/protocol/gen/agnes-v1'
 import { commandAdmissionId, commandBinding } from '../command-binding.js'
 import { runQueued } from '../command-queue.js'
@@ -79,6 +80,7 @@ import { type Feed, type LocalContext, legacyLedgerRpcError } from './acp.js'
 import { registerIntelligentUi } from './intelligent-ui.js'
 import { registerSchedules } from './schedules.js'
 import { registerSessionGrants } from './session-grants.js'
+import { registerSessionUndo, undoOf, undoResultFromFact } from './session-undo.js'
 import { registerToolRecordReads } from './tool-records.js'
 
 export type AuthKind = 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
@@ -473,6 +475,8 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.references.search',
       'session.readToolDetail',
       'session.deliverables',
+      'session.undo.preview',
+      'session.undo',
       'session.list',
       'session.rename',
       'session.revealWorkspace',
@@ -1657,6 +1661,14 @@ export function registerAgnes(
           queued.cancel()
         }
       }
+      case 'undo': {
+        if (!validateAgainst(SessionUndoParams, { ...payload, commandId }).ok)
+          throw rpcError('INVALID_PARAMS', { reason: 'invalid undo request' })
+        const entry = cx.registry.require(sessionId)
+        const input = { turn: Number(payload.turn), commandId, admissionId, actor: connActor(c.conn) }
+        const result = await undoOf(entry.session, input)
+        return { seq: result.seq, result }
+      }
       case 'fork':
         return cx.forkSession(
           sessionId,
@@ -1770,6 +1782,19 @@ export function registerAgnes(
         ),
       }
     }
+    if (kind === 'undo') {
+      const entry = cx.registry.get(String(payload.sessionId))
+      if (!entry) return undefined
+      const event = await scanNewest(
+        entry.session as unknown as ScannableSession,
+        'x/core/workspace-undo',
+        (candidate) => (candidate.data as { admissionId?: unknown } | null)?.admissionId === admissionId,
+      )
+      if (!event) return undefined
+      requireOwner('submit.undo', String(payload.sessionId), c)
+      const result = undoResultFromFact(String(payload.sessionId), event.seq, event.data as never)
+      return { seq: result.seq, result }
+    }
     if (kind === 'jobs.enqueue' && cx.jobs && typeof payload.idempotencyKey === 'string') {
       try {
         await cx.jobs.poll(payload.idempotencyKey)
@@ -1809,6 +1834,7 @@ export function registerAgnes(
       kind === 'sendNow' ||
       kind === 'removeQueued' ||
       kind === 'compact' ||
+      kind === 'undo' ||
       kind === 'fork' ||
       kind === 'jobs.enqueue'
     )
@@ -1916,6 +1942,7 @@ export function registerAgnes(
     return cx.registry.require(sessionId).session.controls.state((params as { afterSeq?: number }).afterSeq)
   })
   ep.register('_agnes/v1/session.control', (params, c) => sugar('control', params, c))
+  registerSessionUndo(ep, cx.registry, requireOwner, submit)
   ep.register('_agnes/v1/apis.list', async (_params, c) => {
     const pr = cx.host.profile
     // This list is what every conversation picker offers and what a client takes its default model
