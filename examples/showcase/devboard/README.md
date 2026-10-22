@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 An R&D and quality workbench demo for a rail door-system manufacturer: review gates that follow the project kind, multi-discipline traceability, type tests and first-article inspection, and the loop from field alarms back to design. **The company "Ningchuan Transportation Equipment Co., Ltd." (宁川交通装备股份有限公司), its customers, metro lines, trains, parts and people are fictional, and all data is simulated**; no external system (PLM, ERP, QIS, SLM, MES …) is contacted. Gate names, limits and safety-integrity statements are assumptions ("inferred" or "project specification assumption"), not any real company's process.
 
-After installing and adopting DevBoard 3.2.1 on the Agents page, the workbench shows ten pages and an **R&D Coordinator** agent. Four projects are seeded:
+After installing and adopting DevBoard 3.3.0 on the Agents page, the workbench shows ten pages and an **R&D Coordinator** agent. Four projects are seeded:
 
 | Project | Kind | Shows |
 | --- | --- | --- |
@@ -15,7 +15,7 @@ After installing and adopting DevBoard 3.2.1 on the Agents page, the workbench s
 
 | Page | What it shows |
 | --- | --- |
-| Portfolio | Project cards: kind, owning technology centre, gate code, stage bar, coverage, defects, changes; in-service cards add alarms, open quality problems, retrofit progress and baseline gap |
+| Portfolio | The demo role's workbench on top (see Role lens), then the project cards: kind, owning technology centre, gate code, stage bar, coverage, defects, changes; in-service cards add alarms, open quality problems, retrofit progress and baseline gap |
 | Projects | Stage timeline with gates as "code · name" and co-signing status, tailoring note, deliverables, configuration baselines (part × as-designed / as-built / as-maintained), service information |
 | Traceability | Matrix by level (CUS/SYS/SWR/DES/TC) with a discipline column, part and drawing numbers, customer clause responses |
 | Tasks | Task board |
@@ -26,7 +26,17 @@ After installing and adopting DevBoard 3.2.1 on the Agents page, the workbench s
 | Service & quality | PHM alarms by signal and time, quality problems with 8D progress, root cause and linked change |
 | My to-dos | Three columns: waiting for me (approval nodes, gates and human-intervention requests for the demo role), started by me, handled; the approval detail shows the node graph, the actions and the full trace; below are all approval flows, gates and intervention requests. Only a role the node or gate names can act; any other role reads and can switch role in one click |
 
-The board polls every 10 seconds. The demo-role switch only signs decisions; it is not a login or a security boundary.
+The board polls every 10 seconds. The demo-role switch signs decisions and sets the role lens below; it is not a login or a security boundary.
+
+## Role lens
+
+Switching the demo role changes what the pages show. A lens is only a view: it never changes who may act or what the server accepts.
+
+- **Portfolio** opens with "{role}的工作台": a "waiting for me" count (approval nodes, gates and human-intervention requests), two or three counts of open records that matter to the role (for 质量工程师: open defects, 8D problems and trial reports to review) and up to five urgent related records, late ones first, each linking to its detail. The project cards follow under "项目组合".
+- **Traceability, Tasks, Changes, Defects & tests, Trials & first article and Service & quality** have a toggle "只看与我相关（N）｜全部（M）", on "only mine" by default and back to it when the role changes. When nothing on the page concerns the role, the page says so and offers "看全部" instead of an empty table. The development-requirement view of Traceability is not filtered.
+- **Projects** highlights the role's stages (as author) and gates (as approver or stage author) without filtering. **R&D panorama** starts its blocker-role filter at the demo role, or at no filter when that role has no blockers. **My to-dos** is unchanged.
+
+The rules live in `client/lens.js`: 质量工程师 sees every defect, 机械设计师 only the mechanical requirements, 配置管理员 the configuration baselines, 客服工程师 only the alarms reported by customer service; 技术负责人, 分技术中心主任 and IPMT also see everything waiting for their decision. A record kind or role without a rule counts as not related.
 
 ## Rules
 
@@ -60,7 +70,7 @@ The preset explicitly requests reviewed `sandbox.loopback_serve` under L1 enforc
 
 ### Demo script and checkpoints
 
-0. **Update Agnes first, then replace DevBoard**: use a platform build whose package inspection accepts the complete declared role list; an older build may refuse it. To replace 2.x (2.0.0/2.1.0), 3.1.0 or 3.2.0 with **3.2.1**, on the Agents page disable DevBoard, uninstall the old version, install 3.2.1, trust and enable it, then adopt it. Installing over an existing version fails in the confirmed 2.x case; use this replacement path for 3.1.0 and 3.2.0 as well. Whether old data survives uninstall is not yet confirmed; 3.2.1 ships seed data, and **重置演示数据** (reset demo data) on Portfolio restores the demo state.
+0. **Update Agnes first, then replace DevBoard**: use a platform build whose package inspection accepts the complete declared role list; an older build may refuse it. To replace 2.x (2.0.0/2.1.0), 3.1.0, 3.2.0, 3.2.1 or 3.2.2 with **3.3.0**, on the Agents page disable DevBoard, uninstall the old version, install 3.3.0, trust and enable it, then adopt it. Installing over an existing version fails in the confirmed 2.x case; use this replacement path for 3.1.0 and 3.2.x as well. Whether old data survives uninstall is not yet confirmed; 3.3.0 ships seed data, and **重置演示数据** (reset demo data) on Portfolio restores the demo state.
 1. Portfolio: four projects with gate codes and owning centres; PRJ-2023-011 shows alarms, open problems, retrofit progress and baseline gap.
 2. Reviews → the design liaison 2 gate of PRJ-2026-008: signing as 质量工程师 is refused with "本门需由 … 审批"; signing as a role the gate names records one signature and leaves the gate pending; the last signature is refused while findings are open; close them and sign the remaining role to pass the gate and move on to design freeze.
 3. Trials & first article: the failed low-temperature clamping-force trial of PRJ-2025-042 points at its change; submitting the type-test gate adds a finding for every trial not yet approved.
@@ -118,4 +128,4 @@ Everything below is an assumption in this demo and should be confirmed before re
 pnpm exec vitest run examples/showcase/devboard/test --maxWorkers=1
 ```
 
-Upgrading: stored data of schema 1 or 2 reads as the seed and is replaced on the first write, schema 3 and 4 data is kept (a schema 3 store starts with no approvals); update Agnes first, then disable and uninstall the old DevBoard before replacing 2.x, 3.1.0 or 3.2.0 with 3.2.1 (see step 0 of the demo script). To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.
+Upgrading: stored data of schema 1 or 2 reads as the seed and is replaced on the first write, schema 3 and 4 data is kept (a schema 3 store starts with no approvals); update Agnes first, then disable and uninstall the old DevBoard before replacing 2.x, 3.1.0, 3.2.0, 3.2.1 or 3.2.2 with 3.3.0 (see step 0 of the demo script). To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.
