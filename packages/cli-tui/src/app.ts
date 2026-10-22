@@ -241,20 +241,18 @@ export class TuiApp {
           const card = new ApprovalCard(node, {
             ansi,
             locale,
-            onDecide: async (ref, verdict) => {
+            onDecide: async (ref, verdict, reason) => {
               if (this.refuseClosed()) return
+              const value =
+                reason ?? (node.presentation?.[locale] ?? node.presentation?.en)?.responseValue ?? null
               await this.o.session.client.approval.decide({
                 ...ref,
                 commandId: `${ref.id}:${ref.revision}:${verdict}`,
-                response: {
-                  option: verdict,
-                  value: (node.presentation?.[locale] ?? node.presentation?.en)?.responseValue ?? null,
-                },
+                response: { option: verdict, value },
               })
             },
-            // The decide call's settlement (in particular a rejection, which produces no new
-            // ledger event for TuiProjection to pick up) has to ask for its own repaint: nothing
-            // else in the render loop is watching that promise.
+            // The decide call's settlement (a rejection adds no ledger event for TuiProjection)
+            // must ask for its own repaint: nothing else in the render loop watches that promise.
             changed: () => this.stopped || this.renderer.requestRender(),
           })
           this.approvalCards.set(node.id, card)

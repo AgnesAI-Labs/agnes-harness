@@ -147,3 +147,66 @@ it('renders the selected locale fields without rewriting their exact meaning', (
   expect(text).toContain('签名含义: 我批准。')
   expect(text).not.toContain('Human signature')
 })
+
+describe('ApprovalCard rejection reason', () => {
+  const make = () => {
+    const decide = vi.fn(async () => undefined)
+    const card = new ApprovalCard(node(['allow_once', 'reject_once']), { ansi: PLAIN, onDecide: decide })
+    return { card, decide }
+  }
+  const ref = { sessionId: 's', id: 'ticket-1', revision: 1 }
+  const type = (card: ApprovalCard, text: string) => {
+    for (const ch of text) card.handleInput(ch)
+  }
+
+  it('offers the reason key only next to a reject option', () => {
+    expect(make().card.render(120).join('\n')).toContain('[r] Reject with a reason')
+    const none = new ApprovalCard(node(['allow_once']), { ansi: PLAIN, onDecide: vi.fn() })
+    expect(none.render(120).join('\n')).not.toContain('Reject with a reason')
+    expect(none.handleInput('r')).toBe(false)
+  })
+
+  it('sends the typed words with the rejection on Enter', async () => {
+    const { card, decide } = make()
+    expect(card.handleInput('r')).toBe(true)
+    type(card, 'no, usx')
+    card.handleInput('\x7f')
+    type(card, 'e staging')
+    expect(card.render(120).join('\n')).toContain('no, use staging')
+    expect(card.handleInput('\r')).toBe(true)
+    await vi.waitFor(() => expect(decide).toHaveBeenCalledWith(ref, 'rejected', 'no, use staging'))
+  })
+
+  it('goes back to the options on Esc and sends nothing', () => {
+    const { card, decide } = make()
+    card.handleInput('r')
+    type(card, 'abc')
+    expect(card.handleInput('\x1b')).toBe(true)
+    expect(card.render(120).join('\n')).toContain('[1] Allow once')
+    expect(decide).not.toHaveBeenCalled()
+    expect(card.handleInput('1')).toBe(true)
+  })
+
+  it.each(['', '   '])('treats a blank reason (%j) as a plain rejection', async (blank) => {
+    const { card, decide } = make()
+    card.handleInput('r')
+    type(card, blank)
+    card.handleInput('\r')
+    await vi.waitFor(() => expect(decide).toHaveBeenCalledWith(ref, 'rejected'))
+  })
+
+  it('caps the reason at 500 characters, strips control characters and leaves ctrl-c alone', async () => {
+    const { card, decide } = make()
+    card.handleInput('r')
+    expect(card.handleInput('\x03')).toBe(false)
+    card.handleInput('\x1b[200~a\u0007b\n\x1b[31mc\x1b[201~')
+    card.handleInput(`\x1b[200~${'x'.repeat(600)}\x1b[201~`)
+    card.handleInput('\r')
+    await vi.waitFor(() => expect(decide).toHaveBeenCalled())
+    const sent = (decide.mock.calls[0] as unknown[])[2] as string
+    expect([...sent]).toHaveLength(500)
+    expect(sent.startsWith('a b ')).toBe(true)
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting none remain
+    expect(sent).not.toMatch(/[\u0000-\u001f\u007f]/)
+  })
+})

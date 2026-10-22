@@ -1,6 +1,7 @@
 import type { UINode } from '@agnes/protocol'
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
+import { parseKey } from '../keys.js'
 import { type Locale, type LocaleKey, t } from '../locale.js'
 import { tt } from '../locale-extended.js'
 import { paintsColour, type ThemedAnsi } from '../theme.js'
@@ -33,6 +34,12 @@ const OPTION_VERDICT: Partial<Record<string, Verdict>> = {
 
 type Action = { verdict: Verdict; label: string }
 
+/** The most characters of a rejection reason the card collects; Core cuts to the same bound. */
+export const REASON_MAX = 500
+// biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are stripped on purpose
+const REASON_CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g
+const cleanReason = (text: string): string => text.replace(REASON_CONTROL, ' ')
+
 /**
  * What the card offers, in order: the option kinds it knows (an unknown one from a newer daemon is
  * skipped, never shown unlabelled or answered blind) and, right after "allow once", Core's offered
@@ -63,6 +70,8 @@ function actionsOf(n: ApprovalNode, locale: Locale): Action[] {
 export class ApprovalCard implements Component {
   private phase: 'pending' | 'deciding' | 'decided' | 'failed'
   private note = ''
+  /** The rejection reason being typed, or null while the card shows its options. */
+  private reason: string | null = null
 
   get pending(): boolean {
     return this.phase === 'pending'
@@ -73,7 +82,11 @@ export class ApprovalCard implements Component {
     private readonly o: {
       ansi: ThemedAnsi
       locale?: Locale
-      onDecide(ref: NonNullable<ApprovalNode['decisionRef']>, verdict: Verdict): Promise<void>
+      onDecide(
+        ref: NonNullable<ApprovalNode['decisionRef']>,
+        verdict: Verdict,
+        reason?: string,
+      ): Promise<void>
       /**
        * Called after the decide call settles (success or failure), never before. `handleInput`'s
        * own synchronous return already earns this card its next paint for the "deciding…" line
@@ -103,15 +116,41 @@ export class ApprovalCard implements Component {
   invalidate(): void {}
 
   handleInput(data: string): boolean {
-    if (this.phase !== 'pending' || !this.n.decisionRef || !/^[1-9]$/.test(data)) return false
+    if (this.phase !== 'pending' || !this.n.decisionRef) return false
+    if (this.reason !== null) return this.typeReason(data)
+    if (data === 'r' && this.n.options.includes('reject_once')) {
+      this.reason = ''
+      return true
+    }
+    if (!/^[1-9]$/.test(data)) return false
     const action = actionsOf(this.n, this.o.locale ?? 'en')[Number(data) - 1]
     if (!action) return false
+    return this.decide(action.verdict)
+  }
+
+  /** One line of text for the model: Enter rejects with it (blank is a plain reject), Esc goes back. */
+  private typeReason(data: string): boolean {
+    const key = parseKey(data, false)
+    if (key.name === 'esc') this.reason = null
+    else if (key.name === 'enter') return this.decide('rejected', this.reason?.trim() || undefined)
+    else if (key.name === 'backspace') this.reason = [...(this.reason ?? '')].slice(0, -1).join('')
+    else if (key.name === 'char' || key.name === 'paste') {
+      const text = cleanReason(key.ch ?? '')
+      // A control key (ctrl-c and the like) is not text: it falls through to its usual owner.
+      if (key.name === 'char' && text !== key.ch) return false
+      this.reason = [...`${this.reason ?? ''}${text}`].slice(0, REASON_MAX).join('')
+    } else return false
+    return true
+  }
+
+  private decide(verdict: Verdict, reason?: string): boolean {
+    if (!this.n.decisionRef) return false
     // Persisted approval cards use Agnes' four-option vocabulary. The live PermissionModal remains
     // ACP-only and therefore never maps `allow_always` to this profile-scoped permanent decision.
-    const verdict = action.verdict
     const ref = this.n.decisionRef
+    this.reason = null
     this.phase = 'deciding'
-    void this.o.onDecide(ref, verdict).then(
+    void (reason === undefined ? this.o.onDecide(ref, verdict) : this.o.onDecide(ref, verdict, reason)).then(
       () => {
         this.phase = 'decided'
         this.note = verdict
@@ -153,9 +192,10 @@ export class ApprovalCard implements Component {
     const chip = paintsColour(ansi)
       ? (key: string) => ansi.bg('accent', ansi.fg('onAccent', ` ${key} `))
       : (key: string) => ansi.bold(`[${key}]`)
-    const keys = actionsOf(n, locale)
-      .map((action, i) => `${chip(String(i + 1))} ${action.label}`)
-      .join('  ')
+    const keys = [
+      ...actionsOf(n, locale).map((action, i) => `${chip(String(i + 1))} ${action.label}`),
+      ...(n.options.includes('reject_once') ? [`${chip('r')} ${t('approval.rejectReason', locale)}`] : []),
+    ].join('  ')
     const rail = ansi.fg('warning', '│ ')
     return [
       fitLine(
@@ -184,7 +224,12 @@ export class ApprovalCard implements Component {
       ...(n.subjectText
         ? wrapText(escapeControl(n.subjectText), width - 2).map((line) => fitLine(`${rail}${line}`, width))
         : []),
-      fitLine(`${rail}${this.phase === 'deciding' ? '…' : keys}`, width),
+      this.reason !== null
+        ? fitLine(
+            `${rail}${ansi.fg('faint', `${t('approval.reasonPrompt', locale)}: `)}${this.reason}▏`,
+            width,
+          )
+        : fitLine(`${rail}${this.phase === 'deciding' ? '…' : keys}`, width),
     ]
   }
 }
