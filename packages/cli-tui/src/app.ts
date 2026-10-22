@@ -3,6 +3,7 @@ import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '
 import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
+import { cancelTurn } from './busy-input.js'
 import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
@@ -451,16 +452,17 @@ export class TuiApp {
   }
 
   get busy(): boolean {
-    // A projection is presentation data and can arrive behind the ledger (or be a historical cut
-    // during attach). It must never turn an idle editor into a local queue. This client owns one
-    // prompt at a time, so its actual in-flight RPC is the authoritative interaction gate.
-    return this.localTurn
+    // A turn counts whoever started it: the projection shows turns of other clients, and the
+    // local flag covers the window before the projection catches up with this client's own prompt.
+    return this.localTurn || this.turnActive
   }
 
   /** Refuses, with a notice, while this client's own turn or queued prompts still belong to the current
    * session: a switch would send those prompts, and Ctrl-C's cancel, to the next session instead. */
   refuseSwitch(): boolean {
-    const refused = this.busy || this.pendingPrompts.length > 0
+    // Only this client's own in-flight prompt belongs to the session: a turn the projection shows
+    // is the daemon's, and the cancel it needs goes by session, not by what this client displays.
+    const refused = this.localTurn || this.pendingPrompts.length > 0
     if (refused)
       this.statusBar.setNotice('Turn or queued prompt pending: finish or Ctrl-C before switching.', 'warning')
     return refused
@@ -1106,7 +1108,12 @@ export class TuiApp {
   async cancel(): Promise<void> {
     this.attachmentController.abort()
     this.attachmentController = new AbortController()
-    if (this.busy) await this.o.session.cancel()
+    if (!this.busy) return
+    const refused = await cancelTurn(this.o.session, this.locale)
+    if (refused) {
+      this.statusBar.setNotice(refused, 'error')
+      this.renderer.requestRender()
+    }
   }
 
   async stop(): Promise<void> {

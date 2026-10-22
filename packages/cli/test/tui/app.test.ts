@@ -391,6 +391,63 @@ it('Esc cancels actual core inference and keeps the half-written draft', async (
   }
 })
 
+type Submitted = { kind: string; commandId: string; payload: Record<string, unknown> }
+
+/** fakeSessionEndpoint that records every `_agnes/v1/submit` and answers it like a daemon that accepted it. */
+function submitEndpoint(answer: (params: Submitted) => unknown = () => ({ seq: 1, replayed: false })) {
+  const base = fakeSessionEndpoint()
+  const submits: Submitted[] = []
+  base.endpoint
+    .on('_agnes/v1/submit', (params) => {
+      submits.push(params as Submitted)
+      return answer(params as Submitted)
+    })
+    .on('_agnes/v1/submit.ack', () => ({}))
+  return { ...base, submits }
+}
+
+it.each([
+  ['sends the cancel', undefined, undefined],
+  [
+    'says only the owner can cancel when the daemon refuses it',
+    rpcError('CAPABILITY_DENIED', {}),
+    'Only the session owner can cancel this turn',
+  ],
+  [
+    'names the code of a rejected cancel',
+    rpcError('SEMANTIC_REJECTED', { code: 'LOOP_CONTROL_UNSUPPORTED' }),
+    'Cancel refused (LOOP_CONTROL_UNSUPPORTED)',
+  ],
+])('treats a turn another client started as busy, and Ctrl-C %s', async (_name, refusal, shown) => {
+  const { endpoint, submits } = submitEndpoint(() => {
+    if (refusal) throw refusal
+    return { seq: 1, replayed: false }
+  })
+  endpoint.on('_agnes/v1/session.projectUI', () => ({
+    ...EMPTY_TIMELINE,
+    opState: { turn: 1, step: 1, phase: 'tools' },
+  }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    await vi.waitFor(() => expect(app?.busy).toBe(true))
+    term.feed('\x03')
+    await vi.waitFor(() =>
+      expect(submits.map((s) => [s.kind, s.payload.action])).toEqual([['control', 'cancel']]),
+    )
+    if (shown)
+      await vi.waitFor(async () => expect((await screenOf(term, 80, 24)).join('\n')).toContain(shown))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 it('keeps long-conversation history inside fullscreen while paging the projected window', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-history-'))
   const { host } = await createTestHost({
@@ -567,9 +624,7 @@ it("mints a fresh requestSeq for every real action click, never the slot fill's 
     sessionId: SID,
     upto: 1,
     generation: 1,
-    // A late historical projection may still advertise a running turn. It is display state, not
-    // permission to trap the next editor submission in a local queue.
-    opState: { turn: 7, step: 1, phase: 'tools' },
+    opState: null,
     turns: [],
     nodes: [
       {

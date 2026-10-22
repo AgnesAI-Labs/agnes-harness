@@ -22,6 +22,8 @@ export const TERMINAL_KEYS = [
   'picker.filter',
   'scroll.newBelow',
   'scroll.newBelowCtrl',
+  'busy.cancelDenied',
+  'busy.cancelRejected',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -47,6 +49,8 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'picker.filter': 'Filter: {q} ({n}/{total})',
     'scroll.newBelow': '↓ New output below · End to jump back',
     'scroll.newBelowCtrl': '↓ New output below · Ctrl-End to jump back',
+    'busy.cancelDenied': 'Only the session owner can cancel this turn',
+    'busy.cancelRejected': 'Cancel refused ({code})',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -65,5 +69,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'picker.filter': '过滤：{q}（{n}/{total}）',
     'scroll.newBelow': '↓ 有新内容 · End 回到底部',
     'scroll.newBelowCtrl': '↓ 有新内容 · Ctrl-End 回到底部',
+    'busy.cancelDenied': '只有会话属主能取消这一轮',
+    'busy.cancelRejected': '取消被拒绝（{code}）',
   },
 }
