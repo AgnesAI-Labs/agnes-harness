@@ -32,8 +32,15 @@ export class FilterSelect implements Component {
       onCancel?(): void
       ansi?: ThemedAnsi
       maxRows?(): number
+      /** The filter text to start with, for a list rebuilt around the same query. */
+      initialFilter?: string
+      /** Tab: the owner may swap the list; the current filter is handed over to carry across. */
+      onScope?(filter: string): void
+      /** Shown when there is nothing to list and no filter is typed. */
+      emptyText?: string
     },
   ) {
+    this.filter = o.initialFilter ?? ''
     this.select = this.build()
   }
 
@@ -72,6 +79,10 @@ export class FilterSelect implements Component {
       return true
     }
     const action = actionFor('picker', key.name)
+    if (action === 'picker-scope') {
+      this.o.onScope?.(this.filter)
+      return true
+    }
     if (action === 'picker-erase') {
       if (this.filter)
         this.setFilter(this.filter.slice(0, Array.from(GRAPHEMES.segment(this.filter)).at(-1)?.index))
@@ -86,7 +97,8 @@ export class FilterSelect implements Component {
 
   render(width: number): string[] {
     const rows = this.select.render(width)
-    if (!this.filter) return rows
+    if (!this.filter)
+      return rows.length || !this.o.emptyText ? rows : [fitLine(escapeControl(this.o.emptyText), width)]
     const shown = tt('picker.filter', this.o.locale ?? 'en', {
       q: escapeControl(this.filter),
       n: this.matches().length,

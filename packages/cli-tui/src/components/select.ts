@@ -32,6 +32,12 @@ export class Select implements Component {
       this.idx = Math.max(0, Math.min(this.options.length - 1, this.idx + 1))
       return true
     }
+    if (action === 'picker-page-up' || action === 'picker-page-down') {
+      const page = Math.max(1, Math.floor(this.o.maxRows?.() ?? this.options.length))
+      const next = this.idx + (action === 'picker-page-up' ? -page : page)
+      this.idx = Math.max(0, Math.min(this.options.length - 1, next))
+      return true
+    }
     if (action === 'picker-choose') {
       const option = this.options[this.idx]
       if (option) this.o.onChoose(option.id)

@@ -237,11 +237,18 @@ export type ModelChoice = {
 export type SessionChoice = {
   sessionId: string
   createdAt: string
+  /** Last message time; the picker sorts and shows by this, falling back to `createdAt`. */
+  lastMessageAt?: string
   lastSeq: number
   preset: string | null
   title?: string
   /** Set by the /rewind picker: choosing forks this session at that completed-turn boundary. */
   forkAt?: number
+}
+
+export type SessionScopeView = {
+  scope: 'workspace' | 'all'
+  reload(scope: 'workspace' | 'all'): Promise<SessionChoice[]>
 }
 
 export type SlashResult = {
@@ -260,6 +267,8 @@ export type SlashResult = {
   modelChoices?: ModelChoice[]
   sessionChoices?: SessionChoice[]
   sessionPickerTitle?: ExtendedKey
+  /** The /resume picker's scope: Tab switches between this workspace and every workspace, listed by `reload`. */
+  sessionScope?: SessionScopeView
   quit?: boolean
 }
 
@@ -308,13 +317,14 @@ export async function listSessionChoices(session: Session, resumableFrom?: strin
     .map((item) => ({
       sessionId: item.sessionId,
       createdAt: item.createdAt,
+      ...(item.lastMessageAt ? { lastMessageAt: item.lastMessageAt } : {}),
       lastSeq: item.lastSeq,
       preset: item.preset,
       ...(item.title ? { title: item.title } : {}),
     }))
     .sort((a, b) => {
-      const aTime = Date.parse(a.createdAt)
-      const bTime = Date.parse(b.createdAt)
+      const aTime = Date.parse(a.lastMessageAt ?? a.createdAt)
+      const bTime = Date.parse(b.lastMessageAt ?? b.createdAt)
       if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) return bTime - aTime
       if (Number.isFinite(aTime) !== Number.isFinite(bTime)) return Number.isFinite(bTime) ? 1 : -1
       return b.sessionId.localeCompare(a.sessionId)
@@ -446,7 +456,11 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       if (id) return { switchSession: await c.session.load(id, { cwd: app.cwd }) }
       const everywhere = args[0] === 'all'
       const sessionChoices = await listSessionChoices(s, everywhere ? undefined : app.cwd)
-      if (sessionChoices.length) return { sessionChoices }
+      if (sessionChoices.length) {
+        const reload = (scope: 'workspace' | 'all') =>
+          listSessionChoices(s, scope === 'all' ? undefined : app.cwd)
+        return { sessionChoices, sessionScope: { scope: everywhere ? 'all' : 'workspace', reload } }
+      }
       return { text: everywhere ? 'no sessions' : 'no other sessions in this workspace' }
     }
     case '/sessions': {

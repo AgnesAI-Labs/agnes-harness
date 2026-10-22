@@ -725,6 +725,8 @@ describe('runSlash', () => {
               {
                 sessionId: 'older-history',
                 createdAt: '2026-01-01T00:00:00Z',
+                // Created first but active last: the picker orders by activity, not creation.
+                lastMessageAt: '2026-05-01T00:00:00Z',
                 lastSeq: 4,
                 generation: 1,
                 preset: 'standard',
@@ -736,9 +738,10 @@ describe('runSlash', () => {
     try {
       const result = await runSlash(app, '/resume')
       expect(result.sessionChoices?.map((choice) => choice.sessionId)).toEqual([
-        'newest-history',
         'older-history',
+        'newest-history',
       ])
+      expect(result.sessionScope?.scope).toBe('workspace')
       expect(ep.calls.filter((entry) => entry.method === '_agnes/v1/session.list')).toHaveLength(2)
       expect(ep.calls.some((entry) => entry.method === 'session/load')).toBe(false)
     } finally {

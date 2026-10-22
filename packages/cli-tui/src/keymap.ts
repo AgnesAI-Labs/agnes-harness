@@ -53,6 +53,9 @@ export const BINDINGS = [
   { id: 'picker-choose', scope: 'picker', keys: ['enter'], fixed: true },
   { id: 'picker-cancel', scope: 'picker', keys: ['esc'], fixed: true },
   { id: 'picker-erase', scope: 'picker', keys: ['backspace'], fixed: true },
+  { id: 'picker-page-up', scope: 'picker', keys: ['pgup'], fixed: true },
+  { id: 'picker-page-down', scope: 'picker', keys: ['pgdn'], fixed: true },
+  { id: 'picker-scope', scope: 'picker', keys: ['tab'], fixed: true },
   // Read-only report panels.
   { id: 'panel-close', scope: 'panel', keys: ['esc', 'enter', 'ctrl-c'], fixed: true },
   { id: 'panel-up', scope: 'panel', keys: ['up'], fixed: true },

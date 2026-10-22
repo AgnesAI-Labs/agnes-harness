@@ -3,6 +3,9 @@ import { createAnsi } from '../../src/tui/ansi.js'
 import { TuiTheme } from '../../src/tui/theme.js'
 import { SessionPicker } from '../../src/tui/views/session-picker.js'
 
+// The picker prints local time; pin the zone so the expectations hold on any machine.
+process.env.TZ = 'UTC'
+
 const choices = [
   {
     sessionId: 'agnes:local:default:cli:session:new',
@@ -34,7 +37,7 @@ it('renders session metadata, owns input, chooses by key and cancels without cho
   picker.show(choices)
   const rendered = picker.render(160).join('\n')
   expect(rendered).toContain('Select Session')
-  expect(rendered).toContain('2026-09-13 13:45Z · Release review · standard · seq 22')
+  expect(rendered).toContain('2026-09-13 13:45 · Release review · standard · seq 22')
   expect(rendered).toContain(choices[0]?.sessionId)
   expect(picker.handleInput('\t')).toBe(true)
   picker.handleInput('\x1b[B')
@@ -114,4 +117,85 @@ it('types to filter by title, id or time; digits pick only while the filter is e
   picker.show(choices)
   picker.handleInput('\x1b')
   expect(picker.open).toBe(false)
+})
+
+it('shows last activity rather than creation time', () => {
+  const picker = new SessionPicker({
+    ansi: new TuiTheme().ansi(createAnsi('none')),
+    maxRows: () => 8,
+    onChoose: vi.fn(),
+    changed: vi.fn(),
+  })
+  picker.show([{ ...choices[1], lastMessageAt: '2026-09-14T01:02:00Z' }] as never)
+  expect(picker.render(160).join('\n')).toContain('2026-09-14 01:02 · claw')
+})
+
+it('Tab reloads the other scope with the typed filter kept, titles the scope, and says when it is empty', async () => {
+  const reload = vi.fn(async (): Promise<typeof choices> => choices)
+  const picker = new SessionPicker({
+    ansi: new TuiTheme().ansi(createAnsi('none')),
+    maxRows: () => 8,
+    onChoose: vi.fn(),
+    changed: vi.fn(),
+  })
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+  picker.show(choices, undefined, { scope: 'workspace', reload })
+  expect(picker.render(160).join('\n')).toContain('Select Session · this workspace · Tab: all')
+  for (const ch of 'rel') picker.handleInput(ch)
+  expect(picker.handleInput('\t')).toBe(true)
+  await settle()
+  expect(reload).toHaveBeenLastCalledWith('all')
+  let text = picker.render(160).join('\n')
+  expect(text).toContain('all workspaces')
+  expect(text).toContain('Filter: rel (1/2)')
+  // Tab flips back, and an empty scope says so.
+  reload.mockResolvedValueOnce([])
+  picker.handleInput('\t')
+  await settle()
+  expect(reload).toHaveBeenLastCalledWith('workspace')
+  text = picker.render(160).join('\n')
+  expect(text).toContain('this workspace')
+  expect(text).toContain('Filter: rel (0/0)')
+  // A failed reload keeps the list that was showing and names the failure under it.
+  reload.mockRejectedValueOnce(new Error('daemon gone\x1b[31m'))
+  picker.handleInput('\t')
+  await settle()
+  text = picker.render(160).join('\n')
+  expect(text).toContain('this workspace')
+  expect(text).toContain('daemon gone')
+  expect(text).not.toContain('\x1b[31m')
+  // An unscoped picker (rewind, search) ignores Tab.
+  reload.mockClear()
+  picker.show(choices)
+  picker.handleInput('\t')
+  await settle()
+  expect(reload).not.toHaveBeenCalled()
+  picker.show([], undefined, { scope: 'all', reload })
+  expect(picker.render(160).join('\n')).toContain('no sessions in this scope')
+})
+
+it('PageDown and PageUp move by the visible row count and stop at the ends', () => {
+  const chosen = vi.fn()
+  const many = Array.from({ length: 12 }, (_, i) => ({
+    sessionId: `s${i}`,
+    createdAt: '2026-09-13T13:45:00Z',
+    lastSeq: i,
+    preset: 'standard',
+  }))
+  const picker = new SessionPicker({
+    ansi: new TuiTheme().ansi(createAnsi('none')),
+    maxRows: () => 6,
+    onChoose: chosen,
+    changed: vi.fn(),
+  })
+  picker.show(many)
+  // 6 rows minus the title and border budget leaves a 3-row page.
+  picker.handleInput('\x1b[6~')
+  picker.handleInput('\r')
+  expect(chosen).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's3' }))
+  picker.show(many)
+  for (let i = 0; i < 9; i++) picker.handleInput('\x1b[6~')
+  picker.handleInput('\x1b[5~')
+  picker.handleInput('\r')
+  expect(chosen).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 's8' }))
 })

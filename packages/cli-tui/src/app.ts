@@ -934,7 +934,7 @@ export class TuiApp {
     }
     if (r.sessionChoices) {
       this.statusBar.setNotice(undefined)
-      this.sessionPicker.show(r.sessionChoices, r.sessionPickerTitle)
+      this.sessionPicker.show(r.sessionChoices, r.sessionPickerTitle, r.sessionScope)
     }
     if (r.switchSession) await this.applySwitch(r.switchSession)
     if (r.quit) this.onQuit()
