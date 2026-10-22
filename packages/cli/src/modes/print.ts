@@ -3,6 +3,7 @@ import type { EffectIntent, EffectSettled, EventEnvelope, ToolCall, TurnEndReaso
 import { publicErrorHelp } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
 import { CommandError, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageError } from '../errors.js'
+import { timingMark } from '../timing.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { readPromptInput } from './prompt-input.js'
 import { cliEventLine, cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
@@ -214,9 +215,14 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     const toolNames = new Map<string, string>()
     const toolEffects = new Map<string, string>()
     const events: EventEnvelope[] = []
+    let sawToken = false
     const collector = (async () => {
       for await (const e of session.events()) {
         if (e.seq <= startSeq) continue
+        if (!sawToken && (e.type === 'assistant/output' || e.type === 'assistant/message')) {
+          sawToken = true
+          timingMark('first-token')
+        }
         events.push(e)
         if (streaming) io.stdout.write(cliEventLine(e))
         if (!machine) {

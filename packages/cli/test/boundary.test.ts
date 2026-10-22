@@ -38,7 +38,7 @@ export function violationFor(rel: string, spec: string): string | null {
   if (target.startsWith('..')) return 'escapes-package'
   if (target.startsWith('tui/')) return null
   if (rel.startsWith('modes/') && target.startsWith('modes/')) return null
-  if (target === 'errors.js' || target === 'types.js') return null
+  if (target === 'errors.js' || target === 'types.js' || target === 'timing.js') return null
   return 'escapes-layer'
 }
 

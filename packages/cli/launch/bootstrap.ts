@@ -5,6 +5,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, parse, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createPrivateDirectorySync, hasPrivateDaclSync } from '@agnes/system-node'
+import { timingMark } from '../src/timing.js'
 
 /** build-local sets this to the large bundle each tiny local entry loads. */
 declare const AGNES_BOOTSTRAP_MAIN: string | undefined
@@ -62,6 +63,7 @@ export function enableLocalCompileCache(
 }
 
 if (typeof AGNES_BOOTSTRAP_MAIN === 'string') {
+  timingMark('bootstrap')
   enableLocalCompileCache()
   const main = fileURLToPath(new URL(AGNES_BOOTSTRAP_MAIN, import.meta.url))
   // The bundles keep their own main-module guards, which compare argv[1] with their own file.

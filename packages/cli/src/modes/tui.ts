@@ -1,5 +1,6 @@
 import { dirname, join } from 'node:path'
 import { ExitCode, SIGNAL_EXIT_CODES, type SignalName } from '../errors.js'
+import { timingMark } from '../timing.js'
 import { inheritFreshSession, TuiApp } from '../tui/app.js'
 import { escapeControl } from '../tui/component.js'
 import { resolveLocale } from '../tui/locale.js'
@@ -122,7 +123,18 @@ export async function runTui(
         quit()
       }
     })
+    // The first stdout write after this point is the first frame; the composer takes input once
+    // start() has returned. Both marks cost nothing without AGH_TIMING.
+    if (io.env.AGH_TIMING === '1') {
+      const write = io.stdout.write
+      io.stdout.write = (s: string) => {
+        io.stdout.write = write
+        timingMark('first-frame', io.env)
+        return write.call(io.stdout, s)
+      }
+    }
     await tui.start()
+    timingMark('composer-ready', io.env)
     if (io.signal()) quit()
     const initialPrompt = p.command === 'resume' ? p.positional.slice(1) : p.positional
     if (!io.signal() && initialPrompt.length > 0) await tui.runInput(initialPrompt.join(' '))

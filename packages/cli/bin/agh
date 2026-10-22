@@ -6,6 +6,11 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, realpathSy
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// AGH_TIMING=1: one `agh-timing <phase> <ms>` stderr line per phase (see src/timing.ts). The child
+// shares this process's timeline through AGH_TIMING_ORIGIN; without AGH_TIMING nothing changes.
+const timing = process.env.AGH_TIMING === '1'
+if (timing) process.stderr.write(`agh-timing launcher ${performance.now().toFixed(1)}\n`)
+
 const here = dirname(realpathSync(fileURLToPath(import.meta.url)))
 const packageRoot = dirname(here)
 
@@ -20,7 +25,10 @@ if (!entry) fail('missing bundled entry\nagh: build it with: pnpm --filter @agne
 
 ensurePackagedNatives(dirname(entry))
 
-const child = spawn(process.execPath, [entry, ...process.argv.slice(2)], { stdio: 'inherit' })
+const child = spawn(process.execPath, [entry, ...process.argv.slice(2)], {
+  stdio: 'inherit',
+  ...(timing ? { env: { ...process.env, AGH_TIMING_ORIGIN: String(performance.timeOrigin) } } : {}),
+})
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => {
     if (child.exitCode === null && !child.killed) child.kill(signal)

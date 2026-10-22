@@ -1,5 +1,6 @@
 import { daemonStatus, resolveDaemonScope } from '@agnes/daemon'
 import { BootError } from '../errors.js'
+import { timingMark } from '../timing.js'
 import { resolveLocale } from '../tui/locale.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { type EnsureLocalBackendOptions, ensureLocalBackend } from './backend.js'
@@ -24,6 +25,16 @@ export async function bootDefault(
   p: ParsedArgs,
   deps: DefaultBootDeps,
   options: DefaultBootOptions = {},
+): Promise<Booted> {
+  const booted = await selectBoot(p, deps, options)
+  timingMark('booted', deps.env)
+  return booted
+}
+
+async function selectBoot(
+  p: ParsedArgs,
+  deps: DefaultBootDeps,
+  options: DefaultBootOptions,
 ): Promise<Booted> {
   if (p.connect !== undefined) return bootConnect(p, deps)
   if (p.standalone && !p.ephemeral && !options.useEmbedded) {

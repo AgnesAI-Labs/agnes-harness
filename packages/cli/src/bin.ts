@@ -42,6 +42,7 @@ import {
 } from './errors.js'
 import { runAcp } from './modes/acp.js'
 import { runPrint } from './modes/print.js'
+import { timingMark } from './timing.js'
 import { resolveLocale } from './tui/locale.js'
 import type { Booted } from './types.js'
 
@@ -681,6 +682,7 @@ function isMainModule(moduleUrl: string): boolean {
 }
 
 if (!process.getBuiltinModule('node:sea').isSea() && isMainModule(import.meta.url)) {
+  timingMark('main-loaded')
   // The executable flushes both output streams after main completes its owned cleanup.
   void runExecutable()
 }
