@@ -891,7 +891,7 @@ describe('runSlash', () => {
     try {
       const before = ep.calls.length
       const r = await runSlash(app, '/export --html')
-      expect(r.text).toBe(`run: agnes export ${app.session.id} --html`)
+      expect(r.text).toBe(`run: agh export ${app.session.id} --html`)
       expect(ep.calls.length).toBe(before)
     } finally {
       await client.close()

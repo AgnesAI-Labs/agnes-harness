@@ -42,6 +42,10 @@ describe('locale (cli 稿 §9.4)', () => {
     expect(resolveLocale(env)).toBe(expected)
   })
 
+  it.each(LOCALES)('names the resume command agh in %s', (locale) => {
+    expect(t('notice.closed', locale, { id: 'abc' })).toContain('agh --resume abc')
+  })
+
   it('interpolates variables and falls back to English for unknown locales', () => {
     expect(t('notice.resumed', 'en', { step: 4 })).toContain('4')
     expect(t('approval.allowOnce', 'fr')).toBe('Allow once')

@@ -602,7 +602,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       return e instanceof ResourceUsageError ? ExitCode.USAGE : e.code
     }
     // Unknown failures have no public display contract; keep logs and arbitrary data out of stderr.
-    io.stderr.write('agnes: The request failed. Inspect its status with agh doctor.\n')
+    io.stderr.write('agh: The request failed. Inspect its status with agh doctor.\n')
     return ExitCode.ERROR
   } finally {
     stopDiagnostics?.()

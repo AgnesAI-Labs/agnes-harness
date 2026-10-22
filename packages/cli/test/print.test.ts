@@ -87,7 +87,7 @@ describe('runPrint in text mode', () => {
     const code = await runPrint(await booted(ep), parseArgs(['-p', 'rm tmp']), o)
     expect(code).toBe(3)
     expect(o.out()).toBe(`parked ticket=tk-123 session=${FAKE_SESSION_ID}\n`)
-    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagnes: turn ended: parked (exit 3)\n`)
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagh: turn ended: parked (exit 3)\n`)
   })
 
   // The whole table, under both arrival orders. The second one matters more than it looks: with the
@@ -113,7 +113,7 @@ describe('runPrint in text mode', () => {
       const ep = scriptedEndpoint({ reason, rowsAfterReply })
       const got = await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)
       expect(got).toBe(code)
-      expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagnes: turn ended: ${reason} (exit ${code})\n`)
+      expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagh: turn ended: ${reason} (exit ${code})\n`)
     })
 
     it('a completed turn exits 0 and prints no reason word', async () => {
@@ -153,7 +153,7 @@ describe('runPrint in text mode', () => {
     const o = io()
     const t0 = performance.now()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
-    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1)\n`)
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1)\n`)
     // And it comes back at once. daemon raises TURN_ERROR *instead of* a turn outcome, so no
     // turn/end is coming and waiting the full drain out would be a second of silence before the
     // same exit code -- on the one path where the caller already knows something went wrong.
@@ -172,7 +172,7 @@ describe('runPrint in text mode', () => {
       })
       expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
       expect(o.err()).toBe(
-        `Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): TRANSPORT: The provider could not be reached, or it answered with a server error. Check connectivity and try again later. If it keeps happening, the provider may be down.\n`,
+        `Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1): TRANSPORT: The provider could not be reached, or it answered with a server error. Check connectivity and try again later. If it keeps happening, the provider may be down.\n`,
       )
     },
   )
@@ -191,7 +191,7 @@ describe('runPrint in text mode', () => {
     const o = io()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
     expect(o.err()).toBe(
-      `Session: ${FAKE_SESSION_ID}\nagnes: turn ended: error (exit 1): AUTH: The provider refused this model or its credentials. Pick another model or sign in again.\n`,
+      `Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1): AUTH: The provider refused this model or its credentials. Pick another model or sign in again.\n`,
     )
   })
 

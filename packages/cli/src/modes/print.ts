@@ -173,7 +173,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     const signal = io.signal?.()
     if (!signal) return undefined
     if (p.mode !== 'json')
-      io.stderr.write(`agnes: ${signal}; prompt not sent (exit ${SIGNAL_EXIT_CODES[signal]})\n`)
+      io.stderr.write(`agh: ${signal}; prompt not sent (exit ${SIGNAL_EXIT_CODES[signal]})\n`)
     return SIGNAL_EXIT_CODES[signal]
   }
   const early = signalledBeforePrompt()
@@ -185,7 +185,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
   // never printed -- so it goes to stderr whether or not anyone is watching a terminal.
   const offNotice = booted.client.on('notice', (payload) => {
     const kind = (payload as { kind?: unknown } | null)?.kind
-    io.stderr.write(`agnes: notice ${typeof kind === 'string' ? kind : 'unknown'}\n`)
+    io.stderr.write(`agh: notice ${typeof kind === 'string' ? kind : 'unknown'}\n`)
   })
 
   try {
@@ -253,7 +253,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     const drained = await settleWithin(collector, threw ? ERROR_DRAIN_MS : DRAIN_MS)
     if (!drained && !threw)
       io.stderr.write(
-        `agnes: no turn/end row arrived within ${DRAIN_MS} ms; the reason below is the one the reply carried\n`,
+        `agh: no turn/end row arrived within ${DRAIN_MS} ms; the reason below is the one the reply carried\n`,
       )
 
     // The ledger row wins over what the response implied. sdk derives the reason from the terminal
@@ -302,7 +302,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     if (exitCode !== 0 && p.mode !== 'json') {
       const cause = errorCause((ended?.data as { error?: unknown } | null)?.error ?? thrownError, io.locale)
       io.stderr.write(
-        `agnes: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}\n`,
+        `agh: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}\n`,
       )
     }
     return exitCode

@@ -557,7 +557,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       }
     }
     case '/export':
-      return { text: `run: agnes export ${s.id}${args.includes('--html') ? ' --html' : ''}` }
+      return { text: `run: agh export ${s.id}${args.includes('--html') ? ' --html' : ''}` }
     case '/refine':
       // `harness/refine` exists as a raw ledger event type (protocol session-v1 schema), but
       // UITimeline/UINode has no kind that projects it -- there is no 'notice' or 'refine' UINode
