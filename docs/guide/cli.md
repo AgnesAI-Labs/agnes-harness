@@ -54,7 +54,7 @@ Type `/` to see the current menu. Common actions:
 | Fork | `/rewind` opens a picker of completed turns; `/rewind SEQ` forks at a sequence number. Either creates a new session and does not roll back the filesystem |
 | Plugins | `/packages`, `/install SOURCE`, `/package ...` |
 | Resources | `/skills`, `/skill refresh ...`, `/mcp ...` |
-| Display / exit | `/theme [light\|dark\|mono]`, `/mouse`, `/help`, `/quit`. `/mouse` turns mouse reporting off or on for this run: off, your terminal selects and copies text itself, but the wheel sends arrow keys that walk the prompt history. A copy reports Copied, Sent to clipboard (only the terminal was asked, as over SSH) or Copy failed |
+| Display / exit | `/theme [light\|dark\|mono]`, `/mouse`, `/thinking`, `/help`, `/quit`. `/thinking` switches, for this run only, between folding the model's thinking once its answer starts (the default: while it thinks, the last three rows show above the reply, then they become one line saying how much it thought) and keeping it open. `/mouse` turns mouse reporting off or on for this run: off, your terminal selects and copies text itself, but the wheel sends arrow keys that walk the prompt history. A copy reports Copied, Sent to clipboard (only the terminal was asked, as over SSH) or Copy failed |
 
 Choose what a new session may do when you start it, for example `node agnes.mjs --permission read-only`; `--preset NAME` picks the recipe independently (see [permissions and presets](security.md#permissions-and-presets)). `/preset NAME` switches the open session's preset and keeps its permission; a different permission needs a new session.
 

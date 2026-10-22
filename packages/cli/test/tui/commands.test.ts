@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { thinkingMode } from '@agnes/cli-tui'
 import { attachmentLink, rpcError } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
@@ -115,7 +116,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(38)
+    expect(SLASH_COMMANDS).toHaveLength(39)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -138,6 +139,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/preset',
       '/theme',
       '/mouse',
+      '/thinking',
       '/model',
       '/yolo',
       '/grants',
@@ -275,6 +277,24 @@ describe('runSlash', () => {
       expect(writes().indexOf(off)).toBeLessThan(writes().lastIndexOf(on))
     } finally {
       await running.stop()
+      await client.close()
+    }
+  })
+
+  it('/thinking toggles whether thoughts stay open, for this run only', async () => {
+    const { app, client } = await unstartedApp()
+    try {
+      expect(thinkingMode.expanded).toBe(false)
+      await expect(runSlash(app, '/thinking')).resolves.toMatchObject({
+        text: expect.stringContaining('展开'),
+      })
+      expect(thinkingMode.expanded).toBe(true)
+      await expect(runSlash(app, '/thinking')).resolves.toMatchObject({
+        text: expect.stringContaining('收起'),
+      })
+      expect(thinkingMode.expanded).toBe(false)
+    } finally {
+      thinkingMode.expanded = false
       await client.close()
     }
   })

@@ -14,6 +14,11 @@ export const TOOLS_KEYS = [
   'group.search.other',
   'group.list.one',
   'group.list.other',
+  'thinking.done',
+  'thinking.open',
+  'thinking.folded',
+  'commands.thinking',
+  'commands.thinkingSummary',
 ] as const
 
 export type ToolsKey = (typeof TOOLS_KEYS)[number]
@@ -29,6 +34,12 @@ export const TOOLS_DICT: Record<Locale, Record<ToolsKey, string>> = {
     'group.search.other': 'Searched {n} times',
     'group.list.one': 'Listed 1 directory',
     'group.list.other': 'Listed {n} directories',
+    'thinking.done': 'Thought ({n} characters)',
+    'thinking.open': 'Thinking stays open for this run',
+    'thinking.folded': 'Thinking folds once the answer starts',
+    'commands.thinking':
+      "Switch the model's thinking between staying open and folding once the answer starts, for this run only",
+    'commands.thinkingSummary': 'Toggle thinking display',
   },
   'zh-CN': {
     'diff.unchanged': '⋯ {n} 行未变',
@@ -40,5 +51,10 @@ export const TOOLS_DICT: Record<Locale, Record<ToolsKey, string>> = {
     'group.search.other': '搜索 {n} 次',
     'group.list.one': '列出 1 个目录',
     'group.list.other': '列出 {n} 个目录',
+    'thinking.done': '已思考（{n} 字）',
+    'thinking.open': '思考内容已设为始终展开（仅本次运行）',
+    'thinking.folded': '思考内容在回答开始后收起',
+    'commands.thinking': '本次运行内切换模型思考的显示：始终展开，或回答开始后收起',
+    'commands.thinkingSummary': '开关思考展开',
   },
 }

@@ -16,7 +16,6 @@ import { DoubleCtrlC } from './interrupt.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
-import { renderMarkdown } from './markdown.js'
 import { copyTip, systemCopy, TuiMouse } from './mouse.js'
 import { nodeText } from './node-text.js'
 import { PackageController } from './package-controller.js'
@@ -31,6 +30,7 @@ import type { Terminal } from './terminal.js'
 import { TerminalSignals } from './terminal-signals.js'
 import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
 import { readTheme, saveTheme } from './theme-preference.js'
+import { assistantView, LiveView } from './thinking.js'
 import { ToolCards } from './tool-cards.js'
 import { ApprovalCard } from './views/approval-card.js'
 import { Composer } from './views/composer.js'
@@ -78,7 +78,7 @@ export class TuiApp {
   private reservedRows = TIMELINE_RESERVED_ROWS
   // Rows rendered under the permission modal, measured before the modal itself renders each frame.
   private belowModal = 0
-  private readonly live = new Text('')
+  private readonly live: LiveView
   private readonly loader: Loader
   private turnActive = false
   private turnStartedAt: number | undefined
@@ -174,6 +174,7 @@ export class TuiApp {
     const locale = o.locale ?? 'en'
     this.hints = new Hints(ansi, () => this.timeline.newOutputHint(this.editor.text !== ''))
     this.loader = new Loader('', ansi)
+    this.live = new LiveView(ansi, locale)
     this.localCommandView = localCommandView(ansi)
     this.statusBar = new StatusBar(ansi, locale)
     this.mouse = new TuiMouse(
@@ -234,12 +235,7 @@ export class TuiApp {
           this.approvalCards.set(node.id, card)
           return card
         }
-        if (node.kind === 'assistant')
-          return {
-            render: (width) => ['', ...renderMarkdown(nodeText(node), width, ansi)],
-            transcript: (width) => renderMarkdown(nodeText(node), width, ansi),
-            invalidate() {},
-          }
+        if (node.kind === 'assistant') return assistantView(node, ansi, locale)
         if (node.kind === 'user') {
           const text = nodeText(node)
           return new UserMessage(
@@ -554,7 +550,7 @@ export class TuiApp {
         opening = false
       },
       preview: (p) => {
-        if (p.stream !== 'text' || !this.previews.add(p)) return
+        if (!this.previews.add(p)) return
         if (!this.previewEffects.includes(p.effectId)) this.previewEffects.push(p.effectId)
         this.renderLive()
       },
@@ -833,8 +829,7 @@ export class TuiApp {
   private renderLive(): void {
     for (let i = this.previewEffects.length - 1; i >= 0; i--)
       if (this.previews.text(this.previewEffects[i] ?? '') === undefined) this.previewEffects.splice(i, 1)
-    const text = this.previewEffects.map((effectId) => this.previews.text(effectId)?.text ?? '').join('')
-    this.live.set(escapeControl(text))
+    this.live.set(this.previewEffects.flatMap((effectId) => this.previews.text(effectId) ?? []))
     this.renderer.requestRender()
   }
 

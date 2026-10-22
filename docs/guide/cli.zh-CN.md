@@ -48,7 +48,7 @@ node agnes.mjs
 | 分叉 | `/rewind` 打开已完成轮次的选择器；`/rewind SEQ` 按序号分叉。都会创建新会话，不是文件系统回滚 |
 | 插件 | `/packages`、`/install SOURCE`、`/package ...` |
 | 资源 | `/skills`、`/skill refresh ...`、`/mcp ...` |
-| 显示/退出 | `/theme [light\|dark\|mono]`、`/mouse`、`/help`、`/quit`。`/mouse` 在本次运行内关闭或打开鼠标上报：关闭后由终端自己选择和复制文字，但滚轮会发送方向键来翻看输入历史。复制会提示已复制、已发送到剪贴板（只请求了终端，例如经 SSH）或复制失败 |
+| 显示/退出 | `/theme [light\|dark\|mono]`、`/mouse`、`/thinking`、`/help`、`/quit`。`/thinking` 仅在本次运行内切换模型思考的显示：默认在回答开始后收起（思考期间回复上方显示最后三行，之后变成一行“已思考（N 字）”），也可以始终展开。`/mouse` 在本次运行内关闭或打开鼠标上报：关闭后由终端自己选择和复制文字，但滚轮会发送方向键来翻看输入历史。复制会提示已复制、已发送到剪贴板（只请求了终端，例如经 SSH）或复制失败 |
 
 启动时选择新会话能做什么，例如 `node agnes.mjs --permission read-only`；`--preset NAME` 独立选择配方（见[权限与预设](security.zh-CN.md#permissions-and-presets)）。`/preset NAME` 切换当前会话的预设并保留其权限；更换权限需新建会话。
 

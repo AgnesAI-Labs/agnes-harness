@@ -20,6 +20,7 @@ import type { ResourceCommandKind } from './resource-controller.js'
 import { rewindChoices, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
 import type { TuiThemeName } from './theme.js'
+import { thinkingMode } from './thinking.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
 
 export type SlashCommand = {
@@ -104,6 +105,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.themeSummary',
   },
   { name: '/mouse', descriptionKey: 'commands.mouse', summaryKey: 'commands.mouseSummary' },
+  { name: '/thinking', descriptionKey: 'commands.thinking', summaryKey: 'commands.thinkingSummary' },
   {
     name: '/model',
     args: '[<slot> <route>/<model> [<thinking>]]',
@@ -512,6 +514,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         return { text: 'usage: /theme [light|dark|mono]' }
       return { text: app.setTheme(name as TuiThemeName) }
     }
+    case '/thinking':
+      return { text: tt(thinkingMode.toggle() ? 'thinking.open' : 'thinking.folded', app.locale) }
     case '/mouse':
       return { text: tt(app.renderer.toggleMouse() ? 'mouse.on' : 'mouse.off', app.locale) }
     case '/model': {
