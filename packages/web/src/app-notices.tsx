@@ -44,8 +44,6 @@ const errors = createExternalStore<readonly { id: number; message: NoticeText }[
 let nextError = 0
 const dismissError = (id: number) => errors.set(errors.getSnapshot().filter((item) => item.id !== id))
 type ReadOnlyNoticeView = {
-  /** An ordinary opening is readable but has not yet been admitted for execution. */
-  kind?: 'preview'
   message: Readonly<{ en: string; 'zh-CN': string }>
   actions: readonly { id: 'reopen' | 'new'; onSelect(): void }[]
   sessionId?: string
@@ -215,12 +213,6 @@ export function ReadOnlyNotice() {
   const view = useStoreSelector(readOnlyStore, (value) => value)
   const language = useDocumentLanguage()
   if (!view) return null
-  if (view.kind === 'preview')
-    return (
-      <div className="session-history-preview" role="status" data-testid="session-history-preview">
-        {view.message[language === 'zh-CN' ? 'zh-CN' : 'en']}
-      </div>
-    )
   return (
     <Banner
       tone="warning"

@@ -27,6 +27,7 @@ import {
   ConversationToolCard,
   ConversationTurnActions,
   interactionToolPresentation,
+  type TurnErrorActions,
 } from '@agnes/web-ui/conversation'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useSyncExternalStore } from 'react'
@@ -223,6 +224,8 @@ type WebConversationMessagesProps = {
   turns?: readonly UITurn[]
   visibleNodeIds?: readonly string[]
   onFork?: (turn: UITurn) => Promise<void>
+  /** Host operations a failed turn's error row can offer; the adapter adds availability. */
+  turnErrorActions?: TurnErrorActions
   /** Compatibility selector; both values now use the same React-owned Markdown. */
   markdownRenderer?: 'legacy' | 'xmarkdown'
 }
@@ -246,6 +249,7 @@ function ScopedConversationMessages({
   nodes,
   visibleNodeIds,
   onFork,
+  turnErrorActions: hostTurnErrorActions,
   sessionScope,
 }: WebConversationMessagesProps & { sessionScope: string | undefined }) {
   const readAttachment = useCallback(
@@ -290,6 +294,30 @@ function ScopedConversationMessages({
   const folded = new Set(
     conversationCards.entries().flatMap((entry) => entry.hiddenNodeIds?.(nodes ?? [], turns ?? []) ?? []),
   )
+  // A failed turn can be sent again only from a live, idle, writable session. The host supplies
+  // the operations; whether they can run now is session state that is read here, where it updates.
+  const readiness = useSyncExternalStore(
+    session ? session.readiness.subscribe.bind(session.readiness) : noSessionSubscription,
+    () => session?.readiness.getSnapshot().status,
+  )
+  const sessionRunning = (turns ?? []).some(
+    (turn) => turn.status === 'running' || turn.status === 'waiting',
+  )
+  const retryDisabledReason = sessionRunning
+    ? translate('turn.error.action.running')
+    : readiness === 'connecting'
+      ? translate('turn.error.action.offline')
+      : undefined
+  const turnErrorActions = useMemo<TurnErrorActions | undefined>(() => {
+    if (!hostTurnErrorActions) return undefined
+    const next: TurnErrorActions = {}
+    // A retry needs a loaded session; the composer's own guards still run at send time.
+    if (readiness === 'ready' && hostTurnErrorActions.onRetry) next.onRetry = hostTurnErrorActions.onRetry
+    if (hostTurnErrorActions.onOpenSettings) next.onOpenSettings = hostTurnErrorActions.onOpenSettings
+    if (retryDisabledReason) next.retryDisabledReason = retryDisabledReason
+    if (sessionScope) next.sessionId = sessionScope
+    return next
+  }, [hostTurnErrorActions, readiness, retryDisabledReason, sessionScope])
   const shownNodeIds = folded.size
     ? (visibleNodeIds ?? (nodes ?? []).map((node) => node.id)).filter((id) => !folded.has(id))
     : visibleNodeIds
@@ -377,6 +405,7 @@ function ScopedConversationMessages({
       readAttachment,
       renderTurnAttribution: () => <ApplicationAttribution session={session} />,
       t: translate,
+      ...(turnErrorActions ? { turnErrorActions } : {}),
       processStep: (node) => workflowStepRecord(node.text),
       renderMarkdown: (text, part, state) => (
         <SelectedContribution
@@ -592,7 +621,18 @@ function ScopedConversationMessages({
         <TurnContribution kind="renderTurnDeliverables" args={[turn, '', false]} />
       ),
     }
-  }, [readAttachment, translate, registry, claim, session, locale, resources, sessionScope, onFork])
+  }, [
+    readAttachment,
+    translate,
+    registry,
+    claim,
+    session,
+    locale,
+    resources,
+    sessionScope,
+    onFork,
+    turnErrorActions,
+  ])
   const messages = (
     <ConversationMessages
       key={sessionScope ?? ''}

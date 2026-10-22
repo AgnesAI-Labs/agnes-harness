@@ -7,10 +7,10 @@ import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { archivedSessions } from '../src/archived-sessions.js'
 import { NavigationLabel, resetCollapsedGroups } from '../src/navigation.js'
 import { BUILTIN_HOME_ENTRIES } from '../src/pages/entries.js'
 import { SIDEBAR_SLOT } from '../src/region-slots.js'
+import { sessionInventory } from '../src/session-inventory.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 const session = (id: string, cwd: string): PageSessionMeta['items'][number] =>
@@ -35,6 +35,17 @@ const workspace = (path: string, name: string): WorkspaceEntry => ({
 
 describe('rendered sidebar region', () => {
   let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
+
+  /** The view menu is the only way into the archived filter; its items carry stable test ids. */
+  const chooseView = async (name: 'archived' | 'active') => {
+    document.querySelector<HTMLButtonElement>('#session-view')?.click()
+    const item = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>(`[data-testid="session-view-filter-${name}"]`)
+      if (!found) throw new Error('the view menu has not opened yet')
+      return found
+    })
+    item.click()
+  }
 
   afterEach(async () => {
     await runtime?.dispose()
@@ -590,10 +601,10 @@ describe('rendered sidebar region', () => {
     expect(sidebar.inert).toBe(true)
   })
 
-  it('switches the list to archived sessions and restores one from there', async () => {
+  it('switches the list to archived sessions from the heading switch and restores one', async () => {
     const archived = { ...session('old', '/workspace'), archived: true }
     const restore = vi.fn().mockResolvedValue(undefined)
-    archivedSessions.bind({
+    sessionInventory.bind({
       list: async () => ({ items: [archived, session('one', '/workspace')] }),
       restore,
       changed: async () => undefined,
@@ -613,19 +624,113 @@ describe('rendered sidebar region', () => {
       const sidebar = document.querySelector('aside.sidebar')
       expect(sidebar?.querySelector('[data-session="old"]')).toBeNull()
       expect(sidebar?.querySelector('#session-search')).not.toBeNull()
-      flushSync(() => archivedSessions.show('archived'))
-      await vi.waitFor(() =>
-        expect(sidebar?.querySelector('.archived-session[data-session="old"]')).not.toBeNull(),
-      )
-      expect(sidebar?.querySelector('.workspace-group')).toBeNull()
-      expect(sidebar?.querySelector('#session-filter')?.getAttribute('data-filter')).toBe('archived')
+      // 归档入口已移出列表，也没有标题行快捷按钮：筛选只从视图菜单进入。
+      expect(sidebar?.querySelector('[data-testid="sidebar-view-row"]')).toBeNull()
+      expect(sidebar?.querySelector('#session-archive')).toBeNull()
+
+      await chooseView('archived')
+      // 行本身是 Conversations 的 li；`data-session` 在内层按钮上。
+      await vi.waitFor(() => expect(sidebar?.querySelector('[data-session="old"]')).not.toBeNull())
+      // 归档视图由完整清单渲染；未归档会话不在其中。
+      expect(sidebar?.querySelector('[data-testid="session-inventory"]')).not.toBeNull()
+      expect(sidebar?.querySelector('[data-session="one"]')).toBeNull()
       sidebar?.querySelector<HTMLButtonElement>('[data-testid="archived-restore"]')?.click()
-      await vi.waitFor(() => expect(sidebar?.querySelector('.archived-session')).toBeNull())
+      await vi.waitFor(() => expect(sidebar?.querySelector('[data-session="old"]')).toBeNull())
       expect(restore).toHaveBeenCalledWith('old')
-      flushSync(() => archivedSessions.show('unarchived'))
-      expect(sidebar?.querySelector('.workspace-group')).not.toBeNull()
+
+      await chooseView('active')
+      await vi.waitFor(() => expect(sidebar?.querySelector('[data-testid="session-inventory"]')).toBeNull())
+      expect(sidebar?.querySelector('[data-session="one"]')).not.toBeNull()
     } finally {
-      archivedSessions.show('unarchived')
+      sessionInventory.reset()
+    }
+  })
+
+  it('opens an archived session from its row and marks it current without leaving the filter', async () => {
+    const archived = { ...session('old', '/workspace'), archived: true }
+    const openSession = vi.fn()
+    let finish!: (page: { items: PageSessionMeta['items'] }) => void
+    sessionInventory.bind({
+      list: () =>
+        new Promise<{ items: PageSessionMeta['items'] }>((resolve) => {
+          finish = resolve
+        }),
+      restore: vi.fn(),
+      changed: async () => undefined,
+    })
+    try {
+      runtime = await mountRenderedIndex({
+        sidebar: {
+          state: {
+            sessions: [archived],
+            workspaces: [workspace('/workspace', '主工作区')],
+            labels: new Map(),
+            currentId: 'old',
+            sessionPending: false,
+            newDisabled: false,
+          },
+          actions: { openSession },
+        },
+      })
+      const sidebar = document.querySelector('aside.sidebar')
+      await chooseView('archived')
+      // 首次读取尚未返回时用一行状态文案占位，避免列表空白。
+      await vi.waitFor(() =>
+        expect(sidebar?.querySelector('.sidebar-inventory-loading')?.textContent).toBe(
+          'Reading archived sessions…',
+        ),
+      )
+      finish({ items: [archived] })
+      const open = await vi.waitFor(() => {
+        const found = sidebar?.querySelector<HTMLButtonElement>('[data-session="old"]')
+        if (!found) throw new Error('the archived row has not rendered yet')
+        return found
+      })
+      const row = open.closest('.session-row')
+      expect(row?.getAttribute('data-active')).toBe('true')
+      expect(row?.getAttribute('data-archived')).toBe('true')
+      expect(open?.getAttribute('aria-current')).toBe('page')
+      open?.click()
+      expect(openSession).toHaveBeenCalledWith('old')
+      // 打开会话不退出归档筛选：仓库仍停在归档模式。
+      expect(sessionInventory.getSnapshot().mode).toBe('archived')
+    } finally {
+      sessionInventory.reset()
+    }
+  })
+
+  it('keeps the row and writes no inline error when restoring fails', async () => {
+    const archived = { ...session('old', '/workspace'), archived: true }
+    const error = vi.fn()
+    sessionInventory.bind({
+      list: async () => ({ items: [archived] }),
+      restore: vi.fn().mockRejectedValue(new Error('daemon offline')),
+      changed: async () => undefined,
+      error,
+    })
+    try {
+      runtime = await mountRenderedIndex({
+        sidebar: {
+          state: {
+            sessions: [archived],
+            workspaces: [workspace('/workspace', '主工作区')],
+            labels: new Map(),
+            sessionPending: false,
+            newDisabled: false,
+          },
+        },
+      })
+      const sidebar = document.querySelector('aside.sidebar')
+      await chooseView('archived')
+      // 行本身是 Conversations 的 li；`data-session` 在内层按钮上。
+      await vi.waitFor(() => expect(sidebar?.querySelector('[data-session="old"]')).not.toBeNull())
+      sidebar?.querySelector<HTMLButtonElement>('[data-testid="archived-restore"]')?.click()
+      await vi.waitFor(() => expect(error).toHaveBeenCalled())
+      // 恢复失败只走应用通知：行保留，列表里不出现内联红字与重试。
+      expect(sidebar?.querySelector('[data-session="old"]')).not.toBeNull()
+      expect(sidebar?.querySelector('.sidebar-inventory [role="alert"]')).toBeNull()
+    } finally {
+      sessionInventory.reset()
     }
   })
 })

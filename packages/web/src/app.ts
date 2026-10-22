@@ -68,7 +68,6 @@ import { attachmentErrorMessage } from '@agnes/web-units/shell'
 import { createWorkspaceController } from './app/workspace-controller.js'
 import { appNotice, setConnectionNotice, setReconnectNotice } from './app-notices.js'
 import { mountAppShell } from './app-shell.js'
-import { archivedSessions } from './archived-sessions.js'
 import { type ClaimResolver, startClientModules } from './client-modules/boot.js'
 import { startPluginHotReload } from './client-modules/hot-reload.js'
 import { bindJobsClient } from './client-modules/jobs.js'
@@ -92,6 +91,7 @@ import { coalesceBurst, createRefreshCoordinator } from './refresh-coordinator.j
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 import { sessionViewCommands } from './regions/session-views.js'
 import { createSessionActions } from './session-actions.js'
+import { sessionInventory } from './session-inventory.js'
 import {
   allowedPermissionLevels,
   draftPermissionMode,
@@ -864,6 +864,11 @@ const clientModules = await startClientModules({
         await workspaceController.remove(workspace)
       },
       sessionAction: (action, id, title, trigger) => {
+        // Restoring is the inventory's own channel: it owns the request, the row and the notice.
+        if (action === 'unarchive') {
+          void sessionInventory.restore(id)
+          return
+        }
         void sessionActions.act(action, id, title, trigger)
       },
       loadMore: () =>
@@ -878,7 +883,10 @@ const clientModules = await startClientModules({
       },
     },
   },
-  transcript: { onFork: forkTurn },
+  transcript: {
+    onFork: forkTurn,
+    turnErrorActions: { onRetry: retryTurn, onOpenSettings: openErrorSettings },
+  },
   conversationContainer: conversation,
   topbarContainer: hosts.topbar,
   approvalContainer: hosts.approval,
@@ -948,7 +956,7 @@ const clientModules = await startClientModules({
       openMovedSettings(target, {
         openPage: (page, tab) => homeNavigation.open(page, tab ? { tab } : undefined),
         searchSessions: () => sessionSearch.open(),
-        showArchived: () => archivedSessions.show('archived'),
+        showArchived: () => sessionInventory.setMode('archived'),
       })
     },
     onChange: ({ pane }) => {
@@ -980,6 +988,17 @@ const statusCheck = mountStatusCheck({
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
+// The sidebar's application switch asks for the settings page in place; its href stays the fallback.
+const stopSurfaceSettings = onSurfaceEvent('agnes:open-settings', (event) => {
+  const section = (event as CustomEvent<{ section?: string }>).detail?.section
+  if (!section) return
+  event.preventDefault()
+  settingsRegion.open('model')
+  run(async () => {
+    await settings.open()
+    settingsRegion.route(section)
+  })
+})
 // Home entries open full pages in the main area; the built-in three register like any plugin's.
 const homePages = mountHomePages(hosts.homePage, {
   locale: clientModules.locale,
@@ -1193,6 +1212,7 @@ const titleRefresh = createTitleRefresh(async (id) => {
   const index = sessionRows.findIndex((item) => item.sessionId === id)
   if (index >= 0) sessionRows[index] = row
   sidebarPages.patch(row)
+  sessionInventory.patch(row)
   updateTitle(id, row.title)
   return true
 })
@@ -1293,7 +1313,7 @@ const restoreSettingsLocation = () => {
   if (movedSettingsTarget(id)) {
     openMovedSettingsLink(id, {
       searchSessions: () => sessionSearch.open(),
-      showArchived: () => archivedSessions.show('archived'),
+      showArchived: () => sessionInventory.setMode('archived'),
     })
     return
   }
@@ -1347,28 +1367,49 @@ const sessionActions = createSessionActions({
   changed: () => list(),
   renamed: (id, title) => {
     const row = sessionRows.find((item) => item.sessionId === id)
-    if (row) sidebarPages.patch({ ...row, title, titleSource: 'user' })
+    if (row) {
+      sidebarPages.patch({ ...row, title, titleSource: 'user' })
+      sessionInventory.patch({ ...row, title, titleSource: 'user' })
+    }
     updateTitle(id, title)
   },
-  fork: forkSidebar,
+  fork: (id, title) => {
+    // The fork adds a row to whichever list is showing.
+    sessionInventory.invalidate()
+    return forkSidebar(id, title)
+  },
   error: (error) => {
     clientModules.sidebar?.dismiss()
     showError(error)
   },
   archived: (id) => {
-    if (archivedSessions.getSnapshot().filter === 'archived') void archivedSessions.reload()
+    // The cached full list still holds the row; a visible view reads again on invalidation.
+    sessionInventory.invalidate()
     notice.setText(() => t('home.archived.notice'))
-    notice.offer({
+    const undo = {
       label: t('home.archived.undo'),
       run: () => {
         notice.setText('')
-        void archivedSessions.restore(id)
+        void sessionInventory.restore(id)
       },
-    })
+    }
+    // While the row is hidden, the notice also offers the filter that shows it again.
+    if (sessionInventory.getSnapshot().mode === 'active')
+      notice.offerMany([
+        undo,
+        {
+          label: t('home.archived.noticeAction'),
+          run: () => {
+            notice.setText('')
+            sessionInventory.setMode('archived')
+          },
+        },
+      ])
+    else notice.offer(undo)
   },
   translate: t,
 })
-archivedSessions.bind({
+sessionInventory.bind({
   list: (params) => client.session.list(params),
   restore: (id) => client.session.archive(id, false),
   changed: () => list(),
@@ -1389,6 +1430,10 @@ const sessionSearch = mountSessionSearch({
   open: (id) =>
     run(async () => {
       homeNavigation.close()
+      // A live session opened from search has to be visible in the list behind it.
+      const row = sessionRows.find((item) => item.sessionId === id)
+      if (row && !row.archived && sessionInventory.getSnapshot().mode === 'archived')
+        sessionInventory.setMode('active')
       if (id !== sessionBinding.session?.id || draftingNew) await open(id)
     }),
 })
@@ -1591,6 +1636,8 @@ async function list(
 ): Promise<PageSessionMeta> {
   const epoch = ++listGeneration
   if (change) sidebarPages.invalidateSession(change.sessionId, change.cwd, workspaceRows)
+  // A session that has just started is not in the cached full list yet.
+  if (change?.created) sessionInventory.invalidate()
   if (change?.created) {
     const groupId = workspaceRows.find((row) => row.path === change.cwd)?.workspaceId ?? 'unassigned'
     await sidebarPages.created(groupId)
@@ -1637,12 +1684,25 @@ function prepareAttachmentSession(): Promise<string> {
 function forkTurn(turn: UITurn): Promise<void> {
   return sessionController.forkTurn(turn)
 }
+/** A failed turn's retry enters the same submission path as the composer. */
+function retryTurn(turn: UITurn): Promise<void> | undefined {
+  return submissionController.retryTurn(turn)
+}
+/** A failure that needs configuration opens the settings page that fixes it. */
+function openErrorSettings(target: 'account' | 'model'): void {
+  settingsRegion.open('model')
+  if (target === 'model') run(() => settings.open())
+  else run(() => settings.openAccount())
+}
 function beginExplicitNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   requestNewSession()
   return beginNewDraft(showWorkspacePicker, workspace)
 }
 async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEntry): Promise<void> {
   if (sessionPending || submissions.sending) return
+  // A new draft the current filter would hide reads as a lost session: show the live list first.
+  if (sessionInventory.getSnapshot().mode === 'archived') sessionInventory.setMode('active')
+  sessionInventory.invalidate()
   void businessAgentSuggestions.refresh()
   selectComposerDraft()
   sessionPending = true
@@ -2165,6 +2225,7 @@ onPageHide(() => {
   intentionalClose = true
   stopConnectionEvents()
   stopSettingsTerminal()
+  stopSurfaceSettings()
   stopSettingsRouting()
   statusCheck.dispose()
   stopHomeRouting()
@@ -2383,7 +2444,7 @@ run(async () => {
   if (startupMoved)
     openMovedSettingsLink(startupSettings, {
       searchSessions: () => sessionSearch.open(),
-      showArchived: () => archivedSessions.show('archived'),
+      showArchived: () => sessionInventory.setMode('archived'),
     })
   showModelNotice()
   const settingsSelection = sessionBinding.capture()

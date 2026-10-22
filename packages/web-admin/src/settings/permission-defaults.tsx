@@ -9,7 +9,7 @@ import {
   SettingsBlock,
   SettingsChoice,
   SettingsItem,
-  SettingsSelect,
+  SettingsPickerSelect,
   SettingsState,
   SettingsTag,
   StatusDot,
@@ -296,8 +296,9 @@ export function PermissionDefaults({
               .filter(Boolean)
               .join(' ')}
           >
-            <SettingsSelect
+            <SettingsPickerSelect
               data-testid="security-more-presets"
+              label={t('defaultRecipe')}
               aria-label={t('defaultRecipe')}
               value={more.includes(chosenPreset) ? chosenPreset : ''}
               disabled={locked}
@@ -309,7 +310,7 @@ export function PermissionDefaults({
                   {name(preset)}
                 </option>
               ))}
-            </SettingsSelect>
+            </SettingsPickerSelect>
           </SettingsItem>
         </SettingsBlock>
       )}

@@ -1,9 +1,9 @@
 import type { AuxiliaryModelSlots } from '@agnes/protocol'
-import { type ReactNode, useLayoutEffect, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { fallbackT, type Translate } from './locales/index.js'
-import { createSelectPicker, type SelectPicker } from './select-picker.js'
-import { SettingsGroup, SettingsItem, SettingsSelect } from './settings-layout.js'
+import { SettingsGroup, SettingsItem } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
+import { SettingsPickerSelect } from './ui/picker-select.js'
 
 /** `label` names the account the model comes from and `name` the model; ids are only the fallback. */
 export type AuxiliaryModelOption = { route: string; id: string; label?: string; name?: string }
@@ -15,6 +15,7 @@ export const auxiliaryModelLabel = (model: AuxiliaryModelOption): string =>
 function PickedSelect({
   label,
   children,
+  onChange,
   ...props
 }: {
   id: string
@@ -26,24 +27,10 @@ function PickedSelect({
   onChange(value: string): void
   children: ReactNode
 }) {
-  const select = useRef<HTMLSelectElement>(null)
-  const picker = useRef<SelectPicker>()
-  useLayoutEffect(() => {
-    if (!select.current) return
-    const created = createSelectPicker(select.current, { label })
-    picker.current = created
-    return () => {
-      picker.current = undefined
-      created.destroy()
-    }
-  }, [label])
-  // The picker mirrors the select, so it is brought up to date after every render.
-  useLayoutEffect(() => picker.current?.sync())
-  const { onChange, ...rest } = props
   return (
-    <SettingsSelect {...rest} ref={select} onChange={(event) => onChange(event.target.value)}>
+    <SettingsPickerSelect {...props} label={label} onChange={(event) => onChange(event.target.value)}>
       {children}
-    </SettingsSelect>
+    </SettingsPickerSelect>
   )
 }
 export function AuxiliaryModelFields({

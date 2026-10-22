@@ -145,6 +145,14 @@ export function revealSettingsAnchor(anchor: string): void {
     if (node.getAttribute('aria-expanded') !== 'true') node.click()
     return
   }
+  // A row that expands in place is revealed by opening its toggle.
+  if (node.dataset.settingsExpand !== undefined) {
+    const toggle = node.querySelector<HTMLElement>('button[aria-expanded]')
+    if (toggle?.getAttribute('aria-expanded') !== 'true') toggle?.click()
+    node.scrollIntoView?.({ block: 'start' })
+    toggle?.focus({ preventScroll: true })
+    return
+  }
   for (let current: HTMLElement | null = node; current; current = current.parentElement)
     if (current instanceof HTMLDetailsElement) current.open = true
     else if (current.classList.contains('agh-disclosure')) setDisclosureOpen(current, true)

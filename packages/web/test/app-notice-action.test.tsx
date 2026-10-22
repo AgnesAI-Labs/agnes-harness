@@ -7,7 +7,7 @@ import { expect, it, vi } from 'vitest'
 import { onPageHide } from '../src/app/global-events.js'
 import { AppNotice, appNotice, appReadOnly, ReadOnlyNotice } from '../src/app-notices.js'
 
-it('keeps an opening preview neutral and reserves the warning and recovery actions for a refusal', async () => {
+it('states a refused record with a warning, its id and its next step', async () => {
   ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
   const host = document.createElement('div')
   document.body.append(host)
@@ -17,21 +17,11 @@ it('keeps an opening preview neutral and reserves the warning and recovery actio
     await act(async () => {
       root.render(createElement(ReadOnlyNotice))
       appReadOnly.show({
-        kind: 'preview',
-        message: { en: 'History preview (not yet verified)', 'zh-CN': '历史预览（待校验）' },
-        actions: [],
-      })
-    })
-    expect(host.querySelector('[role="status"]')?.textContent).toContain('History preview')
-    expect(host.querySelector('.agh-banner')).toBeNull()
-    expect(host.querySelector('button')).toBeNull()
-    await act(async () =>
-      appReadOnly.show({
         sessionId: '11111111-2222-4333-8444-555555555555',
         message: { en: 'History failed verification', 'zh-CN': '历史校验失败' },
         actions: [{ id: 'new', onSelect: recover }],
-      }),
-    )
+      })
+    })
     expect(host.querySelector('[data-tone="warning"]')?.textContent).toContain('History failed verification')
     expect(host.querySelector('.agh-disclosure')?.getAttribute('data-open')).toBe('false')
     expect(host.querySelector('.agh-disclosure-chevron')).not.toBeNull()

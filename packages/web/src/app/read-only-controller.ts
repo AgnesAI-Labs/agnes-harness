@@ -68,9 +68,6 @@ export function createReadOnlyController(
   let reading: AbortController | undefined
   // The scan marker of the view on screen; the banner states it next to the refusal.
   let scan: ViewScan
-  let openingProgress:
-    | { id: string; phase: 'verifying' | 'replaying'; done: number; total: number }
-    | undefined
 
   /** Fetches a view and commits it in one step; false when a newer request or selection superseded it. */
   async function load(id: string, maxNodes: number, epoch: SessionBinding): Promise<boolean> {
@@ -163,37 +160,7 @@ export function createReadOnlyController(
     reading?.abort()
     reading = undefined
     context.readOnly = undefined
-    openingProgress = undefined
     appReadOnly.clear()
-  }
-
-  function progress(id: string, phase: 'verifying' | 'replaying', done: number, total: number): void {
-    openingProgress = { id, phase, done, total }
-    previewNotice(id)
-  }
-
-  function previewNotice(id: string): void {
-    if (context.readOnly?.id !== id) return
-    const current = openingProgress?.id === id ? openingProgress : undefined
-    const counts = current && current.total > 0 ? ` ${current.done}/${current.total}` : ''
-    const en = !current
-      ? 'Preparing session…'
-      : current.phase === 'verifying'
-        ? 'Checking history'
-        : 'Loading verified history'
-    const zh = !current
-      ? '正在准备会话…'
-      : current.phase === 'verifying'
-        ? '正在校验历史'
-        : '正在加载已验证历史'
-    appReadOnly.show({
-      kind: 'preview',
-      message: {
-        en: `History preview (not yet verified) · ${en}${counts}`,
-        'zh-CN': `历史预览（待校验）· ${zh}${counts}`,
-      },
-      actions: [],
-    })
   }
 
   async function preview(id: string, epoch: SessionBinding): Promise<void> {
@@ -204,10 +171,9 @@ export function createReadOnlyController(
     // never downgrades an admitted binding to history-only. The first live timeline clears us.
     await context.clientModules.reconciler.reconcileNow()
     if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return
-    previewNotice(id)
     context.render()
     context.renderControls()
   }
 
-  return { show, preview, progress, loadEarlier, clear }
+  return { show, preview, loadEarlier, clear }
 }

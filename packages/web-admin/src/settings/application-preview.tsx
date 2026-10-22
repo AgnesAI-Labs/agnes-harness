@@ -9,7 +9,7 @@ import {
   SettingsTechnicalDetails,
   useDocumentLanguage,
 } from '@agnes/web-ui'
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 
 export const PRESENTATION_ROLE_LABELS = {
   navigation: ['Navigation', '导航'],
@@ -130,6 +130,15 @@ export const navigationLabels: Record<string, [string, string]> = {
   plugins: ['Plugins', '插件'],
 }
 
+/** One key-value row in the review: the name on the left, its value on the right. */
+function ReviewRow({ label, value }: { label: ReactNode; value: ReactNode }) {
+  return (
+    <SettingsItem className="application-review-row" label={label}>
+      <span className="application-review-value">{value}</span>
+    </SettingsItem>
+  )
+}
+
 /** A projection of the reviewed payload only; the original digest and write contract stay intact. */
 export function ApplicationPreviewSummary({
   preview,
@@ -235,22 +244,20 @@ export function ApplicationPreviewSummary({
           <SettingsGroup>
             {application && (
               <>
-                <SettingsItem
+                <ReviewRow
                   label={tr('Home page', '首页')}
-                  description={
-                    declaration.presentation?.home ? pageName(declaration.presentation.home) : host
-                  }
+                  value={declaration.presentation?.home ? pageName(declaration.presentation.home) : host}
                 />
-                <SettingsItem
+                <ReviewRow
                   label={tr('Navigation shown', '显示的导航')}
-                  description={list(
+                  value={list(
                     navigation?.entries?.map(pageName),
                     navigation?.entries ? none : tr('Official navigation', '官方导航'),
                   )}
                 />
-                <SettingsItem
+                <ReviewRow
                   label={tr('Official entries hidden', '隐藏的官方入口')}
-                  description={list([
+                  value={list([
                     ...new Set(
                       navigation?.hideBuiltin?.map((entry) =>
                         tr(...(navigationLabels[entry] ?? [entry, entry])),
@@ -263,10 +270,10 @@ export function ApplicationPreviewSummary({
             {preview.replacedRoles.map((value) => {
               const item = object(value)
               return (
-                <SettingsItem
+                <ReviewRow
                   key={JSON.stringify(value)}
                   label={role(text(item?.role))}
-                  description={strings(item?.visibleParts)
+                  value={strings(item?.visibleParts)
                     .map((part) => tr(...(partLabels[part] ?? [part, part])))
                     .join(', ')}
                 />
@@ -303,7 +310,7 @@ export function ApplicationPreviewSummary({
             {application &&
               (access.size ? (
                 [...access].map(([key, group]) => (
-                  <SettingsItem
+                  <ReviewRow
                     key={key}
                     label={
                       group.readOnly === undefined
@@ -312,20 +319,20 @@ export function ApplicationPreviewSummary({
                           ? tr('Read-only tools', '只读工具')
                           : tr('Tools can read and change data', '工具可读取及修改数据')
                     }
-                    description={group.names.join(', ')}
+                    value={group.names.join(', ')}
                   />
                 ))
               ) : (
-                <SettingsItem
+                <ReviewRow
                   label={tr('Launch configuration unavailable', '启动配置尚不可用')}
-                  description={tr('Each action will need a separate review.', '每项动作仍需单独审阅。')}
+                  value={tr('Each action will need a separate review.', '每项动作仍需单独审阅。')}
                 />
               ))}
             {permissions.map((permission) => (
-              <SettingsItem
+              <ReviewRow
                 key={JSON.stringify(permission)}
                 label={permission.label}
-                description={permission.detail}
+                value={permission.detail}
               />
             ))}
             <SettingsItem
