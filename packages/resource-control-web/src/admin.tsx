@@ -210,6 +210,13 @@ class ResourceAdminPage {
     this.render()
   }
 
+  /** What an open detail page shows for a refused action: the list's notice line is covered by it. */
+  #failureText(): string | undefined {
+    if (this.#notice.kind !== 'error') return undefined
+    const text = this.#notice.key ? this.#t(this.#notice.key, this.#notice.vars) : this.#notice.raw
+    return text || undefined
+  }
+
   setRawNotice(raw: string, kind = ''): void {
     this.#notice = { raw, kind }
     this.render()
@@ -509,6 +516,7 @@ class ResourceAdminPage {
             disabled={!this.writable() || this.#activeOperation !== undefined}
             actions={this.#detailActions(selected)}
             progress={progress}
+            failure={this.#failureText()}
             onAction={(action) => void this.#runAction(action)}
             onPrioritySave={(next) => void this.#savePriority(selected, next)}
             onClose={() => this.closeDetail()}
@@ -524,6 +532,7 @@ class ResourceAdminPage {
             disabled={!this.writable()}
             actions={this.#detailActions(selected)}
             progress={progress}
+            failure={this.#failureText()}
             onAction={(action) => void this.#runAction(action)}
             onStatus={async () => {
               const value = await this.api().mcpStatus(selected.serverId)
