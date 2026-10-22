@@ -449,6 +449,19 @@ describe('trace panel', () => {
     expect(root.querySelector('.trace-tool-toggle')?.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('keeps the empty state hidden until the panel has been given records, then shows it for none', () => {
+    const { root, panel } = mount()
+    const empty = () => root.querySelector<HTMLElement>('.trace-empty')
+    // A switched session remounts the panel before its first records arrive: nothing to announce yet.
+    expect(empty()?.hidden).toBe(true)
+    // A session without records opens on the conversation; opening the trace then announces the lack.
+    panel.render([], [])
+    panel.setOpen(true)
+    expect(empty()?.hidden).toBe(false)
+    panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
+    expect(empty()?.hidden).toBe(true)
+  })
+
   it('marks search matches, counts them and steps through them without hiding other records', () => {
     const { root, panel } = mount()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])

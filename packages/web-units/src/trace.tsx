@@ -149,6 +149,8 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     meta?: TraceMeta | undefined
   }
   const [snapshot, setSnapshot] = useState<Snapshot>({ nodes: [], turns: [] })
+  // A switched session remounts this panel empty; the empty state waits for the first record set.
+  const [fed, setFed] = useState(false)
   // While the panel is closed, render() only remembers the newest snapshot; opening shows it.
   const latest = useRef<Snapshot | undefined>(undefined)
   const currentSnapshot = useRef(snapshot)
@@ -352,6 +354,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
     ref,
     () => ({
       render(nodes, turns = [], meta) {
+        flushSync(() => setFed(true))
         const key = meta?.sessionId
         const records = nodes.length > 0
         const last = decided.current
@@ -1010,7 +1013,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       {lightbox ? <TraceLightbox image={lightbox} root={root} close={() => setLightbox(null)} /> : null}
       <EmptyState
         className="trace-empty"
-        hidden={rows.length > 0}
+        hidden={rows.length > 0 || !fed}
         icon={<Icon name="activity" />}
         title={traceText('trace.empty')}
         description=""
