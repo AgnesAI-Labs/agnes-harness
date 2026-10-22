@@ -144,23 +144,86 @@ describe('sessions command', () => {
     expect(await run(['sessions', 'list'], [])).toEqual({ exit: 0, out: 'no sessions\n', err: '' })
   })
 
-  it('list --archived keeps only archived sessions; columns 4-6 are pinned or -, last activity and the inert title', async () => {
+  it('list --archived keeps only archived sessions; columns 4-7 are pinned or -, last activity, cwd and the inert title', async () => {
     const items = [
       { ...target, sessionId: 'a', archived: true },
       { ...target, sessionId: 'b', pinnedAt: '2026-09-12T00:00:00Z', lastMessageAt: '2026-09-13T08:00:00Z' },
     ]
     const title = 'red[31m title second line'
     expect((await run(['sessions', 'list', '--archived'], items)).out).toBe(
-      `a\t4\tstandard\t-\t2026-09-12T00:00:00Z\t${title}\n`,
+      `a\t4\tstandard\t-\t2026-09-12T00:00:00Z\t/w\t${title}\n`,
     )
     const listed = (await run(['sessions', 'list'], items)).out
     expect(listed).toBe(
-      `a\t4\tstandard\t-\t2026-09-12T00:00:00Z\t${title}\nb\t4\tstandard\tpinned\t2026-09-13T08:00:00Z\t${title}\n`,
+      `a\t4\tstandard\t-\t2026-09-12T00:00:00Z\t/w\t${title}\nb\t4\tstandard\tpinned\t2026-09-13T08:00:00Z\t/w\t${title}\n`,
     )
     // The title is one inert line: no control character and no extra row survives.
     expect(listed.split('\n')).toHaveLength(3)
     // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting their absence is the point
     expect(listed).not.toMatch(/[\u0000-\u0008\u000b-\u001f]/)
+  })
+
+  // --limit / --all / --last over a two-page index; `calls` records every session.list request.
+  const paged = async (argv: string[], pages: Record<string, { items: unknown[]; next?: string }>) => {
+    const calls: unknown[] = []
+    const endpoint = new FakeEndpoint()
+    endpoint
+      .on('initialize', () => ({ protocolVersion: 1, agentCapabilities: {} }))
+      .on('_agnes/v1/session.list', (params) => {
+        calls.push(params)
+        return pages[(params as { cursor?: string }).cursor ?? ''] ?? { items: [] }
+      })
+    const client = createClient({ transport: { kind: 'inproc', endpoint } })
+    clients.push(client)
+    let out = ''
+    let err = ''
+    const exit = await sessionsCommand(parseArgs(argv), client, {
+      stdout: { write: (text: string) => (out += text) } as never,
+      stderr: { write: (text: string) => (err += text) } as never,
+    }).catch((e: Error) => e.message)
+    return { exit, out, err, calls }
+  }
+  const row = (id: string, at: string) => ({ ...target, sessionId: id, createdAt: at })
+  const twoPages = {
+    '': { items: [row('a', '2026-09-01T00:00:00Z'), row('b', '2026-09-03T00:00:00Z')], next: 'c1' },
+    c1: { items: [row('c', '2026-09-02T00:00:00Z'), row('d', '2026-09-09T00:00:00Z')] },
+  }
+  const ids = (out: string) => JSON.parse(out) as { items: Array<{ sessionId: string }>; next?: string }
+
+  it('list pages: one page with a stderr hint by default, --limit sets the page size, bad values are usage errors', async () => {
+    const one = await paged(['sessions', 'list', '--json'], twoPages)
+    expect(one.calls).toEqual([{ limit: 50 }])
+    expect(ids(one.out).next).toBe('c1')
+    expect(one.err).toContain('--all')
+    expect((await paged(['sessions', 'list', '--limit', '7'], twoPages)).calls).toEqual([{ limit: 7 }])
+    for (const bad of ['0', '501', 'x', '1.5'])
+      expect((await paged(['sessions', 'list', '--limit', bad], twoPages)).exit).toMatch(/--limit expects/)
+  })
+
+  it.each([
+    [['--all'], ['a', 'b', 'c', 'd'], [{ limit: 500 }, { limit: 500, cursor: 'c1' }]],
+    [
+      ['--all', '--limit', '3'],
+      ['a', 'b', 'c'],
+      [{ limit: 3 }, { limit: 1, cursor: 'c1' }],
+    ],
+    [['--last'], ['d'], [{ limit: 500 }, { limit: 500, cursor: 'c1' }]],
+  ])('list %j reads every page it needs and prints %j', async (flags, want, calls) => {
+    const r = await paged(['sessions', 'list', ...flags, '--json'], twoPages)
+    expect(ids(r.out).items.map((i) => i.sessionId)).toEqual(want)
+    expect(ids(r.out).next).toBeUndefined()
+    expect(r.calls).toEqual(calls)
+    expect(r.err).toBe('')
+  })
+
+  it('--all stops on a cursor that does not advance instead of looping', async () => {
+    const loop = {
+      '': { items: [row('a', '2026-09-01T00:00:00Z')], next: 'c1' },
+      c1: { items: [], next: 'c1' },
+    }
+    const r = await paged(['sessions', 'list', '--all', '--json'], loop)
+    expect(r.calls).toHaveLength(2)
+    expect(ids(r.out).items.map((i) => i.sessionId)).toEqual(['a'])
   })
 
   // One row per verb: which RPC runs with which params, and what the user sees.

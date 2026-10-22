@@ -104,6 +104,8 @@ export type ParsedArgs = {
   force: boolean
   /** `schedules`: list every schedule rather than one session's. */
   all?: boolean
+  /** `sessions list --last`: only the most recently active session. */
+  last?: boolean
   /** Interactive mode: keep the shell screen and write finished turns into its scrollback. */
   noAltScreen?: boolean
   /** `queue`: steer the turn in flight instead of queueing a follow-up. */
@@ -128,6 +130,7 @@ export type ParsedArgs = {
   /** `approvals suggest`: how far back to look, the smallest count worth suggesting, and how many to show. */
   days?: string
   minCount?: string
+  /** `--limit` raw value, range-checked by the command that reads it (`approvals suggest`, `sessions list`). */
   limit?: string
   /** Explicitly permit provider doctor to issue its bounded minimal-inference probe. */
   probe: boolean

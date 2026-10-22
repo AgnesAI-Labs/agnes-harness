@@ -24,9 +24,9 @@ function json(page: PageSessionMeta): string {
 
 function line(item: PageSessionMeta['items'][number]): string {
   const preset = item.preset ?? 'default'
-  // Columns 1-3 keep their place for scripts that cut by number; the rest only ever append.
+  // Human-facing text: scripts should read --json. cwd sits before the title, which stays last.
   const pinned = item.pinnedAt ? 'pinned' : '-'
-  return `${item.sessionId}\t${item.lastSeq}\t${preset}\t${pinned}\t${item.lastMessageAt ?? item.createdAt}\t${oneLine(item.title)}`
+  return `${item.sessionId}\t${item.lastSeq}\t${preset}\t${pinned}\t${item.lastMessageAt ?? item.createdAt}\t${oneLine(item.cwd)}\t${oneLine(item.title)}`
 }
 
 const inert = oneLine
@@ -43,6 +43,48 @@ function details(item: PageSessionMeta['items'][number]): string {
     ['archived', item.archived ? 'yes' : 'no'],
   ]
   return rows.map(([key, value]) => `${key.padEnd(9)}${value}`).join('\n')
+}
+
+const activity = (item: PageSessionMeta['items'][number]): number => {
+  const t = Date.parse(item.lastMessageAt ?? item.createdAt)
+  return Number.isFinite(t) ? t : 0
+}
+
+function parseLimit(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined
+  const n = /^\d+$/.test(raw) ? Number(raw) : Number.NaN
+  if (!(n >= 1 && n <= 500)) throw new UsageError('--limit expects an integer from 1 to 500')
+  return n
+}
+
+/**
+ * One page, or with `walk` every page by following `next` (a repeated cursor stops the loop instead
+ * of spinning). `cap` bounds the total item count; `next` is dropped when everything was read.
+ */
+async function listPages(
+  client: NodeClient,
+  q: { text?: string; cwd?: string } | undefined,
+  pageSize: number,
+  walk: boolean,
+  cap: number | undefined,
+): Promise<PageSessionMeta> {
+  const items: PageSessionMeta['items'] = []
+  const seen = new Set<string>()
+  let cursor: string | undefined
+  while (true) {
+    const size = walk ? Math.min(500, cap === undefined ? 500 : cap - items.length) : pageSize
+    const page = await client.session.list({
+      limit: size,
+      ...(q ? { q } : {}),
+      ...(cursor ? { cursor } : {}),
+    })
+    items.push(...page.items)
+    if (!walk) return page
+    if (!page.next || seen.has(page.next) || (cap !== undefined && items.length >= cap))
+      return { items: cap === undefined ? items : items.slice(0, cap) }
+    seen.add(page.next)
+    cursor = page.next
+  }
 }
 
 /**
@@ -106,16 +148,22 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
     throw new UsageError('sessions list takes no positional arguments')
 
   const q = id || p.cwd ? { ...(id ? { text: id } : {}), ...(p.cwd ? { cwd: p.cwd } : {}) } : undefined
-  const listed = await client.session.list({
-    limit: action === 'show' ? 500 : 50,
-    ...(q ? { q } : {}),
-  })
+  const limit = action === 'list' ? parseLimit(p.limit) : undefined
+  // --last needs the whole index: the protocol has no sort, so the newest activity can be on any page.
+  const walk = action === 'list' && (p.all === true || p.last === true)
+  const listed = await listPages(
+    client,
+    q,
+    action === 'show' ? 500 : (limit ?? 50),
+    walk,
+    p.last ? undefined : limit,
+  )
   // `q` is a search hint in the protocol, not an equality predicate. Keep `show` from printing a
   // different session when a daemon returns a prefix match or a fuzzy match. `show` reads the
   // daemon's full page (500): a fork child's key embeds its parent's id, and the list is ordered by
   // recent activity, so a busier child can rank ahead of the exact session being asked for.
   // The daemon has no archived filter, so `--archived` narrows the returned page here.
-  const page = id
+  let page: PageSessionMeta = id
     ? { ...listed, items: listed.items.filter((item) => item.sessionId === id) }
     : p.archived
       ? { ...listed, items: listed.items.filter((item) => item.archived) }
@@ -126,6 +174,15 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
     io.stderr.write(`no session ${escapeControl(id)}\n`)
     return ExitCode.ERROR
   }
+  if (p.last) {
+    const newest = page.items.reduce<PageSessionMeta['items'][number] | undefined>(
+      (best, item) => (best && activity(best) >= activity(item) ? best : item),
+      undefined,
+    )
+    page = { items: newest ? [newest] : [] }
+  }
+  if (action === 'list' && !walk && page.next)
+    io.stderr.write('more sessions exist; use --all or a larger --limit\n')
   if (p.json) {
     io.stdout.write(json(page))
     return ExitCode.OK

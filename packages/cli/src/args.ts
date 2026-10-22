@@ -121,6 +121,7 @@ const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create
   '--new': 'newSession',
   '--new-session': 'newSession',
   '--all': 'all',
+  '--last': 'last',
   '--steer': 'steer',
   '--no-alt-screen': 'noAltScreen',
   '--json': 'json',
