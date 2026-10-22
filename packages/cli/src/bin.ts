@@ -396,12 +396,33 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const acpMode = mode === 'acp' ? await import('./modes/acp.js') : undefined
     const printMode = mode === 'print' ? await import('./modes/print.js') : undefined
     const { resolveLocale } = await import('./tui/locale.js')
-    const booted: Booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
+    // The composer goes up before the daemon is reached; it keeps what is typed while that happens.
+    let opening = tuiMode
+      ? new tuiMode.TuiOpening(p, {
+          stdin: io.stdin,
+          stdout: io.stdout,
+          stderr: io.stderr,
+          env: io.env,
+          cwd: p.cwd ?? io.cwd,
+          signals: io.signals ?? process,
+          giveUp: (code) => (io.exit ?? hardExit)(code),
+          composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
+        })
+      : undefined
+    let booted: Booted
+    try {
+      booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
+    } catch (error) {
+      opening?.abandon()
+      throw error
+    }
+    let stashed: string | undefined
     let leave!: (code: number) => void
     const exited = new Promise<number>((resolve) => {
       leave = resolve
     })
     try {
+      if (opening?.gaveUp !== undefined) return opening.gaveUp
       // The config wizard is deliberately after boot: it uses the same authenticated SDK endpoint as
       // Web and never opens Host credential stores itself. A daemon without the optional config
       // capability remains usable for ordinary sessions; an actual config failure is surfaced.
@@ -418,6 +439,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
           // Rendered with the TUI's own selectors. `agh config` keeps the line-oriented wizard so
           // a piped or non-TTY caller still has a scriptable path to the same config endpoint.
           const { NodeTerminal, runOnboardingTui } = await import('./onboarding/tui.js')
+          // The wizard needs the normal screen; the draft waits and is put back afterwards.
+          stashed = opening?.stash()
+          opening = undefined
           const term = new NodeTerminal(io.stdin, io.stdout, io.env)
           const saved = await runOnboardingTui(booted.client, snapshot, term, resolveLocale(io.env))
           // Cancellation leaves setup; Demo continues through the already selected local backend.
@@ -479,6 +503,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
             })
           : tuiMode
             ? tuiMode.runTui(booted, p, {
+                ...(opening ? { opening } : {}),
+                ...(stashed ? { draft: stashed } : {}),
                 env: io.env,
                 stdin: io.stdin,
                 stdout: io.stdout,
@@ -514,6 +540,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         ladderInstalled = false
       }
     } finally {
+      opening?.abandon()
       await Promise.race([booted.close().catch(() => undefined), exited])
     }
   } catch (e) {

@@ -305,6 +305,21 @@ export class Renderer {
     this.requestRender()
   }
 
+  /**
+   * Stops drawing and listening but leaves the alternate screen as it is, for the renderer that takes
+   * it over in the same turn. Raw mode is handed back so the next `start()` enters it exactly once.
+   */
+  release(): void {
+    if (!this.active) return
+    process.off('exit', this.onExit)
+    this.active = false
+    this.generation++
+    this.scheduled = false
+    this.offInput?.()
+    this.offResize?.()
+    this.term.leaveRaw()
+  }
+
   /** Restore the shell, optionally leaving one plain transcript, never a copy of UI chrome. */
   stop(transcript: readonly string[] = []): void {
     this.suspended = false

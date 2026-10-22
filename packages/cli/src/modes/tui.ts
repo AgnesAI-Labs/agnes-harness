@@ -10,6 +10,9 @@ import { freshTuiSessionKey } from '../tui/session-key.js'
 import { type InputStream, NodeTerminal, type OutputStream } from '../tui/terminal.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { refuseWhatCannotBeHonoured, sessionToOpen } from './print.js'
+import { markFirstFrame, type TuiOpening } from './tui-opening.js'
+
+export { TuiOpening } from './tui-opening.js'
 
 export async function runTui(
   booted: Booted,
@@ -30,20 +33,26 @@ export async function runTui(
     editorTmpDir?: string
     /** The CLI's own version, shown on the welcome. */
     agnesVersion?: string
+    /** The composer already drawn while the daemon connected; its screen and draft carry over. */
+    opening?: TuiOpening
+    /** A draft taken off the screen for a prompt that needed it (first-run setup). */
+    draft?: string
   },
 ): Promise<number> {
   refuseWhatCannotBeHonoured(p)
   // Match Prime's process lifecycle: own the alternate screen *before* any session, branding, or
   // daemon await. This leaves the previous invocation in normal-screen scrollback on exit, while
   // every new invocation starts on an empty alternate screen even when opening is slow.
-  const term = new NodeTerminal(io.stdin, io.stdout, io.env)
-  term.write('\x1b[?1049h\x1b[H\x1b[2J')
+  const { opening } = io
+  const term = opening?.term ?? new NodeTerminal(io.stdin, io.stdout, io.env)
+  if (!opening) term.write('\x1b[?1049h\x1b[H\x1b[2J')
   let app: TuiApp | undefined
   let left = false
   const leaveScreen = (): void => {
     if (left) return
     left = true
-    term.write('\x1b[?1049l\x1b[?25h')
+    if (opening) opening.abandon()
+    else term.write('\x1b[?1049l\x1b[?25h')
   }
   // Until a TuiApp exists there is nothing to stop, and the ladder's hard exits skip the finally below:
   // a signal while the session opens gives the shell back at once.
@@ -125,16 +134,13 @@ export async function runTui(
     })
     // The first stdout write after this point is the first frame; the composer takes input once
     // start() has returned. Both marks cost nothing without AGH_TIMING.
-    if (io.env.AGH_TIMING === '1') {
-      const write = io.stdout.write
-      io.stdout.write = (s: string) => {
-        io.stdout.write = write
-        timingMark('first-frame', io.env)
-        return write.call(io.stdout, s)
-      }
-    }
+    if (!opening) markFirstFrame(io)
+    // Released and started in one turn: keys typed meanwhile are in the draft, none are lost between.
+    const draft = opening ? opening.release() : io.draft
+    if (draft) tui.setDraft(draft)
     await tui.start()
-    timingMark('composer-ready', io.env)
+    if (!opening) timingMark('composer-ready', io.env)
+    timingMark('session-ready', io.env)
     if (io.signal()) quit()
     const initialPrompt = p.command === 'resume' ? p.positional.slice(1) : p.positional
     if (!io.signal() && initialPrompt.length > 0) await tui.runInput(initialPrompt.join(' '))

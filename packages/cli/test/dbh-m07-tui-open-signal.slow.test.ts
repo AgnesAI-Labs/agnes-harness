@@ -207,9 +207,10 @@ describe('DBH M-07: a session that opens after the signal', () => {
       h.signals.emit('SIGINT')
       h.openGate()
       const code = await running
+      // Raw mode was taken once, by the composer drawn while the session opened; the app never took it.
       expect({ code, rawEnabled: h.rawEnabled(), restored: restored(h.out()) }).toEqual({
         code: 130,
-        rawEnabled: 0,
+        rawEnabled: 1,
         restored: true,
       })
     } finally {

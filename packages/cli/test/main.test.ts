@@ -455,6 +455,8 @@ describe('main', () => {
     try {
       // Booting the test Host takes over a second on the Windows runner.
       await vi.waitFor(() => expect(raw).toBe(true), { timeout: 10_000 })
+      // Enter before the session is ready only keeps the draft, so wait for the real app's welcome.
+      await vi.waitFor(() => expect(h.out()).toContain('Agnes AI'), { timeout: 10_000 })
       input.write('keyboard from main')
       input.write('\r')
       await vi.waitFor(() => expect(h.out()).toContain('main says hi'), { timeout: 10_000 })

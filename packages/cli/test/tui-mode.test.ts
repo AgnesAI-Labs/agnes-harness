@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +9,7 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { runTui } from '../src/modes/tui.js'
+import { TuiOpening } from '../src/modes/tui-opening.js'
 import type { Booted } from '../src/types.js'
 import { say } from './boot-host.js'
 import { FAKE_SESSION_ID, type FakeEndpoint, scriptedEndpoint } from './fake-endpoint.js'
@@ -282,5 +284,103 @@ describe('runTui model selection', () => {
       sessionId: FAKE_SESSION_ID,
     })
     expect(endpoint.calls.map((entry) => entry.method)).not.toContain('session/new')
+  })
+})
+
+describe('composer drawn before the session is ready', () => {
+  const emptyTimeline = () => ({
+    sessionId: FAKE_SESSION_ID,
+    generation: 1,
+    upto: 0,
+    opState: null,
+    turns: [],
+    nodes: [],
+  })
+  function opened() {
+    const io = tuiIO()
+    let rendered = ''
+    io.stdout.on('data', (chunk) => {
+      rendered += String(chunk)
+    })
+    let stderr = ''
+    const giveUp = vi.fn()
+    const opening = new TuiOpening(parseArgs([]), {
+      stdin: io.stdin,
+      stdout: io.stdout,
+      stderr: { write: (s: string) => (stderr += s) },
+      env: io.env,
+      cwd: io.cwd,
+      signals: new EventEmitter(),
+      giveUp,
+    })
+    return { io, opening, rendered: () => rendered, stderr: () => stderr, giveUp }
+  }
+
+  it('keeps the draft on Enter before ready, then carries it into the app, where Enter sends it', async () => {
+    const endpoint = scriptedEndpoint()
+      .on('_agnes/v1/session.projectUI', emptyTimeline)
+      .on('session/prompt', () => ({ stopReason: 'end_turn' }))
+    const { io, opening, rendered } = opened()
+    io.stdin.write('hello draft')
+    io.stdin.write('\r')
+    await vi.waitFor(() => expect(rendered()).toContain('your draft is kept'))
+    expect(endpoint.calls.map((c) => c.method)).not.toContain('session/prompt')
+    let signal: 'SIGTERM' | undefined
+    const running = runTui(await booted(endpoint), parseArgs([]), {
+      ...io,
+      signal: () => signal,
+      opening,
+    })
+    try {
+      await vi.waitFor(() => expect(endpoint.calls.map((c) => c.method)).toContain('session/new'))
+      await vi.waitFor(() => expect(rendered().split('hello draft').length).toBeGreaterThan(2))
+      io.stdin.write('\r')
+      await vi.waitFor(() => expect(endpoint.calls.map((c) => c.method)).toContain('session/prompt'))
+      expect(JSON.stringify(endpoint.calls.find((c) => c.method === 'session/prompt')?.params)).toContain(
+        'hello draft',
+      )
+    } finally {
+      signal = 'SIGTERM'
+      io.stdin.write('\x03')
+      io.stdin.write('\x03')
+      await running.catch(() => undefined)
+    }
+  })
+
+  it('prints the draft, control characters removed, when the start fails', () => {
+    const { io, opening, rendered, stderr } = opened()
+    io.stdin.write('\x1b[200~keep\x1b[31m this\x1b[201~')
+    opening.abandon()
+    expect(rendered()).toContain('\x1b[?1049l')
+    expect(stderr()).toMatch(/^Unsent draft: keep.*this\n$/)
+    expect(stderr()).not.toContain('\x1b')
+    opening.abandon()
+    expect(stderr().match(/Unsent draft/g)).toHaveLength(1)
+  })
+
+  it('marks first-frame, composer-ready and session-ready in order', async () => {
+    const endpoint = scriptedEndpoint().on('_agnes/v1/session.projectUI', emptyTimeline)
+    const io = tuiIO()
+    const env = { ...io.env, AGH_TIMING: '1' }
+    const marks: string[] = []
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation(((s: string) => {
+      marks.push(...[...String(s).matchAll(/^agh-timing (\S+) /gm)].map((m) => m[1] as string))
+      return true
+    }) as typeof process.stderr.write)
+    try {
+      const opening = new TuiOpening(parseArgs([]), {
+        stdin: io.stdin,
+        stdout: io.stdout,
+        stderr: { write: () => true },
+        env,
+        cwd: io.cwd,
+        signals: new EventEmitter(),
+        giveUp: () => undefined,
+      })
+      await runTui(await booted(endpoint), parseArgs([]), { ...io, env, opening })
+    } finally {
+      err.mockRestore()
+    }
+    expect(marks).toEqual(['first-frame', 'composer-ready', 'session-ready'])
   })
 })

@@ -568,6 +568,11 @@ export class TuiApp {
     })
   }
 
+  /** Text typed before the session was ready; it lands in the editor unsent. */
+  setDraft(text: string): void {
+    this.editor.setText(text)
+  }
+
   async start(): Promise<void> {
     this.offPermission = this.o.session.onPermissionRequest((request, context) =>
       this.modal.ask(request, context),
