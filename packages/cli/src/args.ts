@@ -1,4 +1,4 @@
-import { parseAgentRef, parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol'
+import { parseAgentRef, parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol/command-line'
 import { UsageError } from './errors.js'
 import type { Command, ModelSel, ParsedArgs } from './types.js'
 

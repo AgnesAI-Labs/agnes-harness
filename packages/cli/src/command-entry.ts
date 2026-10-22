@@ -1,23 +1,29 @@
 import { resolve } from 'node:path'
 import { parseArgs } from './args.js'
-import { bootDefault, type DefaultBootDeps } from './boot/default.js'
+import type { DefaultBootDeps } from './boot/default.js'
 import { parseBatchArgs } from './commands/batch.js'
-import { dispatchBatchCli } from './commands/batch-runtime.js'
-import { parseRuntimeArgs, runtimeCommand } from './commands/runtime.js'
+import { parseRuntimeArgs } from './commands/runtime-args.js'
 import type { ParsedArgs } from './types.js'
 
 export { resolveMode } from './args.js'
-export { dispatchBatchCli } from './commands/batch-runtime.js'
 export function isProfileCommand(command: ParsedArgs['command']) {
   return command === 'batch' || command === 'runtime'
 }
-export function dispatchProfileCli(
+export async function dispatchProfileCli(
   parsed: ParsedArgs,
   io: { cwd: string; stdout: NodeJS.WritableStream; signals?: NodeJS.EventEmitter },
   deps: DefaultBootDeps,
   useEmbedded: boolean,
 ) {
-  if (parsed.command === 'batch') return dispatchBatchCli(parsed, io, deps, useEmbedded)
+  // Loaded when the command runs: both pull in the boot path and the Host, which `--help` never needs.
+  if (parsed.command === 'batch') {
+    const { dispatchBatchCli } = await import('./commands/batch-runtime.js')
+    return dispatchBatchCli(parsed, io, deps, useEmbedded)
+  }
+  const [{ runtimeCommand }, { bootDefault }] = await Promise.all([
+    import('./commands/runtime.js'),
+    import('./boot/default.js'),
+  ])
   return runtimeCommand(parsed.rest, {
     write: (text) => {
       io.stdout.write(text)

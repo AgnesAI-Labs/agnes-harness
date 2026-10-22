@@ -1,7 +1,7 @@
 import { usage } from './args.js'
 import { BATCH_USAGE } from './commands/batch.js'
-import { RUN_USAGE } from './commands/run.js'
-import { RUNTIME_USAGE } from './commands/runtime.js'
+import { RUN_USAGE } from './commands/run-usage.js'
+import { RUNTIME_USAGE } from './commands/runtime-args.js'
 import type { Command } from './types.js'
 
 /** Help is rendered before boot, including forwarded command grammars. */

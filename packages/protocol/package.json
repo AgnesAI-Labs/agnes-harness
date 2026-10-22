@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./command-line": "./src/command-line.ts",
     "./intelligent-ui": "./src/ui-surface-validation.ts",
     "./gen/*": "./gen/ts/*.ts"
   },

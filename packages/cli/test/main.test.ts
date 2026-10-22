@@ -17,17 +17,15 @@ import { JsonRpcError, TransportClosed } from '@agnes/sdk'
 import { windowsWritePrivateFile } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
+import { agnesVersion, type MainIO, main } from '../src/bin.js'
+import type { LocalBootDeps } from '../src/boot/local.js'
+import { bootLocal } from '../src/boot/local.js'
 import {
-  agnesVersion,
-  type MainIO,
-  main,
   safeDaemonDisconnectLine,
   safeExpectedResourceRpcFailureLine,
   safeExpectedSessionRpcFailureLine,
   safeResourceFailureLine,
-} from '../src/bin.js'
-import type { LocalBootDeps } from '../src/boot/local.js'
-import { bootLocal } from '../src/boot/local.js'
+} from '../src/command-failure.js'
 import { say, stalledProvider, TEST_LOCK, testDeps } from './boot-host.js'
 
 // The lazy runtime reports first-use preparation only where the pinned driver is admitted for this

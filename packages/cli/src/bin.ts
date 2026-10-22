@@ -4,100 +4,24 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { installDiagnosticJournal } from '@agnes/observability'
-import { AGNES_ERRORS, JSONRPC_ERRORS, publicErrorHelp } from '@agnes/protocol'
-import {
-  confirmResourceOperation,
-  isResourceOperationFailure,
-  ResourceUsageError,
-  resourceOperationFailureWasRendered,
-  runResourceCliCommand,
-} from '@agnes/resource-control-cli'
-import { TransportClosed } from '@agnes/sdk'
-import { bootDefault } from './boot/default.js'
-import { makeEphemeralHome, resolveHome } from './boot/inputs.js'
-import { bootLocal, type LocalBootDeps } from './boot/local.js'
+import type { bootDefault as BootDefault } from './boot/default.js'
+import type { LocalBootDeps } from './boot/local.js'
 import { installSignalLadder } from './boot/signals.js'
 import { dispatchProfileCli, isProfileCommand, prepareCommandArgs, resolveMode } from './command-entry.js'
 import { commandHelp } from './command-help.js'
-import { recoveryCommand } from './commands/app.js'
-import {
-  type BranchContext,
-  readConfigurationSnapshot,
-  runComputerUseBranch,
-  runConfigBranch,
-  runDaemonBranch,
-  runDoctorBranch,
-  runPackagesBranch,
-  runPluginsPackBranch,
-  runProfileBranch,
-} from './commands/bin-branches.js'
-import {
-  BootError,
-  CommandError,
-  ExitCode,
-  SIGNAL_EXIT_CODES,
-  type SignalName,
-  UsageError,
-} from './errors.js'
-import { runAcp } from './modes/acp.js'
-import { runPrint } from './modes/print.js'
+import type { BranchContext } from './commands/bin-branches.js'
+import { BootError, ExitCode, SIGNAL_EXIT_CODES, type SignalName, UsageError } from './errors.js'
 import { timingMark } from './timing.js'
-import { resolveLocale } from './tui/locale.js'
 import type { Booted } from './types.js'
 import { versionLine } from './version-line.js'
 
-/** The resource command layer only raises these for backend-confirmed terminal outcomes. */
-export function safeResourceFailureLine(error: unknown): string | undefined {
-  if (!isResourceOperationFailure(error)) return undefined
-  return `${error.code}: ${error.message} operation ${error.operationId}`
-}
+// Everything heavier than argument parsing and help text is imported where its command runs, so
+// `agh --help` and a usage error never evaluate the Host, Daemon, SDK or protocol schemas.
 
-/** A daemon disappearing during a client command is operational, not a CLI programming failure. */
-export function safeDaemonDisconnectLine(error: unknown): string | undefined {
-  const kind = (error as { kind?: unknown } | null)?.kind
-  if (!(error instanceof TransportClosed) && kind !== 'transport-closed') return undefined
-  return 'DAEMON_CONNECTION_CLOSED: local Daemon connection closed; retry the command.'
-}
-
-type RpcFailureShape = Readonly<{
-  kind?: unknown
-  code?: unknown
-  data?: Readonly<{ code?: unknown }>
-}>
-
-/**
- * These are the only confirmed resource-operation JSON-RPC outcomes that can occur while a local
- * command is finishing. Match their wire shape so the handling survives the local/SEA bundle edge;
- * do not interpolate server messages or data because either can contain untrusted diagnostics.
- */
-export function safeExpectedResourceRpcFailureLine(error: unknown): string | undefined {
-  const value = error as RpcFailureShape | null
-  if (value?.kind !== 'json-rpc') return undefined
-  if (value.code === JSONRPC_ERRORS.INVALID_REQUEST && value.data?.code === 'SHUTTING_DOWN')
-    return 'DAEMON_SHUTTING_DOWN: local Daemon is shutting down; retry the command.'
-  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'RESOURCE_OPERATION_TERMINAL')
-    return 'RESOURCE_OPERATION_TERMINAL: resource operation has already reached a terminal state.'
-  return undefined
-}
-
-/**
- * Refusals a session command meets because of what the operator asked for or has configured: a
- * `--model`/`--preset` this profile does not carry, or a home with no provider at all. Each gets
- * one fixed line saying what to do next. Same rule as above: the server's message and data are not
- * interpolated.
- */
-export function safeExpectedSessionRpcFailureLine(error: unknown): string | undefined {
-  const value = error as RpcFailureShape | null
-  if (value?.kind !== 'json-rpc') return undefined
-  if (value.code === AGNES_ERRORS.PRESET_SWITCH_REJECTED)
-    return 'PRESET_SWITCH_REJECTED: the requested preset or model is not available in this profile; `agh doctor provider` lists the configured routes.'
-  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'PROVIDER_UNCONFIGURED')
-    return 'PROVIDER_UNCONFIGURED: no model provider is configured for this profile; run `agh config` to add one.'
-  if (value.code === AGNES_ERRORS.SEMANTIC_REJECTED && value.data?.code === 'LEGACY_LEDGER_FORMAT')
-    return 'LEGACY_LEDGER_FORMAT: this session was created by an older version and cannot be opened by this one; start a new session.'
-  return undefined
-}
+/** The branches that live outside this file, loaded on first use. */
+const branches = () => import('./commands/bin-branches.js')
+const bootDefault: typeof BootDefault = async (...args) =>
+  (await import('./boot/default.js')).bootDefault(...args)
 
 export type MainIO = {
   env: NodeJS.ProcessEnv
@@ -143,7 +67,11 @@ function hardExit(code: number): void {
  * default termination, so the hook still runs. The default termination acts the instant a signal is
  * delivered, so the handlers exist before the home does and outlive its removal.
  */
-function ephemeralHome(io: MainIO, ladderInstalled: () => boolean): { home: string; release(): void } {
+function ephemeralHome(
+  io: MainIO,
+  ladderInstalled: () => boolean,
+  makeEphemeralHome: () => { home: string; dispose(): void },
+): { home: string; release(): void } {
   const signals = io.signals ?? process
   const exit = io.exit ?? ((code: number) => process.exit(code))
   const handlers = (Object.keys(SIGNAL_EXIT_CODES) as SignalName[]).map((sig) => {
@@ -200,9 +128,11 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     }
   }
 
+  const { makeEphemeralHome, resolveHome } = await import('./boot/inputs.js')
   let ladderInstalled = false
-  const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled) : undefined
+  const eph = p.ephemeral ? ephemeralHome(io, () => ladderInstalled, makeEphemeralHome) : undefined
   const home = eph?.home ?? resolveHome(io.env)
+  const { recoveryCommand } = await import('./commands/app.js')
   const recovery = await recoveryCommand(p, io, home)
   if (recovery !== undefined) return recovery
   const production = Object.keys(boot).length === 0
@@ -228,7 +158,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     }
   }
   const stopDiagnostics =
-    production && p.command !== 'doctor' ? installDiagnosticJournal(diagnosticHome) : undefined
+    production && p.command !== 'doctor'
+      ? (await import('@agnes/observability')).installDiagnosticJournal(diagnosticHome)
+      : undefined
   // Progress goes to a terminal or nowhere. A redirected stderr belongs to whatever the operator
   // pointed it at, and filling it with spinner text is how a log becomes unreadable.
   const log = (s: string): void => {
@@ -297,7 +229,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       }
       return ExitCode.OK
     }
-    if (p.command === 'daemon') return await runDaemonBranch(p, branchContext)
+    if (p.command === 'daemon') return await (await branches()).runDaemonBranch(p, branchContext)
     if (p.command === 'consent') {
       const { consentCommand } = await import('./commands/consent.js')
       io.stdout.write(`${consentCommand(p, deps)}\n`)
@@ -308,9 +240,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       io.stdout.write(`${await statsDeviation(p, deps)}\n`)
       return ExitCode.OK
     }
-    if (p.command === 'config') return await runConfigBranch(p, branchContext)
-    if (p.command === 'doctor') return await runDoctorBranch(p, branchContext)
-    if (p.command === 'computer-use') return await runComputerUseBranch(p, branchContext)
+    if (p.command === 'config') return await (await branches()).runConfigBranch(p, branchContext)
+    if (p.command === 'doctor') return await (await branches()).runDoctorBranch(p, branchContext)
+    if (p.command === 'computer-use') return await (await branches()).runComputerUseBranch(p, branchContext)
     if (p.command === 'conformance') {
       const { conformanceGateway } = await import('./commands/conformance.js')
       const result = await conformanceGateway(p, deps)
@@ -334,6 +266,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       const { importFile } = await import('./commands/import.js')
       if (p.connect !== undefined || io.env.AGNES_CONNECT !== undefined)
         throw new UsageError('import only runs in one-shot form (no --connect)')
+      const { bootLocal } = await import('./boot/local.js')
       const booted = await bootLocal(p, deps)
       try {
         if (booted.host === undefined) throw new BootError('local import requires a Host')
@@ -376,7 +309,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       }
     }
     if (p.command === 'plugins' && p.positional[0] === 'pack')
-      return await runPluginsPackBranch(p, branchContext)
+      return await (await branches()).runPluginsPackBranch(p, branchContext)
     if (
       (p.command === 'plugins' &&
         !/^(reload|publication-status|provenance|candidates|config|tree|generations)$/.test(
@@ -419,11 +352,12 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'packages') return await runPackagesBranch(p, branchContext)
+    if (p.command === 'packages') return await (await branches()).runPackagesBranch(p, branchContext)
     if (
       (p.command === 'resources' || p.command === 'skills' || p.command === 'mcp') &&
       !(p.command === 'mcp' && p.rest[0] === 'serve')
     ) {
+      const { confirmResourceOperation, runResourceCliCommand } = await import('@agnes/resource-control-cli')
       await runResourceCliCommand({
         kind: p.command,
         rest: p.rest,
@@ -450,7 +384,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    if (p.command === 'profile') return await runProfileBranch(p, branchContext)
+    if (p.command === 'profile') return await (await branches()).runProfileBranch(p, branchContext)
     // Commands still require their own runners. ACP is a mode as well as a command alias.
     if (p.command && p.command !== 'resume' && p.command !== 'acp')
       throw new UsageError(`agh ${p.command} is not available in this build`)
@@ -459,6 +393,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       throw new UsageError(`agh ${mode} is not available in this build; use -p`)
     // Resolve the selected mode before installing its signal ladder, so loading cannot race cancel.
     const tuiMode = mode === 'tui' ? await import('./modes/tui.js') : undefined
+    const acpMode = mode === 'acp' ? await import('./modes/acp.js') : undefined
+    const printMode = mode === 'print' ? await import('./modes/print.js') : undefined
+    const { resolveLocale } = await import('./tui/locale.js')
     const booted: Booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
     let leave!: (code: number) => void
     const exited = new Promise<number>((resolve) => {
@@ -476,7 +413,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         // and consuming the stream here would steal bytes from the embedder's own TUI.
         Object.keys(boot).length === 0
       ) {
-        const snapshot = await readConfigurationSnapshot(booted)
+        const snapshot = await (await branches()).readConfigurationSnapshot(booted)
         if (snapshot && !snapshot.configured) {
           // Rendered with the TUI's own selectors. `agh config` keeps the line-oriented wizard so
           // a piped or non-TTY caller still has a scriptable path to the same config endpoint.
@@ -530,45 +467,44 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         },
       )
       try {
-        const run =
-          mode === 'acp'
-            ? runAcp(booted, p, {
+        const run = acpMode
+          ? acpMode.runAcp(booted, p, {
+              stdin: io.stdin,
+              stdout: io.stdout,
+              stderr: io.stderr,
+              registerCancel: (fn) => {
+                cancel = fn
+              },
+              signal: () => signal,
+            })
+          : tuiMode
+            ? tuiMode.runTui(booted, p, {
+                env: io.env,
                 stdin: io.stdin,
                 stdout: io.stdout,
+                cwd: p.cwd ?? io.cwd,
+                registerCancel: (fn) => {
+                  cancel = fn
+                },
+                signal: () => signal,
+                ...(resourceController ? { resourceController } : {}),
+                composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
+                historyPath: join(resolveHome(io.env), 'tui-history.jsonl'),
+                commandsDir: join(home, 'commands'),
+                editorTmpDir: join(resolveHome(io.env), 'tmp'),
+                agnesVersion: io.agnesVersion,
+              })
+            : printMode!.runPrint(booted, p, {
+                locale: resolveLocale(io.env),
+                stdout: io.stdout,
                 stderr: io.stderr,
+                stdin: io.stdin,
+                cwd: p.cwd ?? io.cwd,
                 registerCancel: (fn) => {
                   cancel = fn
                 },
                 signal: () => signal,
               })
-            : tuiMode
-              ? tuiMode.runTui(booted, p, {
-                  env: io.env,
-                  stdin: io.stdin,
-                  stdout: io.stdout,
-                  cwd: p.cwd ?? io.cwd,
-                  registerCancel: (fn) => {
-                    cancel = fn
-                  },
-                  signal: () => signal,
-                  ...(resourceController ? { resourceController } : {}),
-                  composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
-                  historyPath: join(resolveHome(io.env), 'tui-history.jsonl'),
-                  commandsDir: join(home, 'commands'),
-                  editorTmpDir: join(resolveHome(io.env), 'tmp'),
-                  agnesVersion: io.agnesVersion,
-                })
-              : runPrint(booted, p, {
-                  locale: resolveLocale(io.env),
-                  stdout: io.stdout,
-                  stderr: io.stderr,
-                  stdin: io.stdin,
-                  cwd: p.cwd ?? io.cwd,
-                  registerCancel: (fn) => {
-                    cancel = fn
-                  },
-                  signal: () => signal,
-                })
         // Assigned before the first await, so a signal arriving in the same tick already has something
         // to wait for rather than closing on an empty promise.
         settled = run
@@ -581,34 +517,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       await Promise.race([booted.close().catch(() => undefined), exited])
     }
   } catch (e) {
-    const help = publicErrorHelp(e, resolveLocale(io.env))
-    if (help) {
-      io.stderr.write(`${help.code}: ${help.reason} ${help.action}\n`)
-      return ExitCode.ERROR
-    }
-    const safeFailure =
-      safeResourceFailureLine(e) ??
-      safeExpectedResourceRpcFailureLine(e) ??
-      safeExpectedSessionRpcFailureLine(e) ??
-      safeDaemonDisconnectLine(e)
-    if (safeFailure !== undefined) {
-      if (!resourceOperationFailureWasRendered(e)) io.stderr.write(`${safeFailure}\n`)
-      return ExitCode.ERROR
-    }
-    if (
-      e instanceof UsageError ||
-      e instanceof BootError ||
-      e instanceof CommandError ||
-      e instanceof ResourceUsageError
-    ) {
-      io.stderr.write(
-        `${e.message.replace(/[\r\n]+/g, ' ')}; run agh${p.command ? ` ${p.command}` : ''} --help for usage\n`,
-      )
-      return e instanceof ResourceUsageError ? ExitCode.USAGE : e.code
-    }
-    // Unknown failures have no public display contract; keep logs and arbitrary data out of stderr.
-    io.stderr.write('agh: The request failed. Inspect its status with agh doctor.\n')
-    return ExitCode.ERROR
+    return (await import('./command-failure.js')).reportCommandFailure(e, p.command, io)
   } finally {
     stopDiagnostics?.()
     eph?.release()
