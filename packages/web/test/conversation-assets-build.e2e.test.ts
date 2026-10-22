@@ -65,8 +65,21 @@ it('resolves the conversation layer from the shared vendor instead of bundling a
   }
   expect(duplicated).toEqual([])
 
-  const vendor = JSON.parse(await readFile(resolve(output, 'vendor/conversation.js.map'), 'utf8')) as {
-    sources: string[]
+  // Splitting can place presentation dependencies in shared vendor chunks. Follow this entry's
+  // actual imports, so an unrelated vendor's dependencies cannot satisfy the ownership check.
+  const vendor = { sources: [] as string[] }
+  const pending = ['conversation.js']
+  const visited = new Set<string>()
+  for (const file of pending) {
+    if (visited.has(file)) continue
+    visited.add(file)
+    const [source, map] = await Promise.all([
+      readFile(resolve(output, 'vendor', file), 'utf8'),
+      readFile(resolve(output, 'vendor', `${file}.map`), 'utf8'),
+    ])
+    vendor.sources.push(...(JSON.parse(map) as { sources: string[] }).sources)
+    for (const match of source.matchAll(/(?:\bfrom\s*|\bimport\s*)["']\.\/([^"']+\.js)["']/g))
+      pending.push(match[1]!)
   }
   expect(vendor.sources.some((source) => source.includes('node_modules/@assistant-ui/'))).toBe(false)
   expect(vendor.sources.some((source) => source.includes('@ant-design/x-markdown/'))).toBe(true)

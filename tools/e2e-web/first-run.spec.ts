@@ -4,7 +4,7 @@ import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { firstRunSnapshots } from './first-run-snapshots.js'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { closeSettings, expand, fullAccess, preferences, settings } from './ui.js'
+import { closeSettings, expand, fullAccess, preferences, send, settings } from './ui.js'
 
 // The behavioral gate uses the same real flows without the decorative replay/pixel matrix.
 const behaviorOnly = process.env.AGH_BEHAVIOR_ONLY === '1'
@@ -61,7 +61,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.getByRole('option', { name: 'DeepSeek', exact: true }).click()
         await expand(connection.locator('#config-account-advanced'))
         await connection.locator('#config-base-url').fill(provider.baseUrl)
-        await connection.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
+        await connection.locator('#config-api-key').fill(provider.apiKey)
         await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'workspace')
         // The completed progress step replaces the retired inline saved badge.
@@ -107,9 +107,7 @@ for (const locale of ['en', 'zh-CN']) {
         expect(diagnostics.checks.find((check) => check.id === 'accounts')?.probed).toBe(false)
         if (diagnostics.checks.find((check) => check.id === 'sandbox')?.status !== 'ok')
           await fullAccess(page, locale)
-        const composer = page.getByRole('textbox', { name: name('Task content', '任务内容'), exact: true })
-        await composer.fill('Complete my first task')
-        await composer.press('Enter')
+        await send(page, 'Complete my first task')
         await expect(page.getByTestId('conversation-turn')).toContainText('FIRST_TASK_COMPLETED')
         await expect(page.getByTestId('conversation-turn')).toHaveAttribute('data-status', 'completed')
         const saved = await client.config.get()
@@ -126,7 +124,7 @@ for (const locale of ['en', 'zh-CN']) {
         await account.locator('#config-account-advanced > :is(summary, .agh-disclosure-summary)').click()
         await account.locator('#config-account-name').fill('Second account')
         await account.locator('#config-base-url').fill(provider.baseUrl)
-        await account.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
+        await account.locator('#config-api-key').fill(provider.apiKey)
         await account.locator('#config-save').click()
         await expect(account).toBeHidden()
         await expect(page.locator('.config-account')).toHaveCount(2)
@@ -265,8 +263,7 @@ test('first run Demo reaches a conversation without storing an account', async (
     .poll(height, { message: 'Clearing the draft restores the compact composer' })
     .toBeLessThanOrEqual(restingHeight + 1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true)
-  await composer.fill('Hello from Demo')
-  await composer.press('Enter')
+  await send(page, 'Hello from Demo')
   await expect(page.getByTestId('conversation-turn')).toHaveAttribute('data-status', 'completed')
   const client = await runtime.connect()
   expect((await client.config.get()).accounts).toHaveLength(0)

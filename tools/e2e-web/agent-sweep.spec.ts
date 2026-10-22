@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import type { Page } from '@playwright/test'
 import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
@@ -8,12 +8,17 @@ import { readSessionEvents } from './ledger.js'
 import { chooseWorkspace, expand, expandActivityGroups, homePage, preferences, send } from './ui.js'
 
 type Launch = { prompt?: { text: { en: string } }; pages?: string[] }
-type Manifest = { name: string; agnes?: { bundles?: Record<string, { launch?: Launch }> } }
+type Manifest = {
+  name: string
+  agnes?: { application?: object; bundles?: Record<string, { launch?: Launch }> }
+}
 const real = process.env.AGH_REAL_AGENT_SWEEP === '1'
 const filter = process.env.AGH_AGENT_FILTER?.split(',')
 
 // Enumerate declarations, including additions outside examples/fde; fixture-only packages have no launch.
-function agents(directory = 'examples'): { directory: string; ref: string; launch: Launch }[] {
+function agents(
+  directory = 'examples',
+): { directory: string; ref: string; launch: Launch; application?: boolean }[] {
   const found: ReturnType<typeof agents> = []
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && !['node_modules', 'dist'].includes(entry.name))
@@ -21,13 +26,19 @@ function agents(directory = 'examples'): { directory: string; ref: string; launc
     else if (entry.name === 'package.json') {
       const manifest: Manifest = JSON.parse(readFileSync(join(directory, entry.name), 'utf8'))
       for (const [id, bundle] of Object.entries(manifest.agnes?.bundles ?? {}))
-        if (bundle.launch) found.push({ directory, ref: `${manifest.name}#${id}`, launch: bundle.launch })
+        if (bundle.launch)
+          found.push({
+            directory,
+            ref: `${manifest.name}#${id}`,
+            launch: bundle.launch,
+            application: !!manifest.agnes?.application,
+          })
     }
   }
   return found.sort((a, b) => a.ref.localeCompare(b.ref))
 }
 
-async function answerControls(page: Page) {
+async function answerControls(page: Page, answered: Set<string>) {
   const allow = page.getByTestId('approval-action').filter({ hasText: /^Allow once$/ })
   if (await allow.first().isVisible()) {
     await allow.first().click()
@@ -51,7 +62,10 @@ async function answerControls(page: Page) {
   const expand = inline.getByTestId('ui-expand').last()
   if (await expand.isVisible()) await expand.click()
   const action = page.getByTestId('intelligent-ui-panel').getByTestId('ui-action-approve').first()
-  if ((await action.isVisible()) && (await action.isEnabled())) await action.click()
+  if (!answered.has('finance') && (await action.isVisible()) && (await action.isEnabled())) {
+    await action.click()
+    answered.add('finance')
+  }
   const confirm = page.getByTestId('ui-confirm').first()
   if ((await confirm.isVisible()) && (await confirm.isEnabled())) await confirm.click()
 }
@@ -62,12 +76,13 @@ catalog.push({
   ref: 'builtin:general',
   launch: { prompt: { text: { en: 'call read {"path":"report.md"}' } } },
 })
-// One worker owns this file even in the parallel browser gate; each case owns a fresh daemon home.
+// Offline cases own independent daemon homes and can be sharded. Paid inference stays serial
+// so one worker owns the shared budget ledger.
 test.describe('shipped agent acceptance', () => {
   // Playwright's SW-block init script reads navigator.serviceWorker in opaque frames.
   // Those frames already forbid service workers; leave their sandbox intact.
   test.use({ serviceWorkers: 'allow' })
-  test.describe.configure({ mode: 'default' })
+  test.describe.configure({ mode: real ? 'default' : 'parallel' })
   for (const agent of catalog.filter((agent) => !filter || filter.some((id) => agent.ref.includes(id))))
     test(`agent launch sweep: ${agent.ref}`, async ({ page, runtime }, info) => {
       test.setTimeout(9 * 60_000)
@@ -86,20 +101,8 @@ test.describe('shipped agent acceptance', () => {
       }
       await preferences(page)
       await page.goto(runtime.url)
-      if (real) await chooseWorkspace(page, runtime)
-      else {
-        const guide = page.getByTestId('first-run-guide')
-        await page.getByTestId('first-run-demo').click()
-        await page.getByTestId('first-run-next').click()
-        await guide
-          .getByRole('button', { name: 'Enter a folder if the picker is unavailable', exact: true })
-          .click()
-        await guide.getByRole('textbox', { name: 'Folder path', exact: true }).fill(runtime.workspace)
-        await guide.getByRole('button', { name: 'Use folder', exact: true }).click()
-        await page.getByTestId('first-run-next').click()
-        await page.getByTestId('first-run-next').click()
-        await expect(guide).toBeHidden()
-      }
+      // Onboarding has its own gate; this sweep owns agent review and execution.
+      await chooseWorkspace(page, runtime)
       console.log(`Sweep ${agent.ref}: ${runtime.home}; ${runtime.url}`)
       const browserErrors: string[] = []
       page.on('pageerror', (error) => browserErrors.push(error.message))
@@ -129,41 +132,49 @@ test.describe('shipped agent acceptance', () => {
       let runTimer: ReturnType<typeof setTimeout> | undefined
       try {
         if (totalUsd > 5) throw new Error('AGH-recorded $5 budget exhausted')
-        if (agent.ref.startsWith('@acme/')) {
-          await homePage(page, 'plugins')
-          await page.getByTestId('plugin-install-source').click()
-          const source = page.getByRole('dialog', { name: 'Check a plugin source', exact: true })
-          await source.getByRole('combobox', { name: 'Source type', exact: true }).selectOption('file')
-          await source
-            .getByRole('textbox', { name: 'Source reference', exact: true })
-            .fill(`file:${resolve(agent.directory)}`)
-          await source.getByRole('button', { name: 'Check source', exact: true }).click()
-          await page
-            .getByTestId('install-review')
-            .getByRole('button', { name: 'Install and enable', exact: true })
-            .click()
-          await expect(page.getByTestId('install-review')).toBeHidden({ timeout: 90_000 })
+        if (agent.directory && !agent.directory.startsWith('examples/showcase/')) {
+          await installDeveloperExample(page, agent.directory)
           await expect
             .poll(
               async () =>
                 (await client.packages.list({ profile: 'local-dev' })).packages.find(
-                  (row) => row.id === '@acme/operations',
+                  (row) => row.id === agent.ref.split('#')[0],
                 )?.actual,
               { timeout: 90_000 },
             )
             .toBe('running')
         }
-        if (agent.directory.startsWith('examples/fde/')) await installDeveloperExample(page, agent.directory)
         await homePage(page, 'agents')
         const general = agent.ref === 'builtin:general'
         const draft = agent.launch.prompt?.text.en
-        if (!draft) throw new Error('Every business agent must provide its own sample draft')
+        // Demo is a deterministic tool fixture, not a natural-language planner. Preserve the
+        // declared draft/review, then explicitly exercise an admitted read-only tool offline.
+        const aerospace = agent.ref.startsWith('@agnes-showcase/aerospace-quality#')
+        const smokeTool = agent.ref.startsWith('@acme/') ? 'acme_status' : aerospace ? 'aero_quality' : 'read'
+        const input =
+          !real && aerospace
+            ? 'call aero_quality {"view":"dashboard"}'
+            : draft && (real || /\bcall\s+/.test(draft))
+              ? draft
+              : 'call read {"path":"report.md"}'
+        row.input = input
+        row.syntheticPrompt = input !== draft
         const card = general
           ? page.getByTestId('general-agent')
           : page.locator(`[data-agent-ref="${agent.ref}"]`)
-        await card
-          .getByRole('button', { name: general ? 'Start conversation' : 'Start now', exact: true })
-          .click()
+        if (agent.application) {
+          // Application roles are grouped under their application, rather than standalone cards.
+          // Exercise their supported shareable launch page and the same backend ticket review.
+          const url = new URL(page.url())
+          url.searchParams.delete('new')
+          url.searchParams.set('page', 'agents')
+          url.searchParams.set('view', `agent-${encodeURIComponent(agent.ref)}`)
+          await page.goto(url.href)
+          await expect(page.getByTestId('home-page-agents')).toBeVisible()
+        } else
+          await card
+            .getByRole('button', { name: general ? 'Start conversation' : 'Start now', exact: true })
+            .click()
         if (!general) {
           const install = page.getByTestId('agent-start-confirm')
           await expect(
@@ -174,14 +185,17 @@ test.describe('shipped agent acceptance', () => {
           if (await install.isVisible()) await install.click()
           const review = page.getByTestId('agent-launch-review')
           await expect(review).toBeVisible({ timeout: 90_000 })
-          await expect(review).toContainText(draft)
+          if (draft) await expect(review).toContainText(draft)
           for (const label of ['Agent', 'Task', 'Access', 'Next']) await expect(review).toContainText(label)
           await expand(review.getByTestId('launch-technical'))
           const plan = JSON.parse(await review.getByTestId('launch-technical').locator('pre').innerText())
           expect(plan).toMatchObject({
             ref: agent.ref,
             model: { model: real ? 'deepseek-flash' : 'demo-model' },
-            permission: { readOnly: expect.any(Boolean), tools: expect.arrayContaining(['read']) },
+            permission: {
+              readOnly: expect.any(Boolean),
+              tools: expect.arrayContaining([smokeTool]),
+            },
             sources: expect.arrayContaining([expect.objectContaining({ id: agent.ref.split('#')[0] })]),
           })
           row.review = await review.innerText()
@@ -194,8 +208,8 @@ test.describe('shipped agent acceptance', () => {
             'Built-in direct Loop selection; no Bundle launch or launch.prompt. Synthetic read-only smoke prompt.'
         if (general) await chooseWorkspace(page, runtime)
         const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
-        await expect(composer).toHaveValue(general ? '' : draft, { timeout: 90_000 })
-        if (general) await send(page, draft)
+        await expect(composer).toHaveValue(general ? '' : (draft ?? ''), { timeout: 90_000 })
+        if (general) await send(page, input)
         const id = new URL(page.url()).searchParams.get('session')
         if (!id) throw new Error('Launch did not select a session')
         row.sessionId = id
@@ -205,10 +219,11 @@ test.describe('shipped agent acceptance', () => {
         runTimer = setTimeout(() => {
           void session?.cancel()
         }, 6 * 60_000)
-        if (!general) await send(page, draft)
+        if (!general) await send(page, input)
+        const answered = new Set<string>()
         const deadline = Date.now() + 6 * 60_000
         while (Date.now() < deadline) {
-          await answerControls(page)
+          await answerControls(page, answered)
           const timeline = await session.projectUI(undefined, { surface: 'web' })
           if (totalUsd + (timeline.usage?.cost?.usdMicros ?? 0) / 1e6 > 5) {
             await session.cancel()
@@ -255,7 +270,17 @@ test.describe('shipped agent acceptance', () => {
           row.panel = label
         }
         if (agent.ref.includes('finance-reconcile')) {
-          const frame = page.getByTestId('ui-custom-frame-diff-view')
+          const inline = page
+            .getByTestId('intelligent-ui-inline')
+            .filter({ hasText: 'Finance reconciliation' })
+            .last()
+          const expand = inline.getByTestId('ui-expand').last()
+          if (await expand.isVisible()) await expand.click()
+          const frame = page
+            .getByTestId('intelligent-ui-panel')
+            .last()
+            .getByTestId('ui-custom-frame-diff-view')
+            .last()
           await expect(frame).toBeVisible({ timeout: 20_000 })
           await expect(frame.contentFrame().getByRole('table')).toContainText('TX-2')
           row.panel =

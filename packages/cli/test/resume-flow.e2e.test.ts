@@ -108,7 +108,9 @@ describe('parked approval across the CLI one-shot boundary', () => {
       app = new TuiApp({ session, term, header: 'Agnes' })
       await app.start()
       await vi.waitFor(async () =>
-        expect((await screenOf(term, 100, 30)).join('\n')).toContain('Awaiting approval: shell'),
+        expect((await screenOf(term, 100, 30)).join('\n')).toContain(
+          `Awaiting approval: ${pending?.request.spec.prompt}`,
+        ),
       )
       term.feed('1')
       await vi.waitFor(async () => {

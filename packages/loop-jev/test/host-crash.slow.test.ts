@@ -76,9 +76,9 @@ describe('agnes.jev after a crash during a Jev call', () => {
   })
 })
 
-/** A stop gate that fails the first completed turn and parks it for review. */
-function parkingGate() {
-  let failures = 1
+/** Repeated verification failure exhausts one automatic repair without asking a person. */
+function failingGate() {
+  let failures = 2
   return {
     verifier: {
       verify: async (scope: string) =>
@@ -97,67 +97,50 @@ type SavedState = { stage: string; endReason?: string; idTurn: number | null }
 const lastSaved = (rows: Event[]) =>
   (data(ofType(rows, 'x/core/loop-checkpoint').at(-1)).checkpoint as { state: SavedState }).state
 
-describe('agnes.jev after a restart while the stop gate holds its answer', () => {
+describe('agnes.jev after a restart following exhausted automatic repair', () => {
   useLoopback()
-  it('neither finishes the parked turn again nor asks again, and starts the next turn afresh', async () => {
+  it('does not replay the blocked turn or request approval, and starts the next turn afresh', async () => {
     const dataDir = jevDataDir()
     const fake = await startJev(jevAnswers([PICK_RESPOND]))
-    const seams = parkingGate()
-    const first = await bootJevLoop({ dataDir, fake, main: [textReply('First answer.')], seams })
-    let parked: Event[]
+    const seams = failingGate()
+    const first = await bootJevLoop({
+      dataDir,
+      fake,
+      main: [textReply('First answer.'), textReply('Repaired answer.')],
+      seams,
+    })
     try {
       const session = await first.open('gate')
-      expect((await runTurn(session, 'Answer with evidence')).reason).toBe('parked')
-      parked = await rowsOf(session)
-      // The loop asked to complete; the stop gate turned that into the park.
-      expect(lastSaved(parked)).toMatchObject({ stage: 'finish', endReason: 'completed', idTurn: 1 })
+      expect((await runTurn(session, 'Answer with evidence')).reason).toBe('blocked')
+      const rows = await rowsOf(session)
+      expect(lastSaved(rows)).toMatchObject({ stage: 'finish', endReason: 'completed', idTurn: 1 })
+      expect(ofType(rows, 'repair/decision').map((row) => data(row).decision)).toEqual(['repair', 'park'])
+      expect(await session.decisions.list()).toEqual([])
       await crash(first, session)
     } catch (error) {
       await first.host.close()
       throw error
     }
-    // Each process reads the scripted replies from the start.
     const second = await bootJevLoop({ dataDir, fake, main: [textReply('Second answer.')], seams })
     try {
       const reopened = await second.open('gate')
-      // While the review is open, running the session neither steps the loop nor writes a row.
-      expect((await continueTurn(reopened)).reason).toBe('parked')
-      expect((await rowsOf(reopened)).length).toBe(parked.length)
-      const [decision] = await reopened.decisions.list()
-      if (!decision) throw new Error('the stop gate did not ask for a review')
-      await reopened.decisions.answer(
-        {
-          handle: decision.handle,
-          revision: decision.revision,
-          commandId: 'human-answer',
-          response: { option: 'allowed-once', value: null },
-        },
-        { actor: reopened.d.actor, category: 'human', authorize() {} } as never,
-      )
-      // Core ends the approved turn itself: the loop does not finish it a second time.
+      const before = await rowsOf(reopened)
       expect((await continueTurn(reopened)).reason).toBe('completed')
-      const approved = (await rowsOf(reopened)).slice(parked.length)
-      // Only Core's rows: no loop checkpoint, event or cost, so the loop was not stepped.
-      expect(approved.map((r) => r.type)).toEqual([
-        'decision/state',
-        'turn/start',
-        'decision/state',
-        'x/core/decision-checkpoint',
-        'turn/end',
-      ])
-      expect(data(approved[1])).toMatchObject({ trigger: 'approval-resume' })
-      expect(ofType(approved, 'turn/end').map((r) => data(r).reason)).toEqual(['completed'])
-      expect(fake.seen).toHaveLength(1)
-      // The next prompt is a new turn: the saved finish of the parked one is not replayed.
+      const resumed = await rowsOf(reopened)
+      expect(ofType(resumed, 'turn/end')).toEqual(ofType(before, 'turn/end'))
+      expect(costs(resumed)).toEqual(costs(before))
+      expect(await reopened.decisions.list()).toEqual([])
+      expect(fake.seen).toHaveLength(2)
       expect((await runTurn(reopened, 'And now?')).reason).toBe('completed')
       const rows = await rowsOf(reopened)
-      expect(fake.seen).toHaveLength(2)
-      expect(costs(rows).filter((r) => data(r).purpose === 'inference')).toHaveLength(2)
-      expect(ofType(rows, 'assistant/message').map((r) => JSON.stringify(data(r).content))).toEqual([
+      expect(fake.seen).toHaveLength(3)
+      expect(costs(rows).filter((row) => data(row).purpose === 'inference')).toHaveLength(3)
+      expect(ofType(rows, 'assistant/message').map((row) => JSON.stringify(data(row).content))).toEqual([
         expect.stringContaining('First answer.'),
+        expect.stringContaining('Repaired answer.'),
         expect.stringContaining('Second answer.'),
       ])
-      expect(lastSaved(rows)).toMatchObject({ stage: 'finish', endReason: 'completed', idTurn: 3 })
+      expect(lastSaved(rows)).toMatchObject({ stage: 'finish', endReason: 'completed', idTurn: 2 })
       expect(violations(rows)).toEqual([])
     } finally {
       await second.host.close()

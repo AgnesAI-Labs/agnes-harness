@@ -164,7 +164,8 @@ try {
     )
   } else {
     say('1. Ask the Agent to create a text statistics plugin through the installed authoring helper.')
-    const author = await rt.session({ preset: 'standard', permission: 'full-access', bundles: [] })
+    // This walkthrough demonstrates human publication; full access publishes automatically.
+    const author = await rt.session({ preset: 'standard', permission: 'workspace-write', bundles: [] })
     await prompt(author, 'Create a plugin that counts characters and words in text.')
     const draft = await result(author, 'plugin_helper_create')
     assert.equal(draft.state, 'draft')

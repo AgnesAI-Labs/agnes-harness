@@ -143,6 +143,19 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       row.textContent = new Date(2026, 9, 11, 12).toLocaleString(document.documentElement.lang || 'en')
     }
   })
+  // Error groups show both first and latest occurrence times. Normalize only leaf clock text;
+  // keep the localized labels, error code, occurrence count and group layout in the pixel gate.
+  const diagnosticClocks = page.locator('.agnes-diagnostics-when span')
+  await diagnosticClocks.evaluateAll((rows) => {
+    for (const row of rows) {
+      if (row.childElementCount) continue
+      const original = row.textContent ?? ''
+      const normalized = original.replace(/\b\d{1,2}:\d{2}(?::\d{2})?(?:[\s\u202f]?[AP]M)?/g, '12:00')
+      if (normalized === original) continue
+      row.setAttribute('data-e2e-diagnostic-clock-original', original)
+      row.textContent = normalized
+    }
+  })
   const disk = page
     .getByTestId('doctor-space')
     .or(page.getByTestId('doctor-check-disk').getByTestId('doctor-check-value'))
@@ -329,6 +342,14 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
       for (const row of rows) {
         row.textContent = row.getAttribute('data-e2e-request-clock-original')
         row.removeAttribute('data-e2e-request-clock-original')
+      }
+    })
+    await diagnosticClocks.evaluateAll((rows) => {
+      for (const row of rows) {
+        const original = row.getAttribute('data-e2e-diagnostic-clock-original')
+        if (original === null) continue
+        row.textContent = original
+        row.removeAttribute('data-e2e-diagnostic-clock-original')
       }
     })
     await disk.evaluateAll((rows) => {

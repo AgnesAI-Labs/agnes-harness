@@ -13,9 +13,8 @@ export async function installDeveloperExample(page: Page, directory: string) {
     .getByRole('textbox', { name: 'Source reference', exact: true })
     .fill(`file:${resolve(directory)}`)
   await source.getByRole('button', { name: 'Check source', exact: true }).click()
-  await page
-    .getByTestId('install-review')
-    .getByRole('button', { name: 'Install and enable', exact: true })
-    .click()
+  const review = page.getByTestId('install-review')
+  await expect(review).toBeVisible({ timeout: 90_000 })
+  await review.getByTestId('install-review-confirm').click()
   await expect(page.getByTestId('install-review')).toBeHidden({ timeout: 90_000 })
 }

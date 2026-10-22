@@ -131,6 +131,7 @@ export async function homePage(page: Page, id: string, tab?: string) {
     await dismissWorkbench(page)
   await sidebar(page)
   await page.getByTestId(`home-entry-${id}`).click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('page')).toBe(id)
   await expect(page.getByTestId(`home-page-${id}`)).toBeVisible()
   const back = page.getByTestId('push-back')
   for (let level = 0; level < 8 && (await back.isVisible()); level++) {

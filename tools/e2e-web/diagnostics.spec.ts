@@ -116,7 +116,13 @@ for (const locale of ['en', 'zh-CN'])
           await expect(
             page.getByTestId(id === 'bundles' ? 'bundles-panel' : 'settings-subsection-provider-types'),
           ).toBeVisible()
-          const heading = await page.locator('#config h2:visible').boundingBox()
+          // The heading can fill its flex row; only its rendered content must clear the close action.
+          const heading = await page.locator('#config h2:visible').evaluate((node) => {
+            const range = document.createRange()
+            range.selectNodeContents(node)
+            const { x, width } = range.getBoundingClientRect()
+            return { x, width }
+          })
           const exit = await close.boundingBox()
           expect(heading && exit && heading.x + heading.width <= exit.x).toBe(true)
         }

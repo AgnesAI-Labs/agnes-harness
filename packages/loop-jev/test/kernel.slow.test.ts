@@ -256,10 +256,10 @@ describe('agnes.jev on a real Core session', () => {
     }
   })
 
-  it('stops its own work when the stop gate parks', async () => {
+  it('stops after one automatic repair when verification keeps failing', async () => {
     const jev = fakeJev(() => ({ pick: PICK_RESPOND }))
     const kit = jevKernel({
-      scripts: [textTurn('answer')],
+      scripts: [textTurn('answer'), textTurn('repaired answer')],
       jev,
       seams: {
         verifier: {
@@ -276,16 +276,23 @@ describe('agnes.jev on a real Core session', () => {
     })
     const session = await kit.open('gate-park')
     try {
-      expect((await kit.run(session)).reason).toBe('parked')
+      expect((await kit.run(session)).reason).toBe('blocked')
       const checkpoints = (await kit.rows(session)).filter((r) => r.type === 'x/core/loop-checkpoint')
       const saved = checkpoints.at(-1)?.data as {
         checkpoint: { state: { stage: string; endReason?: string } }
       }
       expect(saved.checkpoint.state.stage).toBe('finish')
-      // The loop asked to complete; the stop gate turned that into the park.
+      const rows = await kit.rows(session)
+      expect(
+        rows
+          .filter((row) => row.type === 'repair/decision')
+          .map((row) => (row.data as { decision: string }).decision),
+      ).toEqual(['repair', 'park'])
+      expect(rows.some((row) => row.type === 'approval/request')).toBe(false)
+      // The Loop asked to complete; Core exhausted its bounded automatic repair.
       expect(saved.checkpoint.state.endReason).toBe('completed')
-      expect(kit.provider.calls).toBe(1)
-      expect(jev.invoked).toHaveLength(1)
+      expect(kit.provider.calls).toBe(2)
+      expect(jev.invoked).toHaveLength(2)
     } finally {
       await kit.kernel.close()
     }
@@ -301,16 +308,18 @@ describe('agnes.jev on a real Core session', () => {
       expect((await kit.run(session)).reason).toBe('completed')
       const rows = await kit.rows(session)
       expect(rows.filter((r) => r.type === 'tool/call')).toHaveLength(0)
-      // Core's own refusal reason, quoted as data.
-      const note =
-        '[runtime observation] write was not applied: REFUSED_BY_CORE (dispatch); reason (data): "tool arguments do not match the registered schema"'
-      expect(userTexts(rows).some((t) => t.includes(JSON.stringify(note).slice(1, -1)))).toBe(true)
+      // Core's bounded correction hints remain quoted data in the persisted and sent note.
+      const prefix =
+        '[runtime observation] write was not applied: REFUSED_BY_CORE (dispatch); reason (data): '
       // The note went out with the request that followed the refusal.
       expect(kit.provider.requests).toHaveLength(2)
       const sent = kit.provider.requests[1]?.messages.flatMap((m) =>
         Array.isArray(m.content) ? m.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])) : [],
       )
-      expect(sent?.some((text) => text.startsWith(`${note}\n`))).toBe(true)
+      const note = sent?.find((text) => text.startsWith(prefix))?.split('\n')[0]
+      expect(note).toContain('tool arguments do not match the registered schema')
+      expect(note?.endsWith('"')).toBe(true)
+      expect(userTexts(rows).some((text) => text.includes(JSON.stringify(note).slice(1, -1)))).toBe(true)
     } finally {
       await kit.kernel.close()
     }

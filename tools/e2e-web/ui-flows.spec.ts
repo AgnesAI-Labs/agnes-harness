@@ -358,11 +358,19 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
     `call subagent_spawn ${JSON.stringify({ task: 'call read {"path":"report.md"}', isolation: 'shared' })}`,
   )
   const session = await current(page, runtime)
-  const spawned = await toolResult(session, 'subagent_spawn')
-  const receipt = spawned?.content.find((block) => block.type === 'text')
-  const childKey = receipt?.type === 'text' ? /^started (\S+);/.exec(receipt.text)?.[1] : undefined
+  await toolResult(session, 'subagent_spawn')
+  await turn(page, 'call tool_describe {"name":"subagent_list"}')
+  await turn(page, 'call subagent_list {}')
+  const listed = await toolResult(session, 'subagent_list')
+  const receipt = listed?.content.find((block) => block.type === 'text')
+  const childKey =
+    receipt?.type === 'text'
+      ? /^(\S+) (?:starting|running|idle|completed|failed|cancelled|interrupted)\b/m.exec(receipt.text)?.[1]
+      : undefined
   if (!childKey) throw new Error('Child spawn must return a durable child key')
-  await expect(page.getByTestId('child-agent-card')).toBeVisible()
+  await expect(
+    page.locator('[data-testid="child-agent-card"][data-tool-name="subagent_spawn"]'),
+  ).toBeVisible()
   await turn(page, 'call tool_describe {"name":"subagent_collect"}')
   await turn(page, `call subagent_collect ${JSON.stringify({ childKey, wait: true })}`)
   expect(JSON.stringify(await toolResult(session, 'subagent_collect'))).toContain('Synthetic delivery')

@@ -345,7 +345,7 @@ const packageRoot = process.cwd().endsWith('/packages/web')
   : resolve(process.cwd(), 'packages/web')
 const publicHtml = await readFile(resolve(packageRoot, 'public/index.html'), 'utf8')
 
-function installPublicFixture(): void {
+function installPublicFixture(permissionCatalog = false): void {
   // The entry point is imported directly below; removing only its production module tag keeps this
   // test rooted in the public DOM without attempting an HTTP fetch for /app.js.
   document.documentElement.innerHTML = publicHtml
@@ -357,7 +357,25 @@ function installPublicFixture(): void {
   localStorage.setItem('agnes-locale', 'zh-CN')
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ available: false }), { status: 200 })),
+    vi.fn<typeof fetch>(async (url) => {
+      if (permissionCatalog) {
+        if (url === '/admin/api/loops') return Response.json({ revision: 1, defaults: {}, loops: [] })
+        if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
+        if (url === '/admin/api/bundles') return Response.json({ catalog: [] })
+        if (url === '/admin/api/runtime')
+          return Response.json({
+            providers: [],
+            bundles: [],
+            presets: [],
+            permissions: ['read-only', 'workspace-write', 'full-access'].map((id) => ({
+              id,
+              isDefault: id === 'workspace-write',
+            })),
+            localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/workspace/plugins' },
+          })
+      }
+      return Response.json({ available: false })
+    }),
   )
 }
 
@@ -1224,7 +1242,7 @@ describe('web session selection', () => {
   it.each(['none', 'model', 'permission'] as const)(
     'opens a new draft with the last model and permission (reconnect during %s)',
     async (reconnectDuring) => {
-      installPublicFixture()
+      installPublicFixture(true)
       history.replaceState(null, '', '/#test-launcher-token')
       localStorage.setItem(
         'agnes-web-composer-selection',
@@ -1301,7 +1319,9 @@ describe('web session selection', () => {
         expect(model.disabled).toBe(false)
         expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
       })
-      expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
+      await vi.waitFor(() =>
+        expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问'),
+      )
       // Reuse the current model-picker contract: choices live in their named radio panels.
       const settingsPanel = () => document.querySelector<HTMLElement>('#model-settings-popover')
       const choice = (group: string, label: string) => {
@@ -1521,7 +1541,11 @@ describe('web session selection', () => {
     )
     submit('create in beta')
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce())
-    expect(create).toHaveBeenCalledWith({ cwd: beta.path, sessionKey: expect.any(String) })
+    expect(create).toHaveBeenCalledWith({
+      cwd: beta.path,
+      permission: 'default',
+      sessionKey: expect.any(String),
+    })
     await vi.waitFor(() =>
       expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'create in beta' }], {
         titleLocale: 'zh-CN',
@@ -1670,7 +1694,7 @@ describe('web session selection', () => {
         if (url === '/admin/api/loops') {
           if (++loopReads === 1) return firstCatalog.promise
           if (loopReads === 2) return stale.promise
-          return Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] })
+          return Response.json({ revision: 2, defaults: { permission: 'full-access' }, loops: [] })
         }
         if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
         if (url === '/admin/api/composition') return Response.json({})
@@ -1678,7 +1702,8 @@ describe('web session selection', () => {
           return Response.json({
             providers: [],
             bundles: [],
-            presets: [
+            presets: [{ id: 'standard', isDefault: true }],
+            permissions: [
               { id: 'full-access', isDefault: true },
               { id: 'read-only', isDefault: false },
             ],
@@ -1709,7 +1734,7 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(rosterStarted).toBe(true))
     expect(newButton().disabled).toBe(true)
     expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
-    firstCatalog.resolve(Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] }))
+    firstCatalog.resolve(Response.json({ revision: 2, defaults: { permission: 'full-access' }, loops: [] }))
     detached.resolve()
     await Promise.resolve()
     expect(newButton().disabled).toBe(true)
@@ -1727,7 +1752,7 @@ describe('web session selection', () => {
     await vi.waitFor(() =>
       expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问'),
     )
-    stale.resolve(Response.json({ revision: 1, defaults: { preset: 'read-only' }, loops: [] }))
+    stale.resolve(Response.json({ revision: 1, defaults: { permission: 'read-only' }, loops: [] }))
     await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(3))
     expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
   })
@@ -2087,7 +2112,11 @@ describe('web session selection', () => {
     expect(send.disabled).toBe(true)
     expect(model.disabled).toBe(true)
     expect(old.prompt).not.toHaveBeenCalled()
-    expect(create).toHaveBeenCalledWith({ cwd: '/workspace/agnes', sessionKey: expect.any(String) })
+    expect(create).toHaveBeenCalledWith({
+      cwd: '/workspace/agnes',
+      permission: 'default',
+      sessionKey: expect.any(String),
+    })
 
     firstCreation.resolve(fresh)
     includeFresh = true

@@ -20,7 +20,9 @@
     "id": "unknown-effect",
     "highlights": [2],
     "file": "packages/core/test/resume.test.ts",
-    "testNames": ["a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn"]
+    "testNames": [
+      "a tool that must not be replayed becomes TOOL_OUTCOME_UNKNOWN and parks the turn while the question is open"
+    ]
   },
   {
     "id": "incomplete-summary",
