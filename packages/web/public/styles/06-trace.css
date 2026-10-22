@@ -1000,6 +1000,11 @@
     background: var(--agnes-status-warning-bg);
     color: inherit;
   }
+  /* A match can sit in text the row does not show, so the row itself carries the current mark. */
+  .trace-row[data-match="current"] {
+    box-shadow: inset 2px 0 0 var(--agnes-status-warning-text), var(--focus-line-inset);
+    background: color-mix(in srgb, var(--agnes-status-warning-bg) 45%, transparent);
+  }
   .trace-row[data-match="current"] mark {
     box-shadow: 0 0 0 1px var(--agnes-status-warning-text);
   }

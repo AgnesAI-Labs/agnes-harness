@@ -401,7 +401,6 @@ class ResourceAdminPage {
       const op = await api.operation(receipt.operationId)
       if (this.lifetime.signal.aborted) return false
       this.#operations.set(op.operationId, op)
-      this.render()
       if (terminal.has(op.state)) {
         this.#activeOperation = undefined
         if (op.state === 'succeeded') {
@@ -414,6 +413,8 @@ class ResourceAdminPage {
         if (this.#loadState === 'error') return false
         return op.state === 'succeeded'
       }
+      // Progress belongs to the detail panel. The list is already locked by this operation.
+      this.render(false)
       await resourcePollDelay(attempt, this.lifetime.signal)
     }
     this.#activeOperation = undefined
@@ -425,7 +426,7 @@ class ResourceAdminPage {
     return this.#tab
   }
 
-  render(): void {
+  render(renderList = true): void {
     if (activePage !== this) return
     if (!surface) renderSettingsChrome(this.#tab, this.#t)
     const failure = renderNotice(notice, this.#notice, this.#t, !!surface)
@@ -442,29 +443,31 @@ class ResourceAdminPage {
     }
     list.dataset.state = this.#loadState
     list.setAttribute('aria-busy', String(this.#loadState === 'loading'))
-    renderRegion(
-      list,
-      <UiLocaleProvider source={this.#locale}>
-        {this.#tab === 'skills' ? (
-          <SkillsPage
-            embedded={!!surface}
-            query={this.#skillQuery}
-            onQuery={(query) => {
-              this.#skillQuery = query
-              this.render()
-            }}
-            onRefresh={() => refreshButton.click()}
-            busy={busy || this.#activeOperation !== undefined}
-            writable={this.writable()}
-            locations={<ResourceRoots roots={this.#skillRoots} />}
-          >
-            {(onImport) => this.#resourceList(onImport)}
-          </SkillsPage>
-        ) : (
-          this.#resourceList()
-        )}
-      </UiLocaleProvider>,
-    )
+    if (renderList) {
+      renderRegion(
+        list,
+        <UiLocaleProvider source={this.#locale}>
+          {this.#tab === 'skills' ? (
+            <SkillsPage
+              embedded={!!surface}
+              query={this.#skillQuery}
+              onQuery={(query) => {
+                this.#skillQuery = query
+                this.render()
+              }}
+              onRefresh={() => refreshButton.click()}
+              busy={busy || this.#activeOperation !== undefined}
+              writable={this.writable()}
+              locations={<ResourceRoots roots={this.#skillRoots} />}
+            >
+              {(onImport) => this.#resourceList(onImport)}
+            </SkillsPage>
+          ) : (
+            this.#resourceList()
+          )}
+        </UiLocaleProvider>,
+      )
+    }
     const selected = this.#items.find((item) => item.resourceId === this.#selected)
     if (!selected) {
       this.#closeDetailDialog()

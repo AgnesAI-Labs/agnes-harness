@@ -165,7 +165,8 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   const [typedQuery, setQuery] = useState('')
   const query = typedQuery.trim().toLowerCase()
   const [kinds, setKinds] = useState<ReadonlySet<string>>(new Set())
-  const [matchCursor, setMatchCursor] = useState(0)
+  // The current match is remembered by row, so a chip, a timeline range or new records cannot move it.
+  const [matchId, setMatchId] = useState<string | undefined>(undefined)
   const searchRef = useRef<HTMLInputElement>(null)
   const inspectorWidth = useInspectorWidth()
   const [selected, setSelected] = useState<string | undefined>(undefined)
@@ -518,7 +519,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
       query ? visibleRows.filter((row) => traceRowHaystack(row).includes(query)).map((row) => row.id) : [],
     [visibleRows, query],
   )
-  const matchIndex = matches.length ? Math.min(matchCursor, matches.length - 1) : 0
+  const matchIndex = Math.max(0, matchId === undefined ? 0 : matches.indexOf(matchId))
   const currentMatch = matches[matchIndex]
   // One group per turn, in the order the turns first appear; rows are already placed contiguously.
   const groups = useMemo(() => {
@@ -767,8 +768,8 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   const stepMatch = (direction: 1 | -1): void => {
     if (!matches.length) return
     const next = (matchIndex + direction + matches.length) % matches.length
-    flushSync(() => setMatchCursor(next))
     const id = matches[next]
+    flushSync(() => setMatchId(id))
     if (id) revealRow(id)
   }
   // ⌘F / Ctrl+F finds in the trace while it is the visible view.
@@ -801,7 +802,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
         query={typedQuery}
         setQuery={(value) => {
           setQuery(value)
-          setMatchCursor(0)
+          setMatchId(undefined)
         }}
         matches={matches.length}
         matchIndex={matchIndex}
