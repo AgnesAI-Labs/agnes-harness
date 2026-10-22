@@ -247,6 +247,12 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "index",
       },
       {
+        "name": "sqlite_autoindex_ledger_integrity_failure_v1_1",
+        "sql": null,
+        "tbl_name": "ledger_integrity_failure_v1",
+        "type": "index",
+      },
+      {
         "name": "sqlite_autoindex_ledger_verified_head_v1_1",
         "sql": null,
         "tbl_name": "ledger_verified_head_v1",
@@ -341,6 +347,12 @@ exports[`fresh data directory schema > creates every database at its final schem
      integrity_mode TEXT, integrity_prev TEXT, integrity_digest TEXT,
      PRIMARY KEY (session_key, seq))",
         "tbl_name": "events",
+        "type": "table",
+      },
+      {
+        "name": "ledger_integrity_failure_v1",
+        "sql": "CREATE TABLE ledger_integrity_failure_v1 (session_key TEXT PRIMARY KEY, seq INTEGER)",
+        "tbl_name": "ledger_integrity_failure_v1",
         "type": "table",
       },
       {

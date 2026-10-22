@@ -158,7 +158,6 @@ describe('5.0.0 major API', () => {
     for (const file of [
       'cli/launch/packaged-host.ts',
       'host/src/runtime/assemble/kernel-stage.ts',
-      'host-providers/src/assemble/tool-providers.ts',
       'worker-runtime/src/mcp-server-rows.ts',
     ]) {
       const text = readFileSync(new URL(file, packages), 'utf8')

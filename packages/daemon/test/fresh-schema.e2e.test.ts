@@ -142,6 +142,7 @@ describe('fresh data directory schema', () => {
         'child_writer_gens',
         'cost_origins',
         'events',
+        'ledger_integrity_failure_v1',
         'ledger_verified_head_v1',
         'registers',
         'sessions',
