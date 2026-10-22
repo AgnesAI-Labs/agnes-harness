@@ -52,6 +52,7 @@
     "./settings/system-prompt": "./src/settings/system-prompt.tsx",
     "./settings/system-prompt-api": "./src/settings/system-prompt-api.ts",
     "./settings/terminal-screen": "./src/settings/terminal-screen.ts",
+    "./settings/triggers-api": "./src/settings/triggers-api.ts",
     "./settings/triggers": "./src/settings/triggers.tsx",
     "./first-run": "./src/first-run.ts"
   },

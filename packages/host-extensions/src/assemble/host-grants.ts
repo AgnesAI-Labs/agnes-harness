@@ -1,10 +1,12 @@
 import { existsSync, lstatSync } from 'node:fs'
+import { lstat } from 'node:fs/promises'
 import type { ResolvedPackage } from '@agnes/host-common/profile/types'
 import {
   HOST_CAPABILITY_GRANTS,
   type HostCapabilityGrant,
   type HostGrantDeclaration,
   hashDirectory,
+  hashDirectoryAsync,
   RELEASE_HOOK_RANKS,
 } from '@agnes/package-manager'
 import type { EntryRow } from '@agnes/plugin-runtime/host'
@@ -13,16 +15,58 @@ import type { PackageModule } from './packages.js'
 
 const empty: HostCapabilityGrant = Object.freeze({})
 
-/** Pins are scoped to this assembly and use the existing generation row revision on restore.
- * Code images are supplied only by executable/in-memory Host loaders, never by package exports. */
+type PinObservation = { stat?: ReturnType<typeof lstatSync> | undefined; digest?: string | undefined }
+const eligible = (packages: readonly ResolvedPackage[], packageId: string) => {
+  const p = packages.find((candidate) => candidate.id === packageId)
+  return p?.enabled &&
+    p.trust === 'builtin' &&
+    p.source === 'builtin' &&
+    p.integrity === `builtin:${p.version}`
+    ? p
+    : undefined
+}
+const observe = (directory: string): PinObservation => {
+  const stat = existsSync(directory) ? lstatSync(directory) : undefined
+  return { stat, digest: stat ? hashDirectory(directory) : undefined }
+}
+
+/** Same assembly-scoped pins as the synchronous entry; large source images yield during hashing. */
+export async function pinHostCapabilitiesAsync(...args: Parameters<typeof pinHostCapabilities>) {
+  const [packages, directories, , declarations = HOST_CAPABILITY_GRANTS] = args
+  const observations = new Map<string, PinObservation>()
+  for (const declaration of declarations) {
+    const directory = directories.get(declaration.packageId)
+    if (!directory || !eligible(packages, declaration.packageId) || observations.has(directory)) continue
+    try {
+      const stat = await lstat(directory)
+      observations.set(directory, { stat, digest: await hashDirectoryAsync(directory) })
+    } catch {
+      observations.set(directory, {})
+    }
+  }
+  return pinCapabilities(args[0], args[1], args[2], args[3], (directory) => observations.get(directory) ?? {})
+}
+
 export function pinHostCapabilities(
   packages: readonly ResolvedPackage[],
   directories: ReadonlyMap<string, string>,
   retained: readonly EntryRow[] = [],
   declarations: readonly HostGrantDeclaration[] = HOST_CAPABILITY_GRANTS,
 ) {
+  return pinCapabilities(packages, directories, retained, declarations, observe)
+}
+
+/** Pins are scoped to this assembly and use the existing generation row revision on restore.
+ * Code images are supplied only by executable/in-memory Host loaders, never by package exports. */
+function pinCapabilities(
+  packages: readonly ResolvedPackage[],
+  directories: ReadonlyMap<string, string>,
+  retained: readonly EntryRow[] = [],
+  declarations: readonly HostGrantDeclaration[] = HOST_CAPABILITY_GRANTS,
+  observeDirectory: (directory: string) => PinObservation = observe,
+) {
   const pins = declarations.flatMap((declaration) => {
-    const identity = packages.find((p) => p.id === declaration.packageId)
+    const identity = eligible(packages, declaration.packageId)
     const directory = directories.get(declaration.packageId)
     if (
       !identity?.enabled ||
@@ -35,8 +79,7 @@ export function pinHostCapabilities(
     let stat: ReturnType<typeof lstatSync> | undefined
     let digest: string | undefined
     try {
-      stat = existsSync(directory) ? lstatSync(directory) : undefined
-      digest = stat ? hashDirectory(directory) : undefined
+      ;({ stat, digest } = observeDirectory(directory))
     } catch {
       // A Host code image may use a mutable data directory. File-backed code still needs a digest.
     }

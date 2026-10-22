@@ -1,4 +1,5 @@
 import type { DecisionSnapshot, JsonValue } from '@agnes/protocol'
+import { triggersRequest } from '@agnes/web-admin/settings/triggers-api'
 import type { HostAgnesClient } from '@agnes/web-client'
 
 export type WaitingRun = {
@@ -15,9 +16,8 @@ export async function waitingAutomation(client: HostAgnesClient): Promise<Waitin
       '_agnes/v1/schedules.list',
       { scope: 'all', includeArchived: true },
     ),
-    client.call<import('@agnes/protocol/gen/app-server').WebhookResult>('_agnes/v1/admin.triggers', {
-      action: 'list',
-    }),
+    // Browser RPC carries session/read authority; administration stays on its existing BFF.
+    triggersRequest({ action: 'list' }),
   ])
   if (scheduled.status === 'rejected' && triggered.status === 'rejected') return undefined
   const entries = new Map<string, WaitingRun>()
