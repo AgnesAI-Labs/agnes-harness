@@ -37,6 +37,21 @@ export async function cancelTurn(session: Session, locale: string): Promise<stri
   return undefined
 }
 
+/**
+ * A send that failed twice may still have reached the daemon with only its answer lost. Sending the same
+ * command id once more is the SDK's own check: it resolves only when the daemon holds the command.
+ */
+async function reachedDaemon(session: Session, commandId: string): Promise<boolean> {
+  try {
+    if (!(await session.client.journal.pending(session.id)).some((c) => c.commandId === commandId))
+      return false
+    await session.checkCommand(commandId)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export type BusyHost = {
   session: () => Session
   locale: () => string
@@ -84,7 +99,7 @@ export class BusyInput {
   /**
    * Queues behind the turn (`followUp`) or inserts into it (`steer`, which falls back to `followUp` when
    * the turn takes no guidance). One command id covers the retry, so the daemon takes the input once.
-   * An input that cannot be sent goes back to the editor; one the daemon may hold is never sent twice.
+   * An input that cannot be sent goes back to the editor, unless the daemon turns out to hold it already.
    */
   async queue(blocks: ContentBlock[], draft: string, mode: 'followUp' | 'steer'): Promise<void> {
     const { host } = this
@@ -112,6 +127,7 @@ export class BusyInput {
       })
     } catch (error) {
       if (unsure(error)) host.notice(tt('busy.unsure', locale), 'warning')
+      else if (await reachedDaemon(session, commandId)) host.notice(tt('busy.landed', locale), 'warning')
       else {
         host.restore(draft)
         host.notice(tt('busy.kept', locale), 'error')

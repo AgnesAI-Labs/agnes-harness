@@ -30,6 +30,7 @@ export const TERMINAL_KEYS = [
   'busy.steerFallback',
   'busy.kept',
   'busy.unsure',
+  'busy.landed',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -64,6 +65,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'busy.steerFallback': 'This turn takes no guidance: queued instead',
     'busy.kept': 'Not sent: the draft is back in the editor',
     'busy.unsure': 'Not sure the daemon took it: check /queue before sending it again',
+    'busy.landed': 'The daemon did take it after a retry: it is queued, see /queue',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -90,5 +92,6 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'busy.steerFallback': '当前回合不接受插入，已排队',
     'busy.kept': '未发送，草稿已保留在输入框',
     'busy.unsure': '不确定 daemon 是否收到：重新发送前请先看 /queue',
+    'busy.landed': 'daemon 重试后已收下：已在队列中，见 /queue',
   },
 }
