@@ -79,6 +79,8 @@ export const TERMINAL_KEYS = [
   'custom.notFile',
   'custom.confirm',
   'custom.empty',
+  'custom.more',
+  'custom.hidden',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -164,6 +166,9 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'custom.notFile': 'not a regular file',
     'custom.confirm': 'Project command from {path}. It will send:\n{preview}\nPress Enter again to send it.',
     'custom.empty': 'The command {name} expands to nothing',
+    'custom.more': '… and {count} more characters not shown; read {path} for all of it',
+    'custom.hidden':
+      'Not run: {path} contains invisible formatting characters that could hide part of the text',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -241,5 +246,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'custom.notFile': '不是普通文件',
     'custom.confirm': '来自 {path} 的项目命令。将发送：\n{preview}\n再按一次 Enter 发送。',
     'custom.empty': '命令 {name} 展开后为空',
+    'custom.more': '……另有 {count} 个字符未显示，完整内容见 {path}',
+    'custom.hidden': '未运行：{path} 含有不可见的格式字符，可能藏有看不到的内容',
   },
 }

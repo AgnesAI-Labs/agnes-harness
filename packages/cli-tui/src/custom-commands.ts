@@ -143,11 +143,19 @@ export function customSlash(
   if (!found) return undefined
   const text = expand(found.body, line.trim().split(/\s+/).slice(1)).trim()
   if (!text) return { text: tt('custom.empty', app.locale, { name: cmd }) }
+  // Format and private-use characters (bidi overrides, tag characters, zero-width) can hide text the
+  // preview cannot show, so a repository's command that carries them is not run at all.
+  if (found.scope === 'project' && /[\p{Cf}\p{Co}]/u.test(found.body))
+    return { text: tt('custom.hidden', app.locale, { path: oneLine(found.shown) }) }
   if (found.scope === 'project' && !confirmed.has(found.digest)) {
     confirmed.add(found.digest)
-    const preview = [...text].slice(0, PREVIEW_CHARS).join('')
+    const chars = [...text]
+    const path = oneLine(found.shown)
+    // A cut preview says so: the rest is sent too, and the user is confirming all of it.
+    const more = chars.length > PREVIEW_CHARS
+    const preview = `${escapeControl(chars.slice(0, PREVIEW_CHARS).join(''))}${more ? `\n${tt('custom.more', app.locale, { count: String(chars.length - PREVIEW_CHARS), path })}` : ''}`
     return {
-      text: tt('custom.confirm', app.locale, { path: oneLine(found.shown), preview: escapeControl(preview) }),
+      text: tt('custom.confirm', app.locale, { path, preview }),
       presentation: 'transcript',
       draft: line.trim(),
     }
