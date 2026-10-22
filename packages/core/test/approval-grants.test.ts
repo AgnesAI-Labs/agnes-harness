@@ -91,6 +91,59 @@ async function reopen(
   }
 }
 
+describe('a rejection reason', () => {
+  const base = 'the user rejected this action; do not retry the same call without asking'
+  it.each([
+    { name: 'none', value: null, expected: base },
+    { name: 'blank', value: '  \n ', expected: base },
+    { name: 'text', value: 'use the staging db', expected: `${base} The user said: "use the staging db"` },
+    {
+      name: 'controls and quotes',
+      value: 'a\u0007b\nc "quoted" \\',
+      expected: `${base} The user said: "a b c \\"quoted\\" \\\\"`,
+    },
+    { name: 'long', value: 'x'.repeat(600), expected: `${base} The user said: "${'x'.repeat(500)}"` },
+  ])('reaches the model after a rejection: $name', async ({ value, expected }) => {
+    const clock = () => 1_757_203_200_000
+    const registry = new ToolRegistry()
+    registry.add(
+      shellTool(async () => ({ content: [{ type: 'text', text: 'executed' }] })),
+      {
+        source: 'fixture',
+        trust: 'builtin',
+      },
+    )
+    const provider = fakeProvider([toolTurn('shell', { command: 'x' }), textTurn('done')])
+    const h = await openSession({
+      storage: new MemoryStorage({ clock }),
+      clock,
+      registry,
+      provider,
+      seams: fakeSeams({
+        approval: {
+          ask: async () => ({ ticket: 'ticket', expiresAt: new Date(clock() + 1000).toISOString() }),
+        },
+      }),
+    })
+    await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+    const run = () => h.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect((await run()).reason).toBe('parked')
+    await h.session.decisions.answer(
+      {
+        handle: [...h.session.state.registers.decisionStates.values()][0]!.value.handle,
+        revision: 1,
+        commandId: 'answer',
+        response: { option: 'rejected', value },
+      },
+      { actor, category: 'human', authorize() {} },
+    )
+    expect((await run()).reason).toBe('completed')
+    const result = provider.requests[1]?.messages.find((m) => m.role === 'tool_result')
+    expect(JSON.stringify(result?.content)).toBe(JSON.stringify([{ type: 'text', text: expected }]))
+    await h.session.close()
+  })
+})
+
 describe('durable session approval grants', () => {
   it.each(['sync', 'callback'] as const)(
     'restores an executed %s allowed-session grant after reopening',

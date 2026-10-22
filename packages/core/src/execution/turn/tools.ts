@@ -985,6 +985,7 @@ export async function approveAndExecute(
           verdict as import('@agnes/protocol').ApprovalVerdict,
           reason,
           s.preset.approval.timeoutMs,
+          answer.response.value,
         )
         return { result: await refuse(s, call.toolUseId, refusal.code, refusal.text, decisionId, settled()) }
       }

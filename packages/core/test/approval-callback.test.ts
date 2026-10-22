@@ -213,10 +213,16 @@ describe('durable tool decisions', () => {
         handle: h.seen[0]!.handle,
         revision: 1,
         commandId: 'x',
-        response: { option: 'allowed-once', value: 'changed' },
+        response: { option: 'allowed-once', value: { changed: true } },
       }
       await expect(
         h.session.decisions.answer(command, { actor, category: 'human', authorize() {} }),
+      ).rejects.toThrow('RESPONSE_SCHEMA')
+      await expect(
+        h.session.decisions.answer(
+          { ...command, response: { option: 'rejected', value: 'x'.repeat(4001) } },
+          { actor, category: 'human', authorize() {} },
+        ),
       ).rejects.toThrow('RESPONSE_SCHEMA')
       await expect(
         h.session.decisions.answer(

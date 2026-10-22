@@ -1,5 +1,6 @@
 import { newOpState, type OpStateObj, type ToolCallState } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
+import { userWordsNote } from '@agnes/core-effects/effects/approval-answer'
 import { isNestedCall } from '@agnes/core-ledger'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { DecisionSnapshot } from '@agnes/extension-api'
@@ -46,6 +47,7 @@ async function refusedRows(
   toolUseId: string,
   callSeq: Seq,
   rejected: boolean,
+  userWords?: unknown,
 ): Promise<EventInput[]> {
   const result = s.ev(
     'tool/result',
@@ -55,7 +57,7 @@ async function refusedRows(
         {
           type: 'text',
           text: rejected
-            ? 'the user rejected this action; do not retry the same call without asking'
+            ? `the user rejected this action; do not retry the same call without asking${userWordsNote(userWords)}`
             : 'approval unavailable: deadline',
         },
       ],
@@ -250,7 +252,14 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
     ]
     if (!allowed)
       events.push(
-        ...(await refusedRows(s, original, toolUseId, call.seq, snapshot.result?.reason === 'answered')),
+        ...(await refusedRows(
+          s,
+          original,
+          toolUseId,
+          call.seq,
+          snapshot.result?.reason === 'answered',
+          snapshot.result?.reason === 'answered' ? snapshot.result.response.value : undefined,
+        )),
       )
     // A refusal is final: the answered decision ends with it, after the continuation that read it.
     if (snapshot.result?.reason === 'answered' && !allowed)

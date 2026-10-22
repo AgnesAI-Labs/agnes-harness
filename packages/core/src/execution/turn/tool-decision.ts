@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError } from '@agnes/core-common/types'
+import { APPROVAL_RESPONSE_SCHEMA } from '@agnes/core-effects/effects/approval-answer'
 import type { ApprovalRequest } from '@agnes/core-effects/effects/seams'
 import type { DecisionHandle, DecisionSnapshot } from '@agnes/extension-api'
 import { inspectJsonData, type JsonValue } from '@agnes/protocol'
@@ -88,7 +89,7 @@ export async function requestToolDecision(
     },
     prompt: offered.summary,
     options: offered.options ?? ['allowed-once', 'allowed-session', 'rejected'],
-    responseSchema: { type: 'null' },
+    responseSchema: APPROVAL_RESPONSE_SCHEMA,
   })
   return s.decisions.get(handle, source)
 }

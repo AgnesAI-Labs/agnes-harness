@@ -58,11 +58,34 @@ export function normalizeApproval(
   }
 }
 
-/** The result code and the words the model reads when a call is refused at the approval step. */
+export const USER_WORDS_MAX = 500
+
+/** An approval's response is null, or the words a user gave with a rejection (cut to {@link USER_WORDS_MAX} for the model). */
+export const APPROVAL_RESPONSE_SCHEMA = { type: ['null', 'string'], maxLength: 4000 } as const
+
+/**
+ * What the user typed when rejecting, made safe to show the model: control characters become spaces,
+ * the text is cut to {@link USER_WORDS_MAX} characters, and backslashes and quotes are escaped so the
+ * words cannot close the quoted label around them. Anything that is not a non-blank string yields "".
+ */
+export function userWordsNote(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control characters is the point
+  const clean = value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').trim()
+  const words = [...clean].slice(0, USER_WORDS_MAX).join('').trim()
+  if (!words) return ''
+  return ` The user said: "${words.replace(/["\\]/g, '\\$&')}"`
+}
+
+/**
+ * The result code and the words the model reads when a call is refused at the approval step.
+ * `userWords` is the free text sent with a rejection; it is appended only to a user rejection.
+ */
 export function approvalRefusal(
   verdict: Verdict,
   reason: ApprovalReason | undefined,
   timeoutMs: number,
+  userWords?: unknown,
 ): { code: string; text: string } {
   if (verdict === 'cancelled') return { code: 'CANCELLED', text: 'cancelled while waiting for approval' }
   if (verdict === 'unavailable') {
@@ -85,7 +108,7 @@ export function approvalRefusal(
   }
   const text =
     reason === 'user-rejected'
-      ? 'the user rejected this action; do not retry the same call without asking'
+      ? `the user rejected this action; do not retry the same call without asking${userWordsNote(userWords)}`
       : reason === 'deadline'
         ? `no one answered the approval within ${Math.round(timeoutMs / 1000)}s, so the action was not run; ask the user before trying again`
         : reason === 'policy_denied'
