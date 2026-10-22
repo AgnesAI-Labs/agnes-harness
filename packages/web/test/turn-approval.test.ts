@@ -403,6 +403,35 @@ it('offers no reason field on a live approval, which has no channel for it', asy
   expect(document.querySelector('[data-testid="approval-reject-reason-open"]')).toBeNull()
 })
 
+it('shows who asked and what an always-allow stores, as plain text, folding past three scopes', async () => {
+  const { context, controller } = await harness()
+  const show = async (extra: Partial<typeof approval>) => {
+    context.projection = timeline([
+      { ...approval, options: ['allow_once', 'allow_always', 'reject_once'], ...extra },
+    ])
+    controller.renderApproval()
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="approval-card"]')).not.toBeNull())
+  }
+  const origin = () => document.querySelector('[data-testid="approval-origin"]')
+  const stores = () => document.querySelector('[data-testid="approval-stores"]')
+  await show({})
+  expect(origin()).toBeNull()
+  expect(stores()).toBeNull()
+  await show({
+    grantScopes: ['a', 'b'],
+    origin: { package: '@agnes/browser', role: 'reviewer', mcpServer: '<b>github</b>' },
+  })
+  await vi.waitFor(() =>
+    expect(origin()?.textContent).toBe('来自 @agnes/browser · 角色 reviewer · MCP <b>github</b>'),
+  )
+  expect(origin()?.querySelector('b')).toBeNull()
+  await vi.waitFor(() => expect(stores()?.textContent).toBe('「始终允许」会保存：a, b'))
+  expect(stores()?.getAttribute('title')).toBeNull()
+  await show({ grantScopes: ['a', 'b', 'c', 'd', 'e'] })
+  await vi.waitFor(() => expect(stores()?.textContent).toBe('「始终允许」会保存：a, b, c +2'))
+  expect(stores()?.getAttribute('title')).toBe('a, b, c, d, e')
+})
+
 it('submits an empty reason as a plain rejection', async () => {
   const { controller, list, decide } = await harness()
   list.mockResolvedValue({ decisions: [snapshot] })

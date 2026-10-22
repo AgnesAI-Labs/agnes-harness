@@ -553,6 +553,13 @@
     gap: var(--s8);
     margin-top: 0.875rem;
   }
+  #approval .approval-origin,
+  #approval .approval-stores {
+    font-size: var(--font-size-xs);
+  }
+  #approval .approval-stores {
+    text-align: right;
+  }
   .approval-reason-input {
     flex: 1 1 14rem;
     min-width: 0;

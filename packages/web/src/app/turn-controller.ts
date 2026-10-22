@@ -424,6 +424,25 @@ export function createTurnController(
           onSubmit: (reason: string) => guarded(send('rejected', reason === '' ? null : reason))(),
         }
     }
+    // Plain text only: who asked, and what «always allow» would keep (first three, the rest on hover).
+    const origin = reconcile
+      ? undefined
+      : [
+          durable?.origin?.package && context.t('app.approval.from', { value: durable.origin.package }),
+          durable?.origin?.role && context.t('app.approval.role', { value: durable.origin.role }),
+          durable?.origin?.mcpServer && context.t('app.approval.mcp', { value: durable.origin.mcpServer }),
+        ]
+          .filter(Boolean)
+          .join(' · ') || undefined
+    const scopes = reconcile || context.liveApproval ? [] : (durable?.grantScopes ?? [])
+    const stores = scopes.length
+      ? {
+          text: context.t('app.approval.stores', {
+            value: scopes.slice(0, 3).join(', ') + (scopes.length > 3 ? ` +${scopes.length - 3}` : ''),
+          }),
+          ...(scopes.length > 3 ? { title: scopes.join(', ') } : {}),
+        }
+      : undefined
     // A reconciliation's subject is bookkeeping (ids, turn, step), not something to review.
     const preview = reconcile ? undefined : (card?.preview ?? durable?.subjectText)
     const planApproval = context.liveApproval
@@ -450,6 +469,8 @@ export function createTurnController(
       ...(card?.warning === undefined ? {} : { warning: card.warning }),
       ...(preview === undefined ? {} : { preview }),
       actions,
+      ...(origin === undefined ? {} : { origin }),
+      ...(stores === undefined ? {} : { stores }),
       ...(rejectWithReason ? { rejectWithReason } : {}),
       disabled:
         context.approvalBusy ||
