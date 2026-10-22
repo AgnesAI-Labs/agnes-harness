@@ -117,6 +117,8 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 
 私有效果准入统一使用后端证明载体（`@agnes/protocol` 的 `permissionEffectAdmission`）。异步验证与最终同步提交或 CAS 内的 `assertActive()` 保持分离；载体保留取消、过期、会话 epoch 和上游准入检查，任一检查失败后永久失效。各业务模块继续核对自己的对象、版本与持久消费状态：memory 文件摘要、候选及包摘要、凭据引用、Skill 行及业务决策。一次发布可以包含多个获准提交；该载体不替代持久重放检查，也不承诺外部效果恰好发生一次。
 
+由 App Server 持有的效果，其自动权限租约还会在最终提交时同步检查 supervisor 持有的 epoch 撤权屏障。full-access 和 preset 切换会先等待撤权确认，再记录切换；会话关闭在报告成功前等待确认，包含继承的子会话授权。请求返回后，后台任务仍受该屏障约束。延迟到达的 worker 快照或取消通知不能恢复已撤销的租约。运行中会话的工作区隔离策略保持固定；更改策略需要关闭旧会话并新建会话。仅有异步快照验证器不能签发自动效果租约。
+
 
 候选作者测试在 macOS/Linux 保留 Host OS 沙箱，只运行独立候选副本；POSIX 沙箱缺失时仍拒绝执行。Windows 仍无隔离。完全访问下所有平台自动允许精确哈希的测试决定；`workspace-write` 权限 仍展示包名、哈希、执行方式、风险和范围，要求一次确认。哈希变化后拒绝旧授权。决定保存在 `candidate-test-audit.jsonl`；测试本身不发布。完全访问下提交通过测试的候选，会自动完成现有安装、信任、启用和运行时激活事务。
 

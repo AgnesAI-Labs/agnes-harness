@@ -512,7 +512,7 @@ export class KernelChildren implements ChildrenFactory {
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
     if (isTerminalChildState(record.state) || record.state === 'cancelling')
-      throw new CoreError('E_CLOSED', 'Child admission has terminated')
+      throw new CoreError('E_UNSUPPORTED', 'Child admission has terminated')
     const cached = this.handles.get(childKey)
     if (cached) {
       if (

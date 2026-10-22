@@ -18,6 +18,7 @@ export async function permissionRequest<T>(
   directory: string,
   work: () => Promise<T>,
   verify?: () => Promise<PermissionContext | undefined>,
+  current?: () => PermissionContext | undefined,
 ) {
   if (!context || !verify) {
     const value = await work()
@@ -34,6 +35,7 @@ export async function permissionRequest<T>(
       },
       work,
       verify,
+      current,
     )
     return { value, __aghPermissionEvidence: evidence }
   } catch (error) {

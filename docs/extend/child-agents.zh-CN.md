@@ -43,6 +43,8 @@ export const main = defineAgnesPlugin({
 
 `in-process` 随 `@agnes/base` 安装。插件行 id 是 `child-agent:in-process`，提供者 id 是 `in-process`。
 
+父回合完成不会停止已 spawn 的任务。显式关闭或取消父会话及任意祖先，会持久取消其尚未终止的后代准入，包括从未运行的任务。没有显式停止记录的进程崩溃仍按恢复处理。
+
 ## 允许名单
 
 预设 schema 没有子代理允许名单。从 subagent 扩展配置设置，或在运行时替换某一个会话：

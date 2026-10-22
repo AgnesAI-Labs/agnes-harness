@@ -1,4 +1,4 @@
-import { CoreError } from '@agnes/core-common/types'
+import { CoreError, type Seq } from '@agnes/core-common/types'
 import {
   type Actor,
   type EventEnvelope,
@@ -6,16 +6,20 @@ import {
   type PermissionContext,
   validateActor,
 } from '@agnes/protocol'
+import { sysEvent } from './events.js'
+import type { SessionImpl } from './session.js'
 
 /** Backend lifetime and actor snapshot. Author-facing ports only receive detached views. */
 export class SessionPermissionAuthority {
   private readonly id = crypto.randomUUID()
   private epoch = 0
   private readonly changes = new Set<() => void>()
+  private readonly barriers = new Set<() => Promise<void>>()
   private readonly snapshot: Actor
   private selection: { enabled: boolean; operator: Actor } | undefined
   private parent: (() => Pick<PermissionContext, 'policy' | 'actor'>) | null | undefined
   private releaseParent: (() => void) | undefined
+  private releaseParentBarrier: (() => void) | undefined
   private closed = false
 
   constructor(actor: Actor) {
@@ -94,10 +98,13 @@ export class SessionPermissionAuthority {
   inherit(
     parent: (() => PermissionContext) | undefined,
     subscribe?: (listener: () => void) => () => void,
+    before?: (listener: () => Promise<void>) => () => void,
   ): void {
     this.releaseParent?.()
+    this.releaseParentBarrier?.()
     this.parent = parent ?? null
     this.releaseParent = subscribe?.(() => this.revoke())
+    this.releaseParentBarrier = before?.(() => this.prepare())
     this.revoke()
   }
 
@@ -105,7 +112,9 @@ export class SessionPermissionAuthority {
     this.closed = true
     this.revoke()
     this.releaseParent?.()
+    this.releaseParentBarrier?.()
     this.releaseParent = undefined
+    this.releaseParentBarrier = undefined
     this.parent = undefined
   }
 
@@ -114,6 +123,18 @@ export class SessionPermissionAuthority {
     return () => {
       this.changes.delete(listener)
     }
+  }
+
+  /** Backend effect owners must fence the current epoch before a downgrade can commit. */
+  beforeChange(listener: () => Promise<void>): () => void {
+    this.barriers.add(listener)
+    return () => {
+      this.barriers.delete(listener)
+    }
+  }
+
+  async prepare(): Promise<void> {
+    await Promise.all([...this.barriers].map((listener) => listener()))
   }
 
   revoke(): void {
@@ -129,4 +150,34 @@ export function permissionOperator(operator: Actor): Actor {
   const checked = validateActor(inspected.value)
   if (!checked.ok) throw new CoreError('E_ENVELOPE', 'invalid yolo operator')
   return checked.value
+}
+
+/** The caller owns the validated actor before queuing this operation under the projection gate. */
+export async function setSessionYolo(
+  session: SessionImpl,
+  authority: SessionPermissionAuthority,
+  enabled: boolean,
+  actor: Actor,
+): Promise<Seq> {
+  await session.preparePermissionRevocation()
+  const result = await session.d.log.append([
+    sysEvent(
+      { actor, lane: session.lane },
+      'x/core/yolo-switch',
+      {
+        version: 2,
+        to: enabled,
+        operatorId: actor.id,
+        sessionKey: session.key,
+        lane: session.lane,
+        profileHash: session.d.resolvedProfileHash,
+        sessionOwner: { id: session.d.actor.id, org: session.d.actor.org },
+      },
+      { ignorable: true },
+    ),
+  ])
+  authority.select(enabled, actor)
+  const invalidations = session.decisions.revokedAutomaticEvents()
+  if (invalidations.length) await session.d.log.append(invalidations)
+  return result.firstSeq
 }

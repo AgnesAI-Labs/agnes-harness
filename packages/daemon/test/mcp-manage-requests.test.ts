@@ -101,6 +101,7 @@ it.each(['immediate-notification', 'queued-notification'] as const)(
           }
           return snapshot
         },
+        () => current,
       )
       await notified
       expect(revoked).toBe(true)
@@ -151,6 +152,7 @@ it('round2: an automatic MCP decision that expires after the prompt cannot regis
       },
       () => s.request({ action: 'commit', proposalId: prepared.proposalId }).catch(() => undefined),
       async () => context,
+      () => context,
     )
     expect(consumed).toBe(true)
     expect(
@@ -222,6 +224,7 @@ it.each(['intent', 'create', 'trust', 'local-start', 'journal-create', 'journal-
           }
           return context
         },
+        () => context,
       )
       expect(result).toMatchObject({ state: 'cancelled', via: 'unavailable' })
       const all = ['_agnes/v1/mcp.servers.create', '_agnes/v1/mcp.servers.trust.set', 'local-start']
@@ -532,6 +535,13 @@ it.each(['full-access', 'workspace-write'])(
         policy,
         actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
       }),
+      () => ({
+        sessionKey: 'session',
+        sessionId: 'fixture-backend',
+        epoch: 0,
+        policy,
+        actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      }),
     )
     expect(s.ask).toHaveBeenCalledTimes(policy === 'full-access' ? 0 : 1)
     if (policy === 'full-access')
@@ -579,6 +589,23 @@ it.each(['same-chunk', 'next-chunk'] as const)(
     const socket = new EventEmitter() as EventEmitter & { write(chunk: Buffer): boolean; end(): void }
     const channel = new SharedSessionChannel(
       (frame) => {
+        if ((frame as { method?: string }).method === 'permission-revoke') {
+          const revoke = frame as {
+            sessionKey: string
+            requestId: string
+            params: { sessionId: string; epoch: number }
+          }
+          link.permissionFence.revoke(revoke.sessionKey, revoke.params.sessionId, revoke.params.epoch)
+          queueMicrotask(() =>
+            channel.settle({
+              kind: 'reply',
+              sessionKey: revoke.sessionKey,
+              requestId: revoke.requestId,
+              result: null,
+            }),
+          )
+          return
+        }
         if (buffered) buffered.push(frame)
         else socket.emit('data', encodeFrame(frame))
       },
@@ -649,6 +676,7 @@ it.each(['same-chunk', 'next-chunk'] as const)(
           s.root,
           () => s.dispatch(frame.sessionKey, frame.requestId, frame.method, frame.params, signal),
           () => link.commandForSession(frame.sessionKey, 'permissionContext', {}) as Promise<typeof expected>,
+          frame.permissionContext ? link.permissionFence.bind(frame.permissionContext) : undefined,
         )
         return completed
       },

@@ -96,7 +96,18 @@ it('review: a queued control-plane request cannot auto-allow after the effective
   const f = await openSession({ key: 'k', preset, provider: fakeProvider([]) })
   const sent: RequestFrame[] = []
   const channel = new SharedSessionChannel(
-    (frame) => sent.push(frame as RequestFrame),
+    (frame) => {
+      sent.push(frame as RequestFrame)
+      if ((frame as RequestFrame).method === 'permission-revoke')
+        queueMicrotask(() =>
+          channel.settle({
+            kind: 'reply',
+            sessionKey: 'k',
+            requestId: (frame as RequestFrame).requestId,
+            result: null,
+          }),
+        )
+    },
     sessionPermissions((key) => (key === 'k' ? (f.session as HostSession) : undefined)),
   )
   const pending = channel.run('k', () =>
@@ -140,6 +151,7 @@ it('review: journal failure prevents the control-plane effect', async () => {
         effects++
       },
       async () => context,
+      () => context,
     ),
   ).rejects.toThrow()
   expect(effects).toBe(0)
@@ -152,6 +164,7 @@ it('review: durable journal retains exact session binding for recovery without t
     root,
     () => router().ask(request(), { signal: new AbortController().signal }),
     async () => context,
+    () => context,
   )
   const lines = readFileSync(join(root, 'permission-decisions.jsonl'), 'utf8')
     .trim()
@@ -247,6 +260,7 @@ it.each(['decision', 'journal', 'consumption', 'effect'])(
           effects++
         },
         async () => current,
+        () => current,
       ),
     ).rejects.toThrow('revoked')
     expect(effects).toBe(0)
@@ -297,6 +311,7 @@ it.each(['scope', 'hash', 'session'])(
         await expect(acquirePermissionLease(binding, new AbortController().signal)).rejects.toThrow()
       },
       async () => context,
+      () => context,
     )
   },
 )
@@ -337,6 +352,7 @@ it.each(['epoch', 'verifier-failure', 'deadline'])(
           if (unavailable) throw new Error('synthetic closed worker')
           return current
         },
+        () => current,
       )
     } finally {
       clock.mockRestore()
@@ -372,6 +388,7 @@ it.each(['cancelled', 'expired'])(
           }
           return context
         },
+        () => context,
       )
     } finally {
       clock.mockRestore()
@@ -400,3 +417,16 @@ it.each(['read-only', 'workspace-write', 'standard', 'custom'])(
     expect(ask).toHaveBeenCalledTimes(1)
   },
 )
+
+it('refuses an automatic effect lease when only an asynchronous snapshot verifier is installed', async () => {
+  const req = request('mcp.connect')
+  await withPermissionContext(
+    context,
+    () => undefined,
+    async () => {
+      await router().ask(req, { signal: new AbortController().signal })
+      await expect(acquirePermissionLease(req, new AbortController().signal)).rejects.toThrow('unavailable')
+    },
+    async () => context,
+  )
+})

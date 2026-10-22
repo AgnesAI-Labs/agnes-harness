@@ -442,6 +442,7 @@ export function replacementEffects(s: SessionImpl, name: string, effects: EventI
  */
 export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> {
   const seq = await s.locked(async () => {
+    await s.preparePermissionRevocation()
     if (s.d.sessionOverlay) await s.d.sessionOverlay.apply(s.key, { preset: view.name })
     const r = await s.d.log.append([
       s.ev(
@@ -456,9 +457,10 @@ export async function setPreset(s: SessionImpl, view: PresetView): Promise<Seq> 
         { ignorable: true },
       ),
     ])
-    s.revokeAutomaticPermissions()
+    const revocation = s.revokeAutomaticPermissions()
     s.preset = structuredClone(view)
     s.d.runtime.preset = structuredClone(view)
+    await revocation
     const invalidations = s.decisions.revokedAutomaticEvents()
     if (invalidations.length) await s.d.log.append(invalidations)
     return r.firstSeq

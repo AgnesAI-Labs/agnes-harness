@@ -3,6 +3,7 @@ import { connect } from 'node:net'
 import { join } from 'node:path'
 import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
+import type { ToolContext } from '@agnes/extension-api'
 import { createTestHost, type TestHostOptions } from '@agnes/host/testkit'
 import { readDevelopmentPlugin } from '@agnes/package-manager'
 import type { Context } from '@agnes/plugin-runtime'
@@ -91,7 +92,20 @@ async function permissionFixture(dataDir: string): Promise<Partial<TestHostOptio
           deferLoading: false,
           requiresApproval: 'always',
         },
-        execute: async () => {
+        execute: async (_input: unknown, context: ToolContext) => {
+          if (env.AGNES_FAKE_WORKER_MCP === '1') {
+            if (!context.mcpManage) throw new Error('Missing MCP management port')
+            const prepared = (await context.mcpManage.request({
+              action: 'prepare',
+              definition: {
+                serverId: 'revocation-probe',
+                displayName: 'Revocation probe',
+                transport: { kind: 'http', url: 'https://mcp.example.test/api' },
+                secretBinding: { kind: 'none' },
+              },
+            })) as { proposalId: string }
+            await context.mcpManage.request({ action: 'commit', proposalId: prepared.proposalId })
+          }
           if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
             appendFileSync(join(dataDir, 'permission-dispatched'), 'yes\n')
           else writeFileSync(join(dataDir, 'permission-dispatched'), 'yes')
@@ -147,11 +161,14 @@ void runWorker(
     gate,
   },
   {
-    buildHost: async (profile, workerPrompter) => {
+    buildHost: async (profile, workerPrompter, capabilities) => {
+      if (env.AGNES_FAKE_WORKER_MCP === '1')
+        writeFileSync(join(profile.dataDir, 'mcp-worker-pid'), String(process.pid))
       if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
         writeFileSync(join(profile.dataDir, 'fixture-worker-pid'), String(process.pid))
       const { host } = await createTestHost({
         dataDir: profile.dataDir,
+        mcpManage: capabilities.mcpManage,
         ...(await permissionFixture(profile.dataDir)),
         ...(env.AGNES_FAKE_WORKER_QUEUE === '1'
           ? {

@@ -216,6 +216,7 @@ export type RequestFrame = {
     | 'bound-wake'
     | 'permission'
     | 'permission-abort'
+    | 'permission-revoke'
     | 'notice'
     | 'artifact-media-read'
     | 'skill-install'

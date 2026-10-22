@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import type { Socket } from 'node:net'
-import { rpcError } from '@agnes/protocol'
+import { type PermissionContext, permissionEffectAdmission, rpcError } from '@agnes/protocol'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { SharedSessionChannel } from '../../worker-runtime/src/shared-session-channel.js'
 import { encodeFrame } from '../src/supervisor/framing.js'
@@ -11,6 +11,7 @@ class FakeSocket extends EventEmitter {
 
   write(chunk: Buffer): boolean {
     this.writes.push(chunk)
+    this.emit('write', chunk)
     return true
   }
 
@@ -502,4 +503,56 @@ it('routes load progress only to its pending open and sends cancellation without
   )
   expect(await result).toContain('cancelled')
   link.close('test finished')
+})
+
+it('fences old epochs before replying to revocation, and cannot revive them on reopen or link loss', async () => {
+  const { link, socket } = setup()
+  const context: PermissionContext = {
+    sessionKey: 'owner',
+    sessionId: 'incarnation',
+    epoch: 0,
+    policy: 'full-access',
+    actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+  }
+  const admission = (value: PermissionContext) =>
+    permissionEffectAdmission({
+      context: { expected: value, current: link.permissionFence.bind(value) },
+      unavailable: () => new Error('revoked'),
+    })
+  const old = admission(context)
+  const sibling = admission({ ...context, sessionKey: 'sibling' })
+  await old.verify()
+  const acknowledged = new Promise<void>((resolve) => socket.once('write', () => resolve()))
+  socket.emit(
+    'data',
+    encodeFrame({
+      kind: 'request',
+      method: 'permission-revoke',
+      sessionKey: 'owner',
+      requestId: 'revoke',
+      params: { sessionId: context.sessionId, epoch: 0 },
+    }),
+  )
+  await acknowledged
+  expect(socket.writes.map((b) => JSON.parse(b.toString()))).toContainEqual({
+    kind: 'reply',
+    sessionKey: 'owner',
+    requestId: 'revoke',
+    result: null,
+  })
+  expect(() => old.assertActive()).toThrow('revoked')
+  expect(() => admission(context).assertActive()).toThrow('revoked')
+  const fresh = admission({ ...context, epoch: 1 })
+  await fresh.verify()
+  link.permissionFence.revoke('owner', context.sessionId, 0)
+  fresh.assertActive()
+  sibling.assertActive()
+  link.permissionFence.closeSession('owner')
+  link.permissionFence.openSession('owner')
+  expect(() => fresh.assertActive()).toThrow('revoked')
+  const reopened = admission({ ...context, sessionId: 'reopened' })
+  await reopened.verify()
+  socket.emit('close')
+  expect(() => reopened.assertActive()).toThrow('revoked')
+  expect(() => sibling.assertActive()).toThrow('revoked')
 })

@@ -336,7 +336,7 @@ describe('independent-review V1–V7', () => {
     await k.close()
   })
 
-  it('V2/v1: instance exit marks failed and resume from a new kernel is refused', async () => {
+  it('V2/v1: explicit instance close persists cancellation and a new kernel refuses resume', async () => {
     const provider = Object.assign(fakeProvider([textTurn('recovered')]), { models: () => [catalogue()] })
     const storage = new MemoryStorage()
     const k = kernel({ storage, provider }, provider)
@@ -350,11 +350,11 @@ describe('independent-review V1–V7', () => {
       'spawn child',
     )
     await k.close()
-    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('failed')
+    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('cancelled')
     const k2 = kernel({ storage, provider }, provider)
     const parent2 = await k2.session('parent', sessionOpts)
     await expect(parent2.d.children.resume?.(child.key)).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })
-    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('failed')
+    expect((await requireChildControl(storage).lookupByKey(child.key))?.state).toBe('cancelled')
     await k2.close()
   })
 
@@ -562,7 +562,9 @@ describe('independent-review V1–V7', () => {
       }),
       'spawn child',
     )
-    await parentA.close()
+    // Hand off only the parent writer: an explicit parent close would durably cancel the child,
+    // so it would no longer exercise another kernel trying to resume a live admission.
+    await parentA.d.log.close()
     const kB = kernel({ storage })
     const parentB = await kB.session('parent', { ...sessionOpts, writerRunId: 'rB' })
     await expect(parentB.d.children.resume?.(child.key)).rejects.toMatchObject({ code: 'E_UNSUPPORTED' })

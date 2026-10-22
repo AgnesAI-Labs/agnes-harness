@@ -20,7 +20,6 @@ async function cancelAdmission(store: ChildControlStore, record: ChildTaskRecord
 export async function stopChildAdmissions(session: SessionImpl): Promise<void> {
   const store = session.d.log.storage
   if (!hasChildControl(store)) return
-  requireChildControl(store)
   const pending = [session.key]
   const seen = new Set<string>()
   while (pending.length) {
@@ -29,6 +28,8 @@ export async function stopChildAdmissions(session: SessionImpl): Promise<void> {
     if (seen.has(parent)) throw new CoreError('E_RELATION', 'Cyclic child admission ancestry')
     seen.add(parent)
     for (const child of await store.listByParent(parent)) {
+      // An empty tree needs no child-format write; any admitted row still requires the format fence.
+      requireChildControl(store)
       // Terminal ancestors may still have admitted descendants; do not prune that subtree.
       pending.push(child.childKey)
       await cancelAdmission(store, child)

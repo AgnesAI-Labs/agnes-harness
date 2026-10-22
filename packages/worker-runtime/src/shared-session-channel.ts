@@ -14,6 +14,9 @@ export function sessionPermissions(lookup: (key: string) => HostSession | undefi
     subscribe(key: string, changed: () => void) {
       return lookup(key)?.onPermissionChange(changed) ?? (() => {})
     },
+    beforeChange(key: string, revoke: () => Promise<void>) {
+      return lookup(key)?.onBeforePermissionChange(revoke) ?? (() => {})
+    },
     async record(key: string, evidence: readonly import('@agnes/protocol').JsonValue[]) {
       const session = lookup(key)
       if (!session) throw new Error('Permission evidence session is closed')
@@ -30,6 +33,8 @@ export function sessionPermissions(lookup: (key: string) => HostSession | undefi
  * The worker never guesses a session when the context is absent.
  */
 export class SharedSessionChannel {
+  private closed = false
+  private readonly permissionWatches = new Map<string, () => void>()
   private readonly context = new AsyncLocalStorage<SessionContext>()
   private readonly pending = new Map<
     string,
@@ -42,6 +47,7 @@ export class SharedSessionChannel {
     private readonly permissions?: {
       context(sessionKey: string): import('@agnes/protocol').PermissionContext | undefined
       subscribe?(sessionKey: string, changed: () => void): () => void
+      beforeChange?(sessionKey: string, revoke: () => Promise<void>): () => void
       record(sessionKey: string, evidence: readonly import('@agnes/protocol').JsonValue[]): Promise<void>
     },
   ) {}
@@ -74,11 +80,29 @@ export class SharedSessionChannel {
   }
 
   request(method: RequestFrame['method'], params: unknown, signal: AbortSignal): Promise<unknown> {
+    if (this.closed) return Promise.reject(new Error('worker channel closed'))
     const sessionKey = this.currentSessionKey()
     const requestId = `w${this.nextRequestId++}`
     const permissionContext = ['permission', 'plugin-manage', 'mcp-manage', 'skill-install'].includes(method)
       ? this.permissions?.context(sessionKey)
       : undefined
+    if (permissionContext && !this.permissionWatches.has(sessionKey) && this.permissions?.beforeChange) {
+      const off = this.permissions.beforeChange(sessionKey, async () => {
+        const current = this.permissions?.context(sessionKey)
+        if (!current) throw new Error('Permission revocation session is closed')
+        await this.run(sessionKey, () =>
+          this.request(
+            'permission-revoke',
+            {
+              sessionId: current.sessionId,
+              epoch: current.epoch,
+            },
+            AbortSignal.timeout(30_000),
+          ),
+        )
+      })
+      this.permissionWatches.set(sessionKey, off)
+    }
     return new Promise((resolve, reject) => {
       const cancel = (): void => {
         if (
@@ -221,10 +245,18 @@ export class SharedSessionChannel {
   }
 
   closeAll(reason: unknown = new Error('worker closed')): void {
+    this.closed = true
+    for (const off of this.permissionWatches.values()) off()
+    this.permissionWatches.clear()
     for (const pending of this.pending.values()) {
       pending.cancel()
       pending.reject(reason)
     }
     this.pending.clear()
+  }
+
+  releaseSession(sessionKey: string): void {
+    this.permissionWatches.get(sessionKey)?.()
+    this.permissionWatches.delete(sessionKey)
   }
 }

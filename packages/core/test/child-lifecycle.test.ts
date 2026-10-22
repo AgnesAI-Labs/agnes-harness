@@ -243,6 +243,11 @@ describe('Kernel child lifecycle (generation, fan-out, budget)', () => {
       parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'x' }),
     ).rejects.toMatchObject({ code: 'E_FORMAT' })
     await k.close()
+    expect(storage.childControlFormat()).toBe(CHILD_CONTROL_FORMAT + 1)
+    expect(await storage.listByParent(parent.key)).toEqual([])
+    const reopened = kernel({ storage })
+    await reopened.session('parent', { ...sessionOpts, writerRunId: 'after-format-refusal' })
+    await reopened.close()
   })
 
   it('keeps a durable child record after the in-memory handle is closed', async () => {

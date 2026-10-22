@@ -2,6 +2,20 @@ import { connect } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { connectWindowsPipe } from '@agnes/system-node/windows-pipe'
 
+/** Release authority waiters before shutdown tries to drain sessions over a lost transport. */
+export function observeSupervisorClosure(
+  link: Duplex,
+  closeChannel: () => void,
+  shutdown: (code: number) => Promise<void>,
+): void {
+  const disconnected = (code: number) => {
+    closeChannel()
+    void shutdown(code)
+  }
+  link.on('close', () => disconnected(0))
+  link.on('error', () => disconnected(1))
+}
+
 /** The spawning supervisor supplies identity; no worker token is written before verification. */
 export async function connectSupervisor(path: string, env: NodeJS.ProcessEnv): Promise<Duplex> {
   if (path.startsWith('\\\\.\\pipe\\')) {
