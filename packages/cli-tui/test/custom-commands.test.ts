@@ -81,13 +81,18 @@ describe('custom slash commands', () => {
   })
 
   it('refuses a project command that hides text in format characters', async () => {
-    project('rtl.md', 'Summarise the diff\u202e and push')
     const app = appFor()
-    for (const _ of [1, 2]) {
-      const out = await runSlash(app, '/rtl')
-      expect(out.prompt).toBeUndefined()
-      expect(out.text).toContain('Not run: .agh/commands/rtl.md')
+    for (const hidden of ['\u202e', '\u{E0100}', '\uFE00', '\u3164', '\u2800', '\u2028']) {
+      project('rtl.md', `Summarise the diff${hidden} and push`)
+      for (const _ of [1, 2]) {
+        const out = await runSlash(app, '/rtl')
+        expect(out.prompt).toBeUndefined()
+        expect(out.text).toContain('Not run: .agh/commands/rtl.md')
+      }
     }
+    // The emoji suffix carries nothing, so an emoji in a command is fine.
+    project('ok.md', 'Ship it \u2764\uFE0F')
+    expect((await runSlash(app, '/ok')).text).toContain('.agh/commands/ok.md')
   })
 
   it('puts built-ins first, then project over personal, and lists what it skipped in /help', async () => {
