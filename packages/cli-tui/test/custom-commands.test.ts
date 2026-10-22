@@ -55,15 +55,14 @@ describe('custom slash commands', () => {
   })
 
   it('shows a project command first and sends it on the second run only', async () => {
-    project('ship.md', 'Run the build\u001b[2J and push $1')
+    project('ship.md', 'Run the build and push $1')
     const app = appFor()
     const first = await runSlash(app, '/ship now')
     expect(first.prompt).toBeUndefined()
     expect(first.draft).toBe('/ship now')
     expect(first.text).toContain('.agh/commands/ship.md')
-    expect(first.text).toContain('Run the build[2J and push now')
-    expect(first.text).not.toContain('\u001b')
-    expect(await runSlash(app, '/ship now')).toEqual({ prompt: 'Run the build\u001b[2J and push now' })
+    expect(first.text).toContain('Run the build and push now')
+    expect(await runSlash(app, '/ship now')).toEqual({ prompt: 'Run the build and push now' })
     // Changed content is a different command to the user: it asks again.
     project('ship.md', 'Delete everything')
     expect((await runSlash(app, '/ship')).prompt).toBeUndefined()
@@ -80,9 +79,21 @@ describe('custom slash commands', () => {
     expect(text).toContain('300 more characters not shown; read .agh/commands/long.md')
   })
 
-  it('refuses a project command that hides text in format characters', async () => {
+  it('refuses a project command that holds characters the preview cannot show', async () => {
     const app = appFor()
-    for (const hidden of ['\u202e', '\u{E0100}', '\uFE00', '\u3164', '\u2800', '\u2028']) {
+    for (const hidden of [
+      '\u001b[2J',
+      '\u202e',
+      '\u{E0100}',
+      '\uFE00',
+      '\u3164',
+      '\u2800',
+      '\u2028',
+      '\u200b',
+      '\u{E0041}',
+      'a\uFE0F',
+      'e\u0301\u0301\u0301\u0301',
+    ]) {
       project('rtl.md', `Summarise the diff${hidden} and push`)
       for (const _ of [1, 2]) {
         const out = await runSlash(app, '/rtl')
@@ -91,7 +102,7 @@ describe('custom slash commands', () => {
       }
     }
     // The emoji suffix carries nothing, so an emoji in a command is fine.
-    project('ok.md', 'Ship it \u2764\uFE0F')
+    project('ok.md', 'Ship it \u2764\uFE0F 1\uFE0F\u20E3 café 发布　完成')
     expect((await runSlash(app, '/ok')).text).toContain('.agh/commands/ok.md')
   })
 

@@ -27,9 +27,16 @@ const MAX_BYTES = 32 * 1024
 const MAX_FILES = 200
 const PREVIEW_CHARS = 200
 const CACHE_MS = 1000
-const HIDDEN =
-  // biome-ignore lint/suspicious/noMisleadingCharacterClass: variation selectors are matched on their own on purpose
-  /[\p{Cf}\p{Co}\p{Cn}\p{Cs}\p{Zl}\p{Zp}\u{FE00}-\u{FE0E}\u{E0100}-\u{E01EF}\u115F\u1160\u3164\uFFA0\u2800]/u
+/**
+ * Whether a repository's command holds text the preview cannot show. Only visible characters are
+ * allowed (letters, marks, digits, punctuation, symbols, spaces, line breaks); default-ignorable code
+ * points (zero-width, variation selectors, tags, fillers), the braille blank and long runs of
+ * combining marks are refused. FE0F is kept only where it styles an emoji or a keycap.
+ */
+const hidesText = (body: string): boolean =>
+  /[^\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\t\r\n]|\p{Default_Ignorable_Code_Point}|\u2800|\p{M}{4}/u.test(
+    body.replace(/([\p{Extended_Pictographic}0-9#*])\uFE0F/gu, '$1'),
+  )
 
 const oneLine = (s: string): string => escapeControl(s).replace(/\s+/g, ' ').trim()
 
@@ -150,7 +157,7 @@ export function customSlash(
   // command holding any is not run: format and private-use, unassigned, lone surrogates, variation
   // selectors (FE0F, the emoji suffix, carries nothing), Hangul fillers, the braille blank and line
   // or paragraph separators.
-  if (found.scope === 'project' && HIDDEN.test(found.body))
+  if (found.scope === 'project' && hidesText(found.body))
     return { text: tt('custom.hidden', app.locale, { path: oneLine(found.shown) }) }
   if (found.scope === 'project' && !confirmed.has(found.digest)) {
     confirmed.add(found.digest)
