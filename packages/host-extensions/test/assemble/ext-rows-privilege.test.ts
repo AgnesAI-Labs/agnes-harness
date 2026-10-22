@@ -1,12 +1,12 @@
-import { mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ResolvedPackage } from '@agnes/host-common/profile/types'
 import { HOST_CAPABILITY_GRANTS } from '@agnes/package-manager'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it } from 'vitest'
 import { pinHostCapabilities } from '../../src/assemble/host-grants.js'
-import type { PackageModule } from '../../src/assemble/packages.js'
+import { type PackageModule, readNamedExports } from '../../src/assemble/packages.js'
 
 const roots: string[] = []
 afterEach(() => {
@@ -20,7 +20,9 @@ const ids = [
   'agnes/mcp-search',
 ] as const
 function fixture(override: Partial<ResolvedPackage> = {}) {
-  const directory = mkdtempSync(join(tmpdir(), 'agh-host-grant-'))
+  const parent = join(homedir(), 'agh-real-eval')
+  mkdirSync(parent, { recursive: true })
+  const directory = mkdtempSync(join(parent, 'agh-host-grant-'))
   roots.push(directory)
   writeFileSync(join(directory, 'index.js'), 'export const identity = 1\n')
   const pkg: ResolvedPackage = {
@@ -136,4 +138,111 @@ describe('verified ext: row privilege grants', () => {
     renameSync(replacement.directory, h.directory)
     expect(h.grants()).toEqual(ids.map(() => ({})))
   })
+  it.each([
+    { source: 'link:./base', trust: 'trusted' },
+    { source: 'workspace:packages/base', trust: 'trusted' },
+    { source: 'npm:@agnes/base', trust: 'trusted' },
+  ] satisfies Partial<ResolvedPackage>[])(
+    'refuses all grants for linked/workspace lookalikes: %j',
+    (override) => {
+      const h = fixture(override)
+      expect(h.grants()).toEqual(ids.map(() => ({})))
+      expect(h.authority.seam(h.pkg.id, 'artifacts', h.module)).toEqual({})
+      expect(h.authority.governance()).toEqual([])
+    },
+  )
+
+  it.each([
+    { enabled: false },
+    { source: 'file:./replacement' },
+    { trust: 'trusted' },
+    { version: '2.0.0' },
+    { integrity: 'builtin:2.0.0' },
+  ] satisfies Partial<ResolvedPackage>[])('rechecks every identity field at grant time: %j', (patch) => {
+    const h = fixture()
+    Object.assign(h.pkg, patch)
+    expect(h.grants()).toEqual(ids.map(() => ({})))
+    expect(h.authority.seam(h.pkg.id, 'artifacts', h.module)).toEqual({})
+  })
+
+  it('does not lend the official module or factories to another builtin owner', () => {
+    const h = fixture()
+    const other = { ...h.pkg, id: '@agnes/code' }
+    const factory = () => () => undefined
+    const isolated = async () => ({ data: {}, capability: async () => undefined })
+    const ecosystem = { [ids[1]]: factory }
+    const isolatedEcosystem = { [ids[1]]: isolated }
+    Object.assign(h.module, { ecosystem, isolatedEcosystem })
+    const borrowed = { ...h.module, id: other.id }
+    h.modules.set(other.id, borrowed)
+    const authority = pinHostCapabilities(
+      [h.pkg, other],
+      new Map([
+        [h.pkg.id, h.directory],
+        [other.id, h.directory],
+      ]),
+    )
+    authority.bind(h.modules)
+    expect(authority.extension(h.pkg.id, ids[1], h.module)).toMatchObject({ isolatedHooks: true })
+    expect(authority.extension(other.id, ids[1], borrowed)).toEqual({})
+    expect(authority.extension(h.pkg.id, ids[1], borrowed)).toEqual({})
+    expect(authority.seam(other.id, 'artifacts', borrowed)).toEqual({})
+    ecosystem[ids[1]] = () => () => undefined
+    expect(authority.extension(h.pkg.id, ids[1], h.module)).toEqual({})
+    ecosystem[ids[1]] = factory
+    isolatedEcosystem[ids[1]] = async () => ({ data: {}, capability: async () => undefined })
+    expect(authority.extension(h.pkg.id, ids[1], h.module)).toEqual({})
+  })
+
+  it('refuses a file loader directory symlink before and after swapping its target', () => {
+    const h = fixture()
+    const replacement = fixture()
+    const link = join(h.directory, 'load-path')
+    symlinkSync(replacement.directory, link)
+    const authority = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, link]]))
+    authority.bind(h.modules)
+    expect(authority.extension(h.pkg.id, ids[2], h.module)).toEqual({})
+    unlinkSync(link)
+    symlinkSync(h.directory, link)
+    expect(authority.extension(h.pkg.id, ids[2], h.module)).toEqual({})
+  })
+
+  it('does not let named exports declare an executable code image', () => {
+    const h = fixture()
+    const module = readNamedExports(h.pkg.id, join(h.directory, 'index.js'), {
+      id: h.pkg.id,
+      extensionEntry: undefined,
+      embeddedExtensions: [],
+      hostGrants: HOST_CAPABILITY_GRANTS,
+    })
+    expect(module.extensionEntry).toBe(join(h.directory, 'index.js'))
+    expect(module.embeddedExtensions).toBeUndefined()
+    h.modules.set(h.pkg.id, module)
+    h.authority.bind(h.modules)
+    writeFileSync(join(h.directory, 'index.js'), 'export const identity = 2\n')
+    expect(h.grants()).toEqual(ids.map(() => ({})))
+  })
+
+  // Default: visible expected failures. Set AGH_SECURITY_ASSERT_REFUSAL=1 to reproduce ordinary failures.
+  const refusalTest = process.env.AGH_SECURITY_ASSERT_REFUSAL === '1' ? it : it.fails
+  refusalTest.each(['host-ext-row:v1', 'custom-reload-revision'])(
+    'refuses a changed tree when a retained row has a non-hash revision: %s',
+    (entryRevision) => {
+      const h = fixture()
+      const retained = createPluginRow({
+        id: 'ext:agnes/hooks-runner',
+        plugin: 'builtin:@agnes/base/hooks-runner',
+        snapshotDigest: 'host-ext-row:v1',
+        exportName: 'agnes/hooks-runner',
+        entryRevision,
+        extrasRevision: 'none',
+        mountRevision: 'host-ext-row:v1',
+      })
+      writeFileSync(join(h.directory, 'index.js'), 'export const identity = 2\n')
+      const restored = pinHostCapabilities([h.pkg], new Map([[h.pkg.id, h.directory]]), [retained])
+      restored.bind(h.modules)
+      expect.soft(restored.extension(h.pkg.id, ids[1], h.module)).toEqual({})
+      expect(restored.seam(h.pkg.id, 'artifacts', h.module)).toEqual({})
+    },
+  )
 })

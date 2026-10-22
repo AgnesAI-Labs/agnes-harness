@@ -186,4 +186,42 @@ describe('Host excludes official business identities/implementations; reviewed l
     writeFileSync(join(hidden, 'package.json'), JSON.stringify({ name: '@agnes/host-hidden' }))
     expect(() => assertHostPackageCoverage(scratch)).toThrow(/Unclassified Host package/)
   })
+  // Default: visible expected failures. Set AGH_SECURITY_ASSERT_REFUSAL=1 to reproduce ordinary failures.
+  const refusalTest = process.env.AGH_SECURITY_ASSERT_REFUSAL === '1' ? it : it.fails
+  refusalTest.each([
+    ['concatenated package', "if (owner === '@agnes/' + 'base') grant()"],
+    ['joined extension', "if (id === ['agnes', 'computer-use'].join('/')) grant()"],
+    [
+      'computed default',
+      "import * as api from '@agnes/core'; if (loop === api['DEFAULT_' + 'LOOP']) grant()",
+    ],
+  ])('rejects computed official identities: %s', (_name, source) => {
+    const file = join(scratch, 'computed-identity.ts')
+    writeFileSync(file, source)
+    for (const path of [
+      'packages/host/src/example.ts',
+      'packages/core/src/registry/tools.ts',
+      'packages/daemon/src/supervisor/assembly-runtime.ts',
+      'packages/daemon-admin/src/packages/builtin-client-services.ts',
+    ]) {
+      const entries = withSourceTrees([file], (trees) =>
+        trees.flatMap((tree) => hostFindings(tree, path, catalogue)),
+      )
+      expect.soft(entries.length, path).toBeGreaterThan(0)
+    }
+  })
+
+  it('rejects the producer of an aliased re-export even when its consumer uses a local alias', () => {
+    const producer = join(scratch, 'forward-default.ts')
+    const consumer = join(scratch, 'consume-default.ts')
+    writeFileSync(producer, "export { DEFAULT_LOOP as selection } from '@agnes/core'")
+    writeFileSync(
+      consumer,
+      "import { selection } from './forward-default.js'; if (loop === selection) grant()",
+    )
+    const findings = withSourceTrees([producer, consumer], (trees) =>
+      trees.flatMap((tree) => hostFindings(tree, 'packages/core/src/registry/tools.ts', catalogue)),
+    )
+    expect(findings.length).toBeGreaterThan(0)
+  })
 })
