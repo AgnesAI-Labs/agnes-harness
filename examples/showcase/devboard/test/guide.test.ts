@@ -68,6 +68,35 @@ describe('demo guide data', () => {
     expect(MAIN_STEPS.find((s) => 'action' in s)?.action).toBe('new-project')
   })
 
+  it('sends step 7 to the live project tasks and step 12 to the delivery card, and step 2 mentions fast-forward', () => {
+    const step = (id: string) => MAIN_STEPS.find((s) => s.id === id) as Any
+    expect(step('m7')).toMatchObject({ page: 'devboard-tasks', project: 'live', target: 'tasks-view' })
+    expect(step('m12')).toMatchObject({
+      page: 'devboard-projects',
+      project: 'live',
+      target: 'projects-delivery',
+    })
+    expect(step('m2').note).toContain('快进演示到…')
+    // the start button only drafts a request; the presenter sends it and approves a shell command
+    expect(step('m12').how).toContain('批准其中一条 shell 命令')
+    expect(step('m12').note).toContain('macOS 沙箱')
+    // the main steps keep their board rules: the card only changes where step 12 points
+    expect(MAIN_STEPS.map((s) => s.done)).toEqual([
+      undefined,
+      'project',
+      'CDCP:submitted',
+      'CDCP:approved',
+      'TR1:submitted',
+      'TR1:approved',
+      'TR3:submitted',
+      'TR3:approved',
+      'TR4:approved',
+      'TR5:submitted',
+      'TR5:approved',
+      'ADCP:approved',
+    ])
+  })
+
   it('ends the guide of each main-line role with a pointer to its main-line steps', () => {
     for (const role of new Set(MAIN_STEPS.map((s) => s.role))) {
       const mine = MAIN_STEPS.flatMap((s, i) => (s.role === role ? [i + 1] : []))
