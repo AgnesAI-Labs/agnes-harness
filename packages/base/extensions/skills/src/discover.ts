@@ -50,6 +50,9 @@ export function workspaceSkillKey(workspaceRoot: string): string {
   return skillSha256(workspaceRoot)
 }
 
+/** Location prefix of the extra folders a user adds to the personal root. */
+const ADDED_FOLDER_PREFIX = 'custom/'
+
 /** Agnes roots are always scanned; other tools' OS-home roots require explicit deployment opt-in. */
 export function skillRoots(paths: {
   workspaceRoot: string
@@ -82,7 +85,7 @@ export function skillRoots(paths: {
         ...[...new Set(paths.customRoots ?? [])].map((path) => {
           if (!isAbsolute(path)) throw new Error('custom Skill roots must be absolute')
           const canonical = resolve(path)
-          return { path: canonical, prefix: `custom/${skillSha256(canonical)}/` }
+          return { path: canonical, prefix: `${ADDED_FOLDER_PREFIX}${skillSha256(canonical)}/` }
         }),
       ]),
     },
@@ -323,11 +326,22 @@ export async function discoverSkillRoot(fs: SkillFs, root: SkillRoot): Promise<S
   const dirs = root.dirs ?? [{ path: root.path, prefix: '' }]
   for (const [dirIndex, dir] of dirs.entries()) {
     if (resolve(dir.path).split(/[\\/]/).includes('.authoring-candidates')) continue
+    // A folder the user added is theirs to get wrong: another account's directory, one without
+    // permission, a path that is a file. It is skipped and reported, and the rest of the root stays.
+    const added = dir.prefix.startsWith(ADDED_FOLDER_PREFIX)
+    const skipFolder = (code: SkillRootFailure) => {
+      const location = dir.prefix.replace(/\/$/, '')
+      skipped.push(Object.freeze({ resourceId: skillResourceIdAt(root, location), code, location }))
+    }
     let entries: FsEntry[]
     try {
       entries = await fs.list(dir.path)
     } catch (error) {
       if ((error as { code?: unknown }).code === 'ENOENT') continue
+      if (added) {
+        skipFolder('root-unreadable')
+        continue
+      }
       return failed(root.rootKey, 'root-unreadable')
     }
     let dirReal: string | undefined
@@ -335,6 +349,10 @@ export async function discoverSkillRoot(fs: SkillFs, root: SkillRoot): Promise<S
       try {
         dirReal = await fs.realpath(dir.path)
       } catch {
+        if (added) {
+          skipFolder('root-unresolvable')
+          continue
+        }
         return failed(root.rootKey, 'root-unresolvable')
       }
     }
