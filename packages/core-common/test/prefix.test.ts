@@ -137,13 +137,55 @@ describe('banned runners and subcommand programs', () => {
     expect(isBannedPrefix([program, 'run'])).toBe(true)
   })
 
-  it.each(['git', 'npm', 'pnpm', 'yarn', 'bun', 'cargo', 'go', 'pip', 'pip3', 'uv'])(
-    'needs a subcommand for %s',
-    (program) => {
-      expect(offerPrefix(program)).toBeUndefined()
-      expect(offerPrefix(`${program} --version`)).toBeUndefined()
-    },
-  )
+  it.each([
+    'git',
+    'npm',
+    'pnpm',
+    'yarn',
+    'bun',
+    'cargo',
+    'go',
+    'pip',
+    'pip3',
+    'uv',
+    'make',
+    'poetry',
+    'bundle',
+    'mvn',
+  ])('needs a subcommand for %s', (program) => {
+    expect(offerPrefix(program)).toBeUndefined()
+    expect(offerPrefix(`${program} --version`)).toBeUndefined()
+    expect(isBannedPrefix([program])).toBe(true)
+  })
+
+  it.each(['ls', 'cat', 'grep', 'wc', 'echo'])('lets read-only %s stand alone', (program) => {
+    expect(offerPrefix(program)?.tokens).toEqual([program])
+  })
+
+  it.each([
+    'uv run',
+    'cargo run',
+    'go run',
+    'poetry run',
+    'pipenv run',
+    'bundle exec',
+    'git foreach',
+    'deno eval',
+    'dotnet tool',
+    'gradle run',
+    'hatch shell',
+    'npm run-script',
+  ])('never offers the run-style subcommand %s', (prefix) => {
+    expect(offerPrefix(`${prefix} payload`)).toBeUndefined()
+    expect(isBannedPrefix(prefix.split(' '))).toBe(true)
+  })
+
+  it.each(
+    'tsx ts-node java Rscript tclsh expect sqlite3 psql vim nvim emacs sed less man uvx pipx'.split(' '),
+  )('never offers the code runner %s', (program) => {
+    expect(offerPrefix(`${program} build x`)).toBeUndefined()
+    expect(isBannedPrefix([program, 'build'])).toBe(true)
+  })
 
   it('offers program plus subcommand for the ordinary subcommand programs', () => {
     expect(offerPrefix('cargo test')?.tokens).toEqual(['cargo', 'test'])

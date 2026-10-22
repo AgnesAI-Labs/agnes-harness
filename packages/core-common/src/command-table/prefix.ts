@@ -127,23 +127,87 @@ const RUNNERS = [
   'open',
   'xdg-open',
 ]
-const BANNED_FIRST = new Set([...SHELLS, ...INTERPRETERS, ...RUNNERS])
-/** Too broad on their own: the prefix must carry a subcommand. */
-const NEEDS_SUBCOMMAND = new Set([
-  'git',
-  'rm',
-  'npm',
-  'pnpm',
-  'yarn',
-  'bun',
-  'cargo',
-  'go',
-  'pip',
-  'pip3',
-  'uv',
+/** Interpreters, editors and query shells that run code or commands given as ordinary arguments. */
+const CODE_RUNNERS = [
+  'tsx',
+  'ts-node',
+  'java',
+  'jshell',
+  'rscript',
+  'r',
+  'julia',
+  'swift',
+  'kotlin',
+  'scala',
+  'groovy',
+  'irb',
+  'pry',
+  'ghci',
+  'tclsh',
+  'wish',
+  'expect',
+  'sqlite3',
+  'psql',
+  'mysql',
+  'vim',
+  'vi',
+  'nvim',
+  'emacs',
+  'ed',
+  'ex',
+  'less',
+  'more',
+  'man',
+  'sed',
+  'uvx',
+  'pipx',
+]
+const BANNED_FIRST = new Set([...SHELLS, ...INTERPRETERS, ...RUNNERS, ...CODE_RUNNERS])
+/**
+ * A prefix of the program alone grants it with any arguments, so only read-only programs whose
+ * arguments cannot name a command to run may stand alone. Everything else needs a subcommand.
+ */
+const ALONE_OK = new Set([
+  'ls',
+  'cat',
+  'head',
+  'tail',
+  'wc',
+  'grep',
+  'rg',
+  'pwd',
+  'echo',
+  'which',
+  'file',
+  'stat',
+  'du',
+  'df',
+  'tree',
+  'diff',
+  'sort',
+  'uniq',
+  'cut',
+  'date',
 ])
-const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun'])
-const PACKAGE_RUNNERS = new Set(['run', 'exec', 'x', 'dlx', 'create', 'init'])
+/** Second words that hand the rest of the command line to something else to run, for any program. */
+const RUN_SUBCOMMANDS = new Set([
+  'run',
+  'run-script',
+  'exec',
+  'x',
+  'dlx',
+  'create',
+  'init',
+  'foreach',
+  'eval',
+  'shell',
+  'repl',
+  'console',
+  'debug',
+  'tool',
+  'with',
+  'script',
+])
 
 const programName = (word: string): string =>
   (word.split(/[\\/]/).pop() ?? '').toLowerCase().replace(/\.(?:exe|cmd|bat|com)$/, '')
@@ -152,8 +216,8 @@ const programName = (word: string): string =>
 export function isBannedPrefix(tokens: readonly string[]): boolean {
   const name = programName(tokens[0] ?? '')
   if (!name || BANNED_FIRST.has(name) || /^python[\d.]*$/.test(name)) return true
-  if (tokens.length === 1 && NEEDS_SUBCOMMAND.has(name)) return true
-  if (PACKAGE_MANAGERS.has(name) && PACKAGE_RUNNERS.has(tokens[1] ?? '')) return true
+  if (tokens.length === 1 && !ALONE_OK.has(name)) return true
+  if (RUN_SUBCOMMANDS.has((tokens[1] ?? '').toLowerCase())) return true
   return tokens.some((token) => looksLikeSecret(token))
 }
 
