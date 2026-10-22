@@ -2,11 +2,12 @@ import { homeNavigation, openApplicationWork } from '@agnes/web-client'
 import { Badge, Button, Segmented } from '@agnes/web-ui'
 import React from 'react'
 import { MAIN_STEPS, ROLE_STEPS } from './guide-data.js'
+import { guideMemory } from './guide-memory.js'
 import { liveProject, mainProgress } from './guide-progress.js'
 
 // Demo guide: a side panel next to the page (not a modal, so the audience still sees the page), step cards
 // with a "带我去" jump and a spotlight (outline plus a text bubble), and local-only progress. Nothing here
-// writes to the board or the backend.
+// writes to the board or the backend; guide-memory.js remembers ticks and first visits in this browser.
 
 const h = React.createElement
 const PROJECT_KEY = 'devboard.project'
@@ -20,14 +21,8 @@ const message = (error) => (error instanceof Error ? error.message : String(erro
 
 // ── Progress (guide-memory.js keeps it in this browser) ────────────────────────────────────────────
 
-// Ticks live in memory for the page session; guide-memory.js keeps them in the browser.
-const memory = { main: new Set(), roles: new Map() }
-const ticks = (main, role) => (main ? memory.main : (memory.roles.get(role) ?? new Set()))
 const setTick = (step, role, on) => {
-  const ids = ticks(Boolean(step.role), role)
-  if (on) ids.add(step.id)
-  else ids.delete(step.id)
-  if (!step.role) memory.roles.set(role, ids)
+  guideMemory.setTick(Boolean(step.role), role, step.id, on)
   touch()
 }
 
@@ -240,11 +235,23 @@ export function GuidePanel({ board, role, setRole, page, jump }) {
   const title = React.useRef(null)
   const steps = tab === 'main' ? MAIN_STEPS : (ROLE_STEPS[role] ?? [])
   const auto = React.useMemo(() => (board.data ? mainProgress(board.data, MAIN_STEPS) : {}), [board.data])
-  const ticked = ticks(tab === 'main', role)
+  const ticked = guideMemory.ticks(tab === 'main', role)
   const isDone = (s) => Boolean(tab === 'main' && auto[s.id]) || ticked.has(s.id)
   const firstOpen = steps.find((s) => !isDone(s))?.id
   const current = focus[tab] === '' || steps.some((s) => s.id === focus[tab]) ? focus[tab] : firstOpen
 
+  // First visit of a role: open the panel on "我的角色" and light step 1 when it is on this page.
+  React.useEffect(() => {
+    if (!board.data || !role) return
+    if (guideMemory.seen(role)) return
+    if (open) return guideMemory.markSeen(role)
+    if (guideMemory.shouldAutoOpen(role)) {
+      guideMemory.markSeen(role)
+      update({ open: true, tab: 'role' })
+      const first = ROLE_STEPS[role]?.[0]
+      if (first?.page === page) setTimeout(() => showSpot(first), 400)
+    }
+  }, [board.data, role, page, open])
   // A jump from the panel of another page: light the spot once the page has its data.
   React.useEffect(() => {
     const step = STEPS.get(jump?.step)
@@ -271,7 +278,7 @@ export function GuidePanel({ board, role, setRole, page, jump }) {
 
   if (!open) return h(Spotlight)
   const total = MAIN_STEPS.length
-  const finished = MAIN_STEPS.filter((s) => (auto[s.id] ?? false) || ticks(true).has(s.id)).length
+  const finished = MAIN_STEPS.filter((s) => (auto[s.id] ?? false) || guideMemory.ticks(true).has(s.id)).length
   const actions = {
     toggle: (id) => setFocus({ ...focus, [tab]: current === id ? '' : id }),
     tick: (step, on) => setTick(step, role, on),
@@ -331,6 +338,34 @@ export function GuidePanel({ board, role, setRole, page, jump }) {
             auto: Boolean(tab === 'main' && auto[step.id]),
             actions,
           }),
+        ),
+      ),
+      h(
+        'div',
+        { className: 'devboard-guide-foot' },
+        h(
+          'label',
+          { className: 'devboard-guide-check' },
+          h('input', {
+            type: 'checkbox',
+            checked: guideMemory.autoOpenOff(),
+            onChange: (e) => {
+              guideMemory.setAutoOpenOff(e.target.checked)
+              touch()
+            },
+          }),
+          '不再自动打开',
+        ),
+        h(
+          Button,
+          {
+            onClick: () => {
+              guideMemory.restart(role)
+              setFocus({})
+              touch()
+            },
+          },
+          '从头开始',
         ),
       ),
     ),

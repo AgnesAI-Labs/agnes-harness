@@ -3,6 +3,7 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { MAIN_STEPS, ROLE_STEPS } from '../client/guide-data.js'
+import { createGuideMemory } from '../client/guide-memory.js'
 import { liveProject, mainProgress } from '../client/guide-progress.js'
 import { GATE_PROFILES, ROLES } from '../profiles.mjs'
 import { buildSeed } from '../seed-data.mjs'
@@ -116,5 +117,53 @@ describe('main-line progress from the board snapshot', () => {
     expect(done(board(gate(LIVE, 'CDCP', 'APPROVED'), gate(LIVE, 'TR1')))).toEqual(['m2', 'm3', 'm4', 'm5'])
     const all = ['CDCP', 'TR1', 'TR3', 'TR4', 'TR5', 'ADCP'].map((c) => gate(LIVE, c, 'APPROVED'))
     expect(done(board(...all))).toEqual(MAIN_STEPS.filter((s) => s.id !== 'm1').map((s) => s.id))
+  })
+})
+
+describe('what the guide remembers in the browser', () => {
+  const fakeStorage = () => {
+    const rows = new Map<string, string>()
+    return {
+      rows,
+      getItem: (k: string) => rows.get(k) ?? null,
+      setItem: (k: string, v: string) => void rows.set(k, v),
+    }
+  }
+
+  it('opens by itself once per role, unless switched off, and restarts from the beginning', () => {
+    const storage = fakeStorage()
+    const memory = createGuideMemory(() => storage)
+    expect(memory.shouldAutoOpen('项目经理')).toBe(true)
+    memory.markSeen('项目经理')
+    expect(memory.shouldAutoOpen('项目经理')).toBe(false)
+    expect(memory.shouldAutoOpen('IPMT')).toBe(true)
+    memory.setAutoOpenOff(true)
+    expect(memory.shouldAutoOpen('IPMT')).toBe(false)
+    // A reload (a new memory over the same storage) sees the same state.
+    expect(createGuideMemory(() => storage).seen('项目经理')).toBe(true)
+
+    memory.setTick(true, '项目经理', 'm1', true)
+    memory.setTick(false, '项目经理', 'pm-1', true)
+    memory.setTick(false, 'IPMT', 'ipmt-1', true)
+    expect([...memory.ticks(true, 'IPMT')]).toEqual(['m1'])
+    expect([...memory.ticks(false, '项目经理')]).toEqual(['pm-1'])
+    memory.setTick(false, '项目经理', 'pm-1', false)
+    expect(memory.ticks(false, '项目经理').size).toBe(0)
+    memory.setTick(false, '项目经理', 'pm-1', true)
+    memory.restart('项目经理')
+    expect(memory.ticks(true, 'IPMT').size).toBe(0)
+    expect(memory.ticks(false, '项目经理').size).toBe(0)
+    expect(memory.seen('项目经理')).toBe(true)
+    expect([...memory.ticks(false, 'IPMT')]).toEqual(['ipmt-1'])
+  })
+
+  it('keeps working in memory when the browser blocks storage', () => {
+    const memory = createGuideMemory(() => {
+      throw new Error('blocked')
+    })
+    memory.markSeen('质量工程师')
+    memory.setTick(false, '质量工程师', 'qe-1', true)
+    expect(memory.seen('质量工程师')).toBe(true)
+    expect([...memory.ticks(false, '质量工程师')]).toEqual(['qe-1'])
   })
 })
