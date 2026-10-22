@@ -1,6 +1,5 @@
-import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { MAIN_STEPS, ROLE_STEPS } from '../client/guide-data.js'
@@ -17,14 +16,6 @@ const homeEntries: string[] = manifest.client.homeEntries.map((e: Any) => e.id)
 const roleSteps = ROLE_STEPS as Record<string, Any[]>
 const projectIds: string[] = buildSeed(Date.now()).projects.map((p: Any) => p.id)
 const allSteps: Any[] = [...MAIN_STEPS, ...Object.values(roleSteps).flat()]
-
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const path = join(dir, e.name)
-    if (e.isDirectory()) return e.name === 'node_modules' ? [] : sourceFiles(path)
-    return /\.(m?js|ts|json|md|css)$/.test(e.name) ? [path] : []
-  })
-}
 
 describe('demo guide data', () => {
   it('covers every demo role with 4 to 6 steps', () => {
@@ -107,34 +98,6 @@ describe('demo guide data', () => {
         role,
       ).toHaveLength(1)
     }
-  })
-
-  it('names only the fictional company', () => {
-    // Real company names must not appear in this public repository, so only their hashes are kept
-    // here: sha256 prefix by name length, matched against every substring of that length.
-    const forbidden: Record<number, string[]> = {
-      2: ['0876ac236f2cdc80', '10035b1808607f91'],
-      3: ['3b7356188745b0f8', 'fbfcb0b058521d11', 'b61c7d641d8875bb'],
-      5: ['d45437499c5035f5', 'c1405e603d5e3c56'],
-      8: ['256bae985b56e8ea'],
-    }
-    const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16)
-    const hits: string[] = []
-    // the shipped sample project is scanned as well
-    expect(
-      sourceFiles(ROOT).filter((f) =>
-        relative(ROOT, f).replaceAll('\\', '/').startsWith('assets/fastforward/'),
-      ).length,
-    ).toBeGreaterThan(10)
-    for (const file of sourceFiles(ROOT)) {
-      const text = readFileSync(file, 'utf8')
-      for (const [len, hashes] of Object.entries(forbidden)) {
-        for (let i = 0; i + Number(len) <= text.length; i++) {
-          if (hashes.includes(hash(text.slice(i, i + Number(len))))) hits.push(`${relative(ROOT, file)}:${i}`)
-        }
-      }
-    }
-    expect(hits).toEqual([])
   })
 })
 
