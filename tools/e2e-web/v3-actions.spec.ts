@@ -141,7 +141,56 @@ test('v3 MCP two-step local wizard saves a stdio fixture only after consent', as
   await expect(dialog).toBeVisible()
   await expect(dialog.locator('#mcp-step')).toContainText(/1/)
   await expect(dialog.locator('#mcp-command')).toBeHidden()
-  await dialog.locator('#mcp-method-local').click()
+  await test.info().attach('mcp-method-cards.png', {
+    body: await dialog.screenshot(),
+    contentType: 'image/png',
+  })
+  // Hit the actual screen coordinates so an overlay cannot mask an inactive part of the card.
+  async function clickMethod(method: 'local' | 'remote' | 'agent', target: 'description' | 'icon' | 'space') {
+    const row = dialog
+      .locator('#mcp-methods > :is(.agh-list-row, .mcp-method-card)')
+      .nth(['local', 'remote', 'agent'].indexOf(method))
+    await row.scrollIntoViewIfNeeded()
+    const area =
+      target === 'description'
+        ? row.locator('p, .mcp-method-description')
+        : target === 'icon'
+          ? row.locator(':scope > [aria-hidden="true"]')
+          : row
+    const bounds = await area.boundingBox()
+    if (!bounds) throw new Error('MCP method card must have visible bounds')
+    await page.mouse.click(
+      bounds.x + (target === 'space' ? bounds.width - 12 : bounds.width / 2),
+      bounds.y + bounds.height / 2,
+    )
+  }
+  for (const method of ['remote', 'local'] as const) {
+    for (const target of ['description', 'icon', 'space'] as const) {
+      await clickMethod(method, target)
+      await expect(dialog.locator(method === 'local' ? '#mcp-command' : '#mcp-url')).toBeFocused()
+      await dialog.locator('#mcp-back').click()
+      await expect(dialog.locator('#mcp-methods')).toBeVisible()
+    }
+  }
+  const agentHref = await dialog.locator('#mcp-method-agent').getAttribute('href')
+  if (!agentHref) throw new Error('Agent method must remain a real link')
+  const agentUrl = new URL(agentHref, runtime.url).href
+  const agentPrompt = new URL(agentUrl).searchParams.get('prompt')
+  if (!agentPrompt) throw new Error('Agent method must include the connection prompt')
+  for (const target of ['description', 'icon', 'space'] as const) {
+    await clickMethod('agent', target)
+    await expect(page).toHaveURL(agentUrl)
+    await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toHaveValue(agentPrompt)
+    await page.goBack()
+    await homePage(page, 'plugins', 'mcp')
+    await page.getByTestId('mcp-create').click()
+  }
+  await dialog.locator('#mcp-method-local').focus()
+  await page.keyboard.press('Tab')
+  await expect(dialog.locator('#mcp-method-remote')).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(dialog.locator('#mcp-method-local')).toBeFocused()
+  await page.keyboard.press('Enter')
   await expect(dialog.locator('#mcp-step')).toContainText(/2/)
   await dialog.locator('#mcp-command').fill(`node ${resolve('tools/e2e-web/fixtures/mcp.mjs')}`)
   await expand(dialog.locator('#mcp-advanced'))

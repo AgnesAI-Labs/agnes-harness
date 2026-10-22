@@ -618,50 +618,56 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  /* The ways to add a server are option cards: the whole card is the choice, its button is the
-   name, and the focus ring belongs to the card. */
+  /* Each connection method is one native button or link covering the entire card. */
   #mcp-methods {
     gap: var(--s8);
   }
-  #mcp-methods > .agh-list-row {
-    position: relative;
+  #mcp-methods > .mcp-method-card {
+    /* Keep edge clicks inside the native action while it is pressed. */
+    --press-scale: 1;
+    display: flex;
+    justify-content: flex-start;
+    width: 100%;
+    height: auto;
     min-height: 0;
+    gap: var(--s12);
     padding: var(--s12) var(--s16);
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
     background: var(--agnes-bg-group);
+    text-align: start;
+    white-space: normal;
     transition:
       border-color var(--transition-fast),
       background-color var(--transition-fast);
   }
-  #mcp-methods > .agh-list-row:hover {
+  #mcp-methods > .mcp-method-card:hover {
     border-color: var(--agnes-line-emphasis);
     background: var(--agnes-bg-card);
   }
-  #mcp-methods > .agh-list-row:has(.agh-btn:focus-visible) {
+  #mcp-methods > .mcp-method-card:focus-visible {
     border-color: var(--agnes-brand-focus-ring);
     outline: var(--focus-outline);
     outline-offset: 1px;
   }
-  #mcp-methods .agh-list-row h3 .agh-btn {
-    position: static;
-    height: auto;
-    min-height: 0;
-    padding: 0;
-    border: 0;
+  #mcp-methods .mcp-method-copy {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  #mcp-methods .mcp-method-title {
+    display: block;
     color: var(--agnes-text-primary);
-    background: transparent;
-    box-shadow: none;
-    outline: none;
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-medium);
     line-height: var(--line-sm);
   }
-  #mcp-methods .agh-list-row h3 .agh-btn::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
+  #mcp-methods .mcp-method-description {
+    display: block;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-regular);
+    line-height: 1.6;
   }
   .confirm-facts {
     display: grid;
