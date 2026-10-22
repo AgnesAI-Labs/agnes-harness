@@ -43,6 +43,8 @@ Declare `main` and its `providers` injection once, in `package.json`'s `agnes.pl
 
 The in-process provider is installed with the `@agnes/base` package. Its plugin row id is `child-agent:in-process` and its provider id is `in-process`.
 
+Completing a parent turn leaves its spawned tasks active. Explicitly closing or aborting a parent or ancestor durably cancels its nonterminal descendant admissions, including tasks that never ran. A process crash without an explicit stop record remains a recovery case.
+
 ## Allowlist
 
 The preset schema does not carry a child allowlist. Set it from the subagent extension config, or replace one session at runtime:
