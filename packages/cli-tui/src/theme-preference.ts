@@ -3,16 +3,19 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node
 import { dirname } from 'node:path'
 import type { TuiThemeName } from './theme.js'
 
-export function readTheme(path?: string): TuiThemeName {
+/** What the user chose; `auto` follows the terminal background and is what no saved choice means. */
+export type ThemePreference = TuiThemeName | 'auto'
+
+export function readTheme(path?: string): ThemePreference {
   try {
     const name: unknown = JSON.parse(readFileSync(path ?? '', 'utf8')).theme
-    return name === 'light' || name === 'mono' ? name : 'dark'
+    return name === 'light' || name === 'mono' || name === 'dark' ? name : 'auto'
   } catch {
-    return 'dark'
+    return 'auto'
   }
 }
 
-export function saveTheme(path: string | undefined, theme: TuiThemeName): boolean {
+export function saveTheme(path: string | undefined, theme: ThemePreference): boolean {
   if (!path) return false
   const temporary = `${path}.${randomUUID()}.tmp`
   try {

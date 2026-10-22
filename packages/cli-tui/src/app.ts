@@ -28,9 +28,10 @@ import type { ResourceCommandKind, TuiResourceController } from './resource-cont
 import { type ActionItem, collectSlots } from './slots.js'
 import { pendingSurface } from './surface-prompt.js'
 import type { Terminal } from './terminal.js'
+import { resolveAuto } from './terminal-background.js'
 import { TerminalSignals } from './terminal-signals.js'
 import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
-import { readTheme, saveTheme } from './theme-preference.js'
+import { readTheme, saveTheme, type ThemePreference } from './theme-preference.js'
 import { assistantView, LiveView } from './thinking.js'
 import { ToolCards } from './tool-cards.js'
 import { ApprovalCard } from './views/approval-card.js'
@@ -95,6 +96,7 @@ export class TuiApp {
   private readonly composer: Composer
   private readonly theme: TuiTheme
   private readonly themePicker: ThemePicker
+  private themePreference: ThemePreference
   private readonly usagePanel: UsagePanel
   private readonly modelPicker: ModelPicker
   private readonly sessionPicker: SessionPicker
@@ -177,7 +179,10 @@ export class TuiApp {
   ) {
     // One ansi instance per colour tier for the whole frame: header, status bar, banner, editor
     // chrome and the cards all degrade through the same tier (none emits zero escape sequences).
-    this.theme = new TuiTheme(readTheme(o.themePreferencePath))
+    this.themePreference = readTheme(o.themePreferencePath)
+    this.theme = new TuiTheme(
+      this.themePreference === 'auto' ? resolveAuto(o.term.background) : this.themePreference,
+    )
     const ansi = this.theme.ansi(createAnsi(o.term.caps.color))
     const branding = o.branding ?? DEFAULT_BRANDING
     const locale = o.locale ?? 'en'
@@ -509,20 +514,34 @@ export class TuiApp {
     this.modelPicker.close()
     this.sessionPicker.close()
     this.usagePanel.close()
-    this.themePicker.show(this.theme.name)
+    this.themePicker.show(this.themePreference)
     if (!this.stopped) this.renderer.requestRender()
   }
 
   /** Changes local presentation and persists the preference without touching session data. */
-  setTheme(name: TuiThemeName): string {
+  setTheme(name: ThemePreference): string {
     this.themePicker.close()
+    this.themePreference = name
+    this.restyle(name === 'auto' ? resolveAuto(this.o.term.background) : name)
+    return saveTheme(this.o.themePreferencePath, name)
+      ? tt('app.themeSaved', this.locale, { name })
+      : tt('app.themeEphemeral', this.locale, { name })
+  }
+
+  private restyle(name: TuiThemeName): void {
     this.theme.set(name)
     this.timeline.refreshViews()
     this.editor.invalidate()
     if (!this.stopped) this.renderer.requestRender()
-    return saveTheme(this.o.themePreferencePath, name)
-      ? tt('app.themeSaved', this.locale, { name })
-      : tt('app.themeEphemeral', this.locale, { name })
+  }
+
+  /** `auto` takes the terminal's own answer when it comes; a choice made meanwhile wins. */
+  private followBackground(): void {
+    if (this.themePreference !== 'auto') return
+    void this.o.term.queryBackground?.().then((background) => {
+      if (this.themePreference === 'auto' && resolveAuto(background) !== this.theme.name)
+        this.restyle(resolveAuto(background))
+    })
   }
 
   /** Resource control is supplied only by the Node CLI bootstrap, never the chat/session client. */
@@ -604,6 +623,7 @@ export class TuiApp {
     try {
       this.signals.start()
       this.renderer.start()
+      this.followBackground()
       await this.projection.start()
     } catch (error) {
       await this.stop()

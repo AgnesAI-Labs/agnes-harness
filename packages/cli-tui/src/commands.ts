@@ -21,7 +21,7 @@ import { queueSlash } from './queue-commands.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { rewindChoices, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
-import type { TuiThemeName } from './theme.js'
+import type { ThemePreference } from './theme-preference.js'
 import { thinkingMode } from './thinking.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
 
@@ -544,9 +544,9 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         app.showThemePicker()
         return {}
       }
-      if (args.length !== 1 || !['light', 'dark', 'mono'].includes(name ?? ''))
-        return { text: 'usage: /theme [light|dark|mono]' }
-      return { text: app.setTheme(name as TuiThemeName) }
+      if (args.length !== 1 || !['auto', 'light', 'dark', 'mono'].includes(name ?? ''))
+        return { text: 'usage: /theme [auto|light|dark|mono]' }
+      return { text: app.setTheme(name as ThemePreference) }
     }
     case '/thinking':
       return { text: tt(thinkingMode.toggle() ? 'thinking.open' : 'thinking.folded', app.locale) }

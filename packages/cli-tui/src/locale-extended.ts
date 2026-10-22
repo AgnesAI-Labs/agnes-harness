@@ -154,6 +154,7 @@ export const EXTENDED_KEYS = [
   'welcome.detailContext',
   'usagePanel.title',
   'usagePanel.scrollHint',
+  'theme.auto',
   'theme.light',
   'theme.dark',
   'theme.mono',
@@ -293,7 +294,7 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'commands.preset':
       'Switch permissions: read-only denies changes/commands; workspace files editable, commands need approval and platform isolation; full automatically allows permissions and business confirmations; content questions and hard refusals remain (docs/guide/security.md#full-access-exceptions)',
     'commands.presetSummary': 'Switch permission preset',
-    'commands.theme': 'Switch this TUI to light, dark or mono theme',
+    'commands.theme': 'Switch this TUI to auto, light, dark or mono theme',
     'commands.themeSummary': 'Switch the color theme',
     'commands.model':
       'List available models and select one, or switch a slot directly (optional thinking tier)',
@@ -405,6 +406,7 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'welcome.detailContext': '{size} context',
     'usagePanel.title': 'Session usage',
     'usagePanel.scrollHint': '↑↓ scroll · Esc close',
+    'theme.auto': 'Auto · follow the terminal background',
     'theme.light': 'Light · white background, dark text',
     'theme.dark': 'Dark · charcoal background, light text',
     'theme.mono': 'Mono · terminal default colors',
@@ -541,7 +543,7 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'commands.preset':
       '切换权限：只读拒绝修改与命令；工作区可改文件，命令需审批且隔离依平台；完全访问自动允许权限裁决与业务确认；内容问题与硬拒绝保持有效（docs/guide/security.zh-CN.md#full-access-exceptions）',
     'commands.presetSummary': '切换权限预设',
-    'commands.theme': '切换当前 TUI 的明亮、深色或无色主题',
+    'commands.theme': '切换当前 TUI 的自动、明亮、深色或无色主题',
     'commands.themeSummary': '切换颜色主题',
     'commands.model': '列出可用模型并选择，或直接切换指定槽位（可选带上 thinking 档）',
     'commands.modelSummary': '切换模型',
@@ -648,6 +650,7 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'welcome.detailContext': '{size} 上下文',
     'usagePanel.title': '会话用量',
     'usagePanel.scrollHint': '↑↓ 滚动 · Esc 关闭',
+    'theme.auto': '自动 · 跟随终端背景',
     'theme.light': '明亮 · 白底深字',
     'theme.dark': '深色 · 炭灰底浅字',
     'theme.mono': '无色 · 终端默认色',

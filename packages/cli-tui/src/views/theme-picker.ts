@@ -2,19 +2,25 @@ import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
 import { FilterSelect } from '../components/filter-select.js'
 import { tt } from '../locale-extended.js'
-import type { ThemedAnsi, TuiThemeName } from '../theme.js'
+import type { ThemedAnsi } from '../theme.js'
+import type { ThemePreference } from '../theme-preference.js'
 
 export class ThemePicker implements Component {
   private box: Box | undefined
   constructor(
     private readonly ansi: ThemedAnsi,
     private readonly locale: string,
-    private readonly choose: (name: TuiThemeName) => void,
+    private readonly choose: (name: ThemePreference) => void,
   ) {}
-  show(current: TuiThemeName): void {
+  show(current: ThemePreference): void {
     const locale = this.locale
-    const names: TuiThemeName[] = ['light', 'dark', 'mono']
-    const labels = [tt('theme.light', locale), tt('theme.dark', locale), tt('theme.mono', locale)]
+    const names: ThemePreference[] = ['auto', 'light', 'dark', 'mono']
+    const labels = [
+      tt('theme.auto', locale),
+      tt('theme.light', locale),
+      tt('theme.dark', locale),
+      tt('theme.mono', locale),
+    ]
     const select = new FilterSelect({
       options: names.map((id, i) => ({
         id,
@@ -25,7 +31,7 @@ export class ThemePicker implements Component {
       ansi: this.ansi,
       onChoose: (id) => {
         this.close()
-        this.choose(id as TuiThemeName)
+        this.choose(id as ThemePreference)
       },
       onCancel: () => this.close(),
     })

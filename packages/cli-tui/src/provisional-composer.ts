@@ -6,6 +6,7 @@ import type { Locale } from './locale.js'
 import { tt } from './locale-extended.js'
 import { Renderer } from './renderer.js'
 import type { Terminal } from './terminal.js'
+import { resolveAuto } from './terminal-background.js'
 import { TuiTheme } from './theme.js'
 import { readTheme } from './theme-preference.js'
 import { Composer } from './views/composer.js'
@@ -22,6 +23,8 @@ export class ProvisionalComposer {
   private readonly editor: Editor
   private readonly status: StatusBar
   private readonly renderer: Renderer
+  private readonly theme: TuiTheme
+  private readonly followBackground: boolean
 
   constructor(
     private readonly term: Terminal,
@@ -33,7 +36,10 @@ export class ProvisionalComposer {
       onInterrupt(): void
     },
   ) {
-    const theme = new TuiTheme(readTheme(o.themePreferencePath))
+    const preference = readTheme(o.themePreferencePath)
+    this.followBackground = preference === 'auto'
+    const theme = new TuiTheme(preference === 'auto' ? resolveAuto(term.background) : preference)
+    this.theme = theme
     const ansi = theme.ansi(createAnsi(term.caps.color))
     this.status = new StatusBar(ansi, o.locale)
     this.status.setNotice(tt('app.connecting', o.locale))
@@ -79,6 +85,14 @@ export class ProvisionalComposer {
   /** Draws the first frame and starts reading keys. */
   start(): void {
     this.renderer.start()
+    // The first frame uses COLORFGBG; the terminal's own answer, if it comes within 100 ms, restyles it.
+    if (this.followBackground)
+      void this.term.queryBackground?.().then((background) => {
+        if (resolveAuto(background) === this.theme.name) return
+        this.theme.set(resolveAuto(background))
+        this.editor.invalidate()
+        this.renderer.requestRender()
+      })
   }
 
   /** What Enter would send, paste chips expanded. */

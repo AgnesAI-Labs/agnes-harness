@@ -218,8 +218,8 @@ describe('runSlash', () => {
       await first.app.start()
       await first.app.runInput('/theme')
       expect((await screenOf(first.term, 90, 24)).join('\n')).toContain('当前')
-      // Dark is the default, so one step up the list is light.
-      first.term.feed('\x1b[A')
+      // Auto is the default and heads the list, so one step down is light.
+      first.term.feed('\x1b[B')
       first.term.feed('\r')
       await vi.waitFor(() => expect(first.app.themeName).toBe('light'))
       expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ theme: 'light' })
@@ -253,7 +253,7 @@ describe('runSlash', () => {
       })
       expect(app.themeName).toBe('dark')
       await expect(runSlash(app, '/theme neon')).resolves.toMatchObject({
-        text: 'usage: /theme [light|dark|mono]',
+        text: 'usage: /theme [auto|light|dark|mono]',
       })
       expect(ep.calls.some((call) => call.method.includes('theme'))).toBe(false)
     } finally {

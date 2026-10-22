@@ -1,5 +1,12 @@
 import { eastAsianWidth } from 'get-east-asian-width'
 import { ANSI_RE, type ColorTier, CURSOR_MARKER } from './ansi.js'
+import {
+  BACKGROUND_QUERY,
+  BACKGROUND_TIMEOUT_MS,
+  type Background,
+  BackgroundReplyFilter,
+  backgroundFromEnv,
+} from './terminal-background.js'
 
 export type Capabilities = {
   color: ColorTier
@@ -16,6 +23,10 @@ export interface Terminal {
   onInput(h: (data: string) => void): () => void
   onResize(h: (cols: number, rows: number) => void): () => void
   size(): { columns: number; rows: number }
+  /** What the terminal's background is known to be: from COLORFGBG at first, from OSC 11 once answered. */
+  readonly background?: Background | undefined
+  /** Asks the terminal for its background once; resolves undefined where it cannot or does not answer. */
+  queryBackground?(): Promise<Background | undefined>
 }
 
 // Everything is read from the environment the terminal itself sets. Asking the operating system
@@ -78,6 +89,7 @@ export function displayWidth(s: string): number {
 // Structural shapes rather than NodeJS.ReadStream / WriteStream, so a test can hand NodeTerminal a
 // plain object and observe what it writes without casting real streams into existence.
 export type InputStream = {
+  isTTY?: boolean | undefined
   setRawMode?(raw: boolean): void
   resume(): void
   pause(): void
@@ -99,6 +111,7 @@ export class FakeTerminal implements Terminal {
   readonly writes: string[] = []
   caps: Capabilities
   raw = false
+  background: Background | undefined
   private dims: { columns: number; rows: number }
   private inputs: Array<(d: string) => void> = []
   private resizes: Array<(c: number, r: number) => void> = []
@@ -106,6 +119,7 @@ export class FakeTerminal implements Terminal {
   constructor(dims: { columns: number; rows: number }, env: NodeJS.ProcessEnv = { NO_COLOR: '1' }) {
     this.dims = { ...dims }
     this.caps = detectCapabilities(env, dims)
+    this.background = backgroundFromEnv(env)
   }
 
   write(s: string): void {
@@ -144,6 +158,19 @@ export class FakeTerminal implements Terminal {
 
 export class NodeTerminal implements Terminal {
   readonly caps: Capabilities
+  background: Background | undefined
+  private asked: Promise<Background | undefined> | undefined
+  private answer: ((b: Background | undefined) => void) | undefined
+  private readonly handlers = new Set<(data: string) => void>()
+  // One stdin listener for every consumer, so a chunk is cleaned of terminal replies exactly once.
+  private readonly filter = new BackgroundReplyFilter((b) => {
+    if (b) this.background = b
+    this.answer?.(b)
+  })
+  private readonly dispatch = (chunk: string | Buffer): void => {
+    const data = this.filter.push(String(chunk))
+    if (data) for (const h of [...this.handlers]) h(data)
+  }
 
   constructor(
     private readonly stdin: InputStream,
@@ -151,6 +178,7 @@ export class NodeTerminal implements Terminal {
     env: NodeJS.ProcessEnv,
   ) {
     this.caps = detectCapabilities(env, { columns: stdout.columns ?? 80, rows: stdout.rows ?? 24 })
+    this.background = backgroundFromEnv(env)
   }
 
   write(s: string): void {
@@ -172,10 +200,39 @@ export class NodeTerminal implements Terminal {
     this.stdin.pause()
   }
 
+  /**
+   * Asks for the background colour with OSC 11, once, and waits at most 100 ms for the reply. Only a
+   * raw-mode TTY with colour is asked: elsewhere nothing would read the answer. The reply is taken out
+   * of the input stream whether it arrives in time or late, so it never reaches a key handler.
+   */
+  queryBackground(): Promise<Background | undefined> {
+    if (this.asked) return this.asked
+    const askable =
+      this.stdout.isTTY === true && this.stdin.setRawMode !== undefined && this.caps.color !== 'none'
+    if (!askable) {
+      this.asked = Promise.resolve(this.background)
+      return this.asked
+    }
+    this.asked = new Promise((resolve) => {
+      const done = (b: Background | undefined): void => {
+        clearTimeout(timer)
+        this.answer = undefined
+        resolve(b ?? this.background)
+      }
+      const timer = setTimeout(() => done(undefined), BACKGROUND_TIMEOUT_MS)
+      this.answer = done
+    })
+    this.stdout.write(BACKGROUND_QUERY)
+    return this.asked
+  }
+
   onInput(h: (d: string) => void): () => void {
-    const f = (d: string | Buffer): void => h(String(d))
-    this.stdin.on('data', f)
-    return () => this.stdin.off('data', f)
+    if (this.handlers.size === 0) this.stdin.on('data', this.dispatch)
+    this.handlers.add(h)
+    return () => {
+      this.handlers.delete(h)
+      if (this.handlers.size === 0) this.stdin.off('data', this.dispatch)
+    }
   }
 
   onResize(h: (c: number, r: number) => void): () => void {
