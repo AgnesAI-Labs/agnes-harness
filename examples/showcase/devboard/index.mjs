@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs'
 import { defineAgnesPlugin, defineTool, readOnlyTool, toolError } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import {
+  ACTING_ROLES,
   actApproval,
+  actorOf,
   artifactBody,
   create,
   DomainError,
@@ -39,7 +41,6 @@ const keys = (map) => literals(Object.keys(map))
 const ids = Type.Array(id, { maxItems: 100 })
 const json = (value) => JSON.parse(JSON.stringify(value))
 const MACHINES_FAULT = Object.fromEntries(Object.keys(MACHINES.fault).map((k) => [k, 1]))
-const AGENT = '研发协调员'
 const READ_LIMIT = 256 * 1024
 const skill = readFileSync(new URL('./skills/devboard-playbook.md', import.meta.url), 'utf8')
 
@@ -68,27 +69,35 @@ const titles = {
 }
 const result = Type.Object({ revision: Type.Integer(), data: Type.Unknown() }, strict)
 
+const actingRole = Type.Optional(literals(Object.keys(ACTING_ROLES)))
+
+/** Write tools take an optional actingRole (a playbook role) that only labels the author; the feed line is made by update(). */
 function tool(name, description, parameters, run, meta = write) {
+  const writes = meta.isReadOnly === false && name !== 'devboard_fastforward'
   return defineTool({
     name,
     description,
-    parameters,
+    parameters: writes ? Type.Object({ ...parameters.properties, actingRole }, strict) : parameters,
     result,
     meta: { ...meta, presentation: { title: titles[name.slice('devboard_'.length)], description } },
-    async execute(input, ctx) {
+    async execute({ actingRole: role, ...input }, ctx) {
       ctx.signal.throwIfAborted()
       try {
-        const output = json(await run(input, ctx))
+        const by = actorOf(role)
+        const a = {
+          by,
+          mutate(store, work) {
+            const { revision, result } = update(store, work, Date.now(), { tool: name, actor: by, input })
+            return { revision, data: result }
+          },
+        }
+        const output = json(await run(input, ctx, a))
         return { content: [{ type: 'text', text: JSON.stringify(output) }], structured: output }
       } catch (error) {
         return toolError(error instanceof Error ? error.message : String(error))
       }
     },
   })
-}
-const mutate = (store, work) => {
-  const { revision, result } = update(store, work)
-  return { revision, data: result }
 }
 const lean = (r) => ({
   id: r.id,
@@ -131,7 +140,7 @@ function board(input, store) {
     if (!items.length) throw new DomainError(`未找到 ${input.id}`)
     return { revision: view.revision, data: items.length === 1 ? items[0] : items }
   }
-  const { machines, labels, roles, ...rest } = view
+  const { machines, labels, roles, activity, ...rest } = view
   if (input.projectId) return { revision: view.revision, data: { ...rest, reqs: rest.reqs.map(lean), roles } }
   return {
     revision: view.revision,
@@ -221,7 +230,7 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) => mutate(ctx.store, (s) => create(s, { ...input, kind: 'requirement', by: AGENT })),
+    (input, ctx, a) => a.mutate(ctx.store, (s) => create(s, { ...input, kind: 'requirement', by: a.by })),
   ),
   tool(
     'devboard_create_task',
@@ -236,7 +245,7 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) => mutate(ctx.store, (s) => create(s, { ...input, kind: 'task', by: AGENT })),
+    (input, ctx, a) => a.mutate(ctx.store, (s) => create(s, { ...input, kind: 'task', by: a.by })),
   ),
   tool(
     'devboard_transition',
@@ -251,7 +260,7 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) => mutate(ctx.store, (s) => transition(s, { ...input, by: AGENT })),
+    (input, ctx, a) => a.mutate(ctx.store, (s) => transition(s, { ...input, by: a.by })),
   ),
   tool(
     'devboard_request_human',
@@ -266,15 +275,15 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) =>
-      mutate(ctx.store, (s) =>
+    (input, ctx, a) =>
+      a.mutate(ctx.store, (s) =>
         create(s, {
           kind: 'intervention',
           type: input.type,
           entity: { kind: input.entityKind, id: input.entityId },
           ask: input.ask,
           dueInHours: input.dueInHours,
-          by: AGENT,
+          by: a.by,
         }),
       ),
   ),
@@ -293,19 +302,19 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) => mutate(ctx.store, (s) => create(s, { ...input, kind: 'project', by: AGENT })),
+    (input, ctx, a) => a.mutate(ctx.store, (s) => create(s, { ...input, kind: 'project', by: a.by })),
   ),
   tool(
     'devboard_stage_update',
     'Start a stage (NOT_STARTED or REWORK → IN_PROGRESS); the previous stage must have PASSED. Optionally set its writing role. 开始阶段。',
     Type.Object({ projectId: id, stage: literals(STAGES), author: Type.Optional(short(32)), note }, strict),
-    (input, ctx) =>
-      mutate(ctx.store, (s) =>
+    (input, ctx, a) =>
+      a.mutate(ctx.store, (s) =>
         transition(s, {
           kind: 'stage',
           id: `${input.projectId}/${input.stage}`,
           to: 'IN_PROGRESS',
-          by: AGENT,
+          by: a.by,
           note: input.note,
           author: input.author,
         }),
@@ -327,7 +336,7 @@ export const tools = [
       },
       strict,
     ),
-    async (input, ctx) => {
+    async (input, ctx, a) => {
       const project = read(ctx.store).projects.find((p) => p.id === input.projectId)
       if (!project) throw new DomainError(`未找到 ${input.projectId}`)
       const path = projectPath(project, input.path)
@@ -338,7 +347,7 @@ export const tools = [
         throw new DomainError(`无法读取 ${path}：请先把文件写到项目目录内再登记`)
       }
       ctx.signal.throwIfAborted()
-      return mutate(ctx.store, (s) => recordArtifact(s, { ...input, path, markdown }))
+      return a.mutate(ctx.store, (s) => recordArtifact(s, { ...input, path, markdown }))
     },
   ),
   tool(
@@ -371,7 +380,7 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) => mutate(ctx.store, (s) => upsertReqs(s, { ...input, by: AGENT })),
+    (input, ctx, a) => a.mutate(ctx.store, (s) => upsertReqs(s, { ...input, by: a.by })),
   ),
   tool(
     'devboard_gate_submit',
@@ -388,9 +397,9 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) =>
-      mutate(ctx.store, (s) =>
-        submitGate(s, { ...input, stageId: `${input.projectId}/${input.stage}`, by: AGENT }),
+    (input, ctx, a) =>
+      a.mutate(ctx.store, (s) =>
+        submitGate(s, { ...input, stageId: `${input.projectId}/${input.stage}`, by: a.by }),
       ),
   ),
   tool(
@@ -426,7 +435,7 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) => mutate(ctx.store, (s) => recordTestRun(s, input)),
+    (input, ctx, a) => a.mutate(ctx.store, (s) => recordTestRun(s, input)),
   ),
   tool(
     'devboard_defect_upsert',
@@ -447,11 +456,11 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) =>
-      mutate(ctx.store, (s) =>
+    (input, ctx, a) =>
+      a.mutate(ctx.store, (s) =>
         input.id
-          ? transition(s, { kind: 'defect', id: input.id, to: input.to, note: input.note, by: AGENT })
-          : create(s, { ...input, kind: 'defect', by: AGENT }),
+          ? transition(s, { kind: 'defect', id: input.id, to: input.to, note: input.note, by: a.by })
+          : create(s, { ...input, kind: 'defect', by: a.by }),
       ),
   ),
   tool(
@@ -476,13 +485,13 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) =>
-      mutate(ctx.store, (s) => {
+    (input, ctx, a) =>
+      a.mutate(ctx.store, (s) => {
         const cr = input.id
-          ? updateChange(s, { ...input, by: AGENT })
-          : create(s, { ...input, kind: 'change', by: AGENT })
+          ? updateChange(s, { ...input, by: a.by })
+          : create(s, { ...input, kind: 'change', by: a.by })
         return input.to
-          ? transition(s, { kind: 'change', id: cr.id, to: input.to, note: input.note, by: AGENT })
+          ? transition(s, { kind: 'change', id: cr.id, to: input.to, note: input.note, by: a.by })
           : cr
       }),
   ),
@@ -511,10 +520,10 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) => {
+    (input, ctx, a) => {
       if (input.to === 'APPROVED')
         throw new DomainError('批准试验是人的决定，请让用户在看板的「试验与首件」页操作')
-      return mutate(ctx.store, (s) => upsertTrial(s, { ...input, by: AGENT }))
+      return a.mutate(ctx.store, (s) => upsertTrial(s, { ...input, by: a.by }))
     },
   ),
   tool(
@@ -538,10 +547,10 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx) => {
+    (input, ctx, a) => {
       if (input.to === 'CLOSED')
         throw new DomainError('关闭质量问题是人的决定，请让用户在看板的「运维与质量」页操作')
-      return mutate(ctx.store, (s) => upsertProblem(s, { ...input, by: AGENT }))
+      return a.mutate(ctx.store, (s) => upsertProblem(s, { ...input, by: a.by }))
     },
   ),
   tool(
@@ -567,13 +576,13 @@ export const tools = [
     'devboard_approval_submit',
     `Start the approval flow of an object you drafted yourself (template DOC_RELEASE for a deliverable, ECR for a change in CCB_REVIEW, ECN_RELEASE for an approved change, PROBLEM_CLOSE for a problem in VERIFYING, TRIAL_REPORT for a reported trial; subjectId is the object id). Starting is all you can do: people agree, reject, send back or transfer on the board page 「我的待办」, so tell the user which flow and node is waiting. One running flow per object. 发起审批（只能发起自己起草的对象，处理由人在「我的待办」完成）。`,
     Type.Object({ template: keys(LABELS.approvalTemplate), subjectId: id }, strict),
-    (input, ctx) => mutate(ctx.store, (s) => submitApproval(s, { ...input, by: AGENT, agent: true })),
+    (input, ctx, a) => a.mutate(ctx.store, (s) => submitApproval(s, { ...input, by: a.by, agent: true })),
   ),
   tool(
     'devboard_app_register',
     'Register the local address where a live project application runs (http://127.0.0.1:<port>/). 登记运行地址。',
     Type.Object({ projectId: id, url: short(200) }, strict),
-    (input, ctx) => mutate(ctx.store, (s) => registerApp(s, input)),
+    (input, ctx, a) => a.mutate(ctx.store, (s) => registerApp(s, input)),
   ),
   tool(
     'devboard_fastforward',

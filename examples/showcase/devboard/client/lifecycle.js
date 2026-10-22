@@ -1,5 +1,6 @@
 import { Badge, Button, PushPage, Table, usePushStack } from '@agnes/web-ui'
 import React from 'react'
+import { ActivityPanel } from './activity.js'
 import { ApprovalEntry, TodoColumn } from './approvals.js'
 import {
   byId,
@@ -151,6 +152,7 @@ export function Overview({ data, board, role }) {
     React.Fragment,
     null,
     h(Workbench, { data, role }),
+    h(ActivityPanel, { data }),
     h('h2', { className: 'devboard-heading' }, '项目组合'),
     lateFlows.length > 0 &&
       h(

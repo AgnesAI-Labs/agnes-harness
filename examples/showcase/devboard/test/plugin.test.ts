@@ -455,6 +455,42 @@ describe('DevBoard plugin contract', () => {
     expect(update(store, (s: Any) => s.artifacts.length).result).toBe(seed(Date.now()).artifacts.length + 1)
   })
 
+  it('labels a tool write with its acting role, logs it in the feed and refuses other roles', async () => {
+    const store = memoryStore()
+    const ctx = { store, signal } as Any
+    const writers = tools.filter((t) => !t.meta.isReadOnly && t.name !== 'devboard_fastforward')
+    expect(writers.length).toBeGreaterThan(10)
+    for (const t of writers)
+      expect(JSON.parse(JSON.stringify(t.parameters)).properties.actingRole, t.name).toBeDefined()
+    for (const t of tools.filter((x) => x.meta.isReadOnly || x.name === 'devboard_fastforward'))
+      expect(JSON.parse(JSON.stringify(t.parameters)).properties.actingRole, t.name).toBeUndefined()
+    const created = await tool('devboard_create_requirement').execute(
+      { title: '预警排行', actingRole: 'requirements' },
+      ctx,
+    )
+    expect(created.isError).toBeFalsy()
+    const req = created.structured.data
+    expect(req.history[0].by).toBe('研发协调员 · 系统设计师（需求）')
+    expect(req.actingRole).toBeUndefined()
+    for (const actingRole of ['admin', '开发', '研发协调员'])
+      expect(
+        (await tool('devboard_create_requirement').execute({ title: 'x', actingRole }, ctx)).isError,
+      ).toBe(true)
+    const [line] = read(store).activity
+    expect(line).toMatchObject({
+      actor: '研发协调员 · 系统设计师（需求）',
+      tool: 'devboard_create_requirement',
+      entity: { kind: 'requirement', id: req.id },
+      summary: `录入需求 ${req.id}`,
+    })
+    expect(read(store).activity).toHaveLength(1)
+    // the portfolio and project reads the model gets do not carry the feed
+    const board = await tool('devboard_board').execute({}, ctx)
+    expect(board.structured.data.activity).toBeUndefined()
+    const view = await service('devboard.snapshot').handler({}, { store })
+    expect(view.activity).toHaveLength(1)
+  })
+
   it('registers every tool in the capability names and the coordinator profile, plus the new pages and actions', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const names = tools.map((t) => t.name)

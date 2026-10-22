@@ -778,6 +778,10 @@
     border-color: var(--agnes-status-danger-border);
     background: var(--agnes-status-danger-bg);
   }
+  .devboard-activity-new {
+    border-color: var(--agnes-status-warning-solid);
+    background: var(--agnes-status-warning-bg);
+  }
   /* Demo guide (guide.js): a side panel in the page flow, a spotlight outline and a text bubble. */
   .devboard-frame {
     display: flex;

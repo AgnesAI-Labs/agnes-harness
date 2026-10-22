@@ -417,11 +417,16 @@ export async function fastForward(input, ctx) {
     files++
   }
   ctx.signal.throwIfAborted()
-  const { revision, result } = update(ctx.store, (state) => {
-    const built = build(state, level, now, minSeq, SCENARIO[input.gate])
-    if (built.project.id !== project.id) throw new DomainError('看板在快进期间发生变化，请重试')
-    return built
-  })
+  const { revision, result } = update(
+    ctx.store,
+    (state) => {
+      const built = build(state, level, now, minSeq, SCENARIO[input.gate])
+      if (built.project.id !== project.id) throw new DomainError('看板在快进期间发生变化，请重试')
+      return built
+    },
+    now,
+    { tool: 'devboard_fastforward', actor: AGENT, input: { projectId: project.id } },
+  )
   const { gate, changeId, approvalId } = result
   return {
     revision,

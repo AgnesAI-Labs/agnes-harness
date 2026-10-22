@@ -243,6 +243,7 @@ const COLLECTIONS = {
   task: 'tasks',
   intervention: 'interventions',
   approval: 'approvals',
+  activity: 'activity',
 }
 const PREFIX = { requirement: 'REQ', task: 'TASK', intervention: 'HI' }
 const HOUR = 3_600_000
@@ -1776,6 +1777,7 @@ export function snapshot(state, now = Date.now(), projectId) {
     tasks: pick(state.tasks),
     interventions,
     approvals: pick(state.approvals).map((a) => view(a, now)),
+    activity: pick(state.activity ?? []).toReversed(),
     blockers: blockers(state, now, projectId),
     counts: {
       requirement: count(pick(state.requirements), 'requirement'),
@@ -1893,12 +1895,88 @@ export function artifactBody(store, artifactId, now = Date.now()) {
   }
 }
 
-/** One transaction per write: load, mutate, bump revision, persist. */
-export function update(store, work, now = Date.now()) {
+// ── Agent activity ─────────────────────────────────────────────────────────────────────────────
+// Every board write a tool makes leaves one line. The summary is built here from the tool and the entity,
+// never from text the model supplied, so the feed cannot carry instructions or claims.
+
+export const AGENT_NAME = '研发协调员'
+/** The roles the playbook lets the coordinator write on behalf of (the ids of its role table). */
+export const ACTING_ROLES = Object.freeze({
+  requirements: '系统设计师（需求）',
+  architect: '软件设计师（架构）',
+  developer: '软件设计师（开发）',
+  reviewer: '代码评审员',
+  tester: '验证工程师',
+  mechanical: '机械设计师',
+  electrical: '电气设计师',
+  diagnostics: '诊断工程师',
+  rams: 'RAMS 工程师',
+  quality: '质量工程师',
+  config: '配置管理员',
+})
+export const ACTIVITY_LIMIT = 200
+export const SUMMARY_LIMIT = 160
+/** The author of a tool write: the coordinator, with the role it acted as when it named one. */
+export function actorOf(role) {
+  if (role === undefined || role === null) return AGENT_NAME
+  if (typeof role !== 'string' || !Object.hasOwn(ACTING_ROLES, role))
+    fail(`actingRole 无效：${String(role).slice(0, 32)}（可选 ${Object.keys(ACTING_ROLES).join(' / ')}）`)
+  return `${AGENT_NAME} · ${ACTING_ROLES[role]}`
+}
+/** tool → [verb, entity kind or a function of the input]. */
+const ACTIVITY_VERBS = {
+  devboard_create_requirement: ['录入需求', 'requirement'],
+  devboard_create_task: ['创建任务', 'task'],
+  devboard_transition: ['推进', (input) => input.kind],
+  devboard_request_human: ['发起人工介入', 'intervention'],
+  devboard_project_create: ['创建项目', 'project'],
+  devboard_stage_update: ['开始阶段', 'stage'],
+  devboard_artifact_record: ['登记交付物', 'artifact'],
+  devboard_req_upsert: ['登记追溯条目', 'project'],
+  devboard_gate_submit: ['提交评审', 'gate'],
+  devboard_test_record: ['登记测试运行', 'testRun'],
+  devboard_defect_upsert: ['登记缺陷', 'defect'],
+  devboard_change_upsert: ['登记变更', 'change'],
+  devboard_trial_upsert: ['登记试验', 'trial'],
+  devboard_problem_upsert: ['登记质量问题', 'problem'],
+  devboard_approval_submit: ['发起审批', 'approval'],
+  devboard_app_register: ['登记运行地址', 'project'],
+  devboard_fastforward: ['快进演示项目', 'project'],
+}
+export const ACTIVITY_TOOLS = Object.keys(ACTIVITY_VERBS)
+
+/** Append one activity line for a finished tool write; keeps the newest ACTIVITY_LIMIT. */
+function logActivity(state, { tool, actor, input = {} }, result, now) {
+  const [verb, kindOf] = ACTIVITY_VERBS[tool] ?? []
+  if (!verb) return
+  const kind = typeof kindOf === 'function' ? kindOf(input) : kindOf
+  const id = String(result?.gate?.id ?? result?.id ?? input.projectId ?? '').slice(0, 64)
+  if (!kind || !id) return
+  const to = typeof input.to === 'string' ? LABELS.state[input.to] : undefined
+  const projectId =
+    result?.projectId ?? result?.stage?.projectId ?? (kind === 'project' ? id : input.projectId)
+  const rev = state.revision + 1
+  state.activity ??= []
+  state.activity.push({
+    id: `ACT-${rev}`,
+    rev,
+    at: new Date(now).toISOString(),
+    actor,
+    tool,
+    entity: { kind, id },
+    ...(typeof projectId === 'string' ? { projectId: projectId.slice(0, 64) } : {}),
+    summary: `${verb} ${id}${to ? ` → ${to}` : ''}`.slice(0, SUMMARY_LIMIT),
+  })
+  if (state.activity.length > ACTIVITY_LIMIT) state.activity.splice(0, state.activity.length - ACTIVITY_LIMIT)
+}
+
+/** One transaction per write: load, mutate, bump revision, persist. `activity` ({ tool, actor, input }) adds the feed line of a tool write. */
+export function update(store, work, now = Date.now(), activity) {
   return need(store).transaction(() => {
     const previous = store.get(META)
     const state = load(store) ?? seed(now)
     const result = work(state)
+    if (activity) logActivity(state, activity, result, now)
     state.revision += 1
     save(store, state, previous)
     return { revision: state.revision, result }
