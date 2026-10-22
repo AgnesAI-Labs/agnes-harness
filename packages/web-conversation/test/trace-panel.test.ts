@@ -465,6 +465,14 @@ describe('trace panel', () => {
       input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', shiftKey: true })),
     )
     expect(root.querySelector('[data-testid="trace-search-count"]')?.textContent).toBe('1 / 2')
+    // Stepped to t1; hiding the user rows with a type chip must not move the current match.
+    flushSync(() => input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter' })))
+    flushSync(() => root.querySelector<HTMLButtonElement>('.trace-chip[data-kind="tool"]')?.click())
+    expect(root.querySelector('[data-match="current"]')?.getAttribute('data-trace-row-id')).toBe('t1')
+    flushSync(() => root.querySelector<HTMLButtonElement>('.trace-chip[data-kind="all"]')?.click())
+    flushSync(() =>
+      input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', shiftKey: true })),
+    )
     search(root, 'nothing-here')
     expect(root.querySelector('[data-testid="trace-search-count"]')?.textContent).toBe('0 / 0')
     // ⌘F focuses the search while the trace is showing.
