@@ -89,11 +89,13 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         term.feed('\x1b[A')
         await Promise.resolve()
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          'allow_always',
+          '❯ 2. Always allow in this session',
         )
         term.feed('\x1b[A')
         await Promise.resolve()
-        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain('allow_once')
+        expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
+          '❯ 1. Allow once',
+        )
       } else {
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
           '"path": "receipt.txt"',

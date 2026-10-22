@@ -4,17 +4,32 @@ import { type Component, escapeControl, wrapText } from './component.js'
 import { columns, fitLine } from './components/line.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
+import { tt } from './locale-extended.js'
 import { displayWidth } from './terminal.js'
 import { paintsColour, type ThemedAnsi, TuiTheme } from './theme.js'
+import { approvalBody, approvalHeadline } from './views/approval-body.js'
 
 type Question = {
   request: PermissionRequest
   selected: number
   detailOffset: number
   pageRows: number
-  visible: Set<number>
+  /** How many options the last paint had room for; 0 until there was one. */
+  count: number
   canSelect: boolean
   finish(outcome: PermissionOutcome): void
+}
+
+// The window of options on screen: it follows the selection, so scrolling reaches every option.
+const windowStart = (selected: number, count: number, total: number): number =>
+  Math.max(0, Math.min(selected - count + 1, total - count))
+
+/** What an option says: the kind's own words, with the scope an ACP grant has; unknown kinds keep their name. */
+function optionLabel(option: PermissionRequest['options'][number], locale: Locale): string {
+  if (option.kind === 'allow_once') return t('approval.allowOnce', locale)
+  if (option.kind === 'allow_always') return tt('approval.allowAlways', locale)
+  if (option.kind === 'reject_once') return t('approval.reject', locale)
+  return escapeControl(option.name)
 }
 
 /** FIFO prompts own input until answered; Enter initially selects rejection. */
@@ -45,7 +60,7 @@ export class PermissionModal implements Component {
         selected: snapshot.options.findIndex((option) => option.kind === 'reject_once'),
         detailOffset: 0,
         pageRows: 1,
-        visible: new Set(),
+        count: 0,
         canSelect: false,
         finish: (answer) => {
           if (done) return
@@ -69,6 +84,12 @@ export class PermissionModal implements Component {
     for (const question of [...this.questions]) question.finish({ unanswered: 'detached' })
   }
 
+  /** Whether option `index` is in the window the next paint (or the last one) shows. */
+  private shown(question: Question, index: number): boolean {
+    const start = windowStart(question.selected, question.count, question.request.options.length)
+    return question.canSelect && index >= start && index < start + question.count
+  }
+
   handleInput(data: string): boolean {
     const question = this.questions[0]
     if (!question) return false
@@ -79,15 +100,10 @@ export class PermissionModal implements Component {
       const option = options[question.selected]
       if (!option || option.kind === 'reject_once' || option.kind === 'reject_always')
         question.finish(option ? { optionId: option.optionId } : { unanswered: 'detached' })
-      else if (question.canSelect && question.visible.has(question.selected))
-        question.finish({ optionId: option.optionId })
+      else if (this.shown(question, question.selected)) question.finish({ optionId: option.optionId })
     } else if (key.name === 'char' && /^[1-9]$/.test(key.ch ?? '')) {
       const option = options[Number(key.ch) - 1]
-      if (
-        option &&
-        (option.kind.startsWith('reject_') ||
-          (question.canSelect && question.visible.has(Number(key.ch) - 1)))
-      )
+      if (option && (option.kind.startsWith('reject_') || this.shown(question, Number(key.ch) - 1)))
         question.finish({ optionId: option.optionId })
     } else if (key.name === 'pgup' || key.name === 'pgdn') {
       question.detailOffset = Math.max(
@@ -124,9 +140,8 @@ export class PermissionModal implements Component {
             hash: input.candidateHash.replace(/^sha256-/, '').slice(0, 12),
           })
         : call.title
-    const heading = `${t('permission.heading', locale)}: ${escapeControl(
-      typeof title === 'string' ? title : t('permission.toolRequest', locale),
-    )}`
+    const headline = typeof title === 'string' ? title : approvalHeadline(undefined, call.rawInput)
+    const heading = `${t('permission.heading', locale)}: ${escapeControl(headline || t('permission.toolRequest', locale))}`
     // The title and footer ride in the frame's borders, so framing costs columns but no rows.
     const framed = width >= 8
     const inner = framed ? width - 4 : width
@@ -142,6 +157,18 @@ export class PermissionModal implements Component {
     // costs a row. It stays in the body when the border would clip it or there is nothing else to page.
     const hasInput = question.request.toolCall.rawInput !== undefined
     const details = framed && hasInput && displayWidth(heading) <= inner ? [] : wrapText(heading, inner)
+    // What the request would do comes first, painted as it is; the raw input follows as quiet details.
+    const tool = meta?.['ai.agnes.harness']?.tool
+    details.push(
+      ...approvalBody(
+        { tool: typeof tool === 'string' ? tool : undefined, args: call.rawInput },
+        inner,
+        ansi,
+        locale,
+      ),
+    )
+    if (hasInput && details.length > 0)
+      details.push(ansi.fg('faint', `── ${tt('approval.details', locale)} ──`))
     const headingRows = details.length
     if (hasInput)
       details.push(
@@ -153,18 +180,17 @@ export class PermissionModal implements Component {
       requested !== undefined && Number.isFinite(requested)
         ? Math.max(1, Math.trunc(requested))
         : details.length + choices.length + 2
-    question.visible.clear()
     question.canSelect = rows >= 4
     if (rows < 4) return [fitLine(t('permission.resize', locale), width)]
     const count =
       requested === undefined
         ? choices.length
         : Math.min(choices.length, Math.max(1, Math.floor((rows - 2) / 2)))
-    const start = Math.max(0, Math.min(question.selected - count + 1, choices.length - count))
+    question.count = count
+    const start = windowStart(question.selected, count, choices.length)
     const choiceLines = choices.slice(start, start + count).map((option, i) => {
       const index = start + i
-      question.visible.add(index)
-      const label = `${index + 1}. ${escapeControl(option.name)}`
+      const label = `${index + 1}. ${optionLabel(option, locale)}`
       if (index !== question.selected) return row(`  ${label}`)
       const chosen = fitLine(`${ansi.fg('accent', '❯')} ${ansi.bold(label)}`, inner)
       return row(paintsColour(ansi) ? ansi.bg('selection', chosen) : chosen)

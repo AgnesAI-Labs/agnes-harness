@@ -19,6 +19,10 @@ export const TOOLS_KEYS = [
   'thinking.folded',
   'commands.thinking',
   'commands.thinkingSummary',
+  'approval.risk.destructive',
+  'approval.risk.budget',
+  'approval.allowAlways',
+  'approval.details',
 ] as const
 
 export type ToolsKey = (typeof TOOLS_KEYS)[number]
@@ -40,6 +44,10 @@ export const TOOLS_DICT: Record<Locale, Record<ToolsKey, string>> = {
     'commands.thinking':
       "Switch the model's thinking between staying open and folding once the answer starts, for this run only",
     'commands.thinkingSummary': 'Toggle thinking display',
+    'approval.risk.destructive': 'destructive',
+    'approval.risk.budget': 'uses budget',
+    'approval.allowAlways': 'Always allow in this session',
+    'approval.details': 'Raw input',
   },
   'zh-CN': {
     'diff.unchanged': '⋯ {n} 行未变',
@@ -56,5 +64,9 @@ export const TOOLS_DICT: Record<Locale, Record<ToolsKey, string>> = {
     'thinking.folded': '思考内容在回答开始后收起',
     'commands.thinking': '本次运行内切换模型思考的显示：始终展开，或回答开始后收起',
     'commands.thinkingSummary': '开关思考展开',
+    'approval.risk.destructive': '破坏性操作',
+    'approval.risk.budget': '消耗预算',
+    'approval.allowAlways': '本会话内总是允许',
+    'approval.details': '原始输入',
   },
 }

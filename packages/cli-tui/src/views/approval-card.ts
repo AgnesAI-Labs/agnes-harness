@@ -3,6 +3,8 @@ import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { type Locale, type LocaleKey, t } from '../locale.js'
 import { paintsColour, type ThemedAnsi } from '../theme.js'
+import { approvalBody, approvalHeadline, subjectOf } from './approval-body.js'
+import { diffInput } from './diff.js'
 
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]
@@ -101,7 +103,8 @@ export class ApprovalCard implements Component {
     const n = this.n
     const ansi = this.o.ansi
     const presentation = n.presentation?.[this.o.locale ?? 'en'] ?? n.presentation?.en
-    const summary = escapeControl(presentation?.title ?? n.summary)
+    const subject = subjectOf(n)
+    const summary = escapeControl(approvalHeadline(presentation?.title ?? n.summary, subject.args))
     const resolved = (tone: 'success' | 'danger', glyph: string) => [
       fitLine(
         `${ansi.fg(tone, glyph)} ${summary} ${ansi.fg('faint', '->')} ${ansi.fg(tone, escapeControl(this.note))}`,
@@ -138,7 +141,9 @@ export class ApprovalCard implements Component {
           width - 2,
         ).map((line) => fitLine(`${rail}${line}`, width)),
       ) ?? []),
-      ...(n.subjectText
+      ...approvalBody(subject, width - 2, ansi, locale).map((line) => fitLine(`${rail}${line}`, width)),
+      // The diff shows what the raw subject would only bury; without one the subject stays readable.
+      ...(n.subjectText && !(subject.tool && diffInput(subject.tool, subject.args))
         ? wrapText(escapeControl(n.subjectText), width - 2).map((line) => fitLine(`${rail}${line}`, width))
         : []),
       fitLine(`${rail}${this.phase === 'deciding' ? '…' : keys}`, width),
