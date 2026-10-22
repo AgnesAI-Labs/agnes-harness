@@ -73,6 +73,36 @@ const titles: Record<string, readonly [string, string]> = {
 }
 
 export const baseToolCatalog: LocaleCatalog = {
-  en: Object.fromEntries(Object.entries(titles).map(([name, text]) => [`baseTool.${name}`, text[0]])),
-  'zh-CN': Object.fromEntries(Object.entries(titles).map(([name, text]) => [`baseTool.${name}`, text[1]])),
+  en: {
+    ...Object.fromEntries(Object.entries(titles).map(([name, text]) => [`baseTool.${name}`, text[0]])),
+    'approval.delegation.role': 'Role {role}',
+    'approval.delegation.child': 'child {id}',
+    'approval.delegation.taint': 'Untrusted evidence (taint)',
+    'tool.child.empty': 'no child agents',
+    'tool.child.roles': 'Available application roles:',
+    'tool.child.continuable': 'continuable',
+    'tool.child.starting': 'starting',
+    'tool.child.running': 'running',
+    'tool.child.idle': 'idle',
+    'tool.child.completed': 'completed',
+    'tool.child.failed': 'failed',
+    'tool.child.cancelled': 'cancelled',
+    'tool.child.interrupted': 'interrupted',
+  },
+  'zh-CN': {
+    ...Object.fromEntries(Object.entries(titles).map(([name, text]) => [`baseTool.${name}`, text[1]])),
+    'approval.delegation.role': '角色 {role}',
+    'approval.delegation.child': '子会话 {id}',
+    'approval.delegation.taint': '不可信证据（污染）',
+    'tool.child.empty': '暂无子代理',
+    'tool.child.roles': '可委派的应用角色：',
+    'tool.child.continuable': '可继续',
+    'tool.child.starting': '正在创建',
+    'tool.child.running': '运行中',
+    'tool.child.idle': '空闲',
+    'tool.child.completed': '已完成',
+    'tool.child.failed': '失败',
+    'tool.child.cancelled': '已取消',
+    'tool.child.interrupted': '已中断',
+  },
 }
