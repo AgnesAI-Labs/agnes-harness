@@ -26,6 +26,10 @@ export class PermissionModal implements Component {
     private readonly options: { maxRows?(): number; locale?: Locale; ansi?: ThemedAnsi } = {},
   ) {}
 
+  get count(): number {
+    return this.questions.length
+  }
+
   get pending(): boolean {
     return this.questions.length > 0
   }

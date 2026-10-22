@@ -52,10 +52,16 @@ it('keyboard input reaches real core through SDK/daemon and renders the projecte
     })
     expect(term.writes.join('')).not.toContain('\x1b]52;')
     await vi.waitFor(() => expect(app?.busy).toBe(false))
+    const bells = () => term.writes.filter((w) => w === '\x07').length
+    // In the foreground the first turn ended without a bell; in the background the next one rings once.
+    expect(bells()).toBe(0)
+    term.feed('\x1b[O')
     term.feed('second question')
     term.feed('\r')
     await vi.waitFor(async () => expect((await screenOf(term, 80, 24)).join('\n')).toContain('next answer'))
     await vi.waitFor(() => expect(app?.busy).toBe(false))
+    await vi.waitFor(() => expect(bells()).toBe(1))
+    expect(term.writes.join('')).toContain('\x1b[?1004h')
     term.feed('\x04')
     expect(quit).toHaveBeenCalledTimes(1)
     const clock = vi.spyOn(Date, 'now')
@@ -76,6 +82,8 @@ it('keyboard input reaches real core through SDK/daemon and renders the projecte
     }
     await app.stop()
     expect(term.raw).toBe(false)
+    expect(term.writes.filter((w) => w === '\x1b[22;0t')).toHaveLength(1)
+    expect(term.writes.filter((w) => w === '\x1b[23;0t')).toHaveLength(1)
     expect(session.listeners.size).toBe(0)
     const writes = term.writes.length
     term.feed('after stop')

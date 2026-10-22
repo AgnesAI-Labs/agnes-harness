@@ -116,8 +116,9 @@ export class Renderer {
       this.term.write('\x1b[?1049h\x1b[H\x1b[2J')
       this.screenEntered = true
     }
-    // Bracketed paste (2004): a paste arrives wrapped, so it cannot be mistaken for typing.
-    this.term.write('\x1b[?2004h')
+    // Bracketed paste (2004): a paste arrives wrapped, so it cannot be mistaken for typing. Focus
+    // reporting (1004) sends ESC [ I and ESC [ O as the window gains and loses the user's attention.
+    this.term.write('\x1b[?2004h\x1b[?1004h')
     // 1002 reports presses, releases and motion while a button is held; 1006 gives SGR coordinates.
     if (this.mouse) this.term.write('\x1b[?1002h\x1b[?1006h')
     this.offResize = this.term.onResize(() => {
@@ -270,7 +271,9 @@ export class Renderer {
     try {
       this.selection = undefined
       this.dragging = false
-      this.term.write(`\x1b[?2004l${this.mouse ? '\x1b[?1006l\x1b[?1002l' : ''}\x1b[?1049l\x1b[?25h`)
+      this.term.write(
+        `\x1b[?1004l\x1b[?2004l${this.mouse ? '\x1b[?1006l\x1b[?1002l' : ''}\x1b[?1049l\x1b[?25h`,
+      )
       this.screenEntered = false
       const columns = this.term.size().columns
       for (const line of transcript)

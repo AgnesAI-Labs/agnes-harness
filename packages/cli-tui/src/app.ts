@@ -25,6 +25,7 @@ import type { ResourceCommandKind, TuiResourceController } from './resource-cont
 import { type ActionItem, collectSlots } from './slots.js'
 import { pendingSurface } from './surface-prompt.js'
 import type { Terminal } from './terminal.js'
+import { TerminalSignals } from './terminal-signals.js'
 import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
 import { readTheme, saveTheme } from './theme-preference.js'
 import { ToolCards } from './tool-cards.js'
@@ -105,6 +106,7 @@ export class TuiApp {
   private stopped = false
   /** Sessions this run sent a message to: the exit hint is for those only. */
   readonly prompted = new Set<string>()
+  private readonly signals: TerminalSignals
   // Set once the client reports 'closed' (daemon shutting down). The session can never render again,
   // and the SDK would still re-dial on the next call, so input is refused rather than run unseen.
   private closedNotice: string | undefined
@@ -217,9 +219,7 @@ export class TuiApp {
             // The decide call's settlement (in particular a rejection, which produces no new
             // ledger event for TuiProjection to pick up) has to ask for its own repaint: nothing
             // else in the render loop is watching that promise.
-            changed: () => {
-              if (!this.stopped) this.renderer.requestRender()
-            },
+            changed: () => this.stopped || this.renderer.requestRender(),
           })
           this.approvalCards.set(node.id, card)
           return card
@@ -264,9 +264,7 @@ export class TuiApp {
       cwd: this.cwd,
       remote: o.remote ?? false,
       locale,
-      changed: () => {
-        if (!this.stopped) this.renderer.requestRender()
-      },
+      changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.editor = new Editor({
       maxRows: () => Math.max(1, Math.floor(o.term.size().rows / 3)),
@@ -294,9 +292,7 @@ export class TuiApp {
       locale,
       maxRows: () => Math.max(4, o.term.size().rows - 6),
       onChoose: (choice) => void this.chooseModel(choice),
-      changed: () => {
-        if (!this.stopped) this.renderer.requestRender()
-      },
+      changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.themePicker = new ThemePicker(ansi, locale, (name) => {
       this.statusBar.setNotice(this.setTheme(name))
@@ -306,17 +302,13 @@ export class TuiApp {
       locale,
       maxRows: () => Math.max(4, o.term.size().rows - 6),
       onChoose: (choice) => void this.chooseSession(choice),
-      changed: () => {
-        if (!this.stopped) this.renderer.requestRender()
-      },
+      changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.usagePanel = new UsagePanel({
       ansi,
       locale,
       maxRows: () => Math.max(4, o.term.size().rows - 7),
-      changed: () => {
-        if (!this.stopped) this.renderer.requestRender()
-      },
+      changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.packageController = new PackageController(o.controlClient, () => this.profile)
     this.composer = new Composer(this.editor, ansi, locale)
@@ -355,6 +347,7 @@ export class TuiApp {
       this.usagePanel,
     ]
     root.render = (width) => {
+      this.signals.sync()
       const shown = root.children.filter((child) => !(this.modal.pending && dialogs.includes(child)))
       let rows = 0
       for (const child of shown.toReversed()) {
@@ -375,6 +368,7 @@ export class TuiApp {
     }
     const handle = root.handleInput.bind(root)
     root.handleInput = (data) => {
+      if (this.signals.focus(data)) return true
       if (this.modal.handleInput(data)) return true
       if (this.themePicker.handleInput(data)) return true
       if (this.modelPicker.handleInput(data)) return true
@@ -437,6 +431,13 @@ export class TuiApp {
       }
       return handle(data)
     }
+    this.signals = new TerminalSignals(
+      o.term,
+      this.cwd,
+      () => this.turnActive,
+      this.modal,
+      this.approvalCards,
+    )
     this.renderer = new Renderer(o.term, root, o.screenAlreadyEntered, this.mouse)
     this.projection = this.makeProjection(o.session)
   }
@@ -578,6 +579,7 @@ export class TuiApp {
     if (this.o.initialNotice) this.statusBar.setNotice(this.o.initialNotice)
     this.refreshWorkspace()
     try {
+      this.signals.start()
       this.renderer.start()
       await this.projection.start()
     } catch (error) {
@@ -1119,6 +1121,7 @@ export class TuiApp {
     // Restore the terminal before asynchronous teardown can fail or hang. Nothing from the chat is
     // written back to the shell page: it comes back exactly as it was before the TUI started.
     try {
+      this.signals.stop()
       this.renderer.stop()
     } finally {
       await this.projection.stop()

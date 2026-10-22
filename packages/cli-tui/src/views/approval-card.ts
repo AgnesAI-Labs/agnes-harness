@@ -28,6 +28,10 @@ export class ApprovalCard implements Component {
   private phase: 'pending' | 'deciding' | 'decided' | 'failed'
   private note = ''
 
+  get pending(): boolean {
+    return this.phase === 'pending'
+  }
+
   constructor(
     private readonly n: ApprovalNode,
     private readonly o: {

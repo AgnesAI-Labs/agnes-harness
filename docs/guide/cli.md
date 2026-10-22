@@ -68,6 +68,8 @@ Pasting works as in any terminal editor. The TUI asks the terminal for bracketed
 
 When an approval card appears, inspect the tool, arguments, and scope, then choose an available allow/deny/abort option. `/yolo` enables full access for the current session: it skips tool approvals and allows file reads and writes inside and outside the workspace. Explicit policy denies, operating-system permissions, and configured command sandbox limits still apply. New sessions inherit the saved permission selection. `/yolo off` asks for routine approvals again.
 
+While the terminal reports focus, the TUI rings the bell once when a turn ends and once for each approval that starts waiting, but only when the window is in the background. The window title reads `agh · DIRECTORY`, with `… ` in front while a turn runs and `! ` while an approval waits, and the previous title comes back on exit. A terminal that does not report focus never gets the bell.
+
 `/plan`, `/plan on`, `/plan off`, and `/plan <instruction>` use the selected backend plan service in both TUI and Web. `/plan status` reports the mode; `/plan pending` shows the last submitted plan. If the backend is disabled or unavailable, the UI reports plan mode off. Existing `.agh/plan-mode.json` files are read without migration. Plan mode blocks write and execution tools even with full access; leaving through `exit_plan_mode` still requires human approval of the exact plan revision. An explicit human `/plan off` remains available.
 
 ## Schedules and triggers
