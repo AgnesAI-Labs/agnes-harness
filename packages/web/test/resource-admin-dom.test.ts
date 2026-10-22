@@ -34,7 +34,7 @@ const server: McpServerDescriptor = {
 }
 let skillsFixture: unknown[] = []
 let current: McpServerDescriptor
-let operationState: 'succeeded' | 'failed'
+let operationState: 'running' | 'succeeded' | 'failed'
 let refused: boolean
 let offline: boolean
 let emptyMcp: boolean
@@ -990,7 +990,15 @@ it('enables an untrusted Skill without exposing a separate trust action', async 
   await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Example skill'))
   expect(byId('resource-detail').textContent).not.toContain('trust')
 
+  operationState = 'running'
   action('Enable')
+  await vi.waitFor(() => expect(submitted('operations/get').length).toBeGreaterThan(1))
+  const toggle = () => byId('resource-list').querySelector<HTMLButtonElement>('.switch')
+  // The authoritative result still owns the switch; progress never applies an optimistic state.
+  expect(toggle()?.getAttribute('aria-checked')).toBe('false')
+  expect(toggle()?.disabled).toBe(true)
+  expect(submitted('skills/desired')).toHaveLength(0)
+  operationState = 'succeeded'
 
   await vi.waitFor(() => expect(submitted('skills/trust')).toHaveLength(1))
   await vi.waitFor(() => expect(submitted('skills/desired')).toHaveLength(1))
@@ -1003,6 +1011,27 @@ it('enables an untrusted Skill without exposing a separate trust action', async 
     resourceId: 'skill/user/user-agnes/example',
     expectedRevision: revision,
     state: 'enabled',
+  })
+  await vi.waitFor(() => expect(toggle()?.getAttribute('aria-checked')).toBe('true'))
+  await vi.waitFor(() => expect(toggle()?.disabled).toBe(false))
+  const beforeCancel = submitted('skills/desired').length
+  action('Disable', { confirm: false })
+  expect(submitted('skills/desired')).toHaveLength(beforeCancel)
+  expect(toggle()?.getAttribute('aria-checked')).toBe('true')
+
+  operationState = 'running'
+  const previousReads = submitted('operations/get').length
+  action('Disable')
+  await vi.waitFor(() => expect(submitted('operations/get').length).toBeGreaterThan(previousReads + 1))
+  expect(toggle()?.getAttribute('aria-checked')).toBe('true')
+  expect(toggle()?.disabled).toBe(true)
+  operationState = 'succeeded'
+  await vi.waitFor(() => expect(toggle()?.getAttribute('aria-checked')).toBe('false'))
+  await vi.waitFor(() => expect(toggle()?.disabled).toBe(false))
+  expect(submitted('skills/desired').at(-1)?.body).toMatchObject({
+    resourceId: 'skill/user/user-agnes/example',
+    expectedRevision: revision,
+    state: 'disabled',
   })
 })
 

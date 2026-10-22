@@ -36,10 +36,29 @@ it('refreshes external MCP changes without polling hidden panels or surviving di
 
 it('backs off active resource reads and waits for visibility or cancellation', async () => {
   vi.useFakeTimers()
-  let hidden = true
+  let hidden = false
   const visibility = vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden)
   const lifetime = new AbortController()
   try {
+    // Fast local operations should settle promptly, while slow operations still back off to 30s.
+    for (const [attempt, delay] of [
+      [0, 50],
+      [1, 100],
+      [2, 200],
+      [3, 500],
+      [4, 1000],
+      [9, 30_000],
+      [119, 30_000],
+    ] as const) {
+      const ready = vi.fn()
+      const waiting = resourcePollDelay(attempt, lifetime.signal).then(ready)
+      await vi.advanceTimersByTimeAsync(delay - 1)
+      expect(ready).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(ready).toHaveBeenCalledOnce()
+      await waiting
+    }
+    hidden = true
     const ready = vi.fn()
     const waiting = resourcePollDelay(2, lifetime.signal).then(ready)
     await vi.advanceTimersByTimeAsync(30_000)
@@ -48,7 +67,7 @@ it('backs off active resource reads and waits for visibility or cancellation', a
     document.dispatchEvent(new Event('visibilitychange'))
     await waiting
     expect(ready).toHaveBeenCalledOnce()
-    const next = resourcePollDelay(3, lifetime.signal).then(ready)
+    const next = resourcePollDelay(6, lifetime.signal).then(ready)
     await vi.advanceTimersByTimeAsync(2_000)
     expect(ready).toHaveBeenCalledOnce()
     lifetime.abort()
