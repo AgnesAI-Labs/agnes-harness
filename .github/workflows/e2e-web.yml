@@ -266,10 +266,9 @@ jobs:
       - name: Migrated process and data-heavy tests (zero retries)
         run: node tools/ci/run-migrated-heavy.mjs --shard=${{ matrix.shard }}/3
   web-e2e-gate:
-    if: ${{ inputs.visual_review_capture != true }}
+    if: ${{ always() && inputs.visual_review_capture != true }}
     name: Web E2E gate
     needs: [e2e-web, e2e-web-linux, linux-contracts, linux-fast, linux-migrated-heavy]
-    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
