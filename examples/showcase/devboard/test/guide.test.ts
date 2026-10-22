@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -109,14 +110,25 @@ describe('demo guide data', () => {
   })
 
   it('names only the fictional company', () => {
-    const forbidden = ['康尼', '中车', '克诺尔', '庞巴迪', '西门子', '纳博特斯克', 'Nabtesco', 'Knorr']
+    // Real company names must not appear in this public repository, so only their hashes are kept
+    // here: sha256 prefix by name length, matched against every substring of that length.
+    const forbidden: Record<number, string[]> = {
+      2: ['0876ac236f2cdc80', '10035b1808607f91'],
+      3: ['3b7356188745b0f8', 'fbfcb0b058521d11', 'b61c7d641d8875bb'],
+      5: ['d45437499c5035f5', 'c1405e603d5e3c56'],
+      8: ['256bae985b56e8ea'],
+    }
+    const hash = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16)
     const hits: string[] = []
     // the shipped sample project is scanned as well
     expect(sourceFiles(ROOT).filter((f) => f.includes('/assets/fastforward/')).length).toBeGreaterThan(10)
     for (const file of sourceFiles(ROOT)) {
-      if (file.endsWith('guide.test.ts')) continue
       const text = readFileSync(file, 'utf8')
-      for (const word of forbidden) if (text.includes(word)) hits.push(`${relative(ROOT, file)}: ${word}`)
+      for (const [len, hashes] of Object.entries(forbidden)) {
+        for (let i = 0; i + Number(len) <= text.length; i++) {
+          if (hashes.includes(hash(text.slice(i, i + Number(len))))) hits.push(`${relative(ROOT, file)}:${i}`)
+        }
+      }
     }
     expect(hits).toEqual([])
   })
