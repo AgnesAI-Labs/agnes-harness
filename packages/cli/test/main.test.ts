@@ -522,6 +522,18 @@ describe('main', () => {
     expect(ephemeral.out()).toBe('main says hi\n')
   })
 
+  it('--safe-mode and --ignore-rules never reach a shared daemon, and say what they do not skip', async () => {
+    const shared = harness(scratch())
+    expect(await main(['-p', 'x', '--safe-mode'], shared.io, shared.boot)).toBe(2)
+    expect(shared.err()).toContain('needs a private host')
+    expect(shared.out()).toBe('')
+
+    const private_ = harness(scratch())
+    expect(await main(['-p', 'x', '--ephemeral', '--ignore-rules'], private_.io, private_.boot)).toBe(0)
+    expect(private_.out()).toBe('main says hi\n')
+    expect(private_.err()).toContain('instruction files (AGENTS.md, CLAUDE.md) are still loaded')
+  })
+
   /**
    * `agnes resume <id>` end to end, over a ledger a dead process left mid-answer.
    *

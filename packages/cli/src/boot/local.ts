@@ -245,6 +245,61 @@ function hostLogger(
   return { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') }
 }
 
+type PackageRef = NonNullable<NonNullable<ProfileInputs['user']>['packages']>[number]
+
+/**
+ * `--safe-mode` for a private host: every package that is not built in is switched off. This is the
+ * input-level half, applied to every layer that can name a package so the resolved profile (and its
+ * hash) already describes the safe run; `enforceSafeMode` is the guarantee. The shared daemon's
+ * profile and the saved profile files are never written.
+ */
+export function safeModeInputs(inputs: ProfileInputs): ProfileInputs {
+  const off = <T extends { source: string }>(packages: T[] | undefined): T[] | undefined =>
+    packages?.map((pkg) => (pkg.source === 'builtin' ? pkg : { ...pkg, enabled: false }))
+  const layer = <L extends { packages?: PackageRef[] | undefined }>(value: L | undefined): L | undefined =>
+    value?.packages ? { ...value, packages: off(value.packages) as PackageRef[] } : value
+  const next: ProfileInputs = { ...inputs }
+  const user = layer(inputs.user)
+  const workspaceOverlay = layer(inputs.workspaceOverlay)
+  const local = layer(inputs.local)
+  const flags = layer(inputs.flags)
+  if (user) next.user = user
+  if (workspaceOverlay) next.workspaceOverlay = workspaceOverlay
+  if (local) next.local = local
+  if (flags) next.flags = flags
+  return next
+}
+
+/**
+ * The guarantee behind `--safe-mode`, applied to the fully resolved profile on every resolution:
+ * whatever layer, local plugin root, bundle or configuration contributed a package, a package that is
+ * not built in comes out disabled. If one is still enabled afterwards the boot is refused rather than
+ * run unsafe. `disable` is a seam so a test can force that leak.
+ */
+export function enforceSafeMode(
+  profile: ResolvedProfile,
+  disable: (pkg: ResolvedProfile['packages'][number]) => ResolvedProfile['packages'][number] = (pkg) => ({
+    ...pkg,
+    enabled: false,
+  }),
+): ResolvedProfile {
+  const { hash: _hash, ...body } = profile
+  const packages = profile.packages.map((pkg) => (pkg.source === 'builtin' ? pkg : disable(pkg)))
+  const leaked = packages.filter((pkg) => pkg.source !== 'builtin' && pkg.enabled)
+  if (leaked.length > 0)
+    throw new BootError(
+      `--safe-mode could not switch off ${leaked.map((pkg) => pkg.id).join(', ')}; refusing to start`,
+    )
+  const safe = { ...body, packages }
+  return { ...safe, hash: `sha256-${createHash('sha256').update(jcs(safe)).digest('hex')}` }
+}
+
+function composeSafeMode(
+  next: LocalBootDeps['transformProfileInputs'],
+): NonNullable<LocalBootDeps['transformProfileInputs']> {
+  return async (inputs) => safeModeInputs(next ? await next(inputs) : inputs)
+}
+
 export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Booted> {
   const t0 = performance.now()
   const profileName = profileNameFrom(p, deps.env)
@@ -284,8 +339,9 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
       ...(configurationInput ? { configuration: configurationInput } : {}),
     }
     let inputs = await readProfileInputs(inputOptions)
-    const resolveInputs = async () =>
-      resolveProfile(deps.transformProfileInputs ? await deps.transformProfileInputs(inputs) : inputs, {
+    const transform = p.safeMode ? composeSafeMode(deps.transformProfileInputs) : deps.transformProfileInputs
+    const resolveInputs = async () => {
+      const resolved = await resolveProfile(transform ? await transform(inputs) : inputs, {
         platform: createPlatform().snapshot(),
         agnesVersion: deps.agnesVersion,
         now: new Date().toISOString(),
@@ -293,6 +349,8 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
         // supposedly disposable run write its data/audit/cache beneath the real ~/.agh.
         homeDir: deps.home,
       })
+      return p.safeMode ? enforceSafeMode(resolved) : resolved
+    }
     profile = await resolveInputs()
     if (!deps.loader && !deps.createHostImpl) {
       const sourceManager = createPackageManager({

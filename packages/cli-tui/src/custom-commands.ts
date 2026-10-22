@@ -121,6 +121,7 @@ export function customCommandsFor(
   builtin: (name: string) => boolean,
   fresh = false,
 ): CustomScan {
+  if (app.o.noCustomCommands) return { commands: new Map(), skipped: [] }
   const hit = cache.get(app)
   if (!fresh && hit && Date.now() - hit.at < CACHE_MS) return hit.scan
   const dirs = {

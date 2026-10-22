@@ -172,6 +172,10 @@ export class TuiApp {
       historyPath?: string
       /** `<AGH_HOME>/commands`: where personal custom slash commands live. */
       commandsDir?: string
+      /** `--ignore-rules`: no personal or project custom slash commands are loaded. */
+      noCustomCommands?: boolean
+      /** `--safe-mode`: shown on the status bar for as long as the session runs. */
+      safeMode?: boolean
       /** Ctrl-G's editor command source and temp directory (`<AGH_HOME>/tmp`); tests leave it to the defaults. */
       externalEditor?: ExternalEditorConfig
       /** What the launcher knows for the welcome, and what tests pin (see `WelcomeOptions`). */
@@ -632,6 +636,7 @@ export class TuiApp {
       }),
       client.on('closed', () => this.handleClosed()),
     ]
+    if (this.o.safeMode) this.statusBar.setSafeMode(true)
     if (this.o.initialNotice) this.statusBar.setNotice(this.o.initialNotice)
     this.refreshWorkspace()
     try {

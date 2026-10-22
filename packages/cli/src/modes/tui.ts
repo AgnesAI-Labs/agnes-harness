@@ -112,6 +112,8 @@ export async function runTui(
       ...(io.composerSelectionPath ? { composerSelectionPath: io.composerSelectionPath } : {}),
       ...(io.historyPath ? { historyPath: io.historyPath } : {}),
       ...(io.commandsDir ? { commandsDir: io.commandsDir } : {}),
+      ...(p.ignoreRules || p.safeMode ? { noCustomCommands: true } : {}),
+      ...(p.safeMode ? { safeMode: true } : {}),
       ...(io.editorTmpDir ? { externalEditor: { env: io.env, tmpDir: io.editorTmpDir } } : {}),
       ...(io.composerSelectionPath
         ? { themePreferencePath: join(dirname(io.composerSelectionPath), 'tui-theme.json') }

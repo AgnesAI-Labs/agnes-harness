@@ -31,11 +31,11 @@ _agh() {
   esac
   local cmd="\${w[1]}"
   if [[ $n -eq 1 ]]; then
-    if [[ "$cur" == -* ]]; then COMPREPLY=($(compgen -W "--agent --all --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --ephemeral --every --file --force --format --from --help --html --include --json --key --loop --mode --model --new --new-session --no-alt-screen --out --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --save --session --skip --standalone --steer --text --title --turn --tz --unattended --upgrade --version --weekly --yes" -- "$cur"))
+    if [[ "$cur" == -* ]]; then COMPREPLY=($(compgen -W "--agent --all --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --ephemeral --every --file --force --format --from --help --html --ignore-rules --include --json --key --loop --mode --model --new --new-session --no-alt-screen --out --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --safe-mode --save --session --skip --standalone --steer --text --title --turn --tz --unattended --upgrade --version --weekly --yes" -- "$cur"))
     else COMPREPLY=($(compgen -W "acp agents api app app-server approvals batch completion computer-use config conformance consent credentials daemon dev diagnostics doctor export ext home import install mcp package packages plugin plugins profile queue resources resume run runtime schedules serve sessions settings skills start stats tools triggers web" -- "$cur")); fi
     return
   fi
-  if [[ "$cur" == -* ]]; then COMPREPLY=($(compgen -W "--agent --all --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --ephemeral --every --file --force --format --from --help --html --include --json --key --loop --mode --model --new --new-session --no-alt-screen --out --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --save --session --skip --standalone --steer --text --title --turn --tz --unattended --upgrade --version --weekly --yes" -- "$cur")); return; fi
+  if [[ "$cur" == -* ]]; then COMPREPLY=($(compgen -W "--agent --all --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --ephemeral --every --file --force --format --from --help --html --ignore-rules --include --json --key --loop --mode --model --new --new-session --no-alt-screen --out --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --safe-mode --save --session --skip --standalone --steer --text --title --turn --tz --unattended --upgrade --version --weekly --yes" -- "$cur")); return; fi
   if [[ $n -eq 2 ]]; then
     case "$cmd" in
       resume) _agh_sessions "$cur" ;;
@@ -109,6 +109,7 @@ complete -c agh -l format -x -a 'agnes sharegpt claude-code'
 complete -c agh -l from -x -a 'claude-code codex pi auto'
 complete -c agh -l help
 complete -c agh -l html
+complete -c agh -l ignore-rules
 complete -c agh -l include -r -F
 complete -c agh -l json
 complete -c agh -l key -r -F
@@ -133,6 +134,7 @@ complete -c agh -l repair
 complete -c agh -l resolved
 complete -c agh -l resume -x -a '(agh __complete sessions (commandline -ct) 2>/dev/null)'
 complete -c agh -l review-hash -r -F
+complete -c agh -l safe-mode
 complete -c agh -l save -r -F
 complete -c agh -l session -x -a '(agh __complete sessions (commandline -ct) 2>/dev/null)'
 complete -c agh -l skip -r -F
@@ -171,11 +173,11 @@ _agh() {
     --resume|--session) _agh_sessions "$cur"; return ;;
   esac
   if (( n == 1 )); then
-    if [[ "$cur" == -* ]]; then compadd -- --agent --all --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --ephemeral --every --file --force --format --from --help --html --include --json --key --loop --mode --model --new --new-session --no-alt-screen --out --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --save --session --skip --standalone --steer --text --title --turn --tz --unattended --upgrade --version --weekly --yes
+    if [[ "$cur" == -* ]]; then compadd -- --agent --all --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --ephemeral --every --file --force --format --from --help --html --ignore-rules --include --json --key --loop --mode --model --new --new-session --no-alt-screen --out --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --safe-mode --save --session --skip --standalone --steer --text --title --turn --tz --unattended --upgrade --version --weekly --yes
     else compadd -- acp agents api app app-server approvals batch completion computer-use config conformance consent credentials daemon dev diagnostics doctor export ext home import install mcp package packages plugin plugins profile queue resources resume run runtime schedules serve sessions settings skills start stats tools triggers web; fi
     return
   fi
-  if [[ "$cur" == -* ]]; then compadd -- --agent --all --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --ephemeral --every --file --force --format --from --help --html --include --json --key --loop --mode --model --new --new-session --no-alt-screen --out --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --save --session --skip --standalone --steer --text --title --turn --tz --unattended --upgrade --version --weekly --yes; return; fi
+  if [[ "$cur" == -* ]]; then compadd -- --agent --all --archived --at --candidate-hash --connect --continue --cron --cwd --daily --data-dir --ephemeral --every --file --force --format --from --help --html --ignore-rules --include --json --key --loop --mode --model --new --new-session --no-alt-screen --out --params --park --payload --permission --preset --print --probe --profile --prompt --raw --repair --resolved --resume --review-hash --safe-mode --save --session --skip --standalone --steer --text --title --turn --tz --unattended --upgrade --version --weekly --yes; return; fi
   if (( n == 2 )); then
     case "$cmd" in
       resume) _agh_sessions "$cur" ;;

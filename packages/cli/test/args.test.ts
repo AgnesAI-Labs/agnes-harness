@@ -40,6 +40,20 @@ describe('parseArgs: the common forms', () => {
     expect(usage()).toContain('--no-alt-screen')
   })
 
+  it('--safe-mode and --ignore-rules are refused unless this client starts the host itself', () => {
+    for (const flag of ['--safe-mode', '--ignore-rules']) {
+      expect(parseArgs([flag, '--ephemeral'])).toMatchObject({ ephemeral: true })
+      expect(parseArgs(['-p', 'x', flag, '--standalone'])).toMatchObject({ standalone: true })
+      // The shared daemon, whether attached by default or named with --connect (even beside --standalone).
+      expect(() => parseArgs([flag])).toThrow(/needs a private host/)
+      expect(() => parseArgs([flag, '--connect', 'ws://h'])).toThrow(/needs a private host/)
+      expect(() => parseArgs([flag, '--standalone', '--connect', 'ws://h'])).toThrow(/needs a private host/)
+      expect(() => parseArgs(['sessions', flag, '--ephemeral'])).toThrow(/only to starting or resuming/)
+    }
+    expect(parseArgs(['--safe-mode', '--ephemeral'])).toMatchObject({ safeMode: true })
+    expect(parseArgs(['--ignore-rules', '--ephemeral'])).toMatchObject({ ignoreRules: true })
+  })
+
   it('-p with the one-shot flags', () => {
     const p = parseArgs(['-p', 'hi', '--mode', 'json', '--ephemeral', '--standalone'])
     expect(p).toMatchObject({

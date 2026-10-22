@@ -143,6 +143,14 @@ describe('custom slash commands', () => {
     expect(await runSlash(remote, '/later')).toEqual({ prompt: 'new' })
   })
 
+  it('loads no personal or project command under --ignore-rules', async () => {
+    project('only-here.md', 'x')
+    mine('mine.md', 'personal')
+    const app = { ...appFor(), o: { commandsDir: personal, noCustomCommands: true } } as unknown as TuiApp
+    expect((await runSlash(app, '/only-here')).text).toContain('unknown command')
+    expect((await runSlash(app, '/mine')).text).toContain('unknown command')
+  })
+
   it('reads at most 200 files per directory, and an empty expansion sends nothing', async () => {
     for (let i = 0; i < 210; i++) mine(`c${String(i).padStart(3, '0')}.md`, 'x')
     mine('a-empty.md', '$1')

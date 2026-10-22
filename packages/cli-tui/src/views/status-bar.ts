@@ -34,6 +34,7 @@ export class StatusBar implements Component {
   private notice = ''
   private noticeTone: NoticeTone = 'info'
   private link: LinkState = 'ok'
+  private safeMode = false
   private usage: UsageView | undefined
 
   constructor(
@@ -78,6 +79,11 @@ export class StatusBar implements Component {
     this.noticeTone = tone
   }
 
+  /** A run that skipped parts of its setup says so for its whole life, so nobody forgets it. */
+  setSafeMode(on: boolean): void {
+    this.safeMode = on
+  }
+
   setLink(state: LinkState): void {
     this.link = state
   }
@@ -103,6 +109,7 @@ export class StatusBar implements Component {
       this.budget
         ? this.ansi.bold(this.ansi.fg(this.budgetTier === 'error' ? 'danger' : 'warning', this.budget))
         : '',
+      this.safeMode ? this.ansi.fg('warning', t('status.safeMode', this.locale)) : '',
       this.parked ? this.ansi.dim(this.parked) : '',
       notice,
       this.link === 'ok' ? '' : this.ansi.fg('warning', `⟳ ${link}`),

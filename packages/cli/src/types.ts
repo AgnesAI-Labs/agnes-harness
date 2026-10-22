@@ -108,6 +108,10 @@ export type ParsedArgs = {
   outputSchema?: string
   /** `sessions list --last`: only the most recently active session. */
   last?: boolean
+  /** Private host only: also skip hooks, non-built-in plugins and MCP servers (see parseArgs for what is honoured). */
+  safeMode?: boolean
+  /** Private host only: do not load personal and project custom slash commands, nor instruction files. */
+  ignoreRules?: boolean
   /** Interactive mode: keep the shell screen and write finished turns into its scrollback. */
   noAltScreen?: boolean
   /** `queue`: steer the turn in flight instead of queueing a follow-up. */

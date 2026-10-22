@@ -6,6 +6,7 @@ export function usage(locale = 'en'): string {
     'agh [prompt] [--profile <p>] [--cwd <dir>] [--new | --continue | --resume <id>] [--no-alt-screen]',
     '      [--connect <t>] [--model <slot>=<route>/<model>] [--agent <package#agent> | --loop <id>@<version>]',
     'agh -p [prompt] [--mode text|json|stream-json] [--output-schema <file>] [--ephemeral|--standalone]',
+    'agh (--ephemeral|--standalone) [--safe-mode] [--ignore-rules] ...      private host that skips custom commands and installed plugins',
     'agh --mode acp [--profile <p> | --connect <t>] [--ephemeral]      agh acp ... (alias)',
     'agh runtime reconcile <resource> --extension <row-id> [--operation <id>] [--answer allow|reject]',
     'agh batch start|status|follow|results|resume|cancel|list|export ... [--help]',
