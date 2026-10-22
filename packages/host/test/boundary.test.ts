@@ -148,6 +148,9 @@ describe('host boundaries', () => {
       },
       { file: 'host-extensions/resources/skill-install-content.ts', expression: ".normalize('NFKC')" },
       { file: 'host-extensions/resources/skill-preload.ts', expression: ".normalize('NFKC')" },
+      // isConfigPath folds only to widen a protective match (it can take always-allow away, never
+      // admit a path); the fence's own decisions still match the path as given.
+      { file: 'host-infrastructure/adapters/fs.ts', expression: ".normalize('NFKC')" },
     ])
     for (const f of files) expect(read(f), f).not.toMatch(/\bdecodeURI(?:Component)?\s*\(/)
   })

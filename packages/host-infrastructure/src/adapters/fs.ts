@@ -1,7 +1,8 @@
-import { dirname, isAbsolute, join, parse, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, parse, resolve, sep } from 'node:path'
 import { decideFsPath, FS_DENIED, type FsPolicy } from '@agnes/core'
 import type { FsEntry, FsStat } from '@agnes/extension-api'
 import { sessionHasFullFileAccess } from '@agnes/host-common/session-file-access'
+import { AGH_DIR } from '@agnes/protocol'
 import type { FsIo } from './fs-io.js'
 import { localFsIo } from './fs-io-local.js'
 
@@ -33,6 +34,8 @@ export type FencedFs = HostFs & {
   /** Check the same target, parent and descendant policy enforced by rm. */
   authorizeRemove?(path: string, opts?: { recursive?: boolean }): Promise<void>
   preflight(path: string, mode: 'read' | 'write'): Promise<void>
+  /** See `FsOps.isConfigPath`; never throws. */
+  isConfigPath(path: string): Promise<boolean>
   resolveInside(path: string): Promise<string>
   /** Symlink resolution only - no policy decision. What the sandbox seam's compiler and session open ask for. */
   canonicalize(path: string, opts?: { base?: string }): Promise<string>
@@ -139,6 +142,7 @@ export function createFs(
   io: FsIo = localFsIo,
   readRoots?: () => readonly string[],
   fullAccessReadOnlyRoots?: () => readonly string[],
+  configHomes?: () => readonly string[],
 ): FencedFs {
   /**
    * The one choke point every method goes through: resolve the caller's spelling against the
@@ -245,6 +249,44 @@ export function createFs(
     async preflight(path, mode) {
       if (mode === 'read') await authorizeRead(path)
       else await authorize(path, mode)
+    },
+    async isConfigPath(p) {
+      // Fail closed: whatever cannot be resolved or compared is treated as configuration.
+      try {
+        usable(p)
+        const { policy, caseSensitive } = binding()
+        const abs = isAbsolute(p) ? p : resolve(policy.workspaceRoot, p)
+        const { real, named } = await canonicalNames(io, abs, p)
+        // NFKC first: a case-insensitive volume also folds compatibility forms (`AGENTſ.md` is
+        // `AGENTS.md` there), and matching more names only takes always-allow away.
+        const fold = (text: string) => {
+          const normal = text.normalize('NFKC')
+          return caseSensitive ? normal : normal.toLocaleLowerCase('en-US')
+        }
+        const homes = await Promise.all(
+          (configHomes?.() ?? []).map((home) => canonicalize(io, resolve(home)).catch(() => resolve(home))),
+        )
+        // Every spelling counts: the resolved path, the final link's own name and the path as asked
+        // (a `.agh` that is itself a symlink resolves away from its name). A link called AGENTS.md is
+        // an instruction file whatever it points at.
+        // Names the context-rules default loads; user-configured extra names are that extension's
+        // config, which this layer cannot see, so they are not covered.
+        const names = ['AGENTS.md', 'CLAUDE.md', 'AGENTS.local.md', 'CLAUDE.local.md'].map(fold)
+        // Win32 drops trailing dots and spaces from a name and reads `name:stream` as the same file, so
+        // a segment spelled that way is config, and names are compared with that stripped. This is
+        // platform-agnostic: on POSIX it only removes always-allow from an odd spelling.
+        const plain = (segment: string) => fold(segment.replace(/[. ]+$/, '').split(':')[0] as string)
+        return [real, named, resolve(abs)].some((candidate) => {
+          const segments = candidate.slice(parse(candidate).root.length).split(sep).filter(Boolean)
+          return (
+            segments.some((segment) => /[. ]$|:/.test(segment) || plain(segment) === fold(AGH_DIR)) ||
+            names.includes(plain(basename(candidate))) ||
+            homes.some((home) => decideFsPath(overlay(home), candidate, { caseSensitive }).effect === 'allow')
+          )
+        })
+      } catch {
+        return true
+      }
     },
     resolveInside,
     async canonicalize(p, opts) {

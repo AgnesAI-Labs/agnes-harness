@@ -41,14 +41,36 @@ export function toolDecisionSource(
 /** The server a `mcp__<server>__<tool>` name was registered for, as the stable (sanitized) id. */
 const mcpServerOf = (name: string): string | undefined => /^mcp__(.+?)__./.exec(name)?.[1]
 
+/** The one-line reason a card gives when it offers only a single approval. */
+const configGuardPresentation = (summary: string) => {
+  const title = summary.slice(0, 1024) || 'Approval'
+  return {
+    en: {
+      title,
+      fields: [
+        {
+          label: 'Note',
+          value:
+            'This is an agh configuration or instruction file; it can only be approved one call at a time.',
+        },
+      ],
+    },
+    'zh-CN': {
+      title,
+      fields: [{ label: '说明', value: '这是 agh 的配置或指令文件，只能逐次批准。' }],
+    },
+  }
+}
+
 /** Original call rows are immutable controlled content references, including oversized plans. */
 export async function requestToolDecision(
   s: SessionImpl,
   call: PlannedCall,
   offered: ApprovalRequest,
   rewrite?: AskRewrite,
-  grantScopes?: readonly string[],
+  facts: { grantScopes?: readonly string[] | undefined; configGuarded?: boolean } = {},
 ): Promise<DecisionSnapshot> {
+  const { grantScopes, configGuarded } = facts
   const source = toolDecisionSource(s, call)
   const mcpServer = mcpServerOf(call.name)
   const def = s.currentTools().resolve(call.name)
@@ -100,6 +122,7 @@ export async function requestToolDecision(
       },
     },
     prompt: offered.summary,
+    ...(configGuarded ? { presentation: configGuardPresentation(offered.summary) } : {}),
     options: offered.options ?? ['allowed-once', 'allowed-session', 'rejected'],
     responseSchema: APPROVAL_RESPONSE_SCHEMA,
   })

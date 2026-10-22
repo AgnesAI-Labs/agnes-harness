@@ -459,6 +459,11 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
                 withAccess(() => runtime.fs.preflight!(path, mode)),
             }
           : {}),
+        ...(runtime.fencedFs
+          ? {
+              isConfigPath: (path: string) => withAccess(() => runtime.fencedFs!.isConfigPath(path)),
+            }
+          : {}),
         read: (path, opts) =>
           withAccess(() =>
             runtime.fencedFs

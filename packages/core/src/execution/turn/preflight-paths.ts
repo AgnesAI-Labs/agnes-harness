@@ -1,3 +1,4 @@
+import { normalizeWorkspacePath } from '@agnes/core-common/workspace-path'
 import type { ToolMeta } from '@agnes/extension-api'
 import type { SessionImpl } from '../../step/session.js'
 import { preflightError } from './preflight-error.js'
@@ -59,4 +60,35 @@ export async function preflightDeclaredPaths(
     }
   }
   return undefined
+}
+
+/**
+ * Whether any path a tool declared (`ToolMeta.paths`, read or write, built-in or plugin) resolves to
+ * an agh configuration or instruction file. The Host resolves symlinks and folds case where the
+ * volume does. Every doubt counts as yes: an absent Host check, an unresolvable path or a failure.
+ */
+export async function touchesAghConfig(
+  s: SessionImpl,
+  call: { args: unknown },
+  meta: Pick<ToolMeta, 'paths'>,
+): Promise<boolean> {
+  for (const path of meta.paths ?? []) {
+    const args = call.args as Record<string, unknown>
+    const target = Object.hasOwn(args, path.arg) ? args[path.arg] : path.default
+    if (target === undefined) continue
+    if (typeof target !== 'string' || !target || target.includes('\0')) return true
+    const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(target)?.[1]?.toLowerCase()
+    if (scheme && path.nonWorkspaceSchemes?.includes(scheme)) continue
+    try {
+      const protectedPath = await s.d.workspaceInvocation?.run(async (view) => {
+        const check = view.fs().isConfigPath
+        // Tools resolve a relative path against the session cwd, so the check must too.
+        return check ? await check(normalizeWorkspacePath(target, s.d.cwd).abs) : true
+      })
+      if (protectedPath !== false) return true
+    } catch {
+      return true
+    }
+  }
+  return false
 }

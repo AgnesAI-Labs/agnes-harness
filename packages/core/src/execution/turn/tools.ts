@@ -52,7 +52,7 @@ import { type NestedPark, parkOutcome } from './nested-parks.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
 import { honouredPrefixes, prefixActivation, prefixCommand } from './prefix-approval.js'
-import { preflightDeclaredPaths } from './preflight-paths.js'
+import { preflightDeclaredPaths, touchesAghConfig } from './preflight-paths.js'
 import { terminalDecisionRefusal } from './terminal-decision-refusal.js'
 import { modelCapabilityUnavailable, toolAvailability } from './tool-availability.js'
 import {
@@ -508,7 +508,6 @@ export async function approveAndExecute(
     if (permission.effect === 'deny')
       return { result: await refuse(s, call.toolUseId, 'POLICY_DENIED', permission.reason, decisionId) }
     const humanOnly = permission.approval !== undefined
-    const onceOnly = humanOnly || s.roleAuthority !== undefined
     if (
       humanOnly &&
       (permission.effect !== 'ask' ||
@@ -532,6 +531,15 @@ export async function approveAndExecute(
           decision.effect === 'require_approval')) ||
       permission.effect === 'ask' ||
       (decision.effect === 'require_approval' && !s.yolo && approvalMode !== 'off')
+    // A file that configures or instructs agh is approved one call at a time (no session, lasting or
+    // prefix grant), and a grant given earlier does not cover it.
+    const configGuarded =
+      needsAsk &&
+      !humanOnly &&
+      s.roleAuthority === undefined &&
+      !!meta.paths?.length &&
+      (await touchesAghConfig(s, call, meta))
+    const onceOnly = humanOnly || s.roleAuthority !== undefined || configGuarded
     const scopes = approvalScopesForCall(call.name, policy.approvalScopes)
     recheckPermission = async () => {
       toolDecisionSource(s, call).alive()
@@ -868,13 +876,10 @@ export async function approveAndExecute(
       if (hasChildControl(storage)) await transitionChildState(storage, s.key, 'waiting_approval')
       const delivery = await deliverToolDecision(
         s,
-        await requestToolDecision(
-          s,
-          call,
-          approvalRequest,
-          rewrite,
-          options.includes('allowed-permanent') ? [scope] : undefined,
-        ),
+        await requestToolDecision(s, call, approvalRequest, rewrite, {
+          grantScopes: options.includes('allowed-permanent') ? [scope] : undefined,
+          configGuarded,
+        }),
         approvalRequest,
         o.signal ?? s.ac.signal,
       )

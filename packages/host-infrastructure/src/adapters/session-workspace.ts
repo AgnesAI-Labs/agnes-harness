@@ -97,6 +97,8 @@ export function createSessionWorkspaceAdapterFactory(
     skillReadRoots?: (sessionKey: string) => readonly string[]
     /** The installation's own state, read-only under full file access; ignored for a remote workspace. */
     fullAccessReadOnlyRoots?: () => readonly string[]
+    /** The installation homes whose files are agh configuration, for `FencedFs.isConfigPath`. */
+    configHomes?: () => readonly string[]
   }>,
 ): SessionWorkspaceAdapterFactory {
   if ((input.transport === undefined) !== (input.remotePool === undefined))
@@ -255,6 +257,7 @@ export function createSessionWorkspaceAdapterFactory(
         state.io,
         handle.kind === 'local' && readRoots ? () => readRoots(state.sessionKey) : undefined,
         handle.kind === 'local' ? input.fullAccessReadOnlyRoots : undefined,
+        handle.kind === 'local' ? input.configHomes : undefined,
       )
       const execGate = {
         policy: () => holder.policy,

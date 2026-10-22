@@ -16,11 +16,13 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
   'actual write permission is decided by terminal input: %s',
   async (mode) => {
     const root = mkdtempSync(join(tmpdir(), 'agnes-tui-approval-'))
+    // The workspace must not sit inside the Agnes home, whose files are approved one call at a time.
+    const home = mkdtempSync(join(tmpdir(), 'agnes-tui-home-'))
     const content = mode === 'paged_allow' ? 'x'.repeat(300) : 'approved'
     const dimensions = mode === 'paged_allow' ? { columns: 40, rows: 12 } : { columns: 100, rows: 35 }
     const bridge = createPrompterBridge()
     const { host } = await createTestHost({
-      dataDir: root,
+      dataDir: home,
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
       packages: {
         '@agnes/base': { seams: { approval: baseSeamFactories.approval }, presets: basePresets },
@@ -158,6 +160,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       await endpoint.close()
       await host.close()
       rmSync(root, { recursive: true, force: true })
+      rmSync(home, { recursive: true, force: true })
     }
   },
   // A real Host turn plus TUI paging: under a second alone, past the 5 s default on the Windows runner.

@@ -53,6 +53,67 @@ describe('fs adapter', () => {
     expect(st.size).toBe(9)
     expect(typeof st.mtimeMs).toBe('number')
   })
+  it('names agh configuration and instruction files after resolving the path, failing closed', async () => {
+    const home = join(outside, 'home')
+    mkdirSync(join(root, 'docs'), { recursive: true })
+    mkdirSync(home)
+    writeFileSync(join(root, 'notes.txt'), 'x')
+    writeFileSync(join(root, 'docs', 'agents.md'), 'x')
+    symlinkSync(join(home, 'settings.json'), join(root, 'to-home.txt'))
+    symlinkSync(join(root, 'notes.txt'), join(root, 'AGENTS.md'))
+    symlinkSync(join(root, 'cycle-b'), join(root, 'cycle-a'))
+    symlinkSync(join(root, 'cycle-a'), join(root, 'cycle-b'))
+    const sensitive = createFs(
+      () => bindingFor(root),
+      localFsIo,
+      undefined,
+      undefined,
+      () => [home],
+    )
+    const folding = createFs(
+      () => bindingFor(root, ['.git'], false),
+      localFsIo,
+      undefined,
+      undefined,
+      () => [home],
+    )
+    mkdirSync(join(outside, 'real-agh'))
+    symlinkSync(join(outside, 'real-agh'), join(root, '.agh'))
+    const cases: Array<[string, boolean, boolean]> = [
+      ['.agh/hooks.json', true, true],
+      ['AGENTS.md.', true, true],
+      ['AGENTS.md ', true, true],
+      ['AGENTS.md::$DATA', true, true],
+      ['AGENTS.md:stream', true, true],
+      ['.agh./x', true, true],
+      ['docs/CLAUDE.local.md..', true, true],
+      ['notes.txt.', true, true],
+      ['AGENT\u017F.md', false, true],
+      ['\uFF21GENTS.md', true, true],
+      ['AGENTS.local.md', true, true],
+      ['sub/CLAUDE.local.md', true, true],
+      ['claude.LOCAL.md', false, true],
+      // path, case-sensitive volume, case-insensitive volume
+      ['notes.txt', false, false],
+      ['src/new-file.ts', false, false],
+      [join(home, 'hooks.json'), true, true],
+      [home, true, true],
+      ['.agh/hooks.json', true, true],
+      ['docs/.agh/x', true, true],
+      ['AGENTS.md', true, true],
+      ['docs/CLAUDE.md', true, true],
+      ['docs/agents.md', false, true],
+      ['docs/Agents.MD', false, true],
+      ['to-home.txt', true, true],
+      ['cycle-a', true, true],
+      ['a\0b', true, true],
+      ['', true, true],
+    ]
+    for (const [path, exact, folded] of cases) {
+      expect(await sensitive.isConfigPath(path), `exact ${path}`).toBe(exact)
+      expect(await folding.isConfigPath(path), `folded ${path}`).toBe(folded)
+    }
+  })
   it('keeps a read-only workspace immutable even when the session skips approvals', async () => {
     writeFileSync(join(root, 'existing.txt'), 'keep')
     const f = createFs(() => ({ ...bindingFor(root), readOnly: true }))

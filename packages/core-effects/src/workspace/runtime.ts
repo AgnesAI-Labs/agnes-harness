@@ -279,6 +279,9 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
             scope.track(() => source.fs.preflight!(path, mode)),
         }
       : {}),
+    ...(source.fs.isConfigPath
+      ? { isConfigPath: (path: string) => scope.track(() => source.fs.isConfigPath!(path)) }
+      : {}),
     read: (path, opts) => scope.track(() => source.fs.read(path, opts)),
     write: (path, data) => scope.track(() => source.fs.write(path, data)),
     ...(source.fs.create

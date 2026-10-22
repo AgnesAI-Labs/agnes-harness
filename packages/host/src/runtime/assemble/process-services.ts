@@ -1,5 +1,5 @@
 import { hasChildControl, recoverCreatingChildAttempts } from '@agnes/core'
-import { ownStateRoots } from '@agnes/host-common/paths'
+import { ownHomes, ownStateRoots } from '@agnes/host-common/paths'
 import {
   createHostLockedPackageMutationRuntime,
   type HostLockedPackageMutationRuntime,
@@ -58,6 +58,7 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
         dataDir,
         secretsDir: ctx.profile.adapters.secrets.path,
       }),
+    configHomes: () => ownHomes({ profileDir: deps.profileDir, dataDir }),
     modules,
     signal: ctx.abort.signal,
     workspaceRoot,

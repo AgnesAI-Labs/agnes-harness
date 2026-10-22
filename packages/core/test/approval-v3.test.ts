@@ -779,6 +779,53 @@ describe('v3 approval modes and grants', () => {
     },
   )
 
+  it.each([
+    { name: 'a configuration path', check: async () => true, guarded: true },
+    { name: 'an ordinary path', check: async () => false, guarded: false },
+    {
+      // The tool writes `0` relative to the session cwd; the check must see that same absolute path.
+      name: 'a relative path resolved against the session cwd',
+      check: async (path: string) => !/^([A-Za-z]:)?\/.+\/0$/.test(path),
+      guarded: false,
+    },
+    { name: 'a host without the check', check: undefined, guarded: true },
+    {
+      name: 'a check that fails',
+      check: async () => {
+        throw new Error('cannot resolve')
+      },
+      guarded: true,
+    },
+    { name: 'a tool that declares no path', check: async () => true, guarded: false, declared: false },
+  ])('offers one-time approval only for $name', async ({ check, guarded, declared = true }) => {
+    const offered: unknown[] = []
+    const opened = await atTools({
+      scopes: ['tool:write'],
+      grants: { list: async () => [], put: async () => undefined },
+      fsOps: { ...testFsOps(), preflight: async () => undefined, ...(check ? { isConfigPath: check } : {}) },
+      ...(declared ? { paths: [{ arg: 'value', access: 'write' as const }] } : {}),
+      seams: fakeSeams({
+        approval: {
+          ask: async (request) => {
+            offered.push(request.options)
+            return { verdict: 'allowed-once' as const, answeredBy: actor }
+          },
+        },
+      }),
+    })
+    await opened.session.runToolsPhase()
+    expect(offered).toEqual([
+      guarded
+        ? ['allowed-once', 'rejected']
+        : ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'],
+    ])
+    const [decision] = await opened.session.decisions.list()
+    const presentation = decision?.request.spec.presentation
+    expect(presentation?.en?.fields[0]?.value ?? '').toContain(guarded ? 'one call at a time' : '')
+    expect(presentation?.['zh-CN']?.fields[0]?.value ?? '').toContain(guarded ? '逐次批准' : '')
+    expect(presentation === undefined).toBe(!guarded)
+  })
+
   it('preflights declared defaults and delegates only explicitly declared resource schemes', async () => {
     const fsOps = {
       ...testFsOps(),

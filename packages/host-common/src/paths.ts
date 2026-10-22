@@ -97,16 +97,22 @@ export function hasLegacySessionsDb(home: string): boolean {
  * else, so an unconventional layout narrows the guard instead of widening it to a stranger's
  * directory. A profile that pins its own secrets directory has that listed too.
  */
+/** The installation homes the conventional layout implies; an unconventional layout names none. */
+export function ownHomes(paths: { profileDir: string; dataDir: string }): string[] {
+  const homes = new Set<string>()
+  if (basename(dirname(paths.profileDir)) === 'profiles') homes.add(dirname(dirname(paths.profileDir)))
+  if (basename(paths.dataDir) === 'data') homes.add(dirname(paths.dataDir))
+  return [...homes]
+}
+
 export function ownStateRoots(paths: {
   profileDir: string
   dataDir: string
   secretsDir?: string | undefined
 }): string[] {
-  const homes = new Set<string>()
-  if (basename(dirname(paths.profileDir)) === 'profiles') homes.add(dirname(dirname(paths.profileDir)))
-  if (basename(paths.dataDir) === 'data') homes.add(dirname(paths.dataDir))
   const roots = [paths.profileDir]
-  for (const home of homes) roots.push(fileSecretsDir(home), join(home, 'auth'), join(home, 'profiles'))
+  for (const home of ownHomes(paths))
+    roots.push(fileSecretsDir(home), join(home, 'auth'), join(home, 'profiles'))
   if (paths.secretsDir !== undefined) roots.push(paths.secretsDir)
   return [...new Set(roots)]
 }

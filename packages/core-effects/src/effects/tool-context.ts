@@ -93,6 +93,12 @@ export type FsOps = {
   authorizeRemove?(path: string, opts?: { recursive?: boolean }): Promise<void>
   rm?(path: string, opts?: { recursive?: boolean }): Promise<void>
   preflight?(path: string, mode: 'read' | 'write'): Promise<void>
+  /**
+   * Whether the path, resolved through symlinks, names an agh configuration or instruction file:
+   * anything under the installation home or a `.agh` directory, or a file called AGENTS.md or
+   * CLAUDE.md. Case-folds where the volume does. A path that cannot be resolved answers true.
+   */
+  isConfigPath?(path: string): Promise<boolean>
   read(path: string, opts?: { offset?: number; limit?: number }): Promise<Uint8Array>
   write(path: string, data: Uint8Array | string): Promise<void>
   create?(path: string, data: Uint8Array): Promise<{ size: number; sha256: string }>
