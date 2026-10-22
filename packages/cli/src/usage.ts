@@ -5,7 +5,7 @@ export function usage(locale = 'en'): string {
       : 'Agents: --agent <package#agent>; execution: --loop <id>@<version>; application recovery: agh app clear',
     'agh [prompt] [--profile <p>] [--cwd <dir>] [--new | --continue | --resume <id>]',
     '      [--connect <t>] [--model <slot>=<route>/<model>] [--agent <package#agent> | --loop <id>@<version>]',
-    'agh -p [prompt] [--mode text|json] [--park] [--meta] [--ephemeral|--standalone]',
+    'agh -p [prompt] [--mode text|json] [--ephemeral|--standalone]',
     'agh --mode acp [--profile <p> | --connect <t>] [--ephemeral]      agh acp ... (alias)',
     'agh runtime reconcile <resource> --extension <row-id> [--operation <id>] [--answer allow|reject]',
     'agh batch start|status|follow|results|resume|cancel|list|export ... [--help]',
@@ -49,7 +49,7 @@ export function usage(locale = 'en'): string {
     'agh consent DISABLED|LOCAL|ANON|FULL',
     'agh stats deviation [--json]        agh config [--connect <t>]        agh conformance gateway [--json]',
     'agh web [--port <n>] [--home <dir>] [--profile <p>] [--cwd <dir>]   agh start (same stack)',
-    'agh daemon start|stop|status [...]  agh ext <...>  agh mcp serve [...]  agh serve model-api [...]',
+    'agh daemon start|stop|status [...]',
     'agh --version | --help',
     locale === 'zh-CN'
       ? '高级：运行配置与组合（Bundle / Preset）'

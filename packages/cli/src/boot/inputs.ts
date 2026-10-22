@@ -58,11 +58,11 @@ export function profileNameFrom(p: ParsedArgs, env: NodeJS.ProcessEnv): string {
  * would be a profile misrepresenting itself -- so a layer built here could only ever turn every boot
  * into a refusal naming an internal layer instead of the flag the user typed.
  *
- * Each of the three flags that would have gone in one therefore travels its own way, or is refused
- * by name where the user can see it: `--preset` rides on session/new, which daemon validates against
- * presets.allowed; `--park` and `--model` have no route at all in this build and are refused in
- * modes/print.ts. None of them may widen what a session can do, which is what kept them out of the
- * layer's remit even when the layer existed.
+ * Each of the flags that would have gone in one therefore travels its own way, or is refused by name
+ * where the user can see it: `--preset` rides on session/new, which daemon validates against
+ * presets.allowed; `--model` is applied through `session.setModel` in modes/print.ts; `--park` has
+ * no route at all in this build and is refused there. None of them may widen what a session can do,
+ * which is what kept them out of the layer's remit even when the layer existed.
  */
 // `agnesVersion` feeds the lockfile's empty-lock fallback (generatedBy) when the file is absent.
 export async function readProfileInputs(o: {

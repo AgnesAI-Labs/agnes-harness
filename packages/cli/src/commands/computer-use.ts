@@ -38,7 +38,6 @@ export function validateComputerUseRescueArgs(parsed: ParsedArgs): ComputerUseRe
     parsed.connect !== undefined ||
     parsed.model !== undefined ||
     parsed.park ||
-    parsed.meta ||
     parsed.ephemeral ||
     parsed.standalone !== undefined ||
     parsed.repair ||
@@ -114,7 +113,6 @@ function validateReadOnlyComputerUseFlags(parsed: ParsedArgs, label: string): vo
     parsed.connect !== undefined ||
     parsed.model !== undefined ||
     parsed.park ||
-    parsed.meta ||
     parsed.ephemeral ||
     parsed.standalone !== undefined ||
     parsed.format !== undefined ||
@@ -147,7 +145,6 @@ function validateCommonComputerUseFlags(parsed: ParsedArgs, label: string): void
     parsed.connect !== undefined ||
     parsed.model !== undefined ||
     parsed.park ||
-    parsed.meta ||
     parsed.ephemeral ||
     parsed.standalone !== undefined ||
     parsed.format !== undefined ||
@@ -229,7 +226,6 @@ export function validateComputerUseOperationArgs(parsed: ParsedArgs): ComputerUs
     parsed.connect !== undefined ||
     parsed.model !== undefined ||
     parsed.park ||
-    parsed.meta ||
     parsed.ephemeral ||
     parsed.standalone !== undefined ||
     parsed.repair ||

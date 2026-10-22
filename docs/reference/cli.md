@@ -50,7 +50,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 
 `--preset` selects the recipe (`standard`, `minimal`, `ptc` or another allowed preset) and `--permission` what the session may do; any allowed pair combines, for example `agh --preset ptc --permission read-only` or just `agh --permission read-only`. Retired permission-as-preset aliases (`read-only`, `workspace-write`, `full-access`) are refused; use an explicit recipe and permission. Omitting permission or choosing `default` follows the deployment default. See [permissions and presets](../guide/security.md#permissions-and-presets).
 
-Print options `--park`, `--chunks`, and `--meta` control waiting and output. See [CLI usage](../guide/cli.md) for exit codes. There is no `--session` or plaintext API-key flag.
+Print output is chosen with `--mode text|json`. Waiting for approval is a profile setting (`limits."approval.park"`), not a flag. See [CLI usage](../guide/cli.md) for exit codes. There is no `--session` or plaintext API-key flag.
 
 <a id="控制面"></a>
 
@@ -70,7 +70,7 @@ Print options `--park`, `--chunks`, and `--meta` control waiting and output. See
 | `agh stats deviation --json` | Deviation statistics |
 | `agh conformance gateway --json` | Gateway conformance entry point |
 
-`daemon/ext/mcp/resources/skills/serve` forward remaining arguments to their own parsers. Do not freely mix ordinary run options into them. In the ordinary parser, `--data-dir` is available only to `computer-use rescue`, rather than as a general daemon-selection shortcut.
+`daemon/mcp/resources/skills/serve` forward remaining arguments to their own parsers. Do not freely mix ordinary run options into them. In the ordinary parser, `--data-dir` is available only to `computer-use rescue`, rather than as a general daemon-selection shortcut.
 
 <a id="包资源与-computer-use"></a>
 
@@ -83,8 +83,6 @@ Resources: `resources list|get|operation|cancel|enable|disable`; `skills refresh
 Permanent Skill deletion and priority actions use Web or the Node SDK. Shell/TUI Skills syntax remains the existing refresh/trust commands. Guessed `skills remove` and `skills priority` commands are invalid; see [Skills](../guide/skills.md).
 
 Computer Use: `status`, `install [--upgrade]`, `restart`, `operation [ID]`, `cancel ID`, `permissions status|grant`, and `rescue status|install|repair`. Diagnostics use `doctor computer-use [--include CHECK] [--skip CHECK] --json`. Commands with write, installation, or permission effects must not be run automatically as read-only diagnostics.
-
-Low-level `ext`, `mcp serve`, and `serve model-api` are specialized integration surfaces. They do not replace the local workbench commands or establish a verified public service.
 
 Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](../../packages/cli/src/commands/package.ts), [resources](../../packages/resource-control-cli/src/resources.ts), [TUI package](../../packages/cli-tui/src/package-controller.ts).
 

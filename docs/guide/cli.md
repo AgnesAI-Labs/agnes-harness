@@ -17,10 +17,10 @@ Examples assume the repository root as the working directory. From another direc
 ```sh
 node agnes.mjs -p "Explain this project"
 printf '%s\n' 'Summarize this text' | node agnes.mjs -p
-node agnes.mjs --mode json --chunks --meta "Explain this project"
+node agnes.mjs --mode json "Explain this project"
 ```
 
-`--mode json` automatically selects print mode. JSON output is suitable for programmatic consumption, but stderr may still contain runtime warnings. Check the exit code: partial text is not proof of success. `--park` lets a one-shot call wait for approval. A script without an available approval interaction cannot approve dangerous actions on its own.
+`--mode json` automatically selects print mode. JSON output is suitable for programmatic consumption, but stderr may still contain runtime warnings. Check the exit code: partial text is not proof of success. A one-shot call parks for approval only when the profile sets `limits."approval.park"`; a parked call prints `parked ticket=… session=…` and exits with code 3. The `--park` flag is refused. A script without an available approval interaction cannot approve dangerous actions on its own.
 
 By default, the CLI connects to or starts the shared local daemon. `--connect TARGET` selects an explicit target and does not fall back on failure. `--standalone` uses an embedded runtime; `--ephemeral` selects temporary execution. ACP is available through `acp` or `--mode acp`; do not assume it shares the ordinary daemon mode's lifecycle.
 

@@ -46,7 +46,7 @@
 
 `--preset` 选择配方（`standard`、`minimal`、`ptc` 或其他允许的预设），`--permission` 选择会话能做什么；任何允许的组合均可，例如 `agh --preset ptc --permission read-only`，或只写 `agh --permission read-only`。旧的权限配方别名（`read-only`、`workspace-write`、`full-access`）已拒绝，请分别指定配方与权限。省略权限或选择 `default` 均跟随部署默认值。见[权限与预设](../guide/security.zh-CN.md#permissions-and-presets)。
 
-Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[CLI 指南](../guide/cli.zh-CN.md)。当前无 `--session` 或命令行明文 API key 开关。
+Print 输出用 `--mode text|json` 选择；等待审批是配置项（`limits."approval.park"`），不是命令行参数。退出码见[CLI 指南](../guide/cli.zh-CN.md)。当前无 `--session` 或命令行明文 API key 开关。
 
 ## 控制面
 
@@ -64,7 +64,7 @@ Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[
 | `agh stats deviation --json` | 偏差统计 |
 | `agh conformance gateway --json` | 网关一致性检查入口 |
 
-`daemon/ext/mcp/resources/skills/serve` 将剩余参数交给各自解析器，不可任意混用普通运行参数。`--data-dir` 在普通 parser 中只对 `computer-use rescue` 开放，不作为一般 daemon 选择捷径。
+`daemon/mcp/resources/skills/serve` 将剩余参数交给各自解析器，不可任意混用普通运行参数。`--data-dir` 在普通 parser 中只对 `computer-use rescue` 开放，不作为一般 daemon 选择捷径。
 
 ## 包、资源与 Computer Use
 
@@ -75,8 +75,6 @@ Print 的 `--park`、`--chunks`、`--meta` 控制等待和输出；退出码见[
 当前源码包含的 Skills 永久删除/优先级动作使用 Web 或 Node SDK；shell/TUI 的 Skills 语法仍是 refresh/trust 等既有命令，不能执行猜测的 `skills remove` 或 `skills priority`。见[Skills 指南](../guide/skills.zh-CN.md)。
 
 Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`、`cancel ID`、`permissions status|grant`、`rescue status|install|repair`。诊断用 `doctor computer-use [--include CHECK] [--skip CHECK] --json`。有写入/安装/权限副作用的命令不能当作普通只读 doctor 自动运行。
-
-低层 `ext`、`mcp serve` 与 `serve model-api` 是专用接入面，不能替代前述本地工作台命令或被当作已验证公网服务。
 
 权威语法：[args/usage](../../packages/cli/src/args.ts)、[package](../../packages/cli/src/commands/package.ts)、[resources](../../packages/resource-control-cli/src/resources.ts)、[TUI package](../../packages/cli-tui/src/package-controller.ts)。
 

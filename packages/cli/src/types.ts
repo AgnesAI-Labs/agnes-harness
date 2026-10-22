@@ -78,7 +78,6 @@ export type ParsedArgs = {
   connect?: string
   model?: ModelSel
   park: boolean
-  meta: boolean
   ephemeral: boolean
   /** Keep the historical embedded Host/daemon form for an intentional one-shot run. */
   standalone?: boolean

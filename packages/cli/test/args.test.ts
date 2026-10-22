@@ -32,12 +32,10 @@ describe('parseArgs: the common forms', () => {
   })
 
   it('-p with the one-shot flags', () => {
-    const p = parseArgs(['-p', 'hi', '--mode', 'json', '--park', '--meta', '--ephemeral', '--standalone'])
+    const p = parseArgs(['-p', 'hi', '--mode', 'json', '--ephemeral', '--standalone'])
     expect(p).toMatchObject({
       print: true,
       mode: 'json',
-      park: true,
-      meta: true,
       ephemeral: true,
       standalone: true,
       positional: ['hi'],
@@ -62,7 +60,6 @@ describe('parseArgs: the common forms', () => {
       version: false,
       continue: false,
       park: false,
-      meta: false,
       ephemeral: false,
       json: false,
       html: false,
@@ -167,6 +164,7 @@ describe('parseArgs: subcommands', () => {
     ).toMatchObject({ include: ['binary', 'display'], skip: ['display'] })
     expect(throws(['doctor', 'computer-use', '--include', '--json']).message).toBe('--include needs a value')
     expect(throws(['computer-use', 'status', '--include', 'binary']).message).toBe('unknown flag --include')
+    expect(throws(['-p', 'hi', '--meta']).message).toBe('unknown flag --meta')
     expect(throws(['doctor', 'computer-use', '--token=S3CR3T_MARKER']).message).toBe('unknown flag --token')
     expect(throws(['doctor', 'computer-use', '-S3CR3T_MARKER']).message).toBe('unknown flag')
     expect(usage()).toContain('permissions status|grant [--json]')
@@ -346,13 +344,14 @@ describe('usage', () => {
     'config',
     'conformance',
     'daemon',
-    'ext',
-    'mcp serve',
-    'serve model-api',
     'agh web',
     'agh start',
   ])('mentions %s', (c) => {
     expect(usage()).toContain(c)
+  })
+
+  it('does not list commands this build refuses, nor the removed --meta and --park', () => {
+    expect(usage()).not.toMatch(/agh ext|mcp serve|serve model-api|--meta|--park/)
   })
 
   it('mentions every accepted flag spelling, so the grammar and the help text cannot drift', () => {
@@ -370,8 +369,6 @@ describe('usage', () => {
       '--connect',
       '--model',
       '--mode',
-      '--park',
-      '--meta',
       '--ephemeral',
       '--standalone',
       '--json',
