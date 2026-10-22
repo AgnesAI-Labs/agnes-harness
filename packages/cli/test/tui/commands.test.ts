@@ -116,7 +116,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(43)
+    expect(SLASH_COMMANDS).toHaveLength(44)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -138,6 +138,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/plan',
       '/preset',
       '/theme',
+      '/keys',
       '/mouse',
       '/thinking',
       '/model',
@@ -170,7 +171,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/compact')?.args).toBe('[instructions]')
     expect(slashCommand('/plan')?.args).toBe('[on|off|status|pending|instruction]')
     expect(slashCommand('/preset')?.args).toBe('<name>')
-    expect(slashCommand('/theme')?.args).toBe('[light|dark|mono]')
+    expect(slashCommand('/theme')?.args).toBe('[auto|light|dark|mono]')
     expect(slashCommand('/model')?.args).toBe('[<slot> <route>/<model> [<thinking>]]')
     expect(slashCommand('/install')?.args).toBe('<source>|confirm|cancel')
     expect(slashCommand('/package')?.args).toContain('rollback')
@@ -242,6 +243,17 @@ describe('runSlash', () => {
       await first.client.close()
       await first.ep.close()
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+  it('/keys opens the effective bindings in a panel', async () => {
+    const { app, client, ep } = await unstartedApp()
+    try {
+      const r = await runSlash(app, '/keys')
+      expect(r).toMatchObject({ details: true, title: '键位' })
+      expect(r.text).toMatch(/cut-to-end\s+ctrl-k/)
+    } finally {
+      await client.close()
+      await ep.close()
     }
   })
   it('/theme reports and switches the current TUI presentation without touching the session', async () => {

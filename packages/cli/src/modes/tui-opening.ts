@@ -1,7 +1,7 @@
 import { dirname, join } from 'node:path'
 import { SIGNAL_EXIT_CODES, type SignalName } from '../errors.js'
 import { timingMark } from '../timing.js'
-import { ProvisionalComposer } from '../tui/app.js'
+import { installKeybindings, ProvisionalComposer } from '../tui/app.js'
 import { resolveLocale } from '../tui/locale.js'
 import { type InputStream, NodeTerminal, type OutputStream } from '../tui/terminal.js'
 import type { ParsedArgs } from '../types.js'
@@ -46,6 +46,9 @@ export class TuiOpening {
   ) {
     refuseWhatCannotBeHonoured(p)
     this.term = new NodeTerminal(io.stdin, io.stdout, io.env)
+    // Before the first key is read: the composer takes typing from here on.
+    if (io.composerSelectionPath)
+      installKeybindings(join(dirname(io.composerSelectionPath), 'keybindings.json'), resolveLocale(io.env))
     this.composer = new ProvisionalComposer(this.term, {
       locale: resolveLocale(io.env),
       cwd: io.cwd,

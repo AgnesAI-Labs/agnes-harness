@@ -1,5 +1,6 @@
 import { LOCALES, type Locale, type LocaleKey } from './locale.js'
 import { CONTROL_DICT, type ControlKey } from './locale-control.js'
+import { KEYS_DICT, type KeysKey } from './locale-keys.js'
 import { TERMINAL_DICT, type TerminalKey } from './locale-terminal.js'
 import { TOOLS_DICT, type ToolsKey } from './locale-tools.js'
 
@@ -259,7 +260,7 @@ export const EXTENDED_KEYS = [
 ] as const
 
 type BaseKey = (typeof EXTENDED_KEYS)[number]
-export type ExtendedKey = BaseKey | ControlKey | TerminalKey | ToolsKey
+export type ExtendedKey = BaseKey | ControlKey | TerminalKey | ToolsKey | KeysKey
 
 const BASE: Record<Locale, Record<BaseKey, string>> = {
   en: {
@@ -756,8 +757,14 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
 }
 
 const DICT: Record<Locale, Record<ExtendedKey, string>> = {
-  en: { ...BASE.en, ...CONTROL_DICT.en, ...TERMINAL_DICT.en, ...TOOLS_DICT.en },
-  'zh-CN': { ...BASE['zh-CN'], ...CONTROL_DICT['zh-CN'], ...TERMINAL_DICT['zh-CN'], ...TOOLS_DICT['zh-CN'] },
+  en: { ...BASE.en, ...CONTROL_DICT.en, ...TERMINAL_DICT.en, ...TOOLS_DICT.en, ...KEYS_DICT.en },
+  'zh-CN': {
+    ...BASE['zh-CN'],
+    ...CONTROL_DICT['zh-CN'],
+    ...TERMINAL_DICT['zh-CN'],
+    ...TOOLS_DICT['zh-CN'],
+    ...KEYS_DICT['zh-CN'],
+  },
 }
 
 export function tt(

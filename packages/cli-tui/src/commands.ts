@@ -16,6 +16,7 @@ import { deliverablesSlash } from './deliverable-files.js'
 import { grantsSlash } from './grant-commands.js'
 import { infoSlash } from './info-commands.js'
 import { jobsSlash } from './job-commands.js'
+import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { queueSlash } from './queue-commands.js'
 import type { ResourceCommandKind } from './resource-controller.js'
@@ -102,10 +103,11 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   {
     name: '/theme',
-    args: '[light|dark|mono]',
+    args: '[auto|light|dark|mono]',
     descriptionKey: 'commands.theme',
     summaryKey: 'commands.themeSummary',
   },
+  { name: '/keys', descriptionKey: 'commands.keys', summaryKey: 'commands.keysSummary' },
   { name: '/mouse', descriptionKey: 'commands.mouse', summaryKey: 'commands.mouseSummary' },
   { name: '/thinking', descriptionKey: 'commands.thinking', summaryKey: 'commands.thinkingSummary' },
   {
@@ -550,6 +552,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     }
     case '/thinking':
       return { text: tt(thinkingMode.toggle() ? 'thinking.open' : 'thinking.folded', app.locale) }
+    case '/keys':
+      return { text: formatKeys(locale), details: true, title: tt('keys.title', locale) }
     case '/mouse':
       return { text: tt(app.renderer.toggleMouse() ? 'mouse.on' : 'mouse.off', app.locale) }
     case '/model': {

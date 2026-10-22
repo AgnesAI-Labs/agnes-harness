@@ -1,46 +1,50 @@
-export type KeyName =
-  | 'enter'
-  | 'alt-enter'
-  | 'alt-up'
-  | 'shift-enter'
-  | 'esc'
-  | 'ctrl-c'
-  | 'ctrl-d'
-  | 'ctrl-o'
-  | 'ctrl-r'
-  | 'ctrl-a'
-  | 'ctrl-b'
-  | 'ctrl-e'
-  | 'ctrl-f'
-  | 'ctrl-g'
-  | 'ctrl-k'
-  | 'ctrl-u'
-  | 'ctrl-w'
-  | 'ctrl-y'
-  | 'ctrl-z'
-  | 'ctrl-shift-z'
-  | 'ctrl-end'
-  | 'word-left'
-  | 'word-right'
-  | 'word-delete'
-  | 'word-delete-back'
-  | 'up'
-  | 'down'
-  | 'left'
-  | 'right'
-  | 'tab'
-  | 'backspace'
-  | 'pgup'
-  | 'pgdn'
-  | 'home'
-  | 'end'
-  | 'f1'
-  | 'f2'
-  | 'f3'
-  | 'f4'
-  | 'paste'
-  | 'char'
-  | 'unknown'
+/** Every key the parser can name; the ones a binding can be written for are all but the text kinds. */
+export const KEY_NAMES = [
+  'enter',
+  'alt-enter',
+  'alt-up',
+  'shift-enter',
+  'esc',
+  'ctrl-c',
+  'ctrl-d',
+  'ctrl-o',
+  'ctrl-r',
+  'ctrl-a',
+  'ctrl-b',
+  'ctrl-e',
+  'ctrl-f',
+  'ctrl-g',
+  'ctrl-k',
+  'ctrl-u',
+  'ctrl-w',
+  'ctrl-y',
+  'ctrl-z',
+  'ctrl-shift-z',
+  'ctrl-end',
+  'word-left',
+  'word-right',
+  'word-delete',
+  'word-delete-back',
+  'up',
+  'down',
+  'left',
+  'right',
+  'tab',
+  'backspace',
+  'pgup',
+  'pgdn',
+  'home',
+  'end',
+  'f1',
+  'f2',
+  'f3',
+  'f4',
+  'paste',
+  'char',
+  'unknown',
+] as const
+
+export type KeyName = (typeof KEY_NAMES)[number]
 
 export type Key = { name: KeyName; ch?: string }
 

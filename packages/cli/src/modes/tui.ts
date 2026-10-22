@@ -1,7 +1,7 @@
 import { dirname, join } from 'node:path'
 import { ExitCode, SIGNAL_EXIT_CODES, type SignalName } from '../errors.js'
 import { timingMark } from '../timing.js'
-import { inheritFreshSession, TuiApp } from '../tui/app.js'
+import { inheritFreshSession, installKeybindings, TuiApp } from '../tui/app.js'
 import { escapeControl } from '../tui/component.js'
 import { resolveLocale } from '../tui/locale.js'
 import { tt } from '../tui/locale-extended.js'
@@ -87,6 +87,11 @@ export async function runTui(
       const signal = io.signal()
       return signal ? SIGNAL_EXIT_CODES[signal] : ExitCode.OK
     }
+    // Read once: the opening composer already did when there was one, and the answer is remembered.
+    const keyNotice = io.composerSelectionPath
+      ? installKeybindings(join(dirname(io.composerSelectionPath), 'keybindings.json'), resolveLocale(io.env))
+      : undefined
+    const notice = [inherited?.notice, keyNotice].filter(Boolean).join(' · ')
     const tui = new TuiApp({
       session,
       term,
@@ -102,7 +107,7 @@ export async function runTui(
       // The model the user pinned with -m, when they did; otherwise the banner leaves the field out
       // rather than guessing at the session default (Session exposes no live readback of it).
       ...(p.model ? { model: p.model.model } : inherited?.modelId ? { model: inherited.modelId } : {}),
-      ...(inherited?.notice ? { initialNotice: inherited.notice } : {}),
+      ...(notice ? { initialNotice: notice } : {}),
       ...(io.composerSelectionPath ? { composerSelectionPath: io.composerSelectionPath } : {}),
       ...(io.historyPath ? { historyPath: io.historyPath } : {}),
       ...(io.commandsDir ? { commandsDir: io.commandsDir } : {}),
