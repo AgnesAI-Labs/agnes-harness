@@ -115,7 +115,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(37)
+    expect(SLASH_COMMANDS).toHaveLength(38)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -137,6 +137,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/plan',
       '/preset',
       '/theme',
+      '/mouse',
       '/model',
       '/yolo',
       '/grants',
@@ -250,6 +251,31 @@ describe('runSlash', () => {
     } finally {
       await client.close()
       await ep.close()
+    }
+  })
+
+  it('/mouse switches mouse reporting off and on for this run and says what changed', async () => {
+    const { app, client } = await unstartedApp()
+    const term = new FakeTerminal({ columns: 60, rows: 20 })
+    const running = new TuiApp({ session: app.session, term, header: 'Agnes' })
+    try {
+      await running.start()
+      const off = '\x1b[?1006l\x1b[?1002l'
+      const on = '\x1b[?1002h\x1b[?1006h'
+      const writes = () => term.writes.join('')
+      expect(writes().split(on)).toHaveLength(2)
+      await expect(runSlash(running, '/mouse')).resolves.toMatchObject({
+        text: expect.stringContaining('off'),
+      })
+      expect(writes().split(off)).toHaveLength(2)
+      await expect(runSlash(running, '/mouse')).resolves.toMatchObject({
+        text: expect.stringContaining('on:'),
+      })
+      expect(writes().split(on)).toHaveLength(3)
+      expect(writes().indexOf(off)).toBeLessThan(writes().lastIndexOf(on))
+    } finally {
+      await running.stop()
+      await client.close()
     }
   })
 

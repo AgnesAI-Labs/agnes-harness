@@ -15,7 +15,7 @@ import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { renderMarkdown } from './markdown.js'
-import { copyToClipboard, TuiMouse } from './mouse.js'
+import { copyTip, systemCopy, TuiMouse } from './mouse.js'
 import { nodeText } from './node-text.js'
 import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
@@ -62,7 +62,8 @@ export class TuiApp {
   // session switch (`applySwitch`) never replaces the underlying `Client` -- the daemon
   // connection outlives any one session -- so these are not re-registered per session.
   private offClientEvents: Array<() => void> = []
-  private readonly renderer: Renderer
+  /** Public so `/mouse` can switch the terminal's mouse reporting. */
+  readonly renderer: Renderer
   // Not readonly: `applySwitch` (a slash command that switches session -- /new, /resume, /rewind)
   // replaces it with a fresh projection built for the newly current session.
   private projection: TuiProjection
@@ -142,7 +143,7 @@ export class TuiApp {
       /** The CLI has already entered its alternate screen before opening the session. */
       screenAlreadyEntered?: boolean
       /** Where mouse-selected text goes; defaults to the system clipboard. */
-      copy?: (text: string) => void
+      copy?: (text: string, fail: () => void) => unknown
       /** The workspace the CLI opened its first session in (`--cwd`); defaults to `process.cwd()`. */
       cwd?: string
       /** True over `--connect`: `@` completion then never falls back to this machine's disk. */
@@ -170,8 +171,8 @@ export class TuiApp {
     this.statusBar = new StatusBar(ansi, locale)
     this.mouse = new TuiMouse(
       (rows) => this.scrollTimeline(rows),
-      o.copy ?? ((text) => copyToClipboard(text, (s) => o.term.write(s))),
-      () => ansi.fg('success', tt('app.copied', this.locale)),
+      o.copy ?? systemCopy((s) => o.term.write(s)),
+      copyTip(ansi, locale),
       () => this.stopped || this.renderer.requestRender(),
     )
     this.welcome = new WelcomeController(o, {

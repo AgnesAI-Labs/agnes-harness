@@ -86,6 +86,7 @@ export class Renderer {
   // Screen cells, not content: what is copied is what the screen shows when the button comes up.
   private selection: { anchor: Cell; head: Cell } | undefined
   private dragging = false
+  private mouseOn = false
   private paste = new PasteAssembler()
 
   constructor(
@@ -120,7 +121,8 @@ export class Renderer {
     // reporting (1004) sends ESC [ I and ESC [ O as the window gains and loses the user's attention.
     this.term.write('\x1b[?2004h\x1b[?1004h')
     // 1002 reports presses, releases and motion while a button is held; 1006 gives SGR coordinates.
-    if (this.mouse) this.term.write('\x1b[?1002h\x1b[?1006h')
+    this.mouseOn = this.mouse !== undefined
+    if (this.mouseOn) this.term.write('\x1b[?1002h\x1b[?1006h')
     this.offResize = this.term.onResize(() => {
       this.lastFrame = []
       this.lastCursorKey = ''
@@ -138,8 +140,22 @@ export class Renderer {
     }
   }
 
+  /**
+   * Turns mouse reporting off or on for the rest of this run and returns whether it is on. Off, the
+   * terminal selects text itself, but the alternate screen turns the wheel into arrow keys.
+   */
+  toggleMouse(): boolean {
+    if (!this.mouse || !this.active) return this.mouseOn
+    this.mouseOn = !this.mouseOn
+    this.selection = undefined
+    this.dragging = false
+    this.term.write(this.mouseOn ? '\x1b[?1002h\x1b[?1006h' : '\x1b[?1006l\x1b[?1002l')
+    this.requestRender()
+    return this.mouseOn
+  }
+
   private input(d: string): void {
-    const events = this.mouse ? parseMouse(d) : undefined
+    const events = this.mouseOn ? parseMouse(d) : undefined
     if (events) {
       this.handleMouse(events)
       return

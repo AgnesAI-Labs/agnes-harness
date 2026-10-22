@@ -103,6 +103,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.theme',
     summaryKey: 'commands.themeSummary',
   },
+  { name: '/mouse', descriptionKey: 'commands.mouse', summaryKey: 'commands.mouseSummary' },
   {
     name: '/model',
     args: '[<slot> <route>/<model> [<thinking>]]',
@@ -511,6 +512,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         return { text: 'usage: /theme [light|dark|mono]' }
       return { text: app.setTheme(name as TuiThemeName) }
     }
+    case '/mouse':
+      return { text: tt(app.renderer.toggleMouse() ? 'mouse.on' : 'mouse.off', app.locale) }
     case '/model': {
       if (args.length === 0) {
         const models = (await c.apis()).profile.models ?? []
