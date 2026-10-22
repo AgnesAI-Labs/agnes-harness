@@ -3,9 +3,9 @@ import { UsageError } from './errors.js'
 import type { ParsedArgs } from './types.js'
 
 /** Per-run caps for `agh -p`; they only ever lower what the preset allows. */
-export const TURN_CAP_FLAGS = { '--max-budget': 'maxBudget' } as const
+export const TURN_CAP_FLAGS = { '--max-budget': 'maxBudget', '--max-turns': 'maxTurns' } as const
 
-export type TurnCaps = { creditLimit?: number }
+export type TurnCaps = { creditLimit?: number; maxSteps?: number }
 
 /** Largest limit the SDK accepts (`prompt-budget.ts`); refused here so the message names the flag. */
 const MAX_CREDITS = Number.MAX_SAFE_INTEGER / 1_000_000
@@ -18,21 +18,29 @@ export function parseTurnCaps(p: ParsedArgs): TurnCaps {
       throw new UsageError('--max-budget must be a number of credits greater than 0')
     caps.creditLimit = n
   }
+  if (p.maxTurns !== undefined) {
+    const n = /^\d+$/.test(p.maxTurns) ? Number(p.maxTurns) : Number.NaN
+    if (!(n >= 1 && n <= 1000)) throw new UsageError('--max-turns must be an integer from 1 to 1000')
+    caps.maxSteps = n
+  }
   return caps
 }
 
 export function refuseTurnCapsOutsidePrint(p: ParsedArgs, mode: string): void {
-  if (p.maxBudget !== undefined && mode !== 'print')
-    throw new UsageError('--max-budget is supported only with -p')
+  const flag =
+    p.maxBudget !== undefined ? '--max-budget' : p.maxTurns !== undefined ? '--max-turns' : undefined
+  if (flag && mode !== 'print') throw new UsageError(`${flag} is supported only with -p`)
 }
 
-/** An older daemon would silently ignore the cap, so ask before anything is sent. */
+/** An older daemon would silently ignore a cap, so ask before anything is sent. */
 export async function requireTurnCaps(client: Client, caps: TurnCaps): Promise<void> {
-  if (caps.creditLimit === undefined) return
+  if (caps.creditLimit === undefined && caps.maxSteps === undefined) return
   const info = await client.initialize()
   const meta = (info.capabilities._meta as Record<string, unknown> | undefined)?.['ai.agnes.harness'] as
-    | { hardTurnBudget?: boolean }
+    | { hardTurnBudget?: boolean; turnMaxSteps?: boolean }
     | undefined
-  if (meta?.hardTurnBudget !== true)
+  if (caps.creditLimit !== undefined && meta?.hardTurnBudget !== true)
     throw new UsageError('this daemon does not support --max-budget; upgrade it')
+  if (caps.maxSteps !== undefined && meta?.turnMaxSteps !== true)
+    throw new UsageError('this daemon does not support --max-turns; upgrade it')
 }

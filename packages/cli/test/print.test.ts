@@ -351,6 +351,55 @@ describe('runPrint in text mode', () => {
     })
   })
 
+  describe('--max-turns', () => {
+    const harness = (ep: FakeEndpoint) =>
+      (
+        ep.calls.find((c) => c.method === 'session/prompt')?.params as
+          | { _meta?: Record<string, unknown> }
+          | undefined
+      )?._meta
+
+    it('travels as the step cap on the one prompt', async () => {
+      const ep = scriptedEndpoint({ harnessCapabilities: { turnMaxSteps: true } })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-turns', '3']), io())).toBe(0)
+      expect(harness(ep)).toEqual({ 'ai.agnes.harness': { maxSteps: 3 } })
+    })
+
+    it.each([['0'], ['1001'], ['1.5'], ['abc'], ['1e2'], ['']])(
+      '%j is a usage error and nothing is sent',
+      async (v) => {
+        const ep = scriptedEndpoint({ harnessCapabilities: { turnMaxSteps: true } })
+        const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-turns', v]), io()).catch(
+          (x: unknown) => x,
+        )
+        expect(e).toMatchObject({ name: 'UsageError', code: 2 })
+        expect(ep.calls.map((c) => c.method)).not.toContain('session/prompt')
+      },
+    )
+
+    it('an older daemon is refused with exit 2 before any session or prompt is sent', async () => {
+      // Hard credit budgets alone do not imply the step cap.
+      const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true } })
+      const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-turns', '2']), io()).catch(
+        (x: unknown) => x,
+      )
+      expect(e).toMatchObject({ name: 'UsageError', code: 2 })
+      expect((e as Error).message).toContain('does not support --max-turns')
+      expect(ep.calls.map((c) => c.method)).not.toContain('session/new')
+    })
+
+    it('a turn that reaches the cap exits 5', async () => {
+      const ep = scriptedEndpoint({ reason: 'max_steps', harnessCapabilities: { turnMaxSteps: true } })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-turns', '1']), io())).toBe(5)
+    })
+
+    it('travels together with --max-budget', async () => {
+      const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true, turnMaxSteps: true } })
+      await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '2', '--max-turns', '4']), io())
+      expect(harness(ep)).toEqual({ 'ai.agnes.harness': { creditLimit: 2, maxSteps: 4 } })
+    })
+  })
+
   it('the two remaining refusals say two different things', async () => {
     const said: string[] = []
     for (const argv of [

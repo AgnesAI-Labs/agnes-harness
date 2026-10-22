@@ -112,6 +112,28 @@ describe('shell approvals through the real stack', () => {
     }
   }, 30_000)
 
+  // The loopback provider would happily take a second step; the cap is what ends the turn.
+  it.each([
+    [['--max-turns', '1'], 5],
+    [[], 0],
+  ])(
+    'agh -p %j ends a two-step turn with exit %d',
+    async (extra, exit) => {
+      const home = mkdtempSync(join(tmpdir(), 'agnes-max-turns-'))
+      const createHostImpl = stack(home, () => [shellCall('echo hi'), done('finished')])
+      let booted: Awaited<ReturnType<typeof bootLocal>> | undefined
+      try {
+        const argv = ['-p', 'go', '--preset', 'standard', '--permission', 'full-access', ...extra]
+        booted = await bootLocal(parseArgs(argv), testDeps(home, { createHostImpl }))
+        expect(await runPrint(booted, parseArgs(argv), printIo(home))).toBe(exit)
+      } finally {
+        await booted?.close()
+        rmSync(home, { recursive: true, force: true })
+      }
+    },
+    60_000,
+  )
+
   it('stops asking for commands that start with an approved prefix', async () => {
     const home = mkdtempSync(join(tmpdir(), 'agnes-prefix-'))
     const createHostImpl = stack(home, (open) =>

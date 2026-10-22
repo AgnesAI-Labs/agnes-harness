@@ -108,6 +108,8 @@ export type ParsedArgs = {
   outputSchema?: string
   /** `--max-budget` raw value; `-p` only, range-checked by `parseTurnCaps`. */
   maxBudget?: string
+  /** `--max-turns` raw value; `-p` only, range-checked by `parseTurnCaps`. */
+  maxTurns?: string
   /** `sessions list --last`: only the most recently active session. */
   last?: boolean
   /** Private host only: also skip hooks, non-built-in plugins and MCP servers (see parseArgs for what is honoured). */
