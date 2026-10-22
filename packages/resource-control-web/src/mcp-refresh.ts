@@ -71,7 +71,8 @@ export function resourcePollDelay(attempt: number, signal: AbortSignal): Promise
         elapsed = true
         wake()
       },
-      Math.min(30_000, 500 * 2 ** Math.min(6, attempt)),
+      // Local state changes usually finish before a 500ms poll; slow operations still back off.
+      attempt < 3 ? 50 * 2 ** attempt : Math.min(30_000, 500 * 2 ** Math.min(6, attempt - 3)),
     )
     document.addEventListener('visibilitychange', wake)
     signal.addEventListener('abort', finish, { once: true })
