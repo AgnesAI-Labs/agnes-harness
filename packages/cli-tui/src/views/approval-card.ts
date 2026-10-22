@@ -2,6 +2,7 @@ import type { UINode } from '@agnes/protocol'
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { type Locale, type LocaleKey, t } from '../locale.js'
+import { tt } from '../locale-extended.js'
 import { paintsColour, type ThemedAnsi } from '../theme.js'
 import { approvalBody, approvalHeadline, subjectOf } from './approval-body.js'
 import { diffInput } from './diff.js'
@@ -142,8 +143,12 @@ export class ApprovalCard implements Component {
         ).map((line) => fitLine(`${rail}${line}`, width)),
       ) ?? []),
       ...approvalBody(subject, width - 2, ansi, locale).map((line) => fitLine(`${rail}${line}`, width)),
-      // The diff shows what the raw subject would only bury; without one the subject stays readable.
-      ...(n.subjectText && !(subject.tool && diffInput(subject.tool, subject.args))
+      // The diff is a reading aid, not the record: the raw subject is what is being approved, so it
+      // always stays on the card, set apart under its own heading when a diff came first.
+      ...(n.subjectText && subject.tool && diffInput(subject.tool, subject.args)
+        ? [fitLine(`${rail}${ansi.fg('faint', `── ${tt('approval.details', locale)} ──`)}`, width)]
+        : []),
+      ...(n.subjectText
         ? wrapText(escapeControl(n.subjectText), width - 2).map((line) => fitLine(`${rail}${line}`, width))
         : []),
       fitLine(`${rail}${this.phase === 'deciding' ? '…' : keys}`, width),

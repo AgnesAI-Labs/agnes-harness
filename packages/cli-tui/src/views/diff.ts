@@ -5,7 +5,7 @@ import type { ThemedAnsi } from '../theme.js'
 
 /** One replaced span of an `edit` call; `write` is a single hunk whose old side is empty. */
 export type DiffHunk = { oldText: string; newText: string }
-export type DiffInput = { path: string; hunks: DiffHunk[]; created: boolean }
+export type DiffInput = { path: string; hunks: DiffHunk[]; wholeFile: boolean }
 type Op = { mark: ' ' | '+' | '-'; text: string; no: number }
 
 // Old lines x new lines per hunk; past it the hunk is shown as "old block removed, new block added"
@@ -25,7 +25,7 @@ export function diffInput(tool: string, args: unknown): DiffInput | undefined {
   const a = record(args)
   if (!a || typeof a.path !== 'string') return undefined
   if (tool === 'write' && typeof a.content === 'string')
-    return { path: a.path, created: true, hunks: [{ oldText: '', newText: a.content }] }
+    return { path: a.path, wholeFile: true, hunks: [{ oldText: '', newText: a.content }] }
   if (tool !== 'edit' || !Array.isArray(a.edits)) return undefined
   const hunks = a.edits.flatMap((e: unknown): DiffHunk[] => {
     const r = record(e)
@@ -33,7 +33,7 @@ export function diffInput(tool: string, args: unknown): DiffInput | undefined {
       ? [{ oldText: r.oldText, newText: r.newText }]
       : []
   })
-  return hunks.length > 0 ? { path: a.path, created: false, hunks } : undefined
+  return hunks.length > 0 ? { path: a.path, wholeFile: false, hunks } : undefined
 }
 
 /** `diffInput` over the JSON text of a call's arguments; text that is cut off or not JSON has none. */
@@ -157,7 +157,7 @@ export function statsMark(input: DiffInput, ansi: ThemedAnsi): string {
 export function renderDiff(input: DiffInput, width: number, ansi: ThemedAnsi, locale: string): string[] {
   const hunks = opsOf(input)
   const digits = String(Math.max(1, ...hunks.flat().map((op) => op.no))).length
-  const head = `${ansi.bold(escapeControl(input.path))}${input.created ? ` ${ansi.dim(tt('diff.newFile', locale))}` : ''} ${statsMark(input, ansi)}`
+  const head = `${ansi.bold(escapeControl(input.path))}${input.wholeFile ? ` ${ansi.dim(tt('diff.wholeFile', locale))}` : ''} ${statsMark(input, ansi)}`
   const rows = [fitLine(head, width)]
   hunks.forEach((ops, h) => {
     if (h > 0) rows.push(fitLine(ansi.fg('faint', ' ╌╌╌'), width))

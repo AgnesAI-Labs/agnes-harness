@@ -6,7 +6,7 @@ import type { Locale } from './locale.js'
  */
 export const TOOLS_KEYS = [
   'diff.unchanged',
-  'diff.newFile',
+  'diff.wholeFile',
   'card.moreLines',
   'group.read.one',
   'group.read.other',
@@ -30,7 +30,7 @@ export type ToolsKey = (typeof TOOLS_KEYS)[number]
 export const TOOLS_DICT: Record<Locale, Record<ToolsKey, string>> = {
   en: {
     'diff.unchanged': '⋯ {n} unchanged lines',
-    'diff.newFile': 'new file',
+    'diff.wholeFile': 'whole file, replaces it if it exists',
     'card.moreLines': '… {n} more lines',
     'group.read.one': 'Read 1 file',
     'group.read.other': 'Read {n} files',
@@ -51,7 +51,7 @@ export const TOOLS_DICT: Record<Locale, Record<ToolsKey, string>> = {
   },
   'zh-CN': {
     'diff.unchanged': '⋯ {n} 行未变',
-    'diff.newFile': '新文件',
+    'diff.wholeFile': '整文件写入，已存在则覆盖',
     'card.moreLines': '… 还有 {n} 行',
     'group.read.one': '已读取 1 个文件',
     'group.read.other': '已读取 {n} 个文件',

@@ -132,7 +132,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         term.feed('\x0f')
         await vi.waitFor(async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'receipt.txt new file +1 -0',
+            'receipt.txt whole file, replaces it if it exists +1 -0',
           ),
         )
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
@@ -142,7 +142,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         term.feed('\x0f')
         await vi.waitFor(async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
-            'new file',
+            'whole file',
           ),
         )
       }

@@ -43,7 +43,7 @@ it('diffs every edit of a call as its own hunk and counts the changed lines', ()
 
 it('shows a write as all additions and ignores other tools and malformed arguments', () => {
   expect(draw('write', { path: 'n.txt', content: 'a\nb\n' }).map((r) => r.trimEnd())).toEqual([
-    'n.txt 新文件 +2 -0',
+    'n.txt 整文件写入，已存在则覆盖 +2 -0',
     ' 1 + a',
     ' 2 + b',
   ])

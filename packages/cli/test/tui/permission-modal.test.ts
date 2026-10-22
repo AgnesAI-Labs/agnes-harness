@@ -231,7 +231,9 @@ it('gives the modal and the parked card the same body for the same request', () 
   const modalRows = body(modal.render(80))
   for (const row of ['edit', 'a.ts +1 -1', '1   one', '2 - two', '2 + 2']) expect(cardRows).toContain(row)
   for (const row of ['edit', 'a.ts +1 -1', '1   one', '2 - two', '2 + 2']) expect(modalRows).toContain(row)
-  expect(cardRows.join('\n')).not.toContain('oldText') // the diff replaces the raw subject
+  const card80 = cardRows.join('\n') // the raw subject stays, below the diff, under its own heading
+  expect(card80.indexOf('oldText')).toBeGreaterThan(card80.indexOf('── Raw input ──'))
+  expect(card80.indexOf('── Raw input ──')).toBeGreaterThan(card80.indexOf('2 + 2'))
   modal.close()
 })
 

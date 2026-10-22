@@ -61,6 +61,23 @@ it('keeps the full single-line review subject readable before the choices', () =
   expect(lines.at(-1)).toContain('[1]')
 })
 
+// The diff is a reading aid: a write may replace an existing file, and arguments beyond the diffed
+// fields would otherwise be invisible, so the raw subject stays on the card under its own heading.
+it('shows a write as a whole-file replacement and keeps the raw subject below the diff', () => {
+  const subjectText = JSON.stringify({
+    call: { name: 'write', args: { path: 'a.txt', content: 'hi', mode: 'x' } },
+  })
+  const text = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), subjectText },
+    { ansi: PLAIN, onDecide: async () => undefined },
+  )
+    .render(400)
+    .join('\n')
+  expect(text).toContain('a.txt whole file, replaces it if it exists +1 -0')
+  expect(text.indexOf('── Raw input ──')).toBeGreaterThan(text.indexOf('+ hi'))
+  expect(text).toContain('"mode":"x"')
+})
+
 it('renders stopped authority distinctly from deadline expiry and offers no answer', () => {
   const card = new ApprovalCard(
     {
