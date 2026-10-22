@@ -146,6 +146,8 @@ These commands mirror the Web admin pages and need an admin connection. `agh plu
 | 5 | Maximum steps reached |
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
+A per-run step limit for `agh -p` is not available. It would need a new session or submit field in the protocol, or a change to the shared daemon's configuration, and a one-shot run may do neither. To cap a run, select or export a preset whose definition sets `budget.max_steps` to a positive integer and pass it with `--preset`; the turn then ends with `max_steps` and exit code 5 (see [configuration](../reference/configuration.md)).
+
 Implementation: [arguments and usage](../../packages/cli/src/args.ts), [exit codes](../../packages/cli/src/errors.ts), [TUI commands](../../packages/cli-tui/src/commands.ts).
 
 Use `/attach <path>` in the TUI to upload an original in bounded chunks and submit its receipt as a prompt. Paths may contain spaces. Common image, document, archive and media extensions carry their own MIME type; any other extension uploads as `application/octet-stream`, and a daemon allow-list refusal is shown as returned. Errors preserve the backend attachment reason. The current session owns the receipt; switching sessions before the upload completes refuses submission.

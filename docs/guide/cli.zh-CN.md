@@ -138,6 +138,8 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 | 5 | 到达最大步数 |
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
+`agh -p` 暂不支持按单次运行限制步数。它需要在协议里新增 session 或 submit 字段，或修改共享 daemon 的配置，而一次性运行两者都不应做。要限制步数，请选用或导出在定义里把 `budget.max_steps` 设为正整数的 preset，并用 `--preset` 指定；达到上限后该回合以 `max_steps` 结束，退出码为 5（见[配置参考](../reference/configuration.zh-CN.md)）。
+
 实现依据：[参数与 usage](../../packages/cli/src/args.ts)、[退出码](../../packages/cli/src/errors.ts)、[TUI 命令](../../packages/cli-tui/src/commands.ts)。
 
 在 TUI 中使用 `/attach <path>` 分块上传原件，并将回执作为 prompt 提交。路径可含空格。常见的图片、文档、压缩包和音视频扩展名按各自的 MIME 类型上传，其余扩展名按 `application/octet-stream` 上传；daemon 的白名单拒绝原样显示。失败保留后端附件原因；回执属于当前会话，上传完成前切换会话会拒绝提交。
