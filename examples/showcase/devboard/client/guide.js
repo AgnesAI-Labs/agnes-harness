@@ -3,6 +3,7 @@ import { Badge, Button, Segmented } from '@agnes/web-ui'
 import React from 'react'
 import { MAIN_STEPS, ROLE_STEPS } from './guide-data.js'
 import { guideMemory } from './guide-memory.js'
+import { OPTIONAL_STEPS } from './guide-optional.js'
 import { liveProject, mainProgress } from './guide-progress.js'
 
 // Demo guide: a side panel next to the page (not a modal, so the audience still sees the page), step cards
@@ -16,7 +17,9 @@ const TITLE_ID = 'devboard-guide-title'
 const FIND_MS = 3000
 const SPOT_MS = 9000
 const MISSING = '（页面上暂时没有这一块：先选对项目，或把「只看与我相关」切到「全部」。）'
-const STEPS = new Map([...MAIN_STEPS, ...Object.values(ROLE_STEPS).flat()].map((s) => [s.id, s]))
+const STEPS = new Map(
+  [...MAIN_STEPS, ...OPTIONAL_STEPS, ...Object.values(ROLE_STEPS).flat()].map((s) => [s.id, s]),
+)
 const message = (error) => (error instanceof Error ? error.message : String(error))
 
 // ── Progress (guide-memory.js keeps it in this browser) ────────────────────────────────────────────
@@ -199,6 +202,7 @@ function StepCard({ step, index, role, expanded, done, auto, actions }) {
         { type: 'button', 'aria-expanded': expanded, onClick: () => toggle(step.id) },
         h('span', { className: 'devboard-guide-no' }, index + 1),
         h('span', null, step.title),
+        step.script && h(Badge, { tone: 'off' }, step.script),
         step.role && h(Badge, { tone: mine ? 'ok' : 'off' }, step.role),
       ),
     ),
@@ -233,9 +237,10 @@ export function GuidePanel({ board, role, setRole, page, jump }) {
   const setFocus = (next) => update({ focus: next })
   const panel = React.useRef(null)
   const title = React.useRef(null)
-  const steps = tab === 'main' ? MAIN_STEPS : (ROLE_STEPS[role] ?? [])
+  const steps = { main: MAIN_STEPS, optional: OPTIONAL_STEPS }[tab] ?? ROLE_STEPS[role] ?? []
   const auto = React.useMemo(() => (board.data ? mainProgress(board.data, MAIN_STEPS) : {}), [board.data])
-  const ticked = guideMemory.ticks(tab === 'main', role)
+  // Optional steps are ticked by the presenter and kept with the main line's ticks (their ids do not clash).
+  const ticked = guideMemory.ticks(tab !== 'role', role)
   const isDone = (s) => Boolean(tab === 'main' && auto[s.id]) || ticked.has(s.id)
   const firstOpen = steps.find((s) => !isDone(s))?.id
   const current = focus[tab] === '' || steps.some((s) => s.id === focus[tab]) ? focus[tab] : firstOpen
@@ -311,6 +316,7 @@ export function GuidePanel({ board, role, setRole, page, jump }) {
         onChange: (value) => update({ tab: value }),
         options: [
           { value: 'main', label: '全流程主线' },
+          { value: 'optional', label: '可选剧本' },
           { value: 'role', label: '我的角色' },
         ],
       }),
@@ -319,13 +325,15 @@ export function GuidePanel({ board, role, setRole, page, jump }) {
         { className: 'devboard-muted' },
         tab === 'main'
           ? `一个需求怎样变成可运行的项目，共 ${total} 步，已完成 ${finished} 步。每一步标出由哪个角色操作；有看板依据的步骤会自动打勾。`
-          : `当前演示角色：${role}，共 ${steps.length} 步。换一个角色，这里的步骤会跟着变。`,
+          : tab === 'optional'
+            ? '两段可选剧本，不在 12 步主线里：「客户变更」（客户中途改要求，过 CCB 后返工）和「缺陷卡门」（A 类缺陷挡住 TR5）。演示者自己打勾。'
+            : `当前演示角色：${role}，共 ${steps.length} 步。换一个角色，这里的步骤会跟着变。`,
       ),
       h(
         'ol',
         {
           className: 'devboard-guide-steps',
-          'aria-label': tab === 'main' ? '全流程主线' : `${role}的上手步骤`,
+          'aria-label': { main: '全流程主线', optional: '可选剧本' }[tab] ?? `${role}的上手步骤`,
         },
         steps.map((step, i) =>
           h(StepCard, {

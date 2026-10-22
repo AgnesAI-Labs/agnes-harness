@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { MAIN_STEPS, ROLE_STEPS } from '../client/guide-data.js'
 import { createGuideMemory } from '../client/guide-memory.js'
+import { OPTIONAL_STEPS } from '../client/guide-optional.js'
 import { liveProject, mainProgress } from '../client/guide-progress.js'
 import { GATE_PROFILES, ROLES } from '../profiles.mjs'
 import { buildSeed } from '../seed-data.mjs'
@@ -15,7 +16,7 @@ const manifest = JSON.parse(readFileSync(join(ROOT, 'client/agnes.client.json'),
 const homeEntries: string[] = manifest.client.homeEntries.map((e: Any) => e.id)
 const roleSteps = ROLE_STEPS as Record<string, Any[]>
 const projectIds: string[] = buildSeed(Date.now()).projects.map((p: Any) => p.id)
-const allSteps: Any[] = [...MAIN_STEPS, ...Object.values(roleSteps).flat()]
+const allSteps: Any[] = [...MAIN_STEPS, ...OPTIONAL_STEPS, ...Object.values(roleSteps).flat()]
 
 describe('demo guide data', () => {
   it('covers every demo role with 4 to 6 steps', () => {
@@ -87,6 +88,27 @@ describe('demo guide data', () => {
       'TR5:approved',
       'ADCP:approved',
     ])
+  })
+
+  it('adds two optional scripts after the unchanged main line, with real roles, pages and targets', () => {
+    expect(MAIN_STEPS).toHaveLength(12)
+    expect([...new Set(OPTIONAL_STEPS.map((s) => s.script))]).toEqual(['客户变更', '缺陷卡门'])
+    for (const step of OPTIONAL_STEPS) {
+      expect(ROLES, step.id).toContain(step.role)
+      expect(step.done, step.id).toBeUndefined()
+    }
+    const text = (script: string) =>
+      OPTIONAL_STEPS.filter((s) => s.script === script)
+        .map((s) => `${s.how}${s.see}`)
+        .join('')
+    expect(text('客户变更')).toContain('TR3 待批 + 客户变更')
+    expect(text('客户变更')).toContain('影响树')
+    expect(text('缺陷卡门')).toContain('TR5 待批 + A 类缺陷')
+    expect(text('缺陷卡门')).toContain('系统（缺陷已关闭）')
+    // the fast-forward options the scripts name are the ones the selector offers
+    const options = readFileSync(join(ROOT, 'client/fastforward.js'), 'utf8')
+    expect(options).toContain("'TR3 待批 + 客户变更'")
+    expect(options).toContain("'TR5 待批 + A 类缺陷'")
   })
 
   it('ends the guide of each main-line role with a pointer to its main-line steps', () => {

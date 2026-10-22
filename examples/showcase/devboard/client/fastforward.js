@@ -1,5 +1,5 @@
 import { Select } from '@agnes/web-ui'
-import { h, openWork } from './board.js'
+import { guided, h, openWork } from './board.js'
 
 /** [gate, label] in the order the sample project passes them; DONE is ADCP approved. */
 export const FAST_FORWARD = [
@@ -14,14 +14,17 @@ export const FAST_FORWARD = [
 
 /** Choosing a gate opens the coordinator with the "fast-forward" draft; the presenter sends it. */
 export function FastForward({ board }) {
-  return h(Select, {
-    'aria-label': '快进演示到…',
-    placeholder: '快进演示到…',
-    title: '选一道评审门：打开研发协调员并预填请求，点发送后新建一个停在该门的现场项目',
-    value: null,
-    disabled: board.busy,
-    onChange: (gate) => openWork(board, 'fast-forward', { type: 'fastforward', id: gate }),
-    options: FAST_FORWARD.map(([value, label]) => ({ value, label })),
-    style: { minWidth: 150 },
-  })
+  return guided(
+    'overview-fastforward',
+    h(Select, {
+      'aria-label': '快进演示到…',
+      placeholder: '快进演示到…',
+      title: '选一道评审门：打开研发协调员并预填请求，点发送后新建一个停在该门的现场项目',
+      value: null,
+      disabled: board.busy,
+      onChange: (gate) => openWork(board, 'fast-forward', { type: 'fastforward', id: gate }),
+      options: FAST_FORWARD.map(([value, label]) => ({ value, label })),
+      style: { minWidth: 230 },
+    }),
+  )
 }
