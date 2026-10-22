@@ -54,6 +54,12 @@ export function assistantView(
       ...renderMarkdown(nodeText(node), width, ansi),
     ],
     transcript: (width) => renderMarkdown(nodeText(node), width, ansi),
+    transcriptAfter: (prefix, width) => {
+      const text = nodeText(node)
+      let same = 0
+      while (same < prefix.length && text[same] === prefix[same]) same++
+      return renderMarkdown(text.slice(same), width, ansi)
+    },
     invalidate() {},
   }
 }

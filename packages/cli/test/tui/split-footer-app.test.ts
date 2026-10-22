@@ -1,8 +1,10 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { stampFor } from '@agnes/ai/testkit'
 import { createLocalEndpoint } from '@agnes/daemon/local'
 import { createTestHost } from '@agnes/host/testkit'
+import type { RequestBody } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
 import { TuiApp } from '../../src/tui/app.js'
@@ -115,6 +117,75 @@ it('--no-alt-screen opens and closes the slash menu above the prompt without dis
       )
     expect(kept(after)).toEqual(kept(before))
     expect(after.lines.at(-1)).toContain('session')
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+    await host.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+it('--no-alt-screen commits a long streamed reply block by block: every paragraph once, in order, before the turn ends', async () => {
+  const paragraphs = Array.from(
+    { length: 9 },
+    (_, i) => `Paragraph ${i} ${'words go here and wrap onto more rows '.repeat(3).trim()}`,
+  )
+  const reply = paragraphs.join('\n\n')
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-split-footer-'))
+  const { host } = await createTestHost({
+    dataDir: dir,
+    provider: {
+      models: () => [],
+      async *infer(req: RequestBody) {
+        yield { type: 'sent', stamp: stampFor(req) }
+        // Streams in uneven pieces, with a pause, so previews reach the TUI between them.
+        for (let at = 0; at < reply.length; at += 37) {
+          yield { type: 'text_delta', delta: reply.slice(at, at + 37) }
+          await new Promise((resolve) => setTimeout(resolve, 15))
+        }
+        yield { type: 'done', reason: 'stop' }
+      },
+    },
+  })
+  const endpoint = createLocalEndpoint(host, { pollMs: 5 })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    await client.workspace.add(dir)
+    const session = await client.session.new({ cwd: dir })
+    const term = new FakeTerminal({ columns: COLS, rows: ROWS })
+    term.cursor = { row: 1, col: 1 }
+    app = new TuiApp({ session, term, header: 'Agnes', noAltScreen: true })
+    await app.start()
+    term.feed('tell me')
+    term.feed('\r')
+    let committedWhileRunning = false
+    const count = (screen: { scrollback: string[]; lines: string[] }, marker: string) =>
+      [...screen.scrollback, ...screen.lines].filter((line) => line.includes(marker)).length
+    await vi.waitFor(
+      async () => {
+        const screen = await emulate(term, COLS, ROWS)
+        if (
+          app?.busy &&
+          count(screen, 'Paragraph 0') > 0 &&
+          screen.scrollback.join('').includes('Paragraph 0')
+        )
+          committedWhileRunning = true
+        for (const marker of paragraphs.map((_, i) => `Paragraph ${i} `))
+          expect(count(screen, marker)).toBeLessThanOrEqual(1)
+        expect(count(screen, 'Paragraph 8 ')).toBe(1)
+        expect(app?.busy).toBe(false)
+      },
+      { timeout: 15_000, interval: 10 },
+    )
+    const screen = await emulate(term, COLS, ROWS)
+    const text = [...screen.scrollback, ...screen.lines]
+    const order = paragraphs.map((_, i) => text.findIndex((line) => line.includes(`Paragraph ${i} `)))
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    expect(order.every((index) => index >= 0)).toBe(true)
+    expect(committedWhileRunning).toBe(true)
+    expect(text.join(' ').replace(/\s+/g, ' ')).toContain(paragraphs[8]?.replace(/\s+/g, ' '))
   } finally {
     await app?.stop()
     await client.close()

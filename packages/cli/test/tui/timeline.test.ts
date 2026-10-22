@@ -1,6 +1,10 @@
 import type { UINode, UITimeline } from '@agnes/protocol'
-import { expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { createAnsi } from '../../src/tui/ansi.js'
 import { Text } from '../../src/tui/component.js'
+import { assistantView } from '../../src/tui/footer-renderer.js'
+import { renderMarkdown, renderMarkdownChunk } from '../../src/tui/markdown.js'
+import { TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
 
 const user = (id: string, text: string): UINode => ({
@@ -489,4 +493,78 @@ it('shows only the entries not yet written, the welcome only before anything was
   expect(t.render(30)).toEqual([''])
   expect(t.scroll(-3)).toBe(false)
   expect(t.jumpKey('end', false)).toBe(false)
+})
+
+describe('split footer: a long reply goes out block by block while it streams', () => {
+  const ansi = new TuiTheme('mono').ansi(createAnsi('none'))
+  const full = [
+    '# Title',
+    '',
+    'First paragraph that is long enough to wrap across more than one row at this width.',
+    '',
+    '- item a',
+    '- item b',
+    '',
+    '```js',
+    'const a = 1',
+    '',
+    'const b = 2',
+    '```',
+    '',
+    'Closing words.',
+  ].join('\n')
+  const make = (streamed: { text?: string }) =>
+    new Timeline({
+      rows: () => 20,
+      nodeView: (node) => (node.kind === 'assistant' ? assistantView(node, ansi, 'en') : view(node)),
+      split: true,
+      stream: { text: () => streamed.text, markdown: (md, width) => renderMarkdownChunk(md, width, ansi) },
+    })
+  const node = (text: string, streaming: boolean): UINode => ({
+    kind: 'assistant',
+    id: 'a',
+    seq: 2,
+    text,
+    streaming,
+    effectId: 'e',
+  })
+
+  it('writes every finished block once and the rest at settling, with no gap and no repeat', () => {
+    const streamed: { text?: string } = {}
+    const t = make(streamed)
+    t.apply(busyAt([at(1, user('u', 'ask')), node('', true)]))
+    const out = [...t.takeSettled(40)]
+    let seen = 0
+    for (const size of [7, 3, 40, 1, 25, 90, 5, 61]) {
+      seen = Math.min(full.length, seen + size)
+      streamed.text = full.slice(0, seen)
+      const rows = t.takeSettled(40)
+      // What the footer still shows is exactly the part that has not gone out.
+      expect(t.pending('e', streamed.text).length).toBeLessThanOrEqual(streamed.text.length)
+      out.push(...rows)
+    }
+    streamed.text = full
+    out.push(...t.takeSettled(40))
+    expect(out.length).toBeGreaterThan(2)
+    t.apply(idleAt([user('u', 'ask'), node(full, false)]))
+    out.push(...t.takeSettled(40))
+    expect(out).toEqual(['', 'ask', '', ...renderMarkdown(full, 40, ansi)])
+  })
+
+  it('shows the footer only the text that has not gone out', () => {
+    const streamed = { text: 'One.\n\nTwo.\n\nThr' }
+    const t = make(streamed)
+    t.apply(busyAt([node('', true)]))
+    t.takeSettled(40)
+    expect(t.pending('e', streamed.text)).toBe('Thr')
+    expect(t.pending('other', 'x')).toBe('x')
+  })
+
+  it('writes the partial reply at exit, after the blocks that already went out', () => {
+    const streamed = { text: 'One.\n\nTwo.\n\nThr' }
+    const t = make(streamed)
+    t.apply(busyAt([node('', true)]))
+    const first = t.takeSettled(40)
+    expect([...first, ...t.takeSettled(40, true)]).toEqual(['', ...renderMarkdown(streamed.text, 40, ansi)])
+  })
 })

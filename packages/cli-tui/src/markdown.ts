@@ -303,9 +303,33 @@ function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = 
   return out
 }
 
+/**
+ * How many leading characters of a still-growing Markdown text are made of blocks that are finished:
+ * every block that has another one after it. The last block may still take more text (a paragraph, a
+ * list item, an unclosed code fence), so it is not counted. 0 when the lexer's blocks do not add back
+ * up to the text, which is when nothing can be told apart safely.
+ */
+export function completeBlocks(text: string): number {
+  const tokens = Lexer.lex(text, { gfm: true })
+  if (tokens.map((token) => token.raw).join('') !== text) return 0
+  let offset = 0
+  let lastStart = 0
+  for (const token of tokens) {
+    if (token.type !== 'space') lastStart = offset
+    offset += token.raw.length
+  }
+  return lastStart
+}
+
 /** Terminal-only Markdown: HTML is literal text; links/images never trigger I/O. */
 export function renderMarkdown(md: string, width: number, ansi: ThemedAnsi): string[] {
   if (!Number.isFinite(width)) throw new Error('invalid markdown width')
   const clean = stripVT(md).replace(CONTROL, '').replaceAll('\t', '    ')
   return blocks(Lexer.lex(clean, { gfm: true }), Math.max(1, Math.trunc(width)), ansi)
+}
+
+/** A leading part of a longer text: the blank line that separates it from what follows is kept. */
+export function renderMarkdownChunk(md: string, width: number, ansi: ThemedAnsi): string[] {
+  const rows = renderMarkdown(md, width, ansi)
+  return rows.length > 0 && /\n[ \t]*\n\s*$/.test(md) ? [...rows, ''] : rows
 }

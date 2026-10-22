@@ -19,6 +19,7 @@ import { actionFor } from './keymap.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
+import { renderMarkdownChunk } from './markdown.js'
 import { copyTip, systemCopy, TuiMouse } from './mouse.js'
 import { nodeText } from './node-text.js'
 import { PackageController } from './package-controller.js'
@@ -221,6 +222,10 @@ export class TuiApp {
     })
     this.timeline = new Timeline({
       split: o.noAltScreen === true,
+      stream: {
+        text: (id) => this.previews.text(id)?.text,
+        markdown: (md, width) => renderMarkdownChunk(md, width, ansi),
+      },
       rows: () => o.term.size().rows,
       reservedRows: () => this.reservedRows,
       locale,
@@ -867,7 +872,12 @@ export class TuiApp {
   private renderLive(): void {
     for (let i = this.previewEffects.length - 1; i >= 0; i--)
       if (this.previews.text(this.previewEffects[i] ?? '') === undefined) this.previewEffects.splice(i, 1)
-    this.live.set(this.previewEffects.flatMap((effectId) => this.previews.text(effectId) ?? []))
+    this.live.set(
+      this.previewEffects.flatMap((id) => {
+        const s = this.previews.text(id)
+        return s ? [{ ...s, text: this.timeline.pending(id, s.text) }] : []
+      }),
+    )
     this.renderer.requestRender()
   }
 

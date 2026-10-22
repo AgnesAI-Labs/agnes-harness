@@ -10,6 +10,8 @@ export interface Component {
   render(width: number): string[]
   /** Optional plain shell-history form when the fullscreen TUI exits. */
   transcript?(width: number): string[]
+  /** The plain form of what follows `prefix`, a leading part of the source text that was already written out. */
+  transcriptAfter?(prefix: string, width: number): string[]
   handleInput?(data: string): boolean
   /** A mouse click on the first row this component drew (a card's head); the viewport repaints after. */
   clickHead?(): void

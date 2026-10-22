@@ -3,6 +3,7 @@ import type { Component } from '../component.js'
 import { actionFor } from '../keymap.js'
 import type { KeyName } from '../keys.js'
 import { tt } from '../locale-extended.js'
+import { completeBlocks } from '../markdown.js'
 import { isSettled } from '../settled.js'
 import { groupable, groupRuns, silentKind } from '../tool-groups.js'
 
@@ -10,7 +11,7 @@ export const TIMELINE_RESERVED_ROWS = 5
 
 type Entry = { signature: string; nodes: UINode[]; view: Component }
 type LocalEntry = { afterSeq: number; view: Component }
-type Item = { key: string; view: Component; settled: boolean }
+type Item = { key: string; view: Component; settled: boolean; effectId?: string | undefined }
 
 /** A fullscreen viewport over core's projected nodes; it never reduces ledger events itself. */
 export class Timeline implements Component {
@@ -30,6 +31,8 @@ export class Timeline implements Component {
   // Split footer: the entries already handed to native scrollback. They are never handed out again,
   // whatever the projection does to them afterwards.
   private written = new Set<string>()
+  // Source text of each running reply that already went out, block by block, ahead of its settling.
+  private committed = new Map<string, string>()
   private idle = true
 
   constructor(
@@ -44,6 +47,11 @@ export class Timeline implements Component {
       top?: Component
       /** Split footer: settled entries leave through `takeSettled`; `render` shows only the rest. */
       split?: boolean
+      /** Split footer: the streamed text of an inference that is still running, and how to draw Markdown. */
+      stream?: {
+        text(effectId: string): string | undefined
+        markdown(source: string, width: number): string[]
+      }
     },
   ) {}
 
@@ -53,6 +61,7 @@ export class Timeline implements Component {
       this.entries = new Map()
       this.local = []
       this.written = new Set()
+      this.committed = new Map()
       this.toBottom()
       this.maxOffset = 0
       this.hasEarlier = false
@@ -176,6 +185,7 @@ export class Timeline implements Component {
         key: (entry.nodes[0] as UINode).id,
         view: entry.view,
         settled: !growing && entry.nodes.every(isSettled),
+        effectId: entry.nodes[0]?.kind === 'assistant' ? entry.nodes[0].effectId : undefined,
       })
     })
     while (localIndex < this.local.length) pushLocal()
@@ -208,13 +218,51 @@ export class Timeline implements Component {
     const out: string[] = []
     for (const [index, item] of items.entries()) {
       if (this.written.has(item.key)) continue
-      if (index > last && !all && !item.settled) break
+      if (index > last && !all && !item.settled) {
+        out.push(...this.commitBlocks(item, width))
+        break
+      }
       this.written.add(item.key)
       if (index < last) continue
-      const rows = item.view.transcript?.(width) ?? item.view.render(width)
-      if (rows.length > 0) out.push('', ...rows)
+      out.push(...this.finalRows(item, width, !item.settled))
     }
     return out
+  }
+
+  /** A running reply, first in line: the blocks of its streamed text that are finished go out now, once. */
+  private commitBlocks(item: Item, width: number): string[] {
+    const text = item.effectId === undefined ? undefined : this.o.stream?.text(item.effectId)
+    if (item.effectId === undefined || text === undefined || !this.o.stream) return []
+    const before = this.committed.get(item.effectId) ?? ''
+    const end = completeBlocks(text)
+    if (end <= before.length || !text.startsWith(before)) return []
+    this.committed.set(item.effectId, text.slice(0, end))
+    const rows = this.o.stream.markdown(text.slice(before.length, end), width)
+    return rows.length > 0 && before === '' ? ['', ...rows] : rows
+  }
+
+  /** What is left of an entry to write: all of it, or what follows the blocks of its reply already out. */
+  private finalRows(item: Item, width: number, inFlight: boolean): string[] {
+    const done = item.effectId === undefined ? undefined : this.committed.get(item.effectId)
+    if (item.effectId !== undefined) this.committed.delete(item.effectId)
+    const streamed = inFlight && item.effectId !== undefined ? this.o.stream?.text(item.effectId) : undefined
+    const rows =
+      streamed !== undefined
+        ? this.o.stream?.markdown(
+            streamed.startsWith(done ?? '') ? streamed.slice(done?.length ?? 0) : streamed,
+            width,
+          )
+        : done !== undefined && item.view.transcriptAfter
+          ? item.view.transcriptAfter(done, width)
+          : (item.view.transcript?.(width) ?? item.view.render(width))
+    if (!rows || rows.length === 0) return []
+    return done === undefined ? ['', ...rows] : rows
+  }
+
+  /** The part of a running reply's streamed text the footer still has to show: what went out is not shown twice. */
+  pending(effectId: string, text: string): string {
+    const done = this.committed.get(effectId)
+    return done !== undefined && text.startsWith(done) ? text.slice(done.length) : text
   }
 
   private splitRows(width: number): string[] {
