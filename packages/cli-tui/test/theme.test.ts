@@ -40,6 +40,17 @@ describe('TUI themes', () => {
     expect(choose).toHaveBeenCalledWith('dark')
     expect(picker.render(90)).toEqual([])
   })
+  it('filters themes by name and keeps the current-theme mark', () => {
+    const choose = vi.fn()
+    const picker = new ThemePicker(new TuiTheme('light').ansi(createAnsi('none')), 'en', choose)
+    picker.show('dark')
+    for (const ch of 'MO') picker.handleInput(ch)
+    const text = picker.render(60).join('\n')
+    expect(text).toContain('Filter: MO (1/3)')
+    expect(text).not.toContain('Dark')
+    picker.handleInput('\r')
+    expect(choose).toHaveBeenCalledWith('mono')
+  })
   it('paints blank rows and restores palette after nested resets without losing the cursor', () => {
     const ansi = createAnsi('256')
     const theme = new TuiTheme('dark')

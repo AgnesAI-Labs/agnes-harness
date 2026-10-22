@@ -110,3 +110,24 @@ it('esc on the model list closes the picker entirely', () => {
   expect(picker.open).toBe(false)
   expect(chosen).not.toHaveBeenCalled()
 })
+
+it('filters the model list as you type and still picks the original model', () => {
+  const chosen = vi.fn()
+  const picker = new ModelPicker({
+    ansi: new TuiTheme().ansi(createAnsi('none')),
+    maxRows: () => 8,
+    onChoose: chosen,
+    changed: vi.fn(),
+  })
+  picker.show([
+    { route: 'deepseek', model: 'deepseek-v4-flash', reasoning: false },
+    { route: 'openai', model: 'GPT-5', reasoning: false },
+  ])
+  for (const ch of 'gpt') picker.handleInput(ch)
+  const text = picker.render(60).join('\n')
+  expect(text).toContain('Filter: gpt (1/2)')
+  expect(text).toContain('openai/GPT-5')
+  expect(text).not.toContain('deepseek')
+  picker.handleInput('\r')
+  expect(chosen).toHaveBeenCalledWith({ route: 'openai', model: 'GPT-5' })
+})

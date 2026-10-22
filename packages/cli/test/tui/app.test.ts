@@ -1266,7 +1266,7 @@ it('opens /model choices above the footer, switches primary once, and cancels wi
     // The open picker grows the bottom-anchored input area upward; the footer stays on the last row.
     expect(open.findIndex((line) => line.includes('credits 3000/4000'))).toBe(23)
 
-    term.feed('x') // The open picker owns unrelated keys too; this must not enter the editor.
+    term.feed('\t') // The open picker owns unrelated keys too; this must not enter the editor.
     term.feed('\x1b[B')
     term.feed('\r')
     await vi.waitFor(() =>
@@ -1379,7 +1379,7 @@ it('opens /resume choices above the footer, owns input, loads the selection and 
     )
     expect(endpoint.calls.some((entry) => entry.method === 'session/load')).toBe(false)
 
-    term.feed('x')
+    term.feed('\t')
     term.feed('\x1b[B')
     term.feed('\r')
     await vi.waitFor(() =>

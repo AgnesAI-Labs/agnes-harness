@@ -2,6 +2,7 @@ import type { ThinkingLevel } from '@agnes/protocol'
 import type { ModelChoice } from '../commands.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
+import { FilterSelect } from '../components/filter-select.js'
 import { Select } from '../components/select.js'
 import { tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
@@ -33,8 +34,9 @@ export class ModelPicker implements Component {
   show(choices: readonly ModelChoice[]): void {
     this.choices = choices
     const byId = new Map(choices.map((choice) => [`${choice.route}/${choice.model}`, { ...choice }]))
-    const select = new Select({
+    const select = new FilterSelect({
       options: [...byId.keys()].map((id) => ({ id, label: id })),
+      locale: this.o.locale ?? 'en',
       ansi: this.o.ansi,
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
       onChoose: (id) => {

@@ -19,6 +19,7 @@ export const TERMINAL_KEYS = [
   'editor.unset',
   'editor.cancelled',
   'editor.failed',
+  'picker.filter',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -41,6 +42,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'editor.unset': 'Ctrl-G opens your own editor: set $VISUAL or $EDITOR (for example export EDITOR=vim)',
     'editor.cancelled': 'Cancelled (editor exited with {code}); the draft is unchanged',
     'editor.failed': 'Cannot run the editor: {reason}',
+    'picker.filter': 'Filter: {q} ({n}/{total})',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -56,5 +58,6 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'editor.unset': 'Ctrl-G 用你自己的编辑器编辑草稿：请先设置 $VISUAL 或 $EDITOR（例如 export EDITOR=vim）',
     'editor.cancelled': '已取消（编辑器退出码 {code}），草稿保持不变',
     'editor.failed': '无法运行编辑器：{reason}',
+    'picker.filter': '过滤：{q}（{n}/{total}）',
   },
 }

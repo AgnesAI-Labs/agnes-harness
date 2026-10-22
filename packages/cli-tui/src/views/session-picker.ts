@@ -1,7 +1,7 @@
 import type { SessionChoice } from '../commands.js'
 import type { Component } from '../component.js'
 import { Box } from '../components/box.js'
-import { Select } from '../components/select.js'
+import { FilterSelect } from '../components/filter-select.js'
 import { type ExtendedKey, tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
 
@@ -38,11 +38,12 @@ export class SessionPicker implements Component {
     const keyOf = (choice: SessionChoice): string =>
       choice.forkAt === undefined ? choice.sessionId : `${choice.sessionId}@${choice.forkAt}`
     const byId = new Map(choices.map((choice) => [keyOf(choice), structuredClone(choice)]))
-    const select = new Select({
-      options: [...byId.entries()].map(([id, choice]) => ({
-        id,
-        label: label(choice, this.o.locale ?? 'en'),
-      })),
+    const select = new FilterSelect({
+      options: [...byId.entries()].map(([id, choice]) => {
+        const text = label(choice, this.o.locale ?? 'en')
+        return { id, label: text, search: `${text} ${choice.sessionId}` }
+      }),
+      locale: this.o.locale ?? 'en',
       ansi: this.o.ansi,
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
       onChoose: (id) => {
