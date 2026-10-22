@@ -1,5 +1,6 @@
 import { type Component, CURSOR_MARKER, escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
+import { actionFor } from '../keymap.js'
 import { parseKey } from '../keys.js'
 import { tt } from '../locale-extended.js'
 
@@ -46,8 +47,9 @@ export class SecretInputView implements Component {
 
   handleInput(data: string): boolean {
     const key = parseKey(data, false)
-    switch (key.name) {
-      case 'enter': {
+    const stroke = key.name === 'char' || key.name === 'unknown' ? key.name : actionFor('secret', key.name)
+    switch (stroke) {
+      case 'secret-submit': {
         if (!this.#secret && !this.options.allowEmpty) {
           this.options.onInvalid?.('empty')
           return true
@@ -57,14 +59,14 @@ export class SecretInputView implements Component {
         this.options.onSubmit(submitted)
         return true
       }
-      case 'backspace':
+      case 'secret-erase':
         this.#secret = removeLastGrapheme(this.#secret)
         return true
-      case 'esc':
+      case 'secret-back':
         this.#secret = ''
         this.options.onBack()
         return true
-      case 'ctrl-c':
+      case 'secret-abort':
         this.#secret = ''
         return false
       case 'char': {

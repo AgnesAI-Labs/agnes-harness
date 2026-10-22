@@ -1,6 +1,7 @@
 import { createAnsi } from './ansi.js'
 import { type Component, escapeControl } from './component.js'
 import { Editor } from './editor.js'
+import { actionFor } from './keymap.js'
 import { parseKey } from './keys.js'
 import type { Locale } from './locale.js'
 import { tt } from './locale-extended.js'
@@ -71,8 +72,8 @@ export class ProvisionalComposer {
         )
       },
       handleInput: (data) => {
-        const key = parseKey(data, term.caps.kittyKeyboard).name
-        if (key === 'ctrl-c' || (key === 'ctrl-d' && !this.editor.text)) {
+        const action = actionFor('global', parseKey(data, term.caps.kittyKeyboard).name)
+        if (action === 'interrupt' || (action === 'quit' && !this.editor.text)) {
           o.onInterrupt()
           return true
         }

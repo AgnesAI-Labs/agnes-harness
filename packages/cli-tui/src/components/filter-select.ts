@@ -1,4 +1,5 @@
 import { type Component, escapeControl } from '../component.js'
+import { actionFor } from '../keymap.js'
 import { parseKey } from '../keys.js'
 import { tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
@@ -70,12 +71,13 @@ export class FilterSelect implements Component {
       if (text) this.setFilter(this.filter + text)
       return true
     }
-    if (key.name === 'backspace') {
+    const action = actionFor('picker', key.name)
+    if (action === 'picker-erase') {
       if (this.filter)
         this.setFilter(this.filter.slice(0, Array.from(GRAPHEMES.segment(this.filter)).at(-1)?.index))
       return true
     }
-    if (key.name === 'esc' && this.filter) {
+    if (action === 'picker-cancel' && this.filter) {
       this.setFilter('')
       return true
     }

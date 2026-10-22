@@ -2,6 +2,7 @@ import type { PermissionOutcome, PermissionRequest } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
 import { type Component, escapeControl, wrapText } from './component.js'
 import { columns, fitLine } from './components/line.js'
+import { actionFor } from './keymap.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
@@ -95,8 +96,9 @@ export class PermissionModal implements Component {
     if (!question) return false
     const key = parseKey(data, false)
     const options = question.request.options
-    if (key.name === 'esc' || key.name === 'ctrl-c') question.finish({ unanswered: 'detached' })
-    else if (key.name === 'enter') {
+    const action = actionFor('approval', key.name)
+    if (action === 'approval-dismiss') question.finish({ unanswered: 'detached' })
+    else if (action === 'approval-confirm') {
       const option = options[question.selected]
       if (!option || option.kind === 'reject_once' || option.kind === 'reject_always')
         question.finish(option ? { optionId: option.optionId } : { unanswered: 'detached' })
@@ -105,16 +107,16 @@ export class PermissionModal implements Component {
       const option = options[Number(key.ch) - 1]
       if (option && (option.kind.startsWith('reject_') || this.shown(question, Number(key.ch) - 1)))
         question.finish({ optionId: option.optionId })
-    } else if (key.name === 'pgup' || key.name === 'pgdn') {
+    } else if (action === 'approval-page-up' || action === 'approval-page-down') {
       question.detailOffset = Math.max(
         0,
-        question.detailOffset + (key.name === 'pgup' ? -1 : 1) * question.pageRows,
+        question.detailOffset + (action === 'approval-page-up' ? -1 : 1) * question.pageRows,
       )
       this.changed()
-    } else if (key.name === 'up' || key.name === 'down') {
+    } else if (action === 'approval-up' || action === 'approval-down') {
       question.selected = Math.max(
         0,
-        Math.min(options.length - 1, question.selected + (key.name === 'up' ? -1 : 1)),
+        Math.min(options.length - 1, question.selected + (action === 'approval-up' ? -1 : 1)),
       )
       this.changed()
     }

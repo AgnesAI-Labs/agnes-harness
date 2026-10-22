@@ -1,4 +1,5 @@
 import { type Component, escapeControl } from '../component.js'
+import { actionFor } from '../keymap.js'
 import { parseKey } from '../keys.js'
 import type { ThemedAnsi } from '../theme.js'
 import { fitLine } from './line.js'
@@ -22,20 +23,21 @@ export class Select implements Component {
   invalidate(): void {}
   handleInput(data: string): boolean {
     const key = parseKey(data, false)
-    if (key.name === 'up') {
+    const action = actionFor('picker', key.name)
+    if (action === 'picker-up') {
       this.idx = Math.max(0, this.idx - 1)
       return true
     }
-    if (key.name === 'down') {
+    if (action === 'picker-down') {
       this.idx = Math.max(0, Math.min(this.options.length - 1, this.idx + 1))
       return true
     }
-    if (key.name === 'enter') {
+    if (action === 'picker-choose') {
       const option = this.options[this.idx]
       if (option) this.o.onChoose(option.id)
       return true
     }
-    if (key.name === 'esc') {
+    if (action === 'picker-cancel') {
       this.o.onCancel?.()
       return true
     }

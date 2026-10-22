@@ -14,6 +14,7 @@ import { type ExternalEditorConfig, editDraft } from './external-editor.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { formatTurnSummary } from './format-usage.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
+import { actionFor } from './keymap.js'
 import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
@@ -408,24 +409,25 @@ export class TuiApp {
       // the keystroke falls through to the editor like any other character.
       if (!inert && this.cards.handleInput(data)) return true
       const key = parseKey(data, o.term.caps.kittyKeyboard)
-      if (key.name === 'ctrl-o') {
+      const action = actionFor('global', key.name)
+      if (action === 'card-toggle') {
         this.cards.toggleLatest()
         return true
       }
-      if (key.name === 'f1' || key.name === 'f2' || key.name === 'f3' || key.name === 'f4') {
-        const action = this.hintActions[Number(key.name.slice(1)) - 1]
-        if (action && !action.disabled) this.dispatchAction(action.id)
+      if (action === 'hint-1' || action === 'hint-2' || action === 'hint-3' || action === 'hint-4') {
+        const hint = this.hintActions[Number(action.slice(-1)) - 1]
+        if (hint && !hint.disabled) this.dispatchAction(hint.id)
         return true
       }
       if (this.timeline.jumpKey(key.name, this.editor.text !== '')) return true
-      if (key.name === 'pgup' || key.name === 'pgdn') {
+      if (action === 'timeline-page-up' || action === 'timeline-page-down') {
         const page = Math.max(1, o.term.size().rows - this.reservedRows)
-        this.scrollTimeline(key.name === 'pgup' ? -page : page)
+        this.scrollTimeline(action === 'timeline-page-up' ? -page : page)
         return true
       }
       // Idle Alt+Enter inserts a newline (the editor's own default, reached via `handle(data)`
       // below). Busy, it steers the draft into the turn in flight, where Enter queues it behind.
-      if (key.name === 'alt-enter' && this.busy) {
+      if (action === 'steer' && this.busy) {
         const text = this.editor.expanded()
         if (text.trim() && !this.refuseClosed()) {
           this.editor.clear()
@@ -436,11 +438,11 @@ export class TuiApp {
         return true
       }
       // Alt+Up takes the newest queued message back into an empty editor.
-      if (key.name === 'alt-up' && !this.editor.text) {
+      if (action === 'queue-recall' && !this.editor.text) {
         void this.runInput('/queue edit last')
         return true
       }
-      if (key.name === 'ctrl-c') {
+      if (action === 'interrupt') {
         this.interrupts.press(
           () => this.cancel(),
           () => this.onQuit(),
@@ -448,7 +450,7 @@ export class TuiApp {
         )
         return true
       }
-      if (parseKey(data, o.term.caps.kittyKeyboard).name === 'ctrl-d' && !this.editor.text && !this.busy) {
+      if (action === 'quit' && !this.editor.text && !this.busy) {
         this.onQuit()
         return true
       }

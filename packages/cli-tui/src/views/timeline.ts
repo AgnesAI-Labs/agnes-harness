@@ -1,5 +1,7 @@
 import type { UINode, UITimeline } from '@agnes/protocol'
 import type { Component } from '../component.js'
+import { actionFor } from '../keymap.js'
+import type { KeyName } from '../keys.js'
 import { tt } from '../locale-extended.js'
 import { groupRuns } from '../tool-groups.js'
 
@@ -91,8 +93,9 @@ export class Timeline implements Component {
   }
 
   /** End jumps back to the newest rows and follows new output again; with a draft only Ctrl-End does, since End moves the cursor. */
-  jumpKey(key: string, hasDraft: boolean): boolean {
-    if (key !== 'ctrl-end' && (key !== 'end' || hasDraft)) return false
+  /** End moves the cursor inside a draft; only with an empty one does it jump to the newest row. */
+  jumpKey(key: KeyName, hasDraft: boolean): boolean {
+    if (actionFor('global', key) !== 'timeline-bottom' || (key === 'end' && hasDraft)) return false
     this.toBottom()
     return true
   }

@@ -1,5 +1,6 @@
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { Box } from '../components/box.js'
+import { actionFor } from '../keymap.js'
 import { parseKey } from '../keys.js'
 import { tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
@@ -27,13 +28,13 @@ export class UsagePanel implements Component {
   invalidate(): void {}
   handleInput(data: string): boolean {
     if (this.report === undefined) return false
-    const name = parseKey(data, false).name
-    if (name === 'esc' || name === 'enter' || name === 'ctrl-c' || data === 'q') this.close()
+    const action = actionFor('panel', parseKey(data, false).name)
+    if (action === 'panel-close' || data === 'q') this.close()
     else {
-      if (name === 'up') this.offset -= 1
-      if (name === 'down') this.offset += 1
-      if (name === 'pgup') this.offset -= this.height
-      if (name === 'pgdn') this.offset += this.height
+      if (action === 'panel-up') this.offset -= 1
+      if (action === 'panel-down') this.offset += 1
+      if (action === 'panel-page-up') this.offset -= this.height
+      if (action === 'panel-page-down') this.offset += this.height
       this.offset = Math.max(0, Math.min(this.offset, this.total - this.height))
       this.options.changed()
     }

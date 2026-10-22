@@ -4,6 +4,7 @@ import { type Client, loginSubscription } from '@agnes/sdk'
 import { openLoginBrowser } from '../login-browser.js'
 import { type Component, Text, VStack } from '../tui/component.js'
 import { Select } from '../tui/components/select.js'
+import { actionFor } from '../tui/keymap.js'
 import { parseKey } from '../tui/keys.js'
 import { tt } from '../tui/locale.js'
 import { Renderer } from '../tui/renderer.js'
@@ -66,7 +67,7 @@ export async function runOnboardingTui(
       // The views hand ctrl+c back unhandled; every hint on these screens promises it cancels the flow.
       handleInput: (data) => {
         if (child.handleInput?.(data) === true) return true
-        if (parseKey(data, term.caps.kittyKeyboard).name !== 'ctrl-c') return false
+        if (actionFor('global', parseKey(data, term.caps.kittyKeyboard).name) !== 'interrupt') return false
         finish(undefined)
         return true
       },

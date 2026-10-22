@@ -2,6 +2,7 @@ import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
 import { lineColumn, lineStartOf, moveLine, nextWordEnd, prevWordStart } from './edit-motion.js'
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
+import { type ActionOf, actionFor } from './keymap.js'
 import { type Key, parseKey } from './keys.js'
 import { tt } from './locale-extended.js'
 import type { Tone } from './palette.js'
@@ -188,15 +189,19 @@ export class Editor implements Component {
     // An undo, redo or clear moved the history itself and is not an edit to record.
     if (edited && generation === this.undo.generation) this.undo.record(before, k.name === 'char')
     else if (k.name !== 'char') this.undo.endRun()
-    if (edited || (k.name !== 'up' && k.name !== 'down')) this.goalColumn = undefined
+    const vertical = actionFor('editor', k.name)
+    if (edited || (vertical !== 'move-up' && vertical !== 'move-down')) this.goalColumn = undefined
     return handled
   }
 
   private handleKey(k: Key): boolean {
     const menu = this.openMenu()
     const choices = menu?.labels.length ?? 0
-    switch (k.name) {
-      case 'enter': {
+    // Text, pastes and unreadable escapes are not bindings; every other key means what the table says.
+    const stroke =
+      k.name === 'char' || k.name === 'paste' || k.name === 'unknown' ? k.name : actionFor('editor', k.name)
+    switch (stroke) {
+      case 'submit': {
         // A trailing backslash is the way to enter a newline on terminals that cannot report
         // alt-enter or shift-enter at all.
         if (this.text.endsWith('\\')) {
@@ -220,11 +225,10 @@ export class Editor implements Component {
         this.o.onSubmit(t)
         return true
       }
-      case 'alt-enter':
-      case 'shift-enter':
+      case 'newline':
         this.insert('\n')
         return true
-      case 'backspace': {
+      case 'delete-back': {
         const before = this.text.slice(0, this.cursor)
         const chip = [...this.pastes.keys()].find((c) => before.endsWith(c))
         if (chip) {
@@ -239,25 +243,21 @@ export class Editor implements Component {
         }
         return true
       }
-      case 'left':
-      case 'ctrl-b':
+      case 'cursor-left':
         this.cursor = this.prevBoundary()
         return true
-      case 'right':
-      case 'ctrl-f':
+      case 'cursor-right':
         this.cursor = this.nextBoundary()
         return true
       // Per line, not per buffer. Every terminal editor moves to the ends of the line the cursor is
       // on; a jump to the ends of a multi-line draft would be a surprise with no key to undo it.
-      case 'home':
-      case 'ctrl-a':
+      case 'line-start':
         this.cursor = this.lineStart()
         return true
-      case 'end':
-      case 'ctrl-e':
+      case 'line-end':
         this.cursor = this.lineEnd()
         return true
-      case 'up':
+      case 'move-up':
         if (choices) {
           this.menuIndex = (this.menuIndex - 1 + choices) % choices
         } else if (!this.moveVertically(-1) && this.histIdx + 1 < this.history.length) {
@@ -266,7 +266,7 @@ export class Editor implements Component {
           this.setText(this.history[this.histIdx] as string)
         }
         return true
-      case 'down':
+      case 'move-down':
         if (choices) {
           this.menuIndex = (this.menuIndex + 1) % choices
         } else if (!this.moveVertically(1)) {
@@ -280,7 +280,7 @@ export class Editor implements Component {
           }
         }
         return true
-      case 'esc': {
+      case 'cancel': {
         if (menu && !menu.slash) {
           this.dismissed = this.text.slice(0, this.cursor)
           return true
@@ -290,7 +290,7 @@ export class Editor implements Component {
         this.o.onCancelKey?.(hadDraft)
         return true
       }
-      case 'tab': {
+      case 'complete': {
         if (menu) {
           if (choices) menu.accept(this.menuIndex)
           return true
@@ -307,7 +307,7 @@ export class Editor implements Component {
       case 'paste':
         this.paste(k.ch ?? '')
         return true
-      case 'ctrl-r':
+      case 'history-search':
         this.search = new HistorySearch(this.store, { text: this.text, cursor: this.cursor })
         return true
       case 'char': {
@@ -318,52 +318,53 @@ export class Editor implements Component {
       // Swallowed rather than passed on: an unrecognised escape sequence is not text and is not a
       // command, so the only correct thing to do with it is nothing.
       case 'unknown':
-      case 'alt-up':
         return true
+      // Alt-Up belongs to the app (recalling a queued message); typed into a draft it does nothing.
+      case undefined:
+        return k.name === 'alt-up'
       default:
-        return this.readlineKey(k)
+        return this.readlineKey(stroke)
     }
   }
 
   // The emacs keys beyond plain cursor moves: word motion, cuts and Ctrl-Y, undo and redo, Ctrl-G.
-  private readlineKey(k: Key): boolean {
-    switch (k.name) {
+  private readlineKey(action: ActionOf<'editor'>): boolean {
+    switch (action) {
       case 'word-left':
         this.cursor = prevWordStart(this.text, this.cursor)
         return true
       case 'word-right':
         this.cursor = nextWordEnd(this.text, this.cursor)
         return true
-      case 'ctrl-k': {
+      case 'cut-to-end': {
         // At the end of a line the cut takes the newline, so lines can be joined.
         const end = this.lineEnd()
         this.kill(this.cursor, end > this.cursor ? end : Math.min(this.text.length, end + 1))
         return true
       }
-      case 'ctrl-u':
+      case 'cut-to-start':
         this.kill(this.lineStart(), this.cursor)
         return true
-      case 'ctrl-w':
-      case 'word-delete-back':
+      case 'cut-word-back':
         this.kill(prevWordStart(this.text, this.cursor), this.cursor)
         return true
-      case 'word-delete':
+      case 'cut-word':
         this.kill(this.cursor, nextWordEnd(this.text, this.cursor))
         return true
-      case 'ctrl-y':
+      case 'yank':
         if (this.killed) this.insert(this.killed)
         return true
-      case 'ctrl-z':
-      case 'ctrl-shift-z': {
+      case 'undo':
+      case 'redo': {
         const now = { text: this.text, cursor: this.cursor }
-        const to = k.name === 'ctrl-z' ? this.undo.undo(now) : this.undo.redo(now)
+        const to = action === 'undo' ? this.undo.undo(now) : this.undo.redo(now)
         if (to) {
           this.text = to.text
           this.cursor = to.cursor
         }
         return true
       }
-      case 'ctrl-g':
+      case 'external-edit':
         this.o.onExternalEdit?.()
         return true
       default:
@@ -393,8 +394,10 @@ export class Editor implements Component {
   // the original draft back; any other key takes the match and then does what it always does.
   private searching(k: Key, data: string): boolean {
     const search = this.search as HistorySearch
-    switch (k.name) {
-      case 'ctrl-r':
+    const stroke =
+      k.name === 'char' || k.name === 'paste' || k.name === 'unknown' ? k.name : actionFor('search', k.name)
+    switch (stroke) {
+      case 'search-older':
         search.older()
         return true
       case 'char': {
@@ -402,13 +405,13 @@ export class Editor implements Component {
         if (text) search.type(text)
         return true
       }
-      case 'backspace':
+      case 'search-erase':
         search.erase()
         return true
       case 'paste':
       case 'unknown':
         return true
-      case 'esc':
+      case 'search-cancel':
         this.search = undefined
         this.text = search.draft.text
         this.cursor = search.draft.cursor
@@ -420,7 +423,7 @@ export class Editor implements Component {
           this.text = search.draft.text
           this.cursor = search.draft.cursor
         }
-        return k.name === 'enter' ? true : this.handleInput(data)
+        return stroke === 'search-accept' ? true : this.handleInput(data)
       }
     }
   }
