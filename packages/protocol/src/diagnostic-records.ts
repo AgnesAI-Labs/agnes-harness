@@ -6,6 +6,14 @@ import { AGNES_ERRORS, JSONRPC_ERRORS } from './errors.js'
 
 export type { DiagnosticRecord } from '../gen/ts/agnes-v1.js'
 
+/**
+ * The only non-public cause a record may carry: an internal admin code plus a bounded reason
+ * category built from fixed literals and numeric codes, never from exception text.
+ */
+const ADMIN_CAUSE = /^E_ADMIN_(?:BACKEND|RESPONSE):[a-z][a-z0-9-]*(?::[a-z0-9._/-]{1,48})?$/
+export const adminDiagnosticCause = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.length <= 96 && ADMIN_CAUSE.test(value) ? value : undefined
+
 const records = new Map<string, DiagnosticRecord>()
 const sinks = new Set<(record: Readonly<DiagnosticRecord>) => void>()
 export function recordDiagnostic(record: DiagnosticRecord): boolean {
@@ -57,6 +65,8 @@ export function safeDiagnosticRecord(input: unknown): DiagnosticRecord | undefin
     at: new Date(row.at).toISOString(),
     code: row.code,
     name: row.name,
-    ...(Value.Check(AppServerErrorCause, { code: row.cause }) ? { cause: row.cause } : {}),
+    ...(Value.Check(AppServerErrorCause, { code: row.cause }) || adminDiagnosticCause(row.cause)
+      ? { cause: row.cause }
+      : {}),
   }
 }

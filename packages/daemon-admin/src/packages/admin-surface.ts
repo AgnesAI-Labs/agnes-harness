@@ -32,6 +32,7 @@ import {
   SystemPromptSnapshot,
 } from '@agnes/protocol/gen/agnes-v1'
 
+import { backendCause, invalidResponse, responseCause } from './admin-failure.js'
 import { configurationFailureStatus, configurationReadOnly } from './permissions.js'
 
 const PREFIX = '/admin/plugins/api/'
@@ -159,8 +160,21 @@ function reply(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
   response.end(JSON.stringify(body))
 }
-const error = (response: ServerResponse, status: number, code: string, _message: string): void =>
-  reply(response, status, { error: httpRpcError(status, code) })
+const error = (
+  response: ServerResponse,
+  status: number,
+  code: string,
+  _message: string,
+  diagnosticCause?: string,
+): void => reply(response, status, { error: httpRpcError(status, code, diagnosticCause) })
+
+/** The rpc-bearing catch blocks share this status mapping; only a 502 is an admin failure. */
+function replyRpc(response: ServerResponse, rpc: RpcError, failure: unknown): void {
+  const status = rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502
+  reply(response, status, {
+    error: normalizeRpcError(rpc, status === 502 ? backendCause(failure) : undefined),
+  })
+}
 
 /** No arbitrary method forwarding; ordinary chat credentials never grant raw PackageAdmin access. */
 export function createAdminSurface(options: AdminSurfaceOptions) {
@@ -258,7 +272,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
               action as 'list' | 'create' | 'set' | 'rename' | 'delete',
               input,
             )
-            if (!validateAgainst(spec.result, result).ok) throw new Error('Invalid credential response')
+            if (!validateAgainst(spec.result, result).ok) throw invalidResponse('credentials')
             reply(response, 200, result)
           } catch (cause) {
             const rpc = (cause as { rpc?: RpcError })?.rpc
@@ -277,7 +291,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
                   },
                 },
               })
-            } else error(response, 502, 'E_ADMIN_BACKEND', '')
+            } else error(response, 502, 'E_ADMIN_BACKEND', '', backendCause(cause))
           }
           return true
         }
@@ -301,10 +315,10 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
               return true
             }
             const result = await options.factChain(input as import('@agnes/protocol').FactChainParams)
-            if (!validateAgainst(FactChainResult, result).ok) throw new Error('Invalid fact chain')
+            if (!validateAgainst(FactChainResult, result).ok) throw invalidResponse('fact-chain')
             reply(response, 200, result)
-          } catch {
-            error(response, 502, 'E_ADMIN_BACKEND', '')
+          } catch (cause) {
+            error(response, 502, 'E_ADMIN_BACKEND', '', backendCause(cause))
           }
           return true
         }
@@ -335,7 +349,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
             const snapshot = write
               ? await options.modelSlots.save(input as import('@agnes/protocol').ModelSlotsSnapshot)
               : await options.modelSlots.get()
-            if (!validateAgainst(ModelSlotsSnapshot, snapshot).ok) throw new Error('Invalid model slots')
+            if (!validateAgainst(ModelSlotsSnapshot, snapshot).ok) throw invalidResponse('model-slots')
             reply(response, 200, {
               ...snapshot,
               canSave: !readOnly && configuredPermissions.includes('packages.activate'),
@@ -352,6 +366,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
               conflict ? 409 : invalid ? 400 : 502,
               conflict ? 'CONFIG_REVISION_CONFLICT' : invalid ? 'CONFIG_INVALID_INPUT' : 'E_ADMIN_BACKEND',
               '',
+              backendCause(cause),
             )
           }
           return true
@@ -425,13 +440,13 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
               : await options.systemPrompt.get(
                   sessionPreview ? (input as import('@agnes/protocol').SystemPromptGetParams) : undefined,
                 )
-            if (!validateAgainst(SystemPromptSnapshot, result).ok) throw new Error('Invalid prompt snapshot')
+            if (!validateAgainst(SystemPromptSnapshot, result).ok) throw invalidResponse('system-prompt')
             reply(response, 200, result)
           } catch (failure) {
             const envelope =
               record(failure) && typeof failure.code === 'number' && record(failure.data)
                 ? normalizeRpcError(failure as unknown as RpcError)
-                : httpRpcError(502, 'E_ADMIN_BACKEND')
+                : httpRpcError(502, 'E_ADMIN_BACKEND', backendCause(failure))
             reply(response, configurationFailureStatus(envelope.data?.code), { error: envelope })
           }
           return true
@@ -650,9 +665,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           } catch (cause) {
             const rpc = (cause as { rpc?: RpcError })?.rpc
             if (rpc) {
-              reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
-                error: normalizeRpcError(rpc),
-              })
+              replyRpc(response, rpc, cause)
               return true
             }
             const code = (cause as { code?: string }).code
@@ -745,14 +758,12 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
               }
               result = await provider.save(body)
             } else result = await provider.get()
-            if (!validateAgainst(ChildEnginesState, result).ok) throw new Error('invalid child engines')
+            if (!validateAgainst(ChildEnginesState, result).ok) throw invalidResponse('child-engines')
             reply(response, 200, result)
           } catch (cause) {
             const rpc = (cause as { rpc?: RpcError })?.rpc
             if (rpc) {
-              reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
-                error: normalizeRpcError(rpc),
-              })
+              replyRpc(response, rpc, cause)
               return true
             }
             const code = record(cause) && typeof cause.code === 'string' ? cause.code : undefined
@@ -767,6 +778,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
                 : invalid
                   ? 'The child engine configuration is not valid.'
                   : 'The backend response could not be confirmed.',
+              backendCause(cause),
             )
           }
           return true
@@ -809,31 +821,29 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           } else if (route === 'loops') {
             const [loops, defaults] = await Promise.all([provider.loops(), provider.getDefaults()])
             if (loops.length > 4096 || !loops.every(isAdminLoop) || !isSessionDefaultsSnapshot(defaults))
-              throw new Error('invalid catalog')
+              throw invalidResponse('catalog')
             const presets = await provider.presets?.()
             if (
               presets &&
               (presets.length > 4096 ||
                 !presets.every((preset) => isSessionDefaultsSnapshot({ revision: 0, defaults: { preset } })))
             )
-              throw new Error('invalid preset catalog')
+              throw invalidResponse('preset-catalog')
             reply(response, 200, { loops, ...defaults, ...(presets ? { presets } : {}) })
             return true
           } else if (route === 'model-adapters') {
             const modelAdapters = await provider.modelAdapters()
             if (modelAdapters.length > 4096 || !modelAdapters.every(isAdminModelAdapter))
-              throw new Error('invalid catalog')
+              throw invalidResponse('catalog')
             reply(response, 200, { modelAdapters })
             return true
           } else result = await provider.getDefaults()
-          if (!isSessionDefaultsSnapshot(result)) throw new Error('invalid defaults')
+          if (!isSessionDefaultsSnapshot(result)) throw invalidResponse('defaults')
           reply(response, 200, result)
         } catch (cause) {
           const rpc = (cause as { rpc?: RpcError })?.rpc
           if (rpc) {
-            reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
-              error: normalizeRpcError(rpc),
-            })
+            replyRpc(response, rpc, cause)
             return true
           }
           const code = record(cause) ? cause.code : undefined
@@ -848,6 +858,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
               : invalid
                 ? 'The selected loop, adapter or model is unavailable.'
                 : 'The backend response could not be confirmed.',
+            backendCause(cause),
           )
         }
         return true
@@ -875,7 +886,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           readOnly,
         }
         if (!validatePackageAdminData('PackageAdminContext', context).ok) {
-          error(response, 502, 'E_ADMIN_RESPONSE', 'The backend response could not be confirmed.')
+          error(response, 502, 'E_ADMIN_RESPONSE', '', responseCause('context'))
           return true
         }
         reply(
@@ -889,17 +900,12 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         try {
           const surfaces = [...((await options.surfaceLinks?.()) ?? [])]
           if (surfaces.length > 256 || surfaces.some((value) => !validSurfaceLink(value))) {
-            error(response, 502, 'E_ADMIN_RESPONSE', 'The backend response could not be confirmed.')
+            error(response, 502, 'E_ADMIN_RESPONSE', '', responseCause('surfaces'))
             return true
           }
           reply(response, 200, { surfaces })
-        } catch {
-          error(
-            response,
-            502,
-            'E_ADMIN_BACKEND',
-            'The operation was not confirmed. Check its status or reconnect to the backend.',
-          )
+        } catch (cause) {
+          error(response, 502, 'E_ADMIN_BACKEND', '', backendCause(cause))
         }
         return true
       }
@@ -934,16 +940,14 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         }
         const result = await options.invoke(name, body)
         if (!validatePackageAdminCall(method, 'result', result).ok) {
-          error(response, 502, 'E_ADMIN_RESPONSE', 'The backend response could not be confirmed.')
+          error(response, 502, 'E_ADMIN_RESPONSE', '', responseCause(`result/${name}`))
           return true
         }
         reply(response, 200, result)
       } catch (cause) {
         const rpc = (cause as { rpc?: RpcError })?.rpc
         if (rpc) {
-          reply(response, rpc.code === -32006 ? 403 : rpc.code === -32011 ? 409 : 502, {
-            error: normalizeRpcError(rpc),
-          })
+          replyRpc(response, rpc, cause)
           return true
         }
         const reason = record(cause) && record(cause.data) ? cause.data.reason : undefined
@@ -977,12 +981,7 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
           return true
         }
         // Only validated DTOs may contain backend detail. Exceptions can contain local paths or secrets.
-        error(
-          response,
-          502,
-          'E_ADMIN_BACKEND',
-          'The operation was not confirmed. Check its status or reconnect to the backend.',
-        )
+        error(response, 502, 'E_ADMIN_BACKEND', '', backendCause(cause))
       }
       return true
     },

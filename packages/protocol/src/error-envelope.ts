@@ -1,5 +1,5 @@
 import type { AppServerError, AppServerErrorCause } from '../gen/ts/app-server.js'
-import { recordDiagnostic } from './diagnostic-records.js'
+import { adminDiagnosticCause, recordDiagnostic } from './diagnostic-records.js'
 import { AGNES_ERRORS, JSONRPC_ERRORS, type RpcError } from './errors.js'
 import { publicErrorCode, publicErrorContract, publicErrorCopy, publicErrorReason } from './public-errors.js'
 
@@ -11,7 +11,8 @@ export function errorMessageKey(code: string): AppServerError['data']['messageKe
 function knownCause(value: unknown): value is AppServerErrorCause['code'] {
   return publicErrorContract(value) !== undefined
 }
-export function normalizeRpcError(error: RpcError): AppServerError {
+/** `diagnosticCause` is journal-only (validated by `adminDiagnosticCause`); the response body never carries it. */
+export function normalizeRpcError(error: RpcError, diagnosticCause?: string): AppServerError {
   const names = { ...AGNES_ERRORS, ...JSONRPC_ERRORS }
   const name = Object.entries(names).find(([, number]) => number === error.code)?.[0] ?? 'INTERNAL_ERROR'
   const {
@@ -30,12 +31,13 @@ export function normalizeRpcError(error: RpcError): AppServerError {
     typeof oldId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(oldId)
       ? oldId
       : crypto.randomUUID()
+  const journalCause = cause?.code ?? adminDiagnosticCause(diagnosticCause)
   const available = recordDiagnostic({
     diagnosticId,
     at: new Date().toISOString(),
     code: error.code,
     name,
-    ...(cause ? { cause: cause.code } : {}),
+    ...(journalCause ? { cause: journalCause } : {}),
   })
   return {
     code: error.code,
@@ -59,7 +61,7 @@ export function normalizeRpcError(error: RpcError): AppServerError {
   }
 }
 /** HTTP status stays transport metadata; the body uses the same numeric RPC error envelope. */
-export function httpRpcError(status: number, code: string): AppServerError {
+export function httpRpcError(status: number, code: string, diagnosticCause?: string): AppServerError {
   const number =
     status === 401
       ? AGNES_ERRORS.AUTH_INVALID
@@ -72,9 +74,12 @@ export function httpRpcError(status: number, code: string): AppServerError {
             : status >= 500
               ? JSONRPC_ERRORS.INTERNAL_ERROR
               : JSONRPC_ERRORS.INVALID_PARAMS
-  return normalizeRpcError({
-    code: number,
-    message: code,
-    data: { code, ...(knownCause(code) ? { cause: { code } } : {}) },
-  })
+  return normalizeRpcError(
+    {
+      code: number,
+      message: code,
+      data: { code, ...(knownCause(code) ? { cause: { code } } : {}) },
+    },
+    diagnosticCause,
+  )
 }

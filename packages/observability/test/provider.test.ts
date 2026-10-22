@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { memoryPrivateEvent } from '@agnes/extension-api'
-import { type EventEnvelope, normalizeRpcError, rpcError } from '@agnes/protocol'
+import { type EventEnvelope, httpRpcError, normalizeRpcError, rpcError } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { observabilityConfig } from '../src/config.js'
 import { DIAGNOSTIC_JOURNAL_LIMIT, installDiagnosticJournal, readDiagnosticJournal } from '../src/journal.js'
@@ -230,6 +230,39 @@ it('persists diagnostic ids and projects untrusted history without messages or c
     expect(readDiagnosticJournal(home, DIAGNOSTIC_JOURNAL_LIMIT, recent.diagnosticId)).toEqual([recent])
   } finally {
     retain()
+    stop()
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+it('journals the admin 502 cause under the returned id and still reads records without one', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agh-diagnostic-journal-'))
+  const stop = installDiagnosticJournal(home)
+  try {
+    const failed = httpRpcError(502, 'E_ADMIN_BACKEND', 'E_ADMIN_BACKEND:backend-disconnected')
+    const plain = httpRpcError(502, 'E_ADMIN_BACKEND')
+    const forged = httpRpcError(502, 'E_ADMIN_BACKEND', 'E_ADMIN_BACKEND:/srv/private/key sk-live-abc')
+    expect(failed.data).not.toHaveProperty('cause')
+    const [row] = readDiagnosticJournal(home, 1, failed.data!.diagnosticId)
+    expect(row).toMatchObject({
+      code: -32603,
+      name: 'INTERNAL_ERROR',
+      cause: 'E_ADMIN_BACKEND:backend-disconnected',
+    })
+    expect(readDiagnosticJournal(home, 1, plain.data!.diagnosticId)[0]).not.toHaveProperty('cause')
+    expect(readDiagnosticJournal(home, 1, forged.data!.diagnosticId)[0]).not.toHaveProperty('cause')
+    // A hand-edited journal line cannot smuggle free text through the cause field either.
+    await writeFile(
+      join(home, 'diagnostics', 'errors.jsonl'),
+      `${JSON.stringify({ ...row, diagnosticId: '33333333-3333-3333-3333-333333333333', cause: 'E_ADMIN_BACKEND:/srv/private' })}\n${JSON.stringify({ ...row, diagnosticId: '44444444-4444-4444-4444-444444444444' })}\n`,
+    )
+    expect(readDiagnosticJournal(home, 1, '33333333-3333-3333-3333-333333333333')[0]).not.toHaveProperty(
+      'cause',
+    )
+    expect(readDiagnosticJournal(home, 1, '44444444-4444-4444-4444-444444444444')[0]?.cause).toBe(
+      'E_ADMIN_BACKEND:backend-disconnected',
+    )
+  } finally {
     stop()
     await rm(home, { recursive: true, force: true })
   }

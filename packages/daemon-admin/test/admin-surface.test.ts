@@ -1,6 +1,12 @@
 import { createServer } from 'node:http'
-import type { AdminSessionSelection, DiagnosticsExportResult, PackageAdminPermission } from '@agnes/protocol'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  type AdminSessionSelection,
+  type DiagnosticRecord,
+  type DiagnosticsExportResult,
+  observeDiagnostics,
+  type PackageAdminPermission,
+} from '@agnes/protocol'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ACTIONS,
   type AdminSurfaceAction,
@@ -890,5 +896,112 @@ it('answers a prompt save made against an older revision with 409 and the curren
   expect(response.status).toBe(409)
   expect(await response.json()).toMatchObject({
     error: { data: { code: 'CONFIG_REVISION_CONFLICT', current } },
+  })
+})
+
+describe('admin 502 diagnostics journal', () => {
+  const rpc = { code: -32603, message: 'x', data: { code: 'E_UNMAPPED_BACKEND_FAULT' } }
+  const closed = Object.assign(new Error('transport closed: eof'), { kind: 'transport-closed' })
+  const timeout = Object.assign(new Error('list timed out'), { kind: 'request-timeout' })
+  const refused = Object.assign(new Error('connect'), { code: 'ECONNREFUSED' })
+  const hostile = Object.assign(
+    new Error('/srv/private/key/key?token=sk-live-abc123 user said: my password'),
+    {
+      kind: '/srv/private/key',
+      code: 'sk-live-abc123',
+    },
+  )
+  const records: DiagnosticRecord[] = []
+  const stop = observeDiagnostics((row) => records.push({ ...row }))
+  afterEach(() => records.splice(0))
+  afterAll(stop)
+  // The sink is the seam the durable journal writes from, so a record here is a journal record.
+  const journaled = async (response: Response, status = 502) => {
+    expect(response.status).toBe(status)
+    const body = await response.json()
+    const id = body.error.data.diagnosticId as string
+    const rows = records.filter((row) => row.diagnosticId === id)
+    expect(rows).toHaveLength(1)
+    expect(JSON.stringify(body)).not.toContain('E_ADMIN_BACKEND:')
+    return rows[0]!
+  }
+  const adminRoute = async (failure: unknown) => {
+    const s = await server()
+    await s.login()
+    await s.request('context')
+    s.invoke.mockRejectedValueOnce(failure)
+    return s.request('list', { profile: 'local-dev' })
+  }
+
+  it.each([
+    ['disconnected backend client', closed, 'E_ADMIN_BACKEND:backend-disconnected'],
+    ['refused socket', refused, 'E_ADMIN_BACKEND:backend-disconnected'],
+    ['request timeout', timeout, 'E_ADMIN_BACKEND:backend-timeout'],
+    ['unexpected RPC code', { rpc }, 'E_ADMIN_BACKEND:backend-rpc-error:-32603'],
+    ['plain exception', new Error('boom'), 'E_ADMIN_BACKEND:backend-error'],
+  ])('records the cause of a %s under the id the client receives', async (_name, failure, cause) => {
+    const row = await journaled(await adminRoute(failure))
+    expect(row).toMatchObject({ code: -32603, name: 'INTERNAL_ERROR', cause })
+  })
+
+  it('records an invalid backend response on the action and context routes', async () => {
+    const s = await server()
+    await s.login()
+    await s.request('context')
+    s.invoke.mockResolvedValueOnce({ packages: [], secret: 'not-allowed' })
+    expect(await journaled(await s.request('list', { profile: 'local-dev' }))).toMatchObject({
+      cause: 'E_ADMIN_RESPONSE:response-invalid:result/list',
+    })
+    const surface = await server(undefined, async () => [{ packageId: 'x', surfaceId: 'Y', mount: '/m' }])
+    await surface.login()
+    expect(await journaled(await surface.request('surfaces'))).toMatchObject({
+      cause: 'E_ADMIN_RESPONSE:response-invalid:surfaces',
+    })
+  })
+
+  it('records the cause on the selection routes', async () => {
+    const bad = Object.assign(new Error('x'), { kind: 'transport-closed' })
+    const slots = await server(undefined, undefined, {
+      modelSlots: { get: async () => Promise.reject(bad), save: async () => Promise.reject(bad) },
+    })
+    expect(await journaled(await slots.selectionRequest('model-slots'))).toMatchObject({
+      cause: 'E_ADMIN_BACKEND:backend-disconnected',
+    })
+    const badSlots = await server(undefined, undefined, {
+      modelSlots: { get: async () => ({ nope: true }) as never, save: async () => ({}) as never },
+    })
+    expect(await journaled(await badSlots.selectionRequest('model-slots'))).toMatchObject({
+      cause: 'E_ADMIN_BACKEND:response-invalid:model-slots',
+    })
+    const chain = await server(undefined, undefined, {
+      permissions: ['packages.read'],
+      factChain: async () => Promise.reject({ rpc }),
+    })
+    expect(
+      await journaled(
+        await chain.selectionRequest('fact-chain', 'POST', {
+          sessionId: 'owned',
+          laneId: 'main',
+          anchor: { kind: 'tool', toolUseId: 't1' },
+        }),
+      ),
+    ).toMatchObject({ cause: 'E_ADMIN_BACKEND:backend-rpc-error:-32603' })
+  })
+
+  it('never journals exception text, paths, tokens or user content', async () => {
+    const row = await journaled(await adminRoute(hostile))
+    expect(row.cause).toBe('E_ADMIN_BACKEND:backend-error')
+    const dump = JSON.stringify(records)
+    for (const secret of ['/srv/private', 'sk-live', 'password', 'token=']) expect(dump).not.toContain(secret)
+    const { httpRpcError } = await import('@agnes/protocol')
+    for (const forged of [
+      'E_ADMIN_BACKEND:/srv/private/key',
+      'E_ADMIN_BACKEND:Bearer sk-live-abc',
+      `E_ADMIN_BACKEND:${'a'.repeat(200)}`,
+      'something-else',
+    ]) {
+      const id = httpRpcError(502, 'E_ADMIN_BACKEND', forged).data.diagnosticId
+      expect(records.find((r) => r.diagnosticId === id)?.cause).toBeUndefined()
+    }
   })
 })
