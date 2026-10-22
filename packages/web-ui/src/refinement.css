@@ -502,6 +502,37 @@
     fill: none;
     stroke-width: 1.5;
   }
+  /* Choice menus group their options under a heading and mark the current one with a check. */
+  .agh-menu-popup .agh-menu .ant-menu-item-group-title,
+  .agh-menu-popup .agh-menu .ant-dropdown-menu-item-group-title {
+    padding: 0;
+  }
+  .agh-menu-popup .agh-menu-group-label {
+    display: block;
+    padding: var(--s4) var(--s8) var(--s2);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    line-height: 1.25rem;
+  }
+  .agh-menu-popup .agh-menu-group:first-child > * > .agh-menu-group-label {
+    padding-top: 0;
+  }
+  .agh-menu-popup .agh-menu-label {
+    display: flex;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .agh-menu-popup .agh-menu-label-text {
+    min-width: 0;
+    flex: 1;
+  }
+  .agh-menu-popup .agh-menu-check {
+    width: 0.875rem;
+    height: 0.875rem;
+    flex: none;
+    color: var(--agnes-text-primary);
+  }
   .ant-select-dropdown .ant-select-item-option {
     border-radius: var(--radius-menu-item);
   }

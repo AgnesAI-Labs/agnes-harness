@@ -1,4 +1,4 @@
-import { Dropdown as AntDropdown } from 'antd'
+import { Dropdown as AntDropdown, type MenuProps as AntMenuProps } from 'antd'
 import {
   cloneElement,
   type HTMLAttributes,
@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Icon } from './icon.js'
 import { useReducedMotion } from './overlay.js'
 import { Tooltip } from './tooltip.js'
 
@@ -24,6 +25,10 @@ export type MenuItem = {
   ariaLabel?: string
   title?: string
   dividerBefore?: boolean
+  /** Consecutive items sharing a name render under one group heading. */
+  group?: string
+  /** A choice menu marks the current option with a check. */
+  checked?: boolean
   onSelect(): void
 }
 export type MenuProps = {
@@ -33,9 +38,19 @@ export type MenuProps = {
   triggerMode?: 'click' | 'contextMenu'
   /** Neutral action lists retain text/danger colors and use a visible keyboard focus ring. */
   tone?: 'default' | 'neutral'
+  /** Read after a checked item's label, e.g. 「已选中」. */
+  selectedLabel?: string
 }
+type AntMenuItem = NonNullable<AntMenuProps['items']>[number]
 /** antd owns placement and menu semantics; this adapter preserves the existing keyboard contract. */
-export function Menu({ trigger, label, items, triggerMode = 'click', tone = 'default' }: MenuProps) {
+export function Menu({
+  trigger,
+  label,
+  items,
+  triggerMode = 'click',
+  tone = 'default',
+  selectedLabel,
+}: MenuProps) {
   const [open, setOpen] = useState(false)
   const hold = useRef<ReturnType<typeof setTimeout>>()
   const held = useRef(false)
@@ -49,6 +64,63 @@ export function Menu({ trigger, label, items, triggerMode = 'click', tone = 'def
     () => [...items.filter((item) => !item.danger), ...items.filter((item) => item.danger)],
     [items],
   )
+  // Group headings are presentation only: every `[role="menuitem"]` still follows `ordered`, so the
+  // index arithmetic below keeps working whether or not the menu uses groups.
+  const nodes = useMemo(() => {
+    const out: AntMenuItem[] = []
+    let run: { name: string; children: NonNullable<AntMenuProps['items']> } | undefined
+    const flush = () => {
+      if (!run) return
+      out.push({
+        type: 'group',
+        key: `group-${run.name}`,
+        className: 'agh-menu-group',
+        label: <span className="agh-menu-group-label">{run.name}</span>,
+        children: run.children,
+      })
+      run = undefined
+    }
+    ordered.forEach((item, index) => {
+      const text = (
+        <span key={item.id} className="agh-menu-label">
+          <span className="agh-menu-label-text">{item.label}</span>
+          {item.checked && <Icon name="check" className="agh-menu-check" />}
+        </span>
+      )
+      // The check is the sighted cue; the accessible name carries the same state as words.
+      const selected = item.checked && selectedLabel
+      const action = {
+        key: item.id,
+        label:
+          item.disabled && item.disabledReason ? <Tooltip title={item.disabledReason}>{text}</Tooltip> : text,
+        icon: item.icon ? <span className="agh-menu-icon">{item.icon}</span> : undefined,
+        danger: item.danger ?? false,
+        disabled: item.disabled ?? false,
+        className: ['agh-menu-item', item.className].filter(Boolean).join(' '),
+        'data-testid': item.testId,
+        'data-danger': item.danger || undefined,
+        'data-checked': item.checked || undefined,
+        'aria-label': selected
+          ? `${item.ariaLabel ?? item.label}, ${selectedLabel}`
+          : (item.ariaLabel ?? undefined),
+        ...(item.title ? { title: item.title } : {}),
+      }
+      if (item.dividerBefore || (item.danger && index > 0 && !ordered[index - 1]?.danger)) {
+        flush()
+        out.push({ type: 'divider', key: `${item.id}-divider`, className: 'agh-menu-separator' })
+      }
+      if (item.group === undefined) {
+        flush()
+        out.push(action)
+        return
+      }
+      if (run && run.name !== item.group) flush()
+      run ??= { name: item.group, children: [] }
+      run.children.push(action)
+    })
+    flush()
+    return out
+  }, [ordered, selectedLabel])
   const enabled = useMemo(() => ordered.flatMap((item, i) => (item.disabled ? [] : [i])), [ordered])
   const focus = (index: number | undefined) => {
     if (index !== undefined) popup.current?.querySelectorAll<HTMLElement>('[role="menuitem"]')[index]?.focus()
@@ -95,32 +167,7 @@ export function Menu({ trigger, label, items, triggerMode = 'click', tone = 'def
         'aria-label': label,
         selectable: false,
         className: 'agh-menu',
-        items: ordered.flatMap((item, index) => {
-          const text = <span key={item.id}>{item.label}</span>
-          const action = {
-            key: item.id,
-            label:
-              item.disabled && item.disabledReason ? (
-                <Tooltip title={item.disabledReason}>{text}</Tooltip>
-              ) : (
-                text
-              ),
-            icon: item.icon ? <span className="agh-menu-icon">{item.icon}</span> : undefined,
-            danger: item.danger ?? false,
-            disabled: item.disabled ?? false,
-            className: ['agh-menu-item', item.className].filter(Boolean).join(' '),
-            'data-testid': item.testId,
-            'data-danger': item.danger || undefined,
-            'aria-label': item.ariaLabel,
-            ...(item.title ? { title: item.title } : {}),
-          }
-          return item.dividerBefore || (item.danger && index > 0 && !ordered[index - 1]?.danger)
-            ? [
-                { type: 'divider' as const, key: `${item.id}-divider`, className: 'agh-menu-separator' },
-                action,
-              ]
-            : [action]
-        }),
+        items: nodes,
         onClick: ({ key }) => {
           const item = ordered.find((item) => item.id === key)
           if (!item || item.disabled) return
