@@ -76,7 +76,9 @@ describe('durable directory chains', () => {
     const root = directory()
     expect(() => mkdirDurablySync(join(root, 'x'), join(root, 'elsewhere'))).toThrow(/not inside/)
     writeFileSync(join(root, 'file'), '')
-    expect(() => mkdirDurablySync(join(root, 'file', 'child'), root)).toThrow(/ENOTDIR|EEXIST/)
+    expect(() => mkdirDurablySync(join(root, 'file', 'child'), root)).toThrow(/ENOTDIR|EEXIST|ENOENT/)
+    expect(readFileSync(join(root, 'file'), 'utf8')).toBe('')
+    expect(existsSync(join(root, 'file', 'child'))).toBe(false)
   })
 
   it('flushes a whole tree, and a tree that is not a directory is an error', () => {

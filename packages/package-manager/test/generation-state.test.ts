@@ -264,13 +264,22 @@ describe('generation record shape gate', () => {
 
 describe('pin read-modify-write', () => {
   it('keeps the loop and resources digest across successive writers', () => {
-    const { store, generation } = fixture()
+    const { store, generation, pinFile } = fixture()
     const snapshot = generation()
     store.pin('s', snapshot.id, PINS)
     const other = new RuntimeGenerationSnapshotStore(join(store.root, '..'))
     store.recordLoop('s', { id: 'loop', version: '1.0.0' })
     const pinned = other.pinSessionResources('s', { data: { a: 1 }, directories: [] })
+    const before = statSync(pinFile('s'))
     store.recordLoop('s', { id: 'loop', version: '1.0.0' })
+    expect(statSync(pinFile('s'))).toMatchObject({
+      dev: before.dev,
+      ino: before.ino,
+      mtimeMs: before.mtimeMs,
+    })
+    expect(() => store.recordLoop('s', { id: 'loop', version: '2.0.0' })).toThrow(
+      'E_GENERATION_LOOP_INCOMPATIBLE',
+    )
     expect(store.session('s')).toMatchObject({ loop: { id: 'loop' }, resourcesDigest: expect.any(String) })
     expect(other.sessionResources('s')).toEqual(pinned)
     expect(readdirSync(join(store.root, 'sessions')).filter((name) => name.endsWith('.lock'))).toEqual([])
