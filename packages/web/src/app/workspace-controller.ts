@@ -3,8 +3,8 @@ import { workspaceErrorNotice } from '@agnes/web-conversation/presentation'
 import { preserveRouteParams } from '@agnes/web-ui'
 import type { AppSessionContext } from '../app.js'
 import { requestNewSession } from '../application.js'
-import { archivedSessions } from '../archived-sessions.js'
 import { mountNewSessionDialog } from '../new-session-dialog.js'
+import { sessionInventory } from '../session-inventory.js'
 import { requestWorkspacePicker, workspacePickerAvailable } from '../workspace-picker.js'
 
 /**
@@ -171,7 +171,9 @@ export function createWorkspaceController(
     })
     apply(await context.client.workspace.list())
     await context.list()
-    if (archivedSessions.getSnapshot().filter === 'archived') await archivedSessions.reload()
+    // Removing a folder archives its sessions, so the cached full list no longer matches.
+    sessionInventory.invalidate()
+    if (sessionInventory.getSnapshot().mode !== 'active') await sessionInventory.reload()
   }
 
   async function refreshPicker(): Promise<void> {
