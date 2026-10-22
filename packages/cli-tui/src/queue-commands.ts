@@ -22,7 +22,7 @@ export function queueLine(blocks: readonly ContentBlock[], n: number, locale: st
 
 type Queued = Awaited<ReturnType<Session['controls']>>['pending'][number]
 
-const waitingIn = (pending: readonly Queued[]) =>
+export const waitingIn = (pending: readonly Queued[]) =>
   pending.filter((item) => item.kind === 'follow_up' || item.kind === 'steer')
 
 /** A refusal the daemon gave to a queue action, as text; undefined for anything that is not one. */

@@ -1163,8 +1163,9 @@ it('retries a failed queue submit once under the same command id, then returns t
     failing.type('a')
     await vi.waitFor(() => expect(failing.prompts).toEqual(['a']))
     failing.type('keep me')
-    await vi.waitFor(() => expect(failing.submits).toHaveLength(2))
-    expect(failing.submits[1]?.commandId).toBe(failing.submits[0]?.commandId)
+    // The send, its retry and the final check all carry one command id.
+    await vi.waitFor(() => expect(failing.submits).toHaveLength(3))
+    expect(new Set(failing.submits.map((s) => s.commandId)).size).toBe(1)
     await vi.waitFor(async () => {
       const screen = await failing.shown()
       expect(screen).toContain('Not sent: the draft is back in the editor')
@@ -1176,6 +1177,25 @@ it('retries a failed queue submit once under the same command id, then returns t
     expect(failing.prompts).toEqual(['a'])
   } finally {
     await failing.dispose()
+  }
+  // The daemon took the command but the answers were lost twice: the check under the same id lands it.
+  let lost = 2
+  const landed = await busyHarness({
+    answer: () => {
+      if (lost-- > 0) throw rpcError('INTERNAL_ERROR', {})
+      return { seq: 1, replayed: true }
+    },
+  })
+  try {
+    landed.type('a')
+    await vi.waitFor(() => expect(landed.prompts).toEqual(['a']))
+    landed.type('kept by daemon')
+    await vi.waitFor(async () => expect(await landed.shown()).toContain('it is queued, see /queue'))
+    expect(landed.submits).toHaveLength(3)
+    expect(new Set(landed.submits.map((s) => s.commandId)).size).toBe(1)
+    expect(await landed.shown()).not.toMatch(/❯ kept by daemon/)
+  } finally {
+    await landed.dispose()
   }
 })
 
@@ -1781,7 +1801,7 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     // Local command output recedes to muted text.
     term.feed('help')
     term.feed('\r')
-    await vi.waitFor(() => expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}/context`))
+    await vi.waitFor(() => expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}/status`))
   } finally {
     await app?.stop()
     await client.close()

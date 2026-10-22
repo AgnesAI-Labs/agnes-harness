@@ -15,6 +15,7 @@ export function FastForward({ board }) {
   return h(Select, {
     'aria-label': '快进演示到…',
     placeholder: '快进演示到…',
+    title: '选一道评审门：打开研发协调员并预填请求，点发送后新建一个停在该门的现场项目',
     value: null,
     disabled: board.busy,
     onChange: (gate) => openWork(board, 'fast-forward', { type: 'fastforward', id: gate }),

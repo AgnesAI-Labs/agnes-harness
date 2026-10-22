@@ -86,7 +86,7 @@ export class TuiApp {
   private currentTurn = 0
   private ticker: ReturnType<typeof setInterval> | undefined
   private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
-  private readonly mouse: TuiMouse
+  readonly mouse: TuiMouse
   private readonly statusBar: StatusBar
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
@@ -136,7 +136,7 @@ export class TuiApp {
     // `header` is a back-compat fallback: real callers (`modes/tui.ts`) pass `profile`/`preset`
     // directly; existing tests that only ever set a plain `header` string still get a header line
     // out of it (via `profile: o.profile ?? o.header`), just with an empty preset segment.
-    private readonly o: {
+    readonly o: {
       term: Terminal
       session: Session
       header?: string
@@ -163,6 +163,8 @@ export class TuiApp {
       themePreferencePath?: string
       /** Where sent prompts persist between runs; without it history lasts this run only. */
       historyPath?: string
+      /** `<AGH_HOME>/commands`: where personal custom slash commands live. */
+      commandsDir?: string
       /** Ctrl-G's editor command source and temp directory (`<AGH_HOME>/tmp`); tests leave it to the defaults. */
       externalEditor?: ExternalEditorConfig
       /** What the launcher knows for the welcome, and what tests pin (see `WelcomeOptions`). */
@@ -256,21 +258,16 @@ export class TuiApp {
         return text ? new Text(escapeControl(text)) : new VStack()
       },
     })
-    this.modal = new PermissionModal(
-      () => {
-        if (!this.stopped) this.renderer.requestRender()
+    this.modal = new PermissionModal(() => this.stopped || this.renderer.requestRender(), {
+      locale,
+      ansi,
+      // The renderer drops a tall frame's top rows, so the modal gets no more than the rows below it
+      // leave: an option it counts as visible has to be on screen.
+      maxRows: () => {
+        const { rows } = o.term.size()
+        return Math.max(1, Math.min(rows - Math.max(1, Math.floor(rows / 3)) - 4, rows - this.belowModal))
       },
-      {
-        locale,
-        ansi,
-        // The renderer drops a tall frame's top rows, so the modal gets no more than the rows below it
-        // leave: an option it counts as visible has to be on screen.
-        maxRows: () => {
-          const { rows } = o.term.size()
-          return Math.max(1, Math.min(rows - Math.max(1, Math.floor(rows / 3)) - 4, rows - this.belowModal))
-        },
-      },
-    )
+    })
     // Asks whichever session is current; applySwitch resets the cached answers.
     this.mentions = createMentionSource({
       session: { searchReferences: (query) => this.session.searchReferences(query) },
@@ -296,14 +293,14 @@ export class TuiApp {
         void this.cancel().catch((error) => this.showError(error))
         this.escapes.press(idle && !hadDraft, () => void this.runInput('/rewind'))
       },
-      complete: completeToken,
+      complete: (prefix) => completeToken(prefix, this),
       mentions: this.mentions,
       mentionNotes: {
         loading: tt('composer.mentionLoading', locale),
         empty: tt('composer.mentionEmpty', locale),
         failed: tt('composer.mentionFailed', locale),
       },
-      menuInfo: (name) => slashCommandFor(name, this.o.locale ?? 'en'),
+      menuInfo: (name) => slashCommandFor(name, this.o.locale ?? 'en', this),
     })
     this.editor.setKitty(o.term.caps.kittyKeyboard)
     this.modelPicker = new ModelPicker({

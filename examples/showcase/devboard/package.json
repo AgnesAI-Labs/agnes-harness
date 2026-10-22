@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/devboard",
-  "version": "3.5.0",
+  "version": "3.5.1",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -825,8 +825,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). The target gate is the id of the attached work object (CDCP, TR1, TR3, TR5 or DONE, where DONE means ADCP approved). Call devboard_fastforward once with that gate; do not write files or register anything on the board yourself. Then tell me the new project id, which gate it waits at, and who approves it next in 「我的待办」.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。要快进到的门就是附带工作对象的编号（CDCP、TR1、TR3、TR5 或 DONE，DONE 表示 ADCP 已批准）。只用这个门调用一次 devboard_fastforward，不要自己写文件，也不要自己登记看板。完成后告诉我新项目的编号、停在哪一道门，以及下一步由谁在「我的待办」批准。"
+              "en": "(Fast-forward demo: press Send. In a few seconds the coordinator creates a new live project that waits at the gate you picked; then approve it in 「我的待办」 on the board.)\nFirst call skill_read(name=devboard-playbook). The target gate is the id of the attached work object (CDCP, TR1, TR3, TR5 or DONE, where DONE means ADCP approved). Call devboard_fastforward once with that gate; do not write files or register anything on the board yourself. Then tell me the new project id, which gate it waits at, and who approves it next in 「我的待办」.",
+              "zh-CN": "（快进演示：直接点发送。研发协调员会在十几秒内新建一个现场项目，停在你选的评审门；之后回看板的「我的待办」审批。）\n先调用 skill_read(name=devboard-playbook)。要快进到的门就是附带工作对象的编号（CDCP、TR1、TR3、TR5 或 DONE，DONE 表示 ADCP 已批准）。只用这个门调用一次 devboard_fastforward，不要自己写文件，也不要自己登记看板。完成后告诉我新项目的编号、停在哪一道门，以及下一步由谁在「我的待办」批准。"
             }
           },
           {
