@@ -66,8 +66,13 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
   },
 }
 
+/**
+ * One language for the TUI, print and error help: the first non-empty of AGNES_LOCALE, LC_ALL,
+ * LC_MESSAGES and LANG decides, and anything starting with `zh` is Simplified Chinese.
+ */
 export function resolveLocale(env: Readonly<Record<string, string | undefined>>): Locale {
-  return env.AGNES_LOCALE === 'zh-CN' ? 'zh-CN' : 'en'
+  const value = env.AGNES_LOCALE || env.LC_ALL || env.LC_MESSAGES || env.LANG
+  return value?.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
 }
 
 export function t(

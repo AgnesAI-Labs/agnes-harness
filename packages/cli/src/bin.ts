@@ -554,7 +554,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                   agnesVersion: io.agnesVersion,
                 })
               : runPrint(booted, p, {
-                  locale: io.env.LC_ALL ?? io.env.LC_MESSAGES ?? io.env.LANG ?? 'en',
+                  locale: resolveLocale(io.env),
                   stdout: io.stdout,
                   stderr: io.stderr,
                   stdin: io.stdin,
@@ -576,7 +576,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       await Promise.race([booted.close().catch(() => undefined), exited])
     }
   } catch (e) {
-    const help = publicErrorHelp(e, io.env.LC_ALL ?? io.env.LC_MESSAGES ?? io.env.LANG ?? 'en')
+    const help = publicErrorHelp(e, resolveLocale(io.env))
     if (help) {
       io.stderr.write(`${help.code}: ${help.reason} ${help.action}\n`)
       return ExitCode.ERROR

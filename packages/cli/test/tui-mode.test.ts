@@ -96,10 +96,9 @@ describe('runTui model selection', () => {
       return rendered
     }
 
-    // 语言只由 AGNES_LOCALE 决定：中文 LANG 不再切换语言，未设置或非 zh-CN 的值一律回落英文。
+    // 语言按 AGNES_LOCALE、LC_ALL、LC_MESSAGES、LANG 的顺序取第一个非空值：中文 LANG 切换为中文。
     const fromLang = await renderWith({ LANG: 'zh_CN.UTF-8' })
-    expect(fromLang).toContain('parked tk-abcde…')
-    expect(fromLang).not.toContain('挂起 tk-abcde…')
+    expect(fromLang).toContain('挂起 tk-abcde…')
     const explicitChinese = await renderWith({ AGNES_LOCALE: 'zh-CN', LANG: 'en_US.UTF-8' })
     expect(explicitChinese).toContain('挂起 tk-abcde…')
     const explicitEnglish = await renderWith({ AGNES_LOCALE: 'en', LANG: 'zh_CN.UTF-8' })
