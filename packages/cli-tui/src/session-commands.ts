@@ -9,11 +9,16 @@ export const oneLine = (text: string): string => escapeControl(text).replace(/\s
 
 type HistoryHit = { sessionId: string; title: string; snippet: string; ts: string; seq?: number }
 
-function promptPreview(nodes: readonly UINode[], ids: readonly string[]): string | undefined {
+/** The text of a turn's user prompt, as sent; the editor sanitizes it when it takes it. */
+export function turnPrompt(nodes: readonly UINode[], ids: readonly string[]): string | undefined {
   const user = nodes.find((n) => n.kind === 'user' && ids.includes(n.id))
   if (user?.kind !== 'user') return undefined
-  const text = (user.content as ContentBlock[]).map((b) => (b.type === 'text' ? b.text : '')).join(' ')
-  return oneLine(text).slice(0, 80) || undefined
+  const text = (user.content as ContentBlock[]).map((b) => (b.type === 'text' ? b.text : '')).join('\n')
+  return text.trim() ? text : undefined
+}
+
+function promptPreview(nodes: readonly UINode[], ids: readonly string[]): string | undefined {
+  return oneLine(turnPrompt(nodes, ids) ?? '').slice(0, 80) || undefined
 }
 
 /** Completed turns the daemon will fork from: `forkable` marks a turn whose boundary is a turn/end. */
@@ -24,15 +29,24 @@ export async function rewindChoices(app: TuiApp): Promise<SessionChoice[]> {
     .reverse()
     .map((t) => {
       const title = promptPreview(timeline.nodes, t.nodeIds)
+      const draft = turnPrompt(timeline.nodes, t.nodeIds)
       return {
         sessionId: app.session.id,
         createdAt: t.startedAt,
         lastSeq: t.endSeq as number,
         preset: null,
         forkAt: t.endSeq as number,
+        ...(draft ? { draft } : {}),
         ...(title ? { title: `#${t.turn} ${title}` } : { title: `#${t.turn}` }),
       }
     })
+}
+
+/** The prompt of the completed turn that ends at `seq`. */
+export async function rewindPrompt(app: TuiApp, seq: number): Promise<string | undefined> {
+  const { timeline } = await app.session.projectUIOpening({ surface: 'tui' })
+  const turn = timeline.turns.find((t) => t.endSeq === seq)
+  return turn ? turnPrompt(timeline.nodes, turn.nodeIds) : undefined
 }
 
 /** /pin /unpin /rename /archive /search: every write goes through the daemon and echoes its refusal. */

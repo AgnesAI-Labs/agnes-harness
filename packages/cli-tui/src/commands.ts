@@ -21,7 +21,7 @@ import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { queueSlash } from './queue-commands.js'
 import type { ResourceCommandKind } from './resource-controller.js'
-import { oneLine, rewindChoices, sessionSlash } from './session-commands.js'
+import { oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
 import type { ThemePreference } from './theme-preference.js'
 import { thinkingMode } from './thinking.js'
@@ -251,6 +251,8 @@ export type SessionChoice = {
   title?: string
   /** Set by the /rewind picker: choosing forks this session at that completed-turn boundary. */
   forkAt?: number
+  /** With `forkAt`: the prompt of that turn, put back in the editor after the fork. */
+  draft?: string
   /** Set by the /import picker: choosing imports this external session file instead of resuming. */
   importFile?: string
 }
@@ -548,7 +550,12 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       if (!Number.isInteger(at)) return { text: 'usage: /rewind [seq]' }
       // The daemon forks a session only for its owner and only at a completed turn boundary; any
       // other request is refused there, and that refusal is shown as it comes.
-      return { switchSession: await c.session.fork(s.id, at) }
+      const switchSession = await c.session.fork(s.id, at)
+      // The fork has happened; a projection that cannot name the prompt only costs the refill.
+      const prompt = await rewindPrompt(app, at).catch(() => undefined)
+      return prompt
+        ? { switchSession, draft: prompt }
+        : { switchSession, text: tt('session.rewoundNoPrompt', locale) }
     }
     case '/undo':
       return undoSlash(app, args)

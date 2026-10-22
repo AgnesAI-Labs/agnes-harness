@@ -1029,15 +1029,16 @@ export class TuiApp {
         choice.forkAt === undefined
           ? await this.o.session.client.session.load(choice.sessionId, { cwd: this.cwd })
           : await this.o.session.client.session.fork(choice.sessionId, choice.forkAt)
-      if (await this.applySwitch(next))
+      if (await this.applySwitch(next)) {
+        const turn = choice.title?.match(/^#(\d+)/)?.[1] ?? String(choice.forkAt)
+        if (choice.draft) this.editor.setText(choice.draft)
         this.statusBar.setNotice(
           choice.forkAt === undefined
             ? `Resumed ${escapeControl(choice.sessionId)}`
-            : tt('session.rewound', this.locale, {
-                turn: choice.title?.match(/^#(\d+)/)?.[1] ?? choice.forkAt,
-              }),
+            : tt(choice.draft ? 'session.rewound' : 'session.rewoundNoPrompt', this.locale, { turn }),
           'success',
         )
+      }
       if (!this.stopped) this.renderer.requestRender()
     } catch (error) {
       this.showError(error)

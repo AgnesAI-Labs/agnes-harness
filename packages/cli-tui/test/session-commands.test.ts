@@ -131,10 +131,17 @@ describe('session slash commands', () => {
     const app = appWith({ session: { fork } }, { projectUIOpening })
     const result = await runSlash(app, '/rewind')
     expect(result.sessionPickerTitle).toBe('picker.rewindTitle')
-    expect(result.sessionChoices).toMatchObject([{ sessionId: 'cur', forkAt: 12, title: '#1 first prompt' }])
+    expect(result.sessionChoices).toMatchObject([
+      { sessionId: 'cur', forkAt: 12, title: '#1 first prompt', draft: 'first\nprompt' },
+    ])
     expect(fork).not.toHaveBeenCalled()
-    await runSlash(app, '/rewind 12')
+    const direct = await runSlash(app, '/rewind 12')
     expect(fork).toHaveBeenCalledWith('cur', 12)
+    expect(direct).toMatchObject({ draft: 'first\nprompt', switchSession: { id: 'child' } })
+    // A turn whose prompt cannot be read still forks, and says the editor is unchanged.
+    const bare = await runSlash(app, '/rewind 22')
+    expect(bare.draft).toBeUndefined()
+    expect(bare.text).toBe(tt('session.rewoundNoPrompt', 'en'))
     fork.mockRejectedValueOnce(new Error('fork boundary must be a completed turn/end'))
     await expect(runSlash(app, '/rewind 13')).rejects.toThrow('completed turn/end')
     projectUIOpening.mockResolvedValueOnce({ timeline: { turns: [turn(3, undefined, false)], nodes: [] } })
