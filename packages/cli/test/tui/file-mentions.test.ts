@@ -220,6 +220,61 @@ describe('createMentionSource', () => {
     expect(source.get('q').reason).toBe('Cannot search files: boom [31mred')
   })
 
+  it('embedded: shows the local index until the daemon answers, then the daemon answer', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-mention-warm-'))
+    try {
+      writeFileSync(join(dir, 'local-note.md'), 'x')
+      const changed = vi.fn()
+      let answer: (value: ReturnType<typeof found>) => void = () => {}
+      const search = vi.fn(() => new Promise<ReturnType<typeof found>>((done) => (answer = done)))
+      const source = createMentionSource({
+        session: { searchReferences: search },
+        cwd: dir,
+        remote: false,
+        locale: 'en',
+        changed,
+      })
+      await vi.waitFor(() =>
+        expect(source.get('note')).toEqual({
+          status: 'ready',
+          items: [{ id: 'local-note.md', directory: false }],
+        }),
+      )
+      answer(found('srv/note.ts'))
+      await vi.waitFor(() =>
+        expect(source.get('note').items).toEqual([{ id: 'srv/note.ts', directory: false }]),
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('asks the daemon one query at a time and skips the ones typed meanwhile', async () => {
+    const changed = vi.fn()
+    const answers: Array<() => void> = []
+    const search = vi.fn(
+      (query: string) =>
+        new Promise<ReturnType<typeof found>>((done) => answers.push(() => done(found(`${query}.ts`)))),
+    )
+    const source = createMentionSource({
+      session: { searchReferences: search },
+      cwd: '/nonexistent/agh-mention-serial',
+      remote: true,
+      locale: 'en',
+      changed,
+    })
+    source.get('a')
+    source.get('ab')
+    source.get('abc')
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(1))
+    answers[0]?.()
+    await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    expect(search.mock.calls.map(([query]) => query)).toEqual(['a', 'abc'])
+    answers[1]?.()
+    await vi.waitFor(() => expect(source.get('abc').items).toEqual([{ id: 'abc.ts', directory: false }]))
+    expect(search).toHaveBeenCalledTimes(2)
+  })
+
   it('embedded: falls back to the local workspace only when the daemon lacks the method', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-b7-embedded-'))
     try {

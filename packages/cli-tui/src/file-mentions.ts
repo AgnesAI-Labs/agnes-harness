@@ -281,14 +281,18 @@ const unavailable = (error: unknown): boolean => {
 
 /**
  * Completes `@` through the daemon's `session.references.search`, so the files offered belong to the
- * session's workspace wherever the daemon runs. One request per distinct query, answered
- * synchronously from the cache; while a query is in flight the previous answer stays on screen.
- * `fallback` (local embedded daemon only) takes over for good when the daemon lacks the method; with
- * none (a remote connection) this never reads the local disk, and the failure is the answer.
+ * session's workspace wherever the daemon runs. Answers synchronously from the cache. The daemon
+ * walks the workspace for every query, so one request runs at a time and only the latest query
+ * typed meanwhile is asked next. `fallback` (local embedded daemon only) answers at once from the
+ * local index while the daemon has not, and takes over for good when the daemon lacks the method;
+ * with none (a remote connection) this never reads the local disk, and the failure is the answer.
  */
 export class ReferenceMentionSource {
   private readonly cache = new Map<string, { at: number; state: MentionState }>()
-  private readonly inflight = new Set<string>()
+  private busy = false
+  private wanted: string | undefined
+  // Bumped by reset: an answer from the previous session is dropped, not cached.
+  private generation = 0
   private last: readonly MentionItem[] = []
   private disposed = false
 
@@ -304,8 +308,11 @@ export class ReferenceMentionSource {
     if (this.fallback && this.latched) return this.fallback.get(query)
     const hit = this.cache.get(query)
     if (hit && this.now() - hit.at <= STALE_MS) return hit.state
-    if (!this.inflight.has(query)) this.fetch(query)
-    return hit?.state ?? { status: 'loading', items: this.last }
+    this.wanted = query
+    if (!this.busy) this.fetch(query)
+    if (hit) return hit.state
+    const local = this.fallback?.get(query)
+    return local?.status === 'ready' ? local : { status: 'loading', items: this.last }
   }
 
   dispose(): void {
@@ -318,16 +325,19 @@ export class ReferenceMentionSource {
     this.cache.clear()
     this.last = []
     this.latched = false
+    this.generation++
   }
 
   private latched = false
 
   private fetch(query: string): void {
-    this.inflight.add(query)
+    this.busy = true
+    const generation = this.generation
     Promise.resolve()
       .then(() => this.search(query))
       .then(
         (result) => {
+          if (generation !== this.generation) return
           // Only workspace files are completed here; other sources have no `@path` form.
           const items = result.items
             .filter(
@@ -338,13 +348,18 @@ export class ReferenceMentionSource {
           this.store(query, { status: 'ready', items })
         },
         (error: unknown) => {
+          if (generation !== this.generation) return
           if (this.fallback && unavailable(error)) this.latched = true
           else this.store(query, { status: 'failed', items: [], reason: oneLine(this.describe(error)) })
         },
       )
       .finally(() => {
-        this.inflight.delete(query)
-        if (!this.disposed) this.changed()
+        this.busy = false
+        if (this.disposed) return
+        const next = this.wanted
+        const hit = next === undefined ? undefined : this.cache.get(next)
+        if (next !== undefined && !this.latched && !(hit && this.now() - hit.at <= STALE_MS)) this.fetch(next)
+        this.changed()
       })
   }
 
