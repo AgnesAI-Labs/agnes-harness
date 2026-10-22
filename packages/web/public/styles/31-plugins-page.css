@@ -491,10 +491,14 @@
   [data-testid="home-page-plugins"] .agh-push-body [data-testid="candidate-back"] {
     display: none;
   }
-  /* A form shown as a page: the header carries its title, and the column its margins. */
+  /* A form shown as a page: the header carries its title, and the column its margins. The page
+   scrolls, not the form: a form that kept its dialog scrolling (auto, contained) swallows the wheel
+   once a fold opens and the column outgrows the viewport. */
   .plugins-page-hosted > dialog[data-presentation="page"] .plugin-dialog-form {
     max-height: none;
     padding: 0;
+    overflow: visible;
+    overscroll-behavior: auto;
   }
   .plugins-page-hosted > dialog[data-presentation="page"] .plugin-dialog-form > .dialog-heading {
     display: none;
