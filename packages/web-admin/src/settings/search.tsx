@@ -353,7 +353,12 @@ export function SearchPanel({
           signal: request.signal ?? null,
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({
-            defaultProvider: patch.makeDefault ? row.id : status.defaultProvider,
+            // A disabled service cannot stay the default (the daemon refuses it); clear it, as the editor does.
+            defaultProvider: patch.makeDefault
+              ? row.id
+              : patch.enabled === false && row.isDefault
+                ? null
+                : status.defaultProvider,
             provider: {
               id: row.id,
               enabled: patch.enabled ?? row.enabled,

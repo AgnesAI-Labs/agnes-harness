@@ -229,6 +229,51 @@ it('offers an explicit default action for a ready service and opens the saved se
   )
 })
 
+it.each([
+  { name: 'the default service', target: 'searxng', expected: null },
+  { name: 'a non-default service', target: 'brave', expected: 'searxng' },
+])('disabling $name from its row sends a default the daemon accepts', async ({ target, expected }) => {
+  const ready = { ...brave, enabled: true, ready: true, secretConfigured: true }
+  const searxng = {
+    ...ready,
+    id: 'searxng',
+    needsKey: false,
+    endpoint: 'http://127.0.0.1:1',
+    isDefault: true,
+  }
+  const current = { ...status, configured: true, defaultProvider: 'searxng', providers: [ready, searxng] }
+  const bodies: Array<{ defaultProvider: string | null; provider: { id: string; enabled: boolean } }> = []
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    if (init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body))
+      bodies.push(body)
+      // The daemon refuses a default that is not enabled (providerReady).
+      if (body.defaultProvider === body.provider.id && !body.provider.enabled)
+        return Response.json({ ok: false, code: 'SEARCH_INVALID' }, { status: 400 })
+    }
+    return Response.json(current)
+  })
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  roots.push(root)
+  await act(async () =>
+    root.render(
+      createElement(
+        PushStack,
+        { rootTitle: 'Search' },
+        createElement(SearchPanel, { t, canSave: true, fetcher }),
+      ),
+    ),
+  )
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(`[data-testid="search-enabled-${target}"]`)?.click(),
+  )
+  expect(bodies).toHaveLength(1)
+  expect(bodies[0]?.provider).toMatchObject({ id: target, enabled: false })
+  expect(bodies[0]?.defaultProvider).toBe(expected)
+  expect(host.querySelector('[data-testid="search-error"]')).toBeNull()
+})
+
 it.each(['saved', 'failed'] as const)(
   'discards a stale search probe %s after the transport changes',
   async (outcome) => {
