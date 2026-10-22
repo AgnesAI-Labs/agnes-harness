@@ -113,7 +113,11 @@ child nor the coordinator model can answer. `approvalPolicy: never` continues to
 from approving or signing; it does not prevent already admitted work. Business signatures remain
 refused. With no human surface, including headless or unattended work, an effect needing a human is
 refused. Stopping or closing a parent or ancestor withdraws descendant questions and revokes their
-pending allowances before an answer or effect can commit. A previously created role handle cannot
+pending allowances before an answer or effect can commit.
+Explicit stops also persist cancellation of every nonterminal admitted descendant, including ready, deferred
+and not-yet-run children with no decision. Restart, resume and reattachment cannot reuse those
+stopped creations; a new explicit role delegation gets a new admission identity.
+A previously created role handle cannot
 start work after that parent lifecycle has ended; a closed session instance cannot run again. A process crash does not record
 this explicit withdrawal. Opening a role child alone does not reopen its parent's approval surface.
 Cold recovery reuses the child's original decision and

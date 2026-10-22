@@ -29,7 +29,7 @@ import {
   type HostToolDispatchPort,
 } from '@agnes/core-effects/effects/tool-dispatch'
 import { ToolPolicyRegistry, ToolRuntimeRegistry } from '@agnes/core-effects/effects/tool-providers'
-import { type SeamRuntime, settlesWithin } from '@agnes/core-effects/effects/wrap'
+import type { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 import type { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { SessionLogImpl, Timers } from '@agnes/core-ledger/log/session-log'
@@ -112,6 +112,7 @@ import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1
 import {
   childLifecycle,
   childLifecycleRevoked,
+  persistChildLifecycleStop,
   renewChildLifecycle,
   revokeChildLifecycle,
 } from '../child/lifecycle.js'
@@ -159,7 +160,14 @@ import type {
 import type { HumanAnswerCommand, HumanAnswerContext } from './approval-callback.js'
 import { restoreSessionGrants } from './approval-grants.js'
 import { runCompaction } from './compaction.js'
-import { type AbortResult, abortSession, cancelSessionRuntimes, closeTurn, finishAborted } from './control.js'
+import {
+  type AbortResult,
+  abortSession,
+  cancelSessionRuntimes,
+  closeTurn,
+  drainClosingWork,
+  finishAborted,
+} from './control.js'
 import { askApprovalAnswer } from './decision-delivery.js'
 import { DecisionCommands, type DecisionSource } from './decisions.js'
 import { assertCurrentDomainDecisions } from './domain-decision.js'
@@ -192,6 +200,7 @@ import { sessionToolCatalog } from './tool-catalog.js'
 import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
+import { rehydratedCallState } from './turn-restore.js'
 
 type OperationCommon = {
   name: string
@@ -592,8 +601,6 @@ function webTurns(owners: TraceOwners, traces: ReadonlyMap<string, ChildTrace | 
     take: (turn: UITurn) => build(turn).turn,
   }
 }
-
-const DEFAULT_CLOSE_DRAIN_MS = 30_000
 
 export class SessionImpl {
   /** Identity comes from the Host binding; standalone Core uses its fixed session root. */
@@ -1849,14 +1856,7 @@ export class SessionImpl {
   async rehydrateTurn(op: OpStateObj): Promise<void> {
     await this.restoreGrants()
     await restoreToolDisclosure(this)
-    const range = { fromSeq: op.meta.triggerSeq, toSeq: this.lastSeq, lane: this.lane }
-    const [lastRow] = await this.d.log.scan({ ...range, type: 'request/header', order: 'desc', limit: 1 })
-    const last = lastRow?.data as RequestHeaderData | undefined
-    let calls = 0
-    for await (const page of scanPages((q) => this.d.log.scan(q), { ...range, type: 'tool/call' }))
-      calls += page.length
-    const ordinal =
-      op.phase.kind === 'tools' ? Math.max(calls, ...op.phase.batch.calls.map((c) => c.ordinal + 1)) : calls
+    const { lastRow, last, ordinal } = await rehydratedCallState(this, op)
     const turn = this.freshTurn(ordinal, op.meta.triggerSeq)
     const budget = await rehydratedBudget(this, op)
     if (budget !== undefined) {
@@ -2008,12 +2008,11 @@ export class SessionImpl {
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
     this.abortRevision++
-    return abortSession(this, by).then((result) => {
+    return abortSession(this, by).finally(() => {
       cancelSessionRuntimes(this, [
         () => this.loopDriver?.cancel(),
         ...this.runtimeInstances.map((instance) => () => instance.runtime.cancel()),
       ])
-      return result
     })
   }
 
@@ -2726,18 +2725,13 @@ export class SessionImpl {
           failures.push(error)
         }
       }
+      await attempt(() => persistChildLifecycleStop(this))
       await attempt(() => this.loopDriver?.cancel())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
       await attempt(() => this.loopChildren?.close())
       // Keep hooks, log and lease alive while producers settle effects and final checkpoints. Work
       // that ignores its cancellation is left behind: it must not hold the log and the lease open.
-      const drainMs = this.d.closeDrainMs ?? DEFAULT_CLOSE_DRAIN_MS
-      if (!(await settlesWithin(Promise.allSettled([...this.activeWork]), drainMs)))
-        this.d.logger.warn('session closed with work still in flight', {
-          sessionKey: this.key,
-          pending: this.activeWork.size,
-          drainMs,
-        })
+      await drainClosingWork(this, this.activeWork)
       await attempt(() => this.loopDriver?.dispose())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.dispose())))
       if (this.loopContext) disposeLoopContext(this.loopContext)

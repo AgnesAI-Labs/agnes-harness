@@ -86,6 +86,8 @@ export class KernelChildren implements ChildrenFactory {
 
   async createWithKind(kind: ChildKind, opts: CreateOpts): Promise<ChildHandle> {
     const parent = this.parent()
+    const lifecycle = childLifecycle(parent)
+    lifecycle.assertActive()
     if (parent.turn?.hardBudgetCap !== undefined)
       throw new CoreError('E_BUDGET', 'Child delegation is unavailable in a hard-bounded turn')
     this.bindSession(parent.key)
@@ -118,7 +120,10 @@ export class KernelChildren implements ChildrenFactory {
     const inputHash = sha256Hex(opts.input)
     const prefix = `${parent.key}:${parent.lane}:${effectId}:`
     const reused = (await store.listByParent(parent.key)).find(
-      (row) => row.creationId.startsWith(prefix) && row.inputHash === inputHash,
+      (row) =>
+        row.creationId.startsWith(prefix) &&
+        row.inputHash === inputHash &&
+        !(opts.role && !opts.parentEffectId && isTerminalChildState(row.state)),
     )
     if (reused) {
       const cached = this.handles.get(reused.childKey)
@@ -159,6 +164,7 @@ export class KernelChildren implements ChildrenFactory {
 
     const untrackAttempt = trackChildAttempt(attemptId)
     try {
+      lifecycle.assertActive()
       const created = await store.createDelegatedChild({
         ...(opts.role ? { fresh: true } : {}),
         childKey,
@@ -197,6 +203,7 @@ export class KernelChildren implements ChildrenFactory {
         generationDepth: admitted.childDepth,
       }
       const record = (await store.lookupByKey(created.record.childKey)) ?? created.record
+      lifecycle.assertActive()
       if (opts.start === false) {
         let deferred = record
         if (record.creationPhase === 'creating') {
@@ -372,8 +379,10 @@ export class KernelChildren implements ChildrenFactory {
     let workspace: ChildWorkspaceLifecycle | undefined
     try {
       const historyCheck = parent.d.log.forkCheck()
+      const lifecycle = childLifecycle(parent)
       const checkParent = () => {
         historyCheck()
+        lifecycle.assertActive()
         if (parent.closingOrClosed) throw new CoreError('E_CLOSED', 'parent session closed')
       }
       if (isTerminalChildState(attempt.state) || attempt.state === 'cancelling')
@@ -502,6 +511,8 @@ export class KernelChildren implements ChildrenFactory {
     const record = await store.lookupByKey(childKey)
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
+    if (isTerminalChildState(record.state) || record.state === 'cancelling')
+      throw new CoreError('E_CLOSED', 'Child admission has terminated')
     const cached = this.handles.get(childKey)
     if (cached) {
       if (
@@ -641,7 +652,7 @@ export class KernelChildren implements ChildrenFactory {
       workspace,
     )
     this.childSessions.set(child.key, child)
-    bindChildLifecycle(child, parent)
+    await bindChildLifecycle(child, parent)
     const lifecycle = childLifecycle(parent)
     forkChecks.set(child.d.log, checkParent)
     checkParent()

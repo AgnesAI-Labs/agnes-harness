@@ -1,7 +1,8 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
 import type { EventInput, Seq } from '@agnes/core-common/types'
+import { settlesWithin } from '@agnes/core-effects/effects/wrap'
 import type { Actor } from '@agnes/protocol'
-import { revokeChildLifecycle } from '../child/lifecycle.js'
+import { persistChildLifecycleStop, revokeChildLifecycle } from '../child/lifecycle.js'
 import { refusalNotes } from '../execution/turn/nested-note.js'
 import { deferredEffectId } from './deferred.js'
 import type { SessionImpl, StepOutcome, TurnEndReason } from './session.js'
@@ -18,21 +19,22 @@ export type AbortResult = { seq: Seq | null; alreadyTerminal: boolean }
 export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResult> {
   revokeChildLifecycle(s)
   s.decisions.revokeScope()
-  const op = s.op()
-  // No open turn leaves nothing to mark, but the caller still asked for whatever is running to
-  // stop, and a `run({ until: 'idle' })` sitting between two turns is running.
-  if (!op) {
-    s.ac.abort()
-    await s.decisions.stop()
-    return { seq: null, alreadyTerminal: true }
-  }
-  if (op.control.status === 'cancel_requested') {
-    s.ac.abort()
-    await s.decisions.stop()
-    return { seq: s.opSeq(), alreadyTerminal: false }
-  }
-  const requestedAt = new Date(s.d.clock()).toISOString()
   try {
+    await persistChildLifecycleStop(s)
+    const op = s.op()
+    // No open turn leaves nothing to mark, but the caller still asked for whatever is running to
+    // stop, and a `run({ until: 'idle' })` sitting between two turns is running.
+    if (!op) {
+      s.ac.abort()
+      await s.decisions.stop()
+      return { seq: null, alreadyTerminal: true }
+    }
+    if (op.control.status === 'cancel_requested') {
+      s.ac.abort()
+      await s.decisions.stop()
+      return { seq: s.opSeq(), alreadyTerminal: false }
+    }
+    const requestedAt = new Date(s.d.clock()).toISOString()
     const seqs = await s.transition([], (cur) =>
       cur ? withPhase(cur, cur.phase, { control: { status: 'cancel_requested', requestedAt, by } }) : null,
     )
@@ -44,6 +46,16 @@ export async function abortSession(s: SessionImpl, by: Actor): Promise<AbortResu
     // running on with a caller who believes it was stopped.
     s.ac.abort()
   }
+}
+
+/** Keep the owning writer alive while cancelled producers settle, with the existing time bound. */
+export async function drainClosingWork(s: SessionImpl, work: ReadonlySet<Promise<unknown>>): Promise<void> {
+  if (!(await settlesWithin(Promise.allSettled([...work]), s.d.closeDrainMs ?? 30_000)))
+    s.d.logger.warn('session closed with work still in flight', {
+      sessionKey: s.key,
+      pending: work.size,
+      drainMs: s.d.closeDrainMs ?? 30_000,
+    })
 }
 
 export function cancelSessionRuntimes(s: SessionImpl, cancel: readonly (() => unknown)[]): void {
