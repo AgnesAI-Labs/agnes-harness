@@ -172,15 +172,49 @@ describe('command floor', () => {
     expect((await decide(rules, { call: call('dev') })).effect).toBe('ask')
   })
 
-  it('gives one session a stable floor per policy and table, and none for an empty table', () => {
+  it('gives one session a stable floor per policy and table, and the hard block even for an empty table', () => {
     const floor = sessionCommandFloor(commandArgOf)
-    expect(floor(defaultToolPolicy, [])).toBe(defaultToolPolicy)
-    expect(floor(defaultToolPolicy, undefined)).toBe(defaultToolPolicy)
+    const bare = floor(defaultToolPolicy, [])
+    expect(bare).not.toBe(defaultToolPolicy)
+    expect(floor(defaultToolPolicy, undefined)).toBe(bare)
     const floored = floor(defaultToolPolicy, [EDIT_ALLOW])
     expect(floored).not.toBe(defaultToolPolicy)
     expect(floored.id).toBe(defaultToolPolicy.id)
     // A preset view rebuilt with the same rules is not a policy change; a different table is.
     expect(floor(defaultToolPolicy, [{ ...EDIT_ALLOW }])).toBe(floored)
     expect(floor(defaultToolPolicy, [{ ...EDIT_ALLOW, action: 'deny' }])).not.toBe(floored)
+  })
+})
+
+describe('hard block', () => {
+  const shell = (command: string) => ({ call: { id: 't', name: 'shell', args: { command } } })
+  const allowAll: ToolPolicy = { ...defaultToolPolicy, decide: () => ({ effect: 'allow', reason: 'yolo' }) }
+
+  it('refuses an unrecoverable command under every permission shape, with no table at all', async () => {
+    for (const over of [{}, { fullAccess: true }, { approvalMode: 'off' as const }]) {
+      for (const base of [defaultToolPolicy, allowAll])
+        expect(
+          (await decide([], { ...shell('sudo rm -rf /'), ...over }, base)).effect,
+          JSON.stringify(over),
+        ).toBe('deny')
+    }
+  })
+
+  it('is not overridden by an allow rule, and leaves ordinary commands alone', async () => {
+    const allow: PolicyRule = { tool: 'shell', argv: '.*', action: 'allow' }
+    expect((await decide([allow], shell('git status; rm -rf ~'), allowAll)).effect).toBe('deny')
+    expect((await decide([allow], shell('rm -rf ./build'))).effect).toBe('allow')
+    expect((await decide([], shell('rm -rf ./build'))).effect).toBe('ask')
+  })
+
+  it('covers any tool that declares a command argument, not only the built-in shells', async () => {
+    const declared = (tool: string) => (tool === 'acme_exec' ? 'cmdline' : undefined)
+    const call = { id: 't', name: 'acme_exec', args: { cmdline: 'env rm -rf ~' } }
+    const floor = withCommandFloor(allowAll, [], declared)
+    expect((await floor.decide(input({ call, fullAccess: true }), signal)).effect).toBe('deny')
+    expect(
+      (await floor.decide(input({ call: { ...call, args: { cmdline: 'ls' } }, fullAccess: true }), signal))
+        .effect,
+    ).toBe('allow')
   })
 })

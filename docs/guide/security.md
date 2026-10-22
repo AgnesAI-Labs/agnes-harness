@@ -111,6 +111,19 @@ Full-access sessions automatically allow permission decisions before the unatten
 
 Auto-review's **Future identical calls (same identity, directory and tool definition)** rule binds the complete arguments, cwd, actor identity, tool policy and definition fingerprint. The card previews arguments (possibly truncated), directory and approval mode. Changing any bound value requires another decision; the rule may apply across sessions with the same identity and directory. This differs from session approval. Tainted context also returns an exact saved human allow rule to human review; untainted calls can continue to use the rule. Neither a saved allow rule nor a model allowance waives that check.
 
+### Hard-blocked commands
+
+A short list of shell commands is refused in every permission mode, with no approval request: full access, `/yolo`, `approvals.mode: off`, a saved allow rule and any grant do not change it. The list ships in code, not in a preset, so a preset that clears its command policy (full access does) cannot remove it. The refusal carries the error code `POLICY_HARD_BLOCKED`.
+
+| Rule | Refused |
+| --- | --- |
+| `rm-root-or-home` | `rm` that is recursive (`-r`, `-R`, `--recursive`) on `/`, `/*`, `~`, `~/`, `$HOME`, or any `rm --no-preserve-root` |
+| `fork-bomb` | `:(){ :\|:& };:` and renamed variants |
+| `block-device-write` | `mkfs*` on `/dev/*`; `dd of=/dev/(sd\|nvme\|disk\|rdisk\|hd\|mmcblk)*`; `> /dev/sd*` and the like |
+| `disk-erase` | `diskutil eraseDisk\|zeroDisk\|secureErase`; `format c:` |
+
+`sudo`, `env`, `command`, `exec`, `nohup`, `timeout` and `nice` in front of the command are looked through, every part of a `&&`, `||`, `;` or `|` chain is checked, and the payload of `bash|sh|zsh -c` is checked up to three levels deep. A command the checker cannot parse is not refused for that reason alone: its whole text and every literal piece that can be extracted are scanned, and otherwise it goes through normal approval. This is a text rule, not an interpreter and not a sandbox, and a sufficiently obfuscated command can get past it. The sandbox and the hard path denials remain the real boundary.
+
 <a id="full-access-exceptions"></a>
 
 ### What full access does not change

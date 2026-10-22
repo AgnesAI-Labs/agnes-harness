@@ -14,6 +14,7 @@ import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import type { DecisionHandle, ToolResult } from '@agnes/extension-api'
 import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '@agnes/protocol'
 import { automaticPermissionDecision } from '@agnes/protocol'
+import { hardBlockedCall } from '../../command-table/floor.js'
 import { dispatchLoopEvent } from '../../loop/events.js'
 import {
   hasAuthenticToolPolicyHash,
@@ -433,6 +434,10 @@ export async function approveAndExecute(
     decisionId = decision.decisionId
     if (decision.effect === 'deny')
       return { result: await refuse(s, call.toolUseId, 'AUTHZ_DENIED', decision.reason, decisionId) }
+    // Code-shipped and ahead of every policy, permission mode, approval mode and grant: no request.
+    const hardBlock = hardBlockedCall(call.name, call.args, meta.commandArg)
+    if (hardBlock)
+      return { result: await refuse(s, call.toolUseId, 'POLICY_HARD_BLOCKED', hardBlock.reason, decisionId) }
     if ((o.signal ?? s.ac.signal).aborted) {
       await s.transition([], (cur) => updateCall(cur, call.toolUseId, { status: 'approved' }))
       return {

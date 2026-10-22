@@ -287,6 +287,7 @@ export function createIntelligentUiService(ports: IntelligentUiServicePorts): In
           'HOOK_DENIED',
           'AUTHZ_DENIED',
           'POLICY_DENIED',
+          'POLICY_HARD_BLOCKED',
           'APPROVAL_REJECTED',
           'APPROVAL_TIMEOUT',
           'APPROVAL_UNAVAILABLE',

@@ -105,6 +105,19 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 
 自动审核的 **以后完全相同的调用（同身份/目录/工具定义）** 绑定全部参数、cwd、actor 身份、工具策略和定义指纹。卡片预览参数（可能截断）、目录和审批模式；绑定值变化后需重新决定，同身份同目录的不同会话可复用。这与会话级工具授权不同。上下文受污染时，即使命中精确人工允许规则也返回人工处理；未污染调用仍可复用该规则。人工规则和模型放行都不能跳过这项检查。
 
+### 硬封锁命令
+
+少数 shell 命令在所有权限模式下都会被直接拒绝，且不产生审批请求：完全访问、`/yolo`、`approvals.mode: off`、已保存的允许规则和任何 grant 都不能改变这一点。该清单内置于代码，不来自 preset，所以清空命令策略的 preset（完全访问就是如此）也无法移除它。拒绝时的错误码为 `POLICY_HARD_BLOCKED`。
+
+| 规则 | 拒绝的命令 |
+| --- | --- |
+| `rm-root-or-home` | 带 `-r`、`-R`、`--recursive` 且目标为 `/`、`/*`、`~`、`~/`、`$HOME` 的 `rm`，以及任何带 `--no-preserve-root` 的 `rm` |
+| `fork-bomb` | `:(){ :\|:& };:` 及改名变体 |
+| `block-device-write` | 作用于 `/dev/*` 的 `mkfs*`；`dd of=/dev/(sd\|nvme\|disk\|rdisk\|hd\|mmcblk)*`；`> /dev/sd*` 等 |
+| `disk-erase` | `diskutil eraseDisk\|zeroDisk\|secureErase`；`format c:` |
+
+命令前的 `sudo`、`env`、`command`、`exec`、`nohup`、`timeout`、`nice` 会被穿透；`&&`、`||`、`;`、`|` 连接的每一段都会检查；`bash|sh|zsh -c` 的载荷最多递归检查三层。无法解析的命令不会仅因解析失败被拒绝：会对整串文本和能抽出的字面片段做匹配，其余照常走审批。这是命令文本策略，不是解释器，也不是沙箱，足够混淆的命令可以绕过；真正的边界仍是沙箱和路径硬拒绝。
+
 <a id="full-access-exceptions"></a>
 
 ### 完全访问不改变什么

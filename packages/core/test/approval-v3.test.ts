@@ -1276,3 +1276,53 @@ it.each(['manual', 'off', 'auto-review'] as const)(
     }
   },
 )
+
+describe('hard block at dispatch', () => {
+  it.each(['manual', 'off', 'auto-review'] as const)(
+    'refuses an unrecoverable shell command in %s mode under an allow-everything policy, without asking',
+    async (approvalMode) => {
+      let asks = 0
+      let executions = 0
+      const shell: ToolDef = {
+        ...scopedTool(['tool:shell:execute'], async () => {
+          executions++
+          return { content: [{ type: 'text', text: 'ran' }] }
+        }),
+        name: 'shell',
+        parameters: Type.Object({ command: Type.String() }),
+      }
+      shell.meta = { ...shell.meta, commandArg: 'command' }
+      const policies = new ToolPolicyRegistry()
+      policies.register('test', {
+        id: 'allow-all',
+        version: '1',
+        decide: () => ({ effect: 'allow', reason: 'full access' }),
+      })
+      const opened = await openSession({
+        provider: fakeProvider([toolTurn('shell', { command: 'sudo rm -rf /' }), textTurn('done')]),
+        registry: registryWith(shell),
+        approvalMode,
+        toolPolicies: policies,
+        toolPolicySettings: async () => ({ policy: 'allow-all' }),
+        seams: fakeSeams({
+          approval: {
+            ask: async () => {
+              asks++
+              return { verdict: 'allowed-once', answeredBy: actor }
+            },
+          },
+        }),
+      })
+      await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+      await opened.session.acceptInput()
+      await opened.session.runInference()
+      await opened.session.runToolsPhase()
+      expect((await opened.log.scan({ type: 'tool/result', limit: 10 })).at(-1)?.data).toMatchObject({
+        code: 'POLICY_HARD_BLOCKED',
+        isError: true,
+      })
+      expect({ asks, executions }).toEqual({ asks: 0, executions: 0 })
+      expect(await opened.log.scan({ type: 'decision/state', limit: 5 })).toEqual([])
+    },
+  )
+})

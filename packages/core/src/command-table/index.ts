@@ -1,5 +1,5 @@
 export { readCommandRules } from '@agnes/core-common/command-table/rules'
-export { sessionCommandFloor, withCommandFloor } from './floor.js'
+export { hardBlockedCall, sessionCommandFloor, withCommandFloor } from './floor.js'
 export {
   argvHash,
   matchPolicy,
