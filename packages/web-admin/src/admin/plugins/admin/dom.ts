@@ -52,6 +52,7 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   RUNTIME_IDENTITY_UNKNOWN: 'error.runtime-unconfirmed',
   E_PACKAGE_TRUST: 'error.capability-unconfirmed',
   E_PACKAGE_STATE: 'error.state-changed',
+  E_PACKAGE_SOURCE: 'error.source-rejected',
 }
 /** The locale key that explains an admin failure code. */
 export const adminErrorKey = (code: string): string => ERROR_KEYS[code] ?? 'error.operation-failed'

@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { AGH_DIR, type ArtifactReadResult } from '@agnes/protocol'
 import type { Page } from '@playwright/test'
@@ -764,3 +764,27 @@ for (const locale of ['en', 'zh-CN'] as const) {
     await page.locator('#mcp-cancel').click()
   })
 }
+
+test('Checking a source with no plugin manifest explains that it is not a plugin', async ({
+  page,
+  runtime,
+}) => {
+  test.setTimeout(120_000)
+  // A Skill repository: SKILL.md and no package.json.
+  const folder = join(runtime.workspace, 'not-a-plugin')
+  await mkdir(folder, { recursive: true })
+  await writeFile(join(folder, 'SKILL.md'), '---\nname: sticker\ndescription: x\n---\nbody\n')
+  await preferences(page, 'en')
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime, 'en')
+  await fresh(page, 'en')
+  await settings(page, 'en')
+  await section(page, 'plugins')
+  await page.getByTestId('plugin-install-source').click()
+  const source = page.getByRole('dialog', { name: 'Check a plugin source', exact: true })
+  await source.getByRole('combobox', { name: 'Source type', exact: true }).selectOption('file')
+  await source.getByRole('textbox', { name: 'Source reference', exact: true }).fill(`file:${folder}`)
+  await source.getByRole('button', { name: 'Check source', exact: true }).click()
+  await expect(page.locator('#source-error')).toContainText('A Skill (SKILL.md) is not a plugin')
+  await expect(page.getByText('The plugin operation could not complete.')).toHaveCount(0)
+})

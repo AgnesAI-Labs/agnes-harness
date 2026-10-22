@@ -149,6 +149,8 @@ export const operationsCatalog: LocaleCatalog = {
       'The integrity and capability summary hashes will be bound and the current version and capability scope checked before enabling.',
     'error.state-changed':
       'The plugin version or capability scope has changed. Review the latest details before enabling it again.',
+    'error.source-rejected':
+      'This source could not be accepted as a plugin. Check that the address is reachable without a login and that its root has a plugin manifest (package.json). A Skill (SKILL.md) is not a plugin.',
     'confirm.disable.title': 'Disable “{id}”?',
     'confirm.disable.description':
       'New sessions will no longer use this plugin. Existing sessions keep its tools and panels; panels use the installed frontend version. The rest of Agnes is unaffected.',
@@ -306,6 +308,8 @@ export const operationsCatalog: LocaleCatalog = {
     'confirm.enable.action': '启用',
     'confirm.enable.facts': '启用前会绑定下列完整性摘要与能力摘要哈希，并校验当前版本及能力范围。',
     'error.state-changed': '插件版本或能力范围已经变化，请确认最新内容后再次启用。',
+    'error.source-rejected':
+      '这个来源不能作为插件接受。请确认地址无需登录即可访问，且根目录有插件清单（package.json）。技能（含 SKILL.md）不是插件。',
     'confirm.disable.title': '停用「{id}」？',
     'confirm.disable.description':
       '新会话将不再使用此插件。已有会话保留它的工具和面板；面板使用当前安装的前端版本。Agnes 原界面不受影响。',
