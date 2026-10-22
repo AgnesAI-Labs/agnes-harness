@@ -115,6 +115,8 @@ These commands mirror the Web admin pages and need an admin connection. `agh plu
 
 `agh agents` lists the daemon's sessions with their state and queue: key, title, loop (or preset), state, queued inputs and last activity. By default it shows the 50 most recent unarchived sessions; `--all` lifts the limit and `--json` prints stable fields for scripts. The state comes from one read-only `session.controls` call per session (at most 8 at a time): `paused`, `queued` (inputs wait behind the current turn), `open` (live in the daemon, nothing queued; a turn may still be running, because the daemon gives clients no busy flag), `closed` (not live in the daemon) or `unknown` (that session could not be read; the others are unaffected). `agh sessions list` is the archive and grouping view; `agh agents` is the run and queue view.
 
+`agh queue KEY [--steer] [--json] TEXT...|-` sends one message into an existing session from another shell. By default it is a follow-up: it waits for the current turn to end and then runs. `--steer` guides the turn in flight instead. `-` reads the message from stdin; put `--` before a message that starts with a dash. It uses the same command path as the TUI and Web (command id and pending journal) and prints `queued followUp (seq N)`. A daemon refusal (not your session, session closed, unsupported) is printed as `refused: CODE: message` and exits 1. If the daemon cannot confirm the outcome, the command says `unconfirmed`, exits 1 and does not send again; check with `agh sessions show KEY` before retrying.
+
 <a id="退出码"></a>
 
 ## Exit codes

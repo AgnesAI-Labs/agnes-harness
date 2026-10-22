@@ -20,6 +20,7 @@ const COMMANDS = new Set<string>([
   'settings',
   'credentials',
   'agents',
+  'queue',
   'export',
   'import',
   'doctor',
@@ -114,6 +115,7 @@ const BOOL_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.create
   '--new': 'newSession',
   '--new-session': 'newSession',
   '--all': 'all',
+  '--steer': 'steer',
   '--json': 'json',
   '--repair': 'repair',
   '--upgrade': 'upgrade',
@@ -242,7 +244,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
       write(BOOL_FLAGS[a] as keyof ParsedArgs, true)
       continue
     }
-    if (a.startsWith('-')) {
+    // A lone dash is data (stdin for queue), not a flag.
+    if (a.startsWith('-') && a !== '-') {
       const name = a.split('=', 1)[0] ?? ''
       const safeName = /^(?:--[a-z][a-z0-9-]{0,63}|-[A-Za-z])$/.test(name) ? ` ${name}` : ''
       throw new UsageError(`unknown flag${safeName}`)
@@ -268,6 +271,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     argv.includes('--session')
   )
     throw new UsageError('--session is supported only by tools, diagnostics and schedules')
+  if (p.steer && p.command !== 'queue') throw new UsageError('--steer is supported only by queue')
   if (p.continue && p.resume !== undefined)
     throw new UsageError('--continue and --resume are mutually exclusive')
   if (p.dataDir !== undefined && !(p.command === 'computer-use' && p.positional[0] === 'rescue'))

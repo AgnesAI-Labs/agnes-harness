@@ -295,8 +295,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         await booted.close().catch(() => undefined)
       }
     }
-    // approvals, schedules, triggers, settings, credentials and agents share sessions' boot and entry point.
-    if (/^(sessions|approvals|schedules|triggers|settings|credentials|agents)$/.test(p.command ?? '')) {
+    // approvals, schedules, triggers, settings, credentials, agents and queue share sessions' boot and entry point.
+    if (/^(sessions|approvals|schedules|triggers|settings|credentials|agents|queue)$/.test(p.command ?? '')) {
       const booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
       try {
         const { sessionsCommand } = await import('./commands/sessions.js')

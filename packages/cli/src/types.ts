@@ -29,6 +29,7 @@ export type Command =
   | 'settings'
   | 'credentials'
   | 'agents'
+  | 'queue'
   | 'computer-use'
   | 'profile'
   | 'plugin'
@@ -100,6 +101,8 @@ export type ParsedArgs = {
   force: boolean
   /** `schedules`: list every schedule rather than one session's. */
   all?: boolean
+  /** `queue`: steer the turn in flight instead of queueing a follow-up. */
+  steer?: boolean
   /** `schedules add|edit` task text, title and exactly one of the selector flags. */
   prompt?: string
   title?: string

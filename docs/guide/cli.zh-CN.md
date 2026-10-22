@@ -109,6 +109,8 @@ TUI 与 Web 中的 `/plan`、`/plan on`、`/plan off` 和 `/plan <说明>` 都�
 
 `agh agents` 列出 daemon 里的会话及其状态和队列：key、标题、loop（或 preset）、状态、排队条数和最近活动。默认显示最近活动的 50 个未归档会话，`--all` 不设上限，`--json` 输出供脚本使用的稳定字段。状态来自逐个会话的只读 `session.controls` 调用（并发上限 8）：`paused`（暂停）、`queued`（输入排在当前 turn 之后）、`open`（daemon 中在线、没有排队；daemon 不向客户端提供忙碌标志，所以 turn 仍可能在运行）、`closed`（daemon 中未在线）、`unknown`（该会话读取失败，不影响其他行）。`agh sessions list` 是归档和分组视图，`agh agents` 是运行和队列视图。
 
+`agh queue KEY [--steer] [--json] 文本...|-` 从另一个 shell 往已有会话注入一条消息。默认是 follow-up：等当前 turn 结束后再执行；`--steer` 则在当前 turn 中引导。`-` 从 stdin 读取消息，消息以连字符开头时在前面加 `--`。它和 TUI、Web 走同一条命令路径（commandId 和 pending journal），成功时打印 `queued followUp (seq N)`。daemon 拒绝（不是你的会话、会话已关闭、不支持）时打印 `refused: CODE: message` 并以 1 退出。如果 daemon 无法确认结果，命令会提示 `unconfirmed`、以 1 退出，并且不会重发；重试前先用 `agh sessions show KEY` 核对。
+
 ## 退出码
 
 | 码 | 意义 |
