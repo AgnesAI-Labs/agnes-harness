@@ -82,12 +82,13 @@ async function runFlow(ctx: Any, template: string, subjectId: string, running?: 
 
 describe('DevBoard plugin contract', () => {
   it('registers well-formed tools, services and the playbook skill', () => {
-    expect(tools).toHaveLength(20)
+    expect(tools).toHaveLength(21)
     expect(services.map((s) => s.name).sort()).toEqual([
       'devboard.approval',
       'devboard.artifact',
       'devboard.create',
       'devboard.gate',
+      'devboard.handoff',
       'devboard.reset',
       'devboard.snapshot',
       'devboard.transition',
@@ -491,6 +492,54 @@ describe('DevBoard plugin contract', () => {
     expect(view.activity).toHaveLength(1)
   })
 
+  it('reads a hand-off through the tool and the query service and refuses a bad object', async () => {
+    const store = memoryStore(true)
+    const gate = read(store).gates.find((g: Any) => g.decision === 'PENDING')
+    const def = tool('devboard_handoff')
+    expect(def.meta.isReadOnly).toBe(true)
+    expect(Object.keys(JSON.parse(JSON.stringify(def.parameters)).properties)).toEqual(['type', 'id'])
+    const out = await def.execute({ type: 'gate', id: gate.id }, { store, signal } as Any)
+    expect(out.isError).toBeFalsy()
+    expect(out.structured.data).toMatchObject({ type: 'gate', id: gate.id })
+    const viaService = await service('devboard.handoff').handler({ type: 'gate', id: gate.id }, { store })
+    expect(viaService.summary).toBe(out.structured.data.summary)
+    for (const input of [
+      { type: 'task', id: 'TASK-001' },
+      { type: 'gate', id: 'GATE-404' },
+      { type: 'gate' },
+    ])
+      expect((await def.execute(input, { store, signal } as Any)).isError, JSON.stringify(input)).toBe(true)
+    expect(
+      await service('devboard.handoff').handler({ type: 'gate', id: 'GATE-404' }, { store }),
+    ).toMatchObject({
+      ok: false,
+    })
+  })
+
+  it('tells the coordinator to read the hand-off first in every action that carries an object', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    const actions = pkg.agnes.application.workbench.actions
+    const handed = [
+      'continue',
+      'customer-change',
+      'run-app',
+      'change',
+      'progress',
+      'interventions',
+      'phm-8d',
+      'trial-change',
+    ]
+    for (const id of handed)
+      for (const lang of ['en', 'zh-CN'])
+        expect(actions.find((a: Any) => a.id === id).prompt[lang], `${id} ${lang}`).toContain(
+          'devboard_handoff',
+        )
+    for (const id of ['new-project', 'fast-forward'])
+      expect(actions.find((a: Any) => a.id === id).prompt['zh-CN']).not.toContain('devboard_handoff')
+    expect(pkg.files).toContain('handoff.mjs')
+    expect(pkg.scripts.build).toContain('handoff.mjs')
+  })
+
   it('registers every tool in the capability names and the coordinator profile, plus the new pages and actions', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const names = tools.map((t) => t.name)
@@ -515,12 +564,12 @@ describe('DevBoard plugin contract', () => {
     expect(pkg.files).toContain('profiles.mjs')
   })
 
-  it('adds exactly one capability, the project-directory write, and one tool name for fast-forward', () => {
+  it('adds exactly one capability, the project-directory write, and the fast-forward and hand-off tool names', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const caps = pkg.agnes.plugins[0].capabilities
     expect(caps.filesystem).toEqual({ read: ['devboard-projects/**'], write: ['devboard-projects/**'] })
     expect(Object.keys(caps).sort()).toEqual(['filesystem', 'store', 'tools', 'ui'])
-    expect(caps.tools.names.at(-1)).toBe('devboard_fastforward')
+    expect(caps.tools.names.slice(-2)).toEqual(['devboard_fastforward', 'devboard_handoff'])
     const policy = pkg.agnes.bundles.coordinator.profile.toolPolicy.allow
     expect(policy).toContain('devboard_fastforward')
     expect(pkg.files).toEqual(expect.arrayContaining(['fastforward.mjs', 'assets']))
@@ -534,7 +583,7 @@ describe('DevBoard plugin contract', () => {
   it('adds traceFrom to the change tool without a new tool name or capability', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const caps = pkg.agnes.plugins[0].capabilities
-    expect(caps.tools.names).toHaveLength(20)
+    expect(caps.tools.names).toHaveLength(21)
     expect(Object.keys(caps).sort()).toEqual(['filesystem', 'store', 'tools', 'ui'])
     const schema = JSON.parse(JSON.stringify(tool('devboard_change_upsert').parameters))
     expect(schema.properties.traceFrom).toMatchObject({ type: 'boolean' })

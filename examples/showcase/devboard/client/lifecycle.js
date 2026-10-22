@@ -4,7 +4,6 @@ import { ActivityPanel } from './activity.js'
 import { ApprovalEntry, TodoColumn } from './approvals.js'
 import {
   byId,
-  continueWork,
   day,
   fact,
   gateBadge,
@@ -30,6 +29,7 @@ import { CustomerChange } from './customer-change.js'
 import { cardsOf, lensSummary, METRICS, relevant } from './lens.js'
 import { NewProject } from './new-project.js'
 import { ArtifactPreview, DeliveryCard } from './result.js'
+import { WorkButton } from './work.js'
 
 const STAGE_ORDER = ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE']
 const stagesOf = (data, projectId) =>
@@ -266,10 +266,12 @@ export function Overview({ data, board, role }) {
               ),
               created.live &&
                 h(
-                  Button,
+                  WorkButton,
                   {
+                    board,
+                    action: 'continue',
+                    object: { type: 'project', id: created.id },
                     appearance: 'primary',
-                    onClick: () => continueWork(board, { type: 'project', id: created.id }),
                   },
                   '让研发协调员继续推进',
                 ),
@@ -412,17 +414,16 @@ export function GatePanel({ data, gate, board, role, setRole }) {
           { className: 'devboard-actions' },
           h('p', null, decided ? '已决议。现场项目请让研发协调员继续推进。' : '该评审门已决议。'),
           h(
-            'div',
-            { className: 'devboard-buttons', 'data-guide': 'gate-continue' },
-            h(
-              Button,
-              {
-                appearance: decided ? 'primary' : 'secondary',
-                onClick: () => continueWork(board, { type: 'gate', id: gate.id }),
-              },
-              '继续推进',
-            ),
-            h('span', { className: 'devboard-muted' }, '打开研发协调员会话，草稿带上门编号，由你点发送。'),
+            WorkButton,
+            {
+              board,
+              action: 'continue',
+              object: { type: 'gate', id: gate.id },
+              appearance: decided ? 'primary' : 'secondary',
+              guide: 'gate-continue',
+              title: '打开研发协调员会话，草稿由你点发送',
+            },
+            '继续推进',
           ),
           h(
             'div',

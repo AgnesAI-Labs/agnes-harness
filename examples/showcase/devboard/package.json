@@ -15,6 +15,7 @@
     "profiles.mjs",
     "seed-data.mjs",
     "fastforward.mjs",
+    "handoff.mjs",
     "seed-docs",
     "skills",
     "client",
@@ -24,7 +25,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check domain.mjs && node --check approvals.mjs && node --check approval-templates.mjs && node --check profiles.mjs && node --check seed-data.mjs && node --check fastforward.mjs"
+    "build": "node --check index.mjs && node --check domain.mjs && node --check approvals.mjs && node --check approval-templates.mjs && node --check profiles.mjs && node --check seed-data.mjs && node --check fastforward.mjs && node --check handoff.mjs"
   },
   "agnes": {
     "provides": [
@@ -67,7 +68,8 @@
               "devboard_fault_list",
               "devboard_approval_submit",
               "devboard_app_register",
-              "devboard_fastforward"
+              "devboard_fastforward",
+              "devboard_handoff"
             ],
             "prefix": "devboard_"
           },
@@ -160,6 +162,7 @@
             "devboard_approval_submit",
             "devboard_app_register",
             "devboard_fastforward",
+            "devboard_handoff",
             "skill_read",
             "read",
             "write",
@@ -203,6 +206,7 @@
               "devboard_approval_submit",
               "devboard_app_register",
               "devboard_fastforward",
+              "devboard_handoff",
               "skill_read",
               "read",
               "write",
@@ -813,8 +817,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). A review gate has been decided on the board; its id is in the attached work object. Call devboard_gate_status for that gate, read the decision and findings, then continue the project: next stage if approved, rework per the findings if rejected. After TR1 is approved, create one requirement per SWR group (projectId set, title starting with the SWR ids) with a DEVELOPMENT and a TESTING task, move tasks to IN_PROGRESS and COMPLETED as roles work, and register every failed test case as a defect (foundIn per test level, req = the SWR id) and walk it through FIXING, RETEST and CLOSED; code-review findings stay on the TR4 gate.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。看板上有评审门已决议，门的编号在附带的工作对象里。先用 devboard_gate_status 读取该门的决议与意见，然后继续推进：批准就进入下一阶段，驳回就按意见返工后重新提交。TR1 批准后，按 SWR 分组各建一个需求（带 projectId，标题以 SWR 编号开头），每个需求建一个 DEVELOPMENT 和一个 TESTING 任务，角色开工与交付时把任务置为 IN_PROGRESS、COMPLETED；测试中每个失败的用例登记一条缺陷（foundIn 按测试级别，req 填 SWR 编号），经 FIXING、RETEST、CLOSED 流转；代码评审意见仍挂在 TR4 门上，不登记成缺陷。"
+              "en": "First call skill_read(name=devboard-playbook), then devboard_handoff with the attached work object (type and id): the attached object is a gate that people decided on the board, or a project (for example one just created). The hand-off gives the decision, the open findings, the next stage with its deliverables and the project's open tasks and defects; use devboard_gate_status only to double-check a gate. Then continue the project as its nextStep says: the next stage if approved, rework per the findings if rejected, the plan and the initiation gate for a new project. After TR1 is approved, create one requirement per SWR group (projectId set, title starting with the SWR ids) with a DEVELOPMENT and a TESTING task, move tasks to IN_PROGRESS and COMPLETED as roles work, and register every failed test case as a defect (foundIn per test level, req = the SWR id) and walk it through FIXING, RETEST and CLOSED; code-review findings stay on the TR4 gate.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)，再用附带工作对象（type 与 id）调用 devboard_handoff：附带对象是人在看板上已决议的评审门，或一个项目（例如刚新建的）。交接内容给出决议、未关闭意见、下一阶段及其交付物，以及项目未完成的任务和缺陷；只有需要复核时才再用 devboard_gate_status。然后按 nextStep 继续推进：批准就进入下一阶段，驳回就按意见返工后重新提交，新项目就写项目计划并提交立项评审。TR1 批准后，按 SWR 分组各建一个需求（带 projectId，标题以 SWR 编号开头），每个需求建一个 DEVELOPMENT 和一个 TESTING 任务，角色开工与交付时把任务置为 IN_PROGRESS、COMPLETED；测试中每个失败的用例登记一条缺陷（foundIn 按测试级别，req 填 SWR 编号），经 FIXING、RETEST、CLOSED 流转；代码评审意见仍挂在 TR4 门上，不登记成缺陷。"
             }
           },
           {
@@ -837,8 +841,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "(Customer change demo: press Send. The coordinator registers a change request, traces its impact and sends it to CCB review with its ECR approval started; then approve it in 「我的待办」 on the board.)\nFirst call skill_read(name=devboard-playbook). The attached work object is the live project id. Register one change request with devboard_change_upsert: source {type: 'CUSTOMER', ref: 'TA §3.2'}, title \"客户要求预警排行默认条数由 10 改为 20，并增加按线路筛选\", with the customer's reason; its impact starts from CUS-002 with traceFrom: true so the downstream requirements, design items, test cases and deliverables are traced for you; add the safety impact and effort in days. Move it to ANALYZED and CCB_REVIEW, then start its ECR flow with devboard_approval_submit and stop. Tell me the change id and that the flow waits in 「我的待办」; do not decide it yourself.",
-              "zh-CN": "（客户变更演示：直接点发送。研发协调员会登记一条变更申请、推算影响并提交 CCB，发起 ECR 审批；之后回看板的「我的待办」批准。）\n先调用 skill_read(name=devboard-playbook)。附带的工作对象是现场项目编号。用 devboard_change_upsert 登记一条变更申请：source 填 {type: 'CUSTOMER', ref: 'TA §3.2'}，标题「客户要求预警排行默认条数由 10 改为 20，并增加按线路筛选」并写明客户理由；影响分析从 CUS-002 出发并设 traceFrom: true，由系统沿追溯链补全下游需求、设计条目、用例和交付物；再补上安全影响和工作量（人日）。推进到已分析、提交 CCB，然后用 devboard_approval_submit 发起 ECR 审批并停下。告诉我变更编号，以及审批在「我的待办」等待处理；不要自己决议。"
+              "en": "(Customer change demo: press Send. The coordinator registers a change request, traces its impact and sends it to CCB review with its ECR approval started; then approve it in 「我的待办」 on the board.)\nFirst call skill_read(name=devboard-playbook), then devboard_handoff with the attached work object (type and id): the attached object is the live project. Register one change request with devboard_change_upsert: source {type: 'CUSTOMER', ref: 'TA §3.2'}, title \"客户要求预警排行默认条数由 10 改为 20，并增加按线路筛选\", with the customer's reason; its impact starts from CUS-002 with traceFrom: true so the downstream requirements, design items, test cases and deliverables are traced for you; add the safety impact and effort in days. Move it to ANALYZED and CCB_REVIEW, then start its ECR flow with devboard_approval_submit and stop. Tell me the change id and that the flow waits in 「我的待办」; do not decide it yourself.",
+              "zh-CN": "（客户变更演示：直接点发送。研发协调员会登记一条变更申请、推算影响并提交 CCB，发起 ECR 审批；之后回看板的「我的待办」批准。）\n先调用 skill_read(name=devboard-playbook)，再用附带工作对象（type 与 id）调用 devboard_handoff：附带对象是现场项目。用 devboard_change_upsert 登记一条变更申请：source 填 {type: 'CUSTOMER', ref: 'TA §3.2'}，标题「客户要求预警排行默认条数由 10 改为 20，并增加按线路筛选」并写明客户理由；影响分析从 CUS-002 出发并设 traceFrom: true，由系统沿追溯链补全下游需求、设计条目、用例和交付物；再补上安全影响和工作量（人日）。推进到已分析、提交 CCB，然后用 devboard_approval_submit 发起 ECR 审批并停下。告诉我变更编号，以及审批在「我的待办」等待处理；不要自己决议。"
             }
           },
           {
@@ -849,8 +853,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). The attached work object is the live project id. Read its workspaceDir with devboard_board, then start the app as the playbook describes: run node server.js in the project directory as a background shell job (the command needs my approval; do not set a port or the loopback variables yourself), read the AGH_LOOPBACK_URL the command actually prints, register that address with devboard_app_register, reply with the URL, and keep the service running until I tell you to stop. If it fails to start, report it as it is and register nothing.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。附带的工作对象是现场项目编号。先用 devboard_board 读取它的 workspaceDir，再按 playbook 启动应用：在项目目录用 shell 后台模式运行 node server.js（命令需要我批准；不要自己设置端口或 loopback 环境变量），读取命令实际输出的 AGH_LOOPBACK_URL，用 devboard_app_register 登记这个地址，回复地址，并让服务一直运行到我说停止。启动失败就如实报告，不要登记任何地址。"
+              "en": "First call skill_read(name=devboard-playbook), then devboard_handoff with the attached work object (type and id): the attached object is the live project; its workspaceDir is in the hand-off. Then start the app as the playbook describes: run node server.js in the project directory as a background shell job (the command needs my approval; do not set a port or the loopback variables yourself), read the AGH_LOOPBACK_URL the command actually prints, register that address with devboard_app_register, reply with the URL, and keep the service running until I tell you to stop. If it fails to start, report it as it is and register nothing.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)，再用附带工作对象（type 与 id）调用 devboard_handoff：附带对象是现场项目，workspaceDir 在交接内容里。然后按 playbook 启动应用：在项目目录用 shell 后台模式运行 node server.js（命令需要我批准；不要自己设置端口或 loopback 环境变量），读取命令实际输出的 AGH_LOOPBACK_URL，用 devboard_app_register 登记这个地址，回复地址，并让服务一直运行到我说停止。启动失败就如实报告，不要登记任何地址。"
             }
           },
           {
@@ -861,8 +865,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). List open change requests. For SUBMITTED ones, complete the impact analysis (requirements, deliverables, test cases, safety, effort) with devboard_change_upsert and move them to ANALYZED and CCB_REVIEW; leave the CCB decision to people.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。列出未关闭的变更申请。对已提交的 CR，用 devboard_change_upsert 补齐影响分析（需求、交付物、用例、安全影响、工作量），推进到已分析并提交 CCB；CCB 决议留给人。"
+              "en": "First call skill_read(name=devboard-playbook). If a change is attached (type and id), call devboard_handoff for it and work on that change only; otherwise list the open change requests. For SUBMITTED ones, complete the impact analysis (requirements, deliverables, test cases, safety, effort) with devboard_change_upsert and move them to ANALYZED and CCB_REVIEW; leave the CCB decision to people.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。如果附带了变更对象（type 与 id），先用它调用 devboard_handoff，只处理这一条变更；没有附带就列出未关闭的变更申请。对已提交的 CR，用 devboard_change_upsert 补齐影响分析（需求、交付物、用例、安全影响、工作量），推进到已分析并提交 CCB；CCB 决议留给人。"
             }
           },
           {
@@ -873,8 +877,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "Read the board and summarize each project: stage, review gates, coverage, open defects, test pass rate, overdue items and risks. Do not change anything.",
-              "zh-CN": "读取看板，按项目汇总：阶段、评审门、追溯覆盖率、未关闭缺陷、测试通过率、超期事项与风险。只汇总，不做任何修改。"
+              "en": "If a project is attached (type and id), call devboard_handoff for it and summarize that project only; otherwise read the board and summarize each project: stage, review gates, coverage, open defects, test pass rate, overdue items and risks. Do not change anything.",
+              "zh-CN": "如果附带了项目（type 与 id），先用它调用 devboard_handoff，只汇总这个项目；没有附带就读取看板，按项目汇总：阶段、评审门、追溯覆盖率、未关闭缺陷、测试通过率、超期事项与风险。只汇总，不做任何修改。"
             }
           },
           {
@@ -885,8 +889,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). Read the board, list overdue and open human-intervention requests, and continue the work whose requests have been resolved.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。读取看板，列出超时和待处理的人工介入请求；对已处理完成的请求，按处理结论继续推进相关工作。"
+              "en": "First call skill_read(name=devboard-playbook). If a human-intervention request is attached (type and id), call devboard_handoff for it and continue only the work that request blocks, following the answer; otherwise read the board, list overdue and open human-intervention requests, and continue the work whose requests have been resolved.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。如果附带了人工介入请求（type 与 id），先用它调用 devboard_handoff，只继续该请求所卡住的工作并依答复推进；没有附带就读取看板，列出超时和待处理的人工介入请求；对已处理完成的请求，按处理结论继续推进相关工作。"
             }
           },
           {
@@ -897,8 +901,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). For the in-service project read devboard_fault_list and the full board object details, including related trials, requirements, material revisions and baselines. Include those facts and source ids in each fresh role task. Dispatch diagnostics then rams to write under devboard-projects/<project id>/analysis/<problem id>/ (keep this workspace-relative prefix even when the project has no workspaceDir); quality is read-only and returns numbered findings in its answer, never a report file. Read the actual files and findings back, then draft D2–D4 with devboard_problem_upsert and, if needed, a change with impact analysis via devboard_change_upsert. Cite alarm and trial ids; missing facts remain gaps. Draft only: do not close problems or approve changes; tell me what to confirm on the board.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。对在役项目读取 devboard_fault_list 和看板完整对象详情，含相关试验、需求、物料版本与三类基线；每次新鲜角色派工都带上这些事实及来源编号。按 diagnostics → rams 顺序写文件，工作区相对路径必须为 devboard-projects/<项目编号>/analysis/<质量问题编号>/，即使项目没有 workspaceDir 也保留此前缀；quality 只读，在答复返回编号意见，不创建报告文件。读回实际文件和意见后，用 devboard_problem_upsert 起草 D2–D4，必要时用 devboard_change_upsert 起草变更及影响分析。引用预警和试验编号，缺证据保留缺口。只起草：不得关闭问题或批准变更，最后告诉我到看板确认什么。"
+              "en": "First call skill_read(name=devboard-playbook). If a quality problem or a fault is attached (type and id), call devboard_handoff for it first and work on that one. For the in-service project read devboard_fault_list and the full board object details, including related trials, requirements, material revisions and baselines. Include those facts and source ids in each fresh role task. Dispatch diagnostics then rams to write under devboard-projects/<project id>/analysis/<problem id>/ (keep this workspace-relative prefix even when the project has no workspaceDir); quality is read-only and returns numbered findings in its answer, never a report file. Read the actual files and findings back, then draft D2–D4 with devboard_problem_upsert and, if needed, a change with impact analysis via devboard_change_upsert. Cite alarm and trial ids; missing facts remain gaps. Draft only: do not close problems or approve changes; tell me what to confirm on the board.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。如果附带了质量问题或预警（type 与 id），先用它调用 devboard_handoff，处理这一条。对在役项目读取 devboard_fault_list 和看板完整对象详情，含相关试验、需求、物料版本与三类基线；每次新鲜角色派工都带上这些事实及来源编号。按 diagnostics → rams 顺序写文件，工作区相对路径必须为 devboard-projects/<项目编号>/analysis/<质量问题编号>/，即使项目没有 workspaceDir 也保留此前缀；quality 只读，在答复返回编号意见，不创建报告文件。读回实际文件和意见后，用 devboard_problem_upsert 起草 D2–D4，必要时用 devboard_change_upsert 起草变更及影响分析。引用预警和试验编号，缺证据保留缺口。只起草：不得关闭问题或批准变更，最后告诉我到看板确认什么。"
             }
           },
           {
@@ -909,8 +913,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). Find failed type trials with no change, and read full trial, requirement/DES, material-revision and baseline details from the board. Pass those facts and source ids to a typed mechanical or electrical role to write an impact note under devboard-projects/<project id>/analysis/<trial id>/ (keep the prefix even without workspaceDir). Then pass the facts and note to config: it is read-only and returns numbered baseline findings in its answer, not a file. Read the note and findings back; a missing role or unfinished work remains a gap, never coordinator-written. Draft via devboard_change_upsert with source TYPE_TEST, trial id, rootCause and evidence-based impact, then link devboard_trial_upsert(changeId). Cite trial ids and report numbers; mark unknown materials or revisions as unconfirmed. Draft only: CCB decisions and trial approval stay with people.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。找出不合格且尚无变更的型式试验，读取完整试验、需求/DES、物料版本与基线详情，把事实和来源编号交给 typed mechanical 或 electrical 角色写影响说明。工作区相对路径必须为 devboard-projects/<项目编号>/analysis/<试验编号>/，无 workspaceDir 也保留前缀。再把事实和说明交给只读 config，在答复返回编号核对意见，不创建文件。读回说明与意见后，用 devboard_change_upsert 起草变更（source TYPE_TEST、试验编号、rootCause、有依据的需求/物料/用例影响），用 devboard_trial_upsert(changeId) 关联。角色缺失或未完成保留缺口，不由协调员代写；引用试验编号和报告号，未知物料或版本标待确认。只起草：CCB 决议与试验批准留给人。"
+              "en": "First call skill_read(name=devboard-playbook). If a trial is attached (type and id), call devboard_handoff for it and work on that trial; otherwise find failed type trials with no change. Read full trial, requirement/DES, material-revision and baseline details from the board. Pass those facts and source ids to a typed mechanical or electrical role to write an impact note under devboard-projects/<project id>/analysis/<trial id>/ (keep the prefix even without workspaceDir). Then pass the facts and note to config: it is read-only and returns numbered baseline findings in its answer, not a file. Read the note and findings back; a missing role or unfinished work remains a gap, never coordinator-written. Draft via devboard_change_upsert with source TYPE_TEST, trial id, rootCause and evidence-based impact, then link devboard_trial_upsert(changeId). Cite trial ids and report numbers; mark unknown materials or revisions as unconfirmed. Draft only: CCB decisions and trial approval stay with people.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。如果附带了试验（type 与 id），先用它调用 devboard_handoff，处理这一条试验；没有附带就找出不合格且尚无变更的型式试验。读取完整试验、需求/DES、物料版本与基线详情，把事实和来源编号交给 typed mechanical 或 electrical 角色写影响说明。工作区相对路径必须为 devboard-projects/<项目编号>/analysis/<试验编号>/，无 workspaceDir 也保留前缀。再把事实和说明交给只读 config，在答复返回编号核对意见，不创建文件。读回说明与意见后，用 devboard_change_upsert 起草变更（source TYPE_TEST、试验编号、rootCause、有依据的需求/物料/用例影响），用 devboard_trial_upsert(changeId) 关联。角色缺失或未完成保留缺口，不由协调员代写；引用试验编号和报告号，未知物料或版本标待确认。只起草：CCB 决议与试验批准留给人。"
             }
           }
         ],

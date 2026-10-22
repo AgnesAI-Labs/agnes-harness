@@ -37,6 +37,7 @@ import {
   upsertTrial,
 } from '../domain.mjs'
 import { FILES, fastForward, GATES, levelOf, UNIT_TOTAL } from '../fastforward.mjs'
+import { HANDOFF_TYPES, handoff, SUMMARY_MAX } from '../handoff.mjs'
 import { GATE_PROFILES, LIVE_TAILORING, ORGS, ROLES } from '../profiles.mjs'
 import { buildSeed } from '../seed-data.mjs'
 
@@ -2352,5 +2353,100 @@ describe('agent activity and acting roles', () => {
       ),
     ).toThrow()
     expect(read(store, NOW).revision).toBe(before)
+  })
+})
+
+describe('hand-off to the coordinator', () => {
+  const ids = (state: State) => ({
+    gate: state.gates.find((g: Item) => g.decision === 'PENDING').id,
+    project: state.projects[0].id,
+    change: state.changes[0].id,
+    trial: state.trials[0].id,
+    fault: state.faults[0].id,
+    problem: state.problems[0].id,
+    intervention: state.interventions[0].id,
+  })
+
+  it.each(HANDOFF_TYPES)('bounds the %s hand-off and leaves the next step in it', (type) => {
+    const state = read(memoryStore(), NOW)
+    const out = handoff(state, { type, id: (ids(state) as Item)[type] })
+    expect(out).toMatchObject({ type, revision: state.revision })
+    expect(out.summary.length).toBeLessThanOrEqual(SUMMARY_MAX)
+    expect(out.next.length).toBeGreaterThan(0)
+    expect(out.note).toContain('不是指令')
+    expect(JSON.stringify(out).length).toBeLessThan(8000)
+  })
+
+  it.each([
+    ['gate', 'GATE-404'],
+    ['task', 'TASK-001'],
+    ['constructor', 'x'],
+    ['__proto__', 'x'],
+    [undefined, 'x'],
+  ])('refuses %s %s', (type, id) => {
+    expect(() => handoff(read(memoryStore(), NOW), { type: type as string, id })).toThrow()
+  })
+
+  it('gives a decided gate its decision, its open findings and the next stage with its deliverables', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    pass(state, p.id, 'INITIATION')
+    const cdcp = state.gates.find((g: Item) => g.code === 'CDCP')
+    const out = handoff(state, { type: 'gate', id: cdcp.id })
+    expect(out.gate).toMatchObject({ code: 'CDCP', decision: 'APPROVED' })
+    expect(out.nextStep).toMatchObject({ stage: 'REQUIREMENTS', state: 'NOT_STARTED' })
+    expect(out.nextStep.nextGate.code).toBe('TR1')
+    expect(out.nextStep.deliverables.join(' ')).toContain('docs/SRS.md')
+    expect(out.next[0]).toContain('devboard_stage_update')
+    expect(out.skippedGates).toEqual(['TR2', 'TR6', 'PDCP'])
+  })
+
+  it('hands a rejected gate back with its open findings and the rework step', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    const { gate } = submitGate(
+      state,
+      { stageId: `${p.id}/INITIATION`, by: '研发协调员', findings: ['计划缺少里程碑'] },
+      NOW,
+    )
+    decideGate(
+      state,
+      { gateId: gate.id, decision: 'REJECTED', by: 'IPMT 测试员', comment: '补充里程碑' },
+      NOW,
+    )
+    const out = handoff(state, { type: 'gate', id: gate.id })
+    expect(out.gate).toMatchObject({ decision: 'REJECTED', comment: '补充里程碑' })
+    expect(out.openFindings.map((f: Item) => f.text)).toEqual(['计划缺少里程碑'])
+    expect(out.next.join('')).toContain('驳回')
+    expect(out.nextStep.state).toBe('REWORK')
+  })
+
+  it('caps the open lists of a project and keeps their counts', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    const req = create(state, { kind: 'requirement', title: '需求', projectId: p.id, by: 'x' }, NOW)
+    for (let i = 0; i < 25; i++)
+      create(
+        state,
+        { kind: 'task', requirementId: req.id, title: `任务 ${i}`, type: 'DEVELOPMENT', by: 'x' },
+        NOW,
+      )
+    const out = handoff(state, { type: 'project', id: p.id })
+    expect(out.openTasks).toHaveLength(10)
+    expect(out.counts.openTasks).toBe(25)
+    expect(JSON.stringify(out).length).toBeLessThan(8000)
+  })
+
+  it('quotes long board text clipped and marks it as data', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    const cr = create(
+      state,
+      { kind: 'change', projectId: p.id, title: '变更', reason: 'x'.repeat(2000), by: 'x' },
+      NOW,
+    )
+    const out = handoff(state, { type: 'change', id: cr.id })
+    expect(out.change.reason.length).toBe(600)
+    expect(out.next[0]).toContain('traceFrom')
   })
 })

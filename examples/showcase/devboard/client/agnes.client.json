@@ -8,6 +8,7 @@
     "services": [
       "devboard.snapshot",
       "devboard.artifact",
+      "devboard.handoff",
       "devboard.transition",
       "devboard.create",
       "devboard.gate",
