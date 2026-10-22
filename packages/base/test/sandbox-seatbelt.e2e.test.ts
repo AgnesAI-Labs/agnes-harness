@@ -17,8 +17,9 @@ import { join } from 'node:path'
 import { createExec } from '@agnes/host-infrastructure/adapters/exec'
 import { openLocalProcess } from '@agnes/host-infrastructure/adapters/process'
 import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
+import * as systemNode from '@agnes/system-node'
 import { LOOPBACK_GATE_PATH_PREFIX, openLoopbackListener } from '@agnes/system-node'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 
 function run(argv: string[], env?: NodeJS.ProcessEnv) {
@@ -106,7 +107,14 @@ seatbelt.each([
           if(!headers.includes('\\r\\n\\r\\n')) return;
           socket.off('data',read);
           const path=headers.split(' ')[1];
-          if(path==='/stream') {
+          if(path==='/ws') {
+            const key=headers.match(/Sec-WebSocket-Key: (.+)\\r\\n/i)[1].trim();
+            const accept=require('node:crypto').createHash('sha1').update(key+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+            socket.write('HTTP/1.1 101 Switching Protocols\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Accept: '+accept+'\\r\\n\\r\\n');
+            const send=text=>socket.write(Buffer.concat([Buffer.from([0x81,Buffer.byteLength(text)]),Buffer.from(text)]));
+            send('ws-ready');const timer=setInterval(()=>send('ws-tick'),20);
+            socket.on('close',()=>clearInterval(timer));
+          } else if(path==='/stream') {
             socket.write('HTTP/1.1 200 OK\\r\\nConnection: close\\r\\n\\r\\nstream-ready');
             const timer=setInterval(()=>socket.write('tick'),20);
             socket.on('close',()=>clearInterval(timer));
@@ -156,6 +164,7 @@ seatbelt.each([
     void invocation.catch(() => undefined)
     let pid: number | undefined
     let stream: ReturnType<typeof createConnection> | undefined
+    let websocket: ReturnType<typeof createConnection> | undefined
     try {
       await expect.poll(() => existsSync(ready)).toBe(true)
       const facts = JSON.parse(readFileSync(ready, 'utf8')) as { pid: number; url: string }
@@ -192,6 +201,19 @@ seatbelt.each([
       stream.write('GET /stream HTTP/1.1\r\nHost: localhost\r\n\r\n')
       await expect.poll(() => streamText).toContain('stream-ready')
       const closed = new Promise<void>((resolve) => stream!.once('close', () => resolve()))
+      websocket = createConnection({ host: '127.0.0.1', port: Number(new URL(facts.url).port) })
+      websocket.on('error', () => undefined)
+      let websocketText = ''
+      websocket.on('data', (chunk) => {
+        websocketText += chunk.toString('latin1')
+      })
+      const websocketClosed = new Promise<void>((resolve) => websocket!.once('close', () => resolve()))
+      websocket.write(
+        'GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n',
+      )
+      await expect.poll(() => websocketText).toContain('101 Switching Protocols')
+      expect(websocketText).toContain('Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=')
+      await expect.poll(() => websocketText).toContain('ws-tick')
       let closing: Promise<void> | undefined
       if (end === 'exit') writeFileSync(finish, '')
       if (end === 'abort') controller.abort()
@@ -213,7 +235,10 @@ seatbelt.each([
           { timeout: 4000 },
         )
         .toBe(true)
-      await closed
+      await Promise.all([closed, websocketClosed])
+      const received = streamText.length + websocketText.length
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(streamText.length + websocketText.length).toBe(received)
       // The descendant is still alive in a different group; revocation did not depend on killing it.
       expect(() => process.kill(pid!, 0)).not.toThrow()
       process.kill(pid, 'SIGKILL')
@@ -222,6 +247,7 @@ seatbelt.each([
       await invocation
     } finally {
       stream?.destroy()
+      websocket?.destroy()
       controller.abort()
       if (pid) {
         try {
@@ -572,3 +598,274 @@ seatbelt('serves real IPv4/IPv6 loopback HTTP without wildcard binds or outbound
     await new Promise<void>((resolve) => control.close(() => resolve()))
   }
 })
+
+seatbelt(
+  'security-loopback: concurrent gates reject Unix peers, path replacement and cross-session termination',
+  async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-security-loopback-')))
+    const exec = createExec()
+    const privatePaths: string[] = []
+    const openUnix = systemNode.openUnixListener
+    const pathObserver = vi.spyOn(systemNode, 'openUnixListener').mockImplementation((path) => {
+      privatePaths.push(path)
+      return openUnix(path)
+    })
+    // Production shares its spawner; an instance must dispose only its own processes and gates.
+    const provider = createLocalSandboxProvider(exec, 'darwin')
+    const instances = await Promise.all([
+      provider.create({ workspaceRoot: root }),
+      provider.create({ workspaceRoot: root }),
+    ])
+    const otherPath = join(root, 'other-service.sock')
+    const daemonPath = join(root, 'daemon.sock')
+    let peerConnections = 0
+    const peers = [otherPath, daemonPath].map((path) => {
+      const server = createServer((_request, response) => response.end('UNRELATED_PEER'))
+      server.on('connection', () => {
+        peerConnections++
+      })
+      return { server, path }
+    })
+    const enforcement = { level: 'full' as const, scope: ['file', 'network', 'process'] as const }
+    const policy = {
+      workspaceRoot: root,
+      digest: 'security-loopback',
+      fsRead: { allow: ['/'], deny: [] },
+      fsWrite: { allow: ['/private/tmp', root], deny: [] },
+      network: { mode: 'loopback-serve' as const, hosts: [] },
+      requiredEnforcement: enforcement,
+    }
+    const report = join(root, 'attempts.json')
+    const connectionFunction = `const connect=path=>new Promise(resolve=>{
+    const s=require('node:net').connect(path);s.on('error',e=>{s.destroy();resolve(e.code)});
+    s.on('connect',()=>{s.end();resolve('CONNECTED')});s.setTimeout(500,()=>{s.destroy();resolve('TIMEOUT')});
+  });`
+    try {
+      for (const peer of peers) await new Promise<void>((resolve) => peer.server.listen(peer.path, resolve))
+      const control = await run([
+        process.execPath,
+        '-e',
+        `${connectionFunction}
+      Promise.all(${JSON.stringify([otherPath, daemonPath])}.map(connect)).then(x=>console.log(JSON.stringify(x)));
+    `,
+      ])
+      expect(control.code).toBe(0)
+      expect(JSON.parse(control.stdout)).toEqual(['CONNECTED', 'CONNECTED'])
+      expect(peerConnections).toBe(2)
+      peerConnections = 0
+      symlinkSync('/private/tmp', join(root, 'tmp-alias'))
+      const launch = async (index: number, extra = '') => {
+        const ready = join(root, `ready-${index}.json`)
+        const program = `const fs=require('node:fs'),http=require('node:http');
+        const server=http.createServer((_,res)=>res.end('SESSION_${index}'));
+        server.listen({fd:4},async()=>{
+          fs.writeFileSync(${JSON.stringify(ready)},JSON.stringify({pid:process.pid,url:process.env.AGH_LOOPBACK_URL}));
+          ${extra}
+        });setTimeout(()=>process.exit(),20000);`
+        const handle = await instances[index]!.openProcess!({
+          argv: seatbeltDenyNetworkArgv([process.execPath, '-e', program], {
+            allowPaths: ['/private/tmp', root],
+            denyPaths: [],
+            loopbackServe: true,
+          }),
+          cwd: root,
+          policy,
+          enforcement,
+        })
+        await expect
+          .poll(
+            () => {
+              try {
+                return JSON.parse(readFileSync(ready, 'utf8')).pid as number
+              } catch {
+                return undefined
+              }
+            },
+            { timeout: 5000 },
+          )
+          .toBeGreaterThan(0)
+        // Inherited pipe handles do not expose a Node server.address(); observe only our
+        // own native bind path, forwarding every call to the real native implementation.
+        const facts = { ...JSON.parse(readFileSync(ready, 'utf8')), path: privatePaths.at(-1)! } as {
+          pid: number
+          path: string
+          url: string
+        }
+        expect(facts.path.startsWith(LOOPBACK_GATE_PATH_PREFIX)).toBe(true)
+        expect(await (await fetch(facts.url)).text()).toBe(`SESSION_${index}`)
+        return { handle, facts }
+      }
+      const second = await launch(1)
+      const privatePath = second.facts.path
+      const directory = privatePath.slice(0, privatePath.lastIndexOf('/'))
+      const aliases = [
+        privatePath,
+        privatePath.replace('/private/tmp/', '/tmp/'),
+        privatePath.toUpperCase(),
+        privatePath.replace('/private/tmp/', '/private/tmp/../tmp/'),
+        join(root, 'tmp-alias', privatePath.slice('/private/tmp/'.length)),
+      ].filter(existsSync)
+      expect(aliases.length).toBeGreaterThanOrEqual(4)
+      const extra = `${connectionFunction}
+      fs.writeFileSync(${JSON.stringify(join(root, 'allowed'))},'ordinary-write');
+      fs.linkSync(${JSON.stringify(join(root, 'allowed'))},${JSON.stringify(join(root, 'ordinary-hardlink'))});
+      fs.symlinkSync(${JSON.stringify(otherPath)},${JSON.stringify(join(root, 'ordinary-symlink'))});
+      const attempt=(name,f)=>{try{f();return {name,result:'ALLOWED'}}catch(e){return {name,result:e.code}}};
+      const mutations=${JSON.stringify(aliases)}.flatMap((path,i)=>[
+        attempt('rename-peer-'+i,()=>fs.renameSync(${JSON.stringify(otherPath)},path)),
+        attempt('symlink-replace-'+i,()=>{fs.unlinkSync(path);fs.symlinkSync(${JSON.stringify(otherPath)},path)}),
+        attempt('hardlink-replace-'+i,()=>{fs.unlinkSync(path);fs.linkSync(${JSON.stringify(otherPath)},path)}),
+        attempt('rename-directory-'+i,()=>fs.renameSync(path.slice(0,path.lastIndexOf('/')),${JSON.stringify(root)}+'/moved-'+i)),
+        attempt('hardlink-out-'+i,()=>fs.linkSync(path,${JSON.stringify(root)}+'/leaked-'+i)),
+      ]);
+      mutations.push(attempt('symlink-inside',()=>fs.symlinkSync(${JSON.stringify(otherPath)},${JSON.stringify(join(directory, 'alias'))})));
+      const targets=${JSON.stringify([otherPath, daemonPath, privatePath])};
+      const connections=await Promise.all(targets.map(connect));
+      const publicConnection=await connect({host:'127.0.0.1',port:${Number(new URL(second.facts.url).port)}});
+      const signal=attempt('other-session-signal',()=>process.kill(${second.facts.pid},'SIGTERM'));
+      const bind=await new Promise(resolve=>{const s=require('node:net').createServer();s.on('error',e=>resolve(e.code));s.listen(${JSON.stringify(join(root, 'new.sock'))},()=>{s.close();resolve('BOUND')})});
+      fs.writeFileSync(${JSON.stringify(report)},JSON.stringify({mutations,connections,publicConnection,signal,bind}));`
+      const first = await launch(0, extra)
+      await expect
+        .poll(
+          () => {
+            try {
+              return Array.isArray(JSON.parse(readFileSync(report, 'utf8')).mutations)
+            } catch {
+              return false
+            }
+          },
+          { timeout: 5000 },
+        )
+        .toBe(true)
+      const facts = JSON.parse(readFileSync(report, 'utf8')) as {
+        mutations: { name: string; result: string }[]
+        connections: string[]
+        publicConnection: string
+        signal: { result: string }
+        bind: string
+      }
+      expect(readFileSync(join(root, 'ordinary-hardlink'), 'utf8')).toBe('ordinary-write')
+      expect(realpathSync(join(root, 'ordinary-symlink'))).toBe(otherPath)
+      for (const result of facts.mutations) expect(result.result, result.name).toMatch(/^(EPERM|EACCES)$/)
+      for (const result of [...facts.connections, facts.publicConnection, facts.bind, facts.signal.result])
+        expect(result).toMatch(/^(EPERM|EACCES)$/)
+      expect(peerConnections).toBe(0)
+      expect(await (await fetch(second.facts.url)).text()).toBe('SESSION_1')
+      await instances[0]!.dispose()
+      expect(
+        await fetch(first.facts.url).then(
+          () => 'OPEN',
+          () => 'CLOSED',
+        ),
+      ).toBe('CLOSED')
+      expect(await (await fetch(second.facts.url)).text()).toBe('SESSION_1')
+      await instances[1]!.dispose()
+      expect(
+        await fetch(second.facts.url).then(
+          () => 'OPEN',
+          () => 'CLOSED',
+        ),
+      ).toBe('CLOSED')
+    } finally {
+      await Promise.all(instances.map((instance) => instance.dispose()))
+      await exec.killAll()
+      pathObserver.mockRestore()
+      for (const peer of peers) await new Promise<void>((resolve) => peer.server.close(() => resolve()))
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+  25000,
+)
+
+seatbelt(
+  'security-loopback: a network-denied command cannot redirect another session through the reserved path',
+  async () => {
+    const root = realpathSync(mkdtempSync('/private/tmp/agh-lb-review-'))
+    const ready = join(root, 'ready.json')
+    const peerPath = join(root, 'unrelated.sock')
+    const peer = createServer((_request, response) => response.end('UNRELATED_UNIX_PEER'))
+    const nativeOpen = systemNode.openUnixListener
+    let privatePath = ''
+    const observer = vi.spyOn(systemNode, 'openUnixListener').mockImplementation((path) => {
+      privatePath = path
+      return nativeOpen(path)
+    })
+    const instance = await createLocalSandboxProvider(createExec(), 'darwin', { ownProcesses: true }).create({
+      workspaceRoot: root,
+    })
+    const enforcement = { level: 'full' as const, scope: ['file', 'network', 'process'] as const }
+    try {
+      await new Promise<void>((resolve) => peer.listen(peerPath, resolve))
+      const server = `const fs=require('node:fs');const server=require('node:http').createServer((_,res)=>res.end('AUTHORIZED_SESSION'));
+      server.listen({fd:4},()=>fs.writeFileSync(${JSON.stringify(ready)},JSON.stringify({url:process.env.AGH_LOOPBACK_URL})));
+      setTimeout(()=>process.exit(),15000);`
+      await instance.openProcess!({
+        argv: seatbeltDenyNetworkArgv([process.execPath, '-e', server], {
+          allowPaths: [root],
+          denyPaths: [],
+          loopbackServe: true,
+        }),
+        cwd: root,
+        enforcement,
+        policy: {
+          workspaceRoot: root,
+          digest: 'victim',
+          fsRead: { allow: ['/'], deny: [] },
+          fsWrite: { allow: [root], deny: [] },
+          network: { mode: 'loopback-serve', hosts: [] },
+          requiredEnforcement: enforcement,
+        },
+      })
+      await expect
+        .poll(() => {
+          try {
+            return JSON.parse(readFileSync(ready, 'utf8')).url as string
+          } catch {
+            return ''
+          }
+        })
+        .toMatch(/^http:\/\/127\.0\.0\.1:/)
+      const { url } = JSON.parse(readFileSync(ready, 'utf8')) as { url: string }
+      expect(await (await fetch(url, { headers: { Connection: 'close' } })).text()).toBe('AUTHORIZED_SESSION')
+      expect(privatePath.startsWith(LOOPBACK_GATE_PATH_PREFIX)).toBe(true)
+      const connect = `const connect=()=>new Promise(resolve=>{const s=require('node:net').connect(${JSON.stringify(peerPath)});
+      s.on('error',e=>{s.destroy();resolve(e.code)});s.on('connect',()=>{s.end();resolve('CONNECTED')})});`
+      const control = await run([process.execPath, '-e', `${connect}connect().then(x=>console.log(x));`])
+      expect(control).toEqual({ code: 0, stdout: 'CONNECTED\n' })
+      const attack = await run(
+        seatbeltDenyNetworkArgv(
+          [
+            process.execPath,
+            '-e',
+            `${connect}
+      (async()=>{const direct=await connect();let replacement;
+      require('node:fs').writeFileSync(${JSON.stringify(join(root, 'ordinary-write'))},'permitted');
+      try{require('node:fs').unlinkSync(${JSON.stringify(privatePath)});require('node:fs').symlinkSync(${JSON.stringify(peerPath)},${JSON.stringify(privatePath)});replacement='REPLACED'}catch(e){replacement=e.code}
+      console.log(JSON.stringify({direct,replacement}));})();
+    `,
+          ],
+          { allowPaths: ['/private/tmp', root], denyPaths: [] },
+        ),
+      )
+      expect(attack.code).toBe(0)
+      const result = JSON.parse(attack.stdout) as { direct: string; replacement: string }
+      expect(result.direct).toMatch(/^(EPERM|EACCES)$/)
+      expect(readFileSync(join(root, 'ordinary-write'), 'utf8')).toBe('permitted')
+      const served = await fetch(url, { headers: { Connection: 'close' }, signal: AbortSignal.timeout(1000) }).then(
+        (response) => response.text(),
+        () => 'REFUSED',
+      )
+      expect({ replacementDenied: /^(EPERM|EACCES)$/.test(result.replacement), served }).toEqual({
+        replacementDenied: true,
+        served: 'AUTHORIZED_SESSION',
+      })
+    } finally {
+      await instance.dispose()
+      observer.mockRestore()
+      await new Promise<void>((resolve) => peer.close(() => resolve()))
+      rmSync(root, { recursive: true, force: true })
+    }
+  },
+  15000,
+)
