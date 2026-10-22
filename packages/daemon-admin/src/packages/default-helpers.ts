@@ -149,9 +149,16 @@ export async function refreshDefaultHelpers(options: {
   const refreshed: string[] = []
   for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
     const current = inventory.packages.find((pkg) => pkg.id === helper.id)
+    // A release that moved the plugin API leaves the installed copy blocked as incompatible; that
+    // is exactly when it needs the refresh, so only that blocker is let through.
+    const outdated =
+      !!current?.enabled &&
+      current.trusted &&
+      current.blockers.length > 0 &&
+      current.blockers.every((blocker) => blocker.references[0] === 'plugin-api-range-incompatible')
     if (
       !current ||
-      !isRuntimePackageEligible(current) ||
+      !(isRuntimePackageEligible(current) || outdated) ||
       current.entry.source.type !== 'file' ||
       current.entry.source.ref !== helper.ref
     )
@@ -162,6 +169,7 @@ export async function refreshDefaultHelpers(options: {
     // not a version/mtime shortcut; installed trust and policy came from the verified inventory.
     // The build-time digest stands in for hashing the shipped source; update still verifies it.
     const release = bundledPluginDigest(bundled) ?? hashDirectory(join(bundled.root, bundled.path))
+    if (outdated && release === current.entry.integrity) continue
     if (release !== current.entry.integrity) {
       const source = parseSource(helper.ref)
       const preview = await options.manager.inspect(options.profileDir, source)

@@ -45,6 +45,16 @@ vi.mock('../../package-manager/src/bundled-plugin-source.js', async (original) =
     bundledPluginSource: (ref: string) => payloads.get(ref) ?? module.bundledPluginSource(ref),
   }
 })
+const staleRange = vi.hoisted(() => ({ on: false }))
+vi.mock('@agnes/extension-api', async (original) => {
+  const module = await original<typeof import('@agnes/extension-api')>()
+  return {
+    ...module,
+    // Stands in for a Host release whose API no longer admits what an older install declared.
+    satisfiesApiRange: (range: string, ...rest: [string?]) =>
+      !(staleRange.on && range === '^5.0.0') && module.satisfiesApiRange(range, ...rest),
+  }
+})
 const roots: string[] = []
 afterEach(() => {
   payloads.clear()
@@ -1056,4 +1066,49 @@ it('retains a changed-capability release for explicit review, and preserves a di
   expect((await s.manager.inventory(s.profileDir)).packages.find((pkg) => pkg.id === other.id)).toEqual(
     revoked,
   )
+}, 120_000)
+it('refreshes an installed default whose apiRange the Host no longer admits', async () => {
+  const s = setup()
+  await s.initializePolicy()
+  const helper = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((pkg) => pkg.id === '@agnes/goal-ui')!
+  const source = bundledPluginSource(helper.ref)!
+  const release = join(s.root, 'release', helper.name)
+  cpSync(join(source.root, source.path), release, {
+    recursive: true,
+    filter: (path) => !path.split(sep).includes('node_modules'),
+  })
+  payloads.set(helper.ref, { root: s.root, path: `release/${helper.name}` })
+  const file = join(release, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.agnes.plugins[0].apiRange = '^5.0.0'
+  writeFileSync(file, JSON.stringify(manifest))
+  const old = await s.manager.inspect(s.profileDir, parseSource(helper.ref))
+  await s.manager.install(s.profileDir, parseSource(helper.ref), { expectedIntegrity: old.integrity })
+  await s.manager.trust(s.profileDir, helper.id, {
+    integrity: old.integrity,
+    capabilityHash: old.capabilityHash!,
+  })
+  await s.manager.setEnabled(s.profileDir, helper.id, true)
+  staleRange.on = true
+  try {
+    const stale = (await s.manager.inventory(s.profileDir, { fresh: true })).packages.find(
+      (pkg) => pkg.id === helper.id,
+    )!
+    expect(stale.blockers.map((blocker) => blocker.references[0])).toEqual(['plugin-api-range-incompatible'])
+    manifest.agnes.plugins[0].apiRange = '>=5.0.0'
+    writeFileSync(file, JSON.stringify(manifest))
+    let target: RuntimeTargetArtifact | undefined
+    await refreshDefaultHelpers({
+      ...s,
+      previous: () => target,
+      publish: async (next) => {
+        target = next
+      },
+    })
+    expect(
+      (await s.manager.inventory(s.profileDir, { fresh: true })).packages.find((pkg) => pkg.id === helper.id),
+    ).toMatchObject({ blockers: [], enabled: true, trusted: true })
+  } finally {
+    staleRange.on = false
+  }
 }, 120_000)
