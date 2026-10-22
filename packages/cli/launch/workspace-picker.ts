@@ -37,9 +37,12 @@ type PickerBackend = Readonly<{
   decode(result: PickerCommandResult): WorkspacePickerResult
 }>
 
+// The dialog must belong to the osascript process itself: a dialog shown through Finder outlives the
+// killed osascript (Web "Cancel", a dropped request), stays open invisibly and blocks Finder, so the
+// next click queues behind it. Killing osascript closes this one with it and asks for no extra permission.
 const macScript = (env: NodeJS.ProcessEnv) =>
   `
-tell application "Finder"
+tell current application
   activate
   try
     set chosenFolder to choose folder with prompt ${appleScriptText(TITLE(env))}

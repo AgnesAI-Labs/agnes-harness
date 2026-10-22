@@ -27,6 +27,9 @@ describe('native workspace picker', () => {
     expect(run.mock.calls[0]?.[1].at(-1)).toContain('choose folder')
     expect(run.mock.calls[0]?.[1].at(-1)).toContain('on error number -128')
     expect(run.mock.calls[0]?.[1].at(-1)).toContain('activate')
+    // A dialog owned by Finder survives the killed helper and leaves Finder blocked.
+    expect(run.mock.calls[0]?.[1].at(-1)).toContain('tell current application')
+    expect(run.mock.calls[0]?.[1].at(-1)).not.toContain('Finder')
     expect(run.mock.calls[0]?.[3]).not.toHaveProperty('DEEPSEEK_API_KEY')
   })
 
