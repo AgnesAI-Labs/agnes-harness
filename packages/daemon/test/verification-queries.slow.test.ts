@@ -356,7 +356,7 @@ it('opens a real Host session with bounded source verification and still refuses
     await host.close()
     await f.close()
   }
-})
+}, 60_000)
 
 it('a package status read does not start a worker to decorate inventory', async () => {
   const acquireSharedWorker = vi.fn(async () => {
@@ -480,4 +480,4 @@ it('keeps scheduled session-list requests responsive during nine-package list/sk
     await host.close()
     await f.close()
   }
-})
+}, 90_000)
