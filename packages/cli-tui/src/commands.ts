@@ -11,6 +11,7 @@ import { agentsSlash } from './agent-commands.js'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
+import { customCommandsFor, customHelp, customSlash } from './custom-commands.js'
 import { deliverablesSlash } from './deliverable-files.js'
 import { grantsSlash } from './grant-commands.js'
 import { infoSlash } from './info-commands.js'
@@ -189,13 +190,28 @@ export function slashCommand(name: string): SlashCommand | undefined {
   return SLASH_COMMANDS.find((c) => c.name === name)
 }
 
+const isBuiltin = (name: string): boolean => slashCommand(name) !== undefined
+
 /** 描述在渲染期翻译：编辑器菜单每次重绘都会经此取词。 */
 export function slashCommandFor(
   name: string,
   locale: string,
-): (SlashCommand & { description: string; summary: string }) | undefined {
+  app?: TuiApp,
+): { name: string; args?: string; description: string; summary: string } | undefined {
   const command = slashCommand(name)
-  if (!command) return undefined
+  if (!command) {
+    // A custom command shows its file's description; a project one also says where it came from.
+    const custom = app && customCommandsFor(app, isBuiltin).commands.get(name.slice(1))
+    if (!custom) return undefined
+    const from =
+      custom.scope === 'project' ? `[${tt('custom.project', locale, { path: custom.shown })}] ` : ''
+    return {
+      name,
+      ...(custom.hint ? { args: custom.hint } : {}),
+      description: `${from}${custom.description}`,
+      summary: `${from}${custom.description}`,
+    }
+  }
   return {
     ...command,
     description: tt(command.descriptionKey, locale),
@@ -378,6 +394,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
             (command, index) =>
               `  ${(usages[index] as string).padEnd(usageWidth + 2)}${tt(command.descriptionKey, locale)}`,
           ),
+          ...customHelp(app, isBuiltin),
         ].join('\n'),
         presentation: 'transcript',
       }
@@ -615,18 +632,22 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/mcp':
       return resourceCommand('mcp', args.length ? args : ['list'])
     default:
-      return {
-        text:
-          cmd === '/session'
-            ? 'unknown command /session; did you mean /sessions?'
-            : `unknown command ${cmd}; use /help to list commands`,
-      }
+      return (
+        customSlash(app, cmd, line, isBuiltin) ?? {
+          text:
+            cmd === '/session'
+              ? 'unknown command /session; did you mean /sessions?'
+              : `unknown command ${cmd}; use /help to list commands`,
+        }
+      )
   }
 }
 
-/** '/…' completes against the fixed command table; '@' mentions have their own menu (file-mentions.ts). */
-export function completeToken(prefix: string): string[] {
-  if (prefix.startsWith('/'))
-    return SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(prefix)).map((cmd) => cmd.name)
-  return []
+/** '/…' completes against the command table and the custom commands; '@' mentions have their own menu (file-mentions.ts). */
+export function completeToken(prefix: string, app?: TuiApp): string[] {
+  if (!prefix.startsWith('/')) return []
+  const builtin = SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(prefix)).map((cmd) => cmd.name)
+  if (!app) return builtin
+  const custom = [...customCommandsFor(app, isBuiltin).commands.keys()].map((name) => `/${name}`)
+  return [...builtin, ...custom.filter((name) => name.startsWith(prefix))]
 }

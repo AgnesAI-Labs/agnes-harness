@@ -69,6 +69,16 @@ export const TERMINAL_KEYS = [
   'diff.more',
   'init.new',
   'init.existing',
+  'custom.heading',
+  'custom.project',
+  'custom.skipped',
+  'custom.builtin',
+  'custom.invalid',
+  'custom.size',
+  'custom.overridden',
+  'custom.notFile',
+  'custom.confirm',
+  'custom.empty',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -144,6 +154,16 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
       'Look through this project (layout, build and test commands, conventions) and write an AGENTS.md at its root that tells a coding agent how to work in it. Keep it short and factual; do not invent commands you have not seen.',
     'init.existing':
       'This project already has an AGENTS.md. Read it, check it against the project as it is now, and add what is missing or out of date. Keep what is already correct and do not overwrite the file wholesale.',
+    'custom.heading': 'Custom commands',
+    'custom.project': 'project: {path}',
+    'custom.skipped': 'Skipped command files',
+    'custom.builtin': 'same name as a built-in command',
+    'custom.invalid': 'name must match [a-z0-9][a-z0-9-]{0,31}',
+    'custom.size': 'larger than 32 KiB',
+    'custom.overridden': 'a project command has the same name',
+    'custom.notFile': 'not a regular file',
+    'custom.confirm': 'Project command from {path}. It will send:\n{preview}\nPress Enter again to send it.',
+    'custom.empty': 'The command {name} expands to nothing',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -211,5 +231,15 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
       '请通读本项目（目录结构、构建与测试命令、约定），在项目根目录写一份 AGENTS.md，告诉编码 agent 如何在其中工作。保持简短、基于事实；没见过的命令不要编造。',
     'init.existing':
       '本项目已有 AGENTS.md。请读一遍，对照项目现状检查，补上缺失或过时的内容。已经正确的部分保留，不要整体覆盖。',
+    'custom.heading': '自定义命令',
+    'custom.project': '项目：{path}',
+    'custom.skipped': '被跳过的命令文件',
+    'custom.builtin': '与内置命令同名',
+    'custom.invalid': '命令名须匹配 [a-z0-9][a-z0-9-]{0,31}',
+    'custom.size': '超过 32 KiB',
+    'custom.overridden': '已有同名的项目命令',
+    'custom.notFile': '不是普通文件',
+    'custom.confirm': '来自 {path} 的项目命令。将发送：\n{preview}\n再按一次 Enter 发送。',
+    'custom.empty': '命令 {name} 展开后为空',
   },
 }

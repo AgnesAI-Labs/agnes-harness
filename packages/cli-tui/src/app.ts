@@ -163,7 +163,7 @@ export class TuiApp {
       themePreferencePath?: string
       /** Where sent prompts persist between runs; without it history lasts this run only. */
       historyPath?: string
-      /** `<AGH_HOME>/commands`: the personal slash commands directory; its parent is AGH_HOME. */
+      /** `<AGH_HOME>/commands`: where personal custom slash commands live. */
       commandsDir?: string
       /** Ctrl-G's editor command source and temp directory (`<AGH_HOME>/tmp`); tests leave it to the defaults. */
       externalEditor?: ExternalEditorConfig
@@ -293,14 +293,14 @@ export class TuiApp {
         void this.cancel().catch((error) => this.showError(error))
         this.escapes.press(idle && !hadDraft, () => void this.runInput('/rewind'))
       },
-      complete: completeToken,
+      complete: (prefix) => completeToken(prefix, this),
       mentions: this.mentions,
       mentionNotes: {
         loading: tt('composer.mentionLoading', locale),
         empty: tt('composer.mentionEmpty', locale),
         failed: tt('composer.mentionFailed', locale),
       },
-      menuInfo: (name) => slashCommandFor(name, this.o.locale ?? 'en'),
+      menuInfo: (name) => slashCommandFor(name, this.o.locale ?? 'en', this),
     })
     this.editor.setKitty(o.term.caps.kittyKeyboard)
     this.modelPicker = new ModelPicker({
