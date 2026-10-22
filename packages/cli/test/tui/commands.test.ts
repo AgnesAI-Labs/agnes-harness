@@ -279,6 +279,30 @@ describe('runSlash', () => {
     }
   })
 
+  it('brings the persisted prompt history back on the next run and records new prompts', async () => {
+    const { app, client } = await unstartedApp()
+    const dir = mkdtempSync(join(tmpdir(), 'agh-tui-history-'))
+    const historyPath = join(dir, 'tui-history.jsonl')
+    writeFileSync(historyPath, '{"text":"left over from yesterday"}\n')
+    const term = new FakeTerminal({ columns: 60, rows: 20 })
+    const running = new TuiApp({ session: app.session, term, header: 'Agnes', historyPath })
+    try {
+      await running.start()
+      term.feed('\x1b[A')
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 60, 20)).join('\n')).toContain('left over from yesterday'),
+      )
+      term.feed('\x1b')
+      for (const ch of '/mouse') term.feed(ch)
+      term.feed('\r')
+      await vi.waitFor(() => expect(readFileSync(historyPath, 'utf8')).toContain('"text":"/mouse"'))
+    } finally {
+      await running.stop()
+      await client.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('uses only the injected resource port and keeps permission failures visible', async () => {
     const { app, client } = await unstartedApp()
     const execute = vi.fn(async () => ({ text: 'skill list' }))

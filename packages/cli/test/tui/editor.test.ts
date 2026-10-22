@@ -201,6 +201,39 @@ describe('Editor input', () => {
     expect(sub).toEqual([`${'x'.repeat(1001)} tail`])
   })
 
+  it('ctrl-r searches the history: older matches on repeat, enter takes one without sending, esc restores the draft', () => {
+    const sub: string[] = []
+    const e = new Editor({ onSubmit: (t) => sub.push(t) })
+    for (const t of ['fix build', 'write docs', 'fix tests', 'other']) {
+      type(e, t)
+      e.handleInput('\r')
+    }
+    sub.length = 0
+    type(e, 'half-typed')
+    e.handleInput('\x12')
+    type(e, 'fix')
+    expect(e.render(60)[0]).toBe(`(search history) 'fix${CURSOR_MARKER}': fix tests`)
+    e.handleInput('\x12')
+    expect(e.render(60)[0]).toContain(': fix build')
+    // Nothing older is left, so a further ctrl-r stays on the oldest match; a typo finds nothing.
+    e.handleInput('\x12')
+    expect(e.render(60)[0]).toContain(': fix build')
+    type(e, 'zz')
+    expect(e.render(60)[0]).toContain('(no match)')
+    e.handleInput('\x7f')
+    e.handleInput('\x7f')
+    e.handleInput('\r')
+    expect(e.text).toBe('fix tests')
+    expect(sub).toEqual([])
+    // Esc leaves the search with the original draft.
+    e.setText('draft')
+    e.handleInput('\x12')
+    type(e, 'docs')
+    e.handleInput('\x1b')
+    expect(e.text).toBe('draft')
+    expect(e.render(20)[0]).toContain('draft')
+  })
+
   it('esc clears and reports, ctrl-c and ctrl-d are left to the application', () => {
     let cancels = 0
     let busy = false

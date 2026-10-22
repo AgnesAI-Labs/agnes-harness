@@ -6,6 +6,7 @@ export type KeyName =
   | 'ctrl-c'
   | 'ctrl-d'
   | 'ctrl-o'
+  | 'ctrl-r'
   | 'up'
   | 'down'
   | 'left'
@@ -40,6 +41,7 @@ const SEQ = new Map<string, KeyName>([
   ['\x03', 'ctrl-c'],
   ['\x04', 'ctrl-d'],
   ['\x0f', 'ctrl-o'],
+  ['\x12', 'ctrl-r'],
   ['\t', 'tab'],
   ['\x7f', 'backspace'],
   ['\b', 'backspace'],

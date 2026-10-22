@@ -20,6 +20,7 @@ import { nodeText } from './node-text.js'
 import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
+import { PromptHistory } from './prompt-history.js'
 import { Renderer } from './renderer.js'
 import type { ResourceCommandKind, TuiResourceController } from './resource-controller.js'
 import { type ActionItem, collectSlots } from './slots.js'
@@ -151,6 +152,8 @@ export class TuiApp {
       /** Last model and permission for the next fresh session. Omitted in tests that do not inherit. */
       composerSelectionPath?: string
       themePreferencePath?: string
+      /** Where sent prompts persist between runs; without it history lasts this run only. */
+      historyPath?: string
       /** What the launcher knows for the welcome, and what tests pin (see `WelcomeOptions`). */
       welcome?: WelcomeOptions
       /** Shown once on the status bar after a fresh session inherits a model or full permission. */
@@ -273,6 +276,7 @@ export class TuiApp {
       locale,
       ansi,
       busy: () => this.busy,
+      history: new PromptHistory(o.historyPath),
       onSubmit: (text) => {
         void this.runInput(text)
       },

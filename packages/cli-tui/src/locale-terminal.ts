@@ -14,6 +14,8 @@ export const TERMINAL_KEYS = [
   'mouse.off',
   'copy.sent',
   'copy.failed',
+  'search.label',
+  'search.none',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -31,6 +33,8 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
       'Mouse reporting off: select text with the terminal; the wheel now sends arrow keys (history)',
     'copy.sent': '✓ Sent to clipboard',
     'copy.failed': '✗ Copy failed',
+    'search.label': '(search history)',
+    'search.none': '(no match)',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -41,5 +45,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'mouse.off': '鼠标上报已关闭：由终端自己选择文字；滚轮现在会发送方向键（翻看历史）',
     'copy.sent': '✓ 已发送到剪贴板',
     'copy.failed': '✗ 复制失败',
+    'search.label': '(搜索历史)',
+    'search.none': '(无匹配)',
   },
 }

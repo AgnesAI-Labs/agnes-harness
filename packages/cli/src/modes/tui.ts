@@ -22,6 +22,7 @@ export async function runTui(
     signal(): SignalName | undefined
     resourceController?: TuiResourceController
     composerSelectionPath?: string
+    historyPath?: string
     /** The CLI's own version, shown on the welcome. */
     agnesVersion?: string
   },
@@ -89,6 +90,7 @@ export async function runTui(
       ...(p.model ? { model: p.model.model } : inherited?.modelId ? { model: inherited.modelId } : {}),
       ...(inherited?.notice ? { initialNotice: inherited.notice } : {}),
       ...(io.composerSelectionPath ? { composerSelectionPath: io.composerSelectionPath } : {}),
+      ...(io.historyPath ? { historyPath: io.historyPath } : {}),
       ...(io.composerSelectionPath
         ? { themePreferencePath: join(dirname(io.composerSelectionPath), 'tui-theme.json') }
         : {}),

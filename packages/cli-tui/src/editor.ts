@@ -1,9 +1,10 @@
 import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
-import { parseKey } from './keys.js'
+import { type Key, parseKey } from './keys.js'
 import { tt } from './locale-extended.js'
 import type { Tone } from './palette.js'
+import { HistorySearch, PromptHistory } from './prompt-history.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
 
@@ -81,6 +82,8 @@ export type EditorOptions = {
   locale?: string
   onSubmit(text: string): void
   onCancelKey?(): void
+  /** Sent prompts, kept across runs when it has a file; without it history lasts this editor's lifetime. */
+  history?: PromptHistory
   /** True while a turn runs: esc then interrupts it and leaves the draft alone. */
   busy?(): boolean
   complete?(prefix: string): string[]
@@ -103,7 +106,8 @@ const MENU_MAX_VISIBLE = 5
 export class Editor implements Component {
   text = ''
   cursor = 0
-  history: string[] = []
+  private readonly store: PromptHistory
+  private search: HistorySearch | undefined
   private histIdx = -1
   private kitty = false
   private viewportStart = 0
@@ -116,7 +120,14 @@ export class Editor implements Component {
   private readonly pastes = new Map<string, string>()
   private pasteCount = 0
 
-  constructor(private readonly o: EditorOptions) {}
+  constructor(private readonly o: EditorOptions) {
+    this.store = o.history ?? new PromptHistory()
+  }
+
+  /** Newest first. */
+  get history(): string[] {
+    return this.store.entries
+  }
 
   setKitty(v: boolean): void {
     this.kitty = v
@@ -144,6 +155,7 @@ export class Editor implements Component {
 
   handleInput(data: string): boolean {
     const k = parseKey(data, this.kitty)
+    if (this.search) return this.searching(k, data)
     const menu = this.openMenu()
     const choices = menu?.labels.length ?? 0
     switch (k.name) {
@@ -166,7 +178,7 @@ export class Editor implements Component {
         }
         if (!this.text.trim()) return true
         const t = this.expanded()
-        this.history.unshift(t)
+        this.store.add(t)
         this.clear()
         this.o.onSubmit(t)
         return true
@@ -249,6 +261,9 @@ export class Editor implements Component {
       case 'paste':
         this.paste(k.ch ?? '')
         return true
+      case 'ctrl-r':
+        this.search = new HistorySearch(this.store, { text: this.text, cursor: this.cursor })
+        return true
       case 'char': {
         const s = (k.ch ?? '').replace(CONTROL, '')
         if (s) this.insert(s)
@@ -261,6 +276,50 @@ export class Editor implements Component {
       default:
         return false
     }
+  }
+
+  // Keys while Ctrl-R search is open. Enter takes the match into the draft without sending it; esc puts
+  // the original draft back; any other key takes the match and then does what it always does.
+  private searching(k: Key, data: string): boolean {
+    const search = this.search as HistorySearch
+    switch (k.name) {
+      case 'ctrl-r':
+        search.older()
+        return true
+      case 'char': {
+        const text = (k.ch ?? '').replace(CONTROL, '')
+        if (text) search.type(text)
+        return true
+      }
+      case 'backspace':
+        search.erase()
+        return true
+      case 'paste':
+      case 'unknown':
+        return true
+      case 'esc':
+        this.search = undefined
+        this.text = search.draft.text
+        this.cursor = search.draft.cursor
+        return true
+      default: {
+        this.search = undefined
+        if (search.hit !== undefined) this.setText(search.hit)
+        else {
+          this.text = search.draft.text
+          this.cursor = search.draft.cursor
+        }
+        return k.name === 'enter' ? true : this.handleInput(data)
+      }
+    }
+  }
+
+  private renderSearch(search: HistorySearch, width: number): string[] {
+    const locale = this.o.locale ?? 'en'
+    const first = search.hit?.split('\n')[0] ?? ''
+    const hit = search.hit === undefined ? (search.query ? tt('search.none', locale) : '') : first
+    const more = search.hit?.includes('\n') ? ' …' : ''
+    return wrapLine(`${tt('search.label', locale)} '${search.query}${CURSOR_MARKER}': ${hit}${more}`, width)
   }
 
   // Terminals paste a newline as a carriage return; tabs would not survive the renderer, and every
@@ -450,6 +509,7 @@ export class Editor implements Component {
   render(width: number): string[] {
     if (!Number.isFinite(width)) throw new Error('invalid editor width')
     width = Math.max(1, Math.trunc(width))
+    if (this.search) return this.renderSearch(this.search, width)
     const prompt = width > 2 ? PROMPT : width === 2 ? '❯' : ''
     const shown = prompt && this.bold(this.paint('accent', prompt))
     const continuation = width > 2 ? CONTINUATION : ' '.repeat(prompt.length)
