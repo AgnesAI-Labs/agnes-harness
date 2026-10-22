@@ -17,6 +17,7 @@ import {
 import { expect, it, vi } from 'vitest'
 import { type Colour, createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
+import { SLASH_COMMANDS } from '../../src/tui/commands.js'
 import { FakeTerminal } from '../../src/tui/terminal.js'
 import { type Tone, TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
@@ -1798,10 +1799,12 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     expect(out).not.toContain('\x1b[38;5;45myou:')
     term.feed('/')
     await vi.waitFor(() => expect(term.writes.join('')).toContain(sgr('bg', 'selection')))
-    // Local command output recedes to muted text.
+    // Local command output recedes to muted text; only the end of a long /help fits the screen.
     term.feed('help')
     term.feed('\r')
-    await vi.waitFor(() => expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}/status`))
+    await vi.waitFor(() =>
+      expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}${SLASH_COMMANDS.at(-1)?.name}`),
+    )
   } finally {
     await app?.stop()
     await client.close()

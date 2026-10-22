@@ -10,6 +10,7 @@ import type { Session } from '@agnes/sdk'
 import { agentsSlash } from './agent-commands.js'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
+import { startBtw } from './btw.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { customCommandsFor, customHelp, customSlash } from './custom-commands.js'
 import { deliverablesSlash } from './deliverable-files.js'
@@ -206,6 +207,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.review',
     summaryKey: 'commands.reviewSummary',
   },
+  { name: '/btw', args: '<question>', descriptionKey: 'commands.btw', summaryKey: 'commands.btwSummary' },
 ]
 
 export function slashCommand(name: string): SlashCommand | undefined {
@@ -581,6 +583,13 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/init':
     case '/review':
       return infoSlash(app, cmd, line)
+    case '/btw': {
+      const question = line.trim().replace(/^\S+\s*/, '')
+      if (!question) return { text: tt('btw.usage', locale) }
+      if (Array.from(question).length > 4000) return { text: tt('btw.tooLong', locale) }
+      startBtw(app, question)
+      return {}
+    }
     case '/pin':
     case '/unpin':
     case '/rename':

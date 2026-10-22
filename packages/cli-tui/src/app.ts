@@ -92,7 +92,7 @@ export class TuiApp {
   private ticker: ReturnType<typeof setInterval> | undefined
   private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
   readonly mouse: TuiMouse
-  private readonly statusBar: StatusBar
+  readonly statusBar: StatusBar
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
   private readonly editor: Editor
@@ -101,7 +101,7 @@ export class TuiApp {
   private readonly theme: TuiTheme
   private readonly themePicker: ThemePicker
   private themePreference: ThemePreference
-  private readonly usagePanel: UsagePanel
+  readonly usagePanel: UsagePanel
   private readonly modelPicker: ModelPicker
   private readonly sessionPicker: SessionPicker
   private readonly packageController: PackageController
@@ -881,7 +881,7 @@ export class TuiApp {
     this.renderer.requestRender()
   }
 
-  private showError(error?: unknown): void {
+  showError(error?: unknown): void {
     if (this.stopped) return
     this.statusBar.setNotice(formatTuiErrorNotice(error, this.o.locale ?? 'en'), 'error')
     this.renderer.requestRender()

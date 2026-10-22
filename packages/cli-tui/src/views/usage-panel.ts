@@ -12,6 +12,8 @@ export class UsagePanel implements Component {
   private offset = 0
   private total = 0
   private height = 1
+  /** Bumped by every show and close, so a late result can tell the panel it asked for is gone. */
+  version = 0
   constructor(
     private readonly options: { ansi: ThemedAnsi; locale?: string; maxRows(): number; changed(): void },
   ) {}
@@ -19,10 +21,15 @@ export class UsagePanel implements Component {
     this.title = title ?? tt('usagePanel.title', this.options.locale ?? 'en')
     this.report = escapeControl(text)
     this.offset = 0
+    this.version++
     this.options.changed()
+  }
+  get open(): boolean {
+    return this.report !== undefined
   }
   close(): void {
     this.report = undefined
+    this.version++
     this.options.changed()
   }
   invalidate(): void {}

@@ -116,7 +116,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(47)
+    expect(SLASH_COMMANDS).toHaveLength(48)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -165,6 +165,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/diff',
       '/init',
       '/review',
+      '/btw',
     ])
   })
 
@@ -1080,7 +1081,7 @@ describe('attachmentsFrom', () => {
 })
 
 describe('app.ts wiring: key routing through the editor reaches the real command/completion path', () => {
-  async function liveApp() {
+  async function liveApp(extra?: (ep: ReturnType<typeof scriptedEndpoint>) => void) {
     const ep = scriptedEndpoint()
       .on('_agnes/v1/session.projectUI', () => ({
         sessionId: 'agnes:local:default:cli:dm:main',
@@ -1094,6 +1095,7 @@ describe('app.ts wiring: key routing through the editor reaches the real command
         state: null,
         ledger: [{ seq: 1, credits: 5, creditSource: 'gateway' }],
       }))
+    extra?.(ep)
     const client = createClient({ transport: { kind: 'inproc', endpoint: ep } })
     const session = await client.session.new({ cwd: '/tmp' })
     const term = new FakeTerminal({ columns: 40, rows: 12 })
@@ -1181,6 +1183,54 @@ describe('app.ts wiring: key routing through the editor reaches the real command
       term.feed('\x1b')
       await vi.waitFor(async () =>
         expect((await screenOf(term, 40, 12)).join('\n')).not.toContain('会话用量尚未提供。'),
+      )
+    } finally {
+      await app.stop()
+      await client.close()
+    }
+  })
+
+  it('/btw shows the side answer in a panel that Escape closes, and a late answer is dropped', async () => {
+    let release!: () => void
+    const asked: unknown[] = []
+    const { app, term, client } = await liveApp((ep) =>
+      ep.on('_agnes/v1/session.btw', async (params) => {
+        asked.push(params)
+        if ((params as { question: string }).question === 'slow')
+          await new Promise<void>((r) => (release = r))
+        return { text: 'side answer', model: 'm' }
+      }),
+    )
+    const shown = async () => (await screenOf(term, 40, 12)).join('\n')
+    try {
+      term.feed('/btw what now?')
+      term.feed('\r')
+      await vi.waitFor(async () => expect(await shown()).toContain('side answer'))
+      expect(await shown()).toContain('旁问')
+      expect(asked).toEqual([{ sessionId: 'agnes:local:default:cli:dm:main', question: 'what now?' }])
+      term.feed('\x1b')
+      await vi.waitFor(async () => expect(await shown()).not.toContain('side answer'))
+      term.feed('/btw slow')
+      term.feed('\r')
+      await vi.waitFor(async () => expect(await shown()).toContain('思考中'))
+      term.feed('\x1b')
+      await vi.waitFor(async () => expect(await shown()).not.toContain('思考中'))
+      release()
+      await new Promise((r) => setTimeout(r, 50))
+      expect(await shown()).not.toContain('side answer')
+    } finally {
+      await app.stop()
+      await client.close()
+    }
+  })
+
+  it('/btw says so when the daemon does not know the method', async () => {
+    const { app, term, client } = await liveApp()
+    try {
+      term.feed('/btw hi')
+      term.feed('\r')
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 40, 12)).join('\n')).toContain('当前 daemon 不支持 /btw'),
       )
     } finally {
       await app.stop()

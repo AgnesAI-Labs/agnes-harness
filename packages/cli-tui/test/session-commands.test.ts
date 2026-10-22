@@ -676,4 +676,26 @@ describe('small info commands', () => {
     )
     expect(tt('review.prompt', 'zh-CN')).not.toBe(tt('review.prompt', 'en'))
   })
+
+  it('/btw asks the side question in a panel, and refuses an empty or over-long one with a hint', async () => {
+    const panel = { version: 0, show: vi.fn(), close: vi.fn() }
+    const statusBar = { setNotice: vi.fn() }
+    const btw = vi.fn(async () => ({ text: 'an answer', model: 'm' }))
+    const app = appWith({ session: { btw } }, {}, { usagePanel: panel, statusBar })
+    expect(await runSlash(app, '/btw')).toEqual({ text: tt('btw.usage', 'en') })
+    expect(await runSlash(app, `/btw ${'x'.repeat(4001)}`)).toEqual({ text: tt('btw.tooLong', 'en') })
+    expect(btw).not.toHaveBeenCalled()
+    expect(await runSlash(app, '/btw  why   was that? ')).toEqual({})
+    expect(btw).toHaveBeenCalledWith('cur', 'why   was that?')
+    expect(panel.show).toHaveBeenCalledWith(tt('btw.thinking', 'en'), tt('btw.title', 'en'))
+    await vi.waitFor(() => expect(panel.show).toHaveBeenLastCalledWith('an answer', tt('btw.title', 'en')))
+    // The panel was dismissed or replaced while the answer was on its way: it is dropped.
+    btw.mockImplementationOnce(async () => {
+      panel.version++
+      return { text: 'late', model: 'm' }
+    })
+    await runSlash(app, '/btw again')
+    await new Promise((r) => setTimeout(r, 10))
+    expect(panel.show).not.toHaveBeenCalledWith('late', expect.anything())
+  })
 })
