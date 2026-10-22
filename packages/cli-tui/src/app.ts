@@ -103,6 +103,8 @@ export class TuiApp {
   private readonly previews = new PreviewMerger()
   private readonly previewEffects: string[] = []
   private stopped = false
+  /** Sessions this run sent a message to: the exit hint is for those only. */
+  readonly prompted = new Set<string>()
   // Set once the client reports 'closed' (daemon shutting down). The session can never render again,
   // and the SDK would still re-dial on the next call, so input is refused rather than run unseen.
   private closedNotice: string | undefined
@@ -1016,6 +1018,7 @@ export class TuiApp {
   }
 
   private async submitBlocks(blocks: import('@agnes/protocol').ContentBlock[]): Promise<void> {
+    this.prompted.add(this.o.session.id)
     if (this.busy) {
       // The daemon's followUp endpoint durably enqueues input, but this TUI has no background
       // turn runner to wake that queue after the current turn ends. Keep the draft locally and

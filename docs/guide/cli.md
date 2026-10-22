@@ -60,6 +60,8 @@ Choose what a new session may do when you start it, for example `node agnes.mjs 
 
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
+Leaving the TUI gives the terminal back exactly as it was before; the conversation is not printed again. If this run sent at least one message in the current session and the output is a terminal, one line is left behind, `agh --resume ID`, to return to that session.
+
 Ctrl-O expands the latest tool card and reads the whole call and result from the daemon; while it loads, or if it cannot be read, the card keeps its preview and says why. Plan, subagent, job and workflow tool calls get cards of their own: a plan shows one row per step with its state, the others show their name, state, run time when the timeline has it, and a one-line summary.
 
 Pasting works as in any terminal editor. The TUI asks the terminal for bracketed paste, so a pasted block arrives in one piece, line breaks included: `\r` and `\r\n` become newlines, tabs become two spaces and other control bytes are dropped. A paste of more than 10 lines or 1000 characters shows in the input box as one chip such as `[Pasted #1 · 42 lines]`; Backspace removes the whole chip and Enter sends the full original text. Chips exist only in the running TUI.

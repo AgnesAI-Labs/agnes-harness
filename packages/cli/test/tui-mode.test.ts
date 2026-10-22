@@ -127,7 +127,7 @@ describe('runTui model selection', () => {
           raw = value
         },
       })
-      const stdout = Object.assign(new PassThrough(), { columns: 80, rows: 24 })
+      const stdout = Object.assign(new PassThrough(), { columns: 80, rows: 24, isTTY: true })
       let rendered = ''
       stdout.on('data', (chunk) => {
         rendered += String(chunk)
@@ -165,6 +165,10 @@ describe('runTui model selection', () => {
       stdin.write('\x03')
       stdin.write('\x03')
       await expect(running).resolves.toBe(0)
+      // The transcript is not echoed back; the one line after the screen is restored names the session.
+      expect(rendered.slice(rendered.lastIndexOf('\x1b[?1049l'))).toMatch(
+        /Resume this session: agh --resume \S+\n$/,
+      )
     } finally {
       await client.close()
       await endpoint.close()
@@ -183,7 +187,15 @@ describe('runTui model selection', () => {
       nodes: [],
     }))
 
-    await expect(runTui(await booted(endpoint), parseArgs([]), tuiIO())).resolves.toBe(143)
+    const io = tuiIO()
+    Object.assign(io.stdout, { isTTY: true })
+    let written = ''
+    io.stdout.on('data', (chunk) => {
+      written += String(chunk)
+    })
+    await expect(runTui(await booted(endpoint), parseArgs([]), io)).resolves.toBe(143)
+    // Nothing was sent this run, so there is nothing to resume.
+    expect(written).not.toContain('agh --resume')
 
     const call = endpoint.calls.find((entry) => entry.method === 'session/new')
     expect(call?.params).toMatchObject({

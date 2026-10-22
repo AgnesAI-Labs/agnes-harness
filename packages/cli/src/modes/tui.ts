@@ -1,7 +1,9 @@
 import { dirname, join } from 'node:path'
 import { ExitCode, SIGNAL_EXIT_CODES, type SignalName } from '../errors.js'
 import { inheritFreshSession, TuiApp } from '../tui/app.js'
+import { escapeControl } from '../tui/component.js'
 import { resolveLocale } from '../tui/locale.js'
+import { tt } from '../tui/locale-extended.js'
 import type { TuiResourceController } from '../tui/resource-controller.js'
 import { freshTuiSessionKey } from '../tui/session-key.js'
 import { type InputStream, NodeTerminal, type OutputStream } from '../tui/terminal.js'
@@ -123,6 +125,9 @@ export async function runTui(
     if (app) {
       const session = app.session
       await app.stop()
+      // The shell page comes back exactly as it was; the one line left on it says how to return.
+      if (io.stdout.isTTY === true && app.prompted.has(session.id))
+        io.stdout.write(`${tt('resume.hint', resolveLocale(io.env), { id: escapeControl(session.id) })}\n`)
       await session.detach().catch(() => undefined)
     } else {
       // Opening can fail before a TuiApp exists (e.g. a refused or unreachable session). Do not
