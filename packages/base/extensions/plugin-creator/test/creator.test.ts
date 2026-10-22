@@ -545,8 +545,22 @@ it('projects allowlisted validation diagnostics and redacted failing assertions 
   expect(JSON.stringify(result.structured)).not.toContain('/' + 'Users' + '/private')
   const read = await pluginCreatorTools[5].execute({ candidateId }, ctx)
   expect(read.structured).toMatchObject({ tests: { output: expect.stringContaining('AssertionError') } })
+  for (const output of [
+    'E_TOOLDEF_META: meta.replay: safe requires isReadOnly',
+    'Test port not configured; supply options.context',
+  ]) {
+    value.tests!.output = output
+    const failed = await pluginCreatorTools[2].execute({ candidateId, expectedHash: candidateHash }, ctx)
+    const hint = JSON.stringify(failed.content)
+    expect(hint).toContain('Repair hint')
+    expect(hint).toContain("replay: 'never'")
+    expect(hint).toContain("'default' is invalid")
+    expect(hint).toContain('BOTH survive')
+    expect(failed.isError).toBe(true)
+  }
   value.tests!.state = 'passed'
   const passed = await pluginCreatorTools[2].execute({ candidateId, expectedHash: candidateHash }, ctx)
+  expect(JSON.stringify(passed.content)).not.toContain('Repair hint')
   expect(JSON.stringify(passed.content)).not.toContain('AssertionError')
   value.tests = null
   value.state = 'draft'

@@ -35,7 +35,34 @@ readonly fs: {
     revision?(path: string): Promise<string | undefined>
   }
 ```
+Tool safety metadata / 工具安全元数据:
+```ts
+type ReplayPolicy = 'safe' | 'never' | 'idempotent'
+type RiskClass = 'never' | 'destructive' | 'always'
+interface ToolMeta {
+  attestsHistory?: boolean
+  presentation?: import('@agnes/protocol').ToolPresentation
+  isReadOnly: boolean
+  isDestructive: boolean
+  isConcurrencySafe: boolean
+  isOpenWorld: boolean
+  replay: ReplayPolicy
+  costHint?: { credits?: number; wallMs?: number } | undefined
+  deferLoading?: boolean | 'auto' | undefined
+  discoveryGroup?: string
+  requiresApproval?: RiskClass | undefined
+  modelVisible?: boolean
+  requiresImageInput?: boolean
+  paths?: readonly WorkspacePathArgument[]
+  commandArg?: string
+  isPresentational?: boolean
+  invalidArgumentLimit?: number
+}
+```
+replay: 'safe' requires isReadOnly: true. For writes/appends use isReadOnly: false, replay: 'never'; idempotent requires proven duplicate suppression, not just a timestamped filename. requiresApproval only accepts 'never', 'destructive', 'always' or omission; 'default' is not a value. Approval does not repair an invalid replay declaration. / 写入用 never 重放策略；有真实去重才能用 idempotent；审批和重放互不替代，default 不是合法审批值。
 fs.read returns bytes (Uint8Array); offset/limit are bytes. Decode text with new TextDecoder().decode(await ctx.fs.read(path)); write accepts bytes or a string. execute(args, ctx) receives the invocation context. fs is policy-controlled WORKSPACE access, never a private plugin directory. Use ctx.signal for cancellation; never bypass a denial with ambient Node I/O. / read 返回字节，offset/limit 以字节计；用 TextDecoder 解码。write 接受字节或字符串。fs 是受策略约束的工作区访问，不是插件私有存储；不得通过 Node I/O 绕过拒绝。
+
+fs.write replaces the file content; it does not append. For cumulative records, preserve existing bytes or use exclusive fs.create for independent entries. Test two successive writes and read them back through the same stateful filesystem. Supply used I/O ports with createPluginTestHost(main, { context: { fs } }); the lightweight test Host does not automatically provide a real workspace. / write 覆盖原文，不是追加；累积记录须保留原内容或独占创建独立条目；有状态 fs 测试必须验证两次写入均保留。
 
 Choose data ownership first / 先确定数据归属:
 - Workspace files: ToolContext.fs.read/write, relative to the invocation workspace (ctx.session.workspaceRoot); preserve normal authorization. / 工作区文件用工具调用的 fs，遵循工作区授权。

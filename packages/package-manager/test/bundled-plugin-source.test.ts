@@ -142,24 +142,40 @@ it('generates an executable tool plugin using the current owned registration por
   )
   pluginHelper.apply({ tools })
   const install = registered.get('plugin_helper_install')!
-  for (const state of ['failed', 'passed']) {
-    const failure = await install.execute({ action: 'test', proposalId: 'synthetic-candidate' }, {
-      signal: new AbortController().signal,
-      session: { depth: 0 },
-      pluginManage: {
-        request: async () => ({
-          candidateId: 'synthetic-candidate',
-          candidateHash: 'sha256-reviewed',
-          state,
-          tests: { state, count: 1, output: 'not ok 1 - three-day warning\n' + 'x'.repeat(20000) },
-        }),
-      },
-    } as never)
-    const modelText = JSON.stringify(failure.content)
-    if (state === 'failed') {
-      expect(modelText).toContain('three-day warning')
-      expect(modelText.length).toBeLessThan(10000)
-    } else expect(modelText).not.toContain('three-day warning')
+  for (const output of [
+    'not ok 1 - three-day warning\n' + 'x'.repeat(20000),
+    'E_TOOLDEF_META: meta.replay: safe requires isReadOnly',
+    'Test port not configured; supply options.context',
+  ]) {
+    for (const state of ['failed', 'passed']) {
+      const failure = await install.execute({ action: 'test', proposalId: 'synthetic-candidate' }, {
+        signal: new AbortController().signal,
+        session: { depth: 0 },
+        pluginManage: {
+          request: async () => ({
+            candidateId: 'synthetic-candidate',
+            candidateHash: 'sha256-reviewed',
+            state,
+            tests: { state, count: 1, output },
+          }),
+        },
+      } as never)
+      const modelText = JSON.stringify(failure.content)
+      if (state === 'failed') {
+        expect(modelText).toContain(output.split('\n')[0])
+        expect(modelText.length).toBeLessThan(10000)
+        if (!output.startsWith('not ok')) {
+          expect(modelText).toContain('Repair hint')
+          expect(modelText).toContain("replay: 'never'")
+          expect(modelText).toContain("'default' is invalid")
+          expect(modelText).toContain('statefulFs')
+          expect(modelText).toContain('BOTH survive')
+        } else expect(modelText).not.toContain('Repair hint')
+      } else {
+        expect(modelText).not.toContain(output.split('\n')[0])
+        expect(modelText).not.toContain('Repair hint')
+      }
+    }
   }
   const guide = registered.get('plugin_helper_guide')!
   // The guide is readable even when the invocation has no authoring capability.
@@ -182,8 +198,14 @@ it('generates an executable tool plugin using the current owned registration por
   expect(request).not.toHaveBeenCalled()
   const text = result.content.find((part) => part.type === 'text')
   if (!text || text.type !== 'text') throw new Error('guide returned no text')
-  const data = JSON.parse(text.text) as { apiVersion: string; files: { path: string; content: string }[] }
+  const data = JSON.parse(text.text) as {
+    apiVersion: string
+    authoringPath: string
+    files: { path: string; content: string }[]
+  }
   expect(data.apiVersion).toBe('5.0.0')
+  for (const rule of ['interface ToolMeta', "'default' is invalid", 'statefulFs', 'BOTH survive'])
+    expect(data.authoringPath).toContain(rule)
   const source = data.files.find((file) => file.path === 'index.mjs')!
   const { main } = await import(`data:text/javascript,${encodeURIComponent(source.content)}`)
   const packageDir = fixture()
