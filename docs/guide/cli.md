@@ -72,6 +72,8 @@ While the terminal reports focus, the TUI rings the bell once when a turn ends a
 
 `/plan`, `/plan on`, `/plan off`, and `/plan <instruction>` use the selected backend plan service in both TUI and Web. `/plan status` reports the mode; `/plan pending` shows the last submitted plan. If the backend is disabled or unavailable, the UI reports plan mode off. Existing `.agh/plan-mode.json` files are read without migration. Plan mode blocks write and execution tools even with full access; leaving through `exit_plan_mode` still requires human approval of the exact plan revision. An explicit human `/plan off` remains available.
 
+Esc during a turn interrupts it and keeps the message you were writing. With no turn running, Esc clears the draft; while the `@` file menu is open it only closes that menu. Ctrl-C still interrupts a turn, and pressing it twice within a second quits.
+
 ## Schedules and triggers
 
 `agh schedules` and `agh triggers` manage the same scheduled tasks and webhook rules as the Web automation page, and need an admin connection. A task that repeats every minute: `agh schedules add --prompt "Summarise new issues" --every 1m --cwd .`; `agh schedules run ID` runs it now, `pause` and `resume` stop and restart it, `archive` removes it, and `show ID` lists its recent runs. Webhook rules are written as JSON (`agh triggers add --file rule.json`); the JSON is checked against the protocol schema before anything is sent, and `agh triggers test RULE` runs a synthetic delivery. A refusal prints its code and exits 1; `--json` prints what the daemon returned.

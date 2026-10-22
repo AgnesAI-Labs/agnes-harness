@@ -81,6 +81,8 @@ export type EditorOptions = {
   locale?: string
   onSubmit(text: string): void
   onCancelKey?(): void
+  /** True while a turn runs: esc then interrupts it and leaves the draft alone. */
+  busy?(): boolean
   complete?(prefix: string): string[]
   /** Styles the prompt glyph, placeholder and slash menu; width math always uses the unstyled text. */
   ansi?: ThemedAnsi
@@ -227,7 +229,7 @@ export class Editor implements Component {
           this.dismissed = this.text.slice(0, this.cursor)
           return true
         }
-        this.clear()
+        if (!this.o.busy?.()) this.clear()
         this.o.onCancelKey?.()
         return true
       case 'tab': {

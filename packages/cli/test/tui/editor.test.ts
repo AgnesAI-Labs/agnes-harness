@@ -203,11 +203,18 @@ describe('Editor input', () => {
 
   it('esc clears and reports, ctrl-c and ctrl-d are left to the application', () => {
     let cancels = 0
-    const e = new Editor({ onSubmit: () => {}, onCancelKey: () => cancels++ })
+    let busy = false
+    const e = new Editor({ onSubmit: () => {}, onCancelKey: () => cancels++, busy: () => busy })
     type(e, 'draft')
+    // Mid-turn, esc only interrupts: the half-written message stays.
+    busy = true
+    expect(e.handleInput('\x1b')).toBe(true)
+    expect(e.text).toBe('draft')
+    expect(cancels).toBe(1)
+    busy = false
     expect(e.handleInput('\x1b')).toBe(true)
     expect(e.text).toBe('')
-    expect(cancels).toBe(1)
+    expect(cancels).toBe(2)
     expect(e.handleInput('\x03')).toBe(false)
     expect(e.handleInput('\x04')).toBe(false)
     expect(e.handleInput('\x0f')).toBe(false)

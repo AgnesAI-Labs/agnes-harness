@@ -357,6 +357,40 @@ it('Ctrl-C cancels actual core inference and restores an idle editor', async () 
   }
 })
 
+it('Esc cancels actual core inference and keeps the half-written draft', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-esc-'))
+  const { host } = await createTestHost({ dataDir: dir, provider: slowProvider(60_000) })
+  const endpoint = createLocalEndpoint(host, { pollMs: 5 })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    await client.workspace.add(dir)
+    const session = await client.session.new({ cwd: dir })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    term.feed('slow question')
+    term.feed('\r')
+    await vi.waitFor(async () => expect((await session.projectUI()).opState).not.toBeNull())
+    expect(app.busy).toBe(true)
+    term.feed('half a thought')
+    term.feed('\x1b')
+    await vi.waitFor(() => expect(app?.busy).toBe(false))
+    expect((await session.projectUI()).opState).toBeNull()
+    const shown = async () => (await screenOf(term, 80, 24)).join('\n')
+    await vi.waitFor(async () => expect(await shown()).toContain('half a thought'))
+    // With nothing running, the same key clears the draft as before.
+    term.feed('\x1b')
+    await vi.waitFor(async () => expect(await shown()).not.toContain('half a thought'))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+    await host.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 it('keeps long-conversation history inside fullscreen while paging the projected window', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-history-'))
   const { host } = await createTestHost({

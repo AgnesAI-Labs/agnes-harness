@@ -271,6 +271,7 @@ export class TuiApp {
       placeholder: tt('app.composerPlaceholder', locale),
       locale,
       ansi,
+      busy: () => this.busy,
       onSubmit: (text) => {
         void this.runInput(text)
       },
