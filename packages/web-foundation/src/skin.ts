@@ -36,6 +36,8 @@ export type SkinRosterEntry = {
 }
 
 export const SKIN_STORAGE_KEY = 'agnes-skin'
+/** The user's explicit choice: a skin id, or `none`. Unlike the cache it survives a skin going missing. */
+export const SKIN_PREFERENCE_KEY = 'agnes-skin-preference'
 /** 不匹配即丢弃缓存并按「没有皮肤」处理，不用旧格式猜。 */
 export const SKIN_CACHE_VERSION = 1
 /** `?skin=none` 的取值：强制回到内置外观。 */
@@ -220,8 +222,17 @@ export type SkinReconcilePlan =
 export function planSkinReconcile(
   cached: SkinCache | null,
   entries: readonly SkinRosterEntry[],
+  preferredId: string | null = null,
 ): SkinReconcilePlan {
-  if (cached === null) return { kind: 'keep' }
+  if (cached === null) {
+    // The cache is dropped while the chosen skin is missing from the roster (uninstalled, or a
+    // runtime swap not yet active). The stored choice is not: bring the skin back when it returns.
+    const entry =
+      preferredId === null || preferredId === SKIN_NONE
+        ? undefined
+        : entries.find((candidate) => candidate.id === preferredId)
+    return entry === undefined ? { kind: 'keep' } : { kind: 'refresh', entry }
+  }
   const entry = entries.find((candidate) => candidate.id === cached.id)
   if (entry === undefined) return { kind: 'clear' }
   return cached.revision === entry.revision ? { kind: 'keep' } : { kind: 'refresh', entry }

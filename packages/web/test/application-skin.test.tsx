@@ -125,3 +125,44 @@ it('ignores late application CSS after revoke while preserving the explicit user
   expect(document.adoptedStyleSheets).toEqual(frameworkSheets)
   expect(localStorage.getItem('agnes-skin-preference')).toBe('user')
 })
+
+it('keeps the chosen skin across a missing roster and restores it when the skin returns', async () => {
+  const available = [row]
+  const c = await controller(available)
+  await c.skins.refresh()
+  const select = document.getElementById('skin-select') as HTMLSelectElement
+  await act(async () => {
+    select.value = 'acme'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await vi.waitFor(() => expect(localStorage.getItem('agnes-skin-preference')).toBe('acme'))
+  const painted = () => document.documentElement.style.getPropertyValue('--agnes-brand-primary')
+  expect(painted()).toBe('#123456')
+  // Generation swap or truly removed: the roster has no skin. Display falls back, the choice stays.
+  available.length = 0
+  await c.skins.refresh()
+  expect(painted()).toBe('')
+  expect(localStorage.getItem('agnes-skin-preference')).toBe('acme')
+  // The skin is present again: applied again without the user doing anything.
+  available.push(row)
+  window.dispatchEvent(new CustomEvent('agnes:plugins-invalidated'))
+  await vi.waitFor(() => expect(painted()).toBe('#123456'))
+  expect(localStorage.getItem('agnes-skin-preference')).toBe('acme')
+  expect(JSON.parse(localStorage.getItem(SKIN_STORAGE_KEY) ?? '{}').id).toBe('acme')
+})
+it('does not bring a skin back after the user chose the built-in look', async () => {
+  const available = [row]
+  const c = await controller(available)
+  await c.skins.refresh()
+  const select = document.getElementById('skin-select') as HTMLSelectElement
+  for (const value of ['acme', '']) {
+    await act(async () => {
+      select.value = value
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
+  await vi.waitFor(() => expect(localStorage.getItem('agnes-skin-preference')).toBe('none'))
+  await c.skins.refresh()
+  expect(localStorage.getItem(SKIN_STORAGE_KEY)).toBeNull()
+  expect(document.documentElement.style.getPropertyValue('--agnes-brand-primary')).toBe('')
+})

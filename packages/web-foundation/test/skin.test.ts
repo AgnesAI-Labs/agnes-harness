@@ -263,6 +263,12 @@ describe('skin roster reconciliation', () => {
     const moved = rosterEntry({ revision: 'sha256-def' })
     expect(planSkinReconcile(cache, [moved])).toEqual({ kind: 'refresh', entry: moved })
   })
+  it('restores a stored choice whose skin came back, but never a "none" choice', () => {
+    const back = rosterEntry()
+    expect(planSkinReconcile(null, [back], 'midnight')).toEqual({ kind: 'refresh', entry: back })
+    expect(planSkinReconcile(null, [], 'midnight')).toEqual({ kind: 'keep' })
+    expect(planSkinReconcile(null, [rosterEntry({ id: 'none' })], 'none')).toEqual({ kind: 'keep' })
+  })
 })
 
 describe('skin stylesheet fallback', () => {

@@ -12,6 +12,7 @@ import {
   fetchSkinCss,
   planSkinReconcile,
   readSkinCache,
+  SKIN_PREFERENCE_KEY,
   SKIN_STORAGE_KEY,
   type SkinRosterEntry,
   skinOverride,
@@ -70,6 +71,14 @@ export function createAppearanceController(options: {
   let selection = 0
   let disposed = false
 
+  const readSkinPreference = (): string | null => {
+    try {
+      return storage.getItem(SKIN_PREFERENCE_KEY)
+    } catch {
+      return null
+    }
+  }
+
   /** 告诉首帧逻辑（以及同源的其他文档）缓存里的皮肤变了。同文档不会收到 storage 事件，故手动派发。 */
   const skinChanged = (): void => {
     window.dispatchEvent(new StorageEvent('storage', { key: SKIN_STORAGE_KEY }))
@@ -83,7 +92,7 @@ export function createAppearanceController(options: {
    */
   async function reconcile(entries: readonly SkinRosterEntry[]): Promise<void> {
     if (disposed) return
-    const plan = planSkinReconcile(readSkinCache(storage), entries)
+    const plan = planSkinReconcile(readSkinCache(storage), entries, readSkinPreference())
     if (plan.kind === 'keep') return
     const version = selection
     if (plan.kind === 'clear') {
@@ -182,7 +191,7 @@ export function createAppearanceController(options: {
         // 宿主没内联时先取到文本再写缓存，否则会缓存成一份空样式表——点了等于没点（设计 §8）。
         await cacheSkinEntry(storage, chosen, cssOptions)
       }
-      storage.setItem('agnes-skin-preference', id ?? 'none')
+      storage.setItem(SKIN_PREFERENCE_KEY, id ?? 'none')
       skinChanged()
     },
   })
