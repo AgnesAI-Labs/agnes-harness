@@ -11,6 +11,7 @@ import { schedulesCommand } from './schedules.js'
 import { MANAGE_ACTIONS, manageSessions, oneLine } from './sessions-manage.js'
 import { settingsCommand } from './settings.js'
 import { triggersCommand } from './triggers.js'
+import { undoCommand } from './undo.js'
 
 type SessionsIO = {
   stdout: NodeJS.WritableStream
@@ -90,11 +91,12 @@ export async function sessionsCommand(p: ParsedArgs, client: NodeClient, io: Ses
     return ExitCode.OK
   }
   if (action === 'deliverables') return deliverablesCommand(p, client, io)
+  if (action === 'undo') return undoCommand(p, client, io)
   const managed = MANAGE_ACTIONS.find((a) => a === action)
   if (managed) return manageSessions(managed, p, client, io)
   if (action !== 'list' && action !== 'show')
     throw new UsageError(
-      'sessions expects list, show, pin, unpin, rename, archive, unarchive, search, groups, deliverables, verify or migrate',
+      'sessions expects list, show, pin, unpin, rename, archive, unarchive, search, groups, deliverables, undo, verify or migrate',
     )
 
   const id = action === 'show' ? p.positional[1] : undefined

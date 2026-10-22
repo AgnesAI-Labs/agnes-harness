@@ -4,11 +4,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { HostSession } from '@agnes/host'
 import type { EventEnvelope } from '@agnes/protocol'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { sessionUndo, sessionUndoPreview, undoResultFromFact } from '../src/workspace-undo.js'
+import { realHosted } from './real-hosted.js'
 
 const roots: string[] = []
-afterEach(() => {
+const cleanups: Array<() => Promise<void>> = []
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0)) await cleanup()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 const hash = (text: string) => createHash('sha256').update(text).digest('hex')
@@ -239,4 +242,32 @@ it('refuses a turn with more files than one undo handles instead of restoring pa
     t.write({ path: `f${String(i).padStart(3, '0')}.txt`, before: 'a', after: 'b' })
   await expect(t.undo(1)).rejects.toMatchObject({ data: { code: 'UNDO_UNAVAILABLE' } })
   expect(t.disk('f000.txt')).toBe('b')
+})
+
+it('refuses while a real turn runs, through the worker command frames', async () => {
+  const t = await realHosted()
+  cleanups.push(t.close)
+  await t.hosted.open(t.openFrame('undo-busy'))
+  expect(await t.hosted.dispatch(t.command('undo-busy', 'undoPreview', {}))).toMatchObject({
+    busy: false,
+    undoable: false,
+    files: [],
+  })
+  const release = t.hold()
+  await t.prompt('undo-busy', 'hold the turn open')
+  const running = t.run('undo-busy').catch(() => undefined)
+  const session = t.host.kernel.get('undo-busy')
+  if (!session) throw new Error('session did not open')
+  await vi.waitFor(() => expect(session.op()).not.toBeNull())
+  expect(await t.hosted.dispatch(t.command('undo-busy', 'undoPreview', {}))).toMatchObject({ busy: true })
+  await expect(
+    t.hosted.dispatch(
+      t.command('undo-busy', 'undo', { turn: 1, commandId: 'c', admissionId: 'a', actor: session.d.actor }),
+    ),
+  ).rejects.toMatchObject({ data: { code: 'SESSION_BUSY' } })
+  expect(await session.scan({ type: 'x/core/workspace-undo', fromSeq: 1, toSeq: session.lastSeq })).toEqual(
+    [],
+  )
+  release()
+  await running
 })

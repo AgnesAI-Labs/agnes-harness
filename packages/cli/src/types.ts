@@ -98,6 +98,8 @@ export type ParsedArgs = {
   archived: boolean
   /** `sessions deliverables --save`: the deliverable to download, by number or id. */
   save?: string
+  /** `sessions undo --turn`: the turn whose file changes to undo; the latest one when absent. */
+  turn?: string
   /** `sessions deliverables --save`: replace an existing target file. */
   force: boolean
   /** `schedules`: list every schedule rather than one session's. */

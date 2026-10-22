@@ -23,6 +23,7 @@
 | `agh sessions [list --cwd DIR] [--archived] --json` / `agh sessions show ID` | 列表，每个会话一行、制表符分隔：id、最后序号、preset、`pinned` 或 `-`、最近活动时间（最后一条消息，没有则取创建时间）、标题；`--archived` 只看已归档；机器契约用 `--json` / 详情 |
 | `agh sessions pin\|unpin\|archive\|unarchive ID` / `rename ID TITLE...` | 会话偏好；`--json` 输出已保存的偏好 |
 | `agh sessions deliverables ID [--json]` / `--save N\|ID [--out PATH] [--force]` | 列出会话交付的文件/下载一个：校验 sha256 与大小，只取名称最后一段路径，目标已存在时须加 `--force` |
+| `agh sessions undo KEY [--turn N] [--yes] [--json]` | 打印撤销最近一次改过文件的轮次（或第 N 轮）会做什么；加 `--yes` 才执行。有文件在该轮之后被改动、有轮次运行中、非属主或只读会话时整轮拒绝；被拒绝或有文件未能恢复时退出码为 1。 |
 | `agh approvals grants SESSION [--json]` / `agh approvals revoke SESSION GRANT [--json]` | 列出会话生效中的审批授权/撤销一条（需管理员连接，拒绝原样输出）|
 | `agh schedules [list [--session KEY] [--archived]] / show ID [--json]` | 列出定时任务（默认全部）/查看一个任务及其最近运行 |
 | `agh schedules add --prompt TEXT (--every 30m\|--cron EXPR\|--at ISO\|--daily HH:MM\|--weekly mon,wed@HH:MM) [--tz ZONE] [--title T] [--session KEY \| --new-session [--cwd DIR]] [--unattended notify\|refuse]` / `edit ID [同上]` | 新建或修改任务；`--every` 范围为 60 秒到 366 天，未给 `--session` 或 `--new-session` 时在当前目录新开会话运行，`edit` 只改动给出的参数 |

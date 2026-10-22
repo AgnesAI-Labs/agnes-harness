@@ -24,6 +24,7 @@ import { rewindChoices, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
 import type { ThemePreference } from './theme-preference.js'
 import { thinkingMode } from './thinking.js'
+import { undoSlash } from './undo-commands.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
 
 export type SlashCommand = {
@@ -77,6 +78,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.doctorSummary',
   },
   { name: '/rewind', args: '[seq]', descriptionKey: 'commands.rewind', summaryKey: 'commands.rewindSummary' },
+  {
+    name: '/undo',
+    args: '[turn|confirm|cancel]',
+    descriptionKey: 'commands.undo',
+    summaryKey: 'commands.undoSummary',
+  },
   {
     name: '/compact',
     args: '[instructions]',
@@ -479,6 +486,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       // other request is refused there, and that refusal is shown as it comes.
       return { switchSession: await c.session.fork(s.id, at) }
     }
+    case '/undo':
+      return undoSlash(app, args)
     case '/grants':
       return grantsSlash(app, line)
     case '/deliverables':

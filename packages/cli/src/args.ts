@@ -89,6 +89,7 @@ const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Object.creat
   '-o': 'out',
   '--out': 'out',
   '--save': 'save',
+  '--turn': 'turn',
   '--from': 'from',
   '--key': 'key',
   '--session': 'key',

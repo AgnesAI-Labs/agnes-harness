@@ -383,6 +383,102 @@ describe('/queue', () => {
   })
 })
 
+describe('/undo', () => {
+  const preview = (extra: Record<string, unknown> = {}) => ({
+    sessionId: 'cur',
+    turn: 2,
+    busy: false,
+    undoable: true,
+    blockedBy: 'none',
+    laterTurns: [],
+    shellChanges: false,
+    files: [
+      { path: 'a.txt', action: 'restore', undoable: true },
+      { path: 'new\u001b[31m.txt', action: 'delete', undoable: true },
+    ],
+    ...extra,
+  })
+  const wire = (...args: Parameters<typeof rpcError>) => new JsonRpcError(rpcError(...args))
+
+  it('shows the preview first, undoes only on confirm and reuses one commandId for a retry', async () => {
+    const undoPreview = vi.fn(async () => preview())
+    const undo = vi.fn(async (_turn: number, _options: { commandId: string }) => ({
+      sessionId: 'cur',
+      turn: 2,
+      seq: 9,
+      restored: ['a.txt', 'new.txt'],
+      failed: [],
+      conflicts: [],
+    }))
+    const app = appWith({}, { undoPreview, undo })
+    const shown = await runSlash(app, '/undo')
+    expect(undo).not.toHaveBeenCalled()
+    expect(shown.text).toContain('Turn 2 changed 2 file(s)')
+    expect(shown.text).toContain('delete')
+    expect(shown.text).not.toContain('\u001b')
+    expect(shown.text).toContain(tt('undo.confirm', 'en'))
+    undo.mockRejectedValueOnce(new Error('connection dropped'))
+    await expect(runSlash(app, '/undo confirm')).rejects.toThrow('connection dropped')
+    expect((await runSlash(app, '/undo confirm')).text).toBe(tt('undo.done', 'en', { turn: 2, count: 2 }))
+    expect(undo.mock.calls[0]?.[1]).toEqual(undo.mock.calls[1]?.[1])
+    expect(undo.mock.calls[0]).toEqual([2, { commandId: expect.any(String) }])
+    expect((await runSlash(app, '/undo confirm')).text).toBe(tt('undo.noPending', 'en'))
+  })
+
+  it('previews a given turn, drops a pending undo on cancel and does not offer a blocked one', async () => {
+    const undoPreview = vi.fn(async (turn?: number) =>
+      turn === 1
+        ? preview({ turn: 1, undoable: false, blockedBy: 'later-turns', laterTurns: [2], shellChanges: true })
+        : preview(),
+    )
+    const app = appWith({}, { undoPreview, undo: vi.fn() })
+    const blocked = (await runSlash(app, '/undo 1')).text ?? ''
+    expect(undoPreview).toHaveBeenCalledWith(1)
+    expect(blocked).toContain(tt('undo.blocked.later-turns', 'en'))
+    expect(blocked).toContain(tt('undo.shell', 'en'))
+    expect(blocked).not.toContain(tt('undo.confirm', 'en'))
+    expect((await runSlash(app, '/undo confirm')).text).toBe(tt('undo.noPending', 'en'))
+    await runSlash(app, '/undo')
+    expect((await runSlash(app, '/undo cancel')).text).toBe(tt('undo.cancelled', 'en'))
+    expect((await runSlash(app, '/undo confirm')).text).toBe(tt('undo.noPending', 'en'))
+    expect((await runSlash(app, '/undo x')).text).toContain('usage')
+  })
+
+  it('says why the daemon refused, that an old daemon cannot undo, and lets other failures through', async () => {
+    const undoPreview = vi.fn(async () => preview())
+    const undo = vi.fn()
+    const app = appWith({}, { undoPreview, undo })
+    await runSlash(app, '/undo')
+    undo.mockRejectedValueOnce(
+      wire('SEMANTIC_REJECTED', {
+        code: 'UNDO_CONFLICT',
+        conflicts: [{ path: 'b.txt', reason: 'changed-since' }],
+      }),
+    )
+    const conflict = (await runSlash(app, '/undo confirm')).text ?? ''
+    expect(conflict).toContain(tt('undo.refusedFiles', 'en'))
+    expect(conflict).toContain('b.txt')
+    expect(conflict).toContain(tt('undo.reason.changed-since', 'en'))
+    // A refusal is final: the confirmation is gone and a new preview is needed.
+    expect((await runSlash(app, '/undo confirm')).text).toBe(tt('undo.noPending', 'en'))
+    undoPreview.mockRejectedValueOnce(wire('METHOD_NOT_FOUND'))
+    expect((await runSlash(app, '/undo')).text).toBe(tt('undo.unsupported', 'en'))
+    await runSlash(app, '/undo')
+    undo.mockRejectedValueOnce(wire('SESSION_BUSY', {}))
+    expect((await runSlash(app, '/undo confirm')).text).toBe(tt('undo.refusedBusy', 'en'))
+    undoPreview.mockRejectedValueOnce(new Error('boom'))
+    await expect(runSlash(app, '/undo')).rejects.toThrow('boom')
+  })
+
+  it('says so when no turn changed files', async () => {
+    const app = appWith(
+      {},
+      { undoPreview: vi.fn(async () => preview({ turn: undefined, undoable: false, files: [] })) },
+    )
+    expect((await runSlash(app, '/undo')).text).toBe(tt('undo.nothing', 'en'))
+  })
+})
+
 describe('small info commands', () => {
   const usage = {
     model: { route: 'deepseek', id: 'v4', thinking: 'high' },
