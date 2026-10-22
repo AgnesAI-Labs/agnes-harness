@@ -481,7 +481,7 @@ it('places connection-local output by the seq it follows, writes the unsettled o
   expect(t.takeSettled(30)).toEqual(['', 'ask', '', '/help output'])
   expect(t.takeSettled(30, true)).toEqual(['', ''])
   t.apply({ ...timeline([user('u', 'ask')]), sessionId: 'other' })
-  expect(t.takeSettled(30)).toEqual(['', 'ask'])
+  expect(t.takeSettled(30)).toEqual(['', '── session other ──', '', 'ask'])
 })
 
 it('shows only the entries not yet written, the welcome only before anything was, and no scroll state', () => {
@@ -566,5 +566,42 @@ describe('split footer: a long reply goes out block by block while it streams', 
     t.apply(busyAt([node('', true)]))
     const first = t.takeSettled(40)
     expect([...first, ...t.takeSettled(40, true)]).toEqual(['', ...renderMarkdown(streamed.text, 40, ansi)])
+  })
+})
+
+describe('split footer: sessions and reconnects', () => {
+  const inSession = (id: string, nodes: UINode[]): UITimeline => ({ ...timeline(nodes), sessionId: id })
+
+  it('writes a divider when the session changes after output, not when nothing was written before', () => {
+    const t = splitTimeline()
+    t.apply(inSession('s1', []))
+    t.apply(inSession('s2', [at(1, user('u', 'one'))]))
+    expect(t.takeSettled(30)).toEqual(['', 'one'])
+    t.apply(inSession('s3', [at(1, user('v', 'two'))]))
+    expect(t.takeSettled(30)).toEqual(['', '── session s3 ──', '', 'two'])
+    expect(t.takeSettled(30)).toEqual([])
+  })
+
+  it('after a reconnect rebuilds the same projection, writes only what is new, and keeps every written entry', () => {
+    const t = splitTimeline()
+    const before = [at(1, user('u', 'ask')), assistant('a', 2, 'answer', false)]
+    t.apply(idleAt(before))
+    expect(t.takeSettled(30)).toEqual(['', 'ask', '', 'answer'])
+    // The reopened timeline is a new object with new clones of every node, and something happened in the gap.
+    t.apply(idleAt([...before.map((node) => structuredClone(node)), at(3, user('w', 'while away'))]))
+    expect(t.takeSettled(30)).toEqual(['', 'while away'])
+    t.apply(idleAt([...before, at(3, user('w', 'while away'))]))
+    expect(t.takeSettled(30)).toEqual([])
+  })
+
+  it('says once that earlier output is missing when the window opens on a long history or leaves what was written behind', () => {
+    const t = splitTimeline()
+    t.apply(idleAt([at(5, user('u', 'late'))]), { hasEarlier: true })
+    expect(t.takeSettled(30)).toEqual(['', '⋯ earlier output is not shown here', '', 'late'])
+    t.apply(idleAt([at(5, user('u', 'late')), at(6, user('v', 'next'))]), { hasEarlier: true })
+    expect(t.takeSettled(30)).toEqual(['', 'next'])
+    // A gap longer than the window: nothing written is in it any more.
+    t.apply(idleAt([at(40, user('x', 'far later'))]), { hasEarlier: true })
+    expect(t.takeSettled(30)).toEqual(['', '⋯ earlier output is not shown here', '', 'far later'])
   })
 })

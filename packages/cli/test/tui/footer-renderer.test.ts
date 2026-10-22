@@ -97,6 +97,20 @@ describe.each(['region', 'full'] as const)('FooterRenderer, %s scrolling', (mode
     expect(written(screen)).toEqual(lines)
   })
 
+  it('writes through a footer that leaves the conversation one or two rows, losing nothing', async () => {
+    const t = await started({ mode })
+    const tall = [`> ${CURSOR_MARKER}`, ...Array.from({ length: 5 }, (_, i) => `menu ${i}`)].join('\n')
+    t.footer.set(tall)
+    const lines = Array.from({ length: 12 }, (_, i) => `row ${i}`)
+    for (const batch of [lines.slice(0, 2), lines.slice(2, 9), lines.slice(9)]) {
+      t.source.push(...batch)
+      t.renderer.renderNow()
+    }
+    const screen = await emulate(t.term, t.cols, t.rows)
+    expect(screen.lines.slice(-7)).toEqual(['> ', 'menu 0', 'menu 1', 'menu 2', 'menu 3', 'menu 4', 'status'])
+    expect(written(screen).filter((line) => line.startsWith('row '))).toEqual(lines)
+  })
+
   it('starts under the shell prompt and scrolls only once the screen is full', async () => {
     const t = await started({ mode, cursor: { row: 3, col: 1 } })
     t.source.push('first', 'second')

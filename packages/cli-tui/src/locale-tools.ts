@@ -23,6 +23,8 @@ export const TOOLS_KEYS = [
   'approval.risk.budget',
   'approval.allowAlways',
   'approval.details',
+  'timeline.session',
+  'timeline.omitted',
 ] as const
 
 export type ToolsKey = (typeof TOOLS_KEYS)[number]
@@ -48,6 +50,8 @@ export const TOOLS_DICT: Record<Locale, Record<ToolsKey, string>> = {
     'approval.risk.budget': 'uses budget',
     'approval.allowAlways': 'Always allow in this session',
     'approval.details': 'Raw input',
+    'timeline.session': 'session {id}',
+    'timeline.omitted': '⋯ earlier output is not shown here',
   },
   'zh-CN': {
     'diff.unchanged': '⋯ {n} 行未变',
@@ -68,5 +72,7 @@ export const TOOLS_DICT: Record<Locale, Record<ToolsKey, string>> = {
     'approval.risk.budget': '消耗预算',
     'approval.allowAlways': '本会话内总是允许',
     'approval.details': '原始输入',
+    'timeline.session': '会话 {id}',
+    'timeline.omitted': '⋯ 更早的输出未在此显示',
   },
 }

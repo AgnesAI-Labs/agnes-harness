@@ -194,3 +194,101 @@ it('--no-alt-screen commits a long streamed reply block by block: every paragrap
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+async function withApp(
+  script: ReturnType<typeof say>[],
+  body: (c: {
+    app: TuiApp
+    term: FakeTerminal
+    client: ReturnType<typeof createClient>
+    dir: string
+    session: Awaited<ReturnType<ReturnType<typeof createClient>['session']['new']>>
+    all: () => Promise<string[]>
+  }) => Promise<void>,
+): Promise<void> {
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-split-footer-'))
+  const { host } = await createTestHost({ dataDir: dir, script })
+  const endpoint = createLocalEndpoint(host, { pollMs: 5 })
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    await client.workspace.add(dir)
+    const session = await client.session.new({ cwd: dir })
+    const term = new FakeTerminal({ columns: COLS, rows: ROWS })
+    term.cursor = { row: 1, col: 1 }
+    app = new TuiApp({ session, term, header: 'Agnes', noAltScreen: true, controlClient: client, cwd: dir })
+    await app.start()
+    const all = async () => {
+      const screen = await emulate(term, COLS, ROWS)
+      return [...screen.scrollback, ...screen.lines].filter((line) => line.trim() !== '')
+    }
+    await body({ app, term, client, dir, session, all })
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+    await host.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
+const asked = (term: FakeTerminal, text: string) => {
+  term.feed(text)
+  term.feed('\r')
+}
+const times = (lines: string[], needle: string) => lines.filter((line) => line.includes(needle)).length
+
+it('--no-alt-screen puts a divider between sessions at /new and keeps both conversations once', async () => {
+  await withApp([say('alpha answer'), say('beta answer')], async ({ app, term, all }) => {
+    asked(term, 'alpha question')
+    await vi.waitFor(async () => expect(times(await all(), 'alpha answer')).toBe(1))
+    await vi.waitFor(() => expect(app.busy).toBe(false))
+    asked(term, '/new')
+    await vi.waitFor(async () => expect((await all()).join('\n')).toContain('── session '))
+    asked(term, 'beta question')
+    await vi.waitFor(async () => expect(times(await all(), 'beta answer')).toBe(1))
+    await vi.waitFor(() => expect(app.busy).toBe(false))
+    const lines = await all()
+    const at = (needle: string) => lines.findIndex((line) => line.includes(needle))
+    expect(at('alpha answer')).toBeLessThan(at('── session '))
+    expect(at('── session ')).toBeLessThan(at('beta question'))
+    expect(at('beta question')).toBeLessThan(at('beta answer'))
+    expect(times(lines, 'alpha question')).toBe(1)
+    expect(times(lines, 'beta question')).toBe(1)
+  })
+})
+
+it('--no-alt-screen writes nothing twice when the connection is rebuilt, and carries on with what is new', async () => {
+  await withApp([say('first reply'), say('second reply')], async ({ app, term, client, all }) => {
+    asked(term, 'one')
+    await vi.waitFor(async () => expect(times(await all(), 'first reply')).toBe(1))
+    await vi.waitFor(() => expect(app.busy).toBe(false))
+    const before = await all()
+    const emitter = (client as unknown as { emitter: { emit(name: string, value: unknown): void } }).emitter
+    emitter.emit('gap', { generation: 1 })
+    emitter.emit('reconnected', { generation: 1 })
+    await vi.waitFor(async () => expect((await all()).join('\n')).not.toContain('catching up'))
+    asked(term, 'two')
+    await vi.waitFor(async () => expect(times(await all(), 'second reply')).toBe(1))
+    const lines = await all()
+    for (const needle of ['you: one', 'first reply', 'you: two']) expect(times(lines, needle)).toBe(1)
+    expect(lines.slice(0, before.findIndex((line) => line.includes('first reply')) + 1)).toEqual(
+      before.slice(0, before.findIndex((line) => line.includes('first reply')) + 1),
+    )
+  })
+})
+
+it('--no-alt-screen shows a turn that did not come from its own prompt box, once and in order', async () => {
+  await withApp([say('answer for the other client')], async ({ app, session, all }) => {
+    // The projection carries every turn the same way, whoever sent it: here the session is prompted directly,
+    // which is all the TUI sees of a second client (the daemon's lease keeps a second connection out).
+    await session.prompt('asked from elsewhere')
+    await vi.waitFor(async () => expect(times(await all(), 'answer for the other client')).toBe(1))
+    await vi.waitFor(() => expect(app.busy).toBe(false))
+    const lines = await all()
+    expect(times(lines, 'asked from elsewhere')).toBe(1)
+    expect(lines.findIndex((l) => l.includes('asked from elsewhere'))).toBeLessThan(
+      lines.findIndex((l) => l.includes('answer for the other client')),
+    )
+  })
+})

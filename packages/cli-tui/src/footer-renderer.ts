@@ -25,7 +25,7 @@ const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const SGR_SPLIT = /(\x1b\[[0-9;]*m)/
 // A line that is only a link stays whole so the terminal can still recognise it across its own wrap.
 const LINK_ONLY = /^\s*(?:https?|file):\/\/\S+\s*$/
-// Past this many rows a footer leaves no room for the conversation above it.
+// The footer never takes the last row: the conversation above it always has one to scroll through.
 const MIN_HISTORY_ROWS = 1
 
 type Row = { text: string; rows: number }
@@ -254,7 +254,8 @@ export class FooterRenderer implements ScreenRenderer {
     const top = rows - frame.length + 1
     if (history.length > 0) {
       out += this.insert(history, top, rows)
-      if (this.mode === 'full') repaint = true
+      // Scrolling the whole screen moved the footer too.
+      if (!this.margins(top)) repaint = true
     }
 
     for (let i = 0; i < frame.length; i++) {
@@ -272,6 +273,11 @@ export class FooterRenderer implements ScreenRenderer {
     if (out === '' && cursorKey === this.lastCursorKey) return
     this.lastCursorKey = cursorKey
     this.term.write(`\x1b[?2026h\x1b[?25l${out}${place}\x1b[?2026l`)
+  }
+
+  /** Margins need two rows to scroll within; with a footer that leaves less, the whole screen scrolls instead. */
+  private margins(top: number): boolean {
+    return this.mode === 'region' && top >= 3
   }
 
   /**
@@ -293,7 +299,7 @@ export class FooterRenderer implements ScreenRenderer {
     if (rest.length === 0) return out
     // From here the conversation touches the footer, so no slack is left.
     this.slack = 0
-    if (this.mode === 'region') {
+    if (this.margins(top)) {
       const bottom = Math.max(1, top - 1)
       out += `\x1b[1;${bottom}r\x1b[${bottom};1H`
       for (const { text } of rest) out += `\r\n${text}`

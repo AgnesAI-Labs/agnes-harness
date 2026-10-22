@@ -33,6 +33,10 @@ export class Timeline implements Component {
   private written = new Set<string>()
   // Source text of each running reply that already went out, block by block, ahead of its settling.
   private committed = new Map<string, string>()
+  // Lines the next takeSettled leads with: the id of a session just switched to, and a note that the
+  // loaded window starts after output this terminal never got (a long history, or a gap that outgrew it).
+  private divider: string | undefined
+  private omitted = false
   private idle = true
 
   constructor(
@@ -57,6 +61,7 @@ export class Timeline implements Component {
 
   apply(timeline: UITimeline, options: { opening?: boolean; hasEarlier?: boolean } = {}): void {
     if (this.sessionId !== timeline.sessionId) {
+      if (this.o.split && this.written.size > 0) this.divider = timeline.sessionId
       this.sessionId = timeline.sessionId
       this.entries = new Map()
       this.local = []
@@ -84,6 +89,8 @@ export class Timeline implements Component {
     this.upto = timeline.upto
     this.idle = !timeline.opState
     this.hasEarlier = options.hasEarlier ?? this.hasEarlier
+    if (this.o.split && this.hasEarlier && ordered.length > 0)
+      this.omitted ||= !ordered.some((e) => this.written.has((e.nodes[0] as UINode).id))
   }
 
   private build(nodes: UINode[]): Component {
@@ -213,6 +220,10 @@ export class Timeline implements Component {
    * still in flight, for the exit.
    */
   takeSettled(width: number, all = false): string[] {
+    const lead = this.divider
+      ? ['', `── ${tt('timeline.session', this.o.locale ?? 'en', { id: this.divider })} ──`]
+      : []
+    this.divider = undefined
     const items = this.items()
     const last = items.findLastIndex((item) => this.written.has(item.key))
     const out: string[] = []
@@ -226,7 +237,9 @@ export class Timeline implements Component {
       if (index < last) continue
       out.push(...this.finalRows(item, width, !item.settled))
     }
-    return out
+    if (this.omitted && out.length > 0) lead.push('', tt('timeline.omitted', this.o.locale ?? 'en'))
+    if (out.length > 0) this.omitted = false
+    return [...lead, ...out]
   }
 
   /** A running reply, first in line: the blocks of its streamed text that are finished go out now, once. */
