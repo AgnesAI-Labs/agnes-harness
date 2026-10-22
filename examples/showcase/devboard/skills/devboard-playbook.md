@@ -89,6 +89,15 @@ server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
 
 演示者在总览页选「快进演示到…」后，工作台会带着目标门（`CDCP`、`TR1`、`TR3`、`TR5` 或 `DONE`，`DONE` 表示 ADCP 已批准）打开你。只用这个门调用一次 `devboard_fastforward`：它新建一个现场项目，把包内样例的文件写进新项目目录，并按真实顺序登记交付物、需求、评审、任务、测试和缺陷，目标门留给人批准。不要自己写文件或登记看板，也不要重复调用。完成后告诉用户新项目编号、停在哪一道门、下一步由谁在「我的待办」批准；批准后用户点「继续推进」，你就从这里照常往下做，项目目录里已有对应文件。每次调用都是新项目，不会覆盖旧目录。
 
+## 启动已交付的应用
+
+项目页的「交付成果」卡有「启动并打开」，它带着项目编号打开你。服务只在启动它的那次运行期间监听，所以每次都要重新启动：
+
+1. `devboard_board(projectId)` 读 `workspaceDir`，确认项目目录里有 `server.js`；
+2. 用 shell 后台模式在项目目录运行 `node server.js`（需要人批准；按上面「本地服务与公开接口验收」的约定，不自行设置端口、`AGH_LOOPBACK_FD` 或 `AGH_LOOPBACK_URL`）；
+3. 读取命令实际输出的 `AGH_LOOPBACK_URL`，用 `devboard_app_register` 登记，在答复里给出地址，并保持服务运行到用户说停止（停止时用 `job_kill`）；
+4. 启动失败如实说明原因，不登记任何地址。
+
 ## 角色子智能体
 
 只使用应用声明的角色，通过 `subagent_spawn({role:"@agnes-showcase/devboard#requirements", task:"项目目录、输入文件、交付物与验收要求……", isolation:"shared", wait:true})` 委派。每次都是新鲜角色会话，与父协调员共享工作目录，工具受角色与父快照交集约束；不是把角色名写在普通 task 中，也不能在失败后去掉 role 重试。需要收取结果时（包括 `subagent_spawn(wait=true)` 返回仍在运行），**先调用 `subagent_list`，从本次列表逐字复制真实 `childKey`，再用 `subagent_collect({childKey: "列表返回的原值", wait: true})` 收取**。不得猜测、截断、重建或自行生成子会话编号，也不得把旧的已中断任务当作本次子会话。收取后核对完成状态和实际文件，答复完成不等于文件写入成功。

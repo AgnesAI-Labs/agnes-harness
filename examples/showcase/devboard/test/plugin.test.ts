@@ -491,6 +491,8 @@ describe('DevBoard plugin contract', () => {
     const action = pkg.agnes.application.workbench.actions.find((a: Any) => a.id === 'fast-forward')
     expect(action.agent).toBe('@agnes-showcase/devboard#coordinator')
     expect(action.prompt['zh-CN']).toContain('devboard_fastforward')
+    const runApp = pkg.agnes.application.workbench.actions.find((a: Any) => a.id === 'run-app')
+    expect(runApp.prompt['zh-CN']).toContain('devboard_app_register')
   })
 
   it('takes only the gate enum as input and writes only below the new project directory', async () => {

@@ -830,6 +830,18 @@
             }
           },
           {
+            "id": "run-app",
+            "title": {
+              "en": "Start the delivered app",
+              "zh-CN": "启动已交付的应用"
+            },
+            "agent": "@agnes-showcase/devboard#coordinator",
+            "prompt": {
+              "en": "First call skill_read(name=devboard-playbook). The attached work object is the live project id. Read its workspaceDir with devboard_board, then start the app as the playbook describes: run node server.js in the project directory as a background shell job (the command needs my approval; do not set a port or the loopback variables yourself), read the AGH_LOOPBACK_URL the command actually prints, register that address with devboard_app_register, reply with the URL, and keep the service running until I tell you to stop. If it fails to start, report it as it is and register nothing.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。附带的工作对象是现场项目编号。先用 devboard_board 读取它的 workspaceDir，再按 playbook 启动应用：在项目目录用 shell 后台模式运行 node server.js（命令需要我批准；不要自己设置端口或 loopback 环境变量），读取命令实际输出的 AGH_LOOPBACK_URL，用 devboard_app_register 登记这个地址，回复地址，并让服务一直运行到我说停止。启动失败就如实报告，不要登记任何地址。"
+            }
+          },
+          {
             "id": "change",
             "title": {
               "en": "Process change requests",

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { act, newFlow, view } from '../approvals.mjs'
 import { BLOCKER_KINDS, blockers } from '../blockers.mjs'
+import { entryFile, evidenceDocs, latestRuns, showDelivery } from '../client/delivery.js'
 import { MAIN_STEPS } from '../client/guide-data.js'
 import { mainProgress } from '../client/guide-progress.js'
 import {
@@ -1921,6 +1922,32 @@ describe('fast-forward from the shipped sample', () => {
     await expect(run(store, 'TR3', all)).rejects.toThrow('已有太多旧项目目录')
     expect(all.writes.size).toBe(0)
     expect(read(store).revision).toBe(revision)
+  })
+
+  it('feeds the delivery card only from TR5 on: runs per level, evidence documents and the app address', async () => {
+    const shown: Record<string, boolean> = {}
+    for (const gate of GATES) {
+      const store = memoryStore()
+      await run(store, gate)
+      const data = snapshot(read(store))
+      const project = data.projects.find((p: Item) => p.live)
+      shown[gate] = showDelivery(data, project)
+      if (!shown[gate]) continue
+      expect(entryFile(project)).toBe(`${project.workspaceDir}/server.js`)
+      // the newest run of each level: the unit tests were fixed after the first failure
+      expect(latestRuns(data, project.id).map((r: Item) => [r.level, r.passed, r.failed])).toEqual([
+        ['UNIT', UNIT_TOTAL, 0],
+        ['INTEGRATION', 8, 0],
+        ['SYSTEM', 11, 1],
+      ])
+      expect(evidenceDocs(data, project.id).map((a: Item) => a.kind)).toEqual(['TEST_REPORT', 'ACCEPTANCE'])
+      // an app address appears only once it is registered
+      expect(project.appUrl).toBeUndefined()
+    }
+    expect(shown).toEqual({ CDCP: false, TR1: false, TR3: false, TR5: true, DONE: true })
+    // seed and order projects never show it
+    const seeded = snapshot(seed(NOW))
+    expect(seeded.projects.some((p: Item) => showDelivery(seeded, p))).toBe(false)
   })
 
   it('refuses any input but the gate enum and leaves the board alone', async () => {

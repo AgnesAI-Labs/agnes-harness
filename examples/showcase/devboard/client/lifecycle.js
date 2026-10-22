@@ -13,7 +13,6 @@ import {
   HistoryTable,
   h,
   jumpTo,
-  Markdown,
   Meter,
   NoteField,
   ProjectSelect,
@@ -28,6 +27,7 @@ import {
 } from './board.js'
 import { cardsOf, lensSummary, METRICS, relevant } from './lens.js'
 import { NewProject } from './new-project.js'
+import { ArtifactPreview, DeliveryCard } from './result.js'
 
 const STAGE_ORDER = ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE']
 const stagesOf = (data, projectId) =>
@@ -434,35 +434,6 @@ export function GatePanel({ data, gate, board, role, setRole }) {
   )
 }
 
-export function ArtifactPreview({ board, artifact }) {
-  const [doc, setDoc] = React.useState(null)
-  const [error, setError] = React.useState('')
-  React.useEffect(() => {
-    let live = true
-    setDoc(null)
-    setError('')
-    board
-      .query('devboard.artifact', { artifactId: artifact.id })
-      .then((d) => live && (d.ok === false ? setError(d.error) : setDoc(d)))
-      .catch((e) => live && setError(String(e?.message ?? e)))
-    return () => {
-      live = false
-    }
-  }, [artifact.id, artifact.updatedAt, board.query])
-  return h(
-    'div',
-    { className: 'devboard-detail' },
-    h(
-      'p',
-      { className: 'devboard-muted' },
-      artifact.source?.type === 'workspace' ? `工作区文件：${artifact.source.path}` : '种子文档（包内）',
-    ),
-    error && h('p', { className: 'devboard-alert', role: 'alert' }, error),
-    doc?.truncated && h('p', { className: 'devboard-muted' }, '文档较长，仅显示前 48 KB。'),
-    doc ? h(Markdown, { text: doc.markdown }) : !error && h('p', { role: 'status' }, '正在读取文档…'),
-  )
-}
-
 const latestBaselines = (data, projectId) => {
   const seq = (b) => Number(/-(\d+)$/.exec(b.id)?.[1] ?? 0)
   const out = {}
@@ -665,6 +636,7 @@ export function Projects({ data, board, role, setRole }) {
       { className: 'devboard-muted' },
       `与「${role}」相关的阶段（编写角色）和评审门（审批角色或阶段编写角色）已高亮；本页不按角色筛选。`,
     ),
+    h(DeliveryCard, { data, board, project }),
     data.configBaselines.some((b) => b.projectId === project.id) &&
       guided('projects-baseline', h(BaselineTable, { data, projectId: project.id })),
     (project.risks?.length ?? 0) > 0 &&
