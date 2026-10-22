@@ -215,7 +215,7 @@ export async function continueParked(s: SessionImpl): Promise<'opened' | 'waitin
     const allowed =
       !snapshot.invalidation &&
       (!snapshot.result ||
-        (snapshot.result.reason === 'answered' && snapshot.result.response.option.startsWith('allowed')))
+        (snapshot.result.reason === 'answered' && snapshot.result.response.option.startsWith('allow')))
     const continuedCall: ToolCallState = allowed
       ? {
           ordinal: original.ordinal,
@@ -312,7 +312,7 @@ async function reopenAfterReconciliation(s: SessionImpl, snapshot: DecisionSnaps
   const name = (snapshot.request.spec.subject as { name?: unknown }).name
   const tool = typeof name === 'string' ? name : 'the call'
   const happened =
-    snapshot.result?.reason === 'answered' && snapshot.result.response.option.startsWith('allowed')
+    snapshot.result?.reason === 'answered' && snapshot.result.response.option.startsWith('allow')
   const turn = s.lastTurnNumber() + 1
   await s.transition(
     () => [

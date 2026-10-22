@@ -18,6 +18,7 @@ import { UserMessage } from './user-message.js'
 const APPROVAL_STEP_KEYS: Record<string, string> = {
   'allowed-once': 'activity.approval.allowedOnce',
   'allowed-session': 'activity.approval.allowedSession',
+  allow_prefix_session: 'activity.approval.allowedPrefixSession',
   'allowed-permanent': 'activity.approval.allowedPermanent',
   rejected: 'activity.approval.rejected',
 }
@@ -35,7 +36,7 @@ function ApprovalStep({ node, t, primaryCard }: { node: ApprovalNode; t: Transla
     !reconcile && decided && !node.decision?.reason
       ? APPROVAL_STEP_KEYS[node.decision?.verdict ?? '']
       : undefined
-  const refused = decided && !reconcile && !node.decision?.verdict.startsWith('allowed')
+  const refused = decided && !reconcile && !node.decision?.verdict.startsWith('allow')
   const presentation = decisionPresentation(node.presentation)
   const summary = reconcile
     ? t('activity.reconcile.summary', { tool: reconcile.tool })

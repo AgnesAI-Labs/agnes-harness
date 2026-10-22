@@ -1,3 +1,4 @@
+import { parsePrefixScope } from '@agnes/core-common/command-table/prefix'
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import type { Actor, UINode } from '@agnes/protocol'
 import { clipUtf16 } from './clip.js'
@@ -54,4 +55,13 @@ export const automaticToolPermission = (decisionId: string, actor: Actor) => ({
 /** Identity comes only from the recorded operation's tool call, never transcript position. */
 export function approvalToolReference(tool: { name: string; toolUseId: string } | undefined) {
   return tool ? { toolName: tool.name, toolUseId: tool.toolUseId } : {}
+}
+
+/** The command prefix Core offered with a request, read back from its recorded subject. */
+export function prefixGrantOf(subject: unknown): Pick<ApprovalNode, 'prefixGrant'> {
+  const offered = (subject as { prefixGrant?: { tokens?: unknown; scope?: unknown } } | null)?.prefixGrant
+  const tokens = typeof offered?.scope === 'string' ? parsePrefixScope(offered.scope) : undefined
+  return tokens && JSON.stringify(tokens) === JSON.stringify(offered?.tokens)
+    ? { prefixGrant: { tokens, scope: offered?.scope as string } }
+    : {}
 }

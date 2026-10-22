@@ -48,6 +48,20 @@ export function answeredApproval(
   return approvalNode(value, ref, 'decided')
 }
 
+/** Core's command-prefix offer, as recorded in the decision subject; absent when malformed. */
+function offeredPrefix(value: unknown): Pick<ApprovalNode, 'prefixGrant'> {
+  const offer = value as { tokens?: unknown; scope?: unknown } | null
+  const tokens = offer?.tokens
+  return Array.isArray(tokens) &&
+    tokens.length >= 1 &&
+    tokens.length <= 2 &&
+    tokens.every((token) => typeof token === 'string' && token.length > 0) &&
+    typeof offer?.scope === 'string' &&
+    offer.scope.startsWith('shell:prefix:')
+    ? { prefixGrant: { tokens: tokens as string[], scope: offer.scope } }
+    : {}
+}
+
 function approvalNode(
   value: DecisionSnapshot,
   ref: NonNullable<ApprovalNode['decisionRef']>,
@@ -72,6 +86,7 @@ function approvalNode(
     ...(spec.presentation ? { presentation: spec.presentation } : {}),
     risk: risk === 'destructive' || risk === 'always' || risk === 'budget' ? risk : 'unknown',
     options: spec.options.map((option) => options[option as keyof typeof options]),
+    ...(state === 'pending' ? offeredPrefix(subject?.prefixGrant) : {}),
     // Show the complete decision subject, including the tool arguments and original summary.
     subjectText: JSON.stringify(spec.subject, null, 2),
     ...(expiresAt ? { expiresAt } : {}),

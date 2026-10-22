@@ -39,6 +39,7 @@ import {
   approvalSubject,
   approvalToolReference,
   automaticToolPermission,
+  prefixGrantOf,
   reconcileTool,
 } from './approval-subject.js'
 import {
@@ -892,6 +893,9 @@ export class UIProjectionCell {
           ...(value.request.owner === 'core/unknown-outcome'
             ? { reconcile: { tool: reconcileTool(value.request.spec.subject) } }
             : {}),
+          // Core's command-prefix offer rides beside the options, never inside them: a client that
+          // does not know it sees exactly the options it always saw.
+          ...(result ? {} : prefixGrantOf(value.request.spec.subject)),
           options: value.request.spec.options.map((option) =>
             option === 'allowed-once'
               ? 'allow_once'

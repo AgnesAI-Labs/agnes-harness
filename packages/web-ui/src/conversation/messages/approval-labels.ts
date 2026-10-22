@@ -10,6 +10,7 @@ export const approvalLabelKeys: Record<ApprovalNode['state'], string> = {
 export const verdictLabelKeys: Record<string, string> = {
   'allowed-once': 'timeline.decision.allowedOnce',
   'allowed-session': 'timeline.decision.allowedSession',
+  allow_prefix_session: 'timeline.decision.allowedPrefixSession',
   'allowed-permanent': 'timeline.decision.allowedPermanent',
   rejected: 'timeline.decision.rejected',
   cancelled: 'timeline.decision.cancelled',
@@ -36,7 +37,7 @@ function reconcileStatus(node: ApprovalNode, t: Translate): string | undefined {
   if (!node.reconcile) return undefined
   if (node.state === 'pending') return t('activity.reconcile.pending')
   if (node.state !== 'decided' || !node.decision || node.decision.reason === 'stopped') return undefined
-  if (node.decision.verdict.startsWith('allowed')) return t('activity.reconcile.ran')
+  if (node.decision.verdict.startsWith('allow')) return t('activity.reconcile.ran')
   if (node.decision.verdict === 'rejected') return t('activity.reconcile.notRan')
   return undefined
 }

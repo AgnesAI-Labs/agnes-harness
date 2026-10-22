@@ -37,6 +37,8 @@ export type ApprovalRequest = {
   policyVersion?: string
   policyBinding?: string
   options?: Array<'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'>
+  /** Core's offer of a command-prefix grant: shown by clients, never derived by them. */
+  prefixGrant?: { tokens: string[]; scope: string }
   context?: string
   approval?: ApprovalConstraints
 }

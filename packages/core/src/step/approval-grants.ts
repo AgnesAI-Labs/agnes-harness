@@ -1,3 +1,4 @@
+import { parsePrefixScope } from '@agnes/core-common/command-table/prefix'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { argvHash } from '@agnes/core-effects/effects/runtime'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
@@ -24,6 +25,26 @@ export const sessionGrantKey = (input: {
   definitionFingerprint: string
   policyBinding: string
 }): string => sha256Hex(canonicalJson(input))
+
+/** Answers that leave a session-wide allowance behind. */
+export const isSessionGrantOption = (option: unknown): boolean =>
+  option === 'allowed-session' || option === 'allow_prefix_session'
+
+/**
+ * The scope a session-wide answer granted: the request's own scope for a whole-tool allowance, the
+ * offered command prefix for a prefix allowance. A prefix answer without a well-formed offer grants nothing.
+ */
+export function grantedSessionScope(option: unknown, subject: unknown): string | undefined {
+  const facts = subject as { scope?: unknown; prefixGrant?: { tokens?: unknown; scope?: unknown } } | null
+  if (option === 'allow_prefix_session') {
+    const scope = facts?.prefixGrant?.scope
+    const tokens = typeof scope === 'string' ? parsePrefixScope(scope) : undefined
+    return tokens && JSON.stringify(tokens) === JSON.stringify(facts?.prefixGrant?.tokens)
+      ? (scope as string)
+      : undefined
+  }
+  return option === 'allowed-session' && typeof facts?.scope === 'string' ? facts.scope : undefined
+}
 
 export function approvalScopesForCall(toolId: string, scopes: readonly string[]): string[] {
   const ordered = [...new Set(scopes)]
@@ -72,12 +93,14 @@ export function permanentGrantId(input: { sessionKey: string; toolUseId: string;
 
 export type PersistedToolApproval = {
   requestId: string
-  verdict: ApprovalVerdict
+  verdict: ApprovalVerdict | 'allow_prefix_session'
   grantId?: string
   decisionRef?: DecisionHandle
   decidedAt: string
   answeredBy?: Actor
   subjectRevision?: string
+  /** Set for a prefix answer: the scope of the prefix that was offered and accepted. */
+  prefixScope?: string | undefined
 }
 
 /**
@@ -135,15 +158,22 @@ export async function persistedToolApproval(
     if (snapshot.invalidation || snapshot.result?.reason !== 'answered') return undefined
     if (snapshot.consumption) throw new Error('DECISION_ALREADY_CONSUMED')
     const option = snapshot.result.response.option
-    if (!['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'].includes(option))
+    if (
+      !['allowed-once', 'allowed-session', 'allowed-permanent', 'allow_prefix_session', 'rejected'].includes(
+        option,
+      )
+    )
       throw new Error('DECISION_UNOFFERED_ANSWER')
     return {
       requestId: snapshot.handle.id,
-      verdict: option as ApprovalVerdict,
+      verdict: option as ApprovalVerdict | 'allow_prefix_session',
       decisionRef: snapshot.handle,
       decidedAt: snapshot.result.at,
       answeredBy: snapshot.result.answeredBy,
       ...(subject.approval?.subjectRevision ? { subjectRevision: subject.approval.subjectRevision } : {}),
+      ...(option === 'allow_prefix_session'
+        ? { prefixScope: grantedSessionScope(option, value.request.spec.subject) }
+        : {}),
       ...(option === 'allowed-permanent'
         ? { grantId: permanentGrantId({ sessionKey: s.key, toolUseId: input.toolUseId, scope: input.scope }) }
         : {}),
@@ -189,9 +219,11 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
       !value.consumption ||
       value.invalidation ||
       value.result?.reason !== 'answered' ||
-      value.result.response.option !== 'allowed-session'
+      !isSessionGrantOption(value.result.response.option)
     )
       continue
+    const granted = grantedSessionScope(value.result.response.option, value.request.spec.subject)
+    if (!granted) continue
     const subject = value.request.spec.subject as {
       scope?: string
       bindingHash?: string
@@ -224,12 +256,13 @@ export async function restoreSessionGrants(s: SessionImpl): Promise<void> {
       })
     )
       continue
+    if (granted !== subject.scope) s.sessionPrefixScopes.add(granted)
     s.sessionAllows.add(
       sessionGrantKey({
         actor: s.d.actor,
         sessionKey: s.key,
         toolId: data.name,
-        scope: subject.scope,
+        scope: granted,
         definitionFingerprint: subject.call.definitionFingerprint,
         policyBinding: subject.policyBinding,
       }),
@@ -259,26 +292,22 @@ function activeSessionGrants(s: SessionImpl): Array<{ key: string; entry: Sessio
       !value.consumption ||
       value.invalidation ||
       value.result?.reason !== 'answered' ||
-      value.result.response.option !== 'allowed-session'
+      !isSessionGrantOption(value.result.response.option)
     )
       continue
+    const granted = grantedSessionScope(value.result.response.option, value.request.spec.subject)
     const subject = value.request.spec.subject as {
       scope?: string
       policyBinding?: string
       call?: { name?: string; definitionFingerprint?: string }
     }
-    if (
-      !subject.scope ||
-      !subject.policyBinding ||
-      !subject.call?.name ||
-      !subject.call.definitionFingerprint
-    )
+    if (!granted || !subject.policyBinding || !subject.call?.name || !subject.call.definitionFingerprint)
       continue
     const key = sessionGrantKey({
       actor: s.d.actor,
       sessionKey: s.key,
       toolId: subject.call.name,
-      scope: subject.scope,
+      scope: granted,
       definitionFingerprint: subject.call.definitionFingerprint,
       policyBinding: subject.policyBinding,
     })
@@ -289,7 +318,7 @@ function activeSessionGrants(s: SessionImpl): Array<{ key: string; entry: Sessio
       entry: {
         grantId: value.handle.id,
         toolId: subject.call.name,
-        scope: subject.scope,
+        scope: granted,
         createdAt: value.result.at,
         ...(value.result.answeredBy ? { issuer: value.result.answeredBy } : {}),
       },

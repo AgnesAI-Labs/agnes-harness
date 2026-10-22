@@ -1,3 +1,4 @@
+import { acceptedOptions } from '@agnes/core-common/command-table/prefix'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError, type Event } from '@agnes/core-common/types'
 import {
@@ -78,7 +79,8 @@ export function reduceDecision(previous: DecisionSnapshot | undefined, event: Ev
       previous.consumption !== null &&
       previous.invalidation === null &&
       previous.result?.reason === 'answered' &&
-      previous.result.response.option === 'allowed-session' &&
+      (previous.result.response.option === 'allowed-session' ||
+        previous.result.response.option === 'allow_prefix_session') &&
       next.invalidation?.code === 'grant-revoked' &&
       canonicalJson(next.consumption) === canonicalJson(previous.consumption)
     if (
@@ -110,7 +112,7 @@ export function reduceDecision(previous: DecisionSnapshot | undefined, event: Ev
     )
       fail('answer receipt mismatch')
     if (
-      !next.request.spec.options.includes(next.result.response.option) ||
+      !acceptedOptions(next.request.spec).includes(next.result.response.option) ||
       (!automatic && next.answerCommand === null)
     )
       fail('unoffered answer')

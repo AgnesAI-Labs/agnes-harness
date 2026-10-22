@@ -1,4 +1,5 @@
 import { hasChildControl, transitionChildState } from '@agnes/core-child-control/child/store'
+import { coveredByPrefixes, offerPrefix } from '@agnes/core-common/command-table/prefix'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
@@ -50,7 +51,8 @@ import { callFailureNotes, executedNotes, refusalNotes } from './nested-note.js'
 import { type NestedPark, parkOutcome } from './nested-parks.js'
 import { approvalContinuation } from './parked.js'
 import { decideToolPolicy } from './policy-review.js'
-import { preflightError } from './preflight-error.js'
+import { honouredPrefixes, prefixActivation, prefixCommand } from './prefix-approval.js'
+import { preflightDeclaredPaths } from './preflight-paths.js'
 import { terminalDecisionRefusal } from './terminal-decision-refusal.js'
 import { modelCapabilityUnavailable, toolAvailability } from './tool-availability.js'
 import {
@@ -401,7 +403,10 @@ export async function approveAndExecute(
       return undefined
     }
   }
+  const invalid = (message: string) =>
+    refuse(s, call.toolUseId, 'APPROVAL_STATE_INVALID', message, decisionId, settled())
   const sessionActivations: string[] = []
+  const prefixActivations: Array<{ key: string; scope: string }> = []
   const grantChecks: (() => Promise<void>)[] = []
   let recheckPermission: (() => Promise<void>) | undefined
   if (!o.resumeDispatch) {
@@ -454,64 +459,9 @@ export async function approveAndExecute(
           decisionId,
         ),
       }
-    for (const path of meta.paths ?? []) {
-      const args = call.args as Record<string, unknown>
-      const target = Object.hasOwn(args, path.arg) ? args[path.arg] : path.default
-      if (target === undefined) continue
-      if (typeof target !== 'string' || !target || target.includes('\0'))
-        return {
-          result: await refuse(
-            s,
-            call.toolUseId,
-            'E_FS_DENIED',
-            'E_FS_DENIED: Invalid declared workspace path',
-            decisionId,
-          ),
-        }
-      const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(target)?.[1]?.toLowerCase()
-      if (scheme && path.nonWorkspaceSchemes?.includes(scheme)) continue
-      try {
-        if (!s.d.workspaceInvocation)
-          throw Object.assign(new Error('Workspace path preflight unavailable'), {
-            code: 'E_FS_PREFLIGHT_UNAVAILABLE',
-          })
-        await s.d.workspaceInvocation.run(async (view) => {
-          const fs = view.fs()
-          const preflight = async (target: string) => {
-            if (fs.preflight) await fs.preflight(target, path.access)
-            else if (path.access === 'read') await fs.stat(target)
-            else
-              throw Object.assign(new Error('Workspace write preflight unavailable'), {
-                code: 'E_FS_PREFLIGHT_UNAVAILABLE',
-              })
-          }
-          if (s.d.memory) {
-            // Use the same provider-owned file boundary as execution. Metadata inspection cannot
-            // approve a memory write; the actual mutation still requires its bound proposal.
-            const files = s.d.memory.files(
-              {
-                ...fs,
-                stat: async (target) => {
-                  await preflight(target)
-                  return fs.stat(target)
-                },
-              },
-              { sessionKey: s.key, turn: op.meta.turn, toolUseId: call.toolUseId },
-              o.signal ?? s.ac.signal,
-              async () => ({ status: 'unanswered', reason: 'no-approver' }),
-            )
-            await files.stat(target)
-          } else await preflight(target)
-        })
-      } catch (error) {
-        if ((error as { code?: string } | null)?.code !== 'ENOENT') {
-          const failure = preflightError(error)
-          return {
-            result: await refuse(s, call.toolUseId, failure.code, failure.message, decisionId),
-          }
-        }
-      }
-    }
+    const pathRefusal = await preflightDeclaredPaths(s, call, op.meta.turn, meta, o.signal ?? s.ac.signal)
+    if (pathRefusal)
+      return { result: await refuse(s, call.toolUseId, pathRefusal.code, pathRefusal.message, decisionId) }
     const approvalMode = s.d.approvalMode ?? 'manual'
     const initialSettings = await s.d.toolPolicySettings?.(
       s.preset.approval.policy ?? 'default',
@@ -717,7 +667,9 @@ export async function approveAndExecute(
       if (
         onceOnly &&
         recorded &&
-        (recorded.verdict === 'allowed-session' || recorded.verdict === 'allowed-permanent')
+        (recorded.verdict === 'allowed-session' ||
+          recorded.verdict === 'allowed-permanent' ||
+          recorded.verdict === 'allow_prefix_session')
       )
         return {
           result: await refuse(
@@ -730,6 +682,11 @@ export async function approveAndExecute(
         }
       if (recorded?.decisionRef) approvalRefs.push(recorded.decisionRef)
       if (recorded?.verdict === 'allowed-session') sessionActivations.push(grantKey)
+      if (recorded?.verdict === 'allow_prefix_session') {
+        if (!recorded.prefixScope) return { result: await invalid('prefix approval has no offered prefix') }
+        prefixActivations.push(prefixActivation(s, call, policyBinding, recorded.prefixScope))
+        continue
+      }
       if (recorded?.verdict === 'allowed-permanent') {
         recheckGrant(recorded.grantId)
         if (!durableBinding || !recorded.grantId)
@@ -848,6 +805,20 @@ export async function approveAndExecute(
         }
       }
       if (!onceOnly && s.sessionAllows.has(grantKey)) continue
+      const shellCommand = prefixCommand({
+        call,
+        meta,
+        scope,
+        onceOnly,
+        requiresApproval: policy.requiresApproval,
+        taint,
+        authorization: decision.effect,
+        posixShell: s.d.runtime.platformView().shell === 'posix',
+        workspaceRoot: s.workspaceRoot,
+      })
+      const honoured = shellCommand === undefined ? [] : honouredPrefixes(s, call, policyBinding)
+      if (shellCommand !== undefined && coveredByPrefixes(shellCommand, honoured)) continue
+      const prefixOffer = shellCommand === undefined ? undefined : offerPrefix(shellCommand, honoured)
       if (!onceOnly && durableGrants.length > 0) {
         recheckGrant()
         continue
@@ -870,6 +841,7 @@ export async function approveAndExecute(
         policyVersion: policy.policyVersion,
         policyBinding,
         options,
+        ...(prefixOffer ? { prefixGrant: prefixOffer } : {}),
         ...(permission.approval ? { approval: permission.approval } : {}),
       }
       // The inference or nested-call entry validated `call.args` before persisting the exact args
@@ -1004,7 +976,11 @@ export async function approveAndExecute(
           answeredBy: answer.answeredBy,
         }
       if (verdict === 'allowed-session') sessionActivations.push(grantKey)
-      if (!verdict.startsWith('allowed')) {
+      if (verdict === 'allow_prefix_session') {
+        if (!prefixOffer) return { result: await invalid('prefix approval was not offered') }
+        prefixActivations.push(prefixActivation(s, call, policyBinding, prefixOffer.scope))
+      }
+      if (!verdict.startsWith('allow')) {
         const refusal = approvalRefusal(
           verdict as import('@agnes/protocol').ApprovalVerdict,
           reason,
@@ -1149,6 +1125,10 @@ export async function approveAndExecute(
       },
     })
     for (const key of sessionActivations) s.sessionAllows.add(key)
+    for (const activation of prefixActivations) {
+      s.sessionAllows.add(activation.key)
+      s.sessionPrefixScopes.add(activation.scope)
+    }
     const committed = startedSeqs?.[0]
     if (committed === undefined)
       throw new CoreError('E_RELATION', 'effect intent commit returned no sequence')

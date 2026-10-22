@@ -6,9 +6,9 @@ import { turnVerificationStatus } from '@agnes/web-ui'
 type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]
 export type DurableApprovalAction = {
-  option: ApprovalOption
+  option: ApprovalOption | 'allow_prefix_session'
   label: string
-  verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
+  verdict: 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'allow_prefix_session' | 'rejected'
 }
 
 const DURABLE_APPROVAL_KEYS: Record<ApprovalOption, string> = {
@@ -32,11 +32,26 @@ export function durableApprovalActions(node: ApprovalNode, t: Translate): Durabl
         : []),
     ]
   }
-  return node.options.map((option) => ({
-    option,
-    label: t(DURABLE_APPROVAL_KEYS[option]),
-    verdict: DURABLE_APPROVAL_VERDICTS[option],
-  }))
+  // Core's own offer, rendered as given; only an option kind this view knows is offered at all.
+  const prefix = node.state === 'pending' ? node.prefixGrant : undefined
+  return node.options.flatMap((option): DurableApprovalAction[] => {
+    if (!Object.hasOwn(DURABLE_APPROVAL_KEYS, option)) return []
+    const own = {
+      option,
+      label: t(DURABLE_APPROVAL_KEYS[option]),
+      verdict: DURABLE_APPROVAL_VERDICTS[option],
+    }
+    return option === 'allow_once' && prefix
+      ? [
+          own,
+          {
+            option: 'allow_prefix_session' as const,
+            label: t('timeline.decision.allowPrefix', { prefix: `\`${prefix.tokens.join(' ')}\`` }),
+            verdict: 'allow_prefix_session' as const,
+          },
+        ]
+      : [own]
+  })
 }
 
 const DURABLE_APPROVAL_VERDICTS: Record<ApprovalOption, DurableApprovalAction['verdict']> = {

@@ -83,6 +83,7 @@ export async function requestToolDecision(
       approval: offered.approval ? { ...offered.approval } : null,
       context: offered.context ?? null,
       risk: offered.risk,
+      ...(offered.prefixGrant ? { prefixGrant: offered.prefixGrant } : {}),
       ...(rewrite ? { rewrite } : {}),
     },
     prompt: offered.summary,

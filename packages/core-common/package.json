@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./command-table/hard-block": "./src/command-table/hard-block.ts",
+    "./command-table/prefix": "./src/command-table/prefix.ts",
     "./command-table/rules": "./src/command-table/rules.ts",
     "./command-table/split": "./src/command-table/split.ts",
     "./context-diagnostics": "./src/context-diagnostics.ts",

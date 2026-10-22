@@ -45,6 +45,38 @@ describe('ApprovalCard permanent grants', () => {
   })
 })
 
+describe('ApprovalCard prefix offer', () => {
+  const prefixNode = {
+    ...node(['allow_once', 'allow_always', 'reject_once']),
+    prefixGrant: { tokens: ['git', 'push'], scope: 'shell:prefix:["git","push"]' },
+  }
+
+  it('renders the daemon tokens as given and answers with the prefix verdict', async () => {
+    const decide = vi.fn(async () => undefined)
+    const card = new ApprovalCard(prefixNode, { ansi: PLAIN, onDecide: decide })
+    const text = card.render(140).join('\n')
+    expect(text).toContain('[2] Allow commands starting with `git push` for this session')
+    expect(card.handleInput('2')).toBe(true)
+    await vi.waitFor(() =>
+      expect(decide).toHaveBeenCalledWith(
+        { sessionId: 's', id: 'ticket-1', revision: 1 },
+        'allow_prefix_session',
+      ),
+    )
+  })
+
+  it('keeps ordinary approvals working next to an option kind it does not know', async () => {
+    const decide = vi.fn(async () => undefined)
+    const card = new ApprovalCard(
+      node(['allow_once', 'allow_from_the_future', 'reject_once'] as unknown as ApprovalNode['options']),
+      { ansi: PLAIN, onDecide: decide },
+    )
+    expect(card.render(100).join('\n')).not.toContain('undefined')
+    expect(card.handleInput('2')).toBe(true)
+    await vi.waitFor(() => expect(decide).toHaveBeenCalledWith(expect.anything(), 'rejected'))
+  })
+})
+
 it('keeps the full single-line review subject readable before the choices', () => {
   const subjectText = 'x'.repeat(100000) + '<EXACT-TAIL>'
   const card = new ApprovalCard(

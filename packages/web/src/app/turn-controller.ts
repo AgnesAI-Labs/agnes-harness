@@ -258,7 +258,7 @@ export function createTurnController(
         : undefined)
     if (!context.liveApproval && !durable && answered) {
       const stick = context.conversationRuntime.isTranscriptNearBottom()
-      const ran = answered.decision?.verdict.startsWith('allowed')
+      const ran = answered.decision?.verdict.startsWith('allow')
       context.approvalRuntime.render({
         key: `answered:${answered.decisionRef?.id ?? answered.id}`,
         kind: 'answered',

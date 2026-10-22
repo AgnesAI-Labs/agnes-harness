@@ -11,19 +11,52 @@ type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 type ApprovalOption = ApprovalNode['options'][number]
 
 /** The wire's own decide-verdict vocabulary (sdk plan `Client.approval.decide`, `_agnes/v1/approval.decide`). */
-export type Verdict = 'allowed-once' | 'allowed-session' | 'allowed-permanent' | 'rejected'
+export type Verdict =
+  | 'allowed-once'
+  | 'allowed-session'
+  | 'allowed-permanent'
+  | 'allow_prefix_session'
+  | 'rejected'
 
-const OPTION_LABEL: Record<ApprovalOption, LocaleKey> = {
+const OPTION_LABEL: Partial<Record<string, LocaleKey>> = {
   allow_once: 'approval.allowOnce',
   allow_always: 'approval.allowSession',
   allow_permanent: 'approval.allowPermanent',
   reject_once: 'approval.reject',
 }
-const OPTION_VERDICT: Record<ApprovalOption, Verdict> = {
+const OPTION_VERDICT: Partial<Record<string, Verdict>> = {
   allow_once: 'allowed-once',
   allow_always: 'allowed-session',
   allow_permanent: 'allowed-permanent',
   reject_once: 'rejected',
+}
+
+type Action = { verdict: Verdict; label: string }
+
+/**
+ * What the card offers, in order: the option kinds it knows (an unknown one from a newer daemon is
+ * skipped, never shown unlabelled or answered blind) and, right after "allow once", Core's offered
+ * command prefix. The tokens are Core's; the card never derives a prefix of its own.
+ */
+function actionsOf(n: ApprovalNode, locale: Locale): Action[] {
+  const prefix = n.state === 'pending' ? n.prefixGrant : undefined
+  return n.options.flatMap((kind): Action[] => {
+    const key = OPTION_LABEL[kind]
+    const verdict = OPTION_VERDICT[kind]
+    if (!key || !verdict) return []
+    const own: Action = { verdict, label: t(key, locale) }
+    return kind === 'allow_once' && prefix
+      ? [
+          own,
+          {
+            verdict: 'allow_prefix_session',
+            label: t('approval.allowPrefix', locale, {
+              prefix: `\`${escapeControl(prefix.tokens.join(' '))}\``,
+            }),
+          },
+        ]
+      : [own]
+  })
 }
 
 /** A durable approval view; canonical identity and offered options come from the session projection. */
@@ -71,11 +104,11 @@ export class ApprovalCard implements Component {
 
   handleInput(data: string): boolean {
     if (this.phase !== 'pending' || !this.n.decisionRef || !/^[1-9]$/.test(data)) return false
-    const kind = this.n.options[Number(data) - 1]
-    if (!kind) return false
+    const action = actionsOf(this.n, this.o.locale ?? 'en')[Number(data) - 1]
+    if (!action) return false
     // Persisted approval cards use Agnes' four-option vocabulary. The live PermissionModal remains
     // ACP-only and therefore never maps `allow_always` to this profile-scoped permanent decision.
-    const verdict = OPTION_VERDICT[kind]
+    const verdict = action.verdict
     const ref = this.n.decisionRef
     this.phase = 'deciding'
     void this.o.onDecide(ref, verdict).then(
@@ -120,8 +153,8 @@ export class ApprovalCard implements Component {
     const chip = paintsColour(ansi)
       ? (key: string) => ansi.bg('accent', ansi.fg('onAccent', ` ${key} `))
       : (key: string) => ansi.bold(`[${key}]`)
-    const keys = n.options
-      .map((kind, i) => `${chip(String(i + 1))} ${t(OPTION_LABEL[kind], locale)}`)
+    const keys = actionsOf(n, locale)
+      .map((action, i) => `${chip(String(i + 1))} ${action.label}`)
       .join('  ')
     const rail = ansi.fg('warning', '│ ')
     return [

@@ -118,6 +118,12 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 
 命令前的 `sudo`、`env`、`command`、`exec`、`nohup`、`timeout`、`nice` 会被穿透；`&&`、`||`、`;`、`|` 连接的每一段都会检查；`bash|sh|zsh -c` 的载荷最多递归检查三层。无法解析的命令不会仅因解析失败被拒绝：会对整串文本和能抽出的字面片段做匹配，其余照常走审批。这是命令文本策略，不是解释器，也不是沙箱，足够混淆的命令可以绕过；真正的边界仍是沙箱和路径硬拒绝。
 
+### 命令前缀审批
+
+shell 命令需要审批时，审批卡可以多给一个选择：本会话内，以所给词开头的命令不再询问（例如「以 `git push` 开头的命令」）。前缀由 daemon 计算，客户端原样展示，自己不会拼前缀。只有当命令的每个部分（按 `&&`、`||`、`;`、`|` 切分）在授予后都会被覆盖、前缀词能放进 256 字符的授权范围、且前缀本身允许时才会提供。以下情形永远不提供：shell 与解释器（`bash`、`python -c`、`node -e` 等），`env`、`sudo`、`xargs`、`find`、`eval`、`exec`、`source`、`command`、`curl`、`wget`、`npx`，远程与容器运行器（`ssh`、`docker`、`kubectl`、`gh` 等），裸 `git`、`rm`、`npm`、`pnpm`、`yarn`、`bun`、`cargo`、`go`、`pip`、`uv`，`npm|pnpm|yarn|bun` 的 `run`、`exec`、`dlx`、`x`，以及看起来像凭据的词。
+
+前缀授权只在本会话有效，按整词比较而不是文本前缀：`git status` 覆盖 `git status -s`，不覆盖 `git statusx`。只有检查器完全理解的命令才会被覆盖：重定向、替换、变量、通配符、分组、后台 `&`、注释、行首的 `NAME=value` 或保留字、换行都会让命令变成不透明，不透明命令照常询问。前缀审批只适用于普通的一次性 POSIX shell 调用：后台或持久 shell、已有 shell 会话、PowerShell 等其他解释器（即 Windows 上的所有 shell 调用）、含非 ASCII 字符的命令、工作区之外的工作目录，都不会提供或认可前缀授权。前缀授权不会越过「始终要求审批」的工具、污染上下文、要求审批或拒绝的规则以及硬封锁。`agh approvals grants` 与 `/grants` 把它显示为 `prefix: git push`，`agh approvals revoke` 可撤销。不认识前缀审批的客户端仍然看到并回答原有选项。
+
 <a id="full-access-exceptions"></a>
 
 ### 完全访问不改变什么

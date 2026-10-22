@@ -3807,6 +3807,21 @@
                 "enum": ["allow_once", "allow_always", "allow_permanent", "reject_once"]
               }
             },
+            "prefixGrant": {
+              "type": "object",
+              "description": "Present on a pending shell approval when Core offers to allow every command that starts with these tokens for the rest of the session. Clients render the tokens exactly as given and answer with the decision option allow_prefix_session; they never derive a prefix themselves.",
+              "additionalProperties": false,
+              "required": ["tokens", "scope"],
+              "properties": {
+                "tokens": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 2,
+                  "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+                },
+                "scope": { "type": "string", "maxLength": 256 }
+              }
+            },
             "reconcile": {
               "type": "object",
               "description": "Present when Core asks whether a tool call whose result never arrived actually ran (decision owner core/unknown-outcome): the tool it asks about. The allowed options mean it ran; rejected means it did not.",

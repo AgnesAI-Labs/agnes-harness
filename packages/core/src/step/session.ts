@@ -653,6 +653,8 @@ export class SessionImpl {
    * A fresh instance rebuilds validated session grants from approval and call records before use.
    */
   readonly sessionAllows = new Set<string>()
+  /** Scopes (`shell:prefix:[…]`) of the command-prefix grants among `sessionAllows`. */
+  readonly sessionPrefixScopes = new Set<string>()
   readonly preview = new PreviewHub()
   /** Wrapping memo is optional; the durable header epochs determine historical envelope ids. */
   readonly envelopeCache: EnvelopeCache = createEnvelopeCache()

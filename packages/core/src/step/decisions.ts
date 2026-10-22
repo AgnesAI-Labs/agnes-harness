@@ -1,3 +1,4 @@
+import { acceptedOptions, SESSION_GRANT_OPTIONS } from '@agnes/core-common/command-table/prefix'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { Seq } from '@agnes/core-common/types'
 import { CoreError, type EventInput } from '@agnes/core-common/types'
@@ -581,7 +582,7 @@ export class DecisionCommands {
         value.invalidation ||
         value.request.lane !== this.s.lane ||
         value.result?.reason !== 'answered' ||
-        value.result.response.option !== 'allowed-session'
+        !SESSION_GRANT_OPTIONS.includes(value.result.response.option)
       )
         return false
       const at = new Date(this.s.clock()).toISOString()
@@ -649,7 +650,7 @@ export class DecisionCommands {
       if (!value.result && !value.invalidation) this.execution(value.handle.id)
       if (this.s.cancelled || value.result || value.invalidation || value.consumption) fail('NOT_PENDING')
       if (value.revision !== command.revision) throw new CoreError('E_CAS', 'Decision revision changed')
-      if (!value.request.spec.options.includes(command.response.option)) fail('UNOFFERED_ANSWER')
+      if (!acceptedOptions(value.request.spec).includes(command.response.option)) fail('UNOFFERED_ANSWER')
       if (
         value.request.spec.responseSchema &&
         compilePluginConfig(value.request.spec.responseSchema)(command.response.value).length

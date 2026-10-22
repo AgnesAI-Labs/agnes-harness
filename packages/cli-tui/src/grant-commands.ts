@@ -4,6 +4,20 @@ import type { SlashResult } from './commands.js'
 import { tt } from './locale-extended.js'
 import { oneLine } from './session-commands.js'
 
+/** `shell:prefix:["git","push"]` reads as `prefix: git push`; any other scope is shown as it is. */
+function scopeText(scope: string): string {
+  const head = 'shell:prefix:'
+  if (!scope.startsWith(head)) return oneLine(scope)
+  try {
+    const tokens: unknown = JSON.parse(scope.slice(head.length))
+    if (Array.isArray(tokens) && tokens.every((token) => typeof token === 'string'))
+      return `prefix: ${oneLine(tokens.join(' '))}`
+  } catch {
+    // Not a prefix scope after all: show the raw text.
+  }
+  return oneLine(scope)
+}
+
 /** One inert line per grant: tool and scope text come from tools and plugins, never trusted. */
 export function grantLine(g: SessionApprovalGrant): string {
   return [
@@ -11,7 +25,7 @@ export function grantLine(g: SessionApprovalGrant): string {
     oneLine(g.toolId),
     g.lifetime,
     oneLine(g.createdAt),
-    oneLine(g.scope),
+    scopeText(g.scope),
     ...(g.revokedAt ? ['revoked'] : []),
   ].join('\t')
 }

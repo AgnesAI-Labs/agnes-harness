@@ -178,6 +178,27 @@ describe('web projection adapter', () => {
     })
   })
 
+  it('adds the daemon-offered prefix right after allow-once and skips option kinds it does not know', () => {
+    const node = {
+      kind: 'approval' as const,
+      id: 'p',
+      seq: 4,
+      state: 'pending' as const,
+      summary: 'run it',
+      risk: 'always' as const,
+      options: ['allow_once', 'allow_from_the_future', 'reject_once'] as never,
+      prefixGrant: { tokens: ['git', 'push'], scope: 'shell:prefix:["git","push"]' },
+      decisionRef: { sessionId: 's', id: 'ticket', revision: 1 },
+    }
+    const actions = durableApprovalActions(node, zhT)
+    expect(actions.map((action) => action.verdict)).toEqual([
+      'allowed-once',
+      'allow_prefix_session',
+      'rejected',
+    ])
+    expect(actions[1]?.label).toContain('`git push`')
+  })
+
   it('answers a reconciliation with «执行了 / 没执行» on the same options', () => {
     const asked: Extract<UITimeline['nodes'][number], { kind: 'approval' }> = {
       kind: 'approval',
