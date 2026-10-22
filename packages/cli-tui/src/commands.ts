@@ -182,6 +182,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.diff',
     summaryKey: 'commands.diffSummary',
   },
+  { name: '/init', descriptionKey: 'commands.init', summaryKey: 'commands.initSummary' },
 ]
 
 export function slashCommand(name: string): SlashCommand | undefined {
@@ -472,6 +473,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/status':
     case '/copy':
     case '/diff':
+    case '/init':
       return infoSlash(app, cmd, line)
     case '/pin':
     case '/unpin':

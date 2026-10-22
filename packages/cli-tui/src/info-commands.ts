@@ -126,6 +126,16 @@ async function diffSlash(app: TuiApp, args: string[]): Promise<SlashResult> {
   return { text: out.join('\n'), presentation: 'transcript' }
 }
 
+/** `/init`: never writes a file itself; the agent does, through its write tool and the usual approval. */
+async function initSlash(app: TuiApp): Promise<SlashResult> {
+  // The session's workspace may be on the daemon's machine, so ask the daemon rather than this disk.
+  const exists = await app.session.workspaceRead('AGENTS.md').then(
+    () => true,
+    () => false,
+  )
+  return { prompt: tt(exists ? 'init.existing' : 'init.new', app.locale) }
+}
+
 /** The small commands that report on the session or hand work to the agent. */
 export async function infoSlash(app: TuiApp, cmd: string, line: string): Promise<SlashResult> {
   const args = line.trim().split(/\s+/).slice(1)
@@ -136,6 +146,8 @@ export async function infoSlash(app: TuiApp, cmd: string, line: string): Promise
       return copySlash(app, args)
     case '/diff':
       return diffSlash(app, args)
+    case '/init':
+      return initSlash(app)
     default:
       return {}
   }

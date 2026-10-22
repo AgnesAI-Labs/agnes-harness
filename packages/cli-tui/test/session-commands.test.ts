@@ -552,4 +552,15 @@ describe('small info commands', () => {
     const other = localCommandView(ansi)('/status', '+not a diff').render(40)
     expect(other).toContain(ansi.dim('+not a diff'))
   })
+
+  it('/init submits a fixed message that depends on AGENTS.md, and writes nothing itself', async () => {
+    const workspaceRead = vi.fn(async (path: string) => ({ path }))
+    const app = appWith({}, { workspaceRead })
+    expect(await runSlash(app, '/init')).toEqual({ prompt: tt('init.existing', 'en') })
+    expect(workspaceRead).toHaveBeenCalledWith('AGENTS.md')
+    workspaceRead.mockRejectedValueOnce(new Error('not found'))
+    expect(await runSlash(app, '/init')).toEqual({ prompt: tt('init.new', 'en') })
+    expect(tt('init.new', 'en')).not.toBe(tt('init.existing', 'en'))
+    expect(tt('init.new', 'zh-CN')).not.toBe(tt('init.new', 'en'))
+  })
 })

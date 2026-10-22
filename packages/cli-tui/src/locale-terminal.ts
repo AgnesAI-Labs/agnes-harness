@@ -51,6 +51,8 @@ export const TERMINAL_KEYS = [
   'commands.copySummary',
   'commands.diff',
   'commands.diffSummary',
+  'commands.init',
+  'commands.initSummary',
   'copy.usage',
   'copy.none',
   'copy.range',
@@ -65,6 +67,8 @@ export const TERMINAL_KEYS = [
   'diff.limit',
   'diff.changed',
   'diff.more',
+  'init.new',
+  'init.existing',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -120,6 +124,8 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'commands.copySummary': 'Copy a reply',
     'commands.diff': 'Show the files this session changed with their diffs (turn: only the last turn)',
     'commands.diffSummary': 'Show workspace changes',
+    'commands.init': 'Ask the agent to write AGENTS.md for this project',
+    'commands.initSummary': 'Write AGENTS.md',
     'copy.usage': 'usage: /copy [n|code]',
     'copy.none': 'There is no reply to copy yet',
     'copy.range': 'Only {n} replies so far',
@@ -134,6 +140,10 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'diff.limit': 'diff too long, not shown',
     'diff.changed': 'changed again since',
     'diff.more': '... {n} more lines; run /diff <path> for the whole file',
+    'init.new':
+      'Look through this project (layout, build and test commands, conventions) and write an AGENTS.md at its root that tells a coding agent how to work in it. Keep it short and factual; do not invent commands you have not seen.',
+    'init.existing':
+      'This project already has an AGENTS.md. Read it, check it against the project as it is now, and add what is missing or out of date. Keep what is already correct and do not overwrite the file wholesale.',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -181,6 +191,8 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'commands.copySummary': '复制回复',
     'commands.diff': '查看本会话改动的文件及其 diff（turn：只看最近一个回合）',
     'commands.diffSummary': '查看工作区改动',
+    'commands.init': '让 agent 为本项目写出 AGENTS.md',
+    'commands.initSummary': '生成 AGENTS.md',
     'copy.usage': '用法：/copy [n|code]',
     'copy.none': '还没有可复制的回复',
     'copy.range': '目前只有 {n} 条回复',
@@ -195,5 +207,9 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'diff.limit': 'diff 过长，未显示',
     'diff.changed': '之后又被改动',
     'diff.more': '……还有 {n} 行；用 /diff <路径> 查看整个文件',
+    'init.new':
+      '请通读本项目（目录结构、构建与测试命令、约定），在项目根目录写一份 AGENTS.md，告诉编码 agent 如何在其中工作。保持简短、基于事实；没见过的命令不要编造。',
+    'init.existing':
+      '本项目已有 AGENTS.md。请读一遍，对照项目现状检查，补上缺失或过时的内容。已经正确的部分保留，不要整体覆盖。',
   },
 }

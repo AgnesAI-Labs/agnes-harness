@@ -44,6 +44,7 @@ node agnes.mjs
 | 状态 | `/status` 一屏显示会话、预设、模型、工作区、`AGH_HOME`、连接方式（本机 daemon 或 `--connect`）、上下文用量、花费、排队输入和 YOLO；读不到的值显示 `-` |
 | 复制 | `/copy` 把最近一条回复复制到剪贴板，`/copy N` 复制倒数第 N 条，`/copy code` 复制最近一条回复里的最后一个代码块 |
 | 工作区改动 | `/diff` 列出本会话改动的文件（`+新增 -删除 路径`）并显示前三个文件的 diff；`/diff turn` 只看最近一个回合，`/diff [turn] PATH` 完整显示一个文件。列表被截断、文件没有 diff（二进制、过大）、会话记录没有覆盖全部改动时，都会写明 |
+| 项目初始化 | `/init` 让 agent 写出 `AGENTS.md`，已有时则检查并补全。它只发送一条消息，自己不写文件；写入照常经过审批 |
 | 会话整理 | `/pin`、`/unpin`、`/rename TITLE`、`/archive` |
 | 审批授权 | `/grants` 列出本会话中无需询问即可运行工具的授权（「本会话」与「总是」）；`/grants revoke N\|ID` 撤销一条（需管理员连接） |
 | 交付物 | `/deliverables` 列出本会话交付的文件；`/deliverables save N\|ID [PATH]` 校验大小与 sha256 后下载 |
