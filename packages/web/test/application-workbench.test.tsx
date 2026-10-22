@@ -208,7 +208,14 @@ it('renders work chips, routes object links to reviewed launch intent and attrib
   expect(encodeApplicationWork('Plain request', applicationWorkDraft.read('returned-session'))).toBe(
     'Plain request',
   )
-  const session = { subscribe: () => () => {}, getSnapshot: () => 'returned-session' }
+  // The conversation reads the session's readiness to gate a failed turn's retry; this fixture is
+  // already admitted, so the snapshot is one stable ready value.
+  const readinessSnapshot = { status: 'ready', epoch: 0, sessionId: 'returned-session' }
+  const session = {
+    subscribe: () => () => {},
+    getSnapshot: () => 'returned-session',
+    readiness: { subscribe: () => () => {}, getSnapshot: () => readinessSnapshot },
+  }
   renderRegion(document.body, <ApplicationAttribution session={session as never} />)
   expect(document.body.textContent).toContain('Handled by NCR Reviewer')
   renderRegion(
