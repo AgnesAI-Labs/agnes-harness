@@ -431,3 +431,83 @@ describe('subagents in a workspace-bound Host session', () => {
     },
   )
 })
+
+describe('i01 ordinary child regression', () => {
+  it.each([false, true])(
+    'i01: bounds child file access using the observed child handle (%s)',
+    async (fullAccess) => {
+      const outside = realpathSync.native(tempDir('agnes-subagent-outside-'))
+      const escapePath = join(outside, 'escape.txt')
+      let host!: Awaited<ReturnType<typeof workspaceHost>>['host']
+      let direct: Promise<unknown> | undefined
+      const provider = new RoutedProvider(
+        [
+          toolCall('write', { path: escapePath, content: 'parent' }),
+          toolCall('subagent_fork', { question: 'write two files', isolation: 'shared' }),
+          () => {
+            const childKey = provider.childKeys[0]
+            if (!childKey) throw new Error('missing child inference request')
+            return toolCall('subagent_collect', { childKey, wait: true })
+          },
+          text('parent done'),
+        ],
+        [
+          (req) => {
+            // The child's own workspace capability, asked directly while the child is live.
+            const child = host.kernel.get(req.sessionKey)
+            direct = child?.d.workspaceInvocation?.run((view) =>
+              view.fs().write(escapePath, new TextEncoder().encode('direct')),
+            )
+            provider.childGate =
+              direct?.then(
+                () => undefined,
+                () => undefined,
+              ) ?? Promise.resolve()
+            return toolCall('write', { path: 'inside.txt', content: 'inside' })
+          },
+          toolCall('read', { path: escapePath }),
+          toolCall('write', { path: escapePath, content: 'child' }),
+          text('child done'),
+        ],
+      )
+      const opened = await workspaceHost(provider)
+      host = opened.host
+      const { session, root } = opened
+      try {
+        await session.setYolo(fullAccess, session.d.actor)
+        expect((await prompt(session, 'delegate writes')).reason).toBe('completed')
+        const [parentWrite, fork, collect] = await toolResults(session)
+        expect(fork?.isError).not.toBe(true)
+        expect(collect?.isError).not.toBe(true)
+        expect(textOf(collect)).toBe('child done')
+
+        const child = provider.childKeys[0] as string
+        const childRows = await session.d.log.storage.scan(child, { type: 'tool/result', limit: 10 })
+        const [inside, _readOutside, outsideWrite] = childRows.map(
+          (row) => row.data as ToolResult & { code?: string },
+        )
+        expect(inside?.isError).not.toBe(true)
+        expect(readFileSync(join(root, 'inside.txt'), 'utf8')).toBe('inside')
+        // The user's full-access choice governs descendants too; standard still stays fenced.
+        expect(parentWrite?.isError === true).toBe(!fullAccess)
+        expect(outsideWrite?.isError === true).toBe(!fullAccess)
+        if (fullAccess) {
+          await expect(direct).resolves.toBeUndefined()
+          expect(readFileSync(escapePath, 'utf8')).toBe('child')
+        } else {
+          expect(textOf(parentWrite)).toContain('E_FS_DENIED')
+          expect(textOf(outsideWrite)).toBe(textOf(parentWrite))
+          expect(outsideWrite?.code).toBe(parentWrite?.code)
+          expect(outsideWrite).toMatchObject({
+            enforcement: (parentWrite as { enforcement?: unknown }).enforcement,
+          })
+          expect(outsideWrite).toMatchObject({ enforcement: { level: 'full' } })
+          await expect(direct).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+          expect(existsSync(escapePath)).toBe(false)
+        }
+      } finally {
+        await host.close()
+      }
+    },
+  )
+})

@@ -90,3 +90,62 @@ it('reoffers the same child decision after process loss while pending, using the
     rmSync(home, { recursive: true, force: true })
   }
 }, 110000)
+
+it('review-f1: explicit close survives a real process restart and cannot revive an admitted role', async () => {
+  const homes = join(homedir(), 'agh-real-eval')
+  mkdirSync(homes, { recursive: true })
+  const home = mkdtempSync(join(homes, 'role-closed-epoch-security-'))
+  const fixture = await setupRoleEscalation(
+    async () => {
+      throw new Error('No preparation effects expected')
+    },
+    { home },
+  )
+  await fixture.host.close()
+  const config = join(home, 'crash-config.json')
+  writeFileSync(
+    config,
+    JSON.stringify({
+      dataDir: home,
+      packageDirs,
+      source: fixture.source,
+      target: fixture.target,
+      human: roleHuman,
+      role: fixture.refs[0],
+    }),
+  )
+  const worker = fileURLToPath(new URL('../fixtures/role-escalation-crash-worker.ts', import.meta.url))
+  const children: ReturnType<typeof spawn>[] = []
+  let output = ''
+  const run = async (phase: string) => {
+    const child = spawn(process.execPath, ['--import', 'tsx', worker, config, phase], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    children.push(child)
+    child.stdout?.on('data', (chunk) => {
+      output += chunk
+    })
+    child.stderr?.on('data', (chunk) => {
+      output += chunk
+    })
+    expect(await new Promise((resolve) => child.once('exit', resolve)), output).toBe(0)
+  }
+  try {
+    await run('close-admitted')
+    const stopped = JSON.parse(readFileSync(join(home, 'closed-state.json'), 'utf8'))
+    expect(stopped).toMatchObject({ blocked: 'E_CLOSED', wrote: false })
+    await run('resume-closed')
+    const restored = JSON.parse(readFileSync(join(home, 'closed-resume-result.json'), 'utf8'))
+    for (const question of restored.questions)
+      expect(question.decision.handle.sessionId).toBe(stopped.childKey)
+    if (restored.wrote) expect(readFileSync(join(home, 'cold.md'), 'utf8')).toBe('Cold child requirements')
+    expect({ cards: restored.questions.length, wrote: restored.wrote }).toEqual({ cards: 0, wrote: false })
+  } finally {
+    for (const child of children)
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    for (const child of children)
+      if (child.exitCode === null && child.signalCode === null)
+        await new Promise((resolve) => child.once('exit', resolve))
+    rmSync(home, { recursive: true, force: true })
+  }
+}, 60000)

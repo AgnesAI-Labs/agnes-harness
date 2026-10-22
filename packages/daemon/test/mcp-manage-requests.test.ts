@@ -1,17 +1,26 @@
 import { createHash } from 'node:crypto'
+import { EventEmitter } from 'node:events'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { Duplex } from 'node:stream'
 import { type AutomaticPermissionEvidence, withPermissionContext } from '@agnes/daemon-rpc/local/prompter'
+import { createTestHost } from '@agnes/host/testkit'
 import { jcs } from '@agnes/protocol'
 import {
   createResourceControlService,
   createResourceControlStore,
   localResourceAuthority,
 } from '@agnes/resource-control-store'
+import * as systemNode from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
+import { SharedSessionChannel, sessionPermissions } from '../../worker-runtime/src/shared-session-channel.js'
 import { LocalEndpoint } from '../src/local/endpoint.js'
+import { encodeFrame } from '../src/supervisor/framing.js'
 import { createMcpManageRequests } from '../src/supervisor/mcp-manage-requests.js'
+import { permissionRequest } from '../src/supervisor/permission-requests.js'
+import { WorkerLink } from '../src/supervisor/worker-link.js'
 
 const roots: string[] = []
 const endpoints: LocalEndpoint[] = []
@@ -30,6 +39,81 @@ const definition = {
   secretBinding: { kind: 'none' as const },
 }
 const revision = createHash('sha256').update(jcs(definition)).digest('hex')
+
+it.each(['immediate-notification', 'queued-notification'] as const)(
+  'security2: narrowing after the final MCP permission snapshot cannot publish enabled state with %s',
+  async (notification) => {
+    const s = await setup()
+    const prepared = await s.request({ action: 'prepare', definition })
+    let current = {
+      sessionKey: 'session',
+      sessionId: 'security2-mcp',
+      epoch: 0,
+      policy: 'full-access',
+      actor: { id: 'local', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+    }
+    const expected = structuredClone(current)
+    let revoked = false
+    let notified: Promise<unknown> | undefined
+    const commits: { policy: string; epoch: number }[] = []
+    const rename = systemNode.renameWriteThroughSync
+    const spy = vi.spyOn(systemNode, 'renameWriteThroughSync').mockImplementation((source, target) => {
+      if (target.endsWith('.mcp.json')) {
+        const pending = JSON.parse(readFileSync(source, 'utf8')) as {
+          servers?: Record<string, { desired?: string }>
+        }
+        if (pending.servers?.fixture?.desired === 'enabled')
+          commits.push({ policy: current.policy, epoch: current.epoch })
+      }
+      return rename(source, target)
+    })
+    try {
+      await withPermissionContext(
+        expected,
+        () => undefined,
+        async () => {
+          await s.request({ action: 'commit', proposalId: prepared.proposalId }).catch(() => undefined)
+        },
+        async () => {
+          const snapshot = structuredClone(current)
+          for (const relative of await readdir(s.root, { recursive: true })) {
+            if (!String(relative).includes('.mcp.json.') || !String(relative).endsWith('.tmp')) continue
+            let pending: { servers?: Record<string, { desired?: string }> }
+            try {
+              pending = JSON.parse(await readFile(join(s.root, String(relative)), 'utf8'))
+            } catch {
+              continue
+            }
+            if (!revoked && pending.servers?.fixture?.desired === 'enabled') {
+              revoked = true
+              queueMicrotask(() => {
+                current = { ...current, epoch: 1, policy: 'workspace-write' }
+                notified =
+                  notification === 'immediate-notification'
+                    ? s.abortLatest()
+                    : new Promise((resolve) => {
+                        setImmediate(() => {
+                          void s.abortLatest().then(resolve)
+                        })
+                      })
+              })
+            }
+          }
+          return snapshot
+        },
+      )
+      await notified
+      expect(revoked).toBe(true)
+      expect(current.policy).toBe('workspace-write')
+      expect(s.ask).not.toHaveBeenCalled()
+      expect(commits).not.toContainEqual({ policy: 'workspace-write', epoch: 1 })
+      const rows = await s.store.mcp.workerManaged('local-dev')
+      expect(rows[0]?.desired, JSON.stringify({ commits })).not.toBe('enabled')
+    } finally {
+      spy.mockRestore()
+    }
+  },
+)
 
 it('round2: an automatic MCP decision that expires after the prompt cannot register, trust or enable', async () => {
   const s = await setup()
@@ -242,6 +326,9 @@ async function setup() {
     service,
     request,
     connected,
+    dispatch: (key: string, id: string, method: string, raw: unknown, signal?: AbortSignal) =>
+      handler(key, id, method, raw, signal),
+    abortLatest: () => handler('session', 'security2-abort', 'mcp-manage-abort', { requestId: `r${seq}` }),
     restart: () => {
       handler = createMcpManageRequests(options)
     },
@@ -463,5 +550,154 @@ it.each(['full-access', 'workspace-write'])(
         },
       ])
     else expect(evidence).toEqual([])
+  },
+)
+
+it.each(['same-chunk', 'next-chunk'] as const)(
+  'security3: production channel revocation prevents a stale MCP commit with FIFO %s delivery',
+  async (delivery) => {
+    const s = await setup()
+    const prepared = await s.request({ action: 'prepare', definition })
+    const { host } = await createTestHost({ dataDir: join(s.root, 'host'), disableSessionTitle: true })
+    const session = await host.createSession({
+      key: 'session',
+      cwd: join(s.root, 'host'),
+      permission: 'workspace-write',
+    })
+    const standardPolicy = session.permissionContext.policy
+    expect(standardPolicy).not.toBe('full-access')
+    await session.setYolo(true, session.d.actor)
+    const expected = session.permissionContext
+    expect(expected.policy).toBe('full-access')
+    let buffered: unknown[] | undefined
+    let narrowed = false
+    let completed: Promise<unknown> | undefined
+    let abortDelivered: Promise<void> | undefined
+    let replyAndAbort: string[] = []
+    const commits: number[] = []
+    const commandErrors: unknown[] = []
+    const socket = new EventEmitter() as EventEmitter & { write(chunk: Buffer): boolean; end(): void }
+    const channel = new SharedSessionChannel(
+      (frame) => {
+        if (buffered) buffered.push(frame)
+        else socket.emit('data', encodeFrame(frame))
+      },
+      sessionPermissions((key) => (key === session.key ? session : undefined)),
+    )
+    const respond = async (command: {
+      kind: string
+      requestId: string
+      sessionKey: string
+      method?: string
+    }) => {
+      if (command.kind === 'reply') {
+        channel.settle(command as never)
+        return
+      }
+      if (command.kind !== 'command' || command.method !== 'permissionContext')
+        throw new Error('Unexpected worker command')
+      const snapshot = session.permissionContext
+      let enabling = false
+      for (const relative of await readdir(s.root, { recursive: true })) {
+        if (!String(relative).includes('.mcp.json.') || !String(relative).endsWith('.tmp')) continue
+        const text = await readFile(join(s.root, String(relative)), 'utf8').catch(() => '')
+        if (text && JSON.parse(text).servers?.fixture?.desired === 'enabled') enabling = true
+      }
+      const reply = {
+        kind: 'reply',
+        requestId: command.requestId,
+        sessionKey: command.sessionKey,
+        result: snapshot,
+      }
+      if (!narrowed && enabling) {
+        narrowed = true
+        // The query reply is already written, then the worker persists the real owner switch.
+        // Buffer both outgoing frames to model IPC that has not delivered either frame yet.
+        buffered = [reply]
+        await session.setYolo(false, session.d.actor)
+        const frames = buffered
+        buffered = undefined
+        replyAndAbort = frames.map(
+          (frame) => (frame as { method?: string; kind: string }).method ?? (frame as { kind: string }).kind,
+        )
+        if (delivery === 'same-chunk') socket.emit('data', Buffer.concat(frames.map(encodeFrame)))
+        else {
+          socket.emit('data', encodeFrame(frames[0]))
+          abortDelivered = new Promise((resolve) =>
+            setImmediate(() => {
+              socket.emit('data', Buffer.concat(frames.slice(1).map(encodeFrame)))
+              resolve()
+            }),
+          )
+        }
+      } else socket.emit('data', encodeFrame(reply))
+    }
+    socket.write = (chunk) => {
+      void respond(JSON.parse(chunk.toString())).catch((error) => commandErrors.push(error))
+      return true
+    }
+    socket.end = () => {
+      socket.emit('close')
+    }
+    const link = new WorkerLink(socket as unknown as Duplex, {
+      onEvent() {},
+      async onRequest(frame, signal) {
+        if (frame.method === 'mcp-manage-abort')
+          return s.dispatch(frame.sessionKey, frame.requestId, frame.method, frame.params, signal)
+        completed = permissionRequest(
+          frame.permissionContext,
+          s.root,
+          () => s.dispatch(frame.sessionKey, frame.requestId, frame.method, frame.params, signal),
+          () => link.commandForSession(frame.sessionKey, 'permissionContext', {}) as Promise<typeof expected>,
+        )
+        return completed
+      },
+    })
+    const rename = systemNode.renameWriteThroughSync
+    const spy = vi.spyOn(systemNode, 'renameWriteThroughSync').mockImplementation((source, target) => {
+      if (
+        target.endsWith('.mcp.json') &&
+        JSON.parse(readFileSync(source, 'utf8')).servers?.fixture?.desired === 'enabled'
+      )
+        commits.push(session.permissionContext.epoch)
+      return rename(source, target)
+    })
+    try {
+      const pending = channel
+        .run('session', () =>
+          channel.request(
+            'mcp-manage',
+            {
+              packageId: '@agnes/mcp-helper',
+              snapshotId: 'snapshot',
+              rowId: 'ext:mcp-helper/main',
+              sessionKey: 'session',
+              toolUseId: 'tool',
+              leaseId: 'lease',
+              input: { action: 'commit', proposalId: prepared.proposalId },
+            },
+            new AbortController().signal,
+          ),
+        )
+        .catch(() => undefined)
+      await pending
+      await completed?.catch(() => undefined)
+      await abortDelivered
+      expect(commandErrors).toEqual([])
+      expect(narrowed).toBe(true)
+      expect(replyAndAbort).toEqual(['reply', 'mcp-manage-abort'])
+      expect(session.permissionContext).toMatchObject({
+        policy: standardPolicy,
+        epoch: expected.epoch + 1,
+      })
+      expect(s.ask).not.toHaveBeenCalled()
+      const row = (await s.store.mcp.workerManaged('local-dev'))[0]
+      expect({ commits, enabled: row?.desired === 'enabled' }).toEqual({ commits: [], enabled: false })
+    } finally {
+      spy.mockRestore()
+      channel.closeAll()
+      link.close('test complete')
+      await host.close()
+    }
   },
 )
