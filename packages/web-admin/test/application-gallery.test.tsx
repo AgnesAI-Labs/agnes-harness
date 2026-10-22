@@ -1,13 +1,34 @@
 /** @vitest-environment happy-dom */
 import type { PackageCatalogDescriptor, PackageInstalledDescriptor } from '@agnes/protocol'
 import { applicationIdentity, homeNavigation } from '@agnes/web-client'
-import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
+import {
+  appServerErrorMessage,
+  clearResources,
+  createDocumentLocaleSource,
+  PushStack,
+  searchParamRoute,
+  UiLocaleProvider,
+} from '@agnes/web-ui'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
-import type { PluginAdminApi } from '../src/admin/plugins/api.js'
+import { AdminApiError, type PluginAdminApi } from '../src/admin/plugins/api.js'
+import { agentsCatalog } from '../src/agents/agents-locale.js'
 import { ApplicationCard } from '../src/agents/application-card.js'
 import type { BusinessAgentsData } from '../src/agents/gallery.js'
+import { START_FAILURE_CODES, StartError } from '../src/agents/start-flow.js'
+
+const planFailure = vi.hoisted(() => ({ error: undefined as unknown }))
+vi.mock('../src/agents/start-flow.js', async (importActual) => {
+  const actual = await importActual<typeof import('../src/agents/start-flow.js')>()
+  return {
+    ...actual,
+    planBusinessAgentStart: (...args: Parameters<typeof actual.planBusinessAgentStart>) => {
+      if (planFailure.error) throw planFailure.error
+      return actual.planBusinessAgentStart(...args)
+    },
+  }
+})
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 afterEach(() => {
@@ -16,6 +37,8 @@ afterEach(() => {
   clearResources()
   applicationIdentity.set(undefined)
   vi.restoreAllMocks()
+  planFailure.error = undefined
+  document.documentElement.lang = ''
 })
 
 it.each(['adopt', 'stale', 'readonly', 'denied', 'cancel'] as const)(
@@ -230,5 +253,78 @@ it.each(['missing', 'installed', 'adopted', 'unresolved'] as const)(
     } finally {
       await act(async () => root.unmount())
     }
+  },
+)
+
+const missingApp = {
+  id: 'test/failing-app',
+  version: '1.0.0',
+  contributions: [],
+  source: { type: 'file', ref: 'file:./failing' },
+  integrity: `sha256-${'a'.repeat(64)}`,
+  license: 'MIT',
+  compatibility: 'supported',
+  sourceId: 'test',
+  retrievedAt: '2026-10-20T00:00:00Z',
+  application: { id: 'failing', brand: { title: { en: 'Failing application' } } },
+} as PackageCatalogDescriptor
+
+/** Renders the card in `lang`, makes the start check fail with `error`, and returns the card text. */
+async function cardTextAfterFailedStart(lang: 'en' | 'zh-CN', error: unknown, api: object = {}) {
+  document.documentElement.lang = lang
+  planFailure.error = error
+  const data = { api, installed: [], refreshInstalled() {} } as unknown as BusinessAgentsData
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const locale = createDocumentLocaleSource({})
+  try {
+    await act(async () =>
+      root.render(
+        <UiLocaleProvider source={locale.source}>
+          <PushStack rootTitle="Applications" route={searchParamRoute('view')}>
+            <ApplicationCard entry={missingApp} data={data} />
+          </PushStack>
+        </UiLocaleProvider>,
+      ),
+    )
+    const start = [...host.querySelectorAll('button')].find(
+      (b) => b.textContent === (lang === 'en' ? 'Install and adopt' : '安装并采用'),
+    )
+    expect(start).toBeDefined()
+    await act(async () => start!.click())
+    await vi.waitFor(() => expect(host.querySelector('.agh-banner')).not.toBeNull())
+    return host.querySelector('.agh-banner')?.textContent ?? ''
+  } finally {
+    locale.dispose()
+    await act(async () => root.unmount())
+  }
+}
+
+it.each(
+  START_FAILURE_CODES.flatMap((code) => (['en', 'zh-CN'] as const).map((lang) => [code, lang] as const)),
+)('the application card words start failure %s in %s, never the raw code', async (code, lang) => {
+  const text = await cardTextAfterFailedStart(lang, new StartError({ step: 'install', code }))
+  // The banner is exactly the localized copy: no raw code token is left to show.
+  expect(text).toBe(agentsCatalog[lang]?.[`reason.${code}`])
+  expect(text).not.toBe(code)
+})
+
+it.each(['en', 'zh-CN'] as const)(
+  'the application card keeps the diagnostic ID of an internal error (%s)',
+  async (lang) => {
+    const id = '474ff098-190d-4aab-8ebf-4fc5aee12097'
+    const envelope = {
+      code: -32603,
+      message: 'INTERNAL_ERROR',
+      data: { code: 'E_ADMIN_BACKEND', messageKey: 'appServer.errors.internal', diagnosticId: id },
+    }
+    document.documentElement.lang = lang
+    const message = appServerErrorMessage(envelope, lang)
+    const list = async () => {
+      throw new AdminApiError({ code: 'E_ADMIN_BACKEND', message: message! })
+    }
+    // The real planner turns the failing read into a StartError that carries the safe message.
+    const text = await cardTextAfterFailedStart(lang, undefined, { list })
+    expect(text).toContain(lang === 'en' ? `Diagnostic ID: ${id}` : `诊断 ID：${id}`)
   },
 )

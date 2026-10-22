@@ -29,22 +29,29 @@ export type StartApi = Pick<
 >
 
 /** Why a step stopped: a stable code the dialog words, plus what the daemon said when it said anything. */
+export const START_FAILURE_CODES = [
+  'blocked',
+  'operation',
+  'timeout',
+  'trust-unknown',
+  'changed',
+  'not-running',
+  'restart-required',
+  'loop-missing',
+  'request',
+] as const
+export type StartFailureCode = (typeof START_FAILURE_CODES)[number]
 export type StartFailure = {
   step: StartStep
-  code:
-    | 'blocked'
-    | 'operation'
-    | 'timeout'
-    | 'trust-unknown'
-    | 'changed'
-    | 'not-running'
-    | 'restart-required'
-    | 'loop-missing'
-    | 'request'
+  code: StartFailureCode
   /** A daemon-authored, already safe message. */
   detail?: string | undefined
   hint?: string | undefined
 }
+/** What the person reads: the daemon's own safe message when there is one, else the copy for the code. */
+export const startFailureText = (failure: StartFailure, t: (key: `reason.${StartFailureCode}`) => string) =>
+  `${failure.detail ?? t(`reason.${failure.code}`)}${failure.hint ? ` ${failure.hint}` : ''}`
+
 export class StartError extends Error {
   readonly failure: StartFailure
   constructor(failure: StartFailure) {

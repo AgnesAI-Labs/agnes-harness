@@ -26,7 +26,9 @@ import {
   planBlocked,
   planBusinessAgentStart,
   runBusinessPackageInstall,
+  StartError,
   type StartPlan,
+  startFailureText,
 } from './start-flow.js'
 
 /** Only bounded raster discovery bytes, never URLs or executable catalogue content. */
@@ -96,7 +98,14 @@ export function ApplicationCard({
     try {
       await action(next.signal)
     } catch (e) {
-      if (!next.signal.aborted) setError(e instanceof Error ? e.message : t('reason.request'))
+      if (!next.signal.aborted)
+        setError(
+          e instanceof StartError
+            ? startFailureText(e.failure, t)
+            : e instanceof Error
+              ? e.message
+              : t('reason.request'),
+        )
     } finally {
       if (!next.signal.aborted) {
         setBusy(false)

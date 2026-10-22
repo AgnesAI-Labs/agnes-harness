@@ -29,6 +29,7 @@ import {
   type StartProgress,
   type StartStep,
   type StartTarget,
+  startFailureText,
 } from './start-flow.js'
 
 type Text = (key: string, vars?: Record<string, string | number>) => string
@@ -529,10 +530,7 @@ export function useBusinessAgentStart(options: {
               <StartSteps progress={phase.progress} t={t} />
               <Banner tone="error" data-testid="agent-start-error">
                 <strong>{t(`fail.${phase.failure.step}`)}</strong>
-                <span>
-                  {phase.failure.detail ?? t(`reason.${phase.failure.code}`)}
-                  {phase.failure.hint ? ` ${phase.failure.hint}` : ''}
-                </span>
+                <span>{startFailureText(phase.failure, t)}</span>
               </Banner>
               <p className="agent-start-help">{t(`fail.kept.${phase.failure.step}`)}</p>
               {phase.launch && <p>{t('launch.uncertain')}</p>}

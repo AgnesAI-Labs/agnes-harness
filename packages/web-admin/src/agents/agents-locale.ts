@@ -109,14 +109,22 @@ export const agentsCatalog: LocaleCatalog = {
     'fail.kept.trust': 'The plugin is installed and stays off.',
     'fail.kept.enable': 'The plugin is installed and trusted; it is not running yet.',
     'fail.kept.session': 'The plugin is on. You can start a session from the card.',
-    'reason.blocked': 'This package is not compatible with the current setup.',
-    'reason.operation': 'The background service reported a failure.',
-    'reason.timeout': 'The background service has not confirmed yet. Check Plugins in a moment.',
-    'reason.trust-unknown': 'What this version may access is not confirmed, so it cannot be trusted yet.',
-    'reason.changed': 'The version or its access changed since you reviewed it. Review it again.',
-    'reason.not-running': 'The plugin was enabled but did not start.',
-    'reason.restart-required': 'The plugin needs a restart of the background service before it runs.',
-    'reason.loop-missing': 'The plugin is running but offers no way of working to start a session with.',
+    'reason.blocked':
+      'This package cannot be installed here: it is not compatible with the current setup. Choose another package, or check Plugins for the reason.',
+    'reason.operation':
+      'The background service could not finish this step. Try again; if it keeps failing, check Plugins.',
+    'reason.timeout':
+      'The background service is taking too long to confirm. Wait a moment, check Plugins, then try again.',
+    'reason.trust-unknown':
+      'What this version may access is not confirmed, so it cannot be trusted yet. Choose another version, or ask its publisher.',
+    'reason.changed':
+      'The version or its access changed since you reviewed it. Close this and review it again before starting.',
+    'reason.not-running':
+      'The plugin was enabled but did not start. Open Plugins to see why, then try again.',
+    'reason.restart-required':
+      'The plugin needs the background service restarted before it runs. Restart it, then try again.',
+    'reason.loop-missing':
+      'The plugin is running but offers no way to start a session. Check that it is the right plugin, or contact its publisher.',
     'reason.request': 'The request did not reach the background service. Check the connection.',
     'blocker.dependency': 'a dependency is missing',
     'blocker.profile': 'the current profile does not allow it',
@@ -229,14 +237,14 @@ export const agentsCatalog: LocaleCatalog = {
     'fail.kept.trust': '插件已安装并保持停用。',
     'fail.kept.enable': '插件已安装并受信任，但还没有运行。',
     'fail.kept.session': '插件已启用，可以从卡片上开始新会话。',
-    'reason.blocked': '这个包与当前环境不兼容。',
-    'reason.operation': '后台报告了失败。',
-    'reason.timeout': '后台还没有确认，请稍后在「插件」里查看。',
-    'reason.trust-unknown': '这个版本会访问什么还没有确认，暂时不能信任。',
-    'reason.changed': '插件版本或能力范围已经变化，请确认最新内容后再次开始。',
-    'reason.not-running': '插件已启用，但没有运行起来。',
-    'reason.restart-required': '这个插件需要重启后台后才能运行。',
-    'reason.loop-missing': '插件已运行，但没有提供可用来开会话的运行方式。',
+    'reason.blocked': '这个包与当前环境不兼容，无法安装。请换一个包，或到「插件」里查看原因。',
+    'reason.operation': '后台没能完成这一步。请重试；仍然失败，请到「插件」里查看。',
+    'reason.timeout': '后台迟迟没有确认。请稍等片刻，到「插件」里查看，然后重试。',
+    'reason.trust-unknown': '这个版本会访问什么还没有确认，暂时不能信任。请换一个版本，或联系发布者。',
+    'reason.changed': '插件版本或能力范围已经变化。请关闭后重新查看最新内容，再开始。',
+    'reason.not-running': '插件已启用，但没有运行起来。请到「插件」里查看原因，再重试。',
+    'reason.restart-required': '这个插件需要重启后台后才能运行。请重启后台，再重试。',
+    'reason.loop-missing': '插件已运行，但没有提供可开会话的运行方式。请确认插件是否选对，或联系发布者。',
     'reason.request': '请求没有送达后台，请检查连接。',
     'blocker.dependency': '缺少依赖',
     'blocker.profile': '当前配置不允许',
