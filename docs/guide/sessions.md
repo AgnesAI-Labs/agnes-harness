@@ -91,6 +91,8 @@ it never removes the item and compensates with another message.
 
 A stop request, process exit, expired approval, and completed run are different events. Core recovers through persistent events and a state machine. Unknown side effects may require human confirmation. Recovery cannot guarantee exactly-once operations in external systems, and resending the same natural-language request is not a recovery protocol.
 
+A parked tool continuation keeps its original approval gate even if the current policy would otherwise allow the call. An allowed answer is consumed once with the tool's effect intent; after the continuation completes, Web no longer presents that decision as a pending operation. Recovery still checks current authorization and the original tool and policy binding.
+
 After a daemon failure, preserve the home and error, inspect `daemon status`, restart with the same profile, and check history before continuing. Do not delete SQLite, owner, or audit records to force a restart. Stop the relevant instance before backing up related data from its home. Copying a database file while it is being written is not a reliable backup.
 
 TUI `/rewind` (a picker of completed turns, or `/rewind SEQ`) and Web forking create a new session from a historical point. They do not undo file writes, recall network requests, or invalidate completed tools. Recovery applies current permissions; past authorization is not revived automatically.
