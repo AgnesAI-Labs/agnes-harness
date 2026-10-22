@@ -494,8 +494,15 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
   writeFileSync(dataFile, original.replace('v1-json', 'v2-json'))
   utimesSync(dataFile, stamp.atime, stamp.mtime)
   await expect(m.listRuntimePins(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  // Warm static inspection must never stand in for checking the retained tree's current bytes.
+  await expect(m.inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
   writeFileSync(dataFile, original)
   utimesSync(dataFile, stamp.atime, stamp.mtime)
+  expect((await m.listRuntimePins(profile)).map((row) => row.snapshot)).toEqual([
+    pin.snapshot,
+    second.snapshot,
+  ])
+  expect((await m.inventory(profile)).packages[0]?.trusted).toBe(true)
   writeFileSync(join(pin.snapshot.directory, 'tampered'), 'preserve')
   await expect(m.resolveRuntimePin(profile, { pinId: pin.pinId })).rejects.toMatchObject({
     code: 'E_PACKAGE_INTEGRITY',
@@ -508,6 +515,7 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
   writeFileSync(dataFile, original.replace('v1-json', 'v2-json'))
   // Unreferenced snapshots remain subject to verification, too.
   await expect(m.listRuntimePins(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  await expect(m.inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
   writeFileSync(dataFile, original)
   const unknown = join(dirname(pin.snapshot.directory), 'unknown-directory')
   mkdirSync(unknown)
