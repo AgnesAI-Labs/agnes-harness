@@ -4,6 +4,7 @@ import { lineColumn, lineStartOf, moveLine, nextWordEnd, prevWordStart } from '.
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
 import { type ActionOf, actionFor } from './keymap.js'
 import { type Key, parseKey } from './keys.js'
+import { KillRing } from './kill-ring.js'
 import { tt } from './locale-extended.js'
 import type { Tone } from './palette.js'
 import { HistorySearch, PromptHistory } from './prompt-history.js'
@@ -125,8 +126,14 @@ export class Editor implements Component {
   // Chip text to the pasted text it stands for; lives only as long as this process.
   private readonly pastes = new Map<string, string>()
   private pasteCount = 0
-  // The last text cut by Ctrl-K, Ctrl-U, Ctrl-W or Alt-D: one buffer, replaced by each cut, never the system clipboard.
-  private killed = ''
+  // The texts cut by Ctrl-K, Ctrl-U, Ctrl-W and Alt-D, never the system clipboard. A run of cuts in a row
+  // is one entry; Ctrl-Y pastes the newest and Alt-Y straight after it swaps in the one before.
+  private readonly ring = new KillRing()
+  // What the key before this one was, and what this one is: only 'kill' and 'yank' chain.
+  private prevChain: 'kill' | 'yank' | undefined
+  private chain: 'kill' | 'yank' | undefined
+  // The text the last paste put in, as a range, and how far back in the ring it came from.
+  private yanked: { from: number; to: number; back: number } | undefined
   private readonly undo = new UndoStack()
   // The display column vertical moves aim for, so a short line in between does not lose it.
   private goalColumn: number | undefined
@@ -181,6 +188,8 @@ export class Editor implements Component {
 
   handleInput(data: string): boolean {
     const k = parseKey(data, this.kitty)
+    this.prevChain = this.chain
+    this.chain = undefined
     if (this.search) return this.searching(k, data)
     const before = { text: this.text, cursor: this.cursor }
     const generation = this.undo.generation
@@ -339,21 +348,37 @@ export class Editor implements Component {
       case 'cut-to-end': {
         // At the end of a line the cut takes the newline, so lines can be joined.
         const end = this.lineEnd()
-        this.kill(this.cursor, end > this.cursor ? end : Math.min(this.text.length, end + 1))
+        this.kill(this.cursor, end > this.cursor ? end : Math.min(this.text.length, end + 1), false)
         return true
       }
       case 'cut-to-start':
-        this.kill(this.lineStart(), this.cursor)
+        this.kill(this.lineStart(), this.cursor, true)
         return true
       case 'cut-word-back':
-        this.kill(prevWordStart(this.text, this.cursor), this.cursor)
+        this.kill(prevWordStart(this.text, this.cursor), this.cursor, true)
         return true
       case 'cut-word':
-        this.kill(this.cursor, nextWordEnd(this.text, this.cursor))
+        this.kill(this.cursor, nextWordEnd(this.text, this.cursor), false)
         return true
-      case 'yank':
-        if (this.killed) this.insert(this.killed)
+      case 'yank': {
+        const text = this.ring.at(0)
+        if (text === undefined) return true
+        this.yanked = { from: this.cursor, to: this.cursor + text.length, back: 0 }
+        this.insert(text)
+        this.chain = 'yank'
         return true
+      }
+      case 'yank-pop': {
+        const last = this.prevChain === 'yank' ? this.yanked : undefined
+        if (!last || last.to > this.text.length) return true
+        const back = last.back + 1
+        const text = this.ring.at(back) ?? ''
+        this.text = this.text.slice(0, last.from) + text + this.text.slice(last.to)
+        this.cursor = last.from + text.length
+        this.yanked = { from: last.from, to: this.cursor, back }
+        this.chain = 'yank'
+        return true
+      }
       case 'undo':
       case 'redo': {
         const now = { text: this.text, cursor: this.cursor }
@@ -372,9 +397,12 @@ export class Editor implements Component {
     }
   }
 
-  private kill(from: number, to: number): void {
+  private kill(from: number, to: number, before: boolean): void {
+    const merge = this.prevChain === 'kill'
+    this.chain = merge ? 'kill' : undefined
     if (to <= from) return
-    this.killed = this.text.slice(from, to)
+    this.chain = 'kill'
+    this.ring.add(this.text.slice(from, to), merge, before)
     this.text = this.text.slice(0, from) + this.text.slice(to)
     this.cursor = from
   }

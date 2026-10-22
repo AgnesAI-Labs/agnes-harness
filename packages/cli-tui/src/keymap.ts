@@ -39,6 +39,7 @@ export const BINDINGS = [
   { id: 'cut-word-back', scope: 'editor', keys: ['ctrl-w', 'word-delete-back'] },
   { id: 'cut-word', scope: 'editor', keys: ['word-delete'] },
   { id: 'yank', scope: 'editor', keys: ['ctrl-y'] },
+  { id: 'yank-pop', scope: 'editor', keys: ['alt-y'] },
   { id: 'undo', scope: 'editor', keys: ['ctrl-z'] },
   { id: 'redo', scope: 'editor', keys: ['ctrl-shift-z'] },
   { id: 'external-edit', scope: 'editor', keys: ['ctrl-g'] },

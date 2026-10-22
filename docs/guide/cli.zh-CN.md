@@ -60,7 +60,7 @@ node agnes.mjs
 
 发送过的消息（包括斜杠命令）保存在 `<AGH_HOME>/tui-history.jsonl`（仅本人可读，保留最近 500 条，相邻重复不记），重启后按 ↑ 仍能找到。Ctrl-R 进入反向搜索：输入以缩小范围，再按 Ctrl-R 找更早的匹配，Enter 把匹配项放进输入框但不发送，Esc 退出搜索并恢复草稿。文件无法读写时，历史只在本次运行内有效。
 
-编辑键与 readline 一致。Ctrl-A、Ctrl-E 跳到行首、行尾，Ctrl-B、Ctrl-F 左右移一个字符，Alt-B、Alt-F 或 Ctrl-←、Ctrl-→ 按词移动（中文按词切分）。Ctrl-K 删到行尾，Ctrl-U 删到行首，Ctrl-W 或 Alt-Backspace 删光标前一个词，Alt-D 删后一个词；Ctrl-Y 粘回最近一次删掉的文本。删除内容只存在运行中的 TUI 的一个缓冲区里，每次删除都会覆盖它，不碰系统剪贴板。
+编辑键与 readline 一致。Ctrl-A、Ctrl-E 跳到行首、行尾，Ctrl-B、Ctrl-F 左右移一个字符，Alt-B、Alt-F 或 Ctrl-←、Ctrl-→ 按词移动（中文按词切分）。Ctrl-K 删到行尾，Ctrl-U 删到行首，Ctrl-W 或 Alt-Backspace 删光标前一个词，Alt-D 删后一个词；Ctrl-Y 粘回最近一次删掉的文本。运行中的 TUI 保留最近 16 次删除组成的 kill ring：连续的删除合并成一条（向后删的接在前面，向前删的接在后面），按其他键就中断连续；紧接着 Ctrl-Y 或 Alt-Y 再按 Alt-Y，把刚粘贴的内容换成上一条，循环切换。粘贴和每次切换各算一步撤销。kill ring 只存在内存里，不碰系统剪贴板。
 
 Ctrl-Z 撤销输入框里的上一次编辑，Ctrl-Shift-Z 重做（重做要求终端能报告 Shift，例如 kitty）。连续输入算一步，每次删除和每次粘贴各算一步。最多保留最近 100 步，发送消息或切换会话后清空。
 

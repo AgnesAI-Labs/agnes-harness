@@ -1002,21 +1002,66 @@ describe('Editor readline keys', () => {
     expect(zh.text).toBe('世界 foo')
   })
 
-  it('every cut replaces the buffer, a cut with nothing in it keeps it, and Ctrl-K at a line end joins lines', () => {
+  it('a run of cuts is one kill that grows the right way, and a cut that takes nothing does not break the run', () => {
     const e = at('aa bb')
     e.handleInput(CTRL.w)
     e.handleInput(CTRL.u)
     e.handleInput(CTRL.u)
     e.handleInput(CTRL.y)
-    expect(e.text).toBe('aa ')
+    expect(e.text).toBe('aa bb')
     const lines = at('ab\ncd', 2)
     lines.handleInput(CTRL.k)
     expect(lines.text).toBe('abcd')
     lines.handleInput(CTRL.u)
-    // Already at the start of the line: nothing to cut, and the buffer still holds the last cut.
     lines.handleInput(CTRL.u)
     lines.handleInput(CTRL.y)
-    expect(lines.text).toBe('abcd')
+    expect(lines.text).toBe('ab\ncd')
+    // Forward cuts append: Alt-D twice takes both words and Ctrl-Y puts them back in order.
+    const fwd = at('one two three', 0)
+    fwd.handleInput('\x1bd')
+    fwd.handleInput('\x1bd')
+    expect(fwd.text).toBe(' three')
+    fwd.handleInput(CTRL.y)
+    expect(fwd.text).toBe('one two three')
+  })
+
+  it('Alt-Y after Ctrl-Y swaps the paste for the previous kill, cycles, and does nothing otherwise', () => {
+    const ALT_Y = '\x1by'
+    const e = at('aa bb cc', 8)
+    e.handleInput(CTRL.w) // kill 'cc'
+    e.handleInput('x') // typing breaks the run: the next cut is a kill of its own
+    e.handleInput(CTRL.u) // kill 'aa bb x'
+    expect(e.text).toBe('')
+    e.handleInput(ALT_Y)
+    expect(e.text).toBe('')
+    e.handleInput(CTRL.y)
+    expect(e.text).toBe('aa bb x')
+    e.handleInput(ALT_Y)
+    expect(e.text).toBe('cc')
+    e.handleInput(ALT_Y)
+    expect(e.text).toBe('aa bb x')
+    // Any other key ends the chain.
+    e.handleInput('\x1b[D')
+    e.handleInput(ALT_Y)
+    expect(e.text).toBe('aa bb x')
+    // Each paste and each swap is one undo step.
+    const u = at('aa bb cc', 8)
+    u.handleInput(CTRL.w)
+    u.handleInput('x')
+    u.handleInput(CTRL.u)
+    u.handleInput(CTRL.y)
+    u.handleInput(ALT_Y)
+    expect(u.text).toBe('cc')
+    u.handleInput('\x1a')
+    expect(u.text).toBe('aa bb x')
+    u.handleInput('\x1a')
+    expect(u.text).toBe('')
+    // The kitty protocol spelling of Alt-Y is the same key.
+    const k = at('aa bb', 5)
+    k.handleInput(CTRL.w)
+    k.handleInput(CTRL.u)
+    k.handleInput(CTRL.y)
+    expect(k.handleInput('\x1b[121;3u')).toBe(true)
   })
 
   it('leaves Ctrl-C and Ctrl-D to the application', () => {
