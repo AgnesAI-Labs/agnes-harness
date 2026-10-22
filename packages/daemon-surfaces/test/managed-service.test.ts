@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { ProcessIdentity } from '@agnes/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { acquireManagedLease } from '../src/managed/lease.js'
@@ -293,10 +294,51 @@ describe('managed service supervisor', () => {
     expect(recovered.owner()).toEqual({ pid: 42, startId: 'boot:original' })
     recovered.record('active')
     expect(recovered.owner()).toBeUndefined()
-    recovered.diagnose('shutdown-unconfirmed')
-    expect(recovered.diagnostics()).toEqual(['shutdown-unconfirmed'])
     recovered.record('stopped')
     recovered.release()
+  })
+
+  it('keeps one instance row and rebuilds a lease file left by the three-table layout', () => {
+    const d = directory()
+    const key = 'legacy-layout-service'
+    const first = acquireManagedLease(d, key)
+    first.record('active')
+    first.release()
+    const file = join(d, `${first.id}.db`)
+    const inventory = () => {
+      const db = new DatabaseSync(file, { readOnly: true })
+      try {
+        return {
+          tables: db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`).all(),
+          columns: (db.prepare('PRAGMA table_info(instance)').all() as Array<{ name: string }>).map(
+            (c) => c.name,
+          ),
+        }
+      } finally {
+        db.close()
+      }
+    }
+    expect(inventory()).toEqual({
+      tables: [{ name: 'instance' }],
+      columns: ['id', 'state', 'pid', 'start_id'],
+    })
+    const legacy = new DatabaseSync(file)
+    legacy.exec(`DROP TABLE instance;
+      CREATE TABLE instance (id INTEGER PRIMARY KEY CHECK(id=1), state TEXT NOT NULL);
+      CREATE TABLE process_owner (id INTEGER PRIMARY KEY CHECK(id=1), pid INTEGER NOT NULL, start_id TEXT);
+      CREATE TABLE diagnostics (seq INTEGER PRIMARY KEY, reason TEXT NOT NULL);
+      INSERT INTO instance VALUES (1, 'stopped');
+      INSERT INTO process_owner VALUES (1, 42, 'boot:old');
+      INSERT INTO diagnostics (reason) VALUES ('health-failed');`)
+    legacy.close()
+    const rebuilt = acquireManagedLease(d, key)
+    expect(rebuilt.previous).toBeUndefined()
+    expect(rebuilt.owner()).toBeUndefined()
+    rebuilt.release()
+    expect(inventory()).toEqual({
+      tables: [{ name: 'instance' }],
+      columns: ['id', 'state', 'pid', 'start_id'],
+    })
   })
   it.each([
     { name: 'dead child', state: 'active', startId: 'boot:child', found: { state: 'dead' }, recover: true },

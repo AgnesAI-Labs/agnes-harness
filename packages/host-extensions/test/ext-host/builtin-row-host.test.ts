@@ -16,7 +16,7 @@ const platform = Object.freeze({
   fs: Object.freeze({ caseSensitive: true, pathSep: '/' }),
   terminal: Object.freeze({ color: false }),
 } as const)
-const info = { agnesVersion: '0.0.0', apiVersion: '4.0.0', profileName: 'test' }
+const info = { agnesVersion: '0.0.0', apiVersion: '5.0.0', profileName: 'test' }
 const ROW = 'ext:agnes/tools-search'
 const ID = 'agnes/tools-search'
 
@@ -24,7 +24,7 @@ const manifest = (extra: Record<string, unknown> = {}): ExtensionManifest =>
   ({
     id: ID,
     version: '0.1.0',
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     entry: './index.js',
     capabilities: { tools: { prefix: '', names: ['grep', 'find'] }, hooks: ['shutdown'], ...extra },
   }) as ExtensionManifest
@@ -443,7 +443,7 @@ const fullManifest = (budget?: number): ExtensionManifest =>
   ({
     id: ID,
     version: '0.1.0',
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     entry: './index.js',
     capabilities: {
       tools: { prefix: '', names: ['grep', 'find'] },

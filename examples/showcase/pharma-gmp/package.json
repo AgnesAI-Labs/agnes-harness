@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/pharma-gmp",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -57,7 +57,7 @@
       {
         "id": "ext:@agnes-showcase/pharma-gmp/main",
         "export": "main",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "inject": [
           "tools",
           "services",
@@ -91,14 +91,14 @@
       {
         "id": "ext:@agnes-showcase/pharma-gmp/cards",
         "export": "cards",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "capabilities": {
           "ui": true
         }
       }
     ],
     "hostProvidedExternals": {
-      "@agnes/extension-api": "^4.0.0",
+      "@agnes/extension-api": "^5.0.0",
       "@agnes/plugin-runtime": "0.0.0",
       "@sinclair/typebox": "~0.34.0"
     },

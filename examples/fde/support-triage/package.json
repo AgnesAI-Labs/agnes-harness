@@ -1,6 +1,6 @@
 {
   "name": "@agnes-fde/support-triage",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -22,7 +22,7 @@
     "test": "vitest run test/workflow.test.mjs --maxWorkers=1"
   },
   "dependencies": {
-    "@agnes/extension-api": "^4.0.0",
+    "@agnes/extension-api": "^5.0.0",
     "@agnes/plugin-runtime": "0.0.0",
     "@sinclair/typebox": "0.34.33",
     "@agnes/protocol": "0.0.0"
@@ -31,7 +31,7 @@
     "plugins": [
       {
         "export": "main",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "id": "ext:@agnes-fde/support-triage/main",
         "inject": [
           "tools",

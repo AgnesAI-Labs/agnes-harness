@@ -142,19 +142,20 @@ export const artifactsLocal: SeamFactory<ArtifactsSeam> = async (ctx) => {
     poll: (jobId) => jobs.poll(jobId),
     cancel: (jobId) => jobs.cancel(jobId),
   }
-  const metadata = ctx.adapters.storage.namespace?.('attachments-v1')
-  if (metadata) {
-    const putStream = ctx.privateArtifactStore?.putStream?.bind(ctx.privateArtifactStore)
-    const attachments = createAttachmentStore(
-      metadata,
-      seam,
-      putStream
-        ? (artifact, source, signal) => putStream(artifact.sha256, artifact.size, source, signal)
-        : undefined,
-    )
-    const cache = ctx.adapters.storage.namespace?.('attachment-images-v1')
-    if (cache) attachments.imageVersion = imageVersions(attachments, seam, cache)
-    Object.assign(seam, { attachments })
-  }
+  const metadata = ctx.adapters.storage.namespace('attachments-v1')
+  const putStream = ctx.privateArtifactStore?.putStream?.bind(ctx.privateArtifactStore)
+  const attachments = createAttachmentStore(
+    metadata,
+    seam,
+    putStream
+      ? (artifact, source, signal) => putStream(artifact.sha256, artifact.size, source, signal)
+      : undefined,
+  )
+  attachments.imageVersion = imageVersions(
+    attachments,
+    seam,
+    ctx.adapters.storage.namespace('attachment-images-v1'),
+  )
+  Object.assign(seam, { attachments })
   return seam
 }

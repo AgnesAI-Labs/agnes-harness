@@ -5,10 +5,8 @@ import { isProxy } from 'node:util/types'
 import type { HostPersistence } from '@agnes/host-infrastructure/adapters/storage-provider'
 import {
   createMetadataLockedPackageOperationReceiptPort,
-  createSqliteLockedPackageOperationReceiptPort,
   type HostLockedPackageActivationRecord,
   type HostLockedPackageOperationReceiptPort,
-  migrateLockedPackageReceipts,
 } from './locked-package-receipts-sqlite.js'
 
 const TOKEN = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,255}$/
@@ -442,13 +440,10 @@ function unavailableReceipts(): HostLockedPackageOperationReceiptPort {
 }
 
 function openLockedPackageReceipts(
-  storage: Pick<HostPersistence, 'tables'> & Partial<Pick<HostPersistence, 'metadata' | 'sqlite'>>,
+  storage: Pick<HostPersistence, 'metadata'>,
 ): HostLockedPackageOperationReceiptPort {
   try {
-    if (storage.metadata && storage.sqlite) migrateLockedPackageReceipts(storage, storage.metadata)
-    return storage.metadata
-      ? createMetadataLockedPackageOperationReceiptPort(storage.metadata)
-      : createSqliteLockedPackageOperationReceiptPort(storage)
+    return createMetadataLockedPackageOperationReceiptPort(storage.metadata)
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('E_LOCKED_PACKAGE_RECEIPT_'))
       return unavailableReceipts()
@@ -457,7 +452,7 @@ function openLockedPackageReceipts(
 }
 
 export async function createHostLockedPackageMutationRuntime(
-  storage: Pick<HostPersistence, 'tables'> & Partial<Pick<HostPersistence, 'metadata' | 'sqlite'>>,
+  storage: Pick<HostPersistence, 'metadata'>,
   options?: HostLockedPackageMutationOptions,
 ): Promise<HostLockedPackageMutationRuntime> {
   const receipts = openLockedPackageReceipts(storage)

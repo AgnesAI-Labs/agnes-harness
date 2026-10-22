@@ -43,7 +43,7 @@ agh plugins add ./hello-tool.tgz
   "agnes": {
     "plugins": [
       {
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "export": "main",
         "capabilities": {
           "network": ["api.example.com", "*.example.org"],

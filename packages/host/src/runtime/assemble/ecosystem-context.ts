@@ -1,4 +1,4 @@
-import type { SeamImplementations } from '@agnes/core'
+import { hasChildControl, type SeamImplementations } from '@agnes/core'
 import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
@@ -29,6 +29,18 @@ export function createEcosystemContexts(
   const { baseContext } = seamContexts
   const sessionTasks: { current?: SeamInitContext['sessionTasks'] } = {}
   const privacyTrajectory: { current?: SeamInitContext['privacyTrajectory'] } = {}
+  const storage = adapters.storage
+  // Only the two primary-key calls subagent worktree binding needs, never the whole store. Like
+  // sessionTasks it goes to every @agnes/base-owned context; Base's ecosystem map strips it from
+  // every factory but agnes/subagent, while the MCP server rows and the isolated hooks-runner
+  // preparation receive it unnarrowed and do not read it.
+  const childControl =
+    hasChildControl(storage) && storage.updateWorkspace
+      ? Object.freeze({
+          lookupByKey: storage.lookupByKey.bind(storage),
+          updateWorkspace: storage.updateWorkspace.bind(storage),
+        })
+      : undefined
   const hookCommands =
     adapters.platform.os === 'win32'
       ? trustedHookCommands(ctx.profile.commandHooks, workspaceRoot, adapters.platform.fs())
@@ -48,6 +60,7 @@ export function createEcosystemContexts(
       ...baseContext(owner),
       sandbox: seams.sandbox,
       ...(grant.sessionTasks && sessionTasks.current ? { sessionTasks: sessionTasks.current } : {}),
+      ...(grant.childControl && childControl ? { childControl } : {}),
       ...(grant.searchProvider && deps.searchProvider ? { searchProvider: deps.searchProvider } : {}),
       ...(grant.trustedHookCommands && hookCommands ? { trustedHookCommands: hookCommands } : {}),
       ...(liveResources?.includes('skills') && skills ? { skillResources: skills } : {}),

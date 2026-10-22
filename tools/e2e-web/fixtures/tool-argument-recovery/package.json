@@ -8,7 +8,7 @@
     "plugins": [
       {
         "export": "argumentRecovery",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "id": "ext:agnes-e2e/tool-argument-recovery",
         "inject": [
           "tools"

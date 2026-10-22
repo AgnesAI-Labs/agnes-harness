@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/devboard",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -36,7 +36,7 @@
       {
         "id": "ext:@agnes-showcase/devboard/main",
         "export": "main",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "inject": [
           "tools",
           "services",

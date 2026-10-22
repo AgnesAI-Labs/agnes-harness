@@ -124,7 +124,7 @@ export function mcpServerRowsFromDefinitions(
         manifest: Object.freeze({
           id: extensionId,
           version: '0.1.0',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           entry: './index.mjs',
           // Each server can register only its own stable tool names. Shared resource tools
           // live on `agnes/mcp-resources`, which owns their separate grant.
@@ -137,7 +137,7 @@ export function mcpServerRowsFromDefinitions(
         factory: (ctx: Parameters<typeof mcpCatalogHubFor>[0]) =>
           extensionFactoryOf(
             mcpServerExtension(cfg, {
-              catalogHub: mcpCatalogHubFor(ctx),
+              catalogHub: mcpCatalogHubFor({ signal: ctx.signal, adapters: ctx.adapters }),
               connect: (_cfg: McpServerConfig, signal: AbortSignal) =>
                 leaseMcpConnection(opener, `${serverId}\0${revision}`, definition, signal),
               ...(options.onFirstAttempt

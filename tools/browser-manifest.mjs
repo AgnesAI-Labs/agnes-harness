@@ -44,7 +44,7 @@ const metadata = {
 }
 const manifest = {
   name: '@agnes/browser',
-  version: '0.1.9',
+  version: '0.1.10',
   type: 'module',
   license: 'Apache-2.0',
   exports: './index.mjs',
@@ -55,7 +55,7 @@ const manifest = {
       {
         id: 'ext:browser/main',
         export: 'main',
-        apiRange: '^4.0.0',
+        apiRange: '^5.0.0',
         runtime: 'in-process',
         inject: ['tools', 'hooks', 'services', 'profileRuntime'],
         metadata,

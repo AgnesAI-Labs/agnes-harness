@@ -60,7 +60,7 @@ it('a fresh home does not evaluate repository plugins or other repository code u
       type: 'module',
       license: 'MIT',
       exports: './index.mjs',
-      agnes: { plugins: [{ apiRange: '^4.0.0', export: 'main' }] },
+      agnes: { plugins: [{ apiRange: '^5.0.0', export: 'main' }] },
     }),
   )
   writeFileSync(join(source, 'index.mjs'), entry)

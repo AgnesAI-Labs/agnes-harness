@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { SqliteToolIndex } from '../../../src/mcp/index-table.js'
 import { MemFts } from '../../../testkit/mem-fts.js'
-import { MemTable } from '../../../testkit/mem-table.js'
+import { MemNamespace } from '../../../testkit/seam-init.js'
 import { createMcpCatalogHub, McpCatalogNameConflictError, mcpCatalogHubFor } from '../src/catalog-hub.js'
 
 function row(name: string) {
@@ -115,12 +114,22 @@ describe('createMcpCatalogHub claimants (MCP-ROWS step 3: an update replaces a r
   })
 })
 
-/** A context like the one Host builds: one signal per Host, storage scoped to one table store. */
-function hostContext(table = new MemTable('tool_index')) {
+/** A context like the one Host builds: one signal per Host, storage scoped to one owner. */
+function hostContext(ns = new MemNamespace()) {
   const controller = new AbortController()
   return {
-    table,
-    ctx: { signal: controller.signal, adapters: { storage: { table: () => table } } },
+    ns,
+    ctx: {
+      signal: controller.signal,
+      adapters: {
+        storage: {
+          table: (): never => {
+            throw new Error('the tool index must not open SQL')
+          },
+          namespace: () => ns,
+        },
+      },
+    },
   }
 }
 
@@ -129,7 +138,10 @@ describe('mcpCatalogHubFor', () => {
     const { ctx } = hostContext()
     const first = mcpCatalogHubFor(ctx)
     // Host builds a new context object per extension load; only the signal is shared.
-    const rebuilt = { signal: ctx.signal, adapters: { storage: { table: ctx.adapters.storage.table } } }
+    const rebuilt = {
+      signal: ctx.signal,
+      adapters: { storage: { table: ctx.adapters.storage.table, namespace: ctx.adapters.storage.namespace } },
+    }
     expect(mcpCatalogHubFor(rebuilt)).toBe(first)
   })
 
@@ -142,10 +154,10 @@ describe('mcpCatalogHubFor', () => {
   })
 
   it('clears stale rows once, on the first call in a Host, and never again', () => {
-    const table = new MemTable('tool_index')
-    // A row a previous, killed Host left in the durable table.
-    new SqliteToolIndex(table).upsert([row('mcp_stale_tool')])
-    const { ctx } = hostContext(table)
+    const ns = new MemNamespace()
+    // A row a previous, killed Host left in the durable namespace.
+    ns.set('mcp_stale_tool', row('mcp_stale_tool'))
+    const { ctx } = hostContext(ns)
 
     const hub = mcpCatalogHubFor(ctx)
     expect(hub.get('mcp_stale_tool')).toBeUndefined()

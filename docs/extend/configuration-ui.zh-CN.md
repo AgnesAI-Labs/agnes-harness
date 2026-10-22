@@ -89,7 +89,7 @@ const unregister = ctx.settingsSections.register({
 {
   "export": "businessAgent",
   "id": "ext:acme/support",
-  "apiRange": "^4.0.0",
+  "apiRange": "^5.0.0",
   "configReload": "next-session",
   "configSchema": {
     "type": "object",

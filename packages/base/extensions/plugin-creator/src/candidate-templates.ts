@@ -66,7 +66,7 @@ export function candidateTemplate(template: string, name: string): { path: strin
   pkg.files = ['src', 'client', 'skills', 'mcp.json']
   delete pkg.dependencies
   delete pkg.devDependencies
-  pkg.agnes.plugins = pkg.agnes.plugins.map((p: object) => ({ ...p, apiRange: '^4.0.0' }))
+  pkg.agnes.plugins = pkg.agnes.plugins.map((p: object) => ({ ...p, apiRange: '^5.0.0' }))
   pkg.scripts = { test: 'node --test test/*.test.mjs' }
   manifest.content = JSON.stringify(pkg, null, 2) + '\n'
   if (template === 'tool') files.push({ path: 'test/scripted.test.mjs', content: scriptedToolTest })

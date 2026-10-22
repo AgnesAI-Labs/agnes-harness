@@ -9,7 +9,7 @@
       {
         "id": "ext:example/interaction-renderer",
         "export": "main",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "runtime": "in-process",
         "capabilities": {
           "ui": true

@@ -61,7 +61,7 @@ try {
         exports: './index.mjs',
         agnes: {
           plugins: [
-            { apiRange: '^4.0.0', export: 'runtime', id: `ext:bench-${index}/main`, runtime: 'in-process' },
+            { apiRange: '^5.0.0', export: 'runtime', id: `ext:bench-${index}/main`, runtime: 'in-process' },
           ],
         },
       }),

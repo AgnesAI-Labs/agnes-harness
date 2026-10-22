@@ -48,7 +48,7 @@ async function currentSnapshot() {
       version: '1.0.0',
       license: 'MIT',
       exports: './index.mjs',
-      agnes: { plugins: [{ apiRange: '^4.0.0', export: 'runtime', runtime: 'in-process' }] },
+      agnes: { plugins: [{ apiRange: '^5.0.0', export: 'runtime', runtime: 'in-process' }] },
     }),
   )
   writeFileSync(

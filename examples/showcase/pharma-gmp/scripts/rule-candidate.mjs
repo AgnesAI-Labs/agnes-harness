@@ -14,7 +14,7 @@ export function ruleFiles() {
         {
           id: 'ext:sableleaf-calibration-window/main',
           export: 'main',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           inject: ['tools', 'skills'],
         },
       ],

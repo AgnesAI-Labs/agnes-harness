@@ -2,8 +2,7 @@ import type { Context } from '@agnes/cordis'
 import type { SeamImplementations } from '@agnes/core'
 import { bindApprovalTicket } from '@agnes/host-common/profile-policy'
 import { createMutableSeamImplementations } from '@agnes/plugin-runtime/host'
-import { lazyPackageTables } from '../adapters/index.js'
-import { createApprovalGrantControlPlane, migrateApprovalGrants } from '../approval/grants.js'
+import { createApprovalGrantControlPlane } from '../approval/grants.js'
 import type { AssemblyContext } from './context.js'
 import type { ProcessServices } from './process-services.js'
 import type { SeamContexts } from './seam-contexts.js'
@@ -34,12 +33,7 @@ export function openSeamSet(
     ctx.gates.publicationDispatch,
   )
   const approvalGrantControl = createApprovalGrantControlPlane(
-    (() => {
-      const ns = adapters.storage.metadata.namespace('@agnes/host/approval-grants', 'grants')
-      if (adapters.storage.sqlite)
-        migrateApprovalGrants(lazyPackageTables(adapters.storage, '@agnes/host/approval-grants'), ns)
-      return ns
-    })(),
+    adapters.storage.metadata.namespace('@agnes/host/approval-grants', 'grants'),
     (grantId) => {
       bindApprovalTicket(ctx.gates.hotPolicy, grantId)
     },

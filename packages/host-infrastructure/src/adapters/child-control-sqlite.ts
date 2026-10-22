@@ -244,8 +244,6 @@ export function sqliteChildControl(
       'UPDATE child_workspaces SET phase = ?, path = ?, root = ?, branch = ? WHERE workspace_id = ?',
     ),
     updateTaskCwd: db.prepare('UPDATE child_tasks SET cwd = ? WHERE child_key = ?'),
-    wsByPath: db.prepare('SELECT * FROM child_workspaces WHERE path = ?'),
-    wsByChild: db.prepare('SELECT * FROM child_workspaces WHERE child_key = ?'),
     maxPermit: db.prepare(
       `SELECT permit_id FROM budget_reservations WHERE permit_id LIKE 'p%' ORDER BY length(permit_id) DESC, permit_id DESC LIMIT 1`,
     ),
@@ -584,9 +582,6 @@ export function sqliteChildControl(
         )
         if (patch.path !== undefined) q.updateTaskCwd.run(patch.path, row.child_key)
       })
-    },
-    async lookupWorkspaceByPath(path) {
-      return parseWorkspace(q.wsByPath.get(path) as WorkspaceRow | undefined)
     },
     async reserve(req: ReserveRequest): Promise<ReserveResult> {
       return tx(() => {

@@ -100,7 +100,7 @@ async function installClientPackage(dataDir: string, profileDir: string) {
           {
             id: 'ext:fixture/panel',
             export: 'plugin',
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             runtime: 'in-process',
             capabilities: { ui: true },
           },

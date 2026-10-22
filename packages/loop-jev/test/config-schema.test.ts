@@ -20,7 +20,7 @@ describe('ext:agnes.jev/loop plugin row', () => {
       configReload: 'next-session',
       inject: ['providers'],
       runtime: 'in-process',
-      apiRange: '^4.0.0',
+      apiRange: '^5.0.0',
     })
   })
   it('compiles as a plugin configuration schema that accepts the defaults and refuses out-of-range values', () => {

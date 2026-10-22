@@ -48,7 +48,7 @@ function seamProvidersRow(module: PackageModule) {
   return Object.freeze({
     declaration: Object.freeze({
       export: 'seamProvidersPlugin',
-      apiRange: '^4.0.0',
+      apiRange: '^5.0.0',
       id: 'seam-providers:test',
       inject: ['providers'],
       runtime: 'in-process' as const,
@@ -89,7 +89,7 @@ export function attachTestSeamPlugins(module: PackageModule): PackageModule {
         declaration: {
           id,
           export: exportName,
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           default: true,
           inject: [service],
           runtime: 'in-process',
@@ -102,7 +102,7 @@ export function attachTestSeamPlugins(module: PackageModule): PackageModule {
       declaration: {
         id: 'service:plan-mode',
         export: 'planModePlugin',
-        apiRange: '^4.0.0',
+        apiRange: '^5.0.0',
         default: true,
         inject: ['providers', 'services'],
         provide: ['planMode'],

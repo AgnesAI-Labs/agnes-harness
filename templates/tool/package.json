@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@agnes/plugin-runtime": "0.0.0",
-    "@agnes/extension-api": "^4.0.0",
+    "@agnes/extension-api": "^5.0.0",
     "@sinclair/typebox": "0.34.33"
   },
   "devDependencies": {
@@ -32,7 +32,7 @@
     "plugins": [
       {
         "export": "main",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "id": "ext:__PACKAGE_NAME__/main",
         "inject": [
           "tools"
@@ -42,7 +42,7 @@
     ],
     "hostProvidedExternals": {
       "@agnes/plugin-runtime": "0.0.0",
-      "@agnes/extension-api": "^4.0.0",
+      "@agnes/extension-api": "^5.0.0",
       "@sinclair/typebox": "0.34.33"
     },
     "provides": [

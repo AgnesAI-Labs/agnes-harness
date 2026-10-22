@@ -488,9 +488,6 @@ export function childControl(
     async workspace(id) {
       return db.get<PlannedWorkspace>(identity('workspace', id)) ?? null
     },
-    async lookupWorkspaceByPath(path) {
-      return all<PlannedWorkspace>('workspace').find((row) => row.path === path) ?? null
-    },
     async updateWorkspace(id, patch) {
       tx(() => {
         const row = db.get<PlannedWorkspace>(identity('workspace', id))

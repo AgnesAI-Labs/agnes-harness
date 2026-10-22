@@ -1057,7 +1057,7 @@ it.each(['allowed-once', 'rejected'] as const)(
         type: 'module',
         exports: './index.mjs',
         agnes: {
-          plugins: [{ export: 'main', apiRange: '^4.0.0', default: true, inject: ['tools', 'providers'] }],
+          plugins: [{ export: 'main', apiRange: '^5.0.0', default: true, inject: ['tools', 'providers'] }],
         },
       }),
     )

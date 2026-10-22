@@ -183,7 +183,7 @@ it('generates an executable tool plugin using the current owned registration por
   const text = result.content.find((part) => part.type === 'text')
   if (!text || text.type !== 'text') throw new Error('guide returned no text')
   const data = JSON.parse(text.text) as { apiVersion: string; files: { path: string; content: string }[] }
-  expect(data.apiVersion).toBe('4.0.0')
+  expect(data.apiVersion).toBe('5.0.0')
   const source = data.files.find((file) => file.path === 'index.mjs')!
   const { main } = await import(`data:text/javascript,${encodeURIComponent(source.content)}`)
   const packageDir = fixture()

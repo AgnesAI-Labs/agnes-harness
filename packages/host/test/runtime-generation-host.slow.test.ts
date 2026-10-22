@@ -55,7 +55,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
           plugins: [
             {
               export: 'main',
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               inject: ['hooks', 'eventLog', 'self'],
               configReload: 'live',
               config: version === '1.0.0' ? { limit: 100 } : { limit: 2 },
@@ -108,7 +108,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       treeIntegrity: source.snapshot.treeIntegrity,
       trust: 'trusted',
       license: 'MIT',
-      apiRange: '^4.0.0',
+      apiRange: '^5.0.0',
       dependencies: {},
       previous: null,
       state: {
@@ -165,7 +165,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         ].map(({ entry, ...declaration }) => ({
           declaration: {
             ...declaration,
-            apiRange: '^4.0.0',
+            apiRange: '^5.0.0',
             default: true,
             provide: [],
             runtime: 'in-process' as const,

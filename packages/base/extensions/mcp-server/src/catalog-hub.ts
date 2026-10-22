@@ -1,6 +1,5 @@
 import {
   MetadataToolIndex,
-  SqliteToolIndex,
   type ToolIndex,
   type ToolIndexHit,
   type ToolIndexRow,
@@ -138,18 +137,14 @@ const hubsByHost = new WeakMap<AbortSignal, McpCatalogHub>()
  * - `ctx.adapters.storage` is owner-scoped, and the first call binds the hub to its caller's scope.
  *   Every consumer must therefore be owned by `@agnes/base` (mcp-search is; step 3's MCP rows must
  *   use `spec.package: '@agnes/base'`), or the hub would land in whichever package asked first.
- * - The metadata namespace (or a legacy SQL table) is `tool_index`; catalog data is rebuilt.
- *   The first call clears it, and nothing else writes that table any more.
+ * - The metadata namespace is `tool_index`; catalog data is rebuilt.
+ *   The first call clears it, and nothing else writes that namespace any more.
  */
 export function mcpCatalogHubFor(ctx: McpCatalogHubContext): McpCatalogHub {
   const existing = hubsByHost.get(ctx.signal)
   if (existing) return existing
-  const hub = createMcpCatalogHub(
-    ctx.adapters.storage.namespace
-      ? new MetadataToolIndex(ctx.adapters.storage.namespace('tool_index'))
-      : new SqliteToolIndex(ctx.adapters.storage.table('tool_index')),
-  )
-  // The index table outlives the process; a killed Host's rows are stale. Cleared once per Host.
+  const hub = createMcpCatalogHub(new MetadataToolIndex(ctx.adapters.storage.namespace('tool_index')))
+  // The index namespace outlives the process; a killed Host's rows are stale. Cleared once per Host.
   hub.clear()
   hubsByHost.set(ctx.signal, hub)
   return hub

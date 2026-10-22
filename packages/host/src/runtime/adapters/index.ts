@@ -541,7 +541,7 @@ export {
   sqlitePersistenceProvider,
 } from '@agnes/host-infrastructure/adapters/storage-provider'
 
-export function lazyPackageTables(storage: HostPersistence, owner: string): TableStore {
+function lazyPackageTables(storage: HostPersistence, owner: string): TableStore {
   let opened: TableStore | undefined
   return {
     table(name) {
@@ -563,7 +563,6 @@ export function toSeamAdapters(b: AdapterBundle, opts: { owner: string; prompter
     storage: {
       ...lazyPackageTables(b.storage, opts.owner),
       namespace: (name) => b.storage.metadata.namespace(opts.owner, name),
-      ...(b.storage.sqlite ? { sql: lazyPackageTables(b.storage, opts.owner) } : {}),
     },
     ...(opts.prompter ? { prompter: opts.prompter } : {}),
   }

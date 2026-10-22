@@ -60,7 +60,7 @@ it('assembles the bundled default policy row before opening a real Host session'
             declaration: {
               id: 'test:alternative-jobs',
               export: 'alternativeJobs',
-              apiRange: '^4.0.0',
+              apiRange: '^5.0.0',
               default: true,
               inject: ['services'],
               runtime: 'in-process',

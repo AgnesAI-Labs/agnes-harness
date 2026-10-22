@@ -164,7 +164,7 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 持久化合同分别声明账本、metadata/KV、耐久子任务控制、reclaim 和 integrity。完整 Host 要求这五项能力，接受完整非 SQL 提供器，包括 [JSONL 示例](../../examples/persistence/)。同步 SQL 通过可选 `sqlite` 端口（`dialect: sqlite`）提供，依赖 SQL 的第三方扩展须选择支持它的后端。默认包域及 Host 授权/回执存储使用所有者隔离的 metadata。切换需要重启，不自动迁移文件，参见[提供器合同与导出/导入迁移](../extend/persistence.zh-CN.md)。
 
-作者声明 `capabilities: { ledger: true, ... }`，并显式提供 `metadata`、`childControl`、`reclaim` 和 `scanIntegrity`。SQLite 账本和子任务文件保持兼容。旧授权及回执 schema 先严格校验，再复制到 metadata；撤权先持久化后通知。旧 SQL 表保留用于回退核验，新 metadata 更新不反写旧表。
+作者声明 `capabilities: { ledger: true, ... }`，并显式提供 `metadata`、`childControl`、`reclaim` 和 `scanIntegrity`。SQLite 账本和子任务文件保持兼容。授权和回执只存放在 metadata 中；旧授权及回执 SQL 表既不读取也不复制，版本不同的 metadata 命名空间会被拒绝并需要重置。撤权先持久化后通知。
 
 实现依据：[默认 profile](../../packages/package-manager/templates/local-dev.yaml)、[普通行 API](../../packages/host-extensions/src/ext-host/row-extension-api.ts)、[MCP 参数策略](../../packages/resource-control-cli/src/resources.ts)、[Web server](../../packages/web-server/src/server.ts)。
 

@@ -37,7 +37,7 @@ const plugins = [
 ].map(({ entry, ...declaration }) => ({
   declaration: {
     ...declaration,
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     default: true,
     provide: [],
     runtime: 'in-process' as const,
@@ -110,7 +110,7 @@ it.each(
                 id: 'observability:otel',
                 inject: ['providers'],
                 provide: [],
-                apiRange: '^4.0.0',
+                apiRange: '^5.0.0',
                 default: true,
                 runtime: 'in-process',
                 config: { enabled: true, redaction: 'content', endpoint: collector.endpoint },

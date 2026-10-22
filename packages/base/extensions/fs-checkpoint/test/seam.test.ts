@@ -77,6 +77,9 @@ function context(
         table: () => {
           throw new Error('checkpoint must not use storage.table')
         },
+        namespace: () => {
+          throw new Error('checkpoint must not use storage.namespace')
+        },
       },
     },
     profile: {

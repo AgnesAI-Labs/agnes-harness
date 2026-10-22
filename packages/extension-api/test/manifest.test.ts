@@ -11,7 +11,7 @@ const purpose = {
 const manifest = {
   id: 'agnes/example',
   version: '1.2.0',
-  apiRange: '^4.0.0',
+  apiRange: '^5.0.0',
   entry: './dist/index.js',
   capabilities: {
     hooks: ['tool_call'],

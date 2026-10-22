@@ -143,7 +143,6 @@ export {
   inspectComputerUseDriverLock,
   inspectFixedComputerUseDriverLock,
 } from '@agnes/host-computer-use/computer-use/driver-lock'
-export { createSqliteComputerUseEffectStore } from '@agnes/host-computer-use/computer-use/effect-store-sqlite'
 export {
   type ComputerUseAttempt,
   type ComputerUseAttemptDecision,
@@ -213,7 +212,6 @@ export {
 } from '@agnes/host-computer-use/computer-use/locked-package-mutation-runtime'
 export {
   createMetadataLockedPackageOperationReceiptPort,
-  createSqliteLockedPackageOperationReceiptPort,
   type HostLockedPackageActivationRecord,
   type HostLockedPackageMutationKind,
   type HostLockedPackageOperationReceipt,

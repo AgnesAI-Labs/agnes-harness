@@ -68,7 +68,7 @@ const loopRow = () => ({
   declaration: {
     id: 'loop:test.tail-note',
     export: 'tailNoteLoop',
-    apiRange: '^4.0.0',
+    apiRange: '^5.0.0',
     default: true,
     inject: ['providers'],
     provide: [],

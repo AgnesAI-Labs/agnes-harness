@@ -8,7 +8,6 @@
     "./computer-use/app-admission": "./src/computer-use/app-admission.ts",
     "./computer-use/driver-lock": "./src/computer-use/driver-lock.ts",
     "./computer-use/driver-operation-runtime": "./src/computer-use/driver-operation-runtime.ts",
-    "./computer-use/effect-store-sqlite": "./src/computer-use/effect-store-sqlite.ts",
     "./computer-use/host-dispatch": "./src/computer-use/host-dispatch.ts",
     "./computer-use/host-enforcement": "./src/computer-use/host-enforcement.ts",
     "./computer-use/lazy-runtime": "./src/computer-use/lazy-runtime.ts",

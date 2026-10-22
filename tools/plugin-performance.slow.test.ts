@@ -114,7 +114,7 @@ it.skipIf(!process.env.AGH_PERFORMANCE_OUTPUT)(
               license: 'MIT',
               exports: './index.mjs',
               agnes: {
-                plugins: [{ export: 'main', apiRange: '^4.0.0', capabilities: { ui: true } }],
+                plugins: [{ export: 'main', apiRange: '^5.0.0', capabilities: { ui: true } }],
                 clientDescriptors: [{ rowId: `ext:${id}/main`, path: './client/agnes.client.json' }],
               },
             }),

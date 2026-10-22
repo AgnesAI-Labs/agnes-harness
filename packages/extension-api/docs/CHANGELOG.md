@@ -2,6 +2,30 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.0.0
+
+Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range (including
+`hostProvidedExternals`) moves from `^4.0.0` to `^5.0.0`; a `^4` range is refused with
+`E_API_RANGE`. The bundled default plugins move with the API. No compatibility shim is provided.
+
+### Changed
+
+- `SeamAdaptersView.storage.namespace` is required; the Host always supplies it.
+
+  Migration: drop optional calls such as `storage.namespace?.(name)`. A hand-built
+  `SeamAdaptersView` must provide `namespace`.
+
+### Removed
+
+- `SeamAdaptersView.storage.sql`. Nothing read it; seam providers keep their state in the
+  namespaced metadata store returned by `storage.namespace(name)`.
+
+  Migration: move the state to `storage.namespace(name)`.
+- `ChildControlStore.lookupWorkspaceByPath`. It had no callers.
+
+  Migration: delete the method from a custom store. `lookupByKey` returns the `workspaceId` that
+  `updateWorkspace` takes.
+
 ## 4.0.0
 
 ### Preview additions

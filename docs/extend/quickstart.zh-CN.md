@@ -116,7 +116,7 @@ linker 可重复执行。model-adapter 模板使用公共合同测试数据，�
   "agnes": {
     "hostProvidedExternals": {
       "@agnes/plugin-runtime": "0.0.0",
-      "@agnes/extension-api": "^4.0.0",
+      "@agnes/extension-api": "^5.0.0",
       "@sinclair/typebox": "~0.34.0"
     }
   }

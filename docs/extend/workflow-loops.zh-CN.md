@@ -53,7 +53,7 @@ const workflow = defineWorkflowLoop({
 export const main = workflow.main
 ```
 
-清单声明导出 `main` 的插件行，注入 `tools`、`providers`、`skills`，设置 `apiRange: "^4.0.0"`，并声明连接器和报告目录需要的模型、文件系统能力。在 [profile / preset 配置](bundles-and-profiles.zh-CN.md) 中选择 `providers.loop: { provider: "acme.renewal", version: "1.0.0" }` 和 `providers.tool-policy: { provider: "acme.renewal" }`；安装本身不会选择 Loop。`main` 通过三个公开注册端口注册工具、Loop、配套策略和可选 `skills`，平台负责注册清理。连接器连接仍通过 `ctx.effect()` 绑定生命周期。
+清单声明导出 `main` 的插件行，注入 `tools`、`providers`、`skills`，设置 `apiRange: "^5.0.0"`，并声明连接器和报告目录需要的模型、文件系统能力。在 [profile / preset 配置](bundles-and-profiles.zh-CN.md) 中选择 `providers.loop: { provider: "acme.renewal", version: "1.0.0" }` 和 `providers.tool-policy: { provider: "acme.renewal" }`；安装本身不会选择 Loop。`main` 通过三个公开注册端口注册工具、Loop、配套策略和可选 `skills`，平台负责注册清理。连接器连接仍通过 `ctx.effect()` 绑定生命周期。
 
 helper 首先插入计划关卡。公开 turn view 包含 Plan mode 时，通过 `exit_plan_mode` 请求批准固定阶段清单，再进行业务工作。确认前发布草稿，完成时发布最终文件，均调用官方 `read`、`write`、`present`。路径含会话/输入哈希和阶段序号。注册的策略保留默认策略的拒绝，只允许指定生成报告路径，并单独要求业务写操作审批。`readOnly: true` 禁止源数据变更；可选 `policy` 在这些固定约束之后补充业务规则。
 

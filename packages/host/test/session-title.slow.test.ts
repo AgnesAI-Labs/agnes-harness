@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,7 +6,7 @@ import { stampFor } from '@agnes/ai/testkit'
 import { BASE_SEAM_PROVIDERS } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
 import { type BillingSeam, contextTokens } from '@agnes/core'
-import { createSqliteStorage } from '@agnes/host-infrastructure/adapters/storage-sqlite'
+import { sqlitePersistenceProvider } from '@agnes/host-infrastructure/adapters/storage-provider'
 import {
   type InferenceEvent,
   type ModelRecord,
@@ -247,9 +247,17 @@ it.each([undefined, 'en', 'zh-CN'] as const)(
 it('records equal-sequence title costs from separate sessions in the real ledger without replay duplicates', async () => {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-title-ledger-')))
   roots.push(root)
-  const storage = createSqliteStorage({ file: join(root, 'audit.db'), tablesDir: join(root, 'audit-tables') })
+  mkdirSync(join(root, 'audit'))
+  const audit = await sqlitePersistenceProvider.open({ dataDir: join(root, 'audit') })
+  const metadata = audit.metadata
+  if (!metadata) throw new Error('metadata port missing')
   const init = fakeSeamInit()
-  init.adapters.storage = storage.tables('title-audit')
+  init.adapters.storage = {
+    table: () => {
+      throw new Error('usage ledger has no SQL table')
+    },
+    namespace: (name) => metadata.namespace('title-audit', name),
+  }
   const ledger = await BASE_SEAM_PROVIDERS.billing.create(init, new AbortController().signal)
   const recorded = vi.spyOn(ledger, 'record')
   let host: Host | undefined
@@ -263,13 +271,17 @@ it('records equal-sequence title costs from separate sessions in the real ledger
     }
     expect((await titleRecord(f.session))?.startSeq).toBe((await titleRecord(second))?.startSeq)
     await host.close()
-    const table = init.adapters.storage.table('usage_ledger')
     const rows = () =>
-      table.all<{ session_key: string; effect_id: string; credits: number }>(
-        "SELECT session_key, effect_id, credits FROM usage_ledger WHERE purpose = 'title' ORDER BY session_key",
-      )
+      metadata
+        .namespace('title-audit', 'usage_ledger')
+        .entries()
+        .map(
+          ({ value }) => value as { purpose: string; sessionKey: string; effectId: string; credits: number },
+        )
+        .filter((row) => row.purpose === 'title')
+        .sort((a, b) => a.sessionKey.localeCompare(b.sessionKey))
     expect(rows()).toHaveLength(2)
-    expect(new Set(rows().map((row) => row.effect_id)).size).toBe(2)
+    expect(new Set(rows().map((row) => row.effectId)).size).toBe(2)
     expect(rows().reduce((sum, row) => sum + row.credits, 0)).toBeCloseTo(0.2)
     const titles = recorded.mock.calls.map(([row]) => row).filter((row) => row.purpose === 'title')
     expect(titles).toHaveLength(2)
@@ -283,7 +295,7 @@ it('records equal-sequence title costs from separate sessions in the real ledger
     expect(rows()).toHaveLength(2)
   } finally {
     await host?.close()
-    await storage.close()
+    await audit.close()
   }
 }, 30_000)
 
@@ -292,12 +304,17 @@ it.each(['valid title', '```invalid title'])(
   async (title) => {
     const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-title-recovery-')))
     roots.push(root)
-    const storage = createSqliteStorage({
-      file: join(root, 'audit.db'),
-      tablesDir: join(root, 'audit-tables'),
-    })
+    mkdirSync(join(root, 'audit'))
+    const audit = await sqlitePersistenceProvider.open({ dataDir: join(root, 'audit') })
+    const metadata = audit.metadata
+    if (!metadata) throw new Error('metadata port missing')
     const init = fakeSeamInit()
-    init.adapters.storage = storage.tables('title-recovery')
+    init.adapters.storage = {
+      table: () => {
+        throw new Error('usage ledger has no SQL table')
+      },
+      namespace: (name) => metadata.namespace('title-recovery', name),
+    }
     const real = await BASE_SEAM_PROVIDERS.billing.create(init, new AbortController().signal)
     let fail = true
     let failures = 0
@@ -319,15 +336,20 @@ it.each(['valid title', '```invalid title'])(
       await vi.waitFor(() => expect(failures).toBe(1))
       await host.close()
       const rows = () =>
-        init.adapters.storage
-          .table('usage_ledger')
-          .all<{ credits: number }>("SELECT credits FROM usage_ledger WHERE purpose = 'title'")
+        metadata
+          .namespace('title-recovery', 'usage_ledger')
+          .entries()
+          .map(
+            ({ value }) =>
+              value as { purpose: string; sessionKey: string; effectId: string; credits: number },
+          )
+          .filter((row) => row.purpose === 'title')
       expect(rows()).toHaveLength(0)
       fail = false
       for (let reopen = 0; reopen < 2; reopen++) {
         const recovered = await fixture({ root, ledger })
         host = recovered.host
-        await vi.waitFor(() => expect(rows()).toEqual([{ credits: 0.1 }]))
+        await vi.waitFor(() => expect(rows().map((row) => row.credits)).toEqual([0.1]))
         expect(recovered.calls).toHaveLength(0)
         expect(await titleRecord(recovered.session)).toMatchObject({
           status: title.startsWith('```') ? 'failed' : 'generated',
@@ -338,7 +360,7 @@ it.each(['valid title', '```invalid title'])(
       }
     } finally {
       await host?.close()
-      await storage.close()
+      await audit.close()
     }
   },
   30_000,

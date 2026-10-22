@@ -310,7 +310,7 @@ describe('isolated hooks-runner spike', () => {
         bundledPackageJson({
           id: 'fixture/unawaited-event',
           version: '1.0.0',
-          apiRange: '^4.0.0',
+          apiRange: '^5.0.0',
           entry: './index.js',
           runtime: { supports: ['isolated'] },
           capabilities: { hooks: ['before_step'] },

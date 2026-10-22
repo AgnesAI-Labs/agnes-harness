@@ -9,7 +9,7 @@
       {
         "id": "ext:agnes/plugin-creator",
         "export": "default",
-        "apiRange": "^4.0.0",
+        "apiRange": "^5.0.0",
         "inject": [
           "tools",
           "hooks"

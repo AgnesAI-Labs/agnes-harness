@@ -87,7 +87,7 @@ export function assembleDistributionPackages<T extends ReleaseModule>(
       packageId: '@agnes/base',
       id: 'tool-policy:default',
       export: 'toolPolicyPlugin',
-      apiRange: '^4.0.0',
+      apiRange: '^5.0.0',
       factory: () => ({
         inject: ['providers'],
         apply(ctx: ProviderPluginContext) {
