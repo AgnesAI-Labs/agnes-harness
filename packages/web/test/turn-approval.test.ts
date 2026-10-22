@@ -344,6 +344,86 @@ it('renders authoritative actions and full details without loading old transcrip
   )
 })
 
+it('rejects a durable approval with a trimmed reason, or plainly when it is empty', async () => {
+  const { controller, list, decide } = await harness()
+  list.mockResolvedValue({ decisions: [snapshot] })
+  controller.searchApproval(3)
+  const open = () => document.querySelector<HTMLButtonElement>('[data-testid="approval-reject-reason-open"]')
+  await vi.waitFor(() => expect(open()).toBeTruthy())
+  expect(open()?.textContent).toBe('附理由拒绝')
+  expect(document.querySelector('[data-testid="approval-reason-input"]')).toBeNull()
+  open()?.click()
+  const input = () => document.querySelector<HTMLInputElement>('[data-testid="approval-reason-input"]')
+  await vi.waitFor(() => expect(document.activeElement).toBe(input()))
+  expect(input()?.maxLength).toBe(500)
+  expect(input()?.getAttribute('aria-label')).toBe('告诉模型拒绝的理由')
+  // Esc goes back to the button and drops the draft.
+  input()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  await vi.waitFor(() => expect(document.activeElement).toBe(open()))
+  expect(input()).toBeNull()
+  expect(decide).not.toHaveBeenCalled()
+  const type = (value: string) => {
+    const field = input()
+    if (!field) throw new Error('reason input missing')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(field, value)
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  open()?.click()
+  await vi.waitFor(() => expect(input()).toBeTruthy())
+  type('  too risky  ')
+  // Enter that finishes an IME composition does not submit.
+  input()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true }))
+  expect(decide).not.toHaveBeenCalled()
+  input()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await vi.waitFor(() =>
+    expect(decide).toHaveBeenCalledWith({
+      ...ref,
+      commandId: 'pending:1:rejected',
+      response: { option: 'rejected', value: 'too risky' },
+    }),
+  )
+})
+
+it('offers no reason field on a live approval, which has no channel for it', async () => {
+  const { context, controller } = await harness()
+  context.liveApproval = {
+    request: {
+      sessionId: 's',
+      toolCall: { toolCallId: 'live-1', title: 'Run it', kind: 'other', status: 'pending' },
+      options: [
+        { optionId: 'allow_once', kind: 'allow_once', name: 'allow_once' },
+        { optionId: 'reject_once', kind: 'reject_once', name: 'reject_once' },
+      ],
+    },
+    finish: vi.fn(),
+    afterSeq: 1,
+  } as unknown as typeof context.liveApproval
+  controller.renderApproval()
+  await vi.waitFor(() => expect(document.querySelectorAll('[data-approval-action]')).toHaveLength(2))
+  expect(document.querySelector('[data-testid="approval-reject-reason-open"]')).toBeNull()
+})
+
+it('submits an empty reason as a plain rejection', async () => {
+  const { controller, list, decide } = await harness()
+  list.mockResolvedValue({ decisions: [snapshot] })
+  controller.searchApproval(3)
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="approval-reject-reason-open"]')).toBeTruthy(),
+  )
+  document.querySelector<HTMLButtonElement>('[data-testid="approval-reject-reason-open"]')?.click()
+  await vi.waitFor(() =>
+    expect(document.querySelector('[data-testid="approval-reason-submit"]')).toBeTruthy(),
+  )
+  document.querySelector<HTMLButtonElement>('[data-testid="approval-reason-submit"]')?.click()
+  await vi.waitFor(() =>
+    expect(decide).toHaveBeenCalledWith({
+      ...ref,
+      commandId: 'pending:1:rejected',
+      response: { option: 'rejected', value: null },
+    }),
+  )
+})
+
 it('keeps focus on details when an explicit lookup succeeds before history finishes', async () => {
   const { context, controller, list } = await harness()
   list.mockResolvedValue({ decisions: [snapshot] })

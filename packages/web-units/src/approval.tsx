@@ -1,4 +1,11 @@
-import { Button, DecisionFields, type DecisionPresentation, Disclosure, fallbackT } from '@agnes/web-ui'
+import {
+  Button,
+  DecisionFields,
+  type DecisionPresentation,
+  Disclosure,
+  fallbackT,
+  SettingsInput,
+} from '@agnes/web-ui'
 import {
   type ForwardedRef,
   forwardRef,
@@ -29,6 +36,19 @@ export interface ApprovalView {
   warning?: string
   preview?: string
   actions: readonly ApprovalAction[]
+  /** Who asked, as one plain-text line under the title. */
+  origin?: string
+  /** What «always allow» keeps, as plain text; `title` holds the whole list when `text` is folded. */
+  stores?: { text: string; title?: string }
+  /** Durable approvals only: the live path has no channel for a reason, so it never sets this. */
+  rejectWithReason?: {
+    label: string
+    inputLabel: string
+    submitLabel: string
+    cancelLabel: string
+    maxLength: number
+    onSubmit(reason: string): void
+  }
   disabled: boolean
   /**
    * Presentation marker; the supplied actions remain authoritative. `reconcile`: Core asks whether a
@@ -53,6 +73,81 @@ function focusApproval(content: HTMLDivElement | null): void {
   const card = content?.querySelector<HTMLElement>('[data-approval-key]')
   card?.scrollIntoView?.({ block: 'nearest' })
   ;(card?.querySelector<HTMLButtonElement>('[data-approval-action]:not(:disabled)') ?? card)?.focus()
+}
+
+/** Own state, so a new approval (a new keyed card) always starts collapsed. */
+function RejectWithReason({
+  reject,
+  disabled,
+}: {
+  reject: NonNullable<ApprovalView['rejectWithReason']>
+  disabled: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState('')
+  const input = useRef<HTMLInputElement>(null)
+  const opener = useRef<HTMLButtonElement>(null)
+  const wasOpen = useRef(false)
+  useLayoutEffect(() => {
+    if (open) input.current?.focus()
+    else if (wasOpen.current) opener.current?.focus()
+    wasOpen.current = open
+  }, [open])
+  const close = () => {
+    setOpen(false)
+    setReason('')
+  }
+  const submit = () => {
+    if (disabled) return
+    reject.onSubmit(reason.trim())
+    close()
+  }
+  if (!open)
+    return (
+      <Button
+        ref={opener}
+        htmlType="button"
+        data-testid="approval-reject-reason-open"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
+        {reject.label}
+      </Button>
+    )
+  return (
+    <>
+      <SettingsInput
+        ref={input}
+        surface="surface"
+        type="text"
+        className="approval-reason-input"
+        data-testid="approval-reason-input"
+        aria-label={reject.inputLabel}
+        maxLength={reject.maxLength}
+        value={reason}
+        disabled={disabled}
+        onChange={(event) => setReason(event.target.value)}
+        onKeyDown={(event) => {
+          // An IME uses Enter and Esc to finish or cancel a composition, not to submit.
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            submit()
+          } else if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            close()
+          }
+        }}
+      />
+      <Button htmlType="button" data-testid="approval-reason-submit" disabled={disabled} onClick={submit}>
+        {reject.submitLabel}
+      </Button>
+      <Button htmlType="button" data-testid="approval-reason-cancel" onClick={close}>
+        {reject.cancelLabel}
+      </Button>
+    </>
+  )
 }
 
 export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Approval(
@@ -130,6 +225,11 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
           aria-label={view.title}
         >
           <h2>{view.title}</h2>
+          {view.origin !== undefined && (
+            <p className="approval-origin" data-testid="approval-origin">
+              {view.origin}
+            </p>
+          )}
           <p className="approval-summary-text">{view.summary}</p>
           {view.presentation && <DecisionFields view={view.presentation} />}
           {view.rewritten !== undefined && (
@@ -165,7 +265,15 @@ export const Approval = forwardRef<ApprovalHandle, ApprovalProps>(function Appro
                 {action.label}
               </Button>
             ))}
+            {view.rejectWithReason && (
+              <RejectWithReason reject={view.rejectWithReason} disabled={view.disabled} />
+            )}
           </div>
+          {view.stores !== undefined && (
+            <p className="approval-stores" data-testid="approval-stores" title={view.stores.title}>
+              {view.stores.text}
+            </p>
+          )}
         </div>
       ) : undefined}
     </div>

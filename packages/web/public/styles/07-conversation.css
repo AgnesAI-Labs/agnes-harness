@@ -553,6 +553,20 @@
     gap: var(--s8);
     margin-top: 0.875rem;
   }
+  .approval-reason-input {
+    flex: 1 1 14rem;
+    min-width: 0;
+    padding: var(--s8) var(--s12);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-control);
+    background: var(--agnes-bg-code);
+    color: var(--agnes-text-primary);
+    font: inherit;
+  }
+  .approval-reason-input:focus-visible {
+    outline: 2px solid var(--agnes-button-primary-bg);
+    outline-offset: 1px;
+  }
   .approval-actions button {
     border-radius: var(--radius-control);
     font-weight: var(--font-weight-medium);

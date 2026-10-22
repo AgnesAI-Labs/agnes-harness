@@ -14,11 +14,18 @@ import {
   findApproval,
 } from '@agnes/web-conversation/live-projection'
 import { approvalSummary, decisionPresentation } from '@agnes/web-ui'
+import type { ApprovalView } from '@agnes/web-units/shell'
 import type { AppSessionContext } from '../app.js'
 import { rememberWebComposer } from '../composer-memory.js'
 import { openSessionMode, sessionPermissionLevel } from '../session-permission.js'
 import { sessionTitle } from '../session-title.js'
-import { durableApprovalActions, nodeText, type WebView, webView } from '../view.js'
+import {
+  type DurableApprovalAction,
+  durableApprovalActions,
+  nodeText,
+  type WebView,
+  webView,
+} from '../view.js'
 import { type ApprovalNode, answeredApproval, approvalExpiry, pendingApproval } from './pending-approval.js'
 import { createSessionBookmarks } from './session-bookmarks.js'
 
@@ -344,37 +351,37 @@ export function createTurnController(
     const decisionSession = context.live
     const binding = context.sessionBinding.capture()
     const current = () => context.sessionBinding.isCurrent(binding) && context.live === decisionSession
-    const decide = (id: string, label: string, action: () => Promise<void>): void => {
-      actions.push({
-        id,
-        label,
-        onSelect: () =>
-          context.run(async () => {
-            if (
-              !current() ||
-              context.approvalBusy ||
-              context.stopping ||
-              context.sessionPending ||
-              context.readOnly
-            )
-              return
-            context.approvalBusy = true
-            renderApproval()
-            try {
-              await action()
-              if (current()) cachedApproval = undefined
-            } catch (error) {
-              if (current()) throw error
-            } finally {
-              if (current()) {
-                context.approvalBusy = false
-                decisionSession?.refresh()
-                renderApproval()
-              }
+    const guarded = (action: () => Promise<void>): (() => void) => {
+      return () =>
+        context.run(async () => {
+          if (
+            !current() ||
+            context.approvalBusy ||
+            context.stopping ||
+            context.sessionPending ||
+            context.readOnly
+          )
+            return
+          context.approvalBusy = true
+          renderApproval()
+          try {
+            await action()
+            if (current()) cachedApproval = undefined
+          } catch (error) {
+            if (current()) throw error
+          } finally {
+            if (current()) {
+              context.approvalBusy = false
+              decisionSession?.refresh()
+              renderApproval()
             }
-          }),
-      })
+          }
+        })
     }
+    const decide = (id: string, label: string, action: () => Promise<void>): void => {
+      actions.push({ id, label, onSelect: guarded(action) })
+    }
+    let rejectWithReason: ApprovalView['rejectWithReason']
     if (context.liveApproval) {
       const request = context.liveApproval
       const labels: Record<string, string> = {
@@ -392,17 +399,30 @@ export function createTurnController(
       }
     } else if (durable?.decisionRef) {
       const ref = durable.decisionRef
-      for (const { label, verdict } of durableApprovalActions(durable, context.t))
-        decide(
-          `durable:${verdict}`,
-          label,
-          async () =>
-            void (await context.client.approval.decide({
-              ...ref,
-              commandId: `${ref.id}:${ref.revision}:${verdict}`,
-              response: { option: verdict, value: presentation?.responseValue ?? null },
-            })),
-        )
+      const send = (verdict: DurableApprovalAction['verdict'], value: string | null) => async () =>
+        void (await context.client.approval.decide({
+          ...ref,
+          commandId: `${ref.id}:${ref.revision}:${verdict}`,
+          response: { option: verdict, value },
+        }))
+      const offered = durableApprovalActions(durable, context.t)
+      for (const { label, verdict } of offered)
+        decide(`durable:${verdict}`, label, send(verdict, presentation?.responseValue ?? null))
+      // A reason replaces the response value, so it is offered only where that value is unused.
+      if (
+        !durable.reconcile &&
+        presentation?.responseValue == null &&
+        offered.some(({ verdict }) => verdict === 'rejected')
+      )
+        rejectWithReason = {
+          label: context.t('app.approval.rejectReason'),
+          inputLabel: context.t('app.approval.reasonLabel'),
+          submitLabel: context.t('app.approval.reasonSubmit'),
+          cancelLabel: context.t('app.approval.reasonCancel'),
+          maxLength: 500,
+          // An empty reason is a plain rejection.
+          onSubmit: (reason: string) => guarded(send('rejected', reason === '' ? null : reason))(),
+        }
     }
     // A reconciliation's subject is bookkeeping (ids, turn, step), not something to review.
     const preview = reconcile ? undefined : (card?.preview ?? durable?.subjectText)
@@ -430,6 +450,7 @@ export function createTurnController(
       ...(card?.warning === undefined ? {} : { warning: card.warning }),
       ...(preview === undefined ? {} : { preview }),
       actions,
+      ...(rejectWithReason ? { rejectWithReason } : {}),
       disabled:
         context.approvalBusy ||
         context.stopping ||
