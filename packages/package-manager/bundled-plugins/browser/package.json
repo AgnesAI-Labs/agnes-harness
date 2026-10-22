@@ -143,6 +143,26 @@
                     "enum": [
                       2
                     ]
+                  },
+                  "viewport": {
+                    "type": "object",
+                    "properties": {
+                      "width": {
+                        "type": "integer",
+                        "minimum": 240,
+                        "maximum": 2560
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 160,
+                        "maximum": 1600
+                      }
+                    },
+                    "required": [
+                      "width",
+                      "height"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -235,6 +255,26 @@
                   "sequence": {
                     "type": "integer",
                     "minimum": 1
+                  },
+                  "viewport": {
+                    "type": "object",
+                    "properties": {
+                      "width": {
+                        "type": "integer",
+                        "minimum": 240,
+                        "maximum": 2560
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 160,
+                        "maximum": 1600
+                      }
+                    },
+                    "required": [
+                      "width",
+                      "height"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [
@@ -519,6 +559,26 @@
                     "enum": [
                       2
                     ]
+                  },
+                  "viewport": {
+                    "type": "object",
+                    "properties": {
+                      "width": {
+                        "type": "integer",
+                        "minimum": 240,
+                        "maximum": 2560
+                      },
+                      "height": {
+                        "type": "integer",
+                        "minimum": 160,
+                        "maximum": 1600
+                      }
+                    },
+                    "required": [
+                      "width",
+                      "height"
+                    ],
+                    "additionalProperties": false
                   }
                 },
                 "required": [

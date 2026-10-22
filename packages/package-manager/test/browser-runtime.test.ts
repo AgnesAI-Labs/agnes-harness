@@ -185,6 +185,7 @@ function pageFixture(context: object) {
     isClosed: () => false,
     goto: vi.fn(async () => {}),
     context: () => context,
+    setViewportSize: vi.fn(async (_viewport: { width: number; height: number }) => {}),
     mainFrame: () => main,
     close: vi.fn(async (): Promise<void> => {
       page.emit('close')
@@ -254,7 +255,7 @@ it('retargets an owned view without another stream, ignores stale selections and
     },
   }
   const context = { session, actor: { id: 'viewer', org: 'one' } }
-  const input = { viewId: 'view', pageId: second.pageId, sequence: 2 }
+  const input = { viewId: 'view', pageId: second.pageId, sequence: 2, viewport: { width: 540, height: 920 } }
   try {
     await showView(
       runtime,
@@ -277,9 +278,53 @@ it('retargets an owned view without another stream, ignores stale selections and
     ).rejects.toMatchObject({ code: 'DENIED' })
     // Session composition may import a separate copy while sharing the managed resource.
     await selectPinnedView(runtime, input, context)
+    expect(runtime.describe(runtime.get(session, second.pageId))).toMatchObject({
+      viewportWidth: 540,
+      viewportHeight: 920,
+      pageEpoch: 1,
+      mode: 'agent',
+    })
+    for (const viewport of [
+      { width: 0, height: 920 },
+      { width: 540.5, height: 920 },
+      { width: 2561, height: 920 },
+      { width: 540, height: Infinity },
+      { width: 540, height: 1601 },
+      { width: 540, height: -1 },
+      { width: '540', height: 920 },
+      { width: 540, height: 920, extra: 1 },
+      { width: 540 },
+      null,
+      [],
+    ]) {
+      await expect(
+        selectView(runtime, { ...input, sequence: 10, viewport }, { ...context, actor: { id: 'foreign' } }),
+      ).rejects.toMatchObject({ code: 'DENIED' })
+      await expect(selectView(runtime, { ...input, sequence: 3, viewport }, context)).rejects.toMatchObject({
+        code: 'INVALID_INPUT',
+      })
+    }
     await selectView(runtime, { ...input, pageId: first.pageId, sequence: 1 }, context)
     expect(runtime.get(session, first.pageId).capture).toBeUndefined()
     expect(runtime.get(session, first.pageId).viewers.size).toBe(0)
+    const beforeStaleSurface = frames.length
+    cdp.emit('Page.screencastFrame', {
+      sessionId: 1,
+      data: Buffer.from('old-surface').toString('base64'),
+      metadata: { deviceWidth: 1280, deviceHeight: 800 },
+    })
+    expect(frames).toHaveLength(beforeStaleSurface)
+    for (const header of [
+      '89504e470d0a1a0a0000000d4948445200000a0000000640',
+      'ffd8ffc000110806400a0003011100021101031100',
+    ]) {
+      cdp.emit('Page.screencastFrame', {
+        sessionId: 1,
+        data: Buffer.from(header, 'hex').toString('base64'),
+        metadata: { deviceWidth: 540, deviceHeight: 920 },
+      })
+      expect(frames).toHaveLength(beforeStaleSurface)
+    }
     cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.from('second-page').toString('base64') })
     expect(frames.length).toBeGreaterThan(0)
     for (const frame of frames) {
@@ -288,15 +333,29 @@ it('retargets an owned view without another stream, ignores stale selections and
     }
     // Rapid selections settle on the latest page and retain one capture only.
     await Promise.all([
-      selectView(runtime, { ...input, pageId: first.pageId, sequence: 3 }, context),
-      selectView(runtime, { ...input, sequence: 4 }, context),
+      selectView(runtime, { ...input, pageId: first.pageId, sequence: 4 }, context),
+      selectView(runtime, { ...input, sequence: 5, viewport: { width: 600, height: 1000 } }, context),
     ])
     expect(runtime.get(session, first.pageId).capture).toBeUndefined()
     expect(runtime.get(session, second.pageId).viewers.size).toBe(1)
+    const resized = runtime.describe(runtime.get(session, second.pageId))
+    expect(resized).toMatchObject({ viewportWidth: 600, viewportHeight: 1000, pageEpoch: 2 })
+    await expect(
+      runtime.act(session, { action: 'click', pageId: second.pageId, pageEpoch: 1, x: 100, y: 100 }),
+    ).rejects.toMatchObject({ code: 'STALE_TARGET' })
+    const actor = context.actor
+    const control = await runtime.control(session, { pageId: second.pageId, mode: 'human' }, actor)
+    await expect(
+      runtime.humanInput(session, { ...control, seq: 0, type: 'click', x: 650, y: 100 }, actor),
+    ).rejects.toMatchObject({ code: 'INVALID_INPUT' })
+    await expect(
+      runtime.humanInput(session, { ...control, seq: 1, type: 'click', x: 550, y: 950 }, actor),
+    ).resolves.toMatchObject({ viewportHeight: 1000 })
     abort.abort()
     await vi.waitFor(() => expect(runtime.get(session, second.pageId).capture).toBeUndefined())
     expect(listeners.size).toBe(0)
-    await expect(selectView(runtime, { ...input, sequence: 5 }, context)).rejects.toMatchObject({
+    expect(runtime.get(session, second.pageId).viewportView).toBeUndefined()
+    await expect(selectView(runtime, { ...input, sequence: 6 }, context)).rejects.toMatchObject({
       code: 'DENIED',
     })
   } finally {
@@ -304,6 +363,138 @@ it('retargets an owned view without another stream, ignores stale selections and
     await runtime.close()
   }
 })
+
+it('lets one view own page geometry and releases ownership without granting website input', async () => {
+  const { runtime, session, pages } = fixture()
+  const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+  const first = new AbortController(),
+    second = new AbortController()
+  const actor = { id: 'viewer' }
+  const open = (viewId: string, abort: AbortController, viewport: object) =>
+    showView(
+      runtime,
+      { viewId, pageId: opened.pageId, displayVersion: 2, viewport },
+      {
+        actor,
+        scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+        signal: abort.signal,
+        stream: { send() {}, close() {}, onDisconnect() {} },
+      },
+    )
+  try {
+    await open('primary', first, { width: 500, height: 900 })
+    await open('secondary', second, { width: 900, height: 600 })
+    expect(runtime.list(session)[0]).toMatchObject({ viewportWidth: 500, viewportHeight: 900, mode: 'agent' })
+    const request = {
+      viewId: 'secondary',
+      pageId: opened.pageId,
+      sequence: 1,
+      viewport: { width: 900, height: 600 },
+    }
+    await expect(selectView(runtime, request, { actor, session })).resolves.toMatchObject({
+      viewportWidth: 500,
+      viewportHeight: 900,
+    })
+    first.abort()
+    await expect(selectView(runtime, { ...request, sequence: 2 }, { actor, session })).resolves.toMatchObject(
+      { viewportWidth: 900, viewportHeight: 600 },
+    )
+    let finish!: (bytes: Buffer) => void
+    Object.assign(pages[0]!, {
+      screenshot: async () =>
+        new Promise<Buffer>((resolve) => {
+          finish = resolve
+        }),
+    })
+    const screenshot = runtime.act(session, { action: 'screenshot', pageId: opened.pageId })
+    const stale = expect(screenshot).rejects.toMatchObject({ code: 'STALE_TARGET' })
+    await selectView(
+      runtime,
+      { ...request, sequence: 3, viewport: { width: 1280, height: 800 } },
+      { actor, session },
+    )
+    finish(Buffer.from('old-layout'))
+    await stale
+    const page = runtime.list(session)[0]!
+    expect(page).toMatchObject({ viewportWidth: 1280, viewportHeight: 800, mode: 'agent' })
+    await expect(
+      runtime.act(session, {
+        action: 'click',
+        pageId: opened.pageId,
+        pageEpoch: page.pageEpoch,
+        x: 100,
+        y: 100,
+      }),
+    ).rejects.toMatchObject({ code: 'STALE_TARGET' })
+  } finally {
+    first.abort()
+    second.abort()
+    await runtime.close()
+  }
+})
+
+it.each(['page', 'capture'] as const)(
+  'cleans the owned view after %s resizing fails and refuses further unobserved input',
+  async (phase) => {
+    const { runtime, session, pages, cdp } = fixture()
+    const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
+    const abort = new AbortController(),
+      listeners = new Set<() => void>()
+    const context = { session, actor: { id: 'viewer' } }
+    const stream = {
+      send() {},
+      close() {
+        for (const close of [...listeners]) close()
+      },
+      onDisconnect(close: () => void) {
+        listeners.add(close)
+        return () => listeners.delete(close)
+      },
+    }
+    try {
+      await showView(
+        runtime,
+        { viewId: 'view', pageId: opened.pageId, displayVersion: 2 },
+        {
+          ...context,
+          scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+          signal: abort.signal,
+          stream,
+        },
+      )
+      if (phase === 'page') pages[0]!.setViewportSize.mockRejectedValueOnce(new Error('Resize unavailable'))
+      else
+        cdp.send.mockImplementation(async (method) => {
+          if (method === 'Emulation.setDeviceMetricsOverride') throw new Error('Resize unavailable')
+        })
+      await expect(
+        selectView(
+          runtime,
+          { viewId: 'view', pageId: opened.pageId, sequence: 1, viewport: { width: 500, height: 900 } },
+          context,
+        ),
+      ).rejects.toThrow('Resize unavailable')
+      await vi.waitFor(() => expect(runtime.get(session, opened.pageId).capture).toBeUndefined())
+      expect(runtime.views.has('view')).toBe(false)
+      expect(runtime.get(session, opened.pageId).viewportView).toBeUndefined()
+      expect(listeners.size).toBe(0)
+      expect(cdp.detach).toHaveBeenCalled()
+      const page = runtime.list(session)[0]!
+      await expect(
+        runtime.act(session, {
+          action: 'key',
+          pageId: opened.pageId,
+          pageEpoch: page.pageEpoch,
+          key: 'Enter',
+        }),
+      ).rejects.toMatchObject({ code: 'STALE_TARGET' })
+      expect(pages[0]!.keyboard.press).not.toHaveBeenCalled()
+    } finally {
+      abort.abort()
+      await runtime.close()
+    }
+  },
+)
 
 it('returns known open refusals as terminal results while preserving uncertain or operating-system failures', async () => {
   const { runtime, session } = fixture()
@@ -650,6 +841,7 @@ it('displays the final frame of a burst and cancels delayed frames when the view
     await vi.advanceTimersByTimeAsync(100)
     const latest = Buffer.from(frames.at(-1)!)
     expect(latest.subarray(latest.readUInt32BE() + 4).toString()).toBe('final')
+    expect(JSON.parse(latest.subarray(4, latest.readUInt32BE() + 4).toString()).frameMime).toBe('image/png')
     let firstCapture = true
     Object.assign(pages[0]!, {
       screenshot: async (options: { type: string }) => {
@@ -694,8 +886,38 @@ it('displays the final frame of a burst and cancels delayed frames when the view
     await vi.advanceTimersByTimeAsync(0)
     expect(cdp.send).toHaveBeenCalledWith(
       'Page.startScreencast',
-      expect.objectContaining({ maxWidth: 1920, quality: 65 }),
+      expect.objectContaining({ format: 'jpeg', maxWidth: 2560, maxHeight: 1600, quality: 90 }),
     )
+    Object.assign(pages[0]!, { screenshot: async () => Buffer.from('lossless-text-again') })
+    emit('text-after-photo')
+    await vi.advanceTimersByTimeAsync(300)
+    emit('lossless-scroll')
+    await vi.advanceTimersByTimeAsync(70)
+    const recovered = Buffer.from(frames.at(-1)!)
+    expect(JSON.parse(recovered.subarray(4, recovered.readUInt32BE() + 4).toString()).frameMime).toBe(
+      'image/png',
+    )
+    // Sustained complex motion adjusts compression within a quality floor,
+    // retaining the full device raster; stopping still restores lossless text.
+    Object.assign(pages[0]!, { screenshot: async () => Buffer.alloc(350_000) })
+    for (let index = 0; index < 150; index++) {
+      const image = Buffer.alloc(350_000, index)
+      cdp.emit('Page.screencastFrame', { sessionId: 1, data: image.toString('base64') })
+      await vi.advanceTimersByTimeAsync(16)
+    }
+    for (let index = 0; index < 60; index++) {
+      cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.alloc(60_000, index).toString('base64') })
+      await vi.advanceTimersByTimeAsync(16)
+    }
+    const moving = cdp.send.mock.calls.filter(([method]) => method === 'Page.startScreencast').at(-1)?.[1]
+    expect(moving).toMatchObject({ format: 'jpeg', maxWidth: 2560, maxHeight: 1600 })
+    expect((moving as { quality: number }).quality).toBeGreaterThanOrEqual(70)
+    expect((moving as { quality: number }).quality).toBe(70)
+    Object.assign(pages[0]!, { screenshot: async () => Buffer.from('lossless-text-again') })
+    emit('motion-ended')
+    await vi.advanceTimersByTimeAsync(500)
+    const idle = Buffer.from(frames.at(-1)!)
+    expect(JSON.parse(idle.subarray(4, idle.readUInt32BE() + 4).toString()).frameMime).toBe('image/png')
     emit('after-close')
     const count = frames.length
     abort.abort()
@@ -707,12 +929,18 @@ it('displays the final frame of a burst and cancels delayed frames when the view
   }
 })
 
-it.each([false, true])(
-  'releases capture after display startup fails (page unavailable: %s)',
-  async (unavailable) => {
+it.each([
+  { unavailable: false, retune: false },
+  { unavailable: true, retune: false },
+  { unavailable: false, retune: true },
+  { unavailable: true, retune: true },
+])(
+  'releases capture after display fails (page unavailable: $unavailable, retune: $retune)',
+  async ({ unavailable, retune }) => {
     const { runtime, cdp, session, pages } = fixture()
     const opened = await runtime.act(session, { action: 'open', url: 'http://localhost/' })
     let audioEnabled = false,
+      failCapture = !retune,
       attached = true
     const page = pages[0]!
     const listeners = page.listenerCount('domcontentloaded')
@@ -724,27 +952,42 @@ it.each([false, true])(
       },
     })
     cdp.send.mockImplementation(async (method) => {
-      if (method === 'Page.startScreencast') throw new Error('Display unavailable')
+      if (method === 'Page.startScreencast' && failCapture) throw new Error('Display unavailable')
     })
     cdp.detach.mockImplementation(async () => {
       attached = false
     })
     const abort = new AbortController()
+    let disconnected: (() => void) | undefined
     try {
-      await expect(
-        showPage(
-          runtime,
-          { pageId: opened.pageId, displayVersion: 2 },
-          {
-            scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
-            signal: abort.signal,
-            stream: { send() {}, close() {}, onDisconnect() {} },
+      const displaying = showPage(
+        runtime,
+        { pageId: opened.pageId, displayVersion: 2 },
+        {
+          scope: { kind: 'session', sessionId: session.key, laneId: 'main' },
+          signal: abort.signal,
+          stream: {
+            send() {},
+            close() {
+              disconnected?.()
+            },
+            onDisconnect(close: () => void) {
+              disconnected = close
+            },
           },
-        ),
-      ).rejects.toThrow('Display unavailable')
+        },
+      )
+      if (retune) {
+        await displaying
+        failCapture = true
+        cdp.emit('Page.screencastFrame', { sessionId: 1, data: Buffer.alloc(250_001).toString('base64') })
+        await vi.waitFor(() => expect(attached).toBe(false))
+      } else await expect(displaying).rejects.toThrow('Display unavailable')
       expect(audioEnabled).toBe(false)
       expect(attached).toBe(false)
       expect(page.listenerCount('domcontentloaded')).toBe(listeners)
+      expect(cdp.listenerCount('Page.screencastFrame')).toBe(0)
+      expect(runtime.get(session, opened.pageId).viewers.size).toBe(0)
       page.emit('domcontentloaded')
       await Promise.resolve()
       expect(audioEnabled).toBe(false)

@@ -244,6 +244,7 @@ export class BrowserRuntime {
     const item = {
       id: randomUUID(),
       page,
+      viewport: { width: 1280, height: 800 },
       epoch: 0,
       controlEpoch: 0,
       mode: 'agent',
@@ -563,7 +564,10 @@ export class BrowserRuntime {
     if (input.action === 'screenshot') {
       this.activate(item)
       const observedHumanRevision = item.humanRevision
+      const pageEpoch = item.epoch
       const bytes = await item.page.screenshot({ type: 'png', scale: 'css', timeout: 10_000 })
+      if (item.epoch !== pageEpoch)
+        throw failure('STALE_TARGET', 'Page layout changed while taking the screenshot. Inspect again.')
       if (observedHumanRevision === item.humanRevision) item.observedHumanRevision = observedHumanRevision
       return {
         ...this.describe(item),
@@ -587,9 +591,9 @@ export class BrowserRuntime {
           (!Number.isFinite(input.x) ||
             !Number.isFinite(input.y) ||
             input.x < 0 ||
-            input.x > 1280 ||
+            input.x > item.viewport.width ||
             input.y < 0 ||
-            input.y > 800)
+            input.y > item.viewport.height)
         )
           throw failure('STALE_TARGET', 'Use a current ref or a screenshot point within the viewport.')
         switch (input.action) {
@@ -655,8 +659,8 @@ export class BrowserRuntime {
       pageEpoch: item.epoch,
       controlEpoch: item.controlEpoch,
       mode: item.mode,
-      viewportWidth: 1280,
-      viewportHeight: 800,
+      viewportWidth: item.viewport.width,
+      viewportHeight: item.viewport.height,
       agentRevision: item.agentRevision,
     }
   }
@@ -752,9 +756,9 @@ export class BrowserRuntime {
               !Number.isFinite(input.x) ||
               !Number.isFinite(input.y) ||
               input.x < 0 ||
-              input.x > 1280 ||
+              input.x > item.viewport.width ||
               input.y < 0 ||
-              input.y > 800
+              input.y > item.viewport.height
             )
               throw failure('INVALID_INPUT', 'Point outside viewport.')
             await item.page.mouse.click(input.x, input.y)

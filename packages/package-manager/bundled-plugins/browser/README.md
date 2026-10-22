@@ -106,7 +106,17 @@ rendering from native content types; unsupported downloads are reported. Same-or
 starts after a local user gesture and stops on navigation, disconnect or panel closure.
 No desktop audio is captured.
 
-The logical viewport remains 1280x800, with 2x raster density. Live frames target
-up to 60 fps and adapt detail within the existing media budget. Idle PNG frames
-preserve text edges; oversized images fall back to bounded JPEG. Input retains
-CSS coordinates. Manual tab selection does not follow model activity.
+A narrow inset and theme border frame the page. Visible pages reflow to the panel's
+available size; a fixed 1280x800 desktop mode remains available and background tabs
+start at that size. The first owned view
+requesting geometry controls it until it switches page or disconnects. Resizing
+uses the existing authorized view channel and page queue, invalidates old targets,
+and does not grant website input. Capture and input bounds use that page's viewport.
+
+Both the dedicated native display and page context use 2x raster density. Live
+text scrolls prefer lossless PNG; complex scenes adapt bounded JPEG compression and
+recover lossless capture when inexpensive again. Full-resolution idle images and
+up to 60 fps live frames retain the existing media budget. Input retains CSS
+coordinates. Input receipts pace and coalesce adjacent same-direction scrolling
+without crossing reversals, clicks or keys; stale or failed buffered actions are
+discarded, never retried. Manual tab selection does not follow model activity.

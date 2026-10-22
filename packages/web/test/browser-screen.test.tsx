@@ -1,11 +1,14 @@
 /** @vitest-environment happy-dom */
 import type { ClientContext } from '@agnes/web-client'
-import { type ComponentProps, createElement } from 'react'
+import { type ComponentProps, createElement, createRef } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 import { BrowserAudio } from '../../package-manager/bundled-plugins/browser/src/browser-audio.js'
-import { BrowserScreen } from '../../package-manager/bundled-plugins/browser/src/browser-screen.js'
+import {
+  BrowserScreen,
+  type BrowserScreenHandle,
+} from '../../package-manager/bundled-plugins/browser/src/browser-screen.js'
 
 vi.mock('@agnes/web-ui', async () => {
   const { createElement, forwardRef } = await import('react')
@@ -132,9 +135,210 @@ it('switches tabs on one display connection and refuses late pixels from the pre
   }
 })
 
+it('adapts the real viewport, coalesces resizing and accepts clicks only on matching sharp frames', async () => {
+  let size = { width: 540, height: 920 },
+    raster = size,
+    epoch = 0
+  let resize = () => {},
+    receive = (_frame: unknown) => {}
+  const disconnect = vi.fn()
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        resize = callback
+      }
+      observe() {}
+      disconnect = disconnect
+    },
+  )
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
+    () => new DOMRect(0, 0, size.width, size.height),
+  )
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => size.width)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(() => size.height)
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    drawImage() {},
+    clearRect() {},
+  } as unknown as CanvasRenderingContext2D)
+  const decode = vi.fn(async () => ({
+    width: raster.width * 2,
+    height: raster.height * 2,
+    close() {},
+  }))
+  vi.stubGlobal('createImageBitmap', decode)
+  const request = vi.fn(async (input: Record<string, any>) => {
+    if (input.type === 'view')
+      return {
+        viewportWidth: input.viewport.width,
+        viewportHeight: input.viewport.height,
+        pageEpoch: ++epoch,
+      }
+    return {}
+  })
+  const interaction = { request, onLost: () => () => {} } as unknown as NonNullable<
+    ComponentProps<typeof BrowserScreen>['interaction']
+  >
+  const open = vi.fn(async () => ({
+    close() {},
+    onDisconnect() {},
+    onFrame(callback: typeof receive) {
+      receive = callback
+    },
+  }))
+  const ctx = { sessionStreams: { open } } as unknown as ClientContext
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const page = {
+    pageId: 'adaptive',
+    url: 'http://localhost/',
+    pageEpoch: 0,
+    controlEpoch: 1,
+    mode: 'human' as const,
+  }
+  const control = { pageId: page.pageId, controlEpoch: 1, operationId: '', channel: interaction }
+  const onError = vi.fn()
+  const render = (fixedSize = false) =>
+    flushSync(() =>
+      root.render(
+        createElement(BrowserScreen, {
+          ctx,
+          interaction,
+          page,
+          fixedSize,
+          reconnect: 0,
+          control,
+          t: (key) => key,
+          onError,
+        }),
+      ),
+    )
+  const pixels = (width: number, height: number, pageEpoch = epoch) => {
+    raster = { width, height }
+    const metadata = new TextEncoder().encode(
+      JSON.stringify({
+        ...page,
+        pageEpoch,
+        viewportWidth: width,
+        viewportHeight: height,
+        frameMime: 'image/png',
+      }),
+    )
+    const frame = new Uint8Array(metadata.length + 5)
+    new DataView(frame.buffer).setUint32(0, metadata.length)
+    frame.set(metadata, 4)
+    receive(frame)
+  }
+  try {
+    render()
+    await vi.waitFor(() =>
+      expect(open).toHaveBeenCalledWith(
+        'browser.frames',
+        expect.objectContaining({ viewport: size }),
+        expect.anything(),
+      ),
+    )
+    pixels(540, 920)
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.disabled).toBe(false))
+    const canvas = host.querySelector('canvas')!
+    expect(canvas.width).toBe(1080)
+    decode.mockResolvedValueOnce({ width: 1080, height: 200, close() {} })
+    pixels(540, 920)
+    await new Promise((done) => setTimeout(done, 0))
+    expect(canvas.height).toBe(1840)
+    const inset = vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(11, 11, 540, 920))
+    canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 281, clientY: 471 }))
+    await vi.waitFor(() =>
+      expect(request.mock.lastCall?.[0]).toMatchObject({
+        type: 'input',
+        input: { x: 270, y: 460, pageEpoch: 0 },
+      }),
+    )
+    inset.mockImplementation(() => new DOMRect(0, 0, size.width, size.height))
+    size = { width: 600, height: 1000 }
+    resize()
+    size = { width: 650, height: 1100 }
+    resize()
+    await vi.waitFor(() => expect(request.mock.lastCall?.[0]).toMatchObject({ type: 'view', viewport: size }))
+    const before = request.mock.calls.length
+    pixels(540, 920, 0)
+    canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 325, clientY: 550 }))
+    expect(request.mock.calls).toHaveLength(before)
+    pixels(650, 1100)
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.disabled).toBe(false))
+    expect(canvas.width).toBe(1300)
+    canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 325, clientY: 550 }))
+    await vi.waitFor(() =>
+      expect(request.mock.lastCall?.[0]).toMatchObject({
+        type: 'input',
+        input: { x: 325, y: 550, pageEpoch: 1 },
+      }),
+    )
+    size = { width: 0, height: 0 }
+    resize()
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(request.mock.calls).toHaveLength(before + 1)
+    size = { width: 650, height: 1100 }
+    render(true)
+    await vi.waitFor(() =>
+      expect(request.mock.lastCall?.[0]).toMatchObject({
+        type: 'view',
+        viewport: { width: 1280, height: 800 },
+      }),
+    )
+    pixels(1280, 800)
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.disabled).toBe(false))
+    canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 325, clientY: 550 }))
+    await vi.waitFor(() =>
+      expect(request.mock.lastCall?.[0]).toMatchObject({
+        type: 'input',
+        input: { x: 640, y: 400, pageEpoch: 2 },
+      }),
+    )
+    render(false)
+    await vi.waitFor(() => expect(request.mock.lastCall?.[0]).toMatchObject({ type: 'view', viewport: size }))
+    // Another window may own geometry; keep early pixels until its acknowledgement.
+    let acknowledge!: (value: Record<string, number>) => void
+    request.mockImplementationOnce(
+      async () =>
+        new Promise((resolve) => {
+          acknowledge = resolve
+        }),
+    )
+    size = { width: 600, height: 900 }
+    resize()
+    await vi.waitFor(() => expect(acknowledge).toBeDefined())
+    pixels(1280, 800, 4)
+    expect(host.querySelector('textarea')?.disabled).toBe(true)
+    acknowledge({ viewportWidth: 1280, viewportHeight: 800, pageEpoch: 4 })
+    await vi.waitFor(() => expect(host.querySelector('textarea')?.disabled).toBe(false))
+    pixels(1280, 800, 2)
+    host
+      .querySelector('textarea')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await vi.waitFor(() =>
+      expect(request.mock.lastCall?.[0]).toMatchObject({
+        type: 'input',
+        input: { pageEpoch: 4, type: 'key' },
+      }),
+    )
+    expect(open).toHaveBeenCalledTimes(1)
+  } finally {
+    flushSync(() => root.unmount())
+    host.remove()
+    expect(disconnect).toHaveBeenCalled()
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  }
+})
+
 it('keeps input bound to displayed pixels when navigation acknowledgement precedes the new image', async () => {
   const callbacks = new Map<string, (value: unknown) => void>()
-  const send = vi.fn((_frame: unknown) => 'accepted')
+  const send = vi.fn((frame: unknown) => {
+    callbacks.get('browser.input')?.({ status: 'ok', seq: (frame as { seq: number }).seq })
+    return 'accepted'
+  })
   const draw = vi.fn()
   const ctx = {
     sessionStreams: {
@@ -228,6 +432,13 @@ it('keeps input bound to displayed pixels when navigation acknowledgement preced
       new WheelEvent('wheel', { bubbles: true, deltaY: 3, deltaMode: 1, cancelable: true }),
     )
     await vi.waitFor(() => expect(send.mock.lastCall?.[0]).toMatchObject({ type: 'scroll', y: 48 }))
+    for (const [deltaMode, deltaY, expected] of [
+      [0, 0.75, 0.75],
+      [2, 1, 800],
+    ] as const) {
+      canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY, deltaMode, cancelable: true }))
+      await vi.waitFor(() => expect(send.mock.lastCall?.[0]).toMatchObject({ type: 'scroll', y: expected }))
+    }
     for (const [platform, modifier, expected] of [
       ['Win32', 'ctrlKey', 'ControlOrMeta+a'],
       ['Win32', 'metaKey', 'Meta+a'],
@@ -249,11 +460,208 @@ it('keeps input bound to displayed pixels when navigation acknowledgement preced
   }
 })
 
+it.each(['native', 'legacy'] as const)(
+  'coalesces acknowledged scrolling on %s without crossing gestures or replaying failures',
+  async (transport) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let holdRenewal = false,
+      releaseRenewal: (() => void) | undefined
+    const callbacks = new Map<string, (value: unknown) => void>()
+    const sent: Record<string, any>[] = []
+    const receipts = new Map<number, { resolve(value: object): void; reject(error: Error): void }>()
+    const request = vi.fn(async (frame: Record<string, any>) => {
+      if (frame.type !== 'input') return {}
+      sent.push(frame.input)
+      return new Promise<object>((resolve, reject) => receipts.set(frame.input.seq, { resolve, reject }))
+    })
+    const channel = { request, onLost: () => () => {} } as unknown as NonNullable<
+      ComponentProps<typeof BrowserScreen>['interaction']
+    >
+    const ctx = {
+      sessionStreams: {
+        open: async (name: string) => {
+          if (name === 'browser.input' && holdRenewal)
+            await new Promise<void>((resolve) => {
+              releaseRenewal = resolve
+            })
+          return {
+            send(frame: Record<string, any>) {
+              sent.push(frame)
+              return 'accepted'
+            },
+            close() {},
+            onDisconnect() {},
+            onFrame(fn: (value: unknown) => void) {
+              callbacks.set(name, fn)
+            },
+          }
+        },
+      },
+    } as unknown as ClientContext
+    vi.stubGlobal('createImageBitmap', async () => ({ width: 2560, height: 1600, close() {} }))
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage() {},
+      clearRect() {},
+    } as unknown as CanvasRenderingContext2D)
+    const host = document.createElement('div'),
+      root = createRoot(host),
+      ref = createRef<BrowserScreenHandle>()
+    const page = {
+      pageId: 'scrolling',
+      url: 'http://localhost/',
+      pageEpoch: 0,
+      controlEpoch: 1,
+      mode: 'human' as const,
+    }
+    const onError = vi.fn()
+    const pixels = (pageEpoch: number) => {
+      const metadata = new TextEncoder().encode(JSON.stringify({ ...page, pageEpoch }))
+      const frame = new Uint8Array(metadata.length + 5)
+      new DataView(frame.buffer).setUint32(0, metadata.length)
+      frame.set(metadata, 4)
+      callbacks.get('browser.frames')?.(frame)
+    }
+    const acknowledge = async (seq: number, error?: string) => {
+      if (transport === 'native') {
+        const receipt = receipts.get(seq)
+        if (error) receipt?.reject(new Error(error))
+        else receipt?.resolve({})
+      } else callbacks.get('browser.input')?.({ seq, status: error ? 'error' : 'ok', code: error })
+      await vi.advanceTimersByTimeAsync(0)
+    }
+    const scroll = (y: number) => ref.current!.interact({ type: 'scroll', x: 0, y })
+    try {
+      flushSync(() =>
+        root.render(
+          createElement(BrowserScreen, {
+            ref,
+            ctx,
+            page,
+            reconnect: 0,
+            control: {
+              pageId: page.pageId,
+              controlEpoch: 1,
+              operationId: '',
+              ...(transport === 'native' ? { channel } : {}),
+            },
+            t: (key) => key,
+            onError,
+          }),
+        ),
+      )
+      await vi.waitFor(() => expect(callbacks.has('browser.frames')).toBe(true))
+      pixels(0)
+      await vi.waitFor(() => expect(host.querySelector('[data-connected="true"]')).not.toBeNull())
+      for (let n = 0; n < 40; n++) scroll(0.75)
+      scroll(-1.5)
+      ref.current!.interact({ type: 'click', x: 20, y: 30 })
+      expect(sent).toHaveLength(1)
+      expect(sent[0]).toMatchObject({ type: 'scroll', y: 0.75, seq: 0 })
+      callbacks.get('browser.input')?.({ status: 'queued', seq: 0 })
+      expect(sent).toHaveLength(1)
+      await acknowledge(0)
+      expect(sent[1]).toMatchObject({ type: 'scroll', y: 29.25, seq: 39 })
+      await acknowledge(0) // A duplicate receipt must not release the next gesture.
+      expect(sent).toHaveLength(2)
+      await acknowledge(39)
+      expect(sent[2]).toMatchObject({ type: 'scroll', y: -1.5, seq: 40 })
+      await acknowledge(40)
+      expect(sent[3]).toMatchObject({ type: 'click', x: 20, y: 30, seq: 41 })
+      await acknowledge(41)
+      scroll(1)
+      scroll(2)
+      scroll(3)
+      pixels(1)
+      await vi.advanceTimersByTimeAsync(0)
+      await acknowledge(42)
+      expect(sent).toHaveLength(5) // Navigation discards the unsent old-document delta.
+      scroll(1)
+      scroll(2)
+      scroll(3)
+      expect(sent[5]).toMatchObject({ pageEpoch: 1 })
+      await acknowledge(45, 'DENIED')
+      expect(sent).toHaveLength(6)
+      expect(onError).toHaveBeenCalledOnce()
+      const beforePaste = sent.length
+      for (let index = 0; index < 40; index++) ref.current!.interact({ type: 'text', text: '中'.repeat(500) })
+      for (let index = beforePaste; index < sent.length; index++) {
+        const input = sent[index]!
+        expect(input.type).toBe('text')
+        expect(new TextEncoder().encode(JSON.stringify(input)).length).toBeLessThan(4096)
+        await acknowledge(input.seq)
+      }
+      expect(
+        sent
+          .slice(beforePaste)
+          .map((input) => input.text)
+          .join(''),
+      ).toBe('中'.repeat(20_000))
+      const canvas = host.querySelector('canvas')!
+      const wheel = (deltaY: number, deltaMode = 0) =>
+        canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY, deltaMode, cancelable: true }))
+      // A click, shortcut or text arriving inside the wheel batching window must
+      // remain behind that wheel on both transports.
+      for (const input of [
+        { type: 'click', x: 20, y: 30 },
+        { type: 'key', key: 'ControlOrMeta+a' },
+        { type: 'text', text: '中文' },
+      ]) {
+        const before = sent.length
+        wheel(3, 1)
+        ref.current!.interact(input)
+        expect(sent[before]).toMatchObject({ type: 'scroll', y: 48 })
+        await acknowledge(sent[before]!.seq)
+        expect(sent[before + 1]).toMatchObject(input)
+        await acknowledge(sent[before + 1]!.seq)
+        expect(sent).toHaveLength(before + 2)
+      }
+      // Trackpad reversal must not cancel a preceding delta, even within 8 ms.
+      const beforeReversal = sent.length
+      wheel(0.75)
+      wheel(-0.25)
+      expect(sent[beforeReversal]).toMatchObject({ type: 'scroll', y: 0.75 })
+      await acknowledge(sent[beforeReversal]!.seq)
+      await vi.waitFor(() => expect(sent[beforeReversal + 1]).toMatchObject({ type: 'scroll', y: -0.25 }))
+      await acknowledge(sent[beforeReversal + 1]!.seq)
+      if (transport === 'legacy') {
+        holdRenewal = true
+        await vi.advanceTimersByTimeAsync(25_000)
+        expect(releaseRenewal).toBeDefined()
+        const beforeRenewal = sent.length
+        scroll(12)
+        expect(sent).toHaveLength(beforeRenewal)
+        releaseRenewal!()
+        await vi.advanceTimersByTimeAsync(0)
+        expect(sent[beforeRenewal]).toMatchObject({ type: 'scroll', y: 12 })
+        await acknowledge(sent[beforeRenewal]!.seq)
+      }
+      scroll(1)
+      scroll(2)
+      scroll(3)
+      const outstanding = sent.slice(-1),
+        beforeClose = sent.length
+      wheel(0.5)
+      flushSync(() => root.unmount())
+      for (const input of outstanding) await acknowledge(input.seq)
+      await vi.advanceTimersByTimeAsync(16)
+      expect(sent).toHaveLength(beforeClose) // Late receipts never replay buffered input after closing.
+    } finally {
+      flushSync(() => root.unmount())
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    }
+  },
+)
+
 it.each(['granted', 'denied', 'navigated', 'agent-changed', 'wheel'] as const)(
   'admits the first page click through native control and handles %s handover',
   async (outcome) => {
     const callbacks = new Map<string, (value: unknown) => void>()
-    const send = vi.fn((_frame: unknown) => 'accepted')
+    const send = vi.fn((frame: unknown) => {
+      callbacks.get('browser.input')?.({ status: 'ok', seq: (frame as { seq: number }).seq })
+      return 'accepted'
+    })
     const ctx = {
       sessionStreams: {
         open: async (name: string) => ({
