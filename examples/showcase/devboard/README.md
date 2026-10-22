@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 An R&D and quality workbench demo for a rail door-system manufacturer: review gates that follow the project kind, multi-discipline traceability, type tests and first-article inspection, and the loop from field alarms back to design. **The company "Ningchuan Transportation Equipment Co., Ltd." (宁川交通装备股份有限公司), its customers, metro lines, trains, parts and people are fictional, and all data is simulated**; no external system (PLM, ERP, QIS, SLM, MES …) is contacted. Gate names, limits and safety-integrity statements are assumptions ("inferred" or "project specification assumption"), not any real company's process.
 
-After installing and adopting DevBoard 3.3.0 on the Agents page, the workbench shows ten pages and an **R&D Coordinator** agent. Four projects are seeded:
+After installing and adopting DevBoard 3.4.0 on the Agents page, the workbench shows ten pages and an **R&D Coordinator** agent. Four projects are seeded:
 
 | Project | Kind | Shows |
 | --- | --- | --- |
@@ -38,6 +38,18 @@ Switching the demo role changes what the pages show. A lens is only a view: it n
 
 The rules live in `client/lens.js`: 质量工程师 sees every defect, 机械设计师 only the mechanical requirements, 配置管理员 the configuration baselines, 客服工程师 only the alarms reported by customer service; 技术负责人, 分技术中心主任 and IPMT also see everything waiting for their decision. A record kind or role without a rule counts as not related.
 
+## Demo guide
+
+Next to the demo role at the top of every page there is a **演示指引** (demo guide) button. It opens a side panel to the right of the page. It is not a dialog, so the audience sees the page and the explanation together.
+
+- **Main line**: 12 steps showing how one requirement becomes a running project. The project manager starts the project, IPMT approves CDCP, the systems designer works on requirements and traceability, the technical lead approves TR1, the software designer does design and development, the technical lead approves TR3, TR4 passes by itself once every code review finding is closed, the verification engineer records the acceptance evidence, the quality engineer approves TR5 and IPMT approves ADCP. Each step names the acting role and has a button to switch to it.
+- **My role**: 4 to 6 getting-started steps for the current demo role, using records that role really has in the seed data. Switching the role changes the steps; for roles in the main line the last step points to the steps they own.
+- Every step says what to do, what you will see and what it is worth in real work. "带我去" (take me there) opens the page and lights the target with an outline and a one-line bubble that fades after a few seconds; Esc or a click anywhere dismisses it. When the target is missing (for example no record on the page concerns the current role) the bubble appears next to the page title.
+- Main-line step 2 opens the R&D Coordinator with the quick action prompt "新建并启动一个研发项目" filled in. It is never sent automatically. A full run with a real model takes tens of minutes, so a live demo can stop at CDCP or TR1 and use the preset PRJ-2025-019 for the rest.
+- Main-line milestones tick themselves from the board: the live project exists, and CDCP, TR1, TR3, TR4, TR5 and ADCP are submitted and approved. The other steps are ticked by hand.
+- The first time a demo role visits, the panel opens on the role tab at step 1. Ticks, the roles that have seen the guide and the "don't open by itself" switch are kept in this browser only (localStorage) and never written to the board; "从头开始" (start over) clears the ticks of the main line and of the current role.
+- The only company named is the fictional Ningchuan Equipment; the "in real work" lines describe general value for a door-system manufacturer and the presenter relates them to a real customer.
+
 ## Rules
 
 Every write goes through one set of functions in `domain.mjs`, shared by pages and agent tools.
@@ -70,7 +82,7 @@ The preset explicitly requests reviewed `sandbox.loopback_serve` under L1 enforc
 
 ### Demo script and checkpoints
 
-0. **Update Agnes first, then replace DevBoard**: use a platform build whose package inspection accepts the complete declared role list; an older build may refuse it. To replace 2.x (2.0.0/2.1.0), 3.1.0, 3.2.0, 3.2.1 or 3.2.2 with **3.3.0**, on the Agents page disable DevBoard, uninstall the old version, install 3.3.0, trust and enable it, then adopt it. Installing over an existing version fails in the confirmed 2.x case; use this replacement path for 3.1.0 and 3.2.x as well. Whether old data survives uninstall is not yet confirmed; 3.3.0 ships seed data, and **重置演示数据** (reset demo data) on Portfolio restores the demo state.
+0. **Update Agnes first, then replace DevBoard**: use a platform build whose package inspection accepts the complete declared role list; an older build may refuse it. To replace 2.x (2.0.0/2.1.0), 3.1.0, 3.2.0, 3.2.1, 3.2.2 or 3.3.0 with **3.4.0**, on the Agents page disable DevBoard, uninstall the old version, install 3.4.0, trust and enable it, then adopt it. Installing over an existing version fails in the confirmed 2.x case; use this replacement path for 3.1.0, 3.2.x and 3.3.0 as well. Whether old data survives uninstall is not yet confirmed; 3.3.0 ships seed data, and **重置演示数据** (reset demo data) on Portfolio restores the demo state.
 1. Portfolio: four projects with gate codes and owning centres; PRJ-2023-011 shows alarms, open problems, retrofit progress and baseline gap.
 2. Reviews → the design liaison 2 gate of PRJ-2026-008: signing as 质量工程师 is refused with "本门需由 … 审批"; signing as a role the gate names records one signature and leaves the gate pending; the last signature is refused while findings are open; close them and sign the remaining role to pass the gate and move on to design freeze.
 3. Trials & first article: the failed low-temperature clamping-force trial of PRJ-2025-042 points at its change; submitting the type-test gate adds a finding for every trial not yet approved.
@@ -121,11 +133,11 @@ Everything below is an assumption in this demo and should be confirmed before re
 - `seed-data.mjs`, `seed-docs/`: the fictional portfolio and its document bodies.
 - `index.mjs`: profile services `devboard.snapshot`, `devboard.artifact`, `devboard.transition` (also trial, fault, problem and retrofit), `devboard.create`, `devboard.gate`, `devboard.approval` (start and handle approvals), `devboard.reset`, agent tools and the skill.
 - `skills/devboard-playbook.md`: the coordinator skill.
-- `client/`: the pages built with `@agnes/web-ui`.
+- `client/`: the pages built with `@agnes/web-ui`. The demo guide lives in `guide.js` (panel, spotlight), `guide-memory.js` (what the browser remembers), `guide-progress.js` (ticks from the board snapshot); the copy is plain data in `guide-data.js` (main line) and `guide-roles-*.js` (roles).
 - `test/`: domain rule, plugin contract and seed data tests.
 
 ```sh
 pnpm exec vitest run examples/showcase/devboard/test --maxWorkers=1
 ```
 
-Upgrading: stored data of schema 1 or 2 reads as the seed and is replaced on the first write, schema 3 and 4 data is kept (a schema 3 store starts with no approvals); update Agnes first, then disable and uninstall the old DevBoard before replacing 2.x, 3.1.0, 3.2.0, 3.2.1 or 3.2.2 with 3.3.0 (see step 0 of the demo script). To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.
+Upgrading: stored data of schema 1 or 2 reads as the seed and is replaced on the first write, schema 3 and 4 data is kept (a schema 3 store starts with no approvals); update Agnes first, then disable and uninstall the old DevBoard before replacing 2.x, 3.1.0, 3.2.0, 3.2.1, 3.2.2 or 3.3.0 with 3.4.0 (see step 0 of the demo script). To try it from source, follow [installation](../../../docs/guide/install.md), open the Agents page, install DevBoard, then adopt it.
