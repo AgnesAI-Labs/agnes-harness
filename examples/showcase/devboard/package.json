@@ -801,8 +801,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). Create the live project “Door health monitoring dashboard” (a small dependency-free Node web app for the O&M platform) with devboard_project_create, write the project plan, record it and submit the initiation gate; then stop and tell me to approve it on the board.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。用 devboard_project_create 新建现场项目「车门健康监测看板」（智能运维平台的一个小切片，无依赖的 Node 网页应用），写项目计划、登记交付物并提交立项评审；提交后停下，告诉我到看板审批。"
+              "en": "First call skill_read(name=devboard-playbook). Create the live project “Door health monitoring dashboard” (a small dependency-free Node web app for the O&M platform) with devboard_project_create, write the project plan, record it and submit the initiation gate; then stop and tell me to approve it on the board. Later stages follow the playbook, including the tasks and defects registered on the board.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。用 devboard_project_create 新建现场项目「车门健康监测看板」（智能运维平台的一个小切片，无依赖的 Node 网页应用），写项目计划、登记交付物并提交立项评审；提交后停下，告诉我到看板审批。之后的阶段按 playbook 推进，包括把任务和缺陷登记到看板。"
             }
           },
           {
@@ -813,8 +813,8 @@
             },
             "agent": "@agnes-showcase/devboard#coordinator",
             "prompt": {
-              "en": "First call skill_read(name=devboard-playbook). A review gate has been decided on the board; its id is in the attached work object. Call devboard_gate_status for that gate, read the decision and findings, then continue the project: next stage if approved, rework per the findings if rejected.",
-              "zh-CN": "先调用 skill_read(name=devboard-playbook)。看板上有评审门已决议，门的编号在附带的工作对象里。先用 devboard_gate_status 读取该门的决议与意见，然后继续推进：批准就进入下一阶段，驳回就按意见返工后重新提交。"
+              "en": "First call skill_read(name=devboard-playbook). A review gate has been decided on the board; its id is in the attached work object. Call devboard_gate_status for that gate, read the decision and findings, then continue the project: next stage if approved, rework per the findings if rejected. After TR1 is approved, create one requirement per SWR group (projectId set, title starting with the SWR ids) with a DEVELOPMENT and a TESTING task, move tasks to IN_PROGRESS and COMPLETED as roles work, and register every failed test case as a defect (foundIn per test level, req = the SWR id) and walk it through FIXING, RETEST and CLOSED; code-review findings stay on the TR4 gate.",
+              "zh-CN": "先调用 skill_read(name=devboard-playbook)。看板上有评审门已决议，门的编号在附带的工作对象里。先用 devboard_gate_status 读取该门的决议与意见，然后继续推进：批准就进入下一阶段，驳回就按意见返工后重新提交。TR1 批准后，按 SWR 分组各建一个需求（带 projectId，标题以 SWR 编号开头），每个需求建一个 DEVELOPMENT 和一个 TESTING 任务，角色开工与交付时把任务置为 IN_PROGRESS、COMPLETED；测试中每个失败的用例登记一条缺陷（foundIn 按测试级别，req 填 SWR 编号），经 FIXING、RETEST、CLOSED 流转；代码评审意见仍挂在 TR4 门上，不登记成缺陷。"
             }
           },
           {

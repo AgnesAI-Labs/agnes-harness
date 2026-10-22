@@ -50,10 +50,18 @@ src/…  test/…  server.js  README.md
 
 1. 立项（CDCP）：`devboard_project_create` 建项目（默认 SOFTWARE 档案与裁剪）→ 写 `docs/PROJECT-PLAN.md`（目标、范围、里程碑、角色、风险）→ `devboard_artifact_record(kind=PLAN, stage=INITIATION)` → `devboard_gate_submit` → 结束本轮。
 2. 需求（TR1）：派 `requirements`（系统设计师）写 `docs/SRS.md`（CUS/SYS/SWR 编号条款）与 `docs/RTM.md`；你用 `devboard_req_upsert` 登记 CUS、SYS（parent=CUS）、SWR（parent=SYS）；登记 SRS、RTM 交付物 → 提交评审 → 结束本轮。
-3. 设计（TR3，TR2 与 PDCP 已裁剪）：派 `architect` 写 `docs/SAD.md`（模块、接口、数据流、非功能约束）；登记 DES（parent=SWR）与 SAD → 提交评审 → 结束本轮。
-4. 开发（TR4，自动门）：派开发写 `src/`、`server.js` 和单元测试；再派代码评审子智能体评审（检查代码与测试是否覆盖 SWR）；登记 CODE 交付物（路径如 `src/README.md` 或 `README.md`），把评审意见作为 findings 提交；修复并由代码评审角色复核后关闭意见，自动通过。
-5. 验证（TR5）：派测试子智能体独立编写测试规范与用例（只读 SRS 与公开接口合同，不看实现自证），你登记 TC（parent=SWR）；由你运行 `node --test`（shell 会请人确认），把真实结果用 `devboard_test_record` 登记（含命令、cwd、通过/失败/跳过数和日志摘要），回传结果给测试角色完成 `docs/TEST-REPORT.md`；`node --test` 记录单元测试结果，公开 HTTP/页面验收由真实浏览器执行测试角色的断言或逐条 TC 步骤，分别记录实际计数；失败项用 `devboard_defect_upsert` 登记缺陷。验收必须启动真实 TCP listener，由沙箱外真实浏览器通过 HTTP 请求公开接口，覆盖页面、正常输入和拒绝/错误路径；不得调用 createHandler 等内部函数替代，监听失败不得回退为进程内「通过」。保持缺口意见未关闭；修复后由测试角色复核真实回归，再登记报告 → 提交评审 → 结束本轮。
+3. 设计（TR3，TR2 与 PDCP 已裁剪）：TR1 批准后先按下面的「任务与缺陷入板」建需求和任务；派 `architect` 写 `docs/SAD.md`（模块、接口、数据流、非功能约束）；登记 DES（parent=SWR）与 SAD → 提交评审 → 结束本轮。
+4. 开发（TR4，自动门）：派开发前把对应的 DEVELOPMENT 任务置为 IN_PROGRESS，交付后置为 COMPLETED；派开发写 `src/`、`server.js` 和单元测试；再派代码评审子智能体评审（检查代码与测试是否覆盖 SWR）；登记 CODE 交付物（路径如 `src/README.md` 或 `README.md`），把评审意见作为 findings 提交；修复并由代码评审角色复核后关闭意见，自动通过。
+5. 验证（TR5）：派测试子智能体独立编写测试规范与用例（只读 SRS 与公开接口合同，不看实现自证），你登记 TC（parent=SWR）；由你运行 `node --test`（shell 会请人确认），把真实结果用 `devboard_test_record` 登记（含命令、cwd、通过/失败/跳过数和日志摘要），回传结果给测试角色完成 `docs/TEST-REPORT.md`；`node --test` 记录单元测试结果，公开 HTTP/页面验收由真实浏览器执行测试角色的断言或逐条 TC 步骤，分别记录实际计数；TESTING 任务同样随测试开始、完成置为 IN_PROGRESS、COMPLETED；每个失败用例按「任务与缺陷入板」登记缺陷。验收必须启动真实 TCP listener，由沙箱外真实浏览器通过 HTTP 请求公开接口，覆盖页面、正常输入和拒绝/错误路径；不得调用 createHandler 等内部函数替代，监听失败不得回退为进程内「通过」。保持缺口意见未关闭；修复后由测试角色复核真实回归，再登记报告 → 提交评审 → 结束本轮。
 6. 发布（ADCP，TR6 已裁剪）：写 `docs/RELEASE-NOTE.md`（版本、基线清单、命令、cwd、已验证 URL、停止服务方式）并登记；用 shell 后台模式启动 `node server.js --port <空闲端口>`，读取实际输出的 `AGH_LOOPBACK_URL`，请演示者从真实浏览器通过公开 HTTP 接口检查就绪；请人在真实浏览器打开页面并操作线路、车辆、车门与故障排行，记录浏览器检查证据。确认 HTTP 与浏览器通过后才用 `devboard_app_register` 登记实际 `AGH_LOOPBACK_URL`（`http://127.0.0.1:<实际端口>/`） → 提交评审 → 结束本轮。监听/浏览器失败或尚未检查时保留发布阻断意见，不登记虚构 URL、不宣称已发布。
+
+### 任务与缺陷入板
+
+看板上的任务页和缺陷页要在现场项目里有内容，由你登记，角色不碰看板：
+
+- **任务**：TR1 批准、进入设计后，按 SWR 分组（把相关的 SWR 放在一组，每组一个功能块）为每组调用一次 `devboard_create_requirement`（带 `projectId`，标题以 SWR 编号开头，如「SWR-001、SWR-002 健康评分与等级」），再用 `devboard_create_task` 给它建两个任务：`DEVELOPMENT`（`owner` 填软件设计师）和 `TESTING`（`owner` 填验证工程师，`dependsOn` 填开发任务）。需求先用 `devboard_transition` 走到 REFINED、ASSIGNED。角色开工时把它的任务置为 IN_PROGRESS，交付并核对文件后置为 COMPLETED；一组任务全部 COMPLETED，需求会自动完成。
+- **缺陷**：测试中每个失败的用例登记一条缺陷（`devboard_defect_upsert`：`title`、`severity`、`foundIn` 按发现它的阶段——单元与集成测试填 IMPLEMENTATION，系统与浏览器验收填 VERIFICATION，`testCase` 填用例编号，`req` 填对应的 SWR 编号），确认后置为 CONFIRMED。修复时置为 FIXING，修复合入后置为 RETEST，回归通过再置为 CLOSED；回归没跑就停在 RETEST，不要关闭。
+- **代码评审意见**不登记成缺陷：它们作为 findings 挂在 TR4 门上，由代码评审员复核后关闭。评审意见不等于缺陷。
 
 ### 命令
 

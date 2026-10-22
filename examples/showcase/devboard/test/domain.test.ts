@@ -1805,9 +1805,9 @@ describe('fast-forward from the shipped sample', () => {
   const LEVELS = [
     ['CDCP', 'CDCP', 'I·····', ['m2', 'm3'], 0, 0],
     ['TR1', 'TR1', 'PI····', ['m2', 'm3', 'm4', 'm5'], 0, 0],
-    ['TR3', 'TR3', 'PPI···', ['m2', 'm3', 'm4', 'm5', 'm6', 'm7'], 0, 0],
-    ['TR5', 'TR5', 'PPPPI·', ['m2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9', 'm10'], 0, 0],
-    ['DONE', 'ADCP', 'PPPPPP', MAIN_STEPS.slice(1).map((m) => m.id), 0, 0],
+    ['TR3', 'TR3', 'PPI···', ['m2', 'm3', 'm4', 'm5', 'm6', 'm7'], 6, 0],
+    ['TR5', 'TR5', 'PPPPI·', ['m2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9', 'm10'], 6, 2],
+    ['DONE', 'ADCP', 'PPPPPP', MAIN_STEPS.slice(1).map((m) => m.id), 6, 2],
   ] as const
 
   it.each(LEVELS)(
@@ -1844,7 +1844,12 @@ describe('fast-forward from the shipped sample', () => {
       expect(state.tasks.filter((t: Item) => t.projectId === project.id)).toHaveLength(tasks)
       const found = state.defects.filter((d: Item) => d.projectId === project.id)
       expect(found).toHaveLength(defects)
-      if (level(gate) >= 3) {
+      if (defects) {
+        expect(found.map((d: Item) => [d.severity, d.state])).toEqual([
+          ['C', 'CLOSED'],
+          ['B', 'RETEST'],
+        ])
+        expect(found.map((d: Item) => d.req)).toEqual(['SWR-002', 'SWR-003'])
         const runs = state.testRuns.filter((t: Item) => t.projectId === project.id)
         expect(runs.map((r: Item) => [r.level, r.total, r.failed])).toEqual([
           ['UNIT', UNIT_TOTAL, 1],

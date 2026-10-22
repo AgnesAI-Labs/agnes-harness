@@ -109,6 +109,12 @@ const DES = sub([
   ['DES-005', '启动入口与监听方式（server.js）', ['SWR-006'], { module: 'server.js' }],
 ])
 
+// One requirement per SWR group with a DEVELOPMENT and a TESTING task (design D2).
+const GROUPS = [
+  ['SWR-001、SWR-002', '健康评分与等级'],
+  ['SWR-003、SWR-004', '三级钻取与预警排行'],
+  ['SWR-005、SWR-006', '模拟信号与只读接口'],
+]
 const FINDINGS = [
   '评分函数对 undefined 信号未做保护，需补边界用例',
   '页面快速切换车辆时可能显示过期响应，需丢弃过期结果',
@@ -150,6 +156,7 @@ function build(state, level, now, minSeq) {
     submitGate(state, { stageId: stageId(stage), by: AGENT, ...extra }, at(h)).gate
   const approve = (gate, h) =>
     decideGate(state, { gateId: gate.id, decision: 'APPROVED', by: PEOPLE[gate.approverRoles[0]] }, at(h))
+  const move = (kind, id, to, h, note) => transition(state, { kind, id, to, by: AGENT, note }, at(h))
   const done = (gate) => ({ project, gate })
 
   // 概念
@@ -166,8 +173,50 @@ function build(state, level, now, minSeq) {
   if (level === 1) return done(gate)
   approve(gate, 78)
 
-  // 设计
+  // 设计：TR1 批准后按 SWR 分组登记需求与任务
   start('DESIGN', 78)
+  const groups = GROUPS.map(([swr, name]) => {
+    const requirement = create(
+      state,
+      {
+        kind: 'requirement',
+        projectId,
+        title: `${swr} ${name}`,
+        priority: 'P1',
+        owner: '软件设计师',
+        by: AGENT,
+      },
+      at(80),
+    )
+    move('requirement', requirement.id, 'REFINED', 80)
+    move('requirement', requirement.id, 'ASSIGNED', 80)
+    const dev = create(
+      state,
+      {
+        kind: 'task',
+        requirementId: requirement.id,
+        title: `${swr} 开发：${name}`,
+        type: 'DEVELOPMENT',
+        owner: '软件设计师',
+        by: AGENT,
+      },
+      at(80),
+    )
+    const test = create(
+      state,
+      {
+        kind: 'task',
+        requirementId: requirement.id,
+        title: `${swr} 测试：${name}`,
+        type: 'TESTING',
+        owner: '验证工程师',
+        dependsOn: [dev.id],
+        by: AGENT,
+      },
+      at(80),
+    )
+    return { dev, test }
+  })
   upsertReqs(state, { projectId, items: DES.map((d) => ({ ...d, discipline: 'SW' })), by: AGENT }, at(100))
   docs('DESIGN', 102)
   gate = submit('DESIGN', 120)
@@ -176,14 +225,17 @@ function build(state, level, now, minSeq) {
 
   // 开发：TR4 的代码评审意见挂在门上，全部关闭后自动通过
   start('IMPLEMENTATION', 126)
+  for (const { dev } of groups) move('task', dev.id, 'IN_PROGRESS', 128)
   docs('IMPLEMENTATION', 150)
+  for (const { dev } of groups) move('task', dev.id, 'COMPLETED', 168)
   gate = submit('IMPLEMENTATION', 172, { findings: FINDINGS })
   submit('IMPLEMENTATION', 190, {
     closeFindings: gate.findings.map((f) => ({ id: f.id, note: '已修复并由代码评审员复核' })),
   })
 
-  // 验证
+  // 验证：真实顺序是测试失败 → 登记缺陷 → 修复 → 回归
   start('VERIFICATION', 190)
+  for (const { test } of groups) move('task', test.id, 'IN_PROGRESS', 192)
   const run = (levelName, total, passed, failed, h, log) =>
     recordTestRun(state, { projectId, level: levelName, total, passed, failed, log }, at(h))
   run(
@@ -194,9 +246,48 @@ function build(state, level, now, minSeq) {
     200,
     `node --test：${UNIT_TOTAL} 个用例，${UNIT_TOTAL - 1} 通过，1 失败（TC-002 等级边界）`,
   )
+  const minor = create(
+    state,
+    {
+      kind: 'defect',
+      projectId,
+      title: '评分恰为 80 时被判为「关注」',
+      severity: 'C',
+      foundIn: 'IMPLEMENTATION',
+      testCase: 'TC-002',
+      req: 'SWR-002',
+      owner: '软件设计师',
+      description: 'node --test 首次运行失败：grade(80) 返回「关注」',
+      by: AGENT,
+    },
+    at(200),
+  )
+  move('defect', minor.id, 'CONFIRMED', 201)
+  move('defect', minor.id, 'FIXING', 204, '边界判断改为 ≥ 80')
   run('UNIT', UNIT_TOTAL, UNIT_TOTAL, 0, 216, `node --test：${UNIT_TOTAL} 个用例全部通过（修复后复测）`)
+  move('defect', minor.id, 'RETEST', 217)
+  move('defect', minor.id, 'CLOSED', 218, '复测通过')
   run('INTEGRATION', 8, 8, 0, 222, '真实 HTTP 请求 8 项全部通过（H-1 至 H-8）')
   run('SYSTEM', 12, 11, 1, 232, '真实浏览器 12 步，11 通过，B-9 失败（TC-007 快速切换车辆）')
+  const major = create(
+    state,
+    {
+      kind: 'defect',
+      projectId,
+      title: '快速切换车辆时车门表显示上一辆车的数据',
+      severity: 'B',
+      foundIn: 'VERIFICATION',
+      testCase: 'TC-007',
+      req: 'SWR-003',
+      owner: '软件设计师',
+      description: '浏览器验收 B-9：连续点 T01、T02，偶发显示 T01 的车门',
+      by: AGENT,
+    },
+    at(232),
+  )
+  move('defect', major.id, 'CONFIRMED', 233)
+  move('defect', major.id, 'FIXING', 236, '页面丢弃过期响应')
+  move('defect', major.id, 'RETEST', 244, '修复已合入，待浏览器回归')
   upsertReqs(
     state,
     {
@@ -206,6 +297,7 @@ function build(state, level, now, minSeq) {
     },
     at(245),
   )
+  for (const { test } of groups) move('task', test.id, 'COMPLETED', 246)
   docs('VERIFICATION', 248)
   gate = submit('VERIFICATION', 250)
   if (level === 3) return done(gate)
