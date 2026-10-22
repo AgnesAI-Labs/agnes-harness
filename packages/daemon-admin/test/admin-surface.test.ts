@@ -37,6 +37,7 @@ async function server(
     modelSlots?: NonNullable<AdminSurfaceOptions['modelSlots']>
     factChain?: NonNullable<AdminSurfaceOptions['factChain']>
     runtimeAdmin?: NonNullable<AdminSurfaceOptions['runtimeAdmin']>
+    available?: NonNullable<AdminSurfaceOptions['available']>
   } = {},
 ) {
   let now = Date.now()
@@ -1004,4 +1005,16 @@ describe('admin 502 diagnostics journal', () => {
       expect(records.find((r) => r.diagnosticId === id)?.cause).toBeUndefined()
     }
   })
+})
+
+it('reports an unreachable backend as unavailable, never internal, and does not dispatch', async () => {
+  const s = await server(undefined, undefined, { available: async () => false })
+  const response = await s.request('list', { profile: 'local-dev' })
+  expect(response.status).toBe(503)
+  const { error } = (await response.json()) as { error: { data: Record<string, unknown> } }
+  expect(error.data).toMatchObject({ code: 'E_HOST_CLOSED', messageKey: 'appServer.errors.unavailable' })
+  expect(s.invoke).not.toHaveBeenCalled()
+  // The origin check still comes first: a cross-origin caller learns nothing about backend health.
+  const foreign = await s.request('list', { profile: 'local-dev' }, { Origin: 'http://127.0.0.1:1' })
+  expect(foreign.status).toBe(403)
 })

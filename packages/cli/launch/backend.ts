@@ -5,6 +5,7 @@ import {
 import type { LaunchResources } from './resources.js'
 
 export type LocalBackend = SharedLocalBackend
+export type { ClientLink } from '../src/boot/backend.js'
 
 export type EnsureLocalBackendOptions = {
   env?: NodeJS.ProcessEnv
@@ -17,6 +18,10 @@ export type EnsureLocalBackendOptions = {
   webPort: number
   resources: LaunchResources
   exposeWeb?: boolean
+  /** Re-attach to this trusted scope without starting a daemon; bounded by `signal` and `readinessTimeoutMs`. */
+  attach?: { scope: SharedLocalBackend['scope'] }
+  signal?: AbortSignal
+  readinessTimeoutMs?: number
 }
 
 /**
@@ -35,7 +40,9 @@ export function ensureLocalBackend(options: EnsureLocalBackendOptions): Promise<
     // This launcher must keep the built-in recovery page reachable when the package lock is damaged.
     allowPackageRecovery: true,
     // Local Web startup may need more than the CLI's 30-second daemon readiness default.
-    readinessTimeoutMs: 120_000,
+    readinessTimeoutMs: options.readinessTimeoutMs ?? 120_000,
+    ...(options.attach ? { attach: options.attach } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
     ...(options.exposeWeb === false
       ? {}
       : {

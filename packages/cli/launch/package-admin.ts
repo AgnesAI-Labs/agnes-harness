@@ -114,12 +114,22 @@ export function localPackageAdmin(
 ) {
   if (!backend.web) throw new Error('local Web credential is unavailable')
   const clientId = `admin-web-${backend.scope.scopeID}`
-  const client = createClient({
-    transport: { kind: 'unix', path: backend.socketPath },
-    transportFactories: localPipeFactories(backend.socketPath, backend.scope),
-    auth: { kind: 'local' },
-    journal: memoryJournal(clientId),
-  })
+  const open = () =>
+    createClient({
+      transport: { kind: 'unix', path: backend.socketPath },
+      transportFactories:
+        backend.link?.transportFactories() ?? localPipeFactories(backend.socketPath, backend.scope),
+      auth: { kind: 'local' },
+      journal: memoryJournal(clientId),
+    })
+  // A replaced daemon connection is a new connection: the daemon enrolls roster subscribers per
+  // connection, so a live subscription has to prove itself again on the new one.
+  let rosterSubscribed = false
+  const client = backend.link
+    ? backend.link.client(open, (next) => {
+        if (rosterSubscribed) void next.clientModules.list(backend.scope.profile).catch(() => undefined)
+      })
+    : open()
   let ready: Promise<unknown> | undefined
   const initialize = () =>
     (ready ??= client.initialize().catch((error: unknown) => {
@@ -406,6 +416,7 @@ export function localPackageAdmin(
       'packages.operation-control.v1',
     ],
     invoke,
+    ...(backend.link ? { available: () => backend.link?.ensure() ?? Promise.resolve(true) } : {}),
     surfaceLinks: async () => {
       await initialize()
       const result = await client.surfaces.mounts()
@@ -488,6 +499,7 @@ export function localPackageAdmin(
     async subscribeClientModuleEvents(listener: (event: PluginRebuiltEvent) => void): Promise<() => void> {
       await initialize()
       await client.clientModules.list(backend.scope.profile)
+      rosterSubscribed = true
       return client.on('notice', (payload) => {
         const notice = payload as { kind?: unknown; detail?: unknown }
         if (notice.kind !== 'packages_changed' || typeof notice.detail !== 'object' || notice.detail === null)

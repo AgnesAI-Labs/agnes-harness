@@ -7,6 +7,7 @@ import {
   type RpcError,
   validateMethod,
 } from '@agnes/protocol'
+import { DaemonUnavailableError, daemonUnavailableBody } from './daemon-link.js'
 
 /** Exact-origin HTTP compatibility adapter; daemon owns diagnostic and model-probe authority. */
 export function doctorAdmin(
@@ -53,6 +54,10 @@ export function doctorAdmin(
       if (!validateMethod('_agnes/v1/doctor.run', 'params', input).ok) throw new Error('request')
       reply(200, await invoke(input as AppServerParams<'_agnes/v1/doctor.run'>))
     } catch (error) {
+      if (error instanceof DaemonUnavailableError) {
+        reply(503, daemonUnavailableBody())
+        return true
+      }
       const rpc = (error as { rpc?: RpcError })?.rpc
       reply(rpc?.code === -32006 ? 403 : 400, {
         error: rpc ? normalizeRpcError(rpc) : httpRpcError(400, 'E_ADMIN_REQUEST'),

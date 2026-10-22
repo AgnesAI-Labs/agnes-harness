@@ -46,7 +46,7 @@ type WatchedPluginBuild = {
 /** Start the static Web client. The daemon is intentionally outside this module's lifecycle. */
 export async function createWebServer(options: WebServerOptions): Promise<WebServer> {
   if (!isAbsolute(options.root)) throw new Error('Web asset root must be absolute')
-  const wsUrl = loopbackWs(options.wsUrl)
+  let wsUrl = loopbackWs(options.wsUrl)
   const surfaceNotReady = (requestUrl: string, response: ServerResponse): boolean => {
     const pathname = new URL(requestUrl, 'http://127.0.0.1').pathname
     if (options.surfaceMountsReady?.(pathname) !== false) return false
@@ -73,7 +73,9 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     throw new Error('Web origin port does not match Web listener port')
   if (requestedPort === 0 && !expectedOrigin.port)
     throw new Error('Web origin must include the selected Web listener port')
-  const contentSecurityPolicy = `default-src 'self'; media-src 'self' blob:; connect-src 'self' ${expectedOrigin.origin.replace(/^http/, 'ws')} ${wsUrl.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
+  const policyFor = (ws: URL): string =>
+    `default-src 'self'; media-src 'self' blob:; connect-src 'self' ${expectedOrigin.origin.replace(/^http/, 'ws')} ${ws.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
+  let contentSecurityPolicy = policyFor(wsUrl)
 
   let pickerPending = false
   let activePicker: AbortController | undefined
@@ -633,6 +635,18 @@ void poll();\n`,
       // prefixes (see packages/cli/launch/surface-mounts.ts).
       if (options.mountProxy?.(request, response)) return
       const file = fileName(request.url ?? '/')
+      if (file.endsWith('.html') && options.refreshWsUrl) {
+        // A daemon that was restarted advertises a new loopback address; hand the page the current one.
+        try {
+          const next = loopbackWs(await options.refreshWsUrl())
+          if (next.href !== wsUrl.href) {
+            wsUrl = next
+            contentSecurityPolicy = policyFor(next)
+          }
+        } catch {
+          // Keep the last known address: a failed refresh must not take the page itself down.
+        }
+      }
       let body = await readFile(join(options.root, file))
       const documentNonce = file.endsWith('.html') ? randomBytes(16).toString('base64') : undefined
       if (file === 'index.html') {

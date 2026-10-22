@@ -6,6 +6,7 @@ import { Readable } from 'node:stream'
 import { rpcError } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { contextAdmin } from './context-admin.js'
+import { DaemonUnavailableError } from './daemon-link.js'
 
 it('requires same-origin administration, validates parameters and delegates workspace authority to daemon', async () => {
   const home = mkdtempSync(join(tmpdir(), 'agh-context-admin-'))
@@ -93,6 +94,7 @@ it('validates diagnostic probes behind the same-origin boundary and keeps upstre
   const handler = doctorAdmin('http://127.0.0.1:4177', async (params) => {
     forwarded.push(params)
     if (params.probeAccounts) throw { rpc: rpcError('SEMANTIC_REJECTED') }
+    if (params.probeAccounts === false) throw new DaemonUnavailableError()
     return { checks: [], status: 'ok' }
   })
   const send = async (body: unknown, origin = 'http://127.0.0.1:4177') => {
@@ -122,5 +124,10 @@ it('validates diagnostic probes behind the same-origin boundary and keeps upstre
   expect(await send({ probeAccounts: true })).toMatchObject({
     status: 400,
     body: { error: { data: { messageKey: 'appServer.errors.rejected' } } },
+  })
+  // A backend that is down is reported as unavailable (503), not as a malformed request.
+  expect(await send({ probeAccounts: false })).toMatchObject({
+    status: 503,
+    body: { error: { data: { code: 'E_HOST_CLOSED', messageKey: 'appServer.errors.unavailable' } } },
   })
 })

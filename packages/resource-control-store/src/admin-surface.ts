@@ -5,6 +5,7 @@ import {
   RESOURCE_CONTROL_METHODS,
   type ResourceControlMethodName,
   type RpcError,
+  rpcError,
   validateResourceControlCall,
 } from '@agnes/protocol'
 import { RESOURCE_ALL_PERMISSIONS } from './permissions.js'
@@ -52,6 +53,8 @@ export type ResourceAdminSurfaceOptions = Readonly<{
   clientId: string
   /** Private Node SDK dispatch supplied by the trusted local launcher. */
   invoke(action: ResourceAdminSurfaceAction, params: unknown): Promise<unknown>
+  /** Resolves false while the backend is unreachable; the request then reports `unavailable`, never `internal`. */
+  available?(): Promise<boolean>
   /** @deprecated Retained only for source compatibility with legacy test callers. */
   clock?: () => number
 }>
@@ -163,6 +166,12 @@ export function createResourceAdminSurface(options: ResourceAdminSurfaceOptions)
         url.search
       ) {
         error(response, 403, 'E_RESOURCE_ADMIN_ORIGIN', 'The resource admin request origin is not valid.')
+        return true
+      }
+      if (options.available && !(await options.available())) {
+        reply(response, 503, {
+          error: normalizeRpcError(rpcError('SEMANTIC_REJECTED', { code: 'E_HOST_CLOSED' })),
+        })
         return true
       }
       const action = url.pathname.slice(PREFIX.length)

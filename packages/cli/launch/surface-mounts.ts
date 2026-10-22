@@ -44,7 +44,8 @@ export async function fetchSurfaceMountLookup(
   const openClient = () =>
     createClient({
       transport: { kind: 'unix', path: backend.socketPath },
-      transportFactories: localPipeFactories(backend.socketPath, backend.scope),
+      transportFactories:
+        backend.link?.transportFactories() ?? localPipeFactories(backend.socketPath, backend.scope),
       auth: { kind: 'local' },
       journal: memoryJournal(`surface-mounts-${backend.scope.scopeID}`),
     })

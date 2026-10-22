@@ -8,12 +8,15 @@ import type { LocalBackend } from './backend.js'
 export function localOAuthAdmin(backend: LocalBackend, baseUrl: URL) {
   if (!backend.web) throw new Error('local Web credential is unavailable')
   const clientId = `oauth-admin-web-${backend.scope.scopeID}`
-  const client = createClient({
-    transport: { kind: 'unix', path: backend.socketPath },
-    transportFactories: localPipeFactories(backend.socketPath, backend.scope),
-    auth: { kind: 'local' },
-    journal: memoryJournal(clientId),
-  })
+  const open = () =>
+    createClient({
+      transport: { kind: 'unix', path: backend.socketPath },
+      transportFactories:
+        backend.link?.transportFactories() ?? localPipeFactories(backend.socketPath, backend.scope),
+      auth: { kind: 'local' },
+      journal: memoryJournal(clientId),
+    })
+  const client = backend.link ? backend.link.client(open) : open()
   let ready: Promise<unknown> | undefined
   const initialize = () =>
     (ready ??= client.initialize().catch((error: unknown) => {

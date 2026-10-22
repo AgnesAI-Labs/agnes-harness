@@ -13,6 +13,7 @@ import { parseArgs } from '../src/args.js'
 import { resolveDoctorProfile } from '../src/commands/doctor-profile.js'
 import { firstRunText, startupFailure } from '../src/commands/first-run-locales.js'
 import { ensureLocalBackend, type LocalBackend } from './backend.js'
+import { createDaemonLink, type DaemonLink } from './daemon-link.js'
 import { localOAuthAdmin } from './oauth-admin.js'
 import { localPackageAdmin } from './package-admin.js'
 import { localResourceAdmin } from './resource-admin.js'
@@ -195,6 +196,7 @@ export async function runWebCommand(
       : undefined)
   const exposeWeb = compositionSurfaceAllowed(composition, 'web')
   let backend: LocalBackend | undefined
+  let link: DaemonLink | undefined
   let web: WebServer | undefined
   let admin: ReturnType<typeof localPackageAdmin> | undefined
   let resourceAdmin: ReturnType<typeof localResourceAdmin> | undefined
@@ -222,20 +224,42 @@ export async function runWebCommand(
     }
     if (!backend.web)
       throw new Error('local daemon Web credential is unavailable; stop/restart the local daemon')
-    const adminHandler = localPackageAdmin(backend, origin)
-    const resourceAdminHandler = localResourceAdmin(backend, origin)
+    // The daemon may be restarted or replaced while this launcher keeps serving. The link re-attaches
+    // to the same scope and exact Web origin and replaces the private clients below; it never starts
+    // a daemon and refuses any other one.
+    const attached = backend
+    const daemonLink = createDaemonLink(attached, (signal, readinessTimeoutMs) =>
+      ensure({
+        ...(io.env ? { env: io.env } : {}),
+        cwd,
+        ...(parsed.home ? { home: parsed.home } : {}),
+        ...(parsed.profile ? { profile: parsed.profile } : {}),
+        ...(parsed.dataDir ? { dataDir: parsed.dataDir } : {}),
+        workspace: cwd,
+        webOrigin: origin,
+        webPort: port,
+        resources,
+        attach: { scope: attached.scope },
+        signal,
+        readinessTimeoutMs,
+      }),
+    )
+    link = daemonLink
+    const linked: LocalBackend = { ...attached, link: daemonLink }
+    const adminHandler = localPackageAdmin(linked, origin)
+    const resourceAdminHandler = localResourceAdmin(linked, origin)
     // The OAuth callback endpoints need the launcher's OWN externally-reachable origin (they build
     // an absolute `redirect_uri` a real, external authorization server redirects a browser back to,
     // not a same-process relative URL), which is exactly `origin` - the same value already handed
     // to createWebServer below.
-    const oauthAdminHandler = localOAuthAdmin(backend, new URL(origin))
+    const oauthAdminHandler = localOAuthAdmin(linked, new URL(origin))
     admin = adminHandler
     resourceAdmin = resourceAdminHandler
     oauthAdmin = oauthAdminHandler
     // A persistent private daemon connection receives lifecycle invalidations and re-reads the
     // authoritative mount table; healthy idle launchers do not poll.
     // This creates the feed immediately; the first mount RPC runs in the background.
-    mounts = await fetchSurfaceMountProxy(backend)
+    mounts = await fetchSurfaceMountProxy(linked)
     web = await makeServer({
       root: resources.webRoot,
       pluginStreams: adminHandler.pluginStreams,
@@ -244,6 +268,10 @@ export async function runWebCommand(
       fileUpload: adminHandler.fileUpload,
       planCommand: adminHandler.planCommand,
       wsUrl: backend.web.url,
+      refreshWsUrl: async () => {
+        await daemonLink.refresh()
+        return daemonLink.backend().web?.url ?? attached.web?.url ?? ''
+      },
       port,
       origin,
       ...(io.developmentReload === undefined ? {} : { developmentReload: io.developmentReload }),
@@ -286,6 +314,8 @@ export async function runWebCommand(
     if (message) throw Object.assign(new Error(message), { code: (error as { code: string }).code })
     throw error
   } finally {
+    // First, so a reconnect in flight is cancelled and cannot hold shutdown open.
+    await link?.close().catch(() => undefined)
     await web?.close().catch(() => undefined)
     await admin?.close().catch(() => undefined)
     await resourceAdmin?.close().catch(() => undefined)

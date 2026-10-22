@@ -18,6 +18,7 @@ import {
   type PackageAdminPermission,
   type RpcError,
   RuntimeAdminSnapshot,
+  rpcError,
   validateAgainst,
   validatePackageAdminCall,
   validatePackageAdminData,
@@ -58,6 +59,8 @@ export type AdminSurfaceOptions = {
   authScope?: string
   /** The trusted launcher binds this to the private Node SDK, never to request-selected RPC. */
   invoke(action: AdminSurfaceAction, params: unknown): Promise<unknown>
+  /** Resolves false while the backend is unreachable; the request then reports `unavailable`, never `internal`. */
+  available?(): Promise<boolean>
   /** Live, routable Surface links. The launcher strips loopback endpoint details before returning. */
   surfaceLinks?: () => Promise<readonly AdminSurfaceLink[]>
   /** Real host catalogs plus configuration storage. Missing means selection is unavailable. */
@@ -227,6 +230,12 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         url.search
       ) {
         error(response, 403, 'E_ADMIN_ORIGIN', 'The admin request origin is not valid.')
+        return true
+      }
+      if (options.available && !(await options.available())) {
+        reply(response, 503, {
+          error: normalizeRpcError(rpcError('SEMANTIC_REJECTED', { code: 'E_HOST_CLOSED' })),
+        })
         return true
       }
       if (selectionRoute) {

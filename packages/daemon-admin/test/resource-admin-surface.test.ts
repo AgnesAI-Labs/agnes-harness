@@ -15,6 +15,7 @@ async function server(
   invoke = vi.fn(
     async (_action: ResourceAdminSurfaceAction, _params: unknown): Promise<unknown> => ({ items: [] }),
   ),
+  available?: () => Promise<boolean>,
 ) {
   let now = Date.now()
   let handler: ReturnType<typeof createResourceAdminSurface>
@@ -32,6 +33,7 @@ async function server(
     profile: 'local-dev',
     clientId: 'resource-admin-web',
     invoke,
+    ...(available ? { available } : {}),
     clock: () => now,
   })
   closers.push(async () => {
@@ -250,5 +252,14 @@ describe('local resource admin surface trust boundary', () => {
     })
     expect(cancel.status).toBe(200)
     expect(await cancel.json()).toEqual({ operationId: 'resource-op-1', state: 'received' })
+  })
+
+  it('reports an unreachable backend as unavailable, never internal, and does not dispatch', async () => {
+    const s = await server(undefined, async () => false)
+    const response = await s.request('skills/list', { profile: 'local-dev', kind: 'skill' })
+    expect(response.status).toBe(503)
+    const { error } = (await response.json()) as { error: { data: Record<string, unknown> } }
+    expect(error.data).toMatchObject({ code: 'E_HOST_CLOSED', messageKey: 'appServer.errors.unavailable' })
+    expect(s.invoke).not.toHaveBeenCalled()
   })
 })

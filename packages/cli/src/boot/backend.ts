@@ -51,6 +51,18 @@ export type LocalBackend = {
   /** Releases the retained client, if any; Web launchers have nothing else to release. */
   closeClient(): Promise<void>
   close(): Promise<void>
+  /** Set by a long-lived launcher so its SDK clients survive a daemon restart (see daemon-link). */
+  link?: ClientLink
+}
+
+/** What a launcher's private SDK clients need to outlive one daemon generation. */
+export type ClientLink = {
+  /** A client that is replaced after the daemon closes it for good; `onReplace` sees each new one. */
+  client(open: () => Client, onReplace?: (next: Client) => void): Client
+  /** Transport factories that re-verify the daemon on every connection attempt. */
+  transportFactories(): NonNullable<CreateClientOptions['transportFactories']>
+  /** Wait (bounded) for the daemon to be reachable; false means a request should report it unavailable. */
+  ensure(): Promise<boolean>
 }
 
 type LocalWebOptions = { addr: string; origin: string }
@@ -73,6 +85,8 @@ export type EnsureLocalBackendOptions = {
   localWeb?: LocalWebOptions
   /** Used only when this invocation starts a daemon; never constrains IPC attachment. */
   startupWeb?: LocalWebOptions
+  /** Re-attach to a daemon of this already-trusted scope. Never starts one and never re-resolves the scope. */
+  attach?: { scope: DaemonScope }
   resources?: LaunchResources
   /** Test seam for the SDK handshake; production uses the Node SDK factory. */
   createClientImpl?: (options: CreateClientOptions) => Client
@@ -423,6 +437,11 @@ async function discoverOrStart(
 ): Promise<DiscoveryResult> {
   let discovery = await readReady(scope, requested, deadlineAt, options.signal)
   if (discovery) return { discovery }
+  if (options.attach) {
+    // Attach-only callers wait for a daemon to appear within the deadline; they never spawn one.
+    discovery = await waitReady(scope, options, requested, () => undefined, deadlineAt)
+    return { ...(await sdkReady(scope, discovery, options, deadlineAt)), verified: true }
+  }
 
   // An owner record without a descriptor may be a daemon still starting. Ask the daemon-owned
   // status primitive whether its identity is alive before deciding to acquire startup rights; a
@@ -627,9 +646,9 @@ export async function ensureLocalBackend(options: EnsureLocalBackendOptions = {}
   if (!Number.isSafeInteger(timeout) || timeout <= 0 || !Number.isSafeInteger(poll) || poll <= 0)
     throw new BootError('local daemon readiness timing is invalid')
   const deadlineAt = Date.now() + timeout
-  let scope: DaemonScope | undefined
+  let scope: DaemonScope | undefined = options.attach?.scope
   let started: DiscoveryResult | undefined
-  if (options.preparation === 'connect-first') {
+  if (!scope && options.preparation === 'connect-first') {
     try {
       const candidate = await withinDeadline(() => connectionScope(options), deadlineAt, options.signal)
       const discovery = await readReady(candidate, requested, deadlineAt, options.signal)

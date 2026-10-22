@@ -26,10 +26,16 @@ import type {
   SkillRemoveParams,
   SkillTrustSetParams,
 } from '@agnes/protocol'
-import { createClient, memoryJournal, unixTransport } from '@agnes/sdk'
+import { type Client, type CreateClientOptions, createClient, memoryJournal, unixTransport } from '@agnes/sdk'
 export type LocalResourceBackend = Readonly<{
   socketPath: string
   scope: DaemonScope
+  /** A long-lived launcher's link, so this client outlives one daemon generation. */
+  link?: Readonly<{
+    client(open: () => Client): Client
+    transportFactories(): NonNullable<CreateClientOptions['transportFactories']>
+    ensure(): Promise<boolean>
+  }>
 }>
 
 /**
@@ -40,27 +46,31 @@ export function localResourceAdmin(backend: LocalResourceBackend, origin: string
   const clientId = `resource-admin-web-${backend.scope.scopeID}`
   const path = backend.socketPath
   const scope = { ...backend.scope }
-  const client = createClient({
-    transport: { kind: 'unix', path: backend.socketPath },
-    ...(path.startsWith('\\\\.\\pipe\\')
-      ? {
-          transportFactories: {
-            unix: () =>
-              unixTransport({
-                path,
-                resolveServerIdentity: async () => {
-                  const discovery = await readDaemonDiscovery(scope)
-                  if (!discovery || discovery.socketPath !== path)
-                    throw new Error('local pipe does not match a verified daemon')
-                  return { pid: discovery.owner.pid, processStartId: discovery.owner.processStartId }
-                },
-              }),
-          },
-        }
-      : {}),
-    auth: { kind: 'local' },
-    journal: memoryJournal(clientId),
-  })
+  const open = () =>
+    createClient({
+      transport: { kind: 'unix', path: backend.socketPath },
+      ...(path.startsWith('\\\\.\\pipe\\')
+        ? {
+            transportFactories: {
+              unix: () =>
+                unixTransport({
+                  path,
+                  resolveServerIdentity: async () => {
+                    const discovery = await readDaemonDiscovery(scope)
+                    if (!discovery || discovery.socketPath !== path)
+                      throw new Error('local pipe does not match a verified daemon')
+                    return { pid: discovery.owner.pid, processStartId: discovery.owner.processStartId }
+                  },
+                }),
+            },
+          }
+        : backend.link
+          ? { transportFactories: backend.link.transportFactories() }
+          : {}),
+      auth: { kind: 'local' },
+      journal: memoryJournal(clientId),
+    })
+  const client = backend.link ? backend.link.client(open) : open()
   let ready: Promise<unknown> | undefined
   const initialize = () =>
     (ready ??= client.initialize().catch((error: unknown) => {
@@ -119,6 +129,7 @@ export function localResourceAdmin(backend: LocalResourceBackend, origin: string
     profile: backend.scope.profile,
     clientId,
     invoke,
+    ...(backend.link ? { available: () => backend.link?.ensure() ?? Promise.resolve(true) } : {}),
   })
   return {
     handle: surface.handle,

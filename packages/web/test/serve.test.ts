@@ -249,6 +249,47 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
   }
 })
 
+it('hands each page load the current daemon address and keeps the last one when a refresh fails', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-web-ws-refresh-'))
+  const port = await availablePort()
+  let next: string | Error = 'ws://127.0.0.1:4331'
+  const server = await createWebServer({
+    root,
+    wsUrl: 'ws://127.0.0.1:4330',
+    refreshWsUrl: async () => {
+      if (next instanceof Error) throw next
+      return next
+    },
+    port,
+    origin: `http://127.0.0.1:${port}`,
+  })
+  try {
+    await writeFile(
+      join(root, 'index.html'),
+      '<meta name="agnes-csp-nonce" content="__AGNES_CSP_NONCE__"><meta data-ws="__AGNES_WS_URL__">',
+    )
+    const load = async () => {
+      const page = await fetch(`${server.url}/`)
+      return {
+        ws: (await page.text()).match(/data-ws="([^"]+)"/)?.[1],
+        csp: page.headers.get('content-security-policy') ?? '',
+      }
+    }
+    const first = await load()
+    expect(first.ws).toBe('ws://127.0.0.1:4331/')
+    expect(first.csp).toContain('ws://127.0.0.1:4331')
+    expect(first.csp).not.toContain('ws://127.0.0.1:4330')
+    next = new Error('daemon is gone')
+    expect((await load()).ws).toBe('ws://127.0.0.1:4331/')
+    // A non-loopback address is refused rather than advertised to the browser.
+    next = 'ws://example.com:4331'
+    expect((await load()).ws).toBe('ws://127.0.0.1:4331/')
+  } finally {
+    await server.close()
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 it('fails closed when an admin API handler is not installed', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-web-admin-missing-'))
   const port = await availablePort()

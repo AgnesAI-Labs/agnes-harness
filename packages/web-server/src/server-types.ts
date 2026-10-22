@@ -27,6 +27,8 @@ export type WebServerOptions = {
   root: string
   /** Credential-free loopback WebSocket endpoint advertised to the browser. */
   wsUrl: string
+  /** Re-reads the daemon's current endpoint for each page load; a launcher whose daemon restarts sets it. */
+  refreshWsUrl?: () => Promise<string>
   /** @deprecated Ignored legacy input; local Web access no longer uses a browser token. */
   token?: string
   /** Fixed local HTTP port. The default is kept stable for the daemon origin contract. */

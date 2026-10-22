@@ -510,6 +510,39 @@ describe('ensureLocalBackend', () => {
     expect(vi.mocked(daemon.acquireDaemonStartup).mock.results[0]?.value.release).toHaveBeenCalledOnce()
   })
 
+  it('attaches to a daemon of the trusted scope without resolving a scope or ever spawning one', async () => {
+    const discovery = descriptor({ web: { url: 'ws://127.0.0.1:49101', origin: 'http://127.0.0.1:4180' } })
+    vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(discovery)
+    vi.mocked(daemon.readDaemonWebCredential).mockResolvedValue('web-token')
+    vi.mocked(sdk.createClient).mockReturnValueOnce(fakeClient())
+    const spawnDaemon = vi.fn()
+    const backend = await ensureLocalBackend({
+      attach: { scope },
+      webOrigin: 'http://127.0.0.1:4180',
+      resources: TEST_RESOURCES,
+      spawnDaemon,
+    })
+    expect(backend.web?.url).toBe('ws://127.0.0.1:49101')
+    expect(daemon.resolveDaemonScope).not.toHaveBeenCalled()
+    expect(spawnDaemon).not.toHaveBeenCalled()
+  })
+
+  it('waits for a missing daemon only until the deadline when attaching, and never starts one', async () => {
+    vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(null)
+    const spawnDaemon = vi.fn()
+    await expect(
+      ensureLocalBackend({
+        attach: { scope },
+        resources: TEST_RESOURCES,
+        spawnDaemon,
+        readinessTimeoutMs: 30,
+        readinessPollMs: 3,
+      }),
+    ).rejects.toThrow(/did not become ready/)
+    expect(spawnDaemon).not.toHaveBeenCalled()
+    expect(daemon.acquireDaemonStartup).not.toHaveBeenCalled()
+  })
+
   it('honours an abort during startup and terminates only its child', async () => {
     const child = fakeChild()
     const controller = new AbortController()
