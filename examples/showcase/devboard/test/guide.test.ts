@@ -82,6 +82,8 @@ describe('demo guide data', () => {
   it('names only the fictional company', () => {
     const forbidden = ['康尼', '中车', '克诺尔', '庞巴迪', '西门子', '纳博特斯克', 'Nabtesco', 'Knorr']
     const hits: string[] = []
+    // the shipped sample project is scanned as well
+    expect(sourceFiles(ROOT).filter((f) => f.includes('/assets/fastforward/')).length).toBeGreaterThan(10)
     for (const file of sourceFiles(ROOT)) {
       if (file.endsWith('guide.test.ts')) continue
       const text = readFileSync(file, 'utf8')

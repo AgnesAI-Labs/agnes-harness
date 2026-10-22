@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,6 +17,7 @@ import {
   writeLock,
 } from '../../../../packages/package-manager/src/index.js'
 import { create, read, seed, update, upsertReqs } from '../domain.mjs'
+import { FILES, GATES } from '../fastforward.mjs'
 import { main } from '../index.mjs'
 import { buildSeed } from '../seed-data.mjs'
 
@@ -81,7 +82,7 @@ async function runFlow(ctx: Any, template: string, subjectId: string, running?: 
 
 describe('DevBoard plugin contract', () => {
   it('registers well-formed tools, services and the playbook skill', () => {
-    expect(tools).toHaveLength(19)
+    expect(tools).toHaveLength(20)
     expect(services.map((s) => s.name).sort()).toEqual([
       'devboard.approval',
       'devboard.artifact',
@@ -476,6 +477,89 @@ describe('DevBoard plugin contract', () => {
     const titles = pkg.agnes.application.workbench.actions.map((a: Any) => a.title['zh-CN'])
     expect(titles).toEqual(expect.arrayContaining(['分析 PHM 预警并起草 8D', '型式试验不合格 → 起草变更']))
     expect(pkg.files).toContain('profiles.mjs')
+  })
+
+  it('adds exactly one capability, the project-directory write, and one tool name for fast-forward', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    const caps = pkg.agnes.plugins[0].capabilities
+    expect(caps.filesystem).toEqual({ read: ['devboard-projects/**'], write: ['devboard-projects/**'] })
+    expect(Object.keys(caps).sort()).toEqual(['filesystem', 'store', 'tools', 'ui'])
+    expect(caps.tools.names.at(-1)).toBe('devboard_fastforward')
+    const policy = pkg.agnes.bundles.coordinator.profile.toolPolicy.allow
+    expect(policy).toContain('devboard_fastforward')
+    expect(pkg.files).toEqual(expect.arrayContaining(['fastforward.mjs', 'assets']))
+    const action = pkg.agnes.application.workbench.actions.find((a: Any) => a.id === 'fast-forward')
+    expect(action.agent).toBe('@agnes-showcase/devboard#coordinator')
+    expect(action.prompt['zh-CN']).toContain('devboard_fastforward')
+  })
+
+  it('takes only the gate enum as input and writes only below the new project directory', async () => {
+    const def = tool('devboard_fastforward')
+    const schema = JSON.parse(JSON.stringify(def.parameters))
+    expect(schema).toMatchObject({ type: 'object', additionalProperties: false, required: ['gate'] })
+    expect(Object.keys(schema.properties)).toEqual(['gate'])
+    expect(schema.properties.gate.anyOf.map((v: Any) => v.const)).toEqual(GATES)
+    const store = memoryStore()
+    const writes: string[] = []
+    const fs = {
+      stat: async () => {
+        throw new Error('ENOENT')
+      },
+      write: async (path: string, data: string) => {
+        expect(data.length).toBeGreaterThan(0)
+        writes.push(path)
+      },
+    }
+    const ctx = { store, signal, fs } as Any
+    for (const gate of ['../../etc', 'TR2', '', 7])
+      expect((await def.execute({ gate }, ctx)).isError, String(gate)).toBe(true)
+    expect(writes).toEqual([])
+    const done = await def.execute({ gate: 'TR5' }, ctx)
+    expect(done.isError).toBeFalsy()
+    const { projectId, workspaceDir, gate, decision } = done.structured.data
+    expect({ gate, decision, workspaceDir }).toEqual({
+      gate: 'TR5',
+      decision: 'PENDING',
+      workspaceDir: `devboard-projects/${projectId}`,
+    })
+    expect(writes).toHaveLength(FILES.filter(([from]) => from <= 3).length)
+    for (const path of writes)
+      expect(path.startsWith(`${workspaceDir}/`) && !/\.\./.test(path), path).toBe(true)
+    // a second call is another project in another directory
+    const again = await def.execute({ gate: 'TR5' }, ctx)
+    expect(again.structured.data.projectId).not.toBe(projectId)
+    expect(writes.filter((p) => p.startsWith(`${workspaceDir}/`))).toHaveLength(
+      FILES.filter(([from]) => from <= 3).length,
+    )
+  })
+
+  it('ships a template directory that matches the manifest and the registered documents', async () => {
+    const root = fileURLToPath(new URL('../assets/fastforward/', import.meta.url))
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walk(join(dir, e.name)).map((f) => `${e.name}/${f}`) : [e.name],
+      )
+    expect(walk(root).sort()).toEqual(FILES.map(([, rel]) => rel).sort())
+    const store = memoryStore()
+    const ctx = {
+      store,
+      signal,
+      fs: {
+        stat: async () => {
+          throw new Error('ENOENT')
+        },
+        write: async () => undefined,
+      },
+    } as Any
+    await tool('devboard_fastforward').execute({ gate: 'DONE' }, ctx)
+    const reqs = read(store).reqs.filter((r: Any) => r.projectId === read(store).projects.at(-1).id)
+    const text = (rel: string) => readFileSync(join(root, rel), 'utf8')
+    for (const r of reqs) {
+      expect(text('docs/RTM.md'), r.id).toContain(r.id)
+      if (r.level !== 'TC' && r.level !== 'DES') expect(text('docs/SRS.md'), r.id).toContain(r.id)
+      if (r.level === 'DES') expect(text('docs/SAD.md'), r.id).toContain(r.id)
+    }
+    expect(reqs.filter((r: Any) => r.level === 'TC')).toHaveLength(8)
   })
 
   it('is accepted by the package manager inspection', async () => {

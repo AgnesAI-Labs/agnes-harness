@@ -27,6 +27,7 @@ import {
   upsertReqs,
   upsertTrial,
 } from './domain.mjs'
+import { fastForward, GATES } from './fastforward.mjs'
 import { ORGS } from './profiles.mjs'
 
 const strict = { additionalProperties: false }
@@ -59,6 +60,7 @@ const titles = {
   defect_upsert: '登记或更新缺陷',
   change_upsert: '登记或更新变更',
   app_register: '登记本地应用地址',
+  fastforward: '快进演示项目到评审门',
   trial_upsert: '登记或更新试验',
   problem_upsert: '起草或更新质量问题',
   fault_list: '读取 PHM 预警聚合',
@@ -571,6 +573,12 @@ export const tools = [
     'Register the local address where a live project application runs (http://127.0.0.1:<port>/). 登记运行地址。',
     Type.Object({ projectId: id, url: short(200) }, strict),
     (input, ctx) => mutate(ctx.store, (s) => registerApp(s, input)),
+  ),
+  tool(
+    'devboard_fastforward',
+    'Demo shortcut: create a NEW live project (never reuses a directory) and take it to the review gate gate from the sample project shipped with the plugin (CDCP, TR1, TR3, TR5, or DONE = ADCP approved). The sample files are written under the new workspaceDir and the board is advanced through the real gate rules; the target gate is left PENDING for a person to decide. The input is only the gate. Returns the project id, the pending gate and the next step. 快进演示到指定评审门。',
+    Type.Object({ gate: literals(GATES) }, strict),
+    (input, ctx) => fastForward(input, ctx),
   ),
 ]
 

@@ -191,14 +191,17 @@ export function ProjectSelect({ data, value, onChange, allowAll = false }) {
   })
 }
 
-/** Opens the coordinator with the "continue" action; the object names the gate or project. Never sent automatically. */
-export function continueWork(board, object) {
+/** Opens the coordinator with an application action and a draft; never sent automatically. */
+export function openWork(board, actionId, object) {
   try {
-    openApplicationWork('continue', object)
+    openApplicationWork(actionId, object)
   } catch (e) {
     board.setError(`无法打开研发协调员：${message(e)}。请先在智能体页采纳 DevBoard。`)
   }
 }
+
+/** The "continue" action; the object names the gate or project. */
+export const continueWork = (board, object) => openWork(board, 'continue', object)
 
 const VERBS = {
   REFINED: (from) => (from === 'RAW' ? '细化' : '退回细化'),

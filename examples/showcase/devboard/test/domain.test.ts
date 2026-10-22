@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { act, newFlow, view } from '../approvals.mjs'
 import { BLOCKER_KINDS, blockers } from '../blockers.mjs'
+import { MAIN_STEPS } from '../client/guide-data.js'
+import { mainProgress } from '../client/guide-progress.js'
 import {
   actApproval,
   artifactBody,
@@ -29,10 +31,12 @@ import {
   upsertReqs,
   upsertTrial,
 } from '../domain.mjs'
+import { FILES, fastForward, GATES, UNIT_TOTAL } from '../fastforward.mjs'
 import { GATE_PROFILES, LIVE_TAILORING, ORGS, ROLES } from '../profiles.mjs'
 import { buildSeed } from '../seed-data.mjs'
 
 const NOW = Date.parse('2026-10-21T08:00:00Z')
+const STAGE_LIST = ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE']
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
 // biome-ignore lint/suspicious/noExplicitAny: domain.mjs is untyped JavaScript
@@ -1777,4 +1781,178 @@ describe('store persistence', () => {
     reset(store, NOW)
     expect([...store.rows.keys()].some((k) => k.startsWith('devboard/doc/'))).toBe(false)
   })
+})
+
+describe('fast-forward from the shipped sample', () => {
+  /** A file port that records writes; `existing` directories answer stat. */
+  const fakeFs = (existing: string[] = []) => {
+    const writes = new Map<string, string>()
+    return {
+      writes,
+      stat: async (path: string) => {
+        if (existing.some((dir) => path === dir || path.startsWith(`${dir}/`)))
+          return { kind: 'dir', size: 0, mtimeMs: 0 }
+        throw new Error('ENOENT')
+      },
+      write: async (path: string, data: string) => void writes.set(path, data),
+    }
+  }
+  const run = (store: ReturnType<typeof memoryStore>, gate: string, fs = fakeFs()) =>
+    fastForward({ gate }, { store, fs, signal: new AbortController().signal })
+  const level = (gate: string) => GATES.indexOf(gate)
+
+  // [gate, pending gate code, state of each stage, ticked main steps, tasks, defects]
+  const LEVELS = [
+    ['CDCP', 'CDCP', 'I·····', ['m2', 'm3'], 0, 0],
+    ['TR1', 'TR1', 'PI····', ['m2', 'm3', 'm4', 'm5'], 0, 0],
+    ['TR3', 'TR3', 'PPI···', ['m2', 'm3', 'm4', 'm5', 'm6', 'm7'], 0, 0],
+    ['TR5', 'TR5', 'PPPPI·', ['m2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9', 'm10'], 0, 0],
+    ['DONE', 'ADCP', 'PPPPPP', MAIN_STEPS.slice(1).map((m) => m.id), 0, 0],
+  ] as const
+
+  it.each(LEVELS)(
+    '%s: stops at the right gate with the expected stage, tasks and defects',
+    async (gate, code, shape, ticks, tasks, defects) => {
+      const store = memoryStore()
+      const { revision, data } = (await run(store, gate)) as Item
+      const state = read(store)
+      const live = state.projects.filter((p: Item) => p.live)
+      expect(live).toHaveLength(1)
+      const [project] = live
+      expect(project).toMatchObject({
+        id: data.projectId,
+        workspaceDir: `devboard-projects/${data.projectId}`,
+        stage: expect.any(String),
+      })
+      expect(data).toMatchObject({ gate: code, workspaceDir: project.workspaceDir })
+      expect(revision).toBe(read(store).revision)
+      // P passed, I in review, · not started: the six stages in profile order
+      const stages = state.stages.filter((s: Item) => s.projectId === project.id)
+      const letters = { PASSED: 'P', IN_REVIEW: 'I', NOT_STARTED: '·' } as Record<string, string>
+      expect(stages.map((s: Item) => letters[s.state]).join('')).toBe(shape)
+      const gates = state.gates.filter((g: Item) => g.stageId.startsWith(`${project.id}/`))
+      const pending = gates.filter((g: Item) => g.decision === 'PENDING')
+      if (gate === 'DONE') {
+        expect(pending).toHaveLength(0)
+        expect(gates.at(-1)).toMatchObject({ code: 'ADCP', decision: 'APPROVED' })
+        expect(project.actualEnd).toBeDefined()
+      } else {
+        expect(pending.map((g: Item) => g.code)).toEqual([code])
+        expect(snapshot(state).counts.pendingGates).toBeGreaterThanOrEqual(1)
+      }
+      expect(Object.keys(mainProgress(snapshot(state), MAIN_STEPS))).toEqual(ticks)
+      expect(state.tasks.filter((t: Item) => t.projectId === project.id)).toHaveLength(tasks)
+      const found = state.defects.filter((d: Item) => d.projectId === project.id)
+      expect(found).toHaveLength(defects)
+      if (level(gate) >= 3) {
+        const runs = state.testRuns.filter((t: Item) => t.projectId === project.id)
+        expect(runs.map((r: Item) => [r.level, r.total, r.failed])).toEqual([
+          ['UNIT', UNIT_TOTAL, 1],
+          ['UNIT', UNIT_TOTAL, 0],
+          ['INTEGRATION', 8, 0],
+          ['SYSTEM', 12, 1],
+        ])
+      }
+      if (tasks) {
+        const reqs = state.requirements.filter((r: Item) => r.projectId === project.id)
+        expect(reqs.map((r: Item) => r.title.slice(0, 7))).toEqual(['SWR-001', 'SWR-003', 'SWR-005'])
+        const types = state.tasks.filter((t: Item) => t.projectId === project.id).map((t: Item) => t.type)
+        expect(types.filter((t: string) => t === 'DEVELOPMENT')).toHaveLength(3)
+        expect(types.filter((t: string) => t === 'TESTING')).toHaveLength(3)
+        const finished = level(gate) >= 3
+        expect(
+          state.tasks
+            .filter((t: Item) => t.projectId === project.id)
+            .every((t: Item) => t.state === (finished ? 'COMPLETED' : 'PENDING')),
+        ).toBe(true)
+        expect(reqs.every((r: Item) => r.state === (finished ? 'COMPLETED' : 'ASSIGNED'))).toBe(true)
+      }
+      // the traceability the requirements gate relies on is complete
+      if (level(gate) >= 1)
+        expect(coverage(state, project.id)).toMatchObject({ cusSwr: { pct: 100 }, swrTc: { pct: 100 } })
+      // the timeline is back-dated by days and never runs backwards
+      expect(Date.now() - Date.parse(project.createdAt)).toBeGreaterThan(DAY)
+      const stamps = stages.flatMap((s: Item) => s.history.map((h: Item) => Date.parse(h.at)))
+      expect(stamps.length).toBeGreaterThan(0)
+      for (const [i, t] of stamps.entries())
+        if (i) expect(t).toBeGreaterThanOrEqual(Math.min(...stamps.slice(0, i)))
+    },
+  )
+
+  it('writes only the stage template files below the new project directory, with the template bytes', async () => {
+    const store = memoryStore()
+    for (const gate of GATES) {
+      const fs = fakeFs()
+      const { data } = (await run(store, gate, fs)) as Item
+      const dir = `devboard-projects/${data.projectId}`
+      const expected = FILES.filter(([from]) => from <= level(gate)).map(([, rel]) => `${dir}/${rel}`)
+      expect([...fs.writes.keys()].sort(), gate).toEqual(expected.sort())
+      for (const path of fs.writes.keys())
+        expect(path.startsWith(`${dir}/`) && !path.includes('..'), path).toBe(true)
+      // the cached preview of a registered document is the written text
+      const doc = read(store).artifacts.find(
+        (a: Item) => a.projectId === data.projectId && a.source.path === `${dir}/docs/PROJECT-PLAN.md`,
+      )
+      expect(artifactBody(store, doc.id).markdown).toBe(fs.writes.get(`${dir}/docs/PROJECT-PLAN.md`))
+    }
+  })
+
+  it('creates a new project every time and never takes a directory that already exists', async () => {
+    const store = memoryStore()
+    const a = ((await run(store, 'TR1')) as Item).data.projectId
+    const b = ((await run(store, 'TR1')) as Item).data.projectId
+    expect(new Set([a, b]).size).toBe(2)
+    expect(read(store).projects.filter((p: Item) => p.live)).toHaveLength(2)
+    // a reset keeps the files on disk: the next number is taken from the first free directory
+    reset(store, NOW)
+    const taken = [`devboard-projects/${a}`, `devboard-projects/${b}`]
+    const fs = fakeFs(taken)
+    const c = ((await run(store, 'CDCP', fs)) as Item).data.projectId
+    expect([a, b]).not.toContain(c)
+    for (const path of fs.writes.keys()) expect(taken.some((dir) => path.startsWith(dir))).toBe(false)
+    // a store that answers "exists" for everything is refused and nothing is written or saved
+    const revision = read(store).revision
+    const all = { ...fakeFs(), stat: async () => ({ kind: 'dir', size: 0, mtimeMs: 0 }) }
+    await expect(run(store, 'TR3', all)).rejects.toThrow('已有太多旧项目目录')
+    expect(all.writes.size).toBe(0)
+    expect(read(store).revision).toBe(revision)
+  })
+
+  it('refuses any input but the gate enum and leaves the board alone', async () => {
+    const store = memoryStore()
+    const fs = fakeFs()
+    for (const gate of ['TR4', 'tr1', '../x', '', undefined])
+      await expect(run(store, gate as string, fs), String(gate)).rejects.toThrow('gate 取值无效')
+    expect(fs.writes.size).toBe(0)
+    expect(read(store).projects.some((p: Item) => p.live)).toBe(false)
+  })
+
+  it.each(['CDCP', 'TR1', 'TR3', 'TR5'])(
+    'continues from the pending %s gate through the normal rules',
+    async (gate) => {
+      const store = memoryStore()
+      await run(store, gate)
+      const state = read(store)
+      const project = state.projects.find((p: Item) => p.live)
+      const pending = state.gates.find(
+        (g: Item) => g.decision === 'PENDING' && g.stageId.startsWith(`${project.id}/`),
+      )
+      const stage = byId(state.stages, pending.stageId)
+      // the stage author cannot sign, a role the gate does not name cannot either
+      expect(() =>
+        decideGate(state, { gateId: pending.id, decision: 'APPROVED', by: `${stage.author} 测试员` }, NOW),
+      ).toThrow('编写角色')
+      expect(() =>
+        decideGate(state, { gateId: pending.id, decision: 'APPROVED', by: '客户代表 测试员' }, NOW),
+      ).toThrow('本门需由')
+      sign(state, pending.id, pending.approverRoles[0])
+      expect(byId(state.stages, pending.stageId).state).toBe('PASSED')
+      // the remaining stages run the ordinary start / submit / sign loop
+      for (const next of STAGE_LIST.slice(STAGE_LIST.indexOf(stage.stage) + 1)) pass(state, project.id, next)
+      expect(
+        state.stages.filter((s: Item) => s.projectId === project.id).every((s: Item) => s.state === 'PASSED'),
+      ).toBe(true)
+      expect(byId(state.projects, project.id).actualEnd).toBeDefined()
+    },
+  )
 })

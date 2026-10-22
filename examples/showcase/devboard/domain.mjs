@@ -872,7 +872,8 @@ const pad = (n, width) => String(n).padStart(width, '0')
 
 function createProject(state, input, at, now) {
   const year = new Date(now).getUTCFullYear()
-  const id = `PRJ-${year}-${pad(yearSeq(state.projects, 'PRJ', year), 3)}`
+  // minSeq is for internal callers only (fast-forward skips project numbers whose directory exists on disk).
+  const id = `PRJ-${year}-${pad(Math.max(yearSeq(state.projects, 'PRJ', year), Number(input.minSeq) || 0), 3)}`
   const by = input.by || '研发协调员'
   const kind = oneOf(input.projectKind ?? 'SOFTWARE', Object.keys(GATE_PROFILES), 'projectKind')
   // Only a software project is run live (workspace, files, app); order projects are records only.

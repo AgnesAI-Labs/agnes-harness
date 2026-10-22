@@ -2,6 +2,7 @@ import { Button } from '@agnes/web-ui'
 import React from 'react'
 import { MyTodo } from './approvals.js'
 import { h, JumpContext, Shell, useBoard, useRole } from './board.js'
+import { FastForward } from './fastforward.js'
 import { Service, Trials } from './field.js'
 import { Overview, Projects } from './lifecycle.js'
 import { Panorama } from './panorama.js'
@@ -87,9 +88,14 @@ export function apply(ctx) {
       const reset =
         id === 'devboard-overview' &&
         h(
-          Button,
-          { disabled: board.busy, onClick: () => board.run('devboard.reset', {}, '已恢复演示数据') },
-          '重置演示数据',
+          React.Fragment,
+          null,
+          h(FastForward, { board }),
+          h(
+            Button,
+            { disabled: board.busy, onClick: () => board.run('devboard.reset', {}, '已恢复演示数据') },
+            '重置演示数据',
+          ),
         )
       return h(
         JumpContext.Provider,
