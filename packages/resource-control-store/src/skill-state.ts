@@ -5,6 +5,7 @@ import {
   rpcError,
   type SkillDescriptor,
   type SkillRootStatus,
+  validateResourceControlData,
 } from '@agnes/protocol'
 import type { ResourceAuthority } from './permissions.js'
 import type { SkillJournal } from './skill-journal.js'
@@ -93,8 +94,22 @@ export function deriveIncomingRoots(
   })
 }
 
-export function projected(journal: SkillJournal): SkillDescriptor[] {
-  return journal.discovered.map((source) => {
+/** Only a shared name can affect arbitration when desired/trust changes. */
+export function skillNameGroup(journal: SkillJournal, resourceId: string): readonly SkillDescriptor[] {
+  const source = journal.discovered.find((item) => item.resourceId === resourceId)
+  if (!source) return []
+  const key = source.name.trim().toLocaleLowerCase('en-US')
+  return journal.discovered.filter(
+    (item) =>
+      item.name.trim().toLocaleLowerCase('en-US') === key &&
+      (!source.workspaceId ||
+        item.sourceIdentity.scope !== 'workspace' ||
+        item.workspaceId === source.workspaceId),
+  )
+}
+
+export function projected(journal: SkillJournal, sources = journal.discovered): SkillDescriptor[] {
+  return sources.map((source) => {
     // Discovery metadata is not an actual observation. In particular a stale discovery diagnostic
     // must never survive as the Host's current runtime error after a later reconcile.
     const { lastSafeError: _discoveryError, ...descriptor } = source
@@ -229,5 +244,55 @@ export function skillControl(journal: SkillJournal) {
       capabilityHash: decision.capabilityHash,
       state: decision.state,
     })),
+  }
+}
+
+export function reconcileSkillObservations(
+  journal: SkillJournal,
+  resources: readonly SkillDescriptor[],
+  observations: readonly import('./adapters.js').SkillActualObservation[],
+) {
+  const expected = new Set(resources.map((source) => source.resourceId))
+  if (
+    resources.some(
+      (source) =>
+        !journal.discovered.some(
+          (item) => item.resourceId === source.resourceId && item.revision === source.revision,
+        ),
+    )
+  )
+    throw new Error('skill catalog changed during observation')
+  const seen = new Set(observations.map((item) => item.resourceId))
+  const valid =
+    observations.length === seen.size &&
+    seen.size === expected.size &&
+    [...expected].every((id) => seen.has(id)) &&
+    observations.every(
+      (item) =>
+        expected.has(item.resourceId) &&
+        ['unavailable', 'disabled', 'preparing', 'ready', 'degraded'].includes(item.actual) &&
+        (!item.lastSafeError || validateResourceControlData('SafeError', item.lastSafeError).ok),
+    )
+  if (!valid) throw new Error('invalid skill actual observation')
+  return {
+    next: changed(journal, {
+      discovered: journal.discovered.map((item) => {
+        const seen = observations.find((value) => value.resourceId === item.resourceId)
+        return seen?.resolution ? { ...item, resolution: seen.resolution } : item
+      }),
+      actual: {
+        ...journal.actual,
+        ...Object.fromEntries(
+          observations.map((item) => [
+            item.resourceId,
+            {
+              state: item.actual,
+              ...(item.lastSafeError ? { lastSafeError: item.lastSafeError } : {}),
+            },
+          ]),
+        ),
+      },
+    }),
+    result: undefined,
   }
 }

@@ -109,6 +109,16 @@ export class ResourceAdminApi {
       ...(this.#workspaceId ? { workspaceId: this.#workspaceId } : {}),
     })
   }
+  /** Rebase a list cursor only when another page is explicitly requested after a mutation. */
+  async skillsThrough(loadedCount: number): Promise<{ items: SkillDescriptor[]; nextCursor?: string }> {
+    let page = await this.skills()
+    const items = [...page.items]
+    while (page.nextCursor && items.length <= loadedCount) {
+      page = await this.skills(page.nextCursor)
+      items.push(...page.items)
+    }
+    return { ...page, items }
+  }
   async skill(resourceId: string): Promise<SkillDescriptor> {
     return this.#post('skills/get', {
       profile: this.#context.profile,

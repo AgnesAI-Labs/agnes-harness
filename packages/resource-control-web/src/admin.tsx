@@ -46,9 +46,10 @@ import {
   saveToolDisclosure,
 } from './mcp-form.js'
 import { mountMcpPresets } from './mcp-presets.js'
-import { resourcePollDelay, watchMcpPanel } from './mcp-refresh.js'
+import { pollResourceOperation, watchMcpPanel } from './mcp-refresh.js'
 import { mountMcpWizard } from './mcp-wizard.js'
 import { type ResourceCompletion, reportResourceCompleted } from './operation-feedback.js'
+import { resourceActionMenu, skillDetailActions } from './skill-actions.js'
 import { SkillsPage } from './skills-page.js'
 
 export { registerSkillPagePanels, type SkillPagePanels } from './skills-page.js'
@@ -75,7 +76,6 @@ let createButton!: HTMLButtonElement
 // The dialogs and form are single: the latest mount owns them and an earlier page stops drawing.
 let activePage: ResourceAdminPage | undefined
 let stopMcpRefresh: (() => void) | undefined
-const terminal = new Set<ResourceOperation['state']>(['succeeded', 'failed', 'cancelled'])
 
 type Tab = 'skills' | 'mcp'
 type Item = SkillDescriptor | McpServerDescriptor
@@ -137,7 +137,9 @@ class ResourceAdminPage {
   #generation = 0
   #operations = new Map<string, ResourceOperation>()
   #activeOperation: string | undefined
+  #activeSkillId: string | undefined
   #nextCursor: string | undefined
+  #cursorStale = false
   #workspaceId: string | undefined
   #loadState: ResourceLoadState = 'idle'
   #reloadPromise: Promise<void> | undefined
@@ -288,6 +290,7 @@ class ResourceAdminPage {
       this.#items = result.items
       this.#skillRoots = requestTab === 'skills' && 'skillRoots' in result ? (result.skillRoots ?? []) : []
       this.#nextCursor = result.nextCursor
+      this.#cursorStale = false
       this.#loadedTab = this.#tab
       this.#loadedWorkspace = this.#workspaceId
       this.#loadState = this.#items.length ? 'ready' : 'empty'
@@ -357,7 +360,7 @@ class ResourceAdminPage {
     void this.#ensureLoaded()
   }
   async loadMore(): Promise<void> {
-    if (!this.#nextCursor || this.#loadMorePromise || this.#reloadPromise) return
+    if (!this.#nextCursor || this.#loadMorePromise || this.#reloadPromise || this.#activeOperation) return
     const cursor = this.#nextCursor
     const requestTab = this.#tab
     const requestWorkspace = this.#workspaceId
@@ -365,7 +368,11 @@ class ResourceAdminPage {
     this.#loadMorePromise = (async () => {
       try {
         const result =
-          requestTab === 'skills' ? await this.api().skills(cursor) : await this.api().mcp(cursor)
+          requestTab === 'skills'
+            ? this.#cursorStale
+              ? await this.api().skillsThrough(this.#items.length)
+              : await this.api().skills(cursor)
+            : await this.api().mcp(cursor)
         if (
           requestGeneration !== this.#generation ||
           requestTab !== this.#tab ||
@@ -373,7 +380,11 @@ class ResourceAdminPage {
         )
           return
         const known = new Set(this.#items.map((item) => item.resourceId))
-        this.#items = [...this.#items, ...result.items.filter((item) => !known.has(item.resourceId))]
+        this.#items =
+          this.#cursorStale && requestTab === 'skills'
+            ? result.items
+            : [...this.#items, ...result.items.filter((item) => !known.has(item.resourceId))]
+        this.#cursorStale = false
         this.#nextCursor = result.nextCursor
         this.#loadState = this.#items.length ? 'ready' : 'empty'
       } catch (error) {
@@ -392,34 +403,56 @@ class ResourceAdminPage {
     })()
     await this.#loadMorePromise
   }
-  async track(receipt: { operationId: string }, completion?: ResourceCompletion): Promise<boolean> {
+  async track(
+    receipt: { operationId: string },
+    completion?: ResourceCompletion,
+    skillId?: string,
+  ): Promise<boolean> {
     const api = this.api()
+    const generation = this.#generation
+    const workspace = this.#workspaceId
+    this.#activeSkillId = skillId
     this.#activeOperation = receipt.operationId
     this.setNotice('notice.submitted')
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      if (this.lifetime.signal.aborted) return false
-      const op = await api.operation(receipt.operationId)
-      if (this.lifetime.signal.aborted) return false
-      this.#operations.set(op.operationId, op)
-      if (terminal.has(op.state)) {
-        this.#activeOperation = undefined
-        if (op.state === 'succeeded') {
-          reportResourceCompleted(op, activeResourceText, completion)
-          this.setNotice(undefined)
-        } else if (op.lastSafeError?.message)
-          this.setNotice(resourceFailureKey(op.lastSafeError.code), 'error')
-        else this.setNotice('notice.failed', 'error')
-        await this.reload(true)
-        if (this.#loadState === 'error') return false
-        return op.state === 'succeeded'
+    try {
+      const op = await pollResourceOperation(
+        () => api.operation(receipt.operationId),
+        this.lifetime.signal,
+        (op) => {
+          this.#operations.set(op.operationId, op)
+          this.render(false)
+        },
+      )
+      if (!op) {
+        if (!this.lifetime.signal.aborted) this.setNotice('notice.running', 'warning')
+        return false
       }
-      // Progress belongs to the detail panel. The list is already locked by this operation.
-      this.render(false)
-      await resourcePollDelay(attempt, this.lifetime.signal)
+      this.#operations.set(op.operationId, op)
+      if (skillId) {
+        const item = await api.skill(skillId)
+        if (
+          this.lifetime.signal.aborted ||
+          generation !== this.#generation ||
+          workspace !== this.#workspaceId ||
+          this.#tab !== 'skills'
+        )
+          return false
+        const index = this.#items.findIndex((item) => item.resourceId === skillId)
+        if (index >= 0) this.#items[index] = item
+        this.#cursorStale = !!this.#nextCursor
+      }
+      if (op.state === 'succeeded') {
+        reportResourceCompleted(op, activeResourceText, completion)
+        this.setNotice(undefined)
+      } else if (op.lastSafeError?.message) this.setNotice(resourceFailureKey(op.lastSafeError.code), 'error')
+      else this.setNotice('notice.failed', 'error')
+      if (!skillId) await this.reload(true)
+      return this.#loadState !== 'error' && op.state === 'succeeded'
+    } finally {
+      this.#activeOperation = undefined
+      this.#activeSkillId = undefined
+      this.render()
     }
-    this.#activeOperation = undefined
-    this.setNotice('notice.running', 'warning')
-    return false
   }
 
   tab(): Tab {
@@ -594,6 +627,7 @@ class ResourceAdminPage {
         }
         skillRoots={this.#skillRoots}
         busy={this.#activeOperation !== undefined}
+        busyResourceId={this.#activeSkillId}
         selectedId={this.#selected}
         nextCursor={this.#nextCursor}
         loadingMore={this.#loadMorePromise !== undefined}
@@ -601,10 +635,10 @@ class ResourceAdminPage {
         emptyDescription={
           this.#tab === 'skills' ? this.#t('empty.skills.description') : this.#t('empty.mcp.description')
         }
-        switchDisabled={!this.writable() || this.#activeOperation !== undefined}
+        switchDisabled={!this.writable() || (this.#activeOperation !== undefined && !this.#activeSkillId)}
         itemNameOf={(item) => this.#itemName(item)}
-        onOpen={(item) => this.select(item.resourceId, this.#rowOf(item.resourceId))}
-        onToggleDesired={(item, next) => void this.toggleDesired(item, next)}
+        onOpen={this.#openItem}
+        onToggleDesired={this.#toggleItem}
         onLoadMore={() => void this.loadMore()}
         onRetry={() => void this.reload()}
         mcpActions={(item) => ({
@@ -627,23 +661,18 @@ class ResourceAdminPage {
         })}
         onImport={onImport ?? (() => undefined)}
         filtered={!!this.#skillQuery}
-        menuOf={(item) =>
-          this.#detailActions(item).map((action, index) => ({
-            id: `resource-${index}`,
-            label: action.label,
-            disabled: action.disabled ?? false,
-            danger: action.className?.includes('danger') ?? false,
-            onSelect: () => void this.#runAction(action),
-          }))
-        }
+        menuOf={this.#menuOf}
       />
     )
   }
-  #itemName(item: Item): string {
-    return item.kind === 'skill' ? item.name : item.displayName
-  }
+  #openItem = (item: Item): void => this.select(item.resourceId, this.#rowOf(item.resourceId))
+  #toggleItem = (item: Item, next: boolean): void => void this.toggleDesired(item, next)
+  #menuOf = (item: Item) =>
+    resourceActionMenu(this.#detailActions(item), (action) => void this.#runAction(action))
+  #itemName = (item: Item): string => (item.kind === 'skill' ? item.name : item.displayName)
 
   async toggleDesired(item: Item, next: boolean): Promise<void> {
+    if (this.#activeOperation || this.#reloadPromise || this.#loadMorePromise || !this.writable()) return
     if (item.kind === 'skill' && item.sourceIdentity.scope === 'runtime') return
     const kind = item.kind === 'skill' ? 'Skill' : 'MCP'
     const summary = this.#t('action.request', {
@@ -660,8 +689,9 @@ class ResourceAdminPage {
     try {
       await this.#setDesired(item, next)
     } catch (error) {
+      this.#activeOperation = undefined
+      this.#activeSkillId = undefined
       this.showError(error)
-      this.render()
     }
   }
 
@@ -671,6 +701,8 @@ class ResourceAdminPage {
         item.kind === 'skill'
           ? await this.api().skillTrust(item.resourceId, item.revision, 'trusted')
           : await this.api().mcpTrust(item.serverId, item.revision, 'trusted'),
+        undefined,
+        item.kind === 'skill' ? item.resourceId : undefined,
       )
       if (!trusted) return
       const current = this.#items.find((candidate) => candidate.resourceId === item.resourceId)
@@ -686,6 +718,8 @@ class ResourceAdminPage {
         : next
           ? await this.api().mcpEnable(item.serverId, item.revision)
           : await this.api().mcpDisable(item.serverId, item.revision),
+      undefined,
+      item.kind === 'skill' ? item.resourceId : undefined,
     )
   }
 
@@ -693,47 +727,15 @@ class ResourceAdminPage {
   #detailActions(item: Item): readonly ResourceDetailAction[] {
     const disabled = !this.writable() || this.#activeOperation !== undefined
     const specs: ResourceDetailAction[] = []
-    if (item.kind === 'skill') {
-      if (item.sourceIdentity.scope === 'runtime') return []
-      const skill = item
-      const removing = skill.lastSafeError?.code === 'SKILL_REMOVAL_PENDING'
-      const add = (
-        label: string,
-        summary: string,
-        run: () => Promise<{ operationId: string } | undefined>,
-        extra?: Partial<ResourceDetailAction>,
-      ): void => {
-        specs.push({
-          label,
-          summary,
-          run,
-          disabled: disabled || (removing && label !== this.#t('action.remove-skill.label')),
-          ...extra,
-        })
-      }
-      add(
-        this.#t(resourceDesiredEnabled(skill) ? 'action.disable' : 'action.enable'),
-        this.#t('action.request', {
-          action: this.#t(resourceDesiredEnabled(skill) ? 'action.disable' : 'action.enable'),
-          kind: this.#t('tab.skills'),
-          name: skill.name,
-          revision: `${skill.revision.slice(0, 12)}…`,
-        }),
-        async () => {
-          await this.#setDesired(skill, !resourceDesiredEnabled(skill))
-          return undefined
-        },
+    if (item.kind === 'skill')
+      return skillDetailActions(
+        item,
+        disabled,
+        this.#t,
+        (next) => this.#setDesired(item, next),
+        () => this.api().skillRemove(item.resourceId, item.revision),
+        { className: 'agh-btn--danger' },
       )
-      if (skill.sourceIdentity.scope === 'workspace' || skill.sourceIdentity.scope === 'user') {
-        add(
-          this.#t('action.remove-skill.label'),
-          this.#t('action.remove-skill.summary', { name: skill.name }),
-          () => this.api().skillRemove(skill.resourceId, skill.revision),
-          { className: 'agh-btn--danger' },
-        )
-      }
-      return specs
-    }
     const server = item
     const revision = `${server.revision.slice(0, 12)}…`
     const add = (
@@ -779,6 +781,7 @@ class ResourceAdminPage {
   }
 
   async #runAction(action: ResourceDetailAction): Promise<void> {
+    if (this.#activeOperation || !this.writable()) return
     try {
       if (await this.confirm(action.summary)) {
         const receipt = await action.run()

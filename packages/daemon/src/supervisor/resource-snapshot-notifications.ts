@@ -34,7 +34,11 @@ import { type ActivationLinkPool, notifyLiveSessionWorkers } from '@agnes/resour
  * booting a full supervisor - see daemon/test/resource-snapshot-notify.test.ts.
  */
 export function wireResourceSnapshotNotifications(o: {
-  localResourceStore: { setSuccessfulSnapshotHandler(handler: (profile: string) => void): void }
+  localResourceStore: {
+    setSuccessfulSnapshotHandler(
+      handler: (profile: string, change?: { skillControlRevision: string }) => void,
+    ): void
+  }
   registry: {
     noteResourceSnapshotCommitted(): void
     retireSessions(keys: readonly string[], reason: string): void
@@ -42,14 +46,14 @@ export function wireResourceSnapshotNotifications(o: {
   pool: ActivationLinkPool
   log?: Pick<Console, 'warn'>
 }): void {
-  o.localResourceStore.setSuccessfulSnapshotHandler(() => {
+  o.localResourceStore.setSuccessfulSnapshotHandler((_profile, change) => {
     // Synchronously, before any notice goes out and regardless of how that notice fares: this is a
     // global fence, not a per-session outcome. A worker that is mid-`acquire()` right now has already
     // read the superseded snapshot and is in no notification list at all, so the bump has to happen at
     // the commit itself - and as early as possible, since any worker that reaches hello between the
     // commit and the bump would otherwise pass the fence holding old resources.
     o.registry.noteResourceSnapshotCommitted()
-    void notifyLiveSessionWorkers(o.pool, o.log).then((failedKeys) => {
+    void notifyLiveSessionWorkers(o.pool, o.log, change).then((failedKeys) => {
       if (failedKeys.length > 0) o.registry.retireSessions(failedKeys, 'resource-notify-failed')
     })
   })

@@ -20,7 +20,6 @@ import {
   type McpStatus,
   rpcError,
   type SkillDescriptor,
-  type SkillRootStatus,
   type WorkerGeneration,
 } from '@agnes/protocol'
 import {
@@ -81,6 +80,8 @@ export type WorkerResourceSlot = {
   /** The session worker's MCP supply: one Host row per server in the snapshot (stage 2b step 3).
    *  Set once by `runWorker` after Host assembly; absent in workers that host no sessions. */
   mcpRows?: McpRowRuntime
+  /** One-shot hint for a control-only update; unknown notices and failed reloads use a full scan. */
+  skillControlRevision?: string | undefined
   /** Count of `resource.stale` notices received so far. Only `case 'resource.stale':` writes it. */
   staleMarks: number
   /** The `staleMarks` value the last successful reload consumed; `staleMarks > reloadedMarks` is the
@@ -358,6 +359,7 @@ export async function handleCommand(
         parent: session.d.log.parent ?? null,
       }
     case 'resource.stale':
+      if (o.resources) o.resources.skillControlRevision = undefined
       if (o.resources) o.resources.staleMarks++
       return { ok: true }
     case 'systemPrompt.preview':
@@ -619,10 +621,15 @@ async function reloadWorkerResources(o: {
   const slot = o.resources
   if (!slot || !o.workerResourcesInput) return false
   const previous = slot.generation
+  const skillControlRevision = slot.skillControlRevision
+  slot.skillControlRevision = undefined
   let next: WorkerResourceState | undefined
   let mcpPending = false
   try {
-    next = await bootstrapWorkerResources(o.workerResourcesInput)
+    next = await bootstrapWorkerResources({
+      ...o.workerResourcesInput,
+      ...(skillControlRevision ? { reuseSkillsAt: skillControlRevision } : {}),
+    })
     if (previous && next) next.runtime.skills.shareRuntimeFrom(previous.runtime.skills)
     mcpPending = !!slot.mcpRows
     await slot.mcpRows?.apply(next?.mcpEntries ?? [])
@@ -703,73 +710,7 @@ export async function applyMcpRowChange(
   return slot?.mcpRows?.waitForStatus(serverId, Math.max(0, deadline - Date.now()), ac.signal)
 }
 
-/**
- * A skill scan/removal scoped to one daemon-resolved workspace root, run inside whatever worker
- * already holds this process (design §3.5) instead of a dedicated skill-scan worker. Builds one
- * throwaway resource generation via `bootstrapWorkerResources({..., cwd, mcpRows: true})`: `mcpRows`
- * forces `managedMcp` empty, so this generation stages and connects no MCP server, and its own
- * fresh `createSkillCandidateRegistry` + `ExtensionActivationBarrier` never touch the worker's real
- * `resourceSlot.generation` or its mounted Host rows - the daemon-visible resident view is
- * untouched, exactly as the design's "不碰会话视图" requires. The revision returned is the sha256 of
- * whatever `AGNES_RESOURCE_SNAPSHOT` bytes this call actually read, which is what makes the
- * mismatch check below meaningful: a concurrent write between the daemon computing its own expected
- * revision and this call landing is a real race, not a bug, and must fail rather than silently
- * answer from a snapshot the daemon no longer recognizes.
- */
-async function buildWorkspaceSkillScan(
-  workerResourcesInput: WorkerResourceBootstrapInput,
-  workspaceRoot: string,
-): Promise<WorkerResourceState> {
-  const temp = await bootstrapWorkerResources({ ...workerResourcesInput, cwd: workspaceRoot, mcpRows: true })
-  if (!temp) throw new Error('resource worker did not observe a snapshot for this workspace scan')
-  return temp
-}
-
-export async function scanWorkspaceSkills(
-  workerResourcesInput: WorkerResourceBootstrapInput,
-  params: { workspaceRoot: string; rootKey?: string; snapshotRevision: string },
-): Promise<{
-  /** The resolved descriptors (actual/trust/desired/resolution), for reconcile's re-observation of
-   *  Skills the daemon already tracks. Never filtered by `rootKey` (reconcile never passes one). */
-  skills: readonly SkillDescriptor[]
-  /** Raw candidates + capability hash, for refresh's discovery of new/changed Skills. */
-  candidates: readonly Readonly<{ descriptor: SkillDescriptor; capabilityHash: string }>[]
-  failedRoots: readonly string[]
-  skippedResourceIds: readonly string[]
-  roots: readonly SkillRootStatus[]
-}> {
-  const temp = await buildWorkspaceSkillScan(workerResourcesInput, params.workspaceRoot)
-  try {
-    if (temp.revision !== params.snapshotRevision)
-      throw new Error('resource snapshot changed before this Skill scan completed')
-    const rootKey = params.rootKey
-    return {
-      skills: temp.skills,
-      candidates: rootKey
-        ? temp.discovery.candidates.filter((row) => row.descriptor.sourceIdentity.rootKey === rootKey)
-        : temp.discovery.candidates,
-      failedRoots: temp.discovery.failedRoots,
-      skippedResourceIds: rootKey
-        ? temp.discovery.skippedResourceIds.filter((id) => id.split('/')[2] === rootKey)
-        : temp.discovery.skippedResourceIds,
-      roots: temp.discovery.roots,
-    }
-  } finally {
-    await temp.runtime.mcp.close().catch(() => undefined)
-  }
-}
-
-export async function removeWorkspaceSkill(
-  workerResourcesInput: WorkerResourceBootstrapInput,
-  params: { workspaceRoot: string; descriptor: SkillDescriptor; validateOnly: boolean },
-): Promise<void> {
-  const temp = await buildWorkspaceSkillScan(workerResourcesInput, params.workspaceRoot)
-  try {
-    await temp.removeSkill(params.descriptor, params.validateOnly)
-  } finally {
-    await temp.runtime.mcp.close().catch(() => undefined)
-  }
-}
+export { removeWorkspaceSkill, scanWorkspaceSkills } from './skill-scan.js'
 
 /** Service workers deliberately have no HostSession. Their command surface is correspondingly tiny
  * and cannot reach session storage or a writer lease. */

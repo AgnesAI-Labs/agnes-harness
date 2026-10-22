@@ -23,6 +23,7 @@ import { mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
 import { syncManagedMcpExecutableAllowlist } from './mcp-server-opener.js'
 import { deploymentMcpPolicy, scanSkills } from './skill-bootstrap.js'
 import { removeFilesystemSkill } from './skill-remove.js'
+import type { SkillScanCache } from './skill-scan-cache.js'
 import { workspaceSkills } from './workspace-skills.js'
 
 type ResourceProfile = Readonly<{
@@ -89,6 +90,10 @@ export type WorkerResourceBootstrapInput = Readonly<{
    * connects them as before; dedicated resource-control service workers keep that path unchanged.
    */
   mcpRows?: boolean
+  /** Existing catalog rows to observe; omitted for complete discovery. */
+  skillResourceIds?: readonly string[]
+  skillScanCache?: SkillScanCache
+  reuseSkillsAt?: string
 }>
 
 const digest = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex')
@@ -253,14 +258,20 @@ export async function bootstrapWorkerResources(
     onStatus: (status) => reportMcpStatus?.(status),
   })
   const runtime = createWorkerResourceRuntime({ profile: input.profile.name, skills: registry, mcp: manager })
-  const scanned = await scanSkills(
-    input.cwd,
-    input.env.AGNES_PACKAGE_SKILL_SNAPSHOT,
-    input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
-    input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
-    input.agnesHomeDir,
-    input.env.AGNES_SKILLS_IMPORT_USER === '1',
-  )
+  const revision = digest(snapshotText)
+  const cached = input.reuseSkillsAt === revision ? input.skillScanCache?.get(input.cwd, revision) : undefined
+  const scanned =
+    cached ??
+    (await scanSkills(
+      input.cwd,
+      input.env.AGNES_PACKAGE_SKILL_SNAPSHOT,
+      input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
+      input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
+      input.agnesHomeDir,
+      input.env.AGNES_SKILLS_IMPORT_USER === '1',
+      input.skillResourceIds,
+    ))
+  if (!cached) input.skillScanCache?.observe(input.cwd, revision, scanned, input.skillResourceIds)
   // A test/single-server candidate worker still needs its one server *staged* (createMcpResourceManager's
   // test()/tools() call verify(), which reads only from `staged`, populated by the manager's own
   // bootstrap reconcile over these entries - not by this file talking to it directly). But it must
@@ -311,14 +322,19 @@ export async function bootstrapWorkerResources(
       : workspaceSkills(boot.skillResources, async (root) => {
           const scoped = createSkillCandidateRegistry({ barrier: input.createBarrier() })
           scoped.shareRuntimeFrom(registry)
-          const scan = await scanSkills(
-            root,
-            input.env.AGNES_PACKAGE_SKILL_SNAPSHOT,
-            input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
-            input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
-            input.agnesHomeDir,
-            input.env.AGNES_SKILLS_IMPORT_USER === '1',
-          )
+          const cached =
+            input.reuseSkillsAt === revision ? input.skillScanCache?.get(root, revision) : undefined
+          const scan =
+            cached ??
+            (await scanSkills(
+              root,
+              input.env.AGNES_PACKAGE_SKILL_SNAPSHOT,
+              input.env.AGNES_RESOURCE_SKILL_LKG_DIR,
+              input.env.HOME ?? input.env.USERPROFILE ?? homedir(),
+              input.agnesHomeDir,
+              input.env.AGNES_SKILLS_IMPORT_USER === '1',
+            ))
+          if (!cached) input.skillScanCache?.observe(root, revision, scan)
           for (const item of scan.roots) {
             if (item.rootKey === 'package') scoped.replacePackage(item.candidates)
             else scoped.replaceRoot(item.rootKey, item.candidates)

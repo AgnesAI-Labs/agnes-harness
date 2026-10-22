@@ -3,9 +3,22 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { WorkerResourceBootstrapInput } from '@agnes/resource-control-worker'
-import { scanSkills } from '@agnes/resource-control-worker'
-import { afterEach, describe, expect, it } from 'vitest'
+import { bootstrapWorkerResources, SkillScanCache, scanSkills } from '@agnes/resource-control-worker'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { removeWorkspaceSkill, scanWorkspaceSkills } from '../src/commands.js'
+
+// File reads are observable work here: a single-row control request must not load a sibling body.
+const reads = vi.hoisted(() => [] as string[])
+vi.mock('node:fs/promises', async (original) => {
+  const fs = await original<typeof import('node:fs/promises')>()
+  return {
+    ...fs,
+    readFile: (...args: Parameters<typeof fs.readFile>) => {
+      reads.push(String(args[0]))
+      return fs.readFile(...args)
+    },
+  }
+})
 
 const roots: string[] = []
 afterEach(async () => {
@@ -94,6 +107,69 @@ describe('scanWorkspaceSkills (worker side of resourceSkillScan)', () => {
     expect(result.skills).toMatchObject([{ resourceId: candidate.resourceId, actual: 'ready' }])
     expect(result.candidates.map((row) => row.descriptor.resourceId)).toEqual([candidate.resourceId])
     expect(result.failedRoots).toEqual([])
+    const siblingDir = join(workspace, '.agh', 'skills', 'sibling')
+    await mkdir(siblingDir, { recursive: true })
+    await writeFile(
+      join(siblingDir, 'SKILL.md'),
+      '---\nname: sibling\ndescription: Unrelated\n---\nDo not reload me.',
+    )
+    const lkg = join(input.profile.dataDir, 'lkg')
+    await scanSkills(workspace, undefined, lkg, input.agnesHomeDir, input.agnesHomeDir)
+    const { readdir } = await import('node:fs/promises')
+    const caches = await Promise.all(
+      (await readdir(lkg)).map(async (name) => ({ name, bytes: await readFile(join(lkg, name), 'utf8') })),
+    )
+    const cachedInput = { ...input, skillScanCache: new SkillScanCache(), cwd: workspace, mcpRows: true }
+    const previous = await bootstrapWorkerResources(cachedInput)
+    const disabledRevision = await writeSnapshot({
+      desired: [{ resourceId: candidate.resourceId, state: 'disabled' }],
+      trust: [
+        {
+          resourceId: candidate.resourceId,
+          revision: candidate.revision,
+          capabilityHash: candidate.capabilityHash,
+          state: 'trusted',
+        },
+      ],
+    })
+    reads.length = 0
+    const targeted = await scanWorkspaceSkills(
+      { ...cachedInput, env: { ...input.env, AGNES_RESOURCE_SKILL_LKG_DIR: lkg } },
+      {
+        workspaceRoot: workspace,
+        snapshotRevision: disabledRevision,
+        resourceIds: [candidate.resourceId],
+      },
+    )
+    expect(targeted.skills).toMatchObject([{ resourceId: candidate.resourceId, actual: 'disabled' }])
+    expect(targeted.skills).toHaveLength(1)
+    expect(reads.some((path) => path.startsWith(siblingDir))).toBe(false)
+    expect(reads).toContain(join(workspace, '.agh', 'skills', 'reviewer', 'SKILL.md'))
+    for (const cache of caches) expect(await readFile(join(lkg, cache.name), 'utf8')).toBe(cache.bytes)
+    reads.length = 0
+    const applied = await bootstrapWorkerResources({ ...cachedInput, reuseSkillsAt: disabledRevision })
+    expect(applied?.skills.find((item) => item.resourceId === candidate.resourceId)?.actual).toBe('disabled')
+    expect(previous?.skills.find((item) => item.resourceId === candidate.resourceId)?.actual).toBe('ready')
+    expect(reads.filter((path) => path.endsWith('SKILL.md'))).toEqual([])
+    for (const reuseSkillsAt of [undefined, revision]) {
+      reads.length = 0
+      const fallback = await bootstrapWorkerResources({
+        ...cachedInput,
+        ...(reuseSkillsAt ? { reuseSkillsAt } : {}),
+      })
+      expect(reads).toContain(join(siblingDir, 'SKILL.md'))
+      await fallback?.runtime.mcp.close()
+    }
+    await applied?.runtime.mcp.close()
+    await previous?.runtime.mcp.close()
+
+    await expect(
+      scanWorkspaceSkills(input, {
+        workspaceRoot: workspace,
+        snapshotRevision: '0'.repeat(64),
+        resourceIds: [candidate.resourceId],
+      }),
+    ).rejects.toThrow('resource snapshot changed')
   })
 
   it('scopes strictly to the given workspace root: a second workspace never sees the first one’s Skill', async () => {

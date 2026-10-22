@@ -130,3 +130,21 @@ it('sends deletion and priority changes by identity with revision and priority p
   })
   expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).not.toHaveProperty('path')
 })
+
+it('rebases Skill pagination through the visible rows only when another page is requested', async () => {
+  const fetcher = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      Response.json({ items: [{ resourceId: 'one' }, { resourceId: 'two' }], nextCursor: 'fresh-2' }),
+    )
+    .mockResolvedValueOnce(Response.json({ items: [{ resourceId: 'three' }], nextCursor: 'fresh-3' }))
+  const api = new ResourceAdminApi(context, fetcher)
+  expect(await api.skillsThrough(2)).toMatchObject({
+    items: [{ resourceId: 'one' }, { resourceId: 'two' }, { resourceId: 'three' }],
+    nextCursor: 'fresh-3',
+  })
+  expect(fetcher.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).cursor)).toEqual([
+    undefined,
+    'fresh-2',
+  ])
+})

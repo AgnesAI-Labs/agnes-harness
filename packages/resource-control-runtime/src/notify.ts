@@ -49,11 +49,12 @@ const RESOURCE_STALE_NOTIFY_TIMEOUT_MS = 2_000
 export async function notifyLiveSessionWorkers(
   pool: ActivationLinkPool,
   log?: Pick<Console, 'warn'>,
+  change?: { skillControlRevision: string },
 ): Promise<readonly string[]> {
   const failedSessionKeys: string[] = []
   for (const target of pool.activationLinks()) {
     await target.link
-      .command('resource.stale', {}, { timeoutMs: RESOURCE_STALE_NOTIFY_TIMEOUT_MS })
+      .command('resource.stale', change ?? {}, { timeoutMs: RESOURCE_STALE_NOTIFY_TIMEOUT_MS })
       .catch((error: unknown) => {
         failedSessionKeys.push(target.sessionKey)
         log?.warn?.('failed to notify a session worker of a stale resource snapshot', {

@@ -86,6 +86,34 @@ describe('skill discovery', () => {
     expect(JSON.stringify({ ...scan.candidates[0], directory: undefined })).not.toContain('/private/project')
     expect(scan.candidates[0]?.resourceId).toMatch(/^skill\/workspace\/workspace-agnes\/[a-f0-9]{64}$/)
     expect(scan.candidates[0]?.revision).toMatch(/^[a-f0-9]{64}$/)
+    const selectedId = skillResourceIdAt(root, 'review')
+    const files = fs({
+      '/private/project/.agh/skills/review/SKILL.md':
+        '---\nname: review\ndescription: Review a change\n---\nsecret body',
+      '/private/project/.agh/skills/review/references/guide.md': 'Selected attachment',
+      '/private/project/.agh/skills/neighbor/SKILL.md':
+        '---\nname: neighbor\ndescription: Separate\n---\nUnrelated body',
+    })
+    const reads: string[] = []
+    const selective = {
+      ...files,
+      read: async (path: string) => {
+        reads.push(path)
+        if (path.includes(`${sep}neighbor${sep}`)) throw new Error('unrelated Skill must not be loaded')
+        return files.read(path)
+      },
+    }
+    const selected = await discoverSkillRoot(selective, root, new Set([selectedId]))
+    expect(selected).toMatchObject({
+      ok: true,
+      candidates: [
+        { resourceId: selectedId, body: 'secret body', files: [{ relativePath: 'references/guide.md' }] },
+      ],
+    })
+    expect(reads.some((path) => path.includes(`${sep}neighbor${sep}`))).toBe(false)
+    reads.length = 0
+    expect(await discoverSkillRoot(selective, root, new Set())).toMatchObject({ ok: true, candidates: [] })
+    expect(reads).toEqual([])
   })
 
   it('splits the Agnes-owned root from the OS-home-relative ones when AGH_HOME diverges from the OS home', () => {
