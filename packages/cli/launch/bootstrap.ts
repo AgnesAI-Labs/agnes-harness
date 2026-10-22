@@ -6,11 +6,14 @@ import { isAbsolute, join, parse, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createPrivateDirectorySync, hasPrivateDaclSync } from '@agnes/system-node'
 import { timingMark } from '../src/timing.js'
+import { versionLine } from '../src/version-line.js'
 
 /** build-local sets this to the large bundle each tiny local entry loads. */
 declare const AGNES_BOOTSTRAP_MAIN: string | undefined
 /** build-local sets this to the protocol's AGH_DIR, so this entry never loads the protocol package. */
 declare const AGNES_BOOTSTRAP_HOME_DIR: string
+/** build-local sets this for the `agh` entry only: the version `--version` reports without loading the bundle. */
+declare const AGNES_BOOTSTRAP_VERSION: string | undefined
 
 function nonEmpty(value: string | undefined): string | undefined {
   return value !== undefined && value.trim() !== '' ? value : undefined
@@ -64,9 +67,21 @@ export function enableLocalCompileCache(
 
 if (typeof AGNES_BOOTSTRAP_MAIN === 'string') {
   timingMark('bootstrap')
-  enableLocalCompileCache()
-  const main = fileURLToPath(new URL(AGNES_BOOTSTRAP_MAIN, import.meta.url))
-  // The bundles keep their own main-module guards, which compare argv[1] with their own file.
-  process.argv[1] = main
-  await import(pathToFileURL(main).href)
+  const args = process.argv.slice(2)
+  if (
+    typeof AGNES_BOOTSTRAP_VERSION === 'string' &&
+    args.length === 1 &&
+    (args[0] === '--version' || args[0] === '-v')
+  ) {
+    // Exactly the line the main bundle prints for these arguments, without the 25 MB load. Left to
+    // exit on its own so a piped stdout drains.
+    process.stdout.write(versionLine(AGNES_BOOTSTRAP_VERSION))
+    process.exitCode = 0
+  } else {
+    enableLocalCompileCache()
+    const main = fileURLToPath(new URL(AGNES_BOOTSTRAP_MAIN, import.meta.url))
+    // The bundles keep their own main-module guards, which compare argv[1] with their own file.
+    process.argv[1] = main
+    await import(pathToFileURL(main).href)
+  }
 }

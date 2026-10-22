@@ -433,6 +433,7 @@ async function buildLocal(out: string, nativeOutput?: string, versionOverride?: 
       await bundle(join(cliRoot, 'launch', 'bootstrap.ts'), join(out, `${name}.mjs`), {
         AGNES_BOOTSTRAP_MAIN: JSON.stringify(`./${name}-main.mjs`),
         AGNES_BOOTSTRAP_HOME_DIR: JSON.stringify(AGH_DIR),
+        ...(name === 'agnes' ? { AGNES_BOOTSTRAP_VERSION: JSON.stringify(version) } : {}),
       }),
     )
   await collectThirdPartyNotices(cliRoot, out, backendBuilds)

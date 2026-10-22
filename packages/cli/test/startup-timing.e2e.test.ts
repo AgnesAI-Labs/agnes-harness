@@ -13,7 +13,7 @@ function run(timing: boolean) {
     const env: NodeJS.ProcessEnv = { ...process.env, AGH_HOME: home }
     if (timing) env.AGH_TIMING = '1'
     else delete env.AGH_TIMING
-    return spawnSync(process.execPath, [launcher, '--version'], { env, encoding: 'utf8' })
+    return spawnSync(process.execPath, [launcher, '--help'], { env, encoding: 'utf8' })
   } finally {
     rmSync(home, { recursive: true, force: true })
   }

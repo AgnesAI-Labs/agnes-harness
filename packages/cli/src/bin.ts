@@ -45,6 +45,7 @@ import { runPrint } from './modes/print.js'
 import { timingMark } from './timing.js'
 import { resolveLocale } from './tui/locale.js'
 import type { Booted } from './types.js'
+import { versionLine } from './version-line.js'
 
 /** The resource command layer only raises these for backend-confirmed terminal outcomes. */
 export function safeResourceFailureLine(error: unknown): string | undefined {
@@ -181,7 +182,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     return ExitCode.USAGE
   }
   if (p.version) {
-    io.stdout.write(`agh ${io.agnesVersion} node ${process.versions.node} protocol _agnes/v1\n`)
+    io.stdout.write(versionLine(io.agnesVersion))
     return ExitCode.OK
   }
   if (p.help) {
