@@ -18,7 +18,10 @@ export class ResourceControlStore implements ResourceStateStore {
   private readonly directory: string
   private readonly tails = new Map<string, Promise<unknown>>()
   private readonly drives = new Map<string, Promise<unknown>>()
-  private onSuccessfulSnapshot: ((profile: string) => void) | undefined
+  private readonly snapshotRevisions = new Map<string, string>()
+  private onSuccessfulSnapshot:
+    | ((profile: string, change?: { skillControlRevision: string }) => void)
+    | undefined
   constructor(options: {
     directory: string
     scope: ResourceProfileScope
@@ -173,7 +176,13 @@ export class ResourceControlStore implements ResourceStateStore {
           params.profile as string,
           (result as { operationId: string }).operationId,
           () => this.writeWorkerSnapshot(params.profile as string),
-          () => this.onSuccessfulSnapshot?.(params.profile as string),
+          () =>
+            this.onSuccessfulSnapshot?.(
+              params.profile as string,
+              ['_agnes/v1/resources.desired.set', '_agnes/v1/skills.trust.set'].includes(method)
+                ? { skillControlRevision: this.snapshotRevisions.get(params.profile as string) ?? '' }
+                : undefined,
+            ),
         )
       })
     return result
@@ -197,7 +206,9 @@ export class ResourceControlStore implements ResourceStateStore {
     ])
   }
   /** Called only after a successful effect's latest worker snapshot and terminal operation commit. */
-  setSuccessfulSnapshotHandler(handler: (profile: string) => void): void {
+  setSuccessfulSnapshotHandler(
+    handler: (profile: string, change?: { skillControlRevision: string }) => void,
+  ): void {
     if (this.onSuccessfulSnapshot) throw new Error('worker snapshot handler is already configured')
     this.onSuccessfulSnapshot = handler
   }
@@ -221,10 +232,13 @@ export class ResourceControlStore implements ResourceStateStore {
       mcp: await this.mcp.workerManaged(profile),
       mcpAuthority: 'resource-control' as const,
     }
+    const bytes = JSON.stringify(snapshot)
+    const revision = createHash('sha256').update(bytes).digest('hex')
     const target = this.snapshotPath(profile)
     const windows = process.platform === 'win32' // guards-allow-platform: select shared Windows persistence; retain POSIX.
     if (windows) {
-      await windowsWritePrivateFile(target, Buffer.from(JSON.stringify(snapshot)))
+      await windowsWritePrivateFile(target, Buffer.from(bytes))
+      this.snapshotRevisions.set(profile, revision)
       return
     }
     await mkdir(join(this.directory, 'worker-snapshots'), { recursive: true, mode: 0o700 })
@@ -232,12 +246,13 @@ export class ResourceControlStore implements ResourceStateStore {
     try {
       const handle = await open(temporary, 'wx', 0o600)
       try {
-        await handle.writeFile(JSON.stringify(snapshot))
+        await handle.writeFile(bytes)
         await handle.sync()
       } finally {
         await handle.close()
       }
       await rename(temporary, target)
+      this.snapshotRevisions.set(profile, revision)
     } finally {
       await rm(temporary, { force: true }).catch(() => undefined)
     }

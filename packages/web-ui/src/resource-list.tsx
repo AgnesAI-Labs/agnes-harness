@@ -1,5 +1,5 @@
 import type { SkillDescriptor, SkillRootStatus } from '@agnes/protocol'
-import type { JSX } from 'react'
+import { type JSX, memo } from 'react'
 import { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
 import { McpConnectionRow, type McpRowActions } from './mcp-connection-row.js'
 import { SettingsList, SettingsState, SettingsToolbar } from './settings-layout.js'
@@ -62,7 +62,9 @@ export function ResourceListContent({
   filtered = false,
   menuOf,
   busy = false,
+  busyResourceId,
 }: {
+  busyResourceId?: string | undefined
   tab: ResourceTab
   loadState: ResourceLoadState
   items: readonly ResourceItem[]
@@ -155,39 +157,45 @@ export function ResourceListContent({
         />
       )}
       {items.length > 0 && (
-        <SettingsList>
-          {items.map((item) =>
-            item.kind === 'mcp' ? (
-              <McpConnectionRow
-                key={item.resourceId}
-                item={item}
-                itemName={itemNameOf(item)}
-                selected={item.resourceId === selectedId}
-                disabled={switchDisabled}
-                onOpen={() => onOpen(item)}
-                onToggle={(next) => onToggleDesired(item, next)}
-                actions={mcpActions?.(item)}
-              />
-            ) : (
-              <ResourceRow
-                key={item.resourceId}
-                item={item}
-                selected={item.resourceId === selectedId}
-                switchDisabled={switchDisabled}
-                itemName={itemNameOf(item)}
-                sourceName={
-                  item.kind === 'skill' && item.sourceIdentity.scope === 'package'
-                    ? packageNames?.(item.sourceIdentity.sourceId)
-                    : undefined
-                }
-                onOpen={onOpen}
-                onToggleDesired={onToggleDesired}
-                busy={busy}
-                menuItems={menuOf?.(item)}
-              />
-            ),
-          )}
-        </SettingsList>
+        <fieldset
+          disabled={busy && !!busyResourceId}
+          style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+        >
+          <SettingsList>
+            {items.map((item) =>
+              item.kind === 'mcp' ? (
+                <McpConnectionRow
+                  key={item.resourceId}
+                  item={item}
+                  itemName={itemNameOf(item)}
+                  selected={item.resourceId === selectedId}
+                  disabled={switchDisabled}
+                  onOpen={() => onOpen(item)}
+                  onToggle={(next) => onToggleDesired(item, next)}
+                  actions={mcpActions?.(item)}
+                />
+              ) : (
+                <ResourceRow
+                  key={item.resourceId}
+                  item={item}
+                  selected={item.resourceId === selectedId}
+                  switchDisabled={switchDisabled || (busy && item.resourceId === busyResourceId)}
+                  itemName={itemNameOf(item)}
+                  sourceName={
+                    item.kind === 'skill' && item.sourceIdentity.scope === 'package'
+                      ? packageNames?.(item.sourceIdentity.sourceId)
+                      : undefined
+                  }
+                  onOpen={onOpen}
+                  onToggleDesired={onToggleDesired}
+                  busy={busy && (!busyResourceId || item.resourceId === busyResourceId)}
+                  menuOf={menuOf}
+                  runnerAvailable={!!skillRunner}
+                />
+              ),
+            )}
+          </SettingsList>
+        </fieldset>
       )}
       {nextCursor && (
         <Button htmlType="button" size="small" aria-busy={loadingMore} onClick={onLoadMore}>
@@ -297,7 +305,7 @@ export function ResourceEmpty({
   )
 }
 
-export function ResourceRow({
+function ResourceRowContent({
   item,
   selected,
   switchDisabled,
@@ -305,11 +313,14 @@ export function ResourceRow({
   onOpen,
   onToggleDesired,
   menuItems,
+  menuOf,
   busy = false,
+  runnerAvailable = !!skillRunner,
   sourceName,
 }: {
   /** The plugin a skill comes from, by the name people know it. */
   sourceName?: string | undefined
+  runnerAvailable?: boolean | undefined
   item: ResourceItem
   selected: boolean
   switchDisabled: boolean
@@ -318,6 +329,7 @@ export function ResourceRow({
   onToggleDesired(item: ResourceItem, next: boolean): void
   busy?: boolean
   menuItems?: readonly MenuItem[] | undefined
+  menuOf?: ((item: ResourceItem) => readonly MenuItem[]) | undefined
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
   const enabled = resourceDesiredEnabled(item)
@@ -364,7 +376,7 @@ export function ResourceRow({
               label={t('skills.actions')}
               trigger={<IconButton name="ellipsis" label={t('skills.actions')} />}
               items={[
-                ...(skillRunner && enabled
+                ...(runnerAvailable && enabled
                   ? [
                       {
                         id: 'run',
@@ -375,7 +387,7 @@ export function ResourceRow({
                     ]
                   : []),
                 { id: 'details', label: t('skills.details'), onSelect: () => onOpen(item) },
-                ...(menuItems ?? []),
+                ...(menuItems ?? menuOf?.(item) ?? []),
               ]}
             />
           </>
@@ -429,3 +441,6 @@ export function ResourceRow({
 }
 
 import { resourceFailureLabel } from './resource-failure.js'
+
+/** Unchanged skill descriptors keep their row and menu while another skill settles. */
+export const ResourceRow = memo(ResourceRowContent)

@@ -316,7 +316,12 @@ async function readRootEntry(
  * `skipped`; only a directory that cannot be listed or resolved fails the whole root, so callers
  * keep its last-known-good generation.
  */
-export async function discoverSkillRoot(fs: SkillFs, root: SkillRoot): Promise<SkillRootScan> {
+export async function discoverSkillRoot(
+  fs: SkillFs,
+  root: SkillRoot,
+  /** Host-private observation of known rows; omitted for complete discovery. */
+  resourceIds?: ReadonlySet<string>,
+): Promise<SkillRootScan> {
   if (root.scope === 'workspace' && !root.workspaceKey) return failed(root.rootKey, 'workspace-key-missing')
   const candidates: SkillCandidate[] = []
   const skipped: SkippedSkillEntry[] = []
@@ -363,6 +368,7 @@ export async function discoverSkillRoot(fs: SkillFs, root: SkillRoot): Promise<S
       .sort((a, b) => Number(a.kind !== 'dir') - Number(b.kind !== 'dir') || a.name.localeCompare(b.name))
     for (const entry of ordered) {
       const location = `${dir.prefix}${entry.name}`
+      if (resourceIds && !resourceIds.has(skillResourceIdAt(root, location))) continue
       const skip = (code: SkillRootFailure) =>
         skipped.push(Object.freeze({ resourceId: skillResourceIdAt(root, location), code, location }))
       const read = await readRootEntry(fs, root, dir.path, dirReal, entry)

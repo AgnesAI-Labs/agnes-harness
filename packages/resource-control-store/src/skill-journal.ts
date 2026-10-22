@@ -116,13 +116,14 @@ function decode(value: unknown): SkillJournal {
   const actualRows = actual as Record<string, unknown>
   const operationRows = operations as unknown[]
   if (!discoveredRows.every((entry) => validateResourceControlData('SkillDescriptor', entry).ok)) bad()
-  const ids = new Set((discoveredRows as SkillDescriptor[]).map((entry) => entry.resourceId))
+  const byId = new Map((discoveredRows as SkillDescriptor[]).map((entry) => [entry.resourceId, entry]))
+  const ids = new Set(byId.keys())
   if (ids.size !== discoveredRows.length) bad()
   if (Object.keys(capabilityRows).length !== ids.size) bad()
   for (const [id, value] of Object.entries(capabilityRows))
     if (!ids.has(id) || !revisionPattern.test(String(value))) bad()
   for (const [id, decision] of Object.entries(trustRows)) {
-    const descriptor = (discoveredRows as SkillDescriptor[]).find((item) => item.resourceId === id)
+    const descriptor = byId.get(id)
     if (
       !ids.has(id) ||
       !descriptor ||

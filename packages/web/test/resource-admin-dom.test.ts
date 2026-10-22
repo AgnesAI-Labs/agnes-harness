@@ -43,6 +43,7 @@ let failMcpList: boolean
 let rootFailureCode: string | undefined
 let failReload: boolean
 let failPolling: boolean
+let failSkillGet: boolean
 let pendingPage: { promise: Promise<Response>; resolve: (response: Response) => void } | undefined
 let resourceMount: {
   ready: Promise<void>
@@ -106,6 +107,7 @@ beforeEach(async () => {
   failMcpList = false
   failReload = false
   failPolling = false
+  failSkillGet = false
   pendingPage = undefined
   document.documentElement.lang = 'en'
   vi.stubGlobal(
@@ -126,6 +128,11 @@ beforeEach(async () => {
         })
       if (path === 'context')
         return Response.json({ profile: 'default', clientId: 'dom', permissions: [], readOnly: false })
+      if (path === 'skills/get' && failSkillGet) throw new Error('private Skill read detail')
+      if (path === 'skills/get')
+        return Response.json(
+          skillsFixture.find((item) => (item as { resourceId: string }).resourceId === body.resourceId),
+        )
       if (path === 'skills/list')
         return Response.json({
           items: skillsFixture,
@@ -985,7 +992,21 @@ it('enables an untrusted Skill without exposing a separate trust action', async 
       stale: false,
     },
   ]
+  skillsFixture.push({
+    ...(skillsFixture[0] as Record<string, unknown>),
+    resourceId: 'skill/user/user-agnes/neighbor',
+    name: 'Neighbor skill',
+    trust: 'trusted',
+  })
   await resourceMount.sync({ tab: 'skills' }, { refresh: true })
+  const listReads = submitted('skills/list').length
+  const neighbor = byId('resource-list').querySelector<HTMLElement>(
+    '[data-resource-id="skill/user/user-agnes/neighbor"]',
+  )
+  const changes: MutationRecord[] = []
+  const observer = new MutationObserver((records) => changes.push(...records))
+  if (!neighbor) throw new Error('missing neighboring row')
+  observer.observe(neighbor, { subtree: true, childList: true, attributes: true, characterData: true })
   byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
   await vi.waitFor(() => expect(byId('resource-detail').textContent).toContain('Example skill'))
   expect(byId('resource-detail').textContent).not.toContain('trust')
@@ -1028,12 +1049,60 @@ it('enables an untrusted Skill without exposing a separate trust action', async 
   operationState = 'succeeded'
   await vi.waitFor(() => expect(toggle()?.getAttribute('aria-checked')).toBe('false'))
   await vi.waitFor(() => expect(toggle()?.disabled).toBe(false))
+  observer.disconnect()
+  expect(changes).toEqual([])
+  expect(submitted('skills/list')).toHaveLength(listReads)
+  expect(submitted('skills/get')).toHaveLength(3)
+  expect(
+    submitted('skills/get').every((request) => request.body.resourceId === 'skill/user/user-agnes/example'),
+  ).toBe(true)
   expect(submitted('skills/desired').at(-1)?.body).toMatchObject({
     resourceId: 'skill/user/user-agnes/example',
     expectedRevision: revision,
     state: 'disabled',
   })
 })
+
+it.each(['read-failed', 'revision-changed', 'workspace-changed', 'operation-failed'])(
+  'stops a Skill enable chain after %s',
+  async (failure) => {
+    skillsFixture = [
+      {
+        kind: 'skill',
+        resourceId: 'skill/user/user-agnes/example',
+        name: 'Example skill',
+        revision,
+        sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: revision },
+        priority: 400,
+        resolution: { winner: true, shadowed: [] },
+        trust: 'untrusted',
+        desired: 'disabled',
+        actual: 'disabled',
+        stale: false,
+      },
+    ]
+    await resourceMount.sync({ tab: 'skills' }, { refresh: true })
+    byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
+    operationState = 'running'
+    action('Enable')
+    await vi.waitFor(() => expect(submitted('operations/get').length).toBeGreaterThan(1))
+    if (failure === 'workspace-changed') await resourceMount.sync({ tab: 'mcp' })
+    if (failure === 'read-failed') failSkillGet = true
+    if (failure === 'revision-changed')
+      skillsFixture = skillsFixture.map((item) => ({
+        ...(item as Record<string, unknown>),
+        revision: 'b'.repeat(64),
+      }))
+    operationState = failure === 'operation-failed' ? 'failed' : 'succeeded'
+    await vi.waitFor(() => expect(submitted('skills/get')).toHaveLength(1))
+    await settle()
+    expect(submitted('skills/desired')).toHaveLength(0)
+    if (failure !== 'workspace-changed') {
+      expect(byId('resource-list').querySelector<HTMLButtonElement>('.switch')?.disabled).toBe(false)
+      expect(byId('resource-notice').textContent?.trim()).not.toBe('')
+    }
+  },
+)
 
 it('prefills a Playwright preset without writes and requires save and enable confirmation', async () => {
   byId<HTMLDialogElement>('resource-detail').close()

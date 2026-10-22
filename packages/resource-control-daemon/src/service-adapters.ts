@@ -277,7 +277,11 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
           const link = await sharedWorker(signal)
           const raw = await link.command(
             'resourceSkillScan',
-            { workspaceRoot: bound.path, snapshotRevision },
+            {
+              workspaceRoot: bound.path,
+              snapshotRevision,
+              resourceIds: resources.map((resource) => resource.resourceId),
+            },
             { timeoutMs: 31_000 },
           )
           const parsed = parseSkillScanReply(raw)
@@ -286,6 +290,8 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
         return resources.map((resource) => {
           const observed = byId.get(resource.resourceId)
           if (!observed) throw new Error('resource worker did not observe every requested skill')
+          if (resource.revision && observed.revision !== resource.revision)
+            throw new Error('Skill revision changed during observation')
           return {
             resourceId: observed.resourceId,
             actual: observed.actual,

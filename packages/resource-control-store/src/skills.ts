@@ -25,11 +25,13 @@ import {
   projectRoots,
   prune,
   receipt,
+  reconcileSkillObservations,
   replaceOperation,
   rootTarget,
   safeError,
   setState,
   skillControl,
+  skillNameGroup,
   skillRuntimeRevision,
   terminal,
 } from './skill-state.js'
@@ -167,13 +169,29 @@ export class SkillResourceStore {
     }
   }
   private async get(params: Record<string, unknown>) {
-    const workspaceId = await this.journal.read(
-      params.profile as string,
-      (journal) => projected(journal).find((value) => value.resourceId === params.resourceId)?.workspaceId,
+    const saved = await this.journal.read(params.profile as string, (journal) => ({
+      source: journal.discovered.find((item) => item.resourceId === params.resourceId),
+      skills: projected(journal, skillNameGroup(journal, params.resourceId as string)),
+    }))
+    const workspaceId = await this.bindWorkspace(
+      saved.source?.workspaceId ?? (params.workspaceId as string | undefined),
     )
-    const item = (await this.view({ ...params, ...(workspaceId ? { workspaceId } : {}) })).items.find(
-      (value) => value.resourceId === params.resourceId,
+    const skills = saved.skills.filter(
+      (item) => item.sourceIdentity.scope !== 'workspace' || !workspaceId || item.workspaceId === workspaceId,
     )
+    if (!saved.source && String(params.resourceId).startsWith('skill/runtime/')) {
+      const item = (await this.view(params)).items.find((item) => item.resourceId === params.resourceId)
+      if (item) return item
+    }
+    // Runtime-only resources have no journal row; the adapter supplies their current view.
+    const items = this.adapter?.view
+      ? await this.adapter.view({
+          profile: params.profile as string,
+          skills,
+          signal: AbortSignal.timeout(31_000),
+        })
+      : skills
+    const item = items.find((value) => value.resourceId === params.resourceId)
     if (!item)
       throw rpcError('SEMANTIC_REJECTED', { code: 'RESOURCE_NOT_FOUND', resourceId: params.resourceId })
     return item
@@ -489,7 +507,15 @@ export class SkillResourceStore {
             )
           }
           await this.reconcile(profile, controller.signal, admission)
-        } else await this.reconcile(profile, controller.signal, admission)
+        } else
+          await this.reconcile(
+            profile,
+            controller.signal,
+            admission,
+            ['_agnes/v1/resources.desired.set', '_agnes/v1/skills.trust.set'].includes(record.operation.kind)
+              ? record.operation.target
+              : undefined,
+          )
         await beforeTerminal?.()
         await this.journal.transact(
           profile,
@@ -762,9 +788,12 @@ export class SkillResourceStore {
     profile: string,
     signal: AbortSignal,
     admission?: ResourceEffectAdmission,
+    resourceId?: string,
   ): Promise<void> {
     if (!this.adapter) throw new Error('skill catalog adapter unavailable')
-    const resources = await this.journal.read(profile, projected)
+    const resources = await this.journal.read(profile, (journal) =>
+      projected(journal, resourceId ? skillNameGroup(journal, resourceId) : journal.discovered),
+    )
     if (admission) {
       await admission.verify()
       admission.assertActive()
@@ -776,41 +805,7 @@ export class SkillResourceStore {
     })
     await this.journal.transact(
       profile,
-      (journal) => {
-        const expected = new Set(journal.discovered.map((source) => source.resourceId))
-        const seen = new Set(observations.map((item) => item.resourceId))
-        const valid =
-          seen.size === expected.size &&
-          [...expected].every((id) => seen.has(id)) &&
-          observations.every(
-            (item) =>
-              expected.has(item.resourceId) &&
-              ['unavailable', 'disabled', 'preparing', 'ready', 'degraded'].includes(item.actual) &&
-              (!item.lastSafeError || validateResourceControlData('SafeError', item.lastSafeError).ok),
-          )
-        if (!valid) throw new Error('invalid skill actual observation')
-        return {
-          next: changed(journal, {
-            discovered: journal.discovered.map((item) => {
-              const seen = observations.find((value) => value.resourceId === item.resourceId)
-              return seen?.resolution ? { ...item, resolution: seen.resolution } : item
-            }),
-            actual: {
-              ...journal.actual,
-              ...Object.fromEntries(
-                observations.map((item) => [
-                  item.resourceId,
-                  {
-                    state: item.actual,
-                    ...(item.lastSafeError ? { lastSafeError: item.lastSafeError } : {}),
-                  },
-                ]),
-              ),
-            },
-          }),
-          result: undefined,
-        }
-      },
+      (journal) => reconcileSkillObservations(journal, resources, observations),
       admission,
     )
   }

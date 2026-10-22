@@ -11,6 +11,7 @@ import {
   packageSkillLoadError,
   readContextConfig,
   type SkillRootFailure,
+  skillResourceIdAt,
   workspaceSkillKey,
 } from '@agnes/base'
 import { AGH_DIR, validateResourceControlData } from '@agnes/protocol'
@@ -198,6 +199,7 @@ export async function scanSkills(
   // is unset, which is the case it existed to cover before this parameter split in two.
   agnesHomeDir = join(osHomeDir, AGH_DIR),
   importUserSkills = process.env.AGNES_SKILLS_IMPORT_USER === '1',
+  resourceIds?: readonly string[],
 ) {
   const fs = {
     async list(path: string) {
@@ -236,7 +238,12 @@ export async function scanSkills(
     importUserSkills,
     customRoots: readContextConfig(agnesHomeDir).customSkillRoots,
   }).filter((root) => cwd !== undefined || root.rootKey !== 'workspace-agnes')
-  const scans = await Promise.all(roots.map((root) => discoverSkillRoot(fs, root)))
+  const selected = resourceIds && new Set(resourceIds)
+  const scans = await Promise.all(
+    roots
+      .filter((root) => !selected || resourceIds?.some((id) => id.split('/')[2] === root.rootKey))
+      .map((root) => discoverSkillRoot(fs, root, selected)),
+  )
   const filesystem: Array<{ rootKey: FilesystemSkillRoot; candidates: SkillCandidate[] }> = []
   const rootStatuses: Array<{
     rootKey: FilesystemSkillRoot | 'package'
@@ -252,7 +259,8 @@ export async function scanSkills(
     const scope = scan.root === 'workspace-agnes' ? ('workspace' as const) : ('user' as const)
     if (scan.ok) {
       const candidates = scan.candidates.map(({ normalizedName: _normalizedName, ...candidate }) => candidate)
-      if (lkgDirectory) await writeSkillLkg(lkgDirectory, scan.root, candidates, key)
+      // Targeted observations cannot replace a complete root cache.
+      if (lkgDirectory && !selected) await writeSkillLkg(lkgDirectory, scan.root, candidates, key)
       filesystem.push({ rootKey: scan.root, candidates })
       for (const entry of scan.skipped ?? []) {
         skippedResourceIds.push(entry.resourceId)
@@ -266,7 +274,8 @@ export async function scanSkills(
         ...(key ? { workspaceId: key } : {}),
       })
     } else {
-      const candidates = lkgDirectory ? await readSkillLkg(lkgDirectory, scan.root, key) : undefined
+      const cached = lkgDirectory ? await readSkillLkg(lkgDirectory, scan.root, key) : undefined
+      const candidates = selected ? cached?.filter((item) => selected.has(item.resourceId)) : cached
       if (candidates) filesystem.push({ rootKey: scan.root, candidates })
       rootStatuses.push({
         rootKey: scan.root,
@@ -280,7 +289,11 @@ export async function scanSkills(
     }
   }
   const failedRoots = scans.filter((scan) => !scan.ok).map((scan) => scan.root)
-  if (!packageSnapshot || !existsSync(packageSnapshot))
+  if (
+    (selected && !resourceIds?.some((id) => id.startsWith('skill/package/'))) ||
+    !packageSnapshot ||
+    !existsSync(packageSnapshot)
+  )
     return {
       roots: filesystem,
       failedRoots,
@@ -311,7 +324,24 @@ export async function scanSkills(
     ...raw.skills.map((entry) => ({ entry, failed: false })),
     ...(Array.isArray(raw.failures) ? raw.failures.map((entry) => ({ entry, failed: true })) : []),
   ]
-  const packageCandidates = entries.map(({ entry, failed }) => {
+  const selectedEntries = entries.filter(({ entry }) => {
+    if (!selected) return true
+    if (!entry || typeof entry !== 'object') throw new Error('invalid package skill inventory snapshot')
+    const row = entry as Record<string, unknown>
+    if (
+      typeof row.packageId !== 'string' ||
+      typeof row.contributionId !== 'string' ||
+      typeof row.relativeLocation !== 'string'
+    )
+      throw new Error('invalid package skill inventory identity')
+    return selected.has(
+      skillResourceIdAt(
+        { scope: 'package', rootKey: 'package', priority: 50, path: '' },
+        `${row.packageId}\u0000${row.contributionId}\u0000${row.relativeLocation}`,
+      ),
+    )
+  })
+  const packageCandidates = selectedEntries.map(({ entry, failed }) => {
     if (!entry || typeof entry !== 'object') throw new Error('invalid package skill inventory snapshot')
     const row = entry as Record<string, unknown>
     if (
@@ -349,7 +379,9 @@ export async function scanSkills(
       try {
         files = decodePackageSkillFiles(row.files)
       } catch {
-        throw Object.assign(new Error('invalid Skill attachments'), { code: 'SKILL_ATTACHMENTS_UNREADABLE' })
+        throw Object.assign(new Error('invalid Skill attachments'), {
+          code: 'SKILL_ATTACHMENTS_UNREADABLE',
+        })
       }
       document = discoverPackageSkill({
         ...identity,

@@ -8,6 +8,7 @@ import {
   bootstrapWorkerResources,
   createWorkerMcpServerOpener,
   deploymentMcpPolicy,
+  SkillScanCache,
   syncManagedMcpExecutableAllowlist,
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
@@ -15,6 +16,7 @@ import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
+import { scanWorkspaceSkillRequest } from './skill-scan.js'
 import { runtimeSkillView } from './skill-view.js'
 import { connectSupervisor, observeSupervisorClosure } from './supervisor-connection.js'
 import { workerDomainFailure } from './worker-errors.js'
@@ -62,7 +64,6 @@ import {
   handleServiceCommand,
   prepareIdleResources,
   removeWorkspaceSkill,
-  scanWorkspaceSkills,
   type WorkerResourceSlot,
 } from './commands.js'
 import type {
@@ -278,6 +279,7 @@ export async function runWorker(
   // as `workerResourcesInput` through dispatch()'s command context.
   const workerResourcesInput: WorkerResourceBootstrapInput = {
     env,
+    skillScanCache: new SkillScanCache(),
     ...(resourceWorkspaceRoot ? { cwd: resourceWorkspaceRoot } : {}),
     profile,
     // The one call site that can see both @agnes/host and @agnes/resource-control-worker: resolve
@@ -678,6 +680,9 @@ export async function runWorker(
         const resources = resourceSlot.generation
         const command = frame as WorkerCommandFrame
         if (command.method === 'resource.stale') {
+          resourceSlot.skillControlRevision = (
+            (command.params ?? {}) as { skillControlRevision?: string }
+          ).skillControlRevision
           resourceSlot.staleMarks++
           // Acknowledge promptly; use idle time instead of deferring startup scans to the first prompt.
           idleResourcePreparation = idleResourcePreparation
@@ -706,6 +711,7 @@ export async function runWorker(
             rootKey?: unknown
             snapshotRevision?: unknown
             skills?: unknown
+            resourceIds?: unknown
             descriptor?: unknown
             validateOnly?: unknown
           }
@@ -730,15 +736,8 @@ export async function runWorker(
             if (!page) throw new Error('MCP tool catalog is unavailable for this revision')
             return page
           }
-          if (command.method === 'resourceSkillScan') {
-            if (typeof p.workspaceRoot !== 'string' || typeof p.snapshotRevision !== 'string')
-              throw new TypeError('invalid Skill scan request')
-            return scanWorkspaceSkills(workerResourcesInput, {
-              workspaceRoot: p.workspaceRoot,
-              ...(typeof p.rootKey === 'string' ? { rootKey: p.rootKey } : {}),
-              snapshotRevision: p.snapshotRevision,
-            })
-          }
+          if (command.method === 'resourceSkillScan')
+            return scanWorkspaceSkillRequest(workerResourcesInput, p)
           if (command.method === 'resourceSkillView')
             return runtimeSkillView(
               p,

@@ -1,3 +1,4 @@
+import type { ResourceOperation } from '@agnes/protocol'
 /** Revalidate visible MCP panels on real invalidations or return to the panel, without a timer. */
 export function watchMcpPanel(options: {
   root: HTMLElement
@@ -77,4 +78,20 @@ export function resourcePollDelay(attempt: number, signal: AbortSignal): Promise
     document.addEventListener('visibilitychange', wake)
     signal.addEventListener('abort', finish, { once: true })
   })
+}
+
+/** The operation's authoritative terminal state, with the same bounded, abortable poll policy. */
+export async function pollResourceOperation(
+  read: () => Promise<ResourceOperation>,
+  signal: AbortSignal,
+  progress: (operation: ResourceOperation) => void,
+): Promise<ResourceOperation | undefined> {
+  for (let attempt = 0; attempt < 120 && !signal.aborted; attempt += 1) {
+    const operation = await read()
+    if (signal.aborted) return undefined
+    if (['succeeded', 'failed', 'cancelled'].includes(operation.state)) return operation
+    progress(operation)
+    await resourcePollDelay(attempt, signal)
+  }
+  return undefined
 }
