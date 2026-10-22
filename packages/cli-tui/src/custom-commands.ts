@@ -27,6 +27,9 @@ const MAX_BYTES = 32 * 1024
 const MAX_FILES = 200
 const PREVIEW_CHARS = 200
 const CACHE_MS = 1000
+const HIDDEN =
+  // biome-ignore lint/suspicious/noMisleadingCharacterClass: variation selectors are matched on their own on purpose
+  /[\p{Cf}\p{Co}\p{Cn}\p{Cs}\p{Zl}\p{Zp}\u{FE00}-\u{FE0E}\u{E0100}-\u{E01EF}\u115F\u1160\u3164\uFFA0\u2800]/u
 
 const oneLine = (s: string): string => escapeControl(s).replace(/\s+/g, ' ').trim()
 
@@ -143,9 +146,11 @@ export function customSlash(
   if (!found) return undefined
   const text = expand(found.body, line.trim().split(/\s+/).slice(1)).trim()
   if (!text) return { text: tt('custom.empty', app.locale, { name: cmd }) }
-  // Format and private-use characters (bidi overrides, tag characters, zero-width) can hide text the
-  // preview cannot show, so a repository's command that carries them is not run at all.
-  if (found.scope === 'project' && /[\p{Cf}\p{Co}]/u.test(found.body))
+  // Characters that render as nothing can carry text the preview cannot show, so a repository's
+  // command holding any is not run: format and private-use, unassigned, lone surrogates, variation
+  // selectors (FE0F, the emoji suffix, carries nothing), Hangul fillers, the braille blank and line
+  // or paragraph separators.
+  if (found.scope === 'project' && HIDDEN.test(found.body))
     return { text: tt('custom.hidden', app.locale, { path: oneLine(found.shown) }) }
   if (found.scope === 'project' && !confirmed.has(found.digest)) {
     confirmed.add(found.digest)
