@@ -8,6 +8,7 @@ import type { Tone } from './palette.js'
 import { HistorySearch, PromptHistory } from './prompt-history.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
+import { UndoStack } from './undo.js'
 
 // Control bytes that must never enter the buffer. A paste can carry them; a newline is kept because
 // a multi-line paste is a legitimate multi-line prompt.
@@ -122,6 +123,7 @@ export class Editor implements Component {
   private pasteCount = 0
   // The last text cut by Ctrl-K, Ctrl-U, Ctrl-W or Alt-D: one buffer, replaced by each cut, never the system clipboard.
   private killed = ''
+  private readonly undo = new UndoStack()
 
   constructor(private readonly o: EditorOptions) {
     this.store = o.history ?? new PromptHistory()
@@ -145,6 +147,12 @@ export class Editor implements Component {
     this.setText('')
     this.histIdx = -1
     this.pastes.clear()
+    this.undo.clear()
+  }
+
+  /** Forgets what Ctrl-Z could undo, for when the draft no longer belongs to what is on screen (a session switch). */
+  resetUndo(): void {
+    this.undo.clear()
   }
 
   /** The draft with every paste chip replaced by the text it stands for: what a submit sends. */
@@ -159,7 +167,14 @@ export class Editor implements Component {
   handleInput(data: string): boolean {
     const k = parseKey(data, this.kitty)
     if (this.search) return this.searching(k, data)
-    return this.handleKey(k)
+    const before = { text: this.text, cursor: this.cursor }
+    const generation = this.undo.generation
+    const handled = this.handleKey(k)
+    const edited = this.text !== before.text
+    // An undo, redo or clear moved the history itself and is not an edit to record.
+    if (edited && generation === this.undo.generation) this.undo.record(before, k.name === 'char')
+    else if (k.name !== 'char') this.undo.endRun()
+    return handled
   }
 
   private handleKey(k: Key): boolean {
@@ -316,6 +331,16 @@ export class Editor implements Component {
       case 'ctrl-y':
         if (this.killed) this.insert(this.killed)
         return true
+      case 'ctrl-z':
+      case 'ctrl-shift-z': {
+        const now = { text: this.text, cursor: this.cursor }
+        const to = k.name === 'ctrl-z' ? this.undo.undo(now) : this.undo.redo(now)
+        if (to) {
+          this.text = to.text
+          this.cursor = to.cursor
+        }
+        return true
+      }
       default:
         return false
     }

@@ -1008,3 +1008,83 @@ describe('Editor readline keys', () => {
     expect(e.handleInput('\x04')).toBe(false)
   })
 })
+
+describe('Editor undo and redo', () => {
+  const UNDO = '\x1a'
+  const REDO = '\x1b[122;6u'
+
+  it('undoes a typing run as one step and redoes it', () => {
+    const e = new Editor({ onSubmit() {} })
+    type(e, 'hello')
+    e.handleInput('\x1b[D')
+    type(e, 'XY')
+    expect(e.text).toBe('hellXYo')
+    e.handleInput(UNDO)
+    expect(e.text).toBe('hello')
+    expect(e.cursor).toBe(4)
+    e.handleInput(UNDO)
+    expect(e.text).toBe('')
+    e.handleInput(REDO)
+    expect(e.text).toBe('hello')
+    e.handleInput(REDO)
+    expect(e.text).toBe('hellXYo')
+    // Nothing left to redo, or to undo before the first edit: no change, no error.
+    e.handleInput(REDO)
+    expect(e.text).toBe('hellXYo')
+  })
+
+  it('counts each delete and each paste as a step, and a new edit drops the redo branch', () => {
+    const e = new Editor({ onSubmit() {} })
+    type(e, 'abc')
+    e.handleInput('\x7f')
+    e.handleInput('\x7f')
+    e.handleInput('\x1b[200~pasted\x1b[201~')
+    expect(e.text).toBe('apasted')
+    e.handleInput(UNDO)
+    expect(e.text).toBe('a')
+    e.handleInput(UNDO)
+    expect(e.text).toBe('ab')
+    e.handleInput(UNDO)
+    expect(e.text).toBe('abc')
+    type(e, 'd')
+    e.handleInput(REDO)
+    expect(e.text).toBe('abcd')
+  })
+
+  it('undoes a folded paste with its chip still expanding on redo, and a recalled history entry', () => {
+    const e = new Editor({ onSubmit() {} })
+    const big = Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\n')
+    e.handleInput(`\x1b[200~${big}\x1b[201~`)
+    e.handleInput('\x7f')
+    expect(e.text).toBe('')
+    e.handleInput(UNDO)
+    expect(e.expanded()).toBe(big)
+    const h = new Editor({ onSubmit() {} })
+    type(h, 'sent')
+    h.handleInput('\r')
+    type(h, 'draft')
+    h.handleInput('\x1b[A')
+    expect(h.text).toBe('sent')
+    h.handleInput(UNDO)
+    expect(h.text).toBe('draft')
+  })
+
+  it('keeps the last 100 steps and forgets everything on submit or reset', () => {
+    const e = new Editor({ onSubmit() {} })
+    for (let i = 0; i < 120; i++) {
+      type(e, 'x')
+      e.handleInput('\x1b[D')
+      e.handleInput('\x1b[C')
+    }
+    for (let i = 0; i < 150; i++) e.handleInput(UNDO)
+    expect(e.text.length).toBe(20)
+    type(e, 'ab')
+    e.handleInput('\r')
+    e.handleInput(UNDO)
+    expect(e.text).toBe('')
+    type(e, 'q')
+    e.resetUndo()
+    e.handleInput(UNDO)
+    expect(e.text).toBe('q')
+  })
+})

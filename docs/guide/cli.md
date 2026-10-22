@@ -62,6 +62,8 @@ Messages you send, slash commands included, are kept in `<AGH_HOME>/tui-history.
 
 Editing keys follow readline. Ctrl-A and Ctrl-E go to the start and end of the line, Ctrl-B and Ctrl-F move one character, and Alt-B, Alt-F or Ctrl-Left, Ctrl-Right move by word (Chinese text is cut into words). Ctrl-K cuts to the end of the line, Ctrl-U to its start, Ctrl-W or Alt-Backspace the word before the cursor and Alt-D the word after it; Ctrl-Y pastes the last cut back. There is one cut buffer inside the running TUI, each cut replaces it, and it never touches the system clipboard.
 
+Ctrl-Z undoes the last edit in the input box and Ctrl-Shift-Z redoes it (redo needs a terminal that reports Shift, such as kitty). A run of typed characters is one step; each delete and each paste is a step of its own. The last 100 steps are kept, and sending the message or switching sessions clears them.
+
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
 Leaving the TUI gives the terminal back exactly as it was before; the conversation is not printed again. If this run sent at least one message in the current session and the output is a terminal, one line is left behind, `agh --resume ID`, to return to that session.

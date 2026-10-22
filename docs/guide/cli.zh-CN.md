@@ -56,6 +56,8 @@ node agnes.mjs
 
 编辑键与 readline 一致。Ctrl-A、Ctrl-E 跳到行首、行尾，Ctrl-B、Ctrl-F 左右移一个字符，Alt-B、Alt-F 或 Ctrl-←、Ctrl-→ 按词移动（中文按词切分）。Ctrl-K 删到行尾，Ctrl-U 删到行首，Ctrl-W 或 Alt-Backspace 删光标前一个词，Alt-D 删后一个词；Ctrl-Y 粘回最近一次删掉的文本。删除内容只存在运行中的 TUI 的一个缓冲区里，每次删除都会覆盖它，不碰系统剪贴板。
 
+Ctrl-Z 撤销输入框里的上一次编辑，Ctrl-Shift-Z 重做（重做要求终端能报告 Shift，例如 kitty）。连续输入算一步，每次删除和每次粘贴各算一步。最多保留最近 100 步，发送消息或切换会话后清空。
+
 TUI `/package` 与 shell `package` 的子命令集合不完全相同，例如更新可以从 TUI/Web 发起，shell `package update` 当前没有实现。以[生命周期指南](packages.zh-CN.md)为准。
 
 退出 TUI 时终端原样恢复到进入前的样子，不会重新打印对话。如果本次运行在当前会话里至少发过一条消息，且输出是终端，会留下一行 `agh --resume ID`，用来回到该会话。
