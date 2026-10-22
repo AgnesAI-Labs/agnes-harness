@@ -1088,3 +1088,47 @@ describe('Editor undo and redo', () => {
     expect(e.text).toBe('q')
   })
 })
+
+describe('Editor multi-line navigation', () => {
+  const draft = (text: string, cursor: number, history: string[] = []) => {
+    const e = new Editor({ onSubmit() {} })
+    for (const h of history.toReversed()) {
+      e.setText(h)
+      e.handleInput('\r')
+    }
+    e.setText(text)
+    e.cursor = cursor
+    return e
+  }
+
+  it('up and down move between lines first, keeping the display column', () => {
+    const e = draft('abcdef\nxy\n你好吗', 4)
+    e.handleInput('\x1b[B')
+    expect(e.cursor).toBe(9)
+    e.handleInput('\x1b[B')
+    // Column 4 on the last line sits after two double-width characters.
+    expect(e.cursor).toBe(12)
+    e.handleInput('\x1b[A')
+    e.handleInput('\x1b[A')
+    expect(e.cursor).toBe(4)
+  })
+
+  it('walks history only past the first or last line', () => {
+    const e = draft('one\ntwo', 5, ['older'])
+    e.handleInput('\x1b[A')
+    expect([e.text, e.cursor]).toEqual(['one\ntwo', 1])
+    e.handleInput('\x1b[A')
+    expect(e.text).toBe('older')
+    e.handleInput('\x1b[B')
+    expect(e.text).toBe('')
+    const f = draft('a\nb', 0, ['older'])
+    f.handleInput('\x1b[A')
+    expect(f.text).toBe('older')
+  })
+
+  it('a single-line draft still walks history on the first press', () => {
+    const e = draft('typing', 6, ['older'])
+    e.handleInput('\x1b[A')
+    expect(e.text).toBe('older')
+  })
+})

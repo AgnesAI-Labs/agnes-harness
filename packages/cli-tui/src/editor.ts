@@ -1,6 +1,6 @@
 import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
-import { lineStartOf, nextWordEnd, prevWordStart } from './edit-motion.js'
+import { lineColumn, lineStartOf, moveLine, nextWordEnd, prevWordStart } from './edit-motion.js'
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
 import { type Key, parseKey } from './keys.js'
 import { tt } from './locale-extended.js'
@@ -124,6 +124,8 @@ export class Editor implements Component {
   // The last text cut by Ctrl-K, Ctrl-U, Ctrl-W or Alt-D: one buffer, replaced by each cut, never the system clipboard.
   private killed = ''
   private readonly undo = new UndoStack()
+  // The display column vertical moves aim for, so a short line in between does not lose it.
+  private goalColumn: number | undefined
 
   constructor(private readonly o: EditorOptions) {
     this.store = o.history ?? new PromptHistory()
@@ -174,6 +176,7 @@ export class Editor implements Component {
     // An undo, redo or clear moved the history itself and is not an edit to record.
     if (edited && generation === this.undo.generation) this.undo.record(before, k.name === 'char')
     else if (k.name !== 'char') this.undo.endRun()
+    if (edited || (k.name !== 'up' && k.name !== 'down')) this.goalColumn = undefined
     return handled
   }
 
@@ -245,7 +248,8 @@ export class Editor implements Component {
       case 'up':
         if (choices) {
           this.menuIndex = (this.menuIndex - 1 + choices) % choices
-        } else if (this.histIdx + 1 < this.history.length) {
+        } else if (!this.moveVertically(-1) && this.histIdx + 1 < this.history.length) {
+          // History starts only past the first line of a multi-line draft.
           this.histIdx++
           this.setText(this.history[this.histIdx] as string)
         }
@@ -253,12 +257,15 @@ export class Editor implements Component {
       case 'down':
         if (choices) {
           this.menuIndex = (this.menuIndex + 1) % choices
-        } else if (this.histIdx > 0) {
-          this.histIdx--
-          this.setText(this.history[this.histIdx] as string)
-        } else {
-          this.histIdx = -1
-          this.setText('')
+        } else if (!this.moveVertically(1)) {
+          // History starts only past the last line of a multi-line draft.
+          if (this.histIdx > 0) {
+            this.histIdx--
+            this.setText(this.history[this.histIdx] as string)
+          } else {
+            this.histIdx = -1
+            this.setText('')
+          }
         }
         return true
       case 'esc':
@@ -351,6 +358,17 @@ export class Editor implements Component {
     this.killed = this.text.slice(from, to)
     this.text = this.text.slice(0, from) + this.text.slice(to)
     this.cursor = from
+  }
+
+  // True when the draft has another line in that direction and the cursor moved onto it.
+  private moveVertically(dir: -1 | 1): boolean {
+    if (!this.text.includes('\n')) return false
+    const column = this.goalColumn ?? lineColumn(this.text, this.cursor)
+    const to = moveLine(this.text, this.cursor, dir, column)
+    if (to === undefined) return false
+    this.goalColumn = column
+    this.cursor = to
+    return true
   }
 
   // Keys while Ctrl-R search is open. Enter takes the match into the draft without sending it; esc puts

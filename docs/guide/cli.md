@@ -64,6 +64,8 @@ Editing keys follow readline. Ctrl-A and Ctrl-E go to the start and end of the l
 
 Ctrl-Z undoes the last edit in the input box and Ctrl-Shift-Z redoes it (redo needs a terminal that reports Shift, such as kitty). A run of typed characters is one step; each delete and each paste is a step of its own. The last 100 steps are kept, and sending the message or switching sessions clears them.
 
+In a draft of several lines, ↑ and ↓ first move the cursor between the lines and keep its column; history is walked only when ↑ is pressed on the first line or ↓ on the last.
+
 TUI `/package` and shell `package` have different subcommand sets. Updates can be started from TUI/Web, but shell `package update` is not implemented. Follow the [lifecycle guide](packages.md).
 
 Leaving the TUI gives the terminal back exactly as it was before; the conversation is not printed again. If this run sent at least one message in the current session and the output is a terminal, one line is left behind, `agh --resume ID`, to return to that session.
