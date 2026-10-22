@@ -115,6 +115,23 @@ it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
       await writeFile(join(root, 'data.xml'), '<test>XML</test>')
       await writeFile(join(root, 'note.txt'), 'Readable text 中文')
       await writeFile(join(root, 'utf8.html'), '<!doctype html><p>中文预览</p>')
+      await writeFile(join(root, 'commented.html'), '<!-- <meta charset="utf-8"> --><p>中文</p>')
+      await writeFile(
+        join(root, 'description.html'),
+        '<meta name="description" content="Use charset=utf-8"><p>中文</p>',
+      )
+      await writeFile(
+        join(root, 'scripted.html'),
+        '<script>const x=\'<meta charset="utf-8">\'</script><p>中文</p>',
+      )
+      await writeFile(
+        join(root, 'quoted.html'),
+        Buffer.concat([
+          Buffer.from('<meta data-note=">" charset="gbk">' + ' '.repeat(4096) + '<p>'),
+          Buffer.from('d6d0cec4', 'hex'),
+          Buffer.from('</p>'),
+        ]),
+      )
       await writeFile(
         join(root, 'legacy.html'),
         Buffer.concat([
@@ -275,6 +292,10 @@ it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
         'data.xml',
         'note.txt',
         'utf8.html',
+        'commented.html',
+        'description.html',
+        'scripted.html',
+        'quoted.html',
         'legacy.html',
         'bom.txt',
         'audio.wav',
@@ -339,7 +360,18 @@ it.skipIf(process.env.AGH_BROWSER_TEST_CACHED !== '1')(
             })
             .toBe(32)
         }
-        if (['note.txt', 'utf8.html', 'legacy.html', 'bom.txt'].includes(name))
+        if (
+          [
+            'note.txt',
+            'utf8.html',
+            'commented.html',
+            'description.html',
+            'scripted.html',
+            'quoted.html',
+            'legacy.html',
+            'bom.txt',
+          ].includes(name)
+        )
           expect(await page.locator('body').innerText()).toContain('中文')
         if (name.endsWith('.pdf')) {
           await expect

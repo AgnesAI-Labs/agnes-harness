@@ -69,9 +69,47 @@ const canonicalPath = (path) =>
   realpath(path).catch(() => {
     throw denied()
   })
+function hasHtmlEncoding(text) {
+  // Inspect only the bounded prefix. Quoted attributes may contain '>'; comments and raw
+  // element text may contain examples of meta tags that are not document declarations.
+  const tags =
+    /<!--[\s\S]*?(?:--!?>|$)|<([a-z][^\t\n\f\r />]*)(?=[\t\n\f\r />])(?:[^<>"']|"[^"]*"|'[^']*')*>/gi
+  for (let tag = tags.exec(text); tag; tag = tags.exec(text)) {
+    const name = tag[1]?.toLowerCase()
+    if (!name) continue
+    if (name === 'plaintext') return false
+    if (
+      ['script', 'style', 'title', 'textarea', 'xmp', 'iframe', 'noembed', 'noframes', 'noscript'].includes(
+        name,
+      )
+    ) {
+      const end = new RegExp('</' + name + '(?=[\\t\\n\\f\\r />])[^>]*>', 'gi')
+      end.lastIndex = tags.lastIndex
+      if (!end.exec(text)) return false
+      tags.lastIndex = end.lastIndex
+      continue
+    }
+    if (name !== 'meta') continue
+    const attributes = new Map()
+    for (const attribute of tag[0]
+      .slice(name.length + 1)
+      .matchAll(
+        /([^\t\n\f\r "'<>/=]+)(?:[\t\n\f\r ]*=[\t\n\f\r ]*(?:"([^"]*)"|'([^']*)'|([^\t\n\f\r "'=<>`]+)))?/g,
+      )) {
+      const key = attribute[1].toLowerCase()
+      if (!attributes.has(key)) attributes.set(key, attribute[2] ?? attribute[3] ?? attribute[4] ?? '')
+    }
+    if (attributes.get('charset')?.trim()) return true
+    if (
+      attributes.get('http-equiv')?.trim().toLowerCase() === 'content-type' &&
+      /\bcharset\s*=/i.test(attributes.get('content') ?? '')
+    )
+      return true
+  }
+  return false
+}
 const textType = (mime, text) =>
-  (mime === 'text/html' && /<meta\b[^>]*\bcharset\s*=/i.test(text)) ||
-  (mime === 'text/css' && /^@charset\s+["']/i.test(text))
+  (mime === 'text/html' && hasHtmlEncoding(text)) || (mime === 'text/css' && /^@charset\s+["']/i.test(text))
     ? mime
     : mime + '; charset=utf-8'
 async function contentType(path, files) {

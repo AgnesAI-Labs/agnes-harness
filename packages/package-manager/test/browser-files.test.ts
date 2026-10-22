@@ -35,6 +35,17 @@ it('serves authorized native types and bounded ranges, rejects aliases and revok
   }
   const names = {
     'index.html': ['text/html; charset=utf-8', '<h1>预览</h1>'],
+    'commented.html': ['text/html; charset=utf-8', '<!-- <meta charset="utf-8"> --><p>中文</p>'],
+    'description.html': [
+      'text/html; charset=utf-8',
+      '<meta name="description" content="Use charset=utf-8"><p>中文</p>',
+    ],
+    'scripted.html': [
+      'text/html; charset=utf-8',
+      '<script>const x=\'<meta charset="utf-8">\'</script><p>中文</p>',
+    ],
+    'declared.html': ['text/html', '<meta data-note=">" charset="gbk">' + ' '.repeat(4096)],
+    'http-equiv.html': ['text/html', '<meta content="text/html; charset=gbk" http-equiv="Content-Type">'],
     'style.css': ['text/css; charset=utf-8', 'h1{color:red}'],
     'picture.svg': ['image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg"/>'],
     'data.json': ['application/json', '{"hello":1}'],

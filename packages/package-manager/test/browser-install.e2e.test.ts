@@ -10,7 +10,7 @@ import { expect, it } from 'vitest'
 
 // Copy the production ESM unchanged; only the reviewed payload and engine are synthetic.
 async function fixture(packagedLock = true) {
-  const root = await mkdtemp(join(tmpdir(), 'agh-browser-install-'))
+  const root = await mkdtemp(join(tmpdir(), 'agh-browser-install-中文 #%-'))
   const plugin = join(root, 'plugin')
   const key = process.platform + '-' + process.arch
   const info = { revision: 'fixture', executable: 'chromium', url: 'https://invalid.test/browser.zip' }
