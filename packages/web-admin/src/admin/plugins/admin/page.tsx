@@ -71,7 +71,7 @@ import {
   safeMessage,
   sourceForCatalog,
 } from './model.js'
-import { bindOperationVisibility, OperationBackoff } from './operation-refresh.js'
+import { bindOperationVisibility, OperationBackoff, withOperationDesired } from './operation-refresh.js'
 import {
   type PreviewMode,
   operationRecords as readOperationRecords,
@@ -90,6 +90,8 @@ import {
 
 const ACTIVE_REFRESH_MS = 1_200
 const RECONNECT_REFRESH_MS = 3_000
+/** A slow operation is read every few seconds at most, so its result shows up soon after it finishes. */
+const ACTIVE_REFRESH_MAX_MS = 3_000
 // Must match PackagePinsReleaseParams.pinIds maxItems in packages/protocol/schema/package-admin.json.
 // "Release all" can see far more orphans than one release call accepts, so it batches.
 const PIN_RELEASE_BATCH_SIZE = 64
@@ -1026,6 +1028,7 @@ export class PluginAdminPage {
     } else {
       this.#state = {
         ...this.#state,
+        installed: withOperationDesired(this.#state.installed, operation) as PackageInstalledDescriptor[],
         lastOperation: operation,
         error: undefined,
       }
@@ -1292,9 +1295,14 @@ export class PluginAdminPage {
         await this.operationUpdated(operation)
         return
       }
-      this.#operationBackoff.schedule(operationId, ACTIVE_REFRESH_MS, () => {
-        void this.poll(operationId)
-      })
+      this.#operationBackoff.schedule(
+        operationId,
+        ACTIVE_REFRESH_MS,
+        () => {
+          void this.poll(operationId)
+        },
+        ACTIVE_REFRESH_MAX_MS,
+      )
     } catch (error) {
       this.#operationTimers.delete(operationId)
       if (this.#lifetime.signal.aborted) return
