@@ -25,7 +25,7 @@ import {
 } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
-import { hashFileReads, mapFileChecks } from './file-read-pool.js'
+import { hashFileReads, mapFileChecks, walkFileChecks } from './file-read-pool.js'
 import { extractPluginArchive } from './plugin-archives.js'
 import { checkCancelled } from './ports.js'
 import { fetchNpmProvenance } from './provenance.js'
@@ -226,26 +226,29 @@ export async function hashDirectoryAsync(
   if (!rootStat.isDirectory()) throw sourceError('package source is not a directory', 'not-directory')
   const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
   const files: { rel: string; file: string; observed: Stats }[] = []
-  const walk = async (current: string): Promise<void> => {
+  // Reuse the bounded metadata pool for sibling directories too. Nested entry checks stay
+  // bounded (four directories, four checks each); file handles/scratch memory are unchanged.
+  await walkFileChecks([root], async (current) => {
+    const next: string[] = []
+    checkCancelled(opts.signal)
     const entries = await asyncFs.readdir(current, { withFileTypes: true })
     const observed = await mapFileChecks(entries, async (entry) => {
       checkCancelled(opts.signal)
       const file = join(current, entry.name)
       const rel = relative(root, file).split(sep).join('/')
       if (excluded(rel, rules)) return undefined
-      const stat = await asyncFs.lstat(file)
-      return { file, rel, stat }
+      return { file, rel, stat: await asyncFs.lstat(file) }
     })
     for (const item of observed) {
       if (!item) continue
       const { file, rel, stat } = item
       if (stat.isSymbolicLink()) throw sourceError('package tree contains a symbolic link', 'symlink')
-      if (stat.isDirectory()) await walk(file)
+      if (stat.isDirectory()) next.push(file)
       else if (stat.isFile()) files.push({ rel, file, observed: stat })
       else throw sourceError('package tree contains a special entry', 'special-entry')
     }
-  }
-  await walk(root)
+    return next
+  })
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
   const hashFile = async ({ rel, file, observed }: (typeof files)[number], chunk: Uint8Array) => {
     checkCancelled(opts.signal)
@@ -554,17 +557,17 @@ export function requireGeneratedEntry(ref: string, directory: string): void {
   )
 }
 
-function copyLocal(from: string, into: string, signal?: AbortSignal): string {
+async function copyLocal(from: string, into: string, signal?: AbortSignal): Promise<string> {
   // Validate before copying and again afterwards. The second pass is what catches a source swapped
   // to a link during the copy rather than trusting a preflight snapshot.
-  const before = hashDirectory(from, { ...(signal ? { signal } : {}) })
+  const before = await hashDirectoryAsync(from, { ...(signal ? { signal } : {}) })
   copyPackageTreeSync(from, into, (path) => {
     checkCancelled(signal)
     const rel = relative(from, path).split(sep).join('/')
     return rel === '' || !excluded(rel, DEFAULT_EXCLUDES)
   })
-  const sourceAfter = hashDirectory(from, { ...(signal ? { signal } : {}) })
-  const copied = hashDirectory(into, { ...(signal ? { signal } : {}) })
+  const sourceAfter = await hashDirectoryAsync(from, { ...(signal ? { signal } : {}) })
+  const copied = await hashDirectoryAsync(into, { ...(signal ? { signal } : {}) })
   if (before !== sourceAfter || copied !== sourceAfter)
     throw sourceError('local package source changed while copying', 'source-changed')
   return copied
@@ -640,7 +643,7 @@ export async function fetchSource(
         if (statSync(from).isFile()) {
           await extractPluginArchive(from, payload, exec, opts.signal)
           integrity = hashDirectory(payload)
-        } else integrity = copyLocal(from, payload, opts.signal)
+        } else integrity = await copyLocal(from, payload, opts.signal)
         pkg = metadata(payload)
         break
       }
@@ -804,6 +807,8 @@ export async function fetchSource(
             join(work, 'sigstore-cache'),
           )
         : undefined
+    // Local copies now yield too. A destination created while hashing is still occupied.
+    ensureEmptyDestination(target)
     readyStage(target)
     renameSync(payload, target)
     return {

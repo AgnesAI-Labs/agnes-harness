@@ -14,6 +14,15 @@ export function mapFileChecks<T, R>(files: readonly T[], check: (file: T) => Pro
   return mapFiles(files, () => check)
 }
 
+/** Visit one directory level at a time, draining every started check before advancing or refusing. */
+export async function walkFileChecks<T>(
+  roots: readonly T[],
+  visit: (directory: T) => Promise<readonly T[]>,
+): Promise<void> {
+  let level = roots
+  while (level.length) level = (await mapFileChecks(level, visit)).flat()
+}
+
 async function mapFiles<T, R>(files: readonly T[], createRead: () => (file: T) => Promise<R>): Promise<R[]> {
   const digests: R[] = []
   let next = 0

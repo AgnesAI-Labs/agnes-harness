@@ -142,6 +142,11 @@ describe('hashDirectory', () => {
     writeFileSync(join(root, 'large'), Buffer.alloc(256 * 1024 + 17, 0xa5))
     writeFileSync(join(root, 'small-after-large'), 'short tail')
     writeFileSync(join(root, 'empty'), '')
+    for (let index = 0; index < 8; index++) {
+      const directory = join(root, `分支 ${index}`, 'nested')
+      mkdirSync(directory, { recursive: true })
+      writeFileSync(join(directory, 'bytes'), `branch ${index}`)
+    }
     writeFileSync(join(root, 'node_modules', 'ignored', 'x'), 'ignored')
     writeFileSync(join(root, 'fixtures', 'out', 'x'), 'ignored')
     const first = hashDirectory(root)
@@ -156,19 +161,99 @@ describe('hashDirectory', () => {
     expect(await hashDirectoryAsync(root)).toBe(hashDirectory(root))
   })
 
+  it.each(['failure', 'cancellation'] as const)(
+    'bounds directory reads and drains started siblings before returning a %s',
+    async (mode) => {
+      const canonicalRoot = realpathSync(root)
+      for (let index = 0; index < 8; index++) {
+        const directory = join(root, `branch-${index}`)
+        mkdirSync(directory)
+        writeFileSync(join(directory, 'bytes'), `branch ${index}`)
+      }
+      const gate = () => {
+        let resolve = () => {}
+        let reject = (_error: Error) => {}
+        const promise = new Promise<void>((yes, no) => {
+          resolve = yes
+          reject = no
+        })
+        return { promise, resolve, reject }
+      }
+      const first = gate(),
+        others = gate(),
+        entered = gate(),
+        finishedFirst = gate()
+      const abort = new AbortController()
+      let active = 0,
+        peak = 0,
+        settled = false
+      const readdir = asyncFs.readdir
+      const spy = vi.spyOn(asyncFs, 'readdir').mockImplementation((async (
+        ...args: Parameters<typeof readdir>
+      ) => {
+        const path = String(args[0])
+        if (dirname(path) !== canonicalRoot) return readdir(...args)
+        const isFirst = path === join(canonicalRoot, 'branch-0')
+        peak = Math.max(peak, ++active)
+        if (isFirst) entered.resolve()
+        try {
+          await (isFirst ? first.promise : others.promise)
+          return await readdir(...args)
+        } finally {
+          active--
+          if (isFirst) finishedFirst.resolve()
+        }
+      }) as typeof readdir)
+      const pending = hashDirectoryAsync(root, { signal: abort.signal })
+        .catch((error: unknown) => error)
+        .finally(() => {
+          settled = true
+        })
+      try {
+        await entered.promise
+        expect(active).toBeGreaterThan(1)
+        expect(peak).toBeLessThanOrEqual(4)
+        if (mode === 'failure') first.reject(new Error('directory read refused'))
+        else {
+          abort.abort()
+          first.resolve()
+        }
+        await finishedFirst.promise
+        await Promise.resolve()
+        expect(settled).toBe(false)
+      } finally {
+        first.resolve()
+        others.resolve()
+        await pending
+        spy.mockRestore()
+      }
+      expect(await pending).toBeInstanceOf(Error)
+      expect(await pending).toMatchObject(
+        mode === 'failure' ? { message: 'directory read refused' } : { code: 'E_PACKAGE_CANCELLED' },
+      )
+      expect(active).toBe(0)
+      expect(peak).toBeLessThanOrEqual(4)
+      expect(await hashDirectoryAsync(root)).toBe(hashDirectory(root))
+    },
+  )
+
   it('refuses symlinks and special entries instead of hashing outside the tree', async () => {
-    const outside = join(dirname(root), `${Date.now()}-outside`)
+    const outside = mkdtempSync(join(tmpdir(), 'agnes-hash-outside-'))
     const rootAlias = `${root}-alias`
-    writeFileSync(outside, 'secret')
+    writeFileSync(join(outside, 'secret'), 'secret')
     try {
       symlinkSync(root, rootAlias, process.platform === 'win32' ? 'junction' : 'dir')
       expect(() => hashDirectory(rootAlias)).toThrow(/symbolic link/)
       await expect(hashDirectoryAsync(rootAlias)).rejects.toThrow(/symbolic link/)
-      symlinkSync(outside, join(root, 'escape'))
+      symlinkSync(
+        process.platform === 'win32' ? outside : join(outside, 'secret'),
+        join(root, 'escape'),
+        process.platform === 'win32' ? 'junction' : 'file',
+      )
       expect(() => hashDirectory(root)).toThrow(/symbolic link/)
       await expect(hashDirectoryAsync(root)).rejects.toThrow(/symbolic link/)
     } finally {
-      rmSync(outside, { force: true })
+      rmSync(outside, { recursive: true, force: true })
       unlinkSync(rootAlias)
     }
   })
@@ -280,23 +365,26 @@ describe('fetchSource', () => {
   })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-  it('copies a file source atomically, omits excluded trees, and returns checked metadata', async () => {
-    const into = join(dir, 'installed')
-    const fetched = await fetchSource(parseSource('file:./pkg-a'), into, { cwd: fixtures })
-    expect(fetched).toMatchObject({
-      dir: into,
-      version: '1.0.0',
-      license: 'MIT',
-      dependencies: { '@agnes/extension-api': '2.0.0' },
-    })
-    expect(fetched.integrity).toBe(hashDirectory(into))
-    expect(readFileSync(join(into, 'package.json'), 'utf8')).toContain('acme/pkg-a')
-    const outside = join(dir, 'absolute')
-    await fetchSource(parseSource('file:' + join(fixtures, 'pkg-a').split(sep).join('/')), outside, {
-      cwd: dir,
-    })
-    expect(hashDirectory(outside)).toBe(fetched.integrity)
-  })
+  it.each(['installed', '安装 目录'])(
+    'copies a file source atomically into %s and returns checked metadata',
+    async (name) => {
+      const into = join(dir, name)
+      const fetched = await fetchSource(parseSource('file:./pkg-a'), into, { cwd: fixtures })
+      expect(fetched).toMatchObject({
+        dir: into,
+        version: '1.0.0',
+        license: 'MIT',
+        dependencies: { '@agnes/extension-api': '2.0.0' },
+      })
+      expect(fetched.integrity).toBe(hashDirectory(into))
+      expect(readFileSync(join(into, 'package.json'), 'utf8')).toContain('acme/pkg-a')
+      const outside = join(dir, 'absolute')
+      await fetchSource(parseSource('file:' + join(fixtures, 'pkg-a').split(sep).join('/')), outside, {
+        cwd: dir,
+      })
+      expect(hashDirectory(outside)).toBe(fetched.integrity)
+    },
+  )
 
   it('fails closed on an escaping source symlink and leaves no destination or stage', async () => {
     const cwd = join(dir, 'cwd')
@@ -316,8 +404,14 @@ describe('fetchSource', () => {
     const source = join(cwd, 'pkg')
     mkdirSync(source, { recursive: true })
     writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'acme/pkg', version: '1.0.0' }))
-    writeFileSync(join(dir, 'outside'), 'secret')
-    symlinkSync(join(dir, 'outside'), join(source, 'escape'))
+    const outside = join(dir, 'outside')
+    mkdirSync(outside)
+    writeFileSync(join(outside, 'secret'), 'secret')
+    symlinkSync(
+      process.platform === 'win32' ? outside : join(outside, 'secret'),
+      join(source, 'escape'),
+      process.platform === 'win32' ? 'junction' : 'file',
+    )
     await expect(fetchSource(parseSource('file:./pkg'), join(dir, 'bad'), { cwd })).rejects.toThrow(
       /symbolic link/,
     )
@@ -328,11 +422,18 @@ describe('fetchSource', () => {
     writeFileSync(join(into, 'sentinel'), 'keep')
     await expect(fetchSource(parseSource('file:./pkg'), into, { cwd })).rejects.toThrow(/destination exists/)
     expect(readFileSync(join(into, 'sentinel'), 'utf8')).toBe('keep')
+    unlinkSync(join(source, 'escape'))
+    const during = join(dir, 'created-during-hash')
+    const pending = fetchSource(parseSource('file:./pkg'), during, { cwd })
+    mkdirSync(during)
+    await expect(pending).rejects.toThrow(/destination exists/)
+    expect(readdirSync(during)).toEqual([])
+    expect(readdirSync(dir).some((name) => name.startsWith('.agnes-fetch-'))).toBe(false)
   })
 
   it('treats a dangling destination symlink as occupied', async () => {
     const into = join(dir, 'dangling')
-    symlinkSync(join(dir, 'missing'), into)
+    symlinkSync(join(dir, 'missing'), into, process.platform === 'win32' ? 'junction' : 'file')
     await expect(fetchSource(parseSource('file:./pkg-a'), into, { cwd: fixtures })).rejects.toThrow(
       /destination exists/,
     )

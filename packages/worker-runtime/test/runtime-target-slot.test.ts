@@ -71,10 +71,8 @@ describe('runtime target latest-wins slot', () => {
         )
         if (deferInitialGeneration) {
           const archive = vi
-            .spyOn(RuntimeGenerationSnapshotStore.prototype, 'create')
-            .mockImplementationOnce(() => {
-              throw new Error('fixture archive unavailable')
-            })
+            .spyOn(RuntimeGenerationSnapshotStore.prototype, 'createAsync')
+            .mockRejectedValueOnce(new Error('fixture archive unavailable'))
           try {
             await expect(slot.offer(frame(desired))).resolves.toMatchObject({ status: 'failed' })
             expect(host.pluginGenerationStatus?.().generations).toEqual([])

@@ -23,7 +23,7 @@ export function createGenerationSnapshotter(deps: {
   failed(): Iterable<string>
 }) {
   const { profile, options, store, headKey, preparedRows, host, failed } = deps
-  return (
+  return async (
     target: Parameters<Host['applyRuntimeTarget']>[0],
     sources: readonly RuntimePluginSnapshot[],
     skills: SkillRuntimeInput | undefined,
@@ -60,6 +60,6 @@ export function createGenerationSnapshotter(deps: {
       seams,
     }
     const reused = reusableSnapshot(store, headKey, expected, reuse, failed())
-    return reused ?? store.create(target, sources, compatibility, packages, resources, seams)
+    return reused ?? store.createAsync(target, sources, compatibility, packages, resources, seams)
   }
 }

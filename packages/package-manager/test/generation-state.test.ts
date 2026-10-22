@@ -177,41 +177,44 @@ describe('session pin shape gate', () => {
 })
 
 describe('generation record shape gate', () => {
-  it('keeps synchronous and cooperative reads equally strict for private resources', async () => {
-    const { home, store, target } = fixture()
-    const resources = join(home, 'resource-source')
-    mkdirSync(resources)
-    writeFileSync(join(resources, 'content.txt'), 'original')
-    const snapshot = store.create(
-      target,
-      [],
-      'compat',
-      [],
-      { data: { name: 'fixture' }, directories: [resources] },
-      SEAMS,
-    )
-    await withPackageVerification(async () => {
-      expect(await store.readAsync(snapshot.id)).toEqual(store.read(snapshot.id))
-    })
-    const file = join(store.root, snapshot.id, 'resources', '0', 'content.txt')
-    const before = statSync(file)
-    writeFileSync(file, 'modified')
-    utimesSync(file, before.atime, before.mtime)
-    // Listing historical ownership is not an archive-health verdict or executable source.
-    expect(store.describe(snapshot.id)).toEqual({ id: snapshot.id, packages: snapshot.packages })
-    await withPackageVerification(async () => {
-      expect(() => store.read(snapshot.id)).toThrow('E_GENERATION_RESOURCE_MISSING')
-      await expect(store.readAsync(snapshot.id)).rejects.toThrow('E_GENERATION_RESOURCE_MISSING')
-    })
-    writeFileSync(file, 'original')
-    await withPackageVerification(async () => {
-      expect(await store.readAsync(snapshot.id)).toEqual(snapshot)
-      await withoutPackageVerification(async () => {
-        writeFileSync(file, 'modified')
+  it.each(['sync', 'cooperative'] as const)(
+    'keeps reads equally strict for private resources after %s creation',
+    async (mode) => {
+      const { home, store, target } = fixture()
+      const resources = join(home, 'resource-source')
+      mkdirSync(resources)
+      writeFileSync(join(resources, 'content.txt'), 'original')
+      const snapshot = await store[mode === 'sync' ? 'create' : 'createAsync'](
+        target,
+        [],
+        'compat',
+        [],
+        { data: { name: 'fixture' }, directories: [resources] },
+        SEAMS,
+      )
+      await withPackageVerification(async () => {
+        expect(await store.readAsync(snapshot.id)).toEqual(store.read(snapshot.id))
       })
-      await expect(store.readAsync(snapshot.id)).rejects.toThrow('E_GENERATION_RESOURCE_MISSING')
-    })
-  })
+      const file = join(store.root, snapshot.id, 'resources', '0', 'content.txt')
+      const before = statSync(file)
+      writeFileSync(file, 'modified')
+      utimesSync(file, before.atime, before.mtime)
+      // Listing historical ownership is not an archive-health verdict or executable source.
+      expect(store.describe(snapshot.id)).toEqual({ id: snapshot.id, packages: snapshot.packages })
+      await withPackageVerification(async () => {
+        expect(() => store.read(snapshot.id)).toThrow('E_GENERATION_RESOURCE_MISSING')
+        await expect(store.readAsync(snapshot.id)).rejects.toThrow('E_GENERATION_RESOURCE_MISSING')
+      })
+      writeFileSync(file, 'original')
+      await withPackageVerification(async () => {
+        expect(await store.readAsync(snapshot.id)).toEqual(snapshot)
+        await withoutPackageVerification(async () => {
+          writeFileSync(file, 'modified')
+        })
+        await expect(store.readAsync(snapshot.id)).rejects.toThrow('E_GENERATION_RESOURCE_MISSING')
+      })
+    },
+  )
 
   const corrupted = (mutate: (record: Record<string, unknown>) => unknown) => {
     const { store, generation } = fixture()

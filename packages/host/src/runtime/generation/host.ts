@@ -193,7 +193,7 @@ export async function createRuntimeGenerationHost(
     if (current) return current
     const target = initial.runtimeTargetSnapshot?.()
     if (!target) throw generationError('E_GENERATION_TARGET_MISSING', 'Host has no runtime snapshot')
-    const snapshot = snapshotTarget(
+    const snapshot = await snapshotTarget(
       target,
       await sourcesFor(target),
       options.skillResources,
@@ -677,7 +677,7 @@ export async function createRuntimeGenerationHost(
       lastChange = changeResult({ outcome: 'in-place', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
     }
-    const snapshot = snapshotTarget(
+    const snapshot = await snapshotTarget(
       target,
       sources,
       skillInput,

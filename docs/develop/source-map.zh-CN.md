@@ -72,4 +72,8 @@ CSS 片段保留原来的级联顺序，同一领域的后置覆盖仍在后面�
 
 `RemoteTransport` 纯类型合同位于 [extension-api](../../packages/extension-api/src/remote-transport.ts)，Core 导出同一类型。Ledger 测试助手位于 [core-ledger/testkit](../../packages/core-ledger/testkit)。
 
+插件冷启动发布复用现有的协作式文件校验。[版本归档](../../packages/package-manager/src/runtime-snapshots-generations.ts) 为既有调用方保留同步创建，Host 发布使用异步创建，两者执行同一组校验步骤。复制后的文件树先校验、刷盘，再发布记录，随后重新读取并做完整性校验。未完成的归档由仍存活的创建进程保护，失败后清理。本地来源获取仍检查复制前后的源目录和目标目录，异步等待后再次检查目标是否被占用。
+
+异步目录校验使用现有的受限元数据读取池扫描同层目录：最多同时读取四个目录，每个目录最多同时检查四个条目。文件读取仍限制为每次遍历最多四个句柄和 1 MiB 暂存内存。完整性、路径边界、链接和文件变化检查均保留；失败或取消后，先等待所有已开始的读取结束，再返回。
+
 会话展示按职责拆为 [Web controllers](../../packages/web/src/app)、[区域挂载](../../packages/web/src/regions)、[时间线节点宿主](../../packages/web/src/timeline-node-host.tsx)、[composer](../../packages/web-units/src/composer)、[消息与回合](../../packages/web-ui/src/conversation/messages) 和 [客户端对账](../../packages/web/src/client-modules/reconcile)。原入口保留现有导出。
