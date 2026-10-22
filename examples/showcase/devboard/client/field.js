@@ -1,5 +1,6 @@
 import { Badge, Button, PushPage, Select, Table } from '@agnes/web-ui'
 import React from 'react'
+import { AnalysisFiles } from './analysis.js'
 import { ApprovalEntry } from './approvals.js'
 import {
   byId,
@@ -193,6 +194,7 @@ export function Trials({ data, board, role, setRole }) {
                 item.deviations.map((d) => h('li', { key: d }, d)),
               ),
             ),
+          h(AnalysisFiles, { data, board, projectId: item.projectId, ids: [item.id] }),
           item.result === 'FAIL' &&
             !item.changeId &&
             item.state !== 'APPROVED' &&
@@ -460,6 +462,12 @@ export function Service({ data, board, role, setRole }) {
             { className: 'devboard-muted' },
             '进入措施前必须有根本原因且 D4 完成；关闭前 D8 完成，且关联变更已关闭，或写明无需变更的理由。',
           ),
+          h(AnalysisFiles, {
+            data,
+            board,
+            projectId: problem.projectId,
+            ids: [problem.id, ...(problem.faultIds ?? [])],
+          }),
           workOf('problemEightD', problem) &&
             h(
               WorkButton,

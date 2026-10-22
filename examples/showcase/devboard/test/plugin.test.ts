@@ -666,6 +666,73 @@ describe('DevBoard plugin contract', () => {
     expect(old.structured.data.results).toBeUndefined()
   })
 
+  it('registers code, test and analysis files through the tool and previews them as text', async () => {
+    const store = memoryStore()
+    const project = (
+      await tool('devboard_project_create').execute({ name: '车门' }, { store, signal } as Any)
+    ).structured.data
+    const cr = (
+      await tool('devboard_change_upsert').execute({ projectId: project.id, title: '变更', reason: '原因' }, {
+        store,
+        signal,
+      } as Any)
+    ).structured.data
+    const dir = project.workspaceDir
+    const files = new Map([
+      [`${dir}/src/app.js`, 'export const app = "<b>x</b>"'],
+      [`${dir}/test/app.test.js`, 'test("x", () => {})'],
+      [`${dir}/analysis/${cr.id}/${cr.id}-electrical.md`, '# 电气影响'],
+    ])
+    const fs = {
+      read: async (path: string) => {
+        const text = files.get(path)
+        if (text === undefined) throw new Error('ENOENT')
+        return new TextEncoder().encode(text)
+      },
+    }
+    const ctx = { store, signal, fs } as Any
+    const record = (input: Any) =>
+      tool('devboard_artifact_record').execute(
+        { projectId: project.id, stage: 'IMPLEMENTATION', ...input },
+        ctx,
+      )
+    const kinds = JSON.parse(
+      JSON.stringify(tool('devboard_artifact_record').parameters),
+    ).properties.kind.anyOf.map((k: Any) => k.const)
+    expect(kinds).toEqual(expect.arrayContaining(['CODE', 'TEST', 'ANALYSIS']))
+    const code = await record({ kind: 'CODE', suffix: 'app', path: 'src/app.js', actingRole: 'developer' })
+    const test = await record({ kind: 'TEST', suffix: 'app', path: 'test/app.test.js' })
+    const analysis = await record({
+      kind: 'ANALYSIS',
+      path: `analysis/${cr.id}/${cr.id}-electrical.md`,
+      actingRole: 'electrical',
+    })
+    for (const out of [code, test, analysis]) expect(out.isError).toBeFalsy()
+    expect(
+      await service('devboard.artifact').handler({ artifactId: code.structured.data.id }, { store }),
+    ).toMatchObject({
+      format: 'text',
+      markdown: 'export const app = "<b>x</b>"',
+    })
+    expect(
+      await service('devboard.artifact').handler({ artifactId: analysis.structured.data.id }, { store }),
+    ).toMatchObject({
+      format: 'markdown',
+    })
+    // other kinds under analysis/, other projects' directories and missing files are refused
+    for (const input of [
+      { kind: 'CODE', path: `analysis/${cr.id}/${cr.id}-electrical.md` },
+      { kind: 'ANALYSIS', path: 'devboard-projects/PRJ-2025-042/analysis/CR-2026-019/a.md' },
+      { kind: 'ANALYSIS', path: 'analysis/CR-404/a.md' },
+      { kind: 'TEST', path: 'test/missing.test.js' },
+    ])
+      expect((await record(input)).isError, JSON.stringify(input)).toBe(true)
+    expect(read(store).activity.at(-1)).toMatchObject({
+      actor: '研发协调员 · 电气设计师',
+      entity: { kind: 'artifact' },
+    })
+  })
+
   it('registers every tool in the capability names and the coordinator profile, plus the new pages and actions', () => {
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
     const names = tools.map((t) => t.name)

@@ -778,6 +778,19 @@
     border-color: var(--agnes-status-danger-border);
     background: var(--agnes-status-danger-bg);
   }
+  .devboard-source {
+    margin: 0;
+    padding: 10px 12px;
+    max-height: 480px;
+    overflow: auto;
+    white-space: pre;
+    font-family: var(--agnes-font-mono, ui-monospace, monospace);
+    font-size: 12px;
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: 8px;
+    background: var(--agnes-bg-surface);
+    color: var(--agnes-text-primary);
+  }
   .devboard-activity-new {
     border-color: var(--agnes-status-warning-solid);
     background: var(--agnes-status-warning-bg);

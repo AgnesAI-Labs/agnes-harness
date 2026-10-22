@@ -324,7 +324,7 @@ export const tools = [
   ),
   tool(
     'devboard_artifact_record',
-    'Register or update a deliverable of a live project after writing its file (id DOC-<n>-<KIND>[-<suffix>]; a suffix allows several of one kind). path is relative to the project directory (e.g. docs/SRS.md) and must stay inside it; the file is read so the board can preview it. 登记交付物。',
+    "Register or update a deliverable of a live project after writing its file (id DOC-<n>-<KIND>[-<suffix>]; a suffix allows several of one kind). path is relative to the project directory (e.g. docs/SRS.md) and must stay inside it; the file is read so the board can preview it. Kinds CODE and TEST register source and test files of the project (one suffix per file, e.g. kind CODE suffix APP for src/app.js) and ANALYSIS registers a role's analysis note, only below analysis/<id of an existing change, ECN, problem, trial or fault>/ (a missing suffix is taken from the file name); these preview as plain text, are never run or rendered, and a file with binary content is refused. Files under analysis/ cannot be registered as any other kind. 登记交付物，含代码、测试与分析文件。",
     Type.Object(
       {
         projectId: id,

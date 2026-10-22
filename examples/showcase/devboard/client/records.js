@@ -1,5 +1,6 @@
 import { Badge, Button, Field, PushPage, Segmented, Select, Table, usePushStack } from '@agnes/web-ui'
 import React from 'react'
+import { AnalysisFiles } from './analysis.js'
 import { ApprovalEntry } from './approvals.js'
 import {
   byId,
@@ -353,6 +354,7 @@ export function Changes({ data, board, role, setRole }) {
           ),
           h(ImpactTree, { data, change: item }),
           item.retrofit && h(RetrofitBar, { change: item, board, role }),
+          h(AnalysisFiles, { data, board, projectId: item.projectId, ids: [item.id, item.ecn] }),
           workOf('changeImpact', item) &&
             h(
               WorkButton,

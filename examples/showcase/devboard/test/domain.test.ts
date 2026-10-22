@@ -1045,7 +1045,7 @@ describe('traceability and deliverables', () => {
     expect(() => projectPath({ id: 'PRJ-2025-042', live: false }, 'docs/SRS.md')).toThrow('不是现场项目')
   })
 
-  it('opens analysis/<object id>/ on any project, still refuses escapes, and never registers it', () => {
+  it('opens analysis/<object id>/ on any project, still refuses escapes, and only ANALYSIS registers it', () => {
     const order = { id: 'PRJ-2025-042', live: false }
     expect(projectPath(order, 'analysis/QP-2026-007/D2-D4.md')).toBe(
       'devboard-projects/PRJ-2025-042/analysis/QP-2026-007/D2-D4.md',
@@ -1071,7 +1071,7 @@ describe('traceability and deliverables', () => {
         { projectId: p.id, kind: 'PLAN', stage: 'INITIATION', path: 'analysis/QP-2026-007/a.md' },
         NOW,
       ),
-    ).toThrow('不登记为交付物')
+    ).toThrow('只能用 kind ANALYSIS 登记')
   })
 })
 
@@ -2684,5 +2684,203 @@ describe('per-test-case results', () => {
         expect(Object.values(tr3.tc).every((s) => s !== 'VERIFIED')).toBe(true)
       },
     )
+  })
+})
+
+describe('code, test and analysis files as deliverables', () => {
+  const seeded = () => read(memoryStore(), NOW)
+  const live = () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目', by: 'x' }, NOW)
+    const cr = create(state, { kind: 'change', projectId: p.id, title: '变更', reason: '原因', by: 'x' }, NOW)
+    return { state, p, cr }
+  }
+
+  it('registers a source and a test file per suffix as plain-text previews', () => {
+    const { state, p } = live()
+    const code = recordArtifact(
+      state,
+      {
+        projectId: p.id,
+        stage: 'IMPLEMENTATION',
+        kind: 'CODE',
+        suffix: 'app',
+        path: 'src/app.js',
+        markdown: 'export const a = 1',
+      },
+      NOW,
+    )
+    const test = recordArtifact(
+      state,
+      {
+        projectId: p.id,
+        stage: 'IMPLEMENTATION',
+        kind: 'TEST',
+        suffix: 'app',
+        path: 'test/app.test.js',
+        markdown: 'test()',
+      },
+      NOW,
+    )
+    const n = p.id.split('-').at(-1)
+    expect([code.id, test.id]).toEqual([`DOC-${n}-CODE-APP`, `DOC-${n}-TEST-APP`])
+    expect(code.source.path).toBe(`${p.workspaceDir}/src/app.js`)
+    expect(state.artifacts.filter((a: Item) => a.projectId === p.id)).toHaveLength(2)
+  })
+
+  it('previews source as text and Markdown as Markdown, without touching the body', () => {
+    const store = memoryStore()
+    const { revision } = update(
+      store,
+      (s: State) => {
+        const p = create(s, { kind: 'project', name: '实时项目', by: 'x' }, NOW)
+        const html = '<script>alert(1)</script>\n# 标题'
+        recordArtifact(
+          s,
+          {
+            projectId: p.id,
+            stage: 'IMPLEMENTATION',
+            kind: 'CODE',
+            suffix: 'page',
+            path: 'src/page.html',
+            markdown: html,
+          },
+          NOW,
+        )
+        recordArtifact(
+          s,
+          { projectId: p.id, stage: 'IMPLEMENTATION', kind: 'CODE', path: 'README.md', markdown: '# 说明' },
+          NOW,
+        )
+        return p.id
+      },
+      NOW,
+    )
+    expect(revision).toBeGreaterThan(0)
+    const arts = read(store, NOW).artifacts.filter((a: Item) => a.source?.type === 'workspace')
+    const bodies = Object.fromEntries(
+      arts.map((a: Item) => [a.source.path.split('/').at(-1), artifactBody(store, a.id, NOW)]),
+    )
+    expect(bodies['page.html']).toMatchObject({
+      format: 'text',
+      markdown: '<script>alert(1)</script>\n# 标题',
+    })
+    expect(bodies['README.md']).toMatchObject({ format: 'markdown', markdown: '# 说明' })
+  })
+
+  it('registers an analysis file under an existing object on a live and on an order project', () => {
+    const { state, p, cr } = live()
+    const own = recordArtifact(
+      state,
+      {
+        projectId: p.id,
+        stage: 'DESIGN',
+        kind: 'ANALYSIS',
+        path: `analysis/${cr.id}/${cr.id}-mechanical.md`,
+        markdown: '# 影响',
+      },
+      NOW,
+    )
+    expect(own.id).toBe(`DOC-${p.id.split('-').at(-1)}-ANALYSIS-${cr.id}-MECHANICAL`.slice(0, 200))
+    expect(own.source.path).toBe(`${p.workspaceDir}/analysis/${cr.id}/${cr.id}-mechanical.md`)
+    const order = seeded()
+    const got = recordArtifact(
+      order,
+      {
+        projectId: 'PRJ-2023-011',
+        stage: 'VERIFICATION',
+        kind: 'ANALYSIS',
+        path: 'devboard-projects/PRJ-2023-011/analysis/QP-2026-003/QP-2026-003-diagnostics.md',
+        markdown: '# 预警',
+      },
+      NOW,
+    )
+    expect(got).toMatchObject({ kind: 'ANALYSIS', id: 'DOC-011-ANALYSIS-QP-2026-003-DIAGNOSTICS' })
+    // a second file of the same object is another artifact; the same file again updates it
+    const rams = recordArtifact(
+      order,
+      {
+        projectId: 'PRJ-2023-011',
+        stage: 'VERIFICATION',
+        kind: 'ANALYSIS',
+        path: 'analysis/QP-2026-003/QP-2026-003-rams.md',
+        markdown: '# 可靠性',
+      },
+      NOW,
+    )
+    expect(rams.id).not.toBe(got.id)
+    expect(
+      recordArtifact(
+        order,
+        {
+          projectId: 'PRJ-2023-011',
+          stage: 'VERIFICATION',
+          kind: 'ANALYSIS',
+          path: 'analysis/QP-2026-003/QP-2026-003-rams.md',
+          markdown: '# 可靠性 v2',
+        },
+        NOW,
+      ).id,
+    ).toBe(rams.id)
+    // an ECN number names its change's object
+    const ecn = order.changes.find((c: Item) => c.ecn)
+    expect(
+      recordArtifact(
+        order,
+        {
+          projectId: ecn.projectId,
+          stage: 'DESIGN',
+          kind: 'ANALYSIS',
+          path: `analysis/${ecn.ecn}/note.md`,
+          markdown: 'x',
+        },
+        NOW,
+      ).kind,
+    ).toBe('ANALYSIS')
+  })
+
+  it.each([
+    ['ANALYSIS outside analysis/', 'ANALYSIS', 'docs/a.md', /必须在|不是现场项目/],
+    ['ANALYSIS at the top of analysis/', 'ANALYSIS', 'analysis/a.md', /必须在|不是现场项目/],
+    ['ANALYSIS of an unknown object', 'ANALYSIS', 'analysis/QP-404/a.md', '未找到'],
+    ['ANALYSIS of another project object', 'ANALYSIS', 'analysis/QP-2026-003/a.md', '未找到'],
+    ['an escape', 'ANALYSIS', 'analysis/QP-2026-003/../../x.md', '越界'],
+    [
+      'another project directory',
+      'ANALYSIS',
+      'devboard-projects/PRJ-2025-042/analysis/QP-2026-003/a.md',
+      /越界|不是现场项目/,
+    ],
+    ['an absolute path', 'CODE', '/etc/passwd', /越界|不是现场项目/],
+    ['CODE under analysis/', 'CODE', 'analysis/QP-2026-003/a.js', '只能用 kind ANALYSIS'],
+    ['TEST under analysis/', 'TEST', 'analysis/QP-2026-003/a.test.js', '只能用 kind ANALYSIS'],
+  ])('refuses %s', (_name, kind, path, message) => {
+    const state = seeded()
+    const project =
+      kind === 'ANALYSIS' && path.includes('QP-2026-003/a.md') && !path.includes('devboard-projects')
+        ? 'PRJ-2025-042'
+        : 'PRJ-2023-011'
+    expect(() =>
+      recordArtifact(state, { projectId: project, stage: 'VERIFICATION', kind, path, markdown: 'x' }, NOW),
+    ).toThrow(message)
+  })
+
+  it('refuses a binary file of the three kinds and a CODE file on an order project', () => {
+    const { state, p } = live()
+    for (const kind of ['CODE', 'TEST'])
+      expect(() =>
+        recordArtifact(
+          state,
+          { projectId: p.id, stage: 'IMPLEMENTATION', kind, path: 'src/x.bin', markdown: 'a\u0000b' },
+          NOW,
+        ),
+      ).toThrow('二进制')
+    expect(() =>
+      recordArtifact(
+        seeded(),
+        { projectId: 'PRJ-2025-042', stage: 'IMPLEMENTATION', kind: 'CODE', path: 'src/a.js', markdown: 'x' },
+        NOW,
+      ),
+    ).toThrow('不是现场项目')
   })
 })

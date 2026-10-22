@@ -31,7 +31,16 @@ export function ArtifactPreview({ board, artifact }) {
     ),
     error && h('p', { className: 'devboard-alert', role: 'alert' }, error),
     doc?.truncated && h('p', { className: 'devboard-muted' }, '文档较长，仅显示前 48 KB。'),
-    doc ? h(Markdown, { text: doc.markdown }) : !error && h('p', { role: 'status' }, '正在读取文档…'),
+    // Source, test and analysis files are shown as text, never executed or rendered as HTML.
+    doc?.format === 'text'
+      ? h(
+          'pre',
+          { className: 'devboard-source', tabIndex: 0, 'aria-label': `${artifact.title}（纯文本）` },
+          doc.markdown,
+        )
+      : doc
+        ? h(Markdown, { text: doc.markdown })
+        : !error && h('p', { role: 'status' }, '正在读取文档…'),
   )
 }
 

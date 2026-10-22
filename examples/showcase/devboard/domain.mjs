@@ -162,6 +162,8 @@ export const LABELS = Object.freeze({
     RTM: '需求追溯',
     SAD: '架构设计',
     CODE: '源代码',
+    TEST: '测试代码',
+    ANALYSIS: '分析说明',
     TEST_PLAN: '测试计划',
     TEST_REPORT: '测试报告',
     RELEASE_NOTE: '发布说明',
@@ -910,8 +912,9 @@ const ANALYSIS_PATH = /^analysis\/[A-Za-z0-9][A-Za-z0-9-]*\/[^/]/
 export function projectPath(project, path) {
   const raw = typeof path === 'string' ? path.trim() : ''
   const live = project.live && project.workspaceDir
-  if (!live && !ANALYSIS_PATH.test(raw)) fail(`${project.id} 不是现场项目，不能登记工作区文件`)
   const dir = live ? project.workspaceDir : `devboard-projects/${project.id}`
+  if (!live && !ANALYSIS_PATH.test(raw.startsWith(`${dir}/`) ? raw.slice(dir.length + 1) : raw))
+    fail(`${project.id} 不是现场项目，不能登记工作区文件`)
   const refuse = () => fail(`交付物路径越界：${raw || '（空）'} 必须是 ${dir}/ 内的相对路径`)
   // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what is refused
   if (!raw || raw.startsWith('/') || /^[A-Za-z]:/.test(raw) || /[\\\x00-\x1f]/.test(raw)) refuse()
@@ -932,15 +935,40 @@ export function clip(markdown) {
   }
 }
 
+/** The analysis file's object (a change, its ECN, a problem, a trial or a fault of the project) must exist on the board. */
+const analysisSubject = (state, projectId, id) =>
+  [...state.changes, ...state.problems, ...state.trials, ...state.faults].some(
+    (x) => x.projectId === projectId && (x.id === id || x.ecn === id),
+  )
+/** CODE, TEST and ANALYSIS previews are plain text: a file that is not text is not registered. */
+const SOURCE_KINDS = ['CODE', 'TEST', 'ANALYSIS']
+
 /** One artifact per project, kind and optional suffix (DOC-<n>-<KIND>[-<SUFFIX>]); a live body read by the tool is cached alongside the state. */
 export function recordArtifact(state, input, now = Date.now()) {
   const project = projectOf(state, text(input.projectId, 'projectId', 64))
   const path = projectPath(project, input.path)
-  if (path.startsWith(`${project.workspaceDir ?? `devboard-projects/${project.id}`}/analysis/`))
-    fail(`分析文件 ${input.path} 只读写，不登记为交付物`)
   const kind = oneOf(input.kind, Object.keys(LABELS.artifactKind), 'kind')
+  const dir = project.workspaceDir ?? `devboard-projects/${project.id}`
+  const analysis = /^analysis\/([A-Za-z0-9][A-Za-z0-9-]*)\/./.exec(path.slice(dir.length + 1))
+  if (kind === 'ANALYSIS') {
+    if (!analysis) fail(`分析文件必须在 ${dir}/analysis/<对象编号>/ 下：${input.path}`)
+    if (!analysisSubject(state, project.id, analysis[1]))
+      fail(`未找到 ${project.id} 的对象 ${analysis[1]}：分析文件只登记在已有的变更、质量问题、试验或预警名下`)
+  } else if (analysis) fail(`${input.path} 在 analysis/ 下，只能用 kind ANALYSIS 登记`)
+  if (SOURCE_KINDS.includes(kind) && typeof input.markdown === 'string' && input.markdown.includes('\u0000'))
+    fail(`${input.path} 含二进制内容，只登记文本文件`)
   const stage = oneOf(input.stage, STAGES, 'stage')
-  const suffix = optional(input.suffix, 24).toUpperCase()
+  // Several analysis files hang on one object, so an analysis file without a suffix gets one from its file name.
+  const named = path
+    .split('/')
+    .at(-1)
+    .replace(/\.[^.]*$/, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 24)
+    .replace(/-$/, '')
+  const suffix = optional(input.suffix, 24).toUpperCase() || (kind === 'ANALYSIS' ? named : '')
   if (suffix && !/^[A-Z0-9]+(-[A-Z0-9]+)*$/.test(suffix))
     fail(`suffix 格式无效：${suffix}（大写字母、数字与连字符）`)
   const id = `DOC-${project.id.split('-').at(-1)}-${kind.replaceAll('_', '-')}${suffix ? `-${suffix}` : ''}`
@@ -1980,10 +2008,13 @@ export function artifactBody(store, artifactId, now = Date.now()) {
     return { ...head, source: 'seed', ...clip(readFileSync(url, 'utf8')) }
   }
   const doc = readDoc(store, artifact.id)
+  const path = artifact.source?.path
   return {
     ...head,
     source: 'workspace',
-    path: artifact.source?.path,
+    // Source, test and analysis files that are not Markdown preview as plain text; the page never renders them as HTML.
+    format: SOURCE_KINDS.includes(artifact.kind) && !/\.md$/i.test(path ?? '') ? 'text' : 'markdown',
+    path,
     markdown:
       doc?.markdown ??
       `> 尚未读取到 ${artifact.source?.path ?? '该文件'} 的内容，请让研发协调员重新登记交付物。`,
