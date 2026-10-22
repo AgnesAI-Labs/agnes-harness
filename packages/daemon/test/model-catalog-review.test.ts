@@ -291,6 +291,10 @@ it.each(['cold', 'live'] as const)(
 )
 
 it.each([
+  ['cold', { source: 'link:./ai' }],
+  ['live', { source: 'link:./ai' }],
+  ['cold', { source: 'workspace:extensions/ai' }],
+  ['live', { source: 'workspace:extensions/ai' }],
   ['cold', { source: 'file:./ai' }],
   ['live', { source: 'file:./ai' }],
   ['cold', { integrity: 'builtin:other-release' }],

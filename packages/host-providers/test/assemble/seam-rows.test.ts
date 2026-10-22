@@ -222,6 +222,13 @@ describe('seam binding', () => {
       trustTier: 'builtin',
       ownerPackage: '@acme/other',
     },
+    {
+      id: '@agnes/base',
+      trust: 'builtin',
+      packageId: 'builtin',
+      trustTier: 'builtin',
+      ownerPackage: '@agnes/code',
+    },
   ])('denies a mismatched registration $id the privileged init and closes on dispose', async (origin) => {
     const { id, trust } = origin
     const closed = vi.fn()

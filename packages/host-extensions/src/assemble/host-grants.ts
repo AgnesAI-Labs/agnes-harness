@@ -42,9 +42,7 @@ export function pinHostCapabilities(
     }
     const revisions = retained.filter(
       (row) =>
-        row.mountRevision === EXT_ROW_MOUNT_REVISION &&
-        row.plugin.startsWith(`builtin:${identity.id}/`) &&
-        /^sha256-[a-f0-9]{64}$/.test(row.entryRevision),
+        row.mountRevision === EXT_ROW_MOUNT_REVISION && row.plugin.startsWith(`builtin:${identity.id}/`),
     )
     return [
       {
@@ -53,7 +51,9 @@ export function pinHostCapabilities(
         directory,
         digest,
         stat,
-        retained: revisions.every((row) => row.entryRevision === digest),
+        retained: revisions.every(
+          (row) => /^sha256-[a-f0-9]{64}$/.test(row.entryRevision) && row.entryRevision === digest,
+        ),
       },
     ]
   })

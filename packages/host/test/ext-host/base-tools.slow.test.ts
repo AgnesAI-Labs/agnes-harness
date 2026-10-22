@@ -1527,7 +1527,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         | { isError?: boolean; content?: Array<{ type?: string; text?: string }> }
         | undefined
       expect(result?.isError, JSON.stringify(result)).toBe(false)
-      expect(result?.content?.[0]?.text).toContain('Use subagent_list for the handle')
+      // Only fork was disclosed; guidance must use the task reference rather than an unavailable tool.
+      expect(result?.content?.[0]?.text).toContain('Keep the task reference for follow-up')
+      expect(result?.content?.[0]?.text).not.toContain('Use subagent_list')
       const children = await session.d.children.list?.()
       expect(children).toHaveLength(1)
       const childKey = children?.[0]?.id

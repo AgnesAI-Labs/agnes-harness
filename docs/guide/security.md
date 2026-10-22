@@ -185,6 +185,8 @@ Install verifies downloaded bytes; loading installed packages and immutable gene
 
 Administrative provenance includes the declared resolved source location. Diagnostic messages remain fixed safe summaries and do not disclose unrelated local paths.
 
+Official Host capabilities also require a verified loader binding. For file-backed packages, every retained extension row for that owner must carry a supported SHA256 revision matching the current code tree. A missing or custom revision cannot attest retained code and receives no grant. A normal release establishes fresh pins for new sessions; an old pin never authorizes a changed tree. Packaged executable code uses the Host loader's code-image identity instead of mutable data directories.
+
 Administrators configure `<AGH_HOME>/profiles/<profile>/package-sources.json`:
 
 ```json

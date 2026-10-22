@@ -18,6 +18,63 @@ export type HostAllowance = Omit<HostFinding, 'line'> & { max: number; removal: 
 export const hostKey = (entry: Omit<HostFinding, 'line'>): string =>
   JSON.stringify([entry.path, entry.symbol, entry.literal, entry.role])
 
+/** Evaluate syntax only: no identifiers, coercion, arbitrary calls or user code. */
+function constantString(node: ts.Node): string | undefined {
+  let remaining = 256
+  const read = (node: ts.Node, depth: number): string | undefined => {
+    if (--remaining < 0 || depth > 32) return undefined
+    const child = (value: ts.Node) => read(value, depth + 1)
+    let value: string | undefined
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) value = node.text
+    else if (ts.isParenthesizedExpression(node) || ts.isComputedPropertyName(node))
+      value = child(node.expression)
+    else if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      const left = child(node.left),
+        right = child(node.right)
+      if (left !== undefined && right !== undefined) value = left + right
+    } else if (ts.isTemplateExpression(node)) {
+      value = node.head.text
+      for (const span of node.templateSpans) {
+        const part = child(span.expression)
+        if (part === undefined) return undefined
+        value += part + span.literal.text
+        if (value.length > 4096) return undefined
+      }
+    } else if (ts.isCallExpression(node)) {
+      const access = node.expression
+      const array =
+        ts.isPropertyAccessExpression(access) || ts.isElementAccessExpression(access)
+          ? access.expression
+          : undefined
+      const method = ts.isPropertyAccessExpression(access)
+        ? access.name.text
+        : ts.isElementAccessExpression(access)
+          ? child(access.argumentExpression)
+          : undefined
+      if (
+        method !== 'join' ||
+        !array ||
+        !ts.isArrayLiteralExpression(array) ||
+        array.elements.length > 128 ||
+        node.arguments.length > 1
+      )
+        return undefined
+      const separatorArgument = node.arguments[0]
+      const separator = separatorArgument ? child(separatorArgument) : ','
+      if (separator === undefined) return undefined
+      const parts: string[] = []
+      for (const element of array.elements) {
+        const part = child(element)
+        if (part === undefined) return undefined
+        parts.push(part)
+      }
+      value = parts.join(separator)
+    }
+    return value !== undefined && value.length <= 4096 ? value : undefined
+  }
+  return read(node, 0)
+}
+
 function enclosing(node: ts.Node, tree: ts.SourceFile): string {
   for (let current = node.parent; current; current = current.parent) {
     if (
@@ -78,7 +135,8 @@ export function hostFindings(tree: ts.SourceFile, path: string, catalogue: Busin
     ) {
       for (const element of node.name.elements) {
         if (!element.name) continue
-        const original = (element.propertyName ?? element.name).getText(tree)
+        const key = element.propertyName ?? element.name
+        const original = constantString(key) ?? key.getText(tree)
         if (DEFAULT_SYMBOLS.has(original) && ts.isIdentifier(element.name))
           aliases.set(element.name.text, original)
       }
@@ -86,14 +144,11 @@ export function hostFindings(tree: ts.SourceFile, path: string, catalogue: Busin
   })
   const businessAliases = new Map<string, string>()
   walk(tree, (node) => {
-    if (
-      ts.isVariableDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      (ts.isStringLiteral(node.initializer) || ts.isNoSubstitutionTemplateLiteral(node.initializer)) &&
-      officialTokens(node.initializer.text, catalogue).length
-    )
-      businessAliases.set(node.name.text, node.initializer.text)
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const value = constantString(node.initializer)
+      if (value !== undefined && officialTokens(value, catalogue).length)
+        businessAliases.set(node.name.text, value)
+    }
   })
   // A renamed or locally forwarded default remains an official selection.
   for (let pass = 0; pass < tree.statements.length + 1; pass++)
@@ -134,9 +189,14 @@ export function hostFindings(tree: ts.SourceFile, path: string, catalogue: Busin
       if (kind === 'import' && path.startsWith('packages/daemon/') && daemonPeer) return
       if (officialTokens(text, catalogue).length) add(text, kind)
     }
+    if (ts.isBinaryExpression(node) || ts.isTemplateExpression(node) || ts.isCallExpression(node)) {
+      const text = constantString(node)
+      if (text !== undefined && officialTokens(text, catalogue).length) add(text, role(node))
+    }
     if (ts.isBindingElement(node) && node.name && ts.isObjectBindingPattern(node.parent)) {
       const declaration = node.parent.parent
-      const original = (node.propertyName ?? node.name).getText(tree)
+      const key = node.propertyName ?? node.name
+      const original = constantString(key) ?? key.getText(tree)
       if (
         ts.isVariableDeclaration(declaration) &&
         declaration.initializer &&
@@ -152,10 +212,11 @@ export function hostFindings(tree: ts.SourceFile, path: string, catalogue: Busin
       ts.isElementAccessExpression(node) &&
       ts.isIdentifier(node.expression) &&
       namespaces.has(node.expression.text) &&
-      ts.isStringLiteral(node.argumentExpression) &&
-      DEFAULT_SYMBOLS.has(node.argumentExpression.text)
-    )
-      add(node.argumentExpression.text, `default-${role(node)}`)
+      node.argumentExpression
+    ) {
+      const key = constantString(node.argumentExpression)
+      if (key !== undefined && DEFAULT_SYMBOLS.has(key)) add(key, `default-${role(node)}`)
+    }
     if (ts.isIdentifier(node) && businessAliases.has(node.text) && role(node) === 'comparison')
       add(businessAliases.get(node.text) as string, 'alias-comparison')
     if (ts.isImportSpecifier(node) && DEFAULT_SYMBOLS.has((node.propertyName ?? node.name).text))
