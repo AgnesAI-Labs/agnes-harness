@@ -49,6 +49,9 @@ export function createRuntimeSourceReader() {
     })
 }
 
+/** How long a lock-free read waits in total for writers that announced themselves with a journal. */
+const WRITER_WAIT_MS = 10_000
+
 /** Retry torn reads, but keep unexplained byte/policy changes fatal. */
 export async function readRuntimePluginSnapshots(
   profileDir: string,
@@ -67,8 +70,22 @@ export async function readRuntimePluginSnapshots(
     ['.agnes-package-transaction.json', '.agnes-runtime-transaction.json'].some((file) =>
       existsSync(join(profileDir, file)),
     )
-  for (let attempt = 0; attempt < 3; attempt++) {
-    if (attempt) invalidatePackageVerification()
+  // Unexplained changes get a few retries. An announced writer is waited out instead, for as long as
+  // it holds its journal: collecting a large snapshot tree verifies and removes it under one journal.
+  let retries = 0,
+    waited = 0,
+    pauses = 0,
+    first = true
+  const waitForWriter = async (): Promise<boolean> => {
+    if (waited >= WRITER_WAIT_MS) return false
+    const ms = Math.min(250, 50 * ++pauses)
+    waited += ms
+    await delay(ms)
+    return true
+  }
+  for (;;) {
+    if (!first) invalidatePackageVerification()
+    first = false
     const boundary = committed()
     let writerObserved = transacting()
     try {
@@ -107,14 +124,25 @@ export async function readRuntimePluginSnapshots(
           ),
         ])
       }
-      // A verified read can still straddle an announced write. Give that writer the same
-      // backoff as the exception path, rather than consuming every retry while it is active.
-      if (writerObserved || committed() !== boundary) await delay(50 * (attempt + 1))
+      // A verified read can still straddle an announced write. Wait for that writer rather than
+      // consuming a retry while it is active.
+      if (writerObserved) {
+        if (await waitForWriter()) continue
+        break
+      }
+      if (++retries >= 3) break
+      if (committed() !== boundary) await delay(50 * retries)
     } catch (error) {
       // A failure no writer explains is tampering and stays fatal; otherwise let the writer finish.
-      if (!writerObserved && !transacting() && committed() === boundary) throw error
+      const explained = writerObserved || transacting()
+      if (!explained && committed() === boundary) throw error
       invalidatePackageVerification()
-      await delay(50 * (attempt + 1))
+      if (explained) {
+        if (await waitForWriter()) continue
+        break
+      }
+      if (++retries >= 3) break
+      await delay(50 * retries)
     }
   }
   throw new PackageError('E_LOCK_MISMATCH', 'runtime source changed during snapshot read', {
