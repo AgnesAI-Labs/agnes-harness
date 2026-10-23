@@ -12,6 +12,8 @@ const entry = new URL('../src/bin.ts', import.meta.url)
 // Each case starts the daemon bin from TypeScript source through tsx: under a second alone, but
 // past vitest's 5 s default on a loaded macOS runner.
 const bin = { timeout: 30_000 }
+// Discovery resolves under the AGH home; an isolated home keeps a developer's running daemon out of scope.
+const isolated = (dir: string) => ({ encoding: 'utf8' as const, env: { ...process.env, AGH_HOME: dir } })
 
 describe('agnesd control commands through the real bin', () => {
   it('prints status JSON and uses a nonzero exit when no daemon is running', bin, async () => {
@@ -22,7 +24,7 @@ describe('agnesd control commands through the real bin', () => {
         await execute(
           process.execPath,
           ['--import', 'tsx', fileURLToPath(entry), 'status', '--profile', 'default', '--data-dir', dir],
-          { encoding: 'utf8' },
+          isolated(dir),
         )
       } catch (error) {
         failure = error as { code?: unknown; stdout?: unknown }
@@ -40,7 +42,7 @@ describe('agnesd control commands through the real bin', () => {
       const result = await execute(
         process.execPath,
         ['--import', 'tsx', fileURLToPath(entry), 'stop', '--profile', 'default', '--data-dir', dir],
-        { encoding: 'utf8' },
+        isolated(dir),
       )
       expect(result.stdout).toBe('not-running\n')
     } finally {
