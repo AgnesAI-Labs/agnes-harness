@@ -21,6 +21,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.resume',
     summaryKey: 'commands.resumeSummary',
   },
+  { name: '/tree', descriptionKey: 'commands.tree', summaryKey: 'commands.treeSummary' },
   {
     name: '/import',
     args: '[<file> [--from claude-code|codex|pi|auto]]',

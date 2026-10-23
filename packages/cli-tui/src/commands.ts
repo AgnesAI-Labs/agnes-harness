@@ -34,6 +34,7 @@ import type { ResourceCommandKind } from './resource-controller.js'
 import { scheduleSlash } from './schedule-commands.js'
 import { forkAt, forkSlash, oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
+import { sessionTree } from './session-tree.js'
 import { SLASH_COMMANDS, type SlashCommand } from './slash-table.js'
 import { terminalSetupSlash } from './terminal-setup-command.js'
 import type { ThemePreference } from './theme-preference.js'
@@ -319,6 +320,12 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         return { sessionChoices, sessionScope: { scope: everywhere ? 'all' : 'workspace', reload } }
       }
       return { text: everywhere ? 'no sessions' : 'no other sessions in this workspace' }
+    }
+    case '/tree': {
+      const sessionChoices = await sessionTree(app)
+      return sessionChoices.length
+        ? { sessionChoices, sessionPickerTitle: 'picker.treeTitle' }
+        : { text: tt('tree.none', locale) }
     }
     case '/import': {
       // Importing writes through a local Host, which only the shared local daemon form leaves free.

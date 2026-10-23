@@ -6,6 +6,7 @@ import { SESSION_ACTION_DICT, type SessionActionKey } from './locale-session-act
 import { SESSION_VIEW_DICT, type SessionViewKey } from './locale-session-view.js'
 import { SHELL_UX_DICT, type ShellUxKey } from './locale-shell-ux.js'
 import { TERMINAL_SETUP_DICT, type TerminalSetupKey } from './locale-terminal-setup.js'
+import { TREE_DICT, type TreeKey } from './locale-tree.js'
 
 /**
  * Strings of the terminal-level surfaces: pasted blocks, the exit hint, mouse and clipboard tips and
@@ -125,6 +126,7 @@ export type TerminalKey =
   | HeadsUpKey
   | ShellUxKey
   | SessionViewKey
+  | TreeKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
@@ -135,6 +137,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...HEADS_UP_DICT.en,
     ...SHELL_UX_DICT.en,
     ...SESSION_VIEW_DICT.en,
+    ...TREE_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
     'exit.ran': 'This run lasted {duration}',
@@ -254,6 +257,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...HEADS_UP_DICT['zh-CN'],
     ...SHELL_UX_DICT['zh-CN'],
     ...SESSION_VIEW_DICT['zh-CN'],
+    ...TREE_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
     'exit.ran': '本次运行了 {duration}',
