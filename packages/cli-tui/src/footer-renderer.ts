@@ -118,7 +118,7 @@ export class FooterRenderer implements ScreenRenderer {
     this.lastCursorKey = ''
     this.height = 0
     this.columns = 0
-    this.paste = new PasteAssembler()
+    this.paste = new PasteAssembler(this.term.pasteBursts === true)
     process.once('exit', this.onExit)
     this.term.enterRaw()
     // No alternate screen and no mouse reporting: the shell page stays, and the terminal keeps the wheel

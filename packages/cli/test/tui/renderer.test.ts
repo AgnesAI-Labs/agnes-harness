@@ -347,6 +347,21 @@ describe('Renderer bookkeeping', () => {
     expect(term.writes.at(-1)).toContain('\x1b[?2004l')
   })
 
+  it('on a terminal that reports input timing, a burst without brackets reaches the root wrapped', () => {
+    const term = new FakeTerminal({ columns: 10, rows: 4 })
+    term.pasteBursts = true
+    const seen: string[] = []
+    const r = new Renderer(term, {
+      render: () => ['a'],
+      handleInput: (d) => seen.push(d) > 0,
+      invalidate() {},
+    })
+    r.start()
+    term.feed('first line of text\r')
+    expect(seen).toEqual(['\x1b[200~first line of text\r\x1b[201~'])
+    r.stop()
+  })
+
   // The signal ladder and a crash leave through process.exit, which runs no finally: without an exit
   // hook the shell is left in paste, focus and mouse mode and prints ^[[I, ^[[O and 200~ markers.
   it('gives the terminal back when the process exits without stopping it', () => {

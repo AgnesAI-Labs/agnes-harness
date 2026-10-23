@@ -132,7 +132,7 @@ export class Renderer {
     this.generation++
     this.lastFrame = []
     this.lastCursorKey = ''
-    this.paste = new PasteAssembler()
+    this.paste = new PasteAssembler(this.term.pasteBursts === true)
     process.once('exit', this.onExit)
     this.term.enterRaw()
     // Save the shell screen/cursor before painting. Never clear its scrollback (ED3). `runTui`

@@ -29,6 +29,8 @@ export interface Terminal {
   queryBackground?(): Promise<Background | undefined>
   /** Where the cursor is, 1-based, as the terminal reports it; undefined where it cannot or does not answer. */
   queryCursor?(): Promise<{ row: number; col: number } | undefined>
+  /** Whether the time input arrives in tells a paste from typing (paste.ts); a fake that feeds synchronously says no. */
+  readonly pasteBursts?: boolean
 }
 
 // The cursor-position report: ESC [ row ; col R. Only read while one was asked for, because the same
@@ -125,6 +127,8 @@ export class FakeTerminal implements Terminal {
   readonly writes: string[] = []
   caps: Capabilities
   raw = false
+  /** Off unless a test is about pastes: tests feed text and Enter in the same instant. */
+  pasteBursts = false
   background: Background | undefined
   /** What `queryCursor` answers; a test sets where the shell left the cursor. */
   cursor: { row: number; col: number } | undefined
@@ -177,6 +181,7 @@ export class FakeTerminal implements Terminal {
 
 export class NodeTerminal implements Terminal {
   readonly caps: Capabilities
+  readonly pasteBursts = true
   background: Background | undefined
   private asked: Promise<Background | undefined> | undefined
   private answer: ((b: Background | undefined) => void) | undefined
