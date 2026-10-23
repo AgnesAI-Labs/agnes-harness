@@ -122,6 +122,8 @@ async function scenario(openPicker: boolean) {
     await vi.waitFor(() => expect(modal.modal.questions.length).toBe(1), { timeout: 5_000 })
     await vi.waitFor(async () => expect(await screen()).toMatch(/\d\. Reject/))
     const before = await screen()
+    // Approval keys count only after the card has sat untouched for 600 ms (approval-settle.ts).
+    await sleep(700)
     term.feed('1')
     await sleep(800)
     return {

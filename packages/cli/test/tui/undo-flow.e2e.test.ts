@@ -89,6 +89,8 @@ it.each(['overwrite', 'create'])(
       await vi.waitFor(async () => expect(await screen(term)).toContain('Approval: Write file'), {
         timeout: 10_000,
       })
+      // Approval keys count only after the card has sat untouched for 600 ms (approval-settle.ts).
+      await new Promise((resolve) => setTimeout(resolve, 700))
       term.feed('1')
       expect(await turn).toBeUndefined()
       expect(readFileSync(file, 'utf8')).toBe('after')
