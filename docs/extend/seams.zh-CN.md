@@ -18,6 +18,8 @@ seam 是内核以单个类型化对象消费的必要运行时能力：审批投
 
 合同在 `@agnes/extension-api/seams`。`sandbox` 是已有的[沙箱 provider](../develop/architecture-plugins.zh-CN.md)种类，`platform` 归宿主所有。
 
+Checkpoint 的 `snapshot` 接收可选的会话标识 `owner`，包装层必须保留它，以保证按会话保留快照。经校验的 `list` 行可附带 `owner` 及该检查点恢复的完整规范化路径集合 `paths`。会话撤销除核对轮次外，还要求 owner 匹配，且只包含与收据一致的一条工作区相对路径。缺少元数据、工作区外路径或更大的恢复集合都会在修改文件前拒绝撤销；既有检查点存储格式不变。
+
 ## 注册实现
 
 在注入 `providers` 的普通 Cordis 插件里注册，与其它 provider 完全一样：

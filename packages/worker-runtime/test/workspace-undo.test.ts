@@ -24,10 +24,14 @@ type Write = {
   turn?: number
   checkpoint?: boolean | 'collected'
   session?: string
+  checkpointOwner?: string
+  checkpointPaths?: string[]
 }
 
 /** A fake session over a real temp directory, with a seam that really keeps the old bytes. */
-function fixture(options: { permission?: string; busy?: boolean; failRewindAt?: string } = {}) {
+function fixture(
+  options: { permission?: string; effectivePermission?: string; busy?: boolean; failRewindAt?: string } = {},
+) {
   const root = mkdtempSync(join(tmpdir(), 'agh-undo-'))
   roots.push(root)
   const rows: EventEnvelope[] = []
@@ -35,7 +39,10 @@ function fixture(options: { permission?: string; busy?: boolean; failRewindAt?: 
     rows.push({ seq: rows.length + 1, id: `r${rows.length + 1}`, ts: 't', type, data, origin } as never)
     return rows.length
   }
-  const kept = new Map<string, { path: string; before: string | null; stepId: string }>()
+  const kept = new Map<
+    string,
+    { path: string; before: string | null; stepId: string; owner: string; paths: string[] }
+  >()
   const seam = {
     snapshot: async () => ({ id: 'unused' }),
     rewind: async (id: string) => {
@@ -46,7 +53,8 @@ function fixture(options: { permission?: string; busy?: boolean; failRewindAt?: 
       if (item.before === null) rmSync(file, { force: true })
       else writeFileSync(file, item.before)
     },
-    list: async () => [...kept].map(([id, item]) => ({ id, stepId: item.stepId })),
+    list: async () =>
+      [...kept].map(([id, item]) => ({ id, stepId: item.stepId, owner: item.owner, paths: item.paths })),
   }
   const view = {
     root,
@@ -59,6 +67,7 @@ function fixture(options: { permission?: string; busy?: boolean; failRewindAt?: 
       return rows.length
     },
     preset: { permission: options.permission ?? 'workspace-write' },
+    permissionContext: { policy: options.effectivePermission ?? options.permission ?? 'workspace-write' },
     op: () => (options.busy ? { kind: 'turn' } : null),
     locked: <T>(run: () => Promise<T>) => run(),
     ev: (type: string, data: unknown) => ({ type, data }),
@@ -89,7 +98,13 @@ function fixture(options: { permission?: string; busy?: boolean; failRewindAt?: 
     mkdirSync(dirname(file), { recursive: true })
     const id = `cp${++step}`
     if (spec.checkpoint !== 'collected')
-      kept.set(id, { path: spec.path, before: spec.before, stepId: `${turn}/${step}` })
+      kept.set(id, {
+        path: spec.path,
+        before: spec.before,
+        stepId: `${turn}/${step}`,
+        owner: spec.checkpointOwner ?? 's',
+        paths: spec.checkpointPaths ?? [spec.path],
+      })
     writeFileSync(file, spec.after)
     add(
       'x/agnes/tools-core/file-change',
@@ -169,7 +184,7 @@ it('refuses while a turn runs and when the session permission is read-only', asy
     undoable: false,
     blockedBy: 'busy',
   })
-  const readOnly = fixture({ permission: 'read-only' })
+  const readOnly = fixture({ permission: 'workspace-write', effectivePermission: 'read-only' })
   readOnly.write({ path: 'a.txt', before: 'v0', after: 'v1' })
   await expect(readOnly.undo(1)).rejects.toMatchObject({ data: { code: 'UNDO_READ_ONLY' } })
   expect(readOnly.disk('a.txt')).toBe('v1')
@@ -270,4 +285,27 @@ it('refuses while a real turn runs, through the worker command frames', async ()
   )
   release()
   await running
+})
+
+it('never restores an intermediate version when the receipt scan truncates a turn', async () => {
+  const t = fixture()
+  for (let i = 0; i < 5001; i++) t.write({ path: 'a.txt', before: `v${i}`, after: `v${i + 1}` })
+  expect(await sessionUndoPreview(t.session, { turn: 1 })).toMatchObject({ undoable: false })
+  await expect(t.undo(1)).rejects.toMatchObject({ data: { code: 'UNDO_NOTHING_TO_UNDO' } })
+  expect(t.disk('a.txt')).toBe('v5001')
+  expect(t.facts()).toEqual([])
+})
+
+it.each([
+  { checkpointOwner: 'another-session' },
+  { checkpointPaths: ['a.txt', 'unrelated.txt'] },
+  { checkpointPaths: ['/outside/a.txt'] },
+  { checkpointPaths: ['elsewhere.txt'] },
+])('refuses a checkpoint that is not bound to exactly this session and file: %j', async (extra) => {
+  const t = fixture({ permission: 'full-access' })
+  t.write({ path: 'a.txt', before: 'v0', after: 'v1', ...extra })
+  expect(await sessionUndoPreview(t.session, {})).toMatchObject({ undoable: false, blockedBy: 'files' })
+  await expect(t.undo(1)).rejects.toMatchObject({ data: { code: 'UNDO_UNAVAILABLE' } })
+  expect(t.disk('a.txt')).toBe('v1')
+  expect(t.facts()).toEqual([])
 })

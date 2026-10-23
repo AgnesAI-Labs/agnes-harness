@@ -706,3 +706,29 @@ it('keeps session process activity across invocation return, including cleanup f
   await built.readiness.revoke()
   await other.readiness.revoke()
 })
+
+it('preserves snapshot ownership through the Host and Core invocation wrappers', async () => {
+  let saved: unknown
+  const built = await runtime('owner-session', [], {
+    services: {
+      checkpoint: {
+        snapshot: async (_paths: string[], _step: string, options?: { owner?: string }) => {
+          saved = options
+          return { id: 'c' }
+        },
+        list: async () => [],
+        rewind: async () => undefined,
+      },
+    },
+  })
+  const table = new SessionWorkspaceRuntimeTable()
+  await table.open(built.value.binding, async () => built.value)
+  try {
+    await table.invocation('owner-session').run(async (view) => {
+      await view.checkpointContext().snapshot(['a.txt'], '1/1', { owner: 'owner-session' })
+    })
+    expect(saved).toEqual({ owner: 'owner-session' })
+  } finally {
+    await table.close('owner-session')
+  }
+})

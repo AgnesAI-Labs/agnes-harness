@@ -295,8 +295,8 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
       scope.track(() => ask.call(source.approval, request, opts), { cancelOnAbort: true }),
   })
   const checkpoint: CheckpointWorkspaceContext = Object.freeze({
-    snapshot: (paths: string[], stepId: string) =>
-      scope.track(() => source.checkpoint.snapshot(paths, stepId)),
+    snapshot: (paths: string[], stepId: string, options?: { owner?: string }) =>
+      scope.track(() => source.checkpoint.snapshot(paths, stepId, options)),
     rewind: (id: string) => scope.track(() => source.checkpoint.rewind(id)),
     list: () => scope.track(() => source.checkpoint.list()),
   })

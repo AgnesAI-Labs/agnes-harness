@@ -50,6 +50,27 @@ describe('WorkspaceInvocationPort', () => {
     expect(() => files.read('image.png', { limit: 32 })).toThrow('session closed')
     expect(read).toHaveBeenCalledTimes(1)
   })
+  it('preserves the checkpoint owner through the revocable invocation', async () => {
+    let saved: unknown
+    const port = createWorkspaceInvocationPort(() => ({
+      source: source({
+        checkpoint: {
+          snapshot: async (_paths, _step, options) => {
+            saved = options
+            return { id: 'c' }
+          },
+          list: async () => [],
+          rewind: async () => undefined,
+        },
+      }),
+      release() {},
+    }))
+    await port.run(async (view) => {
+      await view.checkpointContext().snapshot(['a.txt'], '1/1', { owner: 's1' })
+    })
+    expect(saved).toEqual({ owner: 's1' })
+  })
+
   it('acquires synchronously and invokes on the next microtask before releasing once', async () => {
     const order: string[] = []
     const port = createWorkspaceInvocationPort(() => {

@@ -72,7 +72,8 @@ export interface CheckpointSeam {
   /** `owner` is the session key; a seam may use it to keep each session's recent snapshots. */
   snapshot(paths: string[], stepId: string, options?: { owner?: string }): Promise<{ id: string }>
   rewind(id: string): Promise<void>
-  list(): Promise<Array<{ id: string; stepId: string }>>
+  /** Verified restore scope; absent metadata makes a checkpoint unavailable to session undo. */
+  list(): Promise<Array<{ id: string; stepId: string; owner?: string; paths?: string[] }>>
 }
 
 export type TokenCounts = {

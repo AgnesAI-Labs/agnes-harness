@@ -89,14 +89,18 @@ describe('@agnes/base checkpoint against real host adapters', () => {
       const opened = await openCheckpoint(profile, dataDir, workspaceRoot)
       first = opened.bundle
       const saved = await opened.checkpoint.snapshot(['state.txt'], 'turn-1/step-1')
-      expect(await opened.checkpoint.list()).toEqual([{ id: saved.id, stepId: 'turn-1/step-1' }])
+      expect(await opened.checkpoint.list()).toMatchObject([
+        { id: saved.id, stepId: 'turn-1/step-1', paths: ['state.txt'] },
+      ])
       await first.close()
       first = undefined
 
       await writeFile(join(workspaceRoot, 'state.txt'), 'after')
       const next = await openCheckpoint(profile, dataDir, workspaceRoot)
       reopened = next.bundle
-      expect(await next.checkpoint.list()).toEqual([{ id: saved.id, stepId: 'turn-1/step-1' }])
+      expect(await next.checkpoint.list()).toMatchObject([
+        { id: saved.id, stepId: 'turn-1/step-1', paths: ['state.txt'] },
+      ])
       await next.checkpoint.rewind(saved.id)
       expect(await readFile(join(workspaceRoot, 'state.txt'), 'utf8')).toBe('before')
     } finally {
@@ -129,7 +133,9 @@ describe('@agnes/base checkpoint against real host adapters', () => {
         return next.checkpoint
       })
       const saved = await derived.snapshot(['state.txt'], 'turn-1/step-1')
-      expect(await derived.list()).toEqual([{ id: saved.id, stepId: 'turn-1/step-1' }])
+      expect(await derived.list()).toMatchObject([
+        { id: saved.id, stepId: 'turn-1/step-1', paths: ['state.txt'] },
+      ])
       expect(replacement).not.toBe(opened.checkpoint)
     } finally {
       await opened.bundle.close()

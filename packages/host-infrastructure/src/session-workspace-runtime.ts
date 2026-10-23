@@ -535,7 +535,7 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
       },
       approval: services?.approval ?? unavailableApproval,
       checkpoint: {
-        snapshot: (paths, stepId) => withAccess(() => checkpoint.snapshot(paths, stepId)),
+        snapshot: (paths, stepId, options) => withAccess(() => checkpoint.snapshot(paths, stepId, options)),
         rewind: (id) => withAccess(() => checkpoint.rewind(id)),
         list: () => withAccess(() => checkpoint.list()),
       },

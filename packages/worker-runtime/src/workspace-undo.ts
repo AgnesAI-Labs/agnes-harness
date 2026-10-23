@@ -120,9 +120,18 @@ async function scanAll(session: HostSession, query: { type: string | string[]; o
 async function receiptTurns(session: HostSession): Promise<Map<number, Entry[]>> {
   const byTurn = new Map<number, Map<string, Entry>>()
   // Newest first up to the cap, then replayed oldest first, so a long session loses its oldest turns.
-  for (const row of (await scanAll(session, { type: RECEIPT_TYPE, order: 'desc' })).reverse()) {
+  const rows = await scanAll(session, { type: RECEIPT_TYPE, order: 'desc' })
+  // The oldest retained turn may be missing its first writes. Never offer a partial turn.
+  const boundary =
+    rows.length >= MAX_RECEIPT_ROWS
+      ? [...rows]
+          .reverse()
+          .map((row) => receipt(row, session.key))
+          .find((value) => value)?.turn
+      : undefined
+  for (const row of rows.reverse()) {
     const value = receipt(row, session.key)
-    if (!value) continue
+    if (!value || (boundary !== undefined && value.turn <= boundary)) continue
     const paths = byTurn.get(value.turn) ?? new Map<string, Entry>()
     const known = paths.get(value.path)
     paths.set(value.path, known ? { ...known, last: value } : { path: value.path, first: value, last: value })
@@ -195,7 +204,14 @@ async function diskState(
 }
 
 type Judged = UndoPreviewFile & { entry: Entry }
-function judge(entry: Entry, turn: number, disk: Disk, checkpoints: ReadonlyMap<string, string>): Judged {
+type SavedCheckpoint = { stepId: string; owner?: string; paths?: string[] }
+function judge(
+  entry: Entry,
+  turn: number,
+  owner: string,
+  disk: Disk,
+  checkpoints: ReadonlyMap<string, SavedCheckpoint>,
+): Judged {
   const { first, last } = entry
   const base = { path: entry.path, entry }
   const atBefore = first.existed
@@ -209,9 +225,15 @@ function judge(entry: Entry, turn: number, disk: Disk, checkpoints: ReadonlyMap<
     return { ...base, action: 'restore', undoable: false, reason: 'changed-since' }
   const action = first.existed ? 'restore' : 'delete'
   if (!first.checkpointId) return { ...base, action, undoable: false, reason: 'legacy-receipt' }
-  const stepId = checkpoints.get(first.checkpointId)
-  if (stepId === undefined) return { ...base, action, undoable: false, reason: 'checkpoint-collected' }
-  if (!stepId.startsWith(`${turn}/`)) return { ...base, action, undoable: false, reason: 'no-checkpoint' }
+  const checkpoint = checkpoints.get(first.checkpointId)
+  if (checkpoint === undefined) return { ...base, action, undoable: false, reason: 'checkpoint-collected' }
+  if (
+    !checkpoint.stepId.startsWith(`${turn}/`) ||
+    checkpoint.owner !== owner ||
+    checkpoint.paths?.length !== 1 ||
+    checkpoint.paths[0] !== entry.path
+  )
+    return { ...base, action, undoable: false, reason: 'no-checkpoint' }
   return { ...base, action, undoable: true }
 }
 
@@ -238,7 +260,7 @@ async function plan(session: HostSession, view: View, requested?: number): Promi
   const open = [...turns.keys()].filter((turn) => !done.has(turn)).sort((a, b) => a - b)
   const turn = requested ?? open[open.length - 1]
   const busy = session.op() !== null
-  const readOnly = session.preset.permission === 'read-only'
+  const readOnly = (session.permissionContext?.policy ?? session.preset.permission) === 'read-only'
   const entries = turn === undefined ? undefined : turns.get(turn)
   const empty = (blockedBy: UndoBlock): Plan => ({
     preview: {
@@ -256,10 +278,10 @@ async function plan(session: HostSession, view: View, requested?: number): Promi
   })
   if (turn === undefined || !entries || entries.length === 0) return empty('none')
   const laterTurns = open.filter((candidate) => candidate > turn)
-  const listed = new Map((await view.checkpointContext().list()).map((item) => [item.id, item.stepId]))
+  const listed = new Map((await view.checkpointContext().list()).map((item) => [item.id, item]))
   const judged: Judged[] = []
   for (const entry of entries.slice(0, MAX_FILES))
-    judged.push(judge(entry, turn, await diskState(view.fs(), view.root, entry.path), listed))
+    judged.push(judge(entry, turn, session.key, await diskState(view.fs(), view.root, entry.path), listed))
   const blockedBy: UndoBlock = done.has(turn)
     ? 'already-undone'
     : judged.every((file) => file.action === 'unchanged')
@@ -311,7 +333,8 @@ export function sessionUndo(
     withWorkspace(session, async (view) => {
       if (session.op() !== null)
         throw rpcError('SESSION_BUSY', { sessionId: session.key, reason: 'a turn is running' })
-      if (session.preset.permission === 'read-only') throw refuse('UNDO_READ_ONLY')
+      if ((session.permissionContext?.policy ?? session.preset.permission) === 'read-only')
+        throw refuse('UNDO_READ_ONLY')
       const { preview, judged } = await plan(session, view, input.turn)
       if (preview.turn !== input.turn || judged.length === 0)
         throw refuse('UNDO_NOTHING_TO_UNDO', { turn: input.turn })

@@ -184,7 +184,7 @@ async function createBoundFsCheckpoint(
           throw cause
         }
       }),
-    list: () => serial(async () => (await shadow.list()).map(({ id, stepId }) => ({ id, stepId }))),
+    list: () => serial(async () => (await shadow.list()).map(({ id, stepId, owner, entries }) => ({ id, stepId, ...(owner === undefined ? {} : { owner }), paths: entries.map((entry) => entry.rel) }))),
   }
 }
 

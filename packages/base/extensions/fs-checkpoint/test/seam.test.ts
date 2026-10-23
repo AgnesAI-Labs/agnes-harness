@@ -140,7 +140,7 @@ describe('filesystem checkpoint seam', () => {
     const id = (await workspace?.snapshot(['a.txt'], 'other'))?.id
     expect(id).toBeDefined()
     expect(await seam.list()).toEqual([])
-    expect(await workspace?.list()).toEqual([{ id, stepId: 'other' }])
+    expect(await workspace?.list()).toMatchObject([{ id, stepId: 'other', paths: ['a.txt'] }])
   })
 
   it('serializes shadow repository initialization for concurrent sessions on the same workspace', async () => {
@@ -194,7 +194,7 @@ describe('filesystem checkpoint seam', () => {
     }
     await fs.writeFile(join(h.workspace, 'a.txt'), 'v3')
     const reopened = await h.make()
-    expect(await reopened.list()).toEqual([
+    expect(await reopened.list()).toMatchObject([
       { id: id1, stepId: '1/1' },
       { id: id2, stepId: '1/2' },
     ])
@@ -320,6 +320,19 @@ describe('filesystem checkpoint seam', () => {
     const shadow = new ShadowGit(realFs(h.data), `checkpoints/${hash.slice(0, 16)}`)
     await shadow.init({ workspaceHash: hash })
     expect((await shadow.read(id)).manifest.schema).toBe(mode === 'full' ? 2 : 1)
+  })
+
+  it('lists the complete restore scope and session owner from the verified manifest', async () => {
+    const h = await setup()
+    const seam = await h.make()
+    await fs.writeFile(join(h.workspace, 'scoped.txt'), 'before')
+    const saved = await seam.snapshot(['scoped.txt'], '1/1', { owner: 'session-owner' })
+    expect(await seam.list()).toContainEqual({
+      id: saved.id,
+      stepId: '1/1',
+      owner: 'session-owner',
+      paths: ['scoped.txt'],
+    })
   })
 
   it('rejects relative and absolute escapes without creating refs or modifying outside content', async () => {
