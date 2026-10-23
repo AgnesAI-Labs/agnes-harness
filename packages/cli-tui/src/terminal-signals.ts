@@ -8,6 +8,11 @@ const BEL = '\x07'
 /** The same event inside this window is one notification. */
 const COALESCE_MS = 3000
 
+const byTerminal = new WeakMap<object, TerminalSignals>()
+
+/** The signals the app built for this terminal output: how code outside the app says something happened. */
+export const signalsFor = (term: object): TerminalSignals | undefined => byTerminal.get(term)
+
 /**
  * What takes the user's eyes off the terminal and brings them back: while the window is in the
  * background (focus reports, DECSET 1004), a turn that ended, an approval that started waiting, an
@@ -32,7 +37,9 @@ export class TerminalSignals {
     private readonly modal: { readonly count: number },
     private readonly cards: ReadonlyMap<string, { readonly pending: boolean }>,
     private readonly notify?: NotifyPreference,
-  ) {}
+  ) {
+    byTerminal.set(term, this)
+  }
   private last = new Map<NotifyEvent, number>()
   private open = new Set<string>()
 

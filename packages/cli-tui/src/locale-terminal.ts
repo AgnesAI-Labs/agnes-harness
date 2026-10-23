@@ -1,4 +1,5 @@
 import type { Locale } from './locale.js'
+import { BG_DICT, type BgKey } from './locale-bg.js'
 import { MEMORY_DICT, type MemoryKey } from './locale-memory.js'
 import { SESSION_ACTION_DICT, type SessionActionKey } from './locale-session-actions.js'
 
@@ -111,12 +112,13 @@ export const TERMINAL_KEYS = [
   'notify.agent',
 ] as const
 
-export type TerminalKey = (typeof TERMINAL_KEYS)[number] | SessionActionKey | MemoryKey
+export type TerminalKey = (typeof TERMINAL_KEYS)[number] | SessionActionKey | MemoryKey | BgKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
     ...SESSION_ACTION_DICT.en,
     ...MEMORY_DICT.en,
+    ...BG_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
     'exit.ran': 'This run lasted {duration}',
@@ -231,6 +233,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   'zh-CN': {
     ...SESSION_ACTION_DICT['zh-CN'],
     ...MEMORY_DICT['zh-CN'],
+    ...BG_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
     'exit.ran': '本次运行了 {duration}',

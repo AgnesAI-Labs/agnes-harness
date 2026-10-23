@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path'
 import { ExitCode, SIGNAL_EXIT_CODES, type SignalName } from '../errors.js'
 import { timingMark } from '../timing.js'
 import {
+  backgroundSessions,
   type ExportRequest,
   exitSummaryLines,
   inheritFreshSession,
@@ -194,7 +195,9 @@ export async function runTui(
       const session = app.session
       await app.stop()
       // The shell page comes back exactly as it was; the one line left on it says how to return.
-      if (io.stdout.isTTY === true && app.prompted.has(session.id)) {
+      const background = backgroundSessions(app)
+      const prompted = app.prompted.has(session.id)
+      if (io.stdout.isTTY === true && (prompted || background.length > 0)) {
         const locale = resolveLocale(io.env)
         // Input waiting in the daemon behind a turn; a daemon that cannot say leaves the item out.
         const queued = await Promise.race([
@@ -204,9 +207,12 @@ export async function runTui(
             .catch(() => 0),
           new Promise<number>((resolve) => setTimeout(resolve, 500, 0).unref()),
         ])
-        const lines = exitSummaryLines({ ...facts, elapsedMs: Date.now() - startedAt, queued }, locale)
+        const lines = exitSummaryLines(
+          { ...facts, elapsedMs: Date.now() - startedAt, queued, background },
+          locale,
+        )
         io.stdout.write(`${lines.join('\n')}\n`)
-        io.stdout.write(`${tt('resume.hint', locale, { id: escapeControl(session.id) })}\n`)
+        if (prompted) io.stdout.write(`${tt('resume.hint', locale, { id: escapeControl(session.id) })}\n`)
       }
       await session.detach().catch(() => undefined)
     } else {

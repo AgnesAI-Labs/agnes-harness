@@ -11,6 +11,7 @@ import type { Session } from '@agnes/sdk'
 import { agentsSlash } from './agent-commands.js'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
+import { bgSlash } from './bg-command.js'
 import { startBtw } from './btw.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
@@ -248,6 +249,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.review',
     summaryKey: 'commands.reviewSummary',
   },
+  { name: '/bg', args: '[prompt]', descriptionKey: 'commands.bg', summaryKey: 'commands.bgSummary' },
   {
     name: '/memory',
     args: '[list|show <name>|add <text>|edit <name>|confirm|cancel]',
@@ -770,6 +772,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return exportSlash(app, line)
     case '/memory':
       return memorySlash(app, line)
+    case '/bg':
+      return bgSlash(app, line)
     case '/refine':
       // `harness/refine` exists as a raw ledger event type (protocol session-v1 schema), but
       // UITimeline/UINode has no kind that projects it -- there is no 'notice' or 'refine' UINode

@@ -1,4 +1,5 @@
 import type { UITimeline } from '@agnes/protocol'
+import { escapeControl } from './component.js'
 import type { Locale } from './locale.js'
 import { tt } from './locale-extended.js'
 
@@ -34,7 +35,12 @@ export function formatDuration(ms: number): string {
  * the session holds; then one more line only if something is still waiting (an approval, queued input).
  */
 export function exitSummaryLines(
-  facts: TimelineFacts & { elapsedMs: number; queued: number },
+  facts: TimelineFacts & {
+    elapsedMs: number
+    queued: number
+    /** Background sessions (`/bg`) that outlive this run. */
+    background?: readonly { id: string; state: 'running' | 'waiting' }[]
+  },
   locale: Locale,
 ): string[] {
   const head = [
@@ -45,5 +51,12 @@ export function exitSummaryLines(
     ...(facts.approvals > 0 ? [tt('exit.approvals', locale, { n: facts.approvals })] : []),
     ...(facts.queued > 0 ? [tt('exit.queued', locale, { n: facts.queued })] : []),
   ]
-  return [head, ...(waiting.length > 0 ? [tt('exit.pending', locale, { items: waiting.join(', ') })] : [])]
+  const background = (facts.background ?? []).map(
+    (b) => `${escapeControl(b.id)} (${tt(`bg.state.${b.state}`, locale)})`,
+  )
+  return [
+    head,
+    ...(waiting.length > 0 ? [tt('exit.pending', locale, { items: waiting.join(', ') })] : []),
+    ...(background.length > 0 ? [tt('exit.background', locale, { items: background.join(', ') })] : []),
+  ]
 }

@@ -1,6 +1,7 @@
 export * from './agent-commands.js'
 export * from './ansi.js'
 export * from './app.js'
+export { backgroundSessions } from './bg-command.js'
 export * from './commands.js'
 export * from './component.js'
 export * from './components/box.js'
