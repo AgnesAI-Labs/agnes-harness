@@ -297,13 +297,16 @@ describe('parseArgs: every rejection says which check fired', () => {
     expect(throws(argv as string[]).message).toBe(message)
   })
 
-  it.each([['--max-budget'], ['--max-turns']])('%s is refused outside -p and allowed with it', (flag) => {
-    for (const mode of ['tui', 'acp'])
-      expect(() => refuseTurnCapsOutsidePrint(parseArgs([flag, '1']), mode)).toThrow(
-        `${flag} is supported only with -p`,
-      )
-    expect(() => refuseTurnCapsOutsidePrint(parseArgs(['-p', flag, '1']), 'print')).not.toThrow()
-  })
+  it.each([['--max-budget'], ['--max-turns'], ['--timeout'], ['--output-file']])(
+    '%s is refused outside -p and allowed with it',
+    (flag) => {
+      for (const mode of ['tui', 'acp'])
+        expect(() => refuseTurnCapsOutsidePrint(parseArgs([flag, '1']), mode)).toThrow(
+          `${flag} is supported only with -p`,
+        )
+      expect(() => refuseTurnCapsOutsidePrint(parseArgs(['-p', flag, '1']), 'print')).not.toThrow()
+    },
+  )
 
   it('a rejection is a UsageError and carries exit code 2', () => {
     const e = throws(['--bogus'])

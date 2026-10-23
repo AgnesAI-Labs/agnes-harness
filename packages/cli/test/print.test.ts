@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -397,6 +397,82 @@ describe('runPrint in text mode', () => {
       const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true, turnMaxSteps: true } })
       await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '2', '--max-turns', '4']), io())
       expect(harness(ep)).toEqual({ 'ai.agnes.harness': { creditLimit: 2, maxSteps: 4 } })
+    })
+  })
+
+  describe('--timeout and --output-file', () => {
+    // A turn that never ends on its own: it answers only once a cancel command has been submitted.
+    async function hung(): Promise<FakeEndpoint> {
+      const ep = scriptedEndpoint()
+      ep.on('session/prompt', async (_p, e) => {
+        while (!e.calls.some((c) => JSON.stringify(c.params ?? {}).includes('"cancel"')))
+          await new Promise((r) => setTimeout(r, 5))
+        return {
+          stopReason: 'cancelled',
+          _meta: {
+            'ai.agnes.harness': {
+              phase: 'terminalQuiescence',
+              promptTurnId: '1',
+              eventSequence: 1,
+              generation: 1,
+              lane: 'main',
+              turnEnd: { reason: 'aborted' },
+            },
+          },
+        }
+      })
+      return ep
+    }
+
+    it('cancels the turn at the deadline and exits 124 with the reason on stderr', async () => {
+      const o = io()
+      const code = await runPrint(await booted(await hung()), parseArgs(['-p', 'q', '--timeout', '0.05']), o)
+      expect(code).toBe(124)
+      expect(o.err()).toContain('agh: timeout after 0.05s; turn cancelled (exit 124)')
+      expect(o.err()).not.toContain('turn ended')
+    })
+
+    it.each([['0'], ['abc'], ['86401'], ['1e2']])(
+      '--timeout %j is a usage error and nothing is sent',
+      async (v) => {
+        const ep = scriptedEndpoint()
+        const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--timeout', v]), io()).catch(
+          (x: unknown) => x,
+        )
+        expect(e).toMatchObject({ name: expect.stringMatching(/UsageError/), code: 2 })
+        expect(ep.calls.map((c) => c.method)).not.toContain('session/prompt')
+      },
+    )
+
+    it('a turn that ends before the deadline keeps exit 0', async () => {
+      expect(await runPrint(await booted(), parseArgs(['-p', 'q', '--timeout', '30']), io())).toBe(0)
+    })
+
+    it('writes the final text to --output-file and still prints it', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'agh-print-out-'))
+      try {
+        const o = { ...io(), cwd: dir }
+        const code = await runPrint(
+          await booted(scriptedEndpoint({ reply: 'to a file' })),
+          parseArgs(['-p', 'q', '--output-file', 'out.txt']),
+          o,
+        )
+        expect(code).toBe(0)
+        expect(o.out()).toBe('to a file\n')
+        expect(readFileSync(join(dir, 'out.txt'), 'utf8')).toBe('to a file\n')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('an unwritable --output-file is a CommandError', async () => {
+      const e = await runPrint(
+        await booted(),
+        parseArgs(['-p', 'q', '--output-file', 'missing-dir/out.txt']),
+        io(),
+      ).catch((x: unknown) => x)
+      expect(e).toMatchObject({ code: 1 })
+      expect((e as Error).message).toContain('--output-file missing-dir/out.txt')
     })
   })
 

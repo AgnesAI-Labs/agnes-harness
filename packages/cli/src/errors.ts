@@ -13,6 +13,8 @@ export const ExitCode = {
   MAX_STEPS: 5,
   /** `-p --output-schema`: the turn completed but its final reply did not satisfy the schema. */
   SCHEMA_MISMATCH: 6,
+  /** `-p --timeout`: the deadline passed and the turn was cancelled; the value `timeout(1)` uses. */
+  TIMEOUT: 124,
   SIGINT: 130,
   SIGTERM: 143,
   SIGHUP: 129,

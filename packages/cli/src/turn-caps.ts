@@ -3,7 +3,12 @@ import { UsageError } from './errors.js'
 import type { ParsedArgs } from './types.js'
 
 /** Per-run caps for `agh -p`; they only ever lower what the preset allows. */
-export const TURN_CAP_FLAGS = { '--max-budget': 'maxBudget', '--max-turns': 'maxTurns' } as const
+export const TURN_CAP_FLAGS = {
+  '--max-budget': 'maxBudget',
+  '--max-turns': 'maxTurns',
+  '--timeout': 'timeout',
+  '--output-file': 'outputFile',
+} as const
 
 export type TurnCaps = { creditLimit?: number; maxSteps?: number }
 
@@ -26,9 +31,29 @@ export function parseTurnCaps(p: ParsedArgs): TurnCaps {
   return caps
 }
 
+/** Longest `--timeout`, in seconds: one day, far below the timer's own limit of about 24 days. */
+const MAX_TIMEOUT_SECONDS = 86_400
+
+/** `--timeout` in milliseconds, or undefined when absent. Not a turn cap: the CLI enforces it itself. */
+export function parseTimeoutMs(p: ParsedArgs): number | undefined {
+  if (p.timeout === undefined) return undefined
+  const n = /^\d+(\.\d+)?$/.test(p.timeout) ? Number(p.timeout) : Number.NaN
+  if (!(n > 0 && n <= MAX_TIMEOUT_SECONDS))
+    throw new UsageError(`--timeout must be a number of seconds from just above 0 to ${MAX_TIMEOUT_SECONDS}`)
+  return Math.max(1, Math.round(n * 1000))
+}
+
 export function refuseTurnCapsOutsidePrint(p: ParsedArgs, mode: string): void {
   const flag =
-    p.maxBudget !== undefined ? '--max-budget' : p.maxTurns !== undefined ? '--max-turns' : undefined
+    p.maxBudget !== undefined
+      ? '--max-budget'
+      : p.maxTurns !== undefined
+        ? '--max-turns'
+        : p.timeout !== undefined
+          ? '--timeout'
+          : p.outputFile !== undefined
+            ? '--output-file'
+            : undefined
   if (flag && mode !== 'print') throw new UsageError(`${flag} is supported only with -p`)
 }
 

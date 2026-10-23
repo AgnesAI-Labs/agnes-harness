@@ -110,6 +110,10 @@ export type ParsedArgs = {
   maxBudget?: string
   /** `--max-turns` raw value; `-p` only, range-checked by `parseTurnCaps`. */
   maxTurns?: string
+  /** `--timeout` raw seconds; `-p` only, range-checked by `parseTimeoutMs`. */
+  timeout?: string
+  /** `-p --output-file`: also write the final text to this file. Long option only: `-o` is `--out` of export. */
+  outputFile?: string
   /** `sessions list --last`: only the most recently active session. */
   last?: boolean
   /** Private host only: also skip hooks, non-built-in plugins and MCP servers (see parseArgs for what is honoured). */

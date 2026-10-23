@@ -172,11 +172,16 @@ agh completion fish > ~/.config/fish/completions/agh.fish
 | 4 | Budget limit / blocked |
 | 5 | Maximum steps reached |
 | 6 | `--output-schema`: the turn completed but its final reply did not match the schema |
+| 124 | `--timeout`: the deadline passed and the turn was cancelled |
 | 130 / 143 / 129 | SIGINT / SIGTERM / SIGHUP |
 
 `agh -p --max-budget CREDITS` caps the credits one run may spend. `CREDITS` is a number greater than 0, in the same unit as a preset's per-request credit cap. It is sent with the one prompt as a hard per-turn limit and can only lower the preset's own cap, never raise it. When the turn runs out the run ends with `budget` and exit code 4. With `--continue` or `--resume` it applies to this prompt only. A value that is not a positive number, use without `-p`, or a daemon that does not advertise hard turn budgets exits 2 before the prompt is sent.
 
 `agh -p --max-turns N` caps the model steps of one run. `N` is an integer from 1 to 1000. It is sent with the one prompt as a per-turn step cap and can only lower the preset's own `budget.max_steps`, never raise it. When the run reaches the cap the turn ends with `max_steps` and exit code 5 (see [configuration](../reference/configuration.md) for the preset ceiling). With `--continue` or `--resume` it applies to this prompt only. A value outside the range, use without `-p`, or a daemon that does not advertise `turnMaxSteps` exits 2 before the prompt is sent; nothing is silently ignored.
+
+`agh -p --timeout SECONDS` stops a run that takes too long. `SECONDS` is a number from just above 0 to 86400 (fractions allowed). The deadline starts when the prompt is sent. When it passes, the CLI cancels the turn the same way Ctrl-C does, writes `agh: timeout after SECONDSs; turn cancelled (exit 124)` to stderr and exits 124, the code `timeout(1)` uses. A turn that finished before the cancel landed keeps its own exit code, and a signal still decides the code when one arrived. A value outside the range, or use without `-p`, exits 2 before the prompt is sent.
+
+`agh -p --output-file FILE` also writes the final text to `FILE` (relative to `--cwd`, replaced if it exists); stdout is unchanged. With `--output-schema` the file holds the compact JSON value. The file is written for every ending, empty when the turn produced no text, so a script never reads a stale answer. A file that cannot be written exits 1. There is no `-o` short form: `-o` already means `--out` for `export`, `computer-use` and `diagnostics export`. Use without `-p` exits 2.
 
 Implementation: [arguments and usage](../../packages/cli/src/args.ts), [exit codes](../../packages/cli/src/errors.ts), [TUI commands](../../packages/cli-tui/src/commands.ts).
 
