@@ -1398,3 +1398,59 @@ describe('Editor vim mode', () => {
     expect(new Editor({ onSubmit() {} }).vimBadge).toBeUndefined()
   })
 })
+
+describe('recognised slash command colouring', () => {
+  const ansi = new TuiTheme('light').ansi(createAnsi('256'))
+  const accent = (s: string) => ansi.bold(ansi.fg('accent', s))
+  const known = ['/resume', '/model', '/deploy-it']
+  const make = (a: ReturnType<TuiTheme['ansi']> | null = ansi) =>
+    new Editor({
+      onSubmit() {},
+      complete: (p) => known.filter((c) => c.startsWith(p)),
+      ...(a ? { ansi: a } : {}),
+    })
+  const rows = (e: Editor, width = 40) => e.render(width).map((r) => r.replace(CURSOR_MARKER, ''))
+  const body = (row: string) => row.slice(accent('❯ ').length)
+
+  it('colours a built-in or custom command including the slash, and nothing after it', () => {
+    for (const cmd of ['/resume', '/deploy-it']) {
+      const e = make()
+      e.setText(`${cmd} some argument`)
+      expect(body(rows(e)[0] as string)).toBe(`${accent(cmd)} some argument`)
+    }
+  })
+
+  it('leaves an unknown command, a path and a command on a later line plain', () => {
+    for (const text of ['/foo bar', '/var/x/pic.png', 'say /resume', 'hi\n/resume']) {
+      const e = make()
+      e.setText(text)
+      expect(body(rows(e)[0] as string)).toBe(text.split('\n')[0])
+      if (text.includes('\n')) expect(rows(e)[1]).toBe('  /resume')
+    }
+  })
+
+  it('keeps the cursor marker out of the styled run when the cursor is inside the command', () => {
+    const e = make()
+    e.setText('/resume x')
+    e.cursor = 3
+    expect(e.render(40)[0]).toBe(`${accent('❯ ')}${accent('/re')}${CURSOR_MARKER}${accent('sume')} x`)
+  })
+
+  it('colours both rows of a command the width splits', () => {
+    const e = make()
+    e.setText('/deploy-it')
+    const out = rows(e, 8) // two prompt columns leave six per row
+    expect(out[0]).toContain(accent('/deplo'))
+    expect(out[1]).toContain(accent('y-it'))
+  })
+
+  it('adds no colour without a palette or in mono', () => {
+    const plain = make(null)
+    plain.setText('/resume x')
+    expect(rows(plain)[0]).toBe('❯ /resume x')
+    const mono = make(new TuiTheme('mono').ansi(createAnsi('256')))
+    mono.setText('/resume x')
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting no colour is the point
+    expect(rows(mono)[0]).not.toMatch(/\x1b\[(3\d|9\d|38;)/)
+  })
+})

@@ -10,6 +10,7 @@ import {
   prevBoundaryOf,
   prevWordStart,
 } from './edit-motion.js'
+import { commandSpan, paintSpan } from './editor-command.js'
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
 import { type ActionOf, actionFor } from './keymap.js'
 import { type Key, parseKey } from './keys.js'
@@ -737,10 +738,16 @@ export class Editor implements Component, VimTarget {
     }
     const marked = this.text.slice(0, this.cursor) + CURSOR_MARKER + this.text.slice(this.cursor)
     const out: string[] = []
+    // A known command at the head of the draft is coloured; arguments, unknown names and paths stay plain.
+    const span = commandSpan(this.text, this.cursor, (t) => this.o.complete?.(t).includes(t) ?? false)
     for (const [i, logical] of marked.split('\n').entries()) {
       const prefix = i === 0 ? shown : continuation
-      for (const [j, seg] of wrapLine(logical, inner).entries())
-        out.push((j === 0 ? prefix : continuation) + seg)
+      let at = 0
+      for (const [j, seg] of wrapLine(logical, inner).entries()) {
+        const body = i === 0 ? paintSpan(seg, at, span, (t) => this.bold(this.paint('accent', t))) : seg
+        at += seg.length
+        out.push((j === 0 ? prefix : continuation) + body)
+      }
     }
     const requested = this.o.maxRows?.()
     const clamped =
