@@ -116,13 +116,14 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(69)
+    expect(SLASH_COMMANDS).toHaveLength(70)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
       '/exit',
       '/new',
       '/resume',
+      '/handoff',
       '/tree',
       '/import',
       '/sessions',
@@ -1150,7 +1151,7 @@ describe('app.ts wiring: key routing through the editor reaches the real command
     const term = new FakeTerminal({ columns: 40, rows: 12 })
     const app = new TuiApp({ session, term, header: 'Agnes', locale: 'zh-CN' })
     await app.start()
-    return { app, term, client }
+    return { app, term, client, ep }
   }
 
   it('typing "/quit" and Enter reaches command() and calls onQuit', async () => {
@@ -1271,6 +1272,97 @@ describe('app.ts wiring: key routing through the editor reaches the real command
       await app.stop()
       await client.close()
     }
+  })
+
+  describe('/handoff', () => {
+    const OLD = 'agnes:local:default:cli:dm:main'
+    const NEW = 'agnes:local:default:cli:dm:handoff'
+    const handoffApp = (btw: () => unknown) => {
+      let created = 0
+      return liveApp((ep) => {
+        ep.on('session/new', () => ({ sessionId: created++ === 0 ? OLD : NEW }))
+        ep.on('_agnes/v1/session.btw', btw)
+        ep.on('_agnes/v1/session.rename', () => ({ title: 'x' }))
+      })
+    }
+    const methods = (ep: { calls: Array<{ method: string }> }, name: string) =>
+      ep.calls.filter((c) => c.method === name)
+
+    it('previews the summary, then Enter opens a titled fresh session that starts from it', async () => {
+      const { app, term, client, ep } = await handoffApp(() => ({ text: 'GOAL: ship it', model: 'm' }))
+      try {
+        term.feed('/handoff mind the tests')
+        term.feed('\r')
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 40, 12)).join('\n')).toContain('GOAL: ship it'),
+        )
+        const question = (
+          methods(ep, '_agnes/v1/session.btw')[0] as unknown as { params: { question: string } }
+        ).params.question
+        expect(question).toContain('Next step')
+        expect(question).toContain('mind the tests')
+        expect([...question].length).toBeLessThanOrEqual(4000)
+        // Nothing is created before the user confirms.
+        expect(methods(ep, 'session/new')).toHaveLength(1)
+        term.feed('\r')
+        await vi.waitFor(() => expect(app.session.id).toBe(NEW))
+        await vi.waitFor(() => expect(methods(ep, 'session/prompt').length).toBeGreaterThan(0))
+        const sent = JSON.stringify(methods(ep, 'session/prompt').at(-1))
+        expect(sent).toContain(NEW)
+        expect(sent).toContain(OLD)
+        expect(sent).toContain('GOAL: ship it')
+        const rename = methods(ep, '_agnes/v1/session.rename')[0] as unknown as { params: unknown }
+        expect(rename.params).toMatchObject({ sessionId: NEW, title: expect.stringMatching(/^交接：/) })
+        // The old session is neither prompted nor renamed.
+        expect(
+          methods(ep, 'session/prompt').some((c) => JSON.stringify(c).includes(`"sessionId":"${OLD}"`)),
+        ).toBe(false)
+      } finally {
+        await app.stop()
+        await client.close()
+      }
+    })
+
+    it('Esc creates nothing', async () => {
+      const { app, term, client, ep } = await handoffApp(() => ({ text: 'GOAL: ship it', model: 'm' }))
+      try {
+        term.feed('/handoff')
+        term.feed('\r')
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 40, 12)).join('\n')).toContain('GOAL: ship it'),
+        )
+        term.feed('\x1b')
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 40, 12)).join('\n')).not.toContain('GOAL: ship it'),
+        )
+        expect(methods(ep, 'session/new')).toHaveLength(1)
+        expect(app.session.id).toBe(OLD)
+      } finally {
+        await app.stop()
+        await client.close()
+      }
+    })
+
+    it('creates nothing when the summary call fails, and refuses while a turn runs', async () => {
+      const { app, term, client, ep } = await handoffApp(() => {
+        throw new Error('budget exhausted')
+      })
+      try {
+        term.feed('/handoff')
+        term.feed('\r')
+        await vi.waitFor(async () => expect((await screenOf(term, 40, 12)).join('\n')).toContain('请求失败'))
+        expect(methods(ep, 'session/new')).toHaveLength(1)
+        expect(app.session.id).toBe(OLD)
+        const before = methods(ep, '_agnes/v1/session.btw').length
+        Object.defineProperty(app, 'busy', { get: () => true })
+        const refused = await runSlash(app, '/handoff')
+        expect(refused.text).toContain('Ctrl-C')
+        expect(methods(ep, '_agnes/v1/session.btw')).toHaveLength(before)
+      } finally {
+        await app.stop()
+        await client.close()
+      }
+    })
   })
 
   it('/btw says so when the daemon does not know the method', async () => {

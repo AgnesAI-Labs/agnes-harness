@@ -20,6 +20,7 @@ import { deliverablesSlash } from './deliverable-files.js'
 import { exportSlash } from './export-command.js'
 import { listExternalSessions } from './external-sessions.js'
 import { grantsSlash } from './grant-commands.js'
+import { handoffSlash } from './handoff-command.js'
 import { headsUpSlash } from './heads-up.js'
 import { infoSlash } from './info-commands.js'
 import { jobsSlash } from './job-commands.js'
@@ -433,6 +434,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/init':
     case '/review':
       return infoSlash(app, cmd, line)
+    case '/handoff':
+      return handoffSlash(app, line)
     case '/btw': {
       const question = line.trim().replace(/^\S+\s*/, '')
       if (!question) return { text: tt('btw.usage', locale) }

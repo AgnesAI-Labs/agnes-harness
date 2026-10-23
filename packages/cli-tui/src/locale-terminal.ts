@@ -1,5 +1,6 @@
 import type { Locale } from './locale.js'
 import { BG_DICT, type BgKey } from './locale-bg.js'
+import { HANDOFF_DICT, type HandoffKey } from './locale-handoff.js'
 import { HEADS_UP_DICT, type HeadsUpKey } from './locale-heads-up.js'
 import { MEMORY_DICT, type MemoryKey } from './locale-memory.js'
 import { PROMPT_CLICK_DICT, type PromptClickKey } from './locale-prompt-click.js'
@@ -128,6 +129,7 @@ export type TerminalKey =
   | ShellUxKey
   | SessionViewKey
   | TreeKey
+  | HandoffKey
   | PromptClickKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
@@ -140,6 +142,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...SHELL_UX_DICT.en,
     ...SESSION_VIEW_DICT.en,
     ...TREE_DICT.en,
+    ...HANDOFF_DICT.en,
     ...PROMPT_CLICK_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
@@ -261,6 +264,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...SHELL_UX_DICT['zh-CN'],
     ...SESSION_VIEW_DICT['zh-CN'],
     ...TREE_DICT['zh-CN'],
+    ...HANDOFF_DICT['zh-CN'],
     ...PROMPT_CLICK_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
