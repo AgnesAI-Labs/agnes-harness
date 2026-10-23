@@ -173,7 +173,7 @@ export async function createCompositionHost(
    * What a projected target makes a container run: its enabled rows and its live resources. A row the
    * projection disables loads nothing, exactly like a row the target leaves out, so neither counts.
    */
-  const effectiveTarget = (target: RuntimeTarget): string =>
+  const effectiveTarget = (target: ReturnType<typeof project>): string =>
     JSON.stringify({
       rows: targetRows(target)
         .filter((row) => !row.disabled)
