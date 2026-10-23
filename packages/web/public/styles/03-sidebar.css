@@ -258,6 +258,15 @@
   .workspace-sessions[hidden] {
     display: none;
   }
+  /* A folder can hold no session yet: say so on the same indent as a row title, small and muted,
+     so it reads as a note about the folder instead of a session written in body text. */
+  .session-group-empty {
+    margin: var(--s2) 0 var(--s4) 1.375rem;
+    padding: 0 var(--s8);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.25rem;
+  }
   .session-conversations {
     gap: var(--s2);
     padding: 0;
