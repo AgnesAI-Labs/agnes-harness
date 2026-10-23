@@ -73,3 +73,18 @@ export const BRAND_RAMP: Record<'light' | 'dark', readonly `#${string}`[]> = {
   light: ['#3F37F0', '#5E57FE', '#7E76FF', '#A39CFF'],
   dark: ['#6F66FF', '#8B83FF', '#A9A2FF', '#C9C4FF'],
 }
+
+/** Colour-blind friendly built-ins: a base palette with the red/green state tones moved onto a blue, orange and yellow axis. */
+export const DALTONIZED = {
+  'dark-daltonized': {
+    base: 'dark',
+    tones: { success: '#5AAEFF', danger: '#FF9A4D', warning: '#F5D84A' },
+  },
+  'light-daltonized': {
+    base: 'light',
+    tones: { success: '#0B63C5', danger: '#B84F00', warning: '#8A6A00' },
+  },
+} as const satisfies Record<string, { base: 'light' | 'dark'; tones: Partial<Record<Tone, `#${string}`>> }>
+
+export type DaltonizedName = keyof typeof DALTONIZED
+export const isDaltonized = (name: string): name is DaltonizedName => Object.hasOwn(DALTONIZED, name)

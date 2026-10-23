@@ -1,6 +1,6 @@
 import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { PALETTE, type Tone } from './palette.js'
+import { DALTONIZED, isDaltonized, PALETTE, type Tone } from './palette.js'
 import { type Background, resolveAuto } from './terminal-background.js'
 import type { TuiThemeName } from './theme.js'
 
@@ -100,6 +100,8 @@ export function resolvePreference(
   background: Background | undefined,
 ): ResolvedTheme | { problem: ThemeProblem } {
   if (preference === 'auto') return { name: resolveAuto(background) }
+  if (isDaltonized(preference))
+    return { name: DALTONIZED[preference].base, tones: DALTONIZED[preference].tones }
   if (!preference.startsWith(CUSTOM_PREFIX)) return { name: preference as TuiThemeName }
   const name = customName(preference)
   if (name === undefined) return { problem: { code: 'name' } }

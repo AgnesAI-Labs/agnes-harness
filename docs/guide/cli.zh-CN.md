@@ -85,7 +85,7 @@ node agnes.mjs
 | 撤销文件改动 | `/undo` 预览最近一次写过文件的轮次：每个文件会被恢复，本轮新建的文件会被删除，无法撤销的文件连同原因一并列出。`/undo N` 预览第 N 轮，`/undo confirm` 执行预览，`/undo cancel` 放弃。只有会话属主能撤销，轮次运行中和只读会话都不行。只要有文件在该轮之后又被改动，整轮被拒绝且不改动任何文件（没有 force）。要先撤销更晚的轮次，一次只撤一轮。shell 命令造成的改动只做提示，不会恢复。撤销功能出现之前记录的轮次，或快照已被清理的轮次，无法撤销。快照按工作区保留：每个会话最近 20 个改过文件的轮次一定保留；每个工作区最多保留 500 MB 的快照，超出时先清理不受保护的旧快照，再清理最久没活动的会话的快照（从旧的轮次删起）。已知限制：清理只删除快照引用，不删除底层 git 对象，磁盘占用不会因此缩小。旧 daemon 会提示「这个 daemon 不支持撤销」 |
 | 插件 | `/packages`、`/install SOURCE`、`/package ...` |
 | 资源 | `/skills`、`/skill refresh ...`、`/mcp ...` |
-| 显示/退出 | `/theme [auto\|light\|dark\|mono\|custom:<name>]`、`/notify [on\|bell\|off]`（见下文关于提醒的一段）、`/keys`、`/mouse`、`/thinking`、`/help`、`/quit`（或 `/exit`）。`/keys` 按作用域列出当前生效的键位，改过的会标出来。`/thinking` 仅在本次运行内切换模型思考的显示：默认在回答开始后收起（思考期间回复上方显示最后三行，之后变成一行“已思考（N 字）”），也可以始终展开。`/mouse` 在本次运行内关闭或打开鼠标上报（默认开启；环境变量 `AGH_MOUSE=0`、`off`、`false` 或 `no` 会让它一开始就是关闭的，之后可用 `/mouse` 打开）：关闭后由终端自己选择和复制文字，但滚轮会发送方向键来翻看输入历史。复制会提示已复制、已发送到剪贴板（只请求了终端，例如经 SSH）或复制失败。全屏视图且鼠标上报开启时，单击输入框的文字行会把光标移到点击的位置（点在提示符或续行缩进上落到该行开头，点在行尾之外落到该行末尾，点在宽字符右半格落到它之后）；拖动仍然是选中并复制，`/keys` 里也有这条说明。状态栏在知道 preset 后一直显示它（命令行指定或用 `/preset` 设置的），`/yolo` 打开期间改为醒目的粗体 `⚠ 完全访问`。状态栏不显示后台任务或子 agent 的数量：TUI 没有拿到这个数据，查看请用 `/jobs`。Shift+Tab 把模型切到下一个思考档位（`off`、`low`、`medium`、`high`，或模型自己列出的档位），到头回到第一档，走的是和 `/model` 相同的调用；底部显示新档位，提示里写明从哪个 seq 起生效。模型没有思考档位时会提示，不做任何改动。这个键位是 `/keys` 全局作用域里的 `thinking-cycle`，可以在 `keybindings.json` 中改键 |
+| 显示/退出 | `/theme [auto\|light\|dark\|dark-daltonized\|light-daltonized\|mono\|custom:<name>]`、`/notify [on\|bell\|off]`（见下文关于提醒的一段）、`/keys`、`/mouse`、`/thinking`、`/help`、`/quit`（或 `/exit`）。`/keys` 按作用域列出当前生效的键位，改过的会标出来。`/thinking` 仅在本次运行内切换模型思考的显示：默认在回答开始后收起（思考期间回复上方显示最后三行，之后变成一行“已思考（N 字）”），也可以始终展开。`/mouse` 在本次运行内关闭或打开鼠标上报（默认开启；环境变量 `AGH_MOUSE=0`、`off`、`false` 或 `no` 会让它一开始就是关闭的，之后可用 `/mouse` 打开）：关闭后由终端自己选择和复制文字，但滚轮会发送方向键来翻看输入历史。复制会提示已复制、已发送到剪贴板（只请求了终端，例如经 SSH）或复制失败。全屏视图且鼠标上报开启时，单击输入框的文字行会把光标移到点击的位置（点在提示符或续行缩进上落到该行开头，点在行尾之外落到该行末尾，点在宽字符右半格落到它之后）；拖动仍然是选中并复制，`/keys` 里也有这条说明。状态栏在知道 preset 后一直显示它（命令行指定或用 `/preset` 设置的），`/yolo` 打开期间改为醒目的粗体 `⚠ 完全访问`。状态栏不显示后台任务或子 agent 的数量：TUI 没有拿到这个数据，查看请用 `/jobs`。Shift+Tab 把模型切到下一个思考档位（`off`、`low`、`medium`、`high`，或模型自己列出的档位），到头回到第一档，走的是和 `/model` 相同的调用；底部显示新档位，提示里写明从哪个 seq 起生效。模型没有思考档位时会提示，不做任何改动。这个键位是 `/keys` 全局作用域里的 `thinking-cycle`，可以在 `keybindings.json` 中改键 |
 
 启动或恢复会话时可以限制它的工具：`--tools a,b` 只留下这些工具，`--disallowed-tools c,d` 关掉所列工具，交互终端和 `-p` 都支持。参数是精确的工具名（可用 `/tools` 查看），在发送第一条提示之前生效；用于恢复的会话时，会在它原有限制之上再收紧一次。会话里没有的名称，或 daemon 太旧无法限制工具，都会在发送任何提示之前停下。启动时选择新会话能做什么，例如 `node agnes.mjs --permission read-only`；`--preset NAME` 独立选择配方（见[权限与预设](security.zh-CN.md#permissions-and-presets)）。`/preset NAME` 切换当前会话的预设并保留其权限；更换权限需新建会话。
 
@@ -101,7 +101,7 @@ Ctrl-Z 撤销输入框里的上一次编辑，Ctrl-Shift-Z 重做（重做要求
 
 Ctrl-G 用你自己的编辑器编辑草稿：优先 `$VISUAL`，否则 `$EDITOR`（命令可以带参数，如 `code -w`；直接启动，不经过 shell）。Windows 请指定原生 `.exe`，例如 `"C:\Program Files\Microsoft VS Code\Code.exe" -w`，含空格的路径用双引号包住；反斜杠按原样保留，不支持把 `.cmd`/`.bat` 包装脚本作为编辑器。macOS/Linux 保留 POSIX 引号规则。草稿会写入 `<AGH_HOME>/tmp/` 下仅本人可读的临时文件，TUI 把终端交给编辑器；编辑器以 0 退出时，文件内容替换草稿，非 0 退出则保留原草稿并提示“已取消”。临时文件用完即删。两个变量都没设置时，Ctrl-G 只提示如何设置，不会猜一个编辑器。远程 `--connect` 下同样可用，因为编辑器在本机运行，只改本地草稿。
 
-主题默认是 `auto`，跟随终端背景：CLI 用 OSC 11 向终端询问背景色（最多等 100 毫秒），问不到就看 `COLORFGBG` 的最后一段（7 或 15 表示浅色背景），都没有则用深色。输出不是终端、使用 `-p` 或设置了 `NO_COLOR` 时不会发出查询。`/theme auto` 保存的是 `auto` 而不是识别结果；已保存的 `dark`、`light`、`mono` 保持不变。
+主题默认是 `auto`，跟随终端背景：CLI 用 OSC 11 向终端询问背景色（最多等 100 毫秒），问不到就看 `COLORFGBG` 的最后一段（7 或 15 表示浅色背景），都没有则用深色。输出不是终端、使用 `-p` 或设置了 `NO_COLOR` 时不会发出查询。`/theme auto` 保存的是 `auto` 而不是识别结果；已保存的 `dark`、`light`、`mono` 保持不变。`dark-daltonized` 和 `light-daltonized` 是 `dark`、`light` 的色盲友好版本：成功用蓝色、危险用橙色、警告用黄色，不再依赖区分红色和绿色。它们就是在底板调色板上替换这三个色调，保存和恢复方式与其他主题名相同。
 
 自定义主题：在偏好文件所在目录的 `tui-themes/` 下，每个主题放一个 JSON 文件（`<AGH_HOME>/tui-themes/<name>.json`；名字是 1 到 32 个 `a-z`、`0-9` 或 `-`）。`/theme` 在内置主题之后列出它们，选择结果以 `"theme": "custom:<name>"` 存进偏好文件，不影响文件里的其他键。文件的内容是在某个内置配色上替换若干色调：
 
@@ -109,7 +109,7 @@ Ctrl-G 用你自己的编辑器编辑草稿：优先 `$VISUAL`，否则 `$EDITOR
 { "extends": "dark", "tones": { "accent": "#00aaff", "success": "#3ddc97" } }
 ```
 
-`extends` 取 `dark`（默认）或 `light`；`tones` 只能使用下列键，值都是 `#rrggbb`：`bg`, `fg`, `surface`, `surfaceFg`, `selection`, `border`, `borderStrong`, `muted`, `faint`, `accent`, `accentSoft`, `onAccent`, `success`, `warning`, `danger`, `info`, `code`, `codeBg`, `link`, `thinking`。出现其他键、不是 `#rrggbb` 的值、JSON 不合法或超过 8 KB 的文件会被整份拒绝，不会部分生效，`/theme` 会给出原因。不跟随符号链接。启动时已保存的自定义主题丢失或无效，TUI 改用 `auto` 并提示一次，偏好文件保持原样。`mono` 和 `NO_COLOR` 下无论选了哪个主题都不上色。
+`extends` 取 `dark`（默认）或 `light`（色盲友好主题不能被继承，需要的话把它们的三个色调抄进 `tones`）；`tones` 只能使用下列键，值都是 `#rrggbb`：`bg`, `fg`, `surface`, `surfaceFg`, `selection`, `border`, `borderStrong`, `muted`, `faint`, `accent`, `accentSoft`, `onAccent`, `success`, `warning`, `danger`, `info`, `code`, `codeBg`, `link`, `thinking`。出现其他键、不是 `#rrggbb` 的值、JSON 不合法或超过 8 KB 的文件会被整份拒绝，不会部分生效，`/theme` 会给出原因。不跟随符号链接。启动时已保存的自定义主题丢失或无效，TUI 改用 `auto` 并提示一次，偏好文件保持原样。`mono` 和 `NO_COLOR` 下无论选了哪个主题都不上色。
 
 键位可以在 `<AGH_HOME>/keybindings.json` 中修改，CLI 启动时读取一次：`{ "cut-to-end": ["ctrl-o"] }` 表示给这个动作换上新的键，旧键作废。动作 id 和所属作用域（全局、输入框、历史搜索）用 `/keys` 查看，那里也列出可以写的键名（`ctrl-k`、`alt-enter`、`pgup`、`f2` 等，不能绑定普通字母）。文件损坏、动作或键名不存在，或者同一作用域里的键已被别的动作占用，对应条目会被跳过，状态栏给出提示，并列在 `/keys` 末尾；文件里其余条目照常生效，启动不会被拦住。Ctrl-C 和 Ctrl-D（中断与退出）、审批弹窗、选择器、报告面板和密钥输入的按键是固定的。屏幕上的提示（比如回到对话底部）仍然写默认键。
 

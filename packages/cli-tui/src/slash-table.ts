@@ -112,7 +112,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   {
     name: '/theme',
-    args: '[auto|light|dark|mono|custom:<name>]',
+    args: '[auto|light|dark|dark-daltonized|light-daltonized|mono|custom:<name>]',
     descriptionKey: 'commands.theme',
     summaryKey: 'commands.themeSummary',
   },

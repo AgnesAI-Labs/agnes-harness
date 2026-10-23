@@ -19,6 +19,8 @@ export class ThemePicker implements Component {
       'auto',
       'light',
       'dark',
+      'dark-daltonized',
+      'light-daltonized',
       'mono',
       ...custom.map((n) => `custom:${n}` as const),
     ]
@@ -26,6 +28,8 @@ export class ThemePicker implements Component {
       tt('theme.auto', locale),
       tt('theme.light', locale),
       tt('theme.dark', locale),
+      tt('theme.darkDaltonized', locale),
+      tt('theme.lightDaltonized', locale),
       tt('theme.mono', locale),
       ...custom.map((name) => tt('theme.custom', locale, { name })),
     ]

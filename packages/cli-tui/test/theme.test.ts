@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { type Colour, CURSOR_MARKER, createAnsi } from '../src/ansi.js'
 import { listCustomThemes, loadCustomTheme } from '../src/custom-theme.js'
-import { PALETTE, type Tone } from '../src/palette.js'
+import { DALTONIZED, PALETTE, type Tone } from '../src/palette.js'
 import { TuiTheme } from '../src/theme.js'
 import { ThemeController } from '../src/theme-controller.js'
 import { readTheme, saveTheme } from '../src/theme-preference.js'
@@ -26,6 +26,10 @@ describe('TUI themes', () => {
       expect(readTheme(path)).toBe('auto')
       writeFileSync(path, '{"theme":"neon"}')
       expect(readTheme(path)).toBe('auto')
+      expect(saveTheme(path, 'dark-daltonized')).toBe(true)
+      expect(readTheme(path)).toBe('dark-daltonized')
+      expect(saveTheme(path, 'light-daltonized')).toBe(true)
+      expect(readTheme(path)).toBe('light-daltonized')
       expect(saveTheme(join(path, 'child'), 'mono')).toBe(false)
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -51,7 +55,7 @@ describe('TUI themes', () => {
     picker.show('dark')
     for (const ch of 'MO') picker.handleInput(ch)
     const text = picker.render(60).join('\n')
-    expect(text).toContain('Filter: MO (1/4)')
+    expect(text).toContain('Filter: MO (1/6)')
     expect(text).not.toContain('Dark')
     picker.handleInput('\r')
     expect(choose).toHaveBeenCalledWith('mono')
@@ -111,6 +115,55 @@ describe('TUI themes', () => {
     theme.set('mono')
     expect(ansi.fg('accent', ansi.bg(PALETTE.light.success, 'x'))).toBe('x')
     expect(theme.colour('accent')).toBeUndefined()
+  })
+
+  it('colour-blind themes: listed in the picker, applied over their base, distinct and readable', () => {
+    const lum = (hex: string): number => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const v = Number.parseInt(hex.slice(i, i + 2), 16) / 255
+        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0)
+    }
+    const ratio = (a: string, b: string): number => {
+      const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p)
+      return ((x ?? 0) + 0.05) / ((y ?? 0) + 0.05)
+    }
+    const choose = vi.fn()
+    const picker = new ThemePicker(new TuiTheme('dark').ansi(createAnsi('none')), 'en', choose)
+    picker.show('auto')
+    for (const ch of 'daltonized') picker.handleInput(ch)
+    picker.handleInput('\r')
+    expect(choose).toHaveBeenCalledWith('dark-daltonized')
+    const dir = mkdtempSync(join(tmpdir(), 'agh-daltonized-'))
+    try {
+      const path = join(dir, 'tui-theme.json')
+      expect(saveTheme(path, 'light-daltonized')).toBe(true)
+      const themes = new ThemeController({
+        term: { background: 'dark' },
+        path,
+        locale: 'en',
+        base: createAnsi('truecolor'),
+        notice: () => {},
+        repaint: () => {},
+      })
+      expect(themes.theme.colour('success')).toBe(DALTONIZED['light-daltonized'].tones.success)
+      expect(themes.theme.colour('bg')).toBe(PALETTE.light.bg)
+      themes.set('dark-daltonized')
+      expect(themes.theme.colour('danger')).toBe(DALTONIZED['dark-daltonized'].tones.danger)
+      expect(themes.theme.colour('fg')).toBe(PALETTE.dark.fg)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+    for (const { base, tones } of Object.values(DALTONIZED)) {
+      const states = [tones.success, tones.warning, tones.danger]
+      expect(new Set(states).size).toBe(3)
+      for (const s of states) {
+        expect(s).not.toBe(PALETTE[base].success)
+        expect(s).not.toBe(PALETTE[base].danger)
+        expect(ratio(s, PALETTE[base].bg)).toBeGreaterThanOrEqual(4.5)
+      }
+    }
   })
 
   describe('custom colour themes', () => {

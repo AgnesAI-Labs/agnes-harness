@@ -7,6 +7,12 @@
     "color:color: 'red": 2
   },
   "packages/cli-tui/src/palette.ts": {
+    "color:#5aaeff": 1,
+    "color:#ff9a4d": 1,
+    "color:#f5d84a": 1,
+    "color:#0b63c5": 1,
+    "color:#b84f00": 1,
+    "color:#8a6a00": 1,
     "color:#fbfaff": 1,
     "color:#2b2840": 2,
     "color:#f1eefe": 1,

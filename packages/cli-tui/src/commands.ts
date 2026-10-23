@@ -514,9 +514,12 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       }
       if (
         args.length !== 1 ||
-        !(['auto', 'light', 'dark', 'mono'].includes(name ?? '') || name?.startsWith('custom:'))
+        !(
+          ['auto', 'light', 'dark', 'mono', 'dark-daltonized', 'light-daltonized'].includes(name ?? '') ||
+          name?.startsWith('custom:')
+        )
       )
-        return { text: 'usage: /theme [auto|light|dark|mono|custom:<name>]' }
+        return { text: 'usage: /theme [auto|light|dark|dark-daltonized|light-daltonized|mono|custom:<name>]' }
       return { text: app.themes.set(name as ThemePreference) }
     }
     case '/notify': {
