@@ -14,7 +14,7 @@
   "packages/host-computer-use/src/computer-use/windows-driver-backend.ts": 1599,
   "packages/host-infrastructure/src/configuration.ts": 1479,
   "packages/host/src/runtime/generation/host.ts": 1226,
-  "packages/package-manager/src/manager.ts": 1502,
+  "packages/package-manager/src/manager.ts": 1482,
   "packages/resource-control-cli/src/resources.ts": 803,
   "packages/resource-control-web/src/admin.tsx": 1058,
   "packages/sdk/src/session.ts": 894,

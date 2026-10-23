@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
 import type { ExtensionManifest } from '@agnes/extension-api'
 import {
@@ -97,6 +97,7 @@ import { runTrustGate, verifyInstalledIntegrity } from './trust-gate.js'
 import { dependentUpdateBlockers, updatePackages } from './update.js'
 import { withoutPackageVerification, withPackageVerification } from './verification-operation.js'
 import { hashWorkspace, readDeployManifest, supportsHarness } from './workspace.js'
+import { contained, workspacePath } from './workspace-path.js'
 
 export type PackageStatus = {
   id: string
@@ -229,11 +230,6 @@ export type ManagerOptions = {
   residueCheck?: (id: string) => Promise<string[]>
 }
 
-function contained(root: string, target: string): boolean {
-  const rel = relative(root, target)
-  return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
-}
-
 export { readBundledManifest } from './manifest.js'
 
 function verifyIdentity(
@@ -267,26 +263,6 @@ function writable(lock: Lockfile): void {
     throw new PackageError('E_LOCK_MISMATCH', 'profile must be resolved before packages can be changed', {
       detail: { reason: 'unresolved-lock' },
     })
-}
-
-function workspacePath(profileDir: string, deployDir: string): { deployDir: string; relative: string } {
-  let root: string
-  let deploy: string
-  try {
-    root = nativeRealpathSync(profileDir)
-    if (lstatSync(deployDir).isSymbolicLink()) throw new Error('symlink')
-    deploy = nativeRealpathSync(deployDir)
-  } catch {
-    throw new PackageError('E_WORKSPACE_UNTRUSTED', 'workspace directory is not readable', {
-      detail: { reason: 'unreadable' },
-    })
-  }
-  if (!contained(root, deploy) || deploy === root)
-    throw new PackageError('E_WORKSPACE_UNTRUSTED', 'workspace must be contained by the profile directory', {
-      detail: { reason: 'outside-profile' },
-    })
-  const portable = relative(root, deploy).split(sep).join('/')
-  return { deployDir: deploy, relative: portable }
 }
 
 export function createPackageManager(options: ManagerOptions): PackageManager {

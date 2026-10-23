@@ -1,4 +1,5 @@
-import { snapshotHash } from './integrity.js'
+import { PackageError } from './errors.js'
+import { capabilityHash, snapshotHash } from './integrity.js'
 import type { LockEntry } from './lockfile.js'
 import type { SnapshotRecord } from './runtime-snapshot-types.js'
 
@@ -40,4 +41,39 @@ export function recordEntry(record: SnapshotRecord): LockEntry {
     treeIntegrity: record.treeIntegrity,
     ...(record.releasedAt ? { releasedAt: record.releasedAt } : {}),
   } as LockEntry
+}
+
+export function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
+  if (!entry.treeIntegrity || !entry.contributions)
+    throw new PackageError('E_LOCK_MISMATCH', 'runtime snapshot store requires recovery', {
+      detail: { reason: 'snapshot-migration-required' },
+    })
+  const hash = capabilityHash(entry)
+  return {
+    version: 2,
+    snapshotId: runtimeSnapshotId({
+      packageId,
+      version: entry.version,
+      integrity: entry.integrity,
+      treeIntegrity: entry.treeIntegrity,
+      capabilityHash: hash,
+      recordVersion: 2,
+    }),
+    packageId,
+    packageVersion: entry.version,
+    integrity: entry.integrity,
+    treeIntegrity: entry.treeIntegrity,
+    capabilityHash: hash,
+    source: structuredClone(entry.source),
+    license: entry.license,
+    releasedAt: entry.releasedAt ?? null,
+    dependencies: structuredClone(entry.dependencies),
+    contributions: structuredClone(entry.contributions),
+    ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
+    ...(entry.agents ? { agents: structuredClone(entry.agents) } : {}),
+    ...(entry.application ? { application: structuredClone(entry.application) } : {}),
+    ...(entry.declaredCapabilities === undefined
+      ? {}
+      : { declaredCapabilities: structuredClone(entry.declaredCapabilities) }),
+  }
 }

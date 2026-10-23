@@ -28,7 +28,12 @@ import {
 import type { LockEntry, Lockfile } from './lockfile.js'
 import { assertCurrentPackageFormat } from './package-format.js'
 import { assertCurrentBinding, hasSnapshotTrust } from './runtime-snapshot-binding.js'
-import { contributionCeiling, recordEntry, runtimeSnapshotId } from './runtime-snapshot-entry.js'
+import {
+  contributionCeiling,
+  recordEntry,
+  recordFromEntry,
+  runtimeSnapshotId,
+} from './runtime-snapshot-entry.js'
 import type {
   CreateJournal,
   GcJournal,
@@ -262,37 +267,6 @@ function writeState(s: RuntimeSnapshotStore, state: RuntimeState): void {
   mkdirSync(s.profileDir, { recursive: true })
   writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
   renameWriteThroughSync(resolve(tmp), resolve(file))
-}
-function recordFromEntry(packageId: string, entry: LockEntry): SnapshotRecord {
-  if (!entry.treeIntegrity || !entry.contributions) integrityFailure('snapshot-migration-required')
-  const hash = capabilityHash(entry)
-  return {
-    version: 2,
-    snapshotId: runtimeSnapshotId({
-      packageId,
-      version: entry.version,
-      integrity: entry.integrity,
-      treeIntegrity: entry.treeIntegrity,
-      capabilityHash: hash,
-      recordVersion: 2,
-    }),
-    packageId,
-    packageVersion: entry.version,
-    integrity: entry.integrity,
-    treeIntegrity: entry.treeIntegrity,
-    capabilityHash: hash,
-    source: structuredClone(entry.source),
-    license: entry.license,
-    releasedAt: entry.releasedAt ?? null,
-    dependencies: structuredClone(entry.dependencies),
-    contributions: structuredClone(entry.contributions),
-    ...(entry.metadata ? { metadata: structuredClone(entry.metadata) } : {}),
-    ...(entry.agents ? { agents: structuredClone(entry.agents) } : {}),
-    ...(entry.application ? { application: structuredClone(entry.application) } : {}),
-    ...(entry.declaredCapabilities === undefined
-      ? {}
-      : { declaredCapabilities: structuredClone(entry.declaredCapabilities) }),
-  }
 }
 function* verifyRecordSteps(
   s: RuntimeSnapshotStore,
