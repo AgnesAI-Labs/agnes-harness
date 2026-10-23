@@ -150,7 +150,7 @@ function DockTabs({
       {folded.length > 0 && (
         <Menu
           label={more}
-          trigger={<IconButton name="ellipsis" label={more} title={more} />}
+          trigger={<IconButton name="ellipsis" label={more} />}
           items={folded.map((tab) => ({ id: tab.id, label: tab.title, onSelect: () => open(tab.id) }))}
         />
       )}

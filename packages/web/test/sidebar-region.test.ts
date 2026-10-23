@@ -101,6 +101,8 @@ describe('rendered sidebar region', () => {
     await vi.waitFor(() =>
       expect(sidebar?.querySelector('.session-menu-trigger')?.getAttribute('aria-expanded')).toBe('false'),
     )
+    // 悬停提示由 IconButton 的 Tooltip 提供，原生 title 会再弹一层同样的文案。
+    expect(sidebar?.querySelector('#workspace-add')?.getAttribute('title')).toBeNull()
     sidebar?.querySelector<HTMLButtonElement>('#workspace-add')?.click()
     for (const collapsed of [true, false]) {
       document.getElementById('sidebar-toggle')?.click()
@@ -588,6 +590,7 @@ describe('rendered sidebar region', () => {
     expect(main.inert).toBe(true)
     getByRole(sidebar, 'button', { name: 'Settings' }).click()
     expect(openSettings).toHaveBeenCalledOnce()
+    expect(document.getElementById('sidebar-close')?.getAttribute('title')).toBeNull()
     document.getElementById('sidebar-close')?.click()
     expect(sidebar.inert).toBe(true)
     expect(main.inert).toBe(false)

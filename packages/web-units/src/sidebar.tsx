@@ -261,7 +261,6 @@ const SidebarBuiltin = forwardRef<
           className="sidebar-close"
           name="panel-left"
           label={t('sidebar.closeNav')}
-          title={t('sidebar.closeNav')}
         />
       </div>
       <div className="sidebar-actions">
@@ -289,7 +288,6 @@ const SidebarBuiltin = forwardRef<
           id="workspace-add"
           name="folder-plus"
           label={t('sidebar.addWorkspace')}
-          title={t('sidebar.addWorkspace')}
           onClick={actions.addWorkspace}
         />
         {slots?.workspaces}
