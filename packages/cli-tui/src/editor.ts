@@ -1,6 +1,15 @@
 import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
-import { lineColumn, lineStartOf, moveLine, nextWordEnd, prevWordStart } from './edit-motion.js'
+import {
+  lineColumn,
+  lineEndOf,
+  lineStartOf,
+  moveLine,
+  nextBoundaryOf,
+  nextWordEnd,
+  prevBoundaryOf,
+  prevWordStart,
+} from './edit-motion.js'
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
 import { type ActionOf, actionFor } from './keymap.js'
 import { type Key, parseKey } from './keys.js'
@@ -11,6 +20,7 @@ import { HistorySearch, PromptHistory } from './prompt-history.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
 import { UndoStack } from './undo.js'
+import type { Vim, VimTarget } from './vim-mode.js'
 
 // Control bytes that must never enter the buffer. A paste can carry them; a newline is kept because
 // a multi-line paste is a legitimate multi-line prompt.
@@ -19,19 +29,10 @@ const CONTROL = /[\x00-\x09\x0b-\x1f\x7f-\x9f]/g
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
-// Offsets in the text at which a character begins. Moving and deleting by these rather than by code
-// unit keeps a combining mark with the letter it sits on and treats a surrogate pair as one keypress.
-function boundaries(text: string): number[] {
-  const out = [0]
-  for (const s of GRAPHEMES.segment(text)) out.push(s.index + s.segment.length)
-  return out
-}
-
 // A paste past either bound shows as one chip in the buffer and goes out in full on submit.
 const PASTE_FOLD_LINES = 10
 const PASTE_FOLD_CHARS = 1000
 
-const PROMPT = '❯ '
 const CONTINUATION = '  '
 
 const MENU_LEFT_MAX = 30
@@ -104,6 +105,8 @@ export type EditorOptions = {
   mentions?: { get(query: string): MentionState }
   /** The `@` menu's status rows, shown when it has nothing to choose. */
   mentionNotes?: { loading: string; empty: string; failed: string }
+  /** The vim mode of the prompt (`/vim`); without it the editor has no modes. */
+  vim?: Vim
 }
 
 // What the open menu offers: the rows to choose from, how to take one, and a status row when empty.
@@ -112,7 +115,7 @@ type Menu = { labels: string[]; accept(index: number): void; note?: string; slas
 // How many candidates the slash menu shows at once; the rest collapse into ↑/↓ count indicators.
 const MENU_MAX_VISIBLE = 5
 
-export class Editor implements Component {
+export class Editor implements Component, VimTarget {
   text = ''
   cursor = 0
   private readonly store: PromptHistory
@@ -142,6 +145,10 @@ export class Editor implements Component {
 
   constructor(private readonly o: EditorOptions) {
     this.store = o.history ?? new PromptHistory()
+  }
+
+  get vim(): Vim | undefined {
+    return this.o.vim
   }
 
   /** Newest first. */
@@ -200,11 +207,13 @@ export class Editor implements Component {
     if (this.search) return this.searching(k, data)
     const before = { text: this.text, cursor: this.cursor }
     const generation = this.undo.generation
+    // Letters in vim normal mode are commands, not typing: each edit is a step of its own.
+    const typing = k.name === 'char' && !this.o.vim?.normal
     const handled = this.handleKey(k)
     const edited = this.text !== before.text
     // An undo, redo or clear moved the history itself and is not an edit to record.
-    if (edited && generation === this.undo.generation) this.undo.record(before, k.name === 'char')
-    else if (k.name !== 'char') this.undo.endRun()
+    if (edited && generation === this.undo.generation) this.undo.record(before, typing)
+    else if (!typing) this.undo.endRun()
     const vertical = actionFor('editor', k.name)
     if (edited || (vertical !== 'move-up' && vertical !== 'move-down')) this.goalColumn = undefined
     return handled
@@ -216,6 +225,7 @@ export class Editor implements Component {
     // Text, pastes and unreadable escapes are not bindings; every other key means what the table says.
     const stroke =
       k.name === 'char' || k.name === 'paste' || k.name === 'unknown' ? k.name : actionFor('editor', k.name)
+    if (this.vimKey(k, menu)) return true
     switch (stroke) {
       case 'submit': {
         // A trailing backslash is the way to enter a newline on terminals that cannot report
@@ -238,6 +248,7 @@ export class Editor implements Component {
         const t = this.expanded()
         this.store.add(t)
         this.clear()
+        this.o.vim?.insert()
         this.o.onSubmit(t)
         return true
       }
@@ -407,6 +418,55 @@ export class Editor implements Component {
     }
   }
 
+  // Esc leaves insert mode (an open `@` menu takes it first); in normal mode letters are commands and
+  // Ctrl-R redoes. True when the key was a vim key; false leaves it to the ordinary editor.
+  private vimKey(k: Key, menu: Menu | undefined): boolean {
+    const vim = this.o.vim
+    if (!vim?.enabled) return false
+    if (vim.mode === 'insert') {
+      if (k.name !== 'esc' || (menu && !menu.slash)) return false
+      vim.leaveInsert(this)
+      return true
+    }
+    if (k.name === 'esc') return vim.cancelPending()
+    if (k.name === 'char') {
+      for (const { segment } of GRAPHEMES.segment((k.ch ?? '').replace(CONTROL, ''))) vim.press(segment, this)
+      return true
+    }
+    if (actionFor('vim', k.name) === undefined) return false
+    vim.press(k.name, this)
+    return true
+  }
+
+  cut(from: number, to: number, register?: string): void {
+    if (to <= from) return
+    this.ring.add(register ?? this.text.slice(from, to), false, false)
+    this.text = this.text.slice(0, from) + this.text.slice(to)
+    this.cursor = from
+  }
+
+  register(): string | undefined {
+    return this.ring.at(0)
+  }
+
+  undoEdit(): void {
+    this.readlineKey('undo')
+  }
+
+  redoEdit(): void {
+    this.readlineKey('redo')
+  }
+
+  /** The mode marker the composer draws beside the prompt; undefined while vim is off. */
+  get vimBadge(): { normal: boolean; label: string } | undefined {
+    const vim = this.o.vim
+    if (!vim?.enabled) return undefined
+    return {
+      normal: vim.mode === 'normal',
+      label: tt(vim.mode === 'normal' ? 'vim.normal' : 'vim.insert', this.o.locale ?? 'en'),
+    }
+  }
+
   private kill(from: number, to: number, before: boolean): void {
     const merge = this.prevChain === 'kill'
     this.chain = merge ? 'kill' : undefined
@@ -504,20 +564,15 @@ export class Editor implements Component {
   }
 
   private lineEnd(): number {
-    const next = this.text.indexOf('\n', this.cursor)
-    return next < 0 ? this.text.length : next
+    return lineEndOf(this.text, this.cursor)
   }
 
   private prevBoundary(): number {
-    const b = boundaries(this.text)
-    let prev = 0
-    for (const x of b) if (x < this.cursor) prev = x
-    return prev
+    return prevBoundaryOf(this.text, this.cursor)
   }
 
   private nextBoundary(): number {
-    for (const x of boundaries(this.text)) if (x > this.cursor) return x
-    return this.text.length
+    return nextBoundaryOf(this.text, this.cursor)
   }
 
   /**
@@ -668,7 +723,9 @@ export class Editor implements Component {
     if (!Number.isFinite(width)) throw new Error('invalid editor width')
     width = Math.max(1, Math.trunc(width))
     if (this.search) return this.renderSearch(this.search, width)
-    const prompt = width > 2 ? PROMPT : width === 2 ? '❯' : ''
+    // In vim normal mode the arrow turns around, so the mode shows even where the rail is too narrow to say it.
+    const arrow = this.o.vim?.normal ? '❮' : '❯'
+    const prompt = width > 2 ? `${arrow} ` : width === 2 ? arrow : ''
     const shown = prompt && this.bold(this.paint('accent', prompt))
     const continuation = width > 2 ? CONTINUATION : ' '.repeat(prompt.length)
     const inner = Math.max(1, width - prompt.length)

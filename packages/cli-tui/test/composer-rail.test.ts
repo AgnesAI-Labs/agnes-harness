@@ -180,6 +180,22 @@ describe('composer rail bottom edge', () => {
     ])
     expect(bottomRail(state({ usage: undefined }), 80, PLAIN)).not.toContain('thinking')
   })
+
+  it('marks the vim mode by glyph and wording, so mono tells the two apart, and drops it last', () => {
+    const normal = bottomRail(state({ mode: { normal: true, label: 'NORMAL' } }), 80, PLAIN)
+    const insert = bottomRail(state({ mode: { normal: false, label: 'INSERT' } }), 80, PLAIN)
+    expect(normal).toContain('█ NORMAL')
+    expect(insert).toContain('▏INSERT')
+    for (const width of [80, 40, 24, 18, 10])
+      expect(displayWidth(bottomRail(state({ mode: { normal: true, label: 'NORMAL' } }), width, PLAIN))).toBe(
+        width,
+      )
+    // On the colour themes the two differ in weight as well: bold accent against quiet.
+    expect(bottomRail(state({ mode: { normal: true, label: 'NORMAL' } }), 80, COLOUR)).toContain(
+      COLOUR.bold(COLOUR.fg('accent', '█ NORMAL')),
+    )
+    expect(bottomRail(state({ mode: { normal: true, label: 'NORMAL' } }), 24, PLAIN)).toContain('NORMAL')
+  })
 })
 
 describe('composer rail with fields turned off', () => {

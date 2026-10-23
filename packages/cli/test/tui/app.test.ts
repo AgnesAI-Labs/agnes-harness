@@ -1249,6 +1249,78 @@ it('sets the window title from the saved /title choice, and writes nothing when 
   }
 })
 
+/** An app on a fake daemon whose session projects `nodes`, started on the preferences file `saved` holds. */
+async function fakeApp(saved: string, nodes: UINode[] = [], columns = 80) {
+  const SID = 'agnes:local:default:cli:dm:display'
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-display-'))
+  const prefs = join(dir, 'tui-theme.json')
+  writeFileSync(prefs, saved)
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 0,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes,
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns, rows: 24 })
+  const app = new TuiApp({ session, term, header: 'Agnes', cwd: '/work/proj', themePreferencePath: prefs })
+  await app.start()
+  return {
+    app,
+    term,
+    prefs,
+    screen: async () => (await screenOf(term, columns, 24)).join('\n'),
+    saved: () => JSON.parse(readFileSync(prefs, 'utf8')) as unknown,
+    async close() {
+      await app.stop()
+      await client.close()
+      await endpoint.close()
+      rmSync(dir, { recursive: true, force: true })
+    },
+  }
+}
+
+it('/vim edits the prompt with vim keys, marks the mode, and saves the choice beside the other preferences', async () => {
+  const open = await fakeApp('{"theme":"dark","title":"off"}')
+  try {
+    expect(await open.screen()).not.toMatch(/INSERT|NORMAL/)
+    await open.app.runInput('/vim')
+    expect(open.saved()).toEqual({ theme: 'dark', title: 'off', vim: true })
+    await vi.waitFor(async () => expect(await open.screen()).toContain('INSERT'))
+    open.term.feed('hello')
+    open.term.feed('\x1b')
+    await vi.waitFor(async () => expect(await open.screen()).toContain('NORMAL'))
+    open.term.feed('0x')
+    expect(open.app.editor.text).toBe('ello')
+    await open.app.runInput('/vim off')
+    expect(open.saved()).toEqual({ theme: 'dark', title: 'off', vim: false })
+    await vi.waitFor(async () => expect(await open.screen()).not.toMatch(/INSERT|NORMAL/))
+    await open.app.runInput('/vim maybe')
+    expect(open.app.editor.vim?.enabled).toBe(false)
+  } finally {
+    await open.close()
+  }
+  const again = await fakeApp('{"vim":true}')
+  try {
+    expect(again.app.editor.vim).toMatchObject({ enabled: true, mode: 'insert' })
+    await vi.waitFor(async () => expect(await again.screen()).toContain('INSERT'))
+  } finally {
+    await again.close()
+  }
+})
+
 it('shows contextual F1 actions only when projected and dispatches the selected action', async () => {
   const SID = 'agnes:local:default:cli:dm:hints'
   const calls: Array<{ requestSeq: number; action: string; data?: unknown }> = []

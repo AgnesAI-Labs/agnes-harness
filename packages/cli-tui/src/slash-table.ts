@@ -257,4 +257,10 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.title',
     summaryKey: 'commands.titleSummary',
   },
+  {
+    name: '/vim',
+    args: '[on|off]',
+    descriptionKey: 'commands.vim',
+    summaryKey: 'commands.vimSummary',
+  },
 ]

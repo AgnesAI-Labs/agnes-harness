@@ -62,3 +62,50 @@ export function moveLine(text: string, cursor: number, dir: -1 | 1, column: numb
   }
   return at
 }
+
+// Offsets in the text at which a character begins. Moving and deleting by these rather than by code
+// unit keeps a combining mark with the letter it sits on and treats a surrogate pair as one keypress.
+export function boundaries(text: string): number[] {
+  const out = [0]
+  for (const s of GRAPHEMES.segment(text)) out.push(s.index + s.segment.length)
+  return out
+}
+
+/** Start of the character before `cursor` (0 when there is none). */
+export function prevBoundaryOf(text: string, cursor: number): number {
+  let prev = 0
+  for (const x of boundaries(text)) if (x < cursor) prev = x
+  return prev
+}
+
+/** Start of the character after the one at `cursor` (the text's length when there is none). */
+export function nextBoundaryOf(text: string, cursor: number): number {
+  for (const x of boundaries(text)) if (x > cursor) return x
+  return text.length
+}
+
+/** Start of the next word after `cursor`; the text's length when there is none. */
+export function nextWordStart(text: string, cursor: number): number {
+  for (const w of words(text)) if (w.start > cursor) return w.start
+  return text.length
+}
+
+/** The last character of the word the cursor is in, or of the next one when it already stands on a word's last character. */
+export function wordLastChar(text: string, cursor: number): number {
+  for (const w of words(text)) {
+    const last = prevBoundaryOf(text, w.end)
+    if (last > cursor) return last
+  }
+  return prevBoundaryOf(text, text.length)
+}
+
+/** The word the cursor stands in, if it does: where `cw` stops. */
+export function wordEndAt(text: string, cursor: number): number | undefined {
+  return words(text).find((w) => w.start <= cursor && cursor < w.end)?.end
+}
+
+/** Offset where the line holding `cursor` ends (at its newline, or the text's end). */
+export function lineEndOf(text: string, cursor: number): number {
+  const next = text.indexOf('\n', cursor)
+  return next < 0 ? text.length : next
+}

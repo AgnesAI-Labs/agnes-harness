@@ -21,6 +21,8 @@ export type RailState = {
   locale: string
   /** Which fields of the status line the user keeps; every one when absent. */
   fields?: Pick<StatusLineConfig, 'shows'> | undefined
+  /** The prompt's vim mode, when `/vim` is on: its words, and whether it is normal mode. */
+  mode?: { normal: boolean; label: string } | undefined
 }
 
 type Part = { text: string; tone?: Tone; bold?: true; italic?: true; chip?: true }
@@ -194,7 +196,18 @@ export function bottomRail(state: RailState, frameWidth: number, ansi: ThemedAns
   const levelLabel = (EXTENDED_KEYS as readonly string[]).includes(levelKey)
     ? say(levelKey as ExtendedKey)
     : sanitizeLabel(level ?? '')
+  // A block for normal mode and a bar for insert, as a vim cursor looks; bold accent against quiet, so mono tells them apart too.
+  const mode = state.mode
   const hints: Part[][] = [
+    ...(mode
+      ? [
+          [
+            mode.normal
+              ? ({ text: `█ ${mode.label}`, tone: 'accent', bold: true } as Part)
+              : ({ text: `▏${mode.label}`, tone: 'muted' } as Part),
+          ],
+        ]
+      : []),
     ...(level
       ? [[{ text: say('composer.thinking', { level: levelLabel }), tone: 'muted', italic: true } as Part]]
       : []),

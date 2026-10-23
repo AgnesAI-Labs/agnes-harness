@@ -57,6 +57,7 @@ import { StatusLinePicker } from './views/statusline-picker.js'
 import type { ThemePicker } from './views/theme-picker.js'
 import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { UsagePanel } from './views/usage-panel.js'
+import { Vim } from './vim-mode.js'
 import { WelcomeController } from './welcome-controller.js'
 import { WindowTitle } from './window-title.js'
 import { readWorkspaceInfo, tildePath, workspaceRefresher } from './workspace-info.js'
@@ -296,6 +297,7 @@ export class TuiApp {
         failed: tt('composer.mentionFailed', locale),
       },
       menuInfo: (name) => slashCommandFor(name, this.o.locale ?? 'en', this),
+      vim: new Vim(o.themePreferencePath),
     })
     this.editor.setKitty(o.term.caps.kittyKeyboard)
     this.modelPicker = new ModelPicker({

@@ -3,6 +3,7 @@ import type { Locale } from './locale.js'
 import { CHROME_DICT, type ChromeKey } from './locale-chrome.js'
 import { PAGER_DICT, type PagerKey } from './locale-pager.js'
 import { QUICK_DICT, type QuickAction, type QuickKey } from './locale-quick.js'
+import { VIM_DICT, type VimKey } from './locale-vim.js'
 
 /**
  * Strings of the key binding table: one description per action, the scope names, and what /keys and
@@ -11,6 +12,7 @@ import { QUICK_DICT, type QuickAction, type QuickKey } from './locale-quick.js'
 export const KEYS_SCOPES = [
   'global',
   'editor',
+  'vim',
   'search',
   'picker',
   'panel',
@@ -41,6 +43,7 @@ export type KeysKey =
   | 'commands.keysSummary'
   | PagerKey
   | ChromeKey
+  | VimKey
 
 export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
   en: {
@@ -150,6 +153,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'commands.keysSummary': 'List key bindings',
     ...PAGER_DICT.en,
     ...CHROME_DICT.en,
+    ...VIM_DICT.en,
   },
   'zh-CN': {
     ...QUICK_DICT['zh-CN'],
@@ -258,5 +262,6 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'commands.keysSummary': '列出键位',
     ...PAGER_DICT['zh-CN'],
     ...CHROME_DICT['zh-CN'],
+    ...VIM_DICT['zh-CN'],
   },
 }

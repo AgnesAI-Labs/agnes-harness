@@ -6,7 +6,36 @@ export type ApprovalLetter = 'y' | 'a' | 'n'
 export type PagerLetter = '/' | 'n' | 'N' | 'c'
 /** What the tool card focus reads besides named keys: expand all, fold all, and the space bar. */
 export type CardLetter = 'a' | 'z' | 'space'
-type BoundKey = KeyName | ApprovalLetter | PagerLetter | CardLetter
+/** What the prompt's vim normal mode reads: a typed letter or sequence, or the one named key it takes. */
+export type VimSeq =
+  | 'h'
+  | 'j'
+  | 'k'
+  | 'l'
+  | 'w'
+  | 'b'
+  | 'e'
+  | '0'
+  | '^'
+  | '$'
+  | 'gg'
+  | 'G'
+  | 'i'
+  | 'a'
+  | 'I'
+  | 'A'
+  | 'o'
+  | 'O'
+  | 'x'
+  | 'dd'
+  | 'dw'
+  | 'D'
+  | 'cw'
+  | 'C'
+  | 'p'
+  | 'P'
+  | 'u'
+type BoundKey = KeyName | ApprovalLetter | PagerLetter | CardLetter | VimSeq
 
 /**
  * Every key binding, declared once. A scope is a place that reads keys; inside one scope a key means
@@ -61,6 +90,37 @@ export const BINDINGS = [
   { id: 'redo', scope: 'editor', keys: ['ctrl-shift-z'] },
   { id: 'external-edit', scope: 'editor', keys: ['ctrl-g'] },
   { id: 'paste-image', scope: 'editor', keys: ['ctrl-v'] },
+  // The prompt's vim normal mode (`/vim`): Esc leaves insert mode, and these letters act while the mode is
+  // normal. A number before a movement repeats it. Not rebindable; every other key keeps its editor meaning.
+  { id: 'vim-normal', scope: 'vim', keys: ['esc'], fixed: true },
+  { id: 'vim-left', scope: 'vim', keys: ['h'], fixed: true },
+  { id: 'vim-down', scope: 'vim', keys: ['j'], fixed: true },
+  { id: 'vim-up', scope: 'vim', keys: ['k'], fixed: true },
+  { id: 'vim-right', scope: 'vim', keys: ['l'], fixed: true },
+  { id: 'vim-word', scope: 'vim', keys: ['w'], fixed: true },
+  { id: 'vim-word-back', scope: 'vim', keys: ['b'], fixed: true },
+  { id: 'vim-word-end', scope: 'vim', keys: ['e'], fixed: true },
+  { id: 'vim-line-start', scope: 'vim', keys: ['0'], fixed: true },
+  { id: 'vim-line-first', scope: 'vim', keys: ['^'], fixed: true },
+  { id: 'vim-line-end', scope: 'vim', keys: ['$'], fixed: true },
+  { id: 'vim-top', scope: 'vim', keys: ['gg'], fixed: true },
+  { id: 'vim-bottom', scope: 'vim', keys: ['G'], fixed: true },
+  { id: 'vim-insert', scope: 'vim', keys: ['i'], fixed: true },
+  { id: 'vim-append', scope: 'vim', keys: ['a'], fixed: true },
+  { id: 'vim-insert-start', scope: 'vim', keys: ['I'], fixed: true },
+  { id: 'vim-append-end', scope: 'vim', keys: ['A'], fixed: true },
+  { id: 'vim-open-below', scope: 'vim', keys: ['o'], fixed: true },
+  { id: 'vim-open-above', scope: 'vim', keys: ['O'], fixed: true },
+  { id: 'vim-delete-char', scope: 'vim', keys: ['x'], fixed: true },
+  { id: 'vim-delete-line', scope: 'vim', keys: ['dd'], fixed: true },
+  { id: 'vim-delete-word', scope: 'vim', keys: ['dw'], fixed: true },
+  { id: 'vim-delete-to-end', scope: 'vim', keys: ['D'], fixed: true },
+  { id: 'vim-change-word', scope: 'vim', keys: ['cw'], fixed: true },
+  { id: 'vim-change-to-end', scope: 'vim', keys: ['C'], fixed: true },
+  { id: 'vim-paste', scope: 'vim', keys: ['p'], fixed: true },
+  { id: 'vim-paste-before', scope: 'vim', keys: ['P'], fixed: true },
+  { id: 'vim-undo', scope: 'vim', keys: ['u'], fixed: true },
+  { id: 'vim-redo', scope: 'vim', keys: ['ctrl-r'], fixed: true },
   // Ctrl-R history search; any other key accepts the match and then does what it always does.
   { id: 'search-older', scope: 'search', keys: ['ctrl-r'] },
   { id: 'search-erase', scope: 'search', keys: ['backspace'] },
