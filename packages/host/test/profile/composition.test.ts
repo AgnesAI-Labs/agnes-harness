@@ -662,23 +662,49 @@ it('applies disabled-plugin, config and resource changes after skipping an equiv
   }
 })
 
-// Enabled-row equality currently bypasses the container's changed source authority.
-it.fails('refuses revoked source trust when only a disabled row outside the composition changes', async () => {
-  const source = pluginSource("ctx.tools.register(tool('review_trust'))")
-  let trusted = true
-  const f = await pluginHost(source, {
-    profileInputs: { user: { name: 'local-dev', composition: {} } },
-    runtimePluginSources: async () => [{ ...source, trusted }],
-  })
-  try {
-    const row = pluginRow()
-    const excluded = pluginRow('ext:acme/excluded', 'unused', true)
-    expect(await f.host.applyRuntimeTarget(targetOf([row, excluded]))).toMatchObject({ ok: true })
-    trusted = false
-    // Effective enabled rows are identical, but their authority has changed since publication.
-    const result = await f.host.applyRuntimeTarget(targetOf([row]))
-    expect(result.ok).toBe(false)
-  } finally {
-    await f.host.close()
-  }
-})
+// Enabled-row equality must still check the exact running code's current grant.
+it.each(['trust', 'capability binding', 'source removal'] as const)(
+  'refuses revoked %s when only a disabled row outside the composition changes',
+  async (revoked) => {
+    const source = pluginSource("ctx.tools.register(tool('review_trust'))")
+    let current = [source]
+    const f = await pluginHost(source, {
+      profileInputs: { user: { name: 'local-dev', composition: {} } },
+      runtimePluginSources: async () => current,
+    })
+    try {
+      const row = pluginRow()
+      const excluded = pluginRow('ext:acme/excluded', 'unused', true)
+      expect(await f.host.applyRuntimeTarget(targetOf([row, excluded]))).toMatchObject({ ok: true })
+      current =
+        revoked === 'source removal'
+          ? []
+          : [
+              {
+                ...source,
+                trusted: revoked !== 'trust',
+                snapshot: {
+                  ...source.snapshot,
+                  capabilityHash:
+                    revoked === 'capability binding' ? 'revoked' : source.snapshot.capabilityHash,
+                },
+              },
+            ]
+      const before = f.host.pluginGenerationStatus!().currentGenerationId
+      // Effective enabled rows are identical, but their authority has changed since publication.
+      const result = await f.host.applyRuntimeTarget(targetOf([row]))
+      expect(result.ok).toBe(false)
+      expect(result.publication?.containers).toContainEqual(
+        expect.objectContaining({
+          status: 'failed',
+          error: expect.stringContaining('E_GENERATION_UNTRUSTED'),
+        }),
+      )
+      current = [source]
+      expect(await f.host.applyRuntimeTarget(targetOf([row]))).toMatchObject({ ok: true })
+      expect(f.host.pluginGenerationStatus!().currentGenerationId).toBe(before)
+    } finally {
+      await f.host.close()
+    }
+  },
+)

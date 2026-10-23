@@ -22,7 +22,7 @@ import {
   takeOverOwnerFileLock,
 } from '@agnes/system-node/owner-lock'
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
-import { linkPackageTreeSync } from './copy-tree.js'
+import { clonePackageTreeSync } from './copy-tree.js'
 import { type GenerationReuseInputs, matchesGenerationBuildInputs } from './generation-equivalence.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import {
@@ -42,7 +42,7 @@ import {
   readGenerationResourcesSteps,
   writeGenerationResources,
 } from './runtime-snapshots-resources.js'
-import { outsidePackageVerification, settledTreeDigest } from './verification-operation.js'
+import { withoutPackageVerification } from './verification-operation.js'
 
 // Durable record publication is shared by every module that keeps recoverable state beside generations.
 export { mkdirDurablySync, publishFileDurablySync, removeFileDurablySync } from '@agnes/system-node'
@@ -190,7 +190,7 @@ export class RuntimeGenerationSnapshotStore {
     resources?: RuntimeGenerationResourceInput,
     seams?: GenerationSeams,
   ): PluginGenerationSnapshot {
-    return outsidePackageVerification(() =>
+    return withoutPackageVerification(() =>
       collectRead(this.createSteps(target, sources, compatibility, packages, resources, seams)),
     )
   }
@@ -201,7 +201,7 @@ export class RuntimeGenerationSnapshotStore {
   ): Promise<PluginGenerationSnapshot> {
     // A caller may retain mutable arrays/records; a yield must not change the admitted build inputs.
     const captured = structuredClone(args)
-    return outsidePackageVerification(() => collectReadAsync(this.createSteps(...captured)))
+    return withoutPackageVerification(() => collectReadAsync(this.createSteps(...captured)))
   }
 
   private *createSteps(
@@ -233,17 +233,10 @@ export class RuntimeGenerationSnapshotStore {
         if (!source.trusted) throw new Error('E_GENERATION_UNTRUSTED: snapshot is not trusted')
         const destination = join(directory, String(index))
         destinations.push(destination)
-        // Each generation keeps its own directory (its own module identities) but links the files of
-        // the immutable snapshot. A full link mirror of a tree this process already verified holds
-        // exactly those bytes; anything copied, or not yet verified here, is hashed as before.
-        const linked = linkPackageTreeSync(source.snapshot.directory, destination)
-        const verified =
-          linked &&
-          settledTreeDigest(source.snapshot.directory, source.snapshot) === source.snapshot.treeIntegrity
-        if (
-          !verified &&
-          (yield* directoryDigestSteps(destination, source.snapshot)) !== source.snapshot.treeIntegrity
-        )
+        // Clone independent bytes, then verify the destination at this write gate. A prior
+        // Worker read cannot attest a new archive, even when the source root inode still matches.
+        clonePackageTreeSync(source.snapshot.directory, destination)
+        if ((yield* directoryDigestSteps(destination, source.snapshot)) !== source.snapshot.treeIntegrity)
           throw new Error('E_GENERATION_INTEGRITY: package snapshot changed')
         copied.push({ ...source, snapshot: { ...source.snapshot, directory: String(index) } })
       }
@@ -266,7 +259,7 @@ export class RuntimeGenerationSnapshotStore {
         }),
         { replace: true },
       )
-      // Every tree was checked just above; the read-back decodes the record without hashing them again.
+      // These independent destination trees were freshly checked above; read-back validates the record.
       const snapshot = yield* this.readSteps(id, new Set(sources.keys()))
       this.#created.add(id)
       this.#adopt(id)
