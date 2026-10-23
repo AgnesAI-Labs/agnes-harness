@@ -68,16 +68,9 @@ export type {
 export function readRuntimePinRecords(s: RuntimeSnapshotStore): RuntimePinRecords {
   const state = readState(s)
   return freezeData({
-    pins: Object.values(state.pins).map((pin) => {
-      const snapshot = state.snapshots[pin.snapshotId] as SnapshotRecord
-      return {
-        pinId: pin.pinId,
-        purpose: pin.purpose,
-        packageId: pin.packageId,
-        snapshotId: pin.snapshotId,
-        integrity: snapshot.integrity,
-        treeIntegrity: snapshot.treeIntegrity,
-      }
+    pins: Object.values(state.pins).map(({ pinId, purpose, packageId, snapshotId }) => {
+      const { integrity, treeIntegrity } = state.snapshots[snapshotId] as SnapshotRecord
+      return { pinId, purpose, packageId, snapshotId, integrity, treeIntegrity }
     }),
     snapshotIds: Object.keys(state.snapshots),
   })
