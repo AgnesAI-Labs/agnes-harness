@@ -195,7 +195,7 @@ export async function runTui(
             .controls()
             .then((state) => waitingIn(state.pending).length)
             .catch(() => 0),
-          new Promise<number>((resolve) => setTimeout(resolve, 500, 0)),
+          new Promise<number>((resolve) => setTimeout(resolve, 500, 0).unref()),
         ])
         const lines = exitSummaryLines({ ...facts, elapsedMs: Date.now() - startedAt, queued }, locale)
         io.stdout.write(`${lines.join('\n')}\n`)
