@@ -224,6 +224,14 @@ export class FooterRenderer implements ScreenRenderer {
     })
   }
 
+  /** The footer rows are drawn again in full; the conversation above them is the terminal's own scrollback and stays. */
+  redraw(): void {
+    if (!this.active || !this.ready) return
+    this.lastFrame = []
+    this.lastCursorKey = ''
+    this.renderNow()
+  }
+
   renderNow(): void {
     if (!this.active || !this.ready) return
     const { columns, rows } = this.term.size()

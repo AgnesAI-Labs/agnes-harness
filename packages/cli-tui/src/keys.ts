@@ -22,6 +22,7 @@ export const KEY_NAMES = [
   'alt-y',
   'alt-p',
   'ctrl-s',
+  'ctrl-l',
   'alt-shift-p',
   'ctrl-z',
   'ctrl-shift-z',
@@ -81,6 +82,7 @@ const SEQ = new Map<string, KeyName>([
   ['\x19', 'ctrl-y'],
   ['\x1a', 'ctrl-z'],
   ['\x13', 'ctrl-s'],
+  ['\x0c', 'ctrl-l'],
   // Word keys: Alt-B/F/D and Alt-Backspace arrive as an escape prefix, Ctrl/Alt with an arrow as a modified CSI.
   ['\x1bb', 'word-left'],
   ['\x1b[1;5D', 'word-left'],

@@ -261,6 +261,20 @@ describe('Renderer bookkeeping', () => {
     expect(term.writes.length).toBe(before)
   })
 
+  it('redraw clears the screen and paints every row again, though nothing changed', async () => {
+    const term = new FakeTerminal({ columns: 10, rows: 4 })
+    const r = new Renderer(term, new VStack([new Text('one'), new Text('two')]))
+    r.start()
+    const before = term.writes.length
+    r.redraw()
+    const out = term.writes.slice(before).join('')
+    expect(out.startsWith('\x1b[H\x1b[2J')).toBe(true)
+    expect(out).toContain('\x1b[1;1Hone')
+    expect(out).toContain('\x1b[2;1Htwo')
+    expect(r.lastFrame).toEqual(['one', 'two'])
+    expect((await emulate(term, 10, 4)).lines.slice(0, 2)).toEqual(['one', 'two'])
+  })
+
   it('coalesces many requestRender calls into one repaint', async () => {
     const term = new FakeTerminal({ columns: 10, rows: 4 })
     const t = new Text('a')

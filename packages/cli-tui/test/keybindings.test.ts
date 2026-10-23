@@ -77,6 +77,14 @@ describe('model cycle (Alt-P)', () => {
   })
 })
 
+describe('redraw (Ctrl-L)', () => {
+  it('is a global action on the form-feed byte', () => {
+    expect(actionFor('global', 'ctrl-l')).toBe('redraw')
+    expect(parseKey('\x0c', false).name).toBe('ctrl-l')
+    expect(parseKey('\x1b[108;5u', false).name).toBe('ctrl-l')
+  })
+})
+
 describe('draft stash (Ctrl-S)', () => {
   const rig = () => {
     const editor = new Editor({ onSubmit: () => {} })

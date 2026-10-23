@@ -62,6 +62,8 @@ export interface ScreenRenderer {
   suspend(): () => void
   requestRender(): void
   renderNow(): void
+  /** Ctrl-L: forgets what is on screen and paints everything again, changing no state. */
+  redraw(): void
   toggleMouse(): boolean
 }
 
@@ -221,6 +223,14 @@ export class Renderer {
       this.scheduled = false
       this.renderNow()
     })
+  }
+
+  redraw(): void {
+    if (!this.active) return
+    this.lastFrame = []
+    this.lastCursorKey = ''
+    this.term.write('\x1b[H\x1b[2J')
+    this.renderNow()
   }
 
   renderNow(): void {

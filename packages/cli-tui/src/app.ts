@@ -405,6 +405,7 @@ export class TuiApp {
         cards: this.cards,
         models: this.models,
         stashDraft: () => this.drafts.press(),
+        redraw: () => this.renderer.redraw(),
         hintActions: () => this.hintActions,
         dispatchAction: (id) => this.dispatchAction(id),
         timeline: this.timeline,

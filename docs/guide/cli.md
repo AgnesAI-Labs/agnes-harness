@@ -106,6 +106,8 @@ Models: Alt+P switches to the next model in the `/model` list and Alt+Shift+P to
 
 Draft stash: Ctrl-S puts the text in the prompt (paste chips expanded) on a stash of up to 10 drafts and clears the prompt; on an empty prompt it brings the newest back, as one undoable step, and says when the stash is empty. Pushing an 11th drops the oldest. The stash lives in this process only and is not written to disk. Ctrl-S does reach the program: in raw mode the terminal's XOFF flow control (IXON) is off, which was checked on a pseudo-terminal, so it is not moved to Alt-S. The binding is `draft-stash` in the global scope of `/keys`; it does nothing while Ctrl-R search is open.
 
+Redraw: Ctrl-L clears the screen and draws everything again, for when another program wrote over it; the draft, scroll position and session are untouched. In `--no-alt-screen` mode only the footer rows are redrawn, and the conversation already in the terminal's scrollback stays. The binding is `redraw` in the global scope of `/keys`.
+
 The session, model and theme pickers filter as you type, ignoring case, over each row's title, id and time. The top line reads `Filter: xx (3/20)`: matches out of all rows. Backspace deletes a character, Esc clears the filter first and closes the picker only when it is already empty, and the number keys pick a row only while the filter is empty (otherwise a digit is part of the filter).
 
 After you scroll up with PageUp or the wheel, a line above the function-key row reads `↓ New output below · End to jump back` once something new has arrived. End (or Ctrl-End) returns to the newest rows and follows new output again. While the input box holds a draft, End keeps moving the cursor to the end of its line, so only Ctrl-End jumps back and the line says so.

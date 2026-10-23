@@ -30,6 +30,8 @@ export interface RootInputHost {
   models: ModelChooser
   /** Ctrl-S: pushes the draft onto the stash, or pops the newest back into an empty prompt. */
   stashDraft: () => void
+  /** Ctrl-L: a full clear-and-redraw of the screen. */
+  redraw: () => void
   hintActions: () => readonly ActionItem[]
   dispatchAction: (actionId: string) => void
   timeline: Timeline
@@ -79,6 +81,10 @@ export function rootInput(
     }
     if (action === 'model-next' || action === 'model-prev') {
       host.models.cycleModel(action === 'model-next' ? 1 : -1)
+      return true
+    }
+    if (action === 'redraw') {
+      host.redraw()
       return true
     }
     if (action === 'draft-stash') {

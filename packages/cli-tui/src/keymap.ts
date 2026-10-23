@@ -27,6 +27,7 @@ export const BINDINGS = [
   { id: 'model-next', scope: 'global', keys: ['alt-p'] },
   { id: 'model-prev', scope: 'global', keys: ['alt-shift-p'] },
   { id: 'draft-stash', scope: 'global', keys: ['ctrl-s'] },
+  { id: 'redraw', scope: 'global', keys: ['ctrl-l'] },
   // The prompt editor.
   { id: 'submit', scope: 'editor', keys: ['enter'] },
   { id: 'newline', scope: 'editor', keys: ['alt-enter', 'shift-enter'] },

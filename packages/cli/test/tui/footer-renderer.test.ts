@@ -65,6 +65,19 @@ describe.each(['region', 'full'] as const)('FooterRenderer, %s scrolling', (mode
     expect(screen.scrollback.length).toBeGreaterThan(0)
   })
 
+  it('redraw paints the footer rows again without clearing the screen or touching scrollback', async () => {
+    const t = await started({ mode })
+    t.source.push('kept')
+    t.renderer.renderNow()
+    const before = t.term.writes.length
+    t.renderer.redraw()
+    const out = t.term.writes.slice(before).join('')
+    expect(out).toContain('status')
+    expect(out).not.toContain('\x1b[2J')
+    expect(out).not.toContain('\x1b[3J')
+    expect(written(await emulate(t.term, t.cols, t.rows))).toEqual(['kept'])
+  })
+
   it('never claims the alternate screen, mouse reporting or the scrollback', async () => {
     const t = await started({ mode })
     t.source.push('hello')
