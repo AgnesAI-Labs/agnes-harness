@@ -193,6 +193,26 @@ describe('runtime active pin coordinator', () => {
     expect(f.manager.collectRuntimeSnapshots).toHaveBeenCalledTimes(1)
   })
 
+  it('retains a live session pin even when releasing an active pin for the same snapshot', async () => {
+    const f = fixture()
+    await f.coordinator.publish(artifact(), async () => {})
+    const active = [...f.active.values()][0]!
+    const turn: RuntimePin = {
+      ...active,
+      pinId: 'live-session',
+      operationId: 'live-session',
+      purpose: 'turn',
+    }
+    f.active.set(turn.pinId, turn)
+    await f.coordinator.revokePackage(packageId)
+    await f.coordinator.releaseRetiring(packageId)
+    expect([...f.active.keys()]).toEqual([turn.pinId])
+    expect(await f.manager.runtimePinRecords('/profile')).toMatchObject({
+      pins: [{ pinId: turn.pinId, snapshotId: turn.snapshot.snapshotId }],
+      snapshotIds: [turn.snapshot.snapshotId],
+    })
+  })
+
   it('releases a new pin after a failed probe without publishing the target', async () => {
     const f = fixture()
     await expect(

@@ -822,6 +822,55 @@ it('listRuntimePins enumerates every pin regardless of purpose', async () => {
   expect((await m.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['active-v1'])
 })
 
+it('keeps a session turn pin through bookkeeping and locked collection, and refuses corrupt bytes', async () => {
+  const m = await installTrusted()
+  const v1 = await identity()
+  const active = await m.pinRuntimeSnapshot(profile, {
+    pinId: 'active-v1',
+    operationId: 'active-v1',
+    packageId: id,
+    purpose: 'active',
+    selector: { kind: 'installed', expectedIntegrity: v1.integrity, expectedTreeIntegrity: v1.treeIntegrity },
+  })
+  const turn = await m.pinRuntimeSnapshot(profile, {
+    pinId: 'live-session',
+    operationId: 'live-session',
+    packageId: id,
+    purpose: 'turn',
+    selector: {
+      kind: 'snapshot',
+      snapshotId: active.snapshot.snapshotId,
+      expectedIntegrity: v1.integrity,
+      expectedTreeIntegrity: v1.treeIntegrity,
+    },
+  })
+  await m.releaseRuntimePins(profile, [
+    { pinId: active.pinId, expectedSnapshotId: active.snapshot.snapshotId },
+  ])
+  expect(await m.runtimePinRecords(profile)).toMatchObject({
+    pins: [{ pinId: turn.pinId, purpose: 'turn', snapshotId: turn.snapshot.snapshotId }],
+    snapshotIds: [turn.snapshot.snapshotId],
+  })
+  expect(await m.collectRuntimeSnapshots(profile)).toEqual({
+    removed: [],
+    retained: [turn.snapshot.snapshotId],
+  })
+  expect((await m.resolveRuntimePin(profile, { pinId: turn.pinId })).snapshot).toEqual(turn.snapshot)
+  const file = join(turn.snapshot.directory, 'nested.mjs')
+  const original = readFileSync(file, 'utf8')
+  writeFileSync(file, original.replace('v1', 'v2'))
+  // Metadata is explicitly not a health verdict. Verified consumers and deletion still fail closed.
+  expect((await m.runtimePinRecords(profile)).pins.map((pin) => pin.pinId)).toEqual([turn.pinId])
+  await expect(m.resolveRuntimePin(profile, { pinId: turn.pinId })).rejects.toMatchObject({
+    code: 'E_PACKAGE_INTEGRITY',
+  })
+  await expect(m.collectRuntimeSnapshots(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  expect(existsSync(turn.snapshot.directory)).toBe(true)
+  writeFileSync(file, original)
+  await m.releaseRuntimePin(profile, { pinId: turn.pinId, expectedSnapshotId: turn.snapshot.snapshotId })
+  expect((await m.collectRuntimeSnapshots(profile)).removed).toEqual([turn.snapshot.snapshotId])
+})
+
 it('releaseRuntimePins releases a batch in order and keeps earlier releases on a stale pin', async () => {
   const m = await installTrusted()
   const v1 = await identity()
