@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { thinkingMode } from '@agnes/cli-tui'
@@ -42,6 +42,7 @@ async function unstartedApp(
   ],
   composerSelectionPath?: string,
   themePreferencePath?: string,
+  appOptions: { cwd?: string; remote?: boolean } = {},
 ) {
   const ep = scriptedEndpoint()
     .on('_agnes/v1/session.budget', () => ({
@@ -110,13 +111,14 @@ async function unstartedApp(
     locale: 'zh-CN',
     ...(composerSelectionPath ? { composerSelectionPath } : {}),
     ...(themePreferencePath ? { themePreferencePath } : {}),
+    ...appOptions,
   })
   return { app, ep, client, term }
 }
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(72)
+    expect(SLASH_COMMANDS).toHaveLength(73)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -125,6 +127,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/resume',
       '/handoff',
       '/worktree',
+      '/cd',
       '/tree',
       '/import',
       '/sessions',
@@ -853,6 +856,60 @@ describe('runSlash', () => {
       expect(app.session.id).not.toBe('other-id')
     } finally {
       await client.close()
+    }
+  })
+
+  it('/cd registers the directory, opens a session there and names the old one; refusals open nothing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-cd-'))
+    const target = join(root, 'target')
+    const file = join(root, 'a-file')
+    mkdirSync(target)
+    writeFileSync(file, 'x')
+    const opened = (ep: { calls: Array<{ method: string }> }) =>
+      ep.calls.filter((c) => c.method === 'session/new' || c.method === '_agnes/v1/workspace.add').length
+    try {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { cwd: root })
+      try {
+        const base = opened(ep)
+        // Refusals: no argument, missing directory, a file, the current directory.
+        for (const line of ['/cd', '/cd nope', '/cd a-file', '/cd .', `/cd ${root}`]) {
+          const r = await runSlash(app, line)
+          expect(r.switchSession, line).toBeUndefined()
+          expect(r.text, line).toBeTruthy()
+        }
+        expect(opened(ep)).toBe(base)
+        // Success: a relative path, resolved against the session cwd.
+        const ok = await runSlash(app, '/cd target')
+        expect(ok.switchSession?.id).toBeDefined()
+        expect(
+          ep.calls.find(
+            (c) => c.method === '_agnes/v1/workspace.add' && JSON.stringify(c.params).includes(target),
+          ),
+        ).toBeDefined()
+        expect(ep.calls.filter((c) => c.method === 'session/new').at(-1)?.params).toMatchObject({
+          cwd: target,
+        })
+        expect(ok.text).toContain(app.session.id)
+        expect(ok.text).toContain(target)
+        await runSlash(app, '/cd ~')
+        expect(ep.calls.filter((c) => c.method === 'session/new').at(-1)?.params).toMatchObject({
+          cwd: homedir(),
+        })
+      } finally {
+        await client.close()
+      }
+      const remote = await unstartedApp(undefined, undefined, undefined, { cwd: root, remote: true })
+      try {
+        const base = opened(remote.ep)
+        const r = await runSlash(remote.app, '/cd target')
+        expect(r.switchSession).toBeUndefined()
+        expect(r.text).toBeTruthy()
+        expect(opened(remote.ep)).toBe(base)
+      } finally {
+        await remote.client.close()
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 

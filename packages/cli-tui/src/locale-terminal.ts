@@ -1,6 +1,7 @@
 import type { Locale } from './locale.js'
 import { BANG_DICT, type BangKey } from './locale-bang.js'
 import { BG_DICT, type BgKey } from './locale-bg.js'
+import { CD_DICT, type CdKey } from './locale-cd.js'
 import { HANDOFF_DICT, type HandoffKey } from './locale-handoff.js'
 import { HEADS_UP_DICT, type HeadsUpKey } from './locale-heads-up.js'
 import { MEMORY_DICT, type MemoryKey } from './locale-memory.js'
@@ -137,6 +138,7 @@ export type TerminalKey =
   | WorktreeKey
   | PromptClickKey
   | ToolFilterKey
+  | CdKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
@@ -153,6 +155,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...WORKTREE_DICT.en,
     ...PROMPT_CLICK_DICT.en,
     ...TOOL_FILTER_DICT.en,
+    ...CD_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
     'exit.ran': 'This run lasted {duration}',
@@ -278,6 +281,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...WORKTREE_DICT['zh-CN'],
     ...PROMPT_CLICK_DICT['zh-CN'],
     ...TOOL_FILTER_DICT['zh-CN'],
+    ...CD_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
     'exit.ran': '本次运行了 {duration}',
