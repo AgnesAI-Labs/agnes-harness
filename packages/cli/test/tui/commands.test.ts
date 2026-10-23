@@ -116,7 +116,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(65)
+    expect(SLASH_COMMANDS).toHaveLength(66)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -168,6 +168,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/jobs',
       '/queue',
       '/status',
+      '/recap',
       '/copy',
       '/diff',
       '/init',
@@ -1063,7 +1064,7 @@ describe('completeToken', () => {
     // full table.
     expect(completeToken('/zzzz')).toEqual([])
     // A prefix shared by several commands returns all of them, not one arbitrarily.
-    expect(completeToken('/re')).toEqual(['/resume', '/rename', '/rewind', '/refine', '/review'])
+    expect(completeToken('/re')).toEqual(['/resume', '/rename', '/rewind', '/refine', '/recap', '/review'])
     // '@' mentions have their own menu; a plain word has nothing to complete against.
     expect(completeToken('@REA')).toEqual([])
     expect(completeToken('plain')).toEqual([])

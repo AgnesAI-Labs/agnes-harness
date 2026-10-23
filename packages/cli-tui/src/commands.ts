@@ -29,6 +29,7 @@ import { memorySlash } from './memory-command.js'
 import { parseNotifyMode } from './notify.js'
 import { queueSlash } from './queue-commands.js'
 import { rateSlash } from './rate-command.js'
+import { recapSlash } from './recap-command.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { scheduleSlash } from './schedule-commands.js'
 import { forkAt, forkSlash, oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
@@ -402,6 +403,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         ? { switchSession, draft: prompt }
         : { switchSession, text: tt('session.rewoundNoPrompt', locale) }
     }
+    case '/recap':
+      return recapSlash(app)
     case '/fork':
       return forkSlash(app, args)
     case '/undo':

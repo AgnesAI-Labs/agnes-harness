@@ -206,6 +206,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.queueSummary',
   },
   { name: '/status', descriptionKey: 'commands.status', summaryKey: 'commands.statusSummary' },
+  { name: '/recap', descriptionKey: 'commands.recap', summaryKey: 'commands.recapSummary' },
   { name: '/copy', args: '[n|code]', descriptionKey: 'commands.copy', summaryKey: 'commands.copySummary' },
   {
     name: '/diff',

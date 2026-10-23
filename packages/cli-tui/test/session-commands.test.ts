@@ -182,6 +182,71 @@ describe('session slash commands', () => {
     expect(fork).not.toHaveBeenCalled()
   })
 
+  it('/recap assembles the local card, cuts a long request, and leaves out what it cannot read', async () => {
+    const longRequest = `fix ${'the parser '.repeat(40)}now`
+    const plan = {
+      kind: 'tool',
+      id: 'p1',
+      seq: 3,
+      name: 'update_plan',
+      toolUseId: 'p1',
+      status: 'completed',
+      summary: '',
+      argsPreview: JSON.stringify({
+        plan: [
+          { step: 'read', status: 'completed' },
+          { step: 'write the fix', status: 'in_progress' },
+          { step: 'test', status: 'pending' },
+        ],
+      }),
+    }
+    const timeline = {
+      turns: [{ turn: 1 }, { turn: 2 }],
+      nodes: [
+        { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'older' }] },
+        { kind: 'user', id: 'u2', seq: 2, content: [{ type: 'text', text: longRequest }] },
+        { kind: 'user', id: 'u3', seq: 4, origin: 'system', content: [{ type: 'text', text: 'injected' }] },
+        plan,
+      ],
+      usage: { context: { tokens: 500, window: 1000 } },
+    }
+    const session = {
+      projectUIOpening: vi.fn(async () => ({ timeline })),
+      workspaceChanges: vi.fn(async () => ({ files: [{ path: 'a.ts' }, { path: 'b.ts' }] })),
+    }
+    const client = {
+      session: {
+        list: vi.fn(async () => ({ items: [{ ...meta('cur', '/w/a'), title: 'Parser work' }] })),
+        runtime: vi.fn(async () => ({ sessionKey: 'k' })),
+      },
+      call: vi.fn(async () => ({ schedules: [{}, {}, {}] })),
+    }
+    const text = (await runSlash(appWith(client, session), '/recap')).text ?? ''
+    const rows = Object.fromEntries(text.split('\n').map((row) => row.split(/ {2,}/) as [string, string]))
+    expect(rows[tt('recap.session', 'en')]).toBe('Parser work (cur)')
+    expect(rows[tt('recap.turns', 'en')]).toBe('2')
+    expect(rows[tt('recap.request', 'en')]).toBe(
+      `${[...longRequest.replace(/\s+/g, ' ')].slice(0, 200).join('')}…`,
+    )
+    expect(rows[tt('recap.plan', 'en')]).toBe('1/3 · write the fix')
+    expect(rows[tt('recap.files', 'en')]).toBe('2')
+    expect(rows[tt('recap.schedules', 'en')]).toBe('3')
+    expect(rows[tt('recap.context', 'en')]).toBe('500 / 1000 (50.0%)')
+    expect(rows[tt('recap.background', 'en')]).toBeUndefined()
+    // Every source failing leaves the session id only, never a placeholder.
+    const failing = {
+      projectUIOpening: vi.fn(async () => Promise.reject(new Error('x'))),
+      workspaceChanges: vi.fn(async () => Promise.reject(new Error('x'))),
+    }
+    const broken = {
+      session: { list: vi.fn(async () => Promise.reject(new Error('x'))), runtime: vi.fn() },
+      call: vi.fn(),
+    }
+    expect((await runSlash(appWith(broken, failing), '/recap')).text).toBe(
+      `${tt('recap.session', 'en')}  cur`,
+    )
+  })
+
   it('/new <dir> creates the session in that directory and shows a daemon refusal as it comes', async () => {
     const created = vi.fn(async () => {
       throw new Error('workspace not authorised')
