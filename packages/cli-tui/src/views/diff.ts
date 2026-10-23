@@ -2,11 +2,12 @@ import { escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
+import { applyMarks, type MarkedOp, markWords, shownText } from './word-diff.js'
 
 /** One replaced span of an `edit` call; `write` is a single hunk whose old side is empty. */
 export type DiffHunk = { oldText: string; newText: string }
 export type DiffInput = { path: string; hunks: DiffHunk[]; wholeFile: boolean }
-type Op = { mark: ' ' | '+' | '-'; text: string; no: number }
+type Op = MarkedOp & { no: number }
 
 // Old lines x new lines per hunk; past it the hunk is shown as "old block removed, new block added"
 // instead of spending seconds (and tens of megabytes) on an exact line diff.
@@ -94,6 +95,7 @@ function hunkOps(hunk: DiffHunk, budget: { cells: number }): Op[] {
     }
   }
   for (const text of b.slice(b.length - tail)) ops.push({ mark: ' ', text, no: ++newNo })
+  markWords(ops)
   return ops
 }
 
@@ -171,7 +173,9 @@ export function renderDiff(input: DiffInput, width: number, ansi: ThemedAnsi, lo
         )
         continue
       }
-      const text = escapeControl(item.text.replaceAll('\t', '  '))
+      const shown = shownText(item.text)
+      // Changed words of an edited line stand out inside the line's own tone.
+      const text = applyMarks(shown, item.marks ?? [], (w) => ansi.bold(ansi.underline(w)))
       const line = ` ${String(item.no).padStart(digits)} ${item.mark} ${text}`
       rows.push(
         fitLine(

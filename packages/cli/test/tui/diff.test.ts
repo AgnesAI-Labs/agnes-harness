@@ -121,3 +121,19 @@ it('computes the ops of a call once however often it is drawn, and spends one bu
   expect(rows[0]).toContain('+3000 -3000')
   expect(rows.some((row) => row.includes('- co1000'))).toBe(true)
 })
+
+it('marks the changed words of an edited line, and only on paired lines', () => {
+  const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+  const mark = (s: string) => ansi.bold(ansi.underline(s))
+  const edit = (oldText: string, newText: string) =>
+    renderDiff(diffInput('edit', { path: 'a', edits: [{ oldText, newText }] }) as never, 600, ansi, 'en')
+  const rows = edit('const total = price * 2', 'const total = cost * 2')
+  expect(rows[1]).toContain(`const total = ${mark('price')} * 2`)
+  expect(rows[2]).toContain(`const total = ${mark('cost')} * 2`)
+  // An added line with no removed partner, a pair with nothing in common and a long line stay line-level.
+  const fresh = renderDiff(diffInput('write', { path: 'n', content: 'x y' }) as never, 60, ansi, 'en')
+  expect(fresh.join('')).not.toContain('\x1b[1m\x1b[4m')
+  expect(edit('alpha beta', 'gamma delta').join('')).not.toContain('\x1b[1m\x1b[4m')
+  const long = `${'word '.repeat(110)}end`
+  expect(edit(long, `${long}!`).join('')).not.toContain('\x1b[1m\x1b[4m')
+})

@@ -1,5 +1,6 @@
 import { type Component, escapeControl, Text, VStack, wrapText } from '../component.js'
 import type { ThemedAnsi } from '../theme.js'
+import { applyMarks, unifiedMarks } from './word-diff.js'
 
 /** `/diff` output: the unified diff's own marks pick the tone, wrapped rows included. */
 function diffRows(text: string, ansi: ThemedAnsi): Component {
@@ -11,11 +12,23 @@ function diffRows(text: string, ansi: ThemedAnsi): Component {
         : line.startsWith('-')
           ? 'danger'
           : undefined
+  const lines = text.split('\n')
+  const marks = unifiedMarks(lines)
   return {
     render: (width) =>
-      text.split('\n').flatMap((line) => {
+      lines.flatMap((line, i) => {
         const t = tone(line)
-        return wrapText(line, width).map((row) => (t ? ansi.fg(t, row) : ansi.dim(row)))
+        const rows = wrapText(line, width)
+        const changed = marks.get(i)
+        // Wrapped rows are slices of the line (a space may drop at a break), so each is marked where it sits.
+        let from = 0
+        return rows.map((row) => {
+          const at = line.indexOf(row, from)
+          if (at >= 0) from = at + row.length
+          const shown =
+            changed && at >= 0 ? applyMarks(row, changed, (w) => ansi.bold(ansi.underline(w)), at) : row
+          return t ? ansi.fg(t, shown) : ansi.dim(shown)
+        })
       }),
     invalidate() {},
   }

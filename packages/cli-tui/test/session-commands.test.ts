@@ -656,6 +656,17 @@ describe('small info commands', () => {
     expect(other).toContain(ansi.dim('+not a diff'))
   })
 
+  it('/diff marks the changed words of a paired -/+ line, also on a wrapped row', () => {
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+    const mark = (s: string) => ansi.bold(ansi.underline(s))
+    const text = '-let total = price * 2 + tax\n+let total = cost * 2 + tax'
+    const wide = localCommandView(ansi)('/diff', text).render(60)
+    expect(wide).toContain(ansi.fg('danger', `-let total = ${mark('price')} * 2 + tax`))
+    expect(wide).toContain(ansi.fg('success', `+let total = ${mark('cost')} * 2 + tax`))
+    const narrow = localCommandView(ansi)('/diff', text).render(14)
+    expect(narrow.join('')).toContain(mark('price'))
+  })
+
   it('/init submits a fixed message that depends on AGENTS.md, and writes nothing itself', async () => {
     const workspaceRead = vi.fn(async (path: string) => ({ path }))
     const app = appWith({}, { workspaceRead })
