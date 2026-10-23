@@ -72,6 +72,8 @@ export type CreateSessionOptions = {
   /** Set by the Host from the administrator's defaults; not part of what a caller asks for. */
   defaultPermission?: Permission
   bundles?: readonly string[]
+  /** Owner text appended to this NEW session's system prompt; see core's SessionOptions. */
+  systemPromptAppend?: string
   /** Transitional local entry. Authenticated worker opens supply `binding` and cannot override it. */
   cwd?: string
   binding?: WorkspaceBinding
@@ -532,6 +534,7 @@ export async function createSession(
           },
         }
       : {}),
+    ...(opts.systemPromptAppend !== undefined ? { systemPromptAppend: opts.systemPromptAppend } : {}),
     ...(opts.loop ? { loop: opts.loop } : {}),
     defaultLoop: async () => {
       const loop = await a.sessionLoopDefault?.()

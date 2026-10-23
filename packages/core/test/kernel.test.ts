@@ -161,6 +161,66 @@ describe('Kernel (I1 assembly)', () => {
     await missing.close()
   })
 
+  it('appends owner text to a new session pinned prompt, keeps it on resume, and refuses what it cannot honour', async () => {
+    const storage = new MemoryStorage()
+    let config: import('@agnes/protocol').SystemPromptConfig = { personaSuffix: 'house rules' }
+    const promptProvider = {
+      id: 'test.prompt',
+      version: '1.0.0',
+      defaults: () => [],
+      compose: (cfg: import('@agnes/protocol').SystemPromptConfig) => [
+        { id: 'profile:suffix', order: 1, source: 'profile:system-prompt', text: cfg.personaSuffix ?? '' },
+      ],
+    }
+    const systemPrompt = { config: async () => config, resolve: () => promptProvider }
+    const k = base({ storage, systemPrompt })
+    const plain = await k.session('plain', sessionOpts)
+    const appended = await k.session('appended', { ...sessionOpts, systemPromptAppend: 'Answer in French.' })
+    const pinned = await appended.systemPromptPreview()
+    expect(pinned.config.personaSuffix).toBe('house rules\n\nAnswer in French.')
+    expect(pinned.hash).not.toBe((await plain.systemPromptPreview()).hash)
+    expect((await appended.scan({ fromSeq: 1, limit: 1 }))[0]?.data).toMatchObject({
+      systemPrompt: { hash: pinned.hash, config: { personaSuffix: 'house rules\n\nAnswer in French.' } },
+    })
+    config = {}
+    expect(
+      (
+        await (
+          await k.session('alone', { ...sessionOpts, systemPromptAppend: 'Only me.' })
+        ).systemPromptPreview()
+      ).config.personaSuffix,
+    ).toBe('Only me.')
+    await k.close()
+    // Resume reads the persisted config back; a stale append option is refused rather than ignored.
+    const k2 = base({ storage, systemPrompt })
+    const again = await k2.session('appended', { ...sessionOpts, writerRunId: 'r2' })
+    expect((await again.systemPromptPreview()).config.personaSuffix).toBe('house rules\n\nAnswer in French.')
+    await k2.close()
+    const k3 = base({ storage, systemPrompt })
+    await expect(
+      k3.session('appended', { ...sessionOpts, writerRunId: 'r3', systemPromptAppend: 'late' }),
+    ).rejects.toThrow('only to a new session')
+    config = { fullOverride: 'replace everything' }
+    await expect(k3.session('full', { ...sessionOpts, systemPromptAppend: 'x' })).rejects.toThrow(
+      'full replacement',
+    )
+    config = { personaSuffix: 'y'.repeat(8000) }
+    await expect(
+      k3.session('merged-over', { ...sessionOpts, systemPromptAppend: 'x'.repeat(200) }),
+    ).rejects.toThrow('exceeds')
+    config = {}
+    await expect(
+      k3.session('over', { ...sessionOpts, systemPromptAppend: 'x'.repeat(8193) }),
+    ).rejects.toThrow('invalid')
+    await expect(k3.session('nul', { ...sessionOpts, systemPromptAppend: 'a\0b' })).rejects.toThrow('invalid')
+    await k3.close()
+    const noPrompt = base({ storage })
+    await expect(noPrompt.session('np', { ...sessionOpts, systemPromptAppend: 'x' })).rejects.toThrow(
+      'only to a new session',
+    )
+    await noPrompt.close()
+  })
+
   it.each(['new', 'resume'] as const)(
     'releases the writer and renewal timer after memory open fails on %s',
     async (mode) => {

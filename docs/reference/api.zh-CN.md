@@ -168,6 +168,8 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 
 SDK 支持 `client.session.new({ cwd, agent: '@acme/kit#review' })`，调用方无需了解 Bundle 组合。`client.agents.resolve(ref)`（RPC `_agnes/v1/agents.resolve`）返回精确选择、模型、权限摘要、来源身份和最终有效配置摘要；审阅过的调用可传 `agentDigest`，发生漂移即拒绝。不能同时传入 `loop`、`bundles` 或 `preset`。会话/工作区授权仍走普通创建链路；普通会话保留已有模型 fallback。
 
+`session/new` 接受 `_meta['ai.agnes.harness'].systemPromptAppend`（SDK：`client.session.new({ cwd, systemPromptAppend })`），即只给这一个新会话的系统提示词追加所有者文本。长度 1 到 8192 个字符，不能含 NUL，只追加不替换：它被并入收尾指令 `personaSuffix`（原有内容、一个空行、再接追加内容），因此出现在 `session/start` 行的 `systemPrompt.config` 与 hash 中，随 resume 和 fork 保留，不新增 ledger 事件。以下情况会拒绝（`SEMANTIC_REJECTED`，不创建会话）：与 `agent` 同用、会话已存在、包管理控制面报告配置只读（`E_ADMIN_READ_ONLY`，与 `systemPrompt.save` 同一检查；内嵌 endpoint 没有可锁定的控制面）、部署使用 `fullOverride`、合并后的 `personaSuffix` 超过 8192 个字符。不认识该字段的旧 daemon 会静默忽略，所以需要这段文本的客户端应在发第一条提示前，用新的 `sessionId` 读 `_agnes/v1/systemPrompt.get` 并检查各段。
+
 宿主启动 facade 使用 prepare → review → start(ticket, operationId)。start 只返回会话 ID 和可选的已审阅草稿。草稿编辑后通过普通 submit、使用独立 commandId 提交；重试 start 不发送任何提示词。不确定或失败的 operation 不会重新派发。普通启动没有安装、信任或移除权限；示例管理仍受经依赖版本校验的 `exampleOf` 限制。
 
 审阅同时绑定包身份和已发布的执行配置，原始 row 配置保留在后台；工具摘要来自实际准入能力。启动响应丢失后，Web 保留原 ticket 和 operationId，查询原操作回执。另建会话使用独立操作，并明确提醒可能重复创建。

@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ecosystem as baseEcosystem } from '@agnes/base'
+import { systemPromptPlugin } from '@agnes/code'
 import { WORKSPACE_HOOK_SANDBOX, type WorkspaceHookSandbox } from '@agnes/core'
+import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHost } from '../src/runtime/lifecycle/host.js'
 import { createTestHost } from '../testkit/index.js'
@@ -35,6 +37,43 @@ describe('createHost', () => {
     expect(kinds).toContain('host.ready')
     expect(kinds.at(-1)).toBe('host.closed')
     await expect(host.createSession({ cwd: dataDir })).rejects.toThrow(/E_HOST_CLOSED/)
+  })
+  it('carries systemPromptAppend from createSession into the new session pinned prompt', async () => {
+    const dataDir = tmp()
+    const { host } = await createTestHost({
+      dataDir,
+      packages: {
+        '@agnes/code': {
+          plugins: [
+            {
+              declaration: {
+                id: 'system-prompt:default',
+                export: 'systemPromptPlugin',
+                apiRange: '^5.0.0',
+                inject: ['providers'],
+                runtime: 'in-process',
+                default: true,
+              },
+              entry: normalizePluginExport(systemPromptPlugin),
+            },
+          ],
+        },
+      },
+    })
+    try {
+      const plain = await host.createSession({ cwd: dataDir, key: 'plain' })
+      const appended = await host.createSession({
+        cwd: dataDir,
+        key: 'appended',
+        systemPromptAppend: 'Use metric units.',
+      })
+      const pinned = await appended.systemPromptPreview()
+      expect(pinned.config.personaSuffix).toBe('Use metric units.')
+      expect(pinned.sections.some((section) => section.text.includes('Use metric units.'))).toBe(true)
+      expect(pinned.hash).not.toBe((await plain.systemPromptPreview()).hash)
+    } finally {
+      await host.close()
+    }
   })
   it.each([false, true])(
     'the closed refusal carries the lifecycle code (composition=%s)',

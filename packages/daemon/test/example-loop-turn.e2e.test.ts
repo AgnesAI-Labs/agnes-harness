@@ -285,6 +285,19 @@ async function runExample(kind: 'react' | 'dag') {
     if (kind === 'dag')
       expect(provider.requests.some((request) => request.includes('<dag-planner-protocol>'))).toBe(true)
 
+    // Through the real supervisor and worker: a new session's appended system prompt reaches its pinned prompt.
+    stage = 'system prompt append'
+    const appended = await sdk.session.new({
+      cwd: root,
+      sessionKey: `source-${kind}-append`,
+      systemPromptAppend: 'APPENDED_PROMPT_PROBE',
+    })
+    expect(
+      (await sdk.systemPrompt.get({ sessionId: appended.id })).sections.some((section) =>
+        section.text.includes('APPENDED_PROMPT_PROBE'),
+      ),
+    ).toBe(true)
+
     stage = 'session bundle'
     const bundle = `@agnes-example/${kind}-loop#review`
     const selected = await sdk.session.new({ cwd: root, bundles: [bundle] })

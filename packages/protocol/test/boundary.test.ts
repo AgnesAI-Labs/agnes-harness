@@ -134,6 +134,8 @@ describe('protocol src boundary', () => {
         'RuntimePublicationReport',
         'RuntimeSecurityStatus',
         'parseSessionBundles',
+        'parseSystemPromptAppend',
+        'SYSTEM_PROMPT_APPEND_MAX',
         'parseAgentRef',
         'AgentPlan',
         'AgentResolveParams',

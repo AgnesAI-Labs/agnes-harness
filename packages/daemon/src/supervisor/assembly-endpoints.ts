@@ -118,6 +118,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     selectedJobs,
     resolveActor,
     resolveNewSessionActor,
+    effectivePackageAdmin,
   } = state
   const feeds = new Map<string, Feed>()
   const attached = new Map<string, AttachedFeed>()
@@ -163,6 +164,14 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     hasSessionFact: (sessionId: string) =>
       supervisorRegistry.get(sessionId) !== undefined ||
       workspaceCatalog.sessionPath(sessionId) !== undefined,
+    configurationReadOnly: (context) =>
+      configurationReadOnly(async () =>
+        effectivePackageAdmin?.service.call(
+          '_agnes/v1/packages.list',
+          { profile: o.profile.name },
+          localPackageAdminAuthority(['packages.read'])(context),
+        ),
+      ),
     limits: {
       subscribeBufferEvents: o.config.limits.subscribeBufferEvents,
       subscribeBufferBytes: o.config.limits.subscribeBufferBytes,

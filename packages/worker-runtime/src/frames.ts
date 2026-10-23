@@ -247,6 +247,7 @@ export type SessionOpenFrame = {
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
+    systemPromptAppend?: string
     loop?: LoopSelection
     resume?: boolean
     parent?: { key: string; boundarySeq: number }

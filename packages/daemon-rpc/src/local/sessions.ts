@@ -67,6 +67,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       permission: string | null
       agent: string | null
       bundles: string | null
+      systemPromptAppend: string | null
       loop: string | null
       binding: WorkspaceBinding | undefined
       promise: Promise<SessionEntry>
@@ -95,6 +96,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
+    systemPromptAppend?: string
     loop?: LoopSelection
     credential?: unknown
     historySignal?: AbortSignal
@@ -113,6 +115,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       ...(o.agent !== undefined ? { agent: o.agent } : {}),
       ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
+      ...(o.systemPromptAppend !== undefined ? { systemPromptAppend: o.systemPromptAppend } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.credential === undefined ? {} : { credential: o.credential }),
       ...(accepted ? { key: accepted.sessionKey, binding: accepted } : {}),
@@ -123,6 +126,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
         if (o.agent !== undefined) await this.host.createSession(request)
         if (
           existing.session.d.cwd !== request.cwd ||
+          // A live session keeps the prompt it started with; an append can only apply to a new one.
+          request.systemPromptAppend !== undefined ||
           (request.preset !== undefined && existing.session.preset.name !== request.preset) ||
           // `default` names whatever the deployment default is, which only the Host resolves.
           (request.permission !== undefined &&
@@ -146,6 +151,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
           pending.agent !==
             (request.agent === undefined ? null : JSON.stringify([request.agent, request.agentDigest])) ||
           pending.bundles !== (request.bundles === undefined ? null : JSON.stringify(request.bundles)) ||
+          pending.systemPromptAppend !== (request.systemPromptAppend ?? null) ||
           pending.loop !== (request.loop ? JSON.stringify(request.loop) : null) ||
           !sameBinding(pending.binding, request.binding)
         )
@@ -159,6 +165,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
         permission: request.permission ?? null,
         agent: request.agent === undefined ? null : JSON.stringify([request.agent, request.agentDigest]),
         bundles: request.bundles === undefined ? null : JSON.stringify(request.bundles),
+        systemPromptAppend: request.systemPromptAppend ?? null,
         loop: request.loop ? JSON.stringify(request.loop) : null,
         binding: request.binding,
         promise,
@@ -181,6 +188,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
+    systemPromptAppend?: string
     loop?: LoopSelection
     credential?: unknown
     historySignal?: AbortSignal

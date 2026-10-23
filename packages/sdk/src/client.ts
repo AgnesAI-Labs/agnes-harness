@@ -37,6 +37,7 @@ import {
   parseAgentRef,
   parseLoopSelection,
   parseSessionBundles,
+  parseSystemPromptAppend,
   projectClientModuleRows,
   rpcError,
   type SessionApprovalGrant,
@@ -486,6 +487,8 @@ export class Client {
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
+    /** Owner text appended to this new session's system prompt (1 to 8192 characters); never a replacement. */
+    systemPromptAppend?: string
     sessionKey?: string
     loop?: LoopSelection
   }): Promise<Session> {
@@ -513,13 +516,20 @@ export class Client {
       agent?: string
       agentDigest?: string
       bundles?: readonly string[]
+      systemPromptAppend?: string
       sessionKey?: string
       loop?: LoopSelection
     }): Promise<Session> => {
       const meta: Record<string, unknown> = {}
       if (o.agent !== undefined) {
         meta.agent = parseAgentRef(o.agent)
-        if (o.loop || o.bundles !== undefined || o.preset || o.permission !== undefined)
+        if (
+          o.loop ||
+          o.bundles !== undefined ||
+          o.preset ||
+          o.permission !== undefined ||
+          o.systemPromptAppend !== undefined
+        )
           throw new TypeError('agent cannot be combined with execution overrides')
       }
       if (o.agentDigest !== undefined) meta.agentDigest = o.agentDigest
@@ -527,6 +537,8 @@ export class Client {
       if (o.preset) meta.preset = o.preset
       if (o.agent === undefined) meta.permission = o.permission ?? 'default'
       if (o.bundles !== undefined) meta.bundles = parseSessionBundles(o.bundles)
+      if (o.systemPromptAppend !== undefined)
+        meta.systemPromptAppend = parseSystemPromptAppend(o.systemPromptAppend)
       if (o.sessionKey) meta.sessionKey = o.sessionKey
       const r = await this.call<{ sessionId: string }>('session/new', {
         cwd: o.cwd,

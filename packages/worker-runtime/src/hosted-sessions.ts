@@ -181,6 +181,9 @@ export class HostedSessions {
               ? { agentDigest: frame.params.agentDigest }
               : {}),
             ...(frame.params.bundles !== undefined ? { bundles: frame.params.bundles } : {}),
+            ...(!frame.params.resume && frame.params.systemPromptAppend !== undefined
+              ? { systemPromptAppend: frame.params.systemPromptAppend }
+              : {}),
             ...(frame.params.loop ? { loop: frame.params.loop } : {}),
             ...(parent ? { parent } : {}),
           })
