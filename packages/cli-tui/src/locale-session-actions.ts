@@ -12,6 +12,22 @@ export type SessionActionKey =
   | 'paste.image.tooLarge'
   | 'paste.image.failed'
   | 'paste.image.uploadFailed'
+  | 'commands.schedule'
+  | 'commands.scheduleSummary'
+  | 'commands.loop'
+  | 'commands.loopSummary'
+  | 'schedule.usage'
+  | 'schedule.loopUsage'
+  | 'schedule.badInterval'
+  | 'schedule.tooLong'
+  | 'schedule.card'
+  | 'schedule.noPending'
+  | 'schedule.cancelled'
+  | 'schedule.created'
+  | 'schedule.refused'
+  | 'schedule.none'
+  | 'schedule.unknown'
+  | 'schedule.deleted'
 
 export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string>> = {
   en: {
@@ -25,6 +41,27 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'paste.image.tooLarge': 'The clipboard image is larger than {mb} MB',
     'paste.image.failed': 'Could not read an image from the clipboard',
     'paste.image.uploadFailed': 'Attaching the clipboard image failed: {reason}',
+    'commands.schedule':
+      "Schedule a prompt for this session: every <interval> or daily <HH:MM>; list or delete the session's schedules",
+    'commands.scheduleSummary': 'Schedule prompts',
+    'commands.loop': 'Run a prompt in this session at a fixed interval (shorthand for /schedule every)',
+    'commands.loopSummary': 'Repeat a prompt on a timer',
+    'schedule.usage':
+      'usage: /schedule [list] | every <interval> <prompt> | daily <HH:MM> <prompt> | delete <n|id> | confirm | cancel',
+    'schedule.loopUsage':
+      'usage: /loop <interval> <prompt> (an interval such as 90s, 30m, 2h or 1d, from 60s to 366d), then /loop confirm or /loop cancel',
+    'schedule.badInterval':
+      'Not a valid interval: {value}. Use a period such as 90s, 30m, 2h or 1d, from 60s to 366d',
+    'schedule.tooLong': 'The prompt is longer than {max} characters',
+    'schedule.card':
+      'Create this scheduled prompt?\n  when     {when}\n  prompt   {prompt}\n  session  {session}\nRun /schedule confirm to create it, or /schedule cancel.',
+    'schedule.noPending': 'Nothing to confirm; start with /loop or /schedule',
+    'schedule.cancelled': 'schedule cancelled',
+    'schedule.created': 'Scheduled {id} ({when}); /schedule lists it and /schedule delete removes it',
+    'schedule.refused': 'Schedule refused: {code}',
+    'schedule.none': 'No scheduled prompts for this session',
+    'schedule.unknown': 'No schedule {key} in this session',
+    'schedule.deleted': 'Deleted schedule {id}',
   },
   'zh-CN': {
     'commands.paste': '把剪贴板里的图片作为下一条消息的附件（等同于 Ctrl-V）',
@@ -37,5 +74,24 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'paste.image.tooLarge': '剪贴板里的图片超过 {mb} MB',
     'paste.image.failed': '没能从剪贴板读到图片',
     'paste.image.uploadFailed': '附加剪贴板图片失败：{reason}',
+    'commands.schedule': '给当前会话定时发提示：every <间隔> 或 daily <HH:MM>；列出或删除本会话的定时任务',
+    'commands.scheduleSummary': '定时发送提示',
+    'commands.loop': '按固定间隔向当前会话重复发一条提示（/schedule every 的简写）',
+    'commands.loopSummary': '按间隔重复发提示',
+    'schedule.usage':
+      '用法：/schedule [list] | every <间隔> <提示> | daily <HH:MM> <提示> | delete <序号|id> | confirm | cancel',
+    'schedule.loopUsage':
+      '用法：/loop <间隔> <提示>（间隔如 90s、30m、2h、1d，范围 60 秒到 366 天），然后 /loop confirm 或 /loop cancel',
+    'schedule.badInterval': '间隔无效：{value}。请用 90s、30m、2h、1d 这样的写法，范围 60 秒到 366 天',
+    'schedule.tooLong': '提示超过 {max} 个字符',
+    'schedule.card':
+      '创建这条定时提示？\n  时间     {when}\n  提示     {prompt}\n  会话     {session}\n运行 /schedule confirm 创建，或 /schedule cancel 放弃。',
+    'schedule.noPending': '没有待确认的定时任务；请先用 /loop 或 /schedule',
+    'schedule.cancelled': '已取消定时任务',
+    'schedule.created': '已创建定时任务 {id}（{when}）；/schedule 列出，/schedule delete 删除',
+    'schedule.refused': '定时任务被拒绝：{code}',
+    'schedule.none': '本会话没有定时提示',
+    'schedule.unknown': '本会话没有定时任务 {key}',
+    'schedule.deleted': '已删除定时任务 {id}',
   },
 }

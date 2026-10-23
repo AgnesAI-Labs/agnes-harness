@@ -25,6 +25,7 @@ import { type ExtendedKey, tt } from './locale-extended.js'
 import { parseNotifyMode } from './notify.js'
 import { queueSlash } from './queue-commands.js'
 import type { ResourceCommandKind } from './resource-controller.js'
+import { scheduleSlash } from './schedule-commands.js'
 import { oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
 import type { ThemePreference } from './theme-preference.js'
@@ -163,6 +164,18 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     name: '/paste',
     descriptionKey: 'commands.paste',
     summaryKey: 'commands.pasteSummary',
+  },
+  {
+    name: '/schedule',
+    args: '[list|every <interval> <prompt>|daily <HH:MM> <prompt>|delete <n|id>|confirm|cancel]',
+    descriptionKey: 'commands.schedule',
+    summaryKey: 'commands.scheduleSummary',
+  },
+  {
+    name: '/loop',
+    args: '<interval> <prompt>',
+    descriptionKey: 'commands.loop',
+    summaryKey: 'commands.loopSummary',
   },
   { name: '/export', descriptionKey: 'commands.export', summaryKey: 'commands.exportSummary' },
   { name: '/refine', descriptionKey: 'commands.refine', summaryKey: 'commands.refineSummary' },
@@ -608,6 +621,9 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       startBtw(app, question)
       return {}
     }
+    case '/schedule':
+    case '/loop':
+      return scheduleSlash(app, cmd, line)
     case '/pin':
     case '/unpin':
     case '/rename':
