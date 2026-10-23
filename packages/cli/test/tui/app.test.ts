@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -14,6 +14,11 @@ import {
   memoryJournal,
   type TransportFactory,
 } from '@agnes/sdk'
+import {
+  createPrivateDirectorySync,
+  hasPrivateDaclSync,
+  windowsProtectPrivateFileSync,
+} from '@agnes/system-node'
 import { expect, it, vi } from 'vitest'
 import { type Colour, createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
@@ -1115,13 +1120,20 @@ it('Enter while a turn runs queues the input in the daemon under its own command
 })
 
 it('Alt+Enter while a turn runs steers it, and queues instead when the turn takes no guidance', async () => {
+  const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
   const steering = await busyHarness()
   try {
     steering.type('a')
     await vi.waitFor(() => expect(steering.prompts).toEqual(['a']))
-    steering.type('look at b', '\x1b\r')
+    steering.app.busyInput.attach('[Image #1]', image, steering.app.session.id)
+    steering.type('look at b [Image #1]', '\x1b\r')
     await vi.waitFor(() => expect(steering.submits.map((s) => s.kind)).toEqual(['steer']))
     expect(steering.submits[0]?.commandId).toBeTruthy()
+    expect(steering.submits[0]?.payload.content).toEqual([
+      { type: 'text', text: 'look at b [Image #1]' },
+      image,
+    ])
+    expect(steering.app.busyInput.takeKept('[Image #1]')).toEqual([])
     await vi.waitFor(async () =>
       expect(await steering.shown()).toContain('Sent to the running turn: look at b'),
     )
@@ -1132,11 +1144,40 @@ it('Alt+Enter while a turn runs steers it, and queues instead when the turn take
   try {
     refusing.type('a')
     await vi.waitFor(() => expect(refusing.prompts).toEqual(['a']))
-    refusing.type('b', '\x1b\r')
+    refusing.app.busyInput.attach('[Image #1]', image, refusing.app.session.id)
+    refusing.type('b [Image #1]', '\x1b\r')
     await vi.waitFor(() => expect(refusing.submits.map((s) => s.kind)).toEqual(['followUp']))
+    expect(refusing.submits[0]?.payload.content).toEqual([{ type: 'text', text: 'b [Image #1]' }, image])
     await vi.waitFor(async () => expect(await refusing.shown()).toContain('queued instead'))
   } finally {
     await refusing.dispose()
+  }
+})
+
+it('keeps clipboard temporary files private under the CLI private directory and cleans failed reads', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-clipboard-'))
+  const directory = join(root, '中文 clipboard')
+  createPrivateDirectorySync(directory)
+  const h = await busyHarness()
+  const permissions: boolean[] = []
+  h.app.o.externalEditor = { env: {}, tmpDir: directory }
+  h.app.o.clipboard = {
+    readImage: async (file) => {
+      // Node inherits this private parent's ACL. The native validator refuses foreign/broad
+      // grants before freezing inheritance; it does not turn a shared file into a private one.
+      if (process.platform === 'win32') windowsProtectPrivateFileSync(file)
+      permissions.push(hasPrivateDaclSync(directory), hasPrivateDaclSync(file))
+      return { ok: false, reason: 'empty' }
+    },
+  }
+  try {
+    await h.app.command('/paste')
+    expect(permissions).toEqual([true, true])
+    expect(readdirSync(directory)).toEqual([])
+    expect(h.submits).toEqual([])
+  } finally {
+    await h.dispose()
+    rmSync(root, { recursive: true, force: true })
   }
 })
 
@@ -1160,27 +1201,54 @@ it('retries a failed queue submit once under the same command id, then returns t
   }
   const failing = await busyHarness({
     answer: () => {
-      throw rpcError('INTERNAL_ERROR', {})
+      throw rpcError('LOOP_CONTROL_UNSUPPORTED', {})
     },
   })
   try {
     failing.type('a')
     await vi.waitFor(() => expect(failing.prompts).toEqual(['a']))
-    failing.type('keep me')
-    // The send, its retry and the final check all carry one command id.
-    await vi.waitFor(() => expect(failing.submits).toHaveLength(3))
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    failing.app.busyInput.attach('[Image #1]', image, failing.app.session.id)
+    failing.type('keep me [Image #1]')
+    // A definitive refusal clears the SDK journal; both attempts still use the same command id.
+    await vi.waitFor(() => expect(failing.submits).toHaveLength(2))
     expect(new Set(failing.submits.map((s) => s.commandId)).size).toBe(1)
     await vi.waitFor(async () => {
       const screen = await failing.shown()
       expect(screen).toContain('Not sent: the draft is back in the editor')
-      expect(screen).toMatch(/❯ keep me\s*$/m)
+      expect(screen).toMatch(/❯ keep me \[Image #1\]\s*$/m)
     })
+    expect(failing.app.busyInput.takeKept(failing.app.editor.expanded())).toEqual([image])
     failing.release()
     await vi.waitFor(() => expect(failing.app.busy).toBe(false))
     // No local replay: the only prompt this client ever sent is the first one.
     expect(failing.prompts).toEqual(['a'])
   } finally {
     await failing.dispose()
+  }
+  const unknown = await busyHarness({
+    answer: () => {
+      throw rpcError('INTERNAL_ERROR', {})
+    },
+  })
+  try {
+    unknown.type('a')
+    await vi.waitFor(() => expect(unknown.prompts).toEqual(['a']))
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    unknown.app.busyInput.attach('[Image #1]', image, unknown.app.session.id)
+    unknown.type('answer lost [Image #1]')
+    await vi.waitFor(async () => expect(await unknown.shown()).toContain('Not sure the daemon took it'))
+    expect(unknown.submits).toHaveLength(3)
+    expect(new Set(unknown.submits.map((s) => s.commandId)).size).toBe(1)
+    expect(await unknown.app.session.pendingCommands()).toMatchObject([{ state: 'needs-confirmation' }])
+    expect(unknown.app.editor.text).toBe('')
+    expect(unknown.app.busyInput.takeKept('[Image #1]')).toEqual([])
+    unknown.release()
+    await vi.waitFor(() => expect(unknown.app.busy).toBe(false))
+    expect(unknown.submits).toHaveLength(3)
+    expect(unknown.prompts).toEqual(['a'])
+  } finally {
+    await unknown.dispose()
   }
   // The daemon took the command but the answers were lost twice: the check under the same id lands it.
   let lost = 2

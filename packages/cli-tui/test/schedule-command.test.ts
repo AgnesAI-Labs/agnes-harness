@@ -30,15 +30,30 @@ function harness(answers: Record<string, unknown> = {}) {
   return { app, calls }
 }
 
+function deferred() {
+  let resolve!: (value: ReturnType<typeof view>) => void
+  let reject!: (reason: Error) => void
+  const promise = new Promise<ReturnType<typeof view>>((yes, no) => {
+    resolve = yes
+    reject = no
+  })
+  return { promise, resolve, reject }
+}
+
 describe('/loop and /schedule', () => {
   it('shows a card with interval, prompt and session, and creates only after confirm', async () => {
-    const { app, calls } = harness({ '_agnes/v1/schedules.upsert': view('sched_0123456789abcdef') })
+    const { promise, resolve } = deferred()
+    const { app, calls } = harness({ '_agnes/v1/schedules.upsert': promise })
     const card = await scheduleSlash(app, '/loop', '/loop 5m check the build')
     expect(card.text).toContain('every 5m')
     expect(card.text).toContain('check the build')
     expect(card.text).toContain('sess-1')
     expect(calls).toEqual([])
-    const done = await scheduleSlash(app, '/loop', '/loop confirm')
+    const first = scheduleSlash(app, '/loop', '/loop confirm')
+    const second = scheduleSlash(app, '/schedule', '/schedule confirm')
+    resolve(view('sched_0123456789abcdef'))
+    const [done, repeated] = await Promise.all([first, second])
+    expect(repeated).toEqual(done)
     expect(calls).toEqual([
       [
         '_agnes/v1/schedules.upsert',
@@ -52,6 +67,34 @@ describe('/loop and /schedule', () => {
     ])
     expect(done.text).toContain('sched_0123456789abcdef')
     expect((await scheduleSlash(app, '/schedule', '/schedule confirm')).text).toMatch(/nothing to confirm/i)
+  })
+
+  it('does not resend an unknown creation outcome, and lets a new card replace an in-flight card', async () => {
+    const failed = deferred()
+    const answers = { '_agnes/v1/schedules.upsert': failed.promise }
+    const { app, calls } = harness(answers)
+    await scheduleSlash(app, '/loop', '/loop 5m first')
+    const first = expect(scheduleSlash(app, '/loop', '/loop confirm')).rejects.toThrow('response lost')
+    failed.reject(new Error('response lost'))
+    await first
+    await expect(scheduleSlash(app, '/loop', '/loop confirm')).rejects.toThrow('response lost')
+    expect(calls).toHaveLength(1)
+
+    const delayed = deferred()
+    answers['_agnes/v1/schedules.upsert'] = delayed.promise
+    await scheduleSlash(app, '/loop', '/loop 10m second')
+    const second = scheduleSlash(app, '/loop', '/loop confirm')
+    await scheduleSlash(app, '/loop', '/loop cancel')
+    await scheduleSlash(app, '/loop', '/loop 15m replacement')
+    delayed.resolve(view('sched_second'))
+    await second
+    answers['_agnes/v1/schedules.upsert'] = Promise.resolve(view('sched_replacement'))
+    expect((await scheduleSlash(app, '/loop', '/loop confirm')).text).toContain('sched_replacement')
+    expect(calls.map(([, params]) => (params as { prompt: string }).prompt)).toEqual([
+      'first',
+      'second',
+      'replacement',
+    ])
   })
 
   it('cancel drops the card; a refusal is shown with its code', async () => {

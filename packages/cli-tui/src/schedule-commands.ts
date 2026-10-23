@@ -7,7 +7,7 @@ import { oneLine } from './session-commands.js'
 
 type Selector = SchedulesUpsertParams['selector']
 type Refused = { updated: false; code: string }
-type Pending = { params: SchedulesUpsertParams; when: string }
+type Pending = { params: SchedulesUpsertParams; when: string; confirmation?: Promise<SlashResult> }
 
 const UNIT_SECONDS = { s: 1, m: 60, h: 3600, d: 86400 } as const
 const HHMM = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
@@ -94,10 +94,15 @@ export async function scheduleSlash(
   if (word === 'confirm') {
     const next = pending.get(s)
     if (!next) return { text: tt('schedule.noPending', locale) }
-    const result = await call<ScheduleView | Refused>('_agnes/v1/schedules.upsert', next.params)
-    pending.delete(s)
-    if ('updated' in result) return { text: tt('schedule.refused', locale, { code: oneLine(result.code) }) }
-    return { text: tt('schedule.created', locale, { id: oneLine(result.id), when: next.when }) }
+    // Repeated confirmations share one request, including its failure: a lost response does not
+    // prove creation failed. Only a new proposal may start another creation request.
+    next.confirmation ??= Promise.resolve().then(async () => {
+      const result = await call<ScheduleView | Refused>('_agnes/v1/schedules.upsert', next.params)
+      if (pending.get(s) === next) pending.delete(s)
+      if ('updated' in result) return { text: tt('schedule.refused', locale, { code: oneLine(result.code) }) }
+      return { text: tt('schedule.created', locale, { id: oneLine(result.id), when: next.when }) }
+    })
+    return next.confirmation
   }
   if (cmd === '/loop') {
     const seconds = word ? everySeconds(word) : undefined

@@ -81,6 +81,20 @@ it.each([false, true])(
       const source = new Uint8Array(FILE_UPLOAD_CHUNK_BYTES + 7).fill(42)
       const uploadId = crypto.randomUUID()
       const scope = { sessionId: opened.session.key, laneId: opened.session.lane }
+      // SDK-owned IDs cannot be resumed by the caller: failed reads must release their slots/spools.
+      for (let n = 0; n < 4; n++) {
+        await expect(
+          uploadAttachment(client, scope, {
+            name: 'unreadable.bin',
+            type: 'application/octet-stream',
+            size: 1,
+            read: async () => {
+              throw new Error('source changed')
+            },
+          }),
+        ).rejects.toThrow('source changed')
+        expect(await readdir(temporary)).toEqual([])
+      }
       let interrupted = false
       await expect(
         uploadAttachment(
@@ -240,6 +254,38 @@ it.each([false, true])(
         await rm(temporary, { recursive: true, force: true })
       }
     }
+  },
+)
+
+it.each([false, true])(
+  'never retries a lost finish response or masks it with a cleanup failure (resumable=%s)',
+  async (resumable) => {
+    const operations: string[] = []
+    const client = {
+      call: async <T>(_method: string, params: unknown): Promise<T> => {
+        const input = params as FileUploadRequest
+        operations.push(input.operation)
+        if (input.operation === 'finish') throw new Error('response lost')
+        if (input.operation === 'cancel') throw new Error('cleanup unavailable')
+        return { offset: input.operation === 'start' ? 0 : 1 } as T
+      },
+    }
+    await expect(
+      uploadAttachment(
+        client,
+        { sessionId: 'session', laneId: 'main' },
+        {
+          name: 'a.bin',
+          type: 'application/octet-stream',
+          size: 1,
+          read: async () => new Uint8Array([42]),
+        },
+        resumable ? { uploadId: crypto.randomUUID() } : {},
+      ),
+    ).rejects.toThrow('response lost')
+    expect(operations).toEqual(
+      resumable ? ['start', 'chunk', 'finish'] : ['start', 'chunk', 'finish', 'cancel'],
+    )
   },
 )
 
