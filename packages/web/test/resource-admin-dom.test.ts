@@ -556,6 +556,9 @@ it('tells the user a newly created MCP server can be enabled directly', async ()
   expect(feedbackResults.at(-1)?.message).not.toContain('trust')
   expect(byId('resource-notice').dataset.kind).toBe('')
   expect(feedbackResults.at(-1)?.outcome).toBe('success')
+  const scope = feedbackResults.at(-1)!.scope
+  resourceMount.dispose()
+  expect(feedbackResolved).toContain(scope)
 })
 
 it('uses a published-skill link to open the filtered skills list', async () => {
