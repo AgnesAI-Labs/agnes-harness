@@ -10,6 +10,7 @@ import {
 import { type Locale, t } from '../locale.js'
 import type { Tone } from '../palette.js'
 import type { StatusItem } from '../slots.js'
+import type { StatusField, StatusLineConfig } from '../statusline-config.js'
 import { displayWidth } from '../terminal.js'
 import type { ThemedAnsi } from '../theme.js'
 import { RAIL_MIN_WIDTH } from './composer-rail.js'
@@ -45,6 +46,8 @@ export class StatusBar implements Component {
     private readonly safeMode = false,
     /** The launcher passes `(default)` when argv named no preset; only a real name is shown. */
     preset = '',
+    /** Which fields the user keeps; the budget warning, the approval ticket and notices are always shown. */
+    private readonly fields: Pick<StatusLineConfig, 'shows'> = { shows: () => true },
   ) {
     if (preset !== '(default)') this.preset = preset
   }
@@ -111,10 +114,11 @@ export class StatusBar implements Component {
     // `escapeControl` on the two pieces that can carry text an extension or the daemon chose
     // (slot fills, notices): every other part is minted by this component itself from numbers
     // and a fixed enum, so nothing else here can carry a stray control byte to the terminal.
+    const on = (field: StatusField): boolean => this.fields.shows(field)
     const link = t(this.link === 'reconnecting' ? 'status.reconnecting' : 'status.catchingUp', this.locale)
     const notice = this.notice ? this.ansi.fg(NOTICE_TONE[this.noticeTone], escapeControl(this.notice)) : ''
     const parts = [
-      ...this.slots.map(
+      ...(on('slots') ? this.slots : []).map(
         (s) =>
           `${this.ansi.fg(LEVEL_TONE[s.level] ?? 'muted', `[${s.level}]`)} ${this.ansi.dim(escapeControl(s.text))}`,
       ),
@@ -125,9 +129,9 @@ export class StatusBar implements Component {
       this.safeMode ? this.ansi.fg('warning', t('status.safeMode', this.locale)) : '',
       this.parked ? this.ansi.dim(this.parked) : '',
       notice,
-      this.link === 'ok' ? '' : this.ansi.fg('warning', `⟳ ${link}`),
+      this.link === 'ok' || !on('link') ? '' : this.ansi.fg('warning', `⟳ ${link}`),
       // Last, so a narrow line cuts the preset name before it cuts a notice.
-      this.preset && !this.fullAccess
+      this.preset && !this.fullAccess && on('preset')
         ? this.ansi.dim(`${t('status.preset', this.locale)} ${escapeControl(this.preset)}`)
         : '',
     ].filter(Boolean)
@@ -148,7 +152,9 @@ export class StatusBar implements Component {
     }
     // The composer rail draws the context gauge at the same width; below its floor this line does.
     const usage =
-      this.usage && formatUsageLine(this.usage, width, this.ansi, false, width < RAIL_MIN_WIDTH, this.locale)
+      this.usage && on('usage')
+        ? formatUsageLine(this.usage, width, this.ansi, false, width < RAIL_MIN_WIDTH, this.locale)
+        : undefined
     if (usage?.trim()) lines.push(usage)
     return lines
   }

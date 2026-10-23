@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -1122,6 +1122,56 @@ it('Ctrl-X moves between tool cards without touching the draft, and /expand open
     await app?.stop()
     await client.close()
     await endpoint.close()
+  }
+})
+
+it('/statusline hides a field from the live status bar, saves the choice beside the theme, and reset brings it back', async () => {
+  const SID = 'agnes:local:default:cli:dm:statusline'
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-statusline-'))
+  const prefs = join(dir, 'tui-theme.json')
+  writeFileSync(prefs, '{"theme":"dark"}')
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 0,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [],
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes', preset: 'review', themePreferencePath: prefs })
+    await app.start()
+    const screen = async () => (await screenOf(term, 80, 24)).join('\n')
+    await vi.waitFor(async () => expect(await screen()).toContain('preset review'))
+    await app.runInput('/statusline')
+    await vi.waitFor(async () => expect(await screen()).toContain('[x] Preset'))
+    term.feed('\x1b[B')
+    term.feed(' ')
+    await vi.waitFor(async () => expect(await screen()).toContain('[ ] Preset'))
+    term.feed('\x1b')
+    await vi.waitFor(async () => expect(await screen()).not.toContain('preset review'))
+    expect(JSON.parse(readFileSync(prefs, 'utf8'))).toEqual({ theme: 'dark', statusLine: { hide: ['preset'] } })
+    await app.runInput('/statusline reset')
+    await vi.waitFor(async () => expect(await screen()).toContain('preset review'))
+    expect(JSON.parse(readFileSync(prefs, 'utf8'))).toEqual({ theme: 'dark' })
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+    rmSync(dir, { recursive: true, force: true })
   }
 })
 

@@ -245,4 +245,10 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.expand',
     summaryKey: 'commands.expandSummary',
   },
+  {
+    name: '/statusline',
+    args: '[reset]',
+    descriptionKey: 'commands.statusline',
+    summaryKey: 'commands.statuslineSummary',
+  },
 ]

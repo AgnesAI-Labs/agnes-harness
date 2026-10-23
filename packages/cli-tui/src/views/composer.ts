@@ -1,5 +1,6 @@
 import type { UsageView } from '@agnes/protocol'
 import { type Component, padLine } from '../component.js'
+import type { StatusLineConfig } from '../statusline-config.js'
 import type { ThemedAnsi } from '../theme.js'
 import type { WorkspaceInfo } from '../workspace-info.js'
 import { bottomRail, RAIL_MIN_WIDTH, topRail } from './composer-rail.js'
@@ -16,6 +17,7 @@ export class Composer implements Component {
     private readonly editor: Component,
     private readonly ansi: ThemedAnsi,
     private readonly locale = 'en',
+    private readonly fields?: Pick<StatusLineConfig, 'shows'>,
   ) {}
 
   setUsage(usage?: UsageView): void {
@@ -31,7 +33,7 @@ export class Composer implements Component {
     if (width < RAIL_MIN_WIDTH) return this.editor.render(width)
     const frameWidth = width - 1
     const inner = frameWidth - 4
-    const state = { workspace: this.workspace, usage: this.usage, locale: this.locale }
+    const state = { workspace: this.workspace, usage: this.usage, locale: this.locale, fields: this.fields }
     return [
       ` ${topRail(state, frameWidth, this.ansi)}`,
       ...this.editor.render(inner).map((line) => `   ${padLine(line, inner)}  `),

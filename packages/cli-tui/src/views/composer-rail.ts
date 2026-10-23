@@ -3,6 +3,7 @@ import { fitLine } from '../components/line.js'
 import { clipLabel, contextPressure, formatTokenCountShort, sanitizeLabel } from '../format-usage.js'
 import { EXTENDED_KEYS, type ExtendedKey, tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
+import type { StatusField, StatusLineConfig } from '../statusline-config.js'
 import { displayWidth } from '../terminal.js'
 import type { ThemedAnsi } from '../theme.js'
 import type { WorkspaceInfo } from '../workspace-info.js'
@@ -14,12 +15,18 @@ const BRANCH_MIN = 12
 const MODEL_MIN = 8
 const LABEL_MIN = 4
 
-export type RailState = { workspace: WorkspaceInfo; usage?: UsageView | undefined; locale: string }
+export type RailState = {
+  workspace: WorkspaceInfo
+  usage?: UsageView | undefined
+  locale: string
+  /** Which fields of the status line the user keeps; every one when absent. */
+  fields?: Pick<StatusLineConfig, 'shows'> | undefined
+}
 
 type Part = { text: string; tone?: Tone; bold?: true; italic?: true; chip?: true }
 type Chip = {
   model?: string
-  path: string
+  path?: string
   sub: string
   worktree?: string
   branch?: string
@@ -65,11 +72,13 @@ function chipParts(chip: Chip): Part[] {
     parts.push({ text, tone, chip: true, ...(bold ? { bold } : {}) })
   }
   if (chip.model !== undefined) add(`◆ ${chip.model}`, 'code', true)
-  add(chip.path, 'info')
-  if (chip.sub) parts.push({ text: `/${chip.sub}`, tone: 'faint', chip: true })
+  if (chip.path !== undefined) {
+    add(chip.path, 'info')
+    if (chip.sub) parts.push({ text: `/${chip.sub}`, tone: 'faint', chip: true })
+  }
   if (chip.worktree !== undefined) add(chip.worktree ? `⌥ ${chip.worktree}` : '⌥', 'warning')
   if (chip.branch !== undefined) add(`⎇ ${chip.branch}`, chip.detached ? 'warning' : 'success')
-  return [{ text: ' ', chip: true }, ...parts, { text: ' ', chip: true }]
+  return parts.length === 0 ? [] : [{ text: ' ', chip: true }, ...parts, { text: ' ', chip: true }]
 }
 
 /** `─ 23% 230k ━━━──┊── 1M ─╮`; without usage the whole remainder is thin rule. */
@@ -104,24 +113,30 @@ function gaugeParts(gauge: Gauge | undefined, bar: number): Part[] {
 /** The composer's top edge: workspace chip, then the context gauge filling the rest. */
 export function topRail(state: RailState, frameWidth: number, ansi: ThemedAnsi): string {
   const { workspace: ws, usage } = state
+  const show = (field: StatusField): boolean => state.fields?.shows(field) ?? true
   const chip: Chip = {
-    ...(usage ? { model: sanitizeLabel(usage.model.id) } : {}),
-    path: sanitizeLabel(ws.root),
-    sub: sanitizeLabel(ws.subpath),
-    ...(ws.worktree === undefined ? {} : { worktree: sanitizeLabel(ws.worktree) }),
-    ...(ws.detached
-      ? { branch: `@${sanitizeLabel(ws.detached)}` }
-      : ws.branch
-        ? { branch: sanitizeLabel(ws.branch) }
-        : {}),
+    ...(usage && show('model') ? { model: sanitizeLabel(usage.model.id) } : {}),
+    ...(show('cwd') ? { path: sanitizeLabel(ws.root) } : {}),
+    sub: show('cwd') ? sanitizeLabel(ws.subpath) : '',
+    ...(ws.worktree === undefined || !show('branch') ? {} : { worktree: sanitizeLabel(ws.worktree) }),
+    ...(!show('branch')
+      ? {}
+      : ws.detached
+        ? { branch: `@${sanitizeLabel(ws.detached)}` }
+        : ws.branch
+          ? { branch: sanitizeLabel(ws.branch) }
+          : {}),
     detached: Boolean(ws.detached),
   }
-  const gauge: Gauge | undefined = usage && {
-    tokens: usage.context.tokens,
-    window: usage.context.window,
-    ...(usage.context.compactAt === undefined ? {} : { compactAt: usage.context.compactAt }),
-    showTokens: true,
-  }
+  const gauge: Gauge | undefined =
+    usage && show('usage')
+      ? {
+          tokens: usage.context.tokens,
+          window: usage.context.window,
+          ...(usage.context.compactAt === undefined ? {} : { compactAt: usage.context.compactAt }),
+          showTokens: true,
+        }
+      : undefined
   const line = (bar: number): Part[] => [
     { text: '╭─', tone: 'border' },
     ...chipParts(chip),
@@ -140,7 +155,7 @@ export function topRail(state: RailState, frameWidth: number, ansi: ThemedAnsi):
       if (chip.branch) chip.branch = clip(chip.branch, BRANCH_MIN)
     },
     () => {
-      chip.path = shortPath(chip.path)
+      if (chip.path !== undefined) chip.path = shortPath(chip.path)
       chip.sub = ''
     },
     () => {
@@ -150,7 +165,7 @@ export function topRail(state: RailState, frameWidth: number, ansi: ThemedAnsi):
       if (chip.model) chip.model = clip(chip.model, MODEL_MIN)
     },
     () => {
-      chip.path = clip(chip.path, LABEL_MIN)
+      if (chip.path !== undefined) chip.path = clip(chip.path, LABEL_MIN)
     },
     () => {
       delete chip.branch

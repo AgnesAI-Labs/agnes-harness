@@ -194,3 +194,32 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     expect(rows()).toEqual(['F1 Export'])
   })
 })
+
+describe('status bar with fields turned off', () => {
+  const hide = (...hidden: string[]) => ({ shows: (field: string) => !hidden.includes(field) })
+  const bar = (...hidden: string[]) => {
+    const s = new StatusBar(PLAIN, 'en', false, 'review', hide(...hidden) as never)
+    s.setSlots([{ text: 'extension note', level: 'info' }])
+    s.setLink('reconnecting')
+    s.setBudget(95, 100)
+    s.setParked('tk-abcdefgh')
+    s.setNotice('something failed', 'error')
+    return s.render(200)[0] as string
+  }
+
+  it('drops the fields that were turned off and nothing else', () => {
+    const all = bar()
+    for (const text of ['extension note', 'reconnecting', 'preset review']) expect(all).toContain(text)
+    expect(bar('slots')).not.toContain('extension note')
+    expect(bar('link')).not.toContain('reconnecting')
+    expect(bar('preset')).not.toContain('preset review')
+    expect(bar('slots')).toContain('reconnecting')
+  })
+
+  it('never hides the budget warning, a parked approval ticket or an error notice', () => {
+    const line = bar('model', 'preset', 'usage', 'cwd', 'branch', 'link', 'slots')
+    expect(line).toContain('credits 95/100')
+    expect(line).toContain('parked tk-abcde')
+    expect(line).toContain('something failed')
+  })
+})

@@ -1,4 +1,5 @@
 import type { Locale } from './locale.js'
+import type { StatusField } from './statusline-config.js'
 
 /**
  * Strings of the pinned plan panel, tool card focus, the status line settings and the window title.
@@ -28,6 +29,16 @@ export type ChromeKey =
   | 'expand.all'
   | 'expand.none'
   | 'expand.usage'
+  | 'commands.statusline'
+  | 'commands.statuslineSummary'
+  | `statusline.field.${StatusField}`
+  | 'statusline.title'
+  | 'statusline.hint'
+  | 'statusline.always'
+  | 'statusline.unsaved'
+  | 'statusline.reset'
+  | 'statusline.resetUnsaved'
+  | 'statusline.usage'
 
 export const CHROME_DICT: Record<Locale, Record<ChromeKey, string>> = {
   en: {
@@ -56,6 +67,23 @@ export const CHROME_DICT: Record<Locale, Record<ChromeKey, string>> = {
     'expand.all': 'All tool cards opened',
     'expand.none': 'All tool cards folded',
     'expand.usage': 'usage: /expand all|none',
+    'commands.statusline':
+      'Choose which fields the status line shows (model, preset, usage, directory, branch, connection, extension line); "reset" shows them all again',
+    'commands.statuslineSummary': 'Choose status line fields',
+    'statusline.field.model': 'Model',
+    'statusline.field.preset': 'Preset',
+    'statusline.field.usage': 'Usage and context gauge',
+    'statusline.field.cwd': 'Working directory',
+    'statusline.field.branch': 'Git branch and worktree',
+    'statusline.field.link': 'Connection state',
+    'statusline.field.slots': 'Extension status line',
+    'statusline.title': 'Status line',
+    'statusline.hint': '↑↓ move · Space/Enter show or hide · Esc close',
+    'statusline.always': 'Always shown: budget warning, approval ticket, error notices',
+    'statusline.unsaved': 'Not saved: the preferences file could not be written',
+    'statusline.reset': 'Status line reset: every field is shown',
+    'statusline.resetUnsaved': 'Status line reset for this run; the preferences file could not be written',
+    'statusline.usage': 'usage: /statusline [reset]',
   },
   'zh-CN': {
     'commands.todos':
@@ -82,5 +110,22 @@ export const CHROME_DICT: Record<Locale, Record<ChromeKey, string>> = {
     'expand.all': '已展开所有工具卡',
     'expand.none': '已折叠所有工具卡',
     'expand.usage': '用法：/expand all|none',
+    'commands.statusline':
+      '选择状态栏显示哪些字段（模型、预设、用量、目录、分支、连接、扩展状态行）；reset 恢复全部显示',
+    'commands.statuslineSummary': '选择状态栏字段',
+    'statusline.field.model': '模型',
+    'statusline.field.preset': '预设',
+    'statusline.field.usage': '用量与上下文进度条',
+    'statusline.field.cwd': '工作目录',
+    'statusline.field.branch': 'Git 分支与工作树',
+    'statusline.field.link': '连接状态',
+    'statusline.field.slots': '扩展状态行',
+    'statusline.title': '状态栏',
+    'statusline.hint': '↑↓ 移动 · 空格/回车 显示或隐藏 · Esc 关闭',
+    'statusline.always': '始终显示：预算告警、审批暂存票、错误通知',
+    'statusline.unsaved': '未保存：偏好文件无法写入',
+    'statusline.reset': '状态栏已重置：所有字段都显示',
+    'statusline.resetUnsaved': '状态栏已在本次运行中重置；偏好文件无法写入',
+    'statusline.usage': '用法：/statusline [reset]',
   },
 }

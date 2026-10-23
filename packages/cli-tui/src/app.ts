@@ -32,8 +32,9 @@ import { TuiProjection, type TuiProjectionWindow } from './projection.js'
 import { PromptHistory } from './prompt-history.js'
 import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { ResourceCommandKind, TuiResourceController } from './resource-controller.js'
-import { rootInput } from './root-input.js'
+import { type InputDialog, rootInput } from './root-input.js'
 import { type ActionItem, collectSlots } from './slots.js'
+import { StatusLineConfig } from './statusline-config.js'
 import { SurfaceInbox } from './surface-inbox.js'
 import { resolveAuto } from './terminal-background.js'
 import { TerminalSignals } from './terminal-signals.js'
@@ -50,6 +51,7 @@ import { ModelPicker } from './views/model-picker.js'
 import { PlanPanel } from './views/plan-panel.js'
 import { SessionPicker } from './views/session-picker.js'
 import { StatusBar } from './views/status-bar.js'
+import { StatusLinePicker } from './views/statusline-picker.js'
 import { ThemePicker } from './views/theme-picker.js'
 import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { UsagePanel } from './views/usage-panel.js'
@@ -105,6 +107,7 @@ export class TuiApp {
   private themePreference: ThemePreference
   readonly usagePanel: UsagePanel
   readonly planPanel: PlanPanel
+  readonly statusLine: StatusLinePicker
   private readonly pager: PagerOverlay
   private readonly cardFocus: CardFocus
   private readonly modelPicker: ModelPicker
@@ -173,7 +176,13 @@ export class TuiApp {
     )
     this.live = new LiveView(ansi, locale)
     this.localCommandView = localCommandView(ansi)
-    this.statusBar = new StatusBar(ansi, locale, o.safeMode, o.preset)
+    this.statusLine = new StatusLinePicker({
+      config: new StatusLineConfig(o.themePreferencePath),
+      ansi,
+      locale,
+      changed: () => this.stopped || this.renderer.requestRender(),
+    })
+    this.statusBar = new StatusBar(ansi, locale, o.safeMode, o.preset, this.statusLine.config)
     this.mouse = new TuiMouse(
       (rows) => this.scrollTimeline(rows),
       o.copy ?? systemCopy((s) => o.term.write(s)),
@@ -316,7 +325,7 @@ export class TuiApp {
       changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.packageController = new PackageController(o.controlClient, () => this.profile)
-    this.composer = new Composer(this.editor, ansi, locale)
+    this.composer = new Composer(this.editor, ansi, locale, this.statusLine.config)
     this.composer.setWorkspace({ root: tildePath(this.cwd), subpath: '' })
     // At startup and after every turn (the agent may have switched branch); never blocks a frame.
     this.refreshWorkspace = workspaceRefresher(this.cwd, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
@@ -342,22 +351,26 @@ export class TuiApp {
       this.themePicker,
       this.sessionPicker,
       this.usagePanel,
+      this.statusLine,
       this.statusBar,
       this.hints,
     ])
     // A pending approval takes every keystroke, so the dialogs give up their rows until it is answered
     // and then reappear unchanged.
-    const dialogs: readonly Component[] = [
+    const dialogs: readonly (Component & InputDialog)[] = [
       this.modelPicker,
       this.themePicker,
       this.sessionPicker,
       this.usagePanel,
+      this.statusLine,
     ]
     root.render = (width) => {
       this.signals.sync()
       // Like the dialogs, the pager gives way to a pending approval and returns unchanged.
       if (this.pager.open && !this.modal.pending) return this.pager.render(width)
-      const shown = root.children.filter((child) => !(this.modal.pending && dialogs.includes(child)))
+      const shown = root.children.filter(
+        (child) => !(this.modal.pending && dialogs.some((dialog) => dialog === child)),
+      )
       let rows = 0
       for (const child of shown.toReversed()) {
         if (child === this.modal) this.belowModal = rows
@@ -386,14 +399,7 @@ export class TuiApp {
         signals: () => this.signals,
         settle: this.settle,
         modal: this.modal,
-        dialogs: [
-          this.pager,
-          this.cardFocus,
-          this.themePicker,
-          this.modelPicker,
-          this.sessionPicker,
-          this.usagePanel,
-        ],
+        dialogs: [this.pager, this.cardFocus, ...dialogs],
         openPager: () => this.pager.show(),
         openCards: () => this.cardFocus.enter(),
         approvalCards: this.approvalCards,

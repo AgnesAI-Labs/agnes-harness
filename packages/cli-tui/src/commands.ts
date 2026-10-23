@@ -563,6 +563,10 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       const note = args.length > 1 ? undefined : app.planPanel.setMode(args[0])
       return { text: note ?? tt('todos.usage', locale) }
     }
+    case '/statusline': {
+      const text = app.statusLine.command(args)
+      return text === undefined ? {} : { text }
+    }
     case '/expand':
       if (args.length !== 1 || (args[0] !== 'all' && args[0] !== 'none'))
         return { text: tt('expand.usage', locale) }

@@ -181,3 +181,23 @@ describe('composer rail bottom edge', () => {
     expect(bottomRail(state({ usage: undefined }), 80, PLAIN)).not.toContain('thinking')
   })
 })
+
+describe('composer rail with fields turned off', () => {
+  const hide = (...hidden: string[]) => ({ shows: (field: string) => !hidden.includes(field) })
+  const top = (...hidden: string[]) =>
+    topRail(state({ fields: hide(...hidden) as RailState['fields'] }), 200, PLAIN)
+
+  it('leaves out the model, the directory, the branch and the gauge one by one, and keeps the width', () => {
+    expect(top('model')).not.toContain('GLM-5.3-Flash')
+    expect(top('model')).toContain('~/agnes-harness/packages/web')
+    expect(top('cwd')).not.toContain('agnes-harness')
+    expect(top('cwd')).toContain('GLM-5.3-Flash')
+    expect(top('branch')).not.toContain('feat/agh-plugin-core')
+    expect(top('branch')).not.toContain('lane-a')
+    expect(top('usage')).not.toContain('23%')
+    expect(top('usage')).toContain('GLM-5.3-Flash')
+    for (const hidden of [['model'], ['cwd'], ['branch'], ['usage'], ['model', 'cwd', 'branch', 'usage']])
+      expect(displayWidth(top(...hidden))).toBe(200)
+    expect(top('model', 'cwd', 'branch', 'usage')).toBe(`╭─${'─'.repeat(197)}╮`)
+  })
+})
