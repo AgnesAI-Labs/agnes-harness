@@ -21,7 +21,11 @@ describe('importSession', () => {
       trust: 'untrusted',
       actor: { id: 'import', role: 'importer' },
     })
-    for (const event of result.events) expect(validateEvent(event).ok, event.type).toBe(true)
+    for (const event of result.events) {
+      expect(validateEvent(event).ok, event.type).toBe(true)
+      expect(event.trust, event.type).toBe('untrusted')
+      expect(event.origin, event.type).toBe(`import:${source}`)
+    }
   })
 
   it('passes a native stream through, skips its CLI result, and rejects malformed rows', () => {
@@ -109,4 +113,10 @@ describe('importSession', () => {
     expect(result.events.some((event) => event.type === 'x/agnes/import/unmapped')).toBe(true)
     for (const event of result.events) expect(validateEvent(event).ok).toBe(true)
   })
+})
+
+it('refuses oversized import bytes before decoding or parsing them', () => {
+  // No large allocation: touching a decoder would fail with a different error.
+  const oversized = { byteLength: 64 * 1024 * 1024 + 1 } as Uint8Array
+  expect(() => importSession(oversized)).toThrow(/E_IMPORT_TOO_LARGE/)
 })

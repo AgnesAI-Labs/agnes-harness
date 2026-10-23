@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -72,6 +72,23 @@ describe('importInto (the TUI /import path)', () => {
 })
 
 describe('import command', () => {
+  it('refuses oversized sources and non-files before reserving a target', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agnes-import-limits-'))
+    try {
+      const file = join(root, 'oversized.jsonl')
+      writeFileSync(file, '')
+      truncateSync(file, 64 * 1024 * 1024 + 1)
+      const parsed = parseArgs(['import', file])
+      const deps = { cwd: root, env: {}, host: {}, admission: {}, io: sink().io } as Parameters<
+        typeof importFile
+      >[1]
+      await expect(importFile(parsed, deps)).rejects.toThrow(/E_IMPORT_TOO_LARGE/)
+      await expect(importFile(parseArgs(['import', root]), deps)).rejects.toThrow(/regular file/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('is dispatched by the executable through a local Host', async () => {
     const home = mkdtempSync(join(tmpdir(), 'agnes-import-main-'))
     const file = join(home, 'pi.jsonl')

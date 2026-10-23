@@ -69,6 +69,8 @@ The native import above uses a new session key. Choose a previously unused key f
 
 Exports may contain prompts, tool arguments, paths, and business data. Review them before sharing. `--raw` reduces privacy filtering and is not the default sharing method. Importing external formats such as Claude Code, Codex, or Pi converts data; it does not restore the original permissions or process, or guarantee lossless semantics. Preserve import errors and inspect the session list. Changing IDs and retrying is not a substitute for diagnosing a failure.
 
+Import source files must be regular files of at most 64 MiB. Files that grow beyond this limit while being read are refused before a target session is reserved.
+
 <a id="中断与重启"></a>
 
 ## Interruptions and restarts

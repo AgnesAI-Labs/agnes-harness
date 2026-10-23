@@ -24,6 +24,8 @@ const isCliResult = (value: unknown): boolean =>
 
 /** How a skipped row an older build wrote is reported, so an importer can say so plainly. */
 export const OLDER_EXPORT_FORMAT = 'older export format'
+/** Total source bytes, before decoding or allocating JSON rows. */
+export const MAX_IMPORT_BYTES = 64 * 1024 * 1024
 
 function passThroughAgnes(rows: JsonlRow[], report: Tolerance): EventEnvelope[] {
   const events: EventEnvelope[] = []
@@ -81,6 +83,8 @@ function downgrade(event: EventEnvelope, errors: unknown[]): EventEnvelope {
 }
 
 export function importSession(bytes: Uint8Array, options: ImportOptions = {}): ImportResult {
+  if (bytes.byteLength > MAX_IMPORT_BYTES)
+    throw new ImportError('E_IMPORT_TOO_LARGE', 'source exceeds 64 MiB')
   const tolerance = new Tolerance()
   const rows = parseJsonl(bytes, tolerance)
   const detected =

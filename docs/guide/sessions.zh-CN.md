@@ -61,6 +61,8 @@ node agnes.mjs import session.jsonl --from auto --key agnes:local:default:import
 
 导出文件可能包含提示、工具参数、路径和业务数据，分享前审查。`--raw` 会减少隐私过滤，不是默认共享方式。外部格式（Claude Code/Codex/Pi）导入是格式转换，不能恢复原工具权限、原进程或保证所有语义无损。导入失败要保留错误并检查会话列表，不通过重试换 ID 来掩盖失败。
 
+导入源必须是普通文件，最大为 64 MiB；读取过程中增长到超过上限也会在预留目标会话前被拒绝。
+
 ## 中断与重启
 
 指导、补充或队列控制的结果未确认时，SDK 保留原命令 ID。重连会重放 pending 命令一次；

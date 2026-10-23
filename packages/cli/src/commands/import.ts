@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
@@ -7,6 +6,7 @@ import type { EventEnvelope, SessionStart } from '@agnes/protocol'
 import type { LocalBootDeps } from '../boot/local.js'
 import { CommandError, ExitCode, UsageError } from '../errors.js'
 import type { ParsedArgs, SessionAdmissionPort } from '../types.js'
+import { readImportFile } from './import-file.js'
 import { bundleOriginals, readNativeBundle } from './native-bundle.js'
 
 type Sink = { write(chunk: string | Uint8Array): unknown }
@@ -97,7 +97,7 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
     throw new UsageError('import only runs in one-shot form (no --connect)')
   const file = parsed.positional[0]
   if (!file || parsed.positional.length !== 1) throw new UsageError('import expects exactly one file')
-  const bytes = (deps.readFile ?? readFileSync)(resolve(deps.cwd, file))
+  const bytes = (deps.readFile ?? readImportFile)(resolve(deps.cwd, file))
   const bundle = await readNativeBundle(resolve(deps.cwd, file), bytes)
   const converted = importSession(bundle?.raw ?? bytes, {
     from: parsed.from ?? 'auto',
