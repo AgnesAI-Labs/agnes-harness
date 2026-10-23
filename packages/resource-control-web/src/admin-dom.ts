@@ -1,4 +1,14 @@
 import type { LocaleTranslator } from '@agnes/web-ui'
+import { ResourceAdminApiError } from './api.js'
+import type { ResourceAdminError } from './types.js'
+
+export const errorOf = (error: unknown): ResourceAdminError =>
+  error instanceof ResourceAdminApiError
+    ? error.details
+    : {
+        code: 'RESOURCE_ADMIN_UNAVAILABLE',
+        message: 'The resource admin service is temporarily unavailable. Try again later.',
+      }
 
 export type ResourceNotice = {
   key?: string

@@ -25,7 +25,7 @@ export function disclosureOnlyUpdate(
 
 /**
  * The journal row a create or update writes. Any edit needs review again, so the row starts
- * untrusted (keeping the requested enablement) -- except an update that changes only how tools reach
+ * untrusted and disabled -- except an update that changes only how tools reach
  * the model: nothing that runs or connects changed, so trust, enablement and a local start approval
  * carry over to the new revision.
  */
@@ -47,7 +47,7 @@ export function definedRow(
     definition,
     revision,
     trust: 'untrusted',
-    desired: prior?.desired ?? 'disabled',
+    desired: 'disabled',
     status: unavailable,
   }
 }

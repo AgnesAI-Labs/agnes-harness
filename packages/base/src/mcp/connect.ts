@@ -1,3 +1,4 @@
+import type { Stream } from 'node:stream'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 // SSEClientTransport is the legacy pre-2025-03-26 MCP SSE transport. The SDK marks it @deprecated in
@@ -28,6 +29,7 @@ import {
   readRemoteResourceContent,
   readRemoteResourceTemplate,
 } from './resources.js'
+import { observeStdioStartup } from './stdio-diagnostics.js'
 import { type CloseObservableTransport, observeTransportDisconnect } from './transport-health.js'
 
 type SdkTool = {
@@ -42,7 +44,7 @@ type SdkTool = {
       }
     | undefined
 }
-type SdkTransport = CloseObservableTransport
+type SdkTransport = CloseObservableTransport & { readonly stderr?: Pick<Stream, 'on'> | null }
 type SdkResource = { uri: string; name: string; description?: string; mimeType?: string }
 type SdkResourceTemplate = { uriTemplate: string; name: string; description?: string; mimeType?: string }
 type SdkResourceContent = { uri: string; mimeType?: string; text?: string; blob?: string }
@@ -236,7 +238,10 @@ async function bounded<T>(
       onAbort = () => reject(aborted())
       options.signal?.addEventListener('abort', onAbort, { once: true })
       if (timeoutMs !== undefined)
-        timer = setTimeout(() => reject(new Error('MCP operation timed out')), timeoutMs)
+        timer = setTimeout(
+          () => reject(Object.assign(new Error('MCP operation timed out'), { code: 'MCP_CONNECT_TIMEOUT' })),
+          timeoutMs,
+        )
       operation.then(resolve, reject)
     })
   } finally {
@@ -374,6 +379,7 @@ function stdioTransport(cfg: McpServerConfig, deps: McpSdkDeps): SdkTransport {
   return deps.createStdioTransport({
     command,
     args,
+    stderr: 'pipe',
     ...(cfg.cwd ? { cwd: cfg.cwd } : {}),
     env: { ...(cfg.baseEnv ?? deps.defaultEnvironment()), ...(cfg.env ?? {}) },
   })
@@ -492,6 +498,7 @@ export async function connectMcp(
     }
   }
   const client = deps.createClient()
+  const startup = cfg.transport === 'stdio' ? observeStdioStartup(transport.stderr) : undefined
   client.setElicitationHandler(() => ({ action: 'decline' }))
   try {
     await bounded(client.connect(transport), {
@@ -500,8 +507,11 @@ export async function connectMcp(
     })
   } catch (error) {
     await client.close().catch(() => undefined)
-    throw error
+    const failure = options.signal?.aborted ? error : (startup?.failure(error) ?? error)
+    startup?.settled()
+    throw failure
   }
+  startup?.settled()
 
   let closed = false
   const closeListeners = new Set<() => void>()

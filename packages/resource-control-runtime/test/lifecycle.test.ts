@@ -12,6 +12,44 @@ const definition = {
 }
 
 describe('resource runtime lifecycle boundaries', () => {
+  it.each([
+    ['MCP_STDIO_ENV_MISSING', 'MCP_STDIO_ENV_MISSING'],
+    [401, 'MCP_AUTH_FAILED'],
+    ['untrusted-error-code', 'MCP_CONNECT_FAILED'],
+  ])('reports safe MCP failures through enable and test for %s', async (code, expected) => {
+    const manager = createMcpResourceManager({
+      barrier,
+      profile: 'local-dev',
+      credentials: async () => '',
+      stdioPolicy: { allowedExecutables: ['example'] },
+      connect: async () => {
+        throw Object.assign(new Error('private-secret-value'), { code })
+      },
+      inspectCatalog: async () => ({ tools: [], skipped: [] }),
+      apply: async () => undefined,
+    })
+    manager.stage({ definition, revision: 'e'.repeat(64), desired: 'enabled', trust: 'trusted' })
+    const input = {
+      profile: 'local-dev',
+      serverId: 'example',
+      definition,
+      signal: new AbortController().signal,
+    }
+    const enabled = await manager.reconcile({ ...input, enabled: true })
+    expect(enabled.status).toMatchObject({
+      connectionState: 'unavailable',
+      toolCount: 0,
+      lastSafeError: { code: expected },
+    })
+    const tested = await manager.test(input)
+    expect(tested).toMatchObject({
+      toolCount: 0,
+      error: { code: expected === 'MCP_CONNECT_FAILED' ? 'MCP_TEST_FAILED' : expected },
+    })
+    expect(JSON.stringify([enabled, tested])).not.toContain('private-secret-value')
+    await manager.close()
+  })
+
   it('keeps a successful Skill body as LKG input when the next root scan fails', async () => {
     const registry = createSkillCandidateRegistry({ barrier })
     const candidate = {

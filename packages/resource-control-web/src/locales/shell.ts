@@ -29,6 +29,8 @@ export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
     'wizard.oauthClient': 'Client ID (only if you already have one)',
     'wizard.oauthKind': 'OAuth',
     'wizard.env': 'Token environment variable',
+    'wizard.envHelp':
+      'Enter the exact environment variable required by the service, for example CONTEXT7_API_KEY for Context7. Choosing a credential does not choose its variable name.',
 
     'sandbox.workspace': 'Workspace folder (optional, absolute path)',
     'sandbox.off-with-warning': 'Off: full host access (explicit approval)',
@@ -36,6 +38,8 @@ export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
     'sandbox.workspace-write': 'Workspace write, no network',
     'sandbox.strict': 'Strict: workspace read, no network',
     'sandbox.title': 'Sandbox profile',
+    'sandbox.help':
+      'Strict and workspace-write block network access. For package downloads (such as npx) or online APIs, explicitly choose Network. Local commands also require an installed runtime that works inside the sandbox.',
     'confirmation.title': 'Confirm action',
     'confirmation.cancel': 'Cancel',
     'confirmation.confirm': 'Confirm',
@@ -109,6 +113,8 @@ export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
     'wizard.oauthClient': '客户端 ID（已有时才填）',
     'wizard.oauthKind': 'OAuth',
     'wizard.env': '令牌环境变量名',
+    'wizard.envHelp':
+      '请按服务文档填写变量名，例如 Context7 使用 CONTEXT7_API_KEY。选择凭据不会自动确定变量名。',
 
     'sandbox.workspace': '工作区目录（可选，绝对路径）',
     'sandbox.off-with-warning': '关闭：访问完整主机（须明确批准）',
@@ -116,6 +122,8 @@ export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
     'sandbox.workspace-write': '允许工作区写入，禁止联网',
     'sandbox.strict': '严格：工作区只读，禁止联网',
     'sandbox.title': '沙箱配置',
+    'sandbox.help':
+      '严格与工作区写入模式禁止联网。下载包（例如 npx）或访问在线 API 时，请明确选择「允许联网」。本地命令还需要已安装且能在沙箱内运行的执行环境。',
     'confirmation.title': '确认操作',
     'confirmation.cancel': '取消',
     'confirmation.confirm': '确认',

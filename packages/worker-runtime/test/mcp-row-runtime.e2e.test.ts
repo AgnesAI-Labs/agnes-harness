@@ -1137,19 +1137,39 @@ describe('a session MCP row whose catalog holds tools the model cannot be shown'
     expect(page?.catalogRevision).toBe(status?.catalogRevision)
   })
 
-  it('reports a connection failure with an empty message as a valid status', async () => {
+  it.each([
+    ['', 'MCP_CONNECT_FAILED'],
+    ['stdio-child', 'MCP_STDIO_ENV_MISSING'],
+    [
+      Object.assign(new Error('private-secret-value'), { code: 'MCP_STDIO_ENV_MISSING' }),
+      'MCP_STDIO_ENV_MISSING',
+    ],
+    [Object.assign(new Error('private-secret-value'), { code: 401 }), 'MCP_AUTH_FAILED'],
+  ])('reports a safe valid connection failure for %s', async (error, code) => {
     const host = await testHost()
     const failing: McpServerOpener = {
       connect: async () => {
-        throw ''
+        if (error === 'stdio-child')
+          return connectMcp({
+            id: 'alpha',
+            transport: 'stdio',
+            defer: false,
+            cmd: [
+              process.execPath,
+              '-e',
+              'process.stderr.write("private-secret-value\\nOPENCLAW_ELECTRON_PATH is not set\\n"); process.exit(1)',
+            ],
+          })
+        throw error
       },
     }
     const result = await createMcpRowRuntime({ host, opener: failing }).apply([entry('alpha')])
     const status = result.statuses.get('alpha')
     expect(status).toMatchObject({
       connectionState: 'unavailable',
-      lastSafeError: { code: 'MCP_CONNECT_FAILED', message: 'MCP connection failed' },
+      lastSafeError: { code },
     })
+    expect(status?.lastSafeError?.message).not.toContain('private-secret-value')
     expect(validateResourceControlData('McpStatus', status).ok).toBe(true)
   })
 })

@@ -35,7 +35,7 @@ import {
   type UiLocaleSource,
   unmountRegion,
 } from '@agnes/web-ui'
-import { $, type ResourceNotice, renderNotice } from './admin-dom.js'
+import { $, errorOf, type ResourceNotice, renderNotice } from './admin-dom.js'
 import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
 import {
@@ -55,7 +55,7 @@ import { SkillsPage } from './skills-page.js'
 export { registerSkillPagePanels, type SkillPagePanels } from './skills-page.js'
 
 import { type ResourceAdminSurface, renderSettingsChrome } from './settings-chrome.js'
-import type { ResourceAdminContext, ResourceAdminError } from './types.js'
+import type { ResourceAdminContext } from './types.js'
 
 export type { ResourceAdminSurface } from './settings-chrome.js'
 
@@ -91,13 +91,6 @@ export type ResourceScope = Readonly<{ tab: Tab; workspaceId?: string }>
 function normalizeWorkspaceId(workspaceId?: string): string | undefined {
   return workspaceId && /^[a-f0-9]{64}$/.test(workspaceId) ? workspaceId : undefined
 }
-const errorOf = (error: unknown): ResourceAdminError =>
-  error instanceof ResourceAdminApiError
-    ? error.details
-    : {
-        code: 'RESOURCE_ADMIN_UNAVAILABLE',
-        message: 'The resource admin service is temporarily unavailable. Try again later.',
-      }
 const resourceAdminCatalogs = {
   [RESOURCE_ADMIN_LOCALE_NAMESPACE]: resourceAdminLocaleCatalog,
   [RESOURCE_LIST_LOCALE_NAMESPACE]: resourceListLocaleCatalog,
@@ -587,9 +580,7 @@ class ResourceAdminPage {
             onTools={async (cursor) => {
               const result = await this.api().mcpTools(selected.serverId, cursor)
               return {
-                names: result.items.map((tool) =>
-                  tool.description ? `${tool.name} — ${tool.description}` : tool.name,
-                ),
+                items: result.items,
                 nextCursor: result.nextCursor,
               }
             }}
@@ -1055,15 +1046,11 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
       if (stop.signal.aborted) return
       editing = undefined
       if (dialog.open) dialog.close()
-      await page.track(
-        receipt,
-        creating
-          ? {
-              message: activeResourceText('notice.created', { name: definition.displayName }),
-              effect: { kind: 'enable-required', message: activeResourceText('notice.enableRequired') },
-            }
-          : undefined,
-      )
+      await page.track(receipt, {
+        message: activeResourceText(creating ? 'notice.created' : 'notice.updated', {
+          name: definition.displayName,
+        }),
+      })
     })()
       .catch((cause) => {
         if (stop.signal.aborted) return

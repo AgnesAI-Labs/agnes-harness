@@ -86,7 +86,14 @@ export const MCP_FORM_SCHEMAS: Readonly<Record<keyof typeof MCP_FORM_PATTERNS, C
 const matchesField = (key: keyof typeof MCP_FORM_SCHEMAS, value: string) =>
   configIssues(MCP_FORM_SCHEMAS[key], value).length === 0
 
-export type McpFormFieldId = 'mcp-id' | 'mcp-executable' | 'mcp-args' | 'mcp-url' | 'mcp-secret' | 'mcp-tools'
+export type McpFormFieldId =
+  | 'mcp-id'
+  | 'mcp-executable'
+  | 'mcp-args'
+  | 'mcp-url'
+  | 'mcp-secret'
+  | 'mcp-tools'
+  | 'mcp-token-env'
 
 export type McpFormFieldIssue = Readonly<{
   field: McpFormFieldId

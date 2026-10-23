@@ -2,6 +2,7 @@
 @import "./native.css";
 @import "./refinement.css";
 @import "./doctor-groups.css";
+@import "./mcp-tool-catalog.css";
 
 @layer ui {
   .agh-notifications {

@@ -160,6 +160,30 @@ function McpDialogScaffold() {
           </SettingsSelect>
         </label>
         <p id="mcp-credential-status" role="status"></p>
+        <label id="mcp-token-env-row" className="form-field" hidden htmlFor="mcp-token-env">
+          <span>{t('wizard.env')}</span>
+          <SettingsInput
+            id="mcp-token-env"
+            autoComplete="off"
+            placeholder="SERVICE_API_KEY"
+            aria-describedby="mcp-token-env-help"
+          />
+          <span id="mcp-token-env-help" className="form-hint">
+            {t('wizard.envHelp')}
+          </span>
+        </label>
+        <label id="mcp-sandbox-row" className="form-field" htmlFor="mcp-sandbox">
+          <span>{t('sandbox.title')}</span>
+          <SettingsSelect id="mcp-sandbox" aria-describedby="mcp-sandbox-help">
+            <option value="strict">{t('sandbox.strict')}</option>
+            <option value="workspace-write">{t('sandbox.workspace-write')}</option>
+            <option value="network">{t('sandbox.network')}</option>
+            <option value="off-with-warning">{t('sandbox.off-with-warning')}</option>
+          </SettingsSelect>
+          <span id="mcp-sandbox-help" className="form-hint">
+            {t('sandbox.help')}
+          </span>
+        </label>
         <a
           href="https://github.com/AgnesAI-Labs/agnes-harness/blob/feat/agh-plugin-core/docs/guide/mcp.md"
           target="_blank"
@@ -169,10 +193,6 @@ function McpDialogScaffold() {
         </a>
         <Disclosure className="agnes-settings-details" id="mcp-advanced" summary={t('wizard.advanced')}>
           <div className="agnes-settings-stack">
-            <label className="form-field" htmlFor="mcp-token-env">
-              <span>{t('wizard.env')}</span>
-              <SettingsInput id="mcp-token-env" defaultValue="TOKEN" autoComplete="off" />
-            </label>
             <label className="form-field" htmlFor="mcp-name">
               <span>{t('index-shell.mcpNameLabel')}</span>
               <SettingsInput
@@ -202,15 +222,6 @@ function McpDialogScaffold() {
             <label id="mcp-workspace-row" className="form-field" htmlFor="mcp-workspace">
               <span>{t('sandbox.workspace')}</span>
               <SettingsInput id="mcp-workspace" autoComplete="off" />
-            </label>
-            <label id="mcp-sandbox-row" className="form-field" htmlFor="mcp-sandbox">
-              <span>{t('sandbox.title')}</span>
-              <SettingsSelect id="mcp-sandbox">
-                <option value="strict">{t('sandbox.strict')}</option>
-                <option value="workspace-write">{t('sandbox.workspace-write')}</option>
-                <option value="network">{t('sandbox.network')}</option>
-                <option value="off-with-warning">{t('sandbox.off-with-warning')}</option>
-              </SettingsSelect>
             </label>
             <label id="mcp-executable-row" className="form-field" htmlFor="mcp-executable">
               <span>{t('index-shell.mcpExecutableLabel')}</span>

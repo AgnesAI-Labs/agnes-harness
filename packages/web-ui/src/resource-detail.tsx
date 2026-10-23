@@ -2,6 +2,7 @@ import type { McpServerDefinitionInput, McpServerDescriptor, SkillDescriptor } f
 import type { JSX } from 'react'
 import { useState } from 'react'
 import { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
+import { McpToolCatalog, type ToolCatalog } from './mcp-tool-catalog.js'
 import { SettingsAdvanced, SettingsInput, SettingsSaveBar, SettingsState } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { Disclosure } from './ui/disclosure.js'
@@ -240,8 +241,6 @@ type StatusPanel = readonly (readonly [string, string])[]
 type McpToolDisclosure = NonNullable<McpServerDefinitionInput['toolDisclosure']>
 const TOOL_DISCLOSURE_MODES: readonly McpToolDisclosure[] = ['auto', 'always', 'on-demand']
 
-type ToolCatalog = { names: readonly string[]; nextCursor: string | undefined }
-
 /** MCP 详情体。「查看连接状态/工具目录」的异步面板在此组件内管理，api 调用由壳回调。 */
 export function McpDetailContent({
   server,
@@ -337,12 +336,10 @@ export function McpDetailContent({
             variant="plain"
             className="confirm-review-section"
             defaultOpen
-            summary={t('mcp.tools.title', { count: catalog.names.length })}
+            summary={t('mcp.tools.title', { count: catalog.items.length })}
           >
             <div>
-              {catalog.names.map((name) => (
-                <p key={name}>{name}</p>
-              ))}
+              <McpToolCatalog items={catalog.items} />
               {catalog.nextCursor && (
                 <Button
                   htmlType="button"
@@ -351,7 +348,7 @@ export function McpDetailContent({
                   onClick={() =>
                     void onTools(catalog.nextCursor).then((next) =>
                       setCatalog({
-                        names: [...catalog.names, ...next.names],
+                        items: [...catalog.items, ...next.items],
                         nextCursor: next.nextCursor,
                       }),
                     )

@@ -21,6 +21,7 @@ export function createMcpForm(input: {
     ['mcp-url', 'input'],
     ['mcp-secret', 'textarea'],
     ['mcp-tools', 'textarea'],
+    ['mcp-token-env', 'input'],
   ]
   function mcpFormSnapshot(): McpFormFieldSnapshot {
     return {
@@ -44,7 +45,15 @@ export function createMcpForm(input: {
     requireFilled = false,
     t: LocaleTranslator = input.text(),
   ): ReturnType<typeof mcpFormIssues> {
-    const issues = mcpFormIssues(mcpFormSnapshot(), { requireFilled }, t)
+    const snapshot = mcpFormSnapshot()
+    const credential = document.getElementById('mcp-credential') as HTMLSelectElement | null
+    const mapped =
+      snapshot.transport === 'stdio' &&
+      credential?.value &&
+      snapshot.secretText === `${$('mcp-token-env', 'input').value}=${credential.value}`
+    const issues = mcpFormIssues(snapshot, { requireFilled }, t).map((issue) =>
+      mapped && issue.field === 'mcp-secret' ? { ...issue, field: 'mcp-token-env' as const } : issue,
+    )
     for (const [id, tag] of MCP_FIELD_CONTROLS) $(id, tag).removeAttribute('aria-invalid')
     for (const issue of issues) {
       const control = MCP_FIELD_CONTROLS.find(([fieldId]) => fieldId === issue.field)

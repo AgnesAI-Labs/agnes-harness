@@ -6,6 +6,7 @@ import {
   type McpToolCatalogPage,
   validateResourceControlData,
 } from '@agnes/protocol'
+import { mcpConnectionFailure } from '@agnes/resource-control-runtime'
 import {
   type McpServerRowsResult,
   type McpServerSnapshotEntry,
@@ -46,12 +47,13 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
         : {}),
     }
   if (event.state === 'unavailable') {
+    const failure = mcpConnectionFailure(event.error)
     const code =
       event.reason === 'exhausted'
         ? 'MCP_RECONNECT_EXHAUSTED'
         : event.reason === 'lost'
           ? 'MCP_CONNECTION_LOST'
-          : 'MCP_CONNECT_FAILED'
+          : failure.code
     return {
       serverId,
       connectionState: 'unavailable',
@@ -61,8 +63,7 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
       observedAt: observedAt(),
       lastSafeError: {
         code,
-        // SafeError.message is 1..256 chars; an arbitrary error's own message can be longer or empty.
-        message: String(event.error).slice(0, 256) || 'MCP connection failed',
+        message: failure.message,
       },
     }
   }

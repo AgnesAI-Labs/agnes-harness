@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { isIP } from 'node:net'
+import { mcpConnectionFailure } from './mcp-failure.js'
 /**
  * Consumption-only port for Base's MCP library (packages/base/src/mcp). Host neither constructs an MCP client nor imports a
  * package implementation: composition injects Base connectMcp/inspectRemoteCatalog.
@@ -744,7 +745,8 @@ export function createMcpResourceManager(options: Options) {
           'No usable stdio sandbox is available. Explicitly approve off-with-warning or configure a working sandbox.',
           input,
         )
-      return failed(serverId, 'MCP_CONNECT_FAILED', 'MCP connection or catalog health check failed', input)
+      const failure = mcpConnectionFailure(error)
+      return failed(serverId, failure.code, failure.message, input)
     }
     return applyActive(serverId, next, operationId)
   }
@@ -829,11 +831,15 @@ export function createMcpResourceManager(options: Options) {
           toolCount: transient.tools.length,
           catalogRevision: transient.catalogRevision,
         })
-      } catch {
+      } catch (error) {
+        const failure = mcpConnectionFailure(error)
         return Object.freeze({
           toolCount: 0,
           catalogRevision: ZERO_REVISION,
-          error: safeError('MCP_TEST_FAILED', 'MCP test health check failed'),
+          error:
+            failure.code === 'MCP_CONNECT_FAILED'
+              ? safeError('MCP_TEST_FAILED', 'MCP test health check failed')
+              : failure,
         })
       }
     },

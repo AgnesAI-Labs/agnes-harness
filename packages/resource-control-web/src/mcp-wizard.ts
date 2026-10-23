@@ -52,6 +52,8 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     const saved = credential.closest('label')
     if (saved) saved.hidden = on
     $('mcp-credential-status', 'p').hidden = on
+    $('mcp-token-env-row', 'label').hidden = remote || !credential.value
+    $('mcp-token-env', 'input').required = !remote && !!credential.value
     picker.sync()
   }
   let editingMode = false
@@ -107,6 +109,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     const env = /^([A-Z][A-Z0-9_]*)=/.exec(binding)?.[1]
     if (env) $('mcp-token-env', 'input').value = env
     choices(selected)
+    syncOAuth()
     command.setCustomValidity('')
   }
   function choices(selected?: string) {
@@ -213,7 +216,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   on(transport, 'change', () => {
     command.disabled = transport.value !== 'stdio'
     $('mcp-command-row', 'label').hidden = transport.value !== 'stdio'
-    syncOAuth()
+    applyCredential()
     deriveName()
   })
   async function loadCredentials() {

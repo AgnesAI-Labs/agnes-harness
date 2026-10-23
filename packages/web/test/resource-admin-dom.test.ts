@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 import type { McpServerDescriptor } from '@agnes/protocol'
-import { installFeedbackSink, type OperationFeedback } from '@agnes/web-ui'
+import type { OperationFeedback } from '@agnes/web-ui'
 import {
   afterEach,
   beforeAll,
@@ -500,8 +500,21 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   byId('mcp-method-local').click()
   await vi.waitFor(() => expect(byId<HTMLSelectElement>('mcp-credential').options).toHaveLength(2))
   change('mcp-credential', 'secret://dom/token')
-  expect(byId<HTMLTextAreaElement>('mcp-secret').value).toBe('TOKEN=secret://dom/token')
+  expect(byId<HTMLInputElement>('mcp-token-env').value).toBe('')
+  expect(byId('mcp-token-env-row').hidden).toBe(false)
+  expect(byId('mcp-token-env-row').closest('#mcp-advanced')).toBeNull()
+  expect(byId('mcp-sandbox-row').closest('#mcp-advanced')).toBeNull()
+  expect(byId('mcp-sandbox-help').textContent).toContain('block network')
+  expect(byId<HTMLSelectElement>('mcp-sandbox').value).toBe('strict')
+  change('mcp-command', 'npx -y example-mcp')
+  byId('mcp-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await settle()
+  expect(submitted('mcp/create')).toHaveLength(0)
+  expect(byId('mcp-token-env').getAttribute('aria-invalid')).toBe('true')
+  change('mcp-token-env', 'CONTEXT7_API_KEY')
+  expect(byId<HTMLTextAreaElement>('mcp-secret').value).toBe('CONTEXT7_API_KEY=secret://dom/token')
   change('mcp-credential', '')
+  expect(byId('mcp-token-env-row').hidden).toBe(true)
   byId('mcp-secret-kind-trigger').click()
   expect(document.querySelectorAll('#mcp-secret-kind-listbox [role="option"]')).toHaveLength(2)
   byId('mcp-secret-kind-listbox-1').click()
@@ -509,6 +522,7 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   byId('mcp-transport-trigger').click()
   byId('mcp-transport-listbox-1').click()
   expect(byId('mcp-executable-row').hidden).toBe(true)
+  expect(byId('mcp-sandbox-row').hidden).toBe(true)
   expect(byId('mcp-url-row').hidden).toBe(false)
   expect(byId('mcp-oauth-row').hidden).toBe(false)
   expect(byId('mcp-secret-kind-trigger').textContent).toBe('No credentials')
@@ -534,9 +548,10 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   expect(byId('mcp-transport-trigger').textContent).toBe('Local command')
   expect(byId('mcp-secret-kind-trigger').textContent).toBe('No credentials')
   expect(submitted('mcp/create')).toHaveLength(0)
+  expect(byId<HTMLInputElement>('mcp-token-env').value).toBe('')
 })
 
-it('tells the user a newly created MCP server can be enabled directly', async () => {
+it('reports MCP creation as a dismissible success without a persistent enablement warning', async () => {
   byId('mcp-create').click()
   expect(byId('mcp-methods').hidden).toBe(false)
   expect(byId('mcp-connection-fields').hidden).toBe(true)
@@ -552,10 +567,18 @@ it('tells the user a newly created MCP server can be enabled directly', async ()
     transport: { kind: 'stdio', executable: 'fixture', args: ['--mode', 'test suite'] },
   })
   await vi.waitFor(() => expect(feedbackResults.at(-1)?.message).toContain('created'))
-  expect(feedbackResults.at(-1)?.effect?.kind).toBe('enable-required')
+  expect(feedbackResults.at(-1)?.effect).toBeUndefined()
+  expect(feedbackResults.at(-1)?.message).toContain('disabled')
   expect(feedbackResults.at(-1)?.message).not.toContain('trust')
   expect(byId('resource-notice').dataset.kind).toBe('')
   expect(feedbackResults.at(-1)?.outcome).toBe('success')
+  expect(feedback.store.getSnapshot().notices).toEqual([])
+  expect(feedback.store.getSnapshot().queue).toHaveLength(1)
+  await resourceMount.reload()
+  expect(feedback.store.getSnapshot().notices).toEqual([])
+  feedback.dismiss(feedback.store.getSnapshot().queue[0]?.id ?? '')
+  expect(feedback.store.getSnapshot().queue).toEqual([])
+  expect(submitted('mcp/enable')).toHaveLength(0)
 })
 
 it('uses a published-skill link to open the filtered skills list', async () => {
@@ -1170,13 +1193,22 @@ it('prefills a Playwright preset without writes and requires save and enable con
 const feedbackResults: OperationFeedback[] = []
 const feedbackResolved: string[] = []
 let releaseFeedback: (() => void) | undefined
+let feedback: ReturnType<typeof import('../src/operation-feedback.js').createOperationFeedback>
 feedbackBeforeEach(async () => {
   const { installFeedbackSink } = await import('@agnes/web-ui')
+  const { createOperationFeedback } = await import('../src/operation-feedback.js')
+  feedback = createOperationFeedback()
   feedbackResults.length = 0
   feedbackResolved.length = 0
   releaseFeedback = installFeedbackSink({
-    publish: (value) => feedbackResults.push(value),
-    resolve: (scope) => feedbackResolved.push(scope),
+    publish: (value) => {
+      feedbackResults.push(value)
+      feedback.sink.publish(value)
+    },
+    resolve: (scope) => {
+      feedbackResolved.push(scope)
+      feedback.sink.resolve(scope)
+    },
   })
 })
 feedbackAfterEach(() => releaseFeedback?.())
