@@ -32,6 +32,7 @@ import type { ResourceCommandKind } from './resource-controller.js'
 import { scheduleSlash } from './schedule-commands.js'
 import { oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
+import { terminalSetupSlash } from './terminal-setup-command.js'
 import type { ThemePreference } from './theme-preference.js'
 import { thinkingMode } from './thinking.js'
 import { undoSlash } from './undo-commands.js'
@@ -248,6 +249,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '[scope]',
     descriptionKey: 'commands.review',
     summaryKey: 'commands.reviewSummary',
+  },
+  {
+    name: '/terminal-setup',
+    args: '[apply|confirm|cancel]',
+    descriptionKey: 'commands.terminalSetup',
+    summaryKey: 'commands.terminalSetupSummary',
   },
   { name: '/bg', args: '[prompt]', descriptionKey: 'commands.bg', summaryKey: 'commands.bgSummary' },
   {
@@ -774,6 +781,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return memorySlash(app, line)
     case '/bg':
       return bgSlash(app, line)
+    case '/terminal-setup':
+      return terminalSetupSlash(app, line)
     case '/refine':
       // `harness/refine` exists as a raw ledger event type (protocol session-v1 schema), but
       // UITimeline/UINode has no kind that projects it -- there is no 'notice' or 'refine' UINode
