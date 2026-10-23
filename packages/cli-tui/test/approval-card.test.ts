@@ -35,7 +35,8 @@ describe('ApprovalCard permanent grants', () => {
       ansi: PLAIN,
       onDecide: decide,
     })
-    expect(offered.render(100).join('\n')).toContain('[2] Always allow for this profile (a)')
+    expect(offered.render(100).join('\n')).toContain('[2] Always allow for this profile')
+    expect(offered.render(100).join('\n')).not.toContain('profile (a)')
     expect(offered.handleInput('2')).toBe(true)
     await vi.waitFor(() =>
       expect(decide).toHaveBeenCalledWith(
@@ -273,13 +274,31 @@ describe('ApprovalCard single keys and the misclick guard', () => {
     await vi.waitFor(() => expect(onDecide).toHaveBeenCalledWith(ref, verdict))
   })
 
-  it('a takes the first persistent scope listed, and does nothing when there is none', async () => {
-    const first = card(['allow_once', 'allow_permanent', 'allow_always', 'reject_once'])
-    first.card.handleInput('a')
-    await vi.waitFor(() => expect(first.onDecide).toHaveBeenCalledWith(ref, 'allowed-permanent'))
-    const none = card(['allow_once', 'reject_once'])
-    expect(none.card.handleInput('a')).toBe(true)
-    expect(none.onDecide).not.toHaveBeenCalled()
+  it('a takes the session scope only: a permanent grant is never one letter', async () => {
+    const session = card(['allow_once', 'allow_permanent', 'allow_always', 'reject_once'])
+    session.card.handleInput('a')
+    await vi.waitFor(() => expect(session.onDecide).toHaveBeenCalledWith(ref, 'allowed-session'))
+    for (const options of [
+      ['allow_once', 'allow_permanent', 'reject_once'],
+      ['allow_once', 'reject_once'],
+    ] as ApprovalNode['options'][]) {
+      const none = card(options)
+      expect(none.card.handleInput('a')).toBe(true)
+      expect(none.onDecide).not.toHaveBeenCalled()
+    }
+  })
+
+  it('leaves the letters to the prompt while it holds a draft; numbers still decide', async () => {
+    const onDecide = decide()
+    const c = new ApprovalCard(node(['allow_once', 'allow_always', 'reject_once']), {
+      ansi: PLAIN,
+      onDecide,
+      letters: () => false,
+    })
+    for (const key of ['y', 'a', 'n', 'r']) expect(c.handleInput(key, true)).toBe(false)
+    expect(onDecide).not.toHaveBeenCalled()
+    expect(c.handleInput('1', true)).toBe(true)
+    await vi.waitFor(() => expect(onDecide).toHaveBeenCalledWith(ref, 'allowed-once'))
   })
 
   it('decides nothing before the card has settled, and leaves the keys to the prompt draft', () => {

@@ -91,6 +91,8 @@ export class ApprovalCard implements Component {
       locale?: Locale
       /** Whether single keys would count now (approval-settle.ts); the key hints dim until they do. */
       settled?(): boolean
+      /** Whether y, a, n and r may decide: not while the prompt holds a draft, where they are text. */
+      letters?(): boolean
       onDecide(
         ref: NonNullable<ApprovalNode['decisionRef']>,
         verdict: Verdict,
@@ -127,23 +129,23 @@ export class ApprovalCard implements Component {
   /**
    * `settled`: the card had sat untouched long enough before this key. Until then no key decides
    * and text falls through to the prompt's draft, so typing already under way never lands here.
-   * y, a and n are shortcuts for the numbered decisions: `a` takes the first persistent scope the
-   * card lists, and does nothing when it lists none.
+   * y, a and n are shortcuts for the numbered decisions, and only while the prompt is empty: `a`
+   * takes the session scope and does nothing when the card does not list it. A permanent grant is
+   * never one letter; it takes its number.
    */
   handleInput(data: string, settled = this.o.settled?.() ?? true): boolean {
     if (this.phase !== 'pending' || !this.n.decisionRef) return false
     if (this.reason !== null) return this.typeReason(data)
     if (!settled) return false
     const actions = actionsOf(this.n, this.o.locale ?? 'en')
-    const letter = actionFor('approval', data)
+    const letters = this.o.letters?.() ?? true
+    const letter = letters ? actionFor('approval', data) : undefined
     if (letter === 'approval-allow-once') return this.decide('allowed-once')
-    if (letter === 'approval-allow-always') {
-      const own = actions.find((a) => a.verdict === 'allowed-session' || a.verdict === 'allowed-permanent')
-      return own ? this.decide(own.verdict) : true
-    }
+    if (letter === 'approval-allow-always')
+      return actions.some((a) => a.verdict === 'allowed-session') ? this.decide('allowed-session') : true
     if (letter === 'approval-reject')
       return this.n.options.includes('reject_once') ? this.decide('rejected') : true
-    if (data === 'r' && this.n.options.includes('reject_once')) {
+    if (letters && data === 'r' && this.n.options.includes('reject_once')) {
       this.reason = ''
       return true
     }
@@ -220,13 +222,10 @@ export class ApprovalCard implements Component {
       : paintsColour(ansi)
         ? (key: string) => ansi.bg('accent', ansi.fg('onAccent', ` ${key} `))
         : (key: string) => ansi.bold(`[${key}]`)
-    // The single-key shortcut rides after the label: y and n on those verdicts, a on the first persistent scope.
+    // The single-key shortcut rides after the label: y, a and n on once, session and reject.
     const actions = actionsOf(n, locale)
-    const firstPersistent = actions.find(
-      (a) => a.verdict === 'allowed-session' || a.verdict === 'allowed-permanent',
-    )
     const letterOf = (action: Action): string =>
-      action === firstPersistent
+      action.verdict === 'allowed-session'
         ? 'a'
         : action.verdict === 'allowed-once'
           ? 'y'

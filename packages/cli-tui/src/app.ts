@@ -257,6 +257,7 @@ export class TuiApp {
             ansi,
             locale,
             settled: () => this.settle.settled,
+            letters: () => this.editor.text === '',
             onDecide: async (ref, verdict, reason) => {
               if (this.refuseClosed()) return
               const value =
@@ -947,9 +948,7 @@ export class TuiApp {
       if (r.presentation === 'transcript' || r.text.includes('\n')) {
         this.statusBar.setNotice(undefined)
         this.timeline.appendLocal(this.session.id, this.localCommandView(text, r.text))
-      } else {
-        this.statusBar.setNotice(r.text)
-      }
+      } else this.statusBar.setNotice(r.text)
     }
     if (r.draft !== undefined) this.editor.setText(r.draft)
     if (r.keep) this.busyInput.keep(r.keep)
