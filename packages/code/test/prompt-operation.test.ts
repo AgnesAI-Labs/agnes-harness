@@ -161,7 +161,9 @@ describe('the prompt operation', () => {
         .join('\n\n')
     const base = flatten({})
     expect(base.length).toBeGreaterThan(500)
-    expect(base).toContain('You are Agnes, a general-purpose AI agent powered by Agnes Harness.')
+    expect(base).toContain(
+      'You are Agnes, a general-purpose AI agent developed by Agnes AI and powered by Agnes Harness.',
+    )
     expect(flatten({ model: 'a-totally-different-model', route: 'a-different-route' })).toBe(base)
     expect(flatten({ presetName: 'renamed-preset' })).toBe(base)
     expect(flatten({ cwd: '/a/totally/different/workspace' })).toBe(base)
