@@ -436,6 +436,8 @@ it('sends 添加插件 through the same review page, which takes the form’s pl
     setNativeValue(document.getElementById('source-type') as HTMLSelectElement, 'url')
     setNativeValue(form() as HTMLInputElement, 'https://example.com/dag-loop.tgz')
   })
+  // A controlled field must keep what was typed (it used to snap back to empty).
+  expect(form()?.value).toBe('https://example.com/dag-loop.tgz')
   await click('#source-form .dialog-actions button:not(#source-cancel)')
   await vi.waitFor(() => expect(kit.calls).toEqual(['inspect']))
   // The form waits, busy, for the check: no page jump in between.

@@ -556,6 +556,7 @@ export function renderSourcePluginView(this: PluginAdminViewContext): void {
         }}
         onRefChange={(ref) => {
           this.sourceRefValue = ref
+          this.renderSource()
         }}
         onSubmit={() => this.submitSource()}
         onCancel={() => this.closeSourceDialog()}
