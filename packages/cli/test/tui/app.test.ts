@@ -35,6 +35,8 @@ it('keyboard input reaches real core through SDK/daemon and renders the projecte
   const endpoint = createLocalEndpoint(host, { pollMs: 5 })
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
   let app: TuiApp | undefined
+  // The bell is the background alert on any terminal but the verified ones; pin it.
+  vi.stubEnv('AGH_NOTIFY', 'bell')
   try {
     await client.workspace.add(dir)
     const session = await client.session.new({ cwd: dir })
@@ -90,6 +92,7 @@ it('keyboard input reaches real core through SDK/daemon and renders the projecte
     term.feed('after stop')
     expect(term.writes).toHaveLength(writes)
   } finally {
+    vi.unstubAllEnvs()
     await app?.stop()
     await client.close()
     await endpoint.close()

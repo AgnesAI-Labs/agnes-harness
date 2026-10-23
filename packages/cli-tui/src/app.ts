@@ -25,6 +25,7 @@ import { renderMarkdownChunk } from './markdown.js'
 import { ModelChooser } from './model-chooser.js'
 import { copyTip, systemCopy, TuiMouse } from './mouse.js'
 import { nodeText } from './node-text.js'
+import { NotifyPreference } from './notify.js'
 import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
@@ -125,6 +126,7 @@ export class TuiApp {
     () => this.stopped || this.renderer.requestRender(),
     () => this.modal.head ?? this.approvalCards.get(this.latestApproval ?? '')?.key,
   )
+  readonly notify: NotifyPreference
   // Set once the client reports 'closed' (daemon shutting down). The session can never render again,
   // and the SDK would still re-dial on the next call, so input is refused rather than run unseen.
   private closedNotice: string | undefined
@@ -180,6 +182,7 @@ export class TuiApp {
       /** Last model and permission for the next fresh session. Omitted in tests that do not inherit. */
       composerSelectionPath?: string
       themePreferencePath?: string
+      notifyPreferencePath?: string
       /** Where sent prompts persist between runs; without it history lasts this run only. */
       historyPath?: string
       /** `<AGH_HOME>/commands`: where personal custom slash commands live. */
@@ -197,6 +200,7 @@ export class TuiApp {
     // One ansi instance per colour tier for the whole frame: header, status bar, banner, editor
     // chrome and the cards all degrade through the same tier (none emits zero escape sequences).
     this.themePreference = readTheme(o.themePreferencePath)
+    this.notify = new NotifyPreference(o.notifyPreferencePath, process.env, () => this.locale)
     this.theme = new TuiTheme(
       this.themePreference === 'auto' ? resolveAuto(o.term.background) : this.themePreference,
     )
@@ -488,6 +492,7 @@ export class TuiApp {
       () => this.turnActive,
       this.modal,
       this.approvalCards,
+      this.notify,
     )
     this.renderer = o.noAltScreen
       ? new FooterRenderer(o.term, root, this.timeline)
@@ -777,6 +782,7 @@ export class TuiApp {
     void this.syncSurfaces()
     this.o.onTimeline?.(value, options.window?.hasEarlier)
     this.cards.sync(value)
+    this.signals.watch(value.nodes)
     const approvals = value.nodes.filter((node) => node.kind === 'approval')
     const approvalIds = new Set(approvals.map((node) => node.id))
     for (const id of this.approvalCards.keys()) if (!approvalIds.has(id)) this.approvalCards.delete(id)
@@ -903,6 +909,7 @@ export class TuiApp {
   showError(error?: unknown): void {
     if (this.stopped) return
     this.statusBar.setNotice(formatTuiErrorNotice(error, this.o.locale ?? 'en'), 'error')
+    this.signals.event('error')
     this.renderer.requestRender()
   }
 

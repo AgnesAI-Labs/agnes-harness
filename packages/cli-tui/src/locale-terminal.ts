@@ -97,6 +97,16 @@ export const TERMINAL_KEYS = [
   'custom.empty',
   'custom.more',
   'custom.hidden',
+  'commands.notify',
+  'commands.notifySummary',
+  'notify.set',
+  'notify.ephemeral',
+  'notify.overridden',
+  'notify.usage',
+  'notify.done',
+  'notify.approval',
+  'notify.error',
+  'notify.agent',
 ] as const
 
 export type TerminalKey = (typeof TERMINAL_KEYS)[number]
@@ -202,6 +212,17 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'custom.more': '… and {count} more characters not shown; read {path} for all of it',
     'custom.hidden':
       'Not run: {path} contains invisible formatting characters that could hide part of the text',
+    'commands.notify':
+      'Desktop notifications while the terminal is in the background: on (a system notification where the terminal has one, a bell elsewhere), bell, or off',
+    'commands.notifySummary': 'Set background notifications',
+    'notify.set': 'Notifications: {mode}',
+    'notify.ephemeral': 'Notifications: {mode} (this run only; the choice could not be saved)',
+    'notify.overridden': 'AGH_NOTIFY={env} is set and wins over this choice ({mode})',
+    'notify.usage': 'usage: /notify [on|bell|off]',
+    'notify.done': 'done',
+    'notify.approval': 'approval waiting',
+    'notify.error': 'error',
+    'notify.agent': 'subagent finished',
   },
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
@@ -298,5 +319,16 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'custom.empty': '命令 {name} 展开后为空',
     'custom.more': '……另有 {count} 个字符未显示，完整内容见 {path}',
     'custom.hidden': '未运行：{path} 含有不可见的格式字符，可能藏有看不到的内容',
+    'commands.notify':
+      '终端在后台时的提醒：on（终端支持则发系统通知，否则响铃）、bell（只响铃）、off（关闭）',
+    'commands.notifySummary': '设置后台提醒',
+    'notify.set': '提醒：{mode}',
+    'notify.ephemeral': '提醒：{mode}（仅本次运行，设置未能保存）',
+    'notify.overridden': '已设置 AGH_NOTIFY={env}，优先于这个选择（{mode}）',
+    'notify.usage': '用法：/notify [on|bell|off]',
+    'notify.done': '已完成',
+    'notify.approval': '等待审批',
+    'notify.error': '出错',
+    'notify.agent': '子 agent 已完成',
   },
 }

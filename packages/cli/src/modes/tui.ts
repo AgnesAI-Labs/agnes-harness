@@ -142,7 +142,10 @@ export async function runTui(
         : {}),
       ...(io.editorTmpDir ? { externalEditor: { env: io.env, tmpDir: io.editorTmpDir } } : {}),
       ...(io.composerSelectionPath
-        ? { themePreferencePath: join(dirname(io.composerSelectionPath), 'tui-theme.json') }
+        ? {
+            themePreferencePath: join(dirname(io.composerSelectionPath), 'tui-theme.json'),
+            notifyPreferencePath: join(dirname(io.composerSelectionPath), 'tui-notify.json'),
+          }
         : {}),
       welcome: {
         motion: io.stdout.isTTY === true,

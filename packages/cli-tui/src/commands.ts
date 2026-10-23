@@ -21,6 +21,7 @@ import { infoSlash } from './info-commands.js'
 import { jobsSlash } from './job-commands.js'
 import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
+import { parseNotifyMode } from './notify.js'
 import { queueSlash } from './queue-commands.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
@@ -122,6 +123,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '[auto|light|dark|mono]',
     descriptionKey: 'commands.theme',
     summaryKey: 'commands.themeSummary',
+  },
+  {
+    name: '/notify',
+    args: '[on|bell|off]',
+    descriptionKey: 'commands.notify',
+    summaryKey: 'commands.notifySummary',
   },
   { name: '/keys', descriptionKey: 'commands.keys', summaryKey: 'commands.keysSummary' },
   { name: '/mouse', descriptionKey: 'commands.mouse', summaryKey: 'commands.mouseSummary' },
@@ -647,6 +654,18 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       if (args.length !== 1 || !['auto', 'light', 'dark', 'mono'].includes(name ?? ''))
         return { text: 'usage: /theme [auto|light|dark|mono]' }
       return { text: app.setTheme(name as ThemePreference) }
+    }
+    case '/notify': {
+      const next = args.length === 0 ? undefined : parseNotifyMode(args.length === 1 ? args[0] : undefined)
+      if (args.length > 0 && !next) return { text: tt('notify.usage', locale) }
+      const saved = next ? app.notify.set(next) : true
+      const mode = app.notify.saved
+      return {
+        text: [
+          tt(saved ? 'notify.set' : 'notify.ephemeral', locale, { mode }),
+          ...(app.notify.overridden ? [tt('notify.overridden', locale, { env: app.notify.mode, mode })] : []),
+        ].join('\n'),
+      }
     }
     case '/thinking':
       return { text: tt(thinkingMode.toggle() ? 'thinking.open' : 'thinking.folded', app.locale) }
