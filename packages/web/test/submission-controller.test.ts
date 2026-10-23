@@ -1,10 +1,12 @@
 /** @vitest-environment happy-dom */
 import { type ContentBlock, USER_MESSAGE_ATTACHMENT_LIMITS } from '@agnes/protocol'
+import type { Session } from '@agnes/sdk/browser'
 import { attachmentErrorMessage } from '@agnes/web-units'
 import { describe, expect, it, vi } from 'vitest'
 import { SessionBindingOwner } from '../src/app/session-owner.js'
 import { createSubmissionController } from '../src/app/submission-controller.js'
 import { Submission, SubmissionOwner } from '../src/app/submission-owner.js'
+import { ComposerDrafts } from '../src/composer-drafts.js'
 import { type DraftPermissionInput, newSessionRequest } from '../src/session-permission.js'
 import { enT, zhT } from './helpers/locale.js'
 
@@ -118,6 +120,58 @@ describe('new session request', () => {
       expect(request).toEqual({ cwd: '/synthetic/work', sessionKey: expect.any(String), ...expected })
     expect(created).toHaveBeenCalledTimes(2)
   })
+
+  it.each(['prepareComposerSession', 'prepareAttachmentSession'] as const)(
+    'keeps a skill prompt and edits made during %s creation',
+    async (method) => {
+      const binding = new SessionBindingOwner()
+      const drafts = new ComposerDrafts(sessionStorage, location.origin)
+      let text = drafts.select('fixture', undefined, '')
+      text = 'Use $fixture-skill to review the attachment'
+      let created!: (session: Session) => void
+      const session = { id: 'upload-session' } as Session
+      const context = {
+        current: undefined as Session | undefined,
+        draftingNew: true,
+        selectedWorkspace: { path: '/synthetic/work', available: true },
+        sessionPending: false,
+        sessionBinding: binding,
+        renderControls() {},
+        draftLoopAvailable: () => true,
+        loopCatalogPending: false,
+        draftBundles: [],
+        draftSessionRequest: () => ({ preset: 'standard', permission: 'default' }),
+        client: {
+          session: {
+            new: () =>
+              new Promise<Session>((resolve) => {
+                created = resolve
+              }),
+          },
+        },
+        // The session controller selects the new session's draft as it opens it.
+        open: async (id: string, options: { preserveSending?: boolean }) => {
+          text = drafts.select('fixture', id, text, options.preserveSending)
+          const { binding: next } = binding.begin(id)
+          binding.attach(next, { session })
+          context.current = session
+        },
+        t: (key: string) => key,
+        settingsText: (key: string) => key,
+      }
+      const controller = createSubmissionController(
+        context as unknown as Parameters<typeof createSubmissionController>[0],
+      )
+      const opening = controller[method]()
+      text += '\nKeep my latest edit too.'
+      const visible = text
+      created(session)
+      await opening
+      expect(text).toBe(visible)
+      expect(context.current?.id).toBe('upload-session')
+      sessionStorage.clear()
+    },
+  )
 
   it('creates nothing when the deployment refuses the chosen level', async () => {
     const created = vi.fn()

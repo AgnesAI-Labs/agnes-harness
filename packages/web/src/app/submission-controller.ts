@@ -500,6 +500,7 @@ export function createSubmissionController(
         throw new Error(context.t('app.session.selectionChanged'))
       const opening = context.open(created.id, {
         created,
+        preserveSending: true,
         workspace,
         ...(model ? { initialModel: model } : {}),
       })
