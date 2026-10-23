@@ -1201,7 +1201,7 @@ it('retries a failed queue submit once under the same command id, then returns t
   }
   const failing = await busyHarness({
     answer: () => {
-      throw rpcError('LOOP_CONTROL_UNSUPPORTED', {})
+      throw rpcError('SEMANTIC_REJECTED', { code: 'LOOP_CONTROL_UNSUPPORTED' })
     },
   })
   try {
