@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
@@ -13,7 +13,7 @@ const cli = fileURLToPath(new URL('../dist/local/agnes.mjs', import.meta.url))
 const execute = promisify(execFile)
 it('keeps official extensions and privileged CU tools in the built distribution', async () => {
   expect(existsSync(cli), 'run @agnes/cli build:local before this gate').toBe(true)
-  const parent = join(homedir(), 'agh-real-eval')
+  const parent = join(tmpdir(), 'agh-real-eval')
   mkdirSync(parent, { recursive: true })
   const home = mkdtempSync(join(parent, 'built-host-grants-'))
   initializeHome(home)

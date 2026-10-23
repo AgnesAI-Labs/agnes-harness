@@ -8,7 +8,13 @@ import { createConfigurationService } from '@agnes/host-infrastructure/configura
 import { hashDirectory } from '@agnes/package-manager'
 import type { JsonValue } from '@agnes/protocol'
 import { jcs } from '@agnes/protocol'
-import { pluginHost, pluginRow, pluginSourceWith, targetOf } from '../assemble/plugin-extension-fixture.js'
+import {
+  pluginHost,
+  pluginRow,
+  pluginSourceWith,
+  scratch,
+  targetOf,
+} from '../assemble/plugin-extension-fixture.js'
 
 const vendor = '@fixture/escalation'
 const digest = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
@@ -69,7 +75,10 @@ export async function setupRoleEscalation(
     snapshot: { ...raw.snapshot, treeIntegrity: hashDirectory(raw.snapshot.directory, { exclude: [] }) },
   }
   const steps = new Map<string, number>()
+  // Separate ordinary role work from installation configuration unless a crash fixture pins both.
+  const workspaceRoot = review.home ?? scratch()
   const fixture = await pluginHost(source, {
+    workspaceRoot,
     ...(review.home ? { dataDir: review.home } : {}),
     seams: {
       approval: {
@@ -165,12 +174,13 @@ export async function setupRoleEscalation(
   })
   const parent = await fixture.host.createSession({
     key: 'parent',
-    cwd: dataDir,
+    cwd: workspaceRoot,
     agent: `${vendor}#coordinator`,
   })
   return {
     ...fixture,
     dataDir,
+    workspaceRoot,
     parent: parent as typeof parent & { d: { log: { storage: ChildControlStore } } },
     refs,
     source,

@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it, vi } from 'vitest'
@@ -8,7 +8,7 @@ import { packageDirs } from '../assemble/plugin-extension-fixture.js'
 import { roleHuman, setupRoleEscalation } from './role-escalation-fixture.js'
 
 it('reoffers the same child decision after process loss while pending, using the pinned Host composition', async () => {
-  const homes = join(homedir(), 'agh-real-eval')
+  const homes = join(tmpdir(), 'agh-real-eval')
   mkdirSync(homes, { recursive: true })
   const home = mkdtempSync(join(homes, 'role-escalation-security-'))
   const fixture = await setupRoleEscalation(
@@ -92,7 +92,7 @@ it('reoffers the same child decision after process loss while pending, using the
 }, 110000)
 
 it('review-f1: explicit close survives a real process restart and cannot revive an admitted role', async () => {
-  const homes = join(homedir(), 'agh-real-eval')
+  const homes = join(tmpdir(), 'agh-real-eval')
   mkdirSync(homes, { recursive: true })
   const home = mkdtempSync(join(homes, 'role-closed-epoch-security-'))
   const fixture = await setupRoleEscalation(

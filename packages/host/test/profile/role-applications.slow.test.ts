@@ -110,10 +110,12 @@ it.each(['devboard', 'pharma'] as const)(
       ...raw,
       snapshot: { ...raw.snapshot, treeIntegrity: hashDirectory(raw.snapshot.directory, { exclude: [] }) },
     }
-    let workspace = ''
+    // Ordinary role effects run outside the installation home and its config-write gate.
+    const workspace = scratch()
     const outside = scratch()
     let traversal = ''
     const options: Partial<TestHostOptions> = {
+      workspaceRoot: workspace,
       approval: async () => ({ verdict: 'unavailable', reason: 'no-approver' }),
       provider: (profile) => {
         let program: Array<[string, Record<string, JsonValue>]> | undefined
@@ -200,7 +202,6 @@ it.each(['devboard', 'pharma'] as const)(
       },
     }
     const fixture = await pluginHost(source, options)
-    workspace = fixture.dataDir
     traversal = relative(workspace, join(outside, 'traversal.md'))
     let activeHost = fixture.host
     mkdirSync(join(workspace, 'docs'))
@@ -250,7 +251,7 @@ it.each(['devboard', 'pharma'] as const)(
       })
       const parent = await fixture.host.createSession({
         key: 'parent',
-        cwd: fixture.dataDir,
+        cwd: workspace,
         agent: `${vendor}#coordinator`,
       })
       const builtin = parent.currentTools().resolve('read')
@@ -301,7 +302,7 @@ it.each(['devboard', 'pharma'] as const)(
       await expect(
         parent.d.children.createWithKind('spawn', {
           parent: parent.key,
-          cwd: fixture.dataDir,
+          cwd: workspace,
           role: `${vendor}#specialist`,
           input: 'Filtered task',
           resident: true,
@@ -320,7 +321,7 @@ it.each(['devboard', 'pharma'] as const)(
       )
       const handle = await parent.d.children.createWithKind('spawn', {
         parent: parent.key,
-        cwd: fixture.dataDir,
+        cwd: workspace,
         role: `${vendor}#specialist`,
         input: 'Inspect',
         resident: true,
@@ -458,7 +459,7 @@ it.each(['devboard', 'pharma'] as const)(
         await check(taintedNested, 0, false)
         await activeHost.close()
         const reopened = await createTestHost({
-          dataDir: workspace,
+          dataDir: fixture.dataDir,
           packageDirs,
           runtimePluginCatalogue: [source],
           extensionLoader: { import: async (file) => await import(pathToFileURL(file).href) },

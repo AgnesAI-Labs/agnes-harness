@@ -35,7 +35,7 @@ it.each(['allow', 'deny', 'agent', 'system', 'absent', 'deadline'] as const)(
       expect(children).toHaveLength(1)
       const child =
         fixture.host.kernel.get(children[0]!.id) ??
-        (await fixture.host.createSession({ key: children[0]!.id, cwd: fixture.dataDir }))
+        (await fixture.host.createSession({ key: children[0]!.id, cwd: fixture.workspaceRoot }))
       expect(child.d.roleDelegation?.parentTainted).toBe(true)
       expect(questions[0]!.summary).toContain(fixture.refs[0])
       expect(questions[0]!.summary).toContain(child.key)
@@ -54,7 +54,7 @@ it.each(['allow', 'deny', 'agent', 'system', 'absent', 'deadline'] as const)(
           code: 'APPROVAL_UNAVAILABLE',
         })
       }
-      expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(mode === 'allow')
+      expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(mode === 'allow')
       if (mode === 'allow') expect(decisions[0]!.consumption).not.toBeNull()
     } finally {
       await fixture.host.close()
@@ -62,6 +62,48 @@ it.each(['allow', 'deny', 'agent', 'system', 'absent', 'deadline'] as const)(
   },
   30000,
 )
+
+it('requires separate human approvals for clean role writes to instruction files', async () => {
+  const questions: ApprovalRequest[] = []
+  const fixture = await setupRoleEscalation(
+    async (request) => {
+      questions.push(request)
+      return { verdict: 'allowed-once', answeredBy: roleHuman }
+    },
+    {
+      calls: (_key, step) =>
+        step < 2
+          ? [
+              {
+                name: 'write',
+                args: {
+                  path: step === 0 ? 'AGENTS.md' : 'CLAUDE.md',
+                  content: 'Reviewed instruction',
+                },
+              },
+            ]
+          : [],
+    },
+  )
+  try {
+    const handle = await fixture.parent.d.children.createWithKind!('spawn', {
+      parent: fixture.parent.key,
+      cwd: fixture.workspaceRoot,
+      role: fixture.refs[0],
+      input: 'Write instructions',
+      resident: true,
+    })
+    await handle.run('Write instructions')
+    expect(questions.map((request) => request.options)).toEqual([
+      ['allowed-once', 'rejected'],
+      ['allowed-once', 'rejected'],
+    ])
+    for (const path of ['AGENTS.md', 'CLAUDE.md'])
+      expect(readFileSync(join(fixture.workspaceRoot, path), 'utf8')).toBe('Reviewed instruction')
+  } finally {
+    await fixture.host.close()
+  }
+}, 30000)
 
 it('executes all twelve adopted roles with four concurrent slots', async () => {
   const fixture = await setupRoleEscalation(async () => {
@@ -72,13 +114,13 @@ it('executes all twelve adopted roles with four concurrent slots', async () => {
     for (const [index, role] of fixture.refs.entries()) {
       const child = await fixture.parent.d.children.createWithKind!('spawn', {
         parent: fixture.parent.key,
-        cwd: fixture.dataDir,
+        cwd: fixture.workspaceRoot,
         role,
         input: `Requirements ${index}`,
         resident: true,
       })
       await child.run(`Requirements ${index}`)
-      expect(readFileSync(join(fixture.dataDir, `requirements-${index}.md`), 'utf8')).toBe(
+      expect(readFileSync(join(fixture.workspaceRoot, `requirements-${index}.md`), 'utf8')).toBe(
         'Child requirements',
       )
       const session = fixture.host.kernel.get(child.key)!
@@ -119,7 +161,7 @@ it.each(['cancel', 'close'] as const)(
       const child = fixture.host.kernel.get(handle.sessionId!)!
       const pending = await child.decisions.get(handle)
       expect(pending.result).toBeNull()
-      expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(false)
+      expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(false)
       await expect(
         child.decisions.answer(
           {
@@ -134,7 +176,7 @@ it.each(['cancel', 'close'] as const)(
       if (action === 'cancel') await fixture.parent.d.children.cancel!(child.key)
       else await child.close()
       await running
-      expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(false)
+      expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(false)
       const states = await fixture.parent.d.log.storage.scan(child.key, {
         type: 'decision/state',
         order: 'desc',
@@ -164,7 +206,7 @@ it('keeps unattended role gates refused even when a human adapter exists', async
     const child = fixture.host.kernel.get(listing!.id)!
     expect(child.d.roleDelegation?.humanApprovals).toBe(false)
     expect((await child.decisions.list())[0]?.result).toMatchObject({ code: 'delegated-approval-refused' })
-    expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(false)
+    expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(false)
   } finally {
     await fixture.host.close()
   }
@@ -188,14 +230,14 @@ it.each([false, true])(
       paths.push(
         'inside-positive.md',
         join(outside, 'absolute.md'),
-        relative(fixture.dataDir, join(outside, 'traversal.md')),
+        relative(fixture.workspaceRoot, join(outside, 'traversal.md')),
         'escape/symlink.md',
       )
-      symlinkSync(outside, join(fixture.dataDir, 'escape'), 'junction')
+      symlinkSync(outside, join(fixture.workspaceRoot, 'escape'), 'junction')
       await fixture.parent.setYolo(fullAccess, roleHuman)
       const handle = await fixture.parent.d.children.createWithKind!('spawn', {
         parent: fixture.parent.key,
-        cwd: fixture.dataDir,
+        cwd: fixture.workspaceRoot,
         role: fixture.refs[0]!,
         input: 'Write within scope',
         resident: true,
@@ -204,7 +246,7 @@ it.each([false, true])(
       const child = fixture.host.kernel.get(handle.key)!
       expect(child.currentTools().resolve('write')).toBeDefined()
       expect(child.yolo).toBe(false)
-      expect(readFileSync(join(fixture.dataDir, paths[0]!), 'utf8')).toBe('SCOPED_ROLE_WRITE')
+      expect(readFileSync(join(fixture.workspaceRoot, paths[0]!), 'utf8')).toBe('SCOPED_ROLE_WRITE')
       const rows = await child.scan({ type: 'tool/result', limit: 100 })
       expect(rows).toHaveLength(paths.length)
       expect(rows[0]!.data).not.toMatchObject({ isError: true })
@@ -240,7 +282,10 @@ it('security: parent, sibling, agent and system cannot answer the child decision
     await vi.waitFor(() => expect(questions).toHaveLength(1))
     const handle = questions[0]!.decision!.handle
     const child = fixture.host.kernel.get(handle.sessionId!)!
-    const sibling = await fixture.host.createSession({ key: 'parent-prefix-sibling', cwd: fixture.dataDir })
+    const sibling = await fixture.host.createSession({
+      key: 'parent-prefix-sibling',
+      cwd: fixture.workspaceRoot,
+    })
     const pending = await child.decisions.get(handle)
     const command = {
       handle,
@@ -266,7 +311,7 @@ it('security: parent, sibling, agent and system cannot answer the child decision
     expect((await child.decisions.get(handle)).result).toBeNull()
     expect((await child.decisions.list())[0]!.result).toBeNull()
     expect(child.yolo).toBe(false)
-    expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(false)
+    expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(false)
     await fixture.parent.d.children.cancel!(child.key)
     await running
   } finally {
@@ -335,8 +380,8 @@ it.each(['same', 'args', 'child'] as const)(
         return state.handle.id === original.id && state.consumption !== null
       })
       expect(consumed).toHaveLength(1)
-      expect(readFileSync(join(fixture.dataDir, 'once.md'), 'utf8')).toBe('approved content')
-      expect(existsSync(join(fixture.dataDir, 'other.md'))).toBe(false)
+      expect(readFileSync(join(fixture.workspaceRoot, 'once.md'), 'utf8')).toBe('approved content')
+      expect(existsSync(join(fixture.workspaceRoot, 'other.md'))).toBe(false)
     } finally {
       await fixture.host.close()
     }
@@ -385,7 +430,7 @@ it.each(['child', 'parent', 'child-abort', 'parent-abort'] as const)(
         expect(record?.state).not.toBe('waiting_approval')
         expect(record?.state).not.toBe('running')
       })
-      expect({ withdrawn, wrote: existsSync(join(fixture.dataDir, 'requirements-1.md')) }).toEqual({
+      expect({ withdrawn, wrote: existsSync(join(fixture.workspaceRoot, 'requirements-1.md')) }).toEqual({
         withdrawn: true,
         wrote: false,
       })
@@ -433,7 +478,7 @@ it.each([false, true])(
       await expect(
         fixture.parent.d.children.createWithKind!('spawn', {
           parent: 'parent-prefix-sibling',
-          cwd: fixture.dataDir,
+          cwd: fixture.workspaceRoot,
           role: fixture.refs[0]!,
           input: 'forged',
         }),
@@ -468,7 +513,7 @@ it.each([false, true])(
         expect((await grandchild.decisions.list())[0]!.result).toMatchObject({
           code: 'delegated-approval-refused',
         })
-      expect(existsSync(join(fixture.dataDir, 'grandchild.md'))).toBe(false)
+      expect(existsSync(join(fixture.workspaceRoot, 'grandchild.md'))).toBe(false)
     } finally {
       await fixture.host.close()
     }
@@ -495,7 +540,7 @@ it('security: a policy switch while the human decides cannot authorize the old c
       content: [{ type: 'text', text: 'Delegate' }],
     })
     await fixture.parent.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
-    expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(false)
+    expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(false)
     const [listing] = await fixture.parent.d.children.list!()
     expect(
       await fixture.parent.d.log.storage.scan(listing!.id, { type: 'effect/intent', limit: 100 }),
@@ -525,14 +570,14 @@ it.each(['allow', 'deny', 'require_approval'] as const)(
     try {
       const child = await fixture.parent.d.children.createWithKind!('spawn', {
         parent: 'parent',
-        cwd: fixture.dataDir,
+        cwd: fixture.workspaceRoot,
         role: fixture.refs[0]!,
         input: 'Write',
         resident: true,
       })
       await child.run('Write')
       expect(questions).toHaveLength(commandAction === 'require_approval' ? 1 : 0)
-      expect(existsSync(join(fixture.dataDir, 'requirements-0.md'))).toBe(commandAction !== 'deny')
+      expect(existsSync(join(fixture.workspaceRoot, 'requirements-0.md'))).toBe(commandAction !== 'deny')
       if (commandAction === 'deny') {
         const session = fixture.host.kernel.get(child.key)!
         expect(await session.decisions.list()).toEqual([])
@@ -618,7 +663,7 @@ it('security: a human answer arriving after the persisted deadline cannot author
       result: { reason: 'expired', code: 'deadline' },
       consumption: null,
     })
-    expect(existsSync(join(fixture.dataDir, 'requirements-1.md'))).toBe(false)
+    expect(existsSync(join(fixture.workspaceRoot, 'requirements-1.md'))).toBe(false)
   } finally {
     await fixture.host.close()
   }
@@ -639,7 +684,7 @@ it('security: a role admitted before root close cannot acquire a card or effect 
     await fixture.parent.acceptInput()
     const handle = await fixture.parent.d.children.createWithKind!('spawn', {
       parent: 'parent',
-      cwd: fixture.dataDir,
+      cwd: fixture.workspaceRoot,
       role: fixture.refs[0],
       input: 'Write',
       resident: true,
@@ -649,7 +694,7 @@ it('security: a role admitted before root close cannot acquire a card or effect 
     await handle.run('Write').catch(() => undefined)
     expect({
       cards: questions.length,
-      wrote: existsSync(join(fixture.dataDir, 'requirements-0.md')),
+      wrote: existsSync(join(fixture.workspaceRoot, 'requirements-0.md')),
     }).toEqual({ cards: 0, wrote: false })
   } finally {
     await fixture.host.close()
