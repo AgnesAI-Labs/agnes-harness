@@ -99,7 +99,7 @@ function notice(this: PluginAdminViewContext) {
     ? this.state.lastOperation
       ? this.t('notice.operation-error', {
           operation: operationLabel(this.state.lastOperation, this.adminT),
-          message: this.errorMessage(error),
+          message: this.errorMessage(error, this.state.lastOperation.operation),
         })
       : this.errorMessage(error)
     : this.state.loading

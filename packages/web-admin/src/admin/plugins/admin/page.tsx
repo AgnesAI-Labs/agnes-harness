@@ -1229,8 +1229,8 @@ export class PluginAdminPage {
     this.render()
   }
 
-  errorMessage(error: AdminError): string {
-    return this.#t(adminErrorKey(error.code))
+  errorMessage(error: AdminError, operation?: PackageOperation['operation']): string {
+    return this.#t(adminErrorKey(error.code, operation))
   }
 
   track(

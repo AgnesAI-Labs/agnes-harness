@@ -159,6 +159,8 @@ export const operationsCatalog: LocaleCatalog = {
     'confirm.remove.description':
       'If a session or another plugin still uses it, the uninstall is stopped and you are told why.',
     'confirm.remove.action': 'Uninstall',
+    'error.remove-state':
+      'The plugin is not ready to uninstall. Disable it and wait for it to stop and finish cleanup, then retry uninstalling. If it still fails, refresh its details and check remaining usage.',
     'confirm.rollback.title': 'Roll back “{id}” to {version}?',
     'confirm.rollback.description': 'New sessions use {version}; sessions in progress are unaffected.',
     'confirm.rollback.action': 'Roll back',
@@ -317,6 +319,8 @@ export const operationsCatalog: LocaleCatalog = {
     'confirm.remove.title': '卸载「{id}」？',
     'confirm.remove.description': '如果还有会话或其他插件在用它，卸载会被拦下并告诉你原因。',
     'confirm.remove.action': '卸载',
+    'error.remove-state':
+      '插件当前尚不能卸载。请先停用，等待运行停止并完成清理后重试卸载；若仍失败，请刷新插件详情并检查剩余使用情况。',
     'confirm.rollback.title': '回滚「{id}」到 {version}？',
     'confirm.rollback.description': '回滚后新会话使用 {version}；进行中的会话不受影响。',
     'confirm.rollback.action': '回滚',
