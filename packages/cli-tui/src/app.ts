@@ -1,6 +1,7 @@
 import type { ContentBlock, UITimeline } from '@agnes/protocol'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
+import type { TuiAppOptions } from './app-options.js'
 import { ApprovalSettle } from './approval-settle.js'
 import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { pasteClipboardImage } from './clipboard-image.js'
@@ -150,47 +151,7 @@ export class TuiApp {
     // `header` is a back-compat fallback: real callers (`modes/tui.ts`) pass `profile`/`preset`
     // directly; existing tests that only ever set a plain `header` string still get a header line
     // out of it (via `profile: o.profile ?? o.header`), just with an empty preset segment.
-    readonly o: {
-      term: Terminal
-      session: Session
-      header?: string
-      profile?: string
-      preset?: string
-      /** The model the user explicitly chose on argv; omitted when the session default applies. */
-      model?: string
-      /** Resolved once by sdk before construction; session switches retain the same client brand. */
-      branding?: Branding
-      locale?: Locale
-      controlClient?: NodeClient
-      /** Resource commands use this injected port; the chat/session client has no such authority. */
-      resourceController?: TuiResourceController
-      /** The CLI has already entered its alternate screen before opening the session. */
-      screenAlreadyEntered?: boolean
-      /** `--no-alt-screen`: settled turns go into the terminal's own scrollback; only the footer is redrawn. */
-      noAltScreen?: boolean
-      /** Where mouse-selected text goes; defaults to the system clipboard. */
-      copy?: (text: string, fail: () => void) => unknown
-      /** The workspace the CLI opened its first session in (`--cwd`); defaults to `process.cwd()`. */
-      cwd?: string
-      /** True over `--connect`: `@` completion then never falls back to this machine's disk. */
-      remote?: boolean
-      /** Last model and permission for the next fresh session. Omitted in tests that do not inherit. */
-      composerSelectionPath?: string
-      themePreferencePath?: string
-      notifyPreferencePath?: string
-      /** Where sent prompts persist between runs; without it history lasts this run only. */
-      historyPath?: string
-      /** `<AGH_HOME>/commands`: where personal custom slash commands live. */
-      commandsDir?: string
-      /** Ctrl-G's editor command source and temp directory (`<AGH_HOME>/tmp`); tests leave it to the defaults. */
-      externalEditor?: ExternalEditorConfig
-      /** What the launcher knows for the welcome, and what tests pin (see `WelcomeOptions`). */
-      welcome?: WelcomeOptions
-      /** Shown once on the status bar after a fresh session inherits a model or full permission. */
-      initialNotice?: string
-      /** Reads branch and worktree for the composer rail; the gallery injects fixed answers. */
-      probeWorkspace?: WorkspaceProbe
-    } & TuiExtraOptions,
+    readonly o: TuiAppOptions,
   ) {
     // One ansi instance per colour tier for the whole frame: header, status bar, banner, editor
     // chrome and the cards all degrade through the same tier (none emits zero escape sequences).
