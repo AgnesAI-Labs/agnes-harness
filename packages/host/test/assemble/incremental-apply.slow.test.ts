@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { describe, expect, it } from 'vitest'
 import {
@@ -43,7 +45,14 @@ describe('incremental apply on the live tree', () => {
     let installed = [source(A, V1, `ctx.tools.register(tool('a_tool'))`)]
     const h = await livePluginHost(() => installed)
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1)]))
-    installed = [source(A, V2, `ctx.tools.register(tool('a_tool'))`), ...installed]
+    const next = source(A, V2, `ctx.tools.register(tool('a_tool'))`)
+    installed = [next, ...installed]
+    const file = join(next.snapshot.directory, 'index.js')
+    const original = readFileSync(file, 'utf8')
+    writeFileSync(file, original.replace('a_tool', 'a_bad'))
+    await expect(h.host.applyRuntimeTarget(targetOf([rowOf(A, V2)]))).rejects.toThrow()
+    expect(toolNames(h)).toContain('a_tool')
+    writeFileSync(file, original)
     await h.host.applyRuntimeTarget(targetOf([rowOf(A, V2)]))
     await settle()
     expect(toolNames(h)).toContain('a_tool')
@@ -76,6 +85,11 @@ describe('incremental apply on the live tree', () => {
     await expect(h.host.applyRuntimeTarget(targetOf([rowOf(A, V3)]))).rejects.toThrow()
     await settle()
     expect(toolNames(h)).toContain('a_v1')
+    installed = [source(B, V2, `ctx.tools.register(tool('b_v2'))`), ...installed]
+    await h.host.applyRuntimeTarget(targetOf([rowOf(A, V1), rowOf(B, V2)]))
+    // Publishing B cannot turn A's refused generation into the active or accepted one.
+    await expect(h.host.applyRuntimeTarget(targetOf([rowOf(A, V3), rowOf(B, V2)]))).rejects.toThrow()
+    expect(toolNames(h)).toEqual(expect.arrayContaining(['a_v1', 'b_v2']))
     await h.host.close()
   })
 

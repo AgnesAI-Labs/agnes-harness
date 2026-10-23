@@ -162,6 +162,97 @@ it('reuses a settled tree across opted-in reads until its root is replaced, and 
   expect(hash).toHaveBeenCalledTimes(5)
 })
 
+it.each(['sync mismatch', 'async mismatch', 'sync failure', 'async failure'])(
+  'does not resurrect a settled success after an independent %s',
+  async (kind) => {
+    const { dir, identity } = fixture()
+    const other = fixture()
+    const read = (directory = dir, expected = identity) =>
+      withPackageVerification(async () => verifiedDirectoryDigest(directory, expected, false, true), {
+        settleTrees: true,
+      })
+    await read()
+    await read(other.dir, other.identity)
+    writeFileSync(join(dir, 'payload'), 'other')
+    if (kind.endsWith('failure')) {
+      rmSync(join(dir, 'payload'))
+      symlinkSync(other.dir, join(dir, 'payload'), process.platform === 'win32' ? 'junction' : 'dir')
+      if (kind.startsWith('sync')) expect(() => verifiedDirectoryDigest(dir, identity)).toThrow()
+      else await expect(verifiedDirectoryDigestAsync(dir, identity)).rejects.toThrow()
+    } else {
+      const observed = kind.startsWith('sync')
+        ? verifiedDirectoryDigest(dir, identity)
+        : await verifiedDirectoryDigestAsync(dir, identity)
+      expect(observed).not.toBe(identity.treeIntegrity)
+    }
+    // A later switch/read of B must not make the rejected A valid again.
+    await read(other.dir, other.identity)
+    if (kind.endsWith('failure')) await expect(read()).rejects.toThrow()
+    else expect(await read()).not.toBe(identity.treeIntegrity)
+  },
+)
+
+it('does not let an older pending success overwrite a later independent refusal', async () => {
+  const { dir, identity } = fixture()
+  let release!: (digest: string) => void
+  const hash = vi.spyOn(sources, 'hashDirectoryAsync').mockImplementationOnce(
+    () =>
+      new Promise<string>((resolve) => {
+        release = resolve
+      }),
+  )
+  const read = () =>
+    withPackageVerification(() => verifiedDirectoryDigestAsync(dir, identity, false, true), {
+      settleTrees: true,
+    })
+  const pending = read()
+  writeFileSync(join(dir, 'payload'), 'other')
+  expect(verifiedDirectoryDigest(dir, identity)).not.toBe(identity.treeIntegrity)
+  release(identity.treeIntegrity)
+  await pending
+  hash.mockRestore()
+  expect(await read()).not.toBe(identity.treeIntegrity)
+})
+
+it('invalidates another live operation after independent negative evidence', async () => {
+  const { dir, identity } = fixture()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const pending = withPackageVerification(
+    async () => {
+      verifiedDirectoryDigest(dir, identity, false, true)
+      await gate
+      expect(verifiedDirectoryDigest(dir, identity, false, true)).not.toBe(identity.treeIntegrity)
+    },
+    { settleTrees: true },
+  )
+  writeFileSync(join(dir, 'payload'), 'other')
+  expect(verifiedDirectoryDigest(dir, identity)).not.toBe(identity.treeIntegrity)
+  release()
+  await pending
+})
+
+it.each(['version', 'integrity', 'treeIntegrity', 'capabilityHash'] as const)(
+  'fully verifies a changed %s instead of borrowing a settled identity',
+  async (field) => {
+    const { dir, identity } = fixture()
+    const other = fixture()
+    const read = (directory: string, expected: typeof identity) =>
+      withPackageVerification(() => verifiedDirectoryDigestAsync(directory, expected, false, true), {
+        settleTrees: true,
+      })
+    await read(dir, identity)
+    writeFileSync(join(dir, 'payload'), 'other')
+    const changed = { ...identity, [field]: field === 'version' ? '2.0.0' : 'f'.repeat(64) }
+    expect(await read(dir, changed)).not.toBe(changed.treeIntegrity)
+    // A new directory cannot inherit an unrelated package's earlier verification either.
+    writeFileSync(join(other.dir, 'payload'), 'other')
+    expect(await read(other.dir, other.identity)).not.toBe(other.identity.treeIntegrity)
+  },
+)
+
 it('forgets settled trees when a read is invalidated', async () => {
   const { dir, identity } = fixture(),
     hash = vi.spyOn(sources, 'hashDirectory')

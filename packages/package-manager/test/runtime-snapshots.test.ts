@@ -166,6 +166,47 @@ it('lets a worker read validated active snapshots while a package effect owns th
   expect((await m.runtimePluginSnapshots(profile))[0]?.snapshot.packageId).toBe(id)
 })
 
+it.each(['installed payload', 'snapshot payload', 'snapshot manifest'])(
+  'keeps a confirmed %s failure refused by the worker shortcut',
+  async (target) => {
+    const m = await installTrusted()
+    const selected = await identity()
+    const pin = await m.pinRuntimeSnapshot(profile, {
+      pinId: activeRuntimePinId({ packageId: id, integrity: selected.integrity }),
+      operationId: 'enable-v1',
+      packageId: id,
+      purpose: 'active',
+      selector: {
+        kind: 'installed',
+        expectedIntegrity: selected.integrity,
+        expectedTreeIntegrity: selected.treeIntegrity,
+      },
+    })
+    const worker = manager({ settleStoredTrees: true })
+    await worker.runtimePluginSnapshots(profile)
+    const directory = target.startsWith('installed')
+      ? packageDir(root, 'local-dev', id)
+      : pin.snapshot.directory
+    const file = join(directory, target.endsWith('manifest') ? 'package.json' : 'nested.mjs')
+    const original = readFileSync(file, 'utf8'),
+      stamp = statSync(file)
+    writeFileSync(
+      file,
+      original.replace(
+        target.endsWith('manifest') ? 'MIT' : 'v1',
+        target.endsWith('manifest') ? 'ISC' : 'v2',
+      ),
+    )
+    utimesSync(file, stamp.atime, stamp.mtime)
+    // Known design limitation: an opted-in read has no observation of in-place edits yet.
+    // Fresh admission must discover the edit, and that confirmed refusal must remain authoritative.
+    await expect(m.inventory(profile, { fresh: true })).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+    await expect(worker.runtimePluginSnapshots(profile)).rejects.toMatchObject({
+      code: 'E_PACKAGE_INTEGRITY',
+    })
+  },
+)
+
 it.each([
   'package update at old-moved',
   'runtime pin at runtime-snapshot-moved',

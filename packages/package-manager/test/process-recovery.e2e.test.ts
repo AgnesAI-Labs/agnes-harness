@@ -17,6 +17,7 @@ import { expect, it } from 'vitest'
 import {
   createPackageManager,
   emptyLock,
+  hashDirectory,
   localPluginRoots,
   packageDir,
   parseSource,
@@ -148,3 +149,44 @@ it('recovers after an actual child exits while a local scan holds an unready in-
     rmSync(root, { recursive: true, force: true })
   }
 }, 60000)
+
+it('forgets settled byte validity in a new worker process', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-verification-restart-'))
+  try {
+    const module = pathToFileURL(join(fixtures, '../../src/index.ts')).href
+    const script = join(root, 'verify.mts')
+    writeFileSync(
+      script,
+      `
+      import { writeFileSync } from 'node:fs'
+      import { hashDirectory, verifiedDirectoryDigest, withPackageVerification } from ${JSON.stringify(module)}
+      const dir = ${JSON.stringify(root)}
+      const expected = process.argv[2]
+      const identity = { version: '1.0.0', integrity: expected, treeIntegrity: expected, capabilityHash: 'a'.repeat(64) }
+      const read = () => withPackageVerification(async () => verifiedDirectoryDigest(dir, identity, false, true), { settleTrees: true })
+      if (process.argv[3] === 'warm') {
+        await read()
+        writeFileSync(dir + '/payload', 'other')
+      }
+      process.stdout.write(JSON.stringify(await read()))
+    `,
+    )
+    writeFileSync(join(root, 'payload'), 'first')
+    // Both workers inspect exactly the same expected tree, including the unchanged script.
+    const expected = hashDirectory(root, { exclude: [] })
+    const run = (phase: string) =>
+      spawnSync(process.execPath, ['--import', 'tsx', script, expected, phase], {
+        encoding: 'utf8',
+        timeout: 15000,
+      })
+    const warm = run('warm')
+    expect(warm.status, warm.stderr).toBe(0)
+    // Characterization of the pending in-place-edit decision: the incumbent still has its memo.
+    expect(JSON.parse(warm.stdout)).toBe(expected)
+    const restarted = run('cold')
+    expect(restarted.status, restarted.stderr).toBe(0)
+    expect(JSON.parse(restarted.stdout)).not.toBe(expected)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

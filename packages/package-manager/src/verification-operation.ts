@@ -9,6 +9,7 @@ type VerificationOperation = {
   digests: Map<string, string>
   pending: Map<string, Promise<string>>
   epoch: number
+  evidenceEpoch: number
   active: boolean
   /** This read accepts settled trees (see settledTrees); every other read hashes them again. */
   settleTrees: boolean
@@ -26,6 +27,8 @@ const operations = new AsyncLocalStorage<VerificationOperation | undefined>()
 type SettledTree = Readonly<{ dev: number; ino: number; digest: string }>
 const settledTrees = new Map<string, SettledTree>()
 const SETTLED_TREE_LIMIT = 512
+// Negative observations also fence successes still in flight in other operations.
+let evidenceEpoch = 0
 
 function rootInode(directory: string): Readonly<{ dev: number; ino: number }> | undefined {
   try {
@@ -72,12 +75,16 @@ export async function withPackageVerification<T>(
     digests: new Map(),
     pending: new Map(),
     epoch: 0,
+    evidenceEpoch,
     active: true,
     settleTrees: options.settleTrees === true,
   }
   return operations.run(operation, async () => {
     try {
       return await read()
+    } catch (error) {
+      invalidatePackageVerification()
+      throw error
     } finally {
       operation.active = false
       invalidate(operation)
@@ -89,12 +96,17 @@ export async function withPackageVerification<T>(
 export function withoutPackageVerification<T>(action: () => T): T
 export function withoutPackageVerification(action: () => unknown): unknown {
   const parent = operations.getStore()
-  invalidate(parent)
+  invalidatePackageVerification()
   try {
     const result = operations.run(undefined, action)
-    if (result instanceof Promise) return result.finally(() => invalidate(parent))
+    if (result instanceof Promise)
+      return result.finally(() => {
+        invalidatePackageVerification()
+        invalidate(parent)
+      })
     return result
   } finally {
+    invalidatePackageVerification()
     invalidate(parent)
   }
 }
@@ -103,6 +115,7 @@ export function withoutPackageVerification(action: () => unknown): unknown {
 export function invalidatePackageVerification(): void {
   invalidate(operations.getStore())
   settledTrees.clear()
+  evidenceEpoch++
 }
 
 function invalidate(operation: VerificationOperation | undefined): void {
@@ -110,6 +123,21 @@ function invalidate(operation: VerificationOperation | undefined): void {
   operation.epoch++
   operation.digests.clear()
   operation.pending.clear()
+}
+
+/** A refusal invalidates both settled digests and observations held by concurrent readers. */
+function currentOperation(): VerificationOperation | undefined {
+  const operation = operations.getStore()
+  if (operation && operation.evidenceEpoch !== evidenceEpoch) {
+    invalidate(operation)
+    operation.evidenceEpoch = evidenceEpoch
+  }
+  return operation
+}
+
+function observeDigest(digest: string, expected: string | undefined): string {
+  if (expected !== undefined && digest !== expected) invalidatePackageVerification()
+  return digest
 }
 
 /** Exact expected identity plus canonical directory and digest formula, never mtime/size. Failures
@@ -127,9 +155,16 @@ export function verifiedDirectoryDigest(
   /** The tree is AGH-stored (see settledTrees); an opted-in read may reuse its settled digest. */
   storedTree = false,
 ): string {
-  const operation = operations.getStore()
+  const operation = currentOperation()
   const expected = publish ? identity.integrity : identity.treeIntegrity
-  const hash = () => hashDirectory(directory, publish ? {} : { exclude: [] })
+  const hash = () => {
+    try {
+      return observeDigest(hashDirectory(directory, publish ? {} : { exclude: [] }), expected)
+    } catch (error) {
+      invalidatePackageVerification()
+      throw error
+    }
+  }
   if (!operation?.active || expected === undefined) return hash()
   const settled = storedTree && operation.settleTrees
   const key = directoryKey(directory, identity, publish)
@@ -180,9 +215,15 @@ export async function verifiedDirectoryDigestAsync(
   publish = false,
   storedTree = false,
 ): Promise<string> {
-  const operation = operations.getStore()
+  const operation = currentOperation()
   const expected = publish ? identity.integrity : identity.treeIntegrity
-  const hash = () => hashDirectoryAsync(directory, publish ? {} : { exclude: [] })
+  const hash = () =>
+    hashDirectoryAsync(directory, publish ? {} : { exclude: [] })
+      .then((digest) => observeDigest(digest, expected))
+      .catch((error: unknown) => {
+        invalidatePackageVerification()
+        throw error
+      })
   if (!operation?.active || expected === undefined) return hash()
   const settled = storedTree && operation.settleTrees
   // These cheap checks deliberately run before every memo/pending hit, without yielding.
@@ -198,12 +239,14 @@ export async function verifiedDirectoryDigestAsync(
   const pending = operation.pending.get(key)
   if (pending) return pending
   const epoch = operation.epoch
+  const observedEpoch = evidenceEpoch
   const before = settled ? rootInode(directory) : undefined
   const result = hash()
     .then((digest) => {
       if (
         operation.active &&
         operation.epoch === epoch &&
+        evidenceEpoch === observedEpoch &&
         digest === expected &&
         directoryKey(directory, identity, publish) === key
       ) {

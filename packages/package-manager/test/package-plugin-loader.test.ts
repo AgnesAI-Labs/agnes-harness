@@ -16,7 +16,7 @@ import {
 } from '../src/package-plugin-loader.js'
 import type { RuntimePin, RuntimeSnapshot } from '../src/runtime-snapshots.js'
 import { hashDirectory } from '../src/sources.js'
-import { withPackageVerification } from '../src/verification-operation.js'
+import { verifiedDirectoryDigest, withPackageVerification } from '../src/verification-operation.js'
 
 const roots: string[] = []
 
@@ -291,6 +291,12 @@ describe('package plugin loader', () => {
     })
 
     const changed = packageSnapshot([{ apiRange: '^5.0.0', export: 'main' }])
+    const workerRead = () =>
+      withPackageVerification(
+        async () => verifiedDirectoryDigest(changed.directory, changed.snapshot, false, true),
+        { settleTrees: true },
+      )
+    await workerRead()
     await expect(
       loadPackagePlugins({
         snapshot: changed.snapshot,
@@ -308,6 +314,8 @@ describe('package plugin loader', () => {
         },
       }),
     ).rejects.toMatchObject({ legacyCode: 'E_LOCK_MISMATCH', detail: { reason: 'snapshot-changed' } })
+    // A refused module generation must invalidate an earlier descriptive success in this worker.
+    expect(await workerRead()).not.toBe(changed.snapshot.treeIntegrity)
   })
 
   it('does not execute packages that only have legacy extension declarations', async () => {

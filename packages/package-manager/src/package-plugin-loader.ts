@@ -15,7 +15,11 @@ import type { InstalledInventory, InstalledPackage } from './inventory.js'
 import { type AgnesPluginManifestEntry, parseAgnesPluginEntries } from './plugin-manifest.js'
 import type { RuntimePin, RuntimeSnapshot } from './runtime-snapshots.js'
 import { hashDirectoryAsync } from './sources.js'
-import { verifiedDirectoryDigest, verifiedDirectoryDigestAsync } from './verification-operation.js'
+import {
+  invalidatePackageVerification,
+  verifiedDirectoryDigest,
+  verifiedDirectoryDigestAsync,
+} from './verification-operation.js'
 
 export interface PackagePluginModuleLoader {
   importModule(snapshot: RuntimeSnapshot): Promise<Readonly<Record<string, unknown>>>
@@ -190,6 +194,7 @@ function stateFailure(reason: string, detail: Record<string, unknown> = {}): nev
 }
 
 function integrityFailure(reason: string): never {
+  invalidatePackageVerification()
   throw new PackageError('E_LOCK_MISMATCH', 'runtime snapshot changed while loading plugins', {
     detail: { reason },
   })
