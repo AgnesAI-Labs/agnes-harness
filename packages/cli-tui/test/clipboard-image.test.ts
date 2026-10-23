@@ -1,15 +1,22 @@
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { BusyInput } from '../src/busy-input.js'
 import { type ClipboardImagePort, pasteClipboardImage } from '../src/clipboard-image.js'
+import { attachDroppedImages } from '../src/dropped-images.js'
 import { Editor } from '../src/editor.js'
+import { PASTE_END, PASTE_START } from '../src/keys.js'
 
 const uploaded: Array<{ mode: number; regular: boolean }> = []
+const uploadedPaths: string[] = []
+let failUpload = false
 vi.mock('../src/attachment-upload.js', () => ({
   uploadLocalAttachment: async (_session: unknown, _cwd: string, path: string) => {
+    if (failUpload) throw new Error('ATTACHMENT_BYTES')
+    uploadedPaths.push(path)
     const info = statSync(path)
     uploaded.push({ mode: info.mode & 0o777, regular: info.isFile() })
     return { type: 'attachment', id: 'att-1' }
@@ -21,13 +28,15 @@ let dir: string
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'agh-clip-'))
   uploaded.length = 0
+  uploadedPaths.length = 0
+  failUpload = false
 })
 afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-function harness(port: ClipboardImagePort) {
+function harness(port: ClipboardImagePort, remote = false) {
   const session = { id: 's1' }
   const notices: Array<[string, string]> = []
-  const editor = new Editor({ onSubmit: () => {} })
+  const editor = new Editor({ onSubmit: () => {}, onPasteText: (text) => attachDroppedImages(app, text) })
   const busyInput = new BusyInput({
     session: () => app.session,
     locale: () => 'en',
@@ -37,12 +46,13 @@ function harness(port: ClipboardImagePort) {
   const app = {
     locale: 'en',
     session,
+    cwd: dir,
     attachmentSignal: new AbortController().signal,
     statusBar: { setNotice: (text: string, tone: string) => notices.push([text, tone]) },
     renderer: { requestRender: () => {} },
     editor,
     busyInput,
-    o: { externalEditor: { env: {}, tmpDir: dir }, clipboard: port },
+    o: { externalEditor: { env: {}, tmpDir: dir }, clipboard: port, remote },
   } as unknown as TuiApp
   return { app, notices, editor, busyInput }
 }
@@ -168,5 +178,77 @@ describe('clipboard image paste', () => {
     expect(attempts).toBe(checking ? 2 : 1)
     expect(editor.text).toBe('')
     expect(busyInput.takeKept(draft)).toEqual([])
+  })
+
+  it('attaches the file itself when the clipboard holds a copied image file', async () => {
+    const file = join(dir, 'copied.png')
+    writeFileSync(file, PNG)
+    const { app, editor } = harness({ readImage: async () => ({ ok: true, file }) })
+    await pasteClipboardImage(app)
+    expect(editor.text).toBe('[Image #1]')
+    expect(uploadedPaths).toEqual([file])
+  })
+
+  describe('dropped image paths', () => {
+    const drop = (editor: Editor, text: string) => editor.handleInput(`${PASTE_START}${text}${PASTE_END}`)
+    const image = (name: string) => {
+      const file = join(dir, name)
+      writeFileSync(file, PNG)
+      return file
+    }
+
+    it.each([
+      ['an absolute path', 'a.png', (f: string) => f],
+      ['a quoted path', 'my pics/a b.png', (f: string) => `'${f}'`],
+      ['a file URL', 'my pics/a b.png', (f: string) => pathToFileURL(f).href],
+      ['a path with escaped spaces', 'my pics/a b.png', (f: string) => f.replaceAll(' ', '\\ ')],
+    ])('turns %s into a chip and an attachment', async (_name, name, form) => {
+      mkdirSync(join(dir, 'my pics'))
+      const file = image(name)
+      const { editor, busyInput } = harness(withImage)
+      drop(editor, form(file))
+      await vi.waitFor(() => expect(editor.text).toBe('[Image #1]'))
+      expect(uploadedPaths).toEqual([file])
+      expect(busyInput.takeKept('[Image #1]')).toEqual([{ type: 'attachment', id: 'att-1' }])
+    })
+
+    it('attaches several paths, and follows a symlink to a regular file', async () => {
+      const a = image('a.png')
+      const link = join(dir, 'link.webp')
+      symlinkSync(a, link)
+      const { editor } = harness(withImage)
+      drop(editor, `${a}\n${link}`)
+      await vi.waitFor(() => expect(editor.text).toBe('[Image #1][Image #2]'))
+    })
+
+    it.each([
+      ['a non-image file', () => image('a.txt')],
+      ['a missing file', () => join(dir, 'missing.png')],
+      ['a directory', () => dir],
+      ['text with a path', () => `look at ${image('b.png')}`],
+    ])('leaves %s as pasted text', (_name, text) => {
+      const { editor } = harness(withImage)
+      const pasted = text()
+      drop(editor, pasted)
+      expect(editor.text).toBe(pasted)
+      expect(uploadedPaths).toEqual([])
+    })
+
+    it('stays text under --connect', () => {
+      const file = image('c.png')
+      const { editor } = harness(withImage, true)
+      drop(editor, file)
+      expect(editor.text).toBe(file)
+      expect(uploadedPaths).toEqual([])
+    })
+
+    it('keeps the path in the draft when the upload fails', async () => {
+      const file = image('d.png')
+      failUpload = true
+      const { editor, notices } = harness(withImage)
+      drop(editor, file)
+      await vi.waitFor(() => expect(editor.text).toBe(file))
+      expect(notices.at(-1)?.[1]).toBe('error')
+    })
   })
 })

@@ -9,10 +9,10 @@ import { CardFocus } from './card-focus.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { applyCommandResult } from './command-result.js'
 import { completeToken, runSlash, slashCommandFor } from './commands.js'
-import { isSlashCommandLine } from './slash-table.js'
 import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { DraftStash } from './draft-stash.js'
+import { attachDroppedImages } from './dropped-images.js'
 import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
 import { editDraft } from './external-editor.js'
@@ -40,6 +40,7 @@ import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { TuiResourceController } from './resource-controller.js'
 import { type InputDialog, rootInput } from './root-input.js'
 import { applySwitch, chooseSession, ResourceConfirmations } from './session-switch.js'
+import { isSlashCommandLine } from './slash-table.js'
 import { type ActionItem, collectSlots } from './slots.js'
 import { StatusLineConfig } from './statusline-config.js'
 import { SurfaceInbox } from './surface-inbox.js'
@@ -303,6 +304,7 @@ export class TuiApp {
       onSubmit: (text) => {
         void this.runInput(text)
       },
+      onPasteText: (text) => attachDroppedImages(this, text),
       onPasteImage: () => void pasteClipboardImage(this).catch((error) => this.showError(error)),
       onExternalEdit: () =>
         void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor),

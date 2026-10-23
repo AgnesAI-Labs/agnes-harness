@@ -2,8 +2,11 @@ import { execFile } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { mkdir, open, rm, stat, writeFile } from 'node:fs/promises'
 import { join, win32 } from 'node:path'
+import type { ContentBlock } from '@agnes/protocol'
+import type { Session } from '@agnes/sdk'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
+import { isLocalImageFile } from './image-file.js'
 import { tt } from './locale-extended.js'
 import { oneLine } from './session-commands.js'
 
@@ -12,7 +15,10 @@ export const CLIPBOARD_TIMEOUT_MS = 5_000
 export const CLIPBOARD_MAX_BYTES = 20 * 1024 * 1024
 
 export type ClipboardReason = 'empty' | 'unavailable' | 'timeout' | 'too-large' | 'failed'
-export type ClipboardImageResult = { ok: true } | { ok: false; reason: ClipboardReason; tool?: string }
+/** `file`: the clipboard held a copied image file (Finder), so that file is the image and nothing was written. */
+export type ClipboardImageResult =
+  | { ok: true; file?: string }
+  | { ok: false; reason: ClipboardReason; tool?: string }
 
 /**
  * Reads the clipboard's image into `file`, which already exists with mode 0600, as a PNG. The system
@@ -98,8 +104,24 @@ async function viaX11OrWayland(file: string, env: NodeJS.ProcessEnv, signal?: Ab
   return last
 }
 
-/** AppleScript writes the clipboard's PNG straight into the file, so no image crosses stdout. */
+/**
+ * A file copied in Finder puts a file reference on the clipboard, and its bitmap is only the file's
+ * icon: so the reference is tried first, and a copied file that is not an image is "no image".
+ * AppleScript writes a bitmap's PNG straight into the file, so no image crosses stdout.
+ */
 async function viaOsascript(file: string, env: NodeJS.ProcessEnv, signal?: AbortSignal) {
+  const ref = await run(
+    '/usr/bin/osascript',
+    ['-e', 'POSIX path of (the clipboard as «class furl»)'],
+    env,
+    signal,
+  )
+  if (ref.ok) {
+    const path = ref.out.toString('utf8').replace(/\r?\n$/, '')
+    return isLocalImageFile(path)
+      ? ({ ok: true, file: path } as const)
+      : ({ ok: false, reason: 'empty' } as const)
+  }
   const quoted = `"${file.replace(/[\\"]/g, (c) => `\\${c}`)}"`
   const script = [
     'set d to the clipboard as «class PNGf»',
@@ -171,6 +193,20 @@ async function checkImage(file: string): Promise<ClipboardReason | undefined> {
 }
 
 const counts = new WeakMap<TuiApp, number>()
+
+/**
+ * Numbers an uploaded image `[Image #n]`, holds it for the next send and puts the chip in the draft.
+ * A session switch while the upload ran leaves the image behind with the old session: no chip then.
+ */
+export function insertImageChip(app: TuiApp, session: Session, block: ContentBlock): string | undefined {
+  if (app.session !== session) return undefined
+  const n = (counts.get(app) ?? 0) + 1
+  counts.set(app, n)
+  const chip = tt('paste.image.chip', app.locale, { n })
+  app.busyInput.attach(chip, block, session.id)
+  app.editor.insertChip(chip)
+  return chip
+}
 const reading = new WeakSet<TuiApp>()
 
 /**
@@ -196,7 +232,7 @@ export async function pasteClipboardImage(app: TuiApp): Promise<void> {
     await writeFile(file, '', { mode: 0o600, flag: 'wx' })
     const port = app.o.clipboard ?? systemClipboard()
     const read = await port.readImage(file, signal)
-    const reason = read.ok ? await checkImage(file) : read.reason
+    const reason = read.ok ? (read.file ? undefined : await checkImage(file)) : read.reason
     if (reason || !read.ok) {
       const tool = read.ok ? '' : (read.tool ?? '')
       const key = {
@@ -211,15 +247,9 @@ export async function pasteClipboardImage(app: TuiApp): Promise<void> {
         reason === 'empty' ? 'warning' : 'error',
       )
     }
-    const block = await uploadLocalAttachment(session, dir, file, signal)
-    // A session switch while the upload ran leaves the image behind with the old session.
-    if (app.session !== session) return
-    const n = (counts.get(app) ?? 0) + 1
-    counts.set(app, n)
-    const chip = tt('paste.image.chip', locale, { n })
-    app.busyInput.attach(chip, block, session.id)
-    app.editor.insertChip(chip)
-    say(tt('paste.image.attached', locale, { chip }), 'success')
+    const block = await uploadLocalAttachment(session, dir, read.file ?? file, signal)
+    const chip = insertImageChip(app, session, block)
+    if (chip) say(tt('paste.image.attached', locale, { chip }), 'success')
   } catch (error) {
     if (signal.aborted) return
     say(

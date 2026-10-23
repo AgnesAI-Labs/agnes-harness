@@ -92,6 +92,8 @@ export type EditorOptions = {
   onExternalEdit?(): void
   /** Ctrl-V: the terminal forwards no image, so the app reads the clipboard itself. */
   onPasteImage?(): void
+  /** A paste, before it is inserted: true when the app took it over (a dropped image file becomes an attachment). */
+  onPasteText?(text: string): boolean
   /** Sent prompts, kept across runs when it has a file; without it history lasts this editor's lifetime. */
   history?: PromptHistory
   /** True while a turn runs: esc then interrupts it and leaves the draft alone. */
@@ -332,7 +334,7 @@ export class Editor implements Component, VimTarget {
         return true
       }
       case 'paste':
-        this.paste(k.ch ?? '')
+        if (!this.o.onPasteText?.(k.ch ?? '')) this.paste(k.ch ?? '')
         return true
       case 'history-search':
         this.search = new HistorySearch(this.store, { text: this.text, cursor: this.cursor })
@@ -536,7 +538,7 @@ export class Editor implements Component, VimTarget {
 
   // Terminals paste a newline as a carriage return; tabs would not survive the renderer, and every
   // other control byte is dropped as it is from typed text.
-  private paste(raw: string): void {
+  paste(raw: string): void {
     const text = raw.replace(/\r\n?/g, '\n').replaceAll('\t', '  ').replace(CONTROL, '')
     const lines = text.split('\n').length
     if (lines <= PASTE_FOLD_LINES && text.length <= PASTE_FOLD_CHARS) {

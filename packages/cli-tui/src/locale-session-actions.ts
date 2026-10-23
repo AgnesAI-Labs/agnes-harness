@@ -12,6 +12,8 @@ export type SessionActionKey =
   | 'paste.image.tooLarge'
   | 'paste.image.failed'
   | 'paste.image.uploadFailed'
+  | 'paste.drop.attached'
+  | 'paste.drop.failed'
   | 'commands.schedule'
   | 'commands.scheduleSummary'
   | 'commands.loop'
@@ -51,6 +53,8 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'paste.image.tooLarge': 'The clipboard image is larger than {mb} MB',
     'paste.image.failed': 'Could not read an image from the clipboard',
     'paste.image.uploadFailed': 'Attaching the clipboard image failed: {reason}',
+    'paste.drop.attached': 'Attached {name} as {chip}; it is sent with your next message',
+    'paste.drop.failed': 'Attaching {name} failed: {reason}; its path was left in the prompt',
     'commands.schedule':
       "Schedule a prompt for this session: every <interval> or daily <HH:MM>; list or delete the session's schedules",
     'commands.scheduleSummary': 'Schedule prompts',
@@ -89,6 +93,8 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'commands.pasteSummary': '附上剪贴板图片',
     'paste.image.chip': '[图片 #{n}]',
     'paste.image.attached': '已把剪贴板图片附为 {chip}，随下一条消息发送',
+    'paste.drop.attached': '已把 {name} 附为 {chip}，随下一条消息发送',
+    'paste.drop.failed': '附加 {name} 失败：{reason}；路径已留在输入框里',
     'paste.image.empty': '剪贴板里没有图片',
     'paste.image.unavailable': '这里读不了剪贴板：缺少 {tool}',
     'paste.image.timeout': '读取剪贴板超时',
