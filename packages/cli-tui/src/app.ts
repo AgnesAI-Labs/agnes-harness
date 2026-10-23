@@ -1,13 +1,12 @@
-import { randomUUID } from 'node:crypto'
-import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
-import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
+import type { ContentBlock, UITimeline } from '@agnes/protocol'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
 import { ApprovalSettle } from './approval-settle.js'
 import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { pasteClipboardImage } from './clipboard-image.js'
+import { applyCommandResult } from './command-result.js'
 import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
-import { type Component, escapeControl, Text, VStack } from './component.js'
+import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { Editor } from './editor.js'
@@ -18,14 +17,12 @@ import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } fro
 import { FooterRenderer } from './footer-renderer.js'
 import { formatTurnSummary } from './format-usage.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
-import { actionFor } from './keymap.js'
-import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { renderMarkdownChunk } from './markdown.js'
 import { ModelChooser } from './model-chooser.js'
 import { copyTip, systemCopy, TuiMouse } from './mouse.js'
-import { nodeText } from './node-text.js'
+import { nodeView } from './node-view.js'
 import { NotifyPreference } from './notify.js'
 import { PackageController } from './package-controller.js'
 import { PermissionModal } from './permission-modal.js'
@@ -33,20 +30,20 @@ import { TuiProjection, type TuiProjectionWindow } from './projection.js'
 import { PromptHistory } from './prompt-history.js'
 import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { ResourceCommandKind, TuiResourceController } from './resource-controller.js'
+import { rootInput } from './root-input.js'
 import { type ActionItem, collectSlots } from './slots.js'
-import { pendingSurface } from './surface-prompt.js'
+import { SurfaceInbox } from './surface-inbox.js'
 import type { Terminal } from './terminal.js'
 import { resolveAuto } from './terminal-background.js'
 import { TerminalSignals } from './terminal-signals.js'
 import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
 import { readTheme, saveTheme, type ThemePreference } from './theme-preference.js'
-import { assistantView, LiveView } from './thinking.js'
+import { LiveView } from './thinking.js'
 import { ToolCards } from './tool-cards.js'
-import { ApprovalCard } from './views/approval-card.js'
+import type { ApprovalCard } from './views/approval-card.js'
 import { Composer } from './views/composer.js'
 import { Hints } from './views/hints.js'
 import { localCommandView } from './views/local-command.js'
-import { UserMessage } from './views/message.js'
 import { ModelPicker } from './views/model-picker.js'
 import { SessionPicker } from './views/session-picker.js'
 import { StatusBar } from './views/status-bar.js'
@@ -63,12 +60,7 @@ export class TuiApp {
   get attachmentSignal(): AbortSignal {
     return this.attachmentController.signal
   }
-  private surfacePrompt: UiSurfaceRecord | undefined
-  private surfaceCommand: Omit<UiActionParams, 'sessionId'> | undefined
-  private readingSurfaces: Session | undefined
-  private surfaceReadAgain = false
-  private surfaceWatermark = 0
-  private readonly surfaceVersions = new Map<string, number>()
+  private readonly surfaces: SurfaceInbox
   private readonly modal: PermissionModal
   private offPermission: (() => void) | undefined
   // Registered once in `start()` against whichever client the initial session belongs to. A
@@ -251,44 +243,19 @@ export class TuiApp {
       // viewport, never into the shell's history.
       top: this.welcome.banner,
       groupView: (nodes) => this.cards.group(nodes),
-      nodeView: (node) => {
-        if (node.kind === 'tool') return this.cards.view(node)
-        if (node.kind === 'approval') {
-          const card = new ApprovalCard(node, {
-            ansi,
-            locale,
-            settled: () => this.settle.settled,
-            letters: () => this.editor.text === '',
-            onDecide: async (ref, verdict, reason) => {
-              if (this.refuseClosed()) return
-              const value =
-                reason ?? (node.presentation?.[locale] ?? node.presentation?.en)?.responseValue ?? null
-              await this.o.session.client.approval.decide({
-                ...ref,
-                commandId: `${ref.id}:${ref.revision}:${verdict}`,
-                response: { option: verdict, value },
-              })
-            },
-            // The decide call's settlement (a rejection adds no ledger event for TuiProjection)
-            // must ask for its own repaint: nothing else in the render loop watches that promise.
-            changed: () => this.stopped || this.renderer.requestRender(),
-          })
-          this.approvalCards.set(node.id, card)
-          return card
-        }
-        if (node.kind === 'assistant') return assistantView(node, ansi, locale)
-        if (node.kind === 'user') {
-          const text = nodeText(node)
-          return new UserMessage(
-            text.startsWith('you: ') ? text.slice('you: '.length) : text,
-            ansi,
-            this.theme,
-            brandColour(branding.accent),
-          )
-        }
-        const text = nodeText(node)
-        return text ? new Text(escapeControl(text)) : new VStack()
-      },
+      nodeView: nodeView({
+        ansi,
+        locale,
+        theme: this.theme,
+        accent: brandColour(branding.accent),
+        cards: this.cards,
+        approvalCards: this.approvalCards,
+        session: () => this.o.session,
+        settled: () => this.settle.settled,
+        letters: () => this.editor.text === '',
+        refuseClosed: () => this.refuseClosed(),
+        repaint: () => this.stopped || this.renderer.requestRender(),
+      }),
     })
     this.modal = new PermissionModal(() => this.stopped || this.renderer.requestRender(), {
       locale,
@@ -418,78 +385,41 @@ export class TuiApp {
       this.mouse.overlay(screen, above.length + gap - 1, width)
       return o.noAltScreen ? screen : this.theme.frame(createAnsi(o.term.caps.color), screen, width, height)
     }
-    const handle = root.handleInput.bind(root)
-    root.handleInput = (data) => {
-      if (this.signals.focus(data)) return true
-      const settled = this.settle.press()
-      if (this.modal.handleInput(data, settled)) return true
-      if (this.themePicker.handleInput(data)) return true
-      if (this.modelPicker.handleInput(data)) return true
-      if (this.sessionPicker.handleInput(data)) return true
-      if (this.usagePanel.handleInput(data)) return true
-      // Digits reach the persisted approval projection next -- the most recently projected
-      // ApprovalCard, which is only interactive while its node is genuinely pending-with-a-ticket
-      // (the synchronous path's own dialog is the modal above, already tried).
-      // After 'closed' both card kinds are inert: their actions would re-dial the daemon (a parked
-      // ticket survives a restart) and run where nothing renders; digits fall to the editor instead.
-      const inert = this.closedNotice !== undefined
-      if (!inert && this.approvalCards.get(this.latestApproval ?? '')?.handleInput(data, settled)) return true
-      // Numbered actions inside the most recently projected tool card, tried before the digit
-      // reaches anything else. A collapsed card (or one with no matching action) declines, and
-      // the keystroke falls through to the editor like any other character.
-      if (!inert && this.cards.handleInput(data)) return true
-      const key = parseKey(data, o.term.caps.kittyKeyboard)
-      const action = actionFor('global', key.name)
-      if (action === 'thinking-cycle') {
-        this.models.cycleThinking()
-        return true
-      }
-      if (action === 'card-toggle') {
-        this.cards.toggleLatest()
-        return true
-      }
-      if (action === 'hint-1' || action === 'hint-2' || action === 'hint-3' || action === 'hint-4') {
-        const hint = this.hintActions[Number(action.slice(-1)) - 1]
-        if (hint && !hint.disabled) this.dispatchAction(hint.id)
-        return true
-      }
-      if (this.timeline.jumpKey(key.name, this.editor.text !== '')) return true
-      if (!o.noAltScreen && (action === 'timeline-page-up' || action === 'timeline-page-down')) {
-        const page = Math.max(1, o.term.size().rows - this.reservedRows)
-        this.scrollTimeline(action === 'timeline-page-up' ? -page : page)
-        return true
-      }
-      // Idle Alt+Enter inserts a newline (the editor's own default, reached via `handle(data)`
-      // below). Busy, it steers the draft into the turn in flight, where Enter queues it behind.
-      if (action === 'steer' && this.busy) {
-        const text = this.editor.expanded()
-        if (text.trim() && !this.refuseClosed()) {
-          const blocks = attachmentsFrom(text, this.cwd, this.o.remote)
-          blocks.push(...this.busyInput.takeKept(text))
-          this.editor.clear()
-          void this.submitBlocks(blocks, text, true).catch((error) => this.showError(error))
-        }
-        return true
-      }
-      // Alt+Up takes the newest queued message back into an empty editor.
-      if (action === 'queue-recall' && !this.editor.text) {
-        void this.runInput('/queue edit last')
-        return true
-      }
-      if (action === 'interrupt') {
-        this.interrupts.press(
-          () => this.cancel(),
-          () => this.onQuit(),
-          (error) => this.showError(error),
-        )
-        return true
-      }
-      if (action === 'quit' && !this.editor.text && !this.busy) {
-        this.onQuit()
-        return true
-      }
-      return handle(data)
-    }
+    root.handleInput = rootInput(
+      {
+        signals: () => this.signals,
+        settle: this.settle,
+        modal: this.modal,
+        dialogs: [this.themePicker, this.modelPicker, this.sessionPicker, this.usagePanel],
+        approvalCards: this.approvalCards,
+        latestApproval: () => this.latestApproval,
+        closed: () => this.closedNotice !== undefined,
+        cards: this.cards,
+        models: this.models,
+        hintActions: () => this.hintActions,
+        dispatchAction: (id) => this.dispatchAction(id),
+        timeline: this.timeline,
+        editor: this.editor,
+        kitty: o.term.caps.kittyKeyboard,
+        noAltScreen: o.noAltScreen,
+        pageRows: () => Math.max(1, o.term.size().rows - this.reservedRows),
+        scroll: (rows) => this.scrollTimeline(rows),
+        busy: () => this.busy,
+        refuseClosed: () => this.refuseClosed(),
+        steer: (text) =>
+          this.submitBlocks(
+            [...attachmentsFrom(text, this.cwd, this.o.remote), ...this.busyInput.takeKept(text)],
+            text,
+            true,
+          ),
+        runInput: (text) => this.runInput(text),
+        interrupts: this.interrupts,
+        cancel: () => this.cancel(),
+        onQuit: () => this.onQuit(),
+        showError: (error) => this.showError(error),
+      },
+      root.handleInput.bind(root),
+    )
     this.signals = new TerminalSignals(
       o.term,
       this.cwd,
@@ -501,6 +431,17 @@ export class TuiApp {
     this.renderer = o.noAltScreen
       ? new FooterRenderer(o.term, root, this.timeline)
       : new Renderer(o.term, root, o.screenAlreadyEntered, this.mouse, o.mouse !== false)
+    this.surfaces = new SurfaceInbox({
+      session: () => this.o.session,
+      stopped: () => this.stopped,
+      closed: () => Boolean(this.closedNotice),
+      locale: () => this.locale,
+      statusBar: this.statusBar,
+      appendLocal: (id, view) => this.timeline.appendLocal(id, view),
+      localCommandView: this.localCommandView,
+      repaint: () => this.renderer.requestRender(),
+      showError: (error) => this.showError(error),
+    })
     this.projection = this.makeProjection(o.session)
   }
 
@@ -727,63 +668,8 @@ export class TuiApp {
     this.loader.hide()
   }
 
-  private async syncSurfaces(): Promise<void> {
-    const session = this.o.session
-    if (this.stopped || this.closedNotice || typeof session.uiRead !== 'function') return
-    if (this.readingSurfaces === session) {
-      this.surfaceReadAgain = true
-      return
-    }
-    this.readingSurfaces = session
-    try {
-      const page = await session.uiRead()
-      let cursor = page.nextCursor
-      while (cursor) {
-        const next = await session.uiRead({ cursor })
-        page.surfaces.push(...next.surfaces)
-        cursor = next.nextCursor
-      }
-      if (this.stopped || this.closedNotice || session !== this.o.session) return
-      if (page.lastSeq < this.surfaceWatermark) {
-        this.surfaceReadAgain = true
-        return
-      }
-      this.surfaceWatermark = page.lastSeq
-      for (const record of page.surfaces) {
-        if (this.surfaceVersions.get(record.surface.id) === record.updatedSeq) continue
-        this.surfaceVersions.set(record.surface.id, record.updatedSeq)
-        this.timeline.appendLocal(
-          session.id,
-          this.localCommandView(
-            record.surface.title,
-            surfaceText(record.surface) +
-              `\n[Open in Web](/?session=${encodeURIComponent(session.id)}&surface=${encodeURIComponent(record.surface.id)})`,
-            false,
-          ),
-        )
-      }
-      const next = pendingSurface(page)
-      // Keep the displayed request binding until submission; backend refuses an old revision.
-      if (!this.surfacePrompt || this.surfacePrompt.surface.id !== next?.surface.id) this.surfacePrompt = next
-      if (this.surfacePrompt) this.statusBar.setNotice(tt('app.surfacePrompt', this.locale))
-      this.renderer.requestRender()
-    } catch (error) {
-      const code = (error as { data?: { code?: string } } | undefined)?.data?.code
-      if (code !== 'CAPABILITY_DENIED' && code !== 'METHOD_NOT_FOUND' && session === this.o.session)
-        this.showError(error)
-    } finally {
-      if (this.readingSurfaces === session) {
-        this.readingSurfaces = undefined
-        if (this.surfaceReadAgain) {
-          this.surfaceReadAgain = false
-          void this.syncSurfaces()
-        }
-      }
-    }
-  }
-
   private apply(value: UITimeline, options: { opening?: boolean; window?: TuiProjectionWindow } = {}): void {
-    void this.syncSurfaces()
+    void this.surfaces.sync()
     this.o.onTimeline?.(value, options.window?.hasEarlier)
     this.cards.sync(value)
     this.signals.watch(value.nodes)
@@ -942,27 +828,20 @@ export class TuiApp {
       await this.submitBlocks(r.content)
     }
     if (r.prompt) await this.submit(r.prompt)
-    if (r.details && r.text !== undefined) {
-      this.statusBar.setNotice(undefined)
-      this.usagePanel.show(r.text, r.title)
-    } else if (r.text !== undefined) {
-      // Explicit transcript output, and every multiline fallback, stays connection-local: Timeline
-      // anchors it beside projected nodes but never manufactures a UINode or writes the ledger.
-      if (r.presentation === 'transcript' || r.text.includes('\n')) {
-        this.statusBar.setNotice(undefined)
-        this.timeline.appendLocal(this.session.id, this.localCommandView(text, r.text))
-      } else this.statusBar.setNotice(r.text)
-    }
-    if (r.draft !== undefined) this.editor.setText(r.draft)
-    if (r.keep) this.busyInput.keep(r.keep)
-    if (r.modelChoices) {
-      this.statusBar.setNotice(undefined)
-      this.modelPicker.show(r.modelChoices)
-    }
-    if (r.sessionChoices) {
-      this.statusBar.setNotice(undefined)
-      this.sessionPicker.show(r.sessionChoices, r.sessionPickerTitle, r.sessionScope)
-    }
+    applyCommandResult(
+      {
+        statusBar: this.statusBar,
+        usagePanel: this.usagePanel,
+        modelPicker: this.modelPicker,
+        sessionPicker: this.sessionPicker,
+        editor: this.editor,
+        busyInput: this.busyInput,
+        appendLocal: (view) => this.timeline.appendLocal(this.session.id, view),
+        localCommandView: this.localCommandView,
+      },
+      text,
+      r,
+    )
     if (r.switchSession) await this.applySwitch(r.switchSession)
     if (r.quit) this.onQuit()
     if (!this.stopped) this.renderer.requestRender()
@@ -997,11 +876,7 @@ export class TuiApp {
     // attached. Reset turn-lifecycle state to exactly what a freshly-constructed TuiApp looks like.
     this.resetTurn()
     this.welcome.banner.setModel(undefined)
-    this.surfacePrompt = undefined
-    this.surfaceCommand = undefined
-    this.surfaceVersions.clear()
-    this.surfaceWatermark = 0
-    this.surfaceReadAgain = false
+    this.surfaces.reset()
     this.attachmentController.abort()
     this.attachmentController = new AbortController()
     this.mentions.reset()
@@ -1051,34 +926,7 @@ export class TuiApp {
     const skillCommand = /^\/skill\s+invoke\s+\S+/.test(text)
     if (text.startsWith('/') && !skillCommand) throw new Error('Command unavailable')
     this.statusBar.setNotice(undefined)
-    if ((this.surfacePrompt || this.surfaceCommand) && !skillCommand) {
-      const record = this.surfacePrompt
-      const session = this.o.session
-      const command =
-        this.surfaceCommand ??
-        (record
-          ? {
-              surfaceId: record.surface.id,
-              revision: record.surface.revision,
-              commandId: randomUUID(),
-              ...numberedSurfaceInput(record.surface, text),
-            }
-          : undefined)
-      if (!command) return
-      this.surfaceCommand = command
-      const receipt = await session.uiAction(command)
-      if (session !== this.o.session || this.stopped) return
-      this.surfaceWatermark = Math.max(this.surfaceWatermark, receipt.seq)
-      this.surfaceCommand = undefined
-      this.surfacePrompt = undefined
-      await this.syncSurfaces()
-      this.statusBar.setNotice(
-        receipt.refusal?.message ?? tt('app.questionSent', this.locale),
-        receipt.status === 'rejected' ? 'error' : 'success',
-      )
-      this.renderer.requestRender()
-      return
-    }
+    if (this.surfaces.pending && !skillCommand) return this.surfaces.answer(text)
     const kept = this.busyInput.takeKept(text)
     await this.submitBlocks([...attachmentsFrom(text, this.cwd, this.o.remote), ...kept], text)
   }
