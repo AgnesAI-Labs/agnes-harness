@@ -56,6 +56,7 @@ import { ThemePicker } from './views/theme-picker.js'
 import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { UsagePanel } from './views/usage-panel.js'
 import { WelcomeController } from './welcome-controller.js'
+import { WindowTitle } from './window-title.js'
 import { readWorkspaceInfo, tildePath, workspaceRefresher } from './workspace-info.js'
 
 export { formatTuiErrorNotice } from './error-notice.js'
@@ -108,6 +109,7 @@ export class TuiApp {
   readonly usagePanel: UsagePanel
   readonly planPanel: PlanPanel
   readonly statusLine: StatusLinePicker
+  readonly windowTitle: WindowTitle
   private readonly pager: PagerOverlay
   private readonly cardFocus: CardFocus
   private readonly modelPicker: ModelPicker
@@ -316,6 +318,12 @@ export class TuiApp {
       changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.planPanel = new PlanPanel(ansi, locale)
+    this.windowTitle = new WindowTitle({
+      path: o.themePreferencePath,
+      cwd: this.cwd,
+      session: () => this.o.session,
+      changed: () => this.stopped || this.renderer.requestRender(),
+    })
     this.cardFocus = new CardFocus({
       timeline: this.timeline,
       cards: this.cards,
@@ -440,6 +448,7 @@ export class TuiApp {
       this.modal,
       this.approvalCards,
       this.notify,
+      this.windowTitle,
     )
     this.renderer = o.noAltScreen
       ? new FooterRenderer(o.term, root, this.timeline)
@@ -686,6 +695,7 @@ export class TuiApp {
     this.o.onTimeline?.(value, options.window?.hasEarlier)
     this.cards.sync(value)
     this.planPanel.apply(value)
+    this.windowTitle.tick(value)
     this.signals.watch(value.nodes)
     const approvals = value.nodes.filter((node) => node.kind === 'approval')
     const approvalIds = new Set(approvals.map((node) => node.id))

@@ -1,6 +1,6 @@
 import { basename } from 'node:path'
-import { escapeControl } from './component.js'
 import type { NotifyEvent, NotifyPreference } from './notify.js'
+import { WindowTitle } from './window-title.js'
 
 const FOCUS_IN = '\x1b[I'
 const FOCUS_OUT = '\x1b[O'
@@ -18,9 +18,9 @@ export const signalsFor = (term: object): TerminalSignals | undefined => byTermi
  * background (focus reports, DECSET 1004), a turn that ended, an approval that started waiting, an
  * error and a finished subagent each ring a bell or, on a terminal that documents OSC 9, post a
  * desktop notification (see notify.ts: `/notify`, `AGH_NOTIFY`; no `notify` means the plain bell).
- * Repeats of one event inside a few seconds count once. The window title says whether the session
- * is working or waiting; it is saved on start and put back on stop, so the shell gets its own title
- * back. Windows Terminal and ConEmu read OSC 9 as something else, so they only ever get the bell.
+ * Repeats of one event inside a few seconds count once. The window title (see window-title.ts, `/title`)
+ * says whether the session is working or waiting; it is saved before the first one is written and put
+ * back on stop, so the shell gets its own title back. Windows Terminal and ConEmu read OSC 9 as something else, so they only ever get the bell.
  */
 export class TerminalSignals {
   private focused = true
@@ -28,6 +28,7 @@ export class TerminalSignals {
   private wasBusy = false
   private seen = new Set<string>()
   private title = ''
+  private pushed = false
 
   constructor(
     private readonly term: { write(s: string): void },
@@ -37,6 +38,7 @@ export class TerminalSignals {
     private readonly modal: { readonly count: number },
     private readonly cards: ReadonlyMap<string, { readonly pending: boolean }>,
     private readonly notify?: NotifyPreference,
+    private readonly windowTitle: Pick<WindowTitle, 'text'> = new WindowTitle({ cwd }),
   ) {
     byTerminal.set(term, this)
   }
@@ -46,14 +48,14 @@ export class TerminalSignals {
   start(): void {
     if (this.started) return
     this.started = true
-    this.term.write('\x1b[22;0t')
     this.sync()
   }
 
   stop(): void {
     if (!this.started) return
     this.started = false
-    this.term.write('\x1b[23;0t')
+    if (this.pushed) this.term.write('\x1b[23;0t')
+    this.pushed = false
   }
 
   /** Consumes a focus report; true when `data` was one. */
@@ -97,10 +99,11 @@ export class TerminalSignals {
     this.wasBusy = busy
     if (arrived) this.event('approval')
     if (ended) this.event('done')
-    const mark = pending.size > 0 ? '! ' : busy ? '… ' : ''
-    const name = escapeControl(basename(this.cwd)).replaceAll('\n', ' ')
-    const title = `${mark}agh · ${name}`
-    if (title === this.title) return
+    // `off` is no title at all: not even the save of the old one.
+    const title = this.windowTitle.text({ busy, pending: pending.size > 0 })
+    if (title === undefined || title === this.title) return
+    if (!this.pushed) this.term.write('\x1b[22;0t')
+    this.pushed = true
     this.title = title
     this.term.write(`\x1b]2;${title}\x07`)
   }

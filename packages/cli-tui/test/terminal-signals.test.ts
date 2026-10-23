@@ -81,7 +81,7 @@ describe('TerminalSignals', () => {
     state.busy = false
     cards.clear()
     signals.sync()
-    expect(titles()).toEqual(['agh · pr]0;xo j', '… agh · pr]0;xo j', '! agh · pr]0;xo j', 'agh · pr]0;xo j'])
+    expect(titles()).toEqual(['agh · pr]0;xo j', '● agh · pr]0;xo j', '! agh · pr]0;xo j', 'agh · pr]0;xo j'])
   })
 })
 

@@ -251,4 +251,10 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.statusline',
     summaryKey: 'commands.statuslineSummary',
   },
+  {
+    name: '/title',
+    args: '[off|session|cwd|session-cwd]',
+    descriptionKey: 'commands.title',
+    summaryKey: 'commands.titleSummary',
+  },
 ]

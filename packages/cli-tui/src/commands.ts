@@ -567,6 +567,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       const text = app.statusLine.command(args)
       return text === undefined ? {} : { text }
     }
+    case '/title':
+      return { text: app.windowTitle.command(args, locale) }
     case '/expand':
       if (args.length !== 1 || (args[0] !== 'all' && args[0] !== 'none'))
         return { text: tt('expand.usage', locale) }

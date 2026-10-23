@@ -39,6 +39,14 @@ export type ChromeKey =
   | 'statusline.reset'
   | 'statusline.resetUnsaved'
   | 'statusline.usage'
+  | 'commands.title'
+  | 'commands.titleSummary'
+  | 'title.off'
+  | 'title.session'
+  | 'title.cwd'
+  | 'title.session-cwd'
+  | 'title.unsaved'
+  | 'title.usage'
 
 export const CHROME_DICT: Record<Locale, Record<ChromeKey, string>> = {
   en: {
@@ -84,6 +92,15 @@ export const CHROME_DICT: Record<Locale, Record<ChromeKey, string>> = {
     'statusline.reset': 'Status line reset: every field is shown',
     'statusline.resetUnsaved': 'Status line reset for this run; the preferences file could not be written',
     'statusline.usage': 'usage: /statusline [reset]',
+    'commands.title':
+      'Set the terminal window title: off (leave it alone), session (session name), cwd (directory name) or session-cwd; saved',
+    'commands.titleSummary': 'Set the window title',
+    'title.off': 'Window title: off (the terminal title is left alone)',
+    'title.session': 'Window title: session name',
+    'title.cwd': 'Window title: directory name',
+    'title.session-cwd': 'Window title: session name and directory name',
+    'title.unsaved': ' (not saved: the preferences file could not be written)',
+    'title.usage': 'usage: /title off|session|cwd|session-cwd',
   },
   'zh-CN': {
     'commands.todos':
@@ -127,5 +144,13 @@ export const CHROME_DICT: Record<Locale, Record<ChromeKey, string>> = {
     'statusline.reset': '状态栏已重置：所有字段都显示',
     'statusline.resetUnsaved': '状态栏已在本次运行中重置；偏好文件无法写入',
     'statusline.usage': '用法：/statusline [reset]',
+    'commands.title': '设置终端窗口标题：off（不改）、session（会话名）、cwd（目录名）或 session-cwd；会保存',
+    'commands.titleSummary': '设置窗口标题',
+    'title.off': '窗口标题：关闭（不改动终端标题）',
+    'title.session': '窗口标题：会话名',
+    'title.cwd': '窗口标题：目录名',
+    'title.session-cwd': '窗口标题：会话名和目录名',
+    'title.unsaved': '（未保存：偏好文件无法写入）',
+    'title.usage': '用法：/title off|session|cwd|session-cwd',
   },
 }

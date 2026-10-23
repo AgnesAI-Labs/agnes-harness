@@ -1163,12 +1163,86 @@ it('/statusline hides a field from the live status bar, saves the choice beside 
     await vi.waitFor(async () => expect(await screen()).toContain('[ ] Preset'))
     term.feed('\x1b')
     await vi.waitFor(async () => expect(await screen()).not.toContain('preset review'))
-    expect(JSON.parse(readFileSync(prefs, 'utf8'))).toEqual({ theme: 'dark', statusLine: { hide: ['preset'] } })
+    expect(JSON.parse(readFileSync(prefs, 'utf8'))).toEqual({
+      theme: 'dark',
+      statusLine: { hide: ['preset'] },
+    })
     await app.runInput('/statusline reset')
     await vi.waitFor(async () => expect(await screen()).toContain('preset review'))
     expect(JSON.parse(readFileSync(prefs, 'utf8'))).toEqual({ theme: 'dark' })
   } finally {
     await app?.stop()
+    await client.close()
+    await endpoint.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+it('sets the window title from the saved /title choice, and writes nothing when it is off', async () => {
+  const SID = 'agnes:local:default:cli:dm:window-title'
+  const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-title-'))
+  const prefs = join(dir, 'tui-theme.json')
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.list', () => ({
+      items: [
+        {
+          sessionId: SID,
+          createdAt: '2026-10-23T09:00:00Z',
+          lastSeq: 0,
+          generation: 1,
+          preset: null,
+          title: 'Release notes',
+        },
+      ],
+    }))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 0,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [],
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const titles = (term: FakeTerminal) =>
+    term.writes.filter((w) => w.startsWith('\x1b]2;')).map((w) => w.slice(4, -1))
+  const apps: TuiApp[] = []
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const open = async (saved: string) => {
+      writeFileSync(prefs, saved)
+      const term = new FakeTerminal({ columns: 80, rows: 24 })
+      const app = new TuiApp({
+        session,
+        term,
+        header: 'Agnes',
+        cwd: '/work/proj',
+        themePreferencePath: prefs,
+      })
+      apps.push(app)
+      await app.start()
+      return { app, term }
+    }
+    const off = await open('{"title":"off"}')
+    await off.app.runInput('/help')
+    expect(off.term.writes.join('')).not.toContain('\x1b]2;')
+    expect(off.term.writes.join('')).not.toContain('\x1b[22;0t')
+    await off.app.runInput('/title session-cwd')
+    // The directory shows first; the session's name follows once the list is read.
+    await vi.waitFor(() => expect(titles(off.term).at(-1)).toBe('agh · Release notes · proj'))
+    expect(JSON.parse(readFileSync(prefs, 'utf8'))).toEqual({ title: 'session-cwd' })
+    const fresh = await open('{}')
+    await vi.waitFor(() => expect(titles(fresh.term)).toEqual(['agh · proj']))
+  } finally {
+    for (const app of apps) await app.stop()
     await client.close()
     await endpoint.close()
     rmSync(dir, { recursive: true, force: true })
