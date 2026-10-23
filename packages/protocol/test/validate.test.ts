@@ -311,6 +311,9 @@ describe('generated validation reference plans', () => {
       import('../gen/ts/session-v1.js'),
       import('../gen/ts/agnes-v1.js'),
       import('../gen/ts/app-server.js'),
+      import('../gen/ts/package-admin.js'),
+      import('../gen/ts/lockfile.js'),
+      import('../gen/ts/extension-manifest.js'),
     ])
     const primitives: unknown[] = [
       null,
@@ -440,6 +443,153 @@ describe('generated validation reference plans', () => {
     prepareValidationSchemas([recursive])
     for (const value of [null, [null, [[null]]], [undefined], { a: null }])
       expect(validateAgainst(recursive, value)).toEqual(validateAgainst({ ...recursive }, value))
+  })
+
+  it('plans package-admin schemas with identical verdicts for each structural type and format field', async () => {
+    const { validateAgainst } = await import('@agnes/protocol-validation')
+    const P = await import('../gen/ts/package-admin.js')
+    const integrity = `sha256-${'a'.repeat(64)}`
+    const provenance = {
+      source: { type: 'git', ref: 'git:https://example.invalid/repo#main' },
+      integrity,
+      signatureVerified: false,
+      installedAt: '2026-01-01T00:00:00Z',
+    }
+    const cases: [import('@sinclair/typebox').TSchema, unknown][] = [
+      // union + literal + pattern + git-source format
+      [P.PackageSource, { type: 'local', ref: 'local:home/demo' }],
+      [P.PackageSource, { type: 'git', ref: 'git:https://example.invalid/repo#main' }],
+      [P.PackageSource, { type: 'git', ref: 'git:https://' }],
+      [P.PackageSource, { type: 'git', ref: 'git:http://example.invalid/repo' }],
+      [P.PackageSource, { type: 'local', ref: 'local:elsewhere/demo' }],
+      // object + ref + date-time format + optional
+      [P.PackageProvenance, provenance],
+      [P.PackageProvenance, { ...provenance, installedAt: 'not-a-date' }],
+      [P.PackageProvenance, { ...provenance, source: { type: 'git', ref: 'git:https://' } }],
+      [P.PackageProvenance, { ...provenance, integrity: 'bad' }],
+      [P.PackageProvenance, { ...provenance, extra: 1 }],
+      [P.PackageProvenance, { ...provenance, signatureVerified: undefined }],
+      [
+        P.PackageTrustDecision,
+        { integrity, capabilityHash: 'b'.repeat(64), decidedAt: '2026-01-01T00:00:00Z' },
+      ],
+      [
+        P.PackageTrustDecision,
+        { integrity, capabilityHash: 'b'.repeat(64), decidedAt: '2026-13-01T00:00:00Z' },
+      ],
+      // array + uniqueItems + recursive json value
+      [P.JsonValue, [null, { a: [1, 'x', true] }]],
+      [P.JsonValue, [undefined]],
+      [P.JsonValue, { a: () => 1 }],
+      [P.HookEvent, 'session_start'],
+      [P.HookEvent, 'nope'],
+      // plugin-docs-url format
+      [P.PluginMetadataLocale, { docsUrl: 'https://example.invalid/docs' }],
+      [P.PluginMetadataLocale, { docsUrl: ' javascript:alert(1)' }],
+    ]
+    let accepted = 0
+    let rejected = 0
+    for (const [schema, value] of cases) {
+      const actual = validateAgainst(schema, value, '/payload')
+      expect(actual).toEqual(validateAgainst({ ...schema }, value, '/payload'))
+      if (actual.ok) accepted++
+      else rejected++
+    }
+    expect(accepted).toBeGreaterThan(4)
+    expect(rejected).toBeGreaterThan(10)
+  })
+
+  it('checks uniqueItems with the same hash identity as TypeBox for every value kind', async () => {
+    const { Type } = await import('@sinclair/typebox')
+    const { Hash } = await import('@sinclair/typebox/value')
+    const { validateAgainst, prepareValidationSchemas } = await import('@agnes/protocol-validation')
+    const Unique = Type.Module({ Items: Type.Array(Type.Unknown(), { uniqueItems: true }) }).Import('Items')
+    prepareValidationSchemas([Unique])
+    const sym = Symbol('s')
+    const nested = (n: number): unknown => (n === 0 ? 'leaf' : { k: [n, nested(n - 1)] })
+    const values: unknown[] = [
+      0,
+      -0,
+      1,
+      255,
+      256,
+      65535,
+      1.5,
+      NaN,
+      Infinity,
+      -Infinity,
+      2 ** 53,
+      1e21,
+      '',
+      '\0',
+      'a',
+      'ab',
+      'a\0',
+      'ÿ',
+      'Ā',
+      '￿',
+      '\ud800',
+      'é',
+      '日本',
+      'x'.repeat(40),
+      true,
+      false,
+      null,
+      undefined,
+      1n,
+      2n,
+      -1n,
+      2n ** 63n - 1n,
+      [],
+      [undefined],
+      [null],
+      [[]],
+      [0],
+      [-0],
+      ['a', 'b'],
+      ['ab'],
+      ['a', ['b']],
+      {},
+      { a: 1 },
+      { a: undefined },
+      { a: 1, b: 2 },
+      { b: 2, a: 1 },
+      { a: [1] },
+      { a: { b: 1 } },
+      { '': 0 },
+      { Ā: 1 },
+      { 1: 'x', 10: 'y', 2: 'z' },
+      new Date(0),
+      new Date(1),
+      new Date(NaN),
+      new Uint8Array([1, 2]),
+      new Uint8Array([1, 3]),
+      sym,
+      Symbol(),
+      Symbol('s'),
+      nested(3),
+      nested(3),
+    ]
+    let duplicates = 0
+    for (const a of values)
+      for (const b of values) {
+        const same = Hash(a) === Hash(b)
+        const actual = validateAgainst(Unique, [a, b])
+        expect(actual.ok).toBe(!same)
+        expect(actual).toEqual(validateAgainst({ ...Unique }, [a, b]))
+        if (same) duplicates++
+      }
+    expect(duplicates).toBeGreaterThan(values.length)
+    // Unhashable elements fail exactly as the interpreter does.
+    const unhashable = [() => 1]
+    expect(() => validateAgainst({ ...Unique }, unhashable)).toThrow()
+    expect(() => validateAgainst(Unique, unhashable)).toThrow()
+    const Limited = Type.Module({
+      Items: Type.Array(Type.Number(), { uniqueItems: true, maxItems: 2 }),
+    }).Import('Items')
+    prepareValidationSchemas([Limited])
+    for (const value of [[1, 2], [1, 1], [1, 'x'], [1, 2, 3], 'no', [[1]]])
+      expect(validateAgainst(Limited, value)).toEqual(validateAgainst({ ...Limited }, value))
   })
 
   it('preserves live policies, formats, property presence and unresolved-reference errors', async () => {

@@ -1,6 +1,6 @@
 import { ExtendsUndefinedCheck, FormatRegistry, Kind, type TSchema } from '@sinclair/typebox'
 import { TypeSystemPolicy } from '@sinclair/typebox/system'
-import { Value } from '@sinclair/typebox/value'
+import { Hash, Value } from '@sinclair/typebox/value'
 
 type Check = (value: unknown) => boolean
 const generated = new WeakMap<TSchema, ReadonlySet<string>>()
@@ -43,6 +43,72 @@ function sameDefinition(left: unknown, right: unknown): boolean {
       a !== undefined && b !== undefined && 'value' in a && 'value' in b && sameDefinition(a.value, b.value)
     )
   })
+}
+
+// Same FNV-1a 64 byte stream as TypeBox's `Hash` (value/hash/hash.mjs), computed on 32-bit halves
+// instead of BigInt generators. uniqueItems only compares these hashes, so equal streams give equal
+// verdicts; test/validate.test.ts pins bit-for-bit equality with `Hash`.
+let hashHi = 0
+let hashLo = 0
+const f64 = new Float64Array(1)
+const f64View = new DataView(f64.buffer)
+const f64Bytes = new Uint8Array(f64.buffer)
+function fnvByte(byte: number): void {
+  const lo = (hashLo ^ byte) >>> 0
+  const product = lo * 0x1b3
+  hashHi = (Math.imul(hashHi, 0x1b3) + (lo << 8) + Math.floor(product / 4294967296)) >>> 0
+  hashLo = product >>> 0
+}
+function hashVisit(value: unknown, root: unknown): void {
+  if (Array.isArray(value) && !ArrayBuffer.isView(value)) {
+    fnvByte(6)
+    for (const item of value) hashVisit(item, root)
+  } else if (typeof value === 'boolean') {
+    fnvByte(2)
+    fnvByte(value ? 1 : 0)
+  } else if (typeof value === 'bigint') {
+    fnvByte(10)
+    f64View.setBigInt64(0, value)
+    for (const byte of f64Bytes) fnvByte(byte)
+  } else if (value instanceof Date && Number.isFinite(value.getTime())) {
+    fnvByte(7)
+    hashVisit(value.getTime(), root)
+  } else if (value === null) fnvByte(1)
+  else if (typeof value === 'number') {
+    fnvByte(3)
+    f64View.setFloat64(0, value)
+    for (const byte of f64Bytes) fnvByte(byte)
+  } else if (typeof value === 'object') {
+    // Typed arrays below are objects too; TypeBox tests Uint8Array only after plain objects.
+    fnvByte(5)
+    for (const key of Object.getOwnPropertyNames(value).sort()) {
+      hashVisit(key, root)
+      hashVisit((value as Record<string, unknown>)[key], root)
+    }
+  } else if (typeof value === 'string') {
+    fnvByte(4)
+    for (let i = 0; i < value.length; i++) {
+      const code = value.charCodeAt(i)
+      if (code > 0xff) fnvByte(code >> 8)
+      fnvByte(code & 0xff)
+    }
+  } else if (typeof value === 'symbol') {
+    fnvByte(9)
+    hashVisit(value.description, root)
+  } else if (value === undefined) fnvByte(0)
+  else Hash(root) // functions: TypeBox throws its own ValueHashError
+}
+function allUnique(items: unknown[]): boolean {
+  const seen = new Set<string>()
+  for (const item of items) {
+    hashHi = 0xcbf29ce4
+    hashLo = 0x84222325
+    hashVisit(item, item)
+    const key = `${hashHi}:${hashLo}`
+    if (seen.has(key)) return false
+    seen.add(key)
+  }
+  return true
 }
 
 /** Every non-module reference must be reached through its declaration, as with recursive This.
@@ -257,7 +323,6 @@ function build(root: TSchema, initial: TSchema[]): Check {
       }
     } else if (
       kind === 'Array' &&
-      schema.uniqueItems !== true &&
       schema.contains === undefined &&
       schema.minContains === undefined &&
       schema.maxContains === undefined
@@ -267,7 +332,8 @@ function build(root: TSchema, initial: TSchema[]): Check {
         Array.isArray(value) &&
         (schema.minItems === undefined || value.length >= schema.minItems) &&
         (schema.maxItems === undefined || value.length <= schema.maxItems) &&
-        value.every(item)
+        value.every(item) &&
+        (schema.uniqueItems !== true || allUnique(value))
     } else if (kind === 'String') {
       const pattern = schema.pattern === undefined ? undefined : new RegExp(schema.pattern)
       check = (value) =>

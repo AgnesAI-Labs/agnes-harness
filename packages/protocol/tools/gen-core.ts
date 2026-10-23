@@ -730,7 +730,14 @@ export function generateModule(schema: JsonSchemaDoc, moduleName: string, schema
     }
   }
 
-  const planned = ['AgnesV1', 'SessionV1', 'AppServerV1'].includes(moduleName)
+  const planned = [
+    'AgnesV1',
+    'SessionV1',
+    'AppServerV1',
+    'PackageAdminSchema',
+    'LockfileSchema',
+    'ExtensionManifestSchema',
+  ].includes(moduleName)
   let out = HEADER_COMMENT + IMPORT_TYPE
   if (planned)
     out += "import { importValidationSchema, prepareValidationSchemas } from '@agnes/protocol-validation'\n"
