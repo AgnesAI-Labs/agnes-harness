@@ -38,6 +38,7 @@ export class StatusBar implements Component {
   private usage: UsageView | undefined
   private preset = ''
   private fullAccess = false
+  private raw = false
 
   constructor(
     private readonly ansi: ThemedAnsi,
@@ -98,6 +99,11 @@ export class StatusBar implements Component {
     this.noticeTone = tone
   }
 
+  /** `/raw` is on: say so for as long as it lasts, since the screen no longer looks like itself. */
+  setRaw(on: boolean): void {
+    this.raw = on
+  }
+
   setLink(state: LinkState): void {
     this.link = state
   }
@@ -118,6 +124,7 @@ export class StatusBar implements Component {
     const link = t(this.link === 'reconnecting' ? 'status.reconnecting' : 'status.catchingUp', this.locale)
     const notice = this.notice ? this.ansi.fg(NOTICE_TONE[this.noticeTone], escapeControl(this.notice)) : ''
     const parts = [
+      this.raw ? this.ansi.bold(this.ansi.fg('warning', 'RAW')) : '',
       ...(on('slots') ? this.slots : []).map(
         (s) =>
           `${this.ansi.fg(LEVEL_TONE[s.level] ?? 'muted', `[${s.level}]`)} ${this.ansi.dim(escapeControl(s.text))}`,

@@ -222,8 +222,25 @@ function paintCode(body: string, runs: CodeRun[] | undefined, ansi: ThemedAnsi):
   return out.map((run) => ansi.fg(run.tone ?? 'surfaceFg', run.text)).join('')
 }
 
+/** Cuts a line into rows of at most `width` columns without losing a character. */
+function hardWrap(line: string, width: number): string[] {
+  const rows: string[] = ['']
+  for (const { segment } of graphemes.segment(line)) {
+    const last = rows.length - 1
+    if (rows[last] !== '' && displayWidth(rows[last] + segment) > width) rows.push(segment)
+    else rows[last] += segment
+  }
+  return rows
+}
+
 function code(token: Tokens.Code, width: number, ansi: ThemedAnsi): string[] {
   const lang = token.lang?.trim().split(/\s/)[0] ?? ''
+  // Raw view: the language on a line of its own, then the code as it is, so a copy is the code itself.
+  if (ansi.raw)
+    return [
+      ...(lang ? [ansi.dim(lang)] : []),
+      ...token.text.split('\n').flatMap((line) => hardWrap(line, width)),
+    ]
   const label = lang && width - displayWidth(lang) >= 10 ? ` ${lang} ` : ''
   const shaded = shades(ansi)
   const runs = shaded ? highlight(token.text, lang) : undefined
@@ -275,7 +292,7 @@ function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = 
         out.push(...table(token as Tokens.Table, width, ansi, base))
         break
       case 'blockquote': {
-        const prefix = width > 2 ? `${ansi.fg('accentSoft', '▎')} ` : ''
+        const prefix = width > 2 && !ansi.raw ? `${ansi.fg('accentSoft', '▎')} ` : ''
         const quote = { ...base, italic: true, tone: 'muted' } as const
         out.push(
           ...blocks(

@@ -239,7 +239,7 @@ export class ApprovalCard implements Component {
       ),
       ...(n.options.includes('reject_once') ? [`${chip('r')} ${t('approval.rejectReason', locale)}`] : []),
     ].join('  ')
-    const rail = ansi.fg('warning', '│ ')
+    const rail = ansi.raw ? '' : ansi.fg('warning', '│ ')
     const origin = [
       n.origin?.package && t('approval.from', locale, { value: escapeControl(n.origin.package) }),
       n.origin?.role && t('approval.role', locale, { value: escapeControl(n.origin.role) }),

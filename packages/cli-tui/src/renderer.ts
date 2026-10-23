@@ -65,6 +65,10 @@ export interface ScreenRenderer {
   /** Ctrl-L: forgets what is on screen and paints everything again, changing no state. */
   redraw(): void
   toggleMouse(): boolean
+  /** Whether mouse reporting is on right now. */
+  readonly mouseReporting: boolean
+  /** Turns mouse reporting on or off the way `/mouse` flips it; nothing happens when it already is as asked. */
+  setMouse(on: boolean): void
 }
 
 /** Mouse handling the fullscreen app opts into: wheel rows to scroll by, and selected text to copy. */
@@ -196,6 +200,14 @@ export class Renderer {
     this.term.write(this.mouseOn ? '\x1b[?1002h\x1b[?1006h' : '\x1b[?1006l\x1b[?1002l')
     this.requestRender()
     return this.mouseOn
+  }
+
+  get mouseReporting(): boolean {
+    return this.mouseOn
+  }
+
+  setMouse(on: boolean): void {
+    if (on !== this.mouseOn) this.toggleMouse()
   }
 
   private input(d: string): void {

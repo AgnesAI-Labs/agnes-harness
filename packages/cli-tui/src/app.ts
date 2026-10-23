@@ -30,6 +30,7 @@ import { PagerOverlay } from './pager-overlay.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
 import { PromptHistory } from './prompt-history.js'
+import { RawView } from './raw-view.js'
 import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { TuiResourceController } from './resource-controller.js'
 import { type InputDialog, rootInput } from './root-input.js'
@@ -113,6 +114,7 @@ export class TuiApp {
   readonly planPanel: PlanPanel
   readonly statusLine: StatusLinePicker
   readonly windowTitle: WindowTitle
+  readonly raw: RawView
   private readonly pager: PagerOverlay
   readonly cardFocus: CardFocus
   readonly modelPicker: ModelPicker
@@ -483,6 +485,15 @@ export class TuiApp {
       localCommandView: this.localCommandView,
       repaint: () => this.renderer.requestRender(),
       showError: (error) => this.showError(error),
+    })
+    this.raw = new RawView({
+      theme: this.theme,
+      renderer: this.renderer,
+      statusBar: this.statusBar,
+      refresh: () => {
+        this.timeline.refreshViews()
+        this.renderer.requestRender()
+      },
     })
     this.projection = this.makeProjection(o.session)
   }

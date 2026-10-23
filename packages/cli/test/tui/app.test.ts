@@ -1250,7 +1250,12 @@ it('sets the window title from the saved /title choice, and writes nothing when 
 })
 
 /** An app on a fake daemon whose session projects `nodes`, started on the preferences file `saved` holds. */
-async function fakeApp(saved: string, nodes: UINode[] = [], columns = 80) {
+async function fakeApp(
+  saved: string,
+  nodes: UINode[] = [],
+  options: Partial<ConstructorParameters<typeof TuiApp>[0]> = {},
+  columns = 80,
+) {
   const SID = 'agnes:local:default:cli:dm:display'
   const dir = mkdtempSync(join(tmpdir(), 'agnes-tui-display-'))
   const prefs = join(dir, 'tui-theme.json')
@@ -1275,7 +1280,14 @@ async function fakeApp(saved: string, nodes: UINode[] = [], columns = 80) {
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
   const session = await client.session.new({ cwd: '/tmp' })
   const term = new FakeTerminal({ columns, rows: 24 })
-  const app = new TuiApp({ session, term, header: 'Agnes', cwd: '/work/proj', themePreferencePath: prefs })
+  const app = new TuiApp({
+    session,
+    term,
+    header: 'Agnes',
+    cwd: '/work/proj',
+    themePreferencePath: prefs,
+    ...options,
+  })
   await app.start()
   return {
     app,
@@ -1318,6 +1330,52 @@ it('/vim edits the prompt with vim keys, marks the mode, and saves the choice be
     await vi.waitFor(async () => expect(await again.screen()).toContain('INSERT'))
   } finally {
     await again.close()
+  }
+})
+
+const MOUSE_ON = '\x1b[?1002h'
+const MOUSE_OFF = '\x1b[?1002l'
+const times = (term: FakeTerminal, mark: string) => term.writes.join('').split(mark).length - 1
+
+it('/raw drops the mouse capture and the bars and shading, shows RAW, and puts everything back', async () => {
+  const nodes = [
+    { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'copy my question' }] },
+    { kind: 'assistant', id: 'a1', seq: 2, text: '> a quote\n\n```ts\nconst answer = 42\n```' },
+  ] as UINode[]
+  const open = await fakeApp('{}', nodes)
+  try {
+    await vi.waitFor(async () => expect(await open.screen()).toContain('const answer = 42'))
+    const styled = await open.screen()
+    expect(styled).toContain('▍ copy my question')
+    expect(styled).toContain('▎ a quote')
+    expect(styled).toMatch(/^ {2}const answer = 42/m)
+    expect(styled).not.toContain('RAW')
+    expect(times(open.term, MOUSE_ON)).toBe(1)
+    await open.app.runInput('/raw')
+    await vi.waitFor(async () => expect(await open.screen()).toContain('RAW'))
+    const raw = await open.screen()
+    expect(raw).toMatch(/^copy my question/m)
+    expect(raw).toMatch(/^a quote/m)
+    expect(raw).toMatch(/^ts\s*$/m)
+    expect(raw).toMatch(/^const answer = 42/m)
+    expect(raw).not.toMatch(/[▍▎│]/)
+    expect([times(open.term, MOUSE_OFF), times(open.term, MOUSE_ON)]).toEqual([1, 1])
+    await open.app.runInput('/raw')
+    await vi.waitFor(async () => expect(await open.screen()).not.toContain('RAW'))
+    expect(await open.screen()).toContain('▍ copy my question')
+    expect(await open.screen()).toMatch(/^ {2}const answer = 42/m)
+    expect([times(open.term, MOUSE_OFF), times(open.term, MOUSE_ON)]).toEqual([1, 2])
+  } finally {
+    await open.close()
+  }
+  // A run that started with the mouse off stays that way after /raw is switched off again.
+  const quiet = await fakeApp('{}', [], { mouse: false })
+  try {
+    await quiet.app.runInput('/raw')
+    await quiet.app.runInput('/raw')
+    expect([times(quiet.term, MOUSE_OFF), times(quiet.term, MOUSE_ON)]).toEqual([0, 0])
+  } finally {
+    await quiet.close()
   }
 })
 

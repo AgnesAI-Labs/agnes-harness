@@ -213,6 +213,10 @@ export class FooterRenderer implements ScreenRenderer {
     return false
   }
 
+  readonly mouseReporting = false
+
+  setMouse(): void {}
+
   requestRender(): void {
     if (!this.active || this.scheduled) return
     this.scheduled = true

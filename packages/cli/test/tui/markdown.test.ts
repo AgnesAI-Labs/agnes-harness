@@ -177,3 +177,26 @@ it('leaves oversize or pathological code uncoloured and finishes quickly', () =>
     dark.fg('accent', 'return'),
   )
 })
+
+it('raw view: a fence is its language line and the code itself, a quote has no bar, and no character is lost', () => {
+  const theme = new TuiTheme('dark')
+  const ansi = theme.ansi(createAnsi('256'))
+  const md = `> quoted\n\n\`\`\`ts\nconst a = 1\n    indented(${'x'.repeat(50)})\n\`\`\`\n\n\`\`\`\nbare\n\`\`\``
+  const styled = renderMarkdown(md, 30, ansi).map((row) => stripVTControlCharacters(row))
+  expect(styled.join('\n')).toContain('▎ quoted')
+  expect(styled.join('\n')).toContain('  const a = 1')
+  theme.raw = true
+  const raw = renderMarkdown(md, 30, ansi).map((row) => stripVTControlCharacters(row))
+  expect(raw[0]).toBe('quoted')
+  expect(raw.slice(1)).toEqual([
+    '',
+    'ts',
+    'const a = 1',
+    `    indented(${'x'.repeat(17)}`,
+    'x'.repeat(30),
+    'xxx)',
+    '',
+    'bare',
+  ])
+  expect(raw.every((row) => displayWidth(row) <= 30)).toBe(true)
+})

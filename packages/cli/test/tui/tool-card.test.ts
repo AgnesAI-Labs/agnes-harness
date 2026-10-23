@@ -551,3 +551,19 @@ it('turns a run into one timeline entry and keeps the click on its head row', ()
   expect(timeline.click(0)).toBe(true)
   expect(clicked).toBe(1)
 })
+
+it('raw view: an expanded card keeps its words and loses the rail and the closing row, as the theme flips', () => {
+  const theme = new TuiTheme('dark')
+  const card = new ToolCard(
+    { kind: 'tool', id: 'c', seq: 1, toolUseId: 'c', name: 'read', status: 'completed', summary: 'kept' },
+    { ansi: theme.ansi(createAnsi('256')), collapsed: false },
+  )
+  expect(card.render(40).join('\n')).toMatch(/│[\s\S]*╰─/)
+  theme.raw = true
+  const raw = card.render(40)
+  expect(raw.join('\n')).not.toMatch(/[│╰]/)
+  expect(raw.join('\n')).toContain('kept')
+  expect(raw.every((line) => displayWidth(line) === 40)).toBe(true)
+  theme.raw = false
+  expect(card.render(40).join('\n')).toContain('│')
+})

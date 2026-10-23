@@ -114,6 +114,7 @@ export class ToolCard implements Component {
   private readonly summary: string
   private readonly kind: CardKind | undefined
   private readonly look: () => Look
+  private readonly raw: () => boolean
   private readonly right: (expanded: boolean) => string
   /** A plan card's steps, painted, one per row. */
   private readonly stepRows: string[] = []
@@ -145,6 +146,7 @@ export class ToolCard implements Component {
     } = {},
   ) {
     const ansi = options.ansi ?? new TuiTheme('mono').ansi(createAnsi('none'))
+    this.raw = () => ansi.raw === true
     this.onAction = options.onAction ?? (() => {})
     this.onExpand = options.onExpand ?? (() => {})
     const locale = options.locale ?? 'en'
@@ -342,12 +344,16 @@ export class ToolCard implements Component {
         ...(hidden > 0 ? [fitLine(`    ${this.more}`, width)] : []),
       ]
     }
-    const inner = Math.max(1, width - 3)
+    // Raw view: the body without the rail, and no closing line.
+    const raw = this.raw()
+    const inner = Math.max(1, width - (raw ? 0 : 3))
     const rail = look.paint('│')
     return [
       spread(`${head}${this.stats()}`, this.right(true), width),
-      ...this.rail.flatMap((rows) => rows(inner)).map((line) => fitLine(` ${rail} ${line}`, width)),
-      fitLine(look.closing, width),
+      ...this.rail
+        .flatMap((rows) => rows(inner))
+        .map((line) => fitLine(raw ? line : ` ${rail} ${line}`, width)),
+      ...(raw ? [] : [fitLine(look.closing, width)]),
     ]
   }
 }

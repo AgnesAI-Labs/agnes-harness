@@ -20,7 +20,8 @@ export class UserMessage implements Component {
 
   render(width: number): string[] {
     width = Math.max(1, Math.trunc(width))
-    if (width < 3) return wrapText(this.text, width)
+    // Raw view: the words alone, with no bar and no padding to come along in a copy.
+    if (width < 3 || this.ansi.raw) return wrapText(this.text, width)
     const inset = width >= 8 ? 1 : 0
     const inner = Math.max(1, width - inset * 2)
     const prefix = `${this.ansi.bold(this.ansi.fg(this.accent, '▍'))} `
