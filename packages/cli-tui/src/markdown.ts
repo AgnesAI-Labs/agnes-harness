@@ -1,5 +1,7 @@
 import { Lexer, type Token, type Tokens } from 'marked'
 import { type CodeRun, highlight } from './highlight.js'
+import { renderLatex } from './latex.js'
+import { displayMathSource, MATH_FENCES, mathLexerOptions } from './latex-markdown.js'
 import type { Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
@@ -69,6 +71,11 @@ function inline(tokens: Token[], ansi: ThemedAnsi, style: Style = PLAIN): Span[]
       return link.href === plain(label)
         ? label
         : [...label, span(` (${link.href})`, { ...style, tone: 'faint' })]
+    }
+    if (token.type === 'math') {
+      const { raw, text } = token as Tokens.Generic
+      const math = ansi.raw ? undefined : renderLatex(String(text), { display: false })
+      return [math === undefined ? span(String(raw), style) : span(math, { ...style, tone: 'accent' })]
     }
     if (token.type === 'del') return inline((token as Tokens.Del).tokens, ansi, style)
     if (token.type === 'br') return [span('\n', style)]
@@ -233,8 +240,18 @@ function hardWrap(line: string, width: number): string[] {
   return rows
 }
 
+/** A formula as Unicode lines in the accent tone, indented; undefined when it has to stay source. */
+function mathBlock(src: string, width: number, ansi: ThemedAnsi): string[] | undefined {
+  const math = ansi.raw ? undefined : renderLatex(src, { display: true })
+  return math
+    ?.split('\n')
+    .flatMap((line) => hardWrap(`  ${line}`, width).map((row) => ansi.fg('accent', row)))
+}
+
 function code(token: Tokens.Code, width: number, ansi: ThemedAnsi): string[] {
   const lang = token.lang?.trim().split(/\s/)[0] ?? ''
+  const math = MATH_FENCES.has(lang) ? mathBlock(token.text, width, ansi) : undefined
+  if (math) return math
   // Raw view: the language on a line of its own, then the code as it is, so a copy is the code itself.
   if (ansi.raw)
     return [
@@ -269,6 +286,14 @@ function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = 
       case 'paragraph':
       case 'text': {
         const text = token as Tokens.Text
+        const formula = displayMathSource(text.raw)
+        if (formula !== undefined && !ansi.raw) {
+          out.push(
+            ...(mathBlock(formula, width, ansi) ??
+              code({ type: 'code', raw: formula, text: formula }, width, ansi)),
+          )
+          break
+        }
         out.push(...wrap(inline(text.tokens ?? Lexer.lexInline(text.text), ansi, base), width, ansi))
         break
       }
@@ -342,7 +367,7 @@ export function completeBlocks(text: string): number {
 export function renderMarkdown(md: string, width: number, ansi: ThemedAnsi): string[] {
   if (!Number.isFinite(width)) throw new Error('invalid markdown width')
   const clean = stripVT(md).replace(CONTROL, '').replaceAll('\t', '    ')
-  return blocks(Lexer.lex(clean, { gfm: true }), Math.max(1, Math.trunc(width)), ansi)
+  return blocks(Lexer.lex(clean, mathLexerOptions()), Math.max(1, Math.trunc(width)), ansi)
 }
 
 /** A leading part of a longer text: the blank line that separates it from what follows is kept. */

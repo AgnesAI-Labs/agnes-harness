@@ -200,3 +200,37 @@ it('raw view: a fence is its language line and the code itself, a quote has no b
   ])
   expect(raw.every((row) => displayWidth(row) <= 30)).toBe(true)
 })
+
+it('shows LaTeX as Unicode, keeps prices, shell variables and code spans as written, and shows source in /raw', () => {
+  const theme = new TuiTheme('light')
+  const ansi = theme.ansi(createAnsi('256'))
+  const text = (md: string) => renderMarkdown(md, 40, ansi).map((row) => stripVTControlCharacters(row))
+  expect(text('```math\n\\frac{a+b}{2} \\le x^2\n```')).toEqual(['  (a+b)/2 ≤ x²'])
+  expect(text('before\n\n$$\n\\alpha_i \\times \\sqrt{n}\n$$\n\nafter')).toEqual([
+    'before',
+    '',
+    '  αᵢ × √n',
+    '',
+    'after',
+  ])
+  expect(text('\\[ E = mc^2 \\]')).toEqual(['  E = mc²'])
+  expect(text('so \\(a \\le b\\) holds, and $x^2$ too')).toEqual(['so a ≤ b holds, and x² too'])
+  expect(text('$5 and $10, cost $HOME, `$x^2$`')).toEqual(['$5 and $10, cost $HOME,  $x^2$'])
+  expect(text('escaped \\$x^2$ stays')).toEqual(['escaped $x^2$ stays'])
+  // an unknown command keeps the whole formula as written
+  expect(text('see $\\nosuch x^2$ here')).toEqual(['see $\\nosuch x^2$ here'])
+  expect(text('$$\n\\nosuch{x}\n$$')).toEqual([expect.stringContaining('\\nosuch{x}')])
+  // streaming: an unclosed $$ is plain text until it closes
+  expect(text('$$\nx^2')).toEqual(['$$', 'x^2'])
+  // the converted formula is painted in the accent tone, the source is not
+  expect(renderMarkdown('$x^2$', 20, ansi)[0]).toBe(ansi.fg('accent', 'x²'))
+  const mono = new TuiTheme('mono').ansi(createAnsi('256'))
+  expect(renderMarkdown('$x^2$ and\n\n$$\\alpha$$', 20, mono)).toEqual(['x² and', '', '  α'])
+  theme.raw = true
+  expect(text('$x^2$ and \\(a \\le b\\)\n\n$$\\alpha$$')).toEqual([
+    '$x^2$ and \\(a \\le b\\)',
+    '',
+    '$$\\alpha$$',
+  ])
+  expect(text('```math\n\\alpha\n```')).toEqual(['math', '\\alpha'])
+})
