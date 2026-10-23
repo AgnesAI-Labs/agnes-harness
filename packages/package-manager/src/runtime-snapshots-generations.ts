@@ -42,7 +42,7 @@ import {
   readGenerationResourcesSteps,
   writeGenerationResources,
 } from './runtime-snapshots-resources.js'
-import { settledTreeDigest, withoutPackageVerification } from './verification-operation.js'
+import { outsidePackageVerification, settledTreeDigest } from './verification-operation.js'
 
 // Durable record publication is shared by every module that keeps recoverable state beside generations.
 export { mkdirDurablySync, publishFileDurablySync, removeFileDurablySync } from '@agnes/system-node'
@@ -190,7 +190,7 @@ export class RuntimeGenerationSnapshotStore {
     resources?: RuntimeGenerationResourceInput,
     seams?: GenerationSeams,
   ): PluginGenerationSnapshot {
-    return withoutPackageVerification(() =>
+    return outsidePackageVerification(() =>
       collectRead(this.createSteps(target, sources, compatibility, packages, resources, seams)),
     )
   }
@@ -201,7 +201,7 @@ export class RuntimeGenerationSnapshotStore {
   ): Promise<PluginGenerationSnapshot> {
     // A caller may retain mutable arrays/records; a yield must not change the admitted build inputs.
     const captured = structuredClone(args)
-    return withoutPackageVerification(() => collectReadAsync(this.createSteps(...captured)))
+    return outsidePackageVerification(() => collectReadAsync(this.createSteps(...captured)))
   }
 
   private *createSteps(

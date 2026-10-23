@@ -25,6 +25,7 @@ import {
 import * as sources from '../src/sources.js'
 import { hashDirectory } from '../src/sources.js'
 import {
+  settledTreeDigest,
   verifiedDirectoryDigest,
   withoutPackageVerification,
   withPackageVerification,
@@ -489,5 +490,24 @@ describe('generation package trees', () => {
     await expect(store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)).rejects.toThrow(
       'E_GENERATION_INTEGRITY',
     )
+  })
+
+  it('keeps settled trees across a generation, and clears them when one refuses a tree', async () => {
+    const settled = source(fixture().home)
+    await withPackageVerification(
+      async () => verifiedDirectoryDigest(settled.directory, settled.plugin.snapshot, false, true),
+      { settleTrees: true },
+    )
+    const { home, store, target } = fixture()
+    const { directory, plugin } = source(home)
+    await store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
+    expect(settledTreeDigest(settled.directory, settled.plugin.snapshot)).toBe(
+      settled.plugin.snapshot.treeIntegrity,
+    )
+    writeFileSync(join(directory, 'index.mjs'), 'export const main = 2\n')
+    await expect(store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)).rejects.toThrow(
+      'E_GENERATION_INTEGRITY',
+    )
+    expect(settledTreeDigest(settled.directory, settled.plugin.snapshot)).toBeUndefined()
   })
 })
