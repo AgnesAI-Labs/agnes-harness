@@ -9,12 +9,13 @@ const state = vi.hoisted(() => ({
   reads: 0,
   error: undefined as Error | undefined,
   finishDuringRead: false,
+  finishAfterMs: Number.POSITIVE_INFINITY,
 }))
 vi.mock('node:fs', () => ({ existsSync: () => state.writing }))
 vi.mock('node:timers/promises', () => ({
   setTimeout: async (ms: number) => {
     state.pauses.push(ms)
-    if (state.finishOnPause) {
+    if (state.finishOnPause || state.pauses.reduce((sum, value) => sum + value, 0) >= state.finishAfterMs) {
       state.writing = false
       state.error = undefined
     }
@@ -61,6 +62,7 @@ beforeEach(() => {
     reads: 0,
     error: undefined,
     finishDuringRead: false,
+    finishAfterMs: Number.POSITIVE_INFINITY,
   })
   state.pauses.length = 0
 })
@@ -70,13 +72,23 @@ it('lets an announced writer finish between successful but torn reads', async ()
   expect(state.pauses).toEqual([50])
 })
 
-it('keeps a writer that never finishes bounded by the existing retry limit', async () => {
+it('keeps a writer that never finishes bounded by the writer wait', async () => {
   state.finishOnPause = false
   await expect(readRuntimePluginSnapshots('/synthetic/profile', input)).rejects.toMatchObject({
     detail: { reason: 'runtime-source-stale' },
   })
-  expect(state.reads).toBe(6)
-  expect(state.pauses.reduce((sum, ms) => sum + ms, 0)).toBeLessThanOrEqual(300)
+  const waited = state.pauses.reduce((sum, ms) => sum + ms, 0)
+  expect(waited).toBeGreaterThanOrEqual(10_000)
+  expect(waited).toBeLessThanOrEqual(10_250)
+  expect(Math.max(...state.pauses)).toBe(250)
+})
+
+it('waits out a writer that holds its journal longer than the retry backoff', async () => {
+  // Collecting a large snapshot tree keeps one journal while it verifies and removes the tree.
+  state.finishOnPause = false
+  state.finishAfterMs = 1_500
+  await expect(readRuntimePluginSnapshots('/synthetic/profile', input)).resolves.toEqual([])
+  expect(state.pauses.reduce((sum, ms) => sum + ms, 0)).toBeGreaterThanOrEqual(1_500)
 })
 
 it('refuses unexplained integrity failures without waiting or accepting a later read', async () => {

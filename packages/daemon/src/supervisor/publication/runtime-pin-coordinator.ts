@@ -77,14 +77,16 @@ export function createRuntimePinCoordinator(
     new Set([...referencedRuntimePins(input.store), ...[...retiring.values()].flatMap((ids) => [...ids])])
   const collect = async () => {
     const referenced = held()
-    for (const pin of await pins()) {
-      if (pin.purpose !== 'active' || pin.pinId !== activeRuntimePinId(pin.snapshot)) continue
-      if (!referenced.has(pin.pinId))
-        await input.manager.releaseRuntimePin(input.profileDirectory, {
-          pinId: pin.pinId,
-          expectedSnapshotId: pin.snapshot.snapshotId,
-        })
-    }
+    // One write for the whole backlog: a worker applying the new target reads this state meanwhile.
+    const released = (await pins())
+      .filter(
+        (pin) =>
+          pin.purpose === 'active' &&
+          pin.pinId === activeRuntimePinId(pin.snapshot) &&
+          !referenced.has(pin.pinId),
+      )
+      .map((pin) => ({ pinId: pin.pinId, expectedSnapshotId: pin.snapshot.snapshotId }))
+    if (released.length) await input.manager.releaseRuntimePins(input.profileDirectory, released)
     await input.manager.collectRuntimeSnapshots(input.profileDirectory)
   }
   const ensure = async (artifact: RuntimeTargetArtifact): Promise<string> => {

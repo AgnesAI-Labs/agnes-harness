@@ -72,7 +72,7 @@ import {
   type RuntimeSnapshotPinRequest,
   type RuntimeSnapshotStore,
   recoverRuntimeSnapshotStoreAsync,
-  releaseRuntimePinStore,
+  releaseRuntimePinsStore,
   resolveRuntimePinStore,
   runtimePinBlockers,
 } from './runtime-snapshots.js'
@@ -156,6 +156,11 @@ export interface PackageManager {
   releaseRuntimePin(
     profileDir: string,
     request: Readonly<{ pinId: string; expectedSnapshotId: string }>,
+  ): Promise<void>
+  /** Release in order under one lock with one state write; a stale pin keeps earlier releases. */
+  releaseRuntimePins(
+    profileDir: string,
+    requests: readonly Readonly<{ pinId: string; expectedSnapshotId: string }>[],
   ): Promise<void>
   collectRuntimeSnapshots(profileDir: string): Promise<RuntimeSnapshotCollection>
   listRuntimePins(profileDir: string): Promise<readonly RuntimePin[]>
@@ -845,8 +850,12 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       })
     },
     async releaseRuntimePin(profileDir, request) {
-      const frozen = { ...request }
-      await lockedPins(profileDir, async () => releaseRuntimePinStore(storeFor(profileDir), frozen))
+      await manager.releaseRuntimePins(profileDir, [request])
+    },
+    async releaseRuntimePins(profileDir, requests) {
+      if (!requests.length) return
+      const frozen = requests.map((request) => ({ ...request }))
+      await lockedPins(profileDir, async () => releaseRuntimePinsStore(storeFor(profileDir), frozen))
     },
     async collectRuntimeSnapshots(profileDir) {
       return lockedPins(profileDir, async () => collectRuntimeSnapshotsStore(storeFor(profileDir)))

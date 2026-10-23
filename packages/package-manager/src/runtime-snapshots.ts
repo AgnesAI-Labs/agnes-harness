@@ -737,14 +737,35 @@ export function releaseRuntimePinStore(
   s: RuntimeSnapshotStore,
   request: Readonly<{ pinId: string; expectedSnapshotId: string }>,
 ): void {
-  validateToken(request.pinId, 'pin-id')
-  if (!SHA256.test(request.expectedSnapshotId)) integrityFailure('snapshot-id')
+  releaseRuntimePinsStore(s, [request])
+}
+
+/**
+ * Release several pins with one verified state read and one state write. Workers read the state
+ * without the lock and give up after a few changed reads, so releasing a backlog one write at a
+ * time can fail the target a worker is applying. A stale pin stops the batch; earlier releases stay.
+ */
+export function releaseRuntimePinsStore(
+  s: RuntimeSnapshotStore,
+  requests: readonly Readonly<{ pinId: string; expectedSnapshotId: string }>[],
+): void {
+  for (const request of requests) {
+    validateToken(request.pinId, 'pin-id')
+    if (!SHA256.test(request.expectedSnapshotId)) integrityFailure('snapshot-id')
+  }
   const { state } = readVerifiedState(s)
-  const pin = state.pins[request.pinId]
-  if (!pin) return
-  if (pin.snapshotId !== request.expectedSnapshotId) integrityFailure('pin-snapshot-stale')
-  delete state.pins[request.pinId]
-  writeState(s, state)
+  let changed = false
+  try {
+    for (const request of requests) {
+      const pin = state.pins[request.pinId]
+      if (!pin) continue
+      if (pin.snapshotId !== request.expectedSnapshotId) integrityFailure('pin-snapshot-stale')
+      delete state.pins[request.pinId]
+      changed = true
+    }
+  } finally {
+    if (changed) writeState(s, state)
+  }
 }
 
 export function runtimePinBlockers(s: RuntimeSnapshotStore, packageId: string): PackageBlocker[] {
