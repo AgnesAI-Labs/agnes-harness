@@ -9,7 +9,7 @@ vi.mock('node:child_process', () => ({
   },
 }))
 
-const { copyToClipboard, TuiMouse } = await import('../src/mouse.js')
+const { copyToClipboard, mouseFromEnv, TuiMouse } = await import('../src/mouse.js')
 
 describe('copyToClipboard', () => {
   afterEach(() => {
@@ -79,5 +79,20 @@ describe('copy outcome', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('mouseFromEnv', () => {
+  it.each([
+    [undefined, true],
+    ['', true],
+    ['1', true],
+    ['on', true],
+    ['0', false],
+    ['off', false],
+    [' False ', false],
+    ['NO', false],
+  ])('AGH_MOUSE=%j starts with mouse reporting %s', (value, expected) => {
+    expect(mouseFromEnv(value === undefined ? {} : { AGH_MOUSE: value })).toBe(expected)
   })
 })

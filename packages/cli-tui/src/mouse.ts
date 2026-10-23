@@ -15,6 +15,11 @@ export function copyTip(ansi: ThemedAnsi, locale: string): (kind: CopyKind) => s
   return (kind) => ansi.fg(kind === 'failed' ? 'danger' : 'success', tt(key[kind], locale))
 }
 
+/** `AGH_MOUSE=0` (or `off`, `false`, `no`) starts the TUI with mouse reporting off; anything else keeps the default, on. */
+export function mouseFromEnv(env: NodeJS.ProcessEnv): boolean {
+  return !['0', 'off', 'false', 'no'].includes((env.AGH_MOUSE ?? '').trim().toLowerCase())
+}
+
 /** The fullscreen app's mouse: wheel scrolling, and copying a selection with a brief tip on how it went. */
 export class TuiMouse implements RendererMouse {
   private timer: ReturnType<typeof setTimeout> | undefined

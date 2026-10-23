@@ -116,6 +116,8 @@ export class Renderer {
     // reads as prompt history. With it the terminal stops selecting text itself, so the renderer
     // selects and copies instead.
     private readonly mouse?: RendererMouse,
+    // Whether reporting is on from the start; `/mouse` still toggles it either way.
+    private readonly mouseAtStart = true,
   ) {
     this.screenEntered = screenAlreadyEntered
   }
@@ -141,7 +143,7 @@ export class Renderer {
     // reporting (1004) sends ESC [ I and ESC [ O as the window gains and loses the user's attention.
     this.term.write('\x1b[?2004h\x1b[?1004h')
     // 1002 reports presses, releases and motion while a button is held; 1006 gives SGR coordinates.
-    this.mouseOn = this.mouse !== undefined
+    this.mouseOn = this.mouse !== undefined && this.mouseAtStart
     if (this.mouseOn) this.term.write('\x1b[?1002h\x1b[?1006h')
     this.offResize = this.term.onResize(() => {
       this.lastFrame = []

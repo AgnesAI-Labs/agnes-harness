@@ -474,7 +474,7 @@ export class TuiApp {
     )
     this.renderer = o.noAltScreen
       ? new FooterRenderer(o.term, root, this.timeline)
-      : new Renderer(o.term, root, o.screenAlreadyEntered, this.mouse)
+      : new Renderer(o.term, root, o.screenAlreadyEntered, this.mouse, o.mouse !== false)
     this.projection = this.makeProjection(o.session)
   }
 

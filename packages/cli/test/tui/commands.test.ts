@@ -303,6 +303,25 @@ describe('runSlash', () => {
     }
   })
 
+  it('starts with mouse reporting off when the option says so, and /mouse still turns it on', async () => {
+    const { app, client } = await unstartedApp()
+    const term = new FakeTerminal({ columns: 60, rows: 20 })
+    const running = new TuiApp({ session: app.session, term, header: 'Agnes', mouse: false })
+    try {
+      await running.start()
+      const on = '\x1b[?1002h\x1b[?1006h'
+      const writes = () => term.writes.join('')
+      expect(writes()).not.toContain(on)
+      await expect(runSlash(running, '/mouse')).resolves.toMatchObject({
+        text: expect.stringContaining('on:'),
+      })
+      expect(writes().split(on)).toHaveLength(2)
+    } finally {
+      await running.stop()
+      await client.close()
+    }
+  })
+
   it('/thinking toggles whether thoughts stay open, for this run only', async () => {
     const { app, client } = await unstartedApp()
     try {

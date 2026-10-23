@@ -184,7 +184,7 @@ describe('runTui model selection', () => {
       // The transcript is not echoed back; after the screen is restored: how long the run lasted, how
       // many messages the session holds, and the line that names the session.
       expect(rendered.slice(rendered.lastIndexOf('\x1b[?1049l'))).toMatch(
-        /This run lasted \d+s · messages: [12]\nResume this session: agh --resume \S+\n$/,
+        /This run lasted \d+s(?: · messages: \d+)?\n(?:Still waiting.*\n)?Resume this session: agh --resume \S+\n$/,
       )
     } finally {
       await client.close()

@@ -5,6 +5,7 @@ import {
   exitSummaryLines,
   inheritFreshSession,
   installKeybindings,
+  mouseFromEnv,
   type TimelineFacts,
   TuiApp,
   timelineFacts,
@@ -130,6 +131,7 @@ export async function runTui(
       ...(p.ignoreRules || p.safeMode ? { noCustomCommands: true } : {}),
       ...(p.safeMode ? { safeMode: true } : {}),
       ...(io.importSession ? { importSession: io.importSession } : {}),
+      mouse: mouseFromEnv(io.env),
       onTimeline: (timeline, hasEarlier) => {
         // Only a windowed tick says whether older history is out of view; the others keep the last answer.
         if (hasEarlier !== undefined) earlier = hasEarlier
