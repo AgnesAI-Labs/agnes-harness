@@ -281,3 +281,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.vimSummary',
   },
 ]
+
+/** Whether a line is a slash command: its first token is `/` plus a name with no further `/`. A line
+ * that starts with a file path (`/Users/me/a.png describe this`) is an ordinary message. */
+export const isSlashCommandLine = (text: string): boolean => /^\/[^\s/]*(\s|$)/.test(text)

@@ -9,6 +9,7 @@ import { CardFocus } from './card-focus.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { applyCommandResult } from './command-result.js'
 import { completeToken, runSlash, slashCommandFor } from './commands.js'
+import { isSlashCommandLine } from './slash-table.js'
 import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { DraftStash } from './draft-stash.js'
@@ -796,7 +797,7 @@ export class TuiApp {
       if (text.trim() !== '/quit' && text.trim() !== '/exit') return void this.refuseClosed()
       text = '/quit'
     }
-    const task = text.startsWith('/') ? this.command(text) : this.submit(text)
+    const task = isSlashCommandLine(text) ? this.command(text) : this.submit(text)
     await task.catch((error: unknown) => this.showError(error))
   }
 
@@ -835,7 +836,7 @@ export class TuiApp {
     if (this.stopped) throw new Error('TUI stopped')
     if (!text.trim()) return
     const skillCommand = /^\/skill\s+invoke\s+\S+/.test(text)
-    if (text.startsWith('/') && !skillCommand) throw new Error('Command unavailable')
+    if (isSlashCommandLine(text) && !skillCommand) throw new Error('Command unavailable')
     this.statusBar.setNotice(undefined)
     if (this.surfaces.pending && !skillCommand) return this.surfaces.answer(text)
     const kept = this.busyInput.takeKept(text)

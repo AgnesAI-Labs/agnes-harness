@@ -1652,6 +1652,20 @@ it('Enter while a turn runs queues the input in the daemon under its own command
   }
 })
 
+it('sends a message that starts with a file path as a prompt, while /foo is still refused as a command', async () => {
+  const h = await busyHarness()
+  try {
+    h.type('/tmp/pic.png describe this')
+    await vi.waitFor(() => expect(h.prompts).toEqual(['/tmp/pic.png describe this']))
+    h.type('/foo')
+    await vi.waitFor(async () => expect(await h.shown()).toContain('unknown command /foo'))
+    expect(h.prompts).toHaveLength(1)
+    expect(h.submits).toHaveLength(0)
+  } finally {
+    await h.dispose()
+  }
+})
+
 it('Alt+Enter while a turn runs steers it, and queues instead when the turn takes no guidance', async () => {
   const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
   const steering = await busyHarness()
