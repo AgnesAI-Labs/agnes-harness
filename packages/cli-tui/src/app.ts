@@ -7,7 +7,7 @@ import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { CardFocus } from './card-focus.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { applyCommandResult } from './command-result.js'
-import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
+import { completeToken, runSlash, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { DraftStash } from './draft-stash.js'
@@ -31,8 +31,9 @@ import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
 import { PromptHistory } from './prompt-history.js'
 import { Renderer, type ScreenRenderer } from './renderer.js'
-import type { ResourceCommandKind, TuiResourceController } from './resource-controller.js'
+import type { TuiResourceController } from './resource-controller.js'
 import { type InputDialog, rootInput } from './root-input.js'
+import { applySwitch, chooseSession, ResourceConfirmations } from './session-switch.js'
 import { type ActionItem, collectSlots } from './slots.js'
 import { StatusLineConfig } from './statusline-config.js'
 import { SurfaceInbox } from './surface-inbox.js'
@@ -63,13 +64,14 @@ import { readWorkspaceInfo, tildePath, workspaceRefresher } from './workspace-in
 export { formatTuiErrorNotice } from './error-notice.js'
 
 export class TuiApp {
-  private attachmentController = new AbortController()
+  // The fields from here to `previewEffects` that carry no `private` are the ones session-switch.ts swaps.
+  attachmentController = new AbortController()
   get attachmentSignal(): AbortSignal {
     return this.attachmentController.signal
   }
-  private readonly surfaces: SurfaceInbox
-  private readonly modal: PermissionModal
-  private offPermission: (() => void) | undefined
+  readonly surfaces: SurfaceInbox
+  readonly modal: PermissionModal
+  offPermission: (() => void) | undefined
   // Registered once in `start()` against whichever client the initial session belongs to. A
   // session switch (`applySwitch`) never replaces the underlying `Client` -- the daemon
   // connection outlives any one session -- so these are not re-registered per session.
@@ -78,9 +80,9 @@ export class TuiApp {
   readonly renderer: ScreenRenderer
   // Not readonly: `applySwitch` (a slash command that switches session -- /new, /resume, /rewind)
   // replaces it with a fresh projection built for the newly current session.
-  private projection: TuiProjection
+  projection: TuiProjection
   private readonly timeline: Timeline
-  private readonly welcome: WelcomeController
+  readonly welcome: WelcomeController
   readonly cards: ToolCards
   private readonly approvalCards = new Map<string, ApprovalCard>()
   private latestApproval: string | undefined
@@ -89,8 +91,7 @@ export class TuiApp {
   private belowModal = 0
   private readonly live: LiveView
   private readonly loader: Loader
-  private readonly clock: TurnClock
-  private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
+  readonly clock: TurnClock
   readonly mouse: TuiMouse
   readonly statusBar: StatusBar
   private readonly models = new ModelChooser(
@@ -102,26 +103,26 @@ export class TuiApp {
   private hintActions: ActionItem[] = []
   readonly editor: Editor
   private readonly drafts: DraftStash
-  private readonly mentions: ReferenceMentionSource
+  readonly mentions: ReferenceMentionSource
   private readonly composer: Composer
   private readonly theme: TuiTheme
   private readonly themes: ThemeController
-  private readonly themePicker: ThemePicker
+  readonly themePicker: ThemePicker
   readonly usagePanel: UsagePanel
   readonly planPanel: PlanPanel
   readonly statusLine: StatusLinePicker
   readonly windowTitle: WindowTitle
   private readonly pager: PagerOverlay
-  private readonly cardFocus: CardFocus
-  private readonly modelPicker: ModelPicker
-  private readonly sessionPicker: SessionPicker
+  readonly cardFocus: CardFocus
+  readonly modelPicker: ModelPicker
+  readonly sessionPicker: SessionPicker
   private readonly packageController: PackageController
   private readonly localCommandView: (command: string, output: string, quiet?: boolean) => Component
   // Streamed text is never in the projected timeline: a streaming node stays empty there, and the
   // live line shows what the previews of every inference still streaming have said.
-  private readonly previews = new PreviewMerger()
-  private readonly previewEffects: string[] = []
-  private stopped = false
+  readonly previews = new PreviewMerger()
+  readonly previewEffects: string[] = []
+  stopped = false
   /** Sessions this run sent a message to: the exit hint is for those only. */
   readonly prompted = new Set<string>()
   private readonly signals: TerminalSignals
@@ -308,7 +309,7 @@ export class TuiApp {
       ansi,
       locale,
       maxRows: () => Math.max(4, o.term.size().rows - 6),
-      onChoose: (choice) => void this.chooseSession(choice),
+      onChoose: (choice) => void chooseSession(this, choice),
       changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.usagePanel = new UsagePanel({
@@ -543,25 +544,13 @@ export class TuiApp {
   }
 
   /** Resource control is supplied only by the Node CLI bootstrap, never the chat/session client. */
+  private readonly confirmations = new ResourceConfirmations()
+  readonly queueResourceConfirmation = this.confirmations.queue
+  readonly takeResourceConfirmation = this.confirmations.take
+  readonly cancelResourceConfirmation = this.confirmations.cancel
+
   get resourceController(): TuiResourceController | undefined {
     return this.o.resourceController
-  }
-
-  queueResourceConfirmation(kind: ResourceCommandKind, args: readonly string[]): void {
-    this.pendingResourceCommand = { kind, args: [...args] }
-  }
-
-  takeResourceConfirmation(kind: ResourceCommandKind): readonly string[] | undefined {
-    const pending = this.pendingResourceCommand
-    if (!pending || pending.kind !== kind) return undefined
-    this.pendingResourceCommand = undefined
-    return pending.args
-  }
-
-  cancelResourceConfirmation(kind: ResourceCommandKind): boolean {
-    if (!this.pendingResourceCommand || this.pendingResourceCommand.kind !== kind) return false
-    this.pendingResourceCommand = undefined
-    return true
   }
 
   private scrollTimeline(delta: number): void {
@@ -570,7 +559,7 @@ export class TuiApp {
       void this.projection.loadEarlier().then((ok) => ok && !this.stopped && this.renderer.requestRender())
   }
 
-  private makeProjection(session: Session): TuiProjection {
+  makeProjection(session: Session): TuiProjection {
     let opening = true
     return new TuiProjection(session, {
       timeline: (value, window) => {
@@ -672,7 +661,7 @@ export class TuiApp {
   }
 
   /** Every path that would call the daemon after 'closed' routes through here instead. */
-  private refuseClosed(): boolean {
+  refuseClosed(): boolean {
     if (this.closedNotice === undefined) return false
     this.statusBar.setNotice(this.closedNotice)
     if (!this.stopped) this.renderer.requestRender()
@@ -802,84 +791,9 @@ export class TuiApp {
       text,
       r,
     )
-    if (r.switchSession) await this.applySwitch(r.switchSession)
+    if (r.switchSession) await applySwitch(this, r.switchSession)
     if (r.quit) this.onQuit()
     if (!this.stopped) this.renderer.requestRender()
-  }
-
-  // Stops the old projection's local subscription, swaps the session this app renders, and starts
-  // a fresh projection against the new one. The old session is left attached at the protocol level
-  // (its own `Client.close()` cleans that up eventually) -- an explicit detach here is a step this
-  // task's own interface spec never asks for, and one this method has no test coverage compelling.
-  private async applySwitch(next: Session): Promise<boolean> {
-    // runSlash and chooseSession refuse up front; a prompt submitted while the daemon was still opening
-    // `next` is caught here.
-    if (this.refuseClosed() || this.refuseSwitch()) return false
-    this.themePicker.close()
-    this.modelPicker.close()
-    this.sessionPicker.close()
-    this.usagePanel.close()
-    this.editor.resetUndo()
-    this.planPanel.reset()
-    this.cardFocus.exit(false)
-    this.offPermission?.()
-    await this.projection.stop()
-    // stop() may have run before this switch's session arrived or during the await above. It stops only the
-    // projection it finds, so one started from here on would never be stopped: its opening retry timer keeps
-    // the process alive after the TUI has quit. A terminal close during the await is the same case:
-    // starting the next projection would re-dial the daemon.
-    if (this.stopped || this.refuseClosed()) return false
-    // `projection.stop()` only unsubscribes from the old session's ledger events; it never
-    // synthesizes a closing `opState: null` tick for a turn that was still in flight. Left alone,
-    // a mid-turn switch leaves the ticker genuinely running past this point (confirmed reachable:
-    // nothing else stops it once the old projection is torn down) and the loader still labelled
-    // with the old session's turn/phase, so the new session's first idle tick would otherwise
-    // paint a stale, fabricated elapsed time for a turn that belongs to a session no longer even
-    // attached. Reset turn-lifecycle state to exactly what a freshly-constructed TuiApp looks like.
-    this.clock.reset()
-    this.welcome.banner.setModel(undefined)
-    this.surfaces.reset()
-    this.attachmentController.abort()
-    this.attachmentController = new AbortController()
-    this.mentions.reset()
-    this.o.session = next
-    this.o.onSessionSwitch?.(next.id)
-    this.previews.reset()
-    this.previewEffects.length = 0
-    this.projection = this.makeProjection(next)
-    this.offPermission = next.onPermissionRequest((request, context) => this.modal.ask(request, context))
-    await this.projection.start()
-    return true
-  }
-
-  private async chooseSession(choice: SessionChoice): Promise<void> {
-    if (this.refuseClosed()) return
-    // An import row runs `/import FILE` as if typed, so it reports through the same notice.
-    if (choice.importFile !== undefined) return this.runInput(`/import ${choice.importFile}`)
-    try {
-      // The picker stays open during a turn; picking from it is refused before the daemon loads anything.
-      if (this.refuseSwitch()) return this.renderer.requestRender()
-      this.statusBar.setNotice(`Loading session ${escapeControl(choice.sessionId)}…`)
-      this.renderer.requestRender()
-      // A rewind row forks the open session at its completed-turn boundary; any other row resumes.
-      const next =
-        choice.forkAt === undefined
-          ? await this.o.session.client.session.load(choice.sessionId, { cwd: this.cwd })
-          : await this.o.session.client.session.fork(choice.sessionId, choice.forkAt)
-      if (await this.applySwitch(next)) {
-        const turn = choice.title?.match(/^#(\d+)/)?.[1] ?? String(choice.forkAt)
-        if (choice.draft) this.editor.setText(choice.draft)
-        this.statusBar.setNotice(
-          choice.forkAt === undefined
-            ? `Resumed ${escapeControl(choice.sessionId)}`
-            : tt(choice.draft ? 'session.rewound' : 'session.rewoundNoPrompt', this.locale, { turn }),
-          'success',
-        )
-      }
-      if (!this.stopped) this.renderer.requestRender()
-    } catch (error) {
-      this.showError(error)
-    }
   }
 
   async submit(text: string): Promise<void> {
