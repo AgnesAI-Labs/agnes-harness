@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -885,4 +885,110 @@ it('keeps unknown turn failures generic without printing their code or private l
   } finally {
     await connected.close()
   }
+})
+
+describe('runPrint --append-system-prompt', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+  const scratch = (): string => {
+    const d = mkdtempSync(join(tmpdir(), 'agh-append-'))
+    dirs.push(d)
+    return d
+  }
+  const metaOf = (ep: FakeEndpoint): Record<string, unknown> | undefined =>
+    (
+      ep.calls.find((c) => c.method === 'session/new')?.params as
+        | { _meta: Record<string, Record<string, unknown>> }
+        | undefined
+    )?._meta['ai.agnes.harness']
+  /** A daemon that reports the session's prompt back with `applied` text (or none, like an old one). */
+  const daemon = (applied?: string) =>
+    scriptedEndpoint().on('_agnes/v1/systemPrompt.get', () => ({
+      config: {},
+      effect: 'new-sessions',
+      hash: 'a'.repeat(64),
+      preview: 'session-assembled',
+      sections: [
+        { id: 'core', order: 1, source: 'core', text: applied === undefined ? 'base' : `base\n\n${applied}` },
+      ],
+    }))
+  const methodsOf = (ep: FakeEndpoint) => ep.calls.map((c) => c.method)
+
+  it('sends the text on a fresh session and reads the prompt back before the first prompt', async () => {
+    const ep = daemon('Answer in French.')
+    const code = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt', 'Answer in French.']),
+      io(),
+    )
+    expect(code).toBe(0)
+    expect(metaOf(ep)).toMatchObject({ systemPromptAppend: 'Answer in French.' })
+    expect(String(metaOf(ep)?.sessionKey)).toContain(':cli:session:')
+    const methods = methodsOf(ep)
+    expect(methods.indexOf('_agnes/v1/systemPrompt.get')).toBeGreaterThan(methods.indexOf('session/new'))
+    expect(methods.indexOf('_agnes/v1/systemPrompt.get')).toBeLessThan(methods.indexOf('session/prompt'))
+    expect(ep.calls.find((c) => c.method === '_agnes/v1/systemPrompt.get')?.params).toEqual({
+      sessionId: FAKE_SESSION_ID,
+    })
+  })
+
+  it('reads --append-system-prompt-file from the working directory', async () => {
+    const dir = scratch()
+    writeFileSync(join(dir, 'rules.md'), 'Be brief.\n')
+    const ep = daemon('Be brief.\n')
+    const code = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt-file', 'rules.md']),
+      { ...io(), cwd: dir },
+    )
+    expect(code).toBe(0)
+    expect(metaOf(ep)).toMatchObject({ systemPromptAppend: 'Be brief.\n' })
+  })
+
+  it('refuses a symlinked, oversize, empty, NUL or missing file before any session exists', async () => {
+    const dir = scratch()
+    writeFileSync(join(dir, 'real.md'), 'text')
+    symlinkSync(join(dir, 'real.md'), join(dir, 'link.md'))
+    writeFileSync(join(dir, 'big.md'), 'x'.repeat(8193))
+    writeFileSync(join(dir, 'empty.md'), '')
+    writeFileSync(join(dir, 'nul.md'), 'a\0b')
+    for (const file of ['link.md', 'big.md', 'empty.md', 'nul.md', 'missing.md']) {
+      const ep = daemon('text')
+      const e = await runPrint(
+        await booted(ep),
+        parseArgs(['-p', 'q', '--append-system-prompt-file', file]),
+        {
+          ...io(),
+          cwd: dir,
+        },
+      ).catch((x: unknown) => x)
+      expect(e, file).toMatchObject({ name: 'UsageError', code: 2 })
+      expect(methodsOf(ep), file).not.toContain('session/new')
+    }
+  })
+
+  it('does not send the first prompt when an older daemon ignored the field', async () => {
+    const ep = daemon()
+    const e = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt', 'Answer in French.']),
+      io(),
+    ).catch((x: unknown) => x)
+    expect(e).toMatchObject({ name: 'CommandError' })
+    expect((e as Error).message).toContain('did not apply')
+    expect(methodsOf(ep)).not.toContain('session/prompt')
+  })
+
+  it('does not send the first prompt when the daemon cannot report the prompt back', async () => {
+    const ep = scriptedEndpoint()
+    const e = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt', 'x']),
+      io(),
+    ).catch((x: unknown) => x)
+    expect(e).toMatchObject({ name: 'CommandError' })
+    expect(methodsOf(ep)).not.toContain('session/prompt')
+  })
 })

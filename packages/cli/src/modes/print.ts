@@ -16,6 +16,7 @@ import { checkStructured, loadOutputSchema, schemaInstruction } from '../output-
 import { timingMark } from '../timing.js'
 import { parseTimeoutMs, parseTurnCaps, requireTurnCaps } from '../turn-caps.js'
 import type { Booted, ParsedArgs } from '../types.js'
+import { resolveAppendSystemPrompt, verifyAppendApplied } from './append-system-prompt.js'
 import { readPromptInput } from './prompt-input.js'
 import { cliEventLine, cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
 import { applyToolFilter } from './tool-filter.js'
@@ -131,6 +132,7 @@ async function openSession(
   p: ParsedArgs,
   cwd: string,
   breadcrumb?: Breadcrumb,
+  append?: string,
 ): Promise<Session> {
   // `session/load` rather than attach: a session this daemon has not opened yet is not in its
   // registry, and attach requires one. Load opens it from the ledger and replays it, which is what
@@ -143,16 +145,26 @@ async function openSession(
   const resume = await sessionToOpen(booted, p, cwd, breadcrumb)
   if (resume !== undefined) return booted.client.session.load(resume, { cwd })
   await booted.client.workspace.add(cwd)
-  return booted.client.session.new({
+  const session = await booted.client.session.new({
     cwd,
     ...(p.preset ? { preset: p.preset } : {}),
     ...(p.permission !== undefined || !p.agent ? { permission: p.permission ?? 'default' } : {}),
     ...(p.loop ? { loop: p.loop } : {}),
     ...(p.agent ? { agent: p.agent } : {}),
-    ...(p.agent || p.loop || p.newSession
+    ...(append === undefined ? {} : { systemPromptAppend: append }),
+    ...(p.agent || p.loop || p.newSession || append !== undefined
       ? { sessionKey: `agnes:local:${booted.profileName}:cli:${p.loop ? 'loop' : 'session'}:${randomUUID()}` }
       : {}),
   })
+  if (append !== undefined) {
+    try {
+      await verifyAppendApplied(booted.client, session.id, append)
+    } catch (error) {
+      await session.detach().catch(() => undefined)
+      throw error
+    }
+  }
+  return session
 }
 
 /** Resolves to true if `p` settled within `ms`, false if the deadline came first. */
@@ -225,6 +237,8 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
   }
   const early = signalledBeforePrompt()
   if (early !== undefined) return early
+  // A bad flag or file is a usage error before the session exists.
+  const append = await resolveAppendSystemPrompt(p, io.cwd)
 
   // Heterogeneous by design: a row this client dropped arrives as `kind: 'invalid-event'` from sdk
   // itself, a daemon notice arrives with the daemon's own kind. Discriminating on `kind` is the only
@@ -237,7 +251,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
 
   try {
     await requireTurnCaps(booted.client, caps)
-    const session = await openSession(booted, p, io.cwd, io.breadcrumb)
+    const session = await openSession(booted, p, io.cwd, io.breadcrumb, append)
     io.breadcrumb?.write(session.id, io.cwd)
     io.stderr.write(`Session: ${session.id}\n`)
     // Before the model switch, attach and the one prompt: the agent never sees a tool the user took away.

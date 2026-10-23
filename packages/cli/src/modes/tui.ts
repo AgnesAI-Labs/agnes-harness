@@ -24,6 +24,7 @@ import type { TuiResourceController } from '../tui/resource-controller.js'
 import { freshTuiSessionKey } from '../tui/session-key.js'
 import { type InputStream, NodeTerminal, type OutputStream } from '../tui/terminal.js'
 import type { Booted, ParsedArgs } from '../types.js'
+import { resolveAppendSystemPrompt, verifyAppendApplied } from './append-system-prompt.js'
 import { type Breadcrumb, refuseWhatCannotBeHonoured, sessionToOpen } from './print.js'
 import { applyToolFilter } from './tool-filter.js'
 import { markFirstFrame, type TuiOpening } from './tui-opening.js'
@@ -64,6 +65,7 @@ export async function runTui(
   },
 ): Promise<number> {
   refuseWhatCannotBeHonoured(p)
+  const append = await resolveAppendSystemPrompt(p, io.cwd)
   // Match Prime's process lifecycle: own the alternate screen *before* any session, branding, or
   // daemon await. This leaves the previous invocation in normal-screen scrollback on exit, while
   // every new invocation starts on an empty alternate screen even when opening is slow.
@@ -99,7 +101,16 @@ export async function runTui(
             ...(p.permission !== undefined || !p.agent ? { permission: p.permission ?? 'default' } : {}),
             ...(p.loop ? { loop: p.loop } : {}),
             ...(p.agent ? { agent: p.agent } : {}),
+            ...(append === undefined ? {} : { systemPromptAppend: append }),
           })
+    if (resumeId === undefined && append !== undefined) {
+      try {
+        await verifyAppendApplied(booted.client, session.id, append)
+      } catch (error) {
+        await session.detach().catch(() => undefined)
+        throw error
+      }
+    }
     // Before the welcome, the model choice or any prompt: a tool the user took away is gone from the first turn.
     if (p.toolFilter) await applyToolFilter(session, p.toolFilter)
     // A fresh session takes the last model and full-permission choice, unless -m names a model.

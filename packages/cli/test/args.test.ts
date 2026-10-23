@@ -499,6 +499,22 @@ it('selects a versioned loop, including a scoped id, and refuses missing version
     expect(() => parseArgs(argv)).toThrow(UsageError)
 })
 
+it('appends to a new session prompt only: refuses a resume, an agent, both flags and a missing value', () => {
+  expect(parseArgs(['-p', 'hi', '--append-system-prompt', 'Be brief.']).appendSystemPrompt).toBe('Be brief.')
+  expect(parseArgs(['-p', 'hi', '--append-system-prompt-file', 'rules.md']).appendSystemPromptFile).toBe(
+    'rules.md',
+  )
+  for (const argv of [
+    ['--append-system-prompt'],
+    ['--append-system-prompt', 'a', '--append-system-prompt-file', 'b'],
+    ['--continue', '--append-system-prompt', 'a'],
+    ['--resume', 'id', '--append-system-prompt-file', 'a'],
+    ['resume', 'id', '--append-system-prompt', 'a'],
+    ['--agent', '@acme/kit#review', '--append-system-prompt', 'a'],
+  ])
+    expect(() => parseArgs(argv), argv.join(' ')).toThrow(UsageError)
+})
+
 it('recognizes help before forwarding commands and leaves stdio arguments as data', () => {
   for (const command of [
     'serve',

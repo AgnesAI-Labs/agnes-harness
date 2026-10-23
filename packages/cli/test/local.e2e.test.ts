@@ -124,6 +124,33 @@ describe('bootLocal', () => {
     }
   })
 
+  it('admits systemPromptAppend on the embedded endpoint, which has no package control plane to lock', async () => {
+    const dir = home()
+    const opened: Array<Parameters<Host['createSession']>[0]> = []
+    const baseCreateHost = testDeps(dir).createHostImpl
+    if (!baseCreateHost) throw new Error('test host factory is unavailable')
+    const createHostImpl = async (...args: Parameters<typeof baseCreateHost>): Promise<Host> => {
+      const host = await baseCreateHost(...args)
+      return {
+        ...host,
+        createSession: async (options) => {
+          opened.push(options)
+          throw new Error('stop after capture')
+        },
+      }
+    }
+    const b = await bootLocal(parseArgs([]), testDeps(dir, { createHostImpl }))
+    try {
+      await b.client.workspace.add(dir)
+      await b.client.session
+        .new({ cwd: dir, sessionKey: 'agnes:append:embedded', systemPromptAppend: 'x' })
+        .catch(() => undefined)
+      expect(opened[0]).toMatchObject({ systemPromptAppend: 'x' })
+    } finally {
+      await b.close()
+    }
+  })
+
   // Retitled after the review: this case never reached profile resolution. profileNameFrom runs
   // before the try, so a name with a separator is a UsageError, and asserting only `{code: 2}`
   // passed whichever of the two classes came back. Both classes are now named, in two cases.

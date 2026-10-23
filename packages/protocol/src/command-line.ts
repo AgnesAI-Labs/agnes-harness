@@ -6,4 +6,4 @@
 export { closestNames, editDistance } from './closest-names.js'
 export { parseLoopSpecifier } from './loop-selection.js'
 export { SLOT_NAMES } from './provider.js'
-export { parseAgentRef } from './session-composition.js'
+export { parseAgentRef, parseSystemPromptAppend, SYSTEM_PROMPT_APPEND_MAX } from './session-composition.js'

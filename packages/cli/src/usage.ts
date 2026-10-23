@@ -61,6 +61,7 @@ export function usage(locale = 'en'): string {
       ? '高级：运行配置与组合（Bundle / Preset）'
       : 'Advanced: run configuration and composition (Bundle / Preset)',
     'agh [prompt] --preset <name> [--permission <level>]     agh config dump [--profile <name>] [--preset <name>]',
+    'agh [prompt] --append-system-prompt <text> | --append-system-prompt-file <file>   (new sessions only)',
     'agh run --bundle <package#id|path> --input <file|-> --json [--batch]',
   ].join('\n')
 }

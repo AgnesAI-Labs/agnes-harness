@@ -69,6 +69,10 @@ export type ParsedArgs = {
   /** A permission level, or `default` for the deployment default; travels with `preset` on session/new. */
   permission?: 'read-only' | 'workspace-write' | 'full-access' | 'default'
   agent?: string
+  /** `--append-system-prompt`: text added to a NEW session's system prompt. */
+  appendSystemPrompt?: string
+  /** `--append-system-prompt-file`: the same text, read from a local regular file. */
+  appendSystemPromptFile?: string
   loop?: LoopSelection
   /** `--tools` / `--disallowed-tools`: narrows the session's tools; applied before anything is sent. */
   toolFilter?: { allow?: string[]; deny?: string[] }

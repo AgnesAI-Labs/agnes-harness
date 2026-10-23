@@ -1,9 +1,9 @@
 import { parseAgentRef, parseLoopSpecifier } from '@agnes/protocol/command-line'
 import { UsageError } from './errors.js'
+import { refuseFlagConflicts } from './flag-conflicts.js'
 import { parseModel } from './model-flag.js'
-import { refusePrivateHostFlags } from './private-host-flags.js'
 import { unknownFlagMessage } from './suggest.js'
-import { readToolFlag, refuseToolFilterElsewhere } from './tool-filter.js'
+import { readToolFlag } from './tool-filter.js'
 import { TURN_CAP_FLAGS } from './turn-caps.js'
 import type { Command, ParsedArgs } from './types.js'
 import { takeWorktreeFlag } from './worktree-args.js'
@@ -84,6 +84,8 @@ export const VALUE_FLAGS: Record<string, keyof ParsedArgs> = Object.assign(Objec
   '--profile': 'profile',
   '--preset': 'preset',
   '--permission': 'permission',
+  '--append-system-prompt': 'appendSystemPrompt',
+  '--append-system-prompt-file': 'appendSystemPromptFile',
   '--cwd': 'cwd',
   '--data-dir': 'dataDir',
   '--candidate-hash': 'candidateHash',
@@ -290,8 +292,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     argv.includes('--session')
   )
     throw new UsageError('--session is supported only by tools, diagnostics and schedules')
-  refuseToolFilterElsewhere(p)
-  refusePrivateHostFlags(p)
+  refuseFlagConflicts(p)
   if (p.steer && p.command !== 'queue') throw new UsageError('--steer is supported only by queue')
   if (p.continue && p.resume !== undefined)
     throw new UsageError('--continue and --resume are mutually exclusive')

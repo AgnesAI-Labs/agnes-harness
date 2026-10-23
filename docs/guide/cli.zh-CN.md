@@ -89,6 +89,8 @@ node agnes.mjs
 
 启动或恢复会话时可以限制它的工具：`--tools a,b` 只留下这些工具，`--disallowed-tools c,d` 关掉所列工具，交互终端和 `-p` 都支持。参数是精确的工具名（可用 `/tools` 查看），在发送第一条提示之前生效；用于恢复的会话时，会在它原有限制之上再收紧一次。会话里没有的名称，或 daemon 太旧无法限制工具，都会在发送任何提示之前停下。启动时选择新会话能做什么，例如 `node agnes.mjs --permission read-only`；`--preset NAME` 独立选择配方（见[权限与预设](security.zh-CN.md#permissions-and-presets)）。`/preset NAME` 切换当前会话的预设并保留其权限；更换权限需新建会话。
 
+`--append-system-prompt "文本"` 或 `--append-system-prompt-file 路径` 把你自己的指令追加到新会话系统提示词的末尾，排在部署自带的收尾指令之后；它只追加、从不替换，也没有替换整段提示词的参数。文本为 1 到 8192 个字符，不能含 NUL；合并后的收尾指令仍须不超过 8192 个字符，否则拒绝建会话（不会截断）。文件在你本机读取，必须是不超过 8 KiB 的普通文件（符号链接会被拒绝）。TUI、`-p` 和 `agh run` 都支持，只对新会话生效：与 `--resume`、`--continue`、`resume` 同用会报错，因为会话会一直沿用创建时的提示词；也不能与 `--agent` 同用。配置只读时，或部署使用整段系统提示词替换时，daemon 会拒绝。会话建好后命令会回读它的系统提示词；旧版 daemon 会悄悄忽略这个字段，所以看不到你的文本时，命令会报错退出，不发送第一条提示。会话实际使用的各段仍可通过带会话 id 的 `_agnes/v1/systemPrompt.get` 读取。
+
 发送过的消息（包括斜杠命令）保存在 `<AGH_HOME>/tui-history.jsonl`（仅本人可读，保留最近 500 条，相邻重复不记），重启后按 ↑ 仍能找到。Ctrl-R 进入反向搜索：输入以缩小范围，再按 Ctrl-R 找更早的匹配，Enter 把匹配项放进输入框但不发送，Esc 退出搜索并恢复草稿。文件无法读写时，历史只在本次运行内有效。
 
 编辑键与 readline 一致。Ctrl-A、Ctrl-E 跳到行首、行尾，Ctrl-B、Ctrl-F 左右移一个字符，Alt-B、Alt-F 或 Ctrl-←、Ctrl-→ 按词移动（中文按词切分）。Ctrl-K 删到行尾，Ctrl-U 删到行首，Ctrl-W 或 Alt-Backspace 删光标前一个词，Alt-D 删后一个词；Ctrl-Y 粘回最近一次删掉的文本。运行中的 TUI 保留最近 16 次删除组成的 kill ring：连续的删除合并成一条（向后删的接在前面，向前删的接在后面），按其他键就中断连续；紧接着 Ctrl-Y 或 Alt-Y 再按 Alt-Y，把刚粘贴的内容换成上一条，循环切换。粘贴和每次切换各算一步撤销。kill ring 只存在内存里，不碰系统剪贴板。
