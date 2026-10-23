@@ -14,6 +14,8 @@ import {
 } from '@agnes/core'
 import type { SessionTasks } from '@agnes/host-extensions/assemble/packages'
 import type { InferenceEvent } from '@agnes/protocol'
+import type { HostSession } from '../lifecycle/host.js'
+import { askSideQuestion, SideQuestionError } from './session-side-question.js'
 
 type Messages = Parameters<SessionTasks['generate']>[1]['messages']
 const clip = (value: string, length: number) =>
@@ -252,6 +254,36 @@ export function createSessionTasks(
         if (completed && !signal.aborted && (await current(s, input.turn))) return text
       }
       return s.d.withModelSnapshot ? s.d.withModelSnapshot(work) : work()
+    },
+    async review(ref, input, signal) {
+      const s = resolve(ref)
+      if (!s) throw new Error('session unavailable')
+      try {
+        // The side question's conversation view stops before an open turn, so carry that turn's
+        // user request here; without it the reviewer cannot judge what the user actually asked for.
+        const [request] = await s.scan({ type: 'user/message', lane: s.lane, order: 'desc', limit: 1 })
+        const asked = clip(
+          ((request?.data as { content?: Array<{ type: string; text?: string }> } | undefined)?.content ?? [])
+            .filter((b) => b.type === 'text')
+            .map((b) => b.text ?? '')
+            .join('\n'),
+          800,
+        )
+        const data = asked ? `Latest user request:\n${asked}\n\n${input.data}` : input.data
+        const answer = await askSideQuestion(s as unknown as HostSession, clip(data, 6000), {
+          slots: ['verifier', 'fast'],
+          system: clip(input.system, 2000),
+          maxTokens: 300,
+          label: input.label,
+          timeoutMs: input.timeoutMs ?? 15_000,
+          signal,
+        })
+        return answer.text
+      } catch (error) {
+        // Unavailable, over budget, timed out or failed all mean "no review this time".
+        if (error instanceof SideQuestionError) return undefined
+        throw error
+      }
     },
   }
 }

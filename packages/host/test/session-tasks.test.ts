@@ -3,7 +3,7 @@ import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { createSessionTasks } from '../src/runtime/sessions/session-tasks.js'
 
-function fixture(configured = true) {
+function fixture(configured = true, verifier = false) {
   const ref = { key: 'synthetic', lane: 'main', workspaceRoot: '/synthetic' }
   const rows: Event[] = []
   const listeners = new Set<(events: Event[]) => void>()
@@ -32,8 +32,8 @@ function fixture(configured = true) {
     op: () => null,
     preset: {
       model: {
-        route: { fast: configured ? 'fake' : undefined },
-        id: { fast: configured ? 'fast' : undefined },
+        route: { fast: configured ? 'fake' : undefined, verifier: verifier ? 'fake' : undefined },
+        id: { fast: configured ? 'fast' : undefined, verifier: verifier ? 'strong' : undefined },
       },
       budget: { perRequestCap: null },
       treeBudgetCredits: null,
@@ -48,6 +48,12 @@ function fixture(configured = true) {
       listeners.add(fn)
       return () => listeners.delete(fn)
     },
+    surface: () => [],
+    get lastSeq() {
+      return rows.length
+    },
+    envelopeNonceFor: () => undefined,
+    envelopeCache: new Map(),
     locked: async (fn: () => Promise<unknown>) => fn(),
     ev: (type: string, data: unknown) => ({ type, data }),
     append: async (events: Array<{ type: string; data: unknown }>) => {
@@ -57,6 +63,12 @@ function fixture(configured = true) {
       contract: { contract_id: null, parser_version: '1' },
       provider: {
         models: () => [
+          {
+            route: 'fake',
+            id: 'strong',
+            maxTokens: 1024,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          },
           {
             route: 'fake',
             id: 'fast',
@@ -178,4 +190,53 @@ it('drops a late fast-model answer and accounts for failed or cancelled inferenc
   const count = f.infer.mock.calls.length
   await expect(f.tasks.generate(f.ref, { ...input, turn: 2 }, aborted.signal)).resolves.toBeUndefined()
   expect(f.infer.mock.calls).toHaveLength(count)
+})
+
+it('review runs while a turn is open, prefers the verifier slot, caps output and accounts usage', async () => {
+  const f = fixture(true, true)
+  f.append('turn/start', { turn: 1 })
+  f.append('user/message', { content: [{ type: 'text', text: 'clean the build' }] })
+  const input = { label: 'heads-up', system: 'review', data: 'ran rm -rf build' }
+  await expect(f.tasks.review(f.ref, input, new AbortController().signal)).resolves.toBe(
+    'What should I try next?',
+  )
+  expect(f.calls[0]?.model).toBe('strong')
+  expect(f.calls[0]?.sampling?.maxTokens).toBe(300)
+  expect(JSON.stringify(f.calls[0]?.messages)).toContain('Latest user request:\\nclean the build')
+  expect(f.rows.map((r) => r.type)).toEqual(['turn/start', 'user/message', 'cost/ledger'])
+  expect(f.billingRecord).toHaveBeenCalledWith(
+    expect.objectContaining({ purpose: 'side-call', model: 'strong' }),
+  )
+  const fast = fixture()
+  fast.append('turn/start', { turn: 1 })
+  await fast.tasks.review(fast.ref, input, new AbortController().signal)
+  expect(fast.calls[0]?.model).toBe('fast')
+  const none = fixture(false)
+  await expect(none.tasks.review(none.ref, input, new AbortController().signal)).resolves.toBeUndefined()
+  expect(none.infer).not.toHaveBeenCalled()
+  f.infer.mockImplementationOnce(async function* (): AsyncGenerator<InferenceEvent> {
+    await new Promise<void>(() => undefined)
+  })
+  await expect(
+    f.tasks.review(f.ref, { ...input, timeoutMs: 20 }, new AbortController().signal),
+  ).resolves.toBeUndefined()
+})
+
+it('review honours the open turn budget override like generate', async () => {
+  const input = { label: 'heads-up', system: 'review', data: 'x' }
+  const hard = fixture()
+  hard.append('turn/start', { turn: 1 })
+  hard.append('x/core/turn-budget', { turn: 1, hard: true })
+  await expect(hard.tasks.review(hard.ref, input, new AbortController().signal)).resolves.toBeUndefined()
+  expect(hard.infer).not.toHaveBeenCalled()
+  expect(hard.rows.some((r) => r.type === 'cost/ledger')).toBe(false)
+  const soft = fixture()
+  soft.append('turn/start', { turn: 1 })
+  soft.append('x/core/turn-budget', { turn: 1, hard: false, creditsCap: -1 })
+  await expect(soft.tasks.review(soft.ref, input, new AbortController().signal)).resolves.toBeUndefined()
+  expect(soft.infer).not.toHaveBeenCalled()
+  const other = fixture()
+  other.append('turn/start', { turn: 2 })
+  other.append('x/core/turn-budget', { turn: 1, hard: true })
+  await expect(other.tasks.review(other.ref, input, new AbortController().signal)).resolves.toBeTruthy()
 })
