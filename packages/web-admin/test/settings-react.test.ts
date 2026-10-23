@@ -73,6 +73,10 @@ it('keeps the account dialog close control anchored and the action footer visibl
   expect(styleRule(css, '.agnes-settings-group-title')).toContain(
     'padding: 0 var(--settings-header-end) 0 var(--settings-gutter)',
   )
+  // Operation notices render above that line, so they reserve the same top and end room.
+  expect(styleRule(css, '#config:has(.settings-shell) #settings-operation-notices:not(:empty)')).toContain(
+    'padding: var(--settings-header-height) var(--settings-header-end) var(--s12) var(--settings-gutter)',
+  )
 
   // Only the middle section may scroll. Keeping the footer outside that scrollport prevents a
   // short browser window from clipping the save action below the dialog edge.
