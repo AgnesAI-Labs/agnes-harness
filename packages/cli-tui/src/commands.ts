@@ -25,6 +25,7 @@ import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { parseNotifyMode } from './notify.js'
 import { queueSlash } from './queue-commands.js'
+import { rateSlash } from './rate-command.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { scheduleSlash } from './schedule-commands.js'
 import { oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
@@ -183,6 +184,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '[agnes|html|sharegpt|claude-code] [path]',
     descriptionKey: 'commands.export',
     summaryKey: 'commands.exportSummary',
+  },
+  {
+    name: '/rate',
+    args: 'up|down [reason]',
+    descriptionKey: 'commands.rate',
+    summaryKey: 'commands.rateSummary',
   },
   { name: '/refine', descriptionKey: 'commands.refine', summaryKey: 'commands.refineSummary' },
   { name: '/packages', descriptionKey: 'commands.packages', summaryKey: 'commands.packagesSummary' },
@@ -750,6 +757,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         text: `routine approvals skipped from seq ${r.effectiveFromSeq}; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. /yolo off asks again.`,
       }
     }
+    case '/rate':
+      return rateSlash(app, line)
     case '/export':
       return exportSlash(app, line)
     case '/refine':

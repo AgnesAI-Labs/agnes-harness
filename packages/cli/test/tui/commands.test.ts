@@ -116,7 +116,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(51)
+    expect(SLASH_COMMANDS).toHaveLength(52)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -153,6 +153,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/schedule',
       '/loop',
       '/export',
+      '/rate',
       '/refine',
       '/packages',
       '/install',

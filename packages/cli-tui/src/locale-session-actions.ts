@@ -31,6 +31,13 @@ export type SessionActionKey =
   | 'export.unavailable'
   | 'export.done'
   | 'export.failed'
+  | 'commands.rate'
+  | 'commands.rateSummary'
+  | 'rate.usage'
+  | 'rate.tooLong'
+  | 'rate.none'
+  | 'rate.unsupported'
+  | 'rate.done'
 
 export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string>> = {
   en: {
@@ -69,6 +76,13 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
       'Export needs the shared local daemon connection; it is not available with --connect, --standalone or --ephemeral',
     'export.done': 'Exported ({format}, redacted) to {path}',
     'export.failed': 'Export failed: {reason}',
+    'commands.rate': 'Rate the latest finished reply up or down, with an optional reason (the Web thumbs)',
+    'commands.rateSummary': 'Rate the latest reply',
+    'rate.usage': 'usage: /rate up|down [reason]',
+    'rate.tooLong': 'The reason is longer than {max} characters',
+    'rate.none': 'No finished reply to rate yet',
+    'rate.unsupported': 'This daemon does not support ratings',
+    'rate.done': 'Rated the reply of turn {turn} {rating}',
   },
   'zh-CN': {
     'commands.paste': '把剪贴板里的图片作为下一条消息的附件（等同于 Ctrl-V）',
@@ -104,5 +118,12 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
       '导出需要共享的本机 daemon 连接；使用 --connect、--standalone 或 --ephemeral 时不可用',
     'export.done': '已导出（{format}，已脱敏）到 {path}',
     'export.failed': '导出失败：{reason}',
+    'commands.rate': '给最近一条已完成的回复点赞或点踩，可附理由（与 Web 的拇指相同）',
+    'commands.rateSummary': '给最近回复打分',
+    'rate.usage': '用法：/rate up|down [理由]',
+    'rate.tooLong': '理由超过 {max} 个字符',
+    'rate.none': '还没有可打分的已完成回复',
+    'rate.unsupported': '这个 daemon 不支持打分',
+    'rate.done': '已给第 {turn} 轮的回复打分：{rating}',
   },
 }
