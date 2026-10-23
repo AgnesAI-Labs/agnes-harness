@@ -689,15 +689,14 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
     }
     msg = { role: 'user', seq: node.seq, content }
   } else {
-    // Assistant and summary nodes are the harness's own record of what the model said; they are not
-    // wrapped, because an envelope around them would teach the model that its own turns are
-    // suspect. They are scrubbed all the same: a model can be talked into echoing a delimiter, and
-    // an echo replayed verbatim into the next request sits outside every envelope — untrusted
-    // content writing into the trusted frame one turn later.
+    // Trusted assistant and summary nodes record this harness's model output and stay unwrapped.
+    // Imported assistant history is external data, including thinking: preserve its untrusted
+    // marking rather than treating it as our own prior model output. All text is scrubbed too,
+    // because a model may echo an envelope delimiter into a later request's trusted frame.
     const content: RequestMessage['content'] = []
     for (const b of blocksOf(d.content)) {
-      if (b.type === 'text') content.push({ type: 'text', text: sanitize(String(b.text)) })
-      else if (b.type === 'thinking') content.push({ type: 'thinking', text: sanitize(String(b.text)) })
+      if (b.type === 'text') content.push({ type: 'text', text: wrap(String(b.text)) })
+      else if (b.type === 'thinking') content.push({ type: 'thinking', text: wrap(String(b.text)) })
     }
     msg = { role: 'assistant', seq: node.seq, content }
   }
