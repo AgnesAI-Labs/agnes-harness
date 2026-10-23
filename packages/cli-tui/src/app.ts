@@ -341,6 +341,7 @@ export class TuiApp {
       locale,
       timeline: this.timeline,
       loadEarlier: () => this.projection.loadEarlier(),
+      mouse: this.mouse,
       changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.packageController = new PackageController(o.controlClient, () => this.profile)

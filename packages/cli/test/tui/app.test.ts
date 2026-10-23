@@ -306,7 +306,8 @@ it('Ctrl-T pages through the whole conversation, reads older history from its to
   const client = createClient({ transport: { kind: 'inproc', endpoint } })
   const session = await client.session.new({ cwd: '/tmp' })
   const term = new FakeTerminal({ columns: 60, rows: 12 })
-  const app = new TuiApp({ session, term, header: 'Agnes' })
+  const copied: string[] = []
+  const app = new TuiApp({ session, term, header: 'Agnes', copy: (text) => void copied.push(text) })
   const screen = async () => (await screenOf(term, 60, 12)).join('\n')
   const history = () => endpoint.calls.filter((c) => c.method === '_agnes/v1/session.projectUIHistory')
   try {
@@ -323,6 +324,13 @@ it('Ctrl-T pages through the whole conversation, reads older history from its to
     await vi.waitFor(() => expect(history()).toHaveLength(1))
     term.feed('\x1b[H')
     await vi.waitFor(async () => expect(await screen()).toContain('history 4'))
+    // Search runs over what is now loaded, and `c` hands the message with the hit to the clipboard.
+    term.feed('/')
+    term.feed('HISTORY 5')
+    term.feed('\r')
+    await vi.waitFor(async () => expect(await screen()).toContain('/HISTORY 5  1/1'))
+    term.feed('c')
+    expect(copied).toEqual(['history 5'])
     term.feed('\x14')
     await vi.waitFor(async () => expect(await screen()).not.toContain('Ctrl-T/Esc close'))
     expect(

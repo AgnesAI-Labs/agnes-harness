@@ -84,6 +84,10 @@ export const BINDINGS = [
   { id: 'pager-page-down', scope: 'pager', keys: ['pgdn'], fixed: true },
   { id: 'pager-top', scope: 'pager', keys: ['home'], fixed: true },
   { id: 'pager-bottom', scope: 'pager', keys: ['end'], fixed: true },
+  { id: 'pager-search', scope: 'pager', keys: ['/'], fixed: true },
+  { id: 'pager-next', scope: 'pager', keys: ['n'], fixed: true },
+  { id: 'pager-prev', scope: 'pager', keys: ['N'], fixed: true },
+  { id: 'pager-copy', scope: 'pager', keys: ['c'], fixed: true },
   // The approval dialog: never rebindable, so a changed key cannot approve by accident.
   { id: 'approval-dismiss', scope: 'approval', keys: ['esc', 'ctrl-c'], fixed: true },
   { id: 'approval-confirm', scope: 'approval', keys: ['enter'], fixed: true },
