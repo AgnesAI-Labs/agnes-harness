@@ -68,9 +68,11 @@ import {
   listRuntimePinsStoreAsync,
   pinRuntimeSnapshotsStore,
   type RuntimePin,
+  type RuntimePinRecords,
   type RuntimeSnapshotCollection,
   type RuntimeSnapshotPinRequest,
   type RuntimeSnapshotStore,
+  readRuntimePinRecords,
   recoverRuntimeSnapshotStoreAsync,
   releaseRuntimePinsStore,
   resolveRuntimePinStore,
@@ -165,6 +167,8 @@ export interface PackageManager {
   ): Promise<void>
   collectRuntimeSnapshots(profileDir: string): Promise<RuntimeSnapshotCollection>
   listRuntimePins(profileDir: string): Promise<readonly RuntimePin[]>
+  /** Lock-free bookkeeping read with no tree hashed, for deciding whether to release or collect. */
+  runtimePinRecords(profileDir: string): Promise<RuntimePinRecords>
   setEnabled(
     profileDir: string,
     id: string,
@@ -832,6 +836,10 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     },
     async listRuntimePins(profileDir) {
       return locked(profileDir, async () => readPins(profileDir), {}, true)
+    },
+    async runtimePinRecords(profileDir) {
+      // The state file is replaced atomically, so a lock-free read is one committed state.
+      return readRuntimePinRecords(storeFor(profileDir))
     },
     async setEnabled(profileDir, id, enabled, opts) {
       return manager.enable(profileDir, id, enabled, opts)

@@ -4,7 +4,6 @@ import {
   type InstalledInventory,
   isSnapshotPackageEligible,
   type PackageManager,
-  type RuntimePin,
   type RuntimeSnapshotPinRequest,
   type RuntimeSnapshotSelector,
 } from '@agnes/package-manager'
@@ -73,25 +72,31 @@ export function createRuntimePinCoordinator(
     return running
   }
   const pins = () => input.manager.listRuntimePins(input.profileDirectory)
+  // Bookkeeping only: deciding what to release or pin hashes no tree. The locked writes that follow
+  // verify the store themselves; Workers verify every tree they load.
+  const records = () => input.manager.runtimePinRecords(input.profileDirectory)
   const held = () =>
     new Set([...referencedRuntimePins(input.store), ...[...retiring.values()].flatMap((ids) => [...ids])])
   const collect = async () => {
     const referenced = held()
+    const state = await records()
     // One write for the whole backlog: a worker applying the new target reads this state meanwhile.
-    const released = (await pins())
+    const released = state.pins
       .filter(
         (pin) =>
-          pin.purpose === 'active' &&
-          pin.pinId === activeRuntimePinId(pin.snapshot) &&
-          !referenced.has(pin.pinId),
+          pin.purpose === 'active' && pin.pinId === activeRuntimePinId(pin) && !referenced.has(pin.pinId),
       )
-      .map((pin) => ({ pinId: pin.pinId, expectedSnapshotId: pin.snapshot.snapshotId }))
+      .map((pin) => ({ pinId: pin.pinId, expectedSnapshotId: pin.snapshotId }))
     if (released.length) await input.manager.releaseRuntimePins(input.profileDirectory, released)
-    await input.manager.collectRuntimeSnapshots(input.profileDirectory)
+    const releasedIds = new Set(released.map((pin) => pin.pinId))
+    const kept = new Set(state.pins.filter((pin) => !releasedIds.has(pin.pinId)).map((pin) => pin.snapshotId))
+    // Most publications leave nothing unpinned; only then is the verified collection pass worth running.
+    if (state.snapshotIds.some((id) => !kept.has(id)))
+      await input.manager.collectRuntimeSnapshots(input.profileDirectory)
   }
   const ensure = async (artifact: RuntimeTargetArtifact): Promise<string> => {
     const inventory = await input.manager.inventory(input.profileDirectory)
-    const existing = new Map((await pins()).map((pin) => [pin.pinId, pin]))
+    const existing = new Map((await records()).pins.map((pin) => [pin.pinId, pin]))
     const missing: RuntimeSnapshotPinRequest[] = []
     for (const ref of references(artifact)) {
       const id = activeRuntimePinId(ref)
@@ -100,12 +105,12 @@ export function createRuntimePinCoordinator(
       const pkg = inventory.packages.find((row) => row.id === ref.packageId)
       if (!pkg || !isSnapshotPackageEligible(pkg))
         throw new Error(`E_RUNTIME_TARGET_UNTRUSTED: ${ref.packageId}`)
-      const prior: RuntimePin | undefined = existing.get(id)
+      const prior = existing.get(id)
       if (prior) {
         if (
           prior.purpose !== 'active' ||
-          prior.snapshot.integrity !== ref.integrity ||
-          (source && prior.snapshot.treeIntegrity !== source.expectedTreeIntegrity)
+          prior.integrity !== ref.integrity ||
+          (source && prior.treeIntegrity !== source.expectedTreeIntegrity)
         )
           throw new Error(`E_RUNTIME_TARGET_PIN_MISMATCH: ${ref.packageId}`)
         continue

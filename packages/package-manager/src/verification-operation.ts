@@ -48,6 +48,18 @@ function settledDigest(directory: string, key: string): string | undefined {
   return undefined
 }
 
+/**
+ * The digest an opted-in read of this process already verified for this exact AGH-stored tree, if
+ * its root has not been replaced since. Lets a writer that hard-links the tree skip hashing it again.
+ */
+export function settledTreeDigest(
+  directory: string,
+  identity: Parameters<typeof verifiedDirectoryDigest>[1],
+): string | undefined {
+  const key = directoryKey(directory, identity, false)
+  return key === undefined ? undefined : settledDigest(directory, key)
+}
+
 /** Records a digest only when the root was not replaced while it was being hashed. */
 function settleTree(
   directory: string,

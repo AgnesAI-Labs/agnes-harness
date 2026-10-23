@@ -44,10 +44,28 @@ function artifact(disabled = false, exports = ['main']) {
   )
 }
 
+/** What `runtimePinRecords` reports for these pins: their bookkeeping, with only pinned snapshots kept. */
+function records(pins: Iterable<RuntimePin>, extraSnapshots: readonly string[] = []) {
+  const list = [...pins]
+  return {
+    pins: list.map((pin) => ({
+      pinId: pin.pinId,
+      purpose: pin.purpose,
+      packageId: pin.snapshot.packageId,
+      snapshotId: pin.snapshot.snapshotId,
+      integrity: pin.snapshot.integrity,
+      treeIntegrity: pin.snapshot.treeIntegrity,
+    })),
+    snapshotIds: [...new Set([...list.map((pin) => pin.snapshot.snapshotId), ...extraSnapshots])],
+  }
+}
+
 function fixture() {
   const tables = sqliteTables()
   const store = new CompositeTargetStore(tables.table('composite'), 'default')
   const active = new Map<string, RuntimePin>()
+  /** Snapshot ids the store still holds with no pin naming them. */
+  const unpinned: string[] = []
   let trusted = true
   let hash = 'initial'
   const manager = {
@@ -68,6 +86,7 @@ function fixture() {
         }) as unknown as InstalledInventory,
     ),
     listRuntimePins: vi.fn(async () => [...active.values()]),
+    runtimePinRecords: vi.fn(async () => records(active.values(), unpinned)),
     pinRuntimeSnapshots: vi.fn(async (_dir: string, requests: readonly { pinId: string }[]) =>
       requests.map((request) => {
         const pin = {
@@ -101,6 +120,7 @@ function fixture() {
     manager,
     coordinator,
     active,
+    unpinned,
     setTrusted: (v: boolean) => {
       trusted = v
       hash = 'untrusted'
@@ -156,6 +176,21 @@ describe('runtime active pin coordinator', () => {
       stale,
     )
     expect(f.active.size).toBe(0)
+  })
+
+  it('runs no verified release or collection pass when nothing is left to release or collect', async () => {
+    const f = fixture()
+    await f.coordinator.publish(artifact(), async () => {})
+    vi.mocked(f.manager.releaseRuntimePins).mockClear()
+    vi.mocked(f.manager.collectRuntimeSnapshots).mockClear()
+    await f.coordinator.collect()
+    expect(f.manager.releaseRuntimePins).not.toHaveBeenCalled()
+    expect(f.manager.collectRuntimeSnapshots).not.toHaveBeenCalled()
+    expect(f.manager.listRuntimePins).not.toHaveBeenCalled()
+    // A snapshot no pin names any more is collected.
+    f.unpinned.push(`sha256-${'9'.repeat(64)}`)
+    await f.coordinator.collect()
+    expect(f.manager.collectRuntimeSnapshots).toHaveBeenCalledTimes(1)
   })
 
   it('releases a new pin after a failed probe without publishing the target', async () => {
@@ -335,6 +370,7 @@ describe('concurrent reconcile publication', () => {
     const manager = {
       inventory: async () => inventory,
       listRuntimePins: async () => [...active.values()],
+      runtimePinRecords: async () => records(active.values()),
       pinRuntimeSnapshots: async (
         _directory: string,
         requests: readonly {
