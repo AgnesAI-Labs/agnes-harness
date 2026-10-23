@@ -45,7 +45,7 @@
   }
 
   /* ── Business agents ────────────────────────────────────────────────────────
-   Search and filter, then a grid of cards that fills the column. */
+   Search and filter, then cards that fill the column. */
   .agent-gallery-page {
     min-width: 0;
     display: grid;
@@ -56,6 +56,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
     align-items: start;
+    align-content: start;
     gap: var(--s12);
   }
   .agent-card {
@@ -78,6 +79,7 @@
     align-items: center;
     gap: var(--s10);
     min-width: 0;
+    min-height: 2.125rem;
   }
   .agent-card-heading {
     min-width: 0;
@@ -129,6 +131,7 @@
     justify-content: space-between;
     gap: var(--s8);
     min-width: 0;
+    min-height: var(--control-height);
   }
   .agent-card-state {
     display: inline-flex;
@@ -137,6 +140,17 @@
     min-width: 0;
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-xs);
+  }
+  /* The home gallery is a feed, not a grid: every card keeps its own height and packs into
+     columns, so a short card leaves no empty row under it. Column order follows the DOM. */
+  .agent-feed {
+    display: block;
+    columns: 16.875rem;
+    column-gap: var(--s12);
+  }
+  .agent-feed > .agent-card {
+    break-inside: avoid;
+    margin: 0 0 var(--s12);
   }
 
   /* The letter tile: one fixed tint per agent, the same in both themes, white text at AA. */
@@ -423,6 +437,9 @@
 
 @layer app {
   /* Applications are package-level products; their roles stay within the product card. */
+  .application-card {
+    gap: var(--s12);
+  }
   .application-card header {
     align-items: center;
   }
@@ -442,29 +459,47 @@
   .application-card .agent-card-heading p {
     margin: 4px 0;
   }
+  /* Catalogue copy is bounded so one long entry cannot dwarf the rest of the feed. */
   .application-card .agent-card-summary {
-    max-width: 76ch;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
   .application-preview {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    padding: 16px;
-    border-radius: 12px;
+    display: grid;
+    gap: var(--s8);
+    padding: var(--s12);
+    border-radius: var(--radius-md);
     background: var(--agnes-bg-subtle);
     border: 1px solid var(--agnes-line-primary);
   }
-  .application-preview img {
-    width: 56px;
-    height: 56px;
-    object-fit: contain;
-  }
-  .application-preview p {
-    margin: 8px 0;
+  .application-card .application-preview p {
+    display: -webkit-box;
+    margin: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
   }
   .application-preview span {
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+  }
+  .application-scenarios {
+    display: grid;
+    gap: var(--s4);
+    margin: 0;
+    padding-inline-start: 1.2em;
     color: var(--agnes-text-secondary);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
+  }
+  .application-includes {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.55;
   }
   .application-card .application-roles .agh-disclosure-summary {
     cursor: pointer;

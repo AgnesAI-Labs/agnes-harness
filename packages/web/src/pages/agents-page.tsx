@@ -148,7 +148,8 @@ function AgentList({
     <>
       {data.catalogError !== undefined && <Banner tone="warning">{t('catalogUnavailable')}</Banner>}
       <SearchBar label={t('search')} value={query} onChange={setQuery} />
-      <div className="agent-gallery" data-testid="agents-gallery">
+      {/* One feed: cards keep their own height and pack into columns instead of sharing row heights. */}
+      <div className="agent-gallery agent-feed" data-testid="agents-gallery">
         {showGeneral && (
           <article className="agent-card" data-testid="general-agent">
             <header>

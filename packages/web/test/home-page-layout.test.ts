@@ -40,6 +40,13 @@ describe('home page layout', () => {
     expect(css).toMatch(/main\[data-home-page\] > :is\(\.workbench-split,/)
   })
 
+  it('lays the home agent cards out as a feed instead of an equal-height grid', () => {
+    // Cards differ in height; a grid row would pad every short card with blank space.
+    expect(ruleBody('.agent-feed')).toMatch(/columns: 16\.875rem;/)
+    expect(ruleBody('.agent-feed')).toMatch(/display: block;/)
+    expect(ruleBody('.agent-feed > .agent-card')).toMatch(/break-inside: avoid;/)
+  })
+
   it('lifts the brand mark onto the midline of the name and the collapse button', () => {
     // The mark's ink sits low in its square, so its box is raised to centre what the eye sees.
     expect(ruleBody('.sidebar-head .brand-mark-image')).toMatch(/translate: 0 -2px;/)
