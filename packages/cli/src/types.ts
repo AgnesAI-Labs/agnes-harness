@@ -84,6 +84,8 @@ export type ParsedArgs = {
   newSession?: boolean
   /** `--worktree[=name]`: run the new session in its own git worktree; `''` asks for a time-based name. */
   worktree?: string
+  /** `--add-dir <dir>` (repeatable): extra directories for the new session's file fence; absolute once resolved. */
+  addDir?: string[]
   continue: boolean
   resume?: string
   connect?: string

@@ -133,6 +133,7 @@ async function openSession(
   cwd: string,
   breadcrumb?: Breadcrumb,
   append?: string,
+  locale = 'en',
 ): Promise<Session> {
   // `session/load` rather than attach: a session this daemon has not opened yet is not in its
   // registry, and attach requires one. Load opens it from the ledger and replays it, which is what
@@ -145,8 +146,12 @@ async function openSession(
   const resume = await sessionToOpen(booted, p, cwd, breadcrumb)
   if (resume !== undefined) return booted.client.session.load(resume, { cwd })
   await booted.client.workspace.add(cwd)
+  const extraDirs = p.addDir
+    ? await (await import('./add-dir.js')).addDirectoriesFor(booted.client, p, locale)
+    : {}
   const session = await booted.client.session.new({
     cwd,
+    ...extraDirs,
     ...(p.preset ? { preset: p.preset } : {}),
     ...(p.permission !== undefined || !p.agent ? { permission: p.permission ?? 'default' } : {}),
     ...(p.loop ? { loop: p.loop } : {}),
@@ -251,7 +256,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
 
   try {
     await requireTurnCaps(booted.client, caps)
-    const session = await openSession(booted, p, io.cwd, io.breadcrumb, append)
+    const session = await openSession(booted, p, io.cwd, io.breadcrumb, append, io.locale)
     io.breadcrumb?.write(session.id, io.cwd)
     io.stderr.write(`Session: ${session.id}\n`)
     // Before the model switch, attach and the one prompt: the agent never sees a tool the user took away.

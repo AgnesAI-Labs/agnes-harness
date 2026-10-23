@@ -2,11 +2,11 @@ import { parseAgentRef, parseLoopSpecifier } from '@agnes/protocol/command-line'
 import { UsageError } from './errors.js'
 import { refuseFlagConflicts } from './flag-conflicts.js'
 import { parseModel } from './model-flag.js'
+import { takeNewSessionFlags } from './new-session-args.js'
 import { unknownFlagMessage } from './suggest.js'
 import { readToolFlag } from './tool-filter.js'
 import { TURN_CAP_FLAGS } from './turn-caps.js'
 import type { Command, ParsedArgs } from './types.js'
-import { takeWorktreeFlag } from './worktree-args.js'
 
 export type { Command, ModelSel, ParsedArgs } from './types.js'
 
@@ -206,6 +206,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     if (head === 'acp') p.mode = 'acp'
   }
+  argv = takeNewSessionFlags(p, argv)
   const write = (key: keyof ParsedArgs, value: unknown): void => {
     ;(p as Record<string, unknown>)[key] = value
   }
@@ -233,7 +234,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
       continue
     }
-    if (takeWorktreeFlag(p, a)) continue
     if (a === '--tools' || a === '--disallowed-tools') {
       readToolFlag(p, a, argv[++i])
       continue

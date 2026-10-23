@@ -434,6 +434,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const acpMode = mode === 'acp' ? await import('./modes/acp.js') : undefined
     const printMode = mode === 'print' ? await import('./modes/print.js') : undefined
     const { resolveLocale } = await import('./tui/locale.js')
+    if (p.addDir !== undefined)
+      (await import('./add-dir.js')).resolveAddDirs(p, mode, io, resolveLocale(io.env))
     const worktreeFlag = p.worktree !== undefined ? await import('./worktree.js') : undefined
     const worktree = await worktreeFlag?.openWorktreeFlag(p, mode, io, resolveLocale(io.env))
     if (worktree && mode === 'print')

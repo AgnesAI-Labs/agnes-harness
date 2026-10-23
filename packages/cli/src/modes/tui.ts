@@ -91,11 +91,16 @@ export async function runTui(
   try {
     const resumeId = await sessionToOpen(booted, p, io.cwd, io.breadcrumb)
     if (resumeId === undefined) await booted.client.workspace.add(io.cwd)
+    const extraDirs =
+      resumeId === undefined && p.addDir
+        ? await (await import('./add-dir.js')).addDirectoriesFor(booted.client, p, resolveLocale(io.env))
+        : {}
     const session =
       resumeId !== undefined
         ? await booted.client.session.load(resumeId, { cwd: io.cwd })
         : await booted.client.session.new({
             cwd: io.cwd,
+            ...extraDirs,
             sessionKey: freshTuiSessionKey(booted.profileName),
             ...(p.preset ? { preset: p.preset } : {}),
             ...(p.permission !== undefined || !p.agent ? { permission: p.permission ?? 'default' } : {}),
@@ -208,6 +213,14 @@ export async function runTui(
     const draft = opening ? opening.release() : io.draft
     if (draft) tui.setDraft(draft)
     await tui.start()
+    if (p.addDir?.length)
+      tui.noteLocal(
+        '--add-dir',
+        tt('adddir.started', resolveLocale(io.env), {
+          count: p.addDir.length,
+          dirs: p.addDir.map(escapeControl).join(', '),
+        }),
+      )
     if (io.worktree)
       tui.noteLocal('--worktree', startedNotices(io.worktree, resolveLocale(io.env)).join('\n'))
     if (!opening) timingMark('composer-ready', io.env)

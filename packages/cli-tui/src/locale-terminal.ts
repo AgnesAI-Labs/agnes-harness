@@ -1,4 +1,5 @@
 import type { Locale } from './locale.js'
+import { ADD_DIR_DICT, type AddDirKey } from './locale-add-dir.js'
 import { BANG_DICT, type BangKey } from './locale-bang.js'
 import { BG_DICT, type BgKey } from './locale-bg.js'
 import { CD_DICT, type CdKey } from './locale-cd.js'
@@ -137,6 +138,7 @@ export type TerminalKey =
   | HandoffKey
   | BangKey
   | WorktreeKey
+  | AddDirKey
   | PromptClickKey
   | ToolFilterKey
   | CdKey
@@ -155,6 +157,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...HANDOFF_DICT.en,
     ...BANG_DICT.en,
     ...WORKTREE_DICT.en,
+    ...ADD_DIR_DICT.en,
     ...PROMPT_CLICK_DICT.en,
     ...TOOL_FILTER_DICT.en,
     ...CD_DICT.en,
@@ -282,6 +285,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...HANDOFF_DICT['zh-CN'],
     ...BANG_DICT['zh-CN'],
     ...WORKTREE_DICT['zh-CN'],
+    ...ADD_DIR_DICT['zh-CN'],
     ...PROMPT_CLICK_DICT['zh-CN'],
     ...TOOL_FILTER_DICT['zh-CN'],
     ...CD_DICT['zh-CN'],
