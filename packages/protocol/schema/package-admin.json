@@ -1580,6 +1580,10 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "sourceFailure": {
+          "description": "Closed source refusal reason; never raw filesystem or Git diagnostics.",
+          "enum": ["manifest-missing", "manifest-invalid", "not-plugin", "git-ref", "git-fetch"]
+        },
         "diagnostics": {
           "type": "array",
           "maxItems": 16,

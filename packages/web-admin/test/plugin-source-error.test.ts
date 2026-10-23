@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 import { describe, expect, it } from 'vitest'
 import { adminErrorKey } from '../src/admin/plugins/admin/dom.js'
+import { operationFailure } from '../src/admin/plugins/admin/install-flow.js'
 import type { PluginAdminViewContext } from '../src/admin/plugins/admin/page.js'
 import { pluginNotice } from '../src/admin/plugins/admin/views.js'
 import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
@@ -30,3 +31,20 @@ describe('adminErrorKey for a refused package source', () => {
     expect(adminErrorKey('E_SOMETHING_ELSE')).toBe('error.operation-failed')
   })
 })
+
+it.each(['manifest-missing', 'manifest-invalid', 'not-plugin', 'git-ref', 'git-fetch'] as const)(
+  'shows the fixed source reason %s on the install form',
+  (sourceFailure) => {
+    const error = operationFailure({
+      error: { code: 'E_PACKAGE_SOURCE', safeMessage: 'Generic', sourceFailure },
+    } as never)
+    const key = adminErrorKey(error.code, undefined, error.sourceFailure)
+    expect(key).toBe(`error.source.${sourceFailure}`)
+    for (const locale of ['en', 'zh-CN'] as const) {
+      expect(pluginAdminLocaleCatalog[locale]?.[key]).toBeTruthy()
+      expect(pluginAdminLocaleCatalog[locale]?.[key]).not.toBe(
+        pluginAdminLocaleCatalog[locale]?.['error.source-rejected'],
+      )
+    }
+  },
+)

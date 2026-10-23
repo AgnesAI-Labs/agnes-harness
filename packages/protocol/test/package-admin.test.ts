@@ -67,6 +67,19 @@ describe('PM4 management contracts', () => {
   })
 
   it('validates all checked-in contracts through production entry points', () => {
+    const failure = { code: 'E_PACKAGE_SOURCE', safeMessage: 'Source refused.', blockers: [] }
+    expect(validatePackageAdminData('PackageAdminError', failure).ok).toBe(true)
+    for (const sourceFailure of [
+      'manifest-missing',
+      'manifest-invalid',
+      'not-plugin',
+      'git-ref',
+      'git-fetch',
+    ])
+      expect(validatePackageAdminData('PackageAdminError', { ...failure, sourceFailure }).ok).toBe(true)
+    expect(
+      validatePackageAdminData('PackageAdminError', { ...failure, sourceFailure: 'private stderr' }).ok,
+    ).toBe(false)
     const write = valid('_agnes/v1/plugins.candidates.write')
     for (const mode of ['replace', 'merge']) {
       expect(

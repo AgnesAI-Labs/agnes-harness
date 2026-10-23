@@ -96,7 +96,7 @@ const ACTIVE_REFRESH_MAX_MS = 3_000
 // "Release all" can see far more orphans than one release call accepts, so it batches.
 const PIN_RELEASE_BATCH_SIZE = 64
 
-type SourceInlineError = { code: string; message: string }
+type SourceInlineError = AdminError
 type PendingConfirm = {
   title: string | (() => string)
   description: string | (() => string)
@@ -1005,11 +1005,7 @@ export class PluginAdminPage {
         // A check the add form started reports on the form, which is still open.
         this.#flow.sourceCheck = undefined
         this.#sourceBusy = false
-        if (failed)
-          this.#sourceError = {
-            code: operationFailure(operation).code,
-            message: operation.error?.safeMessage ?? '',
-          }
+        if (failed) this.#sourceError = operationFailure(operation)
         this.render()
         if (failed) return
       }
@@ -1230,7 +1226,7 @@ export class PluginAdminPage {
   }
 
   errorMessage(error: AdminError, operation?: PackageOperation['operation']): string {
-    return this.#t(adminErrorKey(error.code, operation))
+    return this.#t(adminErrorKey(error.code, operation, error.sourceFailure))
   }
 
   track(

@@ -628,33 +628,55 @@ describe('fetchSource', () => {
     },
   )
 
-  it('fetches exactly the pinned git commit, verifies HEAD, and removes repository metadata', async () => {
-    const commit = '0123456789012345678901234567890123456789'
-    const calls: string[][] = []
-    const exec: ExecFn = async (_command, args) => {
-      calls.push([...args])
-      const at = args.indexOf('-C')
-      const checkout = args.includes('checkout')
-      if (checkout && at >= 0 && args[at + 1]) {
-        writeFileSync(
-          join(args[at + 1] as string, 'package.json'),
-          JSON.stringify({ name: 'acme/git', version: '2.0.0', license: 'MIT', dependencies: {} }),
-        )
+  it.each(['valid', 'manifest-missing', 'manifest-invalid', 'git-fetch'] as const)(
+    'fetches a pinned Git source or classifies its refusal (%s)',
+    async (outcome) => {
+      const commit = '0123456789012345678901234567890123456789'
+      const calls: string[][] = []
+      const exec: ExecFn = async (_command, args) => {
+        calls.push([...args])
+        if (outcome === 'git-fetch' && args.includes('fetch')) throw new Error('private Git stderr')
+        const at = args.indexOf('-C')
+        const checkout = args.includes('checkout')
+        if (checkout && at >= 0 && args[at + 1] && outcome !== 'manifest-missing') {
+          writeFileSync(
+            join(args[at + 1] as string, 'package.json'),
+            outcome === 'manifest-invalid'
+              ? '{'
+              : JSON.stringify({ name: 'acme/git', version: '2.0.0', license: 'MIT', dependencies: {} }),
+          )
+        }
+        return { stdout: args.includes('rev-parse') ? `${commit}\n` : '' }
       }
-      return { stdout: args.includes('rev-parse') ? `${commit}\n` : '' }
-    }
-    const into = join(dir, 'git')
-    const fetched = await fetchSource(parseSource(`git:https://example.com/x.git#${commit}`), into, {
-      cwd: dir,
-      exec,
-      npmProvenance: async () => undefined,
-    })
-    expect(fetched).toMatchObject({ dir: into, version: '2.0.0', license: 'MIT' })
-    expect(
-      calls.some((args) => args.includes('fetch') && args.includes(commit) && args.includes('--depth')),
-    ).toBe(true)
-    expect(existsSync(join(into, '.git'))).toBe(false)
-  })
+      const into = join(dir, 'git')
+      const fetching = fetchSource(parseSource(`git:https://example.com/x.git#${commit}`), into, {
+        cwd: dir,
+        exec,
+        npmProvenance: async () => undefined,
+      })
+      if (outcome !== 'valid') {
+        await expect(fetching).rejects.toMatchObject({
+          code: 'E_PACKAGE_SOURCE',
+          detail: {
+            reason:
+              outcome === 'manifest-missing'
+                ? 'package-json-missing'
+                : outcome === 'manifest-invalid'
+                  ? 'package-json'
+                  : 'git-fetch',
+          },
+        })
+        expect(existsSync(into)).toBe(false)
+        return
+      }
+      const fetched = await fetching
+      expect(fetched).toMatchObject({ dir: into, version: '2.0.0', license: 'MIT' })
+      expect(
+        calls.some((args) => args.includes('fetch') && args.includes(commit) && args.includes('--depth')),
+      ).toBe(true)
+      expect(existsSync(join(into, '.git'))).toBe(false)
+    },
+  )
 
   it('refuses a git checkout whose resolved HEAD differs from the pin', async () => {
     const commit = '0123456789012345678901234567890123456789'

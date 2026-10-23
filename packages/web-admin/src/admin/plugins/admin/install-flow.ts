@@ -7,6 +7,7 @@ export const operationFailure = (operation: PackageOperation): AdminError => ({
   code: operation.error?.code ?? 'E_PACKAGE_STATE',
   message: operation.error?.safeMessage ?? 'The operation could not be completed.',
   blockers: operation.error?.blockers,
+  sourceFailure: operation.error?.sourceFailure,
 })
 
 type Review = {
