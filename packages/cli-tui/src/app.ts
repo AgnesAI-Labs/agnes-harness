@@ -50,7 +50,6 @@ import { suspendToShell } from './suspend.js'
 import { TerminalSignals } from './terminal-signals.js'
 import { brandColour, type TuiTheme, type TuiThemeName } from './theme.js'
 import { ThemeController } from './theme-controller.js'
-import type { ThemePreference } from './theme-preference.js'
 import { LiveView } from './thinking.js'
 import { ToolCards } from './tool-cards.js'
 import { TurnClock } from './turn-clock.js'
@@ -70,6 +69,7 @@ import { Vim } from './vim-mode.js'
 import { WelcomeController } from './welcome-controller.js'
 import { WindowTitle } from './window-title.js'
 import { readWorkspaceInfo, tildePath, workspaceRefresher } from './workspace-info.js'
+import { WorktreeKeeper } from './worktree.js'
 
 export { formatTuiErrorNotice } from './error-notice.js'
 
@@ -119,7 +119,7 @@ export class TuiApp {
   readonly mentions: ReferenceMentionSource
   private readonly composer: Composer
   private readonly theme: TuiTheme
-  private readonly themes: ThemeController
+  readonly themes: ThemeController
   readonly themePicker: ThemePicker
   readonly usagePanel: UsagePanel
   readonly planPanel: PlanPanel
@@ -132,7 +132,7 @@ export class TuiApp {
   readonly cardFocus: CardFocus
   readonly modelPicker: ModelPicker
   readonly sessionPicker: SessionPicker
-  private readonly packageController: PackageController
+  readonly packages: PackageController
   readonly localCommandView: (command: string, output: string, quiet?: boolean) => Component
   // Streamed text is never in the projected timeline: a streaming node stays empty there, and the
   // live line shows what the previews of every inference still streaming have said.
@@ -171,7 +171,10 @@ export class TuiApp {
   // an accepted limitation, not an oversight.
   private nextRequestSeq = 1
   onQuit: () => void = () => {}
-  private readonly refreshWorkspace: () => void
+  readonly refreshWorkspace: () => void
+  /** The worktrees this run made; a session in one of them shows its branch on the rail. */
+  readonly worktrees = new WorktreeKeeper()
+  private readonly shown = (): string => this.worktrees.current()?.path ?? this.cwd
 
   constructor(
     // `header` is a back-compat fallback: real callers (`modes/tui.ts`) pass `profile`/`preset`
@@ -383,11 +386,11 @@ export class TuiApp {
       notice: (text) => this.statusBar.setNotice(text),
       changed: () => this.stopped || this.renderer.requestRender(),
     })
-    this.packageController = new PackageController(o.controlClient, () => this.profile)
+    this.packages = new PackageController(o.controlClient, () => this.profile)
     this.composer = new Composer(this.editor, ansi, locale, this.statusLine.config)
     this.composer.setWorkspace({ root: tildePath(this.cwd), subpath: '' })
     // At startup and after every turn (the agent may have switched branch); never blocks a frame.
-    this.refreshWorkspace = workspaceRefresher(this.cwd, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
+    this.refreshWorkspace = workspaceRefresher(this.shown, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
       this.composer.setWorkspace(info)
       this.welcome.workspace(info)
       if (!this.stopped) this.renderer.requestRender()
@@ -594,12 +597,13 @@ export class TuiApp {
     return this.o.cwd ?? process.cwd()
   }
 
-  get composerSelectionPath(): string | undefined {
-    return this.o.composerSelectionPath
+  /** A local note under the current session's transcript, headed by the command that caused it. */
+  noteLocal(command: string, text: string): void {
+    this.timeline.appendLocal(this.session.id, this.localCommandView(command, text))
   }
 
-  get packages(): PackageController {
-    return this.packageController
+  get composerSelectionPath(): string | undefined {
+    return this.o.composerSelectionPath
   }
 
   get themeName(): TuiThemeName {
@@ -612,11 +616,6 @@ export class TuiApp {
     this.usagePanel.close()
     this.themes.show()
     if (!this.stopped) this.renderer.requestRender()
-  }
-
-  /** Changes local presentation and persists the preference without touching session data. */
-  setTheme(name: ThemePreference): string {
-    return this.themes.set(name)
   }
 
   /** Resource control is supplied only by the Node CLI bootstrap, never the chat/session client. */

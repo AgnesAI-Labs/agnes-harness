@@ -9,9 +9,12 @@ import {
   inheritFreshSession,
   installKeybindings,
   mouseFromEnv,
+  outcomeLine,
+  startedNotices,
   type TimelineFacts,
   TuiApp,
   timelineFacts,
+  type WorktreeInfo,
   waitingIn,
 } from '../tui/app.js'
 import { escapeControl } from '../tui/component.js'
@@ -53,6 +56,8 @@ export async function runTui(
     agnesVersion?: string
     /** The composer already drawn while the daemon connected; its screen and draft carry over. */
     opening?: TuiOpening
+    /** The git worktree `--worktree` made for this run; `io.cwd` is already inside it. Removed on exit if clean. */
+    worktree?: WorktreeInfo
     /** A draft taken off the screen for a prompt that needed it (first-run setup). */
     draft?: string
   },
@@ -166,6 +171,10 @@ export async function runTui(
       cwd: io.cwd,
     })
     app = tui
+    if (io.worktree) {
+      tui.worktrees.adopt(session.id, io.worktree)
+      await tui.worktrees.switched(session.id)
+    }
     let quit!: () => void
     const finished = new Promise<void>((resolve) => {
       quit = resolve
@@ -185,6 +194,8 @@ export async function runTui(
     const draft = opening ? opening.release() : io.draft
     if (draft) tui.setDraft(draft)
     await tui.start()
+    if (io.worktree)
+      tui.noteLocal('--worktree', startedNotices(io.worktree, resolveLocale(io.env)).join('\n'))
     if (!opening) timingMark('composer-ready', io.env)
     timingMark('session-ready', io.env)
     if (io.signal()) quit()
@@ -218,6 +229,9 @@ export async function runTui(
         if (prompted) io.stdout.write(`${tt('resume.hint', locale, { id: escapeControl(session.id) })}\n`)
       }
       await session.detach().catch(() => undefined)
+      // After the detach, so the daemon no longer holds the directory; clean ones go, the rest are named.
+      const locale = resolveLocale(io.env)
+      for (const outcome of await app.worktrees.finish()) io.stdout.write(`${outcomeLine(outcome, locale)}\n`)
     } else {
       // Opening can fail before a TuiApp exists (e.g. a refused or unreachable session). Do not
       // strand the user's terminal in its alternate screen in that path.

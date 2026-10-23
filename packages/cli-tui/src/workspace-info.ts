@@ -89,7 +89,7 @@ export async function readWorkspaceInfo(
  * last request always sees the state it was asked about.
  */
 export function workspaceRefresher(
-  cwd: string,
+  cwd: string | (() => string),
   probe: WorkspaceProbe,
   apply: (info: WorkspaceInfo) => void,
 ): () => void {
@@ -97,7 +97,7 @@ export function workspaceRefresher(
   let again = false
   const run = (): void => {
     running = true
-    void probe(cwd)
+    void probe(typeof cwd === 'string' ? cwd : cwd())
       .then(apply, () => {})
       .finally(() => {
         running = false

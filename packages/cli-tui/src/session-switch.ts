@@ -4,6 +4,7 @@ import type { SessionChoice } from './commands.js'
 import { escapeControl } from './component.js'
 import { tt } from './locale-extended.js'
 import type { ResourceCommandKind } from './resource-controller.js'
+import { worktreeSwitched } from './worktree-command.js'
 
 // Stops the old projection's local subscription, swaps the session the app renders, and starts
 // a fresh projection against the new one. The old session is left attached at the protocol level
@@ -48,6 +49,7 @@ export async function applySwitch(app: TuiApp, next: Session): Promise<boolean> 
   app.projection = app.makeProjection(next)
   app.offPermission = next.onPermissionRequest((request, context) => app.modal.ask(request, context))
   await app.projection.start()
+  await worktreeSwitched(app, next.id)
   return true
 }
 

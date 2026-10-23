@@ -4,7 +4,7 @@ export function usage(locale = 'en'): string {
       ? '智能体：--agent <插件#智能体>；运行方式：--loop <id>@<version>；应用恢复：agh app clear'
       : 'Agents: --agent <package#agent>; execution: --loop <id>@<version>; application recovery: agh app clear',
     'agh [prompt] [--profile <p>] [--cwd <dir>] [--new | --continue | --resume <id>] [--no-alt-screen]',
-    '      [--connect <t>] [--model <slot>=<route>/<model>] [--agent <package#agent> | --loop <id>@<version>]',
+    '      [--worktree[=<name>]] [--connect <t>] [--model <slot>=<route>/<model>] [--agent <package#agent> | --loop <id>@<version>]',
     'agh -p [prompt] [--mode text|json|stream-json] [--output-schema <file>] [--max-budget <credits>] [--max-turns <n>] [--timeout <seconds>] [--output-file <file>] [--ephemeral|--standalone]',
     'agh (--ephemeral|--standalone) [--safe-mode] [--ignore-rules] ...      private host that skips custom commands and installed plugins',
     'agh --mode acp [--profile <p> | --connect <t>] [--ephemeral]      agh acp ... (alias)',

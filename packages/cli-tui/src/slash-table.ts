@@ -28,6 +28,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.handoff',
     summaryKey: 'commands.handoffSummary',
   },
+  {
+    name: '/worktree',
+    args: '[name]',
+    descriptionKey: 'commands.worktree',
+    summaryKey: 'commands.worktreeSummary',
+  },
   { name: '/tree', descriptionKey: 'commands.tree', summaryKey: 'commands.treeSummary' },
   {
     name: '/import',

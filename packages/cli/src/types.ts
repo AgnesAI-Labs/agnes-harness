@@ -76,6 +76,8 @@ export type ParsedArgs = {
   candidateHash?: string
   reviewHash?: string
   newSession?: boolean
+  /** `--worktree[=name]`: run the new session in its own git worktree; `''` asks for a time-based name. */
+  worktree?: string
   continue: boolean
   resume?: string
   connect?: string

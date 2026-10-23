@@ -434,6 +434,10 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const acpMode = mode === 'acp' ? await import('./modes/acp.js') : undefined
     const printMode = mode === 'print' ? await import('./modes/print.js') : undefined
     const { resolveLocale } = await import('./tui/locale.js')
+    const worktreeFlag = p.worktree !== undefined ? await import('./worktree.js') : undefined
+    const worktree = await worktreeFlag?.openWorktreeFlag(p, mode, io, resolveLocale(io.env))
+    if (worktree && mode === 'print')
+      io.stderr.write(worktreeFlag?.printWorktreeStart(worktree, resolveLocale(io.env)) ?? '')
     // The composer goes up before the daemon is reached; it keeps what is typed while that happens.
     // The opening composer draws on the alternate screen, which --no-alt-screen never enters.
     const openingMode = p.noAltScreen ? undefined : tuiMode
@@ -460,6 +464,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
     } catch (error) {
       opening?.abandon()
+      if (worktree) await worktreeFlag?.printWorktreeEnd(worktree, resolveLocale(io.env))
       throw error
     }
     let stashed: string | undefined
@@ -550,6 +555,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
           : tuiMode
             ? tuiMode.runTui(booted, p, {
                 ...(opening ? { opening } : {}),
+                ...(worktree ? { worktree } : {}),
                 ...(stashed ? { draft: stashed } : {}),
                 env: io.env,
                 stdin: io.stdin,
@@ -615,6 +621,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     } finally {
       opening?.abandon()
       await Promise.race([booted.close().catch(() => undefined), exited])
+      // The TUI reports its own worktrees on the way out; the one-shot form does it here, on stderr.
+      if (worktree && mode === 'print')
+        io.stderr.write((await worktreeFlag?.printWorktreeEnd(worktree, resolveLocale(io.env))) ?? '')
     }
   } catch (e) {
     return (await import('./command-failure.js')).reportCommandFailure(e, p.command, io)

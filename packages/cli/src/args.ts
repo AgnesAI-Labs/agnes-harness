@@ -4,6 +4,7 @@ import { refusePrivateHostFlags } from './private-host-flags.js'
 import { unknownFlagMessage } from './suggest.js'
 import { TURN_CAP_FLAGS } from './turn-caps.js'
 import type { Command, ModelSel, ParsedArgs } from './types.js'
+import { takeWorktreeFlag } from './worktree-args.js'
 
 export type { Command, ModelSel, ParsedArgs } from './types.js'
 
@@ -228,6 +229,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       }
       continue
     }
+    if (takeWorktreeFlag(p, a)) continue
     if (a === '--model') {
       p.model = parseModel(argv[++i])
       continue

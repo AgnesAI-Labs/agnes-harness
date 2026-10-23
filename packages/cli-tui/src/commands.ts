@@ -42,6 +42,7 @@ import type { ThemePreference } from './theme-preference.js'
 import { thinkingMode } from './thinking.js'
 import { undoSlash } from './undo-commands.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
+import { worktreeSlash } from './worktree-command.js'
 
 export { SLASH_COMMANDS, type SlashCommand }
 
@@ -193,6 +194,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   // /resume only opens the picker, which refuses the choice itself.
   const opens =
     cmd === '/new' ||
+    cmd === '/worktree' ||
     cmd === '/fork' ||
     (cmd === '/rewind' && args.length > 0) ||
     (cmd === '/resume' && args.length > 0 && args[0] !== 'all')
@@ -438,6 +440,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return infoSlash(app, cmd, line)
     case '/handoff':
       return handoffSlash(app, line)
+    case '/worktree':
+      return worktreeSlash(app, line)
     case '/btw': {
       const question = line.trim().replace(/^\S+\s*/, '')
       if (!question) return { text: tt('btw.usage', locale) }
@@ -506,7 +510,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         !(['auto', 'light', 'dark', 'mono'].includes(name ?? '') || name?.startsWith('custom:'))
       )
         return { text: 'usage: /theme [auto|light|dark|mono|custom:<name>]' }
-      return { text: app.setTheme(name as ThemePreference) }
+      return { text: app.themes.set(name as ThemePreference) }
     }
     case '/notify': {
       const next = args.length === 0 ? undefined : parseNotifyMode(args.length === 1 ? args[0] : undefined)
