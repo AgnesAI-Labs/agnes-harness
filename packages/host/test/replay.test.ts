@@ -773,7 +773,9 @@ describe('L1 replay corpus', () => {
       // which one a case gets is the one thing the drivers below disagree about, and a `provider`
       // set here would be overridden by the kill path and would silently override the wire path.
       const common: Omit<TestHostOptions, 'script' | 'provider'> = {
-        dataDir: cwd,
+        // Installation files require one-call review even when a recipe allows ordinary edits.
+        dataDir: scratch(undefined),
+        workspaceRoot: cwd,
         ...profileOptions(f),
         // Search now invokes the pinned ripgrep binary. Only that binary runs for real; shell
         // fixtures retain the deterministic sandbox executor and all reads remain fenced.

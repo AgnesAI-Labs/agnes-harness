@@ -1,6 +1,7 @@
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { DecisionSnapshot } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
+import { decisionSubjectDigest, reduceDecision } from '../../core-ledger/src/reduce/decision.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { listSessionGrants, revokeSessionGrant } from '../src/step/approval-grants.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -82,7 +83,23 @@ describe('shell prefix approvals', () => {
       prefixGrant: { tokens: ['git', 'status'] },
       origin: { package: 'fixture' },
     })
-    expect(node).not.toHaveProperty('grantScopes')
+    expect(node).toHaveProperty('grantScopes', ['tool:shell:execute'])
+    const snapshot = structuredClone(t.pending())
+    const forged = structuredClone(snapshot)
+    ;(forged.request.spec.subject as { prefixGrant: unknown }).prefixGrant = {
+      tokens: ['git', 'push'],
+      scope: 'shell:prefix:["git","push"]',
+    }
+    expect(decisionSubjectDigest(forged.request.spec.subject)).not.toBe(snapshot.request.subjectDigest)
+    expect(() =>
+      reduceDecision(undefined, {
+        origin: 'system',
+        trust: 'trusted',
+        register: 'decision/state',
+        lane: snapshot.request.lane,
+        data: forged,
+      } as never),
+    ).toThrow('subject digest')
     await t.answer('allow_prefix_session')
     // The next two commands start with the prefix and run unasked; the fourth does not and asks.
     expect((await t.run()).reason).toBe('parked')

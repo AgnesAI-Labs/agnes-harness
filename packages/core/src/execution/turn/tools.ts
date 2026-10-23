@@ -534,9 +534,8 @@ export async function approveAndExecute(
     // A file that configures or instructs agh is approved one call at a time (no session, lasting or
     // prefix grant), and a grant given earlier does not cover it.
     const configGuarded =
-      needsAsk &&
+      (needsAsk || !policy.isReadOnly) &&
       !humanOnly &&
-      s.roleAuthority === undefined &&
       !!meta.paths?.length &&
       (await touchesAghConfig(s, call, meta))
     const onceOnly = humanOnly || s.roleAuthority !== undefined || configGuarded
@@ -593,7 +592,7 @@ export async function approveAndExecute(
       for (const check of grantChecks) await check()
       toolDecisionSource(s, call).alive()
     }
-    for (const scope of needsAsk ? scopes : []) {
+    for (const scope of needsAsk || configGuarded ? scopes : []) {
       const bindingHash = approvalBindingHash({
         sessionKey: s.key,
         stepId,
@@ -877,7 +876,10 @@ export async function approveAndExecute(
       const delivery = await deliverToolDecision(
         s,
         await requestToolDecision(s, call, approvalRequest, rewrite, {
-          grantScopes: options.includes('allowed-permanent') ? [scope] : undefined,
+          grantScopes:
+            options.includes('allowed-session') || options.includes('allowed-permanent')
+              ? [scope]
+              : undefined,
           configGuarded,
         }),
         approvalRequest,

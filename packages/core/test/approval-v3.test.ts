@@ -471,7 +471,11 @@ describe('v3 approval modes and grants', () => {
     expect(asked.length).toBeGreaterThan(1)
     for (const value of asked) {
       const subject = value.request.spec.subject as { scope: string }
-      expect(subject).toMatchObject({ grantScopes: [subject.scope], origin: { package: expect.any(String) } })
+      expect(subject).toMatchObject({
+        grantScopes: [subject.scope],
+        origin: { package: '@agnes/test-approval-v3' },
+      })
+      expect(grants.filter((grant) => grant.scope === subject.scope)).toHaveLength(1)
     }
     await opened.session.runInference()
     await opened.session.runToolsPhase()
@@ -824,6 +828,75 @@ describe('v3 approval modes and grants', () => {
     expect(presentation?.en?.fields[0]?.value ?? '').toContain(guarded ? 'one call at a time' : '')
     expect(presentation?.['zh-CN']?.fields[0]?.value ?? '').toContain(guarded ? '逐次批准' : '')
     expect(presentation === undefined).toBe(!guarded)
+  })
+
+  it.each(['manual', 'off', 'auto-review'] as const)(
+    'keeps config writes once-only even when the selected policy allows them in %s mode',
+    async (approvalMode) => {
+      const policies = new ToolPolicyRegistry()
+      policies.register('test', {
+        id: 'allow-all',
+        version: '1',
+        decide: () => ({ effect: 'allow', reason: 'explicit allow' }),
+      })
+      const offers: unknown[] = []
+      const opened = await atTools({
+        scopes: ['tool:write'],
+        calls: 2,
+        approvalMode,
+        toolPolicies: policies,
+        toolPolicySettings: async () => ({ policy: 'allow-all' }),
+        paths: [{ arg: 'value', access: 'write' }],
+        fsOps: { ...testFsOps(), preflight: async () => undefined, isConfigPath: async () => true },
+        seams: fakeSeams({
+          approval: {
+            ask: async (request) => {
+              offers.push(request.options)
+              return { verdict: 'allowed-once', answeredBy: actor }
+            },
+          },
+        }),
+      })
+      try {
+        await opened.session.runToolsPhase()
+        await opened.session.runInference()
+        await opened.session.runToolsPhase()
+        expect(offers).toEqual([
+          ['allowed-once', 'rejected'],
+          ['allowed-once', 'rejected'],
+        ])
+        expect(await opened.session.decisions.list()).toHaveLength(2)
+      } finally {
+        await opened.session.close()
+      }
+    },
+  )
+
+  it('records a separate config-write decision per call under full access', async () => {
+    const preset = presetDefaults()
+    preset.permission = 'full-access'
+    const opened = await atTools({
+      scopes: ['tool:write'],
+      calls: 2,
+      preset,
+      paths: [{ arg: 'value', access: 'write' }],
+      fsOps: { ...testFsOps(), preflight: async () => undefined, isConfigPath: async () => true },
+    })
+    try {
+      await opened.session.runToolsPhase()
+      await opened.session.runInference()
+      await opened.session.runToolsPhase()
+      const decisions = await opened.session.decisions.list()
+      expect(decisions).toHaveLength(2)
+      for (const value of decisions) {
+        expect(value.request.spec.options).toEqual(['allowed-once', 'rejected'])
+        expect(value.result).toMatchObject({ code: 'full-access', response: { option: 'allowed-once' } })
+        expect(value.request.spec.subject).not.toHaveProperty('prefixGrant')
+        expect(value.request.spec.subject).not.toHaveProperty('grantScopes')
+      }
+    } finally {
+      await opened.session.close()
+    }
   })
 
   it('preflights declared defaults and delegates only explicitly declared resource schemes', async () => {
