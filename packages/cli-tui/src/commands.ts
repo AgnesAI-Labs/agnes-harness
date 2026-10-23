@@ -16,6 +16,7 @@ import { pasteClipboardImage } from './clipboard-image.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { customCommandsFor, customHelp, customSlash } from './custom-commands.js'
 import { deliverablesSlash } from './deliverable-files.js'
+import { exportSlash } from './export-command.js'
 import { listExternalSessions } from './external-sessions.js'
 import { grantsSlash } from './grant-commands.js'
 import { infoSlash } from './info-commands.js'
@@ -177,7 +178,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.loop',
     summaryKey: 'commands.loopSummary',
   },
-  { name: '/export', descriptionKey: 'commands.export', summaryKey: 'commands.exportSummary' },
+  {
+    name: '/export',
+    args: '[agnes|html|sharegpt|claude-code] [path]',
+    descriptionKey: 'commands.export',
+    summaryKey: 'commands.exportSummary',
+  },
   { name: '/refine', descriptionKey: 'commands.refine', summaryKey: 'commands.refineSummary' },
   { name: '/packages', descriptionKey: 'commands.packages', summaryKey: 'commands.packagesSummary' },
   {
@@ -745,7 +751,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       }
     }
     case '/export':
-      return { text: `run: agh export ${s.id}${args.includes('--html') ? ' --html' : ''}` }
+      return exportSlash(app, line)
     case '/refine':
       // `harness/refine` exists as a raw ledger event type (protocol session-v1 schema), but
       // UITimeline/UINode has no kind that projects it -- there is no 'notice' or 'refine' UINode

@@ -1,5 +1,6 @@
 import type { UITimeline } from '@agnes/protocol'
 import type { ClipboardImagePort } from './clipboard-image.js'
+import type { ExportRequest } from './export-command.js'
 import type { ExternalRoots } from './external-sessions.js'
 
 /** TuiApp options added by later features, kept here so app.ts does not grow. */
@@ -18,6 +19,8 @@ export type TuiExtraOptions = {
   importSession?: (file: string, from?: string) => Promise<{ key: string }>
   /** Reads the clipboard's image for Ctrl-V and `/paste`; defaults to the system clipboard tools. */
   clipboard?: ClipboardImagePort
+  /** `/export`: writes the session to a file with the code behind `agh export`. Absent unless the local daemon form. */
+  exportSession?: (request: ExportRequest) => Promise<void>
   /** Where `/import` looks for Claude Code and codex sessions; defaults to `~/.claude/projects` and `~/.codex/sessions`. */
   externalRoots?: ExternalRoots
 }

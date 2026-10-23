@@ -1008,12 +1008,18 @@ describe('runSlash', () => {
     }
   })
 
-  it('/export only ever suggests the command line; it never touches the wire', async () => {
+  it('/export has no daemon call of its own: it says so without a CLI-injected writer and hands the request to one', async () => {
     const { app, ep, client } = await unstartedApp()
     try {
       const before = ep.calls.length
-      const r = await runSlash(app, '/export --html')
-      expect(r.text).toBe(`run: agh export ${app.session.id} --html`)
+      expect((await runSlash(app, '/export --html')).text).toMatch(/--connect/)
+      const requests: unknown[] = []
+      Object.assign(app.o, { exportSession: async (request: unknown) => void requests.push(request) })
+      const r = await runSlash(app, '/export html out.html')
+      expect(requests).toEqual([
+        { sessionId: app.session.id, format: 'html', out: expect.stringMatching(/out\.html$/) },
+      ])
+      expect(r.text).toContain('out.html')
       expect(ep.calls.length).toBe(before)
     } finally {
       await client.close()

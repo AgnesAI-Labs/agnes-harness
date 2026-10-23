@@ -28,6 +28,9 @@ export type SessionActionKey =
   | 'schedule.none'
   | 'schedule.unknown'
   | 'schedule.deleted'
+  | 'export.unavailable'
+  | 'export.done'
+  | 'export.failed'
 
 export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string>> = {
   en: {
@@ -62,6 +65,10 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'schedule.none': 'No scheduled prompts for this session',
     'schedule.unknown': 'No schedule {key} in this session',
     'schedule.deleted': 'Deleted schedule {id}',
+    'export.unavailable':
+      'Export needs the shared local daemon connection; it is not available with --connect, --standalone or --ephemeral',
+    'export.done': 'Exported ({format}, redacted) to {path}',
+    'export.failed': 'Export failed: {reason}',
   },
   'zh-CN': {
     'commands.paste': '把剪贴板里的图片作为下一条消息的附件（等同于 Ctrl-V）',
@@ -93,5 +100,9 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'schedule.none': '本会话没有定时提示',
     'schedule.unknown': '本会话没有定时任务 {key}',
     'schedule.deleted': '已删除定时任务 {id}',
+    'export.unavailable':
+      '导出需要共享的本机 daemon 连接；使用 --connect、--standalone 或 --ephemeral 时不可用',
+    'export.done': '已导出（{format}，已脱敏）到 {path}',
+    'export.failed': '导出失败：{reason}',
   },
 }

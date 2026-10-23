@@ -2,6 +2,7 @@ import { dirname, join } from 'node:path'
 import { ExitCode, SIGNAL_EXIT_CODES, type SignalName } from '../errors.js'
 import { timingMark } from '../timing.js'
 import {
+  type ExportRequest,
   exitSummaryLines,
   inheritFreshSession,
   installKeybindings,
@@ -42,6 +43,8 @@ export async function runTui(
     breadcrumb?: Breadcrumb
     /** `/import`; absent unless this is the shared local daemon connection. */
     importSession?: (file: string, from?: string) => Promise<{ key: string }>
+    /** `/export`; present under the same condition as `importSession`. */
+    exportSession?: (request: ExportRequest) => Promise<void>
     /** Private scratch directory (`<AGH_HOME>/tmp`) for the Ctrl-G draft file. */
     editorTmpDir?: string
     /** The CLI's own version, shown on the welcome. */
@@ -131,6 +134,7 @@ export async function runTui(
       ...(p.ignoreRules || p.safeMode ? { noCustomCommands: true } : {}),
       ...(p.safeMode ? { safeMode: true } : {}),
       ...(io.importSession ? { importSession: io.importSession } : {}),
+      ...(io.exportSession ? { exportSession: io.exportSession } : {}),
       mouse: mouseFromEnv(io.env),
       onTimeline: (timeline, hasEarlier) => {
         // Only a windowed tick says whether older history is out of view; the others keep the last answer.

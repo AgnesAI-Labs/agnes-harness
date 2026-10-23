@@ -11,6 +11,7 @@ import { installSignalLadder } from './boot/signals.js'
 import { dispatchProfileCli, isProfileCommand, prepareCommandArgs, resolveMode } from './command-entry.js'
 import { commandHelp } from './command-help.js'
 import type { BranchContext } from './commands/bin-branches.js'
+import type { ExportIntoRequest } from './commands/export-into.js'
 import { BootError, ExitCode, SIGNAL_EXIT_CODES, type SignalName, UsageError } from './errors.js'
 import { mistypedCommand } from './suggest.js'
 import { timingMark } from './timing.js'
@@ -563,7 +564,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                 historyPath: join(resolveHome(io.env), 'tui-history.jsonl'),
                 commandsDir: join(home, 'commands'),
                 ...(breadcrumb ? { breadcrumb } : {}),
-                // Needs this machine's own Host, which only the shared local daemon form leaves free.
+                // /import needs this machine's own Host and /export a second connection to the daemon that
+                // holds the session; only the shared local daemon form leaves both free.
                 ...(p.connect === undefined &&
                 !p.standalone &&
                 !p.ephemeral &&
@@ -577,6 +579,13 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                           { cwd: p.cwd ?? io.cwd, env: io.env },
                           file,
                           from,
+                        ),
+                      exportSession: async (request: ExportIntoRequest) =>
+                        (await import('./commands/export-into.js')).exportInto(
+                          p,
+                          (args) => bootDefault(args, deps),
+                          { cwd: p.cwd ?? io.cwd },
+                          request,
                         ),
                     }
                   : {}),

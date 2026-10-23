@@ -311,7 +311,8 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'commands.yoloSummary': 'Skip routine approvals',
     'commands.attach': 'Upload an original attachment',
     'commands.attachSummary': 'Upload an attachment',
-    'commands.export': 'Export the current session',
+    'commands.export':
+      'Write the session to a file: agnes, html, sharegpt or claude-code (redacted), here or at a path',
     'commands.exportSummary': 'Export this session',
     'commands.refine': 'Show refine proposals (not yet projected onto the timeline)',
     'commands.refineSummary': 'Show refine proposals',
@@ -562,7 +563,8 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'commands.yoloSummary': '跳过常规审批',
     'commands.attach': '上传原件附件',
     'commands.attachSummary': '上传附件',
-    'commands.export': '导出当前会话',
+    'commands.export':
+      '把当前会话写入文件：agnes、html、sharegpt 或 claude-code（已脱敏），默认在当前目录或指定路径',
     'commands.exportSummary': '导出当前会话',
     'commands.refine': '查看精炼提案（尚未投影到时间线）',
     'commands.refineSummary': '查看精炼提案',
