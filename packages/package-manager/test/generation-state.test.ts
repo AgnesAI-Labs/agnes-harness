@@ -22,7 +22,14 @@ import {
   type ProcessLiveness,
   RuntimeGenerationSnapshotStore,
 } from '../src/runtime-snapshots-generations.js'
-import { withoutPackageVerification, withPackageVerification } from '../src/verification-operation.js'
+import * as sources from '../src/sources.js'
+import { hashDirectory } from '../src/sources.js'
+import {
+  settledTreeDigest,
+  verifiedDirectoryDigest,
+  withoutPackageVerification,
+  withPackageVerification,
+} from '../src/verification-operation.js'
 
 const homes: string[] = []
 afterEach(() => {
@@ -427,5 +434,80 @@ describe('durable head', () => {
     expect(other.corruptEntries()).toHaveLength(1)
     store.setHead('c', second.id)
     expect(store.headId('c')).toBe(second.id)
+  })
+})
+
+describe('generation package trees', () => {
+  /** A small immutable package tree and the runtime source that names it. */
+  function source(home: string) {
+    const directory = join(home, 'snapshot')
+    mkdirSync(join(directory, 'src'), { recursive: true })
+    writeFileSync(join(directory, 'index.mjs'), 'export const main = 1\n')
+    writeFileSync(join(directory, 'src', 'data.json'), '{"v":1}\n')
+    const snapshot = {
+      snapshotId: `sha256-${'c'.repeat(64)}`,
+      profile: 'test',
+      packageId: '@acme/tree',
+      version: '1.0.0',
+      integrity: hashDirectory(directory),
+      treeIntegrity: hashDirectory(directory, { exclude: [] }),
+      capabilityHash: 'd'.repeat(64),
+      directory,
+      contributions: [],
+    }
+    return { directory, plugin: { snapshot, generation: 1, trusted: true } }
+  }
+
+  it('links a tree this process verified, without hashing it again, into its own directory', async () => {
+    const { home, store, target } = fixture()
+    const { directory, plugin } = source(home)
+    // An opted-in read (a Worker's) verifies and settles the snapshot tree.
+    await withPackageVerification(
+      async () => verifiedDirectoryDigest(directory, plugin.snapshot, false, true),
+      { settleTrees: true },
+    )
+    const hashed = vi.spyOn(sources, 'hashDirectoryAsync')
+    const created = await store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
+    expect(hashed).not.toHaveBeenCalled()
+    const linked = join(created.sources[0]!.snapshot.directory, 'index.mjs')
+    expect(created.sources[0]!.snapshot.directory).not.toBe(directory)
+    expect(statSync(linked).ino).toBe(statSync(join(directory, 'index.mjs')).ino)
+    // The generation keeps its bytes after the runtime snapshot is collected.
+    rmSync(directory, { recursive: true })
+    expect(readFileSync(linked, 'utf8')).toBe('export const main = 1\n')
+    expect((await store.readAsync(created.id)).sources).toHaveLength(1)
+    hashed.mockRestore()
+  })
+
+  it('hashes a tree no read of this process verified, and refuses one that changed', async () => {
+    const { home, store, target } = fixture()
+    const { directory, plugin } = source(home)
+    const hashed = vi.spyOn(sources, 'hashDirectoryAsync')
+    await store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
+    expect(hashed).toHaveBeenCalledTimes(1)
+    hashed.mockRestore()
+    writeFileSync(join(directory, 'index.mjs'), 'export const main = 2\n')
+    await expect(store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)).rejects.toThrow(
+      'E_GENERATION_INTEGRITY',
+    )
+  })
+
+  it('keeps settled trees across a generation, and clears them when one refuses a tree', async () => {
+    const settled = source(fixture().home)
+    await withPackageVerification(
+      async () => verifiedDirectoryDigest(settled.directory, settled.plugin.snapshot, false, true),
+      { settleTrees: true },
+    )
+    const { home, store, target } = fixture()
+    const { directory, plugin } = source(home)
+    await store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
+    expect(settledTreeDigest(settled.directory, settled.plugin.snapshot)).toBe(
+      settled.plugin.snapshot.treeIntegrity,
+    )
+    writeFileSync(join(directory, 'index.mjs'), 'export const main = 2\n')
+    await expect(store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)).rejects.toThrow(
+      'E_GENERATION_INTEGRITY',
+    )
+    expect(settledTreeDigest(settled.directory, settled.plugin.snapshot)).toBeUndefined()
   })
 })

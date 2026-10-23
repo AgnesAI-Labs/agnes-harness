@@ -41,6 +41,7 @@ import type {
   RuntimeJournal,
   RuntimePin,
   RuntimePinPurpose,
+  RuntimePinRecords,
   RuntimeSnapshot,
   RuntimeSnapshotCollection,
   RuntimeSnapshotPinRequest,
@@ -55,12 +56,25 @@ import { invalidatePackageVerification } from './verification-operation.js'
 export type {
   RuntimePin,
   RuntimePinPurpose,
+  RuntimePinRecords,
   RuntimeSnapshot,
   RuntimeSnapshotCollection,
   RuntimeSnapshotPinRequest,
   RuntimeSnapshotSelector,
   RuntimeSnapshotStore,
 } from './runtime-snapshot-types.js'
+
+/** Pin bookkeeping without hashing any tree; see RuntimePinRecords. */
+export function readRuntimePinRecords(s: RuntimeSnapshotStore): RuntimePinRecords {
+  const state = readState(s)
+  return freezeData({
+    pins: Object.values(state.pins).map(({ pinId, purpose, packageId, snapshotId }) => {
+      const { integrity, treeIntegrity } = state.snapshots[snapshotId] as SnapshotRecord
+      return { pinId, purpose, packageId, snapshotId, integrity, treeIntegrity }
+    }),
+    snapshotIds: Object.keys(state.snapshots),
+  })
+}
 
 const SHA256 = /^sha256-[a-f0-9]{64}$/
 const INTEGRITY = /^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$/

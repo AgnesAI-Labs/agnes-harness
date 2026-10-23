@@ -3,7 +3,7 @@ import { basename, join } from 'node:path'
 import type { ProfileFragment } from '@agnes/protocol'
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { PackageError } from './errors.js'
-import { capabilityHash } from './integrity.js'
+import { capabilityHash, own } from './integrity.js'
 import type { LockState, PolicySnapshotInput } from './inventory-types.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { packageDir } from './sources.js'
@@ -187,4 +187,20 @@ export async function snapshotPolicy(
     lock.provider = { package: profile.provider.package, adapters: [...profile.provider.adapters] }
     writeLock(profileDir, lock)
   })
+}
+
+export function entryOf(lock: Lockfile, id: string): LockEntry {
+  const entry = own(lock.packages, id)
+  if (!entry)
+    throw new PackageError('E_DEP_MISSING', `${id} is not installed`, {
+      detail: { id, reason: 'not-installed' },
+    })
+  return entry
+}
+
+export function writable(lock: Lockfile): void {
+  if (lock.resolvedProfileHash === null)
+    throw new PackageError('E_LOCK_MISMATCH', 'profile must be resolved before packages can be changed', {
+      detail: { reason: 'unresolved-lock' },
+    })
 }

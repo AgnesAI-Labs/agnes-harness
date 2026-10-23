@@ -26,7 +26,7 @@ import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
 import { projectGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
-import { liveResourceRow, pluginWorkspaceLayers } from '../generation/target-code.js'
+import { liveResourceRow, pluginWorkspaceLayers, targetRows } from '../generation/target-code.js'
 import { assertGenerationTrust } from '../generation/trust.js'
 import { combinedSecurityStatus } from '../lifecycle/admin-security-status.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
@@ -169,6 +169,17 @@ export async function createCompositionHost(
       resources: target.resource.resources,
     }).target
   }
+  /**
+   * What a projected target makes a container run: its enabled rows and its live resources. A row the
+   * projection disables loads nothing, exactly like a row the target leaves out, so neither counts.
+   */
+  const effectiveTarget = (target: ReturnType<typeof project>): string =>
+    JSON.stringify({
+      rows: targetRows(target)
+        .filter((row) => !row.disabled)
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),
+      resources: target.resource.resources,
+    })
   const containerKey = (binding: CompositionBinding) => `${binding.tree.hash}:${binding.profile.hash}`
   const open = async (binding: CompositionBinding): Promise<Container> => {
     const identity = containerKey(binding)
@@ -299,21 +310,26 @@ export async function createCompositionHost(
           const row = host.extensionRows.prepare({ ...input, ...(dynamic ? { dynamic } : {}) })
           rows.set(row.id, row)
         }
+        let applied: string | undefined
         if (target) {
-          const report = await host.applyRuntimeTarget(project(target, binding.tree, host))
+          const projected = project(target, binding.tree, host)
+          const report = await host.applyRuntimeTarget(projected)
           assertHostPublication(report.publication)
           if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container did not converge')
+          applied = effectiveTarget(projected)
         }
         const selectedRows = latestRows ?? (prepared.size ? [...rows.values()] : undefined)
         if (selectedRows) {
           const report = await host.extensionRows.apply(projectRows(selectedRows, binding.tree, host))
           assertHostPublication(report.publication)
           if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container rows did not converge')
+          applied = undefined
         }
-        const container = {
+        const container: Container = {
           host,
           tree: binding.tree,
           draining: target ? draining(target.tree.rows, binding.tree, host) : false,
+          ...(applied === undefined ? {} : { applied }),
         }
         containers.set(identity, container)
         if (attemptedGeneration) openingFailures.delete(attemptedGeneration)
@@ -439,6 +455,9 @@ export async function createCompositionHost(
     const results: HostPublicationReport['containers'][number][] = []
     let failure: unknown
     for (const container of containers.values()) {
+      // Skills, models and extension rows change a container outside the runtime target, so the next
+      // target is applied to it in full.
+      if (operation !== 'runtime-target') delete container.applied
       try {
         const report = await apply(container)
         if (report && typeof report === 'object' && 'ok' in report && report.ok === false)
@@ -659,10 +678,15 @@ export async function createCompositionHost(
         await refreshTrust()
         const { current: nextCatalog } = await admission(target.tree.rows)
         const publication = await broadcast('runtime-target', async (container) => {
-          const report = await container.host.applyRuntimeTarget(
-            project(target, container.tree, container.host),
-          )
+          const projected = project(target, container.tree, container.host)
+          const effective = effectiveTarget(projected)
           container.draining = draining(target.tree.rows, container.tree, container.host)
+          // A composition the change does not reach (say a plugin its sessions never enabled) runs the
+          // same rows and resources as before; rebuilding its generation would change nothing.
+          if (container.applied === effective) return undefined
+          delete container.applied
+          const report = await container.host.applyRuntimeTarget(projected)
+          if (report.ok) container.applied = effective
           return report
         })
         if (publication.ok) {
