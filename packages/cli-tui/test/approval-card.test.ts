@@ -53,8 +53,23 @@ describe('ApprovalCard prefix offer', () => {
 
   it('renders the daemon tokens as given and answers with the prefix verdict', async () => {
     const decide = vi.fn(async () => undefined)
-    const card = new ApprovalCard(prefixNode, { ansi: PLAIN, onDecide: decide })
+    const card = new ApprovalCard(
+      { ...prefixNode, prefixGrant: { ...prefixNode.prefixGrant, runsProjectCode: true } },
+      { ansi: PLAIN, onDecide: decide },
+    )
     const text = card.render(140).join('\n')
+    expect(text).toContain('This also runs scripts defined in the project')
+    expect(
+      new ApprovalCard(prefixNode, { ansi: PLAIN, onDecide: decide }).render(140).join(''),
+    ).not.toContain('This also runs scripts')
+    expect(
+      new ApprovalCard(
+        { ...prefixNode, prefixGrant: { ...prefixNode.prefixGrant, runsProjectCode: true } },
+        { ansi: PLAIN, locale: 'zh-CN', onDecide: decide },
+      )
+        .render(140)
+        .join(''),
+    ).toContain('这也会运行项目定义的脚本')
     expect(text).toContain('[2] Allow commands starting with `git push` for this session')
     expect(card.handleInput('2')).toBe(true)
     await vi.waitFor(() =>

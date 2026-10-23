@@ -466,7 +466,16 @@ export function createTurnController(
         .filter(Boolean)
         .join(' · '),
       ...(durable && !reconcile ? { risk: durable.risk } : {}),
-      ...(card?.warning === undefined ? {} : { warning: card.warning }),
+      ...((card?.warning || durable?.prefixGrant?.runsProjectCode) && !reconcile
+        ? {
+            warning: [
+              card?.warning,
+              durable?.prefixGrant?.runsProjectCode ? context.t('timeline.decision.projectCode') : undefined,
+            ]
+              .filter(Boolean)
+              .join(' '),
+          }
+        : {}),
       ...(preview === undefined ? {} : { preview }),
       actions,
       ...(origin === undefined ? {} : { origin }),

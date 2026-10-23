@@ -36,6 +36,8 @@ export const timelineLocaleCatalog: LocaleCatalog = {
     'timeline.decision.allowedOnce': 'Allowed once',
     'timeline.decision.allowedSession': 'Allowed for this session',
     'timeline.decision.allowedPrefixSession': 'Allowed matching commands for this session',
+    'timeline.decision.projectCode':
+      'This also runs scripts defined in the project (package scripts, git hooks, build code).',
     'timeline.decision.allowPrefix': 'Allow commands starting with {prefix} for this session',
     'timeline.decision.allowedPermanent': 'Always allowed for this profile',
     'timeline.decision.rejected': 'Rejected',
@@ -196,6 +198,7 @@ export const timelineLocaleCatalog: LocaleCatalog = {
     'timeline.decision.allowedOnce': '仅允许这次',
     'timeline.decision.allowedSession': '本会话允许',
     'timeline.decision.allowedPrefixSession': '本会话允许同前缀命令',
+    'timeline.decision.projectCode': '这也会运行项目定义的脚本（包脚本、git hooks、构建代码）。',
     'timeline.decision.allowPrefix': '本会话内以 {prefix} 开头的命令不再询问',
     'timeline.decision.allowedPermanent': '对此配置始终允许',
     'timeline.decision.rejected': '已拒绝',

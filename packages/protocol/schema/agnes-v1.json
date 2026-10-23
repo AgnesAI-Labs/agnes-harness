@@ -3819,7 +3819,11 @@
                   "maxItems": 2,
                   "items": { "type": "string", "minLength": 1, "maxLength": 256 }
                 },
-                "scope": { "type": "string", "maxLength": 256 }
+                "scope": { "type": "string", "maxLength": 256 },
+                "runsProjectCode": {
+                  "type": "boolean",
+                  "description": "The offered prefix can run project-defined scripts, hooks or build code. Display only; included in the decision subject digest."
+                }
               }
             },
             "grantScopes": {

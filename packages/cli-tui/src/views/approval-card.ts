@@ -236,6 +236,11 @@ export class ApprovalCard implements Component {
       ...(n.subjectText
         ? wrapText(escapeControl(n.subjectText), width - 2).map((line) => fitLine(`${rail}${line}`, width))
         : []),
+      ...(n.prefixGrant?.runsProjectCode
+        ? wrapText(t('approval.projectCode', locale), width - 2).map((line) =>
+            fitLine(`${rail}${ansi.fg('faint', line)}`, width),
+          )
+        : []),
       ...stores.map((line) => fitLine(`${rail}${ansi.fg('faint', line)}`, width)),
       this.reason !== null
         ? fitLine(

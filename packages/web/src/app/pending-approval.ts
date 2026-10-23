@@ -50,7 +50,7 @@ export function answeredApproval(
 
 /** Core's command-prefix offer, as recorded in the decision subject; absent when malformed. */
 function offeredPrefix(value: unknown): Pick<ApprovalNode, 'prefixGrant'> {
-  const offer = value as { tokens?: unknown; scope?: unknown } | null
+  const offer = value as { tokens?: unknown; scope?: unknown; runsProjectCode?: unknown } | null
   const tokens = offer?.tokens
   return Array.isArray(tokens) &&
     tokens.length >= 1 &&
@@ -58,7 +58,13 @@ function offeredPrefix(value: unknown): Pick<ApprovalNode, 'prefixGrant'> {
     tokens.every((token) => typeof token === 'string' && token.length > 0) &&
     typeof offer?.scope === 'string' &&
     offer.scope.startsWith('shell:prefix:')
-    ? { prefixGrant: { tokens: tokens as string[], scope: offer.scope } }
+    ? {
+        prefixGrant: {
+          tokens: tokens as string[],
+          scope: offer.scope,
+          ...(offer.runsProjectCode === true ? { runsProjectCode: true } : {}),
+        },
+      }
     : {}
 }
 

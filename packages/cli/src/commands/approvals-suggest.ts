@@ -8,7 +8,7 @@ import { readLedger } from './export.js'
 
 type IO = { stdout: NodeJS.WritableStream; stderr: NodeJS.WritableStream }
 
-export type Suggestion = { prefix: string[]; count: number; example?: string }
+export type Suggestion = { prefix: string[]; count: number; example?: string; runsProjectCode?: boolean }
 export type SuggestOptions = { days: number; minCount: number; limit: number }
 const ALLOWING = new Set(['allowed-once', 'allowed-session', 'allowed-permanent', 'allow_prefix_session'])
 const MAX_SESSIONS = 1000
@@ -64,11 +64,19 @@ export function suggestPrefixes(
   opts: Pick<SuggestOptions, 'minCount' | 'limit'>,
   existing: readonly (readonly string[])[] = [],
 ): Suggestion[] {
-  const groups = new Map<string, { prefix: string[]; count: number; example?: string; masked: boolean }>()
+  const groups = new Map<
+    string,
+    { prefix: string[]; count: number; example?: string; masked: boolean; runsProjectCode?: boolean }
+  >()
   for (const command of commands) {
     const offer = offerPrefix(command)
     if (!offer || existing.some((granted) => covers(offer.tokens, granted))) continue
-    const group = groups.get(offer.scope) ?? { prefix: offer.tokens, count: 0, masked: false }
+    const group = groups.get(offer.scope) ?? {
+      prefix: offer.tokens,
+      count: 0,
+      masked: false,
+      ...(offer.runsProjectCode ? { runsProjectCode: true } : {}),
+    }
     group.count++
     if (maskSecrets(command).masked) group.masked = true
     else group.example ??= command
@@ -78,9 +86,10 @@ export function suggestPrefixes(
     .filter((group) => group.count >= opts.minCount)
     .sort((a, b) => b.count - a.count || a.prefix.join(' ').localeCompare(b.prefix.join(' ')))
     .slice(0, opts.limit)
-    .map(({ prefix, count, example, masked }) => ({
+    .map(({ prefix, count, example, masked, runsProjectCode }) => ({
       prefix,
       count,
+      ...(runsProjectCode ? { runsProjectCode: true } : {}),
       ...(example && !masked ? { example } : {}),
     }))
 }
@@ -155,7 +164,7 @@ export function formatReport(report: SuggestReport): string {
     ...(report.suggestions.length
       ? report.suggestions.map(
           (s) =>
-            `${String(s.count).padStart(5)}  ${s.prefix.join(' ')}${s.example ? `   (e.g. ${s.example})` : ''}`,
+            `${String(s.count).padStart(5)}  ${s.prefix.join(' ')}${s.example ? `   (e.g. ${s.example})` : ''}${s.runsProjectCode ? '   (runs project scripts, hooks or build code)' : ''}`,
         )
       : [`no prefix was approved at least ${report.minCount} times`]),
     ...(report.grantsCompared ? [] : ['not compared with existing grants (no admin connection)']),

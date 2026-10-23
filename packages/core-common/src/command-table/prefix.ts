@@ -14,7 +14,7 @@ export const PREFIX_SCOPE_HEAD = 'shell:prefix:'
 export const MAX_PREFIX_SCOPE_LENGTH = 256
 const MAX_PREFIX_TOKENS = 2
 
-export type PrefixOffer = { tokens: string[]; scope: string }
+export type PrefixOffer = { tokens: string[]; scope: string; runsProjectCode?: boolean }
 
 export const prefixScope = (tokens: readonly string[]): string =>
   `${PREFIX_SCOPE_HEAD}${JSON.stringify(tokens)}`
@@ -78,50 +78,88 @@ const GIT_LOG = [
   '--patch',
   '--name-only',
 ]
-const PAIRS: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = {
+const PAIRS: Readonly<
+  Record<
+    string,
+    { commands: Readonly<Record<string, readonly string[]>>; runsProjectCode?: boolean | readonly string[] }
+  >
+> = {
   git: {
-    status: ['-s', '--short', '-b', '--branch', '--porcelain'],
-    diff: ['--stat', '--name-only', '--name-status', '--cached', '--staged'],
-    log: GIT_LOG,
-    show: ['--stat', '--name-only', '--oneline'],
-    branch: ['-a', '--all', '-v', '--verbose', '--show-current'],
-    fetch: ['--prune', '--all', '--tags', '-q', '--quiet'],
-    add: ['-p', '--patch', '-u', '--update', '-A', '--all'],
-    commit: ['-m', '--message', '--amend', '--no-edit', '-a', '--all', '-q', '--quiet'],
-    push: ['-u', '--set-upstream', '-q', '--quiet', '-v', '--verbose'],
-    pull: ['--rebase', '--ff-only', '-q', '--quiet'],
-    switch: ['-c', '--create'],
-    checkout: ['-b'],
-    restore: ['--staged', '--worktree'],
-    blame: ['-L'],
-    tag: ['-l', '--list'],
-    remote: ['-v', '--verbose'],
-    'rev-parse': ['--abbrev-ref', '--short', '--show-toplevel'],
-    'ls-files': ['--others', '--exclude-standard', '--modified'],
+    commands: {
+      status: ['-s', '--short', '-b', '--branch', '--porcelain'],
+      diff: ['--stat', '--name-only', '--name-status', '--cached', '--staged'],
+      log: GIT_LOG,
+      show: ['--stat', '--name-only', '--oneline'],
+      branch: ['-a', '--all', '-v', '--verbose', '--show-current'],
+      fetch: ['--prune', '--all', '--tags', '-q', '--quiet'],
+      add: ['-p', '--patch', '-u', '--update', '-A', '--all'],
+      commit: ['-m', '--message', '--amend', '--no-edit', '-a', '--all', '-q', '--quiet'],
+      push: ['-u', '--set-upstream', '-q', '--quiet', '-v', '--verbose'],
+      pull: ['--rebase', '--ff-only', '-q', '--quiet'],
+      switch: ['-c', '--create'],
+      checkout: ['-b'],
+      restore: ['--staged', '--worktree'],
+      blame: ['-L'],
+      tag: ['-l', '--list'],
+      remote: ['-v', '--verbose'],
+      'rev-parse': ['--abbrev-ref', '--short', '--show-toplevel'],
+      'ls-files': ['--others', '--exclude-standard', '--modified'],
+    },
+    runsProjectCode: true,
   },
-  npm: { test: [], ls: ['--json', '--all', '--long'], outdated: ['--json', '--long'] },
-  pnpm: { test: [], ls: ['--json', '--long', '-r', '--recursive'], outdated: ['--json', '--long'] },
-  yarn: { test: [] },
-  bun: { test: ['--coverage', '--bail'] },
+  npm: {
+    commands: { test: [], ls: ['--json', '--all', '--long'], outdated: ['--json', '--long'] },
+    runsProjectCode: ['test'],
+  },
+  pnpm: {
+    commands: { test: [], ls: ['--json', '--long', '-r', '--recursive'], outdated: ['--json', '--long'] },
+    runsProjectCode: ['test'],
+  },
+  yarn: { commands: { test: [] }, runsProjectCode: ['test'] },
+  bun: { commands: { test: ['--coverage', '--bail'] }, runsProjectCode: ['test'] },
   cargo: {
-    build: ['--release', '-p', '--package', '--workspace', '--lib', '--bins', '-q', '-v'],
-    test: ['--release', '-p', '--package', '--workspace', '--lib', '--no-run', '-q', '-v'],
-    check: ['-p', '--package', '--workspace', '--all-targets', '-q'],
-    clippy: ['-p', '--package', '--workspace', '--all-targets', '-q'],
-    fmt: ['--check', '--all'],
-    doc: ['--no-deps', '-p', '--package', '--workspace'],
-    tree: ['-p', '--package', '--depth'],
+    commands: {
+      build: ['--release', '-p', '--package', '--workspace', '--lib', '--bins', '-q', '-v'],
+      test: ['--release', '-p', '--package', '--workspace', '--lib', '--no-run', '-q', '-v'],
+      check: ['-p', '--package', '--workspace', '--all-targets', '-q'],
+      clippy: ['-p', '--package', '--workspace', '--all-targets', '-q'],
+      fmt: ['--check', '--all'],
+      doc: ['--no-deps', '-p', '--package', '--workspace'],
+      tree: ['-p', '--package', '--depth'],
+    },
+    runsProjectCode: true,
   },
   go: {
-    build: ['-v', '-race'],
-    test: ['-v', '-race', '-run', '-count', '-short', '-cover', '-json', '-timeout', '-bench', '-benchmem'],
-    vet: [],
-    fmt: [],
-    list: ['-m', '-json'],
+    commands: {
+      build: ['-v', '-race'],
+      test: ['-v', '-race', '-run', '-count', '-short', '-cover', '-json', '-timeout', '-bench', '-benchmem'],
+      vet: [],
+      fmt: [],
+      list: ['-m', '-json'],
+    },
+    runsProjectCode: true,
   },
-  uv: { sync: ['--frozen', '--locked', '--all-extras', '--dev', '--no-dev'], lock: ['--locked', '--check'] },
-  pip: { list: ['--outdated', '--format', '--local', '--user'], show: [], freeze: ['--local', '--user'] },
-  pip3: { list: ['--outdated', '--format', '--local', '--user'], show: [], freeze: ['--local', '--user'] },
+  uv: {
+    commands: {
+      sync: ['--frozen', '--locked', '--all-extras', '--dev', '--no-dev'],
+      lock: ['--locked', '--check'],
+    },
+    runsProjectCode: true,
+  },
+  pip: {
+    commands: {
+      list: ['--outdated', '--format', '--local', '--user'],
+      show: [],
+      freeze: ['--local', '--user'],
+    },
+  },
+  pip3: {
+    commands: {
+      list: ['--outdated', '--format', '--local', '--user'],
+      show: [],
+      freeze: ['--local', '--user'],
+    },
+  },
 }
 
 const programName = (word: string): string =>
@@ -132,7 +170,11 @@ export function isBannedPrefix(tokens: readonly string[]): boolean {
   const program = tokens[0] ?? ''
   // A path (`./ls`) or another spelling names some other program than the one on the list.
   if (!program || programName(program) !== program) return true
-  if (tokens.length === 1 ? !ALONE_OK.has(program) : !Object.hasOwn(PAIRS[program] ?? {}, tokens[1] ?? ''))
+  if (
+    tokens.length === 1
+      ? !ALONE_OK.has(program)
+      : !Object.hasOwn(PAIRS[program]?.commands ?? {}, tokens[1] ?? '')
+  )
     return true
   return tokens.some((token) => looksLikeSecret(token))
 }
@@ -142,8 +184,8 @@ const REFSPEC_SUBCOMMANDS = new Set(['fetch', 'pull', 'push'])
 /** True when a part after an allowed pair carries an option or word that pair does not allow. */
 const deniedArgument = (words: readonly string[]): boolean => {
   const [program = '', sub = ''] = words
-  if (words.length < 3 || !Object.hasOwn(PAIRS[program] ?? {}, sub)) return false
-  const allowed = PAIRS[program]?.[sub] ?? []
+  if (words.length < 3 || !Object.hasOwn(PAIRS[program]?.commands ?? {}, sub)) return false
+  const allowed = PAIRS[program]?.commands[sub] ?? []
   return words.slice(2).some(
     (word) =>
       (word.startsWith('-') && word !== '--' && !allowed.includes(word.split('=')[0] as string)) ||
@@ -219,7 +261,14 @@ export function offerPrefix(
   if (!uncovered.every((words) => startsWithPrefix(words, tokens))) return undefined
   const scope = prefixScope(tokens)
   if (scope.length > MAX_PREFIX_SCOPE_LENGTH) return undefined
-  return { tokens, scope }
+  const projectCode = PAIRS[tokens[0] ?? '']?.runsProjectCode
+  return {
+    tokens,
+    scope,
+    ...(projectCode === true || (Array.isArray(projectCode) && projectCode.includes(tokens[1]))
+      ? { runsProjectCode: true }
+      : {}),
+  }
 }
 
 /** The answer that accepts Core's prefix offer. It is never listed in `spec.options`. */

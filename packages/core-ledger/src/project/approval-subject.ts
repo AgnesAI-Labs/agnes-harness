@@ -59,10 +59,18 @@ export function approvalToolReference(tool: { name: string; toolUseId: string } 
 
 /** The command prefix Core offered with a request, read back from its recorded subject. */
 export function prefixGrantOf(subject: unknown): Pick<ApprovalNode, 'prefixGrant'> {
-  const offered = (subject as { prefixGrant?: { tokens?: unknown; scope?: unknown } } | null)?.prefixGrant
+  const offered = (
+    subject as { prefixGrant?: { tokens?: unknown; scope?: unknown; runsProjectCode?: unknown } } | null
+  )?.prefixGrant
   const tokens = typeof offered?.scope === 'string' ? parsePrefixScope(offered.scope) : undefined
   return tokens && JSON.stringify(tokens) === JSON.stringify(offered?.tokens)
-    ? { prefixGrant: { tokens, scope: offered?.scope as string } }
+    ? {
+        prefixGrant: {
+          tokens,
+          scope: offered?.scope as string,
+          ...(offered?.runsProjectCode === true ? { runsProjectCode: true } : {}),
+        },
+      }
     : {}
 }
 

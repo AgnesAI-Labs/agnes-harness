@@ -65,8 +65,8 @@ describe('suggestPrefixes', () => {
 
   it('counts by the daemon prefix, drops banned and unprefixable commands, and honours the limits', () => {
     expect(suggestPrefixes(commands, { minCount: 2, limit: 20 })).toEqual([
-      { prefix: ['git', 'status'], count: 8, example: 'git status' },
-      { prefix: ['cargo', 'test'], count: 4, example: 'cargo test -p x' },
+      { prefix: ['git', 'status'], count: 8, example: 'git status', runsProjectCode: true },
+      { prefix: ['cargo', 'test'], count: 4, example: 'cargo test -p x', runsProjectCode: true },
     ])
     expect(suggestPrefixes(commands, { minCount: 2, limit: 1 })).toHaveLength(1)
     expect(suggestPrefixes(commands, { minCount: 9, limit: 20 })).toEqual([])
@@ -74,7 +74,7 @@ describe('suggestPrefixes', () => {
 
   it('skips prefixes an existing grant already covers', () => {
     expect(suggestPrefixes(commands, { minCount: 2, limit: 20 }, [['git', 'status']])).toEqual([
-      { prefix: ['cargo', 'test'], count: 4, example: 'cargo test -p x' },
+      { prefix: ['cargo', 'test'], count: 4, example: 'cargo test -p x', runsProjectCode: true },
     ])
   })
 
@@ -83,7 +83,7 @@ describe('suggestPrefixes', () => {
       minCount: 2,
       limit: 5,
     })
-    expect(found).toEqual([{ prefix: ['git', 'push'], count: 3 }])
+    expect(found).toEqual([{ prefix: ['git', 'push'], count: 3, runsProjectCode: true }])
     expect(JSON.stringify(found)).not.toContain('hunter2')
   })
 })
@@ -103,7 +103,7 @@ describe('buildSuggestReport', () => {
   it('aggregates across sessions, counts unreadable ones and notes when grants were not compared', async () => {
     const report = await buildSuggestReport(['a', 'b', 'c', 'broken'], read, async () => undefined, opts)
     expect(report).toEqual({
-      suggestions: [{ prefix: ['git', 'status'], count: 3, example: 'git status' }],
+      suggestions: [{ prefix: ['git', 'status'], count: 3, example: 'git status', runsProjectCode: true }],
       scannedSessions: 3,
       skippedSessions: 1,
       approvals: 4,

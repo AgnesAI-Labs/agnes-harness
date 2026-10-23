@@ -49,6 +49,8 @@ describe('offerPrefix', () => {
     ['tool API_KEY=abc', undefined],
   ])('%j -> %j', (command, tokens) => {
     expect(offerPrefix(command)?.tokens).toEqual(tokens)
+    if (command === 'pnpm test') expect(offerPrefix(command)?.runsProjectCode).toBe(true)
+    if (command === 'ls') expect(offerPrefix(command)?.runsProjectCode).toBeUndefined()
   })
 
   it('offers only what covers every uncovered part, counting existing prefixes', () => {

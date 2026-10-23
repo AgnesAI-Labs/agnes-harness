@@ -417,6 +417,13 @@ it('shows who asked and what an always-allow stores, as plain text, folding past
   await show({})
   expect(origin()).toBeNull()
   expect(stores()).toBeNull()
+  expect(document.body.textContent).not.toContain('这也会运行项目定义的脚本')
+  await show({
+    prefixGrant: { tokens: ['pnpm', 'test'], scope: 'shell:prefix:["pnpm","test"]', runsProjectCode: true },
+  })
+  await vi.waitFor(() => expect(document.body.textContent).toContain('这也会运行项目定义的脚本'))
+  await show({ prefixGrant: { tokens: ['echo'], scope: 'shell:prefix:["echo"]' } })
+  await vi.waitFor(() => expect(document.body.textContent).not.toContain('这也会运行项目定义的脚本'))
   await show({
     grantScopes: ['a', 'b'],
     origin: { package: '@agnes/browser', role: 'reviewer', mcpServer: '<b>github</b>' },

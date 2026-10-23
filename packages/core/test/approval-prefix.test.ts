@@ -74,21 +74,23 @@ describe('shell prefix approvals', () => {
     expect((request.spec.subject as { prefixGrant: unknown }).prefixGrant).toEqual({
       tokens: ['git', 'status'],
       scope: 'shell:prefix:["git","status"]',
+      runsProjectCode: true,
     })
     const node = (await t.h.session.projectUI()).nodes.find(
       (n) => n.kind === 'approval' && n.state === 'pending',
     )
     expect(node).toMatchObject({
       options: ['allow_once', 'allow_always', 'reject_once'],
-      prefixGrant: { tokens: ['git', 'status'] },
+      prefixGrant: { tokens: ['git', 'status'], runsProjectCode: true },
       origin: { package: 'fixture' },
     })
     expect(node).toHaveProperty('grantScopes', ['tool:shell:execute'])
     const snapshot = structuredClone(t.pending())
     const forged = structuredClone(snapshot)
     ;(forged.request.spec.subject as { prefixGrant: unknown }).prefixGrant = {
-      tokens: ['git', 'push'],
-      scope: 'shell:prefix:["git","push"]',
+      tokens: ['git', 'status'],
+      scope: 'shell:prefix:["git","status"]',
+      runsProjectCode: false,
     }
     expect(decisionSubjectDigest(forged.request.spec.subject)).not.toBe(snapshot.request.subjectDigest)
     expect(() =>
