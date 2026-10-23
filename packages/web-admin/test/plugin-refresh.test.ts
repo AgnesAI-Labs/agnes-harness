@@ -18,14 +18,23 @@ it('reads the plugin tree on mount, real changes and one explicit refresh, and r
   vi.useFakeTimers()
   let hidden = false
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+  const context = {
+    profile: 'test',
+    clientId: 'web',
+    permissions: ['packages.read'] as const,
+    readOnly: false,
+  }
+  const enabled = {
+    id: '@agnes/fixture',
+    integrity: 'a',
+    desired: 'enabled',
+    actual: 'running',
+    contributions: [],
+  } as never
+  const disabled = { ...(enabled as object), desired: 'installed-disabled' } as never
   const overview = vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({
-    context: {
-      profile: 'test',
-      clientId: 'web',
-      permissions: ['packages.read'],
-      readOnly: false,
-    },
-    inventory: { packages: [] },
+    context,
+    inventory: { packages: [enabled] },
   })
   const tree = vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
   vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
@@ -78,15 +87,30 @@ it('reads the plugin tree on mount, real changes and one explicit refresh, and r
     await vi.advanceTimersByTimeAsync(120_000)
     expect(operation).toHaveBeenCalledTimes(2)
     expect(tree).toHaveBeenCalledTimes(4)
+    let finishOverview: (() => void) | undefined
+    overview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOverview = () => resolve({ context, inventory: { packages: [disabled] } })
+        }),
+    )
     operation.mockResolvedValue({
       operationId: 'op-running',
-      operation: 'enable',
+      operation: 'disable',
       state: 'completed',
+      packageId: '@agnes/fixture',
+      installed: disabled,
     } as never)
     hidden = false
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.advanceTimersByTimeAsync(0)
     expect(operation).toHaveBeenCalledTimes(3)
+    // A confirmed disable renders before the full inventory refresh can answer.
+    expect(page.viewContext().state.installed[0]?.desired).toBe('installed-disabled')
+    expect(page.viewContext().state.lastOperation?.state).toBe('completed')
+    expect(tree).toHaveBeenCalledTimes(4)
+    finishOverview?.()
+    await vi.advanceTimersByTimeAsync(0)
     expect(tree).toHaveBeenCalledTimes(5)
     overview.mockRejectedValueOnce(new Error('temporary outage'))
     await page.refresh()
