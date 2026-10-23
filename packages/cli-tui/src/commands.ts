@@ -582,6 +582,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return { text: app.borders.command(args, locale) }
     case '/raw':
       return { text: app.raw.toggle(locale) }
+    case '/images':
+      return { text: app.images.command(args, locale) }
     case '/vim':
       return { text: app.editor.vim?.command(args, locale) ?? '' }
     case '/expand':

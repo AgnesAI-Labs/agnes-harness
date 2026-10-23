@@ -247,6 +247,12 @@ describe('session slash commands', () => {
     )
   })
 
+  it('/images hands its arguments to the inline image switch', async () => {
+    const command = vi.fn(() => 'done')
+    expect(await runSlash(appWith({}, {}, { images: { command } }), '/images off')).toEqual({ text: 'done' })
+    expect(command).toHaveBeenCalledWith(['off'], 'en')
+  })
+
   it('/new <dir> creates the session in that directory and shows a daemon refusal as it comes', async () => {
     const created = vi.fn(async () => {
       throw new Error('workspace not authorised')

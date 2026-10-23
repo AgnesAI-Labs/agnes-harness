@@ -2,6 +2,10 @@ import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { displayWidth } from './terminal.js'
 
+/** Inside tmux or screen the outer terminal's variables say nothing about what the multiplexer passes on. */
+export const underMultiplexer = (env: NodeJS.ProcessEnv): boolean =>
+  Boolean(env.TMUX || env.STY || /^(tmux|screen)/.test(env.TERM ?? ''))
+
 /**
  * Terminals whose own documentation (Alhadis/OSC8-Adoption, which tracks each project) says they draw
  * OSC 8 hyperlinks: iTerm2 3.1+, WezTerm, kitty 0.19+, Ghostty, the VS Code terminal 1.72+ and Windows
@@ -9,7 +13,7 @@ import { displayWidth } from './terminal.js'
  * pass OSC 8 on when configured to, and the outer terminal's variables say nothing about that.
  */
 export function supportsOsc8(env: NodeJS.ProcessEnv): boolean {
-  if (env.TMUX || env.STY || /^(tmux|screen)/.test(env.TERM ?? '')) return false
+  if (underMultiplexer(env)) return false
   return (
     ['iTerm.app', 'WezTerm', 'ghostty', 'vscode'].includes(env.TERM_PROGRAM ?? '') ||
     env.LC_TERMINAL === 'iTerm2' ||

@@ -19,6 +19,7 @@ export async function applySwitch(app: TuiApp, next: Session): Promise<boolean> 
   app.usagePanel.close()
   app.editor.resetUndo()
   app.planPanel.reset()
+  app.images.reset()
   app.cardFocus.exit(false)
   app.offPermission?.()
   await app.projection.stop()

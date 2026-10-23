@@ -1,5 +1,6 @@
 import { ANSI_RE, defang } from './ansi.js'
 import { type Component, CURSOR_MARKER } from './component.js'
+import { type ImageLayer, type ImageMark, takeMark } from './inline-image.js'
 import { type MouseEvent, parseMouse } from './keys.js'
 import { PasteAssembler } from './paste.js'
 import { displayWidth, type Terminal } from './terminal.js'
@@ -126,6 +127,8 @@ export class Renderer {
     private readonly mouseAtStart = true,
     // Wraps URLs and paths in terminal hyperlinks (links.ts); undefined where the terminal has none.
     private readonly links?: (row: string, columns: number) => string,
+    // Draws the images of rows that carry an image mark (inline-image.ts); undefined where no terminal is confirmed.
+    private readonly images?: ImageLayer,
   ) {
     this.screenEntered = screenAlreadyEntered
   }
@@ -142,7 +145,7 @@ export class Renderer {
     // Save the shell screen/cursor before painting. Never clear its scrollback (ED3). `runTui`
     // may already have claimed it while opening the session; entering 1049 a second time is not
     // a harmless no-op on every terminal, so only clear that existing alternate buffer here.
-    if (this.screenEntered) this.term.write('\x1b[H\x1b[2J')
+    if (this.screenEntered) this.term.write(`${this.images?.reset() ?? ''}\x1b[H\x1b[2J`)
     else {
       this.term.write('\x1b[?1049h\x1b[H\x1b[2J')
       this.screenEntered = true
@@ -156,7 +159,7 @@ export class Renderer {
     this.offResize = this.term.onResize(() => {
       this.lastFrame = []
       this.lastCursorKey = ''
-      this.term.write('\x1b[H\x1b[2J')
+      this.term.write(`${this.images?.reset() ?? ''}\x1b[H\x1b[2J`)
       this.renderNow()
     })
     this.offInput = this.term.onInput((d) => {
@@ -241,7 +244,7 @@ export class Renderer {
     if (!this.active) return
     this.lastFrame = []
     this.lastCursorKey = ''
-    this.term.write('\x1b[H\x1b[2J')
+    this.term.write(`${this.images?.reset() ?? ''}\x1b[H\x1b[2J`)
     this.renderNow()
   }
 
@@ -252,9 +255,13 @@ export class Renderer {
     const visible = raw.length > rows ? raw.slice(raw.length - rows) : raw
 
     const frame: string[] = []
+    const marks: ImageMark[] = []
     let cursorRow = -1
     let cursorCol = 0
-    for (const line of visible) {
+    for (const raw of visible) {
+      const taken = this.images ? takeMark(raw, displayWidth) : { text: raw }
+      const line = taken.text
+      if (taken.mark) marks.push({ ...taken.mark, row: frame.length })
       const at = line.indexOf(CURSOR_MARKER)
       if (at >= 0 && cursorRow < 0) {
         cursorRow = frame.length
@@ -274,8 +281,13 @@ export class Renderer {
 
     const changed: string[] = []
     const height = Math.max(frame.length, this.lastFrame.length)
+    const rewritten = new Set<number>()
+    for (let row = 0; row < height; row++) if (frame[row] !== this.lastFrame[row]) rewritten.add(row)
+    // Images: what leaves the screen is deleted or repainted over, and what is drawn goes on after the rows.
+    const pictures = this.images?.frame(marks, rewritten)
+    for (const row of pictures?.repaint ?? []) if (row < height) rewritten.add(row)
     for (let row = 0; row < height; row++) {
-      if (frame[row] === this.lastFrame[row]) continue
+      if (!rewritten.has(row)) continue
       // Overwrite, then erase what is left of the old row. Erasing first would blank the whole row
       // (identity text beside an animated wordmark included) before it is written again.
       // A row that fills the terminal leaves the cursor pending-wrap on its last cell, where an erase
@@ -291,10 +303,13 @@ export class Renderer {
       cursorRow >= 0 ? `\x1b[${cursorRow + 1};${cursorCol + 1}H\x1b[?25h` : `\x1b[${frame.length + 1};1H`
     const cursorKey = `${cursorRow}:${cursorCol}:${frame.length}`
     this.lastFrame = frame
-    if (changed.length === 0 && cursorKey === this.lastCursorKey) return
+    if (changed.length === 0 && !pictures?.before && !pictures?.after && cursorKey === this.lastCursorKey)
+      return
     this.lastCursorKey = cursorKey
     // Synchronized update (mode 2026): the terminal presents the frame at once; ones without it ignore it.
-    this.term.write(`\x1b[?2026h\x1b[?25l${changed.join('')}${place}\x1b[?2026l`)
+    this.term.write(
+      `\x1b[?2026h\x1b[?25l${pictures?.before ?? ''}${changed.join('')}${pictures?.after ?? ''}${place}\x1b[?2026l`,
+    )
   }
 
   /** Selection in reading order, end column exclusive; a click that never moved selects nothing. */
@@ -373,7 +388,7 @@ export class Renderer {
       this.selection = undefined
       this.dragging = false
       this.term.write(
-        `\x1b[?1004l\x1b[?2004l${this.mouse ? '\x1b[?1006l\x1b[?1002l' : ''}\x1b[?1049l\x1b[?25h`,
+        `${this.images?.reset() ?? ''}\x1b[?1004l\x1b[?2004l${this.mouse ? '\x1b[?1006l\x1b[?1002l' : ''}\x1b[?1049l\x1b[?25h`,
       )
       this.screenEntered = false
       const columns = this.term.size().columns

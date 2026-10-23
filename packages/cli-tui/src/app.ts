@@ -18,6 +18,8 @@ import { editDraft } from './external-editor.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { FooterRenderer } from './footer-renderer.js'
 import { foldingTerminal } from './glyphs.js'
+import { imageProtocol } from './image-protocol.js'
+import { InlineImages } from './inline-image.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
 import { createLinker } from './links.js'
 import { type Locale, t } from './locale.js'
@@ -118,6 +120,7 @@ export class TuiApp {
   readonly windowTitle: WindowTitle
   readonly raw: RawView
   readonly borders: Borders
+  readonly images: InlineImages
   private readonly pager: PagerOverlay
   readonly cardFocus: CardFocus
   readonly modelPicker: ModelPicker
@@ -173,6 +176,13 @@ export class TuiApp {
       path: o.themePreferencePath,
       env: process.env,
       changed: () => this.stopped || this.renderer.redraw(),
+    })
+    this.images = new InlineImages({
+      protocol: o.noAltScreen ? undefined : imageProtocol(process.env),
+      path: o.themePreferencePath,
+      raw: () => this.theme.raw,
+      session: () => this.o.session,
+      repaint: () => this.stopped || this.renderer.requestRender(),
     })
     this.notify = new NotifyPreference(o.notifyPreferencePath, process.env, () => this.locale)
     const base = createAnsi(o.term.caps.color)
@@ -259,6 +269,7 @@ export class TuiApp {
         letters: () => this.editor.text === '',
         refuseClosed: () => this.refuseClosed(),
         repaint: () => this.stopped || this.renderer.requestRender(),
+        images: this.images,
       }),
     })
     this.modal = new PermissionModal(() => this.stopped || this.renderer.requestRender(), {
@@ -484,6 +495,7 @@ export class TuiApp {
           this.mouse,
           o.mouse !== false,
           createLinker(process.env),
+          this.images.layer,
         )
     this.surfaces = new SurfaceInbox({
       session: () => this.o.session,

@@ -19,6 +19,13 @@ export type SessionViewKey =
   | 'recap.background'
   | 'recap.schedules'
   | 'recap.context'
+  | 'commands.images'
+  | 'commands.imagesSummary'
+  | 'images.on'
+  | 'images.off'
+  | 'images.usage'
+  | 'images.unsupported'
+  | 'images.unsaved'
 
 export const SESSION_VIEW_DICT: Record<Locale, Record<SessionViewKey, string>> = {
   en: {
@@ -39,6 +46,14 @@ export const SESSION_VIEW_DICT: Record<Locale, Record<SessionViewKey, string>> =
     'recap.background': 'Background',
     'recap.schedules': 'Scheduled',
     'recap.context': 'Context',
+    'commands.images':
+      'Show image attachments inline on terminals that support it (kitty, Ghostty, iTerm2, WezTerm)',
+    'commands.imagesSummary': 'Inline images on or off',
+    'images.on': 'Inline images on',
+    'images.off': 'Inline images off',
+    'images.usage': 'usage: /images [on|off]',
+    'images.unsupported': ' (this terminal cannot show them: images stay as [image: ...] text)',
+    'images.unsaved': ' (the preference could not be saved)',
   },
   'zh-CN': {
     'commands.fork': '从最近一个已完成的回合（或第 N 回合）分叉出新会话并切换过去',
@@ -58,5 +73,12 @@ export const SESSION_VIEW_DICT: Record<Locale, Record<SessionViewKey, string>> =
     'recap.background': '后台会话',
     'recap.schedules': '定时任务',
     'recap.context': '上下文',
+    'commands.images': '在支持的终端里内联显示图片附件（kitty、Ghostty、iTerm2、WezTerm）',
+    'commands.imagesSummary': '内联图片开关',
+    'images.on': '内联图片：开',
+    'images.off': '内联图片：关',
+    'images.usage': '用法：/images [on|off]',
+    'images.unsupported': '（当前终端不能显示，图片仍以 [image: ...] 文本呈现）',
+    'images.unsaved': '（偏好没能保存）',
   },
 }

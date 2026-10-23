@@ -1,6 +1,7 @@
 import type { UINode } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
 import { type Component, escapeControl, Text, VStack } from './component.js'
+import { type InlineImages, WithImages } from './inline-image.js'
 import type { Locale } from './locale.js'
 import { nodeText } from './node-text.js'
 import type { brandColour, ThemedAnsi, TuiTheme } from './theme.js'
@@ -23,6 +24,8 @@ export interface NodeViewHost {
   letters: () => boolean
   refuseClosed: () => boolean
   repaint: () => void
+  /** Draws image attachments inline where the terminal can; without it they stay `[image: ...]` text. */
+  images?: InlineImages
 }
 
 /** The view of one projected timeline node; approvals are registered so keystrokes can reach them. */
@@ -56,14 +59,19 @@ export function nodeView(host: NodeViewHost): (node: UINode) => Component {
     if (node.kind === 'assistant') return assistantView(node, ansi, locale)
     if (node.kind === 'user') {
       const text = nodeText(node)
-      return new UserMessage(
+      const message = new UserMessage(
         text.startsWith('you: ') ? text.slice('you: '.length) : text,
         ansi,
         host.theme,
         host.accent,
       )
+      const pictures = host.images?.blocks(node) ?? []
+      return pictures.length > 0 ? new WithImages(message, pictures) : message
     }
     const text = nodeText(node)
-    return text ? new Text(escapeControl(text)) : new VStack()
+    if (!text) return new VStack()
+    const label = new Text(escapeControl(text))
+    const pictures = node.kind === 'artifact' ? (host.images?.blocks(node) ?? []) : []
+    return pictures.length > 0 ? new WithImages(label, pictures) : label
   }
 }
