@@ -1225,6 +1225,29 @@ describe('web session selection', () => {
     'opens a new draft with the last model and permission (reconnect during %s)',
     async (reconnectDuring) => {
       installPublicFixture()
+      // 记住的权限要经由部署的允许列表校验；不提供运行时目录就会退回默认级别。
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>(async (url) => {
+          if (url === '/admin/api/runtime')
+            return Response.json({
+              providers: [],
+              bundles: [],
+              presets: [{ id: 'standard', isDefault: true }],
+              permissions: [
+                { id: 'read-only', isDefault: false },
+                { id: 'workspace-write', isDefault: false },
+                { id: 'full-access', isDefault: false },
+              ],
+              localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/workspace/plugins' },
+            })
+          if (url === '/admin/api/bundles') return Response.json({ catalog: [] })
+          // 草稿目录与运行时目录在同一次读取里解析：任一项失败，运行时快照会被一起丢弃。
+          if (url === '/admin/api/loops') return Response.json({ revision: 0, defaults: {}, loops: [] })
+          if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
+          return Response.json({ available: false })
+        }),
+      )
       history.replaceState(null, '', '/#test-launcher-token')
       localStorage.setItem(
         'agnes-web-composer-selection',
@@ -1301,7 +1324,10 @@ describe('web session selection', () => {
         expect(model.disabled).toBe(false)
         expect(model.querySelector('[data-model-label]')?.textContent).toBe('model-b')
       })
-      expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
+      await vi.waitFor(
+        () => expect(permission.querySelector('[data-permission-label]')?.textContent).toBe('完全访问'),
+        { timeout: 5000 },
+      )
       // Reuse the current model-picker contract: choices live in their named radio panels.
       const settingsPanel = () => document.querySelector<HTMLElement>('#model-settings-popover')
       const choice = (group: string, label: string) => {
@@ -1334,7 +1360,12 @@ describe('web session selection', () => {
       await openPanel()
       expect(choice('session-model-thinking', '高').getAttribute('aria-checked')).toBe('true')
       choose('session-model-thinking', '低')
-      await vi.waitFor(() => expect(document.getElementById('notice')?.textContent).toContain('新会话将使用'))
+      // 草稿里的模型/权限确认已改由 Toast 呈现，不再占用输入卡上方的提示条。
+      await vi.waitFor(() =>
+        expect(document.querySelector('[data-testid="operation-toast"]')?.textContent).toContain(
+          '新会话将使用',
+        ),
+      )
       // 选完一个参数面板收起，改下一个要重新展开。
       await vi.waitFor(() => expect(document.getElementById('model-listbox')).toBeNull())
       await openPanel('context')
@@ -1521,7 +1552,11 @@ describe('web session selection', () => {
     )
     submit('create in beta')
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce())
-    expect(create).toHaveBeenCalledWith({ cwd: beta.path, sessionKey: expect.any(String) })
+    expect(create).toHaveBeenCalledWith({
+      cwd: beta.path,
+      permission: 'default',
+      sessionKey: expect.any(String),
+    })
     await vi.waitFor(() =>
       expect(fresh.prompt).toHaveBeenCalledWith([{ type: 'text', text: 'create in beta' }], {
         titleLocale: 'zh-CN',
@@ -1670,7 +1705,7 @@ describe('web session selection', () => {
         if (url === '/admin/api/loops') {
           if (++loopReads === 1) return firstCatalog.promise
           if (loopReads === 2) return stale.promise
-          return Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] })
+          return Response.json({ revision: 2, defaults: { permission: 'full-access' }, loops: [] })
         }
         if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
         if (url === '/admin/api/composition') return Response.json({})
@@ -1709,7 +1744,7 @@ describe('web session selection', () => {
     await vi.waitFor(() => expect(rosterStarted).toBe(true))
     expect(newButton().disabled).toBe(true)
     expect((document.getElementById('send') as HTMLButtonElement).disabled).toBe(true)
-    firstCatalog.resolve(Response.json({ revision: 2, defaults: { preset: 'full-access' }, loops: [] }))
+    firstCatalog.resolve(Response.json({ revision: 2, defaults: { permission: 'full-access' }, loops: [] }))
     detached.resolve()
     await Promise.resolve()
     expect(newButton().disabled).toBe(true)
@@ -1727,7 +1762,7 @@ describe('web session selection', () => {
     await vi.waitFor(() =>
       expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问'),
     )
-    stale.resolve(Response.json({ revision: 1, defaults: { preset: 'read-only' }, loops: [] }))
+    stale.resolve(Response.json({ revision: 1, defaults: { permission: 'read-only' }, loops: [] }))
     await vi.waitFor(() => expect(apis).toHaveBeenCalledTimes(3))
     expect(document.querySelector('[data-permission-label]')?.textContent).toBe('完全访问')
   })
@@ -2087,7 +2122,11 @@ describe('web session selection', () => {
     expect(send.disabled).toBe(true)
     expect(model.disabled).toBe(true)
     expect(old.prompt).not.toHaveBeenCalled()
-    expect(create).toHaveBeenCalledWith({ cwd: '/workspace/agnes', sessionKey: expect.any(String) })
+    expect(create).toHaveBeenCalledWith({
+      cwd: '/workspace/agnes',
+      permission: 'default',
+      sessionKey: expect.any(String),
+    })
 
     firstCreation.resolve(fresh)
     includeFresh = true
@@ -3245,9 +3284,8 @@ describe('image composer submissions', () => {
     await vi.waitFor(() =>
       expect(document.querySelector('.agh-notifications')?.textContent).toContain('aggregate byte limit'),
     )
-    await vi.waitFor(() =>
-      expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png'),
-    )
+    // 支持图片的模型下，上传完成的图片按缩略图显示，文件名不再单独展示。
+    await vi.waitFor(() => expect(document.querySelector('.composer-image-preview img')).not.toBeNull())
     validation.mockRestore()
     submit('保留文字和图片')
     await vi.waitFor(() => expect(active.prompt).toHaveBeenCalledTimes(1))
@@ -3263,7 +3301,7 @@ describe('image composer submissions', () => {
     expect(active.followUp).not.toHaveBeenCalled()
     expect(active.steer).not.toHaveBeenCalled()
     expect((document.getElementById('prompt') as HTMLTextAreaElement).value).toBe(longText)
-    expect(document.querySelector('.composer-file-preview')?.textContent).toContain('one.png')
+    await vi.waitFor(() => expect(document.querySelector('.composer-image-preview img')).not.toBeNull())
     await vi.waitFor(() =>
       expect(document.querySelector('.agh-notifications')?.textContent).toContain('144 MiB 限制'),
     )
