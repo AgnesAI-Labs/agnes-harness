@@ -18,6 +18,12 @@
     /* Stay above the sticky page header for pointer access and visible keyboard focus. */
     z-index: 3;
   }
+  /* Operation notices are injected above the page header, which is the only place that gives the
+     absolutely positioned close button room. Reserve the same lines here, otherwise a notice
+     slides under the button. Scoped to the dialog so the standalone settings page stays as is. */
+  #config:has(.settings-shell) #settings-operation-notices:not(:empty) {
+    padding: var(--settings-header-height) var(--settings-header-end) var(--s12) var(--settings-gutter);
+  }
   /* The narrow screen's way back to the list (「设置」) has no place on a wide one, where the
    rail is beside the page. */
   .settings-shell #settings-content-slots > .agh-push-crumbs {
