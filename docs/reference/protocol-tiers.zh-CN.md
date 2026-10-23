@@ -35,6 +35,7 @@
 - `_agnes/v1/session.setPreset`
 - `_agnes/v1/session.setModel`
 - `_agnes/v1/session.setYolo`
+- `_agnes/v1/session.setToolFilter`
 - `_agnes/v1/participant.join`
 - `_agnes/v1/participant.leave`
 - `_agnes/v1/participant.list`

@@ -305,3 +305,22 @@ export function installChildAgents(
 export function childAgentCatalog(root: Context): readonly ChildAgentCatalogEntry[] {
   return root.childAgents.catalog()
 }
+
+/**
+ * The scope Core hands over carries a live `toolFilter` accessor, because the session's filter can be
+ * narrowed after the scope is bound. Spreading it would read the accessor once and freeze that answer,
+ * so the copy keeps an accessor that reads the original at every child start.
+ */
+export function scopeWithGeneration(
+  parent: ChildAgentParentScope,
+  generation?: string,
+): ChildAgentParentScope {
+  return Object.defineProperty(
+    { ...parent, ...(generation === undefined ? {} : { generation }) },
+    'toolFilter',
+    {
+      get: () => parent.toolFilter,
+      enumerable: true,
+    },
+  )
+}

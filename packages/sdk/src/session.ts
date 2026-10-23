@@ -29,6 +29,8 @@ import {
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
+  type SessionSetToolFilterResult,
+  type SessionToolFilterRequest,
   type SessionUndoPreviewResult,
   type SessionUndoResult,
   type SessionWorkspaceChangesParams,
@@ -607,6 +609,25 @@ export class Session {
     return this.client.call<EffectiveFromResult>('_agnes/v1/session.setPreset', {
       sessionId: this.id,
       preset,
+    })
+  }
+
+  /**
+   * Narrows the tools this session may use, for the rest of the session: `deny` is added to what is
+   * already denied, `allow` is intersected with any earlier `allow`. Nothing in the session can
+   * widen it again, so to get a tool back start a new session or fork from before the call. Names
+   * are exact tool names from `tools()`; an unknown name refuses the whole call. Owner only. A retry
+   * with the same `commandId` returns the first attempt's result. An older daemon answers
+   * METHOD_NOT_FOUND (-32601): the filter was not applied.
+   */
+  setToolFilter(
+    filter: SessionToolFilterRequest,
+    opts: { commandId?: string } = {},
+  ): Promise<SessionSetToolFilterResult> {
+    return this.client.call<SessionSetToolFilterResult>('_agnes/v1/session.setToolFilter', {
+      sessionId: this.id,
+      commandId: opts.commandId ?? crypto.randomUUID(),
+      ...filter,
     })
   }
 

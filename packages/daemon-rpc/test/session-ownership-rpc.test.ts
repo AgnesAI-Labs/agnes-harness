@@ -123,6 +123,10 @@ describe('authenticated session ownership RPC guard', () => {
         { method: '_agnes/v1/session.open', params: { sessionId, cwd: h.dataDir, requestId: 'stranger' } },
         { method: 'session/prompt', params: { sessionId, prompt: [] } },
         { method: '_agnes/v1/session.setYolo', params: { sessionId, enabled: true } },
+        {
+          method: '_agnes/v1/session.setToolFilter',
+          params: { sessionId, commandId: 'stranger-filter', deny: ['read'] },
+        },
         { method: '_agnes/v1/session.attach', params: { sessionId } },
         { method: '_agnes/v1/session.tools', params: { sessionId } },
         { method: '_agnes/v1/session.deliverables', params: { sessionId } },

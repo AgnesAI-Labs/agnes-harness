@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import type { Host, HostSession } from '@agnes/host'
 import type { Actor } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
@@ -419,6 +420,53 @@ describe('handleCommand dispatch against the real Host/HostSession shapes', () =
     const out = await handleCommand(session, cmd, { host, aborts: new Map() })
     expect(out).toEqual({ effectiveFromSeq: 5 })
     expect(calls).toEqual(['set:sess-1:standard'])
+  })
+
+  it('setToolFilter narrows a real worker session and refuses an unknown name as the public rejection', async () => {
+    const t = await openTestHost({
+      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    })
+    try {
+      const session = await t.host.createSession({ cwd: t.dataDir })
+      const [first, second] = session
+        .currentTools()
+        .list()
+        .map((tool) => tool.name)
+      expect(first && second).toBeTruthy()
+      const send = (filter: unknown) =>
+        handleCommand(
+          session,
+          { kind: 'command', requestId: 'tf', method: 'setToolFilter', params: { filter } },
+          { host: t.host, aborts: new Map() },
+        )
+      await expect(send({ deny: [first] })).resolves.toEqual({
+        effectiveFromSeq: expect.any(Number),
+        filter: { deny: [first] },
+      })
+      expect(
+        session
+          .currentTools()
+          .list()
+          .map((tool) => tool.name),
+      ).not.toContain(first)
+      await expect(send({ deny: ['no_such_tool'] })).rejects.toMatchObject({
+        code: -32011,
+        data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool', names: ['no_such_tool'] },
+      })
+      await expect(send({})).rejects.toMatchObject({ code: -32602 })
+      await session.close()
+      // The ledger carries the filter: a fresh open of the same session starts narrowed.
+      const reopened = await t.host.createSession({ key: session.key, cwd: t.dataDir })
+      expect(
+        reopened
+          .currentTools()
+          .list()
+          .map((tool) => tool.name),
+      ).not.toContain(first)
+      expect(reopened.toolFilter).toEqual({ deny: [first] })
+    } finally {
+      await t.close()
+    }
   })
 
   it('setModel calls host.validateModelSwitch before session.setModel', async () => {

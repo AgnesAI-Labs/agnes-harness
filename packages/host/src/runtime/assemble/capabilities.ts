@@ -1,4 +1,9 @@
-import type { SessionImpl, ToolRegistry, WorkspaceInvocationPort } from '@agnes/core'
+import {
+  NO_TOOL_FILTER,
+  type SessionImpl,
+  type ToolRegistry,
+  type WorkspaceInvocationPort,
+} from '@agnes/core'
 import type { ResourceEntry } from '@agnes/extension-api'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import {
@@ -104,6 +109,7 @@ export function createCapabilities(
     return resolveSessionCapabilities({
       profile: ctx.profile,
       ...(session?.roleAuthority ? { authority: session.roleAuthority } : {}),
+      ...(session && session.toolFilter !== NO_TOOL_FILTER ? { toolFilter: session.toolFilter } : {}),
       adapterCatalog: modelAdapterCatalog(runtimeTarget.pluginTree.root),
       composition:
         deps.compositionPin ??

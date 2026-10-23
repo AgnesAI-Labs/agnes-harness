@@ -48,6 +48,7 @@ export type SessionMethod =
   | 'undo'
   | 'append'
   | 'setPreset'
+  | 'setToolFilter'
   | 'setModel'
   | 'setYolo'
   | 'manualCompact'

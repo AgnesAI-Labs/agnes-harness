@@ -10,6 +10,8 @@ import {
   manageMemory,
   type ResolvedProfile,
   sessionPermissionCatalog,
+  ToolFilterError,
+  toolFilterRejection,
 } from '@agnes/host'
 import { exporterHealth } from '@agnes/observability'
 import { withPackageVerification } from '@agnes/package-manager'
@@ -507,6 +509,19 @@ export async function handleCommand(
       return session.append(p.tx as never)
     case 'setPreset': {
       return { effectiveFromSeq: await o.host.setSessionPreset(session.key, String(p.preset)) }
+    }
+    case 'setToolFilter': {
+      try {
+        const { seq, filter } = await session.setToolFilter(p.filter)
+        return { effectiveFromSeq: seq, filter }
+      } catch (error) {
+        // A refused request crosses the worker boundary as the public rejection, not an internal error.
+        if (error instanceof ToolFilterError) {
+          const { name, data } = toolFilterRejection(error)
+          throw rpcError(name, data)
+        }
+        throw error
+      }
     }
     case 'setModel': {
       const sel = p.sel as { slot: string; route: string; model: string }

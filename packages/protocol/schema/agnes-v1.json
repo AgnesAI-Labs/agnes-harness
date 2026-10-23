@@ -5944,6 +5944,55 @@
         "enabled": { "type": "boolean" }
       }
     },
+    "SessionToolFilterName": {
+      "description": "An exact tool name as the session catalog spells it. No wildcards.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+    },
+    "SessionToolFilterNames": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/SessionToolFilterName" }
+    },
+    "SessionToolFilterRequest": {
+      "description": "One narrowing request. At least one list must be present; a request can only remove tools, never restore them.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": { "$ref": "#/$defs/SessionToolFilterNames" },
+        "deny": { "$ref": "#/$defs/SessionToolFilterNames" }
+      }
+    },
+    "SessionToolFilter": {
+      "description": "The merged filter a session runs under. An empty allow list means no tool is allowed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": { "type": "array", "items": { "$ref": "#/$defs/SessionToolFilterName" } },
+        "deny": { "type": "array", "items": { "$ref": "#/$defs/SessionToolFilterName" } }
+      }
+    },
+    "SessionSetToolFilterParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "commandId"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "allow": { "$ref": "#/$defs/SessionToolFilterNames" },
+        "deny": { "$ref": "#/$defs/SessionToolFilterNames" }
+      }
+    },
+    "SessionSetToolFilterResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["effectiveFromSeq", "filter"],
+      "properties": {
+        "effectiveFromSeq": { "type": "integer", "minimum": 1 },
+        "filter": { "$ref": "#/$defs/SessionToolFilter" }
+      }
+    },
     "EffectiveFromResult": {
       "type": "object",
       "additionalProperties": false,

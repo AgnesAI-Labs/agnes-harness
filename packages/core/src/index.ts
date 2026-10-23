@@ -343,5 +343,15 @@ export type {
   TurnOutcome,
 } from './step/session.js'
 export { noCompaction, noopHooks, SessionImpl } from './step/session.js'
+export {
+  MAX_TOOL_FILTER_NAMES,
+  mergeToolFilter,
+  NO_TOOL_FILTER,
+  type SessionToolFilter,
+  TOOL_FILTER_EVENT,
+  ToolFilterError,
+  toolFilterRejection,
+  toolFilterRule,
+} from './step/tool-filter.js'
 export type { ExecOpts, PlannedCall } from './step/tools.js'
 export { approveAndExecute, runToolsPhase } from './step/tools.js'

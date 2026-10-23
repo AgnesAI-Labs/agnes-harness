@@ -1,4 +1,4 @@
-import { type Host, type HostSession, resolveSessionCapabilities } from '@agnes/host'
+import { type Host, type HostSession, resolveSessionCapabilities, ToolFilterError } from '@agnes/host'
 import { describe, expect, it, vi } from 'vitest'
 import { handleCommand, handleServiceCommand } from '../src/commands.js'
 
@@ -25,6 +25,38 @@ describe('setPreset command', () => {
     expect(setSessionPreset).toHaveBeenCalledWith('session-a', 'standard')
     expect(session.setPreset).not.toHaveBeenCalled()
     expect(result).toEqual({ effectiveFromSeq: 42 })
+  })
+})
+
+describe('setToolFilter command', () => {
+  const run = (setToolFilter: HostSession['setToolFilter']) =>
+    handleCommand(
+      { key: 'session-a', setToolFilter } as unknown as HostSession,
+      {
+        kind: 'command',
+        requestId: 'request-b',
+        method: 'setToolFilter',
+        params: { filter: { deny: ['bash'] } },
+      } as never,
+      { host: {} as Host, aborts: new Map() },
+    )
+
+  it('hands the request to the session that owns the ledger and answers with the merged filter', async () => {
+    const setToolFilter = vi.fn(async () => ({ seq: 9, filter: { deny: ['bash'] } }))
+    await expect(run(setToolFilter)).resolves.toEqual({ effectiveFromSeq: 9, filter: { deny: ['bash'] } })
+    expect(setToolFilter).toHaveBeenCalledWith({ deny: ['bash'] })
+  })
+
+  it('reports a refused request as the public rejection and lets any other failure through unchanged', async () => {
+    const refused = new ToolFilterError('unknown-tool', 'no such tool', ['nope'])
+    await expect(run(async () => Promise.reject(refused))).rejects.toMatchObject({
+      code: -32011,
+      data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool', names: ['nope'] },
+    })
+    const invalid = new ToolFilterError('invalid-request', 'bad')
+    await expect(run(async () => Promise.reject(invalid))).rejects.toMatchObject({ code: -32602 })
+    const fault = new Error('disk')
+    await expect(run(async () => Promise.reject(fault))).rejects.toBe(fault)
   })
 })
 

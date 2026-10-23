@@ -675,6 +675,12 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionSetPresetParams: AgnesGen.SessionSetPresetParams,
   SessionSetModelParams: AgnesGen.SessionSetModelParams,
   SessionSetYoloParams: AgnesGen.SessionSetYoloParams,
+  SessionToolFilterName: AgnesGen.SessionToolFilterName,
+  SessionToolFilterNames: AgnesGen.SessionToolFilterNames,
+  SessionToolFilterRequest: AgnesGen.SessionToolFilterRequest,
+  SessionToolFilter: AgnesGen.SessionToolFilter,
+  SessionSetToolFilterParams: AgnesGen.SessionSetToolFilterParams,
+  SessionSetToolFilterResult: AgnesGen.SessionSetToolFilterResult,
   EffectiveFromResult: AgnesGen.EffectiveFromResult,
   SeqResult: AgnesGen.SeqResult,
   PermissionWithdrawParams: AgnesGen.PermissionWithdrawParams,
@@ -4453,6 +4459,47 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { sessionId: 's', enabled: 'true' }, // not a boolean
     ],
     note: 'setYolo params: sessionId + the bypass flag to switch to',
+  },
+  SessionToolFilterName: {
+    valid: 'read_file',
+    invalid: ['', '1bad', 'rm*', 'a b', 'x'.repeat(65), 7],
+    note: 'an exact tool name: the extension tool-name pattern, no wildcards',
+  },
+  SessionToolFilterNames: {
+    valid: ['read_file', 'bash'],
+    invalid: [[], ['bash*'], Array.from({ length: 129 }, (_, n) => `tool_${n}`)],
+    note: 'a request list: 1..128 exact names',
+  },
+  SessionToolFilterRequest: {
+    valid: { deny: ['bash'] },
+    invalid: [{ allow: [] }, { deny: ['bash'], extra: 1 }, { allow: 'bash' }],
+    note: 'one narrowing request; a list that is present must name at least one tool',
+  },
+  SessionToolFilter: {
+    valid: { allow: [], deny: ['bash'] },
+    invalid: [{ allow: ['bad name'] }, { deny: 'bash' }, { allow: [], widen: true }],
+    note: 'the merged filter; an empty allow list means nothing is allowed',
+  },
+  SessionSetToolFilterParams: {
+    valid: { sessionId: 's', commandId: 'c1', allow: ['read_file', 'grep'], deny: ['bash'] },
+    invalid: [
+      { sessionId: 's', allow: ['read_file'] }, // missing required commandId
+      { sessionId: 's', commandId: 'c1', allow: [] }, // an empty list names nothing
+      { sessionId: 's', commandId: 'c1', deny: ['bash*'] }, // no wildcards: exact tool names only
+      { sessionId: 's', commandId: 'c1', deny: ['bash '] }, // not a tool name
+      { sessionId: 's', commandId: 'c1', deny: Array.from({ length: 129 }, (_, n) => `tool_${n}`) }, // one past the 128 cap
+      { sessionId: 's', commandId: 'c1', deny: ['bash'], widen: true }, // closed object
+    ],
+    note: 'setToolFilter params: a narrowing request; at least one list is enforced by core, each list by the schema',
+  },
+  SessionSetToolFilterResult: {
+    valid: { effectiveFromSeq: 9, filter: { allow: ['read_file'], deny: ['bash'] } },
+    invalid: [
+      { effectiveFromSeq: 9 }, // missing the merged filter
+      { effectiveFromSeq: 0, filter: {} }, // boundary: one below minimum:1
+      { effectiveFromSeq: 9, filter: { deny: ['rm *'] } }, // not a tool name
+    ],
+    note: 'setToolFilter result: the merged filter, whose allow list may be empty (nothing allowed)',
   },
   EffectiveFromResult: {
     valid: { effectiveFromSeq: 9 },
@@ -9026,6 +9073,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionSetYoloParams',
     result: 'EffectiveFromResult',
   },
+  '_agnes/v1/session.setToolFilter': {
+    fileId: AGNES_ID,
+    params: 'SessionSetToolFilterParams',
+    result: 'SessionSetToolFilterResult',
+  },
   '_agnes/v1/approval.withdraw': { fileId: AGNES_ID, params: 'PermissionWithdrawParams' },
   '_agnes/v1/approval.decide': {
     fileId: AGNES_ID,
@@ -9830,6 +9882,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.SessionSetPresetParams as Sample,
   '_agnes/v1/session.setModel': AGNES_SAMPLES.SessionSetModelParams as Sample,
   '_agnes/v1/session.setYolo': AGNES_SAMPLES.SessionSetYoloParams as Sample,
+  '_agnes/v1/session.setToolFilter': AGNES_SAMPLES.SessionSetToolFilterParams as Sample,
   '_agnes/v1/approval.withdraw': {
     valid: { sessionId: 's', requestId: 'r', reason: 'stopped' },
     invalid: [
@@ -10482,6 +10535,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.EffectiveFromResult as Sample,
   '_agnes/v1/session.setModel': AGNES_SAMPLES.EffectiveFromResult as Sample,
   '_agnes/v1/session.setYolo': AGNES_SAMPLES.EffectiveFromResult as Sample,
+  '_agnes/v1/session.setToolFilter': AGNES_SAMPLES.SessionSetToolFilterResult as Sample,
   initialize: ACP_SAMPLES.InitializeResponse as Sample,
   'session/new': ACP_SAMPLES.NewSessionResponse as Sample,
   'session/prompt': ACP_SAMPLES.PromptResponse as Sample,

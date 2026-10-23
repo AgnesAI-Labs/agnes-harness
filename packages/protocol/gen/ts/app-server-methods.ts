@@ -184,6 +184,7 @@ export interface AppServerMethods {
   "_agnes/v1/session.setPreset": { params: Static<typeof import("./agnes-v1.js").SessionSetPresetParams>; result: Static<typeof import("./agnes-v1.js").EffectiveFromResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.setModel": { params: Static<typeof import("./agnes-v1.js").SessionSetModelParams>; result: Static<typeof import("./agnes-v1.js").EffectiveFromResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.setYolo": { params: Static<typeof import("./agnes-v1.js").SessionSetYoloParams>; result: Static<typeof import("./agnes-v1.js").EffectiveFromResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.setToolFilter": { params: Static<typeof import("./agnes-v1.js").SessionSetToolFilterParams>; result: Static<typeof import("./agnes-v1.js").SessionSetToolFilterResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/approval.decide": { params: Static<typeof import("./agnes-v1.js").ApprovalDecideParams>; result: Static<typeof import("./agnes-v1.js").DecisionCommandReceipt>; direction: "c2s"; kind: "request" }
   "_agnes/v1/decision.list": { params: Static<typeof import("./agnes-v1.js").SessionIdParams>; result: Static<typeof import("./agnes-v1.js").DecisionListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/participant.join": { params: Static<typeof import("./agnes-v1.js").ParticipantParams>; result: Static<typeof import("./agnes-v1.js").SeqResult>; direction: "c2s"; kind: "request" }

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { PreviewSnapshotEntry } from '@agnes/daemon-foundation/registry'
 import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
 import { FEEDBACK_PROVIDER_ID } from '@agnes/host'
-import type { Actor, EventEnvelope } from '@agnes/protocol'
+import type { Actor, EventEnvelope, SessionToolFilter } from '@agnes/protocol'
 import type {
   DeliverablesRead,
   DeliverablesReadResult,
@@ -462,6 +462,16 @@ export class RemoteSession {
     const result = (await this.link.command('setPreset', { preset })) as { effectiveFromSeq: number }
     this.lastSeq = Math.max(this.lastSeq, result.effectiveFromSeq)
     return result.effectiveFromSeq
+  }
+
+  /** The worker holds the session and its ledger; a refused request comes back as the public rejection. */
+  async setToolFilter(filter: unknown): Promise<{ seq: number; filter: SessionToolFilter }> {
+    const result = (await this.link.command('setToolFilter', { filter })) as {
+      effectiveFromSeq: number
+      filter: SessionToolFilter
+    }
+    this.lastSeq = Math.max(this.lastSeq, result.effectiveFromSeq)
+    return { seq: result.effectiveFromSeq, filter: result.filter }
   }
 
   async setModel(sel: unknown): Promise<number> {

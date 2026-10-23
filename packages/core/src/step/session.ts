@@ -199,6 +199,7 @@ import {
   validateTurnOverrides,
 } from './step-cap.js'
 import { sessionToolCatalog } from './tool-catalog.js'
+import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } from './tool-filter.js'
 import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
@@ -861,13 +862,30 @@ export class SessionImpl {
   currentTools(): ToolRegistry {
     const tools = this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
     const allow = this.roleAuthority?.tools.ids ?? this.preset.tools.allow
-    if (allow === undefined) return tools
-    // One view per registry and list, so repeated lookups in a turn share it.
-    if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
-      this.allowedTools = { source: tools, allow, view: new ToolRegistryView(tools, allow, allow) }
-    return this.allowedTools.view
+    let view = tools
+    if (allow !== undefined) {
+      // One view per registry and list, so repeated lookups in a turn share it.
+      if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
+        this.allowedTools = { source: tools, allow, view: new ToolRegistryView(tools, allow, allow) }
+      view = this.allowedTools.view
+    }
+    if (this.toolFilter === NO_TOOL_FILTER) return view
+    // The session filter sits on top of preset and profile, so it can only take tools away.
+    if (this.filteredView?.source !== view || this.filteredView.filter !== this.toolFilter)
+      this.filteredView = {
+        source: view,
+        filter: this.toolFilter,
+        view: filteredTools(view, () => this.toolFilter),
+      }
+    return this.filteredView.view
   }
   private allowedTools?: { source: ToolRegistry; allow: readonly string[]; view: ToolRegistry }
+  private filteredView?: { source: ToolRegistry; filter: SessionToolFilter; view: ToolRegistry }
+  /** Narrowed only by `setToolFilter`, and rebuilt from the ledger on open. Never widened. */
+  toolFilter: SessionToolFilter = NO_TOOL_FILTER
+  setToolFilter(request: unknown): Promise<{ seq: Seq; filter: SessionToolFilter }> {
+    return setToolFilter(this, request)
+  }
 
   /** Read-only catalog from the same model filtering and authorized discovery as this session. */
   toolCatalog(): import('@agnes/protocol').SessionToolsResult {

@@ -81,6 +81,7 @@ import { registerIntelligentUi } from './intelligent-ui.js'
 import { registerSchedules } from './schedules.js'
 import { registerSessionBtw } from './session-btw.js'
 import { registerSessionGrants } from './session-grants.js'
+import { dispatchToolFilter, registerSessionSwitches } from './session-switches.js'
 import { registerSessionUndo, undoOf, undoResultFromFact } from './session-undo.js'
 import { registerToolRecordReads } from './tool-records.js'
 
@@ -488,6 +489,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.btw',
       'session.setPreset',
       'session.setModel',
+      'session.setToolFilter',
       'session.setYolo',
       'approvalGrants.forSession',
       'approvalGrants.revokeForSession',
@@ -1198,49 +1200,6 @@ export function registerAgnes(
     return r.result as { sessionId: string }
   })
   registerSessionBtw(ep, cx, requireOwner)
-  ep.register('_agnes/v1/session.setPreset', async (params, c) => {
-    const p = params as { sessionId: string; preset: string }
-    requireOwner('session.setPreset', p.sessionId, c)
-    const entry = cx.registry.require(p.sessionId)
-    try {
-      const resolved = cx.host.validatePresetSwitch(p.preset, p.sessionId)
-      return {
-        effectiveFromSeq: await runQueued(cx.commandQueue, p.sessionId, neverAbort(), () =>
-          entry.session.setPreset(resolved.view),
-        ),
-      }
-    } catch (e) {
-      return mapCore(e)
-    }
-  })
-  ep.register('_agnes/v1/session.setModel', async (params, c) => {
-    const p = params as {
-      sessionId: string
-      slot: string
-      route: string
-      model: string
-      thinking?: ThinkingLevel | null
-      contextWindow?: number | null
-    }
-    const sel = {
-      slot: p.slot,
-      route: p.route,
-      model: p.model,
-      ...(p.thinking === undefined ? {} : { thinking: p.thinking }),
-      ...(p.contextWindow === undefined ? {} : { contextWindow: p.contextWindow }),
-    }
-    requireOwner('session.setModel', p.sessionId, c)
-    try {
-      cx.host.validateModelSwitch(sel, p.sessionId)
-      return {
-        effectiveFromSeq: await runQueued(cx.commandQueue, p.sessionId, neverAbort(), () =>
-          cx.registry.require(p.sessionId).session.setModel(sel),
-        ),
-      }
-    } catch (e) {
-      return mapCore(e)
-    }
-  })
   // No host validation gate: unlike preset/model, there is no route table a boolean bypass flag
   // could fall outside of, so there is nothing here for `cx.host` to check before it lands.
   ep.register('_agnes/v1/session.setYolo', async (params, c) => {
@@ -1677,6 +1636,8 @@ export function registerAgnes(
         const result = await undoOf(entry.session, input)
         return { seq: result.seq, result }
       }
+      case 'setToolFilter':
+        return dispatchToolFilter(cx, payload)
       case 'fork':
         return cx.forkSession(
           sessionId,
@@ -1803,6 +1764,8 @@ export function registerAgnes(
       const result = undoResultFromFact(String(payload.sessionId), event.seq, event.data as never)
       return { seq: result.seq, result }
     }
+    // Narrowing twice with the same lists changes nothing, so an unknown outcome is settled by running it again.
+    if (kind === 'setToolFilter') return dispatchToolFilter(cx, payload)
     if (kind === 'jobs.enqueue' && cx.jobs && typeof payload.idempotencyKey === 'string') {
       try {
         await cx.jobs.poll(payload.idempotencyKey)
@@ -1844,6 +1807,7 @@ export function registerAgnes(
       kind === 'compact' ||
       kind === 'undo' ||
       kind === 'fork' ||
+      kind === 'setToolFilter' ||
       kind === 'jobs.enqueue'
     )
       requireOwner(`submit.${kind}`, sessionId, c)
@@ -1951,6 +1915,7 @@ export function registerAgnes(
   })
   ep.register('_agnes/v1/session.control', (params, c) => sugar('control', params, c))
   registerSessionUndo(ep, cx.registry, requireOwner, submit)
+  registerSessionSwitches(ep, cx, requireOwner, submit)
   ep.register('_agnes/v1/apis.list', async (_params, c) => {
     const pr = cx.host.profile
     // This list is what every conversation picker offers and what a client takes its default model

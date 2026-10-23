@@ -631,6 +631,28 @@ it.each(['mcp', 'skills'] as const)(
   },
 )
 
+it('reports a session tool filter as the last word on a tool, and only a filtered session shows its rules', () => {
+  const input = {
+    selection: { toolPolicy: { deny: ['write'] } },
+    installed: {
+      tools: ['read', 'write', 'search'].map((name) => ({ name, readOnly: false })),
+    },
+  }
+  const plain = resolveSessionCapabilities(input)
+  expect(plain.tools.flatMap((tool) => tool.reasons).some((r) => r.rule.startsWith('session-'))).toBe(false)
+  const filtered = resolveSessionCapabilities({
+    ...input,
+    toolFilter: { allow: ['read', 'write'], deny: ['read'] },
+  })
+  const by = (id: string) => filtered.tools.find((tool) => tool.id === id)
+  const source = { layer: 'session', name: 'tool-filter' }
+  expect(by('read')).toMatchObject({ enabled: false, reasons: [{ rule: 'session-deny', source }] })
+  expect(by('search')).toMatchObject({ enabled: false, reasons: [{ rule: 'session-allow', source }] })
+  // The profile already turned `write` off; the session allow list cannot bring it back.
+  expect(by('write')).toMatchObject({ enabled: false, reasons: [{ rule: 'policy-deny' }] })
+  expect(filtered.tools.filter((tool) => tool.enabled)).toEqual([])
+})
+
 it('applies disabled-plugin, config and resource changes after skipping an equivalent composition', async () => {
   const source = pluginSource("ctx.tools.register(tool('review_composition'))")
   const f = await pluginHost(source, { profileInputs: { user: { name: 'local-dev', composition: {} } } })

@@ -65,6 +65,7 @@ import {
   type SessionDeps,
   SessionImpl,
 } from './step/session.js'
+import { restoreToolFilter } from './step/tool-filter.js'
 
 /**
  * The closed set of `x/core/*` diagnostic names. Five of them are written outside this file:
@@ -757,6 +758,8 @@ export class Kernel {
           session.hooks = lifecyclePort(session, sessionHooks, logger)
         }
         so.historySignal?.throwIfAborted()
+        // Before anything can resume or run: a damaged filter row refuses the open, never "no filter".
+        await restoreToolFilter(session)
         const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
         resumed = reason === 'resume'
         await session.start()

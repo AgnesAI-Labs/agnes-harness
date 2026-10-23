@@ -12,7 +12,13 @@ export function bindChildAgentSession(
   parent: ChildAgentParentScope,
 ): ChildAgentSessionService {
   const lifetime = new AbortController()
-  const owner = { ...parent, toolFilter: narrowChildToolFilter(parent.toolFilter) }
+  // Read at every start: a session filter set after this scope was bound still binds later children.
+  const owner = {
+    ...parent,
+    get toolFilter() {
+      return narrowChildToolFilter(parent.toolFilter)
+    },
+  }
   const signal = AbortSignal.any([parent.signal, lifetime.signal])
   const handles = new Map<string, ChildAgentHandle>()
   const starting = new Set<Promise<unknown>>()

@@ -23,6 +23,7 @@ import type {
 import { toolArgumentError } from './tool-args.js'
 import { recordToolArgumentCheck, restoreToolArgumentRecovery } from './tool-argument-recovery.js'
 import { toolCallPayload } from './tool-call.js'
+import { toolFilterRule } from './tool-filter.js'
 import { approveAndExecute, type PlannedCall, refuse } from './tools.js'
 
 /** The six names a `{ replace: name }` Operation may stand in for. Closed, not a bare string. */
@@ -94,6 +95,9 @@ type Turn = NonNullable<SessionImpl['turn']>
 export function callableTool(s: SessionImpl, t: Turn, name: string) {
   const def = t.snapshot.byName.get(name)
   if (!def) throw Object.assign(new Error(`unknown tool ${name}`), { code: 'TOOL_NOT_FOUND' })
+  // The turn's snapshot predates a filter set mid-turn; the live filter is what binds the next call.
+  if (toolFilterRule(s.toolFilter, name))
+    throw Object.assign(new Error(`tool ${name} is turned off for this session`), { code: 'TOOL_NOT_FOUND' })
   if (!modelAllowsTool(def, s.computerUseAllowed()))
     throw Object.assign(new Error(modelCapabilityUnavailable.message), {
       code: 'TOOL_NOT_DISCLOSED',

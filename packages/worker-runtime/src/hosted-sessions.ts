@@ -69,6 +69,7 @@ const ACTIVE_METHODS = new Set([
   'run',
   'append',
   'setPreset',
+  'setToolFilter',
   'setModel',
   'setYolo',
   'manualCompact',

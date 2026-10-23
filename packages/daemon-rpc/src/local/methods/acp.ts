@@ -50,6 +50,7 @@ import type { SessionEntry } from '../sessions.js'
 // load agnes.ts back at runtime in the other direction.
 import { mapCore } from './agnes.js'
 import { registerSessionIntegrity } from './session-integrity.js'
+import { applyOpenToolFilter, parseOpenToolFilter } from './session-switches.js'
 import { throwWorkspaceRpcError } from './workspaces.js'
 
 export type LocalContext = {
@@ -663,6 +664,7 @@ export function registerAcp(
     const permission = h.permission
     if (permission !== undefined && (typeof permission !== 'string' || !SESSION_PERMISSIONS.has(permission)))
       throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid permission' })
+    const toolFilter = parseOpenToolFilter(h.toolFilter)
     let entry: SessionEntry
     let workspace: Awaited<ReturnType<WorkspaceCatalog['validate']>>
     try {
@@ -718,6 +720,8 @@ export function registerAcp(
         key: requestedKey,
         ...(c.conn.credential === undefined ? {} : { credential: c.conn.credential }),
       })
+      // Before activation: until the owner can reach the session, no prompt can run it unfiltered.
+      if (toolFilter) await applyOpenToolFilter(cx, entry.key, toolFilter)
       if (reservedNew && !ownership.activateNew(entry.key, c.conn.principalId))
         denyOwnership('session/new', requestedKey)
     } catch (error) {

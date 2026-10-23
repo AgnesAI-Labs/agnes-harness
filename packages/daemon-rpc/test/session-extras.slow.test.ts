@@ -784,6 +784,121 @@ describe('session extras: list, preset/model switching and durable fork', () => 
     await h.close()
   })
 
+  it('setToolFilter narrows once per commandId, only ever narrows, and refuses what it cannot apply', async () => {
+    const h = await openTestHost({
+      packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    })
+    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+    await ep.handle(init)
+    let id = 10
+    const call = (method: string, params: unknown) =>
+      ep.handle({ jsonrpc: '2.0', id: id++, method, params }) as Promise<{
+        result?: Record<string, any>
+        error?: { code: number; data: { code: string; reason?: string } }
+      }>
+    const enabled = (caps: { tools: { id: string; enabled: boolean }[] }) =>
+      caps.tools.filter((tool) => tool.enabled).map((tool) => tool.id)
+    const { result } = (await call('session/new', { cwd: h.dataDir, mcpServers: [] })) as {
+      result: { sessionId: string }
+    }
+    const sessionId = result.sessionId
+    const before = (await call('_agnes/v1/session.tools', { sessionId })).result!
+    const names = enabled(before.capabilities)
+    expect(names.length).toBeGreaterThan(2)
+    const [a, b, c] = names as [string, string, string]
+
+    const first = await call('_agnes/v1/session.setToolFilter', { sessionId, commandId: 'f1', deny: [a] })
+    expect(first.result).toEqual({ effectiveFromSeq: expect.any(Number), filter: { deny: [a] } })
+    // The same commandId replays the first answer; the same id with other lists is a conflict.
+    expect(await call('_agnes/v1/session.setToolFilter', { sessionId, commandId: 'f1', deny: [a] })).toEqual({
+      jsonrpc: '2.0',
+      id: expect.any(Number),
+      result: first.result,
+    })
+    expect(
+      (await call('_agnes/v1/session.setToolFilter', { sessionId, commandId: 'f1', deny: [b] })).error?.data
+        .code,
+    ).toBe('ID_CONFLICT')
+
+    const after = (await call('_agnes/v1/session.tools', { sessionId })).result!
+    expect(after.tools.map((tool: { name: string }) => tool.name)).not.toContain(a)
+    expect(after.capabilities.tools.find((tool: { id: string }) => tool.id === a)).toMatchObject({
+      enabled: false,
+      reasons: [{ rule: 'session-deny', source: { layer: 'session', name: 'tool-filter' } }],
+    })
+    // Allow lists intersect and deny lists accumulate; nothing the first call removed comes back.
+    const merged = await call('_agnes/v1/session.setToolFilter', {
+      sessionId,
+      commandId: 'f2',
+      allow: [a, b, c],
+    })
+    expect(merged.result?.filter).toEqual({ allow: [a, b, c], deny: [a] })
+    const narrowed = await call('_agnes/v1/session.setToolFilter', {
+      sessionId,
+      commandId: 'f3',
+      allow: [a, b],
+    })
+    expect(narrowed.result?.filter).toEqual({ allow: [a, b], deny: [a] })
+    const now = (await call('_agnes/v1/session.tools', { sessionId })).result!
+    expect(enabled(now.capabilities)).toEqual([b])
+    expect(now.capabilities.tools.find((tool: { id: string }) => tool.id === c)).toMatchObject({
+      enabled: false,
+      reasons: [{ rule: 'session-allow' }],
+    })
+
+    // Refusals: an unknown name rejects the whole request; empty, oversized and badly named lists are invalid.
+    const unknown = await call('_agnes/v1/session.setToolFilter', {
+      sessionId,
+      commandId: 'u1',
+      deny: [b, 'nope'],
+    })
+    expect(unknown.error).toMatchObject({
+      code: -32011,
+      data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool' },
+    })
+    expect(enabled((await call('_agnes/v1/session.tools', { sessionId })).result!.capabilities)).toEqual([b])
+    for (const bad of [
+      {},
+      { allow: [] },
+      { deny: ['rm *'] },
+      { deny: Array.from({ length: 129 }, (_, n) => `t${n}`) },
+    ])
+      expect(
+        (await call('_agnes/v1/session.setToolFilter', { sessionId, commandId: `bad-${id}`, ...bad })).error
+          ?.code,
+      ).toBe(-32602)
+
+    // session/new can carry the first filter; a request the new session cannot satisfy fails the open.
+    const withFilter = await call('session/new', {
+      cwd: h.dataDir,
+      mcpServers: [],
+      _meta: {
+        'ai.agnes.harness': {
+          sessionKey: 'agnes:local:default:daemon:dm:filtered',
+          toolFilter: { deny: [a] },
+        },
+      },
+    })
+    const filtered = (await call('_agnes/v1/session.tools', { sessionId: withFilter.result!.sessionId }))
+      .result!
+    expect(enabled(filtered.capabilities)).not.toContain(a)
+    expect(enabled(filtered.capabilities)).toContain(b)
+    for (const toolFilter of [{ deny: ['nope'] }, { allow: [] }, {}, { deny: [a], extra: 1 }])
+      expect(
+        (
+          await call('session/new', {
+            cwd: h.dataDir,
+            mcpServers: [],
+            _meta: {
+              'ai.agnes.harness': { sessionKey: `agnes:local:default:daemon:dm:bad-${id}`, toolFilter },
+            },
+          })
+        ).error,
+      ).toBeDefined()
+    await ep.close()
+    await h.close()
+  })
+
   it('setModel switches to a published route/model pair and rejects one outside the route table', async () => {
     // openTestHost always passes a `script`, which makes the testkit install a ScriptedProvider
     // instead of the production buildProvider path - and the default ScriptedProvider's own model

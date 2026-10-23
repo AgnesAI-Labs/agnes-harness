@@ -23,6 +23,7 @@ import { createNetFetch } from '../adapters/index.js'
 import type { ComputerUseHost } from '../computer-use/index.js'
 import { capabilityEnabled } from '../profile/session-capabilities.js'
 import { createSessionHookPort, readTelemetryConsent } from '../sessions/session-hooks.js'
+import { scopeWithGeneration } from './child-agents.js'
 import { hostCommandPathScope } from './command-path-scope.js'
 import type { AssemblyContext } from './context.js'
 import type { PresetCatalog } from './presets.js'
@@ -190,10 +191,7 @@ export async function createKernel(
       : {}),
     loopChildren: (parent) => {
       const generation = deps.sessionGeneration?.(parent.sessionKey)
-      return pluginTree.root.childAgents.forSession({
-        ...parent,
-        ...(generation === undefined ? {} : { generation }),
-      })
+      return pluginTree.root.childAgents.forSession(scopeWithGeneration(parent, generation))
     },
     storage: adapters.storage,
     ...(loop ? { loop } : {}),

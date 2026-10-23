@@ -173,6 +173,7 @@ export type MethodName =
   | '_agnes/v1/session.setPreset'
   | '_agnes/v1/session.setModel'
   | '_agnes/v1/session.setYolo'
+  | '_agnes/v1/session.setToolFilter'
   | '_agnes/v1/approval.decide'
   | '_agnes/v1/decision.list'
   | '_agnes/v1/participant.join'
@@ -441,6 +442,10 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     result: A.EffectiveFromResult,
   },
   '_agnes/v1/session.setYolo': clientRequest(A.SessionSetYoloParams, A.EffectiveFromResult),
+  '_agnes/v1/session.setToolFilter': clientRequest(
+    A.SessionSetToolFilterParams,
+    A.SessionSetToolFilterResult,
+  ),
   '_agnes/v1/approval.decide': clientRequest(A.ApprovalDecideParams, A.DecisionCommandReceipt),
   '_agnes/v1/decision.list': clientRequest(A.SessionIdParams, A.DecisionListResult),
   '_agnes/v1/participant.join': clientRequest(A.ParticipantParams, A.SeqResult),

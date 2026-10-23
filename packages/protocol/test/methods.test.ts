@@ -326,6 +326,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.setModel',
         '_agnes/v1/session.setPreset',
         '_agnes/v1/session.setYolo',
+        '_agnes/v1/session.setToolFilter',
         '_agnes/v1/session.revealWorkspace',
         '_agnes/v1/session.runtime',
         '_agnes/v1/session.integrity',
@@ -372,7 +373,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(218)
+    expect(Object.keys(METHODS)).toHaveLength(219)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({
@@ -1262,5 +1263,27 @@ describe('methods (I1 set)', () => {
       { command: 'ls', shell: 'bash' },
     ])
       expect(ok(bad)).toBe(false)
+  })
+
+  it('setToolFilter takes exact names in bounded lists and returns the merged filter', () => {
+    const call = (extra: Record<string, unknown>) =>
+      validateMethod('_agnes/v1/session.setToolFilter', 'params', {
+        sessionId: 's',
+        commandId: 'c',
+        ...extra,
+      })
+    expect(call({ deny: ['bash'], allow: ['bash', 'grep'] }).ok).toBe(true)
+    expect(call({ deny: ['bash*'] }).ok).toBe(false)
+    expect(call({ allow: [] }).ok).toBe(false)
+    expect(call({ deny: Array.from({ length: 129 }, (_, n) => `t${n}`) }).ok).toBe(false)
+    expect(
+      errorsOf(validateMethod('_agnes/v1/session.setToolFilter', 'params', { sessionId: 's', deny: ['a'] })),
+    ).toContainEqual(expect.objectContaining({ code: 'MISSING', key: 'commandId' }))
+    expect(
+      validateMethod('_agnes/v1/session.setToolFilter', 'result', {
+        effectiveFromSeq: 9,
+        filter: { allow: [], deny: ['bash'] },
+      }).ok,
+    ).toBe(true)
   })
 })

@@ -9,6 +9,8 @@ export {
   type ScanRead,
   scanAll,
   scanPages,
+  ToolFilterError,
+  toolFilterRejection,
 } from '@agnes/core'
 export {
   ARTIFACT_RECLAIMED_FAILURE,

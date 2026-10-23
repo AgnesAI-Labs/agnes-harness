@@ -5,6 +5,7 @@ import type { ChildWorkspaceLifecycle } from '@agnes/core-effects/workspace/runt
 import type { ChildTaskRecord } from '@agnes/extension-api'
 import type { Kernel, SessionOptions } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
+import { NO_TOOL_FILTER } from '../step/tool-filter.js'
 import { type ResolvedChildRole, recordedChildRole } from './roles.js'
 import { childSessionToolFilter, narrowChildToolFilter } from './tool-filter.js'
 
@@ -41,7 +42,14 @@ export async function openDelegatedSession(
   const cwd = (await store.lookupByKey(record.childKey))?.cwd ?? record.cwd ?? opts.cwd
   checkParent()
   setChildAgentAllowlist(record.childKey, childAgentAllowlist(parent.key))
-  const filter = narrowChildToolFilter(childSessionToolFilter(parent), opts.toolFilter)
+  // The session's own filter binds a child first; the child's request can only narrow it further.
+  const filter = narrowChildToolFilter(
+    narrowChildToolFilter(
+      childSessionToolFilter(parent),
+      parent.toolFilter === NO_TOOL_FILTER ? undefined : parent.toolFilter,
+    ),
+    opts.toolFilter,
+  )
   const open =
     opts.resolvedRole?.open ?? ((key: string, options: SessionOptions) => kernel.session(key, options))
   const child = await open(record.childKey, {
