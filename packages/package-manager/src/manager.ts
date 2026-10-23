@@ -49,6 +49,7 @@ import {
   localWorkspaceRoot,
   localWorkspaceTrustHash,
 } from './local-workspace-trust.js'
+import { entryOf, writable } from './lock-state.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readBundledManifest } from './manifest.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
@@ -235,22 +236,6 @@ export type ManagerOptions = {
 }
 
 export { readBundledManifest } from './manifest.js'
-
-function entryOf(lock: Lockfile, id: string): LockEntry {
-  const entry = own(lock.packages, id)
-  if (!entry)
-    throw new PackageError('E_DEP_MISSING', `${id} is not installed`, {
-      detail: { id, reason: 'not-installed' },
-    })
-  return entry
-}
-
-function writable(lock: Lockfile): void {
-  if (lock.resolvedProfileHash === null)
-    throw new PackageError('E_LOCK_MISMATCH', 'profile must be resolved before packages can be changed', {
-      detail: { reason: 'unresolved-lock' },
-    })
-}
 
 export function createPackageManager(options: ManagerOptions): PackageManager {
   const verificationCache: InventoryVerificationCache = new Map()
