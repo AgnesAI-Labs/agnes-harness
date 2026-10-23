@@ -301,6 +301,7 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
       await vi.waitFor(async () =>
         expect((await screenOf(term, 60, 12)).join('\n')).toContain('tk-wire-1'.slice(0, 8)),
       )
+      await new Promise((resolve) => setTimeout(resolve, 700)) // the settle period
       term.feed('1')
       await vi.waitFor(() =>
         expect(ep.calls.some((c) => c.method === '_agnes/v1/approval.decide')).toBe(true),
@@ -339,6 +340,7 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
       await vi.waitFor(async () => expect((await screenOf(term, 60, 12)).join('\n')).toContain('[2]'))
       const before = (await screenOf(term, 60, 12)).join('\n')
       expect(before).not.toContain('ticket expired')
+      await new Promise((resolve) => setTimeout(resolve, 700)) // the settle period
       term.feed('2')
       // This is exactly the regression the `changed()` callback exists to prevent: with no new
       // ledger event ever coming back for a rejected decide, nothing but that callback would ever

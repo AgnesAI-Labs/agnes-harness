@@ -3,6 +3,7 @@ import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '
 import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
 import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
+import { ApprovalSettle } from './approval-settle.js'
 import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
@@ -120,6 +121,10 @@ export class TuiApp {
   /** Sessions this run sent a message to: the exit hint is for those only. */
   readonly prompted = new Set<string>()
   private readonly signals: TerminalSignals
+  private readonly settle = new ApprovalSettle(
+    () => this.stopped || this.renderer.requestRender(),
+    () => this.modal.head ?? this.approvalCards.get(this.latestApproval ?? '')?.key,
+  )
   // Set once the client reports 'closed' (daemon shutting down). The session can never render again,
   // and the SDK would still re-dial on the next call, so input is refused rather than run unseen.
   private closedNotice: string | undefined
@@ -247,6 +252,7 @@ export class TuiApp {
           const card = new ApprovalCard(node, {
             ansi,
             locale,
+            settled: () => this.settle.settled,
             onDecide: async (ref, verdict, reason) => {
               if (this.refuseClosed()) return
               const value =
@@ -281,6 +287,7 @@ export class TuiApp {
     this.modal = new PermissionModal(() => this.stopped || this.renderer.requestRender(), {
       locale,
       ansi,
+      settled: () => this.settle.settled,
       // The renderer drops a tall frame's top rows, so the modal gets no more than the rows below it
       // leave: an option it counts as visible has to be on screen.
       maxRows: () => {
@@ -406,7 +413,8 @@ export class TuiApp {
     const handle = root.handleInput.bind(root)
     root.handleInput = (data) => {
       if (this.signals.focus(data)) return true
-      if (this.modal.handleInput(data)) return true
+      const settled = this.settle.press()
+      if (this.modal.handleInput(data, settled)) return true
       if (this.themePicker.handleInput(data)) return true
       if (this.modelPicker.handleInput(data)) return true
       if (this.sessionPicker.handleInput(data)) return true
@@ -417,8 +425,7 @@ export class TuiApp {
       // After 'closed' both card kinds are inert: their actions would re-dial the daemon (a parked
       // ticket survives a restart) and run where nothing renders; digits fall to the editor instead.
       const inert = this.closedNotice !== undefined
-      if (!inert && this.latestApproval && this.approvalCards.get(this.latestApproval)?.handleInput(data))
-        return true
+      if (!inert && this.approvalCards.get(this.latestApproval ?? '')?.handleInput(data, settled)) return true
       // Numbered actions inside the most recently projected tool card, tried before the digit
       // reaches anything else. A collapsed card (or one with no matching action) declines, and
       // the keystroke falls through to the editor like any other character.

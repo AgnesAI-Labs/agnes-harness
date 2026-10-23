@@ -1,6 +1,7 @@
 import type { UINode } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { createAnsi } from '../src/ansi.js'
+import { ApprovalSettle } from '../src/approval-settle.js'
 import { TuiTheme } from '../src/theme.js'
 import { ApprovalCard } from '../src/views/approval-card.js'
 
@@ -34,7 +35,7 @@ describe('ApprovalCard permanent grants', () => {
       ansi: PLAIN,
       onDecide: decide,
     })
-    expect(offered.render(100).join('\n')).toContain('[2] Always allow for this profile')
+    expect(offered.render(100).join('\n')).toContain('[2] Always allow for this profile (a)')
     expect(offered.handleInput('2')).toBe(true)
     await vi.waitFor(() =>
       expect(decide).toHaveBeenCalledWith(
@@ -251,5 +252,85 @@ describe('ApprovalCard facts', () => {
       .join('\n')
     expect(text).not.toContain('\u001b')
     expect(text).not.toContain('\u0007')
+  })
+})
+
+describe('ApprovalCard single keys and the misclick guard', () => {
+  const decide = () => vi.fn(async () => undefined)
+  const ref = { sessionId: 's', id: 'ticket-1', revision: 1 }
+  const card = (options: ApprovalNode['options'], onDecide = decide()) => ({
+    onDecide,
+    card: new ApprovalCard(node(options), { ansi: PLAIN, onDecide }),
+  })
+
+  it.each([
+    ['y', 'allowed-once'],
+    ['a', 'allowed-session'],
+    ['n', 'rejected'],
+  ])('%s decides %s once settled', async (key, verdict) => {
+    const { card: c, onDecide } = card(['allow_once', 'allow_always', 'allow_permanent', 'reject_once'])
+    expect(c.handleInput(key, true)).toBe(true)
+    await vi.waitFor(() => expect(onDecide).toHaveBeenCalledWith(ref, verdict))
+  })
+
+  it('a takes the first persistent scope listed, and does nothing when there is none', async () => {
+    const first = card(['allow_once', 'allow_permanent', 'allow_always', 'reject_once'])
+    first.card.handleInput('a')
+    await vi.waitFor(() => expect(first.onDecide).toHaveBeenCalledWith(ref, 'allowed-permanent'))
+    const none = card(['allow_once', 'reject_once'])
+    expect(none.card.handleInput('a')).toBe(true)
+    expect(none.onDecide).not.toHaveBeenCalled()
+  })
+
+  it('decides nothing before the card has settled, and leaves the keys to the prompt draft', () => {
+    const { card: c, onDecide } = card(['allow_once', 'allow_always', 'reject_once'])
+    for (const key of ['y', 'a', 'n', '1', '2', '3', 'r']) expect(c.handleInput(key, false)).toBe(false)
+    expect(onDecide).not.toHaveBeenCalled()
+  })
+
+  it('dims the hints until settled and lists the letters beside the numbers', () => {
+    let lit = false
+    const c = new ApprovalCard(node(['allow_once', 'allow_always', 'reject_once']), {
+      ansi: new TuiTheme('dark').ansi(createAnsi('truecolor')),
+      onDecide: decide(),
+      settled: () => lit,
+    })
+    const row = () => c.render(100).at(-1) ?? ''
+    const dim = row()
+    expect(dim).toContain('Allow once (y)')
+    expect(dim).toContain('Allow for this session (a)')
+    expect(dim).toContain('Reject (n)')
+    lit = true
+    expect(row()).not.toBe(dim)
+  })
+})
+
+describe('ApprovalSettle', () => {
+  it('settles after the quiet period, restarts on every key and on a different approval', () => {
+    vi.useFakeTimers()
+    try {
+      let id: string | undefined = 'one'
+      const repaint = vi.fn()
+      const settle = new ApprovalSettle(repaint, () => id, 600)
+      settle.watch()
+      expect(settle.settled).toBe(false)
+      vi.advanceTimersByTime(606)
+      expect(repaint).toHaveBeenCalledTimes(1)
+      expect(settle.settled).toBe(true)
+      expect(settle.press()).toBe(true)
+      vi.advanceTimersByTime(300)
+      expect(settle.press()).toBe(false)
+      vi.advanceTimersByTime(599)
+      expect(settle.press()).toBe(false)
+      vi.advanceTimersByTime(601)
+      expect(settle.press()).toBe(true)
+      id = 'two'
+      expect(settle.press()).toBe(false)
+      id = undefined
+      settle.watch()
+      settle.stop()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

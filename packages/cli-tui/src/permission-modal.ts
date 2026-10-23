@@ -11,6 +11,7 @@ import { paintsColour, type ThemedAnsi, TuiTheme } from './theme.js'
 import { approvalBody, approvalHeadline } from './views/approval-body.js'
 
 type Question = {
+  id: number
   request: PermissionRequest
   selected: number
   detailOffset: number
@@ -37,10 +38,23 @@ function optionLabel(option: PermissionRequest['options'][number], locale: Local
 export class PermissionModal implements Component {
   private readonly questions: Question[] = []
   private closed = false
+  private asked = 0
   constructor(
     private readonly changed: () => void,
-    private readonly options: { maxRows?(): number; locale?: Locale; ansi?: ThemedAnsi } = {},
+    private readonly options: {
+      maxRows?(): number
+      locale?: Locale
+      ansi?: ThemedAnsi
+      /** Whether single keys would count now; the key hints on the options dim until they do. */
+      settled?(): boolean
+    } = {},
   ) {}
+
+  /** Identifies the question in front, so a new one restarts the misclick guard. */
+  get head(): string | undefined {
+    const id = this.questions[0]?.id
+    return id === undefined ? undefined : `ask:${id}`
+  }
 
   get count(): number {
     return this.questions.length
@@ -57,6 +71,7 @@ export class PermissionModal implements Component {
       let done = false
       const abort = () => question.finish({ unanswered: 'detached' })
       const question: Question = {
+        id: this.asked++,
         request: snapshot,
         selected: snapshot.options.findIndex((option) => option.kind === 'reject_once'),
         detailOffset: 0,
@@ -91,14 +106,39 @@ export class PermissionModal implements Component {
     return question.canSelect && index >= start && index < start + question.count
   }
 
-  handleInput(data: string): boolean {
+  /**
+   * `settled` is whether the card had sat untouched long enough before this key (approval-settle.ts);
+   * left out, the guard is asked now, which is how the root's own dispatch to its children sees it.
+   * Until then only Esc, scrolling and moving the selection work; text falls through to the prompt's
+   * draft and Enter does nothing.
+   */
+  handleInput(data: string, settled = this.options.settled?.() ?? true): boolean {
     const question = this.questions[0]
     if (!question) return false
     const key = parseKey(data, false)
     const options = question.request.options
-    const action = actionFor('approval', key.name)
+    const action = actionFor('approval', key.name === 'char' ? (key.ch ?? '') : key.name)
+    if (!settled && action !== 'approval-dismiss') {
+      if (key.name === 'char' || key.name === 'paste') return false
+      if (!action?.match(/^approval-(up|down|page-up|page-down)$/)) return true
+    }
     if (action === 'approval-dismiss') question.finish({ unanswered: 'detached' })
-    else if (action === 'approval-confirm') {
+    else if (
+      action === 'approval-allow-once' ||
+      action === 'approval-allow-always' ||
+      action === 'approval-reject'
+    ) {
+      const kind =
+        action === 'approval-reject'
+          ? 'reject_once'
+          : action === 'approval-allow-once'
+            ? 'allow_once'
+            : 'allow_always'
+      const index = options.findIndex((option) => option.kind === kind)
+      const option = options[index]
+      if (option && (kind === 'reject_once' || this.shown(question, index)))
+        question.finish({ optionId: option.optionId })
+    } else if (action === 'approval-confirm') {
       const option = options[question.selected]
       if (!option || option.kind === 'reject_once' || option.kind === 'reject_always')
         question.finish(option ? { optionId: option.optionId } : { unanswered: 'detached' })
@@ -190,11 +230,22 @@ export class PermissionModal implements Component {
         : Math.min(choices.length, Math.max(1, Math.floor((rows - 2) / 2)))
     question.count = count
     const start = windowStart(question.selected, count, choices.length)
+    // The single-key shortcut of the option each belongs to, dim until the card has settled.
+    const letters = new Map<number, string>(
+      [
+        ['allow_once', 'y'],
+        ['allow_always', 'a'],
+        ['reject_once', 'n'],
+      ].map(([kind, letter]) => [choices.findIndex((option) => option.kind === kind), letter as string]),
+    )
+    const lit = this.options.settled?.() ?? true
     const choiceLines = choices.slice(start, start + count).map((option, i) => {
       const index = start + i
+      const letter = letters.get(index)
+      const hint = letter ? ansi.fg(lit ? 'accent' : 'faint', ` [${letter}]`) : ''
       const label = `${index + 1}. ${optionLabel(option, locale)}`
-      if (index !== question.selected) return row(`  ${label}`)
-      const chosen = fitLine(`${ansi.fg('accent', '❯')} ${ansi.bold(label)}`, inner)
+      if (index !== question.selected) return row(`  ${label}${hint}`)
+      const chosen = fitLine(`${ansi.fg('accent', '❯')} ${ansi.bold(label)}${hint}`, inner)
       return row(paintsColour(ansi) ? ansi.bg('selection', chosen) : chosen)
     })
     question.pageRows = Math.max(1, rows - choiceLines.length - 2)

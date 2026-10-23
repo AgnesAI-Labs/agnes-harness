@@ -116,7 +116,11 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
           ),
         ).toBe(false)
         await session.cancel()
-      } else term.feed(mode === 'allow' ? '1' : '\r')
+      } else {
+        // A single key only counts once the card has sat untouched for the settle period.
+        await new Promise((resolve) => setTimeout(resolve, 700))
+        term.feed(mode === 'allow' ? '1' : '\r')
+      }
       const outcome = await result
       if (mode === 'disconnect') expect(outcome).toBeInstanceOf(TransportClosed)
       else expect(outcome).toBeUndefined()

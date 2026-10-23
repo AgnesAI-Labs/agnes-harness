@@ -1,5 +1,9 @@
 import type { KeyName } from './keys.js'
 
+/** Letters the approval scope reads as keys: single-key decisions, never rebindable. */
+export type ApprovalLetter = 'y' | 'a' | 'n'
+type BoundKey = KeyName | ApprovalLetter
+
 /**
  * Every key binding, declared once. A scope is a place that reads keys; inside one scope a key means
  * one action. Code asks `actionFor(scope, key)` and switches on the action, never on the key.
@@ -71,6 +75,10 @@ export const BINDINGS = [
   { id: 'approval-down', scope: 'approval', keys: ['down'], fixed: true },
   { id: 'approval-page-up', scope: 'approval', keys: ['pgup'], fixed: true },
   { id: 'approval-page-down', scope: 'approval', keys: ['pgdn'], fixed: true },
+  // Single-key decisions, live once the card has settled (approval-settle.ts); the same decisions as the numbers.
+  { id: 'approval-allow-once', scope: 'approval', keys: ['y'], fixed: true },
+  { id: 'approval-allow-always', scope: 'approval', keys: ['a'], fixed: true },
+  { id: 'approval-reject', scope: 'approval', keys: ['n'], fixed: true },
   // Secret and text prompts.
   { id: 'secret-submit', scope: 'secret', keys: ['enter'], fixed: true },
   { id: 'secret-erase', scope: 'secret', keys: ['backspace'], fixed: true },
@@ -79,7 +87,7 @@ export const BINDINGS = [
 ] as const satisfies readonly {
   id: string
   scope: string
-  keys: readonly KeyName[]
+  keys: readonly BoundKey[]
   fixed?: true
 }[]
 
@@ -92,7 +100,7 @@ export type ActionOf<S extends Scope> = Extract<Binding, { scope: S }>['id']
 export type Effective = {
   id: ActionId
   scope: Scope
-  keys: readonly KeyName[]
+  keys: readonly BoundKey[]
   fixed: boolean
   overridden: boolean
 }
@@ -116,7 +124,7 @@ export class Keymap {
     for (const row of this.rows) for (const key of row.keys) this.lookup.set(`${row.scope}:${key}`, row.id)
   }
 
-  action<S extends Scope>(scope: S, key: KeyName): ActionOf<S> | undefined {
+  action<S extends Scope>(scope: S, key: string): ActionOf<S> | undefined {
     return this.lookup.get(`${scope}:${key}`) as ActionOf<S> | undefined
   }
 
@@ -132,7 +140,7 @@ export function installKeymap(keymap: Keymap): void {
   current = keymap
 }
 
-export function actionFor<S extends Scope>(scope: S, key: KeyName): ActionOf<S> | undefined {
+export function actionFor<S extends Scope>(scope: S, key: string): ActionOf<S> | undefined {
   return current.action(scope, key)
 }
 

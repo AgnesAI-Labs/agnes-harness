@@ -381,6 +381,33 @@ describe('key bindings: approval modal', () => {
     const { answer } = await run(keys as string[])
     expect(await answer).toEqual(want)
   })
+  it.each([
+    ['y allows once', 'y', { optionId: 'a' }],
+    ['a allows always', 'a', { optionId: 'al' }],
+    ['n rejects', 'n', { optionId: 'r' }],
+  ])('%s', async (_n, key, want) => {
+    const { answer } = await run([key])
+    expect(await answer).toEqual(want)
+  })
+  it('before the card has settled only esc, paging and the selection act; text is left to the draft', async () => {
+    const modal = new PermissionModal(vi.fn(), { maxRows: () => 12 })
+    const answer = modal.ask(request, { signal: new AbortController().signal })
+    modal.render(80)
+    for (const k of ['y', 'a', 'n', '1', '2', '3']) expect(modal.handleInput(k, false)).toBe(false)
+    expect(modal.handleInput('\r', false)).toBe(true)
+    expect(modal.handleInput('\x1b[A', false)).toBe(true)
+    expect(modal.count).toBe(1)
+    modal.handleInput('\x1b', false)
+    expect(await answer).toEqual({ unanswered: 'detached' })
+  })
+  it('a new question gets a new head, so the guard restarts', () => {
+    const modal = new PermissionModal(vi.fn())
+    void modal.ask(request, { signal: new AbortController().signal })
+    const first = modal.head
+    void modal.ask(request, { signal: new AbortController().signal })
+    modal.handleInput('\x1b')
+    expect(modal.head).not.toBe(first)
+  })
   it('pgdn and pgup page the details, down and up move the selection', async () => {
     const { modal } = await run([])
     const footer = () => modal.render(80).at(-1) ?? ''
