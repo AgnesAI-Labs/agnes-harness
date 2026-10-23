@@ -16,7 +16,6 @@ import { type ExternalEditorConfig, editDraft } from './external-editor.js'
 import type { TuiExtraOptions } from './extra-options.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { FooterRenderer } from './footer-renderer.js'
-import { formatTurnSummary } from './format-usage.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
 import { createLinker } from './links.js'
 import { type Locale, t } from './locale.js'
@@ -42,6 +41,7 @@ import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
 import { readTheme, saveTheme, type ThemePreference } from './theme-preference.js'
 import { LiveView } from './thinking.js'
 import { ToolCards } from './tool-cards.js'
+import { TurnClock } from './turn-clock.js'
 import type { ApprovalCard } from './views/approval-card.js'
 import { Composer } from './views/composer.js'
 import { Hints } from './views/hints.js'
@@ -84,10 +84,7 @@ export class TuiApp {
   private belowModal = 0
   private readonly live: LiveView
   private readonly loader: Loader
-  private turnActive = false
-  private turnStartedAt: number | undefined
-  private currentTurn = 0
-  private ticker: ReturnType<typeof setInterval> | undefined
+  private readonly clock: TurnClock
   private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
   readonly mouse: TuiMouse
   readonly statusBar: StatusBar
@@ -205,6 +202,11 @@ export class TuiApp {
     const locale = o.locale ?? 'en'
     this.hints = new Hints(ansi, () => this.timeline.newOutputHint(this.editor.text !== ''))
     this.loader = new Loader('', ansi)
+    this.clock = new TurnClock(
+      this.loader,
+      () => this.stopped || this.renderer.requestRender(),
+      () => this.refreshWorkspace(),
+    )
     this.live = new LiveView(ansi, locale)
     this.localCommandView = localCommandView(ansi)
     this.statusBar = new StatusBar(ansi, locale, o.safeMode, o.preset)
@@ -221,7 +223,7 @@ export class TuiApp {
       theme: this.theme,
       locale,
       viewport: () => ({ rows: o.term.size().rows, reserved: this.reservedRows }),
-      shows: () => !this.stopped && !this.turnActive && this.timeline.showsWelcome(),
+      shows: () => !this.stopped && !this.clock.active && this.timeline.showsWelcome(),
       repaint: () => this.stopped || this.renderer.requestRender(),
     })
     this.cards = new ToolCards({
@@ -433,7 +435,7 @@ export class TuiApp {
     this.signals = new TerminalSignals(
       o.term,
       this.cwd,
-      () => this.turnActive,
+      () => this.clock.active,
       this.modal,
       this.approvalCards,
       this.notify,
@@ -465,7 +467,7 @@ export class TuiApp {
   get busy(): boolean {
     // A turn counts whoever started it: the projection shows turns of other clients, and the
     // local flag covers the window before the projection catches up with this client's own prompt.
-    return this.localTurn || this.turnActive
+    return this.localTurn || this.clock.active
   }
 
   /** Refuses, with a notice, while this client's own prompt still belongs to the current session: a
@@ -665,7 +667,7 @@ export class TuiApp {
   private handleClosed(): void {
     this.closedNotice = t('notice.closed', this.o.locale ?? 'en', { id: escapeControl(this.o.session.id) })
     void this.projection.stop()
-    this.resetTurn()
+    this.clock.reset()
     this.refuseClosed()
   }
 
@@ -675,14 +677,6 @@ export class TuiApp {
     this.statusBar.setNotice(this.closedNotice)
     if (!this.stopped) this.renderer.requestRender()
     return true
-  }
-
-  private resetTurn(): void {
-    this.stopTicker()
-    this.turnActive = false
-    this.turnStartedAt = undefined
-    this.currentTurn = 0
-    this.loader.hide()
   }
 
   private apply(value: UITimeline, options: { opening?: boolean; window?: TuiProjectionWindow } = {}): void {
@@ -710,7 +704,7 @@ export class TuiApp {
     this.hintActions = slots.actions
     this.hints.set(this.hintActions)
     this.statusBar.setSlots(slots.status)
-    this.applyOpState(value.opState)
+    this.clock.apply(value.opState)
     this.statusBar.setParked(value.opState?.parked?.decisionRef.id)
     this.statusBar.setUsage(value.usage, value.yolo)
     this.models.current = value.usage?.model
@@ -745,59 +739,6 @@ export class TuiApp {
         data: { id: actionId },
       })
       .catch((error) => this.showError(error))
-  }
-
-  /**
-   * Turn-lifecycle edge detection: `value.opState` flips null↔non-null exactly at turn
-   * boundaries (protocol's `UIOperationState`), and both the spinner (RP1) and the local wall
-   * clock (RP3) key off the same two edges, so they are driven from one place rather than two.
-   *
-   * A null↔non-null flip is not the only boundary that matters, though: `opState.turn` can also
-   * change while `opState` stays non-null the whole time, because projection delivery is
-   * debounced (projection.ts's `REPROJECT_DEBOUNCE_MS`) and can coalesce turn N's end and turn
-   * N+1's start into one tick with no intervening `opState: null` ever reaching `apply()`. Left
-   * undetected, that reads as "still turn N" and both fabricates turn N+1's elapsed time (it would
-   * include turn N's own duration plus the idle gap between them) and drops turn N's own summary
-   * silently. This re-baselines on `opState.turn` changing exactly like a fresh turn start, and
-   * accepts that the coalesced turn N never gets its own `✓ turn N · Xs` line -- silently losing
-   * that one summary is far less harmful than showing a fabricated number for the next one.
-   */
-  private applyOpState(opState: UITimeline['opState']): void {
-    const active = opState !== null
-    if (active && (!this.turnActive || opState.turn !== this.currentTurn)) {
-      this.turnStartedAt = Date.now()
-      this.currentTurn = opState.turn
-      this.loader.restart(opState.phase)
-      this.startTicker()
-    } else if (!active && this.turnActive) {
-      this.stopTicker()
-      const elapsedMs = this.turnStartedAt !== undefined ? Date.now() - this.turnStartedAt : undefined
-      this.loader.stop(elapsedMs !== undefined ? formatTurnSummary(this.currentTurn, elapsedMs) : undefined)
-      this.turnStartedAt = undefined
-      this.refreshWorkspace()
-    } else if (active) {
-      this.loader.setLabel(opState.phase)
-    }
-    this.turnActive = active
-  }
-
-  // One shared 80ms ticker, not a timer per component (spec RP1, matching the reference
-  // implementations surveyed for this design). RP1.1 measured Timeline.render() at well under
-  // 1ms per tick even at 1,000 nodes, so this calls the same requestRender() every other repaint
-  // uses rather than a narrower single-row redraw path.
-  private startTicker(): void {
-    if (this.ticker !== undefined) return
-    this.ticker = setInterval(() => {
-      this.loader.tick()
-      if (!this.stopped) this.renderer.requestRender()
-    }, 80)
-    this.ticker.unref()
-  }
-
-  private stopTicker(): void {
-    if (this.ticker === undefined) return
-    clearInterval(this.ticker)
-    this.ticker = undefined
   }
 
   private renderLive(): void {
@@ -891,7 +832,7 @@ export class TuiApp {
     // with the old session's turn/phase, so the new session's first idle tick would otherwise
     // paint a stale, fabricated elapsed time for a turn that belongs to a session no longer even
     // attached. Reset turn-lifecycle state to exactly what a freshly-constructed TuiApp looks like.
-    this.resetTurn()
+    this.clock.reset()
     this.welcome.banner.setModel(undefined)
     this.surfaces.reset()
     this.attachmentController.abort()
@@ -977,7 +918,7 @@ export class TuiApp {
     this.mentions.dispose()
     this.attachmentController.abort()
     this.mouse.dispose()
-    this.stopTicker()
+    this.clock.stop()
     this.offPermission?.()
     for (const off of this.offClientEvents) off()
     this.offClientEvents = []

@@ -2104,10 +2104,10 @@ it('renders a 1000-tool-card timeline well within one ticker interval (RP1.1 reg
   expect(elapsedMs).toBeLessThan(20)
 })
 
-// Fix round (post-review): `applyOpState`'s null/non-null edge detection alone cannot see a turn
+// Fix round (post-review): `TurnClock.apply`'s null/non-null edge detection alone cannot see a turn
 // number changing while `opState` stays non-null the whole time -- exactly what a debounced
 // projection tick can coalesce (projection.ts's REPROJECT_DEBOUNCE_MS skips an intervening
-// `opState: null`). Reaches `applyOpState` directly (a private method) rather than driving a real
+// `opState: null`). Reaches `apply` directly (a private method) rather than driving a real
 // timed turn through a real host, which is the more deterministic way to force the exact coalesced
 // sequence a real debounce could produce non-deterministically.
 it('re-baselines the wall clock on a coalesced turn boundary instead of fabricating an elapsed time', async () => {
@@ -2161,16 +2161,18 @@ it('resets the turn clock and stops the ticker across a mid-turn session switch'
     app = new TuiApp({ session, term, header: 'Agnes' })
     await app.start()
     const internals = app as unknown as {
-      applyOpState(opState: UITimeline['opState']): void
-      ticker?: unknown
-      turnActive: boolean
-      turnStartedAt?: number
-      currentTurn: number
+      clock: {
+        apply(opState: UITimeline['opState']): void
+        ticker?: unknown
+        active: boolean
+        startedAt?: number
+        turn: number
+      }
       loader: { render(width: number): string[] }
     }
     // A turn genuinely in flight on the OLD session: ticker running, loader spinning on it.
-    internals.applyOpState({ turn: 7, step: 1, phase: 'mid-flight' })
-    expect(internals.ticker).not.toBeUndefined()
+    internals.clock.apply({ turn: 7, step: 1, phase: 'mid-flight' })
+    expect(internals.clock.ticker).not.toBeUndefined()
     expect(internals.loader.render(60)[0]).toContain('mid-flight')
 
     term.feed('/new')
@@ -2183,10 +2185,10 @@ it('resets the turn clock and stops the ticker across a mid-turn session switch'
     await vi.waitFor(() => expect(app?.session.id).toContain('s2'))
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    expect(internals.ticker).toBeUndefined()
-    expect(internals.turnActive).toBe(false)
-    expect(internals.turnStartedAt).toBeUndefined()
-    expect(internals.currentTurn).toBe(0)
+    expect(internals.clock.ticker).toBeUndefined()
+    expect(internals.clock.active).toBe(false)
+    expect(internals.clock.startedAt).toBeUndefined()
+    expect(internals.clock.turn).toBe(0)
     // Zero rows, matching a freshly-constructed TuiApp -- not a stale "✓ turn 7 · Xs" bleeding
     // across the switch.
     expect(internals.loader.render(60)).toEqual([])
