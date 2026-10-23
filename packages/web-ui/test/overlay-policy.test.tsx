@@ -160,3 +160,38 @@ it('mounts notification holders in the shared outlet or active native dialog sco
   expect(document.querySelector('#agnes-overlay-container > .agh-toast-host')).toBeNull()
   expect(document.querySelector('#native > .agh-toast-host')?.textContent).toContain('dialog saved')
 })
+
+it('keeps a toast in the shared outlet when a popover merely holds focus', async () => {
+  const root = document.createElement('div')
+  document.body.append(root)
+  function Shell({ children }: { children?: ReactNode }) {
+    return (
+      <>
+        <div id="fixture" />
+        <div id="agnes-overlay-container" />
+        {children}
+      </>
+    )
+  }
+  mountApplication(root, <Shell />)
+  const page = createRegionRenderer(document.getElementById('fixture')!)
+  // A picker option keeps focus while it closes; a toast raised by that choice must outlive it.
+  const popover = document.createElement('div')
+  popover.setAttribute('popover', 'manual')
+  const option = document.createElement('button')
+  popover.append(option)
+  document.body.append(popover)
+  option.focus()
+  flushSync(() => {
+    page.render(
+      <Toast open duration={0} onDismiss={() => {}}>
+        draft model saved
+      </Toast>,
+    )
+  })
+  await vi.waitFor(() => expect(document.querySelectorAll('[role="status"]')).toHaveLength(1))
+  expect(document.querySelector('#agnes-overlay-container > .agh-toast-host')?.textContent).toContain(
+    'draft model saved',
+  )
+  expect(popover.querySelector('.agh-toast-host')).toBeNull()
+})
