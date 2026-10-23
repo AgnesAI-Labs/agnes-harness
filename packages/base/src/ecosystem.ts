@@ -10,6 +10,7 @@ import contextRulesExtension from '../extensions/context-rules/src/index.js'
 import deliverablesExtension from '../extensions/deliverables/src/index.js'
 import { createFollowUpHintExtension } from '../extensions/follow-up-hint/src/index.js'
 import goalExtension from '../extensions/goal/src/index.js'
+import { createHeadsUpExtension } from '../extensions/heads-up/src/index.js'
 import {
   type CcHookMap,
   type HooksRunnerExtensionDeps,
@@ -186,6 +187,7 @@ const bundled = {
   'agnes/context-rules': (): BundledPlugin => contextRulesExtension,
   'agnes/follow-up-hint': (init: SeamInitContext): BundledPlugin =>
     createFollowUpHintExtension(init.sessionTasks),
+  'agnes/heads-up': (init: SeamInitContext): BundledPlugin => createHeadsUpExtension(init.sessionTasks),
   'agnes/time-context': (): BundledPlugin => timeContextExtension,
 
   'agnes/goal': (): BundledPlugin => goalExtension,

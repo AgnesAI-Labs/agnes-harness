@@ -406,6 +406,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/context-rules',
         'agnes/time-context',
         'agnes/follow-up-hint',
+        'agnes/heads-up',
         'agnes/schedule',
       ])
       const byId = (id: string) => status.find((entry) => entry.id === id)
@@ -1633,7 +1634,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
           .snapshot()
           .entries('tool_call')
           .map((entry) => entry.meta.source),
-      ).toEqual(['agnes/hooks-runner'])
+        // heads-up only observes tool calls (it always answers allow); hooks-runner is the one that blocks.
+      ).toEqual(['agnes/hooks-runner', 'agnes/heads-up'])
       const session = await host.createSession({ cwd: dataDir })
       const payload = {
         toolUseId: 'tool-1',

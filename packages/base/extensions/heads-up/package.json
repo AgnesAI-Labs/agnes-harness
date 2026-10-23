@@ -1,0 +1,112 @@
+{
+  "name": "@agnes/heads-up",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:agnes/heads-up",
+        "export": "default",
+        "default": true,
+        "apiRange": "^5.0.0",
+        "inject": [
+          "hooks",
+          "services"
+        ],
+        "capabilities": {
+          "hooks": [
+            "session_start",
+            "tool_call",
+            "tool_result",
+            "context",
+            "shutdown"
+          ],
+          "services": [
+            {
+              "name": "headsup.read",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "turn": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "busy": {
+                    "type": "boolean"
+                  },
+                  "turn": {
+                    "type": "integer"
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 1200
+                  },
+                  "deliveredTurn": {
+                    "type": "integer"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "timeoutMs": 1000,
+              "maxResultBytes": 4096
+            },
+            {
+              "name": "headsup.set",
+              "kind": "query",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "additionalProperties": false
+              },
+              "timeoutMs": 1000,
+              "maxResultBytes": 256
+            }
+          ]
+        },
+        "metadata": {
+          "displayName": "Side review heads-up",
+          "summary": "Off by default. A side model reviews the agent's work and hands it an advisory heads-up before its next step.",
+          "description": "Off by default. After side-effecting tool results and at the end of a turn, a verifier (or fast) model reviews the conversation plus a truncated tool summary and hands the main agent one short advisory note at its next model request. It never blocks tools, changes permissions or approves anything.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "旁路提醒",
+              "summary": "默认关闭。旁路模型审查主 agent 的工作，并在它下一步之前递上一条仅供参考的提醒。",
+              "description": "默认关闭。在有副作用的工具结果之后和一轮结束时，验证模型（没有则用快速模型）会审查对话和截断后的工具摘要，并在主 agent 下一次模型请求时递上一条简短的参考性提醒。它不会拦截工具、不会改变权限，也不会替用户审批。"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

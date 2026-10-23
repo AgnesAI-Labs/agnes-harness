@@ -104,6 +104,13 @@ const SUPPLIED: Record<string, string[]> = {
   // Service registrations belong to the Host service registry, outside Kernel.registrations.
   'agnes/jobs-web': ['hook:shutdown'],
   'agnes/follow-up-hint': ['hook:session_start', 'hook:shutdown'],
+  'agnes/heads-up': [
+    'hook:session_start',
+    'hook:tool_call',
+    'hook:tool_result',
+    'hook:context',
+    'hook:shutdown',
+  ],
   'agnes/plan-mode': ['tool:exit_plan_mode', 'hook:context', 'hook:approval_request'],
   'agnes/context-rules': ['hook:context', 'projection:agnes/context-rules/scopes'],
   'agnes/time-context': ['hook:context', 'projection:agnes/time-context/clock'],
@@ -178,6 +185,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/context-rules',
       'agnes/time-context',
       'agnes/follow-up-hint',
+      'agnes/heads-up',
       'agnes/schedule',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
