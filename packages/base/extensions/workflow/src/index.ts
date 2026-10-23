@@ -186,7 +186,7 @@ export default defineAgnesPlugin({
                 const settled = await Promise.allSettled(
                   stage.members.map(async (m) => {
                     if (m.status === 'completed') return
-                    if (m.status === 'starting' && !m.childKey)
+                    if (['starting', 'interrupted'].includes(m.status) && !m.childKey)
                       throw new Error(
                         'Interrupted child creation requires reconciliation; refusing duplicate dispatch',
                       )
@@ -201,14 +201,22 @@ export default defineAgnesPlugin({
                         { task: m.task + (input ? '\nPrevious stage results:\n' + input : '') },
                         { signal: ctx.signal },
                       )
+                      if (spawned.isError) {
+                        m.status = 'failed'
+                        m.text = spawned.content
+                          .flatMap((c) => (c.type === 'text' ? [c.text] : []))
+                          .join('\n')
+                          .slice(0, 1024)
+                        await save()
+                        throw new Error(m.text || 'Child creation refused')
+                      }
                       if (
-                        spawned.isError ||
                         !spawned.details ||
                         typeof spawned.details !== 'object' ||
                         Array.isArray(spawned.details) ||
                         typeof spawned.details.childKey !== 'string'
                       )
-                        throw new Error('Child creation refused')
+                        throw new Error('Child creation reply is incomplete; reconciliation required')
                       m.childKey = spawned.details.childKey
                       if (spawned.details.isolation === 'worktree' || spawned.details.isolation === 'shared')
                         m.isolation = spawned.details.isolation
@@ -245,6 +253,9 @@ export default defineAgnesPlugin({
               current.status = 'completed'
             } catch (error) {
               current.error = error instanceof Error ? error.message.slice(0, 512) : 'Workflow failed'
+              for (const stage of current.stages)
+                for (const member of stage.members)
+                  if (member.status === 'starting' && !member.childKey) member.status = 'interrupted'
               const pending = current.stages
                 .flatMap((s) => s.members)
                 .filter((m) => m.status !== 'completed' && m.childKey)

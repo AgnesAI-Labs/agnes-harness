@@ -184,6 +184,17 @@ it('refuses unavailable persistence before spawning, and cancels accepted childr
     'persistence',
   )
   expect(f.tasks).toEqual([])
+  const refused = await fixture()
+  refused.ctx.tools.invoke = async (name) =>
+    name === 'ui_render'
+      ? { content: [] }
+      : { isError: true, content: [{ type: 'text', text: 'worktree creation failed: git-error' }] }
+  await refused.tools.get('workflow')!.execute({ name: 'refused', stages }, refused.ctx)
+  const failed = Object.values(refused.persisted().runs)[0]!
+  expect(failed.status).toBe('failed')
+  expect(failed.error).toContain('worktree creation failed: git-error')
+  expect(failed.stages[0]!.members.map((m) => m.status)).toEqual(['failed', 'failed'])
+  expect(refused.cancelled).toEqual([])
   const uncertain = await fixture()
   const invoke = uncertain.ctx.tools.invoke
   uncertain.ctx.tools.invoke = async (name, args, options) => {
@@ -194,6 +205,7 @@ it('refuses unavailable persistence before spawning, and cancels accepted childr
   await uncertain.tools.get('workflow')!.execute({ name: 'uncertain', stages }, uncertain.ctx)
   const interrupted = Object.values(uncertain.persisted().runs)[0]!
   expect(interrupted.status).toBe('interrupted')
+  expect(interrupted.stages[0]!.members.map((m) => m.status)).toEqual(['interrupted', 'interrupted'])
   uncertain.ctx.tools.invoke = f.ctx.tools.invoke
   const retry = await uncertain.tools.get('workflow')!.execute({ runId: interrupted.id }, uncertain.ctx)
   expect(retry.isError).toBe(true)
