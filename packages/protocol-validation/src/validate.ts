@@ -20,7 +20,31 @@ export function describeValidationErrors(errors: readonly ValidationError[]): st
   return `${path ? `${path} ` : ''}${first.message}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`
 }
 
+/** Look inside union members for a deeper field failure; bound diagnostics for wide/nested unions. */
+function specificUnionError(error: ValueError): ValueError {
+  let best = error
+  let depth = error.path.split('/').length
+  let remaining = 64
+  const visit = (value: ValueError, level: number): void => {
+    if (level >= 8 || remaining <= 0) return
+    for (const member of value.errors) {
+      for (const nested of member) {
+        if (remaining-- <= 0) return
+        const nestedDepth = nested.path.split('/').length
+        if (nestedDepth > depth) {
+          best = nested
+          depth = nestedDepth
+        }
+        if (nested.type === ValueErrorType.Union) visit(nested, level + 1)
+      }
+    }
+  }
+  visit(error, 0)
+  return best
+}
+
 function classify(e: ValueError): ValidationError {
+  if (e.type === ValueErrorType.Union) e = specificUnionError(e)
   const key = e.path.split('/').pop() || undefined
   // Measured against TypeBox 0.34.33: for ObjectRequiredProperty, `e.path` points at the missing key
   // itself (a missing `enforcement` gives e.path '/enforcement'). The shape we report is the other

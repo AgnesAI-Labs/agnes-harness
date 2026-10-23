@@ -266,6 +266,31 @@ describe('validation refusal descriptions', () => {
       expect(describeValidationErrors(errors)).toBe(expected)
     },
   )
+  it('names the invalid field inside root and nested unions without echoing values', async () => {
+    const { Type } = await import('@sinclair/typebox')
+    const { validateAgainst } = await import('@agnes/protocol-validation')
+    const { validateMethod } = await import('../src/index.js')
+    const root = validateMethod('_agnes/v1/session.list', 'params', { limit: 0 })
+    expect(root.ok).toBe(false)
+    if (!root.ok)
+      expect(describeValidationErrors(root.errors)).toContain(
+        '/limit Expected integer to be greater or equal to 1',
+      )
+    const nested = Type.Union([
+      Type.Null(),
+      Type.Object({
+        payload: Type.Union([Type.String(), Type.Object({ limit: Type.Integer({ minimum: 1 }) })]),
+      }),
+    ])
+    const result = validateAgainst(nested, { payload: { limit: 0, secret: 'private-canary' } }, '/request')
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(describeValidationErrors(result.errors)).toBe(
+        '/request/payload/limit Expected integer to be greater or equal to 1',
+      )
+      expect(describeValidationErrors(result.errors)).not.toContain('private-canary')
+    }
+  })
   it('bounds the displayed path without serializing extra rejected data', () => {
     const description = describeValidationErrors([
       { ...field, path: `/data/${'a'.repeat(500)}`, value: 'rejected-private-canary' } as ValidationError,

@@ -1,7 +1,9 @@
+import { Writable } from 'node:stream'
 import type { PackageOperationGetParams } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
+import { reportCommandFailure } from '../src/command-failure.js'
 import { runPackageCommand } from '../src/commands/package.js'
 import { runPluginDevelopmentCommand } from '../src/commands/plugins.js'
 
@@ -249,6 +251,33 @@ it.each([
   await expect(
     runPluginDevelopmentCommand(parseArgs(['plugins', 'reload', 'example']), rpc, () => {}),
   ).rejects.toThrow('E_PLUGIN_RELOAD_DISABLED')
+})
+
+it('explains a dev folder outside the workspace without inspecting or activating it', async () => {
+  const rpc = { packages: { list: async () => ({ packages: [] }) } } as unknown as NodeClient
+  let error: unknown
+  try {
+    await runPluginDevelopmentCommand(
+      parseArgs(['dev', '/isolated-home/plugins/example', '--cwd', '/workspace']),
+      rpc,
+      () => {},
+    )
+  } catch (failure) {
+    error = failure
+  }
+  let message = ''
+  const stderr = new Writable({
+    write(chunk, _encoding, done) {
+      message += String(chunk)
+      done()
+    },
+  })
+  expect(reportCommandFailure(error, 'dev', { env: {}, stderr })).toBe(1)
+  expect(message).toContain('E_PLUGIN_RELOAD_SOURCE_SCOPE')
+  expect(message).toContain('outside the workspace')
+  expect(message).toContain('agh dev')
+  expect(message).toContain('agh plugins reload')
+  expect(message).not.toContain('/isolated-home')
 })
 
 it('routes discovery-owned local reload through the existing activation effect', async () => {

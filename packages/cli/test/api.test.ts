@@ -73,6 +73,9 @@ describe('api command', () => {
     await expect(run(['session.rename', '--params', '{}'])).rejects.toThrow(
       /params do not match session\.rename/,
     )
+    await expect(run(['session.list', '--params', '{"limit":0}'])).rejects.toThrow(
+      /\/limit Expected integer to be greater or equal to 1/,
+    )
     await expect(run(['session.list', '--params', '{nope'])).rejects.toThrow('--params is not valid JSON')
   })
 

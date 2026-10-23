@@ -2,7 +2,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { escapeControl } from '@agnes/cli-tui'
 import type { PackageInstalledDescriptor } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
-import { UsageError } from '../errors.js'
+import { CommandError, UsageError } from '../errors.js'
 import {
   inspectPackage,
   installPreview,
@@ -136,7 +136,9 @@ export async function runPluginDevelopmentCommand(
     }
     const localPath = relative(p.cwd ?? process.cwd(), entry.directory)
     if (dev && (!localPath || isAbsolute(localPath) || localPath.split(sep).includes('..')))
-      throw new Error('E_PLUGIN_RELOAD_SOURCE_SCOPE: dev folder must be below the daemon startup workspace')
+      throw new CommandError(
+        'E_PLUGIN_RELOAD_SOURCE_SCOPE: the dev folder is outside the workspace (or is the workspace root); place the plugin below the workspace and run agh dev <folder>, or use agh plugins reload <id> for an installed local plugin',
+      )
     const source = {
       type: 'file' as const,
       ref: dev ? `file:./${localPath.split(sep).join('/')}` : entry.directory,
