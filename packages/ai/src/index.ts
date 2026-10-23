@@ -56,6 +56,7 @@ export {
 } from './adapters/pi/probe-models.js'
 export { PI_ADAPTER_APIS } from './adapters/pi/wire.js'
 export { validateModelBaseUrl } from './base-url.js'
+export { isChatModelId } from './chat-model.js'
 export type { ContractStoreOptions } from './contract/store.js'
 export { FileContractStore, loadContractStore } from './contract/store.js'
 export type { ContractManifest, ContractSyntax } from './contract/types.js'

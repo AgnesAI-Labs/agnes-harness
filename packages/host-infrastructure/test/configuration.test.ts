@@ -280,7 +280,13 @@ it('keeps the payload-only provider out of the chat account form projection', as
 })
 
 it('connects an OpenAI-compatible endpoint with its own model ids, with or without a key, over chat completions', async () => {
-  const server = await fixture(['my-model', 'qwen-plus'])
+  const server = await fixture([
+    'my-model',
+    'agnes-image-2.5-flash',
+    'agnes-video-1.0',
+    'relay/agnes-image-2.5-flash',
+    'qwen-plus',
+  ])
   const root = await home()
   const service = createConfigurationService({ home: root, profile: 'local-dev' })
   expect((await service.providers()).providers.some((row) => row.id === 'openai-compatible')).toBe(true)
@@ -292,6 +298,11 @@ it('connects an OpenAI-compatible endpoint with its own model ids, with or witho
     verified: true,
   })
   expect(requestsHeaders(server.requests)[0]?.authorization).toBeUndefined()
+  for (const model of ['agnes-image-2.5-flash', 'agnes-video-1.0', 'relay/agnes-image-2.5-flash']) {
+    await expect(
+      service.save({ ...compatible, model, models: [{ id: model, name: model }] }),
+    ).rejects.toMatchObject({ code: 'CONFIG_CHAT_MODEL_REQUIRED' })
+  }
   // The OpenAI provider on the same address keeps its reviewed-catalogue rule.
   expect(
     await service.test({ providerId: 'openai', baseUrl: server.baseUrl, apiKey: 'sk-test-value' }),
@@ -325,6 +336,21 @@ it('connects an OpenAI-compatible endpoint with its own model ids, with or witho
     credentialConfigured: true,
   })
   expect(saved.defaultAccountId).toBe('relay')
+  await expect(
+    service.saveSessionDefaults({
+      revision: 1,
+      defaults: {
+        providers: { 'model-adapter': { provider: 'pi', version: '1.0.0' } },
+        model: 'agnes-image-2.5-flash',
+      },
+    }),
+  ).rejects.toMatchObject({ code: 'CONFIG_CHAT_MODEL_REQUIRED' })
+  await expect(
+    service.saveModelSlots({
+      revision: 1,
+      slots: { fast: { route: 'account-relay', model: 'agnes-image-2.5-flash' } },
+    }),
+  ).rejects.toMatchObject({ code: 'CONFIG_CHAT_MODEL_REQUIRED' })
   // Without models, a save takes what the endpoint lists; a key goes on the request.
   await service.save({
     ...compatible,
@@ -373,6 +399,23 @@ it('connects an OpenAI-compatible endpoint with its own model ids, with or witho
     baseUrl: server.baseUrl,
     credentialConfigured: true,
   })
+  // An older account may already contain a generation model; never publish it into chat routes.
+  const path = join(root, 'profiles', 'local-dev', 'configuration.json')
+  const before = await readFile(path, 'utf8')
+  const state = JSON.parse(before)
+  state.accounts[0].model = 'agnes-image-2.5-flash'
+  state.accounts[0].models = [{ id: 'agnes-image-2.5-flash', name: 'Image' }]
+  state.sessionDefaults = {
+    providers: { 'model-adapter': { provider: 'pi', version: '1.0.0' } },
+    model: 'agnes-image-2.5-flash',
+  }
+  state.modelSlots = { fast: { route: 'account-relay', model: 'agnes-video-1.0' } }
+  await writeFile(path, JSON.stringify(state))
+  expect((await reopened.get()).accounts?.[0]?.models).toEqual([])
+  await expect(reopened.profileInput()).rejects.toMatchObject({ code: 'CONFIG_CHAT_MODEL_REQUIRED' })
+  await expect(reopened.sessionDefaults()).rejects.toMatchObject({ code: 'CONFIG_CHAT_MODEL_REQUIRED' })
+  await expect(reopened.modelSlots()).rejects.toMatchObject({ code: 'CONFIG_CHAT_MODEL_REQUIRED' })
+  await writeFile(path, before)
   // A real key never follows the account to a new address unasked.
   await expect(
     reopened.save({ ...moved, accountId: 'keyed', baseUrl: bare, expectedRevision: 3 }),

@@ -47,6 +47,7 @@
   "getApiKeyProvider",
   "getSubscriptionProvider",
   "guardSequence",
+  "isChatModelId",
   "loadConformanceFixtures",
   "loadContractStore",
   "loadDecodeFixtures",

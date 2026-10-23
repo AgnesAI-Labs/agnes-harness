@@ -539,6 +539,19 @@ describe('PiAdapter', () => {
     )
     expect(unknownModel[0]).toMatchObject({ type: 'error', code: 'NO_MODEL', retryable: false })
     expect(unknownRoute[0]).toMatchObject({ type: 'error', code: 'NO_MODEL', retryable: false })
+    const generation = ['agnes-image-2.5-flash', 'agnes-video-1.0', 'relay/agnes-image-2.5-flash']
+    const legacy = bound({
+      manualRoutes: [
+        { ...route, models: [...route.models, ...generation.map((id) => fakeModel({ id, route: 'gw' }))] },
+      ],
+      streamImpl: impl,
+    })
+    expect(legacy.models('gw').map((model) => model.id)).toEqual(['flash'])
+    for (const model of generation) {
+      expect(await collect(legacy.stream('gw', fakeRequest({ route: 'gw', model }), opts()))).toEqual([
+        expect.objectContaining({ type: 'error', code: 'NO_MODEL', retryable: false }),
+      ])
+    }
     expect(seen).toHaveLength(0)
   })
 

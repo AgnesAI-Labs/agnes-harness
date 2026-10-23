@@ -72,6 +72,14 @@ it('publishes safe, stable envelopes for every transport without leaking nested 
   expect(JSON.stringify(error)).not.toContain('private-path')
   expect(validateAgainst(AppServerError, error).ok).toBe(true)
   expect(normalizeRpcError(error)).toEqual(error)
+  const refusal = publicRejectionRpc({ code: 'CONFIG_CHAT_MODEL_REQUIRED' })
+  if (!refusal) throw new Error('missing public rejection')
+  const generation = normalizeRpcError(refusal)
+  expect(publicErrorHelp(generation, 'zh-CN')).toMatchObject({
+    reason: '图片或视频生成模型不能用于对话。',
+    action: '请在模型设置中选择支持对话的模型。',
+  })
+  expect(publicErrorHelp(generation, 'en')?.reason).toContain('cannot be used for chat')
   const denied = httpRpcError(403, 'E_ADMIN_ORIGIN')
   expect(denied).toMatchObject({ code: -32006, data: { messageKey: 'appServer.errors.forbidden' } })
   expect(normalizeRpcError(rpcError('METHOD_NOT_FOUND'))).toHaveProperty(
