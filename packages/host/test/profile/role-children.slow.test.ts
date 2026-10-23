@@ -216,7 +216,8 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
         ...(role ? { role } : {}),
         ...extra,
       })
-    await expect(create(ref('reader'))).rejects.toThrow('not delegable')
+    for (const role of [ref('reader'), 'bread'])
+      await expect(create(role)).rejects.toThrow('no roles are declared in this session; omit role')
     const body = {
       packageId: vendor,
       version: '2.3.4',
@@ -247,8 +248,10 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
       },
     })
     await expect(fixture.host.resolveAgent?.('@other/application#reader')).resolves.toBeDefined()
-    await expect(create('@other/application#reader')).rejects.toThrow('not delegable')
-    await expect(create(ref('assistant'))).rejects.toThrow('not delegable')
+    for (const role of ['@other/application#reader', ref('assistant'), 'bread'])
+      await expect(create(role)).rejects.toThrow(
+        `unknown role ${role}; available: ${declaration.delegableAgents!.join(', ')}`,
+      )
     await expect(create(ref('reader'), { model: 'gw/m1' })).rejects.toThrow('cannot be combined')
     await expect(
       parent.d.children.createWithKind!('fork', {

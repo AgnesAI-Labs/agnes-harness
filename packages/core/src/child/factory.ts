@@ -103,7 +103,7 @@ export class KernelChildren implements ChildrenFactory {
       if (kind !== 'spawn' || opts.model !== undefined)
         throw new CoreError('E_ENVELOPE', 'role cannot be combined with fork or model')
       const roles = this.kernel.o.childRoles
-      if (!roles) throw new CoreError('E_UNSUPPORTED', 'Application role delegation is unavailable')
+      if (!roles) throw new CoreError('E_UNSUPPORTED', 'no roles are declared in this session; omit role')
       opts = { ...opts, resolvedRole: await roles.resolve(parent, opts.role) }
     }
     const store = requireChildControl(parent.d.log.storage)
