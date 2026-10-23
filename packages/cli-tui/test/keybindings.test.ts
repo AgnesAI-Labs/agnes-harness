@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '../src/editor.js'
 import { formatKeys, installKeybindings, readKeybindings } from '../src/keybindings.js'
 import { actionFor, installKeymap, Keymap } from '../src/keymap.js'
+import { nextThinkingLevel } from '../src/thinking-cycle.js'
 
 afterEach(() => installKeymap(new Keymap()))
 
@@ -18,6 +19,28 @@ function load(content: string | undefined) {
     rmSync(dir, { recursive: true, force: true })
   }
 }
+
+describe('thinking-cycle (Shift+Tab)', () => {
+  const models = [
+    { route: 'r', id: 'plain' },
+    { route: 'r', id: 'deep', reasoning: true },
+    { route: 'r', id: 'mapped', reasoning: true, thinkingLevelMap: { low: 'l', high: 'h' } },
+  ]
+  it('is a global action on a key the editor does not use', () => {
+    expect(actionFor('global', 'shift-tab')).toBe('thinking-cycle')
+    expect(actionFor('editor', 'shift-tab')).toBeUndefined()
+  })
+  it('steps through the model levels, wraps, and declines a model without thinking', () => {
+    const at = (id: string, thinking: string) => nextThinkingLevel(models, { route: 'r', id, thinking })
+    expect(at('deep', 'off')).toBe('low')
+    expect(at('deep', 'high')).toBe('off')
+    expect(at('mapped', 'low')).toBe('high')
+    expect(at('mapped', 'high')).toBe('low')
+    expect(at('mapped', 'off')).toBe('low')
+    expect(at('plain', 'off')).toBeUndefined()
+    expect(at('gone', 'off')).toBeUndefined()
+  })
+})
 
 describe('keybindings.json', () => {
   it('has no effect when absent', () => {

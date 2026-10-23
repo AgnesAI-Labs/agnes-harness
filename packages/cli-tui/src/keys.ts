@@ -31,6 +31,7 @@ export const KEY_NAMES = [
   'left',
   'right',
   'tab',
+  'shift-tab',
   'backspace',
   'pgup',
   'pgdn',
@@ -86,6 +87,7 @@ const SEQ = new Map<string, KeyName>([
   ['\x1b\x7f', 'word-delete-back'],
   ['\x1b[1;5F', 'ctrl-end'],
   ['\t', 'tab'],
+  ['\x1b[Z', 'shift-tab'],
   ['\x7f', 'backspace'],
   ['\b', 'backspace'],
   ['\x1b[A', 'up'],
@@ -162,6 +164,7 @@ export function parseKey(data: string, kitty: boolean): Key {
     const code = Number(m[1])
     const mods = (Number(m[2] ?? '1') - 1) & 7
     if (code === 13 && kitty) return { name: mods === 1 ? 'shift-enter' : mods === 2 ? 'alt-enter' : 'enter' }
+    if (code === 9 && mods === 1) return { name: 'shift-tab' }
     if (code === 27 && mods === 0) return { name: 'esc' }
     if (code === 122 && mods === 5) return { name: 'ctrl-shift-z' }
     if (code === 121 && mods === 2) return { name: 'alt-y' }

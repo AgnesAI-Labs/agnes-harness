@@ -34,6 +34,8 @@ describe('parseKey', () => {
     expect(parseKey('\x1b[A', false).name).toBe('up')
     expect(parseKey('\x1b[13;2u', true).name).toBe('shift-enter')
     expect(parseKey('x', false)).toEqual({ name: 'char', ch: 'x' })
+    expect(parseKey('\x1b[Z', false).name).toBe('shift-tab')
+    expect(parseKey('\x1b[9;2u', true).name).toBe('shift-tab')
   })
 
   it('reads SGR mouse reports and drops the buttons the TUI has no use for', () => {

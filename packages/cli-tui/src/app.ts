@@ -21,6 +21,7 @@ import { parseKey } from './keys.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { renderMarkdownChunk } from './markdown.js'
+import { ModelChooser } from './model-chooser.js'
 import { copyTip, systemCopy, TuiMouse } from './mouse.js'
 import { nodeText } from './node-text.js'
 import { PackageController } from './package-controller.js'
@@ -43,7 +44,7 @@ import { Composer } from './views/composer.js'
 import { Hints } from './views/hints.js'
 import { localCommandView } from './views/local-command.js'
 import { UserMessage } from './views/message.js'
-import { ModelPicker, type ModelSelection } from './views/model-picker.js'
+import { ModelPicker } from './views/model-picker.js'
 import { SessionPicker } from './views/session-picker.js'
 import { StatusBar } from './views/status-bar.js'
 import { ThemePicker } from './views/theme-picker.js'
@@ -93,6 +94,11 @@ export class TuiApp {
   private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
   readonly mouse: TuiMouse
   readonly statusBar: StatusBar
+  private readonly models = new ModelChooser(
+    this,
+    () => this.refuseClosed(),
+    () => this.stopped,
+  )
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
   private readonly editor: Editor
@@ -321,7 +327,7 @@ export class TuiApp {
       ansi,
       locale,
       maxRows: () => Math.max(4, o.term.size().rows - 6),
-      onChoose: (choice) => void this.chooseModel(choice),
+      onChoose: (choice) => void this.models.choose(choice),
       changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.themePicker = new ThemePicker(ansi, locale, (name) => {
@@ -419,6 +425,10 @@ export class TuiApp {
       if (!inert && this.cards.handleInput(data)) return true
       const key = parseKey(data, o.term.caps.kittyKeyboard)
       const action = actionFor('global', key.name)
+      if (action === 'thinking-cycle') {
+        this.models.cycleThinking()
+        return true
+      }
       if (action === 'card-toggle') {
         this.cards.toggleLatest()
         return true
@@ -783,6 +793,7 @@ export class TuiApp {
     this.applyOpState(value.opState)
     this.statusBar.setParked(value.opState?.parked?.decisionRef.id)
     this.statusBar.setUsage(value.usage, value.yolo)
+    this.models.current = value.usage?.model
     this.composer.setUsage(value.usage)
     // `UITimeline.budget` (core's project/ui.ts:282,330) rides along on every projection tick for
     // free -- it is read out of the same register snapshot the rest of this timeline was built
@@ -986,32 +997,6 @@ export class TuiApp {
     this.offPermission = next.onPermissionRequest((request, context) => this.modal.ask(request, context))
     await this.projection.start()
     return true
-  }
-
-  private async chooseModel(choice: ModelSelection): Promise<void> {
-    if (this.refuseClosed()) return
-    try {
-      const result = await this.o.session.setModel({
-        slot: 'primary',
-        route: choice.route,
-        model: choice.model,
-        ...(choice.thinking === undefined ? {} : { thinking: choice.thinking }),
-      })
-      writeComposerMemoryFile(this.composerSelectionPath, {
-        model: {
-          route: choice.route,
-          id: choice.model,
-          ...(choice.thinking ? { thinking: choice.thinking } : {}),
-        },
-      })
-      this.statusBar.setNotice(
-        `model ${escapeControl(choice.route)}/${escapeControl(choice.model)} from seq ${result.effectiveFromSeq}`,
-        'success',
-      )
-      if (!this.stopped) this.renderer.requestRender()
-    } catch (error) {
-      this.showError(error)
-    }
   }
 
   private async chooseSession(choice: SessionChoice): Promise<void> {

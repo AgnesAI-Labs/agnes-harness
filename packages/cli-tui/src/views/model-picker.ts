@@ -12,6 +12,13 @@ export type ModelSelection = { route: string; model: string; thinking?: Thinking
 
 const THINKING_FALLBACK: readonly ThinkingLevel[] = ['off', 'low', 'medium', 'high']
 
+/** The thinking levels a model offers: its own map when it has one, otherwise the common four. */
+export function thinkingLevelsOf(choice: Pick<ModelChoice, 'thinkingLevelMap'>): readonly ThinkingLevel[] {
+  return choice.thinkingLevelMap && Object.keys(choice.thinkingLevelMap).length > 0
+    ? (Object.keys(choice.thinkingLevelMap) as ThinkingLevel[])
+    : THINKING_FALLBACK
+}
+
 /** Transient, connection-local model chooser. It owns all input while open and never writes UI rows. */
 export class ModelPicker implements Component {
   private box: Box | undefined
@@ -59,10 +66,7 @@ export class ModelPicker implements Component {
   }
 
   private showThinking(choice: ModelChoice): void {
-    const levels: readonly ThinkingLevel[] =
-      choice.thinkingLevelMap && Object.keys(choice.thinkingLevelMap).length > 0
-        ? (Object.keys(choice.thinkingLevelMap) as ThinkingLevel[])
-        : THINKING_FALLBACK
+    const levels = thinkingLevelsOf(choice)
     const select = new Select({
       options: levels.map((level) => ({ id: level, label: level })),
       ansi: this.o.ansi,

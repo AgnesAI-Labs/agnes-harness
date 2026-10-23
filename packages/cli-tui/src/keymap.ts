@@ -19,6 +19,7 @@ export const BINDINGS = [
   { id: 'timeline-page-down', scope: 'global', keys: ['pgdn'] },
   { id: 'steer', scope: 'global', keys: ['alt-enter'] },
   { id: 'queue-recall', scope: 'global', keys: ['alt-up'] },
+  { id: 'thinking-cycle', scope: 'global', keys: ['shift-tab'] },
   // The prompt editor.
   { id: 'submit', scope: 'editor', keys: ['enter'] },
   { id: 'newline', scope: 'editor', keys: ['alt-enter', 'shift-enter'] },

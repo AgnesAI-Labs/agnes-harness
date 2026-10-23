@@ -1641,6 +1641,69 @@ it('opens /model choices above the footer, switches primary once, and cancels wi
   }
 })
 
+it('cycles the thinking level on Shift+Tab through setModel, and declines a model without thinking', async () => {
+  const usage = (id: string) => ({
+    totals: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+    context: { tokens: 10, window: 1_000, autoCompact: false },
+    model: { route: 'deepseek', id, thinking: 'low' },
+  })
+  for (const [id, reasoning] of [
+    ['deepseek-v4-pro', true],
+    ['deepseek-v4-flash', false],
+  ] as const) {
+    const endpoint = new FakeEndpoint()
+      .on('initialize', () => ({
+        protocolVersion: 1,
+        agentCapabilities: {},
+        _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+      }))
+      .on('session/new', () => ({ sessionId: 'agnes:local:default:cli:dm:think' }))
+      .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+      .on('_agnes/v1/session.detach', () => ({}))
+      .on('_agnes/v1/session.projectUI', () => ({ ...EMPTY_TIMELINE, usage: usage(id) }))
+      .on('_agnes/v1/apis.list', () => ({
+        profile: {
+          name: 'local-dev',
+          resolvedProfileHash: 'h',
+          presets: { default: 'standard', allowed: ['standard'] },
+          models: [{ route: 'deepseek', id, reasoning }],
+        },
+        families: [],
+      }))
+      .on('_agnes/v1/session.setModel', () => ({ effectiveFromSeq: 5 }))
+    const client = createClient({ transport: { kind: 'inproc', endpoint } })
+    let app: TuiApp | undefined
+    try {
+      const session = await client.session.new({ cwd: '/tmp' })
+      const term = new FakeTerminal({ columns: 100, rows: 24 })
+      app = new TuiApp({ session, term, profile: 'local-dev', preset: 'standard' })
+      await app.start()
+      term.feed('\x1b[Z')
+      if (reasoning) {
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 100, 24)).join('\n')).toContain('thinking medium from seq 5'),
+        )
+        term.feed('\x1b[Z')
+        await vi.waitFor(() =>
+          expect(endpoint.calls.filter((e) => e.method === '_agnes/v1/session.setModel')).toHaveLength(2),
+        )
+        const sent = endpoint.calls.filter((e) => e.method === '_agnes/v1/session.setModel')
+        expect(sent[0]?.params).toMatchObject({ slot: 'primary', model: id, thinking: 'medium' })
+        expect(sent[1]?.params).toMatchObject({ thinking: 'high' })
+      } else {
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 100, 24)).join('\n')).toContain('no thinking levels'),
+        )
+        expect(endpoint.calls.some((e) => e.method === '_agnes/v1/session.setModel')).toBe(false)
+      }
+    } finally {
+      await app?.stop()
+      await client.close()
+      await endpoint.close()
+    }
+  }
+})
+
 it('opens /resume choices above the footer, owns input, loads the selection and replays history', async () => {
   const current = 'agnes:local:default:cli:session:current'
   const newer = 'agnes:local:default:cli:session:newer'
