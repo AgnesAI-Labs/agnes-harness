@@ -1,9 +1,11 @@
+import type { SessionLoadingParams } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk/browser'
 
 type PermissionHandler = Parameters<Session['onPermissionRequest']>[0]
 type LoadSession = (
   id: string,
   options: {
+    onProgress?: (progress: SessionLoadingParams) => void
     cwd?: string
     signal?: AbortSignal
     onPermissionRequest?: PermissionHandler
@@ -25,11 +27,16 @@ export async function loadWebSession(
   load: LoadSession,
   id: string,
   permission: PermissionHandler,
-  options: { signal?: AbortSignal; onPermissionRequestRegistered?: (off: () => void) => void } = {},
+  options: {
+    signal?: AbortSignal
+    onProgress?: (progress: SessionLoadingParams) => void
+    onPermissionRequestRegistered?: (off: () => void) => void
+  } = {},
 ): Promise<WebSessionBinding> {
   let offPermission: (() => void) | undefined
   const session = await load(id, {
     ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.onProgress ? { onProgress: options.onProgress } : {}),
     onPermissionRequest: permission,
     onPermissionRequestRegistered: (off) => {
       offPermission = off

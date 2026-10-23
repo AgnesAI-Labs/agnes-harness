@@ -1,5 +1,6 @@
 import {
   SESSION_VERSION_CODES,
+  type SessionLoadingParams,
   type SessionVersionAction,
   type SessionViewNotice,
   sessionVersionNotice,
@@ -67,6 +68,8 @@ export function createReadOnlyController(
   let latest = 0
   let reading: AbortController | undefined
   // The scan marker of the view on screen; the banner states it next to the refusal.
+  let verificationRead = 0
+  let verificationTimer: ReturnType<typeof setTimeout> | undefined
   let scan: ViewScan
 
   /** Fetches a view and commits it in one step; false when a newer request or selection superseded it. */
@@ -155,12 +158,61 @@ export function createReadOnlyController(
     context.render()
   }
 
-  function clear(): void {
+  function clearPreview(): void {
     latest++
     reading?.abort()
     reading = undefined
     context.readOnly = undefined
+  }
+
+  function clear(): void {
+    clearPreview()
+    verificationRead++
+    clearTimeout(verificationTimer)
     appReadOnly.clear()
+  }
+
+  function previewNotice(id: string, failed = false): void {
+    appReadOnly.show({
+      preview: true,
+      sessionId: id,
+      actions: [],
+      message: failed
+        ? { en: 'History verification failed. Session sealed.', 'zh-CN': '历史校验失败，会话已封存。' }
+        : { en: 'History preview (not yet verified)', 'zh-CN': '历史预览（尚未验证）' },
+    })
+  }
+
+  function progress(value: SessionLoadingParams, epoch: SessionBinding): void {
+    if (context.sessionBinding.isCurrent(epoch) && value.phase === 'verifying') previewNotice(value.sessionId)
+  }
+
+  /** Loading progress covers foreground checks; only the existing integrity fact confirms the full prefix. */
+  function verify(id: string, epoch: SessionBinding): void {
+    const mine = ++verificationRead
+    clearTimeout(verificationTimer)
+    const current = () => mine === verificationRead && context.sessionBinding.isCurrent(epoch)
+    previewNotice(id)
+    const read = async () => {
+      if (!current()) return
+      try {
+        const result = await context.client.session.integrity(id)
+        if (!current()) return
+        if (result.state === 'verified') {
+          appReadOnly.clear()
+          return
+        }
+        if (result.state === 'stopped') return
+        if (result.state === 'failed') {
+          previewNotice(id, true)
+          return
+        }
+      } catch {
+        // A disconnected reader cannot attest the history; retain the note until a successful read.
+      }
+      if (current()) verificationTimer = setTimeout(() => void read(), 1000)
+    }
+    void read()
   }
 
   async function preview(id: string, epoch: SessionBinding): Promise<void> {
@@ -171,9 +223,10 @@ export function createReadOnlyController(
     // never downgrades an admitted binding to history-only. The first live timeline clears us.
     await context.clientModules.reconciler.reconcileNow()
     if (ticket !== latest || !context.sessionBinding.isCurrent(epoch)) return
+    previewNotice(id)
     context.render()
     context.renderControls()
   }
 
-  return { show, preview, loadEarlier, clear }
+  return { show, preview, progress, verify, loadEarlier, clearPreview, clear }
 }

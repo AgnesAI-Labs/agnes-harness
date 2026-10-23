@@ -32,6 +32,7 @@ function setup() {
     },
     client: {
       session: {
+        integrity: vi.fn(async () => ({ state: 'verified' })),
         list: vi.fn(async (query: { q: { prefix: string }; limit: number }) => ({
           items: [
             { sessionId: 'AA', title: 'A different session sharing the prefix' },
@@ -187,7 +188,7 @@ it('states which rows a truncated record shows', async () => {
   )
 })
 
-it('opens history without a banner and ignores a preview that finishes after the formal projection', async () => {
+it('labels unverified history compactly and ignores a preview that finishes after the formal projection', async () => {
   const { context, controller, pending } = setup()
   vi.mocked(appReadOnly.show).mockClear()
   const preview = controller.preview('A', context.sessionBinding.capture())
@@ -195,7 +196,31 @@ it('opens history without a banner and ignores a preview that finishes after the
   pending.get('A:50')?.(view('A'))
   await preview
   expect(context.readOnly?.id).toBe('A')
-  expect(appReadOnly.show).not.toHaveBeenCalled()
+  expect(appReadOnly.show).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      preview: true,
+      message: { en: 'History preview (not yet verified)', 'zh-CN': '历史预览（尚未验证）' },
+    }),
+  )
+  let verified!: (result: { state: string }) => void
+  context.client.session.integrity.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        verified = resolve
+      }) as never,
+  )
+  controller.clearPreview()
+  controller.verify('A', context.sessionBinding.capture())
+  vi.mocked(appReadOnly.clear).mockClear()
+  await tick()
+  expect(appReadOnly.clear).not.toHaveBeenCalled()
+  verified({ state: 'verified' })
+  await tick()
+  expect(appReadOnly.clear).toHaveBeenCalled()
+  const again = controller.preview('A', context.sessionBinding.capture())
+  await tick()
+  pending.get('A:50')?.(view('A'))
+  await again
   context.sessionBinding.attach(context.sessionBinding.capture(), { session: { id: 'A' } as Session })
   context.clientModules.session.setSession('A', 'connecting')
   expect(context.readOnly?.id).toBe('A')
@@ -233,6 +258,44 @@ it('opens history without a banner and ignores a preview that finishes after the
   pending.get('B:50')?.(view('B'))
   await obsolete
   expect(context.projection).toEqual({ sessionId: 'live' })
+})
+
+it('keeps the preview through background verification and ignores a late result after switching', async () => {
+  const { context, controller } = setup()
+  vi.useFakeTimers()
+  try {
+    context.client.session.integrity.mockResolvedValueOnce({ state: 'verifying' })
+    controller.verify('A', context.sessionBinding.capture())
+    await vi.advanceTimersByTimeAsync(0)
+    vi.mocked(appReadOnly.clear).mockClear()
+    expect(appReadOnly.clear).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(appReadOnly.clear).toHaveBeenCalled()
+    let finish!: (value: { state: string }) => void
+    context.client.session.integrity.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        }) as never,
+    )
+    controller.verify('A', context.sessionBinding.capture())
+    context.sessionBinding.begin('B')
+    controller.clear()
+    controller.progress(
+      { sessionId: 'B', phase: 'verifying', verifiedSeq: 0, lastSeq: 10 },
+      context.sessionBinding.capture(),
+    )
+    vi.mocked(appReadOnly.clear).mockClear()
+    finish({ state: 'verified' })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(appReadOnly.clear).not.toHaveBeenCalled()
+    expect(appReadOnly.show).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sessionId: 'B', preview: true }),
+    )
+  } finally {
+    controller.clear()
+    vi.useRealTimers()
+  }
 })
 
 it.each(['refused', 'preview'])(

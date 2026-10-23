@@ -302,6 +302,18 @@ describe('turn timeline', () => {
     await click(button)
     expect(retry).toHaveBeenCalledTimes(1)
     expect(retry).toHaveBeenCalledWith(expect.objectContaining({ id: 'turn:1' }))
+    const newer = turn([], { id: 'turn:2', turn: 2, startSeq: 10, status: 'completed' })
+    await render(nodes, failed, { turns: [failed, newer], turnErrorActions: { onRetry: retry } })
+    expect(host.querySelector('.turn-error-sentence')?.textContent).toBe('连接模型服务失败。')
+    expect([...host.querySelectorAll('button')].some((element) => element.textContent === '重试')).toBe(false)
+    await render(nodes, failed, {
+      turns: [failed, { ...newer, status: 'failed', error: { code: 'TRANSPORT', message: 'status=500' } }],
+      turnErrorActions: { onRetry: retry },
+    })
+    const retries = [...host.querySelectorAll('button')].filter((element) => element.textContent === '重试')
+    expect(retries).toHaveLength(1)
+    await click(retries[0])
+    expect(retry).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'turn:2' }))
   })
 
   it('disables the retry while the host says it cannot send', async () => {

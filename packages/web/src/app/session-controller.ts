@@ -160,6 +160,7 @@ export function createSessionController(
             permission,
             {
               signal: bindingOwner.loadingSignal(epoch),
+              onProgress: (value) => context.readOnlyController.progress(value, epoch),
               onPermissionRequestRegistered: (off) => bindingOwner.loadingPermission(epoch, off),
             },
           )
@@ -253,7 +254,8 @@ export function createSessionController(
           if (!opened) {
             opened = true
             // Retire pending preview reads before installing the live projection in this same turn.
-            context.readOnlyController.clear()
+            context.readOnlyController.clearPreview()
+            context.readOnlyController.verify(id, epoch)
             // 首投影就绪后才换代：清空转录区、写入新会话内容、同步审批卡与控件，
             // 都发生在同一次同步序列里，旧→新之间没有空白帧。
             context.renderer.reset()

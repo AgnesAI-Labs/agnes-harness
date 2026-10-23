@@ -67,9 +67,9 @@ const BY_CODE: Readonly<Record<string, ClassRule>> = {
   E_FS_CHECK_FAILED: { kind: 'workspace', actions: NONE },
   E_STEP_FAILED: { kind: 'internal', actions: RETRY },
   E_RELATION: { kind: 'internal', actions: RETRY },
-  E_LEDGER_INTEGRITY: { kind: 'internal', actions: RETRY },
-  LEDGER_FAILED: { kind: 'internal', actions: RETRY },
-  HOOK_BLOCKED: { kind: 'internal', actions: RETRY },
+  E_LEDGER_INTEGRITY: { kind: 'internal', actions: NONE },
+  LEDGER_FAILED: { kind: 'internal', actions: NONE },
+  HOOK_BLOCKED: { kind: 'internal', actions: NONE },
   CODE_RUNTIME_UNAVAILABLE: { kind: 'internal', actions: RETRY },
   INTERRUPTED: { kind: 'interrupted', actions: RETRY },
 }

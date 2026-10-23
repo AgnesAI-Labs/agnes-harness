@@ -2223,6 +2223,7 @@ const stopSessionConfiguration = onBroadcast(
 )
 onPageHide(() => {
   notice.clearErrors()
+  readOnlyController.clear()
   sidebarPages.reset()
   intentionalClose = true
   stopConnectionEvents()

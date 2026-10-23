@@ -139,6 +139,8 @@ function TurnView({
     : status
   // A failed turn always states what happened; the process summary then stops repeating it.
   const failed = turn.status === 'failed' && !verification
+  const { onRetry, ...errorActions } = props.turnErrorActions ?? {}
+  const retryActions = latest && onRetry ? { ...errorActions, onRetry } : errorActions
   const processStatusText =
     failed && duration
       ? `${t('turn.error.processLabel')}${t('turn.elapsedSuffix', { duration })}`
@@ -284,7 +286,7 @@ function TurnView({
       >
         {statusText}
       </p>
-      {failed && <TurnErrorRow turn={turn} t={t} actions={props.turnErrorActions} />}
+      {failed && <TurnErrorRow turn={turn} t={t} actions={retryActions} />}
       <Disclosure
         className="turn-process"
         open={processOpen}

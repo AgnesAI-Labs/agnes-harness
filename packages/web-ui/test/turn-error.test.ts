@@ -41,9 +41,9 @@ describe('turn error classification', () => {
     ['E_FS_CHECK_FAILED', 'workspace', []],
     ['E_STEP_FAILED', 'internal', ['retry']],
     ['E_RELATION', 'internal', ['retry']],
-    ['E_LEDGER_INTEGRITY', 'internal', ['retry']],
-    ['LEDGER_FAILED', 'internal', ['retry']],
-    ['HOOK_BLOCKED', 'internal', ['retry']],
+    ['E_LEDGER_INTEGRITY', 'internal', []],
+    ['LEDGER_FAILED', 'internal', []],
+    ['HOOK_BLOCKED', 'internal', []],
     ['CODE_RUNTIME_UNAVAILABLE', 'internal', ['retry']],
     ['INTERRUPTED', 'interrupted', ['retry']],
   ] as const)('reads %s as %s with %j', (code, kind, actions) => {

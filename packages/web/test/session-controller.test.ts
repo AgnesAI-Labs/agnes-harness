@@ -55,6 +55,7 @@ it.each(['before', 'after'])(
             }),
           list: async () => ({ items: [] }),
           runtime: async () => ({}),
+          integrity: async () => ({ state: 'verified' }),
         },
       },
       sessionRows: [{ sessionId: 'A' }],
