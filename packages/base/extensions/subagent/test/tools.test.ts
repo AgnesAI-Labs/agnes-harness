@@ -257,43 +257,35 @@ describe('subagent_spawn', () => {
     })
   })
 
-  it('honours explicit shared isolation and a fail-closed worktree fallback', async () => {
-    const wt = worktrees({ create: async () => ({ skipped: 'not-git' }) })
-    const d = deps({ worktrees: wt.manager })
-    const first = context({ spawn: async () => ({ childKey: 'shared-child' }) })
-
-    await subagentSpawnTool(d).execute({ task: 'shared', isolation: 'shared' }, first.ctx)
-    expect(wt.calls.create).toEqual([])
-    expect(first.calls.spawn).toEqual([
-      [
-        'shared',
-        {
-          isolation: 'shared',
-          resident: true,
-          toolFilter: { deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'] },
-        },
-      ],
-    ])
-
-    const second = context({ spawn: async () => ({ childKey: 'fallback-child' }) })
-    const result = await subagentSpawnTool(d).execute({ task: 'fallback' }, second.ctx)
-    expect(second.calls.spawn).toEqual([
-      [
-        'fallback',
-        {
-          isolation: 'worktree',
-          resident: true,
-          toolFilter: { deny: ['schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update'] },
-          start: false,
-        },
-      ],
-    ])
-    expect(result.isError).toBe(true)
-    expect(result.content[0]).toMatchObject({
-      text: expect.stringContaining('worktree creation failed: not-git'),
-    })
-    expect(second.calls.resume).toEqual([])
-  })
+  it.each(['spawn', 'fork'] as const)(
+    'uses shared cwd for an implicit non-git %s, but refuses explicit isolation and other errors',
+    async (kind) => {
+      for (const skipped of ['not-git', 'git-error'] as const) {
+        for (const isolation of [undefined, 'worktree', 'shared'] as const) {
+          const wt = worktrees({ create: async () => ({ skipped }) })
+          const d = deps({ worktrees: wt.manager })
+          const { ctx, calls } = context()
+          const result =
+            kind === 'fork'
+              ? await subagentForkToolWithDeps(d).execute({ question: 'build bread', isolation }, ctx)
+              : await subagentSpawnTool(d).execute({ task: 'build drinks', isolation }, ctx)
+          const shared = isolation === 'shared' || (isolation === undefined && skipped === 'not-git')
+          expect(result.isError).toBe(shared ? undefined : true)
+          if (shared) {
+            expect(result.details).toMatchObject({ isolation: 'shared' })
+            expect(calls.spawn[0]?.[1]).toMatchObject({ isolation: 'shared' })
+            if (isolation === undefined)
+              expect(JSON.stringify(result.content)).toContain(
+                'ran in the shared folder because it is not a git repository',
+              )
+          } else {
+            expect(JSON.stringify(result.content)).toContain('worktree creation failed: ' + skipped)
+            expect(calls.spawn).toEqual([])
+          }
+        }
+      }
+    },
+  )
 
   it('passes an explicit role and backend attribution, rejecting incompatible and refused roles without fallback', async () => {
     const d = deps()
@@ -459,8 +451,8 @@ describe('subagent_spawn', () => {
       if (refused)
         expect(await execution).toMatchObject({ isError: true, details: { code: 'E_CHILD_LIMIT' } })
       else await expect(execution).rejects.toBe(error)
-      expect(wt.calls.create).toEqual(born ? [c.ctx] : [])
-      expect(wt.calls.finish).toEqual(born ? [['spawn-failed', '/work/proj/.worktrees/agnes-1234abcd']] : [])
+      expect(wt.calls.create).toEqual([c.ctx])
+      expect(wt.calls.finish).toEqual([['spawn-failed', '/work/proj/.worktrees/agnes-1234abcd']])
     },
   )
 

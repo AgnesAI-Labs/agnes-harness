@@ -279,37 +279,39 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         return fail(`fan-out limit ${deps.limits.maxFanOut} reached`)
       }
 
-      // Persist identity first (design 10.1), then prepare a worktree, then start the child.
+      // Reserve capacity before preparing the workspace; start only after isolation is resolved.
       state.pending += 1
       let worktree: string | undefined
       let childKey: string | undefined
+      let sharedNonGit = false
       try {
         const requested = args.isolation ?? (args.role ? 'shared' : deps.limits.isolation)
         if (requested === 'worktree' && !deps.worktrees.bind)
           return fail('worktree isolation requires a manager that binds the child working directory')
+        if (requested === 'worktree') {
+          const created = await deps.worktrees.create(ctx)
+          if ('skipped' in created) {
+            if (created.skipped !== 'not-git' || args.isolation !== undefined)
+              return fail(
+                `worktree creation failed: ${created.skipped}; request isolation: shared explicitly to share cwd`,
+              )
+            sharedNonGit = true
+          } else worktree = created.path
+        }
         const options = {
           ...(args.role === undefined ? {} : { role: args.role }),
           ...(args.model === undefined ? {} : { model: args.model }),
           ...(args.budget === undefined ? {} : { budget: args.budget }),
-          isolation: requested,
+          isolation: worktree ? ('worktree' as const) : ('shared' as const),
           resident: true,
           ...(fork ? { fork: true } : {}),
           toolFilter: narrowFilter(narrowFilter(DEFAULT_CHILD_TOOL_FILTER, deps.toolFilter), args.toolFilter),
-          ...(requested === 'worktree' ? { start: false as const } : {}),
+          ...(worktree ? { start: false as const } : {}),
         }
         const spawned = await ctx.subagent.spawn(args.task, options)
         childKey = spawned.childKey
-        if (requested === 'worktree') {
-          const created = await deps.worktrees.create(ctx)
-          if ('skipped' in created) {
-            await ctx.subagent.cancel(spawned.childKey)
-            return fail(
-              `worktree creation failed: ${created.skipped}; request isolation: shared explicitly to share cwd`,
-            )
-          } else {
-            worktree = created.path
-            await deps.worktrees.bind?.(spawned.childKey, created.path)
-          }
+        if (worktree) {
+          await deps.worktrees.bind?.(spawned.childKey, worktree)
           await ctx.subagent.resume(spawned.childKey)
         }
 
@@ -344,9 +346,11 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           content: [
             {
               type: 'text',
-              text: collected
-                ? `Delegated task ${collected.status}.\n${collected.text ?? 'No findings returned.'}`
-                : `Task delegated in the background. A completion notice will carry the findings. ${followUp}; do not repeat internal handles to the user.`,
+              text:
+                (sharedNonGit ? 'Child ran in the shared folder because it is not a git repository.\n' : '') +
+                (collected
+                  ? `Delegated task ${collected.status}.\n${collected.text ?? 'No findings returned.'}`
+                  : `Task delegated in the background. A completion notice will carry the findings. ${followUp}; do not repeat internal handles to the user.`),
             },
           ],
           details,
