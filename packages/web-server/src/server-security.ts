@@ -41,3 +41,47 @@ export function port(value: number): number {
   if (!Number.isInteger(value) || value < 0 || value > 65_535) throw new Error('invalid Web port')
   return value
 }
+
+type RequestSecurityMode =
+  | 'exact-navigation'
+  | 'post-origin'
+  | 'file-upload'
+  | 'history-search'
+  | 'webhook-path'
+  | 'webhook-admin'
+  | 'mount-write'
+
+type SecurityRequest = {
+  method?: string | undefined
+  url?: string | undefined
+  headers: { origin?: string | undefined; 'sec-fetch-site'?: string | string[] | undefined }
+}
+
+/** Preserve the routes' distinct browser admission policies; callers own method/error replies. */
+export function acceptsWebRequest(
+  mode: RequestSecurityMode,
+  expectedOrigin: string,
+  request: SecurityRequest,
+  exactPath?: string,
+): boolean {
+  // Webhook path refusals precede the administration origin/method checks.
+  if (mode === 'webhook-path') return exactPath !== undefined && request.url === exactPath
+  const origin = request.headers.origin
+  // Picker/plan check this only after their method refusal, unlike upload's initial gate.
+  if (mode === 'post-origin') return origin === expectedOrigin
+  const rawSite = request.headers['sec-fetch-site']
+  const site = mode === 'history-search' && Array.isArray(rawSite) ? rawSite[0] : rawSite
+  const strict = mode === 'webhook-admin' || mode === 'mount-write'
+  if (
+    (site !== undefined && site !== 'same-origin' && (strict || site !== 'none')) ||
+    (origin !== undefined && origin !== expectedOrigin)
+  )
+    return false
+  if (strict || (mode === 'file-upload' && request.method === 'POST')) return origin === expectedOrigin
+  if (mode === 'exact-navigation') {
+    if (exactPath === undefined || request.url !== exactPath) return false
+    const url = new URL(request.url, expectedOrigin)
+    return url.origin === expectedOrigin && url.search === ''
+  }
+  return true
+}

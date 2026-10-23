@@ -2,13 +2,14 @@ import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, join } from 'node:path'
-import { FILE_UPLOAD_PATH, httpRpcError, normalizeRpcError, type RpcError } from '@agnes/protocol'
+import { FILE_UPLOAD_PATH } from '@agnes/protocol'
 import { DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame } from './deliverable-preview-frame.js'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
 import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
 import { UI_COMPONENT_MODULE_BYTES, uiComponentFrame } from './ui-component-frame.js'
 import { fileUploadRoute } from './upload-route.js'
 import { webhookRoute } from './webhook-route.js'
+import { createWorkspacePickerRoute, handlePlanMode } from './workspace-routes.js'
 
 export { DEFAULT_WEB_PORT, PLAN_MODE_PATH, WORKSPACE_PICKER_PATH } from './server-assets.js'
 export type {
@@ -28,13 +29,12 @@ import {
   HOST,
   importMapScriptHash,
   MIME,
-  PLAN_MODE_BODY_LIMIT,
   PLAN_MODE_PATH,
   SKIN_MIME,
   WORKSPACE_PICKER_PATH,
 } from './server-assets.js'
-import { json, listen, readLimitedBody } from './server-http.js'
-import { loopbackOrigin, loopbackWs, port } from './server-security.js'
+import { json, listen } from './server-http.js'
+import { acceptsWebRequest, loopbackOrigin, loopbackWs, port } from './server-security.js'
 
 type WatchedPluginBuild = {
   packageId: string
@@ -77,8 +77,7 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     `default-src 'self'; media-src 'self' blob:; connect-src 'self' ${expectedOrigin.origin.replace(/^http/, 'ws')} ${ws.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
   let contentSecurityPolicy = policyFor(wsUrl)
 
-  let pickerPending = false
-  let activePicker: AbortController | undefined
+  const handleWorkspacePicker = createWorkspacePickerRoute(expectedOrigin.origin, options)
   const changeEpoch = randomBytes(16).toString('hex')
   let changeCursor = 0
   let developmentRevision = 0
@@ -222,153 +221,11 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
         return
       }
       if (requestUrl.pathname === WORKSPACE_PICKER_PATH) {
-        const site = request.headers['sec-fetch-site']
-        if (
-          requestUrl.origin !== expectedOrigin.origin ||
-          request.url !== WORKSPACE_PICKER_PATH ||
-          requestUrl.search !== '' ||
-          (site !== undefined && site !== 'same-origin' && site !== 'none') ||
-          (request.headers.origin !== undefined && request.headers.origin !== expectedOrigin.origin)
-        ) {
-          json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
-          return
-        }
-        if (request.method !== 'GET' && request.method !== 'POST') {
-          response.writeHead(405, { Allow: 'GET, POST' }).end()
-          return
-        }
-        if (request.method === 'GET') {
-          const available = (await options.workspacePicker?.available().catch(() => false)) ?? false
-          json(response, 200, { available })
-          return
-        }
-        if (request.headers.origin !== expectedOrigin.origin) {
-          json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
-          return
-        }
-        if (
-          request.headers['transfer-encoding'] !== undefined ||
-          Number(request.headers['content-length'] ?? '0') !== 0
-        ) {
-          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
-          return
-        }
-        if (pickerPending) {
-          json(response, 409, { error: { code: 'PICKER_BUSY' } })
-          return
-        }
-        pickerPending = true
-        const controller = new AbortController()
-        activePicker = controller
-        const abort = (): void => controller.abort()
-        request.once('aborted', abort)
-        response.once('close', abort)
-        try {
-          const available = (await options.workspacePicker?.available().catch(() => false)) ?? false
-          if (controller.signal.aborted && !response.writableEnded) return
-          if (!available || !options.workspacePicker) {
-            json(response, 503, { status: 'unavailable' })
-            return
-          }
-          const result = await options.workspacePicker
-            .pick(controller.signal)
-            .catch(() => ({ status: 'unavailable' }) as const)
-          if (controller.signal.aborted && !response.writableEnded) return
-          if (
-            result.status === 'selected' &&
-            (result.path.length === 0 ||
-              result.path.length > 4096 ||
-              result.path.includes('\0') ||
-              !isAbsolute(result.path))
-          ) {
-            json(response, 503, { status: 'unavailable' })
-            return
-          }
-          json(response, result.status === 'unavailable' ? 503 : 200, result)
-        } finally {
-          request.removeListener('aborted', abort)
-          response.removeListener('close', abort)
-          if (activePicker === controller) activePicker = undefined
-          pickerPending = false
-        }
+        await handleWorkspacePicker.handle(request, response)
         return
       }
       if (requestUrl.pathname === PLAN_MODE_PATH) {
-        const site = request.headers['sec-fetch-site']
-        if (
-          requestUrl.origin !== expectedOrigin.origin ||
-          request.url !== PLAN_MODE_PATH ||
-          requestUrl.search !== '' ||
-          (site !== undefined && site !== 'same-origin' && site !== 'none') ||
-          (request.headers.origin !== undefined && request.headers.origin !== expectedOrigin.origin)
-        ) {
-          json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
-          return
-        }
-        if (request.method !== 'POST') {
-          response.writeHead(405, { Allow: 'POST' }).end()
-          return
-        }
-        if (request.headers.origin !== expectedOrigin.origin) {
-          json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
-          return
-        }
-        const contentType = request.headers['content-type']
-        if (
-          request.headers['transfer-encoding'] !== undefined ||
-          typeof contentType !== 'string' ||
-          !contentType.startsWith('application/json')
-        ) {
-          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
-          return
-        }
-        const length = Number(request.headers['content-length'] ?? '')
-        if (!Number.isInteger(length) || length < 2 || length > PLAN_MODE_BODY_LIMIT) {
-          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
-          return
-        }
-        let raw: string
-        try {
-          raw = await readLimitedBody(request, length)
-        } catch {
-          if (!response.writableEnded) json(response, 400, { error: { code: 'INVALID_REQUEST' } })
-          return
-        }
-        let parsed: { cwd?: unknown; line?: unknown; sessionId?: unknown }
-        try {
-          parsed = JSON.parse(raw) as { cwd?: unknown; line?: unknown; sessionId?: unknown }
-        } catch {
-          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
-          return
-        }
-        if (
-          typeof parsed.cwd !== 'string' ||
-          typeof parsed.line !== 'string' ||
-          (parsed.sessionId !== undefined && typeof parsed.sessionId !== 'string')
-        ) {
-          json(response, 400, { error: { code: 'INVALID_REQUEST' } })
-          return
-        }
-        if (!options.planCommand) {
-          json(response, 503, { error: httpRpcError(503, 'UNAVAILABLE') })
-          return
-        }
-        try {
-          json(
-            response,
-            200,
-            await options.planCommand({
-              cwd: parsed.cwd,
-              line: parsed.line,
-              ...(typeof parsed.sessionId === 'string' ? { sessionId: parsed.sessionId } : {}),
-            }),
-          )
-        } catch (error) {
-          const rpc = (error as { rpc?: RpcError })?.rpc
-          json(response, rpc?.code === -32006 ? 403 : 400, {
-            error: rpc ? normalizeRpcError(rpc) : httpRpcError(400, 'INVALID_REQUEST'),
-          })
-        }
+        await handlePlanMode(request, response, expectedOrigin.origin, options)
         return
       }
       if (request.url === '/__agnes/dev/reload.js') {
@@ -528,11 +385,7 @@ void poll();\n`,
         // A mounted Surface's business API writes, so a non-read request may reach mountProxy - but
         // only from this exact page origin: the Host check above cannot stop a cross-site form POST.
         // Every other non-read request keeps the plain 405 it always had.
-        const site = request.headers['sec-fetch-site']
-        if (
-          request.headers.origin === expectedOrigin.origin &&
-          (site === undefined || site === 'same-origin')
-        ) {
+        if (acceptsWebRequest('mount-write', expectedOrigin.origin, request)) {
           if (options.mountProxy?.(request, response)) return
           // A built-in asset keeps its method refusal even while the mount query is pending.
           try {
@@ -726,7 +579,7 @@ void poll();\n`,
     close: () =>
       (closing ??= new Promise<void>((resolve, reject) => {
         options.pluginStreams?.close()
-        activePicker?.abort()
+        handleWorkspacePicker.close()
         stopPluginEvents?.()
         if (pluginBuildPoller !== undefined) clearInterval(pluginBuildPoller)
         for (const response of pluginEventClients) response.end()
