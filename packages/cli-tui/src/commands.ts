@@ -23,6 +23,7 @@ import { infoSlash } from './info-commands.js'
 import { jobsSlash } from './job-commands.js'
 import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
+import { memorySlash } from './memory-command.js'
 import { parseNotifyMode } from './notify.js'
 import { queueSlash } from './queue-commands.js'
 import { rateSlash } from './rate-command.js'
@@ -246,6 +247,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '[scope]',
     descriptionKey: 'commands.review',
     summaryKey: 'commands.reviewSummary',
+  },
+  {
+    name: '/memory',
+    args: '[list|show <name>|add <text>|edit <name>|confirm|cancel]',
+    descriptionKey: 'commands.memory',
+    summaryKey: 'commands.memorySummary',
   },
   { name: '/btw', args: '<question>', descriptionKey: 'commands.btw', summaryKey: 'commands.btwSummary' },
 ]
@@ -761,6 +768,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return rateSlash(app, line)
     case '/export':
       return exportSlash(app, line)
+    case '/memory':
+      return memorySlash(app, line)
     case '/refine':
       // `harness/refine` exists as a raw ledger event type (protocol session-v1 schema), but
       // UITimeline/UINode has no kind that projects it -- there is no 'notice' or 'refine' UINode
