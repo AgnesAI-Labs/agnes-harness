@@ -35,13 +35,19 @@ export class StatusBar implements Component {
   private noticeTone: NoticeTone = 'info'
   private link: LinkState = 'ok'
   private usage: UsageView | undefined
+  private preset = ''
+  private fullAccess = false
 
   constructor(
     private readonly ansi: ThemedAnsi,
     private readonly locale: Locale = 'en',
     /** A run that skipped parts of its setup says so for its whole life, so nobody forgets it. */
     private readonly safeMode = false,
-  ) {}
+    /** The launcher passes `(default)` when argv named no preset; only a real name is shown. */
+    preset = '',
+  ) {
+    if (preset !== '(default)') this.preset = preset
+  }
 
   setSlots(items: StatusItem[]): void {
     this.slots = items
@@ -71,6 +77,15 @@ export class StatusBar implements Component {
     this.budgetTier = isError ? 'error' : 'warning'
   }
 
+  /**
+   * The approval mode is the preset's name, and a loud full-access marker while routine approvals
+   * are skipped (`yolo`), which is a safety signal. Background work has no count in the projection
+   * the TUI already holds, so none is shown.
+   */
+  setPreset(name: string): void {
+    this.preset = name
+  }
+
   setParked(ticket?: string): void {
     this.parked = ticket ? `${t('status.parked', this.locale)} ${ticket.slice(0, 8)}…` : ''
   }
@@ -85,8 +100,9 @@ export class StatusBar implements Component {
   }
 
   /** Updates the Pi-style usage footer from the same projection as the timeline. */
-  setUsage(usage?: UsageView): void {
+  setUsage(usage?: UsageView, fullAccess = false): void {
     this.usage = usage
+    this.fullAccess = fullAccess
   }
 
   invalidate(): void {}
@@ -102,6 +118,7 @@ export class StatusBar implements Component {
         (s) =>
           `${this.ansi.fg(LEVEL_TONE[s.level] ?? 'muted', `[${s.level}]`)} ${this.ansi.dim(escapeControl(s.text))}`,
       ),
+      this.fullAccess ? this.ansi.bold(this.ansi.fg('danger', t('status.fullAccess', this.locale))) : '',
       this.budget
         ? this.ansi.bold(this.ansi.fg(this.budgetTier === 'error' ? 'danger' : 'warning', this.budget))
         : '',
@@ -109,6 +126,10 @@ export class StatusBar implements Component {
       this.parked ? this.ansi.dim(this.parked) : '',
       notice,
       this.link === 'ok' ? '' : this.ansi.fg('warning', `⟳ ${link}`),
+      // Last, so a narrow line cuts the preset name before it cuts a notice.
+      this.preset && !this.fullAccess
+        ? this.ansi.dim(`${t('status.preset', this.locale)} ${escapeControl(this.preset)}`)
+        : '',
     ].filter(Boolean)
     const separator = this.ansi.fg('faint', ' · ')
     const content = parts.join(separator)

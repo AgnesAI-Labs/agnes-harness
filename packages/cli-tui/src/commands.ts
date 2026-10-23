@@ -634,6 +634,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       const name = args[0]
       if (!name) return { text: 'usage: /preset <name>' }
       const r = await s.setPreset(name)
+      app.statusBar.setPreset(name)
       return { text: `preset ${name} from seq ${r.effectiveFromSeq}` }
     }
     case '/theme': {

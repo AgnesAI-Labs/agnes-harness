@@ -34,6 +34,23 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     expect(new StatusBar(PLAIN, 'en', true).render(80)[0]).toContain('safe mode')
   })
 
+  it('shows the preset, and a loud full-access marker only while yolo is on', () => {
+    const s = new StatusBar(PLAIN)
+    expect(s.render(80)[0]).not.toContain('preset')
+    expect(new StatusBar(PLAIN, 'en', false, '(default)').render(80)[0]).not.toContain('preset')
+    s.setPreset('strict')
+    expect(s.render(80)[0]).toContain('preset strict')
+    s.setUsage(undefined, true)
+    const line = s.render(80)[0] as string
+    expect(line).toContain('⚠ full access')
+    expect(line).not.toContain('preset strict')
+    s.setUsage(undefined)
+    expect(s.render(80)[0]).toContain('preset strict')
+    const zh = new StatusBar(PLAIN, 'zh-CN')
+    zh.setUsage(undefined, true)
+    expect(zh.render(80)[0]).toContain('完全访问')
+  })
+
   it('renders the projected usage as a separate Pi-style footer and clears it', () => {
     const s = new StatusBar(PLAIN)
     s.setUsage({

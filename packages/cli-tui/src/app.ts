@@ -196,7 +196,7 @@ export class TuiApp {
     this.loader = new Loader('', ansi)
     this.live = new LiveView(ansi, locale)
     this.localCommandView = localCommandView(ansi)
-    this.statusBar = new StatusBar(ansi, locale, o.safeMode)
+    this.statusBar = new StatusBar(ansi, locale, o.safeMode, o.preset)
     this.mouse = new TuiMouse(
       (rows) => this.scrollTimeline(rows),
       o.copy ?? systemCopy((s) => o.term.write(s)),
@@ -782,7 +782,7 @@ export class TuiApp {
     this.statusBar.setSlots(slots.status)
     this.applyOpState(value.opState)
     this.statusBar.setParked(value.opState?.parked?.decisionRef.id)
-    this.statusBar.setUsage(value.usage)
+    this.statusBar.setUsage(value.usage, value.yolo)
     this.composer.setUsage(value.usage)
     // `UITimeline.budget` (core's project/ui.ts:282,330) rides along on every projection tick for
     // free -- it is read out of the same register snapshot the rest of this timeline was built
