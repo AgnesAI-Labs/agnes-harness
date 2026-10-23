@@ -227,6 +227,11 @@ export type ManagerOptions = {
   runtimeCheckpoint?: (point: RuntimeSnapshotCommitPoint) => void
   sourceAdapters?: readonly PackageSourceAdapter[]
   residueCheck?: (id: string) => Promise<string[]>
+  /**
+   * A Worker's own manager: `runtimePluginSnapshots` hashes AGH-stored trees once per process and
+   * reuses them while their directories are not replaced. Every other reader leaves this unset.
+   */
+  settleStoredTrees?: boolean
 }
 
 function contained(root: string, target: string): boolean {
@@ -808,12 +813,18 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       })
     },
     async runtimePluginSnapshots(profileDir) {
-      return readRuntimePluginSnapshots(profileDir, {
-        store: storeFor(profileDir),
-        load: () => load(profileDir),
-        ceiling,
-        verificationCache,
-      })
+      // One read boundary, as the daemon's shared reader uses: the before/after inventory reads share
+      // this read's verified digests. Only a Worker's manager settles AGH-stored trees.
+      return withPackageVerification(
+        () =>
+          readRuntimePluginSnapshots(profileDir, {
+            store: storeFor(profileDir),
+            load: () => load(profileDir),
+            ceiling,
+            verificationCache,
+          }),
+        { settleTrees: options.settleStoredTrees === true },
+      )
     },
     async pinRuntimeSnapshot(profileDir, request) {
       return ((await manager.pinRuntimeSnapshots(profileDir, [request])) as [RuntimePin])[0]

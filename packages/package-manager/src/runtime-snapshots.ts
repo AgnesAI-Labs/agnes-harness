@@ -313,10 +313,14 @@ function* verifyRecordSteps(
   }
   if (!contained(root, actual) || actual === root || basename(actual) !== checkedRecord.snapshotId)
     integrityFailure('runtime-path-escape')
-  const treeIntegrity = yield* directoryDigestSteps(actual, {
-    ...checkedRecord,
-    version: checkedRecord.packageVersion,
-  })
+  // Snapshots are immutable AGH-stored trees: hashed in full once per process, then reused while the
+  // directory is not replaced. Path, link and record checks above still run on every read.
+  const treeIntegrity = yield* directoryDigestSteps(
+    actual,
+    { ...checkedRecord, version: checkedRecord.packageVersion },
+    false,
+    true,
+  )
   if (treeIntegrity !== checkedRecord.treeIntegrity) integrityFailure('runtime-tree-mismatch')
   const source = parseSource(checkedRecord.source.ref)
   if (canonical(source) !== canonical(checkedRecord.source)) integrityFailure('runtime-source-mismatch')

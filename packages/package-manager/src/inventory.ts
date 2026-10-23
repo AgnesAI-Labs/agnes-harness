@@ -130,12 +130,18 @@ function* verifyPackageDirectorySteps(
     throw new PackageError('E_LOCK_MISMATCH', 'installed inventory tree differs from lock', {
       detail: { id },
     })
-  const treeIntegrity = yield* directoryDigestSteps(directory, {
-    version: entry.version,
-    integrity: entry.integrity,
-    treeIntegrity: entry.treeIntegrity,
-    capabilityHash: capabilityHash(entry),
-  })
+  const treeIntegrity = yield* directoryDigestSteps(
+    directory,
+    {
+      version: entry.version,
+      integrity: entry.integrity,
+      treeIntegrity: entry.treeIntegrity,
+      capabilityHash: capabilityHash(entry),
+    },
+    false,
+    // Workspace and local sources are folders the user edits; only AGH-stored trees settle.
+    entry.source.type !== 'workspace' && entry.source.type !== 'local',
+  )
   return verifyHashedPackageDirectory(id, entry, directory, ceiling, treeIntegrity, cache)
 }
 
