@@ -7,12 +7,11 @@ import { BusyInput } from '../src/busy-input.js'
 import { type ClipboardImagePort, pasteClipboardImage } from '../src/clipboard-image.js'
 import { Editor } from '../src/editor.js'
 
-const uploaded: string[] = []
+const uploaded: Array<{ mode: number; regular: boolean }> = []
 vi.mock('../src/attachment-upload.js', () => ({
   uploadLocalAttachment: async (_session: unknown, _cwd: string, path: string) => {
-    // The temp file exists, private and a PNG, when the upload reads it.
-    const mode = statSync(path).mode & 0o777
-    uploaded.push(`${mode.toString(8)}:${path}`)
+    const info = statSync(path)
+    uploaded.push({ mode: info.mode & 0o777, regular: info.isFile() })
     return { type: 'attachment', id: 'att-1' }
   },
 }))
@@ -29,7 +28,12 @@ function harness(port: ClipboardImagePort) {
   const session = { id: 's1' }
   const notices: Array<[string, string]> = []
   const editor = new Editor({ onSubmit: () => {} })
-  const busyInput = new BusyInput({ session: () => session } as never)
+  const busyInput = new BusyInput({
+    session: () => app.session,
+    locale: () => 'en',
+    notice: (text, tone = 'info') => notices.push([text, tone]),
+    restore: (draft) => editor.setText(draft),
+  })
   const app = {
     locale: 'en',
     session,
@@ -57,7 +61,9 @@ describe('clipboard image paste', () => {
     expect(editor.text).toBe('[Image #1]')
     expect(notices.at(-1)?.[1]).toBe('success')
     expect(uploaded).toHaveLength(1)
-    expect(uploaded[0]?.startsWith('600:')).toBe(true)
+    expect(uploaded[0]?.regular).toBe(true)
+    // Windows privacy is an ACL contract, checked at the CLI/native boundary, not POSIX mode bits.
+    if (process.platform !== 'win32') expect(uploaded[0]?.mode).toBe(0o600)
     expect(readdirSync(dir)).toEqual([])
     expect(busyInput.takeKept('look at [Image #1]')).toEqual([{ type: 'attachment', id: 'att-1' }])
     await pasteClipboardImage(app)
@@ -88,5 +94,79 @@ describe('clipboard image paste', () => {
     await pasteClipboardImage(app)
     expect(notices.at(-1)?.[0]).toMatch(/no image/i)
     expect(uploaded).toEqual([])
+  })
+
+  it.each([false, true])(
+    'restores failed image drafts only in the original session (switched=%s)',
+    async (switched) => {
+      const { app, editor, busyInput } = harness(withImage)
+      await pasteClipboardImage(app)
+      let attempts = 0
+      Object.assign(app.session, {
+        followUp: async () => {
+          attempts++
+          if (switched) Object.assign(app, { session: { id: 's2' } })
+          throw new Error('not sent')
+        },
+        client: { journal: { pending: async () => [] } },
+      })
+      const draft = editor.expanded()
+      const blocks = busyInput.takeKept(draft)
+      editor.clear()
+      await busyInput.queue(blocks, draft, 'followUp')
+      expect(attempts).toBe(2)
+      expect(editor.text).toBe(switched ? '' : '[Image #1]')
+      expect(busyInput.takeKept(editor.expanded())).toEqual(switched ? [] : blocks)
+      // Removing a restored chip must still remove its image from the next send.
+      if (!switched) {
+        const block = blocks[0]
+        if (!block) throw new Error('missing clipboard image')
+        busyInput.attach('[Image #1]', block, app.session.id)
+        await busyInput.queue(busyInput.takeKept(draft), draft, 'followUp')
+        expect(busyInput.takeKept('chip removed')).toEqual([])
+      }
+    },
+  )
+
+  it.each(
+    ['UNCERTAIN', 'OUTCOME_UNKNOWN', 'needs-confirmation']
+      .flatMap((state) => [[state, false] as const, [state, true] as const])
+      .concat([
+        ['transport-error', true],
+        ['journal-error', true],
+      ]),
+  )('never restores or resends an image when submission is %s (during check=%s)', async (state, checking) => {
+    const { app, editor, busyInput } = harness(withImage)
+    await pasteClipboardImage(app)
+    let attempts = 0
+    let commandId = ''
+    const unknown = () =>
+      state === 'needs-confirmation' ? { submission: { state } } : { data: { code: state } }
+    Object.assign(app.session, {
+      followUp: async (_blocks: unknown, options: { commandId: string }) => {
+        attempts++
+        commandId = options.commandId
+        throw checking ? new Error('response lost') : unknown()
+      },
+      client: {
+        journal: {
+          pending: async () => {
+            if (state === 'journal-error') throw new Error('journal unavailable')
+            return [{ commandId }]
+          },
+        },
+      },
+      checkCommand: async () => {
+        if (state === 'transport-error') throw new Error('transport unavailable')
+        throw unknown()
+      },
+    })
+    const draft = editor.expanded()
+    const blocks = busyInput.takeKept(draft)
+    editor.clear()
+    await busyInput.queue(blocks, draft, 'followUp')
+    expect(attempts).toBe(checking ? 2 : 1)
+    expect(editor.text).toBe('')
+    expect(busyInput.takeKept(draft)).toEqual([])
   })
 })

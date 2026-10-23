@@ -464,10 +464,10 @@ export class TuiApp {
       if (action === 'steer' && this.busy) {
         const text = this.editor.expanded()
         if (text.trim() && !this.refuseClosed()) {
+          const blocks = attachmentsFrom(text, this.cwd, this.o.remote)
+          blocks.push(...this.busyInput.takeKept(text))
           this.editor.clear()
-          void this.submitBlocks(attachmentsFrom(text, this.cwd, this.o.remote), text, true).catch((error) =>
-            this.showError(error),
-          )
+          void this.submitBlocks(blocks, text, true).catch((error) => this.showError(error))
         }
         return true
       }
