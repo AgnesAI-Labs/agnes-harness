@@ -18,6 +18,7 @@ import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
 import { recordChildResultCollected } from './collected-result.js'
 import { deliverChildCompletion } from './completion-notice.js'
+import { childControlMetrics } from './control-metrics.js'
 import { cancelOpenAttempt, reportFailedCreation } from './creation.js'
 import { bindChildLifecycle, childLifecycle } from './lifecycle.js'
 import { childModels, resolveChildModel } from './model-scope.js'
@@ -1118,48 +1119,22 @@ export class KernelChildren implements ChildrenFactory {
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
     const child = this.session(childKey)
-    let totalTokens: number | null = null
-    {
-      const costs = await parent.d.log.storage.scan(childKey, {
-        type: 'cost/ledger',
-        fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
-        limit: 500,
-      })
-      const tokens = costs.map((row) => {
-        const tokens = (row.data as { tokens?: { input?: number; output?: number } }).tokens
-        return typeof tokens?.input === 'number' && typeof tokens.output === 'number'
-          ? tokens.input + tokens.output
-          : undefined
-      })
-      if (costs.length && costs.length < 500 && tokens.every((value) => typeof value === 'number'))
-        totalTokens = tokens.reduce<number>((sum, value) => sum + (value ?? 0), 0)
-    }
-    const first = await parent.d.log.storage.scan(childKey, {
-      type: 'turn/start',
-      fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
-      limit: 1,
-    })
-    const last = await parent.d.log.storage.scan(childKey, {
-      type: 'turn/end',
-      fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
-      order: 'desc',
-      limit: 1,
-    })
-    const end = child?.op() ? parent.d.clock() : last[0] ? Date.parse(last[0].ts) : null
-    const start = first[0] ? Date.parse(first[0].ts) : null
     return {
       id: childKey,
       parentId: parent.key,
       providerId: 'in-process',
       status: this.childStatus(record),
       controls: {
-        stop: child?.d.loopFactory.controls?.interrupt === true && child.op() !== null,
+        stop:
+          !isTerminalChildState(record.state) &&
+          child?.d.loopFactory.controls?.interrupt === true &&
+          child.op() !== null,
         continue:
+          !isTerminalChildState(record.state) &&
           child?.d.loopFactory.controls?.steer === true &&
           (this.continueWaiters.has(childKey) || this.residents.has(childKey)),
       },
-      durationMs: start !== null && end !== null ? Math.max(0, end - start) : null,
-      totalTokens,
+      ...(await childControlMetrics(parent, record, child?.op() != null)),
     }
   }
 

@@ -297,6 +297,11 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
         { cause: error },
       )
     })
+    const metrics = await parent.controls.state()
+    expect(metrics.children.find((child) => child.id === reader.key)).toMatchObject({
+      totalTokens: expect.any(Number),
+      durationMs: expect.any(Number),
+    })
     const request = requests.find((request) => request.sessionKey === reader.key)!
     expect(request.system).toContain('READER_PERSISTENT_PERSONA')
     expect(request.system).not.toContain('PARENT_GLOBAL_PERSONA')

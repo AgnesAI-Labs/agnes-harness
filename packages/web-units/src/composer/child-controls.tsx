@@ -74,37 +74,38 @@ export function ChildControlRow({
             child.durationMs === null ? t('composer.child.unknown') : (child.durationMs / 1000).toFixed(1),
         })}
       </p>
-      <Button
-        htmlType="button"
-        data-testid="child-stop"
-        disabled={disabled || pending || !child.controls.stop}
-        title={child.controls.stop ? t('composer.child.stop') : t('composer.control.unsupported')}
-        onClick={() => submit('stop')}
-      >
-        {t('composer.child.stop')}
-      </Button>
-      <SettingsInput
-        data-testid="child-continue-message"
-        aria-label={t('composer.child.message')}
-        value={text}
-        disabled={disabled || pending || !child.controls.continue}
-        onChange={(event: ChangeEvent<HTMLInputElement>) => setText(event.currentTarget.value)}
-      />
-      <Button
-        htmlType="button"
-        data-testid="child-continue"
-        disabled={disabled || pending || !child.controls.continue || !text.trim()}
-        title={
-          !child.controls.continue
-            ? t('composer.control.unsupported')
-            : text.trim()
-              ? t('composer.child.continue')
-              : t('composer.child.messageRequired')
-        }
-        onClick={() => submit('continue')}
-      >
-        {t('composer.child.continue')}
-      </Button>
+      {child.controls.stop ? (
+        <Button
+          htmlType="button"
+          data-testid="child-stop"
+          disabled={disabled || pending}
+          title={t('composer.child.stop')}
+          onClick={() => submit('stop')}
+        >
+          {t('composer.child.stop')}
+        </Button>
+      ) : null}
+      {child.controls.continue ? (
+        <>
+          <SettingsInput
+            data-testid="child-continue-message"
+            aria-label={t('composer.child.message')}
+            placeholder={t('composer.child.message')}
+            value={text}
+            disabled={disabled || pending}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setText(event.currentTarget.value)}
+          />
+          <Button
+            htmlType="button"
+            data-testid="child-continue"
+            disabled={disabled || pending || !text.trim()}
+            title={text.trim() ? t('composer.child.continue') : t('composer.child.messageRequired')}
+            onClick={() => submit('continue')}
+          >
+            {t('composer.child.continue')}
+          </Button>
+        </>
+      ) : null}
       {error ? <SettingsState tone="error">{error}</SettingsState> : null}
     </div>
   )

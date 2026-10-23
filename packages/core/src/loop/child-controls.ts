@@ -42,7 +42,8 @@ export async function controlledChildTree(s: SessionImpl): Promise<SessionContro
           child.interrupt === true &&
           s.d.loopFactory.controls?.interrupt === true &&
           child.status === 'running',
-        continue: child.continuable && s.d.loopFactory.controls?.steer === true,
+        continue:
+          !TERMINAL_CHILD.has(child.status) && child.continuable && s.d.loopFactory.controls?.steer === true,
       },
       durationMs: child.durationMs ?? null,
       totalTokens: child.totalTokens ?? null,
