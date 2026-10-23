@@ -28,6 +28,8 @@ export interface RootInputHost {
   closed: () => boolean
   cards: ToolCards
   models: ModelChooser
+  /** Ctrl-S: pushes the draft onto the stash, or pops the newest back into an empty prompt. */
+  stashDraft: () => void
   hintActions: () => readonly ActionItem[]
   dispatchAction: (actionId: string) => void
   timeline: Timeline
@@ -77,6 +79,10 @@ export function rootInput(
     }
     if (action === 'model-next' || action === 'model-prev') {
       host.models.cycleModel(action === 'model-next' ? 1 : -1)
+      return true
+    }
+    if (action === 'draft-stash') {
+      host.stashDraft()
       return true
     }
     if (action === 'card-toggle') {

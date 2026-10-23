@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { DraftStash, STASH_MAX } from '../src/draft-stash.js'
 import { Editor } from '../src/editor.js'
 import { formatKeys, installKeybindings, readKeybindings } from '../src/keybindings.js'
 import { actionFor, installKeymap, Keymap } from '../src/keymap.js'
@@ -73,6 +74,64 @@ describe('model cycle (Alt-P)', () => {
     expect(at('gone', -1)).toEqual({ route: 's', model: 'last' })
     expect(nextModel([{ route: 'r', id: 'a' }], { route: 'r', id: 'a', thinking: '' }, 1)).toBeUndefined()
     expect(nextModel([], undefined, 1)).toBeUndefined()
+  })
+})
+
+describe('draft stash (Ctrl-S)', () => {
+  const rig = () => {
+    const editor = new Editor({ onSubmit: () => {} })
+    const notes: string[] = []
+    const stash = new DraftStash(
+      editor,
+      (text) => notes.push(text),
+      () => 'en',
+    )
+    return { editor, notes, stash }
+  }
+  it('is a global action on the byte the terminal sends, also as kitty reports it', () => {
+    expect(actionFor('global', 'ctrl-s')).toBe('draft-stash')
+    expect(parseKey('\x13', false).name).toBe('ctrl-s')
+    expect(parseKey('\x1b[115;5u', false).name).toBe('ctrl-s')
+  })
+  it('pushes a draft and clears the prompt, then pops the newest back into an empty one', () => {
+    const { editor, notes, stash } = rig()
+    editor.setText('first')
+    stash.press()
+    expect([editor.text, stash.size]).toEqual(['', 1])
+    editor.setText('second')
+    stash.press()
+    stash.press()
+    expect([editor.text, stash.size]).toEqual(['second', 1])
+    editor.clear()
+    stash.press()
+    expect([editor.text, stash.size]).toEqual(['first', 0])
+    editor.clear()
+    stash.press()
+    expect(notes.at(-1)).toBe('Nothing stashed')
+    expect(editor.text).toBe('')
+  })
+  it('keeps at most ten drafts, dropping the oldest', () => {
+    const { editor, stash } = rig()
+    for (let i = 1; i <= 12; i++) {
+      editor.setText(`d${i}`)
+      stash.press()
+    }
+    expect(stash.size).toBe(STASH_MAX)
+    stash.press()
+    expect(editor.text).toBe('d12')
+    for (let i = 0; i < 9; i++) {
+      editor.clear()
+      stash.press()
+    }
+    expect(editor.text).toBe('d3')
+    expect(stash.size).toBe(0)
+  })
+  it('leaves the prompt alone while history search is open', () => {
+    const { editor, stash } = rig()
+    editor.setText('draft')
+    editor.handleInput('\x12')
+    stash.press()
+    expect([editor.inSearch, stash.size]).toEqual([true, 0])
   })
 })
 

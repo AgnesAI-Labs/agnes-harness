@@ -26,6 +26,7 @@ export const BINDINGS = [
   { id: 'thinking-cycle', scope: 'global', keys: ['shift-tab'] },
   { id: 'model-next', scope: 'global', keys: ['alt-p'] },
   { id: 'model-prev', scope: 'global', keys: ['alt-shift-p'] },
+  { id: 'draft-stash', scope: 'global', keys: ['ctrl-s'] },
   // The prompt editor.
   { id: 'submit', scope: 'editor', keys: ['enter'] },
   { id: 'newline', scope: 'editor', keys: ['alt-enter', 'shift-enter'] },

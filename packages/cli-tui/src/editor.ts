@@ -167,6 +167,11 @@ export class Editor implements Component {
     this.undo.clear()
   }
 
+  /** True while Ctrl-R history search is open. */
+  get inSearch(): boolean {
+    return this.search !== undefined
+  }
+
   /** Swaps the whole draft for `t` as one undoable step. */
   replaceDraft(t: string): void {
     this.undo.record({ text: this.text, cursor: this.cursor }, false)

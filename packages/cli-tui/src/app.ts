@@ -9,6 +9,7 @@ import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './
 import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
+import { DraftStash } from './draft-stash.js'
 import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
 import { type ExternalEditorConfig, editDraft } from './external-editor.js'
@@ -98,6 +99,7 @@ export class TuiApp {
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
   readonly editor: Editor
+  private readonly drafts: DraftStash
   private readonly mentions: ReferenceMentionSource
   private readonly composer: Composer
   private readonly theme: TuiTheme
@@ -386,6 +388,11 @@ export class TuiApp {
       this.mouse.overlay(screen, above.length + gap - 1, width)
       return o.noAltScreen ? screen : this.theme.frame(createAnsi(o.term.caps.color), screen, width, height)
     }
+    this.drafts = new DraftStash(
+      this.editor,
+      (text, tone) => this.statusBar.setNotice(text, tone),
+      () => this.locale,
+    )
     root.handleInput = rootInput(
       {
         signals: () => this.signals,
@@ -397,6 +404,7 @@ export class TuiApp {
         closed: () => this.closedNotice !== undefined,
         cards: this.cards,
         models: this.models,
+        stashDraft: () => this.drafts.press(),
         hintActions: () => this.hintActions,
         dispatchAction: (id) => this.dispatchAction(id),
         timeline: this.timeline,
