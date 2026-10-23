@@ -24,7 +24,7 @@ const PREFIX = '_agnes/v1/'
  */
 export const API_REFUSALS: ReadonlyArray<readonly [RegExp, string]> = [
   [
-    /^(submit(\.|$)|session\.(.+\.)?(control|fork)$)/,
+    /^(submit(\.|$)|session\.(.+\.)?(control|fork|undo)$)/,
     'it is a command that needs a command id and the pending journal; use agh queue or the matching subcommand',
   ],
   [

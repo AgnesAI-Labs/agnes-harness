@@ -1,10 +1,11 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import * as daemon from '@agnes/daemon'
 import { createConfigurationService } from '@agnes/host'
 import * as sdk from '@agnes/sdk'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
 import { main } from '../src/bin.js'
 import { FakeEndpoint } from './fake-endpoint.js'
@@ -15,8 +16,10 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 it('dispatches app clear before generic boot, ignores broken plugins, and only clears presentation using the configuration CAS', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agh-app-clear-'))
-  roots.push(root)
+  const scratch = await mkdtemp(join(tmpdir(), 'agh-app-clear-'))
+  roots.push(scratch)
+  const root = join(scratch, 'home')
+  createPrivateDirectorySync(root)
   const config = createConfigurationService({ home: root, profile: 'local-dev' })
   await config.saveApplication({
     revision: 0,
@@ -69,15 +72,17 @@ it('dispatches app clear before generic boot, ignores broken plugins, and only c
   expect(await readFile(join(directory, 'agnes-lock.json'), 'utf8')).toBe(brokenLock)
 })
 
-it('clears an online application over a Unix socket without requiring a Windows pipe identity', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'agh-app-online-'))
-  roots.push(root)
+it('clears an online application with platform-appropriate local transport admission', async () => {
+  const scratch = await mkdtemp(join(tmpdir(), 'agh-app-online-'))
+  roots.push(scratch)
+  const root = join(scratch, 'home')
+  createPrivateDirectorySync(root)
   const owner = {
     pid: 123,
     processStartId: 'synthetic',
     generation: 'generation',
     startedAt: '2026-10-18T00:00:00.000Z',
-    socketPath: join(root, 'daemon.sock'),
+    socketPath: sep === '\\' ? '\\\\.\\pipe\\agh-app-recovery-fixture' : join(root, 'daemon.sock'),
   }
   vi.spyOn(daemon, 'daemonStatus').mockResolvedValue({ running: true, socketReachable: true, owner })
   const state = { revision: 7, selection: null, status: 'host', effective: null, assets: {}, candidates: [] }

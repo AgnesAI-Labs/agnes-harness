@@ -7,7 +7,9 @@ import { createCredentialAdmin } from '../src/credentials.js'
 it.each(['full-access', 'workspace-write'])(
   'retains the credential administration confirmation boundary under %s',
   async (policy) => {
-    const home = await mkdtemp(join(tmpdir(), 'agh-credential-permission-'))
+    const scratch = await mkdtemp(join(tmpdir(), 'agh-credential-permission-'))
+    // The existing credential writer creates a fresh private home; it refuses broad pre-existing ACLs.
+    const home = join(scratch, 'home')
     const actor = { id: 'owner', org: 'local', role: 'owner', deptPath: [], attrs: {} }
     try {
       const admin = createCredentialAdmin({
@@ -46,7 +48,7 @@ it.each(['full-access', 'workspace-write'])(
         expect(await admin.call('list', {}, actor.id)).toMatchObject({ items: [{ id: created.id }] })
       }
     } finally {
-      await rm(home, { recursive: true, force: true })
+      await rm(scratch, { recursive: true, force: true })
     }
   },
 )

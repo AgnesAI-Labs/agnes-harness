@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CURSOR_MARKER, createAnsi } from '../../src/tui/ansi.js'
 import {
   detectCapabilities,
@@ -234,6 +234,54 @@ const fakeStreams = (): {
 }
 
 describe('NodeTerminal', () => {
+  it.each([
+    ['whole', ['hello\x1b[12;34Rworld']],
+    ['fragmented', ['hello\x1b', '[12', ';34Rworld']],
+    ['one byte at a time', Array.from('hello\x1b[12;34Rworld')],
+  ])('removes a requested cursor report from %s input without losing typed text', async (_name, chunks) => {
+    const { stdin, stdout } = fakeStreams()
+    stdout.isTTY = true
+    const terminal = new NodeTerminal(stdin, stdout, {})
+    const seen: string[] = []
+    const off = terminal.onInput((data) => seen.push(data))
+    try {
+      const answer = terminal.queryCursor()
+      await Promise.resolve()
+      for (const chunk of chunks) stdin.emit(chunk)
+      await expect(answer).resolves.toEqual({ row: 12, col: 34 })
+      expect(seen.join('')).toBe('helloworld')
+      stdin.emit('\x1b[1;2R')
+      expect(seen.join('')).toBe('helloworld\x1b[1;2R')
+    } finally {
+      off()
+    }
+  })
+
+  it('releases an unfinished cursor prefix on timeout and preserves other CSI keys', async () => {
+    vi.useFakeTimers()
+    const { stdin, stdout } = fakeStreams()
+    stdout.isTTY = true
+    const terminal = new NodeTerminal(stdin, stdout, {})
+    const seen: string[] = []
+    const off = terminal.onInput((data) => seen.push(data))
+    try {
+      const answer = terminal.queryCursor()
+      await Promise.resolve()
+      stdin.emit('\x1b')
+      stdin.emit('[A')
+      expect(seen.join('')).toBe('\x1b[A')
+      stdin.emit('\x1b[')
+      await vi.runAllTimersAsync()
+      await expect(answer).resolves.toBeUndefined()
+      expect(seen.join('')).toBe('\x1b[A\x1b[')
+      stdin.emit('typed')
+      expect(seen.join('')).toBe('\x1b[A\x1b[typed')
+    } finally {
+      off()
+      vi.useRealTimers()
+    }
+  })
+
   it('asks for the kitty keyboard protocol only where it is understood', () => {
     const kitty = fakeStreams()
     const plain = fakeStreams()

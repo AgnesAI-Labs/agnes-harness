@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { bindMcpResourceServer, type McpConnection } from '@agnes/base'
@@ -307,7 +307,7 @@ ${
     packageId: vendor,
     version: '2.3.4',
     integrity: source.snapshot.integrity,
-    source: { type: 'file' as const, ref: `file:${raw.snapshot.directory}` },
+    source: { type: 'file' as const, ref: `file:${raw.snapshot.directory.split(sep).join('/')}` },
     signature: 'unverified' as const,
     declaration,
     declarationDigest: digest(declaration),

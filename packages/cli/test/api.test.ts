@@ -90,6 +90,7 @@ describe('api command', () => {
       'submit',
       'session.attach',
       'session.control',
+      'session.undo',
       'session/prompt',
       '_agnes/v1/submit.ack',
     ]) {
@@ -111,6 +112,7 @@ describe('api refusal table', () => {
     '_agnes/v1/session.detach',
     '_agnes/v1/session.fork',
     '_agnes/v1/session.jobs.control',
+    '_agnes/v1/session.undo',
     '_agnes/v1/submit',
     '_agnes/v1/submit.ack',
   ]
@@ -138,6 +140,7 @@ describe('api refusal table', () => {
       expect(apiRefusal(`_agnes/v1/${name}`)).toBeDefined()
     expect(apiRefusal('_agnes/v1/plugins.candidates.submit')).toBeUndefined()
     expect(apiRefusal('_agnes/v1/schedules.control')).toBeUndefined()
+    expect(apiRefusal('_agnes/v1/session.undo.preview')).toBeUndefined()
   })
 
   it('generates the help list from the protocol table: every callable method, no refused one', () => {

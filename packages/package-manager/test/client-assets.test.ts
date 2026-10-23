@@ -399,7 +399,9 @@ describe('client module request resolution', () => {
     mkdirSync(join(outside, 'dist'), { recursive: true })
     writeFileSync(join(outside, 'dist', 'served.js'), 'export {}\n')
     const planted = `sha256-${'c'.repeat(64)}`
-    symlinkSync(outside, join(root, 'acme', 'panel', planted))
+    // Directory junctions exercise the same escape refusal without Windows file-symlink privileges.
+    const directoryLink = process.platform === 'win32' ? 'junction' : 'dir'
+    symlinkSync(outside, join(root, 'acme', 'panel', planted), directoryLink)
     expect(resolveClientModuleAsset(root, `/plugins/acme/panel/${planted}/dist/served.js`)).toBeNull()
   })
 })

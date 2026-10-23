@@ -37,6 +37,8 @@ export const CURSOR_QUERY = '\x1b[6n'
 export const CURSOR_TIMEOUT_MS = 250
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching the escape is the point
 const CURSOR_REPLY = /\x1b\[(\d+);(\d+)R/
+// biome-ignore lint/suspicious/noControlCharactersInRegex: an unfinished cursor report, while a query is pending.
+const CURSOR_PREFIX = /\x1b(?:\[\d*(?:;\d*)?)?$/
 
 // Everything is read from the environment the terminal itself sets. Asking the operating system
 // instead would answer a different question: a Windows console under ConPTY understands the same
@@ -176,6 +178,7 @@ export class NodeTerminal implements Terminal {
   private asked: Promise<Background | undefined> | undefined
   private answer: ((b: Background | undefined) => void) | undefined
   private cursorAnswer: ((at: { row: number; col: number } | undefined) => void) | undefined
+  private cursorInput = ''
   private cursorLine: Promise<void> = Promise.resolve()
   private readonly handlers = new Set<(data: string) => void>()
   // One stdin listener for every consumer, so a chunk is cleaned of terminal replies exactly once.
@@ -184,11 +187,20 @@ export class NodeTerminal implements Terminal {
     this.answer?.(b)
   })
   private readonly dispatch = (chunk: string | Buffer): void => {
-    let text = String(chunk)
+    let text = this.cursorInput + String(chunk)
+    this.cursorInput = ''
     const reply = this.cursorAnswer ? CURSOR_REPLY.exec(text) : null
     if (reply) {
       text = text.replace(reply[0], '')
       this.cursorAnswer?.({ row: Number(reply[1]), col: Number(reply[2]) })
+    } else if (this.cursorAnswer) {
+      // TTY/ConPTY replies can be split at any byte. Hold only a bounded possible suffix;
+      // unrelated text and keys still reach their existing handlers in order.
+      const prefix = CURSOR_PREFIX.exec(text)
+      if (prefix && prefix[0].length <= 64) {
+        this.cursorInput = prefix[0]
+        text = text.slice(0, prefix.index)
+      }
     }
     const data = this.filter.push(text)
     if (data) for (const h of [...this.handlers]) h(data)
@@ -259,7 +271,10 @@ export class NodeTerminal implements Terminal {
         const done = (at: { row: number; col: number } | undefined): void => {
           clearTimeout(timer)
           this.cursorAnswer = undefined
+          const pending = this.cursorInput
+          this.cursorInput = ''
           resolve(at)
+          if (pending) this.dispatch(pending)
         }
         const timer = setTimeout(() => done(undefined), CURSOR_TIMEOUT_MS)
         this.cursorAnswer = done

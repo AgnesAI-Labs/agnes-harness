@@ -53,8 +53,11 @@ async function renderPluginHost(): Promise<void> {
 /** The plugin admin's own pages (installed, discover) are switched by name; settings no longer lists them. */
 const showPluginPage = (page: 'plugins' | 'discover') =>
   document.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: page }))
-// Every case starts from fresh module state, so the host and the controller share one instance.
-beforeEach(() => vi.resetModules())
+// Compile the shared DOM fixture during setup; assertions keep their existing deadlines.
+beforeEach(async () => {
+  vi.resetModules()
+  await import('./web-dom-fixture.js')
+}, 180_000)
 const timestamp = '2026-09-13T00:00:00.000Z'
 const capabilityHash = 'c'.repeat(64)
 const families = [

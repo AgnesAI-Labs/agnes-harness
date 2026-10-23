@@ -1,9 +1,13 @@
 /** @vitest-environment happy-dom */
+
+import * as ui from '@agnes/web-ui'
 import { PushStack, searchParamRoute } from '@agnes/web-ui'
 import { act, createElement, Fragment } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import type { PluginView } from '../src/pages/plugins/admin-view.js'
 import { type HostedOpen, HostedPage, useHostedDialog } from '../src/pages/plugins/hosted-pages.js'
+import { InstallReviewPage } from '../src/pages/plugins/install-page.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -190,4 +194,44 @@ it('lets a form give way to the detail it produced: back then leaves the flow', 
   expect(view()).toBe('item:a')
   expect(history.length).toBe(depth)
   expect(document.querySelector('[data-testid="push-page-add"]')).toBeNull()
+})
+
+it('keeps a completed check until its review route commits, then respects a real back step', async () => {
+  const cancelReview = vi.fn()
+  const navigation = {
+    stack: ['add-plugin'],
+    open: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    backTo: vi.fn(),
+    finish: vi.fn(),
+    reset: vi.fn(),
+  }
+  const readNavigation = vi.spyOn(ui, 'usePushStack').mockImplementation(() => ({ ...navigation }))
+  const view = {
+    state: { loading: false },
+    review: { preview: { id: '@fixture/checked', source: { type: 'file' } }, mode: 'install' },
+    t: (key: string) => key,
+    cancelReview,
+  } as unknown as PluginView
+  root = createRoot(document.body.appendChild(document.createElement('div')))
+  const render = () => act(async () => root?.render(createElement(InstallReviewPage, { view })))
+  try {
+    await render()
+    // A controller update can arrive while React still exposes the preceding route snapshot.
+    navigation.stack = ['add-plugin']
+    await render()
+    expect(cancelReview).not.toHaveBeenCalled()
+    expect(navigation.replace).toHaveBeenCalledWith('install:@fixture/checked')
+    navigation.stack = ['install:@fixture/checked']
+    await render()
+    expect(cancelReview).not.toHaveBeenCalled()
+    navigation.stack = []
+    await render()
+    expect(cancelReview).toHaveBeenCalledOnce()
+  } finally {
+    await act(async () => root?.unmount())
+    root = undefined
+    readNavigation.mockRestore()
+  }
 })

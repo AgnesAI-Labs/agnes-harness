@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process'
 import { closeSync, fstatSync, readSync } from 'node:fs'
 import { lstat, realpath } from 'node:fs/promises'
-import { devNull } from 'node:os'
 import { join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { openCanonicalFileSync } from '@agnes/system-node'
@@ -14,6 +13,8 @@ export type GitStatus = {
 const MAX_GIT_BYTES = 256 * 1024
 const GIT_TIMEOUT_MS = 500
 const MAX_GIT_POINTER_BYTES = 1024
+// Git for Windows recognizes /dev/null; Node's \\.\nul spelling is not a Git config path.
+const devNull = '/dev/null'
 
 export function gitMark(status: string): GitMark | undefined {
   if (status === '??') return 'untracked'

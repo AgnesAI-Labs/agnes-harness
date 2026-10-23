@@ -5,6 +5,7 @@ import { execFile, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeHomeLocked } from '@agnes/host'
@@ -16,7 +17,7 @@ const args = process.argv.slice(2)
 if (args.length && (args.length !== 2 || args[0] !== '--entry'))
   throw new Error('Usage: smoke.mjs [--entry PATH_TO_BUILT_AGNES]')
 const entry = args[1] ? resolve(args[1]) : resolve(repo, 'packages/cli/dist/local/agnes.mjs')
-const root = await mkdtemp('/tmp/agh-pdocs-')
+const root = await mkdtemp(join(tmpdir(), 'agh-pdocs-'))
 const home = join(root, 'h')
 const cwd = join(root, 'w')
 await initializeHomeLocked(home, 'local-dev')
@@ -51,7 +52,12 @@ const origin = `http://127.0.0.1:${port}`
 // Allow-list child environment so no account credentials or connection overrides are inherited.
 const env = {
   PATH: process.env.PATH,
-  TMPDIR: '/tmp',
+  SystemRoot: process.env.SystemRoot,
+  HOME: root,
+  USERPROFILE: root,
+  TMPDIR: tmpdir(),
+  TEMP: tmpdir(),
+  TMP: tmpdir(),
   AGH_HOME: home,
   AGNES_PROFILE: 'local-dev',
   AGNES_WEB_ORIGIN: origin,
@@ -97,7 +103,13 @@ try {
   pass('daemon cold start and sessions list')
   const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
   client = createClient({
-    transport: { kind: 'unix', path: owner.socketPath },
+    transport: {
+      kind: 'unix',
+      path: owner.socketPath,
+      ...(owner.socketPath.startsWith('\\\\.\\pipe\\')
+        ? { serverIdentity: { pid: owner.pid, processStartId: owner.processStartId } }
+        : {}),
+    },
     auth: { kind: 'local' },
     journal: memoryJournal(),
   })

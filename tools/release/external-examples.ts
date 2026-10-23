@@ -10,6 +10,7 @@ import { SyntaxKind } from 'typescript/unstable/ast'
 import { createScanner } from 'typescript/unstable/ast/scanner'
 import { bundledManifests } from '../../packages/cli/tools/bundled-manifests.mjs'
 import { AGH_DIR } from '../../packages/protocol/src/index.js'
+import { npmCommand } from '../toolchain/check.mjs'
 import { packNpxPackage } from './pack-npx.js'
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -174,16 +175,26 @@ function environment(home: string): NodeJS.ProcessEnv {
 }
 
 function run(command: string, args: string[], cwd: string, env?: NodeJS.ProcessEnv): void {
+  if (command === 'npm') {
+    const npm = npmCommand()
+    command = npm.bin
+    args = [...npm.args, ...args]
+  }
   execFileSync(command, args, { cwd, env: env ?? process.env, stdio: 'inherit', timeout: 120_000 })
 }
 
 async function pack(directory: string, output: string, env: NodeJS.ProcessEnv): Promise<string> {
-  const json = execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', output], {
-    cwd: directory,
-    env,
-    encoding: 'utf8',
-    timeout: 30_000,
-  })
+  const npm = npmCommand()
+  const json = execFileSync(
+    npm.bin,
+    [...npm.args, 'pack', '--json', '--ignore-scripts', '--pack-destination', output],
+    {
+      cwd: directory,
+      env,
+      encoding: 'utf8',
+      timeout: 30_000,
+    },
+  )
   const entry = (JSON.parse(json) as { filename?: string }[])[0]
   if (!entry?.filename) throw new Error(`npm pack did not return a tarball for ${directory}`)
   return join(output, entry.filename)

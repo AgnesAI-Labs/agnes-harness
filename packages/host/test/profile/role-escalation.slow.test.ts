@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, symlinkSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import type { ApprovalRequest } from '@agnes/core'
 import { expect, it, vi } from 'vitest'
 import { scratch } from '../assemble/plugin-extension-fixture.js'
@@ -141,8 +141,13 @@ it.each(['cancel', 'close'] as const)(
   'withdraws a blocked role approval on %s',
   async (action) => {
     const questions: ApprovalRequest[] = []
+    let offerReady!: () => void
+    const offered = new Promise<void>((resolve) => {
+      offerReady = resolve
+    })
     const fixture = await setupRoleEscalation((request, signal) => {
       questions.push(request)
+      offerReady()
       return new Promise((resolve) =>
         signal.addEventListener('abort', () => resolve({ verdict: 'cancelled', reason: 'stopped' }), {
           once: true,
@@ -156,7 +161,8 @@ it.each(['cancel', 'close'] as const)(
         content: [{ type: 'text', text: 'Delegate' }],
       })
       const running = fixture.parent.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
-      await vi.waitFor(() => expect(questions).toHaveLength(1))
+      await Promise.race([offered, running])
+      expect(questions).toHaveLength(1)
       const handle = questions[0]!.decision!.handle
       const child = fixture.host.kernel.get(handle.sessionId!)!
       const pending = await child.decisions.get(handle)
@@ -263,8 +269,13 @@ it.each([false, true])(
 
 it('security: parent, sibling, agent and system cannot answer the child decision', async () => {
   const questions: ApprovalRequest[] = []
+  let offerReady!: () => void
+  const offered = new Promise<void>((resolve) => {
+    offerReady = resolve
+  })
   const fixture = await setupRoleEscalation((request, signal) => {
     questions.push(request)
+    offerReady()
     return new Promise((resolve) =>
       signal.addEventListener('abort', () => resolve({ verdict: 'cancelled', reason: 'stopped' }), {
         once: true,
@@ -279,7 +290,8 @@ it('security: parent, sibling, agent and system cannot answer the child decision
       content: [{ type: 'text', text: 'Delegate' }],
     })
     const running = fixture.parent.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
-    await vi.waitFor(() => expect(questions).toHaveLength(1))
+    await Promise.race([offered, running])
+    expect(questions).toHaveLength(1)
     const handle = questions[0]!.decision!.handle
     const child = fixture.host.kernel.get(handle.sessionId!)!
     const sibling = await fixture.host.createSession({
@@ -395,9 +407,14 @@ it.each(['child', 'parent', 'child-abort', 'parent-abort'] as const)(
     let request!: ApprovalRequest
     let deliverySignal!: AbortSignal
     let release!: () => void
+    let deliveryReady!: () => void
+    const delivered = new Promise<void>((resolve) => {
+      deliveryReady = resolve
+    })
     const fixture = await setupRoleEscalation(async (offered, signal) => {
       request = offered
       deliverySignal = signal
+      deliveryReady()
       return new Promise((resolve) => {
         release = () => resolve({ verdict: 'allowed-once', answeredBy: roleHuman })
         signal.addEventListener('abort', () => resolve({ verdict: 'cancelled', reason: 'stopped' }), {
@@ -415,7 +432,8 @@ it.each(['child', 'parent', 'child-abort', 'parent-abort'] as const)(
       running = fixture.parent
         .run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
         .catch(() => undefined)
-      await vi.waitFor(() => expect(request).toBeDefined())
+      await Promise.race([delivered, running])
+      expect(request).toBeDefined()
       const child = fixture.host.kernel.get(request.decision!.handle.sessionId!)!
       const session = target.startsWith('parent') ? fixture.parent : child
       const closing = target.endsWith('-abort') ? session.abort(roleHuman) : session.close()
@@ -528,7 +546,9 @@ it('security: a policy switch while the human decides cannot authorize the old c
       ...child.preset,
       approval: {
         ...child.preset.approval,
-        commandTable: [{ tool: 'write', argv: '^/.*$', action: 'deny' }],
+        commandTable: [
+          { tool: 'write', argv: sep === '\\' ? String.raw`^[A-Za-z]:[\\/].*$` : '^/.*$', action: 'deny' },
+        ],
       },
     })
     return { verdict: 'allowed-once', answeredBy: roleHuman }

@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -20,6 +20,7 @@ import {
 } from '@agnes/host-providers/assemble/model-adapters'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
+import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
 import { assemble } from '../../src/runtime/assemble/assemble.js'
 import { modelCatalogPublisher } from '../../src/runtime/profile/model-catalog-publication.js'
@@ -262,9 +263,12 @@ async function fixture(selected: string, missingCredential = false) {
     trusted: true,
   }
   const secretPath = join(dataDir, 'secrets')
-  mkdirSync(join(secretPath, 'fixture'), { recursive: true })
-  if (!missingCredential)
+  createPrivateDirectorySync(secretPath)
+  createPrivateDirectorySync(join(secretPath, 'fixture'))
+  if (!missingCredential) {
+    closeSync(createPrivateFileSync(join(secretPath, 'fixture', 'model')))
     writeFileSync(join(secretPath, 'fixture', 'model'), '  synthetic-community-key  ', { mode: 0o600 })
+  }
   const model = fakeModel({
     id: 'fake-model',
     route: 'fixture',
@@ -350,7 +354,7 @@ async function fixture(selected: string, missingCredential = false) {
         string,
         unknown
       >
-      if (file.endsWith('/index.ts')) fixtureNamespace = namespace as typeof fixtureNamespace
+      if (basename(file) === 'index.ts') fixtureNamespace = namespace as typeof fixtureNamespace
       return namespace
     },
   }
@@ -369,7 +373,10 @@ async function fixture(selected: string, missingCredential = false) {
     audit: createMemoryAudit(),
     log: { info() {}, debug() {}, warn() {}, error() {} },
   })
-  if (!fixtureNamespace) throw new Error('fixture was not imported')
+  if (!fixtureNamespace) {
+    await assembled.rollback.unwind()
+    throw new Error('fixture was not imported')
+  }
   const module = fixtureNamespace
   return { assembled, module, imported }
 }
@@ -379,7 +386,7 @@ it.each(['@community/fake-model-adapter', 'community-fake'])(
   async (selected) => {
     const { assembled, module, imported } = await fixture(selected)
     try {
-      expect(imported.some((file) => file.endsWith('/index.ts'))).toBe(true)
+      expect(imported.some((file) => basename(file) === 'index.ts')).toBe(true)
       expect(assembled.modelAdapterCatalog()).toContainEqual({
         id: 'community-fake',
         wireApi: 'fake-wire-v1',

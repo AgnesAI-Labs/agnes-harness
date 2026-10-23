@@ -72,7 +72,13 @@ it.each(['overwrite', 'create'])(
     bridge.bind(endpoint.prompter)
     const client = createClient({ transport: { kind: 'inproc', endpoint } })
     let app: TuiApp | undefined
-    const screen = async (term: FakeTerminal) => (await screenOf(term, 100, 35)).join('\n')
+    const screen = async (term: FakeTerminal) => {
+      // Replay one captured byte stream: awaiting every render separately can outlive waitFor's
+      // deadline and report a frame captured before the async preview completed.
+      const captured = new FakeTerminal({ columns: 100, rows: 35 })
+      captured.write(term.writes.join(''))
+      return (await screenOf(captured, 100, 35)).join('\n')
+    }
     try {
       await client.workspace.add(root)
       const session = await client.session.new({ cwd: root })
@@ -87,8 +93,14 @@ it.each(['overwrite', 'create'])(
       expect(await turn).toBeUndefined()
       expect(readFileSync(file, 'utf8')).toBe('after')
 
-      term.feed('/undo')
-      term.feed('\r')
+      if (mode === 'create') {
+        term.feed('/undo')
+        term.feed('\r')
+      } else {
+        // Await the public command before replaying the terminal in the SDK retry scenario.
+        // The create scenario still exercises preview and confirmation through real key input.
+        await app.runInput('/undo')
+      }
       await vi.waitFor(async () => expect(await screen(term)).toContain('Turn 1 changed 1 file(s)'))
       expect(readFileSync(file, 'utf8')).toBe('after')
 
@@ -116,9 +128,20 @@ it.each(['overwrite', 'create'])(
         expect.objectContaining({ kind: 'workspace-undo', turn: 1, restored: 1, failed: 0, conflicts: 0 }),
       )
     } finally {
-      await app?.stop()
-      await client.close()
-      rmSync(root, { recursive: true, force: true })
+      try {
+        await app?.stop()
+      } finally {
+        try {
+          await client.close()
+        } finally {
+          try {
+            await endpoint.close()
+          } finally {
+            await host.close()
+            rmSync(root, { recursive: true, force: true })
+          }
+        }
+      }
     }
   },
   30_000,

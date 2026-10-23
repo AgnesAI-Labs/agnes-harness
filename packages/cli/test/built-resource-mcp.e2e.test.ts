@@ -256,7 +256,9 @@ describe('built CLI managed MCP lifecycle', () => {
         expect(stopped.code, stopped.output).toBe(0)
         await expect.poll(() => pids.filter(processAlive), { timeout: 10_000 }).toEqual([])
       } catch (error) {
-        for (const pid of pids.filter(processAlive)) process.kill(pid, 'SIGKILL')
+        // Recorded PIDs may have been reused. Only the original child handle is safe to stop;
+        // unknown descendants keep the fixture on disk instead of risking another process.
+        if (daemon.exitCode === null && daemon.signalCode === null) daemon.kill('SIGKILL')
         await expect.poll(() => pids.filter(processAlive), { timeout: 5_000 }).toEqual([])
         throw error
       }

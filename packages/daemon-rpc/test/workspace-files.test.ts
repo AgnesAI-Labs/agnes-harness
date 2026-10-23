@@ -11,8 +11,8 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { devNull, tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, relative, sep } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { listWorkspace, readWorkspace } from '@agnes/worker-runtime'
 import { describe, expect, it, vi } from 'vitest'
@@ -24,6 +24,9 @@ import {
   parseGitPorcelain,
 } from '../src/local/workspace-files.js'
 import { openTestHost } from './host.js'
+
+// Git for Windows accepts its portable null spelling, not Node's \\.\nul device path.
+const devNull = '/dev/null'
 
 const caps = {
   fs: { readTextFile: false, writeTextFile: false },
@@ -101,7 +104,7 @@ describe('session workspace files', () => {
       writeFileSync(join(workspace, 'picture.bin'), Buffer.from([0, 1, 2, 3]))
       writeFileSync(join(workspace, 'big.txt'), Buffer.alloc(MAX_READ_BYTES + 1, 0x61))
       symlinkSync(join(outside, 'secret.txt'), join(workspace, 'escape'))
-      symlinkSync(outside, join(workspace, 'escape-dir'))
+      symlinkSync(outside, join(workspace, 'escape-dir'), sep === '\\' ? 'junction' : 'dir')
       const home = join(workspace, AGH_DIR)
       mkdirSync(join(home, 'secrets'), { recursive: true })
       mkdirSync(join(home, 'memory'))
@@ -116,9 +119,12 @@ describe('session workspace files', () => {
           env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull },
         })
       expect(git(['init']).status).toBe(0)
-      writeFileSync(join(workspace, 'old\nname.txt'), 'synthetic tracked file\n')
-      writeFileSync(join(workspace, 'new\nname.txt'), 'synthetic untracked file\n')
-      expect(git(['add', '--', 'old\nname.txt']).status).toBe(0)
+      const oldName = sep === '\\' ? 'old name.txt' : 'old\nname.txt'
+      const newName = sep === '\\' ? 'new name.txt' : 'new\nname.txt'
+      const renamedName = sep === '\\' ? 'renamed name.txt' : 'renamed\nname.txt'
+      writeFileSync(join(workspace, oldName), 'synthetic tracked file\n')
+      writeFileSync(join(workspace, newName), 'synthetic untracked file\n')
+      expect(git(['add', '--', oldName]).status).toBe(0)
       expect(
         git([
           '-c',
@@ -133,7 +139,7 @@ describe('session workspace files', () => {
           'Fixture',
         ]).status,
       ).toBe(0)
-      expect(git(['mv', '--', 'old\nname.txt', 'renamed\nname.txt']).status).toBe(0)
+      expect(git(['mv', '--', oldName, renamedName]).status).toBe(0)
       expect(git(['add', '--', 'report.md']).status).toBe(0)
       appendFileSync(join(workspace, '.git', 'config'), '\n# PRIVATE_GIT_CONFIG_SENTINEL\n')
       await h.addWorkspace(workspace)
@@ -168,8 +174,8 @@ describe('session workspace files', () => {
         observedAt: expect.any(String),
       })
       expect(listed.result.entries.find((entry) => entry.name === 'report.md')?.git).toBe('added')
-      expect(listed.result.entries.find((entry) => entry.name === 'renamed\nname.txt')?.git).toBe('renamed')
-      expect(listed.result.entries.find((entry) => entry.name === 'new\nname.txt')?.git).toBe('untracked')
+      expect(listed.result.entries.find((entry) => entry.name === renamedName)?.git).toBe('renamed')
+      expect(listed.result.entries.find((entry) => entry.name === newName)?.git).toBe('untracked')
       expect(names).not.toContain('.git')
       expect(JSON.stringify(listed)).not.toContain('PRIVATE_GIT_CONFIG_SENTINEL')
       expect(JSON.stringify(listed)).not.toContain('PRIVATE_KEY_SENTINEL')
@@ -260,7 +266,7 @@ describe('session workspace files', () => {
         error: { data: { code: 'WORKSPACE_PATH_DENIED' } },
       })
       renameSync(join(workspace, '.git'), join(outside, 'repo-git'))
-      symlinkSync(join(outside, 'repo-git'), join(workspace, '.git'))
+      symlinkSync(join(outside, 'repo-git'), join(workspace, '.git'), sep === '\\' ? 'junction' : 'dir')
       expect(await call(51, '_agnes/v1/session.workspace.list', { sessionId })).toMatchObject({
         result: { gitStatus: 'unavailable' },
       })
@@ -308,7 +314,7 @@ it('refuses an intermediate path swapped to a symlink after authority validation
         if (!swapped) {
           swapped = true
           renameSync(join(workspace, 'dir'), join(workspace, 'old'))
-          symlinkSync(outside, join(workspace, 'dir'))
+          symlinkSync(outside, join(workspace, 'dir'), sep === '\\' ? 'junction' : 'dir')
         }
       },
     }
@@ -417,17 +423,22 @@ it.each(['directory', 'worktree', 'submodule'] as const)(
         const pointer = join(workspace, '.git')
         const original = readFileSync(pointer, 'utf8')
         const gitdir = original.slice('gitdir: '.length).trim()
+        // Git for Windows marks this fixture file hidden; replace it instead of opening with O_TRUNC.
+        const replacePointer = (contents: string) => {
+          rmSync(pointer, { force: true })
+          writeFileSync(pointer, contents)
+        }
         // Relative gitfiles (the absorbed submodule above uses one) and CRLF are also supported.
-        writeFileSync(pointer, `gitdir: ${relative(workspace, gitdir)}\r\n`)
+        replacePointer(`gitdir: ${relative(workspace, gitdir)}\r\n`)
         await expectStatus()
         const relativePath = relative(workspace, gitdir)
         const padding = 1024 - Buffer.byteLength(`gitdir: ${relativePath}`)
         const boundary = `gitdir: ${'./'.repeat(Math.floor(padding / 2))}${relativePath}${padding % 2 ? '\n' : ''}`
         expect(Buffer.byteLength(boundary)).toBe(1024)
-        writeFileSync(pointer, boundary)
+        replacePointer(boundary)
         await expectStatus()
         const linkedDir = join(base, 'linked-gitdir')
-        symlinkSync(gitdir, linkedDir, 'dir')
+        symlinkSync(gitdir, linkedDir, sep === '\\' ? 'junction' : 'dir')
         const notDir = join(base, 'not-a-directory')
         writeFileSync(notDir, 'text')
         for (const contents of [
@@ -443,21 +454,24 @@ it.each(['directory', 'worktree', 'submodule'] as const)(
           `gitdir: ${linkedDir}\n`,
           'gitdir: x\0y\n',
         ]) {
-          writeFileSync(pointer, contents)
+          replacePointer(contents)
           const rejected = await listWorkspace(workspace, '', authority)
           expect(rejected.gitStatus, contents.slice(0, 60)).toBe('unavailable')
           expect(rejected.entries.every((entry) => entry.git === undefined)).toBe(true)
         }
         rmSync(pointer)
-        symlinkSync(gitdir, pointer, 'dir')
+        symlinkSync(gitdir, pointer, sep === '\\' ? 'junction' : 'dir')
         expect((await listWorkspace(workspace, '', authority)).gitStatus).toBe('unavailable')
         rmSync(pointer)
-        const externalPointer = join(base, 'gitfile')
-        writeFileSync(externalPointer, original)
-        symlinkSync(externalPointer, pointer, 'file')
-        expect((await listWorkspace(workspace, '', authority)).gitStatus).toBe('unavailable')
-        rmSync(pointer)
-        writeFileSync(pointer, original)
+        // Unprivileged Windows provides junctions above, but cannot create file symlinks.
+        if (sep !== '\\') {
+          const externalPointer = join(base, 'gitfile')
+          writeFileSync(externalPointer, original)
+          symlinkSync(externalPointer, pointer, 'file')
+          expect((await listWorkspace(workspace, '', authority)).gitStatus).toBe('unavailable')
+          rmSync(pointer)
+        }
+        replacePointer(original)
         await expectStatus()
       }
     } finally {

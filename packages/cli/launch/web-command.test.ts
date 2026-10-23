@@ -201,7 +201,7 @@ describe('Web command launch contract', () => {
     }
 
     await runWebCommand(['--port', '4181', '--data-dir', '/tmp/agnes-data'], {
-      env: { AGH_HOME: '/tmp/agnes-home', AGNES_WEB_ORIGIN: 'http://127.0.0.1:4180' },
+      env: { AGH_HOME: join(daemonDir, 'home'), AGNES_WEB_ORIGIN: 'http://127.0.0.1:4180' },
       cwd: '/tmp/foreign-workspace',
       resources,
       signals,
@@ -212,7 +212,7 @@ describe('Web command launch contract', () => {
       },
     })
     expect(received).toMatchObject({
-      env: { AGH_HOME: '/tmp/agnes-home', AGNES_WEB_ORIGIN: 'http://127.0.0.1:4180' },
+      env: { AGH_HOME: join(daemonDir, 'home'), AGNES_WEB_ORIGIN: 'http://127.0.0.1:4180' },
       cwd: '/tmp/foreign-workspace',
       dataDir: '/tmp/agnes-data',
       workspace: '/tmp/foreign-workspace',

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { pathToFileURL } from 'node:url'
 import { SEAM_KIND_TOKENS } from '@agnes/extension-api/seams'
 import { createLoader } from '@agnes/host'
 import { observabilityKind } from '@agnes/observability/contract'
@@ -15,9 +15,11 @@ import {
 } from '@agnes/plugin-runtime/provided-externals'
 
 const hostRequire = createRequire(createRequire(import.meta.url).resolve('@agnes/host'))
-const { gitWorktreeKind } = await import(hostRequire.resolve('@agnes/git-worktree-contract'))
+const { gitWorktreeKind } = await import(
+  pathToFileURL(hostRequire.resolve('@agnes/git-worktree-contract')).href
+)
 const { intelligentUiKind, uiDataSourceKind } = await import(
-  hostRequire.resolve('@agnes/intelligent-ui-contract')
+  pathToFileURL(hostRequire.resolve('@agnes/intelligent-ui-contract')).href
 )
 
 // Run outside Vitest's shared module graph. Decoy dependencies must never supply kind tokens.
@@ -76,7 +78,7 @@ try {
     export { deferredProducerKind, deferredQueueKind } from '@agnes/plugin-runtime/deferred-contract'
     import { SEAM_KIND_TOKENS } from '@agnes/extension-api/seams'
     export const { approval, principals, billing, checkpoint, artifacts, verifier, repair } = SEAM_KIND_TOKENS
-    export { observabilityKind as runtimeKind } from ${JSON.stringify(fileURLToPath(new URL('../../../observability/src/index.ts', import.meta.url)))}
+    export { observabilityKind as runtimeKind } from ${JSON.stringify(new URL('../../../observability/src/index.ts', import.meta.url).href)}
   `,
   )
   const loader = createLoader({ cacheDir: join(root, 'cache'), hostRoot: root, agnesVersion: '0.0.0' })

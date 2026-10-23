@@ -25,7 +25,7 @@ describe('agnes.jev across an approval park', () => {
   useLoopback()
   it('keeps the goal and notes after the approval continuation and runs the write once', async () => {
     const fake = await startJev(jevAnswers([PICK_WRITE, PICK_RESPOND]))
-    const dataDir = jevDataDir()
+    const dataDir = await jevDataDir()
     const kit = await bootJevLoop({
       dataDir,
       fake,

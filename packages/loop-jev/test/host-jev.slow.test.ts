@@ -23,7 +23,7 @@ describe('agnes.jev when Jev fails', () => {
   useLoopback()
   it('records an overflow as MODEL_UNAVAILABLE without retrying and stops at the third', async () => {
     const fake = await startJev({ status: 400, body: SYSTEMONE_ERROR_BODIES.overflow })
-    const kit = await bootJevLoop({ dataDir: jevDataDir(), fake, main: reply })
+    const kit = await bootJevLoop({ dataDir: await jevDataDir(), fake, main: reply })
     try {
       const session = await kit.open('overflow')
       expect((await runTurn(session, 'go')).reason).toBe('error')
@@ -43,7 +43,7 @@ describe('agnes.jev when Jev fails', () => {
     const fake = await startJev((n, seen) =>
       n === 0 ? { status: 429, headers: { 'retry-after': '1' } } : answer(n - 1, seen),
     )
-    const kit = await bootJevLoop({ dataDir: jevDataDir(), fake, main: reply })
+    const kit = await bootJevLoop({ dataDir: await jevDataDir(), fake, main: reply })
     try {
       const session = await kit.open('retry')
       expect((await runTurn(session, 'go')).reason).toBe('completed')
@@ -59,7 +59,7 @@ describe('agnes.jev when Jev fails', () => {
   })
   it('ends with NO_PROGRESS_LIMIT after three dropped connections', async () => {
     const fake = await startJev({ drop: true })
-    const kit = await bootJevLoop({ dataDir: jevDataDir(), fake, main: reply })
+    const kit = await bootJevLoop({ dataDir: await jevDataDir(), fake, main: reply })
     try {
       const session = await kit.open('drops')
       expect((await runTurn(session, 'go')).reason).toBe('error')
@@ -75,7 +75,7 @@ describe('agnes.jev when Jev fails', () => {
   it('arbitrates once Jev answers again after one failure', async () => {
     const answer = jevAnswers([PICK_RESPOND])
     const fake = await startJev((n, seen) => (n === 0 ? { drop: true } : answer(n - 1, seen)))
-    const kit = await bootJevLoop({ dataDir: jevDataDir(), fake, main: reply })
+    const kit = await bootJevLoop({ dataDir: await jevDataDir(), fake, main: reply })
     try {
       const session = await kit.open('recover')
       expect((await runTurn(session, 'go')).reason).toBe('completed')
@@ -92,7 +92,7 @@ describe('agnes.jev when Jev fails', () => {
     }
   })
   it('route missing: names E_MODEL_UNKNOWN and never calls the model', async () => {
-    const kit = await bootJevLoop({ dataDir: jevDataDir(), fake: null, main: reply })
+    const kit = await bootJevLoop({ dataDir: await jevDataDir(), fake: null, main: reply })
     try {
       const session = await kit.open('missing')
       expect((await runTurn(session, 'go')).reason).toBe('error')

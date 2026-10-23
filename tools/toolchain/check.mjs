@@ -46,6 +46,14 @@ export function pnpmInvocation(env = process.env) {
   return [corepack, 'pnpm']
 }
 
+/** Windows cannot exec npm.cmd directly; keep the selected Node and literal argv. */
+export function npmCommand() {
+  if (process.platform !== 'win32') return { bin: 'npm', args: [] } // guards-allow-platform: verification npm launch leaf.
+  const cli = join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')
+  if (!existsSync(cli)) throw new Error('Windows verification requires Node with bundled npm')
+  return { bin: process.execPath, args: [cli] }
+}
+
 export function checkToolchain(env = process.env) {
   const runtime = { version: process.version, execPath: process.execPath }
   assertRuntime(runtime)

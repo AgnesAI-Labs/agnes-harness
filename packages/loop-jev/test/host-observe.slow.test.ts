@@ -21,7 +21,7 @@ import {
 describe('agnes.jev with the platform path references', () => {
   useLoopback()
   it('reads a file that ls listed without asking the conversation model for its path', async () => {
-    const dataDir = jevDataDir()
+    const dataDir = await jevDataDir()
     writeFileSync(join(dataDir, 'notes.txt'), 'remember the milk\n')
     const fake = await startJev(
       jevAnswers([
@@ -61,7 +61,7 @@ describe('agnes.jev with the platform path references', () => {
     }
   })
   it('reads three listed files in one direct batch', async () => {
-    const dataDir = jevDataDir()
+    const dataDir = await jevDataDir()
     const files = ['a.md', 'b.md', 'c.md']
     for (const f of files) writeFileSync(join(dataDir, f), `content of ${f}\n`)
     const fake = await startJev(

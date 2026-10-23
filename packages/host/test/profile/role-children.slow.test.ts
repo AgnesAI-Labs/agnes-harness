@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { systemPromptPlugin } from '@agnes/code'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
@@ -221,7 +221,7 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
       packageId: vendor,
       version: '2.3.4',
       integrity: source.snapshot.integrity,
-      source: { type: 'file' as const, ref: `file:${initial.snapshot.directory}` },
+      source: { type: 'file' as const, ref: `file:${initial.snapshot.directory.split(sep).join('/')}` },
       signature: 'unverified' as const,
       declaration,
       declarationDigest: digest(declaration),

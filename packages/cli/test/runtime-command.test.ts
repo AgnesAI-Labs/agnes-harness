@@ -4,6 +4,7 @@ import { parseArgs } from '../src/args.js'
 import { prepareCommandArgs } from '../src/command-entry.js'
 import { commandHelp } from '../src/command-help.js'
 import { parseRuntimeArgs, runtimeCommand } from '../src/commands/runtime.js'
+import { FakeEndpoint } from './fake-endpoint.js'
 
 it('validates runtime grammar and selects the profile before boot', () => {
   const rest = ['reconcile', 'fleet', '--extension', 'ext:example.fleet', '--profile', 'synthetic']
@@ -22,7 +23,7 @@ it.each(['pending', 'allow', 'reject', 'dead', 'unknown', 'failed'] as const)(
   'uses the generic facade and native decision flow: %s',
   async (scenario) => {
     const client = createClient({
-      transport: { kind: 'unix', path: '/unused.sock' },
+      transport: { kind: 'inproc', endpoint: new FakeEndpoint() },
       auth: { kind: 'local' },
       journal: memoryJournal(),
     })

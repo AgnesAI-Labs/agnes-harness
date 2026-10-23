@@ -1,5 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { WebhookRequest, WebhookResult } from '@agnes/protocol/gen/app-server'
+import { validateAgainst } from '@agnes/protocol'
+import {
+  type WebhookRequest,
+  WebhookRequest as WebhookRequestSchema,
+  type WebhookResult,
+} from '@agnes/protocol/gen/app-server'
 
 export const TRIGGERS_ADMIN_PATH = '/api/triggers'
 const HEADERS = [
@@ -84,11 +89,15 @@ export function webhookRoute(origin: string, invoke: (input: WebhookRequest) => 
       let result: WebhookResult
       if (admin) {
         const input = JSON.parse(body.toString('utf8')) as WebhookRequest
-        if (!['list', 'configure', 'upsert', 'delete', 'test'].includes(input.action)) {
+        if (
+          !validateAgainst(WebhookRequestSchema, input).ok ||
+          !['list', 'configure', 'upsert', 'delete', 'test'].includes(input.action)
+        ) {
           reply(response, 400, { error: 'INVALID_REQUEST' })
           return true
         }
-        result = await invoke(input)
+        // The list above already read this request's snapshot, including validated secret refs.
+        result = input.action === 'list' ? { snapshot } : await invoke(input)
       } else {
         const headers: Record<string, string> = { 'content-type': request.headers['content-type'] ?? '' }
         let ambiguous = false

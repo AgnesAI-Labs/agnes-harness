@@ -795,19 +795,27 @@ export function collectRuntimeSnapshotsStore(
       continue
     }
     const transactionId = randomUUID(),
-      trashName = `.trash-${transactionId}`,
-      trash = join(runtimeRoot(s), trashName),
-      destination = snapshotDir(s, record.snapshotId),
       journal: GcJournal = {
         version: 1,
         kind: 'gc',
         transactionId,
-        trash: trashName,
+        trash: `.trash-${transactionId}`,
         snapshot: record,
-      }
+      },
+      trash = join(runtimeRoot(s), journal.trash)
     writeJournal(s, journal)
     s.runtimeCheckpoint?.('runtime-gc-prepared')
-    renameSync(destination, trash)
+    try {
+      renameSync(snapshotDir(s, record.snapshotId), trash)
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (sep !== '\\' || (code !== 'EPERM' && code !== 'EBUSY')) throw error
+      // Windows may still hold an unused tree. Verify and unwind the uncommitted journal;
+      // retain its tracked directory for the next collection instead of failing publication.
+      recoverRuntimeSnapshotStore(s)
+      retained.push(record.snapshotId)
+      continue
+    }
     syncDirectory(runtimeRoot(s))
     s.runtimeCheckpoint?.('runtime-gc-moved')
     delete state.snapshots[record.snapshotId]

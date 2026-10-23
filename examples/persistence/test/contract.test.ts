@@ -13,7 +13,8 @@ import {
   persistenceContract,
   persistenceHostContract,
 } from '@agnes/extension-api/testkit/persistence-contract'
-import { afterAll, describe, expect, it } from 'vitest'
+import * as systemNode from '@agnes/system-node'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import { persistenceProvider } from '../src/index.js'
 
 const dirs: string[] = []
@@ -55,12 +56,26 @@ it('refuses concurrent directory owners, repairs a torn tail, and rejects commit
   const path = join(dir, 'store.jsonl')
   const before = readFileSync(path, 'utf8')
   appendFileSync(path, '{"torn":')
+  const failure = new Error('synthetic recovery publication failed')
+  const publication = vi.spyOn(systemNode, 'renameWriteThroughSync').mockImplementationOnce(() => {
+    throw failure
+  })
+  try {
+    expect(() => persistenceProvider.open({ dataDir: dir })).toThrow(failure)
+  } finally {
+    publication.mockRestore()
+  }
+  expect(readFileSync(path, 'utf8')).toBe(`${before}{"torn":`)
+  expect(existsSync(join(dir, 'writer.json'))).toBe(false)
+  expect(readdirSync(dir).filter((name) => name.includes('.recovery-'))).toEqual([])
   const second = await persistenceProvider.open({ dataDir: dir })
   expect(readFileSync(path, 'utf8').startsWith(before)).toBe(true)
   const quarantine = readdirSync(dir).find((name) => name.includes('.tail-'))
   expect(quarantine).toBeDefined()
   if (!quarantine) throw new Error('Missing quarantine')
   expect(readFileSync(join(dir, quarantine), 'utf8')).toBe('{"torn":')
+  for (const name of readdirSync(dir).filter((name) => name.includes('.tail-')))
+    expect(systemNode.hasPrivateDaclSync(join(dir, name))).toBe(true)
   expect(await second.open('k', { writerRunId: 'r', ttlMs: 60000 })).toMatchObject({
     recovery: { diagnosticId: expect.any(String), validThroughSeq: 0 },
   })

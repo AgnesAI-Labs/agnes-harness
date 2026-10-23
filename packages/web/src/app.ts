@@ -2404,14 +2404,12 @@ run(async () => {
   else if (empty) {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
-    await beginNewDraft(
-      configured &&
-        !startupSection &&
-        !startupTerminal &&
-        !startupMoved &&
-        !homeNavigation.getSnapshot() &&
-        !guided,
-    )
+    // Finishing or skipping the guide already starts a draft. Its Host catalogs must not
+    // delay account setup; that draft still waits for the same catalogs before submission.
+    if (!guided)
+      await beginNewDraft(
+        configured && !startupSection && !startupTerminal && !startupMoved && !homeNavigation.getSnapshot(),
+      )
   } else {
     scheduleClientRosterRead(true)
     sessionPending = false

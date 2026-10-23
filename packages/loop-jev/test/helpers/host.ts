@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +15,7 @@ import {
 } from '@agnes/ai/testkit'
 import { CORE_CHECKS, type Event, foldEvents, InvariantRegistry, scanAll } from '@agnes/core'
 import { loopKind, type ModelAdapterEvent } from '@agnes/extension-api'
-import type { HostSession, SessionRecovery } from '@agnes/host'
+import { createCredentialStore, type HostSession, type SessionRecovery } from '@agnes/host'
 import { createTestHost, type TestHost } from '@agnes/host/testkit'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import type { RouteDecl } from '@agnes/protocol'
@@ -88,12 +88,12 @@ export function jevAnswers(
 }
 
 /** A scratch data directory with the route's key in a file secret store, as an operator keeps it. */
-export function jevDataDir(): string {
-  const dataDir = mkdtempSync(join(tmpdir(), 'agnes-jev-host-'))
-  dirs.push(dataDir)
-  const store = join(dataDir, 'credentials')
-  mkdirSync(join(store, 'jev'), { recursive: true, mode: 0o700 })
-  writeFileSync(join(store, 'jev', 'key'), JEV_KEY, { mode: 0o600 })
+export async function jevDataDir(): Promise<string> {
+  const scratch = mkdtempSync(join(tmpdir(), 'agnes-jev-host-'))
+  dirs.push(scratch)
+  const dataDir = join(scratch, 'home')
+  await createCredentialStore({ root: dataDir }).putApiKey(JEV_CREDENTIAL, JEV_KEY)
+  renameSync(join(dataDir, 'secrets'), join(dataDir, 'credentials'))
   return dataDir
 }
 

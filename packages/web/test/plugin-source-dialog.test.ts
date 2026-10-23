@@ -13,8 +13,11 @@ async function renderPluginHost(): Promise<void> {
   host = await mountRenderedIndex({ settings: { sections: settingsSections } })
   ;(await import('./legacy-admin-panes.js')).installAdminPaneHosts('plugin')
 }
-// Every case starts from fresh module state, so the host and the controller share one instance.
-beforeEach(() => vi.resetModules())
+// Compile the shared DOM fixture during setup; assertions keep their existing deadlines.
+beforeEach(async () => {
+  vi.resetModules()
+  await import('./web-dom-fixture.js')
+}, 180_000)
 
 type Fetcher = ReturnType<typeof vi.fn<typeof fetch>>
 let dispose: (() => void) | undefined

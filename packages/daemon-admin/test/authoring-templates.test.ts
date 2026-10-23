@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire, isBuiltin } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runInThisContext } from 'node:vm'
 import { candidateTemplate } from '@agnes/base/plugin-creator'
@@ -137,7 +137,7 @@ it.each(['tool', 'tool-with-panel', 'skin', 'skill', 'scaffold-tool', 'scaffold-
         agnesVersion: '0.1.0',
         cwd: directory,
         ceiling: ['ui', 'store'],
-      }).inspect(join(dataDir, 'profiles/local-dev'), parseSource(`file:${directory}`))
+      }).inspect(join(dataDir, 'profiles/local-dev'), parseSource(`file:${directory.split(sep).join('/')}`))
       expect(preview.blockers).toEqual([])
       if (kind.endsWith('tool-with-panel'))
         expect(preview.contributions).toMatchObject([

@@ -265,4 +265,6 @@ The Web plugin page checks its administrative context when opened. It can reuse 
 
 Open **Settings → Runtime & diagnostics → Plugin file cleanup** to inspect unused retention records. This check runs when you open the cleanup panel, independently of the plugin list. A failed check displays a retry action, not a claim that records exist. Clearing a record requires confirmation and the removal permission; the backend rechecks usage and skips records that are in use again. Releasing retention records allows files to be reclaimed; it does not promise immediate disk-space recovery.
 
+On Windows, an unused snapshot whose directory cannot yet be renamed because it is busy stays tracked for a later collection. Its contents and recovery journal are verified before deferring cleanup; damaged snapshots and other errors still fail explicitly. Temporary directory contention does not turn a successful publication into an activation failure.
+
 The local discovery catalog verifies bundled and repository example payloads on its first read, rather than delaying daemon readiness. Subsequent offline reads reuse the verified catalog until its existing expiry; installation still re-inspects the selected payload.

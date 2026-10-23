@@ -2387,7 +2387,7 @@ describe('side model calls through the built-in typesafe-systemone adapter', () 
   describe('a route saved through the configuration service', () => {
     it('serves side calls from the saved account and stays out of every conversation surface', async () => {
       const fake = await startJev({ answers: CONFIDENT })
-      const dataDir = scratch()
+      const dataDir = join(scratch(), 'home')
       const openai = getApiKeyProvider('openai')
       if (!openai) throw new Error('openai registry entry missing')
       const chatModel = (await openai.createAdapter()).models('openai')[0]?.id

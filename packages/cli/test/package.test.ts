@@ -1,4 +1,6 @@
+import { join, sep } from 'node:path'
 import { Writable } from 'node:stream'
+import { parseSource } from '@agnes/package-manager'
 import type { PackageOperationGetParams } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
@@ -157,14 +159,24 @@ describe('package command', () => {
     for (const argv of [
       ['install', source.ref],
       ['plugins', 'add', source.ref, '--yes'],
+      ['install', './插件 space'],
+      ['install', `.${sep}插件 space`],
+      ['install', join(process.cwd(), '插件 space')],
+      ['install', `file:${join(process.cwd(), '插件 space')}`],
+      ['install', `path:${join(process.cwd(), '插件 space')}`],
     ]) {
       const fixture = client()
+      const inspect = vi.spyOn(fixture.value.packages, 'inspect').mockImplementation(async (input) => {
+        expect(parseSource(input.source.ref)).toEqual(input.source)
+        return { operationId: 'inspect', profile }
+      })
       const written: string[] = []
       await runPackageCommand(parseArgs(argv), fixture.value, {
         write: (line) => written.push(line),
         confirm: async (value) => value.integrity === integrity,
       })
       expect(fixture.installs()).toBe(1)
+      expect(inspect).toHaveBeenCalledOnce()
       expect(written.join('\n')).toContain(`capabilityHash ${preview.capabilityHash}`)
       expect(written.join('\n')).toContain('declared capabilities {"exec":["node"]}')
       expect(written.join('\n')).toContain('blockers none')

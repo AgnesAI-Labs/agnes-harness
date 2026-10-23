@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
@@ -76,9 +76,17 @@ it.each(['devboard', 'pharma'] as const)(
             ? {
                 approval: {
                   command_policy: [
-                    { tool: 'edit|write', argv: '^.*/denied\\.md$', action: 'deny' },
-                    { tool: 'edit|write', argv: '^.*/needs-human\\.md$', action: 'require_approval' },
-                    { tool: 'edit|write', argv: '^/.*$', action: 'allow' },
+                    { tool: 'edit|write', argv: String.raw`^.*[\\/]denied\.md$`, action: 'deny' },
+                    {
+                      tool: 'edit|write',
+                      argv: String.raw`^.*[\\/]needs-human\.md$`,
+                      action: 'require_approval',
+                    },
+                    {
+                      tool: 'edit|write',
+                      argv: sep === '\\' ? String.raw`^[A-Za-z]:[\\/].*$` : '^/.*$',
+                      action: 'allow',
+                    },
                   ],
                 },
                 sandbox: { level: 'L1', on_unavailable: 'deny', network_allow: [] },
@@ -86,7 +94,9 @@ it.each(['devboard', 'pharma'] as const)(
               }
             : {
                 approval: {
-                  command_policy: [{ tool: 'write', argv: '^.*/role-denied\\.md$', action: 'deny' }],
+                  command_policy: [
+                    { tool: 'write', argv: String.raw`^.*[\\/]role-denied\.md$`, action: 'deny' },
+                  ],
                 },
               }),
           model: { system_prompt: { personaPrefix: parent ? 'COORDINATOR' : 'SPECIALIST' } },
@@ -218,7 +228,7 @@ it.each(['devboard', 'pharma'] as const)(
         packageId: vendor,
         version: '2.3.4',
         integrity: source.snapshot.integrity,
-        source: { type: 'file' as const, ref: `file:${raw.snapshot.directory}` },
+        source: { type: 'file' as const, ref: `file:${raw.snapshot.directory.split(sep).join('/')}` },
         signature: 'unverified' as const,
         declaration,
         declarationDigest: digest(declaration),
@@ -346,7 +356,13 @@ it.each(['devboard', 'pharma'] as const)(
           ...parent.preset,
           approval: {
             ...parent.preset.approval,
-            commandTable: [{ tool: 'write|edit', argv: '^/.*$', action: 'deny' }],
+            commandTable: [
+              {
+                tool: 'write|edit',
+                argv: sep === '\\' ? String.raw`^[A-Za-z]:[\\/].*$` : '^/.*$',
+                action: 'deny',
+              },
+            ],
           },
         })
         const check = async (session: typeof child, boundary: number, automatic = true) => {
@@ -409,7 +425,13 @@ it.each(['devboard', 'pharma'] as const)(
           ...rolePreset,
           approval: {
             ...rolePreset.approval,
-            commandTable: [{ tool: 'edit|write', argv: '^/.*$', action: 'allow' }],
+            commandTable: [
+              {
+                tool: 'edit|write',
+                argv: sep === '\\' ? String.raw`^[A-Za-z]:[\\/].*$` : '^/.*$',
+                action: 'allow',
+              },
+            ],
           },
         })
         const nestedHandle = await child.d.children.createWithKind!('spawn', {

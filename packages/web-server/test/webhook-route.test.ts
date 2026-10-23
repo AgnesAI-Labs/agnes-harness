@@ -1,6 +1,8 @@
 import { IncomingMessage, type ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
+import { validateAgainst } from '@agnes/protocol'
 import type { WebhookRequest, WebhookResult, WebhookSnapshot } from '@agnes/protocol/gen/app-server'
+import { WebhookRequest as WebhookRequestSchema } from '@agnes/protocol/gen/app-server'
 import { describe, expect, it } from 'vitest'
 import { webhookRoute } from '../src/webhook-route.js'
 
@@ -14,6 +16,7 @@ function setup(enabled = true) {
     secretRefs: [],
   }
   const route = webhookRoute(origin, async (input): Promise<WebhookResult> => {
+    if (!validateAgainst(WebhookRequestSchema, input).ok) throw new Error('Invalid webhook request')
     inputs.push(input)
     if (input.action !== 'deliver') return { snapshot }
     return {
@@ -104,6 +107,22 @@ describe('webhook HTTP boundary', () => {
         })
       ).status,
     ).toBe(400)
+    for (const input of [
+      { action: 'list', unexpected: true },
+      { action: 'list', ruleId: 123 },
+      { action: 'list', config: { enabled: 'yes' } },
+      null,
+    ])
+      expect(
+        (
+          await f.send({
+            path: '/api/triggers',
+            headers: { origin: [origin] },
+            body: Buffer.from(JSON.stringify(input)),
+          })
+        ).status,
+      ).toBe(400)
+    const beforeList = f.inputs.length
     expect(
       (
         await f.send({
@@ -113,6 +132,7 @@ describe('webhook HTTP boundary', () => {
         })
       ).status,
     ).toBe(200)
+    expect(f.inputs.slice(beforeList)).toEqual([{ action: 'list' }])
     expect(f.inputs.some((input) => input.action === 'deliver')).toBe(false)
   })
 })

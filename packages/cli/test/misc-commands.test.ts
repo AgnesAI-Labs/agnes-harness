@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { PassThrough, Readable } from 'node:stream'
 import { readProfileTelemetryConsent } from '@agnes/host'
-import { hasPrivateDaclSync } from '@agnes/system-node'
+import { createPrivateDirectorySync, hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { type MainIO, main } from '../src/bin.js'
@@ -48,9 +48,16 @@ afterEach(() => {
   for (const dir of cleanup.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
+function privateHome(prefix: string): string {
+  const root = mkdtempSync(join(tmpdir(), prefix))
+  cleanup.push(root)
+  const home = join(root, 'home')
+  createPrivateDirectorySync(home)
+  return home
+}
+
 function deps(): BootDeps {
-  const home = mkdtempSync(join(tmpdir(), 'agnes-misc-'))
-  cleanup.push(home)
+  const home = privateHome('agnes-misc-')
   return { env: {}, home, cwd: home, agnesVersion: '0', log: () => undefined }
 }
 
@@ -179,8 +186,7 @@ describe('stats deviation', () => {
 
 describe('profile list', () => {
   it('is dispatched by the executable without booting a session', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-profile-list-'))
-    cleanup.push(home)
+    const home = privateHome('agnes-profile-list-')
     const stdout = new PassThrough()
     const stderr = new PassThrough()
     let out = ''
@@ -203,8 +209,7 @@ describe('profile list', () => {
 
 describe('profile inspect', () => {
   it('returns UsageError when no profile name is provided', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-profile-inspect-no-name-'))
-    cleanup.push(home)
+    const home = privateHome('agnes-profile-inspect-no-name-')
     const stdout = new PassThrough()
     const stderr = new PassThrough()
     let out = ''
@@ -225,8 +230,7 @@ describe('profile inspect', () => {
   })
 
   it('prints short summary when inspecting a profile without --resolved', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-profile-inspect-'))
-    cleanup.push(home)
+    const home = privateHome('agnes-profile-inspect-')
     const stdout = new PassThrough()
     const stderr = new PassThrough()
     let out = ''
@@ -249,8 +253,7 @@ describe('profile inspect', () => {
   })
 
   it('prints resolved profile as JSON when --resolved is provided', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-profile-inspect-resolved-'))
-    cleanup.push(home)
+    const home = privateHome('agnes-profile-inspect-resolved-')
     const stdout = new PassThrough()
     const stderr = new PassThrough()
     let out = ''
@@ -281,8 +284,7 @@ describe('profile trust', () => {
   })
 
   it('returns UsageError when no deploy directory is provided', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-profile-trust-no-arg-'))
-    cleanup.push(home)
+    const home = privateHome('agnes-profile-trust-no-arg-')
     const stdout = new PassThrough()
     const stderr = new PassThrough()
     let out = ''
@@ -305,8 +307,7 @@ describe('profile trust', () => {
   })
 
   it('boots a client, resolves the profile, and dispatches to profileTrust', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-profile-trust-'))
-    cleanup.push(home)
+    const home = privateHome('agnes-profile-trust-')
     const stdout = new PassThrough()
     const stderr = new PassThrough()
     let out = ''
@@ -337,8 +338,7 @@ describe('profile trust', () => {
   })
 
   it('resolves a relative deploy directory against cwd before dispatching to the client', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'agnes-profile-trust-relative-'))
-    cleanup.push(home)
+    const home = privateHome('agnes-profile-trust-relative-')
     const stdout = new PassThrough()
     const stderr = new PassThrough()
     const io: MainIO = {
@@ -366,8 +366,7 @@ describe('profile trust', () => {
     // A real `agnes profile trust deploy/x --cwd <dir>` run surfaced this: the process's actual
     // cwd and the --cwd flag's value can differ, and only the flag should win (matching every
     // other command in bin.ts, e.g. the `package`/`doctor` --cwd handling).
-    const home = mkdtempSync(join(tmpdir(), 'agnes-profile-trust-explicit-cwd-'))
-    cleanup.push(home)
+    const home = privateHome('agnes-profile-trust-explicit-cwd-')
     const explicitCwd = mkdtempSync(join(tmpdir(), 'agnes-profile-trust-explicit-cwd-target-'))
     cleanup.push(explicitCwd)
     const stdout = new PassThrough()
@@ -397,8 +396,7 @@ describe('profile trust', () => {
     // A real `agnes --cwd . -p ...` run surfaced this: the raw "." reached the daemon, which resolved
     // it against its own working directory and answered WORKSPACE_INVALID; `sessions list --cwd .`
     // silently listed nothing for the same reason.
-    const home = mkdtempSync(join(tmpdir(), 'agnes-relative-cwd-'))
-    cleanup.push(home)
+    const home = privateHome('agnes-relative-cwd-')
     const stdout = new PassThrough()
     const stderr = new PassThrough()
     const io: MainIO = {

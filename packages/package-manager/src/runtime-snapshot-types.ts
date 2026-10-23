@@ -49,6 +49,7 @@ export type RuntimeSnapshotPinRequest = Readonly<{
 
 export type RuntimeSnapshotCollection = Readonly<{
   removed: readonly string[]
+  /** Referenced snapshots, plus verified unused Windows trees whose rename is temporarily blocked. */
   retained: readonly string[]
 }>
 

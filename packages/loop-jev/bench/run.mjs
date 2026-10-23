@@ -14,8 +14,8 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ensureJevLoopInstalled } from './install.mjs'
 import {
   aggregate,
@@ -317,10 +317,12 @@ function runProbe(command, cwd, env) {
   })
 }
 
-function writeTurnFiles(workspace, files) {
+export function writeTurnFiles(workspace, files) {
   for (const file of files ?? []) {
     const target = resolve(workspace, file.name)
-    if (!target.startsWith(`${workspace}/`)) throw new Error(`inject file ${file.name} leaves the workspace`)
+    const local = relative(workspace, target)
+    if (!local || local === '..' || local.startsWith(`..${sep}`) || isAbsolute(local))
+      throw new Error(`inject file ${file.name} leaves the workspace`)
     mkdirSync(dirname(target), { recursive: true })
     writeFileSync(target, file.content)
   }
@@ -1037,8 +1039,8 @@ export async function main(argv) {
     process.on('SIGINT', onSignal)
     process.on('SIGTERM', onSignal)
     const { initializeHomeLocked } = await import('@agnes/host')
-    const { bootHeadless } = await import(join(CLI, 'src', 'boot', 'headless.ts'))
-    const { parseArgs } = await import(join(CLI, 'src', 'args.ts'))
+    const { bootHeadless } = await import(pathToFileURL(join(CLI, 'src', 'boot', 'headless.ts')).href)
+    const { parseArgs } = await import(pathToFileURL(join(CLI, 'src', 'args.ts')).href)
     await initializeHomeLocked(home, o.profile)
     // The Jev loop is an optional bundled package: install it into the home the way the Market does.
     if (await ensureJevLoopInstalled({ home, profile: o.profile, agnesVersion, cwd: root }))

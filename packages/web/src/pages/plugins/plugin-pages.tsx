@@ -62,7 +62,8 @@ export function PluginPages({ view }: { view: PluginView | undefined }) {
     open: () => {
       const current = latest.current
       // What the reader may do is known once the first read has finished.
-      if (!current || current.state.loading) return 'pending'
+      // A completed check is replacing this form; a stale route must not open it again.
+      if (!current || current.state.loading || current.review) return 'pending'
       if (!current.canEffect('packages.install')) return 'missing'
       current.openSourceDialog('install')
       return 'opened'

@@ -22,7 +22,12 @@ export type WorkspaceProbe = (cwd: string) => Promise<WorkspaceInfo>
 const TIMEOUT_MS = 1_000
 
 export function tildePath(path: string, home = homedir()): string {
-  return home && (path === home || path.startsWith(home + sep)) ? `~${path.slice(home.length)}` : path
+  // Display paths only: Git uses '/', including on Windows; filesystem callers retain native paths.
+  const display = path.split(sep).join('/')
+  const base = home.split(sep).join('/')
+  return base && (display === base || display.startsWith(`${base}/`))
+    ? `~${display.slice(base.length)}`
+    : display
 }
 
 /** One fixed-argument git call without a shell; any failure, timeout or missing git reads as no answer. */

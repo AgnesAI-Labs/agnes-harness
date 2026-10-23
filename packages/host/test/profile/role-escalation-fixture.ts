@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join, sep } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import type { ApprovalAnswer, ApprovalRequest } from '@agnes/core'
 import type { ChildControlStore } from '@agnes/extension-api'
@@ -53,7 +53,13 @@ export async function setupRoleEscalation(
         extends: 'standard',
         subagent: { max_depth: 2, max_fan_out: 4, isolation: 'shared' },
         approval: {
-          command_policy: [{ tool: 'write', argv: '^/.*$', action: review.commandAction ?? 'allow' }],
+          command_policy: [
+            {
+              tool: 'write',
+              argv: sep === '\\' ? String.raw`^[A-Za-z]:[\\/].*$` : '^/.*$',
+              action: review.commandAction ?? 'allow',
+            },
+          ],
         },
       },
     },
@@ -142,7 +148,7 @@ export async function setupRoleEscalation(
     packageId: vendor,
     version: '2.3.4',
     integrity: source.snapshot.integrity,
-    source: { type: 'file' as const, ref: `file:${raw.snapshot.directory}` },
+    source: { type: 'file' as const, ref: `file:${raw.snapshot.directory.split(sep).join('/')}` },
     signature: 'unverified' as const,
     declaration,
     declarationDigest: digest(declaration),

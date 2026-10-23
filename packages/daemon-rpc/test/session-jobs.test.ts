@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { createJobsServiceFixture, fakeToolContext } from '@agnes/base/testkit'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { MemoryJournal } from '@agnes/daemon-foundation/local/ports'
@@ -111,7 +112,7 @@ it.each([undefined, 0, 3])(
   'validates real jobs service results through RPC with stoppedProcesses=%s',
   async (stoppedProcesses) => {
     const { jobs, services } = createJobsServiceFixture()
-    const tool = fakeToolContext({ sessionKey: 's1' })
+    const tool = fakeToolContext({ sessionKey: 's1', cwd: resolve('/work/proj') })
     const receipt = { code: 0, ...(stoppedProcesses === undefined ? {} : { stoppedProcesses }) }
     let finish!: (exit: ProcessExit) => void
     tool.sandbox.openProcess = async () => ({

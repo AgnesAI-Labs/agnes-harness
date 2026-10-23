@@ -1,4 +1,4 @@
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 import type { Page } from '@playwright/test'
 import { expect } from './fixtures.js'
 import { homePage } from './ui.js'
@@ -11,7 +11,7 @@ export async function installDeveloperExample(page: Page, directory: string) {
   await source.getByRole('combobox', { name: 'Source type', exact: true }).selectOption('file')
   await source
     .getByRole('textbox', { name: 'Source reference', exact: true })
-    .fill(`file:${resolve(directory)}`)
+    .fill(`file:${resolve(directory).split(sep).join('/')}`)
   await source.getByRole('button', { name: 'Check source', exact: true }).click()
   await page
     .getByTestId('install-review')

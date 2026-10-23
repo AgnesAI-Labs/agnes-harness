@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto'
-import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { createHash, randomUUID } from 'node:crypto'
+import { closeSync, lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { homeLayout } from '@agnes/host'
+import { createPrivateDirectorySync, createPrivateFileSync, hasPrivateDaclSync } from '@agnes/system-node'
 import type { Breadcrumb } from './modes/print.js'
 
 /**
@@ -48,19 +49,34 @@ export function terminalBreadcrumb(home: string, env: NodeJS.ProcessEnv): Breadc
       let temporary: string | undefined
       try {
         const target = file()
-        mkdirSync(join(target, '..'), { recursive: true, mode: 0o700 })
-        temporary = `${target}.${process.pid}.tmp`
-        writeFileSync(temporary, JSON.stringify({ sessionKey, cwd, at: new Date().toISOString() }), {
-          mode: 0o600,
-        })
-        // The mode above is masked by the umask; the file must be private whatever it is.
-        chmodSync(temporary, 0o600)
+        const directory = dirname(target)
+        try {
+          createPrivateDirectorySync(directory)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        }
+        const stat = lstatSync(directory)
+        if (!stat.isDirectory() || stat.isSymbolicLink() || !hasPrivateDaclSync(directory)) return
+        const pending = `${target}.${randomUUID()}.tmp`
+        const fd = createPrivateFileSync(pending)
+        temporary = pending
+        try {
+          writeFileSync(fd, JSON.stringify({ sessionKey, cwd, at: new Date().toISOString() }))
+        } finally {
+          closeSync(fd)
+        }
         renameSync(temporary, target)
         temporary = undefined
       } catch {
         // Ignored on purpose; the temporary file of a failed write is removed below.
       } finally {
-        if (temporary !== undefined) rmSync(temporary, { force: true })
+        if (temporary !== undefined) {
+          try {
+            rmSync(temporary, { force: true })
+          } catch {
+            // A breadcrumb must never make a successful CLI operation fail.
+          }
+        }
       }
     },
   }
