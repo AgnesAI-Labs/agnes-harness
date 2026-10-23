@@ -377,28 +377,38 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--s12);
   }
+  /* Each field already splits its own label and value, so this list is one track per row. The
+     shared technical-details rule still gives every `dl` two tracks; letting both apply nests
+     the field inside the label column and squeezes long values into one character per line. */
   .capability-facts {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--s8);
     margin: 0;
   }
   .capability-facts > div {
+    grid-column: 1 / -1;
     display: grid;
     grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr);
     gap: var(--s12);
+    min-width: 0;
     font-size: var(--font-size-sm);
   }
   .capability-facts dt {
+    min-width: 0;
+    overflow-wrap: anywhere;
     color: var(--agnes-text-secondary);
+    font-size: var(--font-size-xs);
   }
   .capability-facts dd {
     margin: 0;
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  /* Monospace belongs to the secret reference only; ordinary prose keeps the body face. */
   .capability-facts dd[translate="no"] {
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-xs);
   }
   /* What an enabled engine needs, opened under its own row inside the same card. */
   .capability-engine-fields {
