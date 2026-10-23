@@ -20,7 +20,7 @@ export const KEYS_SCOPES = [
   'secret',
 ] as const
 export type KeysKey =
-  | `keys.act.${Exclude<ActionId, QuickAction>}`
+  | `keys.act.${Exclude<ActionId, QuickAction | 'suspend'>}`
   | QuickKey
   | `keys.scope.${(typeof KEYS_SCOPES)[number]}`
   | 'keys.title'

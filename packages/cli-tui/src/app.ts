@@ -36,6 +36,7 @@ import { type InputDialog, rootInput } from './root-input.js'
 import { type ActionItem, collectSlots } from './slots.js'
 import { StatusLineConfig } from './statusline-config.js'
 import { SurfaceInbox } from './surface-inbox.js'
+import { suspendToShell } from './suspend.js'
 import { TerminalSignals } from './terminal-signals.js'
 import { brandColour, type TuiTheme, type TuiThemeName } from './theme.js'
 import { ThemeController } from './theme-controller.js'
@@ -425,6 +426,7 @@ export class TuiApp {
         models: this.models,
         stashDraft: () => this.drafts.press(),
         redraw: () => this.renderer.redraw(),
+        suspend: () => suspendToShell(this.renderer, o.suspendIO),
         hintActions: () => this.hintActions,
         dispatchAction: (id) => this.dispatchAction(id),
         timeline: this.timeline,

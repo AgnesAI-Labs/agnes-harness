@@ -2,6 +2,7 @@ import type { UITimeline } from '@agnes/protocol'
 import type { ClipboardImagePort } from './clipboard-image.js'
 import type { ExportRequest } from './export-command.js'
 import type { ExternalRoots } from './external-sessions.js'
+import type { SuspendIO } from './suspend.js'
 
 /** TuiApp options added by later features, kept here so app.ts does not grow. */
 export type TuiExtraOptions = {
@@ -23,4 +24,6 @@ export type TuiExtraOptions = {
   exportSession?: (request: ExportRequest) => Promise<void>
   /** Where `/import` looks for Claude Code and codex sessions; defaults to `~/.claude/projects` and `~/.codex/sessions`. */
   externalRoots?: ExternalRoots
+  /** Ctrl-Z's signal source; tests inject one so nothing really stops. */
+  suspendIO?: SuspendIO
 }

@@ -32,6 +32,8 @@ export const BINDINGS = [
   { id: 'model-prev', scope: 'global', keys: ['alt-shift-p'] },
   { id: 'draft-stash', scope: 'global', keys: ['ctrl-s'] },
   { id: 'redraw', scope: 'global', keys: ['ctrl-l'] },
+  // Only on an empty prompt (root-input.ts); with a draft the editor's undo below gets the key.
+  { id: 'suspend', scope: 'global', keys: ['ctrl-z'] },
   { id: 'pager-open', scope: 'global', keys: ['ctrl-t'] },
   { id: 'cards-focus', scope: 'global', keys: ['ctrl-x'] },
   // The prompt editor.

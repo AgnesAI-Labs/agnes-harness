@@ -3,6 +3,7 @@ import { BG_DICT, type BgKey } from './locale-bg.js'
 import { HEADS_UP_DICT, type HeadsUpKey } from './locale-heads-up.js'
 import { MEMORY_DICT, type MemoryKey } from './locale-memory.js'
 import { SESSION_ACTION_DICT, type SessionActionKey } from './locale-session-actions.js'
+import { SHELL_UX_DICT, type ShellUxKey } from './locale-shell-ux.js'
 import { TERMINAL_SETUP_DICT, type TerminalSetupKey } from './locale-terminal-setup.js'
 
 /**
@@ -121,6 +122,7 @@ export type TerminalKey =
   | BgKey
   | TerminalSetupKey
   | HeadsUpKey
+  | ShellUxKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
@@ -129,6 +131,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...BG_DICT.en,
     ...TERMINAL_SETUP_DICT.en,
     ...HEADS_UP_DICT.en,
+    ...SHELL_UX_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
     'exit.ran': 'This run lasted {duration}',
@@ -246,6 +249,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...BG_DICT['zh-CN'],
     ...TERMINAL_SETUP_DICT['zh-CN'],
     ...HEADS_UP_DICT['zh-CN'],
+    ...SHELL_UX_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
     'exit.ran': '本次运行了 {duration}',

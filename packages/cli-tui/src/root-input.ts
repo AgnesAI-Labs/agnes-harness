@@ -32,6 +32,8 @@ export interface RootInputHost {
   stashDraft: () => void
   /** Ctrl-L: a full clear-and-redraw of the screen. */
   redraw: () => void
+  /** Ctrl-Z: suspends to the shell; false where that is not possible, so the editor's undo gets the key. */
+  suspend: () => boolean
   hintActions: () => readonly ActionItem[]
   dispatchAction: (actionId: string) => void
   /** Ctrl-T: the full-conversation pager (it is also first among `dialogs`, which closes it). */
@@ -91,6 +93,7 @@ export function rootInput(
       host.redraw()
       return true
     }
+    if (action === 'suspend' && !host.editor.text && host.suspend()) return true
     if (action === 'draft-stash') {
       host.stashDraft()
       return true
