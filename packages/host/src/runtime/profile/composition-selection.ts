@@ -7,6 +7,7 @@ import type {
 import { freezeTree } from '@agnes/host-common/profile/composition-freeze'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { pluginSnapshotIdentity } from '@agnes/host-providers/runtime-plugin-catalogue'
+import type { RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { PluginRow } from '@agnes/plugin-runtime/host'
 import type { Host } from '../lifecycle/host.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
@@ -16,7 +17,7 @@ export type CompositionContainer = {
   tree: ResolvedComposition
   draining?: boolean
   /** What the last runtime target applied here makes it run; unset once anything else changed it. */
-  applied?: string
+  applied?: Readonly<{ target: string; sources: readonly RuntimePluginSnapshot[] }>
 }
 
 /** Compile a preset tree into a separate Host profile, without changing an existing session. */

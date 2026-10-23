@@ -17,9 +17,9 @@ type VerificationOperation = {
 const operations = new AsyncLocalStorage<VerificationOperation | undefined>()
 
 /**
- * For a read that opts in, trees AGH stores itself (installed packages, runtime snapshots, shipped
- * builtins) are hashed in full once per process. Later opted-in reads reuse that digest while the
- * canonical directory, the exact expected identity and the root's inode are unchanged: installs,
+ * For Worker runtime-source reads that opt in, trees AGH stores itself (installed packages,
+ * runtime snapshots, shipped builtins) are hashed in full once per process. Later opted-in reads reuse
+ * that digest while the canonical directory, the exact expected identity and the root's inode are unchanged: installs,
  * updates and snapshot writes replace whole directories, so a replaced tree is hashed again. An
  * in-place edit is not seen by these reads until the process restarts. Editable workspace/local
  * sources never settle here. Below this layer, hashDirectory itself reuses a digest for every caller
@@ -48,18 +48,6 @@ function settledDigest(directory: string, key: string): string | undefined {
   if (root?.dev === known.dev && root.ino === known.ino) return known.digest
   settledTrees.delete(key)
   return undefined
-}
-
-/**
- * The digest an opted-in read of this process already verified for this exact AGH-stored tree, if
- * its root has not been replaced since. Lets a writer that hard-links the tree skip hashing it again.
- */
-export function settledTreeDigest(
-  directory: string,
-  identity: Parameters<typeof verifiedDirectoryDigest>[1],
-): string | undefined {
-  const key = directoryKey(directory, identity, false)
-  return key === undefined ? undefined : settledDigest(directory, key)
 }
 
 /** Records a digest only when the root was not replaced while it was being hashed. */
@@ -125,24 +113,6 @@ export function withoutPackageVerification(action: () => unknown): unknown {
   } finally {
     dropPackageObservations()
     invalidate(parent)
-  }
-}
-
-/**
- * Generation snapshots only: leaves any read operation without discarding settled trees. Linking an
- * AGH-stored tree into a generation changes no package bytes, so it is not a write gate; a failure
- * still invalidates everything, like any refusal.
- */
-export function outsidePackageVerification<T>(action: () => T): T {
-  const refused = (error: unknown): never => {
-    invalidatePackageVerification()
-    throw error
-  }
-  try {
-    const result = operations.run(undefined, action)
-    return (result instanceof Promise ? result.catch(refused) : result) as T
-  } catch (error) {
-    return refused(error)
   }
 }
 
