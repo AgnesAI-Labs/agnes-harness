@@ -69,7 +69,6 @@ export function SessionReport() {
       name="bug"
       onClick={(event) => sessionViewCommands.reportProblem?.(event.currentTarget)}
       label={tr('index-shell.reportProblem')}
-      title={tr('index-shell.reportProblem')}
     />
   )
 }

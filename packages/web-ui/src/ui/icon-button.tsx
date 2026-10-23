@@ -5,7 +5,9 @@ import type { IconName } from './icon-set.js'
 import type { ShortcutKey } from './kbd.js'
 import { Tooltip } from './tooltip.js'
 
-export type IconButtonProps = Omit<ButtonProps, 'children' | 'icon' | 'name' | 'aria-label'> & {
+// `title` stays out: the Tooltip above already names the action, and a native
+// title would pop a second, identical hint after the browser's own delay.
+export type IconButtonProps = Omit<ButtonProps, 'children' | 'icon' | 'name' | 'aria-label' | 'title'> & {
   name: IconName
   label: string
   /** The action's keyboard shortcut, shown as keycaps after the label in the tooltip. */

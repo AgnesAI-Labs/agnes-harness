@@ -42,7 +42,8 @@ describe('report-problem button placement', () => {
 
     expect(button.type).toBe('button')
     expect(button.getAttribute('aria-label')).toBe('Report a problem')
-    expect(button.getAttribute('title')).toBe('Report a problem')
+    // Only the shared Tooltip names this action; a native title would double it up.
+    expect(button.getAttribute('title')).toBeNull()
     expect(button.querySelector('svg[aria-hidden="true"][data-agnes-region="icon"]')).not.toBeNull()
   })
 
