@@ -438,6 +438,14 @@ it('round-trips a task through the form and orders Agnes AI models first', () =>
   expect(draft).toMatchObject({ frequency: 'cron', cron: '*/5 * * * *', zone: 'UTC', preset: 'review' })
   expect(targetOf(draft, choices)).toEqual(target)
   expect(selectorOf(draft)).toEqual({ cron: { expr: '*/5 * * * *', timeZone: 'UTC' } })
+  for (const unattendedApproval of ['notify', 'refuse'] as const) {
+    const target = { kind: 'session' as const, sessionKey: 's1', unattendedApproval }
+    const [saved] = rowsOf({ schedules: [{ ...standup, target }] })
+    if (!saved) throw new Error('saved schedule')
+    const edited = { ...draftOf(saved, choices, Date.now()), title: 'Renamed only' }
+    expect(edited.unattendedApproval).toBe(unattendedApproval)
+    expect(targetOf(edited, choices)).toEqual(target)
+  }
   // A create-only "after N seconds" reminder edits as a one-time task at its next run.
   const [later] = rowsOf({
     schedules: [
@@ -448,6 +456,11 @@ it('round-trips a task through the form and orders Agnes AI models first', () =>
   expect(selectorOf(draftOf(later, choices, Date.now()))).toEqual({ at: '2030-01-01T10:00:00.000Z' })
   // Rows of an unexpected shape are left out instead of breaking the list.
   expect(rowsOf({ schedules: [{ id: 'x' }, standup] })).toHaveLength(1)
+  expect(
+    rowsOf({
+      schedules: [{ ...standup, target: { kind: 'session', sessionKey: 's1', unattendedApproval: 'allow' } }],
+    }),
+  ).toEqual([])
   expect(emptyDraft({ now: 0 }).target).toBe('new-session')
 })
 

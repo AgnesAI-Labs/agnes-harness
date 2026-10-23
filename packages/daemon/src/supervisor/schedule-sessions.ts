@@ -91,12 +91,19 @@ export function scheduleSessions(
       journal: memoryJournal('scheduled-tasks'),
     })
   return {
-    async create(target: NewSessionTarget, title: string): Promise<string> {
+    async create(target: NewSessionTarget, title: string, signal?: AbortSignal): Promise<string> {
+      signal?.throwIfAborted()
       if (closing) throw new Error('scheduled session admission closed')
       const client = connect()
       clients.add(client)
+      const cancel = () => {
+        void client.close().catch(() => undefined)
+      }
+      signal?.addEventListener('abort', cancel, { once: true })
       try {
+        signal?.throwIfAborted()
         await client.initialize()
+        signal?.throwIfAborted()
         // A fresh key, as the Web uses for a new chat: without one, `session/new` reopens the
         // workspace's canonical session and every run would land in the same conversation.
         const session = await client.createSession({
@@ -107,7 +114,9 @@ export function scheduleSessions(
           ...(target.bundles?.length ? { bundles: target.bundles } : {}),
           ...(target.loop ? { loop: target.loop } : {}),
         })
+        signal?.throwIfAborted()
         await client.call('_agnes/v1/session.rename', { sessionId: session.id, title })
+        signal?.throwIfAborted()
         if (target.model)
           await client.call('_agnes/v1/session.setModel', {
             sessionId: session.id,
@@ -115,8 +124,10 @@ export function scheduleSessions(
             route: target.model.route,
             model: target.model.model,
           })
+        signal?.throwIfAborted()
         return session.id
       } finally {
+        signal?.removeEventListener('abort', cancel)
         // The session is durable once created; closing this transport does not end it.
         await client.close().finally(() => clients.delete(client))
       }
@@ -177,14 +188,16 @@ export function scheduledTasks(o: {
       port.noteSettlement(job.idempotencyKey, info),
     unattendedApproval: (job: JobRow) =>
       port.targetOf(job.idempotencyKey)?.target.unattendedApproval ?? ('notify' as const),
-    prepare: async (job: JobRow) => {
+    prepare: async (job: JobRow, signal?: AbortSignal) => {
+      signal?.throwIfAborted()
       if (port.hasWaiting(job.idempotencyKey)) throw new Error('approval_pending_previous_run')
       const task = newSession(job)
       if (!task) return undefined
       // Checked again at run time: a workspace or plugin may have gone since the task was saved.
       const code = await check(task.target)
+      signal?.throwIfAborted()
       if (code) throw new Error(code)
-      return { sessionKey: await runs.create(task.target, runTitle(task.title, o.clock())) }
+      return { sessionKey: await runs.create(task.target, runTitle(task.title, o.clock()), signal) }
     },
     retryable: (job: JobRow) => newSession(job) === undefined,
     onFailed: (job: JobRow, info: { at: number; error: string; sessionKey?: string }) =>

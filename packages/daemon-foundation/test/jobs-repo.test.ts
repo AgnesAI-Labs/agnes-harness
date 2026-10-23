@@ -94,7 +94,7 @@ describe('JobsRepo', () => {
     expect(repo.get('j')?.result).toBeUndefined()
   })
 
-  it('backs the schedule catalog: queued through insert checks, on the catalog connection', () => {
+  it('backs the schedule catalog: queued through insert checks, on the catalog connection', async () => {
     const tables = sqliteTables()
     const repo = new JobsRepo(tables.table('jobs'), () => 0)
     const catalog = openScheduleCatalog(
@@ -128,5 +128,16 @@ describe('JobsRepo', () => {
     ).toThrow(expect.objectContaining({ data: expect.objectContaining({ reason: 'JOB_IDENTITY_CONFLICT' }) }))
     catalog.control(created.id, 'pause')
     expect(repo.get(key)?.status).toBe('cancelled')
+    const table = tables.table('schedules')
+    table.exec(`CREATE TRIGGER fail_resume BEFORE UPDATE OF status ON schedules
+      WHEN OLD.status = 'paused' AND NEW.status = 'active'
+      BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END`)
+    expect(() => catalog.control(created.id, 'resume')).toThrow('simulated write failure')
+    expect(catalog.read(created.id)).toMatchObject({ status: 'paused', revision: 1 })
+    expect(repo.get(`schedule:${created.id}:2`)).toBeUndefined()
+    table.exec('DROP TRIGGER fail_resume')
+    expect(catalog.control(created.id, 'resume')).toMatchObject({ status: 'active', revision: 2 })
+    expect(repo.get(`schedule:${created.id}:2`)).toMatchObject({ status: 'waiting', sessionKey: 's' })
+    await tables.close()
   })
 })

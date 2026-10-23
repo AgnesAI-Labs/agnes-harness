@@ -267,7 +267,11 @@ export class JobsRepo {
     return due.length
   }
 
-  reclaimStalled(now: number, maxStalled: number): { requeued: string[]; dead: string[] } {
+  reclaimStalled(
+    now: number,
+    maxStalled: number,
+    live?: ReadonlySet<string>,
+  ): { requeued: string[]; dead: string[] } {
     const rows = this.table.all<{ idempotency_key: string; stalled_counter: number }>(
       "SELECT idempotency_key, stalled_counter FROM jobs WHERE status = 'active' AND lease_until < ? ORDER BY idempotency_key",
       [now],
@@ -275,6 +279,8 @@ export class JobsRepo {
     const requeued: string[] = []
     const dead: string[] = []
     for (const row of rows) {
+      // A local execution still has a live owner even if its heartbeat was delayed (e.g. OS sleep).
+      if (live?.has(row.idempotency_key)) continue
       const stalledCounter = row.stalled_counter + 1
       if (stalledCounter > maxStalled) {
         this.table.exec(

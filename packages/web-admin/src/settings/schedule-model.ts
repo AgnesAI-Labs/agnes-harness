@@ -48,8 +48,18 @@ const STATUSES = new Set(['active', 'paused', 'archived', 'ended'])
 function targetOf(value: unknown): ScheduleTarget | undefined {
   if (!value || typeof value !== 'object') return undefined
   const target = value as Record<string, unknown>
+  if (
+    target.unattendedApproval !== undefined &&
+    target.unattendedApproval !== 'notify' &&
+    target.unattendedApproval !== 'refuse'
+  )
+    return undefined
   if (target.kind === 'session' && typeof target.sessionKey === 'string')
-    return { kind: 'session', sessionKey: target.sessionKey }
+    return {
+      kind: 'session',
+      sessionKey: target.sessionKey,
+      ...(target.unattendedApproval ? { unattendedApproval: target.unattendedApproval } : {}),
+    }
   if (target.kind === 'new-session' && typeof target.cwd === 'string') return target as ScheduleTarget
   return undefined
 }

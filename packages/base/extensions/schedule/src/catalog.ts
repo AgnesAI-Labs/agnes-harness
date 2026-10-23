@@ -537,21 +537,20 @@ export function openScheduleCatalog(
         if (row.status === 'active') return viewOf(row)
         if (row.status !== 'paused') return { updated: false, code: 'schedule_ended' }
         if (status === 'active') return { updated: false, code: 'schedule_running' }
-        let restarted: ReturnType<typeof restart>
         try {
-          restarted = restart(row, now)
+          db.transaction(() => {
+            const restarted = restart(row, now)
+            db.exec(
+              `UPDATE schedules SET status = 'active', job_key = ?, revision = ?, next_run_at = ?, updated_at = ?
+               WHERE id = ? AND status = 'paused'`,
+              [restarted.key, restarted.revision, restarted.next, now, id],
+            )
+          })
         } catch (error) {
           // A one-time task whose moment has passed cannot resume; it says so instead of running late.
           if (error instanceof ScheduleRejected) return { updated: false, code: error.code }
           throw error
         }
-        db.transaction(() => {
-          db.exec(
-            `UPDATE schedules SET status = 'active', job_key = ?, revision = ?, next_run_at = ?, updated_at = ?
-             WHERE id = ? AND status = 'paused'`,
-            [restarted.key, restarted.revision, restarted.next, now, id],
-          )
-        })
       } else {
         if (row.status === 'paused') return { updated: false, code: 'schedule_paused' }
         if (row.status !== 'active') return { updated: false, code: 'schedule_ended' }
