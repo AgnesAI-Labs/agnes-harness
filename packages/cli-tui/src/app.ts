@@ -758,6 +758,7 @@ export class TuiApp {
 
   private apply(value: UITimeline, options: { opening?: boolean; window?: TuiProjectionWindow } = {}): void {
     void this.syncSurfaces()
+    this.o.onTimeline?.(value, options.window?.hasEarlier)
     this.cards.sync(value)
     const approvals = value.nodes.filter((node) => node.kind === 'approval')
     const approvalIds = new Set(approvals.map((node) => node.id))

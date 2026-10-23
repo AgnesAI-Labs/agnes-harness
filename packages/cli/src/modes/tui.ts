@@ -1,7 +1,15 @@
 import { dirname, join } from 'node:path'
 import { ExitCode, SIGNAL_EXIT_CODES, type SignalName } from '../errors.js'
 import { timingMark } from '../timing.js'
-import { inheritFreshSession, installKeybindings, TuiApp } from '../tui/app.js'
+import {
+  exitSummaryLines,
+  inheritFreshSession,
+  installKeybindings,
+  type TimelineFacts,
+  TuiApp,
+  timelineFacts,
+  waitingIn,
+} from '../tui/app.js'
 import { escapeControl } from '../tui/component.js'
 import { resolveLocale } from '../tui/locale.js'
 import { tt } from '../tui/locale-extended.js'
@@ -52,6 +60,9 @@ export async function runTui(
   // --no-alt-screen keeps the shell page: nothing is claimed up front and nothing needs giving back.
   if (!opening && !p.noAltScreen) term.write('\x1b[?1049h\x1b[H\x1b[2J')
   let app: TuiApp | undefined
+  let facts: TimelineFacts = { approvals: 0 }
+  let earlier = false
+  const startedAt = Date.now()
   let left = false
   const leaveScreen = (): void => {
     if (left) return
@@ -119,6 +130,11 @@ export async function runTui(
       ...(p.ignoreRules || p.safeMode ? { noCustomCommands: true } : {}),
       ...(p.safeMode ? { safeMode: true } : {}),
       ...(io.importSession ? { importSession: io.importSession } : {}),
+      onTimeline: (timeline, hasEarlier) => {
+        // Only a windowed tick says whether older history is out of view; the others keep the last answer.
+        if (hasEarlier !== undefined) earlier = hasEarlier
+        facts = timelineFacts(timeline, earlier)
+      },
       ...(io.breadcrumb
         ? { onSessionSwitch: (sessionId: string) => io.breadcrumb?.write(sessionId, io.cwd) }
         : {}),
@@ -169,8 +185,20 @@ export async function runTui(
       const session = app.session
       await app.stop()
       // The shell page comes back exactly as it was; the one line left on it says how to return.
-      if (io.stdout.isTTY === true && app.prompted.has(session.id))
-        io.stdout.write(`${tt('resume.hint', resolveLocale(io.env), { id: escapeControl(session.id) })}\n`)
+      if (io.stdout.isTTY === true && app.prompted.has(session.id)) {
+        const locale = resolveLocale(io.env)
+        // Input waiting in the daemon behind a turn; a daemon that cannot say leaves the item out.
+        const queued = await Promise.race([
+          session
+            .controls()
+            .then((state) => waitingIn(state.pending).length)
+            .catch(() => 0),
+          new Promise<number>((resolve) => setTimeout(resolve, 500, 0)),
+        ])
+        const lines = exitSummaryLines({ ...facts, elapsedMs: Date.now() - startedAt, queued }, locale)
+        io.stdout.write(`${lines.join('\n')}\n`)
+        io.stdout.write(`${tt('resume.hint', locale, { id: escapeControl(session.id) })}\n`)
+      }
       await session.detach().catch(() => undefined)
     } else {
       // Opening can fail before a TuiApp exists (e.g. a refused or unreachable session). Do not

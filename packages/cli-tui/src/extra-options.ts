@@ -1,3 +1,4 @@
+import type { UITimeline } from '@agnes/protocol'
 import type { ExternalRoots } from './external-sessions.js'
 
 /** TuiApp options added by later features, kept here so app.ts does not grow. */
@@ -8,6 +9,8 @@ export type TuiExtraOptions = {
   safeMode?: boolean
   /** Called with the new session's id once /new, /resume or a picker choice made it the current one. */
   onSessionSwitch?: (sessionId: string) => void
+  /** Called with every projected timeline and, when the projection reported a window, whether older history is not loaded. */
+  onTimeline?: (timeline: UITimeline, hasEarlier?: boolean) => void
   /** `/import`: brings one external session file into this machine's home. Absent unless the local daemon form. */
   importSession?: (file: string, from?: string) => Promise<{ key: string }>
   /** Where `/import` looks for Claude Code and codex sessions; defaults to `~/.claude/projects` and `~/.codex/sessions`. */

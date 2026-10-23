@@ -8,6 +8,11 @@ import type { Locale } from './locale.js'
 export const TERMINAL_KEYS = [
   'paste.chip',
   'resume.hint',
+  'exit.ran',
+  'exit.messages',
+  'exit.approvals',
+  'exit.queued',
+  'exit.pending',
   'commands.mouse',
   'commands.mouseSummary',
   'mouse.on',
@@ -100,6 +105,11 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
+    'exit.ran': 'This run lasted {duration}',
+    'exit.messages': 'messages: {n}',
+    'exit.approvals': 'approvals: {n}',
+    'exit.queued': 'queued messages: {n}',
+    'exit.pending': 'Still waiting until you resume: {items}',
     'commands.mouse':
       'Switch mouse reporting on or off for this run. Off, the terminal selects and copies text itself',
     'commands.mouseSummary': 'Toggle mouse reporting',
@@ -196,6 +206,11 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   'zh-CN': {
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
+    'exit.ran': '本次运行了 {duration}',
+    'exit.messages': '消息数：{n}',
+    'exit.approvals': '待审批：{n}',
+    'exit.queued': '排队的消息：{n}',
+    'exit.pending': '恢复会话前仍在等待：{items}',
     'commands.mouse': '本次运行内开关鼠标上报；关闭后由终端自己选择和复制文字',
     'commands.mouseSummary': '开关鼠标上报',
     'mouse.on': '鼠标上报已开启：在应用内拖选即可复制，滚轮滚动对话',
