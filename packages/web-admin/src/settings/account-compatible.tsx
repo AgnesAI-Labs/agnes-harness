@@ -8,6 +8,8 @@ type CatalogueError = NonNullable<ConfigTestResult['catalogueError']>
 
 /** Why the endpoint listed nothing, in the reader's words; 404 is usually a missing `/v1`. */
 export function catalogueErrorText(error: CatalogueError): string {
+  if (error.reason === 'http' && (error.status === 401 || error.status === 403))
+    return tr('accounts.compatible.error.notConfigured')
   if (error.reason !== 'http') return tr(`accounts.compatible.error.${error.reason}`)
   return tr(error.status === 404 ? 'accounts.compatible.error.http404' : 'accounts.compatible.error.http', {
     status: String(error.status ?? ''),

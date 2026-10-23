@@ -65,7 +65,7 @@ async function boundedJson(response: Response): Promise<{ value: unknown } | Pro
  * Performs the provider-owned part of configuration testing. It requests a bounded model catalogue
  * and returns IDs only, or the reason it could not; Host decides what those IDs may become. A
  * missing credential sends no authentication header at all.
- * Authentication/access refusals throw a fixed-message ApiKeyProviderError carrying only HTTP status.
+ * Authentication/access refusals with a supplied credential throw a fixed-message ApiKeyProviderError carrying only HTTP status.
  */
 export async function fetchProviderModels(options: {
   api: string
@@ -125,7 +125,7 @@ export async function fetchProviderModels(options: {
   }
   if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
     await response.body?.cancel().catch(() => undefined)
-    if (response.status === 401 || response.status === 403)
+    if (credential !== undefined && (response.status === 401 || response.status === 403))
       throw new ApiKeyProviderError('CATALOG_UNAVAILABLE', response.status)
     if (response.status >= 300 && response.status < 400) return failed('redirect', response.status)
     return response.ok ? failed('not-json') : failed('http', response.status)

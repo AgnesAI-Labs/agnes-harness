@@ -422,7 +422,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     renderModels()
     if (clearError) form.clearErrors()
     // Only a connection that had passed needs telling that its result no longer holds.
-    say(retest ? tr('settings.state.connectionChanged') : '', 'warn')
+    say(
+      retest
+        ? tr('settings.state.connectionChanged')
+        : !saved && !ui.apiKey.value.trim() && !isOAuth()
+          ? tr('settings.state.notConfigured')
+          : '',
+      retest ? 'warn' : '',
+    )
   }
   /** A changed key is tested once typing settles, at once after a paste; an emptied field tests nothing. */
   const connectionChanged = (delay: number): void => {

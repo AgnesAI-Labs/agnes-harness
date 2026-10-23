@@ -422,9 +422,14 @@ it('connects an OpenAI-compatible endpoint with its own model ids, with or witho
   ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REQUIRED', field: 'apiKey' })
 })
 
-it('refuses a rejected key while listing an OpenAI-compatible endpoint', async () => {
-  const server = await fixture('my-model', 401)
+it.each([401, 403])('distinguishes an unconfigured relay from a rejected key on HTTP %i', async (status) => {
+  const server = await fixture('my-model', status)
   const service = createConfigurationService({ home: await home(), profile: 'local-dev' })
+  expect(await service.test({ providerId: 'openai-compatible', baseUrl: server.baseUrl })).toEqual({
+    models: [],
+    verified: false,
+    catalogueError: { reason: 'http', status },
+  })
   await expect(
     service.test({ providerId: 'openai-compatible', baseUrl: server.baseUrl, apiKey: 'sk-bad' }),
   ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REJECTED' })
