@@ -67,7 +67,8 @@ export type EditorOptions = {
   history?: PromptHistory
   /** True while a turn runs: esc then interrupts it and leaves the draft alone. */
   busy?(): boolean
-  complete?(prefix: string): string[]
+  /** `before` is the draft up to the word being completed, for completions that depend on the command. */
+  complete?(prefix: string, before?: string): string[]
   /** Styles the prompt glyph, placeholder and slash menu; width math always uses the unstyled text. */
   ansi?: ThemedAnsi
   /** Args shape and short summary for a slash-menu candidate (the app passes the command table). */
@@ -317,7 +318,7 @@ export class Editor implements Component, VimTarget {
         const m = /(\S+)$/.exec(this.text.slice(0, this.cursor))
         const token = m?.[1]
         if (!token) return true
-        const first = this.o.complete?.(token)?.[0]
+        const first = this.o.complete?.(token, this.text.slice(0, this.cursor - token.length))?.[0]
         if (!first) return true
         this.text = `${this.text.slice(0, this.cursor - token.length)}${first} ${this.text.slice(this.cursor)}`
         this.cursor += first.length - token.length + 1

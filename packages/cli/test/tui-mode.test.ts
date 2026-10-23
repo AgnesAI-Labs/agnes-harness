@@ -253,6 +253,43 @@ describe('runTui model selection', () => {
     ).toBeGreaterThan(endpoint.calls.findIndex((entry) => entry.method === 'session/new'))
   })
 
+  it('narrows the tools of a new or resumed session before the app starts, and stops on an older daemon', async () => {
+    for (const argv of [[], ['--resume', FAKE_SESSION_ID]]) {
+      const endpoint = scriptedEndpoint()
+        .on('_agnes/v1/session.setToolFilter', () => ({ effectiveFromSeq: 1, filter: { deny: ['bash'] } }))
+        .on('_agnes/v1/session.projectUI', () => ({
+          sessionId: FAKE_SESSION_ID,
+          generation: 1,
+          upto: 0,
+          opState: null,
+          turns: [],
+          nodes: [],
+        }))
+      await expect(
+        runTui(await booted(endpoint), parseArgs([...argv, '--disallowed-tools', 'bash']), tuiIO()),
+      ).resolves.toBe(143)
+      const methods = endpoint.calls.map((entry) => entry.method)
+      expect(methods.indexOf('_agnes/v1/session.setToolFilter')).toBeGreaterThan(
+        methods.indexOf(argv.length ? 'session/load' : 'session/new'),
+      )
+      expect(methods.indexOf('_agnes/v1/session.setToolFilter')).toBeLessThan(
+        methods.indexOf('_agnes/v1/session.projectUIOpening'),
+      )
+      expect(
+        endpoint.calls.find((entry) => entry.method === '_agnes/v1/session.setToolFilter')?.params,
+      ).toMatchObject({
+        sessionId: FAKE_SESSION_ID,
+        deny: ['bash'],
+      })
+    }
+
+    const older = scriptedEndpoint()
+    await expect(runTui(await booted(older), parseArgs(['--tools', 'read']), tuiIO())).rejects.toMatchObject({
+      message: expect.stringContaining('cannot limit a session'),
+    })
+    expect(older.calls.map((entry) => entry.method)).not.toContain('_agnes/v1/session.projectUIOpening')
+  })
+
   it('does not rewrite the historical model of a resumed session', async () => {
     const endpoint = scriptedEndpoint()
       .on('_agnes/v1/session.setModel', () => ({ effectiveFromSeq: 1 }))

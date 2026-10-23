@@ -110,7 +110,15 @@ export const SESSION_KEY_VERBS = [
 /** Flags whose value is an existing session key, completed from the daemon. */
 export const SESSION_FLAGS = ['--resume', '--session'] as const
 /** Flags the parser reads before its flag tables, so the tables do not list them. */
-const SPECIAL_VALUE_FLAGS = ['--agent', '--loop', '--model', '--include', '--skip']
+const SPECIAL_VALUE_FLAGS = [
+  '--agent',
+  '--loop',
+  '--model',
+  '--include',
+  '--skip',
+  '--tools',
+  '--disallowed-tools',
+]
 
 export type CompletionSpec = {
   commands: string[]

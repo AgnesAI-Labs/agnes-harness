@@ -9,6 +9,7 @@ import { SESSION_ACTION_DICT, type SessionActionKey } from './locale-session-act
 import { SESSION_VIEW_DICT, type SessionViewKey } from './locale-session-view.js'
 import { SHELL_UX_DICT, type ShellUxKey } from './locale-shell-ux.js'
 import { TERMINAL_SETUP_DICT, type TerminalSetupKey } from './locale-terminal-setup.js'
+import { TOOL_FILTER_DICT, type ToolFilterKey } from './locale-tool-filter.js'
 import { TREE_DICT, type TreeKey } from './locale-tree.js'
 import { WORKTREE_DICT, type WorktreeKey } from './locale-worktree.js'
 
@@ -135,6 +136,7 @@ export type TerminalKey =
   | BangKey
   | WorktreeKey
   | PromptClickKey
+  | ToolFilterKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
@@ -150,6 +152,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...BANG_DICT.en,
     ...WORKTREE_DICT.en,
     ...PROMPT_CLICK_DICT.en,
+    ...TOOL_FILTER_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
     'exit.ran': 'This run lasted {duration}',
@@ -274,6 +277,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...BANG_DICT['zh-CN'],
     ...WORKTREE_DICT['zh-CN'],
     ...PROMPT_CLICK_DICT['zh-CN'],
+    ...TOOL_FILTER_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
     'exit.ran': '本次运行了 {duration}',

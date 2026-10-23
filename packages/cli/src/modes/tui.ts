@@ -25,6 +25,7 @@ import { freshTuiSessionKey } from '../tui/session-key.js'
 import { type InputStream, NodeTerminal, type OutputStream } from '../tui/terminal.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { type Breadcrumb, refuseWhatCannotBeHonoured, sessionToOpen } from './print.js'
+import { applyToolFilter } from './tool-filter.js'
 import { markFirstFrame, type TuiOpening } from './tui-opening.js'
 
 export { TuiOpening } from './tui-opening.js'
@@ -99,6 +100,8 @@ export async function runTui(
             ...(p.loop ? { loop: p.loop } : {}),
             ...(p.agent ? { agent: p.agent } : {}),
           })
+    // Before the welcome, the model choice or any prompt: a tool the user took away is gone from the first turn.
+    if (p.toolFilter) await applyToolFilter(session, p.toolFilter)
     // A fresh session takes the last model and full-permission choice, unless -m names a model.
     // Resume keeps the historical session's own model and does not read the preference file.
     const inherited =

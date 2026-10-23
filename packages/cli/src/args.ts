@@ -1,9 +1,11 @@
-import { parseAgentRef, parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol/command-line'
+import { parseAgentRef, parseLoopSpecifier } from '@agnes/protocol/command-line'
 import { UsageError } from './errors.js'
+import { parseModel } from './model-flag.js'
 import { refusePrivateHostFlags } from './private-host-flags.js'
 import { unknownFlagMessage } from './suggest.js'
+import { readToolFlag, refuseToolFilterElsewhere } from './tool-filter.js'
 import { TURN_CAP_FLAGS } from './turn-caps.js'
-import type { Command, ModelSel, ParsedArgs } from './types.js'
+import type { Command, ParsedArgs } from './types.js'
 import { takeWorktreeFlag } from './worktree-args.js'
 
 export type { Command, ModelSel, ParsedArgs } from './types.js'
@@ -230,6 +232,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
       continue
     }
     if (takeWorktreeFlag(p, a)) continue
+    if (a === '--tools' || a === '--disallowed-tools') {
+      readToolFlag(p, a, argv[++i])
+      continue
+    }
     if (a === '--model') {
       p.model = parseModel(argv[++i])
       continue
@@ -284,6 +290,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     argv.includes('--session')
   )
     throw new UsageError('--session is supported only by tools, diagnostics and schedules')
+  refuseToolFilterElsewhere(p)
   refusePrivateHostFlags(p)
   if (p.steer && p.command !== 'queue') throw new UsageError('--steer is supported only by queue')
   if (p.continue && p.resume !== undefined)
@@ -299,15 +306,6 @@ export function parseArgs(argv: string[]): ParsedArgs {
   )
     throw new UsageError('--probe is supported only by doctor or doctor provider')
   return p
-}
-
-function parseModel(v: string | undefined): ModelSel {
-  const m = v === undefined ? null : /^([A-Za-z_]+)=([^/]+)\/(.+)$/.exec(v)
-  if (!m) throw new UsageError('--model expects <slot>=<route>/<model>')
-  const slot = m[1] as string
-  if (!(SLOT_NAMES as readonly string[]).includes(slot))
-    throw new UsageError(`--model slot must be one of ${SLOT_NAMES.join(', ')}, got ${slot}`)
-  return { slot: slot as ModelSel['slot'], route: m[2] as string, model: m[3] as string }
 }
 
 export function resolveMode(

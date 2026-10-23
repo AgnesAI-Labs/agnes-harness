@@ -40,6 +40,7 @@ import { SLASH_COMMANDS, type SlashCommand } from './slash-table.js'
 import { terminalSetupSlash } from './terminal-setup-command.js'
 import type { ThemePreference } from './theme-preference.js'
 import { thinkingMode } from './thinking.js'
+import { toolNameCandidates, toolsSlash } from './tool-filter-command.js'
 import { undoSlash } from './undo-commands.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
 import { worktreeSlash } from './worktree-command.js'
@@ -499,6 +500,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       app.statusBar.setPreset(name)
       return { text: `preset ${name} from seq ${r.effectiveFromSeq}` }
     }
+    case '/tools':
+      return toolsSlash(app, args)
     case '/theme': {
       const name = args[0]
       if (args.length === 0) {
@@ -658,8 +661,9 @@ function unknownCommand(cmd: string, app: TuiApp): string {
 }
 
 /** '/…' completes against the command table and the custom commands; '@' mentions have their own menu (file-mentions.ts). */
-export function completeToken(prefix: string, app?: TuiApp): string[] {
-  if (!prefix.startsWith('/')) return []
+export function completeToken(prefix: string, app?: TuiApp, before?: string): string[] {
+  if (!prefix.startsWith('/'))
+    return (app && before !== undefined && toolNameCandidates(app, prefix, before)) || []
   const builtin = SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(prefix)).map((cmd) => cmd.name)
   if (!app) return builtin
   const custom = [...customCommandsFor(app, isBuiltin).commands.keys()].map((name) => `/${name}`)

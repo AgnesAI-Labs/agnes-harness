@@ -120,6 +120,24 @@ describe('parseArgs: the common forms', () => {
     expect(parseArgs(['--resume', 'sid']).resume).toBe('sid')
   })
 
+  it('--tools and --disallowed-tools record exact names, deduplicated, for a new or resumed session', () => {
+    expect(
+      parseArgs(['--tools', 'read_file,grep,read_file', '--disallowed-tools', 'bash']).toolFilter,
+    ).toEqual({
+      allow: ['read_file', 'grep'],
+      deny: ['bash'],
+    })
+    expect(parseArgs(['-p', 'go', '--disallowed-tools', 'bash,web_fetch']).toolFilter).toEqual({
+      deny: ['bash', 'web_fetch'],
+    })
+    expect(parseArgs(['resume', 'sid', '--tools', 'read_file']).toolFilter).toEqual({ allow: ['read_file'] })
+    expect(parseArgs(['--resume', 'sid', '--tools', 'read_file']).toolFilter).toEqual({
+      allow: ['read_file'],
+    })
+    expect(parseArgs(['go']).toolFilter).toBeUndefined()
+    expect(usage()).toContain('--disallowed-tools')
+  })
+
   it('-h/-v are the short spellings of --help/--version', () => {
     expect(parseArgs(['-h']).help).toBe(true)
     expect(parseArgs(['--help']).help).toBe(true)
@@ -305,6 +323,33 @@ describe('parseArgs: every rejection says which check fired', () => {
     [['--model', 'pri mary=gateway/x'], '--model expects <slot>=<route>/<model>'],
     [['--model', 'primary.fast=gateway/x'], '--model expects <slot>=<route>/<model>'],
     [['--model', '1=gateway/x'], '--model expects <slot>=<route>/<model>'],
+    [['--tools'], '--tools needs a value'],
+    [['--disallowed-tools', '--json'], '--disallowed-tools needs a value'],
+    [
+      ['--tools', 'read,'],
+      '--tools expects comma-separated tool names (letters, digits, underscore; no wildcards)',
+    ],
+    [
+      ['--tools', 'read*'],
+      '--tools expects comma-separated tool names (letters, digits, underscore; no wildcards)',
+    ],
+    [
+      ['--disallowed-tools', 'a b'],
+      '--disallowed-tools expects comma-separated tool names (letters, digits, underscore; no wildcards)',
+    ],
+    [
+      ['--tools', Array.from({ length: 129 }, (_, n) => `t${n}`).join(',')],
+      '--tools names more than 128 tools',
+    ],
+    [['--tools', 'a', '--tools', 'b'], '--tools was given twice; list every tool in one value'],
+    [
+      ['sessions', '--tools', 'a'],
+      '--tools and --disallowed-tools apply only when starting or resuming a session',
+    ],
+    [
+      ['--mode', 'acp', '--disallowed-tools', 'a'],
+      '--tools and --disallowed-tools apply only when starting or resuming a session',
+    ],
   ])('%j is rejected with %s', (argv, message) => {
     expect(throws(argv as string[]).message).toBe(message)
   })

@@ -70,6 +70,8 @@ export type ParsedArgs = {
   permission?: 'read-only' | 'workspace-write' | 'full-access' | 'default'
   agent?: string
   loop?: LoopSelection
+  /** `--tools` / `--disallowed-tools`: narrows the session's tools; applied before anything is sent. */
+  toolFilter?: { allow?: string[]; deny?: string[] }
   cwd?: string
   /** Explicit Computer Use rescue store; bypasses profile/package resolution. */
   dataDir?: string

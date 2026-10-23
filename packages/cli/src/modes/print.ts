@@ -18,6 +18,7 @@ import { parseTimeoutMs, parseTurnCaps, requireTurnCaps } from '../turn-caps.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { readPromptInput } from './prompt-input.js'
 import { cliEventLine, cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
+import { applyToolFilter } from './tool-filter.js'
 
 export type Breadcrumb = {
   /** The session last used in this terminal pane for `cwd`, if one was left. Never throws. */
@@ -239,6 +240,8 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     const session = await openSession(booted, p, io.cwd, io.breadcrumb)
     io.breadcrumb?.write(session.id, io.cwd)
     io.stderr.write(`Session: ${session.id}\n`)
+    // Before the model switch, attach and the one prompt: the agent never sees a tool the user took away.
+    if (p.toolFilter) await applyToolFilter(session, p.toolFilter)
     // Before attach/prompt, not after: setModel takes effect for the next request onward, so it has
     // to land before the one prompt this invocation is about to send, not race it.
     if (p.model) await session.setModel(p.model)

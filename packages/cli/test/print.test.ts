@@ -544,6 +544,56 @@ describe('runPrint in text mode', () => {
     expect(setModelIndex).toBeLessThan(promptIndex)
   })
 
+  it('--tools and --disallowed-tools narrow the session before anything else is sent, resumed or not', async () => {
+    for (const argv of [
+      ['-p', 'q'],
+      ['-p', 'q', '--resume', FAKE_SESSION_ID],
+    ]) {
+      const ep = scriptedEndpoint()
+      ep.on('_agnes/v1/session.setToolFilter', () => ({ effectiveFromSeq: 3, filter: { allow: ['read'] } }))
+      const args = [...argv, '--tools', 'read', '--disallowed-tools', 'bash,web_fetch']
+      expect(await runPrint(await booted(ep), parseArgs(args), io())).toBe(0)
+      const methods = ep.calls.map((c) => c.method)
+      const at = methods.indexOf('_agnes/v1/session.setToolFilter')
+      expect(at).toBeGreaterThanOrEqual(0)
+      expect(at).toBeLessThan(methods.indexOf('session/prompt'))
+      expect(at).toBeLessThan(methods.indexOf('_agnes/v1/session.attach'))
+      expect(ep.calls[at]?.params).toMatchObject({
+        sessionId: FAKE_SESSION_ID,
+        allow: ['read'],
+        deny: ['bash', 'web_fetch'],
+        commandId: expect.any(String),
+      })
+    }
+  })
+
+  it('an older daemon, or a name the session does not have, stops the run before any prompt is sent', async () => {
+    const old = scriptedEndpoint()
+    const o = io()
+    const e = await runPrint(await booted(old), parseArgs(['-p', 'q', '--tools', 'read']), o).catch(
+      (x: unknown) => x,
+    )
+    expect(e).toMatchObject({
+      name: 'CommandError',
+      message: expect.stringContaining('cannot limit a session'),
+    })
+    expect(old.calls.map((c) => c.method)).not.toContain('session/prompt')
+
+    const strict = scriptedEndpoint().on('_agnes/v1/session.setToolFilter', () => {
+      throw Object.assign(new Error('rejected'), {
+        code: -32011,
+        data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool', names: ['nope'] },
+      })
+    })
+    const rejected = await runPrint(
+      await booted(strict),
+      parseArgs(['-p', 'q', '--disallowed-tools', 'nope']),
+      io(),
+    ).catch((x: unknown) => x)
+    expect(rejected).toMatchObject({ message: expect.stringContaining('nope') })
+    expect(strict.calls.map((c) => c.method)).not.toContain('session/prompt')
+  })
+
   // Not refused: on a new session a preset travels on session/new, where daemon checks it against
   // presets.allowed. Only a resume cannot take one.
   it('--preset on a new session is passed through rather than refused', async () => {

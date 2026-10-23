@@ -116,7 +116,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(71)
+    expect(SLASH_COMMANDS).toHaveLength(72)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -144,6 +144,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/goal',
       '/plan',
       '/preset',
+      '/tools',
       '/theme',
       '/notify',
       '/keys',
@@ -1078,6 +1079,158 @@ describe('runSlash', () => {
     try {
       expect((await runSlash(app, '/preset')).text).toContain('usage')
       expect((await runSlash(app, '/preset claw')).text).toBe('preset claw from seq 4')
+    } finally {
+      await client.close()
+    }
+  })
+
+  const toolsResult = (off: Record<string, string> = {}) => {
+    const source = { layer: 'default' as const, name: 'x' }
+    const names = ['bash', 'read_file', 'web_fetch']
+    const items = (ids: string[]) =>
+      ids.map((id) => ({
+        id,
+        enabled: !(id in off),
+        reasons:
+          id in off
+            ? [{ rule: off[id] as string, source: { layer: 'session' as const, name: 'tool-filter' } }]
+            : [],
+      }))
+    return {
+      sessionId: 'x',
+      tools: names
+        .filter((n) => !(n in off))
+        .map((name) => ({
+          name,
+          description: '',
+          parameters: {},
+          source: 's',
+          deferred: false,
+          readOnly: false,
+        })),
+      resources: [],
+      capabilities: {
+        preset: 'standard',
+        bundles: [],
+        codePin: { legacy: false, packages: [] },
+        loop: { value: { id: 'l', version: '1' }, source },
+        modelRoutes: { value: null, source },
+        permissions: { preset: 'standard', policy: 'p', toolRuntime: 't', readOnly: false, source },
+        sandbox: { provider: 'none', onUnavailable: 'allow' as const, source },
+        compaction: { engine: null, source },
+        persistence: { provider: 'sqlite', source },
+        tools: items(names),
+        mcp: [],
+        skills: [],
+        modelAdapters: [],
+        childEngines: [],
+        childModels: [],
+        uiModules: [],
+        surfaces: [],
+        packages: [],
+        plugins: [],
+        selectedModelAdapters: [],
+      },
+    }
+  }
+
+  it('/tools lists every tool with its state and why it is off', async () => {
+    const { app, ep, client } = await unstartedApp()
+    ep.on('_agnes/v1/session.tools', () => toolsResult({ web_fetch: 'session-deny', bash: 'session-allow' }))
+    try {
+      const text = (await runSlash(app, '/tools')).text ?? ''
+      expect(text.split('\n')[0]).toBe('工具：1 个开启，2 个关闭')
+      expect(text).toMatch(/bash\s+关\s+不在本会话的允许列表内/)
+      expect(text).toMatch(/read_file\s+开$/m)
+      expect(text).toMatch(/web_fetch\s+关\s+已在本会话内关闭/)
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('/tools deny and /tools only ask once, narrow only on confirm, and keep one commandId for a retry', async () => {
+    const { app, ep, client } = await unstartedApp()
+    let calls = 0
+    ep.on('_agnes/v1/session.tools', () => toolsResult(calls ? { bash: 'session-deny' } : {}))
+    ep.on('_agnes/v1/session.setToolFilter', (params) => {
+      calls++
+      if (calls === 1) throw Object.assign(new Error('x'), { code: -32603, data: { code: 'INTERNAL' } })
+      return { effectiveFromSeq: 12, filter: { deny: (params as { deny: string[] }).deny } }
+    })
+    const sent = () => ep.calls.filter((c) => c.method === '_agnes/v1/session.setToolFilter')
+    try {
+      expect((await runSlash(app, '/tools nonsense')).text).toContain('用法')
+      expect((await runSlash(app, '/tools deny')).text).toContain('至少写出一个工具名')
+      expect((await runSlash(app, '/tools deny bash nope')).text).toContain('没有这个工具：nope')
+      expect((await runSlash(app, '/tools confirm')).text).toContain('没有等待确认')
+      const asked = (await runSlash(app, '/tools deny bash')).text ?? ''
+      expect(asked).toContain('无法撤销')
+      expect(asked).toContain('bash')
+      expect(sent()).toHaveLength(0)
+      // A dropped answer keeps the confirmation, and the retry carries the same commandId.
+      await expect(runSlash(app, '/tools confirm')).rejects.toBeDefined()
+      const done = (await runSlash(app, '/tools confirm')).text ?? ''
+      expect(done).toContain('自 seq 12 起生效：2 个开启，1 个关闭')
+      expect(sent()).toHaveLength(2)
+      const ids = sent().map((call) => (call.params as { commandId: string }).commandId)
+      expect(ids[0]).toBe(ids[1])
+      expect(sent()[1]?.params).toMatchObject({ deny: ['bash'] })
+      expect(sent()[1]?.params).not.toHaveProperty('allow')
+      expect((await runSlash(app, '/tools confirm')).text).toContain('没有等待确认')
+
+      expect((await runSlash(app, '/tools only read_file,web_fetch')).text).toContain(
+        '只留下 read_file, web_fetch',
+      )
+      ep.on('_agnes/v1/session.setToolFilter', (params) => ({
+        effectiveFromSeq: 13,
+        filter: { allow: (params as { allow: string[] }).allow },
+      }))
+      await runSlash(app, '/tools confirm')
+      expect(sent().at(-1)?.params).toMatchObject({ allow: ['read_file', 'web_fetch'] })
+      expect((await runSlash(app, '/tools cancel')).text).toContain('已放弃')
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('/tools refuses on an old daemon, for a non-owner and for an unknown name, and never pretends it applied', async () => {
+    const { app, ep, client } = await unstartedApp()
+    ep.on('_agnes/v1/session.tools', () => toolsResult())
+    try {
+      await runSlash(app, '/tools deny bash')
+      // No session.setToolFilter handler: the endpoint answers METHOD_NOT_FOUND like an older daemon.
+      expect((await runSlash(app, '/tools confirm')).text).toContain('不能限制会话的工具')
+      expect((await runSlash(app, '/tools confirm')).text).toContain('没有等待确认')
+
+      await runSlash(app, '/tools deny bash')
+      ep.on('_agnes/v1/session.setToolFilter', () => {
+        throw Object.assign(new Error('denied'), { code: -32006, data: { code: 'CAPABILITY_DENIED' } })
+      })
+      expect((await runSlash(app, '/tools confirm')).text).toContain('只有会话属主')
+
+      await runSlash(app, '/tools deny bash')
+      ep.on('_agnes/v1/session.setToolFilter', () => {
+        throw Object.assign(new Error('unknown'), {
+          code: -32011,
+          data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool', names: ['bash'] },
+        })
+      })
+      expect((await runSlash(app, '/tools confirm')).text).toContain('没有这个工具：bash')
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('/tools completes tool names that are on, only after /tools deny or only, once the catalog is known', async () => {
+    const { app, ep, client } = await unstartedApp()
+    ep.on('_agnes/v1/session.tools', () => toolsResult({ web_fetch: 'session-deny' }))
+    try {
+      expect(completeToken('re', app, '/tools deny ')).toEqual([])
+      await vi.waitFor(() => expect(completeToken('re', app, '/tools deny ')).toEqual(['read_file']))
+      expect(completeToken('', app, '/tools only read_file ')).toEqual(['bash', 'read_file'])
+      expect(completeToken('re', app, 'please re')).toEqual([])
+      expect(completeToken('re', app, '/tools ')).toEqual([])
+      expect(completeToken('/to', app)).toContain('/tools')
     } finally {
       await client.close()
     }

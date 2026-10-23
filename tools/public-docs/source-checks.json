@@ -9,7 +9,11 @@
   },
   {
     "path": "packages/cli/src/args.ts",
-    "includes": ["--continue", "--resume", "--model expects <slot>=<route>/<model>"]
+    "includes": ["--continue", "--resume"]
+  },
+  {
+    "path": "packages/cli/src/model-flag.ts",
+    "includes": ["--model expects <slot>=<route>/<model>"]
   },
   {
     "path": "packages/cli/src/commands/package.ts",

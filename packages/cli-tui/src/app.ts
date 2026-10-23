@@ -331,7 +331,7 @@ export class TuiApp {
         void this.cancel().catch((error) => this.showError(error))
         this.escapes.press(idle && !hadDraft, () => void this.runInput('/rewind'))
       },
-      complete: (prefix) => completeToken(prefix, this),
+      complete: (prefix, before) => completeToken(prefix, this, before),
       mentions: this.mentions,
       mentionNotes: {
         loading: tt('composer.mentionLoading', locale),

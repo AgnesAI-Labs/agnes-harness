@@ -104,6 +104,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.presetSummary',
   },
   {
+    name: '/tools',
+    args: '[deny|only <names…> | confirm | cancel]',
+    descriptionKey: 'commands.tools',
+    summaryKey: 'commands.toolsSummary',
+  },
+  {
     name: '/theme',
     args: '[auto|light|dark|mono|custom:<name>]',
     descriptionKey: 'commands.theme',
