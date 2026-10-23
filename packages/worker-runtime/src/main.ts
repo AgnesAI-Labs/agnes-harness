@@ -360,9 +360,21 @@ export async function runWorker(
   const hostRoot = deps.hostRoot ?? hostRootFrom()
   const profileDir = join(agnesHome(env), 'profiles', profile.name)
   // Re-read trust and immutable active pins for every target. Installed package directories are
-  // mutable and must never become executable sources for ordinary rows.
-  const installedPackages = createPackageManager({ dataDir: profile.dataDir, agnesVersion: '0.0.0' })
-  const runtimePluginSources = () => installedPackages.runtimePluginSnapshots(profileDir)
+  // mutable and must never become executable sources for ordinary rows. AGH-stored trees are hashed
+  // once per Worker process and re-hashed when their directory is replaced.
+  const installedPackages = createPackageManager({
+    dataDir: profile.dataDir,
+    agnesVersion: '0.0.0',
+    settleStoredTrees: true,
+  })
+  // One target application rebuilds several compositions; they share that target's single verified
+  // read instead of each re-verifying every snapshot tree. Outside an application every call re-reads.
+  let applying: { sources?: ReturnType<typeof installedPackages.runtimePluginSnapshots> } | undefined
+  const runtimePluginSources = () => {
+    if (!applying) return installedPackages.runtimePluginSnapshots(profileDir)
+    applying.sources ??= installedPackages.runtimePluginSnapshots(profileDir)
+    return applying.sources
+  }
   const computerUse = profile.computerUse ?? DEFAULT_COMPUTER_USE
   // The shared `session` worker owns the ordinary Host and is where the supervisor dispatches
   // browser surface-service calls. Pass this through both default and packaged/custom Host assembly
@@ -540,7 +552,14 @@ export async function runWorker(
     }
     return Object.freeze({
       async applyRuntimeTarget(target) {
-        const report = await candidate.applyRuntimeTarget(target)
+        const scope = {}
+        applying = scope
+        let report: Awaited<ReturnType<typeof candidate.applyRuntimeTarget>>
+        try {
+          report = await candidate.applyRuntimeTarget(target)
+        } finally {
+          if (applying === scope) applying = undefined
+        }
         assertHostPublication(report.publication)
         // Host-local per-composition diagnostics must not extend the closed wire report schema.
         return { hash: report.hash, ok: report.ok, rows: report.rows }

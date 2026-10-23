@@ -5,6 +5,7 @@ import type { RuntimeTargetArtifact } from '@agnes/protocol'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  createInProcessRuntimeTargetProbe,
   createRuntimeTargetProbeLauncher,
   RUNTIME_TARGET_PROBE_REAP_TIMEOUT_MS,
   RUNTIME_TARGET_PROBE_TIMEOUT_MS,
@@ -161,6 +162,23 @@ describe('runtime target probe launcher', () => {
     expect(inherited).toBeDefined()
     expect(inherited).not.toHaveProperty('agnes_probe_secret')
     expect(inherited).not.toHaveProperty('AgNeS_business_state')
+  })
+
+  it('validates in process with the same envelope, digest and identity refusals', async () => {
+    const probe = createInProcessRuntimeTargetProbe()
+    await expect(probe(artifact())).resolves.toBeUndefined()
+    await expect(
+      probe({ ...artifact(), canonicalBase64: `${artifact().canonicalBase64}\n` }),
+    ).rejects.toThrow('E_RUNTIME_TARGET_SCHEMA')
+    await expect(probe({ ...artifact(), digest: `sha256-${'0'.repeat(64)}` })).rejects.toThrow(
+      'E_RUNTIME_TARGET_DIGEST',
+    )
+    await expect(
+      probe({
+        ...artifact(),
+        identity: { ...artifact().identity, compositeRevision: 'd'.repeat(64) },
+      }),
+    ).rejects.toThrow('E_RUNTIME_TARGET_IDENTITY')
   })
 
   it('strictly rejects malformed base64 and a digest mismatch before spawning', async () => {

@@ -132,6 +132,49 @@ it('reuses only an exact identity in one operation, never a different version, d
   expect(hash).toHaveBeenCalledTimes(4)
 })
 
+it('reuses a settled tree across opted-in reads until its root is replaced, and nowhere else', async () => {
+  const { dir, identity } = fixture(),
+    hash = vi.spyOn(sources, 'hashDirectory'),
+    hashAsync = vi.spyOn(sources, 'hashDirectoryAsync')
+  const settles = { settleTrees: true }
+  const read = () =>
+    withPackageVerification(async () => verifiedDirectoryDigest(dir, identity, false, true), settles)
+  expect(await read()).toBe(identity.treeIntegrity)
+  expect(await read()).toBe(identity.treeIntegrity)
+  expect(
+    await withPackageVerification(() => verifiedDirectoryDigestAsync(dir, identity, false, true), settles),
+  ).toBe(identity.treeIntegrity)
+  expect(hash).toHaveBeenCalledTimes(1)
+  expect(hashAsync).not.toHaveBeenCalled()
+  // Reads that do not opt in, trees that are not AGH-stored and write gates keep hashing every time.
+  await withPackageVerification(async () => verifiedDirectoryDigest(dir, identity, false, true))
+  await withPackageVerification(async () => verifiedDirectoryDigest(dir, identity), settles)
+  withoutPackageVerification(() => verifiedDirectoryDigest(dir, identity, false, true))
+  expect(hash).toHaveBeenCalledTimes(4)
+  // Installs and updates replace the whole directory; a replaced root is hashed again.
+  const next = `${dir}-next`
+  roots.push(next)
+  mkdirSync(next)
+  writeFileSync(join(next, 'payload'), 'other')
+  rmSync(dir, { recursive: true })
+  renameSync(next, dir)
+  expect(await read()).not.toBe(identity.treeIntegrity)
+  expect(hash).toHaveBeenCalledTimes(5)
+})
+
+it('forgets settled trees when a read is invalidated', async () => {
+  const { dir, identity } = fixture(),
+    hash = vi.spyOn(sources, 'hashDirectory')
+  const read = () =>
+    withPackageVerification(async () => verifiedDirectoryDigest(dir, identity, false, true), {
+      settleTrees: true,
+    })
+  await read()
+  invalidatePackageVerification()
+  await read()
+  expect(hash).toHaveBeenCalledTimes(2)
+})
+
 it.each(['synchronous', 'asynchronous'] as const)(
   'a %s write forces independent verification and invalidates its parent read',
   async (kind) => {

@@ -27,7 +27,7 @@ import {
 import { type RegistryOptions, WorkerRegistry } from './registry.js'
 import { SupervisorRegistry, supervisorLister } from './registry-facade.js'
 import { wireResourceSnapshotNotifications } from './resource-snapshot-notifications.js'
-import { createRuntimeTargetProbeLauncher, spawnRuntimeTargetProbeWorker } from './runtime-target-probe.js'
+import { createInProcessRuntimeTargetProbe } from './runtime-target-probe.js'
 import { observeSessionRequests, SESSION_REQUEST_EVENT_TYPES } from './session-request-events.js'
 import { createAutomationEvents, deliverWorkerEvent } from './worker-events.js'
 import { WorkerPool } from './worker-pool.js'
@@ -87,14 +87,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
         onConverged: notifyRuntimeTarget,
       })
     : undefined
-  const runtimeTargetProbe = runtimeStore
-    ? createRuntimeTargetProbeLauncher({
-        spawnWorker: spawnRuntimeTargetProbeWorker({
-          executable: o.workerExecPath ?? process.execPath,
-          args: [...(o.workerExecArgv ?? []), workerEntry],
-        }),
-      })
-    : undefined
+  const runtimeTargetProbe = runtimeStore ? createInProcessRuntimeTargetProbe() : undefined
   const automationEvents = createAutomationEvents(sessionOwnership, notices, o.profile.name)
   const workerRequests = assemblyPort<NonNullable<ConstructorParameters<typeof WorkerPool>[0]['onRequest']>>()
   lifetime.own({ dispose: () => workerRequests.close() })
