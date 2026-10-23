@@ -175,6 +175,22 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     element.addEventListener(event, listener, { signal: abort.signal })
   on($('mcp-method-local', 'button'), 'click', () => choose('stdio'))
   on($('mcp-method-remote', 'button'), 'click', () => choose('http'))
+  // Each card is the choice, not just the words inside it. A click that lands on an inner control
+  // already has its own handler, so the row only reacts to the rest of the card.
+  const onRowChoice = (rowId: string, activate: () => void) => {
+    const row = document.getElementById(rowId)
+    if (!row) return
+    on(row, 'click', (event) => {
+      if ((event.target as Element).closest('button, a')) return
+      activate()
+    })
+  }
+  onRowChoice('mcp-method-local-row', () => choose('stdio'))
+  onRowChoice('mcp-method-remote-row', () => choose('http'))
+  // Follow the row's own link so the prompt parameter prepared for it is kept.
+  onRowChoice('mcp-method-agent-row', () =>
+    (document.getElementById('mcp-method-agent') as HTMLAnchorElement | null)?.click(),
+  )
   on(back, 'click', () => stage(false, false))
   on(identity, 'input', () => {
     manualId = true

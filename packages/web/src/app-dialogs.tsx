@@ -103,7 +103,9 @@ function McpDialogScaffold() {
       <p className="dialog-intro">{t('shell.dialog.description')}</p>
       <p id="mcp-step" className="dialog-step" role="status"></p>
       <section className="agnes-settings-stack" id="mcp-methods" aria-label={t('wizard.choose')}>
+        {/* The row ids let the wizard make the whole card the choice, not just its title. */}
         <ListRow
+          id="mcp-method-local-row"
           icon={<Icon name="terminal" size={20} />}
           title={
             <Button id="mcp-method-local" htmlType="button" appearance="secondary">
@@ -113,6 +115,7 @@ function McpDialogScaffold() {
           description={t('wizard.localHelp')}
         />
         <ListRow
+          id="mcp-method-remote-row"
           icon={<Icon name="globe" size={20} />}
           title={
             <Button id="mcp-method-remote" htmlType="button" appearance="secondary">
@@ -122,6 +125,7 @@ function McpDialogScaffold() {
           description={t('wizard.remoteHelp')}
         />
         <ListRow
+          id="mcp-method-agent-row"
           icon={<Icon name="bot" size={20} />}
           title={
             <Button id="mcp-method-agent" href="/?new=1" appearance="secondary">

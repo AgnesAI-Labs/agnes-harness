@@ -551,6 +551,15 @@ it('tells the user a newly created MCP server can be enabled directly', async ()
   expect(feedbackResults.at(-1)?.outcome).toBe('success')
 })
 
+it('lets the whole MCP method card pick its transport', async () => {
+  byId('mcp-create').click()
+  expect(byId('mcp-connection-fields').hidden).toBe(true)
+  // The title is only the label inside the card; the card body now answers as well.
+  byId('mcp-method-local-row').querySelector('p')?.click()
+  expect(byId('mcp-connection-fields').hidden).toBe(false)
+  expect(byId<HTMLSelectElement>('mcp-transport').value).toBe('stdio')
+})
+
 it('uses a published-skill link to open the filtered skills list', async () => {
   await resourceMount.sync({ tab: 'mcp' })
   resourceMount.dispose()

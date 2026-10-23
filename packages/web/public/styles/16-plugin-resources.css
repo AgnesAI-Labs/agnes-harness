@@ -627,6 +627,7 @@
     position: relative;
     min-height: 0;
     padding: var(--s12) var(--s16);
+    cursor: pointer;
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
     background: var(--agnes-bg-group);
