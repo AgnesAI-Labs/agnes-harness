@@ -1,12 +1,22 @@
 import type { ActionId } from './keymap.js'
 import type { Locale } from './locale.js'
+import { PAGER_DICT, type PagerKey } from './locale-pager.js'
 import { QUICK_DICT, type QuickAction, type QuickKey } from './locale-quick.js'
 
 /**
  * Strings of the key binding table: one description per action, the scope names, and what /keys and
  * the startup notice say. Kept beside the other locale files so locale-extended.ts stays small.
  */
-export const KEYS_SCOPES = ['global', 'editor', 'search', 'picker', 'panel', 'approval', 'secret'] as const
+export const KEYS_SCOPES = [
+  'global',
+  'editor',
+  'search',
+  'picker',
+  'panel',
+  'pager',
+  'approval',
+  'secret',
+] as const
 export type KeysKey =
   | `keys.act.${Exclude<ActionId, QuickAction>}`
   | QuickKey
@@ -27,6 +37,7 @@ export type KeysKey =
   | 'keys.names'
   | 'commands.keys'
   | 'commands.keysSummary'
+  | PagerKey
 
 export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
   en: {
@@ -98,11 +109,20 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.act.secret-erase': 'Erase a character',
     'keys.act.secret-back': 'Go back',
     'keys.act.secret-abort': 'Abort the flow',
+    'keys.act.pager-open': 'Open the whole conversation in a pager overlay',
+    'keys.act.pager-close': 'Close the pager and return to where you were',
+    'keys.act.pager-up': 'Scroll up one line',
+    'keys.act.pager-down': 'Scroll down one line',
+    'keys.act.pager-page-up': 'Scroll up one page (loads earlier history at the top)',
+    'keys.act.pager-page-down': 'Scroll down one page',
+    'keys.act.pager-top': 'Jump to the top',
+    'keys.act.pager-bottom': 'Jump to the newest output',
     'keys.scope.global': 'Global',
     'keys.scope.editor': 'Prompt editor',
     'keys.scope.search': 'History search',
     'keys.scope.picker': 'Pickers',
     'keys.scope.panel': 'Report panels',
+    'keys.scope.pager': 'Conversation pager (Ctrl-T)',
     'keys.scope.approval': 'Approval dialog',
     'keys.scope.secret': 'Secret and text prompts',
     'keys.title': 'Key bindings',
@@ -121,6 +141,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.names': 'Key names: {names}',
     'commands.keys': 'List the key bindings in force, marking overrides from keybindings.json',
     'commands.keysSummary': 'List key bindings',
+    ...PAGER_DICT.en,
   },
   'zh-CN': {
     ...QUICK_DICT['zh-CN'],
@@ -191,11 +212,20 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.act.secret-erase': '删除一个字符',
     'keys.act.secret-back': '返回',
     'keys.act.secret-abort': '中止流程',
+    'keys.act.pager-open': '在翻阅层中打开完整对话',
+    'keys.act.pager-close': '关闭翻阅层，回到原来的位置',
+    'keys.act.pager-up': '向上滚一行',
+    'keys.act.pager-down': '向下滚一行',
+    'keys.act.pager-page-up': '向上翻一页（到顶后加载更早的记录）',
+    'keys.act.pager-page-down': '向下翻一页',
+    'keys.act.pager-top': '跳到顶部',
+    'keys.act.pager-bottom': '跳到最新输出',
     'keys.scope.global': '全局',
     'keys.scope.editor': '输入框',
     'keys.scope.search': '历史搜索',
     'keys.scope.picker': '选择器',
     'keys.scope.panel': '报告面板',
+    'keys.scope.pager': '对话翻阅层（Ctrl-T）',
     'keys.scope.approval': '审批弹窗',
     'keys.scope.secret': '密钥与文本输入',
     'keys.title': '键位',
@@ -214,5 +244,6 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.names': '可用键名：{names}',
     'commands.keys': '列出当前生效的键位，并标出 keybindings.json 的覆盖',
     'commands.keysSummary': '列出键位',
+    ...PAGER_DICT['zh-CN'],
   },
 }

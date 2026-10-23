@@ -34,6 +34,8 @@ export interface RootInputHost {
   redraw: () => void
   hintActions: () => readonly ActionItem[]
   dispatchAction: (actionId: string) => void
+  /** Ctrl-T: the full-conversation pager (it is also first among `dialogs`, which closes it). */
+  openPager: () => void
   timeline: Timeline
   editor: Editor
   kitty: Parameters<typeof parseKey>[1]
@@ -98,6 +100,11 @@ export function rootInput(
     if (action === 'hint-1' || action === 'hint-2' || action === 'hint-3' || action === 'hint-4') {
       const hint = host.hintActions()[Number(action.slice(-1)) - 1]
       if (hint && !hint.disabled) host.dispatchAction(hint.id)
+      return true
+    }
+    // The pager needs the fullscreen display; with the split footer the conversation is in the terminal's own scrollback.
+    if (action === 'pager-open') {
+      if (!host.noAltScreen) host.openPager()
       return true
     }
     if (host.timeline.jumpKey(key.name, host.editor.text !== '')) return true

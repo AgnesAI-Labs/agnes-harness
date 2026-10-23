@@ -2,7 +2,9 @@ import type { KeyName } from './keys.js'
 
 /** Letters the approval scope reads as keys: single-key decisions, never rebindable. */
 export type ApprovalLetter = 'y' | 'a' | 'n'
-type BoundKey = KeyName | ApprovalLetter
+/** Letters the pager reads while it is open: search, next and previous match, copy. */
+export type PagerLetter = '/' | 'n' | 'N' | 'c'
+type BoundKey = KeyName | ApprovalLetter | PagerLetter
 
 /**
  * Every key binding, declared once. A scope is a place that reads keys; inside one scope a key means
@@ -28,6 +30,7 @@ export const BINDINGS = [
   { id: 'model-prev', scope: 'global', keys: ['alt-shift-p'] },
   { id: 'draft-stash', scope: 'global', keys: ['ctrl-s'] },
   { id: 'redraw', scope: 'global', keys: ['ctrl-l'] },
+  { id: 'pager-open', scope: 'global', keys: ['ctrl-t'] },
   // The prompt editor.
   { id: 'submit', scope: 'editor', keys: ['enter'] },
   { id: 'newline', scope: 'editor', keys: ['alt-enter', 'shift-enter'] },
@@ -73,6 +76,14 @@ export const BINDINGS = [
   { id: 'panel-down', scope: 'panel', keys: ['down'], fixed: true },
   { id: 'panel-page-up', scope: 'panel', keys: ['pgup'], fixed: true },
   { id: 'panel-page-down', scope: 'panel', keys: ['pgdn'], fixed: true },
+  // The full-conversation pager (Ctrl-T): it takes every key while open.
+  { id: 'pager-close', scope: 'pager', keys: ['esc', 'ctrl-t', 'ctrl-c'], fixed: true },
+  { id: 'pager-up', scope: 'pager', keys: ['up'], fixed: true },
+  { id: 'pager-down', scope: 'pager', keys: ['down'], fixed: true },
+  { id: 'pager-page-up', scope: 'pager', keys: ['pgup'], fixed: true },
+  { id: 'pager-page-down', scope: 'pager', keys: ['pgdn'], fixed: true },
+  { id: 'pager-top', scope: 'pager', keys: ['home'], fixed: true },
+  { id: 'pager-bottom', scope: 'pager', keys: ['end'], fixed: true },
   // The approval dialog: never rebindable, so a changed key cannot approve by accident.
   { id: 'approval-dismiss', scope: 'approval', keys: ['esc', 'ctrl-c'], fixed: true },
   { id: 'approval-confirm', scope: 'approval', keys: ['enter'], fixed: true },

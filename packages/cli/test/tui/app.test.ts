@@ -271,6 +271,69 @@ it('loads an earlier fixed-cut page on PgUp without moving the live attach curso
   }
 })
 
+it('Ctrl-T pages through the whole conversation, reads older history from its top, and closes where it began', async () => {
+  const sessionId = 'agnes:local:default:cli:dm:pager-history'
+  const user = (index: number) => ({
+    kind: 'user' as const,
+    id: `user-${index}`,
+    seq: index,
+    content: [{ type: 'text' as const, text: `history ${index}` }],
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 10, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUIOpening', () => ({
+      timeline: { sessionId, generation: 1, upto: 10, opState: null, turns: [], nodes: [user(8), user(9)] },
+      history: { hasEarlier: true, cursor: 'before-8', startIndex: 8, totalNodes: 10 },
+    }))
+    .on('_agnes/v1/session.projectUIHistory', () => ({
+      sessionId,
+      generation: 1,
+      cut: 10,
+      turns: [],
+      nodes: [user(4), user(5), user(6), user(7)],
+      hasEarlier: true,
+      cursor: 'before-4',
+      startIndex: 4,
+      totalNodes: 10,
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns: 60, rows: 12 })
+  const app = new TuiApp({ session, term, header: 'Agnes' })
+  const screen = async () => (await screenOf(term, 60, 12)).join('\n')
+  const history = () => endpoint.calls.filter((c) => c.method === '_agnes/v1/session.projectUIHistory')
+  try {
+    await app.start()
+    await vi.waitFor(async () => expect(await screen()).toContain('history 9'))
+    const before = (await screenOf(term, 60, 12)).filter((l) => l.includes('history'))
+    term.feed('\x14')
+    await vi.waitFor(async () => expect(await screen()).toContain('Ctrl-T/Esc close'))
+    expect(await screen()).toContain('Earlier history')
+    expect(history()).toHaveLength(0)
+    // At the top, one more step up reads the older page; it lands above what was on screen.
+    term.feed('\x1b[H')
+    term.feed('\x1b[A')
+    await vi.waitFor(() => expect(history()).toHaveLength(1))
+    term.feed('\x1b[H')
+    await vi.waitFor(async () => expect(await screen()).toContain('history 4'))
+    term.feed('\x14')
+    await vi.waitFor(async () => expect(await screen()).not.toContain('Ctrl-T/Esc close'))
+    expect(
+      (await screenOf(term, 60, 12)).filter((l) => l.includes('history 8') || l.includes('history 9')),
+    ).toEqual(before.filter((l) => l.includes('history 8') || l.includes('history 9')))
+  } finally {
+    await app.stop()
+    await client.close()
+  }
+})
+
 it('keeps an unknown error generic without exposing the raw failure message', async () => {
   const endpoint = new FakeEndpoint()
     .on('initialize', () => ({

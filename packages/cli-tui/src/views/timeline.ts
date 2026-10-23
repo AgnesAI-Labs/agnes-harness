@@ -1,9 +1,11 @@
 import type { UINode, UITimeline } from '@agnes/protocol'
+import { ANSI_RE } from '../ansi.js'
 import type { Component } from '../component.js'
 import { actionFor } from '../keymap.js'
 import type { KeyName } from '../keys.js'
 import { tt } from '../locale-extended.js'
 import { completeBlocks } from '../markdown.js'
+import { nodeText } from '../node-text.js'
 import { isSettled } from '../settled.js'
 import { groupable, groupRuns, silentKind } from '../tool-groups.js'
 
@@ -11,7 +13,15 @@ export const TIMELINE_RESERVED_ROWS = 5
 
 type Entry = { signature: string; nodes: UINode[]; view: Component }
 type LocalEntry = { afterSeq: number; view: Component }
-type Item = { key: string; view: Component; settled: boolean; effectId?: string | undefined }
+type Item = {
+  key: string
+  view: Component
+  settled: boolean
+  effectId?: string | undefined
+  nodes?: UINode[]
+}
+/** One entry of the loaded conversation as the pager shows it: its rows, and the text a copy takes. */
+export type PagerBlock = { rows: string[]; text: string }
 
 /** A fullscreen viewport over core's projected nodes; it never reduces ledger events itself. */
 export class Timeline implements Component {
@@ -192,6 +202,7 @@ export class Timeline implements Component {
         key: (entry.nodes[0] as UINode).id,
         view: entry.view,
         settled: !growing && entry.nodes.every(isSettled),
+        nodes: entry.nodes,
         effectId: entry.nodes[0]?.kind === 'assistant' ? entry.nodes[0].effectId : undefined,
       })
     })
@@ -284,6 +295,23 @@ export class Timeline implements Component {
     const window = Math.max(1, this.o.rows() - (this.o.reservedRows?.() ?? TIMELINE_RESERVED_ROWS))
     const shown = this.written.size === 0 && pending.length === 0 ? (this.o.top?.render(width) ?? []) : rows
     return shown.slice(-window)
+  }
+
+  /** Whether older history than the loaded window exists (the pager reads it a page at a time). */
+  get earlier(): boolean {
+    return this.hasEarlier
+  }
+
+  /** The loaded conversation entry by entry, plain like `transcript`, for the full-screen pager. */
+  blocks(width: number): PagerBlock[] {
+    return this.items().flatMap((item) => {
+      const rows = item.view.transcript?.(width) ?? item.view.render(width)
+      const text = item.nodes
+        ?.map((n) => (n.kind === 'user' ? nodeText(n).slice(5) : nodeText(n)))
+        .filter(Boolean)
+        .join('\n')
+      return rows.length === 0 ? [] : [{ rows, text: text || rows.join('\n').replace(ANSI_RE, '') }]
+    })
   }
 
   /** Current loaded conversation only: no new history read, UI chrome or row-archive side effects. */

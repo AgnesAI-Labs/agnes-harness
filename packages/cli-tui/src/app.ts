@@ -26,6 +26,7 @@ import { copyTip, systemCopy, TuiMouse } from './mouse.js'
 import { nodeView } from './node-view.js'
 import { NotifyPreference } from './notify.js'
 import { PackageController } from './package-controller.js'
+import { PagerOverlay } from './pager-overlay.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
 import { PromptHistory } from './prompt-history.js'
@@ -103,6 +104,7 @@ export class TuiApp {
   private readonly themePicker: ThemePicker
   private themePreference: ThemePreference
   readonly usagePanel: UsagePanel
+  private readonly pager: PagerOverlay
   private readonly modelPicker: ModelPicker
   private readonly sessionPicker: SessionPicker
   private readonly packageController: PackageController
@@ -215,7 +217,7 @@ export class TuiApp {
       o.copy ?? systemCopy((s) => o.term.write(s)),
       copyTip(ansi, locale),
       () => this.stopped || this.renderer.requestRender(),
-      (row) => this.timeline.click(row),
+      (row) => !this.pager.open && this.timeline.click(row),
     )
     this.welcome = new WelcomeController(o, {
       branding,
@@ -333,6 +335,14 @@ export class TuiApp {
       maxRows: () => Math.max(4, o.term.size().rows - 7),
       changed: () => this.stopped || this.renderer.requestRender(),
     })
+    this.pager = new PagerOverlay({
+      theme: this.theme,
+      term: o.term,
+      locale,
+      timeline: this.timeline,
+      loadEarlier: () => this.projection.loadEarlier(),
+      changed: () => this.stopped || this.renderer.requestRender(),
+    })
     this.packageController = new PackageController(o.controlClient, () => this.profile)
     this.composer = new Composer(this.editor, ansi, locale)
     this.composer.setWorkspace({ root: tildePath(this.cwd), subpath: '' })
@@ -371,6 +381,8 @@ export class TuiApp {
     ]
     root.render = (width) => {
       this.signals.sync()
+      // Like the dialogs, the pager gives way to a pending approval and returns unchanged.
+      if (this.pager.open && !this.modal.pending) return this.pager.render(width)
       const shown = root.children.filter((child) => !(this.modal.pending && dialogs.includes(child)))
       let rows = 0
       for (const child of shown.toReversed()) {
@@ -400,7 +412,8 @@ export class TuiApp {
         signals: () => this.signals,
         settle: this.settle,
         modal: this.modal,
-        dialogs: [this.themePicker, this.modelPicker, this.sessionPicker, this.usagePanel],
+        dialogs: [this.pager, this.themePicker, this.modelPicker, this.sessionPicker, this.usagePanel],
+        openPager: () => this.pager.show(),
         approvalCards: this.approvalCards,
         latestApproval: () => this.latestApproval,
         closed: () => this.closedNotice !== undefined,
@@ -566,8 +579,9 @@ export class TuiApp {
   }
 
   private scrollTimeline(delta: number): void {
-    if (!this.timeline.scroll(delta)) return
-    void this.projection.loadEarlier().then((ok) => ok && !this.stopped && this.renderer.requestRender())
+    if (this.pager.open) this.pager.scroll(delta)
+    else if (this.timeline.scroll(delta))
+      void this.projection.loadEarlier().then((ok) => ok && !this.stopped && this.renderer.requestRender())
   }
 
   private makeProjection(session: Session): TuiProjection {
