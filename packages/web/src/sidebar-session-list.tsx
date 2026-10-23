@@ -412,7 +412,9 @@ export function WorkspaceSessions({ options, t }: { options: SidebarNavigationOp
                         </Button>
                       </p>
                     )}
-                    {page.loaded && page.items.length === 0 && !page.loading && <p>{t('nav.empty.title')}</p>}
+                    {page.loaded && page.items.length === 0 && !page.loading && (
+                      <p className="session-group-empty">{t('nav.empty.title')}</p>
+                    )}
                   </>
                 )}
                 {!collapsed && toggleable && (
