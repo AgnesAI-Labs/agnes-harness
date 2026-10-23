@@ -309,22 +309,23 @@ it.each(
   expect(text).not.toBe(code)
 })
 
-it.each(['en', 'zh-CN'] as const)(
-  'the application card keeps the diagnostic ID of an internal error (%s)',
-  async (lang) => {
-    const id = '474ff098-190d-4aab-8ebf-4fc5aee12097'
-    const envelope = {
-      code: -32603,
-      message: 'INTERNAL_ERROR',
-      data: { code: 'E_ADMIN_BACKEND', messageKey: 'appServer.errors.internal', diagnosticId: id },
-    }
-    document.documentElement.lang = lang
-    const message = appServerErrorMessage(envelope, lang)
-    const list = async () => {
-      throw new AdminApiError({ code: 'E_ADMIN_BACKEND', message: message! })
-    }
-    // The real planner turns the failing read into a StartError that carries the safe message.
-    const text = await cardTextAfterFailedStart(lang, undefined, { list })
-    expect(text).toContain(lang === 'en' ? `Diagnostic ID: ${id}` : `诊断 ID：${id}`)
-  },
-)
+it.each(
+  ['INTERNAL_ERROR', 'OUTCOME_UNKNOWN', 'E_PACKAGE_BLOCKED'].flatMap((code) =>
+    (['en', 'zh-CN'] as const).map((lang) => [code, lang] as const),
+  ),
+)('the application card keeps the diagnostic ID for %s (%s)', async (code, lang) => {
+  const id = '474ff098-190d-4aab-8ebf-4fc5aee12097'
+  const envelope = {
+    code: -32603,
+    message: 'INTERNAL_ERROR',
+    data: { code, messageKey: 'appServer.errors.internal', diagnosticId: id },
+  }
+  document.documentElement.lang = lang
+  const message = appServerErrorMessage(envelope, lang)
+  const list = async () => {
+    throw new AdminApiError({ code: 'E_ADMIN_BACKEND', message: message! })
+  }
+  // The real planner turns the failing read into a StartError that carries the safe message.
+  const text = await cardTextAfterFailedStart(lang, undefined, { list })
+  expect(text).toContain(lang === 'en' ? `Diagnostic ID: ${id}` : `诊断 ID：${id}`)
+})

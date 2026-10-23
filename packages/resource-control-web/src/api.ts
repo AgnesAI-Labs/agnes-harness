@@ -26,6 +26,14 @@ export class ResourceAdminApiError extends Error {
     this.details = details
   }
 }
+export const resourceAdminError = (error: unknown): ResourceAdminError =>
+  error instanceof ResourceAdminApiError
+    ? error.details
+    : {
+        code: 'RESOURCE_ADMIN_UNAVAILABLE',
+        message: 'The resource admin service is temporarily unavailable. Try again later.',
+      }
+
 function safeError(
   value: unknown,
   fallback = 'The resource admin service is temporarily unavailable. Try again later.',

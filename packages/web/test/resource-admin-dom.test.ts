@@ -579,6 +579,9 @@ it('reports MCP creation as a dismissible success without a persistent enablemen
   feedback.dismiss(feedback.store.getSnapshot().queue[0]?.id ?? '')
   expect(feedback.store.getSnapshot().queue).toEqual([])
   expect(submitted('mcp/enable')).toHaveLength(0)
+  const scope = feedbackResults.at(-1)!.scope
+  resourceMount.dispose()
+  expect(feedbackResolved).toContain(scope)
 })
 
 it('uses a published-skill link to open the filtered skills list', async () => {

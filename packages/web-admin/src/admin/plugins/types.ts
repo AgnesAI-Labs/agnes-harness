@@ -46,6 +46,7 @@ export type AdminError = Readonly<{
   code: string
   message: string
   blockers?: readonly PackageBlocker[] | undefined
+  sourceFailure?: PackageAdminError['sourceFailure'] | undefined
 }>
 
 export type AdminPageState = {

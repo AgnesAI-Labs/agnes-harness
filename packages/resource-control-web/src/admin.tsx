@@ -35,8 +35,8 @@ import {
   type UiLocaleSource,
   unmountRegion,
 } from '@agnes/web-ui'
-import { $, errorOf, type ResourceNotice, renderNotice } from './admin-dom.js'
-import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
+import { $, type ResourceNotice, renderNotice } from './admin-dom.js'
+import { resourceAdminError as errorOf, ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
 import {
   createMcpForm,
@@ -48,7 +48,7 @@ import {
 import { mountMcpPresets } from './mcp-presets.js'
 import { pollResourceOperation, watchMcpPanel } from './mcp-refresh.js'
 import { mountMcpWizard } from './mcp-wizard.js'
-import { type ResourceCompletion, reportResourceCompleted } from './operation-feedback.js'
+import { type ResourceCompletion, ResourcePageFeedback } from './operation-feedback.js'
 import { resourceActionMenu, skillDetailActions } from './skill-actions.js'
 import { SkillsPage } from './skills-page.js'
 
@@ -128,6 +128,7 @@ class ResourceAdminPage {
   #selected: string | undefined
   #detailTrigger: HTMLElement | undefined
   #generation = 0
+  readonly #feedback = new ResourcePageFeedback()
   #operations = new Map<string, ResourceOperation>()
   #activeOperation: string | undefined
   #activeSkillId: string | undefined
@@ -213,6 +214,7 @@ class ResourceAdminPage {
     const nextWorkspace = normalizeWorkspaceId(scope.workspaceId)
     const tabChanged = this.#tab !== scope.tab
     const workspaceChanged = this.#workspaceId !== nextWorkspace
+    if (tabChanged || workspaceChanged) this.#feedback.clear()
     this.#tab = scope.tab
     this.#workspaceId = nextWorkspace
     this.#selected = undefined
@@ -348,6 +350,7 @@ class ResourceAdminPage {
   }
   setTab(tab: Tab): void {
     if (this.#tab === tab) return
+    this.#feedback.clear()
     this.#tab = tab
     this.#selected = undefined
     void this.#ensureLoaded()
@@ -404,6 +407,7 @@ class ResourceAdminPage {
     const api = this.api()
     const generation = this.#generation
     const workspace = this.#workspaceId
+    const publish = this.#feedback.capture()
     this.#activeSkillId = skillId
     this.#activeOperation = receipt.operationId
     this.setNotice('notice.submitted')
@@ -434,8 +438,8 @@ class ResourceAdminPage {
         if (index >= 0) this.#items[index] = item
         this.#cursorStale = !!this.#nextCursor
       }
+      if (!publish(op, activeResourceText, completion)) return false
       if (op.state === 'succeeded') {
-        reportResourceCompleted(op, activeResourceText, completion)
         this.setNotice(undefined)
       } else if (op.lastSafeError?.message) this.setNotice(resourceFailureKey(op.lastSafeError.code), 'error')
       else this.setNotice('notice.failed', 'error')
@@ -805,6 +809,7 @@ class ResourceAdminPage {
     this.#localeCleanup?.()
     // A later mount already took the shared form, dialogs and hosts over.
     if (activePage !== this) return
+    this.#feedback.clear()
     activePage = undefined
     stopMcpRefresh?.()
     stopMcpRefresh = undefined

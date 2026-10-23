@@ -149,6 +149,16 @@ export const operationsCatalog: LocaleCatalog = {
       'The integrity and capability summary hashes will be bound and the current version and capability scope checked before enabling.',
     'error.state-changed':
       'The plugin version or capability scope has changed. Review the latest details before enabling it again.',
+    'error.source.manifest-missing':
+      'No package.json was found at the repository root. An AGH plugin needs this manifest; a SKILL.md alone is a Skill, not a plugin.',
+    'error.source.manifest-invalid':
+      'The source package.json cannot be read or is invalid. Check its JSON, package name and version.',
+    'error.source.not-plugin':
+      'This repository has no AGH plugin declarations. Choose an AGH plugin package; a Skill is installed from Skills.',
+    'error.source.git-ref':
+      'The Git branch, tag or commit is unavailable or ambiguous. Check the ref or supply an exact commit.',
+    'error.source.git-fetch':
+      'The Git repository could not be downloaded or checked out. Check network access, the public HTTPS address and Git availability.',
     'error.source-rejected':
       'This source could not be accepted as a plugin. Check that the address is reachable without a login and that its root has a plugin manifest (package.json). A Skill (SKILL.md) is not a plugin.',
     'confirm.disable.title': 'Disable “{id}”?',
@@ -310,6 +320,12 @@ export const operationsCatalog: LocaleCatalog = {
     'confirm.enable.action': '启用',
     'confirm.enable.facts': '启用前会绑定下列完整性摘要与能力摘要哈希，并校验当前版本及能力范围。',
     'error.state-changed': '插件版本或能力范围已经变化，请确认最新内容后再次启用。',
+    'error.source.manifest-missing':
+      '仓库根目录没有 package.json 插件清单。AGH 插件需要此清单；仅含 SKILL.md 的技能不是插件。',
+    'error.source.manifest-invalid': '来源中的 package.json 无法读取或内容无效，请检查 JSON、包名与版本。',
+    'error.source.not-plugin': '此仓库没有 AGH 插件声明，请选择 AGH 插件包；技能请从“技能”页安装。',
+    'error.source.git-ref': 'Git 分支、标签或提交不存在或有歧义，请检查引用或填写完整提交 SHA。',
+    'error.source.git-fetch': 'Git 仓库下载或检出失败，请检查网络、公开 HTTPS 地址及 Git 是否可用。',
     'error.source-rejected':
       '这个来源不能作为插件接受。请确认地址无需登录即可访问，且根目录有插件清单（package.json）。技能（含 SKILL.md）不是插件。',
     'confirm.disable.title': '停用「{id}」？',

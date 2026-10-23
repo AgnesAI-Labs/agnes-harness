@@ -80,39 +80,51 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-it('previews without importing code or writing lock, then installs only disabled/untrusted with a checked tree', async () => {
-  writeFileSync(join(sourceDir, 'index.ts'), `throw new Error('must not run')`)
-  pkg({
-    scripts: { postinstall: 'exit 99' },
-    agnes: { metadata: purpose, plugins: [{ apiRange: '^5.0.0', export: 'main', metadata: purpose }] },
-  })
-  const before = lockBytes(),
-    phases: number[] = []
-  const m = manager(),
-    preview = await m.inspect(profile, source, { onProgress: (p) => phases.push(p.percent) })
-  expect(lockBytes()).toBe(before)
-  expect(phases).toEqual([0, 50, 100])
-  clean()
-  expect(preview).toMatchObject({
-    id: 'acme/pkg-a',
-    provenance: { signatureVerified: false },
-    blockers: [],
-    contributions: [],
-  })
-  const entry = await m.install(profile, source, { expectedIntegrity: preview.integrity })
-  expect(entry.state).toMatchObject({ trusted: null, enabled: false })
-  expect(entry.treeIntegrity).toBe(hashDirectory(packageDir(root, 'local-dev', preview.id), { exclude: [] }))
-  expect(entry.contributions).toEqual(preview.contributions)
-  expect(preview.presentation?.rows).toEqual([
-    { id: 'ext:acme/pkg-a/main', metadata: purpose, settings: false },
-  ])
-  expect(preview.metadata).toEqual(purpose)
-  expect(entry.metadata).toEqual(purpose)
-  expect(
-    readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[preview.id]?.metadata,
-  ).toEqual(purpose)
-  clean()
-})
+it.each(['file', 'git'] as const)(
+  'inspects and installs a valid %s plugin without executing code or granting trust',
+  async (kind) => {
+    writeFileSync(join(sourceDir, 'index.ts'), `throw new Error('must not run')`)
+    pkg({
+      scripts: { postinstall: 'exit 99' },
+      agnes: { metadata: purpose, plugins: [{ apiRange: '^5.0.0', export: 'main', metadata: purpose }] },
+    })
+    const before = lockBytes(),
+      phases: number[] = []
+    const commit = 'a'.repeat(40)
+    const candidate = kind === 'git' ? parseSource(`git:https://example.com/plugin.git#${commit}`) : source
+    const m = manager({
+        exec: async (_command, args) => {
+          if (args.includes('checkout')) cpSync(sourceDir, args[args.indexOf('-C') + 1]!, { recursive: true })
+          return { stdout: args.includes('rev-parse') ? commit : '' }
+        },
+      }),
+      preview = await m.inspect(profile, candidate, { onProgress: (p) => phases.push(p.percent) })
+    expect(lockBytes()).toBe(before)
+    expect(phases).toEqual([0, 50, 100])
+    clean()
+    expect(preview).toMatchObject({
+      id: 'acme/pkg-a',
+      provenance: { signatureVerified: false },
+      blockers: [],
+      contributions: [],
+    })
+    const entry = await m.install(profile, candidate, { expectedIntegrity: preview.integrity })
+    expect(entry.state).toMatchObject({ trusted: null, enabled: false })
+    expect(entry.treeIntegrity).toBe(
+      hashDirectory(packageDir(root, 'local-dev', preview.id), { exclude: [] }),
+    )
+    expect(entry.contributions).toEqual(preview.contributions)
+    expect(preview.presentation?.rows).toEqual([
+      { id: 'ext:acme/pkg-a/main', metadata: purpose, settings: false },
+    ])
+    expect(preview.metadata).toEqual(purpose)
+    expect(entry.metadata).toEqual(purpose)
+    expect(
+      readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[preview.id]?.metadata,
+    ).toEqual(purpose)
+    clean()
+  },
+)
 it('recognizes the static agnes.plugins declaration without importing plugin code', async () => {
   writeFileSync(join(sourceDir, 'index.mjs'), `throw new Error('plugin code must not run during inspect')`)
   pkg({
@@ -295,12 +307,17 @@ it.each([
   expect(existsSync(packageDir(root, 'local-dev', 'acme/pkg-a'))).toBe(false)
   clean()
 })
-it('returns blockers for legacy dynamic-only packages and policy/API incompatibility', async () => {
+it('refuses non-plugin packages and legacy dynamic metadata with a specific reason', async () => {
   pkg({ main: 'index.ts', exports: undefined, agnes: undefined })
-  const p = await manager().inspect(profile, source)
-  expect(p.blockers).toEqual([{ code: 'unknown-contribution', references: ['static-declaration-required'] }])
-  await expect(manager().install(profile, source, { expectedIntegrity: p.integrity })).rejects.toMatchObject({
-    code: 'E_PACKAGE_BLOCKED',
+  await expect(manager().inspect(profile, source)).rejects.toMatchObject({
+    code: 'E_PACKAGE_SOURCE',
+    detail: { reason: 'static-declaration-required' },
+  })
+  await expect(
+    manager().install(profile, source, { expectedIntegrity: hashDirectory(sourceDir) }),
+  ).rejects.toMatchObject({
+    code: 'E_PACKAGE_SOURCE',
+    detail: { reason: 'static-declaration-required' },
   })
   json(join(sourceDir, 'agnes.extension.json'), {
     id: 'acme/pkg-a',

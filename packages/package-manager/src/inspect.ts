@@ -437,7 +437,9 @@ export function inspectVerifiedTree(
       metadata.plugins === undefined &&
       bundles === undefined)
   )
-    blockers.push({ code: 'unknown-contribution', references: ['static-declaration-required'] })
+    throw new PackageError('E_DEP_MISSING', 'source has no AGH plugin declarations', {
+      detail: { reason: 'static-declaration-required' },
+    })
   for (const c of contributions) {
     const range = c.kind === 'surface' ? c.descriptor.apiRange : 'apiRange' in c ? c.apiRange : undefined
     if (range !== undefined && !satisfiesApiRange(range, API_VERSION))
