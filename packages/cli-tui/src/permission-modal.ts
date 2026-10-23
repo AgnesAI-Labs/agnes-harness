@@ -47,6 +47,8 @@ export class PermissionModal implements Component {
       ansi?: ThemedAnsi
       /** Whether single keys would count now; the key hints on the options dim until they do. */
       settled?(): boolean
+      /** Whether y, a and n may decide: not while the prompt holds a draft, where they are text. */
+      letters?(): boolean
     } = {},
   ) {}
 
@@ -122,6 +124,8 @@ export class PermissionModal implements Component {
       if (key.name === 'char' || key.name === 'paste') return false
       if (!action?.match(/^approval-(up|down|page-up|page-down)$/)) return true
     }
+    if (key.name === 'char' && /^[a-z]$/.test(key.ch ?? '') && !(this.options.letters?.() ?? true))
+      return false
     if (action === 'approval-dismiss') question.finish({ unanswered: 'detached' })
     else if (
       action === 'approval-allow-once' ||

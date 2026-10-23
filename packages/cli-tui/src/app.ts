@@ -294,6 +294,7 @@ export class TuiApp {
       locale,
       ansi,
       settled: () => this.settle.settled,
+      letters: () => this.editor.text === '',
       // The renderer drops a tall frame's top rows, so the modal gets no more than the rows below it
       // leave: an option it counts as visible has to be on screen.
       maxRows: () => {
