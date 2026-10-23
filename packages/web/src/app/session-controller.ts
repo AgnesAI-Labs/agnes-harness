@@ -15,6 +15,7 @@ export function createSessionController(
     AppSessionContext,
     | 'submissions'
     | 'SESSION_WATCH_STOP_TIMEOUT_MS'
+    | 'approvalRuntime'
     | 'approvalSearch'
     | 'clearSessionRecovery'
     | 'client'
@@ -82,6 +83,7 @@ export function createSessionController(
     const preserved = options.preserveSending ? context.submissions.currentComposer : undefined
     context.selectComposerDraft(id, options.preserveSending)
     const { binding: epoch, previous } = bindingOwner.begin(id)
+    context.approvalRuntime.render(undefined)
     // The old projection may stay visible, but its preview/refusal no longer describes this selection.
     context.readOnlyController.clear()
     preserved?.adopt(epoch)

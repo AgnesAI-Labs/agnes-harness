@@ -65,6 +65,7 @@ it.each(['before', 'after'])(
       references: { clear() {} },
       selectComposerDraft() {},
       topbarRuntime: { setStatus() {} },
+      approvalRuntime: { render: vi.fn() },
       render: vi.fn(),
       renderControls() {},
       renderer: { reset() {} },
@@ -84,6 +85,7 @@ it.each(['before', 'after'])(
     })
     const controller = createSessionController(context as never, binding)
     const work = controller.open('A')
+    expect(context.approvalRuntime.render).toHaveBeenCalledWith(undefined)
     await vi.waitFor(() => expect(showPreview).toBeTypeOf('function'))
     const preview = { sessionId: 'A', upto: 1, nodes: [], turns: [] }
     const publishPreview = async () => {

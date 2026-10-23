@@ -552,6 +552,43 @@ it.each(['different', 'returned'] as const)(
   },
 )
 
+it.each(['draft', 'other'] as const)(
+  'hides A approval on a switch to %s and answers only A after returning',
+  async (target) => {
+    const { context, controller, decide, binding } = await harness()
+    context.projection = timeline([approval])
+    controller.renderApproval()
+    const action = () =>
+      document.querySelector<HTMLButtonElement>('[data-approval-action="durable:rejected"]')
+    await vi.waitFor(() => expect(action()).not.toBeNull())
+    const oldAction = action()
+    if (!oldAction) throw new Error('missing approval action')
+    binding.begin(target === 'draft' ? undefined : 'other')
+    context.current = target === 'draft' ? undefined : ({ id: 'other' } as typeof context.current)
+    // A draft has no projection; opening B retains A's projection until B is ready.
+    if (target === 'draft') context.projection = undefined
+    controller.render()
+    await vi.waitFor(() => expect(document.querySelector('[data-testid="approval-card"]')).toBeNull())
+    oldAction.click()
+    expect(decide).not.toHaveBeenCalled()
+    controller.renderApproval()
+    expect(document.querySelector('[data-testid="approval-card"]')).toBeNull()
+    binding.begin('s')
+    context.current = { id: 's' } as typeof context.current
+    context.projection = timeline([approval])
+    controller.renderApproval()
+    await vi.waitFor(() => expect(action()).not.toBeNull())
+    action()?.click()
+    await vi.waitFor(() =>
+      expect(decide).toHaveBeenCalledWith({
+        ...ref,
+        commandId: 'pending:1:rejected',
+        response: { option: 'rejected', value: null },
+      }),
+    )
+  },
+)
+
 it('formats expiry in the UI language as a relative duration instead of ISO', () => {
   const now = Date.parse('2026-10-14T02:49:50.221Z')
   const expiry = '2026-10-15T02:49:50.221Z'

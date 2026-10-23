@@ -109,6 +109,7 @@ export function createTurnController(
       context.topbarRuntime.setStatus(context.t('app.status.newTask'), 'idle')
       context.clientModules.sidebar?.setRunning([])
       context.tracePanel.render([], [])
+      renderApproval()
       context.renderControls()
       return
     }
@@ -116,7 +117,10 @@ export function createTurnController(
     // 上一会话：此时屏幕上保留的正是上一会话画面，任何重绘都会把旧投影的
     // 模型、标题、审批卡写进新会话的控件。等投影换代后再渲染。
     const viewId = context.current?.id ?? context.readOnly?.id
-    if (!viewId || context.projection.sessionId !== viewId) return
+    if (!viewId || context.projection.sessionId !== viewId) {
+      renderApproval()
+      return
+    }
     if (
       typeof context.projection.yolo === 'boolean' &&
       !context.readOnly &&
@@ -229,7 +233,13 @@ export function createTurnController(
 
   function renderApproval(): void {
     syncApprovalScope()
-    if (context.readOnly || context.sessionPending) {
+    if (
+      context.readOnly ||
+      context.sessionPending ||
+      !context.current ||
+      (context.projection && context.projection.sessionId !== context.current.id) ||
+      (context.liveApproval && context.liveApproval.request.sessionId !== context.current.id)
+    ) {
       context.approvalRuntime.render(undefined)
       return
     }
