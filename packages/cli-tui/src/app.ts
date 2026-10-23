@@ -793,7 +793,7 @@ export class TuiApp {
   async runInput(text: string): Promise<void> {
     if (this.closedNotice !== undefined) {
       // Decide and act on the same normalized text: a padded ' /quit' must not reach submit().
-      if (text.trim() !== '/quit') return void this.refuseClosed()
+      if (text.trim() !== '/quit' && text.trim() !== '/exit') return void this.refuseClosed()
       text = '/quit'
     }
     const task = text.startsWith('/') ? this.command(text) : this.submit(text)

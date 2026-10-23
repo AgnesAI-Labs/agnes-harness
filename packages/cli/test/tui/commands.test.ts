@@ -116,10 +116,11 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(68)
+    expect(SLASH_COMMANDS).toHaveLength(69)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
+      '/exit',
       '/new',
       '/resume',
       '/tree',
@@ -619,6 +620,7 @@ describe('runSlash', () => {
       // The help line carries the one-line description, not just the name.
       expect(help.text).toContain('退出')
       expect(await runSlash(app, '/quit')).toEqual({ quit: true })
+      expect(await runSlash(app, '/exit')).toEqual({ quit: true })
       const unknown = await runSlash(app, '/nope')
       expect(unknown.text).toContain('unknown')
       expect(unknown.text).toContain('/help')

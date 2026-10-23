@@ -277,6 +277,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       }
     }
     case '/quit':
+    case '/exit':
       return { quit: true }
     case '/computer-use': {
       if (args.length !== 1 || args[0] !== 'status')

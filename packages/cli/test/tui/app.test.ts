@@ -2827,19 +2827,22 @@ it('stops the turn spinner on a terminal close and refuses input it could never 
   }
 })
 
-it('after a terminal close, a padded /quit quits locally instead of being sent as a prompt', async () => {
-  const h = await daemonRestartHarness()
-  try {
-    await h.stopDaemon()
-    h.term.feed(' /quit ')
-    h.term.feed('\r')
-    await vi.waitFor(() => expect(h.quit).toHaveBeenCalled())
-    expect(h.dials()).toBe(1)
-    expect(h.newDaemon.calls).toEqual([])
-  } finally {
-    await h.dispose()
-  }
-})
+it.each(['/quit', '/exit'])(
+  'after a terminal close, a padded %s quits locally instead of being sent as a prompt',
+  async (command) => {
+    const h = await daemonRestartHarness()
+    try {
+      await h.stopDaemon()
+      h.term.feed(` ${command} `)
+      h.term.feed('\r')
+      await vi.waitFor(() => expect(h.quit).toHaveBeenCalled())
+      expect(h.dials()).toBe(1)
+      expect(h.newDaemon.calls).toEqual([])
+    } finally {
+      await h.dispose()
+    }
+  },
+)
 
 it('input queued in the daemon leaves nothing behind that re-dials after a terminal close', async () => {
   const h = await daemonRestartHarness({ hangPrompt: true })
