@@ -167,7 +167,7 @@ const forkParameters = Type.Object(
 const forkDefinition: ToolDef<typeof forkParameters> = {
   name: 'subagent_fork',
   description:
-    'Start a background child inheriting parent context and send follow-ups. Its result arrives as a child-completed notice, so end your turn instead of polling.',
+    'Fork parent context into a background child. Results arrive by notice; end your turn instead of polling. Isolation defaults to worktree, or shared in non-git folders; explicit worktree fails if unavailable.',
   parameters: forkParameters,
   meta: {
     isReadOnly: false,
@@ -235,7 +235,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
   const definition: ToolDef<typeof spawnParameters> = {
     name: 'subagent_spawn',
     description:
-      'Delegate a self-contained task to a continuable child. Use wait: true to receive findings and finish the user request in this turn. Default background mode returns immediately; a child-completed notice arrives later. Keep internal handles out of the user reply.',
+      'Delegate a task to a continuable child. Only use role for a declared role by exact ref; otherwise omit it. Isolation defaults to worktree (roles: shared), with shared fallback in non-git folders; explicit worktree fails if unavailable. Use wait: true for findings now; otherwise results arrive by notice. Keep handles out of user replies.',
     parameters: spawnParameters,
     meta: {
       isReadOnly: false,

@@ -110,7 +110,7 @@ export default defineAgnesPlugin({
         defineTool({
           name: 'workflow',
           description:
-            'Run sequential stages of parallel child agents. Each stage receives previous stage results. Supply name and stages for a new run, or only runId to resume a durable run. A failed stage stops the workflow. Use workflow_status to inspect stages and child sessions.',
+            'Run sequential stages of parallel children; later stages receive prior results. Members need name and task, not invented roles. Isolation follows subagent_spawn: worktree, or shared in non-git folders. Supply name and stages to start, or runId to resume. A failed stage stops the run; workflow_status inspects it.',
           parameters: Type.Object(
             {
               runId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),

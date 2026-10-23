@@ -152,6 +152,9 @@ describe('subagent tool definitions', () => {
       ['subagent_interrupt', 'never', true],
       ['list_subagent_models', 'safe', true],
     ])
+    expect(tools[1]?.description).toContain('Only use role for a declared role')
+    expect(tools[1]?.description).toContain('non-git')
+    expect(tools[0]?.description).toContain('non-git')
     expect(tools[0]?.meta).toMatchObject({ isReadOnly: false, isOpenWorld: true, replay: 'never' })
     expect(tools[2]?.meta).toMatchObject({ isReadOnly: false, isDestructive: true })
   })

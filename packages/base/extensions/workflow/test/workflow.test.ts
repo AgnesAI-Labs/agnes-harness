@@ -103,6 +103,7 @@ it.each(['completed', 'idle'] as const)(
   'joins parallel members (%s) before advancing and persists a replayable run',
   async (terminal) => {
     const f = await fixture(terminal)
+    expect(f.tools.get('workflow')!.description).toContain('non-git')
     const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
     expect(out.isError).toBe(false)
     expect(f.tasks).toHaveLength(3)
