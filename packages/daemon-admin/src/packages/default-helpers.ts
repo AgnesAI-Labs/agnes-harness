@@ -57,6 +57,8 @@ export async function initializeDefaultHelpers(options: {
     await options.initializePolicy()
     if (state.phase !== 'pending') return
     await options.manager.recover(options.profileDir)
+    // One verified read: helper ids are distinct, so installs in this loop never answer a later lookup.
+    const existing = (await options.manager.inventory(options.profileDir)).packages
     for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {
       if (!Object.hasOwn(state.integrity, helper.id)) continue
       const source = parseSource(helper.ref)
@@ -84,9 +86,7 @@ export async function initializeDefaultHelpers(options: {
         save(state)
         continue
       }
-      const installed = (await options.manager.inventory(options.profileDir)).packages.find(
-        (p) => p.id === helper.id,
-      )
+      const installed = existing.find((p) => p.id === helper.id)
       if (
         installed &&
         (installed.entry.integrity !== preview.integrity || installed.entry.source.ref !== helper.ref)
