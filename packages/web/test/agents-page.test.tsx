@@ -413,9 +413,11 @@ it.each([false, true])(
       await vi.waitFor(() => expect(host.querySelectorAll('[data-application]')).toHaveLength(1))
       const gallery = host.querySelector('[data-testid="agents-gallery"]')
       expect(gallery?.firstElementChild?.getAttribute('data-testid')).toBe('general-agent')
+      expect(gallery?.querySelector('[data-testid="general-agent"] > footer button')).not.toBeNull()
+      // Applications share the one feed with the agent cards; the feed decides the packing.
       expect(gallery?.querySelector('[data-application]')).not.toBeNull()
       expect(gallery?.querySelector('[data-application]')?.textContent).not.toContain(entry.id)
-      expect(gallery?.querySelector('[data-testid="general-agent"] > footer button')).not.toBeNull()
+      expect(host.querySelector('[data-testid="applications-gallery"]')).toBeNull()
       expect(host.querySelectorAll('.application-roles li')).toHaveLength(5)
       expect(host.textContent).toContain('5 role agents')
       expect(host.querySelectorAll('.application-roles li button')).toHaveLength(offline ? 1 : 0)

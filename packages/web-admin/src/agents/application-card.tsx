@@ -147,15 +147,13 @@ export function ApplicationCard({
         </header>
         <p className="agent-card-summary">{metadata?.summary}</p>
         <div className="application-preview">
-          <div>
-            <p>{metadata?.description}</p>
-            <span>
-              {tr(
-                'Branded workspace · Industry dashboard · Evidence and review',
-                '专属品牌工作台 · 行业看板 · 证据与审核',
-              )}
-            </span>
-          </div>
+          <p>{metadata?.description}</p>
+          <span>
+            {tr(
+              'Branded workspace · Industry dashboard · Evidence and review',
+              '专属品牌工作台 · 行业看板 · 证据与审核',
+            )}
+          </span>
         </div>
         {entry.application?.workbench?.scenarios && (
           <ul className="application-scenarios">
@@ -165,7 +163,7 @@ export function ApplicationCard({
           </ul>
         )}
         {!!entry.application?.workbench?.includes?.length && (
-          <p>
+          <p className="application-includes">
             {tr('Includes: ', '包含：')}
             {entry.application.workbench.includes
               .map(
