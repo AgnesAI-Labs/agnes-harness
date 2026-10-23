@@ -116,7 +116,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(56)
+    expect(SLASH_COMMANDS).toHaveLength(57)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -154,6 +154,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/loop',
       '/export',
       '/rate',
+      '/heads-up',
       '/refine',
       '/packages',
       '/install',
@@ -1049,7 +1050,7 @@ describe('runSlash', () => {
 describe('completeToken', () => {
   it('matches commands; an unmatched prefix returns empty, not everything', () => {
     // Exact single match.
-    expect(completeToken('/he')).toEqual(['/help'])
+    expect(completeToken('/he')).toEqual(['/help', '/heads-up'])
     // Reverse-verification (required): a prefix matching nothing returns an empty list, never the
     // full table.
     expect(completeToken('/zzzz')).toEqual([])

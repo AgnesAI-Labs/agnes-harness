@@ -5,6 +5,7 @@ import {
   backgroundSessions,
   type ExportRequest,
   exitSummaryLines,
+  HeadsUpWatcher,
   inheritFreshSession,
   installKeybindings,
   mouseFromEnv,
@@ -67,6 +68,7 @@ export async function runTui(
   let app: TuiApp | undefined
   let facts: TimelineFacts = { approvals: 0 }
   let earlier = false
+  const headsUp = new HeadsUpWatcher(() => app)
   const startedAt = Date.now()
   let left = false
   const leaveScreen = (): void => {
@@ -141,6 +143,7 @@ export async function runTui(
         // Only a windowed tick says whether older history is out of view; the others keep the last answer.
         if (hasEarlier !== undefined) earlier = hasEarlier
         facts = timelineFacts(timeline, earlier)
+        headsUp.onTimeline(timeline)
       },
       ...(io.breadcrumb
         ? { onSessionSwitch: (sessionId: string) => io.breadcrumb?.write(sessionId, io.cwd) }

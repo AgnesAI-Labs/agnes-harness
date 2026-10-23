@@ -20,6 +20,7 @@ import { deliverablesSlash } from './deliverable-files.js'
 import { exportSlash } from './export-command.js'
 import { listExternalSessions } from './external-sessions.js'
 import { grantsSlash } from './grant-commands.js'
+import { headsUpSlash } from './heads-up.js'
 import { infoSlash } from './info-commands.js'
 import { jobsSlash } from './job-commands.js'
 import { formatKeys } from './keybindings.js'
@@ -193,6 +194,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: 'up|down [reason]',
     descriptionKey: 'commands.rate',
     summaryKey: 'commands.rateSummary',
+  },
+  {
+    name: '/heads-up',
+    args: '[on|off]',
+    descriptionKey: 'commands.headsUp',
+    summaryKey: 'commands.headsUpSummary',
   },
   { name: '/refine', descriptionKey: 'commands.refine', summaryKey: 'commands.refineSummary' },
   { name: '/packages', descriptionKey: 'commands.packages', summaryKey: 'commands.packagesSummary' },
@@ -775,6 +782,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     }
     case '/rate':
       return rateSlash(app, line)
+    case '/heads-up':
+      return headsUpSlash(app, line)
     case '/export':
       return exportSlash(app, line)
     case '/memory':
