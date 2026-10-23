@@ -6,7 +6,8 @@ import type { LocaleCatalog } from './index.js'
  */
 export const turnErrorLocaleCatalog = {
   en: {
-    'turn.error.class.auth': 'The model account was rejected. Check the account and try again.',
+    'turn.error.class.auth':
+      'Model account authentication is unavailable. Check its credential configuration and access.',
     'turn.error.class.quota': 'The model account has no quota left.',
     'turn.error.class.rate': 'The model service is limiting requests. Try again shortly.',
     'turn.error.class.timeout': 'The model service did not answer in time.',
@@ -37,7 +38,7 @@ export const turnErrorLocaleCatalog = {
     'turn.error.processLabel': 'Process log',
   },
   'zh-CN': {
-    'turn.error.class.auth': '模型账户的凭证被拒绝了，检查账户后可以继续。',
+    'turn.error.class.auth': '模型账户认证未通过，请检查凭据配置与访问权限。',
     'turn.error.class.quota': '模型账户的额度已用完。',
     'turn.error.class.rate': '模型服务正在限流，稍后再试。',
     'turn.error.class.timeout': '模型服务没有在时限内响应。',

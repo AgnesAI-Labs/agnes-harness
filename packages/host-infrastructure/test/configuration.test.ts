@@ -433,6 +433,23 @@ it.each([401, 403])('distinguishes an unconfigured relay from a rejected key on 
   await expect(
     service.test({ providerId: 'openai-compatible', baseUrl: server.baseUrl, apiKey: 'sk-bad' }),
   ).rejects.toMatchObject({ code: 'CONFIG_CREDENTIAL_REJECTED' })
+  // A configured key is not a rejected key when the transport or catalogue cannot be checked.
+  for (const [reply, failure] of [
+    [() => Promise.reject(new Error('fixture-key network')), { reason: 'network' }],
+    [() => Promise.reject(new DOMException('fixture-key timeout', 'TimeoutError')), { reason: 'timeout' }],
+    [() => Response.json({ error: 'fixture-key' }, { status: 503 }), { reason: 'http', status: 503 }],
+    [() => Response.json({ error: 'fixture-key' }), { reason: 'invalid' }],
+  ] as const) {
+    const unavailable = createConfigurationService({
+      home: await home(),
+      profile: 'local-dev',
+      request: async () => reply(),
+    })
+    const result = await unavailable.test({ providerId: 'agnes-ai', apiKey: 'fixture-key' })
+    expect(result).toMatchObject({ verified: false, catalogueError: failure })
+    expect(JSON.stringify(result)).not.toContain('fixture-key')
+    expect((await unavailable.get()).accounts).toEqual([])
+  }
 })
 
 const JEV_MODEL = {

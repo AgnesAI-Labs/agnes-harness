@@ -19,7 +19,7 @@ import {
 import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
-import { compatibleModelsPanel } from './settings/account-compatible.js'
+import { catalogueErrorText, compatibleModelsPanel } from './settings/account-compatible.js'
 import { accountForm, endpointHost, fieldError } from './settings/account-form.js'
 import { accountNetworkFields } from './settings/account-network.js'
 import { bindAccountPage, linkedAccountRestorer, showAccountDiscard } from './settings/account-page.js'
@@ -577,7 +577,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         renderModels()
         return
       }
-      if (!result.verified || result.models.length === 0) throw new Error(tr('settings.provider.noCatalog'))
+      if (result.catalogueError) throw new Error(catalogueErrorText(result.catalogueError))
+      if (!result.verified) {
+        if (!request.apiKey && !savedProvider()?.credentialConfigured) {
+          say(tr('settings.state.notConfigured'))
+          return
+        }
+        throw new Error(tr('settings.config.verificationUnknown'))
+      }
+      if (result.models.length === 0) throw new Error(tr('settings.provider.noCatalog'))
       tested = result
       say(tr('settings.step.third', { count: result.models.length }), 'ok')
       form.clearErrors()

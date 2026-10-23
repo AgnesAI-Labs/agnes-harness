@@ -96,6 +96,8 @@ export const settingsLocaleCatalog: LocaleCatalog = {
       'The local credential store is unavailable. Check filesystem access and native build support; see data/audit/configuration.jsonl for the path and error code.',
     'settings.config.providerUnavailable':
       'The provider model catalog is unavailable. Check the network or base URL.',
+    'settings.config.verificationUnknown':
+      'Credential validity is unknown. The service returned no usable chat model list.',
     'settings.config.testFailed': 'The provider connection test failed. Check the address and key.',
     'settings.config.subscriptionAuth':
       'The upstream rejected the subscription authorization or access. Re-authorize and verify the signed-in account.',
@@ -309,6 +311,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.credentialStore':
       '本地凭据存储不可用。请检查文件系统访问权限和本机构建支持；具体路径及错误码见 data/audit/configuration.jsonl。',
     'settings.config.providerUnavailable': '服务商模型目录不可用，请检查网络或 Base URL。',
+    'settings.config.verificationUnknown': '无法确认凭据是否有效。服务未返回可用的对话模型列表。',
     'settings.config.testFailed': '服务商连接测试未通过，请检查地址和密钥。',
     'settings.config.subscriptionAuth': '上游拒绝了订阅授权或访问权限，请重新授权并核对登录账号。',
     'settings.config.subscriptionQuota': '上游报告额度或余额不足，请检查订阅用量。',
