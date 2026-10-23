@@ -308,10 +308,12 @@ describe('standard.yaml', () => {
   // host resolves against the deployment's own adapter list — a product recipe never names a
   // concrete provider or model.
   it('routes name ai routes, never concrete models', () => {
-    const route = (doc.model as { route: Record<string, unknown> }).route
-    expect(Object.keys(route).sort()).toEqual(['compaction', 'escalation', 'fast', 'primary', 'verifier'])
-    for (const [slot, target] of Object.entries(route))
-      expect(target, slot).toEqual({ route: 'default', model: 'default' })
+    for (const name of ['standard', 'minimal']) {
+      const route = (loadPreset(name).model as { route: Record<string, unknown> }).route
+      expect(Object.keys(route).sort(), name).toEqual(['escalation', 'fast', 'primary', 'verifier'])
+      for (const [slot, target] of Object.entries(route))
+        expect(target, `${name}: ${slot}`).toEqual({ route: 'default', model: 'default' })
+    }
   })
 
   it('carries the workspace edit/write allow rule and nothing wider', () => {
