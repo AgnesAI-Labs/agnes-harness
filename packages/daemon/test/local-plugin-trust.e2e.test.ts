@@ -17,13 +17,17 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 
 const fixture = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
+// The source-form worker transpiles the whole bundled-plugin graph (~1500 modules, node_modules
+// included) through jiti with forceTranspile, so no cache applies. Measured on a cold home: boot ~9s,
+// first session/new ~35s, reloadLocal ~20s. Every step needs headroom over the SDK's 30s default.
+const STEP_MS = 120_000
 async function bounded<T>(work: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
       work,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error('isolated daemon deadline')), 30_000)
+        timer = setTimeout(() => reject(new Error('isolated daemon deadline')), STEP_MS)
       }),
     ])
   } finally {
@@ -104,7 +108,11 @@ it('a fresh home does not evaluate repository plugins or other repository code u
   try {
     await bounded(ready)
     const owner = JSON.parse(readFileSync(join(home, 'daemon', 'owner.json'), 'utf8'))
-    sdk = createClient({ journal: memoryJournal(), transport: { kind: 'unix', path: owner.socketPath } })
+    sdk = createClient({
+      journal: memoryJournal(),
+      transport: { kind: 'unix', path: owner.socketPath },
+      timeouts: { request: STEP_MS },
+    })
     await sdk.initialize()
     await bounded(sdk.session.new({ cwd: workspace }))
     expect(existsSync(marker)).toBe(false)
@@ -136,4 +144,4 @@ it('a fresh home does not evaluate repository plugins or other repository code u
     await shutdown(child, exited)
     rmSync(root, { recursive: true, force: true })
   }
-}, 90_000)
+}, 300_000)
