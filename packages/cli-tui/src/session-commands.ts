@@ -1,4 +1,5 @@
 import type { ContentBlock, UINode } from '@agnes/protocol'
+import type { Session } from '@agnes/sdk'
 import type { TuiApp } from './app.js'
 import type { SessionChoice, SlashResult } from './commands.js'
 import { escapeControl } from './component.js'
@@ -40,6 +41,31 @@ export async function rewindChoices(app: TuiApp): Promise<SessionChoice[]> {
         ...(title ? { title: `#${t.turn} ${title}` } : { title: `#${t.turn}` }),
       }
     })
+}
+
+/** The one fork `/rewind` and `/fork` share. The daemon forks only for the owner and only at a completed turn boundary. */
+export const forkAt = (app: TuiApp, seq: number): Promise<Session> =>
+  app.session.client.session.fork(app.session.id, seq)
+
+/** `/fork [N]`: fork at the end of the latest completed turn (or turn N) and switch to the new session. */
+export async function forkSlash(app: TuiApp, args: readonly string[]): Promise<SlashResult> {
+  const locale = app.locale
+  const n = args[0] === undefined ? undefined : Number(args[0])
+  if (args.length > 1 || (n !== undefined && !(Number.isInteger(n) && n > 0)))
+    return { text: tt('fork.usage', locale) }
+  if (app.busy) return { text: tt('fork.busy', locale) }
+  const { timeline } = await app.session.projectUIOpening({ surface: 'tui' })
+  const turn =
+    n === undefined ? timeline.turns.findLast((t) => t.forkable) : timeline.turns.find((t) => t.turn === n)
+  if (!turn)
+    return { text: tt(n === undefined ? 'fork.noTurns' : 'fork.notForkable', locale, { turn: n ?? 0 }) }
+  if (!turn.forkable || turn.endSeq === undefined)
+    return { text: tt('fork.notForkable', locale, { turn: turn.turn }) }
+  const switchSession = await forkAt(app, turn.endSeq)
+  return {
+    switchSession,
+    text: tt('fork.done', locale, { turn: turn.turn, id: escapeControl(app.session.id) }),
+  }
 }
 
 /** The prompt of the completed turn that ends at `seq`. */

@@ -58,6 +58,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.doctorSummary',
   },
   { name: '/rewind', args: '[seq]', descriptionKey: 'commands.rewind', summaryKey: 'commands.rewindSummary' },
+  { name: '/fork', args: '[turn]', descriptionKey: 'commands.fork', summaryKey: 'commands.forkSummary' },
   {
     name: '/undo',
     args: '[turn|confirm|cancel]',

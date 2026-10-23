@@ -148,6 +148,40 @@ describe('session slash commands', () => {
     expect((await runSlash(app, '/rewind')).text).toBe(tt('session.noTurns', 'en'))
   })
 
+  it('/fork forks at the latest completed turn, or turn N, through the same call as /rewind', async () => {
+    const turn = (n: number, endSeq: number | undefined, forkable: boolean) => ({
+      id: `t${n}`,
+      turn: n,
+      startSeq: n * 10,
+      ...(endSeq ? { endSeq } : {}),
+      forkable,
+    })
+    const turns = [turn(1, 12, true), turn(2, 22, true), turn(3, undefined, false)]
+    const projectUIOpening = vi.fn(async () => ({ timeline: { turns, nodes: [] } }))
+    const fork = vi.fn(async () => ({ id: 'child' }))
+    const app = appWith({ session: { fork } }, { projectUIOpening })
+    const latest = await runSlash(app, '/fork')
+    expect(fork).toHaveBeenLastCalledWith('cur', 22)
+    expect(latest.switchSession).toMatchObject({ id: 'child' })
+    expect(latest.text).toBe(tt('fork.done', 'en', { turn: 2, id: 'cur' }))
+    await runSlash(app, '/fork 1')
+    expect(fork).toHaveBeenLastCalledWith('cur', 12)
+    await runSlash(app, '/rewind 12')
+    expect(fork).toHaveBeenLastCalledWith('cur', 12)
+    fork.mockClear()
+    for (const line of ['/fork 3', '/fork 9'])
+      expect((await runSlash(app, line)).text).toBe(
+        tt('fork.notForkable', 'en', { turn: Number(line.slice(6)) }),
+      )
+    for (const line of ['/fork x', '/fork 0', '/fork 1 2'])
+      expect((await runSlash(app, line)).text).toBe(tt('fork.usage', 'en'))
+    const busy = appWith({ session: { fork } }, { projectUIOpening }, { busy: true })
+    expect((await runSlash(busy, '/fork')).text).toBe(tt('fork.busy', 'en'))
+    projectUIOpening.mockResolvedValueOnce({ timeline: { turns: [turn(3, undefined, false)], nodes: [] } })
+    expect((await runSlash(app, '/fork')).text).toBe(tt('fork.noTurns', 'en'))
+    expect(fork).not.toHaveBeenCalled()
+  })
+
   it('/new <dir> creates the session in that directory and shows a daemon refusal as it comes', async () => {
     const created = vi.fn(async () => {
       throw new Error('workspace not authorised')

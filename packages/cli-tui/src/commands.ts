@@ -31,7 +31,7 @@ import { queueSlash } from './queue-commands.js'
 import { rateSlash } from './rate-command.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { scheduleSlash } from './schedule-commands.js'
-import { oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
+import { forkAt, forkSlash, oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
 import { SLASH_COMMANDS, type SlashCommand } from './slash-table.js'
 import { terminalSetupSlash } from './terminal-setup-command.js'
@@ -190,6 +190,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   // /resume only opens the picker, which refuses the choice itself.
   const opens =
     cmd === '/new' ||
+    cmd === '/fork' ||
     (cmd === '/rewind' && args.length > 0) ||
     (cmd === '/resume' && args.length > 0 && args[0] !== 'all')
   if (opens && app.refuseSwitch()) return {}
@@ -394,13 +395,15 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       if (!Number.isInteger(at)) return { text: 'usage: /rewind [seq]' }
       // The daemon forks a session only for its owner and only at a completed turn boundary; any
       // other request is refused there, and that refusal is shown as it comes.
-      const switchSession = await c.session.fork(s.id, at)
+      const switchSession = await forkAt(app, at)
       // The fork has happened; a projection that cannot name the prompt only costs the refill.
       const prompt = await rewindPrompt(app, at).catch(() => undefined)
       return prompt
         ? { switchSession, draft: prompt }
         : { switchSession, text: tt('session.rewoundNoPrompt', locale) }
     }
+    case '/fork':
+      return forkSlash(app, args)
     case '/undo':
       return undoSlash(app, args)
     case '/grants':
