@@ -29,6 +29,7 @@ import { openSessionServices } from './assembly-session-services.js'
 import { openStores } from './assembly-stores.js'
 import { listenWorkers } from './assembly-worker-listener.js'
 import { openWorkers } from './assembly-workers.js'
+import { bestEffort } from './best-effort.js'
 import { openBootVerification } from './boot-verification.js'
 import type { Args } from './config.js'
 import { publishDaemonDiscovery, removeDaemonDiscovery } from './discovery.js'
@@ -352,7 +353,7 @@ export async function runAgnesd(args: RunAgnesdArgs = {}, deps: RunAgnesdDeps = 
     lifetime.own({
       dispose: async () => {
         await (deps.removeDiscovery ?? removeDaemonDiscovery)(scope, sup.owner.generation).catch(
-          () => undefined,
+          bestEffort(audit, 'discovery-remove'),
         )
       },
     })

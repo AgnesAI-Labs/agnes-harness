@@ -40,6 +40,7 @@ import type {
 import { ProviderError } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
 import { isProfileDecisionJournal } from '@agnes/protocol'
+import { bestEffort } from './best-effort.js'
 import { recoverChildCompletions } from './child/completion-notice.js'
 import { KernelChildren } from './child/factory.js'
 import { readRoleDelegation } from './child/role-snapshot.js'
@@ -553,7 +554,7 @@ export class Kernel {
     } catch (error) {
       // Abandoned rather than closed: a writer whose open never finished is marked faulted before its
       // lease is handed back.
-      await forked?.abandon().catch(() => undefined)
+      await forked?.abandon().catch(bestEffort(logger, 'fork-abandon'))
       throw error
     }
     const { log, tracker, surface, ui, registersRebuilt } = tracked
@@ -730,7 +731,7 @@ export class Kernel {
         ...(so.historySignal ? [so.historySignal] : []),
       ])
       const cancelCreation = () => {
-        void session.close().catch(() => undefined)
+        void session.close().catch(bestEffort(logger, 'cancelled-session-close'))
       }
       creationSignal.addEventListener('abort', cancelCreation, { once: true })
       try {

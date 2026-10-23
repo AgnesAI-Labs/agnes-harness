@@ -3,6 +3,7 @@ import { isActiveChildState, isTerminalChildState } from '@agnes/core-child-cont
 import { CoreError } from '@agnes/core-common/types'
 import type { ChildHandle, ChildrenFactory } from '@agnes/core-effects/effects/tool-context'
 import type { ChildTaskRecord } from '@agnes/extension-api'
+import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { type ChildRolePort, type ResolvedChildRole, recordedChildRole } from './roles.js'
 
@@ -40,7 +41,7 @@ export async function resumeRoleChild(
   await child.d.log.fullVerified()
   const inbox = child.latest('inbox') as { items?: unknown[] } | undefined
   if (child.op() || inbox?.items?.length) {
-    void handle.run(record.inputText).catch(() => undefined)
+    void handle.run(record.inputText).catch(bestEffort(parent.d.logger, 'role-child-resume'))
   } else {
     port.continued()
     const [end] = await child.scan({ type: 'turn/end', order: 'desc', limit: 1 })

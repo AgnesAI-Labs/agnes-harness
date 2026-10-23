@@ -14,6 +14,7 @@ import {
 } from '@agnes/core'
 import type { SessionTasks } from '@agnes/host-extensions/assemble/packages'
 import type { InferenceEvent } from '@agnes/protocol'
+import { bestEffort } from '../../best-effort.js'
 import type { HostSession } from '../lifecycle/host.js'
 import { askSideQuestion, SideQuestionError } from './session-side-question.js'
 
@@ -96,7 +97,7 @@ export function createSessionTasks(
               if (alive && epoch === revision && (await current(s, completedTurn)))
                 listener({ turn: completedTurn, reason, messages })
             })
-            .catch(() => undefined)
+            .catch(bestEffort(s.d.logger, 'completed-turn-observer'))
         }
       })
       return () => {

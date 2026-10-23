@@ -109,6 +109,7 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
+import { bestEffort } from '../best-effort.js'
 import {
   childLifecycle,
   childLifecycleRevoked,
@@ -2058,7 +2059,7 @@ export class SessionImpl {
     }
     this.turnEndError = undefined
     const cancelled = () => opts.signal.aborted || this.abortRevision !== abortRevision
-    const onAbort = () => void this.abort().catch(() => undefined)
+    const onAbort = () => void this.abort().catch(bestEffort(this.d.logger, 'session-abort'))
     opts.signal.addEventListener('abort', onAbort, { once: true })
     // A phase edge that reports where it went without writing where it went leaves step() reading
     // the same phase forever. Bound consecutive edges without a committed program-counter change,

@@ -1075,6 +1075,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       // carries a failure to the inference owner.
       const written = (row: EventInput): void => {
         const pending = s.d.log.append([row]).then(() => undefined)
+        // Streaming writes report to flushQueue; per-delta diagnostics would duplicate that failure.
         pending.catch(() => undefined)
         flushQueue = Promise.all([flushQueue, pending]).then(() => undefined)
       }

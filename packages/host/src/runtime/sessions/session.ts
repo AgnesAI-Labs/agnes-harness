@@ -37,6 +37,7 @@ import { referenceHistory } from '@agnes/host-providers/assemble/reference-histo
 import { referenceLimits } from '@agnes/host-providers/assemble/reference-text'
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import type { Actor, LoopSelection, SessionStart } from '@agnes/protocol'
+import { bestEffort } from '../../best-effort.js'
 import type { Assembled } from '../assemble/assemble.js'
 import { retainedModelView } from '../assemble/retained-model.js'
 import type { HostSession } from '../lifecycle/host.js'
@@ -266,7 +267,7 @@ function childSandboxes(
         )
         return Object.freeze({ ...child, sandbox })
       } catch (error) {
-        await child.close().catch(() => undefined)
+        await child.close().catch(bestEffort(a.kernel.o.logger, 'unpublished-child-close'))
         throw error
       }
     },

@@ -14,6 +14,7 @@ import { HostError } from '@agnes/host-common/errors'
 import type { RowOrigin, RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { type JsonValue, jcs, type ServiceCapability } from '@agnes/protocol'
 import { BUILTIN_HOOK_RANKS } from '../assemble/ext-rows.js'
+import { bestEffort } from '../best-effort.js'
 import { diagnostic, loadError } from './diagnostics.js'
 import { DisposerBag } from './disposers.js'
 import { ExtensionOwners } from './extension-owners.js'
@@ -197,7 +198,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     if (wasLive && wasLoaded && activation)
       shutdown = activation
         .shutdown(r.source, { reason: 'revoke', lease: r.lease.view() })
-        .catch(() => undefined)
+        .catch(bestEffort(options.log, 'retired-extension-shutdown'))
     r.lease.revoke(reason)
     r.ac.abort()
     r.pending.clear()

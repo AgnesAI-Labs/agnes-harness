@@ -12,6 +12,7 @@ import {
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
 import { decodeArtifactMediaResponse } from './artifact-media-response.js'
+import { bestEffort } from './best-effort.js'
 import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
@@ -282,11 +283,13 @@ export async function runWorker(
     resourcesClosed = true
 
     await idleResourcePreparation
-    await hostedSessions?.closeAll().catch(() => undefined)
+    await hostedSessions?.closeAll().catch(bestEffort(deps.log ?? sessionLog, 'hosted-sessions-close'))
     sharedChannel.closeAll()
 
-    await host?.close().catch(() => undefined)
-    await resourceSlot.generation?.runtime.mcp.close().catch(() => undefined)
+    await host?.close().catch(bestEffort(deps.log ?? sessionLog, 'worker-host-close'))
+    await resourceSlot.generation?.runtime.mcp
+      .close()
+      .catch(bestEffort(deps.log ?? sessionLog, 'worker-resources-close'))
     link.destroy()
   }
   const assemble = async <T>(operation: Promise<T>): Promise<T> => {

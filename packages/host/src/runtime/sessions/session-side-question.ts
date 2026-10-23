@@ -12,6 +12,7 @@ import {
   toProviderRequest,
 } from '@agnes/core'
 import type { InferenceEvent } from '@agnes/protocol'
+import { bestEffort } from '../../best-effort.js'
 import type { HostSession } from '../lifecycle/host.js'
 
 export type SideQuestionFailure = 'budget' | 'unavailable' | 'timeout' | 'failed'
@@ -237,6 +238,7 @@ async function ask(
           if (event.type === 'error' || event.type === 'toolcall_end' || event.type === 'deviation') break
         }
       } finally {
+        // Early stream cancellation can reject return(); settlement remains owned by this request.
         void iterator.return?.().catch(() => undefined)
       }
     } catch (error) {
@@ -290,7 +292,10 @@ async function ask(
     options.signal?.removeEventListener('abort', cancel)
     abort.abort()
     // Still held only when the provider was never called or accounting itself failed.
-    if (permit) await permit.store.releaseReservation(permit.id).catch(() => undefined)
+    if (permit)
+      await permit.store
+        .releaseReservation(permit.id)
+        .catch(bestEffort(s.d.logger, 'side-question-reservation-release'))
   }
 }
 

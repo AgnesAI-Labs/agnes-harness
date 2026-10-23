@@ -271,7 +271,9 @@ export class RemoteSession {
       try {
         if ((await this.link.command('latest', { register: 'op.state', key: 'main' })) == null)
           completed = true
-      } catch {}
+      } catch {
+        // A lost reply leaves the lease for startup recovery.
+      }
       throw error
     } finally {
       o.signal.removeEventListener('abort', onAbort)
@@ -492,7 +494,9 @@ export class RemoteSession {
         if ((await this.link.command('latest', { register: 'op.state', key: 'main' })) == null) {
           released = true
         }
-      } catch {}
+      } catch {
+        // A lost reply leaves the lease for startup recovery.
+      }
       if (released) {
         this.manualTurnReserved = false
         this.onTurnBoundary?.()

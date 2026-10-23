@@ -781,6 +781,7 @@ export async function createCompositionHost(
       clearInterval(statusTimer)
       idleSince.clear()
       const hosts = new Map([...containers.values()].map(({ host }) => [host, host.close()]))
+      // The allSettled owner below reports these errors; this only prevents early unhandled rejections.
       for (const close of hosts.values()) void close.catch(() => undefined)
       closing = (async () => {
         await calls.drain()

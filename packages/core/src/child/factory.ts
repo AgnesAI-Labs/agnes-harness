@@ -14,6 +14,7 @@ import type { ChildWorkspaceLifecycle } from '@agnes/core-effects/workspace/runt
 import { forkChecks } from '@agnes/core-ledger/log/fork-seed'
 import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
+import { bestEffort } from '../best-effort.js'
 import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
 import { recordChildResultCollected } from './collected-result.js'
@@ -314,7 +315,7 @@ export class KernelChildren implements ChildrenFactory {
       .then(() => {
         if (this.residents.get(childKey)?.idle()) this.pump(childKey)
       })
-      .catch(() => undefined)
+      .catch(bestEffort(resident.child.d.logger, 'resident-child-pump'))
   }
 
   private open(
@@ -454,16 +455,17 @@ export class KernelChildren implements ChildrenFactory {
       const child = this.session(attempt.childKey)
       if (handle)
         await reportFailedCreation(parent, attempt.childKey, child?.state.creditsUsed ?? 0).catch(
-          () => undefined,
+          bestEffort(parent.d.logger, 'failed-child-creation-report'),
         )
       if (child) {
         workspaceCloseDelegated = true
         // Never publish a completion/cost for a handle that was not admitted. That would also
         // wait on the very parent verification which invalidated this attempt.
-        await child.d.log.abandon().catch(() => undefined)
+        await child.d.log.abandon().catch(bestEffort(parent.d.logger, 'child-abandon'))
         await this.dropLocalChild(attempt.childKey, child)
       }
-      if (!workspaceCloseDelegated) await workspace?.close().catch(() => undefined)
+      if (!workspaceCloseDelegated)
+        await workspace?.close().catch(bestEffort(parent.d.logger, 'child-workspace-close'))
       this.handles.delete(attempt.childKey)
       if (cancellationError)
         throw new AggregateError([error, cancellationError], 'child open and durable cancellation failed')
@@ -522,7 +524,7 @@ export class KernelChildren implements ChildrenFactory {
         record.state === 'interrupted' ||
         record.state === 'creating'
       )
-        void cached.run(record.inputText).catch(() => undefined)
+        void cached.run(record.inputText).catch(bestEffort(parent.d.logger, 'child-resume'))
       return cached
     }
     return resumeRoleChild(parent, record, this.kernel.o.childRoles, {
@@ -703,7 +705,7 @@ export class KernelChildren implements ChildrenFactory {
       if (stored && isTerminalChildState(stored)) outcome = stored as typeof outcome
       await parent.hooks
         .subagentEnd?.({ childKey: record.childKey, outcome, credits: Math.max(0, child.state.creditsUsed) })
-        .catch(() => undefined)
+        .catch(bestEffort(parent.d.logger, 'child-end-hook'))
       const cost = (await child.scan({ type: 'cost/ledger', order: 'desc', limit: 1 }).catch(() => []))[0]
       const credits = Math.max(0, child.state.creditsUsed)
       await parent.d.log
@@ -719,8 +721,10 @@ export class KernelChildren implements ChildrenFactory {
               : { creditSource: 'unknown' as const }),
           }),
         ])
-        .catch(() => undefined) // Only after the terminal state is durable; a missed delivery is repaired by the parent's recovery scan.
-      await deliverChildCompletion(parent, record, outcome, { credits }).catch(() => undefined)
+        .catch(bestEffort(parent.d.logger, 'child-cost-write')) // Only after the terminal state is durable; a missed delivery is repaired by the parent's recovery scan.
+      await deliverChildCompletion(parent, record, outcome, { credits }).catch(
+        bestEffort(parent.d.logger, 'child-completion-delivery'),
+      )
     }
     const handle: ChildHandle = {
       key: record.childKey,
@@ -817,7 +821,7 @@ export class KernelChildren implements ChildrenFactory {
               await deliverChildCompletion(parent, record, 'completed', {
                 credits: Math.max(0, child.state.creditsUsed),
                 continuable: true,
-              }).catch(() => undefined)
+              }).catch(bestEffort(parent.d.logger, 'child-continuation-delivery'))
             queueMicrotask(() => this.pump(record.childKey))
             return { text, lastSeq: child.lastSeq }
           }
@@ -922,7 +926,7 @@ export class KernelChildren implements ChildrenFactory {
     if (kind === 'spawn' || opts.resident) handle.run = (input) => this.detached(() => run(input))
     await parent.hooks
       .subagentStart?.({ childKey: record.childKey, kind, budget: opts.budget ?? null })
-      .catch(() => undefined)
+      .catch(bestEffort(parent.d.logger, 'child-start-hook'))
     checkParent()
     return handle
   }
@@ -1011,7 +1015,7 @@ export class KernelChildren implements ChildrenFactory {
       const result = await child.run(input.task)
       return { id: child.key, text: result.text }
     } finally {
-      await child.close().catch(() => undefined)
+      await child.close().catch(bestEffort(parent.d.logger, 'fork-close'))
     }
   }
 

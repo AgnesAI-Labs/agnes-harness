@@ -239,7 +239,9 @@ export function createExtensionServiceHost(input: {
       for (const off of offs) {
         try {
           off()
-        } catch {}
+        } catch {
+          // Continue releasing the other provider listeners.
+        }
       }
       bindings.forget(kind.kind, provider.id, provider.version)
       return dispose()
@@ -280,7 +282,9 @@ export function createExtensionServiceHost(input: {
             for (const off of offs.reverse()) {
               try {
                 off()
-              } catch {}
+              } catch {
+                // Preserve the registration failure while unwinding listeners.
+              }
             }
             if (claimed) bindings.forget(kind.kind, provider.id, provider.version)
             void dispose().catch(() => undefined)
@@ -293,7 +297,9 @@ export function createExtensionServiceHost(input: {
             for (const off of offs.reverse()) {
               try {
                 off()
-              } catch {}
+              } catch {
+                // Continue releasing the other provider listeners.
+              }
             }
             bindings.forget(kind.kind, provider.id, provider.version)
           }

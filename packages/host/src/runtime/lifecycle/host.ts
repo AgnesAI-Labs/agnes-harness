@@ -1,5 +1,6 @@
 import { CoreError, roleAuthority } from '@agnes/core'
 import { isProfileDecisionJournal, rpcError } from '@agnes/protocol'
+import { bestEffort } from '../../best-effort.js'
 import { restoreRolePolicy, roleWorkspacePreset } from '../sessions/role-policy.js'
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
@@ -680,7 +681,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             throw error
           }
           if (pendingChildWorkspace && !pendingChildWorkspace.commit()) {
-            await s.close().catch(() => undefined)
+            await s.close().catch(bestEffort(opts.log, 'unpublished-session-close'))
             throw new HostError('E_WORKSPACE_CLOSED', 'fork workspace closed before publication', {
               detail: { reason: 'child-workspace-commit-lost' },
             })
@@ -689,8 +690,10 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           // Kernel keeps a live session in its table on a duplicate-open mismatch. That session owns
           // the existing workspace entry, so only an open that left no live session is rolled back.
           if (o.binding && !a.kernel.get(o.binding.sessionKey))
-            await workspaceRuntimes.close(o.binding.sessionKey).catch(() => undefined)
-          await pendingChildWorkspace?.close().catch(() => undefined)
+            await workspaceRuntimes
+              .close(o.binding.sessionKey)
+              .catch(bestEffort(opts.log, 'session-workspace-rollback'))
+          await pendingChildWorkspace?.close().catch(bestEffort(opts.log, 'child-workspace-rollback'))
           throw error
         }
         const offObservation = a.observeSession(s.key)

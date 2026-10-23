@@ -19,6 +19,7 @@ import {
   USER_MESSAGE_IMAGE_LIMITS,
   validateStoredAttachment,
 } from '@agnes/protocol-validation'
+import { bestEffort } from '../best-effort.js'
 import { resolveModel } from '../step/inference.js'
 import type { SessionImpl } from '../step/session.js'
 import { attachmentImagePolicy } from './attachment-image-policy.js'
@@ -225,7 +226,7 @@ export async function admitSessionAttachments(
       discard,
     }
   } catch (error) {
-    await discard().catch(() => undefined)
+    await discard().catch(bestEffort(session.d.logger, 'attachment-discard'))
     throw attachmentFailure(error, signal)
   }
 }
@@ -242,10 +243,10 @@ export async function commitSessionAttachments<T>(
   try {
     result = await commit(admitted.content)
   } catch (error) {
-    await admitted.discard().catch(() => undefined)
+    await admitted.discard().catch(bestEffort(session.d.logger, 'attachment-commit-discard'))
     throw error
   }
-  await admitted.confirm().catch(() => undefined)
+  await admitted.confirm().catch(bestEffort(session.d.logger, 'attachment-confirm'))
   return result
 }
 

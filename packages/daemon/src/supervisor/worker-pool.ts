@@ -24,6 +24,7 @@ import {
   resourceWorkerObservation,
 } from '@agnes/resource-control-daemon'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
+import { bestEffort } from './best-effort.js'
 import type { DaemonConfig } from './config.js'
 import type { RequestFrame } from './frames.js'
 import type {
@@ -875,7 +876,7 @@ export class WorkerPool {
       if (!slot || !channel) continue
       slot.channels.delete(key)
       slot.sessions.delete(key)
-      void channel.closeSession(reason).catch(() => undefined)
+      void channel.closeSession(reason).catch(bestEffort(this.o.onRuntimeLog, 'worker-session-retire'))
     }
   }
 

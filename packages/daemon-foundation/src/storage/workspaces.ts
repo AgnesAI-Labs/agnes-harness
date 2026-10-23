@@ -284,7 +284,9 @@ export class WorkspaceCatalog {
     for (const listener of this.boundListeners) {
       try {
         listener(binding.workspaceId, binding.canonicalRoot)
-      } catch {}
+      } catch {
+        // An advisory listener cannot undo the workspace binding.
+      }
     }
   }
 
@@ -294,7 +296,9 @@ export class WorkspaceCatalog {
     for (const listener of this.registeredListeners) {
       try {
         listener(row.workspaceId, row.path)
-      } catch {}
+      } catch {
+        // An advisory listener cannot undo the workspace registration.
+      }
     }
     return this.entry(row, this.sessionAggregate(), true)
   }
