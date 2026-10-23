@@ -98,6 +98,9 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'validation.server-id-format':
       'Use a service ID that starts with a lowercase letter and contains only lowercase letters, numbers, dots, underscores, or hyphens.',
     'validation.executable-required': 'Enter an executable.',
+    'validation.workspace-required':
+      'Choose a workspace folder containing the local script and its dependencies before saving.',
+    'validation.workspace-format': 'Enter an absolute workspace folder path, up to 4096 characters.',
     'validation.url-required': 'Enter an HTTPS address or a loopback HTTP address allowed by local policy.',
     'placeholder.env': 'TOKEN=secret://namespace/name (one per line)',
     'select.transport': 'Transport',
@@ -189,6 +192,8 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'validation.server-id-required': '请填写服务 ID。',
     'validation.server-id-format': '服务 ID 需以小写字母开头，只能含小写字母、数字、点、下划线、连字符。',
     'validation.executable-required': '请填写可执行文件。',
+    'validation.workspace-required': '保存前请填写包含本地脚本及其依赖的工作区目录。',
+    'validation.workspace-format': '请填写工作区目录的绝对路径，最多 4096 个字符。',
     'validation.url-required': '请填写 HTTPS 地址，或本地策略允许的 loopback HTTP 地址。',
     'placeholder.env': 'TOKEN=secret://namespace/name（每行一个）',
     'select.transport': '传输',

@@ -22,6 +22,7 @@ export function createMcpForm(input: {
     ['mcp-secret', 'textarea'],
     ['mcp-tools', 'textarea'],
     ['mcp-token-env', 'input'],
+    ['mcp-workspace', 'input'],
   ]
   function mcpFormSnapshot(): McpFormFieldSnapshot {
     return {
@@ -33,6 +34,8 @@ export function createMcpForm(input: {
       url: $('mcp-url', 'input').value.trim(),
       secretText: $('mcp-secret', 'textarea').value.trim(),
       toolsText: $('mcp-tools', 'textarea').value,
+      workspacePath: $('mcp-workspace', 'input').value.trim(),
+      sandboxProfile: $('mcp-sandbox', 'select').value,
     }
   }
   /**

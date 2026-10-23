@@ -504,6 +504,7 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   expect(byId('mcp-token-env-row').hidden).toBe(false)
   expect(byId('mcp-token-env-row').closest('#mcp-advanced')).toBeNull()
   expect(byId('mcp-sandbox-row').closest('#mcp-advanced')).toBeNull()
+  expect(byId('mcp-workspace-row').closest('#mcp-advanced')).toBeNull()
   expect(byId('mcp-sandbox-help').textContent).toContain('block network')
   expect(byId<HTMLSelectElement>('mcp-sandbox').value).toBe('strict')
   change('mcp-command', 'npx -y example-mcp')
@@ -523,6 +524,7 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   byId('mcp-transport-listbox-1').click()
   expect(byId('mcp-executable-row').hidden).toBe(true)
   expect(byId('mcp-sandbox-row').hidden).toBe(true)
+  expect(byId('mcp-workspace-config').hidden).toBe(true)
   expect(byId('mcp-url-row').hidden).toBe(false)
   expect(byId('mcp-oauth-row').hidden).toBe(false)
   expect(byId('mcp-secret-kind-trigger').textContent).toBe('No credentials')
@@ -549,6 +551,39 @@ it('uses shared pickers for transport, permitted credentials and headers, then r
   expect(byId('mcp-secret-kind-trigger').textContent).toBe('No credentials')
   expect(submitted('mcp/create')).toHaveLength(0)
   expect(byId<HTMLInputElement>('mcp-token-env').value).toBe('')
+})
+
+it('requires a workspace for a local script and applies its suggested install root only when requested', async () => {
+  byId('mcp-create').click()
+  byId('mcp-method-local').click()
+  change('mcp-command', 'node /srv/fixture/node_modules/example-mcp/dist/index.js')
+  change('mcp-name', 'Local fixture')
+  expect(byId<HTMLInputElement>('mcp-workspace').value).toBe('')
+  expect(byId<HTMLInputElement>('mcp-workspace').required).toBe(true)
+  expect(byId('mcp-workspace-suggestion').hidden).toBe(false)
+  expect(byId('mcp-workspace-explanation').textContent).toContain('/srv/fixture')
+  byId('mcp-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  await settle()
+  expect(submitted('mcp/create')).toHaveLength(0)
+  expect(byId('mcp-workspace').getAttribute('aria-invalid')).toBe('true')
+  expect(document.activeElement).toBe(byId('mcp-workspace'))
+  byId('mcp-workspace-use').click()
+  expect(byId<HTMLInputElement>('mcp-workspace').value).toBe('/srv/fixture')
+  expect(byId('mcp-workspace').hasAttribute('aria-invalid')).toBe(false)
+  expect(byId('mcp-workspace-suggestion').hidden).toBe(true)
+  expect(byId<HTMLSelectElement>('mcp-sandbox').value).toBe('strict')
+  change('mcp-workspace', '/srv/my-reviewed-folder')
+  change('mcp-command', 'node /srv/other/node_modules/example-mcp/index.js')
+  expect(byId<HTMLInputElement>('mcp-workspace').value).toBe('/srv/my-reviewed-folder')
+  expect(byId('mcp-workspace-suggestion').hidden).toBe(false)
+  byId('mcp-workspace-use').click()
+  await submitMcpForm()
+  await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
+  expect(submitted('mcp/create')[0]?.body.definition).toMatchObject({
+    workspacePath: '/srv/other',
+    sandboxProfile: 'strict',
+    transport: { kind: 'stdio', executable: 'node', args: ['/srv/other/node_modules/example-mcp/index.js'] },
+  })
 })
 
 it('reports MCP creation as a dismissible success without a persistent enablement warning', async () => {

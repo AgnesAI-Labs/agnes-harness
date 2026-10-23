@@ -172,6 +172,26 @@ function McpDialogScaffold() {
             {t('wizard.envHelp')}
           </span>
         </label>
+        <div id="mcp-workspace-config" className="agnes-settings-stack">
+          <label id="mcp-workspace-row" className="form-field" htmlFor="mcp-workspace">
+            <span>{t('sandbox.workspace')}</span>
+            <SettingsInput
+              id="mcp-workspace"
+              maxLength={4096}
+              autoComplete="off"
+              aria-describedby="mcp-workspace-help mcp-error"
+            />
+            <span id="mcp-workspace-help" className="form-hint">
+              {t('sandbox.workspaceHelp')}
+            </span>
+          </label>
+          <p id="mcp-workspace-suggestion" className="form-hint" hidden>
+            <span id="mcp-workspace-explanation"></span>{' '}
+            <Button id="mcp-workspace-use" htmlType="button">
+              {t('sandbox.workspaceUse')}
+            </Button>
+          </p>
+        </div>
         <label id="mcp-sandbox-row" className="form-field" htmlFor="mcp-sandbox">
           <span>{t('sandbox.title')}</span>
           <SettingsSelect id="mcp-sandbox" aria-describedby="mcp-sandbox-help">
@@ -218,10 +238,6 @@ function McpDialogScaffold() {
                 <option value="http">{t('index-shell.mcpTransportHttp')}</option>
                 <option value="sse">{t('index-shell.mcpTransportSse')}</option>
               </SettingsSelect>
-            </label>
-            <label id="mcp-workspace-row" className="form-field" htmlFor="mcp-workspace">
-              <span>{t('sandbox.workspace')}</span>
-              <SettingsInput id="mcp-workspace" autoComplete="off" />
             </label>
             <label id="mcp-executable-row" className="form-field" htmlFor="mcp-executable">
               <span>{t('index-shell.mcpExecutableLabel')}</span>

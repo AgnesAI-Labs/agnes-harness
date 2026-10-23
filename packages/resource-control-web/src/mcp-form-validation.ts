@@ -6,6 +6,7 @@ import {
   type LocaleTranslator,
 } from '@agnes/web-ui'
 import { resourceAdminLocaleCatalog } from './locales/admin.js'
+import { localScriptWorkspace } from './mcp-workspace.js'
 
 const englishText = createCatalogTranslator(resourceAdminLocaleCatalog, 'en')
 
@@ -23,6 +24,8 @@ type SchemaNode = {
   properties?: Record<string, SchemaNode>
   items?: SchemaNode
   $defs?: Record<string, SchemaNode>
+  oneOf?: SchemaNode[]
+  anyOf?: SchemaNode[]
 }
 
 const CREATE_PARAMS = RESOURCE_CONTROL_METHODS['_agnes/v1/mcp.servers.create'].params as unknown as SchemaNode
@@ -34,7 +37,11 @@ const CREATE_PARAMS = RESOURCE_CONTROL_METHODS['_agnes/v1/mcp.servers.create'].p
 function schemaNode(path: string): SchemaNode {
   let node: SchemaNode | undefined = CREATE_PARAMS
   for (const key of path.split('.')) {
-    node = node?.$defs?.[key] ?? node?.properties?.[key] ?? (key === 'items' ? node?.items : undefined)
+    node =
+      node?.$defs?.[key] ??
+      node?.properties?.[key] ??
+      (node?.oneOf ?? node?.anyOf)?.find((branch) => branch.properties?.[key])?.properties?.[key] ??
+      (key === 'items' ? node?.items : undefined)
     if (!node) throw new Error(`MCP form schema node missing: ${path}`)
   }
   return node
@@ -61,6 +68,7 @@ export const MCP_FORM_PATTERNS = {
   secretRef: schemaPattern('SecretRef'),
   envName: schemaPattern('McpEnvName'),
   url: schemaPattern('McpHttpTransport.url'),
+  workspace: schemaPattern('McpServerDefinitionInput.workspacePath'),
 } as const
 
 export const MCP_FORM_LIMITS = {
@@ -69,6 +77,7 @@ export const MCP_FORM_LIMITS = {
   toolMaxLength: schemaNumber('McpToolPolicy.allow.items', 'maxLength'),
   toolsMaxItems: schemaNumber('McpToolPolicy.allow', 'maxItems'),
   urlMaxLength: schemaNumber('McpHttpTransport.url', 'maxLength'),
+  workspaceMaxLength: schemaNumber('McpServerDefinitionInput.workspacePath', 'maxLength'),
 } as const
 
 /** Shared UI schema validation keeps the existing managed MCP form/confirmation DOM intact. */
@@ -94,6 +103,7 @@ export type McpFormFieldId =
   | 'mcp-secret'
   | 'mcp-tools'
   | 'mcp-token-env'
+  | 'mcp-workspace'
 
 export type McpFormFieldIssue = Readonly<{
   field: McpFormFieldId
@@ -110,6 +120,8 @@ export type McpFormFieldSnapshot = Readonly<{
   url: string
   secretText: string
   toolsText: string
+  workspacePath?: string
+  sandboxProfile?: string
 }>
 
 const URL_CREDENTIAL_QUERY = /(?:token|secret|password|api[_-]?key|credential)/i
@@ -263,6 +275,19 @@ export function mcpFormIssues(
         issues.push({ field: 'mcp-executable', message: t('validation.executable-required') })
     }
     issues.push(...stdioIssues(snapshot.executable, snapshot.argsText, t))
+    const workspace = snapshot.workspacePath?.trim() ?? ''
+    if (
+      workspace &&
+      (workspace.length > MCP_FORM_LIMITS.workspaceMaxLength || !matchesField('workspace', workspace))
+    )
+      issues.push({ field: 'mcp-workspace', message: t('validation.workspace-format') })
+    else if (
+      !workspace &&
+      options.requireFilled &&
+      snapshot.sandboxProfile !== 'off-with-warning' &&
+      localScriptWorkspace(snapshot.executable, snapshot.argsText)
+    )
+      issues.push({ field: 'mcp-workspace', message: t('validation.workspace-required') })
   } else if (snapshot.transport === 'http' || snapshot.transport === 'sse') {
     if (!snapshot.url) {
       if (options.requireFilled)

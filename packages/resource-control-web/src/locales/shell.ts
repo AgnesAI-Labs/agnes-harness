@@ -33,7 +33,12 @@ export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
     'wizard.envHelp':
       'Enter the exact environment variable required by the service, for example CONTEXT7_API_KEY for Context7. Choosing a credential does not choose its variable name.',
 
-    'sandbox.workspace': 'Workspace folder (optional, absolute path)',
+    'sandbox.workspace': 'Workspace folder',
+    'sandbox.workspaceHelp':
+      'Use an absolute folder containing the local script and its dependencies. Required for recognized Node/Python script paths when sandboxed. Network access does not grant file access.',
+    'sandbox.workspaceSuggestion':
+      'Suggested folder to include the script and its dependencies: {directory}. Review it before applying.',
+    'sandbox.workspaceUse': 'Use suggested folder',
     'sandbox.off-with-warning': 'Off: full host access (explicit approval)',
     'sandbox.network': 'Network, workspace read',
     'sandbox.workspace-write': 'Workspace write, no network',
@@ -118,7 +123,11 @@ export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
     'wizard.envHelp':
       '请按服务文档填写变量名，例如 Context7 使用 CONTEXT7_API_KEY。选择凭据不会自动确定变量名。',
 
-    'sandbox.workspace': '工作区目录（可选，绝对路径）',
+    'sandbox.workspace': '工作区目录',
+    'sandbox.workspaceHelp':
+      '填写包含本地脚本及其依赖的文件夹绝对路径。使用沙箱且识别到 Node/Python 脚本路径时须填写；允许联网不会增加文件读取权限。',
+    'sandbox.workspaceSuggestion': '建议包含脚本和依赖的目录：{directory}。请检查后再采用。',
+    'sandbox.workspaceUse': '使用建议目录',
     'sandbox.off-with-warning': '关闭：访问完整主机（须明确批准）',
     'sandbox.network': '允许联网，工作区只读',
     'sandbox.workspace-write': '允许工作区写入，禁止联网',
