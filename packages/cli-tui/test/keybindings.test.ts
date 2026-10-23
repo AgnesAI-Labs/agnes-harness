@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Editor } from '../src/editor.js'
 import { formatKeys, installKeybindings, readKeybindings } from '../src/keybindings.js'
 import { actionFor, installKeymap, Keymap } from '../src/keymap.js'
+import { parseKey } from '../src/keys.js'
+import { nextModel } from '../src/model-cycle.js'
 import { nextThinkingLevel } from '../src/thinking-cycle.js'
 
 afterEach(() => installKeymap(new Keymap()))
@@ -39,6 +41,38 @@ describe('thinking-cycle (Shift+Tab)', () => {
     expect(at('mapped', 'off')).toBe('low')
     expect(at('plain', 'off')).toBeUndefined()
     expect(at('gone', 'off')).toBeUndefined()
+  })
+})
+
+describe('model cycle (Alt-P)', () => {
+  const models = [
+    { route: 'r', id: 'a' },
+    { route: 'r', id: 'deep', reasoning: true },
+    { route: 'r', id: 'a' },
+    { route: 's', id: 'last', reasoning: true, thinkingLevelMap: { low: 'l' } },
+  ]
+  const at = (id: string, step: 1 | -1, route = 'r', thinking = 'high') =>
+    nextModel(models, { route, id, thinking }, step)
+  it('is a global action; Alt-P and Alt-Shift-P are told apart, plain and as kitty reports them', () => {
+    expect(actionFor('global', 'alt-p')).toBe('model-next')
+    expect(actionFor('global', 'alt-shift-p')).toBe('model-prev')
+    expect(parseKey('\x1bp', false).name).toBe('alt-p')
+    expect(parseKey('\x1bP', false).name).toBe('alt-shift-p')
+    expect(parseKey('\x1b[112;3u', true).name).toBe('alt-p')
+    expect(parseKey('\x1b[112;4u', true).name).toBe('alt-shift-p')
+  })
+  it('walks the picker order, lists each model once, wraps, and keeps a thinking level the model offers', () => {
+    expect(at('a', 1)).toEqual({ route: 'r', model: 'deep', thinking: 'high' })
+    expect(at('deep', 1)).toEqual({ route: 's', model: 'last' })
+    expect(at('last', 1, 's')).toEqual({ route: 'r', model: 'a' })
+    expect(at('a', -1)).toEqual({ route: 's', model: 'last' })
+    expect(at('deep', -1)).toEqual({ route: 'r', model: 'a' })
+  })
+  it('starts at the first (or last) when the current model is not listed, and declines when nothing else is', () => {
+    expect(at('gone', 1)).toEqual({ route: 'r', model: 'a' })
+    expect(at('gone', -1)).toEqual({ route: 's', model: 'last' })
+    expect(nextModel([{ route: 'r', id: 'a' }], { route: 'r', id: 'a', thinking: '' }, 1)).toBeUndefined()
+    expect(nextModel([], undefined, 1)).toBeUndefined()
   })
 })
 

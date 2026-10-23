@@ -20,6 +20,8 @@ export const KEY_NAMES = [
   'ctrl-w',
   'ctrl-y',
   'alt-y',
+  'alt-p',
+  'alt-shift-p',
   'ctrl-z',
   'ctrl-shift-z',
   'ctrl-end',
@@ -86,6 +88,8 @@ const SEQ = new Map<string, KeyName>([
   ['\x1b[1;3C', 'word-right'],
   ['\x1bd', 'word-delete'],
   ['\x1by', 'alt-y'],
+  ['\x1bp', 'alt-p'],
+  ['\x1bP', 'alt-shift-p'],
   ['\x1b\x7f', 'word-delete-back'],
   ['\x1b[1;5F', 'ctrl-end'],
   ['\t', 'tab'],
@@ -170,6 +174,8 @@ export function parseKey(data: string, kitty: boolean): Key {
     if (code === 27 && mods === 0) return { name: 'esc' }
     if (code === 122 && mods === 5) return { name: 'ctrl-shift-z' }
     if (code === 121 && mods === 2) return { name: 'alt-y' }
+    if (code === 112 && mods === 2) return { name: 'alt-p' }
+    if ((code === 112 && mods === 3) || (code === 80 && mods === 2)) return { name: 'alt-shift-p' }
     const ctrl = mods === 4 && code >= 97 && code <= 122 ? SEQ.get(String.fromCharCode(code - 96)) : undefined
     if (ctrl) return { name: ctrl }
   }

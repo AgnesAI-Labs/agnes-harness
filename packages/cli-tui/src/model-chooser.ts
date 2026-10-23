@@ -2,6 +2,7 @@ import type { TuiApp } from './app.js'
 import { escapeControl } from './component.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { tt } from './locale-extended.js'
+import { nextModel } from './model-cycle.js'
 import { nextThinkingLevel } from './thinking-cycle.js'
 import type { ModelSelection } from './views/model-picker.js'
 
@@ -64,6 +65,27 @@ export class ModelChooser {
         }
         await this.choose({ route: current.route, model: current.id, thinking: next }, true)
         this.current = { ...current, thinking: next }
+      } catch (error) {
+        app.showError(error)
+      }
+    })()
+  }
+
+  /** Alt+P / Alt+Shift+P: the next or previous model of the /model list, switched through `choose`. */
+  cycleModel(step: 1 | -1): void {
+    if (this.closed()) return
+    const { app } = this
+    void (async () => {
+      try {
+        const next = nextModel((await app.session.client.apis()).profile.models ?? [], this.current, step)
+        if (!next) {
+          app.statusBar.setNotice(tt('model.noOther', app.locale), 'warning')
+          if (!this.stopped()) app.renderer.requestRender()
+          return
+        }
+        // Set before the call so a second press while it is in flight goes on from here.
+        this.current = { route: next.route, id: next.model, thinking: next.thinking ?? '' }
+        await this.choose(next)
       } catch (error) {
         app.showError(error)
       }

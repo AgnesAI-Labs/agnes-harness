@@ -1775,6 +1775,55 @@ it('cycles the thinking level on Shift+Tab through setModel, and declines a mode
   }
 })
 
+it('switches to the next and previous /model entry on Alt+P and Alt+Shift+P through setModel', async () => {
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: 'agnes:local:default:cli:dm:altp' }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({ ...EMPTY_TIMELINE }))
+    .on('_agnes/v1/apis.list', () => ({
+      profile: {
+        name: 'local-dev',
+        resolvedProfileHash: 'h',
+        presets: { default: 'standard', allowed: ['standard'] },
+        models: [
+          { route: 'r', id: 'one' },
+          { route: 'r', id: 'two' },
+        ],
+      },
+      families: [],
+    }))
+    .on('_agnes/v1/session.setModel', () => ({ effectiveFromSeq: 7 }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 100, rows: 24 })
+    app = new TuiApp({ session, term, profile: 'local-dev', preset: 'standard' })
+    await app.start()
+    const sent = () => endpoint.calls.filter((e) => e.method === '_agnes/v1/session.setModel')
+    // Nothing known yet: next starts at the first model, then goes on from it.
+    term.feed('\x1bp')
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 100, 24)).join('\n')).toContain('model r/one from seq 7'),
+    )
+    term.feed('\x1bp')
+    await vi.waitFor(() => expect(sent()).toHaveLength(2))
+    term.feed('\x1bP')
+    await vi.waitFor(() => expect(sent()).toHaveLength(3))
+    expect(sent().map((e) => (e.params as { model: string }).model)).toEqual(['one', 'two', 'one'])
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 it('opens /resume choices above the footer, owns input, loads the selection and replays history', async () => {
   const current = 'agnes:local:default:cli:session:current'
   const newer = 'agnes:local:default:cli:session:newer'

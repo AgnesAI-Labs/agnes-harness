@@ -75,6 +75,10 @@ export function rootInput(
       host.models.cycleThinking()
       return true
     }
+    if (action === 'model-next' || action === 'model-prev') {
+      host.models.cycleModel(action === 'model-next' ? 1 : -1)
+      return true
+    }
     if (action === 'card-toggle') {
       host.cards.toggleLatest()
       return true

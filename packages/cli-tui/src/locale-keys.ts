@@ -1,5 +1,6 @@
 import type { ActionId } from './keymap.js'
 import type { Locale } from './locale.js'
+import { QUICK_DICT, type QuickAction, type QuickKey } from './locale-quick.js'
 
 /**
  * Strings of the key binding table: one description per action, the scope names, and what /keys and
@@ -7,7 +8,8 @@ import type { Locale } from './locale.js'
  */
 export const KEYS_SCOPES = ['global', 'editor', 'search', 'picker', 'panel', 'approval', 'secret'] as const
 export type KeysKey =
-  | `keys.act.${ActionId}`
+  | `keys.act.${Exclude<ActionId, QuickAction>}`
+  | QuickKey
   | `keys.scope.${(typeof KEYS_SCOPES)[number]}`
   | 'keys.title'
   | 'keys.fixed'
@@ -28,6 +30,7 @@ export type KeysKey =
 
 export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
   en: {
+    ...QUICK_DICT.en,
     'keys.act.interrupt': 'Interrupt the running turn; press twice to quit',
     'keys.act.quit': 'Quit when the draft is empty and nothing is running',
     'keys.act.card-toggle': 'Expand or fold the latest tool card',
@@ -120,6 +123,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'commands.keysSummary': 'List key bindings',
   },
   'zh-CN': {
+    ...QUICK_DICT['zh-CN'],
     'keys.act.interrupt': '中断正在运行的回合；连按两次退出',
     'keys.act.quit': '草稿为空且没有回合运行时退出',
     'keys.act.card-toggle': '展开或折叠最近一张工具卡',

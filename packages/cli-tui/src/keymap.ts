@@ -24,6 +24,8 @@ export const BINDINGS = [
   { id: 'steer', scope: 'global', keys: ['alt-enter'] },
   { id: 'queue-recall', scope: 'global', keys: ['alt-up'] },
   { id: 'thinking-cycle', scope: 'global', keys: ['shift-tab'] },
+  { id: 'model-next', scope: 'global', keys: ['alt-p'] },
+  { id: 'model-prev', scope: 'global', keys: ['alt-shift-p'] },
   // The prompt editor.
   { id: 'submit', scope: 'editor', keys: ['enter'] },
   { id: 'newline', scope: 'editor', keys: ['alt-enter', 'shift-enter'] },
