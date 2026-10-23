@@ -65,6 +65,8 @@ export function detectCapabilities(
 // lands on the letter before it, and a zero-width joiner is not drawn at all. get-east-asian-width
 // answers a property question and reports 1 for all of them, so they are filtered first.
 const ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cf}]$/u
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the escape byte starts the sequence
+const OSC8_RE = /\x1b\]8;[^\x1b\x07]*\x1b\\/g
 
 // Asks for the emoji rendering of the character before it, which is drawn in two columns wherever it
 // is honoured. Without this a heart or a keycap measures one column and every wrap boundary and
@@ -85,7 +87,8 @@ const EMOJI_PRESENTATION = '\ufe0f'
  * every row the renderer addresses is off by one.
  */
 export function displayWidth(s: string): number {
-  const chars = [...s.replaceAll(CURSOR_MARKER, '').replace(ANSI_RE, '')]
+  // OSC 8 hyperlink sequences (links.ts) take no columns, whatever text they carry.
+  const chars = [...s.replaceAll(CURSOR_MARKER, '').replace(ANSI_RE, '').replace(OSC8_RE, '')]
   let w = 0
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i] as string

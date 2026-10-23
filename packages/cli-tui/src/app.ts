@@ -17,6 +17,7 @@ import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } fro
 import { FooterRenderer } from './footer-renderer.js'
 import { formatTurnSummary } from './format-usage.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
+import { createLinker } from './links.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { renderMarkdownChunk } from './markdown.js'
@@ -430,7 +431,14 @@ export class TuiApp {
     )
     this.renderer = o.noAltScreen
       ? new FooterRenderer(o.term, root, this.timeline)
-      : new Renderer(o.term, root, o.screenAlreadyEntered, this.mouse, o.mouse !== false)
+      : new Renderer(
+          o.term,
+          root,
+          o.screenAlreadyEntered,
+          this.mouse,
+          o.mouse !== false,
+          createLinker(process.env),
+        )
     this.surfaces = new SurfaceInbox({
       session: () => this.o.session,
       stopped: () => this.stopped,

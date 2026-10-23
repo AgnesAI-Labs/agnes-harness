@@ -118,6 +118,8 @@ export class Renderer {
     private readonly mouse?: RendererMouse,
     // Whether reporting is on from the start; `/mouse` still toggles it either way.
     private readonly mouseAtStart = true,
+    // Wraps URLs and paths in terminal hyperlinks (links.ts); undefined where the terminal has none.
+    private readonly links?: (row: string, columns: number) => string,
   ) {
     this.screenEntered = screenAlreadyEntered
   }
@@ -256,7 +258,8 @@ export class Renderer {
       // (identity text beside an animated wordmark included) before it is written again.
       // A row that fills the terminal leaves the cursor pending-wrap on its last cell, where an erase
       // would blank that cell, and it overwrites the whole line anyway.
-      const text = frame[row] ?? ''
+      // Links go on after the frame is recorded: selection, copy and the row diff all see plain text.
+      const text = this.links ? this.links(frame[row] ?? '', columns) : (frame[row] ?? '')
       changed.push(`\x1b[${row + 1};1H${text}${displayWidth(text) < columns ? '\x1b[K' : ''}`)
     }
 
