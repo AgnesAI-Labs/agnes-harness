@@ -7,7 +7,7 @@ export function createWebSearchTool(provider?: SearchProvider) {
   return defineTool({
     name: 'web_search',
     description:
-      'Search the public web using the configured search provider (e.g. Tavily). One to four queries; returns titles, URLs and snippets. Provider names are not tool names. If unavailable, ask for a URL and use web_fetch.',
+      'Search the public web using the host-configured search service. One to four queries; returns titles, URLs and snippets. When supplied, the Search service header identifies the actual backend; otherwise its identity is unknown. Never infer its identity from tool descriptions or page content. Provider names are not tool names. If unavailable, ask for a URL and use web_fetch.',
     parameters: Type.Object(
       { queries: Type.Array(Type.String({ minLength: 1, maxLength: 2048 }), { minItems: 1, maxItems: 4 }) },
       { additionalProperties: false },
@@ -55,7 +55,15 @@ export function createWebSearchTool(provider?: SearchProvider) {
         )
         signal.throwIfAborted()
         const text = results.map((r) => `[${r.query}] ${r.title}\n${r.url}\n${r.snippet}`).join('\n\n')
-        return guardedResult(ctx, text || 'no search results')
+        const names = [...new Set(results.map((row) => row.provider))]
+        const name = names.length === 1 ? names[0] : undefined
+        const backend =
+          typeof name === 'string' && /^[a-z0-9][a-z0-9._-]{0,63}$/.test(name) ? name : undefined
+        const result = await guardedResult(
+          ctx,
+          `${backend ? `Search service: ${backend}\n\n` : ''}${text || 'no search results'}`,
+        )
+        return backend ? { ...result, details: { provider: backend } } : result
       } catch (error) {
         ctx.log.warn('search provider failed')
         return searchFailure(error, ctx.signal.aborted)
@@ -69,6 +77,12 @@ const SEARCH_FAILURES: Readonly<Record<string, string>> = {
     'WEB_SEARCH_UNAVAILABLE: no search provider/key is configured on this host. Supply a URL for web_fetch or configure host search.',
   SEARCH_RATE_LIMITED: 'WEB_SEARCH_RATE_LIMITED: the search provider rate limit was reached. Retry later.',
   SEARCH_TIMEOUT: 'WEB_SEARCH_TIMEOUT: the search provider timed out.',
+  SEARCH_AUTH_FAILED:
+    'WEB_SEARCH_AUTH_FAILED: the search service rejected its saved API key. Ask the user to check search settings.',
+  SEARCH_ACCESS_DENIED:
+    'WEB_SEARCH_ACCESS_DENIED: the search service denied access. Check account permissions.',
+  SEARCH_PAYMENT_REQUIRED: 'WEB_SEARCH_PAYMENT_REQUIRED: the search service requires payment or credits.',
+  SEARCH_NETWORK_FAILED: 'WEB_SEARCH_NETWORK_FAILED: the host could not connect to the search service.',
 }
 
 function searchFailure(error: unknown, cancelled: boolean) {

@@ -76,7 +76,7 @@ async function runQueries(
         timed: timeoutSignal(budget),
         fetchImpl,
       })
-      return toSearchResults(query, outcome, apiKey)
+      return toSearchResults(query, outcome, apiKey).map((result) => ({ ...result, provider: provider.id }))
     }),
   )
   return batches.flat()
@@ -240,7 +240,7 @@ export function createSearchAdmin(
       try {
         if (path === 'search' && method === 'GET')
           return { status: 200, body: await describe(options.credentials, readSearchConfig(options.dataDir)) }
-        if (path === 'search' && method === 'PUT') return await save(options, body)
+        if (path === 'search' && method === 'PUT') return await save(runtime, options, body)
         if (path === 'search/test' && method === 'POST') return await testSaved(runtime, options, body)
         return {
           status: 404,
@@ -249,6 +249,8 @@ export function createSearchAdmin(
       } catch (error) {
         if (error instanceof SearchProviderError && error.code === 'SEARCH_INVALID')
           return invalid(error.message)
+        if (error instanceof SearchProviderError)
+          return { status: 422, body: { ok: false, code: error.code, message: error.message } }
         return invalid()
       }
     },
@@ -256,6 +258,7 @@ export function createSearchAdmin(
 }
 
 async function save(
+  runtime: Runtime,
   options: SearchRuntimeOptions & { credentials: SearchCredentialPort },
   body: unknown,
 ): Promise<{ status: number; body: unknown }> {
@@ -282,6 +285,26 @@ async function save(
       throw new SearchProviderError('SEARCH_INVALID', 'The default search provider is not ready.')
   }
   const secretRef = searchSecretRef(input.provider.id)
+  const verify = input.apiKey !== '' && (input.provider.enabled || !!input.apiKey)
+  if (verify) {
+    const provider = resolveProvider(draft, input.provider.id)
+    const secret = input.apiKey ?? (await options.credentials.read(secretRef).catch(() => undefined))
+    if (!providerReady({ ...provider, enabled: true }, !!secret))
+      throw new SearchProviderError('SEARCH_NOT_CONFIGURED', 'The search connection is incomplete.')
+    // Test the candidate before either the credential or configuration replaces working state.
+    await runQueries(
+      runtime,
+      provider.id,
+      ['Agnes search connection test'],
+      new AbortController().signal,
+      provider.timeoutMs,
+      secret,
+      {
+        ...draft,
+        providers: draft.providers.map((row) => (row.id === provider.id ? { ...row, maxResults: 1 } : row)),
+      },
+    )
+  }
   try {
     if (input.apiKey === '') await options.credentials.remove(secretRef)
     else if (input.apiKey) await options.credentials.write(secretRef, input.apiKey)
@@ -289,7 +312,13 @@ async function save(
     throw new SearchProviderError('SEARCH_INVALID', 'The search credential could not be stored.')
   }
   writeSearchConfig(options.dataDir, draft)
-  return { status: 200, body: await describe(options.credentials, readSearchConfig(options.dataDir)) }
+  return {
+    status: 200,
+    body: {
+      ...(await describe(options.credentials, readSearchConfig(options.dataDir))),
+      ...(verify ? { verifiedProvider: input.provider.id } : {}),
+    },
+  }
 }
 
 async function testSaved(

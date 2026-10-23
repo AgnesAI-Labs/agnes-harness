@@ -174,7 +174,7 @@ describe('search configured through the admin surface', () => {
           endpoint: fixture.origin,
           maxResults: 3,
           timeoutMs: 15000,
-          ratePerMinute: 2,
+          ratePerMinute: 3,
         },
       }),
     })

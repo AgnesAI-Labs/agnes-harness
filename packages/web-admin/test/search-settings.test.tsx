@@ -46,12 +46,13 @@ const status = {
 it('shows the unconfigured state and saves a key without rendering it again', async () => {
   const key = 'ui-search-key-value'
   let saved = false
+  let refuseSave = true
   let refuseProbe = true
   const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
     if (init?.method === 'POST')
       return Response.json(
         refuseProbe
-          ? { ok: false }
+          ? { ok: false, code: 'SEARCH_AUTH_FAILED', message: key }
           : {
               ok: true,
               results: [
@@ -63,11 +64,14 @@ it('shows the unconfigured state and saves a key without rendering it again', as
       const body = JSON.parse(String(init.body)) as { apiKey?: string; provider?: { id?: string } }
       expect(body.apiKey).toBe(key)
       expect(body.provider?.id).toBe('brave')
+      if (refuseSave)
+        return Response.json({ ok: false, code: 'SEARCH_AUTH_FAILED', message: key }, { status: 422 })
       saved = true
       return Response.json({
         ...status,
         configured: true,
         defaultProvider: 'brave',
+        verifiedProvider: 'brave',
         providers: status.providers.map((row) =>
           row.id === 'brave'
             ? { ...row, enabled: true, secretConfigured: true, isDefault: true, ready: true }
@@ -141,6 +145,13 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   await act(async () => {
     panel.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click()
   })
+  expect(saved).toBe(false)
+  expect(document.querySelector('[data-testid="push-page-search-engine"]')).not.toBeNull()
+  expect(input.value).toBe(key)
+  expect(panel.querySelector('[data-testid="search-error"]')?.textContent).toContain('rejected the API key')
+  expect(panel.querySelector('[data-testid="search-error"]')?.textContent).not.toContain(key)
+  refuseSave = false
+  await act(async () => panel.querySelector<HTMLButtonElement>('[data-testid="search-save"]')?.click())
   expect(panel.querySelector('[data-testid="search-provider-brave"]')).not.toBeNull()
   expect(panel.querySelector('[data-testid="search-enabled-brave"]')?.getAttribute('role')).toBe('switch')
   expect(panel.querySelector('[data-testid="search-enabled-brave"]')?.getAttribute('aria-checked')).toBe(
@@ -148,6 +159,7 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   )
   expect(count?.getAttribute('aria-invalid')).toBeNull()
   expect(saved).toBe(true)
+  expect(panel.querySelector('[data-testid="search-provider-brave"]')?.textContent).toContain('Test passed')
   expect(host.textContent).not.toContain(key)
   expect(panel.querySelector('[data-testid="search-api-key"]')?.getAttribute('value') ?? '').not.toContain(
     key,
@@ -160,9 +172,11 @@ it('shows the unconfigured state and saves a key without rendering it again', as
   })
   await act(async () => panel.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.click())
   expect(panel.querySelector('[data-testid="search-test-error"]')?.textContent).toMatch(
-    /Search failed.*\d+ ms/,
+    /rejected the API key.*\d+ ms/,
   )
   expect(panel.querySelector('[data-testid="search-test-error"]')?.textContent).not.toContain('saved')
+  expect(panel.querySelector('[data-testid="search-test-error"]')?.textContent).not.toContain(key)
+  expect(panel.querySelector('[data-testid="search-provider-brave"]')?.textContent).toContain('Test failed')
   refuseProbe = false
   await act(async () => panel.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.click())
   expect(panel.querySelector('[data-testid="search-test-error"]')).toBeNull()
@@ -205,6 +219,9 @@ it('offers an explicit default action for a ready service and opens the saved se
     ),
   )
   expect(host.querySelector('[data-testid="search-empty"]')).toBeNull()
+  expect(host.querySelector('[data-testid="search-provider-brave"]')?.textContent).toContain(
+    'Configured, not yet verified',
+  )
   expect(host.querySelector('[data-testid="search-needs-default"]')?.textContent).toContain('default')
   expect(host.querySelector<HTMLButtonElement>('[data-testid="search-test"]')?.disabled).toBe(true)
   await act(async () =>

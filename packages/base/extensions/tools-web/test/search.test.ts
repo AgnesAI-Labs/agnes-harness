@@ -7,7 +7,8 @@ describe('web_search', () => {
   it('discloses a valid vendor-neutral tool and refuses clearly without a configured provider', async () => {
     const tool = createWebSearchTool()
     expect(checkToolDef(tool)).toEqual({ ok: true })
-    expect(tool.description).toContain('configured search provider (e.g. Tavily)')
+    expect(tool.description).toContain('host-configured search service')
+    expect(tool.description).not.toContain('Tavily')
     const configured = createWebSearchTool({ search: async () => [] })
     expect(configured.description).toBe(tool.description)
     expect(configured.parameters).toEqual(tool.parameters)
@@ -57,6 +58,7 @@ describe('web_search', () => {
         return [
           {
             query: 'a',
+            provider: 'exa',
             title: 'Answer',
             url: 'https://example.com/a',
             snippet: 'A fact.\n\nCitations:\n- https://example.com/a',
@@ -70,6 +72,9 @@ describe('web_search', () => {
         text: expect.stringContaining('Citations:\n- https://example.com/a'),
       }),
     ])
+    expect(cited.details).toEqual({ provider: 'exa' })
+    expect(cited.content[0]).toMatchObject({ text: expect.stringMatching(/^Search service: exa\n/) })
+    expect(JSON.stringify(cited)).not.toContain('tavily')
     const unavailable = await createWebSearchTool({
       async search() {
         throw Object.assign(new Error('missing'), { code: 'SEARCH_NOT_CONFIGURED' })
