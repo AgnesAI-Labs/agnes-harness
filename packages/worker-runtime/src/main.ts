@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import { createReadStream, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Duplex } from 'node:stream'
@@ -12,6 +11,7 @@ import {
   syncManagedMcpExecutableAllowlist,
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
+import { decodeArtifactMediaResponse } from './artifact-media-response.js'
 import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
@@ -22,6 +22,7 @@ import { connectSupervisor, observeSupervisorClosure } from './supervisor-connec
 import { workerDomainFailure } from './worker-errors.js'
 
 export { scanSkills } from '@agnes/resource-control-worker'
+export { decodeArtifactMediaResponse } from './artifact-media-response.js'
 
 import {
   agnesHome,
@@ -44,7 +45,6 @@ import {
   type PackageLoader,
   type Prompter,
   packageDirs,
-  REQUEST_MEDIA_ARTIFACT_RECLAIMED,
   type ResolvedProfile,
   readLock,
   resolveFileSecretsDirectory,
@@ -116,59 +116,6 @@ export type WorkerHostDeps = {
   ) => Promise<WorkerHostLike>
   /** Embedder-only runtime switch; absent means every extension stays in-process. */
   extensionIsolation?: ExtensionIsolationOptions
-}
-
-/** @internal Exported for byte-level contract tests; callers should use the composed request-media port. */
-export function decodeArtifactMediaResponse(
-  value: unknown,
-  expectedSha256: string,
-  maxBytes: number,
-): Uint8Array | typeof REQUEST_MEDIA_ARTIFACT_RECLAIMED | undefined {
-  try {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
-    const descriptors = Object.getOwnPropertyDescriptors(value)
-    const keys = Reflect.ownKeys(descriptors)
-    if (
-      keys.length === 2 &&
-      descriptors.sha256?.value === expectedSha256 &&
-      descriptors.reclaimed?.value === true
-    )
-      return REQUEST_MEDIA_ARTIFACT_RECLAIMED
-    if (
-      keys.length !== 4 ||
-      keys.some(
-        (key) =>
-          typeof key !== 'string' ||
-          !['sha256', 'size', 'mime', 'data'].includes(key) ||
-          descriptors[key]?.enumerable !== true ||
-          !Object.hasOwn(descriptors[key] ?? {}, 'value'),
-      )
-    )
-      return undefined
-    const response = Object.fromEntries(
-      (keys as string[]).map((key) => [key, descriptors[key]?.value]),
-    ) as Record<string, unknown>
-    if (
-      response.sha256 !== expectedSha256 ||
-      !Number.isSafeInteger(response.size) ||
-      (response.size as number) < 1 ||
-      (response.size as number) > maxBytes ||
-      (response.mime !== 'image/png' && response.mime !== 'image/jpeg') ||
-      typeof response.data !== 'string' ||
-      response.data.length > Math.ceil(maxBytes / 3) * 4
-    )
-      return undefined
-    const bytes = Uint8Array.from(Buffer.from(response.data, 'base64'))
-    if (
-      bytes.byteLength !== response.size ||
-      Buffer.from(bytes).toString('base64') !== response.data ||
-      createHash('sha256').update(bytes).digest('hex') !== expectedSha256
-    )
-      return undefined
-    return bytes
-  } catch {
-    return undefined
-  }
 }
 
 /** This package's own install root, the same role `hostRootFrom()` plays in cli's boot path. */

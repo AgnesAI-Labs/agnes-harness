@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { setImmediate } from 'node:timers/promises'
-import type { ExtensionManifest } from '@agnes/extension-api'
 import {
   type PackagePreview,
   type PackageProvenance,
@@ -16,6 +15,7 @@ import { packageAdmission, withPackageAdmission } from './effect-admission.js'
 import { isPackageError, PackageError } from './errors.js'
 import { previewWithExampleParent } from './example-parent.js'
 import { inspectStaged } from './inspect.js'
+import { verifyInstalledIdentity } from './installed-identity.js'
 import { canonical, capabilityHash, freezeData, own } from './integrity.js'
 import {
   type InstalledInventory,
@@ -236,23 +236,6 @@ export type ManagerOptions = {
 }
 
 export { readBundledManifest } from './manifest.js'
-
-function verifyIdentity(
-  id: string,
-  entry: LockEntry,
-  dir: string,
-  manifest: ExtensionManifest | undefined,
-): void {
-  const pkg = readPackageJson(dir)
-  if (
-    pkg.name !== id ||
-    pkg.version !== entry.version ||
-    (manifest !== undefined && (manifest.id !== id || manifest.version !== entry.version))
-  )
-    throw new PackageError('E_LOCK_MISMATCH', `${id} installed identity differs from the lockfile`, {
-      detail: { id, reason: 'identity' },
-    })
-}
 
 function entryOf(lock: Lockfile, id: string): LockEntry {
   const entry = own(lock.packages, id)
@@ -1079,7 +1062,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             }
             verifyInstalledIntegrity(id, entry, dir, reference)
             const manifest = undefined
-            verifyIdentity(id, entry, dir, manifest)
+            verifyInstalledIdentity(id, entry, dir, manifest)
             const trusted = stamp()
             runTrustGate({
               id,
