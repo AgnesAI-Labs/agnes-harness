@@ -58,8 +58,11 @@ export function useComposerAttachments({
 
   const uploads = useComposerUploads(
     prepareUploadSession,
-    (attachment, id, size) => {
-      publishAttachments([...attachmentsRef.current, { ...attachment, id, size, pixels: 0 }])
+    (attachment, id, size, previewUrl) => {
+      publishAttachments([
+        ...attachmentsRef.current,
+        { ...attachment, id, size, pixels: 0, ...(previewUrl ? { previewUrl } : {}) },
+      ])
     },
     onAttachmentsChange,
     dependencies.translate,

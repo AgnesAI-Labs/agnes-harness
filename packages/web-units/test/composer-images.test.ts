@@ -149,10 +149,30 @@ it('keeps a batch through upload session opening, stores references and cleans a
   expect(handle.current?.getAttachmentBlocks().every(storedAttachment)).toBe(true)
   expect(JSON.stringify(handle.current?.getAttachmentBlocks())).not.toContain(PNG_DATA)
   expect(cancelled).not.toHaveBeenCalled()
+  // A finished upload keeps a local preview URL, so the image shows as a thumbnail, not a file row.
+  const readyRows = [...host.querySelectorAll('[data-testid="attachment-ready"]')]
+  const thumbnail = readyRows.find((node) => node.classList.contains('composer-image-preview'))
+  expect(thumbnail?.querySelector('img')?.getAttribute('src')).toBe('blob:preview')
+  expect(readyRows.filter((node) => node.classList.contains('composer-file-preview'))).toHaveLength(2)
+  // Clicking it opens the shared preview layer instead of doing nothing.
+  await act(async () =>
+    thumbnail?.querySelector('img')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
+  )
+  await vi.waitFor(() => expect(document.querySelector('.ant-image-preview')).not.toBeNull())
   const remove = host.querySelector<HTMLButtonElement>('[data-testid="attachment-remove"]')
   await act(async () => remove?.click())
   expect(handle.current?.getAttachmentBlocks()).toHaveLength(2)
   expect(cancelled).not.toHaveBeenCalled()
+  // 模型不收图片时这份上传是按文件发出去的，所以同一张图回到文件行，不再给缩略图。
+  await act(async () =>
+    handle.current?.render({ ...view, imagePolicy: userImagePolicy({ input: ['text'] }) }),
+  )
+  expect(host.querySelector('.composer-image-preview')).toBeNull()
+  expect(
+    [...host.querySelectorAll('[data-testid="attachment-ready"]')].some(
+      (node) => node.classList.contains('composer-file-preview') && node.textContent?.includes('one.png'),
+    ),
+  ).toBe(true)
 })
 
 it.each([
