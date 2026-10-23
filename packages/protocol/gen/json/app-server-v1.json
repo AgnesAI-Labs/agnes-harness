@@ -2512,10 +2512,10 @@
     }
   },
   "$defs": {
-    "Df0c9a4dbe608_AppServerErrorCause": {
-      "$ref": "#/$defs/R1ade13e985b1"
+    "D7ec851b7c3ce_AppServerErrorCause": {
+      "$ref": "#/$defs/R1fe406b741c2"
     },
-    "R1ade13e985b1": {
+    "R1fe406b741c2": {
       "additionalProperties": false,
       "type": "object",
       "properties": {
@@ -2599,6 +2599,10 @@
             },
             {
               "const": "CONFIG_INVALID_STATE",
+              "type": "string"
+            },
+            {
+              "const": "CONFIG_CHAT_MODEL_REQUIRED",
               "type": "string"
             },
             {
@@ -3424,10 +3428,10 @@
         "code"
       ]
     },
-    "Df0c9a4dbe608_AppServerError": {
-      "$ref": "#/$defs/R5ef8759ba4c6"
+    "D7ec851b7c3ce_AppServerError": {
+      "$ref": "#/$defs/R40ae05e13cd5"
     },
-    "R5ef8759ba4c6": {
+    "R40ae05e13cd5": {
       "additionalProperties": false,
       "type": "object",
       "properties": {
@@ -3489,6 +3493,10 @@
                 },
                 {
                   "const": "appServer.errors.unavailable",
+                  "type": "string"
+                },
+                {
+                  "const": "appServer.errors.chatModelRequired",
                   "type": "string"
                 },
                 {
@@ -3554,7 +3562,7 @@
               "type": "string"
             },
             "cause": {
-              "$ref": "#/$defs/Df0c9a4dbe608_AppServerErrorCause"
+              "$ref": "#/$defs/D7ec851b7c3ce_AppServerErrorCause"
             },
             "publicReason": {
               "maxLength": 512,
@@ -3578,7 +3586,7 @@
         "data"
       ]
     },
-    "Df0c9a4dbe608_AdminCredentialReference": {
+    "D7ec851b7c3ce_AdminCredentialReference": {
       "$ref": "#/$defs/R4a457ed3aaf2"
     },
     "R4a457ed3aaf2": {
@@ -3620,7 +3628,7 @@
         "configId"
       ]
     },
-    "Df0c9a4dbe608_AdminCredentialMetadata": {
+    "D7ec851b7c3ce_AdminCredentialMetadata": {
       "$ref": "#/$defs/Rcee1c56c4e38"
     },
     "Rcee1c56c4e38": {
@@ -3650,7 +3658,7 @@
           "maxItems": 4096,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialReference"
+            "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialReference"
           }
         }
       },
@@ -3662,7 +3670,7 @@
         "references"
       ]
     },
-    "Df0c9a4dbe608_AdminCredentialsList": {
+    "D7ec851b7c3ce_AdminCredentialsList": {
       "$ref": "#/$defs/R1a34880ae350"
     },
     "R1a34880ae350": {
@@ -3673,7 +3681,7 @@
           "maxItems": 4096,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialMetadata"
+            "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialMetadata"
           }
         }
       },
@@ -3681,7 +3689,7 @@
         "items"
       ]
     },
-    "Df0c9a4dbe608_AdminCredentialCreate": {
+    "D7ec851b7c3ce_AdminCredentialCreate": {
       "$ref": "#/$defs/Rd410a5bee4de"
     },
     "Rd410a5bee4de": {
@@ -3706,7 +3714,7 @@
         "value"
       ]
     },
-    "Df0c9a4dbe608_AdminCredentialSet": {
+    "D7ec851b7c3ce_AdminCredentialSet": {
       "$ref": "#/$defs/Ra824047421bc"
     },
     "Ra824047421bc": {
@@ -3730,7 +3738,7 @@
         "value"
       ]
     },
-    "Df0c9a4dbe608_AdminCredentialRename": {
+    "D7ec851b7c3ce_AdminCredentialRename": {
       "$ref": "#/$defs/R85ad53e36b25"
     },
     "R85ad53e36b25": {
@@ -3754,7 +3762,7 @@
         "label"
       ]
     },
-    "Df0c9a4dbe608_AdminCredentialDelete": {
+    "D7ec851b7c3ce_AdminCredentialDelete": {
       "$ref": "#/$defs/Ra1903dfc34ad"
     },
     "Ra1903dfc34ad": {
@@ -3777,7 +3785,7 @@
         "id"
       ]
     },
-    "Df0c9a4dbe608_AdminEmpty": {
+    "D7ec851b7c3ce_AdminEmpty": {
       "$ref": "#/$defs/R91fe060caa26"
     },
     "R91fe060caa26": {
@@ -3785,7 +3793,7 @@
       "type": "object",
       "properties": {}
     },
-    "Df0c9a4dbe608_AdminBundlesSave": {
+    "D7ec851b7c3ce_AdminBundlesSave": {
       "$ref": "#/$defs/Rb408c73d920d"
     },
     "Rb408c73d920d": {
@@ -3810,7 +3818,7 @@
         "bundles"
       ]
     },
-    "Df0c9a4dbe608_AdminBundlesResult": {
+    "D7ec851b7c3ce_AdminBundlesResult": {
       "$ref": "#/$defs/Re00e8d605acf"
     },
     "Re00e8d605acf": {
@@ -3862,7 +3870,7 @@
         "effect"
       ]
     },
-    "Df0c9a4dbe608_AdminCompositionParams": {
+    "D7ec851b7c3ce_AdminCompositionParams": {
       "$ref": "#/$defs/Re1b7c9538ab8"
     },
     "Re1b7c9538ab8": {
@@ -3875,7 +3883,7 @@
         }
       }
     },
-    "Df0c9a4dbe608_AdminCompositionResult": {
+    "D7ec851b7c3ce_AdminCompositionResult": {
       "$ref": "#/$defs/R41fbd0de4040"
     },
     "R41fbd0de4040": {
@@ -4025,7 +4033,7 @@
         }
       ]
     },
-    "Df0c9a4dbe608_AdminSearchSave": {
+    "D7ec851b7c3ce_AdminSearchSave": {
       "$ref": "#/$defs/R04e0722a900b"
     },
     "R04e0722a900b": {
@@ -4060,7 +4068,7 @@
         "provider"
       ]
     },
-    "Df0c9a4dbe608_AdminSearchTest": {
+    "D7ec851b7c3ce_AdminSearchTest": {
       "$ref": "#/$defs/R62f246babdb7"
     },
     "R62f246babdb7": {
@@ -4081,7 +4089,7 @@
         "query"
       ]
     },
-    "Df0c9a4dbe608_AdminSearchResult": {
+    "D7ec851b7c3ce_AdminSearchResult": {
       "$ref": "#/$defs/R58fc95d93535"
     },
     "R58fc95d93535": {
@@ -4092,7 +4100,7 @@
         }
       }
     },
-    "Df0c9a4dbe608_AdminContextConfig": {
+    "D7ec851b7c3ce_AdminContextConfig": {
       "$ref": "#/$defs/R21894b8f67d6"
     },
     "R21894b8f67d6": {
@@ -4161,7 +4169,7 @@
         "customSkillRoots"
       ]
     },
-    "Df0c9a4dbe608_AdminContextParams": {
+    "D7ec851b7c3ce_AdminContextParams": {
       "$ref": "#/$defs/R2bb94c6540c5"
     },
     "R2bb94c6540c5": {
@@ -4229,7 +4237,7 @@
         }
       }
     },
-    "Df0c9a4dbe608_AdminContextResult": {
+    "D7ec851b7c3ce_AdminContextResult": {
       "$ref": "#/$defs/Rdff469d08979"
     },
     "Rdff469d08979": {
@@ -4237,7 +4245,7 @@
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/$defs/Df0c9a4dbe608_AdminContextConfig"
+          "$ref": "#/$defs/D7ec851b7c3ce_AdminContextConfig"
         },
         "workspaces": {
           "maxItems": 4096,
@@ -4334,7 +4342,7 @@
         "workspaces"
       ]
     },
-    "Df0c9a4dbe608_AdminHistoryParams": {
+    "D7ec851b7c3ce_AdminHistoryParams": {
       "$ref": "#/$defs/R7eec7d41924b"
     },
     "R7eec7d41924b": {
@@ -4364,7 +4372,7 @@
         "workspace"
       ]
     },
-    "Df0c9a4dbe608_AdminHistoryResult": {
+    "D7ec851b7c3ce_AdminHistoryResult": {
       "$ref": "#/$defs/R26245f75b96e"
     },
     "R26245f75b96e": {
@@ -4429,7 +4437,7 @@
         "truncated"
       ]
     },
-    "Df0c9a4dbe608_AdminPlanParams": {
+    "D7ec851b7c3ce_AdminPlanParams": {
       "$ref": "#/$defs/R1ea8182169f3"
     },
     "R1ea8182169f3": {
@@ -4455,7 +4463,7 @@
         "line"
       ]
     },
-    "Df0c9a4dbe608_AdminPlanResult": {
+    "D7ec851b7c3ce_AdminPlanResult": {
       "$ref": "#/$defs/R0e8b17dba52d"
     },
     "R0e8b17dba52d": {
@@ -4475,7 +4483,7 @@
         "text"
       ]
     },
-    "Df0c9a4dbe608_AdminMcpOAuthSave": {
+    "D7ec851b7c3ce_AdminMcpOAuthSave": {
       "$ref": "#/$defs/R546900150242"
     },
     "R546900150242": {
@@ -4536,7 +4544,7 @@
         "credential"
       ]
     },
-    "Df0c9a4dbe608_DoctorParams": {
+    "D7ec851b7c3ce_DoctorParams": {
       "$ref": "#/$defs/R7c9eacc877fc"
     },
     "R7c9eacc877fc": {
@@ -4548,7 +4556,7 @@
         }
       }
     },
-    "Df0c9a4dbe608_DoctorCheck": {
+    "D7ec851b7c3ce_DoctorCheck": {
       "$ref": "#/$defs/R40a46a573031"
     },
     "R40a46a573031": {
@@ -4689,7 +4697,7 @@
         "fixHintKey"
       ]
     },
-    "Df0c9a4dbe608_DoctorResult": {
+    "D7ec851b7c3ce_DoctorResult": {
       "$ref": "#/$defs/R3c0dc227323d"
     },
     "R3c0dc227323d": {
@@ -4700,7 +4708,7 @@
           "maxItems": 32,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df0c9a4dbe608_DoctorCheck"
+            "$ref": "#/$defs/D7ec851b7c3ce_DoctorCheck"
           }
         },
         "status": {
@@ -4729,7 +4737,7 @@
         "status"
       ]
     },
-    "Df0c9a4dbe608_MemorySettings": {
+    "D7ec851b7c3ce_MemorySettings": {
       "$ref": "#/$defs/R9e1c4826d751"
     },
     "R9e1c4826d751": {
@@ -4797,7 +4805,7 @@
         "userEnabled"
       ]
     },
-    "Df0c9a4dbe608_MemorySettingsPatch": {
+    "D7ec851b7c3ce_MemorySettingsPatch": {
       "$ref": "#/$defs/Rb5599f16e0d9"
     },
     "Rb5599f16e0d9": {
@@ -4855,7 +4863,7 @@
         }
       }
     },
-    "Df0c9a4dbe608_MemorySource": {
+    "D7ec851b7c3ce_MemorySource": {
       "$ref": "#/$defs/Re064708ffd3b"
     },
     "Re064708ffd3b": {
@@ -4882,7 +4890,7 @@
         "turn"
       ]
     },
-    "Df0c9a4dbe608_MemoryFileInfo": {
+    "D7ec851b7c3ce_MemoryFileInfo": {
       "$ref": "#/$defs/R458b6f8d1a47"
     },
     "R458b6f8d1a47": {
@@ -4913,7 +4921,7 @@
         "lines"
       ]
     },
-    "Df0c9a4dbe608_MemoryFile": {
+    "D7ec851b7c3ce_MemoryFile": {
       "$ref": "#/$defs/Rf3b7224971d2"
     },
     "Rf3b7224971d2": {
@@ -4949,7 +4957,7 @@
         "content"
       ]
     },
-    "Df0c9a4dbe608_MemoryInspection": {
+    "D7ec851b7c3ce_MemoryInspection": {
       "$ref": "#/$defs/Ra3f73dc2539d"
     },
     "Ra3f73dc2539d": {
@@ -4962,13 +4970,13 @@
           "type": "string"
         },
         "settings": {
-          "$ref": "#/$defs/Df0c9a4dbe608_MemorySettings"
+          "$ref": "#/$defs/D7ec851b7c3ce_MemorySettings"
         },
         "files": {
           "maxItems": 128,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df0c9a4dbe608_MemoryFileInfo"
+            "$ref": "#/$defs/D7ec851b7c3ce_MemoryFileInfo"
           }
         },
         "bytes": {
@@ -4976,7 +4984,7 @@
           "type": "integer"
         },
         "lastWriter": {
-          "$ref": "#/$defs/Df0c9a4dbe608_MemorySource"
+          "$ref": "#/$defs/D7ec851b7c3ce_MemorySource"
         }
       },
       "required": [
@@ -4986,7 +4994,7 @@
         "bytes"
       ]
     },
-    "Df0c9a4dbe608_AdminMemoryParams": {
+    "D7ec851b7c3ce_AdminMemoryParams": {
       "$ref": "#/$defs/R5bb1426342f0"
     },
     "R5bb1426342f0": {
@@ -4999,7 +5007,7 @@
           "type": "string"
         },
         "settings": {
-          "$ref": "#/$defs/Df0c9a4dbe608_MemorySettingsPatch"
+          "$ref": "#/$defs/D7ec851b7c3ce_MemorySettingsPatch"
         },
         "file": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.md$",
@@ -5018,7 +5026,7 @@
         "cwd"
       ]
     },
-    "Df0c9a4dbe608_AdminMemoryResult": {
+    "D7ec851b7c3ce_AdminMemoryResult": {
       "$ref": "#/$defs/R32e6cfb52318"
     },
     "R32e6cfb52318": {
@@ -5048,10 +5056,10 @@
           }
         },
         "inspection": {
-          "$ref": "#/$defs/Df0c9a4dbe608_MemoryInspection"
+          "$ref": "#/$defs/D7ec851b7c3ce_MemoryInspection"
         },
         "file": {
-          "$ref": "#/$defs/Df0c9a4dbe608_MemoryFile"
+          "$ref": "#/$defs/D7ec851b7c3ce_MemoryFile"
         }
       },
       "required": [
@@ -5059,7 +5067,7 @@
         "inspection"
       ]
     },
-    "Df0c9a4dbe608_ObservabilitySettings": {
+    "D7ec851b7c3ce_ObservabilitySettings": {
       "$ref": "#/$defs/R0b672034daad"
     },
     "R0b672034daad": {
@@ -5152,7 +5160,7 @@
         "enabled"
       ]
     },
-    "Df0c9a4dbe608_ObservabilityHealth": {
+    "D7ec851b7c3ce_ObservabilityHealth": {
       "$ref": "#/$defs/R90edc6e323e7"
     },
     "R90edc6e323e7": {
@@ -5210,7 +5218,7 @@
         "failures"
       ]
     },
-    "Df0c9a4dbe608_AdminObservabilityParams": {
+    "D7ec851b7c3ce_AdminObservabilityParams": {
       "$ref": "#/$defs/Rc20fedecc357"
     },
     "Rc20fedecc357": {
@@ -5218,14 +5226,14 @@
       "type": "object",
       "properties": {
         "settings": {
-          "$ref": "#/$defs/Df0c9a4dbe608_ObservabilitySettings"
+          "$ref": "#/$defs/D7ec851b7c3ce_ObservabilitySettings"
         },
         "test": {
           "type": "boolean"
         }
       }
     },
-    "Df0c9a4dbe608_AdminObservabilityResult": {
+    "D7ec851b7c3ce_AdminObservabilityResult": {
       "$ref": "#/$defs/R28f3453b8b2c"
     },
     "R28f3453b8b2c": {
@@ -5233,10 +5241,10 @@
       "type": "object",
       "properties": {
         "settings": {
-          "$ref": "#/$defs/Df0c9a4dbe608_ObservabilitySettings"
+          "$ref": "#/$defs/D7ec851b7c3ce_ObservabilitySettings"
         },
         "health": {
-          "$ref": "#/$defs/Df0c9a4dbe608_ObservabilityHealth"
+          "$ref": "#/$defs/D7ec851b7c3ce_ObservabilityHealth"
         },
         "connection": {
           "anyOf": [
@@ -5251,7 +5259,7 @@
           ]
         },
         "workerHealth": {
-          "$ref": "#/$defs/Df0c9a4dbe608_ObservabilityHealth"
+          "$ref": "#/$defs/D7ec851b7c3ce_ObservabilityHealth"
         },
         "workerState": {
           "anyOf": [
@@ -5275,7 +5283,7 @@
         "health"
       ]
     },
-    "Df0c9a4dbe608_WebhookRule": {
+    "D7ec851b7c3ce_WebhookRule": {
       "$ref": "#/$defs/R2d8f40fccc3b"
     },
     "R2d8f40fccc3b": {
@@ -5403,7 +5411,7 @@
         "ratePerMinute"
       ]
     },
-    "Df0c9a4dbe608_WebhookConfig": {
+    "D7ec851b7c3ce_WebhookConfig": {
       "$ref": "#/$defs/R6df345ce2566"
     },
     "R6df345ce2566": {
@@ -5431,7 +5439,7 @@
         "maxPayloadBytes"
       ]
     },
-    "Df0c9a4dbe608_WebhookDelivery": {
+    "D7ec851b7c3ce_WebhookDelivery": {
       "$ref": "#/$defs/R654e0ee2732d"
     },
     "R654e0ee2732d": {
@@ -5539,7 +5547,7 @@
         "status"
       ]
     },
-    "Df0c9a4dbe608_WebhookSnapshot": {
+    "D7ec851b7c3ce_WebhookSnapshot": {
       "$ref": "#/$defs/R7926db09bc6a"
     },
     "R7926db09bc6a": {
@@ -5547,20 +5555,20 @@
       "type": "object",
       "properties": {
         "config": {
-          "$ref": "#/$defs/Df0c9a4dbe608_WebhookConfig"
+          "$ref": "#/$defs/D7ec851b7c3ce_WebhookConfig"
         },
         "rules": {
           "maxItems": 128,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df0c9a4dbe608_WebhookRule"
+            "$ref": "#/$defs/D7ec851b7c3ce_WebhookRule"
           }
         },
         "deliveries": {
           "maxItems": 200,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df0c9a4dbe608_WebhookDelivery"
+            "$ref": "#/$defs/D7ec851b7c3ce_WebhookDelivery"
           }
         },
         "secretRefs": {
@@ -5581,7 +5589,7 @@
         "secretRefs"
       ]
     },
-    "Df0c9a4dbe608_WebhookRequest": {
+    "D7ec851b7c3ce_WebhookRequest": {
       "$ref": "#/$defs/Rb2329c71e428"
     },
     "Rb2329c71e428": {
@@ -5617,10 +5625,10 @@
           ]
         },
         "config": {
-          "$ref": "#/$defs/Df0c9a4dbe608_WebhookConfig"
+          "$ref": "#/$defs/D7ec851b7c3ce_WebhookConfig"
         },
         "rule": {
-          "$ref": "#/$defs/Df0c9a4dbe608_WebhookRule"
+          "$ref": "#/$defs/D7ec851b7c3ce_WebhookRule"
         },
         "ruleId": {
           "minLength": 1,
@@ -5651,7 +5659,7 @@
         "action"
       ]
     },
-    "Df0c9a4dbe608_WebhookResult": {
+    "D7ec851b7c3ce_WebhookResult": {
       "$ref": "#/$defs/R7b3bf96b0597"
     },
     "R7b3bf96b0597": {
@@ -5659,14 +5667,14 @@
       "type": "object",
       "properties": {
         "snapshot": {
-          "$ref": "#/$defs/Df0c9a4dbe608_WebhookSnapshot"
+          "$ref": "#/$defs/D7ec851b7c3ce_WebhookSnapshot"
         },
         "delivery": {
-          "$ref": "#/$defs/Df0c9a4dbe608_WebhookDelivery"
+          "$ref": "#/$defs/D7ec851b7c3ce_WebhookDelivery"
         }
       }
     },
-    "Df0c9a4dbe608_FeedbackTarget": {
+    "D7ec851b7c3ce_FeedbackTarget": {
       "$ref": "#/$defs/Rb40e26b71cb4"
     },
     "Rb40e26b71cb4": {
@@ -5703,7 +5711,7 @@
         "turn"
       ]
     },
-    "Df0c9a4dbe608_FeedbackItem": {
+    "D7ec851b7c3ce_FeedbackItem": {
       "$ref": "#/$defs/Rf20a6c5451a7"
     },
     "Rf20a6c5451a7": {
@@ -5719,7 +5727,7 @@
           "type": "string"
         },
         "target": {
-          "$ref": "#/$defs/Df0c9a4dbe608_FeedbackTarget"
+          "$ref": "#/$defs/D7ec851b7c3ce_FeedbackTarget"
         },
         "rating": {
           "anyOf": [
@@ -5828,7 +5836,7 @@
         "candidateHash"
       ]
     },
-    "Df0c9a4dbe608_FeedbackGrowth": {
+    "D7ec851b7c3ce_FeedbackGrowth": {
       "$ref": "#/$defs/R004c7b070ae0"
     },
     "R004c7b070ae0": {
@@ -5912,7 +5920,7 @@
         "version"
       ]
     },
-    "Df0c9a4dbe608_AdminFeedbackParams": {
+    "D7ec851b7c3ce_AdminFeedbackParams": {
       "$ref": "#/$defs/R096ea8003594"
     },
     "R096ea8003594": {
@@ -5944,7 +5952,7 @@
           "type": "string"
         },
         "target": {
-          "$ref": "#/$defs/Df0c9a4dbe608_FeedbackTarget"
+          "$ref": "#/$defs/D7ec851b7c3ce_FeedbackTarget"
         },
         "id": {
           "maxLength": 512,
@@ -6018,7 +6026,7 @@
         "action"
       ]
     },
-    "Df0c9a4dbe608_AdminFeedbackResult": {
+    "D7ec851b7c3ce_AdminFeedbackResult": {
       "$ref": "#/$defs/Rd6840da5e77f"
     },
     "Rd6840da5e77f": {
@@ -6029,14 +6037,14 @@
           "maxItems": 4096,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df0c9a4dbe608_FeedbackItem"
+            "$ref": "#/$defs/D7ec851b7c3ce_FeedbackItem"
           }
         },
         "growth": {
           "maxItems": 4096,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/Df0c9a4dbe608_FeedbackGrowth"
+            "$ref": "#/$defs/D7ec851b7c3ce_FeedbackGrowth"
           }
         },
         "counts": {
@@ -6079,124 +6087,124 @@
       ]
     },
     "_agnes_v1_admin_feedbackParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminFeedbackParams"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminFeedbackParams"
     },
     "_agnes_v1_admin_feedbackResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminFeedbackResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminFeedbackResult"
     },
     "_agnes_v1_admin_credentials_listParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminEmpty"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminEmpty"
     },
     "_agnes_v1_admin_credentials_listResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialsList"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialsList"
     },
     "_agnes_v1_admin_credentials_createParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialCreate"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialCreate"
     },
     "_agnes_v1_admin_credentials_createResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialMetadata"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialMetadata"
     },
     "_agnes_v1_admin_credentials_setParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialSet"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialSet"
     },
     "_agnes_v1_admin_credentials_setResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialMetadata"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialMetadata"
     },
     "_agnes_v1_admin_credentials_renameParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialRename"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialRename"
     },
     "_agnes_v1_admin_credentials_renameResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialMetadata"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialMetadata"
     },
     "_agnes_v1_admin_credentials_deleteParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCredentialDelete"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCredentialDelete"
     },
     "_agnes_v1_admin_credentials_deleteResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminEmpty"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminEmpty"
     },
     "_agnes_v1_admin_bundles_getParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminEmpty"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminEmpty"
     },
     "_agnes_v1_admin_bundles_getResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminBundlesResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminBundlesResult"
     },
     "_agnes_v1_admin_bundles_saveParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminBundlesSave"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminBundlesSave"
     },
     "_agnes_v1_admin_bundles_saveResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminBundlesResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminBundlesResult"
     },
     "_agnes_v1_admin_composition_getParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCompositionParams"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCompositionParams"
     },
     "_agnes_v1_admin_composition_getResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminCompositionResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminCompositionResult"
     },
     "_agnes_v1_admin_search_getParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminEmpty"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminEmpty"
     },
     "_agnes_v1_admin_search_getResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminSearchResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminSearchResult"
     },
     "_agnes_v1_admin_search_saveParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminSearchSave"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminSearchSave"
     },
     "_agnes_v1_admin_search_saveResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminSearchResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminSearchResult"
     },
     "_agnes_v1_admin_search_testParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminSearchTest"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminSearchTest"
     },
     "_agnes_v1_admin_search_testResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminSearchResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminSearchResult"
     },
     "_agnes_v1_admin_contextParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminContextParams"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminContextParams"
     },
     "_agnes_v1_admin_contextResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminContextResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminContextResult"
     },
     "_agnes_v1_admin_history_searchParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminHistoryParams"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminHistoryParams"
     },
     "_agnes_v1_admin_history_searchResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminHistoryResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminHistoryResult"
     },
     "_agnes_v1_admin_planParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminPlanParams"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminPlanParams"
     },
     "_agnes_v1_admin_planResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminPlanResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminPlanResult"
     },
     "_agnes_v1_admin_mcp_oauth_saveParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminMcpOAuthSave"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminMcpOAuthSave"
     },
     "_agnes_v1_admin_mcp_oauth_saveResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminEmpty"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminEmpty"
     },
     "_agnes_v1_doctor_runParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_DoctorParams"
+      "$ref": "#/$defs/D7ec851b7c3ce_DoctorParams"
     },
     "_agnes_v1_doctor_runResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_DoctorResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_DoctorResult"
     },
     "_agnes_v1_admin_memoryParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminMemoryParams"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminMemoryParams"
     },
     "_agnes_v1_admin_memoryResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminMemoryResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminMemoryResult"
     },
     "_agnes_v1_admin_observabilityParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminObservabilityParams"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminObservabilityParams"
     },
     "_agnes_v1_admin_observabilityResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AdminObservabilityResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_AdminObservabilityResult"
     },
     "_agnes_v1_admin_triggersParams": {
-      "$ref": "#/$defs/Df0c9a4dbe608_WebhookRequest"
+      "$ref": "#/$defs/D7ec851b7c3ce_WebhookRequest"
     },
     "_agnes_v1_admin_triggersResult": {
-      "$ref": "#/$defs/Df0c9a4dbe608_WebhookResult"
+      "$ref": "#/$defs/D7ec851b7c3ce_WebhookResult"
     },
     "D822a44f4e97d_PluginConfigGetParams": {
       "$ref": "#/$defs/R7248095df605"
@@ -50332,7 +50340,7 @@
       "$ref": "#/$defs/D52bd1a1faa6a_DaemonNotice"
     },
     "AppServerError": {
-      "$ref": "#/$defs/Df0c9a4dbe608_AppServerError"
+      "$ref": "#/$defs/D7ec851b7c3ce_AppServerError"
     }
   }
 }

@@ -109,6 +109,19 @@ export function configModel(record: ModelRecord, saved?: ConfigModel): ConfigMod
   }
 }
 
+/** Project an installed catalogue while retaining each model's saved configuration. */
+export function configModels(
+  records: readonly ModelRecord[],
+  saved: readonly ConfigModel[] = [],
+): ConfigModel[] {
+  return records.map((record) =>
+    configModel(
+      record,
+      saved.find((model) => model.id === record.id),
+    ),
+  )
+}
+
 export function applyModelConfiguration(record: ModelRecord, saved?: ConfigModel): ModelRecord {
   let effective = record
   if (saved?.thinkingEfforts === false) {

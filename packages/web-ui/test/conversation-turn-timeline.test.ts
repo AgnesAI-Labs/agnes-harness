@@ -351,7 +351,7 @@ describe('turn timeline', () => {
       { turnErrorActions: { onRetry: vi.fn(), onOpenSettings: openSettings } },
     )
     expect(host.querySelector('.turn-error-sentence')?.textContent).toBe(
-      '模型账户的凭证被拒绝了，检查账户后可以继续。',
+      '模型账户认证未通过，请检查凭据配置与访问权限。',
     )
     expect(host.querySelector('.turn-error-meta')?.textContent).toBe('状态 401')
     const labels = [...host.querySelectorAll('.turn-error-actions button')].map(

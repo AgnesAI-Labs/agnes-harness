@@ -42,6 +42,8 @@ it('lists an OpenAI-compatible catalogue without a key and names why a listing f
   await fetchProviderModels({ ...options, credential: 'sk-relay' })
   expect(seen[1]?.get('authorization')).toBe('Bearer sk-relay')
   const cases: [() => Response | Promise<Response>, unknown][] = [
+    [() => Response.json({ error: 'key required' }, { status: 401 }), { reason: 'http', status: 401 }],
+    [() => Response.json({ error: 'key required' }, { status: 403 }), { reason: 'http', status: 403 }],
     [() => new Response('nope', { status: 404 }), { reason: 'http', status: 404 }],
     [
       () => new Response(null, { status: 302, headers: { location: '/v2' } }),

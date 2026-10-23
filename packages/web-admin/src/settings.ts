@@ -19,7 +19,7 @@ import {
 import { createElement } from 'react'
 import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
-import { compatibleModelsPanel } from './settings/account-compatible.js'
+import { catalogueErrorText, compatibleModelsPanel } from './settings/account-compatible.js'
 import { accountForm, endpointHost, fieldError } from './settings/account-form.js'
 import { accountNetworkFields } from './settings/account-network.js'
 import { bindAccountPage, linkedAccountRestorer, showAccountDiscard } from './settings/account-page.js'
@@ -422,7 +422,14 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     renderModels()
     if (clearError) form.clearErrors()
     // Only a connection that had passed needs telling that its result no longer holds.
-    say(retest ? tr('settings.state.connectionChanged') : '', 'warn')
+    say(
+      retest
+        ? tr('settings.state.connectionChanged')
+        : !saved && !ui.apiKey.value.trim() && !isOAuth()
+          ? tr('settings.state.notConfigured')
+          : '',
+      retest ? 'warn' : '',
+    )
   }
   /** A changed key is tested once typing settles, at once after a paste; an emptied field tests nothing. */
   const connectionChanged = (delay: number): void => {
@@ -570,7 +577,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         renderModels()
         return
       }
-      if (!result.verified || result.models.length === 0) throw new Error(tr('settings.provider.noCatalog'))
+      if (result.catalogueError) throw new Error(catalogueErrorText(result.catalogueError))
+      if (!result.verified) {
+        if (!request.apiKey && !savedProvider()?.credentialConfigured) {
+          say(tr('settings.state.notConfigured'))
+          return
+        }
+        throw new Error(tr('settings.config.verificationUnknown'))
+      }
+      if (result.models.length === 0) throw new Error(tr('settings.provider.noCatalog'))
       tested = result
       say(tr('settings.step.third', { count: result.models.length }), 'ok')
       form.clearErrors()

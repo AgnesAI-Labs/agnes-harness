@@ -234,8 +234,9 @@ describe('settings controller', () => {
 
   it('separates the saved default model from the current session model throughout configuration', async () => {
     installDom()
+    const probe = vi.fn(async (): Promise<ConfigTestResult> => testResult)
     const settings = createSettingsController({
-      client: client(),
+      client: client({ test: probe }),
       onSaved: vi.fn(async () => undefined),
       onError: vi.fn(),
     })
@@ -249,6 +250,22 @@ describe('settings controller', () => {
     await vi.waitFor(() => expect(node('config-model').children).toHaveLength(3))
     expect(node('config-state').textContent).toBe('连接成功，找到 2 个模型')
     expect(node('config-state').dataset.tone).toBe('ok')
+    node('config-api-key').value = 'fixture-key'
+    for (const [reason, message] of [
+      ['network', '连不上这个地址。'],
+      ['timeout', '连接超时。'],
+      ['invalid', '模型列表格式无法识别。'],
+    ] as const) {
+      probe.mockResolvedValueOnce({ models: [], verified: false, catalogueError: { reason } })
+      node('config-test').dispatch('click')
+      await vi.waitFor(() => expect(node('config-error').textContent).toBe(message))
+      expect(node('config-error').textContent).not.toContain('被拒')
+    }
+    probe.mockResolvedValueOnce({ models: [], verified: false })
+    node('config-test').dispatch('click')
+    await vi.waitFor(() =>
+      expect(node('config-error').textContent).toBe('无法确认凭据是否有效。服务未返回可用的对话模型列表。'),
+    )
   })
 
   it('tests a key once typing settles, at once after a paste, and never a superseded one', async () => {
@@ -425,6 +442,7 @@ describe('settings controller', () => {
     ['CONFIG_CREDENTIAL_NO_SPACE', '无法保存凭据。 请检查存储权限。'],
     ['CONFIG_REVISION_CONFLICT', '资源已变更。 请重新载入最新状态后重试。'],
     ['CONFIG_CREDENTIAL_REJECTED', '凭据被拒绝。 请检查后重试。'],
+    ['CONFIG_CREDENTIAL_REQUIRED', '缺少提供方凭据。 请为此提供方添加凭据。'],
   ])(
     'translates %s into an actionable settings error',
     async (reason, message, metadata: Record<string, unknown> = {}) => {

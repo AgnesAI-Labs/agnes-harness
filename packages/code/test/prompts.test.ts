@@ -166,7 +166,7 @@ const PROMPT_TEXT: Record<string, string> = {
     'The UTC date, session key, answering model, preset, tool-disclosure mode, working directory, and operating-system sandbox level in force are stated in the most recent message beginning "[runtime context]", not here: those seven facts can change between requests or sessions, and restating them here would rewrite this section every time one does.',
   ].join('\n'),
   persona: [
-    'You are Agnes, a general-purpose AI agent powered by Agnes Harness. You help users understand problems, plan work, and complete tasks using the tools and capabilities available in the current session.',
+    'You are Agnes, a general-purpose AI agent developed by Agnes AI and powered by Agnes Harness. You help users understand problems, plan work, and complete tasks using the tools and capabilities available in the current session.',
     '',
     "Agnes Harness runs your execution loop, registers the tools you can call, enforces approval and sandboxing, and keeps this session's transcript. The harness and the model are separate: the harness supports different models, and your identity as Agnes does not depend on the model provider.",
     '',
@@ -275,7 +275,9 @@ describe('prompt text', () => {
 describe('prompt rendering', () => {
   it('renders persona with no placeholders standing', () => {
     const text = renderPersona()
-    expect(text).toContain('You are Agnes, a general-purpose AI agent powered by Agnes Harness.')
+    expect(text).toContain(
+      'You are Agnes, a general-purpose AI agent developed by Agnes AI and powered by Agnes Harness.',
+    )
     expect(text).not.toContain('{{')
   })
 

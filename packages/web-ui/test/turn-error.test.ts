@@ -1,6 +1,7 @@
 import type { UITurn } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { turnErrorMessageFacts, turnErrorView } from '../src/conversation/turn-error.js'
+import { turnErrorLocaleCatalog } from '../src/locales/turn-error.js'
 
 const turn = (extra: Partial<UITurn> = {}): UITurn => ({
   id: 'turn:1',
@@ -49,6 +50,10 @@ describe('turn error classification', () => {
   ] as const)('reads %s as %s with %j', (code, kind, actions) => {
     const view = turnErrorView(failure(code))
     expect(view.kind).toBe(kind)
+    if (code === 'PROVIDER_UNCONFIGURED' || code === 'AUTH') {
+      expect(turnErrorLocaleCatalog['zh-CN']['turn.error.class.auth']).not.toContain('被拒')
+      expect(turnErrorLocaleCatalog.en['turn.error.class.auth']).not.toContain('rejected')
+    }
     expect(view.actions).toEqual(actions)
     expect(view.detail).toEqual({ code, message: 'status=500' })
   })

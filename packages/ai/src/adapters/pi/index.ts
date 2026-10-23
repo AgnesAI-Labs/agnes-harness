@@ -12,6 +12,7 @@ import type {
   ProviderStreamOptions,
 } from '@earendil-works/pi-ai'
 import { type AdapterStreamOptions, WireAdapter, type WireEvent } from '../../adapter.js'
+import { isChatModelId } from '../../chat-model.js'
 import { AiSetupError } from '../../errors.js'
 import { sha256Hex } from '../../hash.js'
 import {
@@ -294,7 +295,7 @@ export class PiAdapter extends WireAdapter {
   }
 
   models(route: string): ModelRecord[] {
-    return this.manual.get(route)?.models ?? []
+    return (this.manual.get(route)?.models ?? []).filter((model) => isChatModelId(model.id))
   }
 
   override async probe(route: string, signal: AbortSignal) {
@@ -374,7 +375,7 @@ export class PiAdapter extends WireAdapter {
   async *stream(route: string, req: RequestBody, opts: AdapterStreamOptions): AsyncIterable<WireEvent> {
     const decl = this.manual.get(route)
     const record = decl?.models.find((m) => m.id === req.model)
-    if (!decl || !record) {
+    if (!decl || !record || !isChatModelId(req.model)) {
       yield {
         type: 'error',
         reason: 'error',

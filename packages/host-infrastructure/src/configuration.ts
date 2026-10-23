@@ -12,6 +12,7 @@ import {
   fetchProviderModels,
   getApiKeyProvider,
   getSubscriptionProvider,
+  isChatModelId,
   SUBSCRIPTION_PROVIDER_REGISTRY,
   type SubscriptionProviderEntry,
   subscriptionAuth,
@@ -84,6 +85,7 @@ import { ConfigurationError, type ConfigurationErrorCode } from './configuration
 import {
   applyModelConfiguration,
   configModel,
+  configModels,
   normalizeConfigModel,
   normalizeModelSettings,
   supportsModelSettings,
@@ -657,6 +659,7 @@ export function createConfigurationService(
   SessionDefaultsConfigurationService &
   ChildEnginesConfigurationService &
   Required<Pick<ConfigurationService, 'application' | 'saveApplication' | 'modelSlots' | 'saveModelSlots'>> {
+  const chatModels = compatible.chatModelPolicy(isChatModelId)
   const home = resolve(options.home)
   if (!PROFILE.test(options.profile)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const profile = options.profile
@@ -783,7 +786,7 @@ export function createConfigurationService(
           ...(row.networkTimeouts === undefined ? {} : { networkTimeouts: row.networkTimeouts }),
           model: row.model,
           models: compatible.declaresModels(entry)
-            ? row.models.map((saved) => structuredClone(saved))
+            ? chatModels.models(row.models, isPayloadOnlyEntry(entry))
             : await staticCatalogue(entry)
                 .catch(() => ({ records: [] as ModelRecord[] }))
                 .then(({ records }) =>
@@ -826,6 +829,7 @@ export function createConfigurationService(
   /** An unset fast slot follows the default account; an explicit choice or `null` is left alone. */
   const slotsSnapshot = async (state: StoredConfiguration | undefined): Promise<ModelSlotsSnapshot> => {
     const slots = structuredClone(state?.modelSlots ?? {})
+    chatModels.requireSlots(slots)
     const effectiveDefault = (await snapshot(state)).defaultAccountId
     const row = state?.accounts.find((account) => account.accountId === effectiveDefault)
     const result = { revision: state?.revision ?? 0, slots }
@@ -925,18 +929,13 @@ export function createConfigurationService(
         throw error
       })
     if (compatible.isCompatibleEntry(parsed.entry))
-      return compatible.testCompatibleAccount(
+      return chatModels.testCompatibleAccount(
         { entry: parsed.entry, baseUrl, apiKey: parsed.apiKey, row },
         { list, readCredential },
       )
     const storedCredential =
       row && parsed.apiKey === undefined ? await readCredential(row.credentialRef) : null
-    let models = (await staticCatalogue(parsed.entry)).records.map((record) =>
-      configModel(
-        record,
-        row?.models.find((m) => m.id === record.id),
-      ),
-    )
+    let models = configModels((await staticCatalogue(parsed.entry)).records, row?.models)
     if (row?.authType === 'oauth' && parsed.apiKey === undefined) {
       const provider = getSubscriptionProvider(row.id)
       if (!provider || !isSubscriptionCredential(storedCredential, row.id)) return { models, verified: false }
@@ -946,12 +945,7 @@ export function createConfigurationService(
         const store = subscriptionCredentials(home, row.credentialRef, provider.id)
         const runtime = subscriptionAuth(provider.id, store)
         const auth = await runtime.resolve(signal)
-        models = (await runtime.available(signal)).map((record) =>
-          configModel(
-            record,
-            row.models.find((m) => m.id === record.id),
-          ),
-        )
+        models = configModels(await runtime.available(signal), row.models)
         const model = parsed.model ?? row.model
         if (!models.some((entry) => entry.id === model))
           throw new ConfigurationError('CONFIG_SUBSCRIPTION_MODEL')
@@ -994,6 +988,7 @@ export function createConfigurationService(
 
   const saveInternal = async (input: ConfigSaveInput): Promise<ConfigSnapshot> => {
     const parsed = parseSaveInput(input)
+    chatModels.requireModel(parsed.model, isPayloadOnlyEntry(parsed.entry))
     const current = await loadState()
     const revision = current?.revision ?? 0
     if (parsed.expectedRevision !== undefined && parsed.expectedRevision !== revision)
@@ -1057,15 +1052,10 @@ export function createConfigurationService(
     const result = labelOnlyUpdate
       ? { models: structuredClone(existing?.models ?? []), verified: true }
       : compatible.isCompatibleEntry(entry) && parsed.models !== undefined
-        ? { models: compatible.compatibleModels(entry, baseUrl, parsed.models), verified: true }
+        ? { models: chatModels.compatibleModels(entry, baseUrl, parsed.models), verified: true }
         : oauthEntry
           ? {
-              models: (await staticCatalogue(entry)).records.map((record) =>
-                configModel(
-                  record,
-                  existing?.models.find((m) => m.id === record.id),
-                ),
-              ),
+              models: configModels((await staticCatalogue(entry)).records, existing?.models),
               verified: true,
             }
           : await test({
@@ -1385,6 +1375,7 @@ export function createConfigurationService(
       serialized(async () => {
         if (!validateAgainst(ModelSlotsSnapshot, input).ok)
           throw new ConfigurationError('CONFIG_INVALID_INPUT')
+        chatModels.requireSlots(input.slots)
         const current = await loadState()
         if (input.revision !== (current?.revision ?? 0))
           throw new ConfigurationError('CONFIG_REVISION_CONFLICT')
@@ -1403,7 +1394,10 @@ export function createConfigurationService(
       }),
     async sessionDefaults() {
       const state = await loadState()
-      return { revision: state?.revision ?? 0, defaults: permissionLevelDefaults(state?.sessionDefaults) }
+      return {
+        revision: state?.revision ?? 0,
+        defaults: permissionLevelDefaults(chatModels.defaults(state?.sessionDefaults)),
+      }
     },
     saveSessionDefaults: (input) =>
       serialized(async () => {
@@ -1419,7 +1413,7 @@ export function createConfigurationService(
           ...current,
           ...(!current ? { inheritProvider: true as const } : {}),
           revision: input.revision + 1,
-          sessionDefaults: permissionLevelDefaults(input.defaults),
+          sessionDefaults: permissionLevelDefaults(chatModels.defaults(input.defaults)),
         }
         await persistState(next)
         return { revision: next.revision, defaults: structuredClone(next.sessionDefaults ?? {}) }
@@ -1475,7 +1469,7 @@ export function createConfigurationService(
           // A payload-only account has no provider catalogue to resolve against; its declared
           // models render through the fixed payload template instead.
           if (isPayloadOnlyEntry(entry)) return [payloadOnlyRoute(row, entry.api)]
-          if (compatible.isCompatibleEntry(entry)) return [compatible.compatibleRoute(row, entry.api)]
+          if (compatible.isCompatibleEntry(entry)) return [chatModels.compatibleRoute(row, entry.api)]
           const catalogue = await staticCatalogue(entry)
           const byId = new Map(catalogue.records.map((record) => [record.id, record]))
           const records = row.models.map((model) => {
