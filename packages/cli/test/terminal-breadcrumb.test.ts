@@ -80,6 +80,13 @@ describe('--continue with a terminal pane breadcrumb', () => {
     expect(await resume(daemon([{ sessionId: 'newest' }]), a)).toBe('newest')
   })
 
+  it('never resumes a breadcrumb hidden by the daemon owner filter', async () => {
+    const a = terminalBreadcrumb(home(), env('%1'))
+    a?.write('foreign-session', cwd)
+    expect(await resume(daemon([{ sessionId: 'mine' }]), a)).toBe('mine')
+    await expect(resume(daemon([]), a)).rejects.toThrow(/found no session/)
+  })
+
   it('behaves as before without a pane id, and ignores a corrupt file or an unwritable home', async () => {
     expect(terminalBreadcrumb(home(), {})).toBeUndefined()
     expect(await resume(daemon(rows))).toBe('newest')

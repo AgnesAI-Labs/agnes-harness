@@ -494,6 +494,42 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
   writeFileSync(dataFile, original.replace('v1-json', 'v2-json'))
   utimesSync(dataFile, stamp.atime, stamp.mtime)
   await expect(m.listRuntimePins(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  for (const requests of [
+    [
+      {
+        pinId: 'active-v1',
+        operationId: 'enable-v1',
+        packageId: id,
+        purpose: 'active' as const,
+        selector: {
+          kind: 'installed' as const,
+          expectedIntegrity: expected.integrity,
+          expectedTreeIntegrity: expected.treeIntegrity,
+        },
+      },
+    ],
+    [
+      {
+        pinId: 'fresh-pin',
+        operationId: 'fresh-pin',
+        packageId: id,
+        purpose: 'turn' as const,
+        selector: {
+          kind: 'snapshot' as const,
+          snapshotId: pin.snapshot.snapshotId,
+          expectedIntegrity: expected.integrity,
+          expectedTreeIntegrity: expected.treeIntegrity,
+        },
+      },
+    ],
+  ]) {
+    await expect(m.pinRuntimeSnapshots(profile, requests)).rejects.toMatchObject({
+      code: 'E_PACKAGE_INTEGRITY',
+    })
+    await expect(m.pinRuntimeSnapshot(profile, requests[0]!)).rejects.toMatchObject({
+      code: 'E_PACKAGE_INTEGRITY',
+    })
+  }
   // Warm static inspection must never stand in for checking the retained tree's current bytes.
   await expect(m.inventory(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
   writeFileSync(dataFile, original)
@@ -730,4 +766,30 @@ it('recovers a journal left between two batched pins like sequential pins', asyn
   await fresh.recover(profile)
   expect((await fresh.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['pin-a'])
   expect((await fresh.pinRuntimeSnapshots(profile, [request(idTwo, 'pin-b')]))[0]?.pinId).toBe('pin-b')
+})
+
+it.each(['single', 'batch'] as const)('rechecks warmed installed bytes before a %s pin', async (kind) => {
+  const m = await installTrusted()
+  const expected = await identity()
+  const file = join(packageDir(root, 'local-dev', id), 'data.json')
+  const original = readFileSync(file, 'utf8')
+  const stamp = statSync(file)
+  writeFileSync(file, original.replace('v1-json', 'v2-json'))
+  utimesSync(file, stamp.atime, stamp.mtime)
+  const request = {
+    pinId: 'tamper-test',
+    operationId: 'tamper-test',
+    packageId: id,
+    purpose: 'active' as const,
+    selector: {
+      kind: 'installed' as const,
+      expectedIntegrity: expected.integrity,
+      expectedTreeIntegrity: expected.treeIntegrity,
+    },
+  }
+  await expect(
+    kind === 'single' ? m.pinRuntimeSnapshot(profile, request) : m.pinRuntimeSnapshots(profile, [request]),
+  ).rejects.toThrow()
+  expect(await m.listRuntimePins(profile)).toEqual([])
+  expect(readFileSync(file, 'utf8')).toContain('v2-json')
 })

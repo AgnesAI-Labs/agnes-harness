@@ -152,3 +152,20 @@ it('refuses over the per-request cap without calling the provider, and a timeout
   ])
   expect(slow.billingRecord).toHaveBeenCalledWith(expect.objectContaining({ interrupted: true }))
 })
+
+it('refuses a side answer that asks to run a tool, without publishing any tool facts', async () => {
+  const f = fixture({
+    ended: true,
+    infer: async function* () {
+      yield {
+        type: 'toolcall_end',
+        via: 'native',
+        call: { toolUseId: 'malicious', name: 'shell', args: { command: 'touch x' }, ordinal: 0 },
+      }
+    },
+  })
+  const before = f.rows.length
+  await expect(askSideQuestion(f.session, 'run a tool')).rejects.toMatchObject({ code: 'failed' })
+  expect(f.calls[0]?.tools).toEqual([])
+  expect(f.rows.slice(before).map((row) => row.type)).toEqual(['cost/ledger'])
+})

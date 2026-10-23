@@ -189,6 +189,7 @@ describe('run loop', () => {
     { preset: null, cap: 2, steps: 2 },
     { preset: 5, cap: 1, steps: 1 },
     { preset: 1, cap: 9, steps: 1 },
+    { preset: 2, cap: 1000, steps: 2 },
   ])('a prompt step cap of $cap under a preset ceiling of $preset ends after $steps steps', async (row) => {
     const presetBase = presetDefaults()
     const preset = { ...presetBase, budget: { ...presetBase.budget, maxSteps: row.preset } }
@@ -237,7 +238,7 @@ describe('run loop', () => {
     expect(await reopened.log.scan({ type: 'step/start', limit: 100 })).toHaveLength(2)
   })
 
-  it.each([0, 1001, 1.5, Number.NaN])(
+  it.each([0, -1, 1001, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
     'rejects the step cap %s before changing the inbox',
     async (maxSteps) => {
       const { session } = await openSession({ provider: fakeProvider([]) })
