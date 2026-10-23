@@ -263,15 +263,21 @@ describe('subagent_spawn', () => {
   it.each(['spawn', 'fork'] as const)(
     'uses shared cwd for an implicit non-git %s, but refuses explicit isolation and other errors',
     async (kind) => {
-      for (const skipped of ['not-git', 'git-error'] as const) {
+      for (const skipped of ['not-git', 'git-error', 'remote-sandbox'] as const) {
         for (const isolation of [undefined, 'worktree', 'shared'] as const) {
           const wt = worktrees({ create: async () => ({ skipped }) })
           const d = deps({ worktrees: wt.manager })
           const { ctx, calls } = context()
           const result =
             kind === 'fork'
-              ? await subagentForkToolWithDeps(d).execute({ question: 'build bread', isolation }, ctx)
-              : await subagentSpawnTool(d).execute({ task: 'build drinks', isolation }, ctx)
+              ? await subagentForkToolWithDeps(d).execute(
+                  { question: 'build bread', ...(isolation === undefined ? {} : { isolation }) },
+                  ctx,
+                )
+              : await subagentSpawnTool(d).execute(
+                  { task: 'build drinks', ...(isolation === undefined ? {} : { isolation }) },
+                  ctx,
+                )
           const shared = isolation === 'shared' || (isolation === undefined && skipped === 'not-git')
           expect(result.isError).toBe(shared ? undefined : true)
           if (shared) {
@@ -282,7 +288,7 @@ describe('subagent_spawn', () => {
                 'ran in the shared folder because it is not a git repository',
               )
           } else {
-            expect(JSON.stringify(result.content)).toContain('worktree creation failed: ' + skipped)
+            expect(JSON.stringify(result.content)).toContain(`worktree creation failed: ${skipped}`)
             expect(calls.spawn).toEqual([])
           }
         }
@@ -560,6 +566,9 @@ describe('child allowlist and continuable controls', () => {
       const result = await subagentSpawnTool(deps({ maxDepth: 0 })).execute({ task: 'go' }, ctx)
       expect(result.isError).toBe(true)
       expect(result.content[0]).toMatchObject({ text: expect.stringContaining('E_UNSUPPORTED') })
+      expect(result.content[0]).toMatchObject({
+        text: expect.stringContaining('child provider in-process is not allowed for this session'),
+      })
       expect(calls.spawn).toEqual([])
     } finally {
       resetChildAgentAllowlists()
