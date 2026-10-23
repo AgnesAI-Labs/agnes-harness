@@ -38,6 +38,12 @@ describe('splitShellCommand', () => {
     'a && && b',
     'a ;; b',
     'echo $(id)',
+    'git status $((1 + 2))',
+    'git status <(id)',
+    'ls && (id)',
+    'ls |\ncat',
+    String.raw`ls \
+&& id`,
     'echo `id`',
     'echo $HOME',
     'echo "$HOME"',

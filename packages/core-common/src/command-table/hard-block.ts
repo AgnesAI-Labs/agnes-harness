@@ -35,6 +35,18 @@ const operands = (words: readonly string[]): string[] => {
   ]
 }
 const WHOLE_DISK = /^(?:\/+\*?|(?:~|\$HOME|\$\{HOME\})(?:\/+\*?)?)$/
+// Normalize only literal absolute paths. Variables and shell programs stay text-policy inputs.
+function wholeDisk(operand: string): boolean {
+  if (WHOLE_DISK.test(operand)) return true
+  if (!operand.startsWith('/')) return false
+  const parts: string[] = []
+  for (const part of operand.split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..') parts.pop()
+    else parts.push(part)
+  }
+  return parts.length === 0 || (parts.length === 1 && parts[0] === '*')
+}
 const BLOCK_DEVICE = /\/dev\/(?:sd|nvme|disk|rdisk|hd|mmcblk)/
 
 export const HARD_BLOCK_RULES: readonly HardBlockRule[] = [
@@ -65,7 +77,7 @@ export const HARD_BLOCK_RULES: readonly HardBlockRule[] = [
       const rest = words.slice(1)
       if (rest.includes('--no-preserve-root')) return true
       const recursive = flags(rest).some((flag) => flag === '--recursive' || /^-[a-zA-Z]*[rR]/.test(flag))
-      return recursive && operands(rest).some((operand) => WHOLE_DISK.test(operand))
+      return recursive && operands(rest).some(wholeDisk)
     },
   },
   {
@@ -132,7 +144,11 @@ const optionWithValue: Record<string, readonly string[]> = {
 /** Drop `sudo`, `env`, `command`, `exec`, `nohup`, `timeout` and `nice` in front of the real command. */
 function unwrap(words: readonly string[]): readonly string[] {
   let rest = words
-  for (let guard = 0; guard < 16 && rest.length > 0; guard++) {
+  while (rest.length > 0) {
+    if (/^[A-Za-z_]\w*\+?=/.test(rest[0] as string)) {
+      rest = rest.slice(1)
+      continue
+    }
     const name = basename(rest[0] as string)
     if (!['sudo', 'doas', 'env', 'command', 'exec', 'nohup', 'timeout', 'nice'].includes(name)) return rest
     const valued = optionWithValue[name] ?? []
@@ -172,6 +188,17 @@ function looseSegments(text: string, honourQuotes: boolean): string[][] {
   }
   for (let i = 0; i < text.length; i++) {
     const ch = text[i] as string
+    if (honourQuotes && ch === '\\' && quote !== "'") {
+      const next = text[i + 1]
+      if (next !== undefined && (!quote || '$`"\\\n'.includes(next))) {
+        if (next !== '\n') {
+          word += next
+          has = true
+        }
+        i++
+        continue
+      }
+    }
     if (quote) {
       if (ch === quote) quote = ''
       else word += ch
@@ -210,13 +237,14 @@ function blockedCommand(words: readonly string[], depth: number): string | undef
 }
 
 function hardBlockedAt(command: string, depth: number): string | undefined {
-  const squashed = command.replace(/\s+/g, '')
-  for (const rule of HARD_BLOCK_RULES) if (rule.text?.(squashed)) return rule.id
   const strict = splitShellCommand(command)
+  // Fully parsed commands have no expansions or redirections; quoted words are data.
+  const squashed = command.replace(/\s+/g, '')
+  if (!strict) for (const rule of HARD_BLOCK_RULES) if (rule.text?.(squashed)) return rule.id
   const views = [
     ...(strict ?? looseSegments(command, true)),
     // Literal pieces hidden inside quotes: `echo "$(rm -rf /)"`.
-    ...looseSegments(command, false),
+    ...(strict ? [] : looseSegments(command, false)),
   ]
   for (const words of views) {
     const id = blockedCommand(words, depth)
