@@ -89,6 +89,8 @@ export type EditorOptions = {
   onCancelKey?(hadDraft: boolean): void
   /** Ctrl-G: the app hands the draft to the user's own editor and writes the result back with `replaceDraft`. */
   onExternalEdit?(): void
+  /** Ctrl-V: the terminal forwards no image, so the app reads the clipboard itself. */
+  onPasteImage?(): void
   /** Sent prompts, kept across runs when it has a file; without it history lasts this editor's lifetime. */
   history?: PromptHistory
   /** True while a turn runs: esc then interrupts it and leaves the draft alone. */
@@ -392,6 +394,9 @@ export class Editor implements Component {
       case 'external-edit':
         this.o.onExternalEdit?.()
         return true
+      case 'paste-image':
+        this.o.onPasteImage?.()
+        return true
       default:
         return false
     }
@@ -475,6 +480,12 @@ export class Editor implements Component {
     }
     const chip = tt('paste.chip', this.o.locale ?? 'en', { n: ++this.pasteCount, lines })
     this.pastes.set(chip, text)
+    this.insert(chip)
+  }
+
+  /** Puts a chip such as `[Image #1]` in the draft; Backspace removes it whole, and it goes out as typed. */
+  insertChip(chip: string): void {
+    this.pastes.set(chip, chip)
     this.insert(chip)
   }
 

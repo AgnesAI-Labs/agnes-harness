@@ -48,6 +48,7 @@ export const BINDINGS = [
   { id: 'undo', scope: 'editor', keys: ['ctrl-z'] },
   { id: 'redo', scope: 'editor', keys: ['ctrl-shift-z'] },
   { id: 'external-edit', scope: 'editor', keys: ['ctrl-g'] },
+  { id: 'paste-image', scope: 'editor', keys: ['ctrl-v'] },
   // Ctrl-R history search; any other key accepts the match and then does what it always does.
   { id: 'search-older', scope: 'search', keys: ['ctrl-r'] },
   { id: 'search-erase', scope: 'search', keys: ['backspace'] },

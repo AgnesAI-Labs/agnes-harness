@@ -14,7 +14,14 @@ import { UsagePanel } from '../src/views/usage-panel.js'
 // contract the key binding table (keymap.ts) has to keep: it drives real components and checks what
 // the key does, so it passes before and after the bindings move into one declaration.
 
-type Seen = { text: string; cursor: number; submitted: string[]; cancels: boolean[]; external: number }
+type Seen = {
+  text: string
+  cursor: number
+  submitted: string[]
+  cancels: boolean[]
+  external: number
+  images: number
+}
 type Case = {
   name: string
   keys: string[]
@@ -33,12 +40,14 @@ function drive(c: Case): Seen & { handled: boolean } {
   const submitted: string[] = []
   const cancels: boolean[] = []
   let external = 0
+  let images = 0
   const history = new PromptHistory()
   for (const h of [...(c.history ?? [])].reverse()) history.add(h)
   const e = new Editor({
     onSubmit: (t) => submitted.push(t),
     onCancelKey: (d) => cancels.push(d),
     onExternalEdit: () => void external++,
+    onPasteImage: () => void images++,
     history,
     busy: () => c.busy === true,
     ...(c.complete ? { complete: c.complete } : {}),
@@ -50,7 +59,7 @@ function drive(c: Case): Seen & { handled: boolean } {
   }
   let handled = false
   for (const k of c.keys) handled = e.handleInput(k)
-  return { text: e.text, cursor: e.cursor, submitted, cancels, external, handled }
+  return { text: e.text, cursor: e.cursor, submitted, cancels, external, images, handled }
 }
 
 const S = 'ab cd ef'
@@ -187,6 +196,12 @@ const editorCases: Case[] = [
     keys: ['\x07'],
     text: 'hi',
     want: { external: 1, text: 'hi' },
+  },
+  {
+    name: 'ctrl-v asks the app for the clipboard image and types nothing',
+    keys: ['\x16'],
+    text: 'hi',
+    want: { images: 1, text: 'hi' },
   },
   { name: 'alt-up is swallowed', keys: ['\x1b[1;3A'], text: 'hi', handled: true, want: { text: 'hi' } },
   {

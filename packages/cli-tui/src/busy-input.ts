@@ -75,6 +75,8 @@ export class BusyInput {
 
   private kept: ContentBlock[] = []
 
+  private readonly chips = new Map<string, { block: ContentBlock; sessionId: string }>()
+
   constructor(private readonly host: BusyHost) {}
 
   /** Attachments of a queued message taken back into the editor: they travel with the next message. */
@@ -82,8 +84,16 @@ export class BusyInput {
     this.kept = blocks
   }
 
-  takeKept(): ContentBlock[] {
-    return this.kept.splice(0)
+  /** A clipboard image uploaded to `sessionId`, shown in the draft as `chip`; it travels only if the chip is still in the text sent. */
+  attach(chip: string, block: ContentBlock, sessionId: string): void {
+    this.chips.set(chip, { block, sessionId })
+  }
+
+  takeKept(text = ''): ContentBlock[] {
+    const here = this.host.session().id
+    const chips = [...this.chips].filter(([chip, c]) => c.sessionId === here && text.includes(chip))
+    this.chips.clear()
+    return [...this.kept.splice(0), ...chips.map(([, c]) => c.block)]
   }
 
   /** An idle prompt. A daemon that refuses it as busy did not record it, so it is queued instead. */

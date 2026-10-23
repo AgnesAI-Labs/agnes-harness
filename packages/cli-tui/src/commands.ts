@@ -12,6 +12,7 @@ import { agentsSlash } from './agent-commands.js'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
 import { startBtw } from './btw.js'
+import { pasteClipboardImage } from './clipboard-image.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { customCommandsFor, customHelp, customSlash } from './custom-commands.js'
 import { deliverablesSlash } from './deliverable-files.js'
@@ -157,6 +158,11 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     args: '<path>',
     descriptionKey: 'commands.attach',
     summaryKey: 'commands.attachSummary',
+  },
+  {
+    name: '/paste',
+    descriptionKey: 'commands.paste',
+    summaryKey: 'commands.pasteSummary',
   },
   { name: '/export', descriptionKey: 'commands.export', summaryKey: 'commands.exportSummary' },
   { name: '/refine', descriptionKey: 'commands.refine', summaryKey: 'commands.refineSummary' },
@@ -371,6 +377,10 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   if (opens && app.refuseSwitch()) return {}
   const s = app.session
   const c = s.client
+  if (cmd === '/paste') {
+    await pasteClipboardImage(app)
+    return {}
+  }
   if (cmd === '/attach') {
     const path = line.trim().slice('/attach'.length).trim()
     if (!path) throw new Error('Usage: /attach <path>')

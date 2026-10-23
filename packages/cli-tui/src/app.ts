@@ -5,6 +5,7 @@ import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type S
 import { createAnsi } from './ansi.js'
 import { ApprovalSettle } from './approval-settle.js'
 import { BusyInput, cancelTurn, textOf } from './busy-input.js'
+import { pasteClipboardImage } from './clipboard-image.js'
 import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, Text, VStack } from './component.js'
 import { Loader } from './components/loader.js'
@@ -103,7 +104,7 @@ export class TuiApp {
   )
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
-  private readonly editor: Editor
+  readonly editor: Editor
   private readonly mentions: ReferenceMentionSource
   private readonly composer: Composer
   private readonly theme: TuiTheme
@@ -133,7 +134,7 @@ export class TuiApp {
   private localTurn = false
   private readonly interrupts = new DoubleCtrlC()
   private readonly escapes = new DoubleEsc()
-  private readonly busyInput = new BusyInput({
+  readonly busyInput = new BusyInput({
     session: () => this.o.session,
     locale: () => this.locale,
     notice: (text, tone) => {
@@ -318,6 +319,7 @@ export class TuiApp {
       onSubmit: (text) => {
         void this.runInput(text)
       },
+      onPasteImage: () => void pasteClipboardImage(this).catch((error) => this.showError(error)),
       onExternalEdit: () =>
         void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor),
       onCancelKey: (hadDraft) => {
@@ -1077,7 +1079,7 @@ export class TuiApp {
       return
     }
     await this.submitBlocks(
-      [...attachmentsFrom(text, this.cwd, this.o.remote), ...this.busyInput.takeKept()],
+      [...attachmentsFrom(text, this.cwd, this.o.remote), ...this.busyInput.takeKept(text)],
       text,
     )
   }

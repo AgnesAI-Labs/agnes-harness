@@ -149,6 +149,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/grants',
       '/deliverables',
       '/attach',
+      '/paste',
       '/export',
       '/refine',
       '/packages',
