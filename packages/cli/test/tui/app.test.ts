@@ -23,7 +23,7 @@ import { expect, it, vi } from 'vitest'
 import { type Colour, createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
 import { SLASH_COMMANDS } from '../../src/tui/commands.js'
-import { FakeTerminal } from '../../src/tui/terminal.js'
+import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
 import { type Tone, TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
 import { ToolCard } from '../../src/tui/views/tool-card.js'
@@ -1376,6 +1376,85 @@ it('/raw drops the mouse capture and the bars and shading, shows RAW, and puts e
     expect([times(quiet.term, MOUSE_OFF), times(quiet.term, MOUSE_ON)]).toEqual([0, 0])
   } finally {
     await quiet.close()
+  }
+})
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the range starts at NUL on purpose
+const ASCII_ONLY = /^[\x00-\x7f]*$/
+
+it('/borders ascii draws every frame and icon in ASCII, at the same widths, and unicode brings them back', async () => {
+  const tool = (n: number, status: string) => ({
+    kind: 'tool',
+    id: `t${n}`,
+    seq: n,
+    toolUseId: `c${n}`,
+    name: 'read',
+    status,
+    summary: `step ${n}`,
+  })
+  const nodes = [
+    { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'a question' }] },
+    tool(2, 'completed'),
+    tool(3, 'failed'),
+    {
+      kind: 'assistant',
+      id: 'a1',
+      seq: 4,
+      text: '> quoted\n\n- one\n- two\n\n| k | v |\n|---|---|\n| a | 1 |\n\n---',
+    },
+  ] as UINode[]
+  const open = await fakeApp('{"theme":"dark","title":"off"}', nodes)
+  try {
+    await vi.waitFor(async () => expect(await open.screen()).toContain('a question'))
+    await open.app.runInput('/vim')
+    open.term.feed('/')
+    await vi.waitFor(async () => expect(await open.screen()).toContain('/help'))
+    const fancy = await open.screen()
+    expect(fancy).not.toMatch(ASCII_ONLY)
+    // The rail's edges, the menu's rows and the status line keep their widths when their glyphs change.
+    const rowWidth = (screen: string, mark: string) =>
+      displayWidth(
+        screen
+          .split('\n')
+          .find((line) => line.includes(mark))
+          ?.trimEnd() ?? '',
+      )
+    await open.app.runInput('/borders ascii')
+    await vi.waitFor(async () => expect(await open.screen()).toMatch(ASCII_ONLY))
+    const plain = await open.screen()
+    expect(plain).toContain('* one')
+    for (const [from, to] of [
+      ['╭─ /work/proj', '+- /work/proj'],
+      ['│ ❯ /help', '| > /help'],
+      ['/ commands', '/ commands'],
+    ] as const)
+      expect(rowWidth(plain, to), from).toBe(rowWidth(fancy, from))
+    expect(open.saved()).toEqual({ theme: 'dark', title: 'off', vim: true, borders: 'ascii' })
+    await open.app.runInput('/borders unicode')
+    await vi.waitFor(async () => expect(await open.screen()).not.toMatch(ASCII_ONLY))
+    expect(open.saved()).toEqual({ theme: 'dark', title: 'off', vim: true, borders: 'unicode' })
+  } finally {
+    await open.close()
+  }
+})
+
+it('shows the welcome banner and the editor in ASCII from the start on a Linux console', async () => {
+  vi.stubEnv('TERM', 'linux')
+  const open = await fakeApp('{}')
+  try {
+    await vi.waitFor(async () => expect(await open.screen()).toContain('Agnes'))
+    expect(await open.screen()).toMatch(ASCII_ONLY)
+    // A saved choice beats the console default.
+    vi.stubEnv('TERM', 'linux')
+    const saved = await fakeApp('{"borders":"unicode"}')
+    try {
+      await vi.waitFor(async () => expect(await saved.screen()).not.toMatch(ASCII_ONLY))
+    } finally {
+      await saved.close()
+    }
+  } finally {
+    vi.unstubAllEnvs()
+    await open.close()
   }
 })
 

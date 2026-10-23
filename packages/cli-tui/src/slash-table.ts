@@ -257,6 +257,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.title',
     summaryKey: 'commands.titleSummary',
   },
+  {
+    name: '/borders',
+    args: '[unicode|ascii]',
+    descriptionKey: 'commands.borders',
+    summaryKey: 'commands.bordersSummary',
+  },
   { name: '/raw', descriptionKey: 'commands.raw', summaryKey: 'commands.rawSummary' },
   {
     name: '/vim',

@@ -3,6 +3,7 @@ import { DEFAULT_BRANDING, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
 import type { TuiAppOptions } from './app-options.js'
 import { ApprovalSettle } from './approval-settle.js'
+import { Borders } from './borders.js'
 import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { CardFocus } from './card-focus.js'
 import { pasteClipboardImage } from './clipboard-image.js'
@@ -16,6 +17,7 @@ import { formatTuiErrorNotice } from './error-notice.js'
 import { editDraft } from './external-editor.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { FooterRenderer } from './footer-renderer.js'
+import { foldingTerminal } from './glyphs.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
 import { createLinker } from './links.js'
 import { type Locale, t } from './locale.js'
@@ -115,6 +117,7 @@ export class TuiApp {
   readonly statusLine: StatusLinePicker
   readonly windowTitle: WindowTitle
   readonly raw: RawView
+  readonly borders: Borders
   private readonly pager: PagerOverlay
   readonly cardFocus: CardFocus
   readonly modelPicker: ModelPicker
@@ -166,6 +169,11 @@ export class TuiApp {
   ) {
     // One ansi instance per colour tier for the whole frame: header, status bar, banner, editor
     // chrome and the cards all degrade through the same tier (none emits zero escape sequences).
+    this.borders = new Borders({
+      path: o.themePreferencePath,
+      env: process.env,
+      changed: () => this.stopped || this.renderer.redraw(),
+    })
     this.notify = new NotifyPreference(o.notifyPreferencePath, process.env, () => this.locale)
     const base = createAnsi(o.term.caps.color)
     this.themes = new ThemeController({
@@ -465,10 +473,12 @@ export class TuiApp {
       this.notify,
       this.windowTitle,
     )
+    // Frames, scrollback lines and the exit text all go through the glyph table when `/borders ascii` is on.
+    const term = foldingTerminal(o.term, () => this.borders.ascii)
     this.renderer = o.noAltScreen
-      ? new FooterRenderer(o.term, root, this.timeline)
+      ? new FooterRenderer(term, root, this.timeline)
       : new Renderer(
-          o.term,
+          term,
           root,
           o.screenAlreadyEntered,
           this.mouse,
