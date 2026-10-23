@@ -44,7 +44,7 @@ export function ResourcesTab({
 }) {
   const names = useRef(packageName)
   names.current = packageName
-  // A skill that is on can be run in a new session from its row's menu (this replaces 运行技能 in settings).
+  // A skill that is on can be run in a new session from its row's menu (this replaces Run skill in settings).
   const pages = usePushStack()
   const openPage = useRef(pages.open)
   openPage.current = pages.open

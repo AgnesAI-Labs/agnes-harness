@@ -278,7 +278,7 @@ export function createReconciler(options: ReconcilerOptions): ClientReconciler {
     )
     navigation.retain(new Set([...wanted.keys(), ...suspended].filter((id) => !blockedRows.has(id))))
     const waits: Promise<void>[] = []
-    // 名册不再列出的包：dispose（级联撤销注册项）；模块记录本身驻留（B1）。
+    // Packages removed from the roster: dispose, cascading registration removal; keep the module record resident.
     for (const [rowId, state] of packages) {
       if (
         (!wanted.has(rowId) || blockedRows.has(rowId)) &&

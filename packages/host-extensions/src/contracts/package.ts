@@ -108,7 +108,7 @@ export type SeamInitContext = {
   /** Privileged resource snapshot, supplied only to the bundled skills ecosystem factory. */
   skillResources?: BoundSkillRuntimeInput
   /** Safe descriptors, supplied to agnes/mcp-search without Skill-body access. A live view of the
-   *  Skills generation agnes/skills currently serves (design §3.9, D123). */
+   *  Skills generation agnes/skills currently serves. */
   skillDiscovery?: SkillRuntimeDiscovery
   /** Host-owned fixed operation, populated only for the exact agnes/privacy factory. */
   privacyTrajectory?: PrivacyTrajectoryCapability
@@ -140,7 +140,7 @@ export type OperationDeps = {
   ext: Record<string, unknown>
   profile: SeamProfileView
 }
-/** ERRATA B4: an Operation needs assembly-time dependencies, so a package exports factories. */
+/** An Operation needs assembly-time dependencies, so a package exports factories. */
 export type OperationTable = Record<string, (deps: OperationDeps) => Operation>
 
 export type RuntimeFactory = (ctx: { log: Logger; signal: AbortSignal }) => Promise<unknown>

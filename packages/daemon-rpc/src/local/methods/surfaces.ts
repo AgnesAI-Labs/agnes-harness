@@ -27,8 +27,7 @@ export type SurfaceMountsSource = {
  *
  * No extra authKind check beyond what the caller wires: a connection that reaches this method at all
  * can read where a Surface it can already browse is routed. Unlike `workspace.list`/`workspace.add`/
- * `session.list`, though, `startSupervisor` only ever registers this on the `unix` transport (M4,
- * final review) -- its only real consumer is the local CLI process bridging this same-machine
+ * `session.list`, though, `startSupervisor` only ever registers this on the `unix` transport -- its only real consumer is the local CLI process bridging this same-machine
  * `agnes serve` process boundary, not a remote WSS client.
  */
 export function registerSurfaces(endpoint: LocalEndpoint, source: SurfaceMountsSource): void {
@@ -36,7 +35,7 @@ export function registerSurfaces(endpoint: LocalEndpoint, source: SurfaceMountsS
     // Subscribe before taking the snapshot so a concurrent lifecycle change cannot be missed.
     conn.surfaceMountNotices = true
     const instances = source.snapshot()?.instances ?? []
-    // I3 (final review, Important): shared healthy-instance filter with the since-retired
+    // shared healthy-instance filter with the since-retired
     // `supervisor.ts` `surfaceMountProxy` closure -- see `isRoutableSurfaceInstance`'s own doc.
     const mounts = instances.filter(isRoutableSurfaceInstance).map((instance) => ({
       package: instance.package,

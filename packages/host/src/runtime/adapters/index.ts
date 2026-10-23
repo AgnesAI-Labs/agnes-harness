@@ -90,7 +90,7 @@ export type AdapterBundle = {
   /** The policy-bound exec every seam is handed. The raw spawner never leaves this bundle. */
   policyExec: ExecAdapter['run']
   /**
-   * Present only when this deployment is in remote mode (RA17): `undefined` in every local
+   * Present only when this deployment is in remote mode: `undefined` in every local
    * deployment, unchanged from before this field existed. `sandboxHostServices()` hands the same
    * handle to the sandbox factory; nothing else in this bundle opens or closes it.
    */
@@ -348,7 +348,7 @@ export async function openAdapters(
     // elsewhere would otherwise read and write outside its own workspace, because the fence would be
     // pinned to wherever the host process happened to start.
     //
-    // In remote mode it is a remote-absolute path (RA15), so `canonicalRoot`'s local realpath is
+    // In remote mode it is a remote-absolute path, so `canonicalRoot`'s local realpath is
     // wrong twice over: it is a local syscall about a remote path, and where that spelling happens to
     // exist locally too (`/tmp`, `/home/<same name>`, a symlinked `/var`) it silently rewrites the
     // fence's root to the LOCAL realpath of a remote directory. The remote spelling is normalized
@@ -387,7 +387,7 @@ export async function openAdapters(
     let gate: ExecGateState = { backend: 'none', onUnavailable: 'deny' }
     // The fence itself is not new for remote mode - it is the same createFs from step 0, reading the
     // same holder - only the io underneath it changes: derived from the live transport when this
-    // deployment is remote, the caller's io (or the local disk) when it is not (spec §4.1, P1).
+    // deployment is remote, the caller's io (or the local disk) when it is not.
     const fs = createFs(
       () => holder.current,
       transport ? createRemoteFsIo(transport) : (opts.workspaceIo ?? localFsIo),

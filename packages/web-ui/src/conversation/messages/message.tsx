@@ -229,7 +229,7 @@ function MessageView({
       {...(node.kind === 'tool'
         ? {
             'data-status': node.status,
-            // 无障碍标签要带上工具名：只报状态会让读屏用户听不出是哪次调用。
+            // Include the tool name in the accessible label: status alone does not identify the call to screen-reader users.
             'aria-label': props.t('tool.card.aria', {
               name: baseToolTitle(node.name, props.t) ?? node.presentation?.title ?? node.name,
               status: toolOutcome(node, props.t).label,

@@ -18,28 +18,28 @@ export function bindDismissibleDialog(options: {
     event.preventDefault()
     dismiss()
   })
-  // 点遮罩关闭：落在 dialog 自身（而非其内容）的点击即遮罩点击。
+  // Clicking the backdrop closes: a click on dialog itself, rather than its contents, is a backdrop click.
   options.dialog.addEventListener('click', (event) => {
     if (event.target === options.dialog) dismiss()
   })
 }
 
 /**
- * 展开体的"点外部关闭"。
+ * Close expanded details on outside clicks.
  *
- * 内联展开体（会话用量、单次调用用量）此前只能靠再次点击标题收起，和弹窗
- * "点外部关闭"的行为不一致。面板自身是 details 的后代，所以路径包含 details 就够。
+ * Inline details (session and per-call usage) previously closed only on another title click, unlike dialogs.
+ * The panel is a descendant of details, so checking whether the path includes details is sufficient.
  *
- * 轮次过程块**不**在此列：运行中它被投影器每帧撑开，点外部收起会在下一帧被撑回
- * （表现为闪烁），且误伤面过宽——Web 端只认 summary 点击切换，不注册此机制
- * （见 packages/web-conversation/src/turns.ts）。
+ * Turn process blocks are **excluded**: the projector opens them every frame while running, so an outside
+ * click would be undone on the next frame, causing flicker and affecting too much. Web only toggles them
+ * on summary clicks and does not register this mechanism (packages/web-conversation/src/turns.ts).
  *
- * 实现是**一次性的 document 级委托**，不是按元素挂/卸监听器：展开体在会话里会被反复创建
- * （每个回合两个），而"元素在展开态被移除"（换会话、点新会话、条目被替换）不会触发
- * `toggle` —— 按元素挂的写法会在 document 上永久留下监听器，并把它引用的整棵游离子树钉在
- * 内存里。委托版对"元素已被移除"天然免疫：它不在 `document.querySelectorAll` 的结果里。
+ * Use **one document-level delegated listener**, not per-element listeners: details are repeatedly created
+ * (two per turn), and removing an open element (switching sessions, starting one, replacing an entry) does
+ * not fire `toggle`. Per-element listeners would remain on document forever and retain the detached subtree.
+ * Delegation handles removal naturally: removed elements are absent from `document.querySelectorAll`.
  *
- * 注册幂等，调用方不需要（也没有办法）释放。
+ * Registration is idempotent; callers need not and cannot dispose it.
  */
 const autoDismiss = new WeakSet<HTMLDetailsElement>()
 let listening = false

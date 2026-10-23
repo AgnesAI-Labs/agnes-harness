@@ -129,7 +129,7 @@ export interface LoopPickerView {
   /** The Host's current recipe catalog. */
   presets?: readonly { id: string; isDefault: boolean }[]
   preset?: string | undefined
-  /** The recipe a draft runs when it names none; the 「默认」 entry carries its name. */
+  /** The recipe a draft runs when it names none; the 「Default」 entry carries its name. */
   inheritedPreset?: string | undefined
   presetLabel?: string
   bundles?: readonly {
@@ -166,7 +166,7 @@ const subscribe = (listener: () => void) => {
 }
 
 /**
- * Whether 「显示高级设置」 is on, which it is unless this browser turned it off. The settings dialog
+ * Whether 「Show advanced settings」 is on, which it is unless this browser turned it off. The settings dialog
  * owns the switch and stores it in this browser; the chip reads it each time it renders, which
  * includes every time its popover opens.
  */
@@ -208,7 +208,7 @@ export function LoopPicker() {
   )
   const state = { ...published, loops: namedLoops(published.loops, agents.installed, locale, tr) }
   const launchable = agents.agents.filter((agent) => agents.readyAgents.includes(agent.ref))
-  // The recipes a draft may choose. The default one is the 「默认」 entry, never listed twice.
+  // The recipes a draft may choose. The default one is the 「Default」 entry, never listed twice.
   const choices = recipes.filter((entry) => entry.id !== state.inheritedPreset)
   const presetValue = state.preset === state.inheritedPreset ? '' : (state.preset ?? '')
   const presetDescription = (id: string) => {

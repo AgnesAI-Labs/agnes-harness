@@ -720,9 +720,9 @@ export function registerAgnes(
     return grant
   })
   ep.register('_agnes/v1/computerUse.status', async (_params, c): Promise<ComputerUseStatusResult> => {
-    // This handler is deliberately a P0 gate report, not a probe. Authentication must have been
+    // This handler is deliberately an admission-evidence gate report, not a probe. Authentication must have been
     // established by initialize/authGate, and answering it must never resolve, install or start a
-    // driver. When the P0 evidence gate is complete a later contract may widen these closed states.
+    // driver. When the production evidence gate is complete a later contract may widen these closed states.
     return computerUseControl.status(c.conn, _params)
   })
   ep.register(

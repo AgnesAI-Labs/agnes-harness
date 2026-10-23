@@ -113,9 +113,9 @@ export function createTurnController(
       context.renderControls()
       return
     }
-    // 会话切换的尾流（旧审批收尾、事件竞态）可能在这时触发渲染，而投影仍属于
-    // 上一会话：此时屏幕上保留的正是上一会话画面，任何重绘都会把旧投影的
-    // 模型、标题、审批卡写进新会话的控件。等投影换代后再渲染。
+    // Session-switch tail work (old approval cleanup, event races) may render while the projection still belongs
+    // to the previous session, whose view remains on screen. Rendering would write its model, title and approvals
+    // into the new session controls. Wait for the new projection before rendering.
     const viewId = context.current?.id ?? context.readOnly?.id
     if (!viewId || context.projection.sessionId !== viewId) {
       renderApproval()
@@ -318,8 +318,8 @@ export function createTurnController(
     const key = context.liveApproval
       ? `live:${context.liveApproval.request.toolCall.toolCallId}`
       : (durable?.decisionRef?.id ?? '')
-    // 审批卡是会话区外的流内兄弟：显示/收回都会改变 #transcript 的视口高度。
-    // 原本贴底的会话要保持贴底，否则最新过程被压出可视区、贴底跟随也会被破坏。
+    // Approval cards are in-flow siblings outside the session region: showing/hiding them changes #transcript viewport height.
+    // Keep bottom-pinned sessions pinned, or the latest steps leave the viewport and bottom following breaks.
     const stick = context.conversationRuntime.isTranscriptNearBottom()
     if (!key) {
       context.approvalRuntime.render(undefined)

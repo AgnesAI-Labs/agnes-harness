@@ -60,8 +60,8 @@ export {
   type LocaleCatalog,
   type LocaleDictionary,
   type Translate,
-  // 宿主注册目录时要按这个名字登记（boot.ts 与测试 helpers 都从包入口取），
-  // 漏掉它会让 web 构建在 client-modules/boot.ts 直接失败。
+  // The host must register the catalog under this name (boot.ts and test helpers import it from the package entry);
+  // omitting it makes the web build fail in client-modules/boot.ts.
   WEB_UNITS_LOCALE_NAMESPACE,
   webUnitsLocaleCatalog,
 } from './locales/index.js'

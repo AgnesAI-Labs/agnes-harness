@@ -141,7 +141,7 @@ export async function buildProvider(
         }
       : {}),
   }
-  // ERRATA B19: a test host, and AGNES_TEST_PROVIDER=faux, replace the whole model seam. Such a
+  // A test host, and AGNES_TEST_PROVIDER=faux, replace the whole model seam. Such a
   // provider has no registry, which is why the field is optional on the way out - and why the
   // caller cannot treat a missing registry as "verification passed".
   const factory = deps.providerFactory

@@ -43,7 +43,7 @@ import { useSettingsOverlay } from './overlay.js'
 import { searchFailureMessage } from './search-feedback.js'
 import { SEARCH_NAMESPACE, searchCatalog } from './search-locale.js'
 
-/** The page that adds or edits a search service, pushed over 网页搜索. */
+/** The page that adds or edits a search service, pushed over Web search. */
 const EDITOR_PAGE = 'search-engine'
 const PROVIDER_IDS = ['brave', 'tavily', 'exa', 'perplexity', 'searxng'] as const
 type ProviderId = (typeof PROVIDER_IDS)[number]
@@ -128,7 +128,7 @@ export function SearchPanel({
   fetcher?: typeof fetch
 }) {
   const { t: ux } = useUiText(SEARCH_NAMESPACE, searchCatalog)
-  // Adding or editing a service is a page over 网页搜索 (`search-engine`), not a dialog.
+  // Adding or editing a service is a page over Web search (`search-engine`), not a dialog.
   const pages = usePushStack()
   const editor = pages.stack.at(-1) === EDITOR_PAGE
   const leaveEditor = () => {

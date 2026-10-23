@@ -18,7 +18,7 @@ import { type CandidateRuntime, stageCandidateRuntime } from './runtime-candidat
 import type { RuntimePluginCatalogue } from './runtime-plugin-catalogue.js'
 
 /**
- * The ordinary half of an invisible C2 runtime candidate.
+ * The ordinary half of an invisible runtime-target candidate.
  *
  * Resource-owned rows deliberately are not mounted here. They are still selected and verified
  * through the same immutable catalogue before this function imports an ordinary row, so a target

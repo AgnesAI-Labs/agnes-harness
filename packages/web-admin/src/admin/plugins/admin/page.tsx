@@ -477,7 +477,7 @@ export class PluginAdminPage {
 
   bind(): void {
     const bound = { signal: this.#lifetime.signal }
-    // 详情是模态框：点遮罩、按 Escape 都要走同一条收尾路径（含焦点归还与「不要立刻重开」）。
+    // Modal details share one cleanup path for backdrop clicks and Escape, including focus restoration and preventing immediate reopening.
     this.#detail.addEventListener(
       'cancel',
       (event) => {
@@ -910,7 +910,7 @@ export class PluginAdminPage {
     return this.#sourceMode === 'update' ? this.#t('source.intro.update') : this.#t('source.intro.install')
   }
 
-  /** React 渲染后 input 由组件持有，首焦点交给表单第一个可交互元素。 */
+  /** After React renders, the component owns input; give initial focus to the form's first interactive element. */
   #sourceDialogFocusTarget(): HTMLElement | undefined {
     return this.#sourceDialog.querySelector<HTMLElement>('select, input, button') ?? undefined
   }
@@ -1351,7 +1351,7 @@ export class PluginAdminPage {
     renderPluginView.call(this.viewContext())
   }
 
-  /** React 键控行会复用 DOM：键盘焦点跟随 data-plugin-id 保留，无需手工恢复。 */
+  /** React keyed rows reuse DOM: keyboard focus follows data-plugin-id without manual restoration. */
 
   /** A page surface draws its rows in its own tree, outside the host this controller renders into. */
   get #rows(): ParentNode {
@@ -1639,7 +1639,7 @@ export class PluginAdminPage {
   selectItem(item: PackageInstalledDescriptor | PackageCatalogDescriptor): void {
     if (manageExample(this, item)) return
     this.#ownsDialogs(true)
-    // React 键控行复用 DOM：触发行查询自渲染结果，详情关闭后焦点可以精确归还。
+    // React keyed rows reuse DOM: find the trigger row in rendered results for precise focus restoration after details close.
     this.#detailTrigger =
       this.#rows.querySelector<HTMLElement>(`.plugin-row[data-plugin-id="${CSS.escape(item.id)}"]`) ??
       undefined

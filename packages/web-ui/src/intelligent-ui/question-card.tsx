@@ -406,7 +406,7 @@ export function QuestionAnswersReceipt({
 }
 
 /**
- * «✓ 已回答 N 项» at the front of the asking answer's action row. Pointer hover or keyboard focus
+ * «✓ Answered N items» at the front of the asking answer's action row. Pointer hover or keyboard focus
  * shows the answers above it; a touch opens it until a touch elsewhere.
  */
 export function AnsweredBadge({

@@ -97,7 +97,7 @@ export type McpServerOpenerDeps = Readonly<{
    * (`McpOAuthNeedsReconnectError`) -- matching `bootstrapWorkerResources`'s own optional wiring.
    * Moot in practice: `mcpServerRowsFromDefinitions` (`@agnes/worker-runtime`) filters
    * `secretBinding.kind === 'oauth'` definitions out before any row (and so this opener) ever sees
-   * them (design doc §3.4, D105/D109). */
+   * them. */
   oauthCredentials?: McpOAuthCredentialResolver
   approvedLocalStart?(definition: McpServerDefinitionInput): Promise<boolean>
   connectTimeoutMs?: number
@@ -106,7 +106,7 @@ export type McpServerOpenerDeps = Readonly<{
 
 /**
  * Composes `resolvedConfig` (credential resolution + deployment policy) with `connectMcp`
- * (stage 2b step 3, D102) into the one `McpServerOpener` port `@agnes/base`'s row extensions depend
+ * into the one `McpServerOpener` port `@agnes/base`'s row extensions depend
  * on. One instance is definition-agnostic and serves every MCP row: `deps` here is deployment-wide
  * state (the credential resolver, the two policies), never anything specific to one server.
  *
@@ -171,14 +171,14 @@ export function createMcpServerOpener(deps: McpServerOpenerDeps): McpServerOpene
 }
 
 /**
- * The one `McpServerOpener` a shared session worker gives every MCP row (stage 2b step 3), wired
+ * The one `McpServerOpener` a shared session worker gives every MCP row, wired
  * exactly like `bootstrapWorkerResources` wires `createMcpResourceManager` today: the same
  * `AGNES_RESOURCE_MCP_POLICY` deployment policy, and the same lazily built `createSecrets` resolver
  * (a worker whose servers all use `secretBinding: none` never needs a configured secret backend).
  * The resolver is built once per worker, not per generation: the file and env resolvers read their
  * source on every `resolve`, so a rotated secret is still picked up by the next connect attempt.
  * `baseEnv` is `{}` because the manager's `baseEnvironment` is never set in production either.
- * No OAuth resolver: OAuth-bound definitions never become rows (design §3.4, D105/D109).
+ * No OAuth resolver: OAuth-bound definitions never become rows.
  */
 export function createWorkerMcpServerOpener(
   input: Pick<WorkerResourceBootstrapInput, 'env' | 'profile' | 'createSecrets' | 'cwd' | 'agnesHomeDir'>,

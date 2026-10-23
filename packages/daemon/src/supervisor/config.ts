@@ -127,7 +127,7 @@ export type DaemonConfig = {
  * optional ws+tls leg when the profile declares one.
  *
  * `ipc` picks the transport shape (`unix` socket vs. Windows named pipe); it comes from the
- * caller, not by reading the OS off the process directly (README 勘误 8 — that's banned in this
+ * caller, not by reading the OS off the process directly (that's banned in this
  * package; host's `platform` adapter is the one place allowed to know the OS).
  */
 export function buildConfig(o: {

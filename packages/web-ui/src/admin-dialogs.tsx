@@ -6,10 +6,10 @@ import { Field } from './ui/field.js'
 import { useUiText } from './ui-locale.js'
 
 /**
- * 来源检查对话框的内容体。`<dialog>` 与 showModal/焦点归还留在壳里；字段受控，
- * 值与格式示例由壳提供，提交时把原始输入交回壳做格式校验。
- * 提交走显式按钮回调（happy-dom 的 requestSubmit 触达不了 React 的委托 onSubmit），
- * Enter 键在引用输入框上补齐表单提交语义。
+ * Source inspection dialog body. The shell retains `<dialog>`, showModal and focus restoration.
+ * Fields are controlled; the shell provides values and format examples, and validates raw submitted input.
+ * Submit through an explicit button callback (happy-dom requestSubmit misses React's delegated onSubmit).
+ * Enter in the reference input completes form submission semantics.
  */
 export function SourceDialogContent({
   title,
@@ -100,8 +100,8 @@ export function SourceDialogContent({
 }
 
 /**
- * 通用确认对话框的内容体。facts 由壳传入 React 节点（对应原 renderFacts 机制），
- * 确认按钮的置灰与恢复由壳在运行确认流程时控制。
+ * Generic confirmation dialog body. The shell supplies facts as React nodes (the former renderFacts mechanism)
+ * and controls disabling and restoring the confirmation button during its confirmation flow.
  */
 export function ConfirmDialogContent({
   title,

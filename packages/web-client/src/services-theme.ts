@@ -3,7 +3,7 @@ import { notifyListeners } from '@agnes/sdk/browser'
 
 export type ResolvedTheme = 'light' | 'dark'
 
-/** 主题：light/dark 与订阅。宿主把既有 appearance 状态包进来（WC8：不改宿主内部）。 */
+/** Light/dark theme and subscriptions. The host wraps existing appearance state without changing its internals. */
 export class ThemeService extends Service {
   private resolved: ResolvedTheme
   private readonly listeners = new Set<() => void>()
@@ -17,7 +17,7 @@ export class ThemeService extends Service {
     return this.resolved
   }
 
-  /** 仅宿主调用。 */
+  /** Host-only call. */
   setTheme(theme: ResolvedTheme): void {
     if (theme === this.resolved) return
     this.resolved = theme
@@ -32,4 +32,4 @@ export class ThemeService extends Service {
   getSnapshot = (): ResolvedTheme => this.resolved
 }
 
-/** 界面语言。未知值回落英文。与 Web 偏好模块保持同一组取值。 */
+/** UI locale. Unknown values fall back to English. Keep values aligned with Web preferences. */

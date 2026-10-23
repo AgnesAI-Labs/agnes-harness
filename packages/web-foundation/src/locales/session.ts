@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-client'
 
-/** 侧栏导航、会话菜单与重命名/归档面板。命令式渲染时取词。 */
+/** Sidebar navigation, session menus and rename/archive panels. Translate during imperative rendering. */
 export const sessionLocaleCatalog: LocaleCatalog = {
   en: {
     'session.integrity.title': 'History integrity',

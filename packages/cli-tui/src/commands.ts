@@ -51,7 +51,7 @@ export function slashCommand(name: string): SlashCommand | undefined {
 
 const isBuiltin = (name: string): boolean => slashCommand(name) !== undefined
 
-/** 描述在渲染期翻译：编辑器菜单每次重绘都会经此取词。 */
+/** Translate descriptions at render time: each editor-menu redraw resolves its text here. */
 export function slashCommandFor(
   name: string,
   locale: string,

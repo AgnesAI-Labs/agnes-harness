@@ -63,7 +63,7 @@ function assemblyFailure(name: DoctorSectionName, error: unknown): Section {
   )
 }
 
-/** Read-only daemon health through the package-owned owner/process/socket probes (ERRATA B23). */
+/** Read-only daemon health through the package-owned owner/process/socket probes. */
 export async function doctorDaemon(deps: Pick<DoctorCommandDeps, 'home'>): Promise<Section> {
   const dataDir = hostDataDir(deps.home)
   try {

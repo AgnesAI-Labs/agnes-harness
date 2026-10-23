@@ -11,7 +11,7 @@ export function skillRunUrl(name: string, args: string): string {
 }
 
 /**
- * 「在新会话中运行」 from a skill row, as a page over the skills list: optional arguments, then a new
+ * 「Run in new session」 from a skill row, as a page over the skills list: optional arguments, then a new
  * session opens with the invocation filled in. Nothing runs until the person sends it there.
  */
 export function SkillRunPage({ name, t }: { name: string; t: Text }) {

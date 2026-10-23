@@ -15,7 +15,7 @@ const tabOf = (selection: unknown): AutomationTab =>
   (selection as { tab?: unknown } | undefined)?.tab === 'triggers' ? 'triggers' : 'schedules'
 
 /**
- * 自动化: what happens by itself. Scheduled tasks run at a set time, in a new session or an existing
+ * Automation: what happens by itself. Scheduled tasks run at a set time, in a new session or an existing
  * one; triggers start a session when another system sends an event. The tab is part of the address.
  */
 export function AutomationPage({ context }: { context: UiExtensionContext }) {
@@ -81,7 +81,7 @@ export function AutomationPage({ context }: { context: UiExtensionContext }) {
     <HomePageFrame
       id="automation"
       title={context.t('home.entry.automation')}
-      // New and edit open as pages inside this one: 自动化 › 新建定时任务.
+      // New and edit open as pages inside this one: Automation › New scheduled task.
       pushTitle={context.t('home.entry.automation')}
       description={ux('pageDescription')}
       actions={<div className="home-page-action-slot" ref={setActionsHost} />}

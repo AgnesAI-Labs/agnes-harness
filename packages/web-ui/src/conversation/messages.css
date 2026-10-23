@@ -71,7 +71,7 @@
     display: none;
   }
 
-  /* 图片自成一块排在正文之上，横排换行，和输入框里的待发图片同一种排法。 */
+  /* Images form a wrapping row above the body, matching the pending-image layout in the composer. */
   [data-agnes-conversation-messages] .user-message-images {
     display: flex;
     flex-wrap: wrap;
@@ -80,8 +80,8 @@
     margin-block: var(--s4) var(--s8);
   }
 
-  /* 宽高由 antd Image 的行内尺寸给定（72×56），这里只管裁切与描边；
-   object-fit 必须显式写：antd 只声明了 width/height，默认的 fill 会把图压变形。 */
+  /* antd Image sets 72×56 dimensions inline; this only handles cropping and borders.
+     Set object-fit explicitly: antd sets only width/height, and the default fill would distort the image. */
   [data-agnes-conversation-messages] .user-message-image {
     display: block;
     border: 1px solid var(--agnes-line-primary);
@@ -147,7 +147,7 @@
     overflow-wrap: anywhere;
   }
 
-  /* 提问导航：对话区左缘一列细横线，每条一次提问；悬停放大并弹出预览卡。 */
+  /* Question navigation: thin horizontal lines along the conversation's left edge, one per question; hover enlarges them and opens a preview card. */
   .turn-nav-rail {
     opacity: 0;
     transition: opacity 140ms var(--motion-ease-out);
@@ -189,7 +189,7 @@
       width 140ms var(--motion-ease-out),
       background-color 140ms var(--motion-ease-out);
   }
-  /* 命中区比 2px 的线宽得多，上下相邻横线的命中区首尾相接。 */
+  /* Hit areas are much wider than the 2px lines; vertically adjacent hit areas meet without gaps. */
   .turn-nav-tick::after {
     content: "";
     position: absolute;
@@ -198,8 +198,8 @@
   .turn-nav-tick:is([data-current="true"], [data-hot="true"]) {
     background: var(--agnes-text-primary);
   }
-  /* 书签：横线本身变成品牌色并加粗到 3px，右侧再放一个 6px 圆点。圆点落在整列右侧留白里，
-     不会被整列的滚动裁掉；当前一轮或悬停时仍是品牌色，靠长度区分。 */
+  /* Bookmarks use a 3px brand-colored line and a 6px dot in the column's right padding, beyond the
+     scroll clipping area. Current-turn and hovered lines stay brand-colored, distinguished by length. */
   .turn-nav-tick[data-bookmarked="true"] {
     height: 3px;
     background: var(--agnes-brand-primary);

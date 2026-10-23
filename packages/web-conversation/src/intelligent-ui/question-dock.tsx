@@ -189,7 +189,7 @@ function useQuestionRecords(ids: readonly string[]) {
   return { binding, records }
 }
 
-/** «✓ 已回答 N 项» on the answer that asked, with each question's label → answer on hover or focus. */
+/** «✓ Answered N items» on the answer that asked, with each question's label → answer on hover or focus. */
 export function AnsweredQuestions({ answered }: { answered: readonly { submission: Submission }[] }) {
   const { binding, records } = useQuestionRecords(answered.map((item) => item.submission.surfaceId))
   const items = answered.flatMap(({ submission }, index) =>
@@ -203,7 +203,7 @@ export function AnsweredQuestions({ answered }: { answered: readonly { submissio
 }
 
 /**
- * «你的回答» where the answer landed, for an answer whose asking turn is not in view. Labels come
+ * «Your answers» where the answer landed, for an answer whose asking turn is not in view. Labels come
  * from the question surface; without it the answers stand alone.
  */
 export function QuestionAnswersNode({ submission, native }: { submission: Submission; native: ReactNode }) {

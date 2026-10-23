@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-client'
 
-/** 设置域文案（S 线）：配置错误码译文（§8.2 设置负责人翻译）、外观、OAuth、选择器与账户面板。 */
+/** Settings text: translated configuration errors, appearance, OAuth, pickers and account panels. */
 export const settingsLocaleCatalog: LocaleCatalog = {
   en: {
     'settings.config.part.home': 'Home directory',

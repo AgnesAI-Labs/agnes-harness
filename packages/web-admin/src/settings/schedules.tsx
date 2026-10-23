@@ -210,7 +210,7 @@ export function SchedulesPage({
   const [runRequested, setRunRequested] = useState(false)
   const [pending, setPending] = useState<string>()
   const [busy, setBusy] = useState(false)
-  // New and edit open as pages inside 自动化: the open page is the address (`view=schedule-…`).
+  // New and edit open as pages inside Automation: the open page is the address (`view=schedule-…`).
   const nav = usePushStack()
   const top = nav.stack.at(-1)
   const lifetime = useRequestScope(api, top)

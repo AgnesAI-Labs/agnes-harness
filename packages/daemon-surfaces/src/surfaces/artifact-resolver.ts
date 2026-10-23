@@ -24,7 +24,7 @@ export function createSurfaceArtifactResolver(inventory: InstalledInventory): Su
       const raw = artifact.entry
       if (isAbsolute(raw)) throw new Error('surface artifact entry escapes the package directory')
       const entry = resolve(cwd, raw)
-      // I5 (final review, Important): `resolve()` produces `\`-separated paths on Windows, so a
+      // `resolve()` produces `\`-separated paths on Windows, so a
       // manual `entry.startsWith(`${cwd}/`)` prefix check is wrong for every legitimate entry there.
       // Use the same `relative()` + leading-`..`/absolute-result containment idiom already used right
       // next to this file (`local-runtime.ts`'s post-resolve check, `package-manager/src/workspace.ts`'s

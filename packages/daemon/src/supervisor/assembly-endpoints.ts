@@ -630,7 +630,7 @@ function registerExtensionEndpoints(
   // Lets `agnes serve`'s separate OS process (see runWebCommand) bridge createMountProxy's
   // lookup() across the connection this same endpoint() closure serves; reads the live
   // `surfaceController` set below by the same startup sequence.
-  // M4 (final review, Minor): gated the same way `registerPackageAdmin`/`registerResourceControl`
+  // Gated the same way `registerPackageAdmin`/`registerResourceControl`
   // above restrict themselves off remote WSS -- this method's only real consumer is the local CLI
   // process bridging the same-machine `agnes serve` process boundary (see
   // `packages/cli/launch/surface-mounts.ts`); a remote WSS client has no legitimate reason to read

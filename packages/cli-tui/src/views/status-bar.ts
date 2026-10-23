@@ -59,8 +59,8 @@ export class StatusBar implements Component {
 
   /**
    * Below the 70% warning threshold, or with no hard cap at all, this stays hidden -- a number
-   * that never changes colour is background noise nobody reads by the time it matters (spec
-   * RP2). Above it, the segment shows the fraction crossed and, at 90%, an explicit warning
+   * that never changes colour is background noise nobody reads by the time it matters.
+   * Above it, the segment shows the fraction crossed and, at 90%, an explicit warning
    * glyph on top of the colour change.
    */
   setBudget(used: number, cap?: number): void {

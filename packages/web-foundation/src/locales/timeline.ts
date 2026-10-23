@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-client'
 
-/** 时间线节点、回合投影与审批状态。渲染时取词；fingerprint 掺 locale 版本保证切换后全量刷新。 */
+/** Timeline nodes, turn projections and approvals. Translate at render time; locale version in the fingerprint forces a full refresh. */
 export const timelineLocaleCatalog: LocaleCatalog = {
   en: {
     'brand.harness': 'Agnes Harness',

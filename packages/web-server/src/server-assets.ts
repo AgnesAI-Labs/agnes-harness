@@ -27,8 +27,8 @@ export const FILES = new Set([
   'style.css',
   'antd.css',
   'tokens.css',
-  // 侧栏品牌位与过程行头像共用的客户端 AgnesMark 位图。白名单仍然逐文件放行
-  // （不放宽成任意 .png），它由 packages/web/public 随 style.css 一起拷进发行目录。
+  // Client AgnesMark bitmap shared by the sidebar brand and process-row avatars. Keep the per-file allowlist;
+  // do not allow arbitrary .png files. Copy it from packages/web/public into the distribution alongside style.css.
   'brand-mark.png',
   // The browser-tab icon: the brand mark in its own blue on an off-white tile, so it reads on
   // light and dark tab strips alike. The mask above is white-on-transparent and cannot serve as one.
@@ -71,8 +71,10 @@ export const CLIENT_MODULE_MIME: Record<string, string> = {
   '.map': 'application/json',
 }
 
-/** WC5：index.html 内联 import map 脚本体（<script type="importmap"> 与 </script> 之间的精确字节）
- *  的 SHA-256，供 CSP script-src 以哈希放行。文件缺失或无 import map 时返回 undefined（fail-closed）。 */
+/**
+ * SHA-256 of the inline index.html import map body: the exact bytes between <script type="importmap"> and </script>.
+ * CSP script-src allows it by hash. Return undefined if the file or map is missing (fail-closed).
+ */
 export async function importMapScriptHash(root: string): Promise<string | undefined> {
   let html: string
   try {
@@ -107,8 +109,8 @@ export function fileName(requestUrl: string): string {
   // esbuild names shared chunks chunk-<hash> and lazy entries <module>-<hash>.
   // Accept either generated name, without allowing arbitrary scripts or nested paths.
   const isChunk = /^[A-Za-z0-9_-]+-[A-Z0-9]{8}\.(?:js|css)(\.map)?$/.test(file)
-  // WC5：/vendor/* 平台共享单例命名空间——入口文件名固定（import map 的映射目标），共享 chunk
-  // 走 chunk- 哈希模式；命名空间内不允许任意文件，不放宽成目录列举。
+  // /vendor/* is the shared platform singleton namespace: entry names are fixed import-map targets; shared chunks
+  // use the chunk- hash pattern. Do not allow arbitrary files or directory listings in this namespace.
   const vendorEntry = /^vendor\/([a-z0-9-]+)\.js(?:\.map)?$/.exec(file)?.[1]
   const isVendor =
     (vendorEntry !== undefined && VENDOR_ENTRY_NAMES.has(vendorEntry)) ||

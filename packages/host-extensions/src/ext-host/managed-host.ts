@@ -86,13 +86,13 @@ type Options = {
 /**
  * When an extension may register tools, resources, hooks and the like. `factory` (every ordinary
  * extension): only while its factory runs. `lifetime`: for as long as it stays loaded -- granted
- * only to Host-owned dynamic rows (design 2026-09-21-resource-rows-design.md §3.7, D119), whose
+ * only to Host-owned dynamic rows, whose
  * supervisor registers a server's tools when its connection lands, again after a reconnect or a
  * `tools/list_changed`. Every other check is unchanged, and a revoked or unloaded extension is still
  * refused: `release` revokes the lease before anything else, and every registration asserts it alive.
  */
 export type RegistrationWindow = 'factory' | 'lifetime'
-/** What only a Host-owned dynamic row asks of `loadEmbedded` (design §3.7, D119). Ordinary loads
+/** What only a Host-owned dynamic row asks of `loadEmbedded`. Ordinary loads
  *  pass nothing and keep both defaults: the factory-only window and the seam immutability veto. */
 export type DynamicLoad = Readonly<{
   registration?: RegistrationWindow

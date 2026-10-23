@@ -43,7 +43,7 @@ export type CompositionToolGroup = Readonly<{
   tools: readonly string[]
 }>
 
-/** Shares W7's session lifetime: retained on close/hibernate, removed only on deletion. */
+/** Shares the runtime generation session lifetime: retained on close/hibernate, removed only on deletion. */
 export class CompositionSessionStore {
   readonly root: string
   readonly #anchor: string

@@ -29,7 +29,7 @@ export type {
   ModelPickerState,
 } from './model-picker/types.js'
 
-/** 模型少时一眼能看完，搜索框只会多占一行。 */
+/** With few models the whole list is visible, so a search field only adds an extra row. */
 const searchThreshold = 7
 const NO_MOTION = { motionName: '' }
 // Keep right-aligned panels inside narrow viewports.
@@ -39,8 +39,8 @@ const PANEL_ALIGN = { overflow: { shiftX: true, adjustX: true, adjustY: true } }
  * Session model selector. The app keeps the confirmed model; this component owns only the
  * transient popover: search, the provider-grouped list and the current model's session settings.
  *
- * 选模型即切换并收起；思考强度与上下文窗口属于当前会话模型，改动经 `onSettingsChange`
- * 立即提交，没有「应用」按钮。
+ * Selecting switches model and closes the panel; thinking effort and context window belong to the
+ * current session model and submit immediately through `onSettingsChange`, without an Apply button.
  */
 export function ModelPickerControl(props: ModelPickerProps): ReactElement {
   const { state, t = tr } = props
@@ -51,7 +51,7 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
   const disabled = state.disabled || state.pending || state.options.length === 0
   const badge = thinkingBadge(state.settings, t)
 
-  // 宿主在请求期间会禁用按钮；等它恢复可用再把焦点交回去，否则焦点落到 body 上。
+  // The host disables the button during requests; wait until it is enabled before restoring focus or focus falls to body.
   useEffect(() => {
     if (open || disabled || !refocus.current) return
     refocus.current = false
@@ -236,7 +236,7 @@ function ModelPanel({
       ?.scrollIntoView?.({ block: 'nearest' })
   }, [activeIndex])
 
-  /** 一次只跑一个请求；面板在请求期间保持打开，失败时原地说明。 */
+  /** Run one request at a time; keep the panel open during requests and explain failures inline. */
   async function run(kind: 'select' | 'settings', action: () => Promise<boolean>): Promise<void> {
     if (state.disabled || busy) return
     const current = ++request.current
@@ -261,8 +261,8 @@ function ModelPanel({
 
   function select(option: ModelPickerOption | undefined): void {
     if (!option) return
-    // 当前模型的设置就在下面这一段里，点它不必再发一次同样的 setModel。
-    // 没有设置可看时（模型没报容量）重选等于按默认值再确认一次，仍然提交。
+    // The current model settings are directly below, so clicking it need not send the same setModel again.
+    // With no settings to show (no reported capacity), reselection reconfirms defaults and still submits.
     if (sameOption(option, state.selected) && state.settings && onSettingsChange) {
       if (!busy) close(true)
       return
@@ -278,7 +278,7 @@ function ModelPanel({
     }
     if (event.key === 'ArrowDown') move(activeIndex + 1)
     else if (event.key === 'ArrowUp') move(activeIndex - 1)
-    // 搜索框里 Home/End 与空格归光标和输入。
+    // Inside the search field, Home/End move the cursor and Space remains text input.
     else if (event.key === 'Home' && !fromSearch) move(0)
     else if (event.key === 'End' && !fromSearch) move(visible.length - 1)
     else if (event.key === 'Enter' || (event.key === ' ' && !fromSearch)) {

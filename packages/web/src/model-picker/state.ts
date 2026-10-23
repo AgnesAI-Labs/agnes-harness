@@ -20,8 +20,8 @@ export type ModelEntry = { option: ModelPickerOption; index: number }
 export type ModelGroup = { key: string; label: string; entries: ModelEntry[] }
 
 /**
- * 按服务商账户分组并按搜索词过滤。`index` 是过滤后扁平列表里的位置，
- * 键盘高亮与 `model-picker-option-N` 都用它，分组标题不占位。
+ * Group by provider account and filter by search terms. `index` is the position in the filtered flat list,
+ * used by keyboard highlighting and `model-picker-option-N`; group headings occupy no index.
  */
 export function groupModels(
   options: readonly ModelPickerOption[],
@@ -49,7 +49,7 @@ export function flatModels(groups: readonly ModelGroup[]): ModelPickerOption[] {
   return groups.flatMap((group) => group.entries.map((entry) => entry.option))
 }
 
-/** 档位候选：首项是「自动」，其余是模型声明的档位；名称去掉原始取值后缀（「高 · high」→「高」）。 */
+/** Effort choices: Auto first, then model-declared levels; strip raw-value suffixes from labels (High · high → High). */
 export function thinkingChoices(
   settings: ModelPickerSettings | undefined,
   t: Translate,
@@ -61,12 +61,12 @@ export function thinkingChoices(
   }))
 }
 
-/** 模型没有声明任何档位时只剩「自动」，主菜单直接写明不支持，不再进入二级页。 */
+/** Without model-declared effort levels only Auto remains; the main menu says unsupported without opening a subpage. */
 export function thinkingSupported(settings: ModelPickerSettings | undefined, t: Translate): boolean {
   return thinkingChoices(settings, t).length > 1
 }
 
-/** 会话里与默认值不同的后台模型槽位数；0 表示两项都跟随默认。 */
+/** Count of session background model slots differing from defaults; 0 means both follow defaults. */
 export function changedSlots(snapshot: SessionAuxiliarySnapshot): number {
   // An unset default resolves to the preset's route, which the client cannot see, so it never counts.
   return (['fast', 'verifier'] as const).filter((slot) => {
@@ -77,7 +77,7 @@ export function changedSlots(snapshot: SessionAuxiliarySnapshot): number {
   }).length
 }
 
-/** 已保存的档位若不在模型声明的范围内，返回它以便就地告知用户。 */
+/** Return a saved effort outside the model-declared range so the UI can report it inline. */
 export function unavailableThinking(
   settings: ModelPickerSettings | undefined,
   t: Translate,
@@ -87,7 +87,7 @@ export function unavailableThinking(
   return thinkingChoices(settings, t).some((option) => option.value === saved) ? undefined : saved
 }
 
-/** 触发按钮上跟在模型名后面的档位；自动或不可用时不显示。 */
+/** Effort shown after the model name on the trigger; hidden when automatic or unavailable. */
 export function thinkingBadge(settings: ModelPickerSettings | undefined, t: Translate): string | undefined {
   const saved = settings?.thinking
   if (!saved) return undefined
@@ -100,7 +100,7 @@ export function budgetChoices(capacity: number): number[] {
 
 export type BudgetCheck = { valid: true; tokens?: number } | { valid: false; min: number; max: number }
 
-/** 空串表示「自动」；其余必须落在「最小可用预算 到 模型容量」之间。 */
+/** An empty string means Auto; other values must fall between the minimum usable budget and model capacity. */
 export function checkBudget(raw: string, capacity: number): BudgetCheck {
   const text = raw.trim()
   if (text === '') return { valid: true }
@@ -110,7 +110,7 @@ export function checkBudget(raw: string, capacity: number): BudgetCheck {
   return { valid: true, tokens }
 }
 
-/** 面板内的完整草稿：档位与预算一起给，避免只改一项把另一项重置。 */
+/** Complete panel draft: send effort and budget together to avoid resetting one when changing the other. */
 export function draftSettings(thinking: string, budget: string, capacity: number): ModelSettings | undefined {
   const check = checkBudget(budget, capacity)
   if (!check.valid) return undefined

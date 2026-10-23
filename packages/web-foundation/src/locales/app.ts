@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-client'
 
-/** 宿主编排面文案：重连、插件命令授权、审批卡、任务恢复、新建任务、模型/权限切换与连接事件。 */
+/** Host orchestration text: reconnect, plugin command authorization, approvals, recovery, new tasks, model/permission changes and connection events. */
 export const appLocaleCatalog: LocaleCatalog = {
   en: {
     'app.notification.close': 'Dismiss notification',

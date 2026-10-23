@@ -250,7 +250,7 @@
     outline: var(--focus-outline);
     outline-offset: 1px;
   }
-  /* Push pages: an opened page takes the region; its breadcrumb (上一级 › 当前) leads back. */
+  /* Push pages: an opened page takes the region; its breadcrumb (Parent › Current) leads back. */
   .agh-push-stack {
     min-width: 0;
   }
@@ -1191,7 +1191,7 @@
     min-height: var(--control-height-sm);
   }
   @media (max-width: 900px) {
-    /* Preserve existing pages' 32px floor through B3–B8; new icon actions use the 28px contract. */
+    /* Preserve existing pages' 32px floor; new icon actions use the 28px contract. */
     body[data-agnes-region="app"]
       :is(.agnes-ui-button.agh-btn--sm:not(.agh-btn--icon), .secondary-button:where(.compact), .icon-button) {
       min-height: var(--s32);

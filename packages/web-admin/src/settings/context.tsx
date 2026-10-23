@@ -115,8 +115,8 @@ function timeZones(current: string): string[] {
 const sameConfig = (a: Config, b: Config) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
- * 上下文 in 运行配置: project rules and the current time as switches, the time zone as a searchable
- * list with the computer's own zone marked 自动, the refresh as presets (自定义 keeps any other
+ * Context in Runtime configuration: project rules and the current time as switches, the time zone as a searchable
+ * list with the computer's own zone marked Auto, the refresh as presets (Custom keeps any other
  * value), and the skill folders as chips. Each change saves itself. The rule files a workspace
  * loads are a subpage.
  */

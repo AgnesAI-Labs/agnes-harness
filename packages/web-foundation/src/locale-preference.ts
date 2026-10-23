@@ -1,8 +1,8 @@
 /**
- * 界面语言偏好。有效保存值优先，否则使用浏览器首选语言；不支持的语言回落英文。
+ * UI locale preference: a valid saved value wins, then the browser preference; unsupported locales fall back to English.
  *
- * 取值与 `@agnes/web-client` 的 `resolveUiLocale` 保持一致：`en` | `zh-CN`。
- * 本模块不引用 web-client，以便首帧脚本 `theme-boot` 可以单独打进阻塞式 IIFE。
+ * Keep the values aligned with `@agnes/web-client` resolveUiLocale: `en` | `zh-CN`.
+ * Avoid importing web-client so the first-frame `theme-boot` script can be bundled as a blocking IIFE.
  */
 
 export const UI_LOCALES = ['en', 'zh-CN'] as const
@@ -33,12 +33,12 @@ export function readLocalePreference(
   }
 }
 
-/** 写失败不冒泡：本次切换仍应即时生效，只损失持久化。 */
+/** Write failures do not propagate: apply the change immediately; only persistence is lost. */
 export function writeLocalePreference(storage: Pick<Storage, 'setItem'>, value: UiLocale): void {
   try {
     storage.setItem(LOCALE_STORAGE_KEY, value)
   } catch {
-    // 配额用尽或存储被禁用时静默降级。
+    // Degrade silently when storage is full or disabled.
   }
 }
 
@@ -48,7 +48,7 @@ export function applyDocumentLocale(root: LocaleRoot, locale: UiLocale): void {
   root.lang = locale
 }
 
-/** 把静态文案标记回填成当前语言。 */
+/** Fill static text markers with the current locale. */
 export function applyLocaleText(root: ParentNode, translate: (key: string) => string): void {
   for (const node of root.querySelectorAll<HTMLElement>('[data-i18n]')) {
     const key = node.getAttribute('data-i18n')

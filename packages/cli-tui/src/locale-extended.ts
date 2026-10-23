@@ -6,7 +6,7 @@ import { TERMINAL_DICT, type TerminalKey } from './locale-terminal.js'
 import { TOOLS_DICT, type ToolsKey } from './locale-tools.js'
 import { UNDO_DICT, type UndoKey } from './locale-undo.js'
 
-/** 既有 cli-tui 字典的扩展域（C1）：命令说明、用量明细、工具卡、欢迎横幅、主题选择与连接提示。 */
+/** Extended cli-tui dictionary: command help, usage details, tool cards, welcome banner, theme selection and connection hints. */
 export const EXTENDED_KEYS = [
   'commands.help',
   'commands.helpSummary',

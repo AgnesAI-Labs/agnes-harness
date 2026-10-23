@@ -122,7 +122,7 @@ export type SurfaceController = Readonly<{
   ): Promise<SurfaceInstanceStatus>
 }>
 
-/** I3 (final review, Important): shared mount-lookup predicate -- an exact path match or a
+/** Shared mount-lookup predicate -- an exact path match or a
  * `mount/...` sub-path. Lives in this leaf module (only `@agnes/host`'s `ResolvedDeployment` as a
  * dependency) rather than in `mount-proxy.ts` or `routes.ts` because those two already depend on
  * each other (`mount-proxy.ts` imports `FORGED_IDENTITY_KEYS`/`normalizeKey` from `routes.ts`), and
@@ -137,7 +137,7 @@ export function mountMatches(mount: string, pathname: string): boolean {
   return pathname === mount || pathname.startsWith(`${mount}/`)
 }
 
-/** I3 (final review, Important): shared healthy-instance filter -- an instance only counts as
+/** Shared healthy-instance filter -- an instance only counts as
  * routable once it is `healthy` AND has been assigned a live loopback `endpoint` (a `starting`,
  * `crashed`, or `stopping` instance, or a healthy instance whose endpoint has not landed in the
  * snapshot yet, must never receive traffic). This exact filter was hand-duplicated between

@@ -15,7 +15,7 @@ const ITEMS: readonly (readonly [SessionAction, string, IconName])[] = [
 
 /**
  * The actions this row offers. An archived session cannot be pinned — the two states exclude each
- * other — and its most useful action is the way back, so 「归档会话」 becomes 「恢复会话」.
+ * other — and its most useful action is the way back, so 「Archive session」 becomes 「Restore session」.
  */
 function itemsFor({
   chats,
@@ -51,9 +51,9 @@ export function SessionMenu({
   pinned = false,
   archived = false,
 }: {
-  /** Offers 「取消置顶」 in place of 「置顶」. */
+  /** Offers 「Unpin」 in place of 「Pin」. */
   pinned?: boolean
-  /** Offers 「恢复会话」 in place of 「归档会话」 and drops the pin actions. */
+  /** Offers 「Restore session」 in place of 「Archive session」 and drops the pin actions. */
   archived?: boolean
   platform?: string | undefined
   /** A chat in the managed chats workspace has no folder of its own to show. */

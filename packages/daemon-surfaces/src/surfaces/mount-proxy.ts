@@ -9,7 +9,7 @@ import { surfaceSecurityHeaders } from './security-headers.js'
 import { mountMatches } from './types.js'
 
 /** The narrow slice of a mount-table row `createMountProxy` actually reads: a loopback host/port and
- * the mount prefix it was matched against. M3 (final review, Minor): this used to be
+ * the mount prefix it was matched against. This used to be
  * `{ endpoint: SurfaceEndpoint; mount: string }`, which forced every caller -- including
  * `packages/cli/launch/surface-mounts.ts`, whose mount-proxy RPC row only ever carries
  * `{mount, host, port}` -- to fabricate a `healthPath` field purely to satisfy the wider type. Narrow
@@ -17,8 +17,8 @@ import { mountMatches } from './types.js'
 export type MountProxyMatch = Readonly<{ mount: string; host: string; port: number }>
 
 /**
- * Shared mount-lookup predicate: an exact path match or a `mount/...` sub-path. I3 (final review,
- * Important): this exact rule used to be hand-duplicated in three places (this file's own
+ * Shared mount-lookup predicate: an exact path match or a `mount/...` sub-path. This exact
+ * rule used to be hand-duplicated in three places (this file's own
  * `surfaceMountProxy` closure in `supervisor.ts` -- since retired, see that file's history --,
  * `packages/cli/launch/surface-mounts.ts`, and `routes.ts`'s `routeTarget`). `routes.ts` matches over
  * a different table shape (`ResolvedSurface[]`, mount nested under `.instance.mount`) so it calls
@@ -91,7 +91,7 @@ export function createMountProxy(deps: {
         headers,
       },
       (upstreamRes) => {
-        // M2 (final review, Minor): reuse routes.ts's own pattern -- pass upstream headers THROUGH
+        // Reuse routes.ts's own pattern -- pass upstream headers THROUGH
         // surfaceSecurityHeaders(input) so its `\r\n\0` filter (security-headers.ts's
         // `safeHeaderValue`) actually runs on them, instead of spreading `upstreamRes.headers`
         // straight into `writeHead` unfiltered and calling surfaceSecurityHeaders() with no argument

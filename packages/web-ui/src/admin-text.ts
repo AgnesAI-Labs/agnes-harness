@@ -8,8 +8,8 @@ import { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from './locales/admin.js'
 import { createCatalogTranslator, type LocaleTranslator } from './ui-locale.js'
 
 /**
- * 浏览器 UI 运行状态的展示视图。结构与 web 包的 PluginRuntimeState 保持结构化等价
- * （phase/packageId/revision/error.message），组件层不 import web 包。
+ * Display view of browser UI runtime status. Structurally equivalent to the web package PluginRuntimeState
+ * (phase/packageId/revision/error.message) without importing web into the component layer.
  */
 export type RuntimeStateView = Readonly<{
   packageId: string

@@ -186,7 +186,7 @@ function AgentList({
                 appearance="primary"
                 disabled={!chosenLoop}
                 disabledReason={t('noRunningMode')}
-                // B2's agent facade is AgentRef-only. Ordinary Loop selection stays on the plain
+                // The agent launch facade is AgentRef-only. Ordinary Loop selection stays on the plain
                 // new-session branch, with no agent, combination or permission overrides.
                 onClick={() =>
                   chosenLoop && location.assign(sessionStartUrl(undefined, undefined, undefined, chosenLoop))

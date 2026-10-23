@@ -3,7 +3,7 @@ import { createPortal, flushSync } from 'react-dom'
 import { SheetHandle } from './sheet-handle.js'
 
 const HOSTS = 'dialog[open]'
-// A host shown as a page is not a sheet: it sits in its page and leaves through the page's 返回.
+// A host shown as a page is not a sheet: it sits in its page and leaves through the page's Back.
 const SKIPPED = '.agh-drawer, .lightbox, [role=presentation], [data-presentation="page"]'
 
 type Sheet = { dialog: HTMLDialogElement; key: number }

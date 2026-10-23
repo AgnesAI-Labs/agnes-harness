@@ -288,7 +288,7 @@ export function SettingsHub({
       <section data-testid={`settings-page-${page}`} aria-label={sectionTitle(page)}>
         {!embedded && (
           <>
-            {/* A narrow screen shows one page; the breadcrumb leads back to the list (「‹ 设置 › 当前页」). */}
+            {/* A narrow screen shows one page; the breadcrumb leads back to the list (「‹ Settings › Current page」). */}
             <PushCrumbs
               title={sectionTitle(page)}
               crumbs={[shellText('settings-shell.root')]}

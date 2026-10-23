@@ -60,7 +60,7 @@ export type SessionMethod =
   | 'previewSnapshot'
   | 'systemPrompt.preview'
 
-/** Process-wide methods available before C2 runtime-target delivery exists. */
+/** Process-wide methods available before runtime-target delivery exists. */
 export type WorkerMethod =
   | 'ping'
   | 'pluginGenerations.status'

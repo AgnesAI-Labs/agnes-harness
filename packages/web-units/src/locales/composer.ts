@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from './index.js'
 
-/** 组件内置可访问性文案。经 `ComposerDependencies.translate` 注入，命名空间 `@agnes/web-units`。 */
+/** Built-in accessibility text, injected through `ComposerDependencies.translate` under `@agnes/web-units`. */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
     'composer.attachment.hashMismatch': 'The attachment contents changed. Attach the file again.',

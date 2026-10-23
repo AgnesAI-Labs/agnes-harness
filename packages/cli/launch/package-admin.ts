@@ -474,7 +474,7 @@ export function localPackageAdmin(
       }
     },
     /**
-     * Bytes for one `/plugins/...` path, for the Web launcher's same-origin asset route (design WC3).
+     * Bytes for one `/plugins/...` path, for the Web launcher's same-origin asset route.
      *
      * Same shape as `readSkin`: it rides the same private package-admin connection, the daemon owns
      * path authority and answers only for its enabled+trusted roster snapshots, and a miss, a

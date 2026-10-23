@@ -131,8 +131,8 @@ export type McpOAuthCredentialResolver = (
 /**
  * Thrown by `resolvedConfig()` when an `oauth`-bound MCP server's credential cannot be resolved or
  * refreshed: no resolver configured, no credential stored yet, or refresh failed even after the
- * optimistic re-read retry (spec §3.5's "刷新失败" outcome, and M3's "must not silently keep trying
- * with a stale/expired token" requirement). Distinctly typed rather than a bare `Error` so a caller
+ * optimistic re-read retry (never silently keep trying
+ * with a stale/expired token). Distinctly typed rather than a bare `Error` so a caller
  * can recognize "this connection failed because the user needs to re-authorize" instead of folding
  * it into every other candidate()/connect failure, and react by surfacing `needs-reconnect` --
  * `connectManaged()` below is that caller (traced per the brief's own instruction to find
@@ -216,8 +216,8 @@ type Options = Readonly<{
 
 /**
  * How long before an OAuth access token's real `expiresAt` `resolvedConfig()` treats it as already
- * expired and refreshes eagerly (spec §3.5: "留一个短的提前量...由实现者参照已有的类似超时常量风格给出并
- * 注释理由"). 30s covers the gap between resolvedConfig() reading the credential and the actual MCP
+ * expired and refreshes eagerly. 30s covers the gap between resolvedConfig() reading the credential
+ * and the actual MCP
  * connect request landing on the wire -- normally milliseconds, not seconds -- without refreshing on
  * every single connection attempt the way a near-zero leeway would once a token is within its final
  * seconds of life.
@@ -331,8 +331,8 @@ function validateManagedTransport(
 /**
  * Resolves the `Authorization` header value for an `oauth`-bound MCP server: returns the stored
  * access token directly if it is not near expiry, otherwise refreshes it first (spec §3.5). On a
- * refresh failure, performs exactly one optimistic re-read-and-compare retry before giving up (spec
- * §1.6/§3.5, M4's hard requirement): another worker process connecting to the same MCP server may
+ * refresh failure, performs exactly one optimistic re-read-and-compare retry before giving up:
+ * another worker process connecting to the same MCP server may
  * have already refreshed and persisted a new credential between this call's initial read and its
  * failed refresh attempt, and the credential store has no file lock -- re-reading once and checking
  * whether the access token actually changed is cheaper and safer than either locking or giving up

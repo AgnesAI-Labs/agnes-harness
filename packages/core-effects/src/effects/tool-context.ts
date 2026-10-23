@@ -338,7 +338,7 @@ export function buildToolContext(
         return Object.freeze({ level: e.level, scope: Object.freeze([...e.scope]) })
       },
     },
-    // Facts read at call time, probe passed through; no manifest gate (spec 2026-09-15 P3).
+    // Facts read at call time, probe passed through; no manifest gate.
     platform: d.runtime.platformView(),
     // Action and Target are protocol's, and until protocol publishes them they are JsonValue here.
     // The conversion is a cast at this one boundary rather than a shape core invents.

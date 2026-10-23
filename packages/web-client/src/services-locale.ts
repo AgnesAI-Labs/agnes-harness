@@ -9,10 +9,10 @@ export function resolveUiLocale(value: string | null | undefined): UiLocale {
   return (UI_LOCALES as readonly string[]).includes(value ?? '') ? (value as UiLocale) : 'en'
 }
 
-/** 一种语言下的文案。键为消息 key，值为已翻译文本。 */
+/** Text for one locale: message keys mapped to translated values. */
 export type LocaleDictionary = Record<string, string>
 
-/** `ctx.locale.register` 的目录：同一命名空间同时登记 `en` 与 `zh-CN`。 */
+/** `ctx.locale.register` catalog: register `en` and `zh-CN` under the same namespace. */
 export type LocaleCatalog = Partial<Record<UiLocale, LocaleDictionary>>
 
 export type LocaleVars = Readonly<Record<string, string | number>>
@@ -41,7 +41,7 @@ export class LocaleService extends Service {
     return this.currentLocale
   }
 
-  /** 注册目录（命名空间 = 包 id）。撤销时自动移除；插件侧经 effect 绑定 fiber。 */
+  /** Register a catalog under the package id namespace. Revocation removes it; plugin effects bind it to the fiber. */
   register(namespace: string, catalog: LocaleCatalog): () => void {
     // Re-registering a namespace is an update, not a second competing seat.
     // Delete first so the newest revision wins deterministic lookup order.
@@ -56,8 +56,8 @@ export class LocaleService extends Service {
   }
 
   /**
-   * 查目录：后注册者覆盖先注册者。
-   * 当前语言没有该 key 时回落英文，英文也没有则回落 key 本身。
+   * Look up catalog text: later registrations override earlier ones.
+   * Missing keys fall back from the current locale to English, then to the key itself.
    */
   t(key: string, vars?: LocaleVars): string {
     if (key === 'brand.agent') return applicationBrand(this.currentLocale).assistantName
@@ -81,7 +81,7 @@ export class LocaleService extends Service {
     }
   }
 
-  /** 仅宿主调用。未知语言回落英文。 */
+  /** Host-only call. Unknown locales fall back to English. */
   setLocale(locale: string): void {
     const next = resolveUiLocale(locale)
     if (next === this.currentLocale) return

@@ -54,7 +54,7 @@ export function groupRuns(nodes: readonly UINode[]): UINode[][] {
 
 const KIND = { read: ['read'], search: ['grep', 'find'], list: ['ls'] } as const
 
-/** `已读取 4 个文件 · 搜索 2 次`: one clause per kind of call that occurs in the group. */
+/** `Read 4 files · Searched 2 times`: one clause per kind of call that occurs in the group. */
 export function groupTitle(nodes: readonly ToolNode[], locale: string): string {
   return (Object.keys(KIND) as Array<keyof typeof KIND>)
     .flatMap((kind) => {

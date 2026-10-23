@@ -279,7 +279,7 @@ export async function runWebCommand(
       // `/skins/*` bytes come from the daemon over the launcher's private connection: this process
       // does not own the package store, so it never resolves a skin path itself (design §22).
       skinAsset: (pathname: string) => adminHandler.readSkin(pathname),
-      // `/plugins/*` client module bytes follow the same rule (design WC3): the daemon resolves
+      // `/plugins/*` client module bytes follow the same rule: the daemon resolves
       // from its immutable snapshots over the same private connection; the launcher never touches
       // the package store itself.
       clientModuleAsset: (pathname: string) => adminHandler.readClientModule(pathname),

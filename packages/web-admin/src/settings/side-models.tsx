@@ -62,7 +62,7 @@ const closePage = (page: HTMLElement | undefined) =>
 /**
  * The side-model list and its editor. Inside the settings dialog the editor is a pushed page of the
  * model pane (`SIDE_MODEL_PAGE_IDS`): this panel renders it into the page the pane lends, and
- * leaving that page by 返回 or the browser drops the draft. Without that pane it opens below the list.
+ * leaving that page by Back or the browser drops the draft. Without that pane it opens below the list.
  */
 function SideModels({
   client,

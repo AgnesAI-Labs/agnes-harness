@@ -58,7 +58,7 @@ function bind(): void {
 }
 
 /**
- * Whether 「显示高级设置」 is on: the advanced settings group and every advanced fold follow it. On
+ * Whether 「Show advanced settings」 is on: the advanced settings group and every advanced fold follow it. On
  * unless this browser turned it off.
  */
 export function advancedSettingsShown(): boolean {

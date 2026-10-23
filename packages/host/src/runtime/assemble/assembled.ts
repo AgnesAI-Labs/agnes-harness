@@ -96,7 +96,7 @@ export type Assembled = {
   computerUse: HostComputerUseStatusSource | undefined
   /** Native, reachability-checked screenshot collector; absent on unsupported platforms. */
   computerUseArtifactGc: ComputerUseArtifactGcRuntime | undefined
-  /** Live C1 ordinary Cordis tree containing preset rows and the eight dynamic runtime seams. */
+  /** Live ordinary Cordis tree containing preset rows and the eight dynamic runtime seams. */
   intelligentUi: ReturnType<typeof createIntelligentUiBridge>
   pluginTree: HostPluginTreeBase
   extHost: ManagedExtHost
@@ -114,7 +114,7 @@ export type Assembled = {
   /**
    * Cleanly unload and reload an extension row declaring live resources with a fresh resource snapshot, without
    * restarting the worker process. It does not touch
-   * PackageManager's own IH0-IH10 hot-update path.
+   * PackageManager's own package hot-update path.
    */
   reloadEcosystemExtension(
     id: string,
@@ -130,7 +130,7 @@ export type Assembled = {
         liveResourceRevision?: string
         config?: unknown
         disabled?: boolean
-        /** Supply the extension itself, for a row that exists only at runtime (stage 2b, D107′). */
+        /** Supply the extension itself, for a row that exists only at runtime. */
         dynamic?: DynamicExtension
         skillResources?: SkillRuntimeInput | undefined
       }>,

@@ -1,6 +1,6 @@
 export type LocaleVars = Readonly<Record<string, string | number>>
 
-/** web-ui 组件的取词合同：宿主注入 `LocaleService#t` 的稳定包装（props `t`）。 */
+/** web-ui translation contract: the host injects a stable `LocaleService#t` wrapper through the `t` prop. */
 export type Translate = (key: string, vars?: LocaleVars) => string
 
 export type LocaleDictionary = Record<string, string>

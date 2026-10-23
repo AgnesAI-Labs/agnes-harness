@@ -16,7 +16,7 @@ async function readAll(s: NodeJS.ReadableStream): Promise<string> {
  *
  * Both present is not an error: `cat notes.md | agh -p summarize` is the shape people actually
  * write. The piped half arrives as a second block rather than concatenated into the first, so a
- * later reader can still tell the instruction from the material it was handed. protocol's I1
+ * later reader can still tell the instruction from the material it was handed. protocol's
  * ContentBlock has no `resource` member, which was the first choice for carrying it, so the block is
  * text with a marker line instead.
  */

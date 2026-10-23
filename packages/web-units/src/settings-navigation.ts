@@ -5,20 +5,20 @@ const merged: Readonly<Record<string, readonly [string, string]>> = {
   bundles: ['models', 'bundles'],
   'system-prompt': ['models', 'system-prompt'],
   context: ['models', 'context'],
-  // Adding an account is a page of 模型与账户.
+  // Adding an account is a page of Models and accounts.
   'add-account': ['model', 'add-account'],
-  // Subpages of 权限与安全 open from their rows.
+  // Subpages of Permissions and security open from their rows.
   'auto-review': ['security', 'auto-review'],
   'approval-rules': ['security', 'approval-rules'],
   isolation: ['security', 'isolation'],
-  // Subpages of 运行配置 open from their rows.
+  // Subpages of Runtime configuration open from their rows.
   'prompt-preview': ['models', 'prompt-preview'],
   'agent-fde': ['models', 'bundles'],
   'runtime-config': ['models', 'models'],
   'runtime-configuration': ['models', 'models'],
   'additional-combinations': ['models', 'bundles'],
   'session-slots': ['models', 'session-slots'],
-  // The loop is chosen in 新会话默认 → 执行方式; memory and instructions are the General page's 个性化.
+  // The loop is chosen in New session defaults → Execution method; memory and instructions are the General page's Personalization.
   execution: ['models', 'session-loop'],
   personalization: ['general', 'personalization'],
   memory: ['general', 'memory'],
@@ -79,7 +79,7 @@ export function settingsGroup(group: string): string {
   return SETTINGS_EVERYDAY_GROUPS.some((known) => known === group) ? group : 'extensions'
 }
 
-/** Listed only while 「显示高级设置」 is on. */
+/** Listed only while 「Show advanced settings」 is on. */
 export function advancedSettings(group: string): boolean {
   return settingsGroup(group) === 'advanced'
 }

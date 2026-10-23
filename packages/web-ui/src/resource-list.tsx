@@ -26,7 +26,7 @@ export function setResourcePackageNames(resolve: ((id: string) => string | undef
 
 let skillRunner: ((name: string) => void) | undefined
 /**
- * The plugins page offers 「在新会话中运行」 on each skill that is on: it registers what running a
+ * The plugins page offers 「Run in new session」 on each skill that is on: it registers what running a
  * skill does (ask for arguments, then open a new session), since the list's controller cannot
  * reach the page. Without a runner the row offers no such action.
  */
@@ -40,7 +40,7 @@ export type ResourceTab = 'skills' | 'mcp'
 
 export type ResourceLoadState = 'idle' | 'loading' | 'ready' | 'empty' | 'error'
 
-/** 列表区整体内容：加载/错误（含重试）/来源扫描/空态/行/加载更多。宿主 `#resource-list` 即挂载点。 */
+/** Whole list content: loading/errors with retry/source scans/empty state/rows/load more. Host `#resource-list` is the mount point. */
 export function ResourceListContent({
   tab,
   loadState,
@@ -207,8 +207,9 @@ export function ResourceListContent({
 }
 
 /**
- * 开关表达用户意图（期望状态），与后端的 `desired` 同义：后端按它决定要不要继续拉起资源，
- * 也按它决定资源能不能被移除。实际有没有跑起来由行内的失败原因说明，不靠开关冒充。
+ * The switch expresses user intent (desired state), matching backend `desired`, which controls whether
+ * to keep starting a resource and whether it can be removed. Inline failure reasons describe whether it
+ * actually started; the switch does not pretend to report that.
  */
 export function resourceDesiredEnabled(item: ResourceItem): boolean {
   return item.desired === 'enabled'
@@ -228,8 +229,8 @@ export const ROOT_FAILURE_KEYS: Record<NonNullable<SkillRootStatus['diagnostic']
 }
 
 /**
- * 来源扫描状态：默认只占一行摘要，展开才看每个来源。
- * 文案面向用户，不暴露实现视角的措辞。
+ * Source scanning state: one summary line by default; expand to see individual sources.
+ * Use user-facing text without implementation terminology.
  */
 export function ResourceRoots({ roots }: { roots: readonly SkillRootStatus[] }): JSX.Element {
   const { t, locale } = useUiText(RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog)
@@ -401,8 +402,8 @@ function ResourceRowContent({
       data-resource-id={item.resourceId}
       data-selected={String(selected)}
       onClick={(event) => {
-        // 行内 Switch 自己处理点击（并已 stopPropagation）；这里再挡一次，
-        // 因为置灰的按钮在部分浏览器里不发 click，事件会落到行上。
+        // The inline Switch handles clicks and stopPropagation itself; block them again here because
+        // disabled buttons do not emit click in some browsers, letting the event reach the row.
         if (event.target instanceof Element && event.target.closest('.switch, button, a')) return
         onOpen(item)
       }}

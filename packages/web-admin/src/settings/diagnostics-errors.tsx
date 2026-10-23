@@ -19,7 +19,7 @@ import { useEffect, useState } from 'react'
 import { type ErrorKind, errorKind } from './diagnostics-kinds.js'
 import { DIAGNOSTICS_NAMESPACE, diagnosticsCatalog } from './diagnostics-locale.js'
 
-/** How many kinds the list shows before 「查看全部」. */
+/** How many kinds the list shows before 「View all」. */
 const RECENT = 5
 /** How many of a kind's latest occurrences its details list. */
 const OCCURRENCES = 3
@@ -105,7 +105,7 @@ export function errorsEntry(records: readonly DiagnosticRecord[]) {
 }
 
 /**
- * 近期错误: a summary, kind filters, then one row per kind grouped by day, each opening
+ * Recent errors: a summary, kind filters, then one row per kind grouped by day, each opening
  * its own page for its IDs. An ID lookup shows only that kind; empty, not-found and failed reads each
  * say what happened.
  */

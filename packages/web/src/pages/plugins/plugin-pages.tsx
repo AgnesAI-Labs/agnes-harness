@@ -8,7 +8,7 @@ import { pluginPage, pluginPageId } from './route.js'
 const DETAIL_KINDS = new Set(['plugin', 'market', 'operations'])
 
 /**
- * The plugin controller's detail and its 添加插件 form, as pages of the plugins page: an installed
+ * The plugin controller's detail and its Add plugin form, as pages of the plugins page: an installed
  * plugin is `plugin:<id>`, a marketplace entry `market:<id>`, running operations `operations` (opened
  * from the page's activity line, never by an install), and the form `add-plugin`.
  */

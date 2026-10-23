@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from './index.js'
 
-/** 设置壳模板（S1）：首帧由宿主 applyLocaleText 回填，切换语言走 boot 的全文档回填。 */
+/** Settings shell template: host applyLocaleText fills the first frame; boot refills the whole document on locale changes. */
 export const settingsShellLocaleCatalog: LocaleCatalog = {
   en: {
     'settings-shell.advancedModels': 'Advanced: side models and task models',

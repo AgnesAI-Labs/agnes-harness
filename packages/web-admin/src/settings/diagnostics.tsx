@@ -39,8 +39,8 @@ const browserApi = diagnosticsApi()
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 
 /**
- * 运行时与诊断: status checks in four compact groups (重新检查, 测试模型账户), recent errors by day
- * and kind as a subpage with an ID lookup (see RecentErrors), and 集成 (OTLP export and the runtime details as
+ * Runtime and diagnostics: status checks in four compact groups (Recheck, Test model account), recent errors by day
+ * and kind as a subpage with an ID lookup (see RecentErrors), and Integrations (OTLP export and the runtime details as
  * subpages). The page header copies a summary and exports a redacted bundle after saying what it
  * contains; after a lookup finds an error, the bundle holds only that error.
  */
@@ -52,7 +52,7 @@ export function DiagnosticsPanel({
 }: {
   api?: DiagnosticsApi
   download?: (bundle: DiagnosticsExportResult) => void
-  /** More rows of 集成 (the runtime details), given by the page. */
+  /** More rows of Integrations (the runtime details), given by the page. */
   integrations?: ReactNode
   maintenance?: ReactNode
 }) {

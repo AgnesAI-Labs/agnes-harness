@@ -389,7 +389,7 @@ export class TuiApp {
       this.welcome.workspace(info)
       if (!this.stopped) this.renderer.requestRender()
     })
-    // Zero rows until the first turn starts (spec RP1.2). `Loader`'s own constructor is
+    // Zero rows until the first turn starts. `Loader`'s own constructor is
     // immediately visible by design (see loader.ts's doc comment), so the app -- not the
     // component -- is what decides a fresh session shows nothing yet.
     this.loader.hide()

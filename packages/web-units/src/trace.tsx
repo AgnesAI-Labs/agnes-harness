@@ -69,7 +69,7 @@ export type TraceHandle = {
   setOpen(open: boolean): void
   isOpen(): boolean
   selectTool?(sessionId: string, callSeq: number, resultSeq?: number): boolean
-  /** Opens the trace on the record a fact-chain link names, with its «来源» tab showing. */
+  /** Opens the trace on the record a fact-chain link names, with its «Provenance» tab showing. */
   focusFact?(params: import('@agnes/protocol').FactChainParams): boolean
 }
 export type TracePanel = TraceHandle
@@ -84,7 +84,7 @@ export type TracePanelOptions = {
   ) => Promise<import('@agnes/protocol').ModelRequestClearResult>
   /** Downloads an artifact a record produced, through the session's resource service. */
   loadArtifact?: LoadArtifact
-  /** Reads a request's provenance for the inspector's «来源» tab; the trace never opens the workbench. */
+  /** Reads a request's provenance for the inspector's «Provenance» tab; the trace never opens the workbench. */
   readFactChain?: ReadFactChain
   readModelRequest?: (
     params: import('@agnes/protocol').ModelRequestParams,

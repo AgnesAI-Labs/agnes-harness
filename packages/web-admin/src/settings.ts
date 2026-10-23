@@ -100,7 +100,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const accountName = optionalElement('config-account-name', 'input')
   const accountBody = accountDialog?.querySelector<HTMLElement>('.account-dialog-body')
   const accounts = () => configuration?.accounts
-  // Leaving the page by 返回 or the browser drops the draft, as closing the dialog did.
+  // Leaving the page by Back or the browser drops the draft, as closing the dialog did.
   const accountRestore = linkedAccountRestorer(
     ui.dialog,
     () => open(),
@@ -686,7 +686,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         return
       }
       if (current(token)) {
-        // 保存成功后只收起账户弹窗、留在设置里并刷新列表（该账户保持选中）。
+        // After saving, close only the account dialog, stay in settings and refresh the list with that account still selected.
         closeAccountDialog()
         renderAccounts()
       }
@@ -764,7 +764,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     if (!inlineHost) openAccountDialog()
   }
 
-  /** 打开账户：设置里有账户页时进入该页，否则用账户弹窗（showModal 不可用时退回 open 属性）。 */
+  /** Open an account page when settings provides one; otherwise use its dialog, falling back to open when showModal is unavailable. */
   const openAccountDialog = (): void => {
     if (
       !accountDialog ||
@@ -998,8 +998,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     event.preventDefault()
     close()
   })
-  // 点遮罩关闭。落在 dialog 自身（而非其内容）的点击即遮罩点击；
-  // 面板里嵌的 iframe 事件不会冒泡到这里，所以不会误关。
+  // Close on backdrop clicks: a click on dialog itself, rather than its contents, is a backdrop click;
+  // events in embedded iframes do not bubble here, preventing accidental closure.
   ui.dialog.addEventListener('click', (event) => {
     // `EventTarget` may come from the embedded browser realm in tests, so do not rely on a
     // cross-realm `instanceof Element` check for this delegated, replaceable-pane control.

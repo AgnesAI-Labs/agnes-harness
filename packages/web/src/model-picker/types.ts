@@ -7,19 +7,19 @@ export type ModelPickerOption = {
   input?: readonly ('text' | 'image')[]
   inputLimits?: ModelInputLimits
   label?: string
-  /** 模型声明的「档位 → provider 取值」映射；缺省表示这个模型不提供档位选择。 */
+  /** Model-declared effort-to-provider-value mapping; absence means the model offers no effort selection. */
   thinkingLevelMap?: Record<string, string>
   contextWindow?: number
   defaultSettings?: ModelSettings
 }
 
-/** 面板里「思考强度」与「上下文窗口」两段要显示的会话现状。 */
+/** Current session state shown in the panel's thinking-effort and context-window sections. */
 export type ModelPickerSettings = {
-  /** 会话已保存的档位；缺省表示交给 provider 默认。 */
+  /** Saved session effort; absence uses the provider default. */
   thinking?: ThinkingLevel
-  /** 会话已保存的上下文预算；缺省表示按模型容量自动。 */
+  /** Saved session context budget; absence automatically uses model capacity. */
   contextWindow?: number
-  /** 模型目录容量，同时是预算校验的上界。 */
+  /** Model catalog capacity, also the upper bound for budget validation. */
   capacity: number
   thinkingLevelMap?: Record<string, string>
 }
@@ -46,8 +46,8 @@ export type ModelPickerProps = {
   onError(error: unknown): void
   onSelect(option: ModelPickerOption): Promise<boolean>
   /**
-   * 档位与预算改动；缺省时面板只列模型。
-   * 档位与预算一起提交：app 侧把缺省字段还原成 null，只送一项会重置另一项。
+   * Effort and budget changes; without this callback the panel only lists models.
+   * Submit both together: app restores missing fields to null, so sending one would reset the other.
    */
   onSettingsChange?(settings: ModelSettings): Promise<boolean>
 }

@@ -9,10 +9,10 @@ import { settingsLocaleCatalog } from './locales/settings.js'
 import { timelineLocaleCatalog } from './locales/timeline.js'
 import { toolCardsLocaleCatalog } from './locales/tool-cards.js'
 
-/** 宿主内置文案的命名空间。第一期只覆盖语言开关自身。 */
+/** Namespace for host built-in text. Initially covers only the locale switch itself. */
 export const WEB_LOCALE_NAMESPACE = '@agnes/web'
 
-/** web 包各域目录的聚合点：新域只在这里追加一项。 */
+/** Aggregation point for web domain catalogs: add each new domain here. */
 const WEB_DICTS = [
   appLocaleCatalog,
   goalLocaleCatalog,

@@ -259,7 +259,7 @@ export async function runWorker(
     // same on-disk root, not a shared in-memory handle).
     createOAuthCredentialStore: () => createCredentialStore({ root: agnesHome(env) }),
     // The shared session worker supplies MCP as Host rows, one per server, each owning its own
-    // connection (stage 2b step 3, D107'); its resource generation connects nothing itself. The
+    // connection; its resource generation connects nothing itself. The
     // resource-control service workers keep the manager path.
     ...(workerKind === 'session' ? { mcpRows: true } : {}),
   }

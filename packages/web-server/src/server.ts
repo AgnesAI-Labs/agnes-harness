@@ -59,9 +59,9 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
       .end('Surface mount table is not ready yet; retry shortly.')
     return true
   }
-  // WC5：对 index.html 内联 import map 的脚本体计算 SHA-256，追加进 CSP script-src（严格哈希，
-  // 不放宽策略）。哈希输入是 <script type="importmap"> 与 </script> 之间的精确字节（浏览器语义）。
-  // 缺失或解析失败时不追加哈希：内联 import map 会被浏览器拒绝，页面退回无插件模块的现状（fail-closed）。
+  // Hash the inline index.html import map body with SHA-256 and add it to CSP script-src, using a strict hash
+  // without weakening the policy. Hash the exact bytes between <script type="importmap"> and </script>, as the browser does.
+  // If missing or unparseable, add no hash: the browser refuses the inline map and the page loads without plugin modules (fail-closed).
   const importMapHash = await importMapScriptHash(options.root)
   // Static assets share the base policy. Each HTML response adds its own nonce for Ant Design's
   // CSS-in-JS styles; it is also inserted into that document for ConfigProvider to consume.
@@ -424,7 +424,7 @@ void poll();\n`,
         else response.end(typeof resolved === 'string' ? await readFile(resolved) : resolved)
         return
       }
-      // Client module assets (design WC3) follow the skin branch's exact shape: the resolver owns
+      // Client module assets follow the skin branch's exact shape: the resolver owns
       // path authority, this route owns method, MIME and headers, and a miss, an unknown suffix and
       // a refusal are the one same 404. It must sit before mountProxy so a mounted Surface can never
       // claim the reserved `/plugins` prefix.

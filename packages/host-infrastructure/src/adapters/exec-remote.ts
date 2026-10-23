@@ -29,7 +29,7 @@ function clamp(text: string, max: number): { text: string; truncated: boolean } 
  * gets the cwd one over the remote workspace, because the fence `authorizeCwd` resolves through
  * sits on `createRemoteFsIo` (spec §4.6: `authorizeCwd` itself does not change by one line).
  *
- * This runner deliberately cannot fall back: a dead channel is a hard refusal (RA7 / P3), and the
+ * This runner deliberately cannot fall back: a dead channel is a hard refusal, and the
  * refusal is made here rather than by the gate. Per spec §4.6.1 the remote runner throws on its
  * own when the connection is unusable and must not consult `onUnavailable` - which is what makes
  * `onUnavailable: 'allow'` inoperative under remote mode without the gate needing a remote branch.
@@ -83,7 +83,7 @@ export function createRemoteExec(transport: RemoteTransport): ExecAdapter {
         ...(r.signal === undefined ? {} : { signal: r.signal }),
       }
     },
-    // Remote process termination is deferred to B2; closing a channel does not attest it.
+    // Remote process termination is deferred; closing a channel does not attest it.
     async killAll() {},
   }
 }

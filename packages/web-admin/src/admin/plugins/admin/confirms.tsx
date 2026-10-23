@@ -68,7 +68,7 @@ export function PreviewFacts({
 }
 
 /**
- * What a review page keeps under 技术详情: the full record of the preview and where it came from.
+ * What a review page keeps under Technical details: the full record of the preview and where it came from.
  * The confirmation this replaced showed the same facts.
  */
 export function PreviewTechnicalFacts({

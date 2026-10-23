@@ -12,7 +12,7 @@ export function presetChoice(value: number | undefined, presets: readonly Settin
   return presets.some((preset) => preset.value === value) ? String(value) : 'custom'
 }
 
-/** Second presets in milliseconds, labelled by the caller's 「{count} 秒」 text. */
+/** Second presets in milliseconds, labelled by the caller's 「{count} seconds」 text. */
 export function secondPresets(
   seconds: readonly number[],
   label: (count: number) => string,
@@ -20,7 +20,7 @@ export function secondPresets(
   return seconds.map((count) => ({ value: count * 1000, label: label(count) }))
 }
 
-/** Minute presets in milliseconds, labelled by the caller's 「{count} 分钟」 text. */
+/** Minute presets in milliseconds, labelled by the caller's 「{count} minutes」 text. */
 export function minutePresets(
   minutes: readonly number[],
   label: (count: number) => string,

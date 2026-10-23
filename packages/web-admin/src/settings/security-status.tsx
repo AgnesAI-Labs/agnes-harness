@@ -293,7 +293,7 @@ export function SecurityStatusPanel({
   )
 }
 
-/** Yellow and red isolation states put a dot on 权限与安全 in the navigation. */
+/** Yellow and red isolation states put a dot on Permissions and security in the navigation. */
 function NavAttention({ tone }: { tone: string }) {
   useEffect(() => {
     const attention = tone === 'warn' ? 'warn' : tone === 'error' ? 'error' : undefined

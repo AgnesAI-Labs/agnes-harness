@@ -17,8 +17,9 @@ export const MAX_TOTAL_IMAGE_BYTES = USER_MESSAGE_IMAGE_LIMITS.maxAggregateBytes
 export const IMAGE_PREVIEW_LIMITS = USER_MESSAGE_IMAGE_LIMITS
 
 /**
- * 源文件的粗上限，只为避免把超大文件整体读进内存再交给 canvas。真正的每张与合计上限看
- * 缩放之后的结果：一张几 MB 的截图缩完往往只剩几百 KB，按原图卡会在能缩小之前就拒掉。
+ * Coarse source-file cap to avoid reading enormous files into memory before canvas. Actual per-image
+ * and total limits apply after resizing: a multi-MB screenshot often shrinks to a few hundred KB,
+ * so checking the original against them would reject it before it could shrink.
  */
 export const MAX_SOURCE_IMAGE_BYTES = USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregateBytes
 
@@ -26,18 +27,18 @@ export const MAX_SOURCE_IMAGE_BYTES = USER_MESSAGE_ATTACHMENT_LIMITS.maxAggregat
 export const IMAGE_MAX_EDGE = 1456
 
 /**
- * 把长边超过 IMAGE_MAX_EDGE 的图片缩到该边长，格式和文件名保持不变。只对超限的图动手；
- * 正常小图（包括 EOI 后带尾迹的 JPEG）保持原样。
- * canvas 不可用或编码失败时原样返回，交给服务端按原图判定。
+ * Shrink images whose long edge exceeds IMAGE_MAX_EDGE to that length, preserving format and filename.
+ * Only oversized images change; normal small images (including JPEGs with trailing bytes after EOI) stay intact.
+ * If canvas is unavailable or encoding fails, return the original for server-side validation.
  */
 export async function downscaleImageFile(file: File, policy = userImagePolicy(undefined)): Promise<File> {
-  // 有些 DOM 实现没有位图解码（测试环境就是），那种情况下按原图走，交给服务端判定。
+  // Some DOM implementations, including tests, lack bitmap decoding; send the original for server-side validation.
   if (typeof createImageBitmap !== 'function') return file
   let bitmap: ImageBitmap
   try {
     bitmap = await createImageBitmap(file)
   } catch {
-    // 文件本身解不开时也按原图走：拒绝与否由服务端的格式校验决定，这里不下结论。
+    // If decoding fails, keep the original: server-side format validation decides whether to reject it.
     return file
   }
   try {
@@ -59,7 +60,7 @@ export async function downscaleImageFile(file: File, policy = userImagePolicy(un
     const context = canvas.getContext('2d')
     if (!context) return file
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-    // PNG 会忽略质量参数，JPEG 用它。保持原格式，避免截图上的小字被有损编码糊掉。
+    // PNG ignores quality while JPEG uses it. Preserve format so lossy encoding does not blur small screenshot text.
     const blob = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, file.type, (policy.jpegQuality ?? 92) / 100),
     )

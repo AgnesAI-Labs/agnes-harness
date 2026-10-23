@@ -28,7 +28,7 @@ export function HomePageFrame({
   tabs?: ReactNode
   /**
    * The page's name as the first level of its breadcrumb. With it, items open as pages inside this
-   * one (「‹ 返回」, breadcrumb, browser back, `?view=` links); `PushPage`s in the body declare them.
+   * one (「‹ Back」, breadcrumb, browser back, `?view=` links); `PushPage`s in the body declare them.
    */
   pushTitle?: ReactNode
   children?: ReactNode

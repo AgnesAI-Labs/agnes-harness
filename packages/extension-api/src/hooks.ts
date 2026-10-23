@@ -150,7 +150,7 @@ export interface HookContext {
   }
   readonly projections: ProjectionReader
   readonly session: SessionRef
-  readonly replayed: boolean // replayOnResume 重发时 true；handler 必须幂等
+  readonly replayed: boolean // True when replayOnResume resends; handlers must be idempotent.
   readonly signal: AbortSignal
   readonly lease: LeaseView
   readonly log: Logger

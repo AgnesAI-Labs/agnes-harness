@@ -1,4 +1,4 @@
-// WC5 vendor 入口垫片：/vendor/react.js 的具名导出面。
+// Shared vendor entry shim: named exports for /vendor/react.js.
 // react 是 CJS 包，esbuild 打出的默认导出只有 default；import map 的消费方（宿主 app 与插件）
 // 都用具名导入，所以这里显式重导出 React 18.3.1 的公开 API。升级 React 时同步维护此清单。
 import React from 'react'

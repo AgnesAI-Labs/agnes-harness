@@ -22,8 +22,8 @@ export class TurnClock {
 
   /**
    * Turn-lifecycle edge detection: `value.opState` flips null↔non-null exactly at turn
-   * boundaries (protocol's `UIOperationState`), and both the spinner (RP1) and the local wall
-   * clock (RP3) key off the same two edges.
+   * boundaries (protocol's `UIOperationState`), and both the spinner and the local wall
+   * clock key off the same two edges.
    *
    * A null↔non-null flip is not the only boundary that matters, though: `opState.turn` can also
    * change while `opState` stays non-null the whole time, because projection delivery is
@@ -63,8 +63,8 @@ export class TurnClock {
     this.loader.hide()
   }
 
-  // One shared 80ms ticker, not a timer per component (spec RP1, matching the reference
-  // implementations surveyed for this design). RP1.1 measured Timeline.render() at well under
+  // One shared 80ms ticker, not a timer per component (matching the reference
+  // implementations surveyed for this design). Measurements put Timeline.render() at well under
   // 1ms per tick even at 1,000 nodes, so this calls the same requestRender() every other repaint
   // uses rather than a narrower single-row redraw path.
   private start(): void {

@@ -479,7 +479,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     A.PluginStreamsEndpointResult,
   ),
   '_agnes/v1/surfaces.mounts': clientRequest(A.SurfacesMountsParams, A.SurfacesMountsResult),
-  // Pulled forward from I3. daemon's dispatcher answers -32601 from this table before it reaches any
+  // The daemon's dispatcher answers -32601 from this table before it reaches any
   // handler, so a method daemon registers and this table omits is unreachable rather than merely
   // unvalidated.
   authenticate: {

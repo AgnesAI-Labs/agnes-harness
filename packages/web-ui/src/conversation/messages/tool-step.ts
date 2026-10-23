@@ -94,7 +94,7 @@ function argument(preview: string | undefined, keys: readonly string[]): string 
 
 export interface ToolStep {
   kind: ActivityKind
-  /** 运行命令 / 读取 / 搜索 / 编辑 / 调用 <工具>. */
+  /** Run command / read / search / edit / call <tool>. */
   verb: string
   /** One line: what it acted on. Empty when the call names nothing. */
   target: string
@@ -165,7 +165,7 @@ const SUMMARY_ORDER: readonly ActivityKind[] = [
   'approval',
 ]
 
-/** 已读取 3 个文件，运行了 2 条命令 — a group of consecutive steps in one line. */
+/** Read 3 files, ran 2 commands — a group of consecutive steps in one line. */
 export function activitySummary(kinds: readonly ActivityKind[], t: Translate): string {
   const counts = new Map<ActivityKind, number>()
   for (const kind of kinds) counts.set(kind, (counts.get(kind) ?? 0) + 1)

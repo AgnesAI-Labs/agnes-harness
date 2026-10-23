@@ -27,7 +27,7 @@ export type SessionEntry = {
   backlog: EventEnvelope[]
   backlogTruncated: boolean
   tailError: unknown
-  /** What listeners threw, oldest first and bounded. Nothing acts on these in I1; they exist so a
+  /** What listeners threw, oldest first and bounded. Nothing acts on these yet; they exist so a
    *  contained failure is recorded somewhere rather than only not crashing. */
   listenerErrors: unknown[]
   ac: AbortController
@@ -296,7 +296,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
           // with a cursor. Nothing tells a client it was dropped for throwing, so detaching would
           // leave a connection silently subscribed to nothing. The cost is that a permanently broken
           // listener goes on being called once per event and its stream keeps holes it is never told
-          // about; the failures are recorded on the entry, and acting on them is I1 debt.
+          // about; the failures are recorded on the entry, and acting on them remains unimplemented.
           for (const l of entry.listeners) {
             try {
               l(e)

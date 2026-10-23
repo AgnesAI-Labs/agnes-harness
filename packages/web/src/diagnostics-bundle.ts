@@ -8,9 +8,9 @@ import type {
 import { type ContentBlock, storedAttachment } from '@agnes/protocol'
 import { redactDiagnostic, redactDiagnosticText } from '@agnes/web-foundation/diagnostics-redact'
 import { diagnosticsText } from '@agnes/web-units/diagnostics-locale'
-// 走诊断相关的子路径，而不是 @agnes/web-units 的包根 barrel：barrel 会连带导出整个 UI 组件树
-// (含 XMarkdown 的 CJS 构建)，而它的 CJS 里有 require('./DebugPanel.css')，在没有 CSS 加载器的
-// 环境里会直接抛语法错误。本模块只做收集、脱敏和打包，不需要 React。
+// Import diagnostic subpaths rather than the @agnes/web-units root barrel, which re-exports the whole UI tree
+// (including the XMarkdown CJS build). Its CJS require('./DebugPanel.css') throws a syntax error without a CSS loader.
+// This module only collects, redacts and packages diagnostics; it does not need React.
 import type {
   BrowserLog,
   DiagnosticsArtifact,

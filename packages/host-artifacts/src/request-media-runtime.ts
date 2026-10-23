@@ -9,9 +9,9 @@ type ImageInputTokenFallback = NonNullable<KernelOptions['imageInputTokenFallbac
 export type ProductionRequestMediaConfiguration = Readonly<{
   /** Session/lane-scoped trusted reader. It must resolve ownership before returning bytes. */
   readArtifact: RequestMediaRuntime['readArtifact']
-  /** Explicit product limits frozen from P0 evidence; Host deliberately supplies no defaults. */
+  /** Explicit product limits frozen from production evidence; Host deliberately supplies no defaults. */
   surfaceLimits: RequestMediaRuntime['surfaceLimits']
-  /** Explicit product limits frozen from P0 evidence; Host deliberately supplies no defaults. */
+  /** Explicit product limits frozen from production evidence; Host deliberately supplies no defaults. */
   mediaLimits: RequestMediaRuntime['mediaLimits']
 }>
 

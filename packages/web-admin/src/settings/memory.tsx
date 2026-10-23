@@ -24,8 +24,8 @@ const errorEnvelope = (error: unknown) => (error as { envelope?: unknown })?.env
 type Request = Parameters<typeof memoryRequest>[0]
 
 /**
- * 记忆 on the General page: the workspace, whether the agent may remember (off / ask / auto), and a
- * 记忆文件 subpage with the files, an editor that checks the version on save, and where it is kept.
+ * Memory on the General page: the workspace, whether the agent may remember (off / ask / auto), and a
+ * Memory files subpage with the files, an editor that checks the version on save, and where it is kept.
  */
 export function MemoryPanel({ canSave }: { canSave: boolean }) {
   const { t, locale } = useUiText('@agnes/web/memory', memoryCatalog)

@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from './index.js'
 
-/** 侧栏外壳的组件内文案。经 `SidebarDependencies.translate` 注入。 */
+/** Sidebar shell component text, injected through `SidebarDependencies.translate`. */
 export const sidebarLocaleCatalog: LocaleCatalog = {
   en: {
     'sidebar.closeNav': 'Close navigation',

@@ -1,2 +1,2 @@
-// WC5 vendor 入口：/vendor/cordis.js。@agnes/cordis 是 ESM TS 源，具名导出原样保留。
+// Shared vendor entry: /vendor/cordis.js. @agnes/cordis is ESM TypeScript; preserve named exports.
 export * from '@agnes/cordis'

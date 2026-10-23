@@ -29,8 +29,8 @@ export {
 import { RELEASE_EXTENSION_IDS } from '@agnes/package-manager'
 
 /**
- * An extension that exists only at runtime, one instance per resource (an MCP server): stage 2b,
- * D107′. Its spec and manifest are supplied by the composition layer instead of being read from a
+ * An extension that exists only at runtime, one instance per resource (an MCP server).
+ * Its spec and manifest are supplied by the composition layer instead of being read from a
  * package on disk, and it is loaded through the row-owned builtin facade. The row id is
  * `ext:<spec.id>`, and the row owns whatever the factory opens: unmounting the row closes it.
  *

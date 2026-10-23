@@ -14,7 +14,7 @@ import { pluginPage, pluginPageId } from './route.js'
 const LOCAL_SOURCES = new Set(['file', 'local', 'workspace', 'path'])
 
 /**
- * A finished install or update check, as a page: 「插件 › 安装「<name>」」. It opens by itself when the
+ * A finished install or update check, as a page: 「Plugins › Install 「<name>」」. It opens by itself when the
  * check is done (in place of the add form or the marketplace entry that asked), back cancels it,
  * and it closes once the confirmed operation has finished. A failure stays on it with a retry.
  */

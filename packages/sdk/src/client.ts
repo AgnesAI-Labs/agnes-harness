@@ -451,7 +451,7 @@ export class Client {
   }
 
   /**
-   * Web client modules contributed by installed packages (design WC2/WC3). The page calls `list`
+   * Web client modules contributed by installed packages. The page calls `list`
    * directly; `read` is for the launcher's asset proxy — the path stays in the `/plugins/` URL
    * space and the daemon answers only from its immutable snapshots.
    */

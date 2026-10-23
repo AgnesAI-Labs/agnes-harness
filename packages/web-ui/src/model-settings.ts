@@ -12,8 +12,8 @@ const THINKING_LABEL_KEYS: Record<ThinkingLevel, string> = {
 }
 
 /**
- * 会话级模型配置的取词与取值规则。composer 的模型面板与账号级默认值表单共用这一份，
- * 所以这里只放纯函数：界面由调用方渲染（面板走宿主 DOM，账号表单走 settings 控制器）。
+ * Pure session-model settings translation and value rules, shared by the composer model panel and
+ * account defaults form. Callers render the UI: host DOM for the panel, settings controller for the form.
  */
 export function modelThinkingOptions(map?: Record<string, string>, t: Translate = fallbackT) {
   return [
@@ -34,13 +34,13 @@ export function parseContextBudget(value: string): number | undefined {
 
 const BUDGET_PRESETS = [32_000, 64_000, 128_000, 256_000, 512_000, 1_000_000] as const
 
-/** 面板给出的预算预设：只保留落在「最小可用预算 到 模型容量」之间的档位。 */
+/** Panel budget presets: keep only values between the minimum usable budget and model capacity. */
 export function contextBudgetPresets(capacity: number): number[] {
   const minimum = minimumContextBudget(capacity)
   return BUDGET_PRESETS.filter((tokens) => tokens >= minimum && tokens <= capacity)
 }
 
-/** Token 数的紧凑写法：32000 显示 32K，1000000 显示 1M，非整千的容量留一位小数。 */
+/** Compact token counts: 32000 → 32K, 1000000 → 1M; non-thousand capacities keep one decimal place. */
 export function contextBudgetLabel(tokens: number): string {
   if (tokens >= 1_000_000) return `${Number((tokens / 1_000_000).toFixed(1))}M`
   if (tokens >= 1000) return `${Number((tokens / 1000).toFixed(1))}K`

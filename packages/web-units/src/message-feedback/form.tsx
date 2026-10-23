@@ -29,7 +29,7 @@ const OVERFLOW = { adjustX: 1, adjustY: 1, shiftX: true, shiftY: true } as unkno
 
 /**
  * One click records the rating and opens a small popover for an optional reason and note; closing
- * it (完成, Escape or a click elsewhere) saves them. Clicking the pressed rating again withdraws it.
+ * it (Done, Escape or a click elsewhere) saves them. Clicking the pressed rating again withdraws it.
  */
 export function MessageFeedback({
   sessionId,
@@ -40,7 +40,7 @@ export function MessageFeedback({
   sessionId: string
   target: FeedbackTarget
   openEvidence(candidateId: string): void
-  /** Opens 插件 → 待审阅, where a drafted suggestion waits for review. */
+  /** Opens Plugins → Pending review, where a drafted suggestion waits for review. */
   openReview?(): void
 }) {
   const { t } = useFeedbackText()
@@ -215,7 +215,7 @@ export function MessageFeedback({
       .finally(settle)
   }
 
-  /** Escape and 完成 hand focus back to the rating; a click elsewhere leaves it where it went. */
+  /** Escape and Done hand focus back to the rating; a click elsewhere leaves it where it went. */
   function close(returnFocus: boolean) {
     const rating = open
     if (!rating) return

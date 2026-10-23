@@ -265,8 +265,8 @@ export function SettingsState({
 }
 
 /**
- * A read in progress, the shared way (DESIGN v4 「统一加载」): nothing for 200 ms, then quiet grey lines,
- * and 「仍在读取…」 only after 3 s. What is being read is announced, not printed on its own line.
+ * A read in progress, the shared way: nothing for 200 ms, then quiet grey lines,
+ * and 「Still reading…」 only after 3 s. What is being read is announced, not printed on its own line.
  */
 function LoadingState({ children }: { children?: ReactNode }) {
   const [phase, setPhase] = useState<'hidden' | 'shown' | 'slow'>('hidden')
@@ -400,7 +400,7 @@ export function SettingsDetails({
   )
 }
 /**
- * A setting only a few people change. It exists on the page only while 「显示高级设置」 is on; then it
+ * A setting only a few people change. It exists on the page only while 「Show advanced settings」 is on; then it
  * is a dashed card marked "Advanced" whose header states the current value.
  */
 export function SettingsAdvanced({

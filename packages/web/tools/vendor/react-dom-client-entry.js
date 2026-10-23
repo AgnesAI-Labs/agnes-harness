@@ -1,4 +1,4 @@
-// WC5 vendor 入口垫片：/vendor/react-dom-client.js（react-dom/client 公开导出面）。
+// Shared vendor entry shim: /vendor/react-dom-client.js (react-dom/client public exports).
 import ReactDOMClient from 'react-dom/client'
 
 export const { createRoot, hydrateRoot } = ReactDOMClient

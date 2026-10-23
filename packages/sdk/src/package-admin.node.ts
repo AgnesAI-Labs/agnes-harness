@@ -40,7 +40,7 @@ export type PackageAdminRpc = Readonly<{
 type Disposer = () => void
 
 export type PackageOperationSubscriptionOptions = {
-  /** Polling preserves progress recovery across reconnects until PM5 supplies progress notifications. */
+  /** Polling preserves progress recovery across reconnects until progress notifications are available. */
   intervalMs?: number
   signal?: AbortSignal
   onError?: (error: unknown) => void

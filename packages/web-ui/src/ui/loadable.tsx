@@ -36,7 +36,7 @@ function Placeholder({ shape, slow }: { shape: LoadableShape; slow: boolean }) {
 
 /**
  * The one way a read shows: nothing for the first 200 ms, then a quiet placeholder (its shape is
- * optional), and 「仍在读取…」 after 3 s. A failure shows its reason and 重试 without removing what
+ * optional), and 「Still reading…」 after 3 s. A failure shows its reason and Retry without removing what
  * was already there. Content arrives with a 160 ms fade (none under reduced motion).
  */
 export function Loadable({

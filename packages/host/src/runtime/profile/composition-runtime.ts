@@ -65,7 +65,7 @@ import { describeCapabilitySession } from './session-capability-view.js'
 
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
 
-/** Composition selects a container; W7 continues to own generations, leases and durable pins. */
+/** Composition selects a container; runtime generation management continues to own generations, leases and durable pins. */
 export async function createCompositionHost(
   profile: ResolvedProfile,
   options: HostOptions,

@@ -3,7 +3,7 @@ import type { LocaleVars } from '@agnes/web-client'
 
 export { shouldShowEmptyState } from './conversation-visibility.js'
 
-/** 渲染时取词：宿主传 `LocaleService#t` 的稳定包装，禁止缓存返回值跨渲染。 */
+/** Translate at render time using the host's stable `LocaleService#t` wrapper; never cache results across renders. */
 export type Translate = (key: string, vars?: LocaleVars) => string
 
 export type ComposerPresentation = {
@@ -90,7 +90,7 @@ export function canSubmitComposer(
   return state.connected && state.hasSession && !state.sending && !state.stopping && !state.loading
 }
 
-/** 档位在界面上按首字母大写显示，与后台的 `ThinkingLevel` 小写取值区分开。 */
+/** Capitalize effort labels in the UI, distinct from lowercase backend `ThinkingLevel` values. */
 export function thinkingLevelLabel(level: ThinkingLevel): string {
   return level.charAt(0).toUpperCase() + level.slice(1)
 }

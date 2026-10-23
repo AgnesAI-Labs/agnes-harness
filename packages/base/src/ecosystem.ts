@@ -204,7 +204,7 @@ const bundled = {
     createToolsWebExtension(init.searchProvider ?? officialSearchProvider(init)),
   'agnes/compaction': (): BundledPlugin => compactionExtension,
   'agnes/privacy': (init: SeamInitContext): BundledPlugin => privacyFactory(init),
-  // Cross-server deferred-tool search plus the ready-Skill listing (design §3.9, D123). Host hands it
+  // Cross-server deferred-tool search plus the ready-Skill listing. Host hands it
   // a live Skill view; MCP servers themselves are per-server rows, never an ecosystem extension.
   'agnes/mcp-search': (init: SeamInitContext): BundledPlugin =>
     mcpSearchExtension({

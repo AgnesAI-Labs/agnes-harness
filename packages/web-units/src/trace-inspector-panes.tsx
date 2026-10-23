@@ -251,7 +251,7 @@ export function ToolArgs({
   )
 }
 
-/** A failed call's recorded error, shown before anything else in «结果». */
+/** A failed call's recorded error, shown before anything else in «Result». */
 export function ToolError({ row }: { row: TraceRow }) {
   return (
     <TraceCard title={traceText('trace.card.error')} testId="trace-tool-error">
@@ -394,7 +394,7 @@ export function AnswersTable({ answers }: { answers: ReadonlyArray<readonly [str
   )
 }
 
-/** «用量»: this call's tokens, its place in the session's billing order, and the request's tokens. */
+/** «Usage»: this call's tokens, its place in the session's billing order, and the request's tokens. */
 export function UsagePane({
   row,
   metrics,

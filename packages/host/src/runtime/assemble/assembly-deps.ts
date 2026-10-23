@@ -121,7 +121,7 @@ export type AssembleDeps = HostPaths &
     skillContribution?: SkillCordisService
     /**
      * Trusted Host-owned media composition. The caller must supply explicit, reviewed byte/pixel
-     * limits; Host deliberately has no product defaults until P0 evidence freezes them. Omission
+     * limits; Host deliberately has no product defaults until production evidence freezes them. Omission
      * preserves the legacy text-only path, and cannot mint auxiliary-vision admission.
      */
     requestMedia?: KernelOptions['requestMedia']

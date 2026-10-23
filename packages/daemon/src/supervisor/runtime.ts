@@ -67,7 +67,7 @@ export async function startSupervisor(
   /** Process-internal lifecycle hook used by deterministic idle-recovery verification. */
   evictIdleNow(): number
   /** Process-internal lifecycle hook used by deterministic worker-replacement verification: '@shared'
-   *  is kept up from daemon start (P1) and so never idle-evicted, but a session must still recover
+   *  is kept up from daemon start and so never idle-evicted, but a session must still recover
    *  cleanly when it is replaced (crash, restart) - this forces that without waiting for one. */
   retireSharedWorkerNow(): boolean
   socketPath: string

@@ -80,7 +80,7 @@ for (const [id, group, pane, navigationId, key, order] of [
 }
 
 /**
- * 运行详情 under 集成: a subpage of technical records, each opening in place. The runtime catalog is
+ * Runtime details under Integrations: a subpage of technical records, each opening in place. The runtime catalog is
  * cached when the subpage opens and revalidated on window focus.
  */
 function RuntimeDetails({ c, t }: { c: RuntimeSettingsContext; t: UiExtensionContext['t'] }) {

@@ -39,8 +39,8 @@ export async function buildWeb(
   await buildPresentations()
   if (options.clean !== false) await rm(out, { recursive: true, force: true })
   await mkdir(out, { recursive: true })
-  // WC5：平台共享单例说明符。宿主 app 与（未来的）插件模块都经 import map 解析到 /vendor/* 的
-  // 同一份实例；app.js 打包时保持这些说明符为外部导入。
+  // Shared platform singleton specifiers: the host app and future plugin modules resolve through
+  // the import map to the same /vendor/* instances; keep these imports external in app.js.
   const metafiles: BuildResult[] = []
   metafiles.push(
     await build({
@@ -74,9 +74,9 @@ export async function buildWeb(
       metafile: true,
     }),
   )
-  // WC5：平台共享单例 /vendor/*。React 入口与外部化 React 的 UI vendor 分开构建；React 的代码只
-  // 存在于共享入口/chunk 一份，antd、conversation、web-client 经 import map 引用同一套 React 说明符。产物落在
-  // /vendor/ 命名空间，web-server 按固定文件名 + chunk 哈希模式放行。
+  // Shared /vendor/* singletons: build React entries separately from UI vendors that externalize React.
+  // React code exists once in shared entries/chunks; antd, conversation and web-client reference the same React
+  // specifiers through the import map. web-server allows fixed filenames and hashed chunks under /vendor/.
   const vendorOptions = {
     ...(options.development ? {} : productionWebOptions),
     outdir: join(out, 'vendor'),

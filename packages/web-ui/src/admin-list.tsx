@@ -27,7 +27,7 @@ export type SurfaceLinkItem = Readonly<{
   mount: string
 }>
 
-/** 行内主动作。label/disabled 由壳按权限与忙碌态推导，run 是壳的确认流程入口。 */
+/** Inline primary action. The shell derives label/disabled from permissions and busy state; run enters its confirmation flow. */
 export type RowAction = Readonly<{
   label: string
   disabled: boolean
@@ -42,7 +42,7 @@ export type OrphanPinItem = Readonly<{
   snapshotId: string
 }>
 
-/** 孤儿运行时 pin 区：逐条释放或一键全释放，逐条错误就地显示。整块替换骨架 section 的子节点。 */
+/** Orphan runtime pins: release individually or all at once, with per-item errors inline. Replaces the skeleton section children. */
 export function OrphanPins({
   pins,
   errors,
@@ -108,7 +108,7 @@ export function OrphanPins({
   )
 }
 
-/** 目录页保留兼容性提示；已安装页不再显示内部状态灯。 */
+/** Keep compatibility hints on the catalog page; the installed page no longer shows internal status lights. */
 function CatalogCompatibility({ item }: { item: PackageCatalogDescriptor }): JSX.Element {
   const { t } = useUiText(ADMIN_LIST_LOCALE_NAMESPACE, adminListLocaleCatalog)
   const unsupported = item.compatibility === 'unsupported'

@@ -10,7 +10,7 @@ type Shared = {
 }
 const journals = new Map<string, Shared>()
 
-/** Code generations share one AR1 writer; storage calls use a still-retained Host adapter. */
+/** Code generations share one decision-journal writer; storage calls use a still-retained Host adapter. */
 export function retainProfileJournal(
   key: string,
   profileId: string,

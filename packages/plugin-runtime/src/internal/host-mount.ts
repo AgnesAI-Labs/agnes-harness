@@ -13,7 +13,7 @@ type BuiltinInput = Readonly<{
   ownerPackage?: string
 }>
 
-/** Host-private builtin source. D74 trusts the desired row's existing mount identity. */
+/** Host-private builtin source. Builtin mounting trusts the desired row's existing mount identity. */
 export function createBuiltinRowMountFactory(
   options: Readonly<{
     allowedRowIds: ReadonlySet<string>

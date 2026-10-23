@@ -135,8 +135,8 @@ export function renderPluginView(this: PluginAdminViewContext): void {
     return
   }
   const { context, loading } = this.state
-  // 通知条/树状态/恢复横幅是骨架上的单行文本节点，命令式赋值即可；真正的手工业（列表行、
-  // 详情体、对话框内容）全部在下面的 React 区域里。
+  // Notices, tree status and recovery banners are single-line skeleton text nodes assigned imperatively; list rows,
+  // detail bodies and dialog contents all live in the React regions below.
   this.recovery.hidden = !context?.readOnly
   this.layout.dataset.detail = String(this.hasDetail())
   const { message: noticeMessage, kind: noticeKind, tree: treeText } = notice.call(this)
@@ -395,7 +395,7 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
       renderRegion(this.detail, <UiLocaleProvider source={this.locale} />)
       return
     }
-    // 不传焦点目标：render 每 1.2 秒被刷新触发一次，抢焦点会打断弹窗里的输入。
+    // Pass no focus target: refresh renders every 1.2 seconds and stealing focus would interrupt dialog input.
     setDialog(this.detail, true)
     renderRegion(
       this.detail,
@@ -430,7 +430,7 @@ export function renderDetailPluginView(this: PluginAdminViewContext): void {
     )
     return
   }
-  // 不传焦点目标：render 每 1.2 秒被刷新触发一次，抢焦点会打断弹窗里的操作。
+  // Pass no focus target: refresh renders every 1.2 seconds and stealing focus would interrupt dialog interaction.
   setDialog(this.detail, true)
   const purpose = resolvePluginMetadata(item.metadata, this.locale.getSnapshot())
   const name = purpose?.displayName ?? item.id
@@ -513,7 +513,7 @@ export function renderConfirmPluginView(this: PluginAdminViewContext): void {
             .then(() => this.closeConfirm())
             .catch((error: unknown) => this.showError(error))
             .finally(() => {
-              // 确认框在失败路径保持打开：按钮必须复位为可重试，而不是停在置灰。
+              // Keep confirmation open on failure: restore the button for retry rather than leaving it disabled.
               this.confirmActionDisabled = false
               this.renderConfirm()
             })

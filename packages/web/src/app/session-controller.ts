@@ -93,10 +93,10 @@ export function createSessionController(
     context.sessionPending = true
     context.draftingNew = false
     context.renderControls()
-    // 投影与转录区都保留到新投影就绪：加载期间旧画面继续显示（body.session-switching
-    // 半透明提示，状态栏「正在准备会话」），不经历「清空 → 空白 → 填充」的闪屏，
-    // 也避免 `body:has(#transcript:empty)` 把布局跳进空态模式。
-    // 会话区若因切换而重挂载，不会再回放上一会话的转录（见 boot.tsx），先显示新会话的预览/加载态。
+    // Retain projection and transcript until the new projection is ready: keep the old view during loading (translucent
+    // body.session-switching and Preparing session status), avoiding clear → blank → fill flicker and preventing
+    // `body:has(#transcript:empty)` from switching the layout to empty-state mode.
+    // If switching remounts the conversation region, show the new session preview/loading state instead of replaying old text (boot.tsx).
     context.moduleSessionId = undefined
     context.clientModules.session.setSession(undefined)
     if (!options.created) context.permissionMode = 'workspace'
@@ -258,8 +258,8 @@ export function createSessionController(
             // Retire pending preview reads before installing the live projection in this same turn.
             context.readOnlyController.clearPreview()
             context.readOnlyController.verify(id, epoch)
-            // 首投影就绪后才换代：清空转录区、写入新会话内容、同步审批卡与控件，
-            // 都发生在同一次同步序列里，旧→新之间没有空白帧。
+            // Swap only after the first projection is ready: clear transcript, fill new contents, sync approvals and controls
+            // in one synchronous sequence, with no blank frame between the old and new views.
             context.renderer.reset()
             context.approvalSearch = 'idle'
             // Nothing replays the history any more, so the last loaded turn stands for it.
@@ -341,7 +341,7 @@ export function createSessionController(
           // The failed binding is already unavailable to the composer.
         }
         if (!context.sessionBinding.isCurrent(epoch)) return
-        // 加载失败没有可保留的画面：清空转录区回到空态，错误走 #notice。
+        // Loading failed with no view to retain: clear transcript to the empty state and report the error through #notice.
         context.renderer.reset()
         if (options.preserveSending) {
           context.draftingNew = true

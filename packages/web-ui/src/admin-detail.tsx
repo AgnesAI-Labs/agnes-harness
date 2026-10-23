@@ -14,7 +14,7 @@ export type DetailActionSpec = Readonly<{
   disabled?: boolean
   title?: string
   ariaLabel?: string
-  /** 链接型动作渲染为 `<a target="_blank" rel="noopener">`，保留既有 `.plugin-surface-link` 契约。 */
+  /** Render link actions as `<a target="_blank" rel="noopener">`, preserving the `.plugin-surface-link` contract. */
   href?: string
   /** The detail tab this action belongs to; ungrouped actions stay in the footer. */
   group?: 'overview' | 'trust' | 'versions'
@@ -48,8 +48,8 @@ function BlockersSection({
 }
 
 /**
- * 详情/操作模态的内容体。`<dialog>` 元素留在宿主骨架里（showModal、Escape、焦点归还
- * 由壳管理）；React 只替换 dialog 的子节点，所以这里没有 dialog 元素本身。
+ * Detail/action modal body. The host skeleton retains `<dialog>` and manages showModal, Escape
+ * and focus restoration. React replaces only its children, so this component has no dialog element.
  */
 export function DetailContent({
   heading,

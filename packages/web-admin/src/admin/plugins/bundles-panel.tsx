@@ -40,11 +40,11 @@ export function reorder<T>(list: readonly T[], from: number, to: number): T[] {
 }
 
 /**
- * Agent FDE (formerly 组合包): the business agents applied to every new session, in order. The row
+ * Agent FDE (formerly bundles): the business agents applied to every new session, in order. The row
  * states how many are on; its subpage lists them by name with a switch each, reorders them by
  * dragging (or Alt+↑/↓ on the handle), marks ones whose plugin is gone, and shows the composed
  * result. The order only takes effect after the background service restarts, so it is applied with
- * one explicit 「应用」.
+ * one explicit 「Apply」.
  */
 export function BundlesPanel({
   api,

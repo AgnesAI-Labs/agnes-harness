@@ -6,7 +6,7 @@ import type {
   PluginRuntimeState,
 } from '@agnes/web-foundation/client-modules/runtime-status'
 
-/** 名册里的 ready 模块（WC3 modules 的最小子集）。 */
+/** Minimal subset of ready modules from the client roster. */
 export interface ReadyClientModule {
   clientId?: string
   presentationRoleBindings?: ModuleIdentity['presentationRoleBindings']
@@ -37,7 +37,7 @@ export interface ReadyClientModule {
   publicConfig?: Readonly<Record<string, unknown>>
 }
 
-/** 名册状态项（WC3 statuses 的最小子集）。 */
+/** Minimal subset of status entries from the client roster. */
 export interface ClientModuleStatus {
   packageId: string
   installedRevision: string
@@ -55,7 +55,7 @@ export interface ClientRoster {
   rowAliases?: Readonly<Record<string, string>>
 }
 
-/** 名册源契约；P1a 落地后由 SDK 客户端实现。 */
+/** Roster source contract, implemented by the SDK client. */
 export interface RosterSource {
   /** Profile, session and selection generation of the current query scope. */
   identity?(): string
@@ -64,7 +64,7 @@ export interface RosterSource {
   list(): Promise<ClientRoster>
 }
 
-/** 可注入的模块导入器（测试用 fake 替换；生产是动态 import）。 */
+/** Injectable module importer: fake in tests, dynamic import in production. */
 export type ModuleImporter = (url: string) => Promise<unknown>
 
 export type ClientModuleLifecycleStep =
@@ -105,7 +105,7 @@ export interface ReconcilerOptions {
   onLifecycleStep?: (step: ClientModuleLifecycleStep, packageId: string) => Promise<void> | void
   /** Stylesheet preparation is injectable so lifecycle tests do not need a browser network stack. */
   prepareStyles?: ClientStylePreparer
-  /** 超时可注入以便测试；毫秒。 */
+  /** Injectable timeouts for tests, in milliseconds. */
   timeouts?: { import?: number; styles?: number; apply?: number; dispose?: number }
 }
 
@@ -135,7 +135,7 @@ export interface PackageState {
 
 export interface ClientReconciler {
   reconcileNow(): Promise<void>
-  /** 名册失效提示（WC10 packages_changed 的语义：推送是失效提示，必须重读名册）。 */
+  /** Roster invalidation hint: packages_changed requires rereading the roster. */
   invalidate(): Promise<void>
   /**
    * Reload one snapshot named by the public reload hints.  The hint is never trusted as an asset URL: we
@@ -147,7 +147,7 @@ export interface ClientReconciler {
   snapshot(): Map<string, PluginRuntimeState>
 }
 
-/** 供宿主判断模块身份的类型出口（clientModule config 的形状）。 */
+/** Type export for host module identity checks, matching clientModule config. */
 export type ClientModuleConfig = ModuleIdentity & Record<string, unknown>
 
 export type { ClientContext }

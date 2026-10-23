@@ -1,8 +1,8 @@
 import type { LocaleCatalog } from './index.js'
 
 /**
- * 失败回合错误行的文案。14 类失败各一句固定话术，加动作、详情、过程记录标签。
- * 宿主与独立消费方共用同一组键值，因此单独成表而不塞进对话区目录。
+ * Failed-turn error text: one fixed message for each of 14 failure kinds plus action, detail and process labels.
+ * Hosts and standalone consumers share these keys, kept in a separate table from the conversation catalog.
  */
 export const turnErrorLocaleCatalog = {
   en: {

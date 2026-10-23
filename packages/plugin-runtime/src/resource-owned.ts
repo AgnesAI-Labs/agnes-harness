@@ -3,7 +3,7 @@
  * daemon skips them when composing targets, and Host refuses a package that declares one.
  *
  * `ext:agnes/mcp-client` has no supplier any more: MCP servers became one Host row each and the
- * extension was retired (design 2026-09-21-resource-rows-design.md §3.9, D121). It stays listed on
+ * extension was retired. It stays listed on
  * purpose: removing it changes the target format that published and persisted targets carry, and
  * would let a package claim the id. Retire it only with a target format version change.
  */

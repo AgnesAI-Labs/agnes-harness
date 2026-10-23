@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
 
-/** 输入框、会话编排提示与工作区/会话错误说明。宿主组装 view 时渲染取词。 */
+/** Composer, session orchestration hints and workspace/session errors. The host translates while assembling the view. */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
     'composer.child.title': 'Sub-agents / workflows',

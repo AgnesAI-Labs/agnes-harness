@@ -55,7 +55,7 @@ const TIMEOUT_SECONDS = [5, 10, 30, 60] as const
 const sameConfig = (a: AutoReviewConfig, b: AutoReviewConfig) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
- * 审批 under 权限与安全: whether AI reviews low-risk actions first (one switch), the review rules as a
+ * Approvals under Permissions and security: whether AI reviews low-risk actions first (one switch), the review rules as a
  * subpage (reviewer model, tools as chips, kinds of action as toggles, highest risk, per-session
  * limit, timeout in seconds), and the rules added from approvals as a subpage where each can be
  * removed or all cleared. Each change saves itself.

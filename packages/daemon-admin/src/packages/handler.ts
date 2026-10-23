@@ -420,7 +420,7 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
   const checked = validatePackageAdminData('PackageCatalogDescriptor', value)
   if (!checked.ok) throw rpcError('SEMANTIC_REJECTED', { reason: 'E_PACKAGE_STATE' })
   const entry = checked.value as PackageCatalogDescriptor
-  // Keep the canonical PM4 source. It is the inspect/install input, and its grammar already rejects
+  // Keep the canonical package source. It is the inspect/install input, and its grammar already rejects
   // credentials and absolute file paths; replacing it with a display label would break the digest
   // confirmation binding.
   const projected: PackageCatalogDescriptor = {

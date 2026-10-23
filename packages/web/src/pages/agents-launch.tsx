@@ -31,7 +31,7 @@ type Launch = {
   work?: ApplicationWorkRequest
 }
 
-/** Installed agents use the B2 ticket facade. Catalog-only agents use B2's public install flow,
+/** Installed agents use the agent launch-ticket facade. Catalog-only agents use the public agent install flow,
  * which also prepares, reviews and starts through that facade after package admission.
  */
 export function useAgentLaunch(data: BusinessAgentsData) {

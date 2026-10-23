@@ -14,8 +14,8 @@ export type PopoverPositionOptions = Readonly<{
   preferredWidth: number
   preferredHeight: number
   /**
-   * `'fixed'`（默认）把面板宽度钉在 `preferredWidth`。`'content'` 交给 CSS 决定宽度，
-   * 只按视口钳制——菜单项内容短的时候，钉死宽度会在右侧留出一大片空白。
+   * `'fixed'` (default) pins the panel width to `preferredWidth`. `'content'` lets CSS choose the width,
+   * clamped only to the viewport, avoiding empty space to the right of short menu items.
    */
   width?: 'fixed' | 'content'
   /** Minimum distance kept from every viewport edge. */
@@ -50,8 +50,8 @@ export function positionPopover(
     padding,
     Math.min(triggerBounds.left, Math.max(padding, viewportWidth - width - padding)),
   )
-  // scrollHeight 是内容真实需要的高度。面板身上可能还带着上一轮（或 CSS）设下的
-  // max-height，只量 getBoundingClientRect 会量到被截过的值，翻边判断和落点都会偏。
+  // scrollHeight is the actual content height. The panel may still have a max-height from CSS or the previous pass;
+  // getBoundingClientRect alone measures the clipped height, skewing side selection and placement.
   const measuredHeight =
     Math.max(panel.getBoundingClientRect().height, panel.scrollHeight) || options.preferredHeight
   const roomAbove = Math.max(0, triggerBounds.top - padding - gap)
@@ -96,8 +96,8 @@ export function positionSubmenu(
     return positionPopover(parent, panel, { ...options, width: 'fixed', gap })
   const opensRight = toRight + width + padding <= viewportWidth || toLeft < padding
   const left = Math.max(padding, Math.min(opensRight ? toRight : toLeft, viewportWidth - width - padding))
-  // scrollHeight 是内容真实需要的高度。面板身上可能还带着上一轮（或 CSS）设下的
-  // max-height，只量 getBoundingClientRect 会量到被截过的值，据此摆位就会一直压不住底部。
+  // scrollHeight is the actual content height. The panel may still have a max-height from CSS or the previous pass;
+  // getBoundingClientRect alone measures the clipped height, leaving the bottom overflowing when positioning from it.
   const measuredHeight =
     Math.max(panel.getBoundingClientRect().height, panel.scrollHeight) || options.preferredHeight
   const height = Math.min(measuredHeight, options.preferredHeight, viewportHeight - padding * 2)

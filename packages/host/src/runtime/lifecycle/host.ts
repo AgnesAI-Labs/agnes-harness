@@ -204,7 +204,7 @@ export interface Host {
   applyModelProfile(next: ResolvedProfile): Promise<void | HostPublicationReport>
   readonly profile: ResolvedProfile
   readonly kernel: Kernel
-  /** ERRATA B19: cli reads it for `agnes models` and for --probe. */
+  /** cli reads it for `agnes models` and for --probe. */
   readonly provider: Assembled['provider']
   readonly providerFingerprint: string | null
   /** Read-only descriptions from the currently assembled adapter registry. */

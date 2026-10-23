@@ -8,7 +8,7 @@ const NO_MOTION = { motionName: '' }
 
 /**
  * The composer's workspace chip: a popover to search and switch the draft's workspace, with
- * 「新建工作区…」 handing over to the full dialog, and an × that leaves the workspace for a chat.
+ * 「New workspace…」 handing over to the full dialog, and an × that leaves the workspace for a chat.
  */
 export function WorkspacePickerControl({
   workspace,

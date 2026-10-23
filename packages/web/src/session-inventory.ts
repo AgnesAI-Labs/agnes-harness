@@ -42,7 +42,7 @@ export function currentMode(view: {
   return view.mode ?? (view.filter === 'archived' ? 'archived' : 'active')
 }
 
-/** Hosts that implement `setMode` can show the flat list and 「全部对话」; older ones cannot. */
+/** Hosts that implement `setMode` can show the flat list and 「All conversations」; older ones cannot. */
 export function supportsModes(history: { setMode?: unknown }): boolean {
   return typeof history.setMode === 'function'
 }

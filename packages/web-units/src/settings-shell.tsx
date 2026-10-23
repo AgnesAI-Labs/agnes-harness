@@ -127,7 +127,7 @@ function SettingsRegistryNavigation({
 
 /**
  * A narrow screen shows one settings page at a time; its way back to the list is the same breadcrumb
- * as every page: 「‹ 设置 › 当前页」. The settings controller listens on `#settings-back`.
+ * as every page: 「‹ Settings › Current page」. The settings controller listens on `#settings-back`.
  */
 function SettingsBackCrumbs({
   store,

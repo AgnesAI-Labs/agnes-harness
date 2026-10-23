@@ -67,7 +67,7 @@ export function toPresetView(
   const input = validatedPresetViewInput(doc)
   readCommandTable(doc)
   const view = readRoutedPreset(input)
-  // ERRATA B20: `--park` may not write a preset field through the flags layer, so cli hands it down
+  // `--park` may not write a preset field through the flags layer, so cli hands it down
   // as a Profile limit and the conversion to a session knob happens here.
   if (opts.park === 1 || opts.limits?.['approval.park'] === 1)
     return { ...view, approval: { ...view.approval, onUnavailable: 'park' } }
