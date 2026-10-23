@@ -188,7 +188,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/compact')?.args).toBe('[instructions]')
     expect(slashCommand('/plan')?.args).toBe('[on|off|status|pending|instruction]')
     expect(slashCommand('/preset')?.args).toBe('<name>')
-    expect(slashCommand('/theme')?.args).toBe('[auto|light|dark|mono]')
+    expect(slashCommand('/theme')?.args).toBe('[auto|light|dark|mono|custom:<name>]')
     expect(slashCommand('/model')?.args).toBe('[<slot> <route>/<model> [<thinking>]]')
     expect(slashCommand('/install')?.args).toBe('<source>|confirm|cancel')
     expect(slashCommand('/package')?.args).toContain('rollback')
@@ -282,7 +282,7 @@ describe('runSlash', () => {
       })
       expect(app.themeName).toBe('dark')
       await expect(runSlash(app, '/theme neon')).resolves.toMatchObject({
-        text: 'usage: /theme [auto|light|dark|mono]',
+        text: 'usage: /theme [auto|light|dark|mono|custom:<name>]',
       })
       expect(ep.calls.some((call) => call.method.includes('theme'))).toBe(false)
     } finally {

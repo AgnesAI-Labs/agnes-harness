@@ -1,11 +1,13 @@
+import { customName } from './custom-theme.js'
 import { readPrefs, updatePrefs } from './prefs.js'
 import type { TuiThemeName } from './theme.js'
 
-/** What the user chose; `auto` follows the terminal background and is what no saved choice means. */
-export type ThemePreference = TuiThemeName | 'auto'
+/** What the user chose; `auto` follows the terminal background and is what no saved choice means. `custom:<name>` is a file in tui-themes/. */
+export type ThemePreference = TuiThemeName | 'auto' | `custom:${string}`
 
 export function readTheme(path?: string): ThemePreference {
   const name = readPrefs(path).theme
+  if (typeof name === 'string' && customName(name) !== undefined) return name as ThemePreference
   return name === 'light' || name === 'mono' || name === 'dark' ? name : 'auto'
 }
 

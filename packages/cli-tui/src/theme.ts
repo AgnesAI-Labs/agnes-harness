@@ -44,22 +44,27 @@ export type ThemedAnsi = Omit<Ansi, 'fg' | 'bg'> & {
 /** Mutable session theme. Components keep one façade, so switching takes effect on the next frame. */
 export class TuiTheme {
   private current: TuiThemeName
+  private tones: Partial<Record<Tone, string>> | undefined
 
-  constructor(name: TuiThemeName = 'dark') {
+  constructor(name: TuiThemeName = 'dark', tones?: Partial<Record<Tone, string>>) {
     this.current = name
+    this.tones = tones
   }
 
   get name(): TuiThemeName {
     return this.current
   }
 
-  set(name: TuiThemeName): void {
+  /** `tones` are a custom theme's replacements for the palette's own; mono has no colours to replace. */
+  set(name: TuiThemeName, tones?: Partial<Record<Tone, string>>): void {
     this.current = name
+    this.tones = tones
   }
 
   /** What `tone` looks like in the current theme; mono has no colours. */
   colour(tone: Tone): Colour | undefined {
-    return this.current === 'mono' ? undefined : PALETTE[this.current][tone]
+    if (this.current === 'mono') return undefined
+    return (this.tones?.[tone] as Colour | undefined) ?? PALETTE[this.current][tone]
   }
 
   /** The brand gradient, darkest first; mono has none. */

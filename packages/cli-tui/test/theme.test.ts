@@ -1,10 +1,12 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { type Colour, CURSOR_MARKER, createAnsi } from '../src/ansi.js'
+import { listCustomThemes, loadCustomTheme } from '../src/custom-theme.js'
 import { PALETTE, type Tone } from '../src/palette.js'
 import { TuiTheme } from '../src/theme.js'
+import { ThemeController } from '../src/theme-controller.js'
 import { readTheme, saveTheme } from '../src/theme-preference.js'
 import { ThemePicker } from '../src/views/theme-picker.js'
 
@@ -109,5 +111,155 @@ describe('TUI themes', () => {
     theme.set('mono')
     expect(ansi.fg('accent', ansi.bg(PALETTE.light.success, 'x'))).toBe('x')
     expect(theme.colour('accent')).toBeUndefined()
+  })
+
+  describe('custom colour themes', () => {
+    const scratch = () => {
+      const dir = mkdtempSync(join(tmpdir(), 'agh-custom-theme-'))
+      const themes = join(dir, 'tui-themes')
+      mkdirSync(themes)
+      return { dir, themes, path: join(dir, 'tui-theme.json') }
+    }
+    const open = (path: string, tier: 'truecolor' | 'none' = 'truecolor', locale = 'en') => {
+      const notices: string[] = []
+      const repaints: number[] = []
+      const themes = new ThemeController({
+        term: { background: 'dark' },
+        path,
+        locale,
+        base: createAnsi(tier),
+        notice: (text) => void notices.push(text),
+        repaint: () => void repaints.push(1),
+      })
+      return { themes, notices, repaints, ansi: themes.theme.ansi(createAnsi(tier)) }
+    }
+
+    it('applies a valid theme over the palette it extends, and keeps the other preference keys', () => {
+      const { dir, themes, path } = scratch()
+      try {
+        writeFileSync(
+          join(themes, 'ocean.json'),
+          JSON.stringify({ extends: 'light', tones: { accent: '#00AAFF' } }),
+        )
+        writeFileSync(path, JSON.stringify({ theme: 'dark', statusLine: ['model'] }))
+        const t = open(path)
+        expect(listCustomThemes(themes)).toEqual(['ocean'])
+        expect(t.themes.set('custom:ocean')).toBe('theme custom:ocean · preference saved')
+        expect(t.themes.theme.name).toBe('light')
+        expect(t.ansi.fg('accent', 'x')).toBe('\x1b[38;2;0;170;255mx\x1b[39m')
+        expect(t.themes.theme.colour('fg')).toBe(PALETTE.light.fg)
+        expect(t.repaints).toHaveLength(1)
+        expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({
+          theme: 'custom:ocean',
+          statusLine: ['model'],
+        })
+        expect(open(path).themes.theme.colour('accent')).toBe('#00aaff')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('refuses the whole file for each kind of invalid input and says why, changing nothing', () => {
+      const { dir, themes, path } = scratch()
+      try {
+        const files: Record<string, string> = {
+          unknownTone: JSON.stringify({ tones: { sparkle: '#000000' } }),
+          unknownKey: JSON.stringify({ colours: {} }),
+          badValue: JSON.stringify({ tones: { accent: '#0af', fg: '#ffffff' } }),
+          notHex: JSON.stringify({ tones: { accent: 'red' } }),
+          badBase: JSON.stringify({ extends: 'mono' }),
+          notObject: '[]',
+          broken: '{nope',
+          big: JSON.stringify({ tones: { accent: '#000000' }, pad: 'x'.repeat(9000) }),
+        }
+        for (const [name, text] of Object.entries(files))
+          writeFileSync(join(themes, `${name.toLowerCase()}.json`), text)
+        const t = open(path)
+        const reasons: Record<string, string> = {
+          unknowntone: 'unknown key "sparkle"',
+          unknownkey: 'unknown key "colours"',
+          badvalue: '"accent" must be a colour like #rrggbb',
+          nothex: '"accent" must be a colour like #rrggbb',
+          badbase: '"extends" must be "dark" or "light"',
+          notobject: 'the file must be a JSON object',
+          broken: 'the file is not valid JSON',
+          big: 'the file is over 8 KB',
+        }
+        for (const [name, reason] of Object.entries(reasons))
+          expect(t.themes.set(`custom:${name}`)).toContain(`theme custom:${name} not applied: ${reason}`)
+        expect(t.themes.theme.name).toBe('dark')
+        expect(t.themes.theme.colour('accent')).toBe(PALETTE.dark.accent)
+        expect(t.repaints).toEqual([])
+        expect(existsSync(path)).toBe(false)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('refuses bad names, symbolic links and missing files', () => {
+      const { dir, themes, path } = scratch()
+      try {
+        writeFileSync(join(dir, 'outside.json'), '{}')
+        symlinkSync(join(dir, 'outside.json'), join(themes, 'linked.json'))
+        writeFileSync(join(themes, 'Upper.json'), '{}')
+        writeFileSync(join(themes, 'fine.json'), '{}')
+        expect(listCustomThemes(themes)).toEqual(['fine'])
+        for (const name of ['../outside', 'Upper', 'a/b', '', 'x'.repeat(33)])
+          expect(loadCustomTheme(themes, name)).toEqual({ problem: { code: 'name' } })
+        expect(loadCustomTheme(themes, 'linked')).toEqual({ problem: { code: 'symlink' } })
+        expect(loadCustomTheme(themes, 'gone')).toEqual({ problem: { code: 'missing' } })
+        expect(loadCustomTheme(themes, 'fine')).toEqual({ theme: { base: 'dark', tones: {} } })
+        expect(open(path).themes.set('custom:../outside')).toContain('not applied')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('starts on auto and says so once when the saved custom theme is gone, in the user language', () => {
+      const { dir, path } = scratch()
+      try {
+        writeFileSync(path, JSON.stringify({ theme: 'custom:gone' }))
+        const t = open(path, 'truecolor', 'zh-CN')
+        expect(t.themes.theme.name).toBe('dark')
+        t.themes.follow()
+        t.themes.follow()
+        expect(t.notices).toEqual([
+          'theme custom:gone 无法加载（tui-themes 文件夹里没有这个文件），改用 auto',
+        ])
+        expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual({ theme: 'custom:gone' })
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('stays uncoloured in a colourless terminal even with a custom theme chosen', () => {
+      const { dir, themes, path } = scratch()
+      try {
+        writeFileSync(
+          join(themes, 'loud.json'),
+          JSON.stringify({ tones: { accent: '#ff0000', bg: '#000001' } }),
+        )
+        const t = open(path, 'none')
+        t.themes.set('custom:loud')
+        expect(t.ansi.fg('accent', 'x')).toBe('x')
+        expect(t.themes.theme.frame(createAnsi('none'), ['x'], 3, 1)).toEqual(['x'])
+        const mono = new TuiTheme('mono', { accent: '#ff0000' })
+        expect(mono.ansi(createAnsi('truecolor')).fg('accent', 'x')).toBe('x')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('lists the user themes after the built-in ones in the picker', () => {
+      const choose = vi.fn()
+      const picker = new ThemePicker(new TuiTheme('dark').ansi(createAnsi('none')), 'en', choose)
+      picker.show('custom:ocean', ['ocean', 'sunset'])
+      const text = picker.render(80).join('\n')
+      expect(text).toContain('Custom · ocean ✓ current')
+      expect(text).toContain('Custom · sunset')
+      picker.handleInput('\x1b[B')
+      picker.handleInput('\r')
+      expect(choose).toHaveBeenCalledWith('custom:sunset')
+    })
   })
 })

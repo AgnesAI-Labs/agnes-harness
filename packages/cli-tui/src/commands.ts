@@ -482,8 +482,11 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         app.showThemePicker()
         return {}
       }
-      if (args.length !== 1 || !['auto', 'light', 'dark', 'mono'].includes(name ?? ''))
-        return { text: 'usage: /theme [auto|light|dark|mono]' }
+      if (
+        args.length !== 1 ||
+        !(['auto', 'light', 'dark', 'mono'].includes(name ?? '') || name?.startsWith('custom:'))
+      )
+        return { text: 'usage: /theme [auto|light|dark|mono|custom:<name>]' }
       return { text: app.setTheme(name as ThemePreference) }
     }
     case '/notify': {

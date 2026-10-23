@@ -90,7 +90,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   {
     name: '/theme',
-    args: '[auto|light|dark|mono]',
+    args: '[auto|light|dark|mono|custom:<name>]',
     descriptionKey: 'commands.theme',
     summaryKey: 'commands.themeSummary',
   },

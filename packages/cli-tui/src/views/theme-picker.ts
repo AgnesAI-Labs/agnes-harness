@@ -12,14 +12,22 @@ export class ThemePicker implements Component {
     private readonly locale: string,
     private readonly choose: (name: ThemePreference) => void,
   ) {}
-  show(current: ThemePreference): void {
+  /** The built-in themes, then `custom` (the names of the user's theme files). */
+  show(current: ThemePreference, custom: readonly string[] = []): void {
     const locale = this.locale
-    const names: ThemePreference[] = ['auto', 'light', 'dark', 'mono']
+    const names: ThemePreference[] = [
+      'auto',
+      'light',
+      'dark',
+      'mono',
+      ...custom.map((n) => `custom:${n}` as const),
+    ]
     const labels = [
       tt('theme.auto', locale),
       tt('theme.light', locale),
       tt('theme.dark', locale),
       tt('theme.mono', locale),
+      ...custom.map((name) => tt('theme.custom', locale, { name })),
     ]
     const select = new FilterSelect({
       options: names.map((id, i) => ({
