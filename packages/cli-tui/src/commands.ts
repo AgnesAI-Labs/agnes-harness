@@ -559,6 +559,10 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return memorySlash(app, line)
     case '/bg':
       return bgSlash(app, line)
+    case '/todos': {
+      const note = args.length > 1 ? undefined : app.planPanel.setMode(args[0])
+      return { text: note ?? tt('todos.usage', locale) }
+    }
     case '/terminal-setup':
       return terminalSetupSlash(app, line)
     case '/refine':

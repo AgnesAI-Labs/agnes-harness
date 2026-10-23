@@ -233,4 +233,10 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.memorySummary',
   },
   { name: '/btw', args: '<question>', descriptionKey: 'commands.btw', summaryKey: 'commands.btwSummary' },
+  {
+    name: '/todos',
+    args: '[auto|show|hide]',
+    descriptionKey: 'commands.todos',
+    summaryKey: 'commands.todosSummary',
+  },
 ]

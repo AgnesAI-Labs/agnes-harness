@@ -996,6 +996,67 @@ it('draws plan, subagent and job cards from the projected timeline', async () =>
   }
 })
 
+it('pins the plan above the prompt and /todos hide takes it off', async () => {
+  const SID = 'agnes:local:default:cli:dm:plan-panel'
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 1,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [
+        {
+          kind: 'tool',
+          id: 'p',
+          seq: 1,
+          toolUseId: 'p',
+          status: 'completed',
+          summary: '',
+          name: 'update_plan',
+          argsPreview: JSON.stringify({
+            plan: [
+              { step: 'read the code', status: 'completed' },
+              { step: 'write the panel', status: 'in_progress' },
+            ],
+          }),
+        },
+      ],
+    }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 24 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const count = async () =>
+      (await screenOf(term, 80, 24)).filter((line) => line.includes('[>] write the panel'))
+    // The plan card in the conversation and the pinned panel just above the prompt's top rail.
+    await vi.waitFor(async () => expect(await count()).toHaveLength(2))
+    const lines = await screenOf(term, 80, 24)
+    expect(lines.findLastIndex((line) => line.includes('[>] write the panel'))).toBe(
+      lines.findIndex((line) => line.includes('╭─')) - 1,
+    )
+    await app.runInput('/todos hide')
+    await vi.waitFor(async () => expect(await count()).toHaveLength(1))
+    await app.runInput('/todos')
+    await vi.waitFor(async () => expect(await count()).toHaveLength(2))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 it('shows contextual F1 actions only when projected and dispatches the selected action', async () => {
   const SID = 'agnes:local:default:cli:dm:hints'
   const calls: Array<{ requestSeq: number; action: string; data?: unknown }> = []

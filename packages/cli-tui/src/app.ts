@@ -1,5 +1,5 @@
 import type { ContentBlock, UITimeline } from '@agnes/protocol'
-import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
+import { DEFAULT_BRANDING, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
 import type { TuiAppOptions } from './app-options.js'
 import { ApprovalSettle } from './approval-settle.js'
@@ -9,12 +9,10 @@ import { applyCommandResult } from './command-result.js'
 import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
-import { writeComposerMemoryFile } from './composer-memory.js'
 import { DraftStash } from './draft-stash.js'
 import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
-import { type ExternalEditorConfig, editDraft } from './external-editor.js'
-import type { TuiExtraOptions } from './extra-options.js'
+import { editDraft } from './external-editor.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { FooterRenderer } from './footer-renderer.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
@@ -36,7 +34,6 @@ import type { ResourceCommandKind, TuiResourceController } from './resource-cont
 import { rootInput } from './root-input.js'
 import { type ActionItem, collectSlots } from './slots.js'
 import { SurfaceInbox } from './surface-inbox.js'
-import type { Terminal } from './terminal.js'
 import { resolveAuto } from './terminal-background.js'
 import { TerminalSignals } from './terminal-signals.js'
 import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
@@ -49,13 +46,14 @@ import { Composer } from './views/composer.js'
 import { Hints } from './views/hints.js'
 import { localCommandView } from './views/local-command.js'
 import { ModelPicker } from './views/model-picker.js'
+import { PlanPanel } from './views/plan-panel.js'
 import { SessionPicker } from './views/session-picker.js'
 import { StatusBar } from './views/status-bar.js'
 import { ThemePicker } from './views/theme-picker.js'
 import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { UsagePanel } from './views/usage-panel.js'
-import { WelcomeController, type WelcomeOptions } from './welcome-controller.js'
-import { readWorkspaceInfo, tildePath, type WorkspaceProbe, workspaceRefresher } from './workspace-info.js'
+import { WelcomeController } from './welcome-controller.js'
+import { readWorkspaceInfo, tildePath, workspaceRefresher } from './workspace-info.js'
 
 export { formatTuiErrorNotice } from './error-notice.js'
 
@@ -105,6 +103,7 @@ export class TuiApp {
   private readonly themePicker: ThemePicker
   private themePreference: ThemePreference
   readonly usagePanel: UsagePanel
+  readonly planPanel: PlanPanel
   private readonly pager: PagerOverlay
   private readonly modelPicker: ModelPicker
   private readonly sessionPicker: SessionPicker
@@ -305,6 +304,7 @@ export class TuiApp {
       mouse: this.mouse,
       changed: () => this.stopped || this.renderer.requestRender(),
     })
+    this.planPanel = new PlanPanel(ansi, locale)
     this.packageController = new PackageController(o.controlClient, () => this.profile)
     this.composer = new Composer(this.editor, ansi, locale)
     this.composer.setWorkspace({ root: tildePath(this.cwd), subpath: '' })
@@ -323,6 +323,7 @@ export class TuiApp {
       this.live,
       this.loader,
       this.modal,
+      this.planPanel,
       this.composer,
       // Transient command dialogs belong immediately above the footer, not in the conversation.
       // Closed pickers render zero rows, preserving the normal rule/editor/status adjacency.
@@ -659,6 +660,7 @@ export class TuiApp {
     void this.surfaces.sync()
     this.o.onTimeline?.(value, options.window?.hasEarlier)
     this.cards.sync(value)
+    this.planPanel.apply(value)
     this.signals.watch(value.nodes)
     const approvals = value.nodes.filter((node) => node.kind === 'approval')
     const approvalIds = new Set(approvals.map((node) => node.id))
@@ -794,6 +796,7 @@ export class TuiApp {
     this.sessionPicker.close()
     this.usagePanel.close()
     this.editor.resetUndo()
+    this.planPanel.reset()
     this.offPermission?.()
     await this.projection.stop()
     // stop() may have run before this switch's session arrived or during the await above. It stops only the

@@ -1,5 +1,6 @@
 import type { ActionId } from './keymap.js'
 import type { Locale } from './locale.js'
+import { CHROME_DICT, type ChromeKey } from './locale-chrome.js'
 import { PAGER_DICT, type PagerKey } from './locale-pager.js'
 import { QUICK_DICT, type QuickAction, type QuickKey } from './locale-quick.js'
 
@@ -38,6 +39,7 @@ export type KeysKey =
   | 'commands.keys'
   | 'commands.keysSummary'
   | PagerKey
+  | ChromeKey
 
 export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
   en: {
@@ -146,6 +148,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'commands.keys': 'List the key bindings in force, marking overrides from keybindings.json',
     'commands.keysSummary': 'List key bindings',
     ...PAGER_DICT.en,
+    ...CHROME_DICT.en,
   },
   'zh-CN': {
     ...QUICK_DICT['zh-CN'],
@@ -253,5 +256,6 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'commands.keys': '列出当前生效的键位，并标出 keybindings.json 的覆盖',
     'commands.keysSummary': '列出键位',
     ...PAGER_DICT['zh-CN'],
+    ...CHROME_DICT['zh-CN'],
   },
 }

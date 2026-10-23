@@ -1,5 +1,6 @@
 import type { UINode, UISpan, UITimeline } from '@agnes/protocol'
 import { tt } from '../locale-extended.js'
+import type { Tone } from '../palette.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
@@ -10,6 +11,21 @@ export type CardKind = 'plan' | 'agent' | 'job' | 'workflow'
 export type CardFacts = { status?: string; durationMs?: number }
 
 export type PlanStep = { text: string; status: 'todo' | 'doing' | 'done' | 'blocked' }
+
+/** The mark and tone of a step's state; the plan card and the pinned plan panel draw the same ones. */
+export const STEP_MARK: Record<PlanStep['status'], [string, Tone]> = {
+  todo: ['[ ]', 'faint'],
+  doing: ['[>]', 'accent'],
+  done: ['[x]', 'success'],
+  blocked: ['[!]', 'danger'],
+}
+
+/** The newest plan call of a timeline with its steps, or undefined when there is none or its preview is cut. */
+export function latestPlan(timeline: UITimeline): { id: string; steps: PlanStep[] } | undefined {
+  const node = timeline.nodes.findLast((n): n is ToolNode => n.kind === 'tool' && PLAN_TOOLS.has(n.name))
+  const steps = node && planSteps(node)
+  return node && steps ? { id: node.id, steps } : undefined
+}
 
 // `todo` is the plan tool this repository ships; `update_plan` is the name other plan tools use.
 const PLAN_TOOLS = new Set(['update_plan', 'todo'])

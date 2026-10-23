@@ -8,14 +8,7 @@ import { displayWidth } from '../terminal.js'
 import { paintsColour, type ThemedAnsi, TuiTheme } from '../theme.js'
 import type { ToolDetailState } from '../tool-detail.js'
 import { type DiffInput, diffFromArgsText, renderDiff, statsMark } from './diff.js'
-import {
-  type CardFacts,
-  type CardKind,
-  cardHead,
-  cardKind,
-  type PlanStep,
-  planSteps,
-} from './special-card.js'
+import { type CardFacts, type CardKind, cardHead, cardKind, planSteps, STEP_MARK } from './special-card.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
@@ -73,12 +66,6 @@ const STATUS_GLYPH: Record<string, string> = {
 // Without colour the running and failed diamonds would be indistinguishable from a finished one.
 const COLOURLESS_GLYPH: Record<string, string> = { running: '◈', failed: '✗', error: '✗' }
 const LABEL_WIDTH = 'Enforcement:'.length
-const STEP_MARK: Record<PlanStep['status'], [string, Tone]> = {
-  todo: ['[ ]', 'faint'],
-  doing: ['[>]', 'accent'],
-  done: ['[x]', 'success'],
-  blocked: ['[!]', 'danger'],
-}
 // A collapsed plan card shows this many steps; Ctrl-O shows them all.
 const COLLAPSED_STEPS = 10
 // A collapsed card previews this many screen rows of its result.
