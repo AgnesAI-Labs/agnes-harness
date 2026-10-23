@@ -127,17 +127,10 @@ export class PermissionModal implements Component {
     if (key.name === 'char' && /^[a-z]$/.test(key.ch ?? '') && !(this.options.letters?.() ?? true))
       return false
     if (action === 'approval-dismiss') question.finish({ unanswered: 'detached' })
-    else if (
-      action === 'approval-allow-once' ||
-      action === 'approval-allow-always' ||
-      action === 'approval-reject'
-    ) {
-      const kind =
-        action === 'approval-reject'
-          ? 'reject_once'
-          : action === 'approval-allow-once'
-            ? 'allow_once'
-            : 'allow_always'
+    // `a` decides nothing here: the scope of an agent's "always allow" is the agent's, so it takes its number.
+    else if (action === 'approval-allow-always') return true
+    else if (action === 'approval-allow-once' || action === 'approval-reject') {
+      const kind = action === 'approval-reject' ? 'reject_once' : 'allow_once'
       const index = options.findIndex((option) => option.kind === kind)
       const option = options[index]
       if (option && (kind === 'reject_once' || this.shown(question, index)))
@@ -238,7 +231,6 @@ export class PermissionModal implements Component {
     const letters = new Map<number, string>(
       [
         ['allow_once', 'y'],
-        ['allow_always', 'a'],
         ['reject_once', 'n'],
       ].map(([kind, letter]) => [choices.findIndex((option) => option.kind === kind), letter as string]),
     )

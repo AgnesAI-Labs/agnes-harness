@@ -398,7 +398,6 @@ describe('key bindings: approval modal', () => {
   })
   it.each([
     ['y allows once', 'y', { optionId: 'a' }],
-    ['a allows always', 'a', { optionId: 'al' }],
     ['n rejects', 'n', { optionId: 'r' }],
   ])('%s', async (_n, key, want) => {
     const { answer } = await run([key])
@@ -414,6 +413,15 @@ describe('key bindings: approval modal', () => {
     expect(modal.count).toBe(1)
     modal.handleInput('\x1b', false)
     expect(await answer).toEqual({ unanswered: 'detached' })
+  })
+  it('a decides nothing: an always-allow takes its number', async () => {
+    const modal = new PermissionModal(vi.fn(), { maxRows: () => 12 })
+    const answer = modal.ask(request, { signal: new AbortController().signal })
+    expect(modal.render(80).join('\n')).not.toContain('[a]')
+    expect(modal.handleInput('a')).toBe(true)
+    expect(modal.count).toBe(1)
+    modal.handleInput('2')
+    expect(await answer).toEqual({ optionId: 'al' })
   })
   it('leaves the letters to the prompt while it holds a draft; numbers still decide', async () => {
     const modal = new PermissionModal(vi.fn(), { maxRows: () => 12, letters: () => false })
