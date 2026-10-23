@@ -653,6 +653,49 @@ it('listRuntimePins enumerates every pin regardless of purpose', async () => {
   expect((await m.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['active-v1'])
 })
 
+it('releaseRuntimePins releases a batch in order and keeps earlier releases on a stale pin', async () => {
+  const m = await installTrusted()
+  const v1 = await identity()
+  const active = await m.pinRuntimeSnapshot(profile, {
+    pinId: 'active-v1',
+    operationId: 'enable-v1',
+    packageId: id,
+    purpose: 'active',
+    selector: { kind: 'installed', expectedIntegrity: v1.integrity, expectedTreeIntegrity: v1.treeIntegrity },
+  })
+  const snapshotId = active.snapshot.snapshotId
+  for (const pinId of ['turn-a', 'turn-b', 'turn-c'])
+    await m.pinRuntimeSnapshot(profile, {
+      pinId,
+      operationId: `op-${pinId}`,
+      packageId: id,
+      purpose: 'turn',
+      selector: {
+        kind: 'snapshot',
+        snapshotId,
+        expectedIntegrity: v1.integrity,
+        expectedTreeIntegrity: v1.treeIntegrity,
+      },
+    })
+  const ids = async () => (await m.listRuntimePins(profile)).map((pin) => pin.pinId).sort()
+
+  await expect(
+    m.releaseRuntimePins(profile, [
+      { pinId: 'turn-a', expectedSnapshotId: snapshotId },
+      { pinId: 'turn-b', expectedSnapshotId: `sha256-${'0'.repeat(64)}` },
+      { pinId: 'turn-c', expectedSnapshotId: snapshotId },
+    ]),
+  ).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  expect(await ids()).toEqual(['active-v1', 'turn-b', 'turn-c'])
+
+  await m.releaseRuntimePins(profile, [
+    { pinId: 'turn-b', expectedSnapshotId: snapshotId },
+    { pinId: 'turn-missing', expectedSnapshotId: snapshotId },
+    { pinId: 'turn-c', expectedSnapshotId: snapshotId },
+  ])
+  expect(await ids()).toEqual(['active-v1'])
+})
+
 // Batched pins: two installed packages so a batch contains two real snapshot-creating transactions.
 const idTwo = 'acme/runtime-snapshot-two'
 async function installBoth() {

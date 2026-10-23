@@ -90,8 +90,8 @@ function fixture() {
         return pin
       }),
     ),
-    releaseRuntimePin: vi.fn(async (_dir: string, request: { pinId: string }) => {
-      active.delete(request.pinId)
+    releaseRuntimePins: vi.fn(async (_dir: string, requests: readonly { pinId: string }[]) => {
+      for (const request of requests) active.delete(request.pinId)
     }),
     collectRuntimeSnapshots: vi.fn(async () => ({ removed: [], retained: [] })),
   } as unknown as PackageManager
@@ -135,6 +135,28 @@ describe('runtime active pin coordinator', () => {
       expect(f.active.size).toBe(1)
     },
   )
+
+  it('releases every unreferenced active pin in one call', async () => {
+    const f = fixture()
+    // Pins left by an earlier build: a Worker reads their state unlocked while they are released.
+    const stale = ['e', 'f', 'g'].map((digit) => {
+      const old = `sha256-${digit.repeat(64)}`
+      const pin = {
+        pinId: activeRuntimePinId({ packageId, integrity: old }),
+        operationId: 'old',
+        purpose: 'active',
+        snapshot: { snapshotId: old, packageId, integrity: old },
+      } as unknown as RuntimePin
+      f.active.set(pin.pinId, pin)
+      return pin.pinId
+    })
+    await f.coordinator.collect()
+    expect(f.manager.releaseRuntimePins).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(f.manager.releaseRuntimePins).mock.calls[0]![1].map((request) => request.pinId)).toEqual(
+      stale,
+    )
+    expect(f.active.size).toBe(0)
+  })
 
   it('releases a new pin after a failed probe without publishing the target', async () => {
     const f = fixture()
@@ -341,8 +363,8 @@ describe('concurrent reconcile publication', () => {
           active.set(pin.pinId, pin)
           return pin
         }),
-      releaseRuntimePin: async (_directory: string, request: { pinId: string }) => {
-        active.delete(request.pinId)
+      releaseRuntimePins: async (_directory: string, requests: readonly { pinId: string }[]) => {
+        for (const request of requests) active.delete(request.pinId)
       },
       collectRuntimeSnapshots: async () => ({ removed: [], retained: [] }),
     } as unknown as PackageManager
