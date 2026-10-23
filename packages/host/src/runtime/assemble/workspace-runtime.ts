@@ -366,6 +366,7 @@ export function createWorkspaceRuntimeFactory(
             ...(ctx.profile.adapters?.secrets.path ? { secretsDir: ctx.profile.adapters.secrets.path } : {}),
           }),
           semantics: sessionFence.semantics,
+          ...(binding.extraRoots.length ? { extraRoots: binding.extraRoots } : {}),
           staticConfig: sandboxConfig,
           canonicalize: (path, options) => sessionFence.fs.canonicalize(path, options),
         })

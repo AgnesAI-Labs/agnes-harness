@@ -26,6 +26,7 @@ export async function reserveOwnedSession(input: {
   principalId: string
   sessionKey: string
   canonicalRoot: string
+  extraRoots?: readonly string[]
   hasSessionFact: boolean
 }): Promise<{ envelope: WorkspaceBindingEnvelope; reservedNew: boolean }> {
   let reservedNew = false
@@ -51,7 +52,11 @@ export async function reserveOwnedSession(input: {
       throw new SessionAdmissionDenied(input.sessionKey)
     }
   }
-  const envelope = await input.workspaces.authorizeAndBind(input.sessionKey, input.canonicalRoot)
+  const envelope = await input.workspaces.authorizeAndBind(
+    input.sessionKey,
+    input.canonicalRoot,
+    input.extraRoots,
+  )
   return { envelope, reservedNew }
 }
 

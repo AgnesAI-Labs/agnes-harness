@@ -763,6 +763,42 @@ it('carries validated loop, preset, permission and ordered bundles on new-sessio
   }
 })
 
+it('sends additionalDirectories only to a daemon that advertises them, and otherwise sends nothing', async () => {
+  for (const advertised of [false, true]) {
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: advertised ? { sessionCapabilities: { additionalDirectories: {} } } : {},
+      }),
+      'session/new': () => ({ sessionId: 'dirs-session' }),
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const created = c.createSession({ cwd: '/w', additionalDirectories: ['/lib/a', '/lib/b'] })
+      if (advertised) {
+        await created
+        expect(f.calls.find((call) => call.method === 'session/new')?.params).toMatchObject({
+          cwd: '/w',
+          additionalDirectories: ['/lib/a', '/lib/b'],
+        })
+      } else {
+        await expect(created).rejects.toThrow('does not support adding directories')
+        expect(f.calls.some((call) => call.method === 'session/new')).toBe(false)
+      }
+      await c.createSession({ cwd: '/w' })
+      expect(f.calls.filter((call) => call.method === 'session/new').at(-1)?.params).not.toHaveProperty(
+        'additionalDirectories',
+      )
+    } finally {
+      await c.close()
+    }
+  }
+})
+
 it('starts the load idle clock after initialization and cancels a stalled restore without creating a handle', async () => {
   vi.useFakeTimers()
   let finish!: () => void

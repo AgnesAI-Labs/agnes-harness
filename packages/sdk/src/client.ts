@@ -69,6 +69,7 @@ import { type PermissionHandler, type PermissionRequest, unansweredPermission } 
 import { type ReconnectOptions, Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
 import { Session } from './session.js'
+import { requireAdditionalDirectories } from './session-directories.js'
 import { resendPending, submitForkCommand } from './submit.js'
 import { textFor } from './text.js'
 import { inprocTransport, type RpcEndpoint } from './transport/inproc.js'
@@ -176,6 +177,23 @@ type Schema = Parameters<typeof validateAgainst>[0]
 
 // Reserved for generated-but-unlisted methods; empty means no call bypasses METHODS validation.
 const UNLISTED: Record<string, { params?: Schema; result?: Schema }> = {}
+
+/** What `session/new` takes from a client. */
+export type NewSessionOptions = {
+  cwd: string
+  preset?: string
+  /** `read-only`, `workspace-write`, `full-access`, or `default` for the deployment default. */
+  permission?: string
+  agent?: string
+  agentDigest?: string
+  bundles?: readonly string[]
+  /** Owner text appended to this new session's system prompt (1 to 8192 characters); never a replacement. */
+  systemPromptAppend?: string
+  sessionKey?: string
+  loop?: LoopSelection
+  /** Extra directories for this new session's file fence; the daemon must advertise support. */
+  additionalDirectories?: readonly string[]
+}
 
 export class Client {
   private readonly sessionHistory = new Map<string, 'full' | 'none'>()
@@ -479,19 +497,7 @@ export class Client {
       this.call('_agnes/v1/clientModules.callEffect', input),
   }
 
-  createSession(options: {
-    cwd: string
-    preset?: string
-    /** `read-only`, `workspace-write`, `full-access`, or `default` for the deployment default. */
-    permission?: string
-    agent?: string
-    agentDigest?: string
-    bundles?: readonly string[]
-    /** Owner text appended to this new session's system prompt (1 to 8192 characters); never a replacement. */
-    systemPromptAppend?: string
-    sessionKey?: string
-    loop?: LoopSelection
-  }): Promise<Session> {
+  createSession(options: NewSessionOptions): Promise<Session> {
     return this.session.new(options)
   }
 
@@ -509,17 +515,9 @@ export class Client {
       ),
     runtime: (id: string): Promise<SessionRuntimeDescriptor> =>
       this.call('_agnes/v1/session.runtime', { sessionId: id }),
-    new: async (o: {
-      cwd: string
-      preset?: string
-      permission?: string
-      agent?: string
-      agentDigest?: string
-      bundles?: readonly string[]
-      systemPromptAppend?: string
-      sessionKey?: string
-      loop?: LoopSelection
-    }): Promise<Session> => {
+    new: async (o: NewSessionOptions): Promise<Session> => {
+      const extra = o.additionalDirectories ?? []
+      if (extra.length) requireAdditionalDirectories((await this.initialize()).capabilities)
       const meta: Record<string, unknown> = {}
       if (o.agent !== undefined) {
         meta.agent = parseAgentRef(o.agent)
@@ -542,6 +540,7 @@ export class Client {
       if (o.sessionKey) meta.sessionKey = o.sessionKey
       const r = await this.call<{ sessionId: string }>('session/new', {
         cwd: o.cwd,
+        ...(extra.length ? { additionalDirectories: [...extra] } : {}),
         mcpServers: [],
         _meta: { [META_KEY]: meta },
       })

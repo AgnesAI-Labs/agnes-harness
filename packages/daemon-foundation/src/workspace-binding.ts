@@ -3,6 +3,8 @@ export type WorkspaceBindingRecord = Readonly<{
   workspaceId: string
   revision: number
   canonicalRoot: string
+  /** Canonical, registered extra directories admitted at creation; absent means none. */
+  extraRoots?: readonly string[]
 }>
 
 declare const workspaceBindingBrand: unique symbol

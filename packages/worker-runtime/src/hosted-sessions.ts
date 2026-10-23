@@ -1,4 +1,9 @@
-import type { Host, HostSession, WorkspaceBinding } from '@agnes/host'
+import {
+  type Host,
+  type HostSession,
+  sameWorkspaceBindingAuthority,
+  type WorkspaceBinding,
+} from '@agnes/host'
 import { rpcError, type WorkerGeneration } from '@agnes/protocol'
 import { handleCommand, type WorkerResourceSlot } from './commands.js'
 import { closeSessionFileUploads } from './file-upload.js'
@@ -564,10 +569,7 @@ export class HostedSessions {
     const actualParent = session.d.log.parent
     if (
       !actualBinding ||
-      actualBinding.sessionKey !== binding.sessionKey ||
-      actualBinding.workspaceId !== binding.workspaceId ||
-      actualBinding.authorityRevision !== binding.authorityRevision ||
-      actualBinding.canonicalRoot !== binding.canonicalRoot ||
+      !sameWorkspaceBindingAuthority(actualBinding, binding) ||
       actualParent?.key !== parent?.key ||
       actualParent?.boundarySeq !== parent?.boundarySeq
     )

@@ -1,16 +1,18 @@
 import { mkdirSync } from 'node:fs'
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { FsPolicy } from '@agnes/core'
 import { withSessionFileAccess } from '@agnes/host-common/session-file-access'
 import { CliWorkspaceAuthority } from '@agnes/host-common/workspace-authority'
+import { compileWorkspacePolicy, normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
 import type { RemoteWorkspacePool } from '@agnes/sandbox-remote'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ExecAdapter } from '../../src/adapters/exec.js'
 import { createPlatform } from '../../src/adapters/platform.js'
 import { createLoopbackTransport, type RemoteTransport } from '../../src/adapters/remote-transport.js'
 import { createSessionWorkspaceAdapterFactory } from '../../src/adapters/session-workspace.js'
+import { WorkspaceHookLoader } from '../../src/workspace-hook-loader.js'
 
 const roots: string[] = []
 // guards-allow-platform: the loopback spawns remote POSIX commands on this machine.
@@ -65,6 +67,58 @@ describe('session workspace adapters', () => {
       })
       expect(() => fence.bind(missing), dir).toThrow(/omits the host integrity floor/)
     }
+    await fence.close()
+    await handle.close()
+  })
+
+  it('opens a bound extra directory to reads and writes while its .git, secrets and the rest stay refused', async () => {
+    const [root, extra, outside, data, home] = await Promise.all(
+      ['root', 'extra', 'outside', 'data', 'home'].map(async (name) =>
+        realpath(await mkdtemp(join(tmpdir(), `agnes-ws-extra-${name}-`))),
+      ),
+    )
+    roots.push(root!, extra!, outside!, data!, home!)
+    await mkdir(join(extra!, '.git'))
+    await writeFile(join(extra!, '.git', 'config'), 'x')
+    await writeFile(join(extra!, 'lib.txt'), 'library')
+    await writeFile(join(outside!, 'other.txt'), 'other')
+    await mkdir(join(extra!, '.agh'))
+    await writeFile(
+      join(extra!, '.agh', 'hooks.json'),
+      JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: 'exit 2' }] }] } }),
+    )
+    const factory = createSessionWorkspaceAdapterFactory({
+      platform: createPlatform(),
+      exec: { run: vi.fn<ExecAdapter['run']>(), killAll: async () => undefined },
+    })
+    const handle = await factory.openWorkspace(new CliWorkspaceAuthority(root!).bind('extra'))
+    const fence = await factory.openFence(handle)
+    const plan = await compileWorkspacePolicy({
+      canonicalRoot: fence.root,
+      extraRoots: [extra!],
+      dataDir: data!,
+      homeDir: home!,
+      semantics: fence.semantics,
+      staticConfig: normalizeSandboxStaticConfig({}),
+      canonicalize: (path, options) => fence.fs.canonicalize(path, options),
+    })
+    await fence.bind(plan.policy)
+    await expect(fence.fs.read(join(extra!, 'lib.txt'))).resolves.toEqual(new TextEncoder().encode('library'))
+    await fence.fs.write(join(extra!, 'new.txt'), new TextEncoder().encode('written'))
+    await expect(readFile(join(extra!, 'new.txt'), 'utf8')).resolves.toBe('written')
+    await expect(fence.fs.read(join(extra!, '.git', 'config'))).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+    await expect(fence.fs.write(join(extra!, '.git', 'hook'), new Uint8Array())).rejects.toMatchObject({
+      code: 'E_FS_DENIED',
+    })
+    await expect(fence.fs.read(join(outside!, 'other.txt'))).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+    // Extra directories are data only: the hook file is read from the workspace root alone, even when
+    // the extra tree carries one and the loader is told that every file is trusted.
+    const snapshot = await new WorkspaceHookLoader(
+      fence.fs,
+      () => 'r1',
+      () => true,
+    ).snapshot()
+    expect(snapshot.hooks).toEqual([])
     await fence.close()
     await handle.close()
   })

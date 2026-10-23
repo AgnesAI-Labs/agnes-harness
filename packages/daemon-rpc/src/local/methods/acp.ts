@@ -592,6 +592,7 @@ export function registerAcp(
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
+        ...(cx.workspaces.admitsExtraRoots ? { sessionCapabilities: { additionalDirectories: {} } } : {}),
         _meta: { 'ai.agnes.harness': { hardTurnBudget: true, turnMaxSteps: true, sessionOpen: true } },
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
@@ -613,7 +614,7 @@ export function registerAcp(
   ep.register('authenticate', async () => ({}))
 
   ep.register('session/new', async (params, c) => {
-    const p = params as { cwd: string; mcpServers: unknown[] }
+    const p = params as { cwd: string; mcpServers: unknown[]; additionalDirectories?: string[] }
     if (p.mcpServers.length > 0) throw rpcError('SEMANTIC_REJECTED', { reason: 'mcpServers must be empty' })
     if (
       cx.auth.config.transport === 'ws' &&
@@ -679,6 +680,8 @@ export function registerAcp(
     } catch (error) {
       throwWorkspaceRpcError(error)
     }
+    // Admitted before any key is reserved, so a refused directory leaves nothing behind.
+    const extraRoots = await cx.workspaces.admitExtraRoots(workspace.path, p.additionalDirectories ?? [])
     // Default creation reuses the canonical workspace ledger. An explicit loop needs a fresh
     // ledger because loop identity is immutable; otherwise reuse could silently select the old loop.
     // Session IDs are opaque to storage and ownership. Supplying sessionKey still reuses that exact
@@ -690,7 +693,7 @@ export function registerAcp(
             cx.host.profile,
             await cx.resolveNewSessionActor(c.conn.credential, 'session'),
             workspace.path,
-          )}${agent ? `:agent:${randomUUID()}` : loop ? `:loop:${randomUUID()}` : bundles !== undefined ? `:composition:${randomUUID()}` : ''}`
+          )}${agent ? `:agent:${randomUUID()}` : loop ? `:loop:${randomUUID()}` : bundles !== undefined ? `:composition:${randomUUID()}` : extraRoots.length ? `:dirs:${randomUUID()}` : ''}`
     const hasSessionFact =
       cx.registry.get(requestedKey) !== undefined ||
       cx.workspaces.sessionPath(requestedKey) !== undefined ||
@@ -711,6 +714,7 @@ export function registerAcp(
         principalId: c.conn.principalId,
         sessionKey: requestedKey,
         canonicalRoot: workspace.path,
+        extraRoots,
         hasSessionFact,
       })
       reservedNew = reserved.reservedNew

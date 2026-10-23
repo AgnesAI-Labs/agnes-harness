@@ -149,6 +149,8 @@ export type WorkspaceBindingFrame = Readonly<{
   workspaceId: string
   revision: number
   canonicalRoot: string
+  /** Extra directories admitted at creation; absent for bindings that have none. */
+  extraRoots?: readonly string[]
 }>
 
 export function parseWorkspaceBinding(value: unknown, sessionKey: string): WorkspaceBindingFrame {
@@ -162,7 +164,9 @@ export function parseWorkspaceBinding(value: unknown, sessionKey: string): Works
     !Number.isSafeInteger(binding.revision) ||
     (binding.revision as number) < 1 ||
     typeof binding.canonicalRoot !== 'string' ||
-    binding.canonicalRoot.length === 0
+    binding.canonicalRoot.length === 0 ||
+    (binding.extraRoots !== undefined &&
+      (!Array.isArray(binding.extraRoots) || binding.extraRoots.some((root) => typeof root !== 'string')))
   )
     throw new Error('invalid workspace binding')
   return binding as WorkspaceBindingFrame

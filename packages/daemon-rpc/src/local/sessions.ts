@@ -7,7 +7,13 @@ import {
   assertWorkspaceBindingEnvelope,
   type WorkspaceBindingEnvelope,
 } from '@agnes/daemon-foundation/storage/workspaces'
-import { type Host, type HostSession, loadSessionTitle, type WorkspaceBinding } from '@agnes/host'
+import {
+  type Host,
+  type HostSession,
+  loadSessionTitle,
+  sameWorkspaceBindingAuthority,
+  type WorkspaceBinding,
+} from '@agnes/host'
 import type { LoopSelection } from '@agnes/protocol'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 
@@ -47,12 +53,7 @@ const LISTENER_ERRORS_MAX = 100
 
 function sameBinding(a: WorkspaceBinding | undefined, b: WorkspaceBinding | undefined): boolean {
   if (!a || !b) return a === b
-  return (
-    a.sessionKey === b.sessionKey &&
-    a.workspaceId === b.workspaceId &&
-    a.authorityRevision === b.authorityRevision &&
-    a.canonicalRoot === b.canonicalRoot
-  )
+  return sameWorkspaceBindingAuthority(a, b)
 }
 
 export class SessionRegistry implements Registry<SessionEntry> {

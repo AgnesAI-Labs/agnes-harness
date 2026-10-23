@@ -1,10 +1,13 @@
 import { createHash } from 'node:crypto'
+import { posix } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { MemorySessionWorkspaces } from '../src/storage/lister.js'
 import {
   assertWorkspaceBindingEnvelope,
   MemoryWorkspaceBindings,
   MemoryWorkspaceStore,
+  SessionWorkspaceConflictError,
+  WorkspaceBindingIndex,
   WorkspaceCatalog,
   type WorkspaceDirectoryResolver,
   WorkspaceIndex,
@@ -337,3 +340,145 @@ it.each(['admit', 'reveal'])(
     expect(sessions.keys()).toEqual([])
   },
 )
+
+describe('WorkspaceCatalog extra directories', () => {
+  // Spelled without a literal home path so the secrets guard has nothing to allow.
+  const home = posix.join('/home', 'user')
+  const ssh = posix.join(home, '.ssh')
+  const protectedRoots = ['/data', ssh]
+  const all = [
+    '/repo',
+    '/shared/a',
+    '/shared/b',
+    '/shared/c',
+    '/repo/inside',
+    '/data',
+    '/data/chats',
+    home,
+    ssh,
+  ]
+  const setup = async (
+    guard: { protectedRoots: string[] } | null = { protectedRoots },
+    bindings = new MemoryWorkspaceBindings(),
+  ) => {
+    const catalog = new WorkspaceCatalog(
+      new MemoryWorkspaceStore(),
+      new MemorySessionWorkspaces(),
+      resolver(new Set(all)),
+      () => 0,
+      bindings,
+      undefined,
+      guard ?? undefined,
+    )
+    for (const path of ['/repo', '/shared/a', '/shared/b', '/repo/inside', '/data', home, ssh])
+      await catalog.add(path)
+    return catalog
+  }
+  const refusal = { data: { code: 'EXTRA_DIRECTORY_REFUSED' } }
+
+  it('refuses every directory it cannot vouch for before any binding exists', async () => {
+    const catalog = await setup()
+    const refused: Array<[string, string[], object]> = [
+      ['relative', ['shared/a'], refusal],
+      ['missing', ['/shared/missing'], refusal],
+      ['unregistered', ['/shared/c'], { data: { code: 'WORKSPACE_NOT_FOUND' } }],
+      ['data directory', ['/data'], refusal],
+      ['ssh directory', [ssh], refusal],
+      ['ancestor of both (home)', [home], refusal],
+      ['too many', Array.from({ length: 9 }, (_, i) => `/shared/n${i}`), refusal],
+    ]
+    for (const [name, paths, expected] of refused)
+      await expect(catalog.authorizeAndBind(`s-${name}`, '/repo', paths), name).rejects.toMatchObject(
+        expected,
+      )
+    expect(catalog.sessionPath('s-relative')).toBeUndefined()
+    await expect(catalog.restoreBinding('s-data directory')).rejects.toMatchObject({
+      data: { code: 'WORKSPACE_NOT_FOUND' },
+    })
+    const unguarded = await setup(null)
+    await expect(unguarded.authorizeAndBind('s', '/repo', ['/shared/a'])).rejects.toMatchObject(refusal)
+    expect(unguarded.admitsExtraRoots).toBe(false)
+    expect(catalog.admitsExtraRoots).toBe(true)
+  })
+
+  it('persists the canonical list once, inherits it on fork, and refuses a different list on restore or rebind', async () => {
+    const catalog = await setup()
+    // Duplicates and anything the workspace root already covers fall away; the rest is sorted.
+    const bound = await catalog.authorizeAndBind('s1', '/repo', [
+      '/shared/b',
+      '/repo/inside',
+      '/shared/a',
+      '/shared/b',
+    ])
+    expect(bound.extraRoots).toEqual(['/shared/a', '/shared/b'])
+    await expect(catalog.restoreBinding('s1')).resolves.toMatchObject({
+      extraRoots: ['/shared/a', '/shared/b'],
+    })
+    await expect(catalog.restoreBinding('s1', '/repo', [])).resolves.toMatchObject({
+      extraRoots: ['/shared/a', '/shared/b'],
+    })
+    await expect(catalog.restoreBinding('s1', '/repo', ['/shared/b', '/shared/a'])).resolves.toBeDefined()
+    for (const different of [['/shared/a'], ['/shared/a', '/shared/b', '/data/chats']])
+      await expect(catalog.restoreBinding('s1', '/repo', different)).rejects.toMatchObject({
+        data: { code: 'ID_CONFLICT' },
+      })
+    await expect(catalog.authorizeAndBind('s1', '/repo', ['/shared/a'])).rejects.toBeInstanceOf(
+      SessionWorkspaceConflictError,
+    )
+    await expect(catalog.authorizeAndBind('s1', '/repo')).rejects.toBeInstanceOf(
+      SessionWorkspaceConflictError,
+    )
+    const child = await catalog.authorizeAndBind('s1-child', '/repo', bound.extraRoots)
+    expect(child.extraRoots).toEqual(bound.extraRoots)
+    const plain = await catalog.authorizeAndBind('plain', '/repo')
+    expect(plain.extraRoots).toBeUndefined()
+    await expect(catalog.authorizeAndBind('plain', '/repo', ['/shared/a'])).rejects.toBeInstanceOf(
+      SessionWorkspaceConflictError,
+    )
+  })
+
+  it('stops granting an extra directory once it is no longer a registered workspace', async () => {
+    const store = new MemoryWorkspaceStore()
+    const catalog = new WorkspaceCatalog(
+      store,
+      new MemorySessionWorkspaces(),
+      resolver(new Set(all)),
+      () => 0,
+      new MemoryWorkspaceBindings(),
+      undefined,
+      { protectedRoots },
+    )
+    await catalog.add('/repo')
+    await catalog.add('/shared/a')
+    await catalog.authorizeAndBind('s', '/repo', ['/shared/a'])
+    catalog.remove(workspaceId('/shared/a'), undefined, { running: () => false, archive: () => undefined })
+    await expect(catalog.restoreBinding('s')).rejects.toMatchObject({ data: { code: 'WORKSPACE_STALE' } })
+  })
+
+  it('stores extras next to an old-shaped binding row without touching it, and never adds them later', async () => {
+    const tables = sqliteTables()
+    tables
+      .table('workspace_bindings')
+      .exec(
+        'CREATE TABLE workspace_bindings (session_key TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, revision INTEGER NOT NULL, canonical_root TEXT NOT NULL)',
+      )
+    tables
+      .table('workspace_bindings')
+      .exec("INSERT INTO workspace_bindings VALUES ('old', ?, 1, '/repo')", [workspaceId('/repo')])
+    const bindings = new WorkspaceBindingIndex(tables.table('workspace_bindings'))
+    const catalog = await setup({ protectedRoots }, bindings as never)
+    await expect(catalog.restoreBinding('old')).resolves.toMatchObject({ canonicalRoot: '/repo' })
+    expect((await catalog.restoreBinding('old')).extraRoots).toBeUndefined()
+    await expect(catalog.authorizeAndBind('old', '/repo', ['/shared/a'])).rejects.toBeInstanceOf(
+      SessionWorkspaceConflictError,
+    )
+    await catalog.authorizeAndBind('new', '/repo', ['/shared/a'])
+    const reopened = await setup(
+      { protectedRoots },
+      new WorkspaceBindingIndex(tables.table('workspace_bindings')) as never,
+    )
+    await expect(reopened.restoreBinding('new')).resolves.toMatchObject({ extraRoots: ['/shared/a'] })
+    await expect(reopened.restoreBinding('old')).resolves.toMatchObject({ canonicalRoot: '/repo' })
+    await tables.close()
+  })
+})

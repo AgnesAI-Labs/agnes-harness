@@ -28,7 +28,12 @@ export function registerSessionLoading(
   const loadSession =
     (replay: boolean): Handler =>
     async (params, call) => {
-      const p = params as { sessionId: string; cwd?: string; requestId?: string }
+      const p = params as {
+        sessionId: string
+        cwd?: string
+        additionalDirectories?: string[]
+        requestId?: string
+      }
       requireOwner(replay ? 'session/load' : 'session.open', p.sessionId)
       const controller = new AbortController()
       if (p.requestId !== undefined) loadingIds.set(controller, p.requestId)
@@ -41,7 +46,11 @@ export function registerSessionLoading(
         let entry = cx.registry.get(p.sessionId)
         const wasOpen = entry !== undefined
         try {
-          const binding = await cx.workspaces.restoreBinding(p.sessionId, p.cwd || undefined)
+          const binding = await cx.workspaces.restoreBinding(
+            p.sessionId,
+            p.cwd || undefined,
+            p.additionalDirectories,
+          )
           // Calling open for a live entry is intentional: both registries must reject a different
           // authority binding rather than ignoring it until the next restart.
           const onProgress = (progress: { verifiedSeq: number; lastSeq: number }) => {

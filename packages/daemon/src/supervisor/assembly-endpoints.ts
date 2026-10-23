@@ -212,6 +212,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
         const childBinding = await workspaceCatalog.authorizeAndBind(
           ownedChildKey,
           parentBinding.canonicalRoot,
+          parentBinding.extraRoots,
         )
         const created = await supervisorRegistry.fork({
           parent: sessionId,

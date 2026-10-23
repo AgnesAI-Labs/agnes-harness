@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { WorkspaceDirectory } from '@agnes/host-infrastructure/workspace'
 import { rpcError, type WorkspaceEntry } from '@agnes/protocol'
 import type { WorkspaceBindingEnvelope, WorkspaceBindingRecord } from '../workspace-binding.js'
+import { assertNotProtected, canonicalExtraRoots } from './extra-roots.js'
 import type { SessionWorkspacePort } from './lister.js'
 import { ensure, type TableHandle } from './table.js'
 
@@ -140,6 +141,13 @@ export interface WorkspaceBindingStore {
   keys(): string[]
 }
 
+function parseExtraRoots(raw: string): string[] {
+  const parsed: unknown = JSON.parse(raw)
+  if (!Array.isArray(parsed) || parsed.some((root) => typeof root !== 'string'))
+    throw new Error('workspace binding extra directories are corrupt')
+  return parsed as string[]
+}
+
 export class WorkspaceBindingIndex implements WorkspaceBindingStore {
   constructor(private readonly table: TableHandle) {
     ensure(
@@ -151,6 +159,15 @@ export class WorkspaceBindingIndex implements WorkspaceBindingStore {
         canonical_root TEXT NOT NULL
       )`,
     )
+    // Extra directories live beside the binding, write-once with it. A binding without a row here
+    // has none, which is what every binding written before they existed means.
+    ensure(
+      table,
+      `CREATE TABLE IF NOT EXISTS workspace_binding_extra_roots (
+        session_key TEXT PRIMARY KEY,
+        roots TEXT NOT NULL
+      )`,
+    )
   }
 
   get(sessionKey: string): WorkspaceBindingRecord | undefined {
@@ -159,8 +176,11 @@ export class WorkspaceBindingIndex implements WorkspaceBindingStore {
       workspace_id: string
       revision: number
       canonical_root: string
+      roots: string | null
     }>(
-      'SELECT session_key, workspace_id, revision, canonical_root FROM workspace_bindings WHERE session_key = ?',
+      `SELECT b.session_key, b.workspace_id, b.revision, b.canonical_root, e.roots
+         FROM workspace_bindings b LEFT JOIN workspace_binding_extra_roots e ON e.session_key = b.session_key
+        WHERE b.session_key = ?`,
       [sessionKey],
     )
     return row
@@ -169,16 +189,26 @@ export class WorkspaceBindingIndex implements WorkspaceBindingStore {
           workspaceId: row.workspace_id,
           revision: row.revision,
           canonicalRoot: row.canonical_root,
+          ...(row.roots ? { extraRoots: parseExtraRoots(row.roots) } : {}),
         }
       : undefined
   }
 
   putIfAbsent(binding: WorkspaceBindingRecord): WorkspaceBindingRecord {
-    this.table.exec(
-      `INSERT INTO workspace_bindings (session_key, workspace_id, revision, canonical_root)
-       VALUES (?, ?, ?, ?) ON CONFLICT(session_key) DO NOTHING`,
-      [binding.sessionKey, binding.workspaceId, binding.revision, binding.canonicalRoot],
-    )
+    this.table.transaction(() => {
+      // Write-once: an existing binding is never touched, so extras cannot be added to it later.
+      if (this.table.get('SELECT 1 FROM workspace_bindings WHERE session_key = ?', [binding.sessionKey]))
+        return
+      this.table.exec(
+        'INSERT INTO workspace_bindings (session_key, workspace_id, revision, canonical_root) VALUES (?, ?, ?, ?)',
+        [binding.sessionKey, binding.workspaceId, binding.revision, binding.canonicalRoot],
+      )
+      if (binding.extraRoots?.length)
+        this.table.exec('INSERT INTO workspace_binding_extra_roots (session_key, roots) VALUES (?, ?)', [
+          binding.sessionKey,
+          JSON.stringify(binding.extraRoots),
+        ])
+    })
     const persisted = this.get(binding.sessionKey)
     if (!persisted) throw new Error('workspace binding was not persisted')
     return persisted
@@ -251,6 +281,8 @@ export class WorkspaceCatalog {
     private readonly bindings: WorkspaceBindingStore = new MemoryWorkspaceBindings(),
     /** Canonical daemon-managed root for chats; listed as `kind: 'chats'` and never removable. */
     private readonly chatsRoot?: string,
+    /** Paths no extra directory may be, contain or lie inside. Without it, extra directories are refused. */
+    private readonly extraRootGuard?: Readonly<{ protectedRoots: readonly string[] }>,
   ) {
     this.usedSessionKeys = new Set(bindings.keys())
   }
@@ -303,17 +335,47 @@ export class WorkspaceCatalog {
     return this.entry(row, this.sessionAggregate(), true)
   }
 
-  async authorizeAndBind(sessionKey: string, path: string): Promise<WorkspaceBindingEnvelope> {
+  /** Whether this catalog can admit extra directories at all; the daemon advertises it from here. */
+  get admitsExtraRoots(): boolean {
+    return this.extraRootGuard !== undefined
+  }
+
+  /**
+   * The canonical form of an extra directory list for a workspace rooted at `root`. With `register`
+   * the directories must also be registered, fresh workspaces that clear the protected roots.
+   */
+  async admitExtraRoots(root: string, paths: readonly string[], register = true): Promise<string[]> {
+    if (paths.length === 0) return []
+    if (!this.extraRootGuard) throw this.extraRootsUnavailable()
+    const roots = await canonicalExtraRoots(root, paths, this.resolve)
+    if (!register) return roots
+    await assertNotProtected(roots, this.extraRootGuard.protectedRoots)
+    for (const extra of roots) {
+      const row = this.store.rows().find((candidate) => candidate.path === extra)
+      if (!row) throw this.notRegistered()
+      await this.assertFresh(row)
+      this.assertListed(row)
+    }
+    return roots
+  }
+
+  async authorizeAndBind(
+    sessionKey: string,
+    path: string,
+    extraPaths: readonly string[] = [],
+  ): Promise<WorkspaceBindingEnvelope> {
     const directory = await this.resolve(path)
     const row = this.store.rows().find((candidate) => candidate.path === directory.path)
     if (!row) throw this.notRegistered()
     await this.assertFresh(row)
     this.assertListed(row)
+    const extraRoots = await this.admitExtraRoots(row.path, extraPaths)
     const requested: WorkspaceBindingRecord = {
       sessionKey,
       workspaceId: row.workspaceId,
       revision: row.revision,
       canonicalRoot: row.path,
+      ...(extraRoots.length ? { extraRoots } : {}),
     }
     const persisted = this.bindings.putIfAbsent(requested)
     this.assertSameBinding(requested, persisted)
@@ -326,7 +388,15 @@ export class WorkspaceCatalog {
     return issueBinding(persisted)
   }
 
-  async restoreBinding(sessionKey: string, requestedPath?: string): Promise<WorkspaceBindingEnvelope> {
+  /**
+   * `requestedExtra` asserts the session's extra directories: an empty or absent list asserts
+   * nothing, a non-empty one must name exactly the directories the binding was created with.
+   */
+  async restoreBinding(
+    sessionKey: string,
+    requestedPath?: string,
+    requestedExtra?: readonly string[],
+  ): Promise<WorkspaceBindingEnvelope> {
     const binding = this.bindings.get(sessionKey)
     if (!binding)
       throw rpcError('SEMANTIC_REJECTED', {
@@ -351,6 +421,27 @@ export class WorkspaceCatalog {
       const requested = await this.resolve(requestedPath)
       if (requested.path !== binding.canonicalRoot)
         throw new SessionWorkspaceConflictError(sessionKey, binding.canonicalRoot, requested.path)
+    }
+    if (requestedExtra?.length) {
+      const bound = binding.extraRoots ?? []
+      const asked = await this.admitExtraRoots(binding.canonicalRoot, requestedExtra, false)
+      if (asked.length !== bound.length || asked.some((root, index) => root !== bound[index]))
+        throw rpcError('SEMANTIC_REJECTED', {
+          code: 'ID_CONFLICT',
+          sessionId: sessionKey,
+          reason: 'session directories differ from the original request',
+        })
+    }
+    // A registry that no longer lists a bound extra directory must not keep granting it.
+    for (const extra of binding.extraRoots ?? []) {
+      const registered = this.store.rows().find((candidate) => candidate.path === extra)
+      if (!registered)
+        throw rpcError('SEMANTIC_REJECTED', {
+          code: 'WORKSPACE_STALE',
+          sessionId: sessionKey,
+          reason: 'an extra directory of this session is no longer a registered workspace',
+        })
+      await this.assertFresh(registered)
     }
     this.notifyBound(binding)
     return issueBinding(binding)
@@ -468,13 +559,21 @@ export class WorkspaceCatalog {
     if (
       requested.workspaceId !== persisted.workspaceId ||
       requested.revision !== persisted.revision ||
-      requested.canonicalRoot !== persisted.canonicalRoot
+      requested.canonicalRoot !== persisted.canonicalRoot ||
+      JSON.stringify(requested.extraRoots ?? []) !== JSON.stringify(persisted.extraRoots ?? [])
     )
       throw new SessionWorkspaceConflictError(
         requested.sessionKey,
         persisted.canonicalRoot,
         requested.canonicalRoot,
       )
+  }
+
+  private extraRootsUnavailable(): ReturnType<typeof rpcError> {
+    return rpcError('SEMANTIC_REJECTED', {
+      code: 'EXTRA_DIRECTORY_REFUSED',
+      reason: 'this daemon does not admit extra directories',
+    })
   }
 
   private notRegistered(): ReturnType<typeof rpcError> {

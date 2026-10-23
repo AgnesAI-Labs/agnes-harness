@@ -227,3 +227,82 @@ it('binds loopback serving to policy identity and intersects the captured parent
   expect(intersectWorkspacePlan(plan, closed.policy).backendOptions.loopbackServe).not.toBe(true)
   expect(intersectWorkspacePlan(plan, plan.policy).policy.loopbackServe).toBe(true)
 })
+
+describe('extra directories in the session policy', () => {
+  // Spelled without a literal home path so the secrets guard has nothing to allow.
+  const home = posix.join('/home', 'user')
+  const compileExtra = (extraRoots: string[]) =>
+    compileWorkspacePolicy({
+      canonicalRoot: '/work',
+      extraRoots,
+      dataDir: '/data',
+      homeDir: home,
+      semantics: { flavor: 'posix', caseSensitive: true },
+      staticConfig: normalizeSandboxStaticConfig({}),
+      canonicalize,
+    })
+  const decide = (plan: Awaited<ReturnType<typeof compileExtra>>, path: string) =>
+    decideFsPath(plan.policy, path, { caseSensitive: true }).effect
+
+  it('allows the extra tree, hard-denies its .git and secrets, and still refuses everything else', async () => {
+    const plan = await compileExtra(['/shared/lib'])
+    expect(decide(plan, '/shared/lib/src/a.ts')).toBe('allow')
+    expect(plan.backendOptions.allowPaths).toContain('/shared/lib')
+    for (const leaf of ['.git', '.git/config', '.agh/secrets', '.agh/secrets/key'])
+      expect(decide(plan, `/shared/lib/${leaf}`), leaf).toBe('deny')
+    expect(plan.policy.rules).toContainEqual({
+      effect: 'deny',
+      path: '/shared/lib/.git',
+      source: 'host-integrity',
+      hard: true,
+    })
+    expect(plan.policy.rules).toContainEqual({
+      effect: 'allow',
+      path: '/shared/lib',
+      source: 'extra',
+      hard: false,
+    })
+    for (const outside of ['/shared/other/a.ts', '/shared', '/etc/passwd'])
+      expect(decide(plan, outside), outside).toBe('deny')
+    expect(decide(plan, '/work/a.ts')).toBe('allow')
+    expect(() => validateFsPolicy(plan.policy)).not.toThrow()
+  })
+
+  it('pins the list into the digest and the static config hash, and recompiles to the same digest', async () => {
+    const none = await compile('/work')
+    const one = await compileExtra(['/shared/lib'])
+    const again = await compileExtra(['/shared/lib'])
+    const other = await compileExtra(['/shared/other'])
+    expect(again.policy.digest).toBe(one.policy.digest)
+    expect(again.staticConfigHash).toBe(one.staticConfigHash)
+    expect(new Set([none.policy.digest, one.policy.digest, other.policy.digest]).size).toBe(3)
+    expect(new Set([none.staticConfigHash, one.staticConfigHash, other.staticConfigHash]).size).toBe(3)
+    expect(none.staticConfigHash).toBe(sandboxStaticConfigHash(normalizeSandboxStaticConfig({})))
+  })
+
+  it.each([
+    ['the data directory', '/data'],
+    ['below the data directory', '/data/chats'],
+    ['an ancestor of the data directory', '/'],
+    ['the ssh directory', posix.join(home, '.ssh')],
+    ['below the ssh directory', posix.join(home, '.ssh', 'keys')],
+    ['an ancestor of the ssh directory', home],
+  ])('refuses an extra directory that is %s', async (_name, extra) => {
+    await expect(compileExtra([extra])).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+  })
+
+  it('refuses an extra directory whose canonical form differs from the bound one', async () => {
+    await expect(
+      compileWorkspacePolicy({
+        canonicalRoot: '/work',
+        extraRoots: ['/link'],
+        dataDir: '/data',
+        homeDir: home,
+        semantics: { flavor: 'posix', caseSensitive: true },
+        staticConfig: normalizeSandboxStaticConfig({}),
+        canonicalize: async (path, options) =>
+          path === '/link' ? '/real' : posix.resolve(options?.base ?? '/', path),
+      }),
+    ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+  })
+})

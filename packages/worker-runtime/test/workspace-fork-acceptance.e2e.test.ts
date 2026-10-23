@@ -256,6 +256,7 @@ it('the real remote worker fork keeps the parent owner directory and child bindi
       workspaceId: 'a'.repeat(64),
       authorityRevision: 7,
       canonicalRoot: root,
+      extraRoots: [],
     })
     expect(parent.d).not.toHaveProperty('workspaceRuntime')
     expect(hosted.keys()).toEqual([sessionKey, 'worker-child'])

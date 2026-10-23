@@ -19,6 +19,7 @@ import {
   type AuthenticatedWorkspaceBindingEnvelope,
   assertWorkspaceBinding,
   CliWorkspaceAuthority,
+  sameWorkspaceBindingAuthority,
   type WorkspaceBinding,
   WorkspaceBindingAuthority,
 } from '@agnes/host-common/workspace-authority'
@@ -582,12 +583,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             })
           pendingChildWorkspace = await workspaceRuntimes.reserve(o.parent.key, childKey)
           const inherited = pendingChildWorkspace.runtime.binding
-          if (
-            binding.sessionKey !== inherited.sessionKey ||
-            binding.workspaceId !== inherited.workspaceId ||
-            binding.authorityRevision !== inherited.authorityRevision ||
-            binding.canonicalRoot !== inherited.canonicalRoot
-          ) {
+          if (!sameWorkspaceBindingAuthority(binding, inherited)) {
             await pendingChildWorkspace.close()
             pendingChildWorkspace = undefined
             throw new HostError(

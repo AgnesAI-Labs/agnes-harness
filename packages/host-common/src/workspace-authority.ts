@@ -9,6 +9,8 @@ export type WorkspaceBinding = Readonly<{
   workspaceId: string
   authorityRevision: number
   canonicalRoot: string
+  /** Canonical extra directories admitted into this session's file fence; empty when none. */
+  extraRoots: readonly string[]
   readonly [workspaceBindingBrand]: true
 }>
 
@@ -18,7 +20,12 @@ export type AuthenticatedWorkspaceBindingEnvelope = Readonly<{
   workspaceId: string
   revision: number
   canonicalRoot: string
+  /** Absent on bindings written before extra directories existed: no extra directories. */
+  extraRoots?: readonly string[]
 }>
+
+/** Most extra directories one session may carry. */
+export const MAX_EXTRA_ROOTS = 8
 
 const issued = new WeakSet<object>()
 
@@ -43,11 +50,20 @@ function checkedRoot(value: unknown): string {
   return value
 }
 
+function checkedExtraRoots(value: unknown): readonly string[] {
+  if (value === undefined) return Object.freeze([])
+  if (!Array.isArray(value) || value.length > MAX_EXTRA_ROOTS) throw fault('invalid extra directories')
+  const roots = value.map(checkedRoot)
+  if (new Set(roots).size !== roots.length) throw fault('duplicate extra directory')
+  return Object.freeze(roots)
+}
+
 function issue(input: {
   sessionKey: string
   workspaceId: string
   authorityRevision: number
   canonicalRoot: string
+  extraRoots: readonly string[]
 }): WorkspaceBinding {
   const binding = Object.freeze({ ...input }) as WorkspaceBinding
   issued.add(binding)
@@ -76,8 +92,21 @@ export class WorkspaceBindingAuthority {
       workspaceId: envelope.workspaceId,
       authorityRevision: envelope.revision,
       canonicalRoot: checkedRoot(envelope.canonicalRoot),
+      extraRoots: checkedExtraRoots(envelope.extraRoots),
     })
   }
+}
+
+/** Whether two bindings grant the same authority: key, workspace, revision, root and extra roots. */
+export function sameWorkspaceBindingAuthority(left: WorkspaceBinding, right: WorkspaceBinding): boolean {
+  return (
+    left.sessionKey === right.sessionKey &&
+    left.workspaceId === right.workspaceId &&
+    left.authorityRevision === right.authorityRevision &&
+    left.canonicalRoot === right.canonicalRoot &&
+    left.extraRoots.length === right.extraRoots.length &&
+    left.extraRoots.every((root, index) => root === right.extraRoots[index])
+  )
 }
 
 /** Fork inheritance can change only the session key; root and authority revision stay identical. */
@@ -88,6 +117,7 @@ export function inheritWorkspaceBinding(parent: WorkspaceBinding, childSessionKe
     workspaceId: parent.workspaceId,
     authorityRevision: parent.authorityRevision,
     canonicalRoot: parent.canonicalRoot,
+    extraRoots: parent.extraRoots,
   })
 }
 
@@ -109,6 +139,7 @@ export class CliWorkspaceAuthority {
       workspaceId: this.workspaceId,
       authorityRevision: 1,
       canonicalRoot: this.canonicalRoot,
+      extraRoots: Object.freeze([]),
     })
   }
 }

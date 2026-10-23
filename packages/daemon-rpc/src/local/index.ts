@@ -521,7 +521,11 @@ export function createLocalEndpoint(
         }
         try {
           const parentBinding = await workspaces.restoreBinding(sessionId)
-          await workspaces.authorizeAndBind(ownedChildKey, parentBinding.canonicalRoot)
+          await workspaces.authorizeAndBind(
+            ownedChildKey,
+            parentBinding.canonicalRoot,
+            parentBinding.extraRoots,
+          )
           const entry = await registry.fork({
             parent: sessionId,
             at,

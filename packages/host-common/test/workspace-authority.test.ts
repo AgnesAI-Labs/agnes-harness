@@ -3,6 +3,8 @@ import {
   assertWorkspaceBinding,
   CliWorkspaceAuthority,
   inheritWorkspaceBinding,
+  MAX_EXTRA_ROOTS,
+  sameWorkspaceBindingAuthority,
   WorkspaceBindingAuthority,
 } from '../src/workspace-authority.js'
 
@@ -55,5 +57,40 @@ describe('WorkspaceBinding authority', () => {
     expect(binding.canonicalRoot).toBe('/work')
     expect(binding.workspaceId).toMatch(/^[a-f0-9]{64}$/)
     expect(() => cli.bind('session-b', '/other')).toThrow('startup root')
+  })
+
+  it('carries extra roots through accept and inheritance, and compares them as authority', () => {
+    const authority = new WorkspaceBindingAuthority()
+    const plain = authority.accept(envelope(), 'session-a')
+    expect(plain.extraRoots).toEqual([])
+    const withExtra = authority.accept(envelope({ extraRoots: ['/shared/a', '/shared/b'] }), 'session-a')
+    expect(withExtra.extraRoots).toEqual(['/shared/a', '/shared/b'])
+    expect(Object.isFrozen(withExtra.extraRoots)).toBe(true)
+    expect(inheritWorkspaceBinding(withExtra, 'session-a/child').extraRoots).toEqual(withExtra.extraRoots)
+    expect(
+      sameWorkspaceBindingAuthority(
+        withExtra,
+        authority.accept(envelope({ extraRoots: ['/shared/a', '/shared/b'] }), 'session-a'),
+      ),
+    ).toBe(true)
+    expect(sameWorkspaceBindingAuthority(withExtra, plain)).toBe(false)
+    expect(
+      sameWorkspaceBindingAuthority(
+        withExtra,
+        authority.accept(envelope({ extraRoots: ['/shared/a'] }), 'session-a'),
+      ),
+    ).toBe(false)
+  })
+
+  it.each([
+    ['a relative path', ['shared']],
+    ['a duplicate', ['/shared/a', '/shared/a']],
+    ['a non-canonical path', ['/shared/../a']],
+    ['too many', Array.from({ length: MAX_EXTRA_ROOTS + 1 }, (_, i) => `/shared/${i}`)],
+    ['a non-list', '/shared/a'],
+  ])('refuses extra roots that are %s', (_name, extraRoots) => {
+    expect(() => new WorkspaceBindingAuthority().accept(envelope({ extraRoots }), 'session-a')).toThrow(
+      'E_WORKSPACE_UNTRUSTED',
+    )
   })
 })
