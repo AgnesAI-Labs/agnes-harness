@@ -34,6 +34,7 @@ import { PackageController } from './package-controller.js'
 import { PagerOverlay } from './pager-overlay.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
+import { type PromptArea, promptArea, routeClick } from './prompt-click.js'
 import { PromptHistory } from './prompt-history.js'
 import { RawView } from './raw-view.js'
 import { Renderer, type ScreenRenderer } from './renderer.js'
@@ -97,6 +98,9 @@ export class TuiApp {
   private reservedRows = TIMELINE_RESERVED_ROWS
   // Rows rendered under the permission modal, measured before the modal itself renders each frame.
   private belowModal = 0
+  // Where the draft's rows were drawn last frame, and whether a picker or panel covered the prompt.
+  private promptArea: PromptArea | undefined
+  private dialogShown = false
   private readonly live: LiveView
   private readonly loader: Loader
   readonly clock: TurnClock
@@ -226,7 +230,15 @@ export class TuiApp {
       o.copy ?? systemCopy((s) => o.term.write(s)),
       copyTip(ansi, locale),
       () => this.stopped || this.renderer.requestRender(),
-      (row) => !this.pager.open && this.timeline.click(row),
+      (row, col) =>
+        routeClick(
+          this.promptArea,
+          row,
+          col,
+          this.promptClickable(),
+          (r, c) => this.editor.moveCursorToCell(r, c),
+          (r) => !this.pager.open && this.timeline.click(r),
+        ),
     )
     this.welcome = new WelcomeController(o, {
       branding,
@@ -424,12 +436,27 @@ export class TuiApp {
       const height = o.term.size().rows
       const at = shown.indexOf(this.modal)
       const above = shown.slice(0, at).flatMap((child) => child.render(width))
-      const below = shown.slice(at).flatMap((child) => child.render(width))
+      const belowParts = shown.slice(at).map((child) => child.render(width))
+      const below = belowParts.flat()
       // The input area, from the approval dialog down, sits on the bottom edge; a short
       // conversation leaves its gap above it rather than below.
       const gap =
         Number.isFinite(height) && !o.noAltScreen ? Math.max(0, height - above.length - below.length) : 0
       const screen = [...above, ...Array.from({ length: gap }, () => ''), ...below]
+      const composerAt = shown.slice(at).indexOf(this.composer)
+      this.promptArea =
+        composerAt < 0 || this.pager.open
+          ? undefined
+          : promptArea({
+              screenRows: screen.length,
+              belowComposer: belowParts.slice(composerAt + 1).reduce((n, part) => n + part.length, 0),
+              width,
+              textRows: this.editor.textRows,
+            })
+      // A dialog that is drawn owns the keyboard, so a click must not reach through it to the prompt.
+      this.dialogShown = belowParts.some(
+        (part, i) => part.length > 0 && dialogs.some((d) => d === shown[at + i]),
+      )
       this.mouse.overlay(screen, above.length + gap - 1, width)
       return o.noAltScreen ? screen : this.theme.frame(createAnsi(o.term.caps.color), screen, width, height)
     }
@@ -521,6 +548,13 @@ export class TuiApp {
       },
     })
     this.projection = this.makeProjection(o.session)
+  }
+
+  /** A click may move the prompt cursor only while nothing else (approval, pager, card focus, a picker) has the keyboard. */
+  private promptClickable(): boolean {
+    return (
+      !this.pager.open && !this.modal.pending && !this.cardFocus.open && !this.dialogShown && !this.raw.on
+    )
   }
 
   get busy(): boolean {

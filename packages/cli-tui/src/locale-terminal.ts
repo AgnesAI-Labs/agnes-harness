@@ -2,6 +2,7 @@ import type { Locale } from './locale.js'
 import { BG_DICT, type BgKey } from './locale-bg.js'
 import { HEADS_UP_DICT, type HeadsUpKey } from './locale-heads-up.js'
 import { MEMORY_DICT, type MemoryKey } from './locale-memory.js'
+import { PROMPT_CLICK_DICT, type PromptClickKey } from './locale-prompt-click.js'
 import { SESSION_ACTION_DICT, type SessionActionKey } from './locale-session-actions.js'
 import { SESSION_VIEW_DICT, type SessionViewKey } from './locale-session-view.js'
 import { SHELL_UX_DICT, type ShellUxKey } from './locale-shell-ux.js'
@@ -127,6 +128,7 @@ export type TerminalKey =
   | ShellUxKey
   | SessionViewKey
   | TreeKey
+  | PromptClickKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
@@ -138,6 +140,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...SHELL_UX_DICT.en,
     ...SESSION_VIEW_DICT.en,
     ...TREE_DICT.en,
+    ...PROMPT_CLICK_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
     'exit.ran': 'This run lasted {duration}',
@@ -258,6 +261,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...SHELL_UX_DICT['zh-CN'],
     ...SESSION_VIEW_DICT['zh-CN'],
     ...TREE_DICT['zh-CN'],
+    ...PROMPT_CLICK_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
     'exit.ran': '本次运行了 {duration}',

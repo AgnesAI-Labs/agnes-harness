@@ -11,6 +11,7 @@ import {
   prevWordStart,
 } from './edit-motion.js'
 import { commandSpan, paintSpan } from './editor-command.js'
+import { GRAPHEMES, offsetAtCell, wrapLine } from './editor-hit.js'
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
 import { type ActionOf, actionFor } from './keymap.js'
 import { type Key, parseKey } from './keys.js'
@@ -27,8 +28,6 @@ import type { Vim, VimTarget } from './vim-mode.js'
 // a multi-line paste is a legitimate multi-line prompt.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: filtering them is the point
 const CONTROL = /[\x00-\x09\x0b-\x1f\x7f-\x9f]/g
-
-const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
 // A paste past either bound shows as one chip in the buffer and goes out in full on submit.
 const PASTE_FOLD_LINES = 10
@@ -48,38 +47,6 @@ function truncateTo(text: string, max: number): string {
     out += ch
   }
   return max >= 2 ? `${out}…` : ''
-}
-
-/**
- * Splits one logical line into the visual lines it occupies, breaking on columns rather than on
- * characters. The cursor marker takes no column of its own but is treated as needing one when
- * deciding where to break: a cursor sitting just past the last column of a full line belongs at the
- * start of the next line, not in a column the terminal does not have.
- */
-function wrapLine(line: string, width: number): string[] {
-  const limit = Math.max(1, width)
-  const out: string[] = []
-  let cur = ''
-  let used = 0
-  const pieces = line
-    .split(CURSOR_MARKER)
-    .flatMap((part, i) => [
-      ...(i ? [CURSOR_MARKER] : []),
-      ...Array.from(GRAPHEMES.segment(part), ({ segment }) => segment),
-    ])
-  for (const raw of pieces) {
-    const piece = displayWidth(raw) > limit ? '…' : raw
-    const w = displayWidth(piece)
-    if (used + Math.max(w, 1) > limit && cur !== '') {
-      out.push(cur)
-      cur = ''
-      used = 0
-    }
-    cur += piece
-    used += w
-  }
-  out.push(cur)
-  return out
 }
 
 export type EditorOptions = {
@@ -126,6 +93,9 @@ export class Editor implements Component, VimTarget {
   private histIdx = -1
   private kitty = false
   private viewportStart = 0
+  private renderedWidth = 1
+  /** How many text rows the last render drew (the menu above them is not counted). */
+  textRows = 0
   private menuIndex = 0
   private menuStart = 0
   // The text before the cursor when Esc closed the `@` menu: it stays closed until that changes.
@@ -202,6 +172,17 @@ export class Editor implements Component, VimTarget {
   }
 
   invalidate(): void {}
+
+  /** A mouse click on text row `row` (0 is the first row drawn) at column `col` of the last render: the cursor goes there. */
+  moveCursorToCell(row: number, col: number): void {
+    if (this.search) return
+    const at = offsetAtCell(this.text, this.cursor, this.renderedWidth, this.viewportStart + row, col)
+    if (at === undefined) return
+    this.cursor = at
+    this.chain = undefined
+    this.goalColumn = undefined
+    this.undo.endRun()
+  }
 
   handleInput(data: string): boolean {
     const k = parseKey(data, this.kitty)
@@ -725,6 +706,8 @@ export class Editor implements Component, VimTarget {
   render(width: number): string[] {
     if (!Number.isFinite(width)) throw new Error('invalid editor width')
     width = Math.max(1, Math.trunc(width))
+    this.renderedWidth = width
+    this.textRows = 0
     if (this.search) return this.renderSearch(this.search, width)
     // In vim normal mode the arrow turns around, so the mode shows even where the rail is too narrow to say it.
     const arrow = this.o.vim?.normal ? '❮' : '❯'
@@ -765,6 +748,7 @@ export class Editor implements Component, VimTarget {
     // transient overlay reacting to what is being typed right now, not part of the draft itself.
     // The footer (status bar + hints) sits below the editor and is unaffected: the menu grows
     // upward out of the editor's own render output.
+    this.textRows = clamped.length
     const menu = this.openMenu()
     return menu ? [...this.renderMenu(menu, width), ...clamped] : clamped
   }

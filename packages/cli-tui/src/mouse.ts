@@ -32,8 +32,8 @@ export class TuiMouse implements RendererMouse {
     private readonly write: (text: string, fail: () => void) => unknown,
     private readonly label: (kind: CopyKind) => string,
     private readonly changed: () => unknown,
-    /** A click (press and release on one cell) on a screen row of the conversation. */
-    readonly click?: (row: number) => unknown,
+    /** A click (press and release on one cell) on a screen row and column. */
+    readonly click?: (row: number, col: number) => unknown,
   ) {}
 
   copy(text: string): void {

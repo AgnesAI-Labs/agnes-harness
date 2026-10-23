@@ -2943,3 +2943,48 @@ it('a terminal close that lands mid session switch does not start the new sessio
     await h.dispose()
   }
 })
+
+// SGR mouse reports are 1-based; the prompt text starts after the rail's three-column indent and "❯ ".
+const pressAt = (row: number, col: number) => `\x1b[<0;${col};${row}M\x1b[<0;${col};${row}m`
+const screenRowOf = async (h: Awaited<ReturnType<typeof fakeApp>>, text: string) => {
+  const row = (await h.screen()).split('\n').findIndex((line) => line.includes(text)) + 1
+  expect(row).toBeGreaterThan(0)
+  return row
+}
+
+it('a click in the prompt moves the cursor to that cell, and a drag only selects', async () => {
+  const h = await fakeApp('{}')
+  try {
+    h.term.feed('hello world')
+    await vi.waitFor(async () => expect(await h.screen()).toContain('hello world'))
+    const row = await screenRowOf(h, 'hello world')
+    h.term.feed(pressAt(row, 3 + 2 + 6 + 1)) // on the "w"
+    await vi.waitFor(() => expect(h.app.editor.cursor).toBe(6))
+    h.term.feed(pressAt(row, 3 + 2 + 40)) // past the end of the line
+    await vi.waitFor(() => expect(h.app.editor.cursor).toBe(11))
+    h.term.feed(pressAt(row, 2)) // on the rail's indent
+    await vi.waitFor(() => expect(h.app.editor.cursor).toBe(0))
+    h.app.editor.cursor = 4
+    h.term.feed(`\x1b[<0;6;${row}M\x1b[<32;12;${row}M\x1b[<0;12;${row}m`)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(h.app.editor.cursor).toBe(4)
+  } finally {
+    await h.close()
+  }
+})
+
+it('a click on the slash menu above the prompt leaves the cursor alone', async () => {
+  const h = await fakeApp('{}')
+  try {
+    h.term.feed('/m')
+    await vi.waitFor(async () => expect(await h.screen()).toMatch(/│.*\/mouse/))
+    const row = await screenRowOf(h, '/mouse')
+    const before = h.app.editor.cursor
+    h.term.feed(pressAt(row, 8))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(h.app.editor.cursor).toBe(before)
+    expect(h.app.editor.text).toBe('/m')
+  } finally {
+    await h.close()
+  }
+})
