@@ -563,6 +563,11 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       const note = args.length > 1 ? undefined : app.planPanel.setMode(args[0])
       return { text: note ?? tt('todos.usage', locale) }
     }
+    case '/expand':
+      if (args.length !== 1 || (args[0] !== 'all' && args[0] !== 'none'))
+        return { text: tt('expand.usage', locale) }
+      app.cards.setAll(args[0] === 'all')
+      return { text: tt(args[0] === 'all' ? 'expand.all' : 'expand.none', locale) }
     case '/terminal-setup':
       return terminalSetupSlash(app, line)
     case '/refine':

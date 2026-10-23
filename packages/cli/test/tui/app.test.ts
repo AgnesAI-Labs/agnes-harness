@@ -1057,6 +1057,74 @@ it('pins the plan above the prompt and /todos hide takes it off', async () => {
   }
 })
 
+it('Ctrl-X moves between tool cards without touching the draft, and /expand opens them all', async () => {
+  const SID = 'agnes:local:default:cli:dm:card-focus'
+  const tool = (id: string, seq: number) => ({
+    kind: 'tool',
+    id,
+    seq,
+    toolUseId: id,
+    status: 'completed',
+    summary: id,
+    name: 'shell',
+    argsPreview: JSON.stringify({ cmd: id }),
+  })
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: SID }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUI', () => ({
+      sessionId: SID,
+      upto: 2,
+      generation: 1,
+      opState: null,
+      turns: [],
+      nodes: [tool('first', 1), tool('second', 2)],
+    }))
+    .on('_agnes/v1/session.readToolDetail', () => ({ args: '{"cmd":"x"}', result: 'out' }))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 30 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const screen = async () => (await screenOf(term, 80, 30)).filter((line) => line.trim() !== '')
+    await vi.waitFor(async () => expect((await screen()).join('\n')).toContain('second'))
+    term.feed('draft')
+    term.feed('\x18')
+    await vi.waitFor(async () => expect((await screen()).join('\n')).toContain('Esc/Ctrl-X leave'))
+    // The bar is on the newest card; letters do not reach the draft; up moves the bar.
+    expect((await screen()).find((line) => line.startsWith('▌'))).toContain('second')
+    term.feed('xyz')
+    term.feed('\x1b[A')
+    await vi.waitFor(async () =>
+      expect((await screen()).find((line) => line.startsWith('▌'))).toContain('first'),
+    )
+    term.feed('\x18')
+    await vi.waitFor(async () => expect((await screen()).join('\n')).not.toContain('Esc/Ctrl-X leave'))
+    expect(app.editor.text).toBe('draft')
+    expect((await screen()).some((line) => line.startsWith('▌'))).toBe(false)
+    await app.runInput('/expand all')
+    await vi.waitFor(async () =>
+      expect(
+        (await screen()).filter((line) => line.includes('Arguments:') || line.includes('Result:')).length,
+      ).toBeGreaterThanOrEqual(2),
+    )
+    await app.runInput('/expand none')
+    await vi.waitFor(async () => expect((await screen()).join('\n')).not.toContain('Arguments:'))
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 it('shows contextual F1 actions only when projected and dispatches the selected action', async () => {
   const SID = 'agnes:local:default:cli:dm:hints'
   const calls: Array<{ requestSeq: number; action: string; data?: unknown }> = []

@@ -88,6 +88,10 @@ export class ToolGroupCard implements Component {
     this.collapsedState = !this.collapsedState
   }
 
+  setOpen(open: boolean): void {
+    this.collapsedState = !open
+  }
+
   clickHead(): void {
     this.toggle()
   }

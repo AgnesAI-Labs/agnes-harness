@@ -48,6 +48,11 @@ export class Timeline implements Component {
   private divider: string | undefined
   private omitted = false
   private idle = true
+  // Card focus: the entry whose rows get marked, where its rows sit among the content, and whether the
+  // next frame has to scroll it into view.
+  private focus: { key: string; mark(row: string): string } | undefined
+  private focusAt: { start: number; length: number } | undefined
+  private reveal = false
 
   constructor(
     private readonly o: {
@@ -137,6 +142,32 @@ export class Timeline implements Component {
     return true
   }
 
+  /** The keys of the entries that fold open (tool cards and groups of them), in display order. */
+  cardKeys(): string[] {
+    return this.ordered.filter((entry) => entry.view.clickHead).map((entry) => (entry.nodes[0] as UINode).id)
+  }
+
+  /** Marks the rows of one card (`undefined` clears it); the next frame scrolls it into view when `reveal` is set. */
+  setFocus(focus: { key: string; mark(row: string): string } | undefined, reveal = true): void {
+    this.focus = focus
+    this.reveal = reveal && focus !== undefined
+  }
+
+  /** Opens or folds the card under `key`. */
+  toggleCard(key: string): void {
+    this.entries.get(key)?.view.clickHead?.()
+  }
+
+  /** Where the viewport is, so a visit elsewhere can put it back. */
+  position(): { offset: number; leftAt: number | undefined } {
+    return { offset: this.offset, leftAt: this.leftAt }
+  }
+
+  restore(position: { offset: number; leftAt: number | undefined }): void {
+    this.offset = position.offset
+    this.leftAt = position.leftAt
+  }
+
   private toBottom(): void {
     this.offset = 0
     this.leftAt = undefined
@@ -213,12 +244,19 @@ export class Timeline implements Component {
   private content(width: number, plain: boolean): string[] {
     const content: string[] = []
     const rows = (view: Component) => (plain ? view.transcript?.(width) : undefined) ?? view.render(width)
-    if (!plain) this.heads = []
+    if (!plain) {
+      this.heads = []
+      this.focusAt = undefined
+    }
     const clickable = new Set(this.ordered.map((entry) => entry.view))
     for (const item of this.items()) {
       if (!plain && item.view.clickHead && clickable.has(item.view))
         this.heads.push({ row: content.length, view: item.view })
-      content.push(...rows(item.view))
+      const shown = rows(item.view)
+      if (!plain && this.focus?.key === item.key) {
+        this.focusAt = { start: content.length, length: shown.length }
+        content.push(...shown.map(this.focus.mark))
+      } else content.push(...shown)
     }
     return content
   }
@@ -319,6 +357,17 @@ export class Timeline implements Component {
     return this.content(width, true)
   }
 
+  /** Scrolls so rows `start`..+`length` are on screen, or at least their first `window` rows when they are more. */
+  private revealRows(start: number, length: number, total: number, window: number): void {
+    const end = total - this.offset
+    const wanted = start < end - window ? start + window : Math.min(start + length, start + window)
+    if (start >= end - window && start + length <= end) return
+    const before = this.offset
+    this.offset = Math.max(0, Math.min(this.maxOffset, total - wanted))
+    if (before === 0 && this.offset > 0) this.leftAt = this.size
+    else if (this.offset === 0) this.leftAt = undefined
+  }
+
   render(width: number): string[] {
     if (this.o.split) return this.splitRows(width)
     const content = this.content(width, false)
@@ -330,10 +379,13 @@ export class Timeline implements Component {
     ]
     const window = Math.max(1, this.o.rows() - (this.o.reservedRows?.() ?? TIMELINE_RESERVED_ROWS))
     this.maxOffset = Math.max(0, rows.length - window)
+    const prefix = rows.length - content.length
+    if (this.reveal && this.focusAt)
+      this.revealRows(prefix + this.focusAt.start, this.focusAt.length, rows.length, window)
+    this.reveal = false
     this.offset = Math.min(this.offset, this.maxOffset)
     const end = rows.length - this.offset
     this.shownFrom = Math.max(0, end - window)
-    const prefix = rows.length - content.length
     for (const head of this.heads) head.row += prefix
     return rows.slice(this.shownFrom, end)
   }

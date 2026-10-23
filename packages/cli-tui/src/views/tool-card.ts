@@ -309,6 +309,10 @@ export class ToolCard implements Component {
     this.collapsedState = !this.collapsedState
     if (!this.collapsedState) this.onExpand()
   }
+  /** Opens (`true`) or folds it; asking for the state it already has does nothing. */
+  setOpen(open: boolean): void {
+    if (open === this.collapsedState) this.toggle()
+  }
   clickHead(): void {
     this.toggle()
   }

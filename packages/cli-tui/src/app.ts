@@ -4,6 +4,7 @@ import { createAnsi } from './ansi.js'
 import type { TuiAppOptions } from './app-options.js'
 import { ApprovalSettle } from './approval-settle.js'
 import { BusyInput, cancelTurn, textOf } from './busy-input.js'
+import { CardFocus } from './card-focus.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { applyCommandResult } from './command-result.js'
 import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
@@ -76,7 +77,7 @@ export class TuiApp {
   private projection: TuiProjection
   private readonly timeline: Timeline
   private readonly welcome: WelcomeController
-  private readonly cards: ToolCards
+  readonly cards: ToolCards
   private readonly approvalCards = new Map<string, ApprovalCard>()
   private latestApproval: string | undefined
   private reservedRows = TIMELINE_RESERVED_ROWS
@@ -105,6 +106,7 @@ export class TuiApp {
   readonly usagePanel: UsagePanel
   readonly planPanel: PlanPanel
   private readonly pager: PagerOverlay
+  private readonly cardFocus: CardFocus
   private readonly modelPicker: ModelPicker
   private readonly sessionPicker: SessionPicker
   private readonly packageController: PackageController
@@ -305,6 +307,14 @@ export class TuiApp {
       changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.planPanel = new PlanPanel(ansi, locale)
+    this.cardFocus = new CardFocus({
+      timeline: this.timeline,
+      cards: this.cards,
+      ansi,
+      locale,
+      notice: (text) => this.statusBar.setNotice(text),
+      changed: () => this.stopped || this.renderer.requestRender(),
+    })
     this.packageController = new PackageController(o.controlClient, () => this.profile)
     this.composer = new Composer(this.editor, ansi, locale)
     this.composer.setWorkspace({ root: tildePath(this.cwd), subpath: '' })
@@ -324,6 +334,7 @@ export class TuiApp {
       this.loader,
       this.modal,
       this.planPanel,
+      this.cardFocus,
       this.composer,
       // Transient command dialogs belong immediately above the footer, not in the conversation.
       // Closed pickers render zero rows, preserving the normal rule/editor/status adjacency.
@@ -375,8 +386,16 @@ export class TuiApp {
         signals: () => this.signals,
         settle: this.settle,
         modal: this.modal,
-        dialogs: [this.pager, this.themePicker, this.modelPicker, this.sessionPicker, this.usagePanel],
+        dialogs: [
+          this.pager,
+          this.cardFocus,
+          this.themePicker,
+          this.modelPicker,
+          this.sessionPicker,
+          this.usagePanel,
+        ],
         openPager: () => this.pager.show(),
+        openCards: () => this.cardFocus.enter(),
         approvalCards: this.approvalCards,
         latestApproval: () => this.latestApproval,
         closed: () => this.closedNotice !== undefined,
@@ -797,6 +816,7 @@ export class TuiApp {
     this.usagePanel.close()
     this.editor.resetUndo()
     this.planPanel.reset()
+    this.cardFocus.exit(false)
     this.offPermission?.()
     await this.projection.stop()
     // stop() may have run before this switch's session arrived or during the await above. It stops only the

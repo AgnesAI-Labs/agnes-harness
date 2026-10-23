@@ -85,6 +85,21 @@ describe('redraw (Ctrl-L)', () => {
   })
 })
 
+describe('card focus (Ctrl-X)', () => {
+  it('is a global action on the CAN byte, with its own scope of fixed keys listed in /keys', () => {
+    expect(actionFor('global', 'ctrl-x')).toBe('cards-focus')
+    expect(parseKey('\x18', false).name).toBe('ctrl-x')
+    expect(parseKey('\x1b[120;5u', false).name).toBe('ctrl-x')
+    expect(actionFor('cards', 'space')).toBe('cards-toggle')
+    expect(actionFor('cards', 'a')).toBe('cards-expand-all')
+    expect(actionFor('cards', 'z')).toBe('cards-collapse-all')
+    const keys = formatKeys('en', new Keymap(), [])
+    expect(keys).toContain('Tool card focus (Ctrl-X)')
+    expect(keys).toMatch(/cards-focus\s+ctrl-x\s+Move focus between the tool cards/)
+    expect(formatKeys('zh-CN', new Keymap(), [])).toContain('工具卡焦点（Ctrl-X）')
+  })
+})
+
 describe('draft stash (Ctrl-S)', () => {
   const rig = () => {
     const editor = new Editor({ onSubmit: () => {} })
@@ -191,7 +206,7 @@ describe('keybindings.json', () => {
     ['taking ctrl-c', '{"cancel":["ctrl-c"]}', 'reserved'],
     ['hiding behind a global key', '{"cut-to-end":["ctrl-o"]}', 'conflict'],
     ['unknown action', '{"fly":["ctrl-g"]}', 'unknown'],
-    ['unknown key', '{"cancel":["ctrl-x"]}', 'key'],
+    ['unknown key', '{"cancel":["ctrl-q"]}', 'key'],
     ['text is not a key', '{"cancel":["char"]}', 'key'],
     ['not a list', '{"cancel":"esc"}', 'shape'],
     ['empty list', '{"cancel":[]}', 'shape'],
@@ -236,7 +251,7 @@ describe('keybindings.json', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-keys-'))
     try {
       const path = join(dir, 'keybindings.json')
-      writeFileSync(path, '{"fly":["ctrl-g"],"cancel":["ctrl-x"]}')
+      writeFileSync(path, '{"fly":["ctrl-g"],"cancel":["ctrl-q"]}')
       expect(installKeybindings(path, 'en')).toBe('keybindings.json: 2 entries ignored (see /keys)')
       writeFileSync(path, '{}')
       expect(installKeybindings(path, 'en')).toBe('keybindings.json: 2 entries ignored (see /keys)')

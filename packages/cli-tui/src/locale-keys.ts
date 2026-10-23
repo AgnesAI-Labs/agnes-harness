@@ -15,6 +15,7 @@ export const KEYS_SCOPES = [
   'picker',
   'panel',
   'pager',
+  'cards',
   'approval',
   'secret',
 ] as const

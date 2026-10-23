@@ -36,6 +36,8 @@ export interface RootInputHost {
   dispatchAction: (actionId: string) => void
   /** Ctrl-T: the full-conversation pager (it is also first among `dialogs`, which closes it). */
   openPager: () => void
+  /** Ctrl-X: card focus, which then takes the keys through `dialogs`. */
+  openCards: () => void
   timeline: Timeline
   editor: Editor
   kitty: Parameters<typeof parseKey>[1]
@@ -105,6 +107,10 @@ export function rootInput(
     // The pager needs the fullscreen display; with the split footer the conversation is in the terminal's own scrollback.
     if (action === 'pager-open') {
       if (!host.noAltScreen) host.openPager()
+      return true
+    }
+    if (action === 'cards-focus') {
+      if (!host.noAltScreen) host.openCards()
       return true
     }
     if (host.timeline.jumpKey(key.name, host.editor.text !== '')) return true

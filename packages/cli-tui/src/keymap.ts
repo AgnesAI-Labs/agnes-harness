@@ -4,7 +4,9 @@ import type { KeyName } from './keys.js'
 export type ApprovalLetter = 'y' | 'a' | 'n'
 /** Letters the pager reads while it is open: search, next and previous match, copy. */
 export type PagerLetter = '/' | 'n' | 'N' | 'c'
-type BoundKey = KeyName | ApprovalLetter | PagerLetter
+/** What the tool card focus reads besides named keys: expand all, fold all, and the space bar. */
+export type CardLetter = 'a' | 'z' | 'space'
+type BoundKey = KeyName | ApprovalLetter | PagerLetter | CardLetter
 
 /**
  * Every key binding, declared once. A scope is a place that reads keys; inside one scope a key means
@@ -31,6 +33,7 @@ export const BINDINGS = [
   { id: 'draft-stash', scope: 'global', keys: ['ctrl-s'] },
   { id: 'redraw', scope: 'global', keys: ['ctrl-l'] },
   { id: 'pager-open', scope: 'global', keys: ['ctrl-t'] },
+  { id: 'cards-focus', scope: 'global', keys: ['ctrl-x'] },
   // The prompt editor.
   { id: 'submit', scope: 'editor', keys: ['enter'] },
   { id: 'newline', scope: 'editor', keys: ['alt-enter', 'shift-enter'] },
@@ -88,6 +91,13 @@ export const BINDINGS = [
   { id: 'pager-next', scope: 'pager', keys: ['n'], fixed: true },
   { id: 'pager-prev', scope: 'pager', keys: ['N'], fixed: true },
   { id: 'pager-copy', scope: 'pager', keys: ['c'], fixed: true },
+  // Tool card focus (Ctrl-X): it takes every key while on; Ctrl-C leaves it and then interrupts as usual.
+  { id: 'cards-exit', scope: 'cards', keys: ['esc', 'ctrl-x', 'ctrl-c'], fixed: true },
+  { id: 'cards-prev', scope: 'cards', keys: ['up'], fixed: true },
+  { id: 'cards-next', scope: 'cards', keys: ['down'], fixed: true },
+  { id: 'cards-toggle', scope: 'cards', keys: ['enter', 'space'], fixed: true },
+  { id: 'cards-expand-all', scope: 'cards', keys: ['a'], fixed: true },
+  { id: 'cards-collapse-all', scope: 'cards', keys: ['z'], fixed: true },
   // The approval dialog: never rebindable, so a changed key cannot approve by accident.
   { id: 'approval-dismiss', scope: 'approval', keys: ['esc', 'ctrl-c'], fixed: true },
   { id: 'approval-confirm', scope: 'approval', keys: ['enter'], fixed: true },

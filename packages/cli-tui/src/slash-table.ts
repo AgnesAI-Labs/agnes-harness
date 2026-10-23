@@ -239,4 +239,10 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.todos',
     summaryKey: 'commands.todosSummary',
   },
+  {
+    name: '/expand',
+    args: 'all|none',
+    descriptionKey: 'commands.expand',
+    summaryKey: 'commands.expandSummary',
+  },
 ]
