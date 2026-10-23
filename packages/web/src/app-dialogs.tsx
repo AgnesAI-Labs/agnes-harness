@@ -165,7 +165,7 @@ function McpDialogScaffold() {
           <SettingsInput
             id="mcp-token-env"
             autoComplete="off"
-            placeholder="SERVICE_API_KEY"
+            placeholder={t('wizard.envPlaceholder')}
             aria-describedby="mcp-token-env-help"
           />
           <span id="mcp-token-env-help" className="form-hint">

@@ -29,6 +29,7 @@ export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
     'wizard.oauthClient': 'Client ID (only if you already have one)',
     'wizard.oauthKind': 'OAuth',
     'wizard.env': 'Token environment variable',
+    'wizard.envPlaceholder': 'SERVICE_API_KEY',
     'wizard.envHelp':
       'Enter the exact environment variable required by the service, for example CONTEXT7_API_KEY for Context7. Choosing a credential does not choose its variable name.',
 
@@ -113,6 +114,7 @@ export const resourceAdminShellLocaleCatalog: LocaleCatalog = {
     'wizard.oauthClient': '客户端 ID（已有时才填）',
     'wizard.oauthKind': 'OAuth',
     'wizard.env': '令牌环境变量名',
+    'wizard.envPlaceholder': 'SERVICE_API_KEY',
     'wizard.envHelp':
       '请按服务文档填写变量名，例如 Context7 使用 CONTEXT7_API_KEY。选择凭据不会自动确定变量名。',
 

@@ -321,7 +321,7 @@ describe('official search providers', () => {
       const refused = await admin.handle('PUT', 'search', {
         ...original,
         provider: { ...original.provider, maxResults: 3 },
-        apiKey: 'replacement-test-key',
+        apiKey: 'test-new-key',
       })
       expect(refused).toMatchObject({ status: 422, body: { ok: false, code } })
       expect(JSON.stringify(refused)).not.toContain(KEY)
