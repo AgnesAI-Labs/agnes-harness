@@ -1861,8 +1861,7 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
     draftPermission = mode
     syncDraftPermission()
     rememberWebComposer({ permission: mode })
-    notice.setText(() => t('app.permission.draftNotice', { mode: permissionLabel(mode) }))
-    notice.setKind('')
+    reportSuccess('session-permission', t('app.permission.draftNotice', { mode: permissionLabel(mode) }))
     renderControls()
     return true
   }
@@ -1917,7 +1916,6 @@ async function selectPermission(mode: PermissionMode): Promise<boolean> {
         ? t('app.permission.notice.full')
         : t('app.permission.notice.mode', { mode: permissionLabel(mode) }),
     )
-    notice.setKind('')
     return true
   } catch (error) {
     if (sessionBinding.isCurrent(epoch, session) && !sessionPending) showError(error)
@@ -2003,8 +2001,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     else if (!sameModel) draftModelSettingsEdited = false
     knownSessionModel = selected
     rememberWebComposer({ model: knownSessionModel })
-    notice.setText(() => t('app.notice.newSessionModel'))
-    notice.setKind('')
+    reportSuccess('session-primary-model', t('app.notice.newSessionModel'))
     renderControls()
     return true
   }
@@ -2026,7 +2023,6 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
     rememberWebComposer({ model: knownSessionModel })
     initialModelPending = undefined
     reportSuccess('session-primary-model', t('app.notice.modelSaved'))
-    notice.setKind('')
     sessionBinding.live?.refresh()
     return true
   } catch (error) {

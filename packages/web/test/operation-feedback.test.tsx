@@ -20,7 +20,7 @@ const result = (id: string, outcome: OperationFeedback['outcome'] = 'success'): 
   message: 'Settings saved.',
 })
 
-it('queues operations across routes, dedupes IDs and retains one consequence per resource until its owner resolves it', () => {
+it('dedupes IDs, keeps the newest result per scope and retains one consequence until its owner resolves it', () => {
   const feedback = createOperationFeedback()
   feedback.sink.publish(result('first', 'pending'))
   feedback.sink.publish(result('first'))
@@ -35,7 +35,8 @@ it('queues operations across routes, dedupes IDs and retains one consequence per
     ...result('third'),
     effect: { kind: 'rescan-required', message: 'Rescan the updated folders.' },
   })
-  expect(feedback.store.getSnapshot().queue.map((item) => item.id)).toEqual(['first', 'second', 'third'])
+  // Same scope: the later result replaces the earlier one in both lists.
+  expect(feedback.store.getSnapshot().queue.map((item) => item.id)).toEqual(['third'])
   expect(feedback.store.getSnapshot().notices.map((item) => item.id)).toEqual(['third'])
   for (const id of ['first', 'second', 'third']) feedback.dismiss(id)
   expect(feedback.store.getSnapshot().queue).toEqual([])
@@ -46,7 +47,7 @@ it('queues operations across routes, dedupes IDs and retains one consequence per
   expect(feedback.store.getSnapshot().notices).toEqual([])
 })
 
-it('shows one polite toast for 3 seconds without moving focus, then advances even for identical copy', async () => {
+it('shows one polite toast for 3 seconds without moving focus, then advances to the next scope', async () => {
   vi.useFakeTimers()
   const feedback = createOperationFeedback()
   const trigger = document.createElement('button')
@@ -63,7 +64,7 @@ it('shows one polite toast for 3 seconds without moving focus, then advances eve
   dispose = mountRegion(host, createElement(Harness))
   await act(async () => {
     feedback.sink.publish(result('a'))
-    feedback.sink.publish(result('b'))
+    feedback.sink.publish({ ...result('b'), scope: 'other' })
   })
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1)
@@ -84,6 +85,43 @@ it('shows one polite toast for 3 seconds without moving focus, then advances eve
   })
   expect(feedback.store.getSnapshot().queue).toEqual([])
   expect(document.activeElement).toBe(trigger)
+})
+
+it('replaces a pending toast from the same scope and restarts its 3 seconds', async () => {
+  vi.useFakeTimers()
+  const feedback = createOperationFeedback()
+  const host = document.body.appendChild(document.createElement('div'))
+  function Harness() {
+    return createElement(FeedbackHost, {
+      snapshot: useStoreSelector(feedback.store, (value) => value),
+      onDismiss: feedback.dismiss,
+    })
+  }
+  dispose = mountRegion(host, createElement(Harness))
+  await act(async () => {
+    feedback.sink.publish({ ...result('a'), message: 'deepseek-flash' })
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000)
+  })
+  await act(async () => {
+    feedback.sink.publish({ ...result('b'), message: 'agnes-3.0-flash' })
+  })
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1)
+  })
+  expect(feedback.store.getSnapshot().queue.map((item) => item.id)).toEqual(['b'])
+  expect(document.querySelectorAll('.agh-toast')).toHaveLength(1)
+  expect(document.querySelector('.agh-toast')?.textContent).toContain('agnes-3.0-flash')
+  // The replacement owns a fresh window; the first result's remaining time is not inherited.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2900)
+  })
+  expect(feedback.store.getSnapshot().queue.map((item) => item.id)).toEqual(['b'])
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(200)
+  })
+  expect(feedback.store.getSnapshot().queue).toEqual([])
 })
 
 it('clears 启用插件后可使用 as soon as the plugin is set to enabled, before it is running', async () => {

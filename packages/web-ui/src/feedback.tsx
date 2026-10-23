@@ -65,7 +65,9 @@ export function actionable(result: OperationFeedback): boolean {
 export function enqueueFeedback(snapshot: FeedbackSnapshot, result: OperationFeedback): FeedbackSnapshot {
   if (result.outcome !== 'success') return snapshot
   return {
-    queue: [...snapshot.queue, result],
+    /* Repeating one control replaces what is still waiting for it instead of queuing behind it:
+       three quick model switches would otherwise show three seconds of stale copy each. */
+    queue: [...snapshot.queue.filter((item) => item.scope !== result.scope), result],
     notices: actionable(result)
       ? [...snapshot.notices.filter((item) => item.scope !== result.scope), result]
       : snapshot.notices,

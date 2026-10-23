@@ -13,8 +13,12 @@ export function Toast(props: ToastProps) {
     if (!props.open) return
     if (anchor.current) {
       const owner = anchor.current.ownerDocument
-      const modal = owner.querySelector<HTMLElement>('dialog[open]') ?? owner.activeElement
-      setContainer(getOverlayContainer(modal instanceof HTMLElement ? modal : anchor.current, owner))
+      // A toast is a page-level overlay, so an open dialog is the only scope it must stay inside.
+      // Resolving from the focused element instead hands it to a popover that is closing right as
+      // the toast mounts — the action that raised it is often inside that popover — and the toast
+      // disappears with its container.
+      const modal = owner.querySelector<HTMLElement>('dialog[open]')
+      setContainer(getOverlayContainer(modal ?? anchor.current, owner))
     }
   }, [props.open])
   return (
