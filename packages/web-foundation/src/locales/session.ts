@@ -92,6 +92,14 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.permission.preset': 'Set by the “{name}” preset',
     'session.runtime.grants': 'Allowed without asking',
     'session.runtime.grantsHelp': 'After you revoke one, the Agent asks again next time.',
+    'headsUp.label': 'Heads-up',
+    'headsUp.title': 'Side-review heads-up',
+    'headsUp.help':
+      'Off by default. A side model reviews the Agent’s work and hands it one advisory note before its next step. It never blocks a tool, changes a permission or approves anything. The setting belongs to the running session and resets when it is reopened.',
+    'headsUp.sends':
+      'When on, after side-effecting tool calls and at the end of each turn, the conversation so far plus a truncated tool summary is sent to the verifier model, or the fast model when no verifier is set. Each review is billed as a side call.',
+    'headsUp.unavailable': 'Heads-up is not available in this session.',
+    'headsUp.dismiss': 'Dismiss the heads-up',
     'session.runtime.grantsLoading': 'Loading what is allowed…',
     'session.runtime.grantsEmpty': 'Nothing is allowed without asking. The Agent asks each time.',
     'session.runtime.grantsDenied':
@@ -248,6 +256,14 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.permission.preset': '由「{name}」预设决定',
     'session.runtime.grants': '不用再问的操作',
     'session.runtime.grantsHelp': '撤销后，下次会再问你。',
+    'headsUp.label': '旁路提醒',
+    'headsUp.title': '旁路提醒',
+    'headsUp.help':
+      '默认关闭。旁路模型会审查智能体的工作，并在它下一步之前递上一条仅供参考的提醒。它不会拦截工具、不会改变权限，也不会替你审批。该设置属于正在运行的会话，会话重新打开后恢复为关闭。',
+    'headsUp.sends':
+      '开启后，在有副作用的工具调用之后和每轮结束时，会把到目前为止的对话和截断后的工具摘要发给验证模型，没有验证模型时发给快速模型。每次审查按旁路调用计费。',
+    'headsUp.unavailable': '本会话不支持旁路提醒。',
+    'headsUp.dismiss': '关闭这条提醒',
     'session.runtime.grantsLoading': '正在读取已允许的操作…',
     'session.runtime.grantsEmpty': '没有不用再问的操作，智能体每次都会先问你。',
     'session.runtime.grantsDenied': '你无权查看这个会话的授权。已有的授权仍然有效。',

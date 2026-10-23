@@ -19,6 +19,7 @@ import {
   useDocumentLanguage,
 } from '@agnes/web-ui'
 import type { ReactNode } from 'react'
+import { SessionHeadsUp } from './heads-up-view.js'
 import {
   grantsFailure,
   orderGrants,
@@ -346,6 +347,7 @@ export function createRuntimeDialog(options: {
                 onRetry={retryGrants}
                 t={t}
               />
+              {sessionId && <SessionHeadsUp sessionId={sessionId} t={t} />}
               <SessionToolList
                 tools={tools}
                 failed={toolsFailed}
