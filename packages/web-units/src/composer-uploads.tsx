@@ -22,7 +22,8 @@ type Entry = UploadProgress & {
 }
 export function useComposerUploads(
   prepare: (() => Promise<string>) | undefined,
-  ready: (attachment: UploadedAttachment, id: string, size: number) => void,
+  /** `previewUrl` is a local object URL for image uploads; the caller revokes it when it lets go. */
+  ready: (attachment: UploadedAttachment, id: string, size: number, previewUrl?: string) => void,
   changed: (() => void) | undefined,
   t: Translate,
 ) {
@@ -77,7 +78,14 @@ export function useComposerUploads(
             'original',
           )
           entry.state = 'ready'
-          if (alive.current && !entry.controller.signal.aborted) ready(attachment, entry.id, entry.total)
+          if (alive.current && !entry.controller.signal.aborted) {
+            // The uploaded file is a resource link, so its local bytes are the only way to show a
+            // thumbnail. Only ready uploads get a URL, and attachments.ts owns revoking it.
+            const previewUrl = entry.file.type.startsWith('image/')
+              ? URL.createObjectURL(entry.file)
+              : undefined
+            ready(attachment, entry.id, entry.total, previewUrl)
+          }
         } catch (error) {
           if (entry.controller.signal.aborted) {
             await cancel(entry)
