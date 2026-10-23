@@ -27,6 +27,8 @@ node agnes.mjs --mode stream-json "解释当前项目"
 
 `--safe-mode` 和 `--ignore-rules` 用于排障：少加载一些东西来启动会话。它们只在本命令自己启动的私有 host 上生效，所以必须加 `--ephemeral` 或 `--standalone`；连接共享 daemon 时（默认的 attach，或任何 `--connect`，即使同时写了 `--standalone`）一律拒绝，退出码 2，因为那个 daemon 上的其他会话共用同一份配置。`--ignore-rules` 跳过个人和项目的自定义斜杠命令。`--safe-mode` 包含它，并关闭所有非内置插件；内置的 `@agnes/base` 和你的凭据照常可用。TUI 状态栏会一直显示 `安全模式` 标记。暂不支持：跳过指令文件（`AGENTS.md`、`CLAUDE.md`、`<AGH_HOME>/AGENTS.md`）、hooks 和 MCP server。Host 没有对应的启动参数，指令文件现有的唯一开关是安装级的 `context.json`，一次运行不改进程环境变量就无法覆盖它。命令每次都会在 stderr 说明这一点，避免这个开关被当成它并未提供的保证。
 
+名字打错时，会提示最接近的已知名字，不会替你执行。未知的 flag 退出码为 2，长 flag 有接近的候选时追加 `did you mean --json?`。TUI 里不存在的斜杠命令会提示 `unknown command /modl; did you mean /model?`（内置命令和自定义命令都是候选）。第一个词单独出现、且与某个子命令只差一个笔误（比如 `agh sesions`）时，仍按提示词发给模型，因为单个词的提示词是允许的，但 stderr 会先写一行 `note: sesions is sent as a prompt; did you mean the command sessions?`；加 `-p` 则不再提示。
+
 普通自动连接会在核对规范化的 home/profile/数据路径、进程身份、私有 socket 权限、协议与 CLI 版本，并完成认证就绪检查后复用现有 daemon；连接前不再准备本地插件快照或重复校验安装包。RPC 授权及执行前的代码校验仍由 daemon 负责。没有就绪 daemon 或其状态异常时，仍执行完整启动准备；版本不一致时需停止 daemon，再用当前 CLI 重启。Doctor、恢复、嵌入式执行与 Web 启动入口保留各自的准备路径。
 
 `AGH_TIMING=1 node agnes.mjs -p "hello"` 会向 stderr 写入 `agh-timing PHASE MILLISECONDS` 启动阶段标记。数值从启动器／进程的时间原点累计，不是各阶段耗时。stdout 保持选定的文本／JSON 格式；未设置 `AGH_TIMING=1` 时不输出标记。

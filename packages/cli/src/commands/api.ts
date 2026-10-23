@@ -6,6 +6,7 @@ import {
   type MethodName,
   validateMethod,
 } from '@agnes/protocol'
+import { editDistance } from '@agnes/protocol/command-line'
 import { JsonRpcError, type NodeClient } from '@agnes/sdk'
 import { ExitCode, UsageError } from '../errors.js'
 import type { ParsedArgs } from '../types.js'
@@ -62,21 +63,6 @@ export function apiHelp(): string {
   ].join('\n')
 }
 
-function distance(a: string, b: string): number {
-  let row = Array.from({ length: b.length + 1 }, (_, i) => i)
-  for (let i = 1; i <= a.length; i++) {
-    const next = [i]
-    for (let j = 1; j <= b.length; j++)
-      next[j] = Math.min(
-        (row[j] ?? 0) + 1,
-        (next[j - 1] ?? 0) + 1,
-        (row[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1),
-      )
-    row = next
-  }
-  return row[b.length] ?? 0
-}
-
 /** The closest known method names to a mistyped one. */
 export function closestMethods(input: string, limit = 3): string[] {
   const want = input.replace(PREFIX, '').toLowerCase()
@@ -84,7 +70,7 @@ export function closestMethods(input: string, limit = 3): string[] {
     .map((m) => m.slice(PREFIX.length))
     .map((name) => ({
       name,
-      d: distance(want, name.toLowerCase()) - (name.toLowerCase().includes(want) ? 99 : 0),
+      d: editDistance(want, name.toLowerCase()) - (name.toLowerCase().includes(want) ? 99 : 0),
     }))
     .sort((x, y) => x.d - y.d || x.name.localeCompare(y.name))
     .slice(0, limit)

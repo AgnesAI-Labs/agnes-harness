@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { type ParsedArgs, parseArgs, resolveMode, usage } from '../src/args.js'
+import { COMMANDS, type ParsedArgs, parseArgs, resolveMode, usage } from '../src/args.js'
 import { UsageError } from '../src/errors.js'
+import { mistypedCommand } from '../src/suggest.js'
 import { refuseTurnCapsOutsidePrint } from '../src/turn-caps.js'
 
 const throws = (argv: string[]): UsageError => {
@@ -242,6 +243,15 @@ describe('parseArgs: subcommands', () => {
     ])
   })
 
+  it('a lone word one typo from a command is still a prompt, but is named for the hint', () => {
+    expect(parseArgs(['sesions']).positional).toEqual(['sesions'])
+    expect(mistypedCommand(parseArgs(['sesions']), COMMANDS)).toBe('sessions')
+    expect(mistypedCommand(parseArgs(['sessions']), COMMANDS)).toBeUndefined()
+    expect(mistypedCommand(parseArgs(['-p', 'sesions']), COMMANDS)).toBeUndefined()
+    expect(mistypedCommand(parseArgs(['fix', 'the', 'bug']), COMMANDS)).toBeUndefined()
+    expect(mistypedCommand(parseArgs(['hello']), COMMANDS)).toBeUndefined()
+  })
+
   it('a word that is not a command is a prompt, not an error', () => {
     const unknown = parseArgs(['doctorr'])
     expect(unknown.command).toBeUndefined()
@@ -267,6 +277,8 @@ describe('parseArgs: subcommands', () => {
 describe('parseArgs: every rejection says which check fired', () => {
   it.each([
     [['--bogus'], 'unknown flag --bogus'],
+    [['--jsno'], 'unknown flag --jsno; did you mean --json?'],
+    [['--no-alt-scren'], 'unknown flag --no-alt-scren; did you mean --no-alt-screen?'],
     [['-x'], 'unknown flag -x'],
     [['--profile'], '--profile needs a value'],
     [['--profile', '--preset', 'b'], '--profile needs a value'],

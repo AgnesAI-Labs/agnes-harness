@@ -1,6 +1,7 @@
 import { parseAgentRef, parseLoopSpecifier, SLOT_NAMES } from '@agnes/protocol/command-line'
 import { UsageError } from './errors.js'
 import { refusePrivateHostFlags } from './private-host-flags.js'
+import { unknownFlagMessage } from './suggest.js'
 import { TURN_CAP_FLAGS } from './turn-caps.js'
 import type { Command, ModelSel, ParsedArgs } from './types.js'
 
@@ -258,9 +259,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     // A lone dash is data (stdin for queue), not a flag.
     if (a.startsWith('-') && a !== '-') {
-      const name = a.split('=', 1)[0] ?? ''
-      const safeName = /^(?:--[a-z][a-z0-9-]{0,63}|-[A-Za-z])$/.test(name) ? ` ${name}` : ''
-      throw new UsageError(`unknown flag${safeName}`)
+      throw new UsageError(unknownFlagMessage(a, [...Object.keys(VALUE_FLAGS), ...Object.keys(BOOL_FLAGS)]))
     }
     p.positional.push(a)
   }

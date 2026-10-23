@@ -4,6 +4,7 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { COMMANDS } from './args.js'
 import type { bootDefault as BootDefault } from './boot/default.js'
 import type { LocalBootDeps } from './boot/local.js'
 import { installSignalLadder } from './boot/signals.js'
@@ -11,6 +12,7 @@ import { dispatchProfileCli, isProfileCommand, prepareCommandArgs, resolveMode }
 import { commandHelp } from './command-help.js'
 import type { BranchContext } from './commands/bin-branches.js'
 import { BootError, ExitCode, SIGNAL_EXIT_CODES, type SignalName, UsageError } from './errors.js'
+import { mistypedCommand } from './suggest.js'
 import { timingMark } from './timing.js'
 import { refuseTurnCapsOutsidePrint } from './turn-caps.js'
 import type { Booted } from './types.js'
@@ -420,6 +422,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const mode = resolveMode(p, { stdin: io.stdin.isTTY === true, stdout: io.stdout.isTTY === true })
     if (mode !== 'print' && mode !== 'tui' && mode !== 'acp')
       throw new UsageError(`agh ${mode} is not available in this build; use -p`)
+    const near = mistypedCommand(p, COMMANDS)
+    if (near)
+      io.stderr.write(`note: ${p.positional[0]} is sent as a prompt; did you mean the command ${near}?\n`)
     if (p.outputSchema !== undefined && mode !== 'print')
       throw new UsageError('--output-schema is supported only with -p')
     refuseTurnCapsOutsidePrint(p, mode)

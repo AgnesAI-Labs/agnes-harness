@@ -605,6 +605,8 @@ describe('runSlash', () => {
       expect(unknown.text).not.toContain('/packages')
       const singular = await runSlash(app, '/session')
       expect(singular.text).toBe('unknown command /session; did you mean /sessions?')
+      expect((await runSlash(app, '/modl')).text).toBe('unknown command /modl; did you mean /model?')
+      expect((await runSlash(app, '/zzzzzz')).text).toContain('use /help')
       expect(ep.calls.some((call) => call.method === 'session/load')).toBe(false)
       expect(ep.calls.some((call) => call.method === '_agnes/v1/session.attach')).toBe(false)
     } finally {

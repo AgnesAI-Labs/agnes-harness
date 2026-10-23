@@ -6,6 +6,7 @@ import type {
   SlotName,
   ThinkingLevel,
 } from '@agnes/protocol'
+import { closestNames } from '@agnes/protocol/command-line'
 import type { Session } from '@agnes/sdk'
 import { agentsSlash } from './agent-commands.js'
 import type { TuiApp } from './app.js'
@@ -735,13 +736,16 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     default:
       return (
         customSlash(app, cmd, line, isBuiltin) ?? {
-          text:
-            cmd === '/session'
-              ? 'unknown command /session; did you mean /sessions?'
-              : `unknown command ${cmd}; use /help to list commands`,
+          text: unknownCommand(cmd, app),
         }
       )
   }
+}
+
+/** The refusal for a slash command nobody defined; it names the closest one but never runs it. */
+function unknownCommand(cmd: string, app: TuiApp): string {
+  const near = closestNames(cmd, completeToken('/', app))[0]
+  return `unknown command ${cmd}; ${near ? `did you mean ${near}?` : 'use /help to list commands'}`
 }
 
 /** '/…' completes against the command table and the custom commands; '@' mentions have their own menu (file-mentions.ts). */
