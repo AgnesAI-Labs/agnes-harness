@@ -20,6 +20,7 @@ import {
   type SessionAttachResult,
   type SessionBudgetResult,
   type SessionDeliverablesResult,
+  type SessionJob,
   type SessionJobsControlParams,
   type SessionJobsControlResult,
   type SessionJobsReadResult,
@@ -538,6 +539,21 @@ export class Session {
       sessionId: this.id,
       commandId: input.commandId ?? crypto.randomUUID(),
     })
+  }
+
+  /** Runs one non-interactive shell command on the daemon host; poll `jobsRead(job.id)` for output. */
+  async jobsRun(
+    command: string,
+    options: { timeoutMs?: number; commandId?: string } = {},
+  ): Promise<SessionJob> {
+    const { output } = await this.jobsControl({
+      operation: 'run',
+      command,
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.commandId === undefined ? {} : { commandId: options.commandId }),
+    })
+    if (!('id' in output)) throw new Error('session.jobs.control run returned no job')
+    return output
   }
 
   workspaceChanges(

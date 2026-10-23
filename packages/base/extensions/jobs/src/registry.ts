@@ -60,7 +60,7 @@ export class ShellJobs {
     }
     return jobs
   }
-  private add(ctx: JobOwner, view: ShellJobView, stop: () => Promise<void>): Job {
+  private add(ctx: JobOwner, view: ShellJobView, stop: () => Promise<void>, quiet = false): Job {
     view.ownerSessionId = ctx.session.key
     const jobs = this.table(ctx)
     if (jobs.size >= MAX_JOBS) {
@@ -82,9 +82,11 @@ export class ShellJobs {
         if (view.code !== null) return
         view.code = code ?? -1
         if (view.status !== 'killed') view.status = code === 0 ? 'completed' : 'failed'
-        const queue = this.notifications.get(owner(ctx)) ?? []
-        queue.push({ ...view, stdout: '', stderr: '' })
-        this.notifications.set(owner(ctx), queue.slice(-128))
+        if (!quiet) {
+          const queue = this.notifications.get(owner(ctx)) ?? []
+          queue.push({ ...view, stdout: '', stderr: '' })
+          this.notifications.set(owner(ctx), queue.slice(-128))
+        }
         resolve(copy(job))
       },
     }
@@ -186,6 +188,58 @@ export class ShellJobs {
     const off = handle.onOutput((chunk) => this.append(job, chunk))
     void handle.exited.then(({ code, error, stoppedProcesses }) => {
       off()
+      if (stoppedProcesses !== undefined) job.view.stoppedProcesses = stoppedProcesses
+      job.cleanupPending = error !== undefined
+      if (error) this.append(job, { stream: 'stderr', text: String(error) })
+      job.finish(error ? null : code)
+    })
+    return copy(job)
+  }
+  /**
+   * One-shot command a human typed (`!cmd`). Same sandbox path as `start`, but the job is human-owned,
+   * accepts signals, ends as `killed` after `timeoutMs` (SIGTERM, then a kill after 2 s) and never
+   * joins the completion queue that feeds the model's context.
+   */
+  async run(
+    ctx: ProcessJobContext,
+    command: string,
+    timeoutMs: number,
+    powershell = false,
+  ): Promise<ShellJobView> {
+    const argv = powershell ? [SHELL_SENTINEL, command] : ['sh', '-c', command]
+    const handle = await this.open(ctx, argv, ctx.cwd)
+    let job: Job
+    try {
+      job = this.add(
+        ctx,
+        { ...this.view('shell', command, ctx.cwd), owner: 'human' },
+        () => handle.close(),
+        true,
+      )
+    } catch (error) {
+      await handle.close()
+      throw error
+    }
+    this.processes.set(job.view.id, handle)
+    const off = handle.onOutput((chunk) => this.append(job, chunk))
+    let escalation: ReturnType<typeof setTimeout> | undefined
+    const timer = setTimeout(() => {
+      if (job.view.code !== null) return
+      job.view.status = 'killed'
+      void handle.signal('SIGTERM').catch(() => undefined)
+      escalation = setTimeout(() => {
+        if (job.view.code === null)
+          void job
+            .stop()
+            .then(() => job.finish(-1))
+            .catch(() => undefined)
+      }, 2000)
+    }, timeoutMs)
+    void handle.exited.then(({ code, error, stoppedProcesses }) => {
+      clearTimeout(timer)
+      clearTimeout(escalation)
+      off()
+      this.processes.delete(job.view.id)
       if (stoppedProcesses !== undefined) job.view.stoppedProcesses = stoppedProcesses
       job.cleanupPending = error !== undefined
       if (error) this.append(job, { stream: 'stderr', text: String(error) })

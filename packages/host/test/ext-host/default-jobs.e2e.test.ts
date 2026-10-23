@@ -175,6 +175,17 @@ it.skipIf(process.platform === 'win32')(
       await expect.poll(async () => JSON.stringify(await readJobs(terminalId))).toContain('service-tty')
       await control({ operation: 'kill', jobId: terminalId }, 'terminal-close')
       expect(JSON.stringify(await readJobs(terminalId))).toContain('killed')
+      // A one-shot `run` goes through the same authorization and sandbox as `open`.
+      const ran = await control({ operation: 'run', command: 'echo run-$((6*7))' }, 'run-once')
+      const runId = (ran.output as { id: string }).id
+      expect(ran.output).toMatchObject({ owner: 'human', kind: 'shell' })
+      await expect.poll(async () => JSON.stringify(await readJobs(runId))).toContain('run-42')
+      const finished = (await readJobs(runId)).output as {
+        job: { status: string; code: number }
+        completions: { id: string }[]
+      }
+      expect(finished.job).toMatchObject({ status: 'completed', code: 0 })
+      expect(finished.completions.map((job) => job.id)).not.toContain(runId)
       await session.close()
       expect(() => process.kill(pid, 0)).toThrow()
     } finally {

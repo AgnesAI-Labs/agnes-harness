@@ -85,6 +85,6 @@ ACP 初始化版本仍为 1，AGH 扩展仍使用 `_agnes/v1`。v1 客户端应�
 
 ## 会话进程任务
 
-`_agnes/v1/session.jobs.read({sessionId, jobId?})` 返回有上限的任务快照。`_agnes/v1/session.jobs.control({sessionId, commandId, operation, ...})` 经既有服务命令 journal 执行终端副作用。两者校验会话所有权；控制操作拒绝另一会话或 agent 所有的任务。打开终端和输入遵守会话权限策略；打开时使用已准入 cwd 与会话 sandbox。关闭 dock 和分离会话不会结束任务。见[工作台面板](../extend/workbench-panels.zh-CN.md)。
+`_agnes/v1/session.jobs.read({sessionId, jobId?})` 返回有上限的任务快照。`_agnes/v1/session.jobs.control({sessionId, commandId, operation, ...})` 经既有服务命令 journal 执行终端副作用。两者校验会话所有权；控制操作拒绝另一会话或 agent 所有的任务。打开终端、运行命令和输入遵守会话权限策略；打开时使用已准入 cwd 与会话 sandbox。`operation: "run"` 接受 `command`（1 到 8 KiB，不含 NUL）和可选的 `timeoutMs`（1 秒到 10 分钟，默认 120 秒），在会话 cwd 里经与 `open` 相同的 sandbox 与授权，把它作为非交互 shell 任务执行一次，并返回属主为 human 的 `SessionJob`；用 `session.jobs.read({sessionId, jobId})` 轮询输出和退出码，用 `signal` 或 `kill` 取消。超时先发 SIGTERM，2 秒后 SIGKILL，状态为 `killed`。run 任务不会进入模型的「Jobs completed」上下文。关闭 dock 和分离会话不会结束任务。见[工作台面板](../extend/workbench-panels.zh-CN.md)。
 
 `_agnes/v1/admin.feedback`: `list`, `put`, `withdraw`, `generate`. [反馈服务](../extend/feedback.zh-CN.md).

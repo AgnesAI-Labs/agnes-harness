@@ -8,6 +8,8 @@ const owner = (ctx: ServiceContext): JobOwner => {
   if (!ctx.session) throw new Error('Host has no session-bound jobs service')
   return { session: { ...ctx.session, toolUseId: '', depth: 0, generationDepth: 0 } }
 }
+const RUN_COMMAND_MAX = 8192
+const RUN_DEFAULT_TIMEOUT_MS = 120000
 const outputSchema = { type: 'object', additionalProperties: true }
 export const jobsReadSchema = Type.Object(
   { jobId: Type.Optional(Type.String({ minLength: 1 })) },
@@ -15,13 +17,17 @@ export const jobsReadSchema = Type.Object(
 )
 export const jobsControlSchema = Type.Object(
   {
-    operation: Type.Union(['open', 'send', 'resize', 'signal', 'kill'].map((value) => Type.Literal(value))),
+    operation: Type.Union(
+      ['open', 'run', 'send', 'resize', 'signal', 'kill'].map((value) => Type.Literal(value)),
+    ),
     jobId: Type.Optional(Type.String({ minLength: 1 })),
     shell: Type.Optional(ShellSchema),
     text: Type.Optional(Type.String({ maxLength: 65536 })),
     columns: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
     rows: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })),
     signal: Type.Optional(SignalSchema),
+    command: Type.Optional(Type.String({ minLength: 1, maxLength: RUN_COMMAND_MAX })),
+    timeoutMs: Type.Optional(Type.Integer({ minimum: 1000, maximum: 600000 })),
   },
   { additionalProperties: false },
 )
@@ -117,6 +123,33 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
             'human',
           )
           return publicJob(job)
+        }
+        if (input.operation === 'run') {
+          const { command, timeoutMs = RUN_DEFAULT_TIMEOUT_MS } = input
+          if (
+            typeof command !== 'string' ||
+            !command ||
+            command.includes('\0') ||
+            Buffer.byteLength(command) > RUN_COMMAND_MAX
+          )
+            throw new Error('invalid command')
+          if (
+            typeof timeoutMs !== 'number' ||
+            !Number.isInteger(timeoutMs) ||
+            timeoutMs < 1000 ||
+            timeoutMs > 600000
+          )
+            throw new Error('invalid timeoutMs')
+          if (!ctx.sandbox?.openProcess)
+            throw new Error('SANDBOX_UNAVAILABLE: process service is unavailable')
+          return publicJob(
+            await jobs.run(
+              { ...scope, cwd: ctx.cwd, fs: ctx.fs, signal: ctx.signal, sandbox: ctx.sandbox },
+              command,
+              timeoutMs,
+              ctx.platform?.shell === 'powershell',
+            ),
+          )
         }
         if (typeof input.jobId !== 'string') throw new Error('jobId is required')
         const job = jobs.list(scope).find((candidate) => candidate.id === input.jobId)

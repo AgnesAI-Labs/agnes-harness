@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 import type { ServiceContext } from '@agnes/extension-api'
 import { validateMethod } from '@agnes/protocol'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createJobTools } from '../src/index.js'
 import { ShellJobs } from '../src/registry.js'
@@ -213,4 +213,123 @@ it('retains failed cleanup for explicit retry instead of discarding the owned ha
   failing = false
   await jobs.closeSession(ctx.session.key)
   expect(jobs.list(ctx)).toEqual([])
+})
+
+it('runs a human one-shot command with output, exit codes, a timeout kill and no model-context completion', async () => {
+  vi.useFakeTimers()
+  const jobs = new ShellJobs(),
+    tool = fakeToolContext({ cwd: resolve('/work/proj'), sessionKey: 'run-session' })
+  const procs: {
+    argv: readonly string[]
+    cwd: string | undefined
+    signals: string[]
+    closed: boolean
+    emit(stream: 'stdout' | 'stderr', text: string): void
+    end(code: number): void
+  }[] = []
+  tool.sandbox.openProcess = async (request) => {
+    let listener: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void = () => {}
+    let end!: (code: number) => void
+    const exited = new Promise<{ code: number }>((done) => {
+      end = (code) => done({ code })
+    })
+    const proc = {
+      argv: request.argv,
+      cwd: request.cwd,
+      signals: [] as string[],
+      closed: false,
+      emit: (stream: 'stdout' | 'stderr', text: string) => listener({ stream, text }),
+      end,
+    }
+    procs.push(proc)
+    return {
+      enforcement: { level: 'none', scope: [] },
+      exited,
+      onOutput(fn) {
+        listener = fn
+        return () => {}
+      },
+      write: async () => {},
+      resize: async () => {},
+      signal: async (signal) => {
+        proc.signals.push(signal)
+      },
+      close: async () => {
+        proc.closed = true
+        end(137)
+      },
+    }
+  }
+  const ctx = { ...tool, source: 'test', requestId: 'r', timeoutMs: 1000 } as ServiceContext
+  const [read, control] = createJobsServices(jobs)
+  const run = async (input: Record<string, unknown>) =>
+    (await control!.handler({ operation: 'run', ...input } as never, ctx)) as { id: string }
+  try {
+    const ok = await run({ command: 'ls -la' })
+    expect(procs[0]).toMatchObject({ argv: ['sh', '-c', 'ls -la'], cwd: tool.cwd })
+    expect(ok).toMatchObject({ owner: 'human', kind: 'shell', status: 'running', command: 'ls -la' })
+    procs[0]!.emit('stdout', 'hello\n')
+    procs[0]!.emit('stderr', 'warn\n')
+    procs[0]!.end(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await read!.handler({ jobId: ok.id }, ctx)).toMatchObject({
+      job: { status: 'completed', code: 0, stdout: 'hello\n', stderr: 'warn\n' },
+    })
+    expect(validateMethod('_agnes/v1/session.jobs.control', 'result', { output: ok })).toMatchObject({
+      ok: true,
+    })
+
+    const bad = await run({ command: 'false' })
+    procs[1]!.end(3)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(await read!.handler({ jobId: bad.id }, ctx)).toMatchObject({
+      job: { status: 'failed', code: 3 },
+    })
+
+    // Output beyond the 64 KiB read window is reported as truncated.
+    const big = await run({ command: 'yes' })
+    procs[2]!.emit('stdout', 'x'.repeat(70000))
+    expect(await read!.handler({ jobId: big.id }, ctx)).toMatchObject({
+      job: { truncated: true, stdout: 'x'.repeat(65536) },
+    })
+    // A human can interrupt it through the existing signal control.
+    await control!.handler({ operation: 'signal', jobId: big.id, signal: 'SIGINT' }, ctx)
+    expect(procs[2]!.signals).toEqual(['SIGINT'])
+    procs[2]!.end(130)
+    await vi.advanceTimersByTimeAsync(0)
+
+    // The timeout sends SIGTERM, then closes the process after 2 s and reports `killed`.
+    const slow = await run({ command: 'sleep 999', timeoutMs: 1000 })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(procs[3]!.signals).toEqual(['SIGTERM'])
+    expect(procs[3]!.closed).toBe(false)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(procs[3]!.closed).toBe(true)
+    expect(await read!.handler({ jobId: slow.id }, ctx)).toMatchObject({ job: { status: 'killed' } })
+
+    // Human `run` jobs never reach the "Jobs completed" queue; agent terminals still do.
+    expect(jobs.completions(tool)).toEqual([])
+    const agent = await jobs.openTerminal(tool, 'bash')
+    procs[4]!.end(0)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(jobs.completions(tool)).toMatchObject([{ id: agent.id, status: 'completed' }])
+
+    for (const input of [
+      { command: '' },
+      { command: 'a\0b' },
+      { command: 'x'.repeat(8193) },
+      { command: 'ls', timeoutMs: 999 },
+      { command: 'ls', timeoutMs: 600001 },
+    ])
+      await expect(run(input)).rejects.toThrow(/invalid/)
+    expect(procs).toHaveLength(5)
+    const noSandbox = { ...ctx } as { sandbox?: unknown }
+    delete noSandbox.sandbox
+    await expect(
+      control!.handler({ operation: 'run', command: 'ls' }, noSandbox as ServiceContext),
+    ).rejects.toThrow('SANDBOX_UNAVAILABLE')
+  } finally {
+    vi.useRealTimers()
+    await jobs.dispose()
+  }
 })

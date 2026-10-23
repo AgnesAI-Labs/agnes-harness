@@ -1242,4 +1242,25 @@ describe('methods (I1 set)', () => {
     ).toContainEqual(expect.objectContaining({ code: 'MISSING', key: 'enabled' }))
     expect(validateMethod('_agnes/v1/session.setYolo', 'result', { effectiveFromSeq: 9 }).ok).toBe(true)
   })
+
+  it('jobs.control run takes a bounded command and timeout and nothing else', () => {
+    const run = { sessionId: 's', commandId: 'c', operation: 'run' }
+    const ok = (extra: Record<string, unknown>) =>
+      validateMethod('_agnes/v1/session.jobs.control', 'params', { ...run, ...extra }).ok
+    expect(ok({ command: 'ls' })).toBe(true)
+    expect(ok({ command: 'x'.repeat(8192), timeoutMs: 1000 })).toBe(true)
+    expect(ok({ command: 'ls', timeoutMs: 600000 })).toBe(true)
+    for (const bad of [
+      {},
+      { command: '' },
+      { command: 'x'.repeat(8193) },
+      { command: 'a\0b' },
+      { command: 'ls', timeoutMs: 999 },
+      { command: 'ls', timeoutMs: 600001 },
+      { command: 'ls', timeoutMs: 1.5 },
+      { command: 'ls', jobId: 'j' },
+      { command: 'ls', shell: 'bash' },
+    ])
+      expect(ok(bad)).toBe(false)
+  })
 })
