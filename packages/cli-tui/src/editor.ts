@@ -53,7 +53,8 @@ export type EditorOptions = {
   maxRows?(): number
   placeholder?: string
   locale?: string
-  onSubmit(text: string): void
+  /** `raw` is the draft as typed, before chips are expanded; `chips` says whether it holds any. */
+  onSubmit(text: string, raw: string, chips: boolean): void
   /** `hadDraft`: the key found text in the editor (idle, it then cleared it). */
   onCancelKey?(hadDraft: boolean): void
   /** Ctrl-G: the app hands the draft to the user's own editor and writes the result back with `replaceDraft`. */
@@ -171,6 +172,11 @@ export class Editor implements Component, VimTarget {
     return out
   }
 
+  /** Whether `text` holds a paste or image chip of this draft. */
+  hasChip(text = this.text): boolean {
+    return [...this.pastes.keys()].some((chip) => text.includes(chip))
+  }
+
   invalidate(): void {}
 
   /** A mouse click on text row `row` (0 is the first row drawn) at column `col` of the last render: the cursor goes there. */
@@ -230,10 +236,12 @@ export class Editor implements Component, VimTarget {
         }
         if (!this.text.trim()) return true
         const t = this.expanded()
+        const raw = this.text
+        const chips = this.hasChip()
         this.store.add(t)
         this.clear()
         this.o.vim?.insert()
-        this.o.onSubmit(t)
+        this.o.onSubmit(t, raw, chips)
         return true
       }
       case 'newline':
@@ -710,7 +718,8 @@ export class Editor implements Component, VimTarget {
     this.textRows = 0
     if (this.search) return this.renderSearch(this.search, width)
     // In vim normal mode the arrow turns around, so the mode shows even where the rail is too narrow to say it.
-    const arrow = this.o.vim?.normal ? '❮' : '❯'
+    // A draft that starts with `!` is a shell command: the prompt says so.
+    const arrow = this.o.vim?.normal ? '❮' : this.text.startsWith('!') ? '!' : '❯'
     const prompt = width > 2 ? `${arrow} ` : width === 2 ? arrow : ''
     const shown = prompt && this.bold(this.paint('accent', prompt))
     const continuation = width > 2 ? CONTINUATION : ' '.repeat(prompt.length)

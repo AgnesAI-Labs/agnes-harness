@@ -23,7 +23,7 @@ const HEADING: Record<number, Style> = { 1: { bold: true, tone: 'accent' }, 2: {
 const shades = (ansi: ThemedAnsi) => ansi.bg('codeBg', ' ') !== ' '
 
 /** Consume terminal commands without allowing an OSC terminator to swallow preceding CSI text. */
-function stripVT(text: string): string {
+export function stripVT(text: string): string {
   let out = ''
   for (let i = 0; i < text.length; i++) {
     let code = text.charCodeAt(i)

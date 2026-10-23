@@ -3,6 +3,7 @@ import { DEFAULT_BRANDING, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
 import type { TuiAppOptions } from './app-options.js'
 import { ApprovalSettle } from './approval-settle.js'
+import { BangShell, isBangLine } from './bang-shell.js'
 import { Borders } from './borders.js'
 import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { CardFocus } from './card-focus.js'
@@ -90,7 +91,7 @@ export class TuiApp {
   // Not readonly: `applySwitch` (a slash command that switches session -- /new, /resume, /rewind)
   // replaces it with a fresh projection built for the newly current session.
   projection: TuiProjection
-  private readonly timeline: Timeline
+  readonly timeline: Timeline
   readonly welcome: WelcomeController
   readonly cards: ToolCards
   private readonly approvalCards = new Map<string, ApprovalCard>()
@@ -132,7 +133,7 @@ export class TuiApp {
   readonly modelPicker: ModelPicker
   readonly sessionPicker: SessionPicker
   private readonly packageController: PackageController
-  private readonly localCommandView: (command: string, output: string, quiet?: boolean) => Component
+  readonly localCommandView: (command: string, output: string, quiet?: boolean) => Component
   // Streamed text is never in the projected timeline: a streaming node stays empty there, and the
   // live line shows what the previews of every inference still streaming have said.
   readonly previews = new PreviewMerger()
@@ -152,6 +153,8 @@ export class TuiApp {
   private localTurn = false
   private readonly interrupts = new DoubleCtrlC()
   private readonly escapes = new DoubleEsc()
+  /** `!cmd` / `!!cmd` shell lines of the prompt. */
+  readonly bang = new BangShell(this)
   readonly busyInput = new BusyInput({
     session: () => this.o.session,
     locale: () => this.locale,
@@ -313,8 +316,8 @@ export class TuiApp {
       ansi,
       busy: () => this.busy,
       history: new PromptHistory(o.historyPath),
-      onSubmit: (text) => {
-        void this.runInput(text)
+      onSubmit: (text, raw, chips) => {
+        void this.runInput(text, raw, chips)
       },
       onPasteText: (text) => attachDroppedImages(this, text),
       onPasteImage: () => void pasteClipboardImage(this).catch((error) => this.showError(error)),
@@ -497,8 +500,9 @@ export class TuiApp {
             text,
             true,
           ),
-        runInput: (text) => this.runInput(text),
+        runInput: (text, raw, chips) => this.runInput(text, raw, chips),
         interrupts: this.interrupts,
+        shellInterrupt: () => this.bang.interrupt(),
         cancel: () => this.cancel(),
         onQuit: () => this.onQuit(),
         showError: (error) => this.showError(error),
@@ -827,13 +831,17 @@ export class TuiApp {
   /** The one way to run a line of user input, for the editor and for the prompt `agnes "…"` starts
    * with alike: routes `/…` to `command()`, everything else to `submit()`, and reports either one's
    * failure on the status bar instead of throwing, so a recoverable turn error keeps the session. */
-  async runInput(text: string): Promise<void> {
+  async runInput(text: string, raw = text, chips = false): Promise<void> {
     if (this.closedNotice !== undefined) {
       // Decide and act on the same normalized text: a padded ' /quit' must not reach submit().
       if (text.trim() !== '/quit' && text.trim() !== '/exit') return void this.refuseClosed()
       text = '/quit'
     }
-    const task = isSlashCommandLine(text) ? this.command(text) : this.submit(text)
+    const task = isBangLine(raw)
+      ? this.bang.run(raw, chips)
+      : isSlashCommandLine(text)
+        ? this.command(text)
+        : this.submit(text)
     await task.catch((error: unknown) => this.showError(error))
   }
 

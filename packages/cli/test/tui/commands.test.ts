@@ -538,6 +538,132 @@ describe('runSlash', () => {
     }
   })
 
+  it('! runs a shell line through session.jobs.control run and never sends it as a prompt or a command', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    const job = (over: Record<string, unknown> = {}) => ({
+      id: 'sh1',
+      owner: 'human',
+      ownerSessionId: 'cur',
+      kind: 'shell',
+      command: 'ls',
+      cwd: '/tmp',
+      status: 'running',
+      code: null,
+      truncated: false,
+      ...over,
+    })
+    let unsupported = false
+    ep.on('_agnes/v1/session.jobs.control', () => {
+      if (unsupported) throw rpcError('METHOD_NOT_FOUND')
+      return { output: job() }
+    })
+    ep.on('_agnes/v1/session.jobs.read', () => ({
+      jobs: [],
+      completions: [],
+      job: job({ status: 'completed', code: 0, stdout: 'file-a\nfile-b\n' }),
+    }))
+    ep.on('session/prompt', () => ({ stopReason: 'end_turn' }))
+    const prompts = () => ep.calls.filter((call) => call.method === 'session/prompt')
+    const command = vi.spyOn(app, 'command')
+    const submit = vi.spyOn(app, 'submit')
+    try {
+      await app.start()
+      await app.runInput('!ls')
+      expect(ep.calls.find((call) => call.method === '_agnes/v1/session.jobs.control')?.params).toMatchObject(
+        {
+          operation: 'run',
+          command: 'ls',
+        },
+      )
+      expect(prompts()).toEqual([])
+      expect(command).not.toHaveBeenCalled()
+      expect(submit).not.toHaveBeenCalled()
+      expect(app.editor.text).toBe('[Shell #1]')
+      await vi.waitFor(async () => {
+        const screen = (await screenOf(term, 100, 24)).join('\n')
+        expect(screen).toContain('$ ls')
+        expect(screen).toContain('file-b')
+        expect(screen).toContain('退出码 0')
+      })
+      // The chip travels with the next message as a text block.
+      await app.runInput('[Shell #1] what are these?')
+      expect(prompts()).toHaveLength(1)
+      expect(JSON.stringify(prompts()[0]?.params)).toContain('file-a')
+      // `!!` leaves no chip behind.
+      app.editor.clear()
+      await app.runInput('!!ls')
+      expect(app.editor.text).toBe('')
+      // Pasted text that starts with ! is a prompt, not a shell line: only the typed draft decides.
+      const runs = () =>
+        ep.calls.filter(
+          (call) =>
+            call.method === '_agnes/v1/session.jobs.control' &&
+            (call.params as { operation?: string }).operation === 'run',
+        ).length
+      const ran = runs()
+      const sent = prompts().length
+      await app.runInput('!rm -rf ~', '[Pasted #1 · 3 lines]')
+      expect(runs()).toBe(ran)
+      expect(prompts()).toHaveLength(sent + 1)
+      // A shell line that holds a chip is refused, not expanded into the command.
+      await app.runInput('!echo [Pasted #1 · 3 lines]', '!echo [Pasted #1 · 3 lines]', true)
+      expect(runs()).toBe(ran)
+      expect(prompts()).toHaveLength(sent + 1)
+      // A daemon without the operation: a notice, the draft comes back, nothing is sent as a prompt.
+      unsupported = true
+      await app.runInput('!ls')
+      expect(app.editor.text).toBe('!ls')
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 100, 24)).join('\n')).toContain('这个 daemon 不支持 ! 命令'),
+      )
+      expect(prompts()).toHaveLength(2)
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
+  it('Ctrl-C during a ! command sends SIGINT, then kill, and does not quit', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    const running = {
+      id: 'sh1',
+      owner: 'human',
+      ownerSessionId: 'cur',
+      kind: 'shell',
+      command: 'sleep 99',
+      cwd: '/tmp',
+      status: 'running',
+      code: null,
+      truncated: false,
+    }
+    ep.on('_agnes/v1/session.jobs.control', (params) =>
+      (params as { operation: string }).operation === 'run' ? { output: running } : { output: { ok: true } },
+    )
+    ep.on('_agnes/v1/session.jobs.read', () => ({ jobs: [], completions: [], job: running }))
+    let quit = 0
+    app.onQuit = () => quit++
+    const controls = () =>
+      ep.calls.filter((call) => call.method === '_agnes/v1/session.jobs.control').map((call) => call.params)
+    try {
+      await app.start()
+      void app.runInput('!sleep 99')
+      await vi.waitFor(() => expect(controls()).toHaveLength(1))
+      term.feed('\x03')
+      term.feed('\x03')
+      await vi.waitFor(() => expect(controls()).toHaveLength(3))
+      expect(controls().slice(1)).toMatchObject([
+        { operation: 'signal', signal: 'SIGINT', jobId: 'sh1' },
+        { operation: 'kill', jobId: 'sh1' },
+      ])
+      expect(quit).toBe(0)
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
   it('/queue lists the daemon queue, including what Alt+Enter steered in, without sending anything', async () => {
     const { app, client, ep, term } = await unstartedApp()
     try {

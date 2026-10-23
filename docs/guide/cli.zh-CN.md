@@ -48,6 +48,7 @@ node agnes.mjs
 | 新任务/选择历史 | `/new [DIR]`、`/sessions`、`/resume [id\|all]`（`all` 列出所有工作区；选择器里 Tab 在本工作区与全部之间切换并保留已输入的过滤词，PgUp/PgDn 翻页，按最近活动的本地时间排序）、`/search QUERY`（需管理员连接）、`/import [文件 [--from claude-code\|codex\|pi\|auto]]` |
 | 子智能体 | `/agents` 列出本会话可控的子智能体；`/agents stop N\|ID` 中断一个，`/agents resume N\|ID 消息` 让它继续。能否执行由 daemon 决定，拒绝会原样显示 |
 | 后台任务 | `/jobs` 列出本会话的后台任务；`/jobs stop N\|ID` 终止一个（agent 拥有的任务会被 daemon 拒绝） |
+| Shell 命令 | 以 `!` 开头的一行作为 shell 命令运行，例如 `!git status`。草稿以 `!` 开头时，输入框的提示符 `❯` 变成强调色的 `!`。按 Enter 后，命令作为一次性任务发给 daemon，在会话的工作目录里运行（走和打开终端相同的沙箱与授权：只读或 plan 模式的会话、没有 `pty_open` 的预设都会拒绝），时间线里出现一张卡片，显示 `$ 命令`、实时输出（每 250 毫秒轮询一次，逐步放慢到每秒一次）以及退出码和用时。运行中按 Ctrl-C 向命令发 SIGINT，再按一次强制结束；命令运行期间 TUI 不会因 Ctrl-C 退出。命令运行超过 2 分钟会被停止（先 SIGTERM，2 秒后 SIGKILL）。结果出来后，草稿里会多一个 `[Shell #N]` 标记；命令、退出码和输出的最后 16 KiB 会随你的下一条消息发给模型，删掉标记则只留给自己。`!!命令` 运行方式相同，但不生成标记。命令和输出显示前会去掉控制字符和转义序列。通过 `--connect` 连接时命令在 daemon 所在主机上运行，卡片会注明；不支持此功能的旧 daemon 会提示“这个 daemon 不支持 ! 命令”。同一时间只运行一条命令，`!` 开头的行不会被当作提示词发给模型 |
 | 排队消息 | 回合进行中按 Enter，消息进入 daemon 队列，回合结束后自动发送；按 Alt+Enter 则插入正在运行的回合（该回合不接受插入时改为排队）。TUI 不保存任何队列，退出后队列仍在，会话的所有客户端都看得到。`/queue` 列出排队的消息，并按序号管理：`/queue edit N` 放回输入框修改（附件随下一条消息发送），`/queue drop N` 丢弃，`/queue now N` 停止当前回合并先发送这一条，`/queue steer N` 把它变成对当前回合的插入。输入框为空时按 Alt+↑ 取回最新的一条排队消息。对已发送或已删除的消息操作会提示这一点 |
 | 模型/预设 | `/model`、`/model main ROUTE/MODEL`、`/preset NAME` |
 | 上下文/用量 | `/context`、`/usage`、`/cost` |

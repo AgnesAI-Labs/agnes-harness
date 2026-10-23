@@ -273,6 +273,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
               `  ${(usages[index] as string).padEnd(usageWidth + 2)}${tt(command.descriptionKey, locale)}`,
           ),
           ...customHelp(app, isBuiltin),
+          '',
+          tt('bang.help', locale),
         ].join('\n'),
         presentation: 'transcript',
       }

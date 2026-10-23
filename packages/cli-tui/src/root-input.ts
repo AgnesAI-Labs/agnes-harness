@@ -1,4 +1,5 @@
 import type { ApprovalSettle } from './approval-settle.js'
+import { isBangLine } from './bang-format.js'
 import type { Editor } from './editor.js'
 import type { DoubleCtrlC } from './interrupt.js'
 import { actionFor } from './keymap.js'
@@ -51,8 +52,10 @@ export interface RootInputHost {
   refuseClosed: () => boolean
   /** Sends the draft into the turn in flight. */
   steer: (text: string) => Promise<void>
-  runInput: (text: string) => Promise<void>
+  runInput: (text: string, raw?: string, chips?: boolean) => Promise<void>
   interrupts: DoubleCtrlC
+  /** Ctrl-C meant for a running `!` command; true when it took the key. */
+  shellInterrupt: () => boolean
   cancel: () => Promise<void>
   onQuit: () => void
   showError: (error: unknown) => void
@@ -126,9 +129,13 @@ export function rootInput(
     // below). Busy, it steers the draft into the turn in flight, where Enter queues it behind.
     if (action === 'steer' && host.busy()) {
       const text = host.editor.expanded()
+      // Whether it is a shell line comes from what was typed, never from pasted text a chip stands for.
+      const raw = host.editor.text
+      const chips = host.editor.hasChip()
       if (text.trim() && !host.refuseClosed()) {
         host.editor.clear()
-        void host.steer(text).catch(host.showError)
+        // A `!` line is a shell command, never a prompt, even when steering.
+        void (isBangLine(raw) ? host.runInput(text, raw, chips) : host.steer(text)).catch(host.showError)
       }
       return true
     }
@@ -138,6 +145,7 @@ export function rootInput(
       return true
     }
     if (action === 'interrupt') {
+      if (host.shellInterrupt()) return true
       host.interrupts.press(() => host.cancel(), host.onQuit, host.showError)
       return true
     }
