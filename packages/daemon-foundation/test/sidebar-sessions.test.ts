@@ -189,6 +189,42 @@ it.each(['sql', 'memory'])(
 )
 
 it.each(['sql', 'memory'])(
+  'reports the fork parent and boundary only on forked sessions, never across principals (%s)',
+  async (kind) => {
+    const tables = sqliteTables(),
+      t = tables.table('session_workspaces'),
+      s = setup(t)
+    const pages =
+      kind === 'sql'
+        ? new SidebarSessions(t, s.workspaces)
+        : new MemorySidebarSessions(s.workspaces, s.ownership, s.preferences, async () => ({
+            items: s.registry.rows().map((row) => ({ ...row, sessionCount: 0, available: true })),
+          }))
+    const groupId = workspaceIdFor('/repo')
+    try {
+      s.add('parent')
+      s.ownership.inherit('parent', 'kid', 'owner', 2)
+      s.workspaces.put('kid', '/repo')
+      s.workspaces.observe('kid', event(1, 'session/start', '2026-10-15T00:00:00Z', { preset: 'standard' }))
+      s.workspaces.observe('kid', event(2, 'user/message', '2026-10-16T01:00:00Z'))
+      s.ownership.activateFork('parent', 'kid', 'owner', 2)
+      s.add('theirs', '/repo', 'other')
+      const rows = (await pages.list('owner', { groupId })).items
+      expect(rows.map((row) => [row.sessionId, row.parent, row.forkAt])).toEqual([
+        ['kid', 'parent', 2],
+        ['parent', undefined, undefined],
+      ])
+      expect(rows[1]).not.toHaveProperty('parent')
+      expect(rows[1]).not.toHaveProperty('forkAt')
+      expect((await pages.list('other', { groupId })).items.map((row) => row.sessionId)).toEqual(['theirs'])
+    } finally {
+      await pages.close()
+      await tables.close()
+    }
+  },
+)
+
+it.each(['sql', 'memory'])(
   'moves pinned sessions into a first pinned group ordered by pin time, apart from their workspace (%s)',
   async (kind) => {
     let now = 0

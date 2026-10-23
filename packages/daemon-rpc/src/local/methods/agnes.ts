@@ -1180,7 +1180,12 @@ export function registerAgnes(
     })
     const scope = new Set(sessionIds)
     return {
-      items: r.items.filter((item) => scope.has(item.sessionId)),
+      items: r.items
+        .filter((item) => scope.has(item.sessionId))
+        .map((item) => {
+          const fork = cx.sessionOwnership?.lineage(item.sessionId)
+          return fork ? { ...item, parent: fork.parent, forkAt: fork.forkAt } : item
+        }),
       ...(r.cursor !== undefined ? { next: r.cursor } : {}),
     }
   })

@@ -5725,6 +5725,7 @@
         "parent": {
           "type": "string"
         },
+        "forkAt": { "type": "integer", "minimum": 1 },
         "createdAt": {
           "type": "string"
         },

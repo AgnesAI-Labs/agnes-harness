@@ -4365,9 +4365,19 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       preset: 'code',
       permission: 'full-access',
       pinnedAt: '2026-10-20T08:00:00.000Z',
+      parent: 'p',
+      forkAt: 1,
     },
     invalid: [
       { createdAt: '2026-09-10T00:00:00Z', lastSeq: 3, generation: 1, preset: 'code' }, // missing sessionId
+      {
+        sessionId: 's',
+        createdAt: '2026-09-10T00:00:00Z',
+        lastSeq: 3,
+        generation: 1,
+        preset: 'code',
+        forkAt: 0,
+      }, // boundary: one below minimum:1
       { sessionId: 's', createdAt: '', lastSeq: 3, generation: 1, preset: 'code', pinnedAt: 'never' },
       {
         sessionId: 's',

@@ -66,6 +66,21 @@ describe('forking a parent', () => {
       expect(await fork(4, 'agnes:fork:idle-parent')).toMatchObject({
         result: { sessionId: 'agnes:fork:idle-parent' },
       })
+      // The listing reports where the fork came from; the parent itself carries no lineage.
+      const listed = (await ep.handle({
+        jsonrpc: '2.0',
+        id: 5,
+        method: '_agnes/v1/session.list',
+        params: {},
+      })) as {
+        result: { items: Array<{ sessionId: string; parent?: string; forkAt?: number }> }
+      }
+      const row = (id: string) => listed.result.items.find((item) => item.sessionId === id)
+      expect(row('agnes:fork:idle-parent')).toMatchObject({
+        parent: created.result.sessionId,
+        forkAt: ended.seq,
+      })
+      expect(row(created.result.sessionId)).not.toHaveProperty('parent')
     } finally {
       await ep.close()
       await h.close()

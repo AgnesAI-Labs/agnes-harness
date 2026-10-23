@@ -55,6 +55,7 @@ describe.each([
     expect(f.ownership.inherit('parent', 'parent', 'owner-a', 7)).toBe(false)
     expect(f.ownership.inherit('parent', 'child', 'owner-a', 7)).toBe(true)
     expect(f.ownership.resolve('child')).toBeUndefined()
+    expect(f.ownership.lineage('child')).toBeUndefined() // pending forks are not visible yet
     expect(f.ownership.inherit('parent', 'child', 'owner-a', 8)).toBe(false)
     expect(f.ownership.inherit('parent', 'child', 'owner-a', 7)).toBe(true)
     expect(f.ownership.bindNew('child', 'owner-a')).toBe(false)
@@ -63,6 +64,9 @@ describe.each([
     expect(f.ownership.activateNew('other-child', 'owner-b')).toBe(true)
     expect(f.ownership.inherit('parent', 'other-child', 'owner-a', 7)).toBe(false)
     expect(f.ownership.resolve('child')).toEqual({ active: true, principalId: 'owner-a' })
+    expect(f.ownership.lineage('child')).toEqual({ parent: 'parent', forkAt: 7 })
+    expect(f.ownership.lineage('parent')).toBeUndefined()
+    expect(f.ownership.lineage('other-child')).toBeUndefined()
     await f.close()
   })
 

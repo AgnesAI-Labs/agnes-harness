@@ -186,11 +186,14 @@ export class SidebarSessions implements SidebarSessionPort {
           messageAt: number | null
           loopPin: string | null
           bookmarkIds: string | null
+          forkParent: string | null
+          forkAt: number | null
         }
       >(
         `SELECT s.session_key AS sessionId, s.created_at AS createdAt, s.last_seq AS lastSeq, s.generation, s.preset, s.cwd,
          COALESCE(p.title, s.title) AS title, CASE WHEN p.title IS NOT NULL THEN 'user' ELSE NULL END AS titleSource,
-         ${order} AS sortAt, p.pinned_at AS pinnedAt, s.message_at AS messageAt, s.loop_pin AS loopPin, p.bookmarks AS bookmarkIds
+         ${order} AS sortAt, p.pinned_at AS pinnedAt, s.message_at AS messageAt, s.loop_pin AS loopPin, p.bookmarks AS bookmarkIds,
+         o.parent_session_id AS forkParent, o.boundary_seq AS forkAt
          FROM session_workspaces s ${pinned ? '' : 'INDEXED BY sidebar_order'} ${joins}
          WHERE ${visible} AND ${member} ${cursor ? `AND (${order}, s.session_key) < (?, ?)` : ''}
          ORDER BY ${order} DESC, s.session_key COLLATE BINARY DESC LIMIT ?`,
@@ -199,8 +202,20 @@ export class SidebarSessions implements SidebarSessionPort {
       const page = rows.slice(0, limit),
         last = page.at(-1)
       const items = page.map(
-        ({ sortAt: _sort, pinnedAt, messageAt, loopPin, bookmarkIds, titleSource, title, ...row }) => ({
+        ({
+          sortAt: _sort,
+          pinnedAt,
+          messageAt,
+          loopPin,
+          bookmarkIds,
+          titleSource,
+          title,
+          forkParent,
+          forkAt,
+          ...row
+        }) => ({
           ...row,
+          ...(forkParent !== null && forkAt !== null ? { parent: forkParent, forkAt } : {}),
           archived: false,
           ...(pinnedAt !== null ? { pinnedAt: new Date(pinnedAt).toISOString() } : {}),
           ...(title ? { title } : {}),
