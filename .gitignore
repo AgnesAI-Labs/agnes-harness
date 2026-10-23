@@ -36,6 +36,9 @@ outputs/
 spikes/
 docs/task-records/
 
+# Playwright MCP writes page snapshots, console logs and screenshots here while it runs.
+.playwright-mcp/
+
 # Generated from packages/loop-jev by `pnpm --filter @agnes/package-manager build:jev-payload`.
 packages/package-manager/bundled-plugins/jev-loop/index.mjs
 packages/package-manager/bundled-plugins/jev-loop/index.mjs.*.tmp
