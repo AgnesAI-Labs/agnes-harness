@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, sep } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openCanonicalFileSync } from '@agnes/system-node'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -493,7 +493,8 @@ it.each([
     const fd = sep === '\\' && realHandle ? openCanonicalFileSync(data) : undefined
     if (fd === undefined)
       vi.mocked(renameSync).mockImplementation((from, to) => {
-        if (String(from) === pin.snapshot.directory) {
+        // Native real paths may spell the temporary root differently (/var versus /private/var).
+        if (basename(String(from)) === pin.snapshot.snapshotId) {
           if (damaged) writeFileSync(data, 'damaged')
           throw Object.assign(new Error('snapshot rename refused'), { code })
         }
