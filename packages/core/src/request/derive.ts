@@ -652,13 +652,13 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
           },
         ]
       : blocksOf(d.content)
-    // A nested-result note may carry an untrusted result's trust for its preview; its header is
+    // A nested-result or hook-data note may carry untrusted text after its header; the header is
     // still the harness's own words and is scrubbed, not enveloped.
     const nestedHeader =
       node.event.origin === 'system' &&
       d.kind === 'runtime_context' &&
       blocks[0]?.type === 'text' &&
-      String(blocks[0].text).startsWith(NESTED_RESULT_PREFIX)
+      [NESTED_RESULT_PREFIX, HOOK_DATA_PREFIX].some((prefix) => String(blocks[0]?.text).startsWith(prefix))
         ? blocks[0]
         : undefined
     for (const b of blocks) {
@@ -727,6 +727,12 @@ export const SKILL_LOADED_PREFIX = '[skill loaded]\n'
  */
 export const NESTED_RESULT_PREFIX = '[nested result]\n'
 /**
+ * The first line of a note carrying extension text derived from untrusted material (the `context`
+ * hook's `untrustedContext`). Its first block is the harness's header; the text rides in the block
+ * after it, on a row whose trust is `untrusted`, so derive envelopes it.
+ */
+export const HOOK_DATA_PREFIX = '[hook data]\n'
+/**
  * Every prefix a later derivation reads a Core note back by. A loop's note may not begin with one: a
  * committed note that did would be taken for the snapshot or note it imitates.
  */
@@ -735,6 +741,7 @@ export const RESERVED_NOTE_PREFIXES: readonly string[] = Object.freeze([
   HOOK_CONTEXT_PREFIX,
   SKILL_LOADED_PREFIX,
   NESTED_RESULT_PREFIX,
+  HOOK_DATA_PREFIX,
 ])
 
 /** The user line placed between a summary and an assistant message that directly follows it. */

@@ -350,10 +350,12 @@ export type HookPort = {
     proposedReason: string
     verifier?: VerifierVerdict
   }): Promise<{ action: 'stop' } | { action: 'continue'; note: string }>
-  context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
+  context(
+    sections: PromptSection[],
+  ): Promise<{ sections: PromptSection[]; additionalContext: string; untrustedContext: string }>
   refreshContext?(
     sections: PromptSection[],
-  ): Promise<{ sections: PromptSection[]; additionalContext: string }>
+  ): Promise<{ sections: PromptSection[]; additionalContext: string; untrustedContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
   requestPatch?(payload: HookPayloadMap['before_request']): Promise<HookReturnMap['before_request']>
   beforeStep(p: {
@@ -379,7 +381,7 @@ export type BeforeCompactHookSelection =
 export const noopHooks: HookPort = {
   toolCall: async () => ({ allow: true }),
   turnStopping: async () => ({ action: 'stop' }),
-  context: async (s) => ({ sections: s, additionalContext: '' }),
+  context: async (s) => ({ sections: s, additionalContext: '', untrustedContext: '' }),
   beforeRequest: async (o) => o,
   beforeStep: async () => ({}),
 }
@@ -555,7 +557,7 @@ export type TurnMemory = {
   budgetAdmission?: { step: number; cap: number | null; creditsUsed: number }
   snapshot: RegistrySnapshot
   /** Context-hook output is frozen for identical assembly inputs within this turn. */
-  prefix?: { key: string; sections: PromptSection[]; additionalContext: string }
+  prefix?: { key: string; sections: PromptSection[]; additionalContext: string; untrustedContext: string }
   /** A null result means this turn already tried the Host-owned Skill preloader. */
   preload?: RuntimePromptPreload | null
   nonce: string

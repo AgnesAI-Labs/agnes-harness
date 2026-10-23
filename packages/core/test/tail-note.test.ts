@@ -274,7 +274,11 @@ describe('a tail note on a loop request', () => {
     }
     const hooks: HookPort = {
       ...noopHooks,
-      context: async (sections) => ({ sections, additionalContext: 'from a context hook' }),
+      context: async (sections) => ({
+        sections,
+        additionalContext: 'from a context hook',
+        untrustedContext: '',
+      }),
     }
     await withLoop(
       async (t) => {

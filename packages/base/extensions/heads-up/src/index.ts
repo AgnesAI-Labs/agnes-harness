@@ -239,7 +239,7 @@ export function createHeadsUpExtension(tasks?: SessionTasks, options: HeadsUpOpt
           s.pending = []
           for (const entry of sent) entry.deliveredTurn = s.turn
           return {
-            additionalContext: `${NOTE_PREFIX}${sent.map((entry) => entry.text).join(' | ')}`,
+            untrustedContext: `${NOTE_PREFIX}${sent.map((entry) => entry.text).join(' | ')}`,
             refreshOnRequest: true,
           }
         }),

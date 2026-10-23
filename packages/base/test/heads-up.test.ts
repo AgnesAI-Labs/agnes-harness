@@ -78,7 +78,7 @@ async function fixture(options: HeadsUpOptions = { minIntervalMs: 0 }, withTasks
     on: (enabled = true) => call('headsup.set', { enabled }),
     read: (turn = 1) => call('headsup.read', { turn }),
     context: () =>
-      hooks.get('context')?.({}, hctx) as Promise<{ additionalContext?: string; refreshOnRequest?: boolean }>,
+      hooks.get('context')?.({}, hctx) as Promise<{ untrustedContext?: string; refreshOnRequest?: boolean }>,
   }
 }
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
@@ -114,7 +114,8 @@ it('is off by default, reviews only after side-effecting tools and hands over ea
   })
   const first = await f.context()
   expect(first.refreshOnRequest).toBe(true)
-  expect(first.additionalContext).toBe(`${NOTE_PREFIX}Deleted a build dir the user did not mention.`)
+  expect(first.untrustedContext).toBe(`${NOTE_PREFIX}Deleted a build dir the user did not mention.`)
+  expect(first).not.toHaveProperty('additionalContext')
   expect(await f.context()).toEqual({ refreshOnRequest: true })
   f.start(2)
   expect(await f.read(1)).toMatchObject({ deliveredTurn: 1 })
@@ -138,7 +139,7 @@ it('treats NONE and failures as silent, dedupes repeats and caps notes per hour'
   await settle()
   f.answers[2]?.('check the PATH.')
   await settle()
-  expect((await f.context()).additionalContext).toContain('Check the path.')
+  expect((await f.context()).untrustedContext).toContain('Check the path.')
   await f.tool('d', false)
   await settle()
   f.answers[3]?.('Second distinct note.')

@@ -80,6 +80,7 @@ import { restoreToolArgumentRecovery, toolArgumentsDisabled } from '../../step/t
 import { toolCallPayload } from '../../step/tool-call.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
+import { appendHookData } from './hook-data-note.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
 import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
@@ -279,6 +280,7 @@ export async function assembleRequestPrefix(
   merged: Merged
   disclosed: DeriveInput['disclosed']
   additionalContext: string
+  untrustedContext: string
   preloaded: RuntimePromptPreload | null
   memoryRevision?: string
 }> {
@@ -327,7 +329,11 @@ export async function assembleRequestPrefix(
     t.prefix?.key === prefixKey
       ? s.hooks.refreshContext
         ? await s.hooks.refreshContext(merged.sections)
-        : structuredClone({ sections: t.prefix.sections, additionalContext: t.prefix.additionalContext })
+        : structuredClone({
+            sections: t.prefix.sections,
+            additionalContext: t.prefix.additionalContext,
+            untrustedContext: t.prefix.untrustedContext,
+          })
       : await s.hooks.context(merged.sections)
   t.prefix = { key: prefixKey, ...structuredClone(hookContext) }
   merged.sections = hookContext.sections
@@ -349,6 +355,7 @@ export async function assembleRequestPrefix(
     merged,
     disclosed,
     additionalContext: hookContext.additionalContext,
+    untrustedContext: hookContext.untrustedContext,
     preloaded,
     ...(memory ? { memoryRevision: memory.revision } : {}),
   }
@@ -504,11 +511,10 @@ export async function prepareInferenceRequest(
   // list it reads off `ctx` are already resolved, so an Operation here sees exactly what is about to
   // go out rather than having to recompute either one itself.
   await runSlot(s, 'before-inference', ctx)
-  const { merged, disclosed, additionalContext, preloaded, memoryRevision } = await assembleRequestPrefix(
-    s,
-    ctx,
-    op.meta.triggerSeq,
-  )
+  const { merged, disclosed, additionalContext, untrustedContext, preloaded, memoryRevision } =
+    await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
+  // A loop's own message list is not the ledger surface, so a row written for it would never be read.
+  if (!options.messages) await appendHookData(s, untrustedContext)
   const { surface, imageIndices } = await attachmentSurface(s, loopRequestHistory(s, merged, options))
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined

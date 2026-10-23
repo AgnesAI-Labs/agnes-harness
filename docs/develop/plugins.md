@@ -229,7 +229,7 @@ const request = await ctx.prepareRequest({
 
 | Field | Meaning |
 | --- | --- |
-| `text` | 1 to 32768 UTF-8 bytes. After scrubbing it must not begin with a Core note prefix: `[runtime context]`, `[hook context]` or `[skill loaded]`, each followed by a line break. |
+| `text` | 1 to 32768 UTF-8 bytes. After scrubbing it must not begin with a Core note prefix: `[runtime context]`, `[hook context]`, `[hook data]`, `[nested result]` or `[skill loaded]`, each followed by a line break. |
 | `commit` | Default `false`: the note belongs to this request only. `true`: the note is also written into the history, see below. Refused together with custom `messages`. |
 
 An invalid note makes `prepareRequest` throw `E_ENVELOPE` before anything is written. The fake `prepareRequest` of `driveLoop` does not add the note to the requests it records; test a note against a full session fixture.

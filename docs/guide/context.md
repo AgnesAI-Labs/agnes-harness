@@ -34,4 +34,6 @@ Set `rulesEnabled` or `timeEnabled` to `false` to disable that contributor; `ref
 
 For extension authors, return `refreshOnRequest: true` from a `context` hook to refresh that contributor before each model request. Other contributors retain their once-per-turn snapshot. Use `additionalContext` for changing clock notes; stable repository rules use system sections.
 
+`additionalContext` is presented as a trusted harness note, so it must only carry text the extension itself wrote. Text a model produced from outside material (tool output, web pages, files) must be returned as `untrustedContext` instead. Core records it as an untrusted `[hook data]` note and wraps it in the untrusted-content envelope, so the model reads it as data and never as an instruction. Both fields have their own 8192-byte limit, so untrusted text cannot crowd out trusted context.
+
 `getSurface()` exposes `messageKind` to distinguish actual input from automatic `runtime_context` notes. Compaction plans selecting user questions should skip those notes.

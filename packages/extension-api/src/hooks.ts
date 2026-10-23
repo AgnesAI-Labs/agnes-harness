@@ -105,7 +105,12 @@ export interface HookReturnMap {
   resources_discover: { resources?: ResourceEntry[]; additionalContext?: string }
   /** Park releases the turn until new input arrives; block reports a policy refusal. */
   before_step: { block?: boolean; park?: boolean; reason?: string }
-  context: { sections?: PromptSection[]; additionalContext?: string; refreshOnRequest?: boolean }
+  context: {
+    sections?: PromptSection[]
+    additionalContext?: string
+    untrustedContext?: string
+    refreshOnRequest?: boolean
+  }
   before_request: {
     patch?: {
       samplingParams?: Record<string, JsonValue>

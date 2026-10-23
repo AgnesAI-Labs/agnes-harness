@@ -34,4 +34,6 @@
 
 扩展作者可以在 `context` hook 返回 `refreshOnRequest: true`，让该贡献者在每次模型请求前刷新；其他贡献者仍保留每轮快照。变化的时钟信息使用 `additionalContext` 尾部注释，仓库规则使用系统 section。
 
+`additionalContext` 会作为可信的 harness 附注呈现，只应放扩展自己写的文本。由模型根据外部材料（工具输出、网页、文件）生成的文本必须改用 `untrustedContext` 返回。Core 会把它记成不可信的 `[hook data]` 附注并套上不可信内容信封，模型只把它当数据，不当指令。两个字段各有 8192 字节上限，不可信文本挤不掉可信上下文。
+
 `getSurface()` 中的 `messageKind` 区分真实输入和自动生成的 `runtime_context` 注释；压缩计划选择用户问题时应跳过后者。

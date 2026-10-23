@@ -120,6 +120,13 @@ describe('author hook return boundary', () => {
     expect(JSON.stringify(transformed)).not.toContain('untrusted source')
   })
 
+  it('accepts untrustedContext on a context return and still rejects unknown keys', () => {
+    expect(authorHookReturn('context', { untrustedContext: 'data' })).toEqual({ untrustedContext: 'data' })
+    expect(() => authorHookReturn('context', { untrustedContext: 'data', trustedContext: 'x' })).toThrow(
+      'invalid author hook return',
+    )
+  })
+
   it.each([
     { sections: [{ id: 'a', order: 1, text: 'wire field' }] },
     { sections: [{ id: 'a', order: 1, content: 'ok', text: 'hidden' }] },

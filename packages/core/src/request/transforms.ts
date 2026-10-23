@@ -36,10 +36,40 @@ function truncate(text: string, room: number): string {
   return result
 }
 
+/** One capped, hash-deduplicated text channel; the trusted and untrusted channels count separately. */
+function accumulator() {
+  const parts: string[] = [],
+    seen = new Set<string>()
+  let bytes = 0
+  return {
+    parts,
+    add(ext: string, context: string, overflow: Array<{ ext: string; bytes: number }>): void {
+      if (!context) return
+      const hash = sha256Hex(context)
+      if (seen.has(hash)) return
+      seen.add(hash)
+      const size = utf8(context).length,
+        separator = parts.length ? 1 : 0
+      const room = Math.max(0, ADDITIONAL_CONTEXT_MAX_BYTES - bytes - separator)
+      if (size > room) overflow.push({ ext, bytes: size })
+      const part = truncate(context, room)
+      if (part) {
+        parts.push(part)
+        bytes += utf8(part).length + separator
+      }
+    },
+  }
+}
+
 export function applyContextResults(
   base: PromptSection[],
   results: Array<{ ext: string; result: ContextResult }>,
-): { sections: PromptSection[]; additionalContext: string; overflow: Array<{ ext: string; bytes: number }> } {
+): {
+  sections: PromptSection[]
+  additionalContext: string
+  untrustedContext: string
+  overflow: Array<{ ext: string; bytes: number }>
+} {
   // Keyed by id so a participant returning only its own section leaves every other
   // already-contributed section untouched, instead of replacing the whole set.
   const sections = new Map<string, PromptSection>(
@@ -47,10 +77,9 @@ export function applyContextResults(
       .filter((s) => s.id !== 'additional-context')
       .map((s): [string, PromptSection] => [s.id, s]),
   )
-  const parts: string[] = [],
-    seen = new Set<string>()
+  const trusted = accumulator(),
+    untrusted = accumulator()
   const overflow: Array<{ ext: string; bytes: number }> = []
-  let bytes = 0
   for (const item of results) {
     const ext = source(item.ext)
     const result = jsonData(item.result)
@@ -63,24 +92,13 @@ export function applyContextResults(
         if (id === 'additional-context') continue
         sections.set(id, { id, order: s.order, text: sanitize(s.text), source: ext })
       }
-    const context = sanitize(result.additionalContext?.trim() ?? '')
-    if (!context) continue
-    const hash = sha256Hex(context)
-    if (seen.has(hash)) continue
-    seen.add(hash)
-    const size = utf8(context).length,
-      separator = parts.length ? 1 : 0
-    const room = Math.max(0, ADDITIONAL_CONTEXT_MAX_BYTES - bytes - separator)
-    if (size > room) overflow.push({ ext, bytes: size })
-    const part = truncate(context, room)
-    if (part) {
-      parts.push(part)
-      bytes += utf8(part).length + separator
-    }
+    trusted.add(ext, sanitize(result.additionalContext?.trim() ?? ''), overflow)
+    untrusted.add(ext, sanitize(result.untrustedContext?.trim() ?? ''), overflow)
   }
   return {
     sections: [...sections.values()].sort((a, b) => a.order - b.order),
-    additionalContext: parts.join('\n'),
+    additionalContext: trusted.parts.join('\n'),
+    untrustedContext: untrusted.parts.join('\n'),
     overflow,
   }
 }
