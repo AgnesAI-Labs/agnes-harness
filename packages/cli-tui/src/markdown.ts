@@ -69,7 +69,9 @@ function inline(tokens: Token[], ansi: ThemedAnsi, style: Style = PLAIN): Span[]
     if (token.type === 'link') {
       const link = token as Tokens.Link
       const label = inline(link.tokens, ansi, { ...style, link: true })
-      return link.href === plain(label)
+      // marked adds the scheme to a bare www. or e-mail autolink; the label is then the same address.
+      return link.href.replace(/^(?:mailto:|https?:\/\/)/, '') === plain(label).replace(/^https?:\/\//, '') ||
+        link.href === plain(label)
         ? label
         : [...label, span(` (${link.href})`, { ...style, tone: 'faint' })]
     }
