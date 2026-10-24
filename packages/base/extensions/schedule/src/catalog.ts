@@ -280,8 +280,8 @@ export function openScheduleCatalog(
     return { target: { kind: 'session', sessionKey: row.session_key }, origin: row.session_key }
   }
   const progressRows = () =>
-    db.all<{ rid: number; state: string; session_key: string | null }>(
-      'SELECT rowid AS rid, progress AS state, session_key FROM schedule_runs WHERE progress IS NOT NULL AND ended_at IS NULL',
+    db.all<{ rid: number; state: string; session_key: string | null; seq: number | null }>(
+      'SELECT rowid AS rid, progress AS state, session_key, seq FROM schedule_runs WHERE progress IS NOT NULL AND ended_at IS NULL',
     )
   const saveProgress = (rid: number, state: RunProgress) => saveRunProgress(db, clock(), rid, state)
   const expireRuns = () => {
@@ -605,7 +605,7 @@ export function openScheduleCatalog(
       if (!RUN_PROGRESS_EVENT_TYPES.includes(event.type)) return false
       let attention = false
       for (const row of progressRows()) {
-        if (row.session_key !== sessionKey) continue
+        if (row.session_key !== sessionKey || (row.seq !== null && event.seq <= row.seq)) continue
         const before = JSON.parse(row.state) as RunProgress
         const next = observeProgress(before, event, clock())
         saveProgress(row.rid, next)

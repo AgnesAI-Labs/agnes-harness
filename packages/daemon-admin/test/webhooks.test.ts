@@ -348,7 +348,7 @@ it.each(['approve', 'expire', 'refuse'] as const)(
       invalidation: null,
     }
     f.service.observeSession(sessionId, event('decision/state', decision))
-    expect(f.service.observeSession(sessionId, event('turn/end', { turn: 1, reason: 'parked' }))).toBe(true)
+    expect(f.service.observeSession(sessionId, event('turn/end', { reason: 'parked' }))).toBe(true)
     let snapshot = (await f.service.handle({ action: 'list' })).snapshot
     expect(snapshot?.deliveries[0]).toMatchObject({ status: 'waiting_approval', needsAttention: true })
     expect((await f.send(undefined, 'next')).delivery).toMatchObject({
@@ -365,7 +365,7 @@ it.each(['approve', 'expire', 'refuse'] as const)(
         }),
       )
       f.service.observeSession(sessionId, event('turn/start', { turn: 2, trigger: 'approval-resume' }))
-      f.service.observeSession(sessionId, event('turn/end', { turn: 2, reason: 'completed' }))
+      f.service.observeSession(sessionId, event('turn/end', { reason: 'completed' }))
     } else if (action === 'expire') f.advance(1000)
     else
       f.service.observeSession(
@@ -392,7 +392,7 @@ it.each(['approve', 'expire', 'refuse'] as const)(
       expect(next).toMatchObject({ needsAttention: true, reason: 'previous_approval_expired' })
       if (!next?.sessionId) throw new Error('missing post-expiry session')
       f.service.observeSession(next.sessionId, event('turn/start', { turn: 1, trigger: 'prompt' }))
-      f.service.observeSession(next.sessionId, event('turn/end', { turn: 1, reason: 'completed' }))
+      f.service.observeSession(next.sessionId, event('turn/end', { reason: 'completed' }))
       expect(next).toMatchObject({ status: 'ran', needsAttention: true, reason: 'previous_approval_expired' })
     }
     expect(f.sessions).toHaveLength(2)
