@@ -92,7 +92,7 @@ export async function permissionsSlash(
 
   const grantRows =
     list.status === 'fulfilled'
-      ? list.value.grants.map((g, i) => `${i + 1}\t${grantLine(g)}`)
+      ? list.value.grants.map((g, i) => `${i + 1}  ${grantLine(g, '  ')}`)
       : [list.reason instanceof Error && list.reason.message ? oneLine(list.reason.message) : NONE]
 
   const none = [t('permissions.none')]

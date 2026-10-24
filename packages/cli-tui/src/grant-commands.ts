@@ -18,8 +18,11 @@ function scopeText(scope: string): string {
   return oneLine(scope)
 }
 
-/** One inert line per grant: tool and scope text come from tools and plugins, never trusted. */
-export function grantLine(g: SessionApprovalGrant): string {
+/**
+ * One inert line per grant: tool and scope text come from tools and plugins, never trusted. Tab-separated
+ * for `agh approvals`; the TUI passes spaces because its renderer strips control characters, tabs included.
+ */
+export function grantLine(g: SessionApprovalGrant, sep = '\t'): string {
   return [
     oneLine(g.grantId),
     oneLine(g.toolId),
@@ -27,7 +30,7 @@ export function grantLine(g: SessionApprovalGrant): string {
     oneLine(g.createdAt),
     scopeText(g.scope),
     ...(g.revokedAt ? ['revoked'] : []),
-  ].join('\t')
+  ].join(sep)
 }
 
 /** /grants lists what lets this session's tools run unasked; /grants revoke <n|grantId> withdraws one. */
@@ -40,7 +43,7 @@ export async function grantsSlash(app: TuiApp, line: string): Promise<SlashResul
   if (verb === undefined) {
     return {
       text: grants.length
-        ? grants.map((g, i) => `${i + 1}\t${grantLine(g)}`).join('\n')
+        ? grants.map((g, i) => `${i + 1}  ${grantLine(g, '  ')}`).join('\n')
         : tt('grants.none', locale),
     }
   }
@@ -49,5 +52,5 @@ export async function grantsSlash(app: TuiApp, line: string): Promise<SlashResul
     grants.find((g) => g.grantId === key) ?? (/^\d+$/.test(key) ? grants[Number(key) - 1] : undefined)
   if (!target) return { text: tt('grants.unknown', locale, { key: oneLine(key) }) }
   const revoked = await s.client.approval.revokeSessionGrant(s.id, target.grantId)
-  return { text: tt('grants.revoked', locale, { grant: grantLine(revoked) }) }
+  return { text: tt('grants.revoked', locale, { grant: grantLine(revoked, '  ') }) }
 }

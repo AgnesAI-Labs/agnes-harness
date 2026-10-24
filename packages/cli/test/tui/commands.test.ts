@@ -1484,8 +1484,8 @@ describe('runSlash', () => {
             '额外目录',
             '  /srv/extra[31m',
             '放行规则',
-            `  1\tg-1\tbash\tsession\t2026-01-01T00:00:00Z\tx`,
-            `  2\tg-2\tbash\talways\t2026-01-02T00:00:00Z\tprefix: git push`,
+            `  1  g-1  bash  session  2026-01-01T00:00:00Z  x`,
+            `  2  g-2  bash  always  2026-01-02T00:00:00Z  prefix: git push`,
             '撤销：`/permissions revoke <序号>`；按历史审批推荐规则：在 shell 里运行 `agh approvals suggest`',
           ].join('\n'),
         )

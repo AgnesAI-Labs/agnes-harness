@@ -281,10 +281,17 @@ describe('/grants', () => {
     }))
     const app = appWith({ approval: { sessionGrants, revokeSessionGrant } })
     expect((await runSlash(app, '/grants')).text).toBe(
-      '1\tg1\tshell[31m\tsession\t2026-10-22T00:00:00Z\ta b\n2\tg2\tshell[31m\talways\t2026-10-22T00:00:00Z\ta b',
+      '1  g1  shell[31m  session  2026-10-22T00:00:00Z  a b\n2  g2  shell[31m  always  2026-10-22T00:00:00Z  a b',
     )
     expect(sessionGrants).toHaveBeenCalledWith('cur')
-    expect((await runSlash(app, '/grants revoke 2')).text).toContain('revoked g2\t')
+    // the renderer strips control characters: columns must stay apart without them
+    const shown = ((await runSlash(app, '/grants')).text as string).replace(
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: mirrors the renderer
+      /[\x00-\x1f\x7f-\x9f]/g,
+      '',
+    )
+    expect(shown).not.toMatch(/g1shell|1g1/)
+    expect((await runSlash(app, '/grants revoke 2')).text).toContain('revoked g2  ')
     await runSlash(app, '/grants revoke g1')
     expect(revokeSessionGrant.mock.calls).toEqual([
       ['cur', 'g2'],
