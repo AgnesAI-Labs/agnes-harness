@@ -43,6 +43,7 @@ describe('wrapping and padding', () => {
     expect(escapeControl(`x${CURSOR_MARKER}y`)).toBe('xCURy')
     expect(escapeControl('a\nb\rc\x07d')).toBe('a\nbcd')
     expect(escapeControl('a\x9bb')).toBe('ab')
+    expect(escapeControl('name\tvalue\n\tindented')).toBe('name    value\n    indented')
   })
 })
 

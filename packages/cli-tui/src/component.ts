@@ -65,8 +65,9 @@ export function wrapText(text: string, width: number): string[] {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
 const CONTROL = /[\x00-\x1f\x7f-\x9f]/g
 
+// Tab becomes four spaces, as in Markdown and the bang output, so indentation and columns survive.
 export function escapeControl(s: string): string {
-  return s.replace(CONTROL, (c) => (c === '\n' ? c : ''))
+  return s.replace(CONTROL, (c) => (c === '\n' ? c : c === '\t' ? '    ' : ''))
 }
 
 export class Text implements Component {
