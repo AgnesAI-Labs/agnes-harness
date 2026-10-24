@@ -75,12 +75,17 @@ export function createSessionController(
     options: {
       created?: Session
       preserveSending?: boolean
+      /** An attachment opened this session before sending; keep the typed draft in it. */
+      carryDraft?: boolean
       workspace?: WorkspaceEntry
       initialModel?: KnownSessionModel
     } = {},
   ): Promise<void> {
     const preserved = options.preserveSending ? context.submissions.currentComposer : undefined
-    context.selectComposerDraft(id, options.preserveSending)
+    context.selectComposerDraft(id, {
+      ...(options.preserveSending ? { preserve: true } : {}),
+      ...(options.carryDraft ? { carry: true } : {}),
+    })
     const { binding: epoch, previous } = bindingOwner.begin(id)
     // The old projection may stay visible, but its preview/refusal no longer describes this selection.
     context.readOnlyController.clear()

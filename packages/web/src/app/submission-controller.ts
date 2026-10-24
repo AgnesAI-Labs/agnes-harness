@@ -214,7 +214,7 @@ export function createSubmissionController(
     }
     const attachments = context.composerRuntime.getAttachmentBlocks()
     const images = attachments.filter((block) => block.type === 'image')
-    let session = context.current
+    const session = context.current
     if (
       (!input && attachments.length === 0 && selectedReferences.length === 0) ||
       context.composerRuntime.hasPendingImages() ||
@@ -501,6 +501,9 @@ export function createSubmissionController(
       const opening = context.open(created.id, {
         created,
         workspace,
+        // Opening a session for an upload clears the composer; carry the text the user already
+        // typed into the new draft session instead of dropping it.
+        carryDraft: true,
         ...(model ? { initialModel: model } : {}),
       })
       const openedBinding = context.sessionBinding.capture()

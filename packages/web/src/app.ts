@@ -1673,6 +1673,8 @@ function open(
   options: {
     created?: Session
     preserveSending?: boolean
+    /** An attachment opened this session before sending; keep the typed draft in it. */
+    carryDraft?: boolean
     workspace?: WorkspaceEntry
     initialModel?: KnownSessionModel
   } = {},
@@ -1802,9 +1804,9 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   }
   if (cleanupError) throw cleanupError
 }
-function selectComposerDraft(id?: string, preserve = false): void {
-  composerRuntime.setDraft(composerDrafts.select(profileName, id, composerRuntime.getDraft(), preserve))
-  if (!preserve) composerRuntime.clearImageBlocks()
+function selectComposerDraft(id?: string, options: { preserve?: boolean; carry?: boolean } = {}): void {
+  composerRuntime.setDraft(composerDrafts.select(profileName, id, composerRuntime.getDraft(), options))
+  if (!options.preserve) composerRuntime.clearImageBlocks()
 }
 let modelReadGeneration = 0
 let modelAppliedGeneration = 0

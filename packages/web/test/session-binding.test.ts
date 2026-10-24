@@ -317,6 +317,43 @@ describe('selected session owner', () => {
     expect(drafts.select('profile', 'b', 'other profile draft')).toBe('draft B')
     expect(drafts.select('profile', 'a', 'edited B')).toBe('edited A')
   })
+  it('carries a new draft into the session an attachment opens', () => {
+    const storage = new Map<string, string>()
+    const persistent = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value)
+      },
+    }
+    const drafts = new ComposerDrafts(persistent, 'http://synthetic')
+    expect(drafts.select('profile', undefined, 'typed before upload')).toBe('')
+    expect(drafts.select('profile', 'uploaded', 'typed before upload', { carry: true })).toBe(
+      'typed before upload',
+    )
+    // A reload builds a new instance: the carried text must be under the opened session's key.
+    expect(new ComposerDrafts(persistent, 'http://synthetic').select('profile', 'uploaded', '')).toBe(
+      'typed before upload',
+    )
+    // 会话间隔离不变：上传前的草稿 key 仍保留它自己的文字。
+    expect(new ComposerDrafts(persistent, 'http://synthetic').select('profile', undefined, '')).toBe(
+      'typed before upload',
+    )
+  })
+  it('keeps the send-time preserve mode from writing the new session key', () => {
+    const drafts = new ComposerDrafts(
+      {
+        getItem: () => null,
+        setItem: () => undefined,
+      },
+      'http://synthetic',
+    )
+    drafts.select('profile', 'sent', 'text being sent')
+    expect(drafts.select('profile', 'opened for send', 'text being sent', { preserve: true })).toBe(
+      'text being sent',
+    )
+    // Preserve keeps the composer text, but the opened session starts from its own empty draft.
+    expect(drafts.read()).toBe('')
+  })
   it.each(['other-session', 'same-session'])('rejects late load and result after %s switch', async (id) => {
     const owner = new SessionBindingOwner()
     const first = owner.capture()

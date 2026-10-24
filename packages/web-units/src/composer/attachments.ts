@@ -148,7 +148,8 @@ export function useComposerAttachments({
       return
     }
     // Prepare the draft's session before reading a mixed file/image batch: opening it clears the
-    // composer generation. Restore existing inline cards with fresh preview URLs after that clear.
+    // composer generation. The host carries the typed text into the new session; this restores the
+    // existing inline cards with fresh preview URLs after the clear.
     if (prepareUploadSession && !view.hasSession && files.length > 0) {
       const saved = attachmentsRef.current.map(
         ({ id: _id, size: _size, pixels: _pixels, previewUrl: _preview, ...block }) => block,
