@@ -43,7 +43,7 @@ export async function rewindChoices(app: TuiApp): Promise<SessionChoice[]> {
     })
 }
 
-/** The one fork `/rewind` and `/fork` share. The daemon forks only for the owner and only at a completed turn boundary. */
+/** The fork `/rewind` makes. The daemon forks only for the owner and only at a completed turn boundary. */
 export const forkAt = (app: TuiApp, seq: number): Promise<Session> =>
   app.session.client.session.fork(app.session.id, seq)
 
@@ -54,17 +54,20 @@ export async function forkSlash(app: TuiApp, args: readonly string[]): Promise<S
   if (args.length > 1 || (n !== undefined && !(Number.isInteger(n) && n > 0)))
     return { text: tt('fork.usage', locale) }
   if (app.busy) return { text: tt('fork.busy', locale) }
-  const { timeline } = await app.session.projectUIOpening({ surface: 'tui' })
+  const session = app.session
+  const { timeline } = await session.projectUIOpening({ surface: 'tui' })
+  // A /resume or /new during the await leaves nothing to fork from.
+  if (app.session !== session) return {}
   const turn =
     n === undefined ? timeline.turns.findLast((t) => t.forkable) : timeline.turns.find((t) => t.turn === n)
   if (!turn)
     return { text: tt(n === undefined ? 'fork.noTurns' : 'fork.notForkable', locale, { turn: n ?? 0 }) }
   if (!turn.forkable || turn.endSeq === undefined)
     return { text: tt('fork.notForkable', locale, { turn: turn.turn }) }
-  const switchSession = await forkAt(app, turn.endSeq)
+  const switchSession = await session.client.session.fork(session.id, turn.endSeq)
   return {
     switchSession,
-    text: tt('fork.done', locale, { turn: turn.turn, id: escapeControl(app.session.id) }),
+    text: tt('fork.done', locale, { turn: turn.turn, id: escapeControl(session.id) }),
   }
 }
 

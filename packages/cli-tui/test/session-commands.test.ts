@@ -169,6 +169,35 @@ describe('session slash commands', () => {
     expect(notices).toHaveLength(2)
   })
 
+  it('/fork and /add-dir do nothing when the session was switched while the timeline loaded', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-fork-race-'))
+    try {
+      const turns = [{ id: 't1', turn: 1, startSeq: 10, endSeq: 12, forkable: true }]
+      const add = vi.fn(async () => ({}))
+      const forkOld = vi.fn(async () => ({ id: 'child' }))
+      const forkNew = vi.fn(async () => ({ id: 'child' }))
+      for (const line of ['/fork', `/add-dir ${dir}`]) {
+        const newer = { id: 'other', client: { workspace: { add }, session: { fork: forkNew } } }
+        const app = appWith(
+          { workspace: { add }, session: { fork: forkOld } },
+          {
+            projectUIOpening: async () => {
+              ;(app as unknown as { session: unknown }).session = newer
+              return { timeline: { turns, nodes: [] } }
+            },
+          },
+        )
+        const r = await runSlash(app, line)
+        expect(r.switchSession).toBeUndefined()
+      }
+      expect(forkOld).not.toHaveBeenCalled()
+      expect(forkNew).not.toHaveBeenCalled()
+      expect(add).not.toHaveBeenCalled()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('/fork forks at the latest completed turn, or turn N, through the same call as /rewind', async () => {
     const turn = (n: number, endSeq: number | undefined, forkable: boolean) => ({
       id: `t${n}`,
