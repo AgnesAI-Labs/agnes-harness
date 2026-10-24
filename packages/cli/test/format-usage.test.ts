@@ -31,8 +31,12 @@ describe('usage number formatting', () => {
     [999, '999'],
     [1_000, '1.0k'],
     [1_600, '1.6k'],
-    [999_999, '1000.0k'],
+    [999_949, '999.9k'],
+    [999_950, '1.0M'],
+    [999_999, '1.0M'],
     [1_000_000, '1.0M'],
+    [999_949_999, '999.9M'],
+    [999_999_999, '1.0G'],
   ])('formats %d tokens as %s using deterministic SI units', (tokens, expected) => {
     expect(formatTokenCount(tokens)).toBe(expected)
   })
@@ -55,8 +59,9 @@ describe('usage number formatting', () => {
     [1_000, '1k'],
     [1_600, '1.6k'],
     [200_000, '200k'],
-    [999_999, '1000k'],
+    [999_999, '1M'],
     [1_000_000, '1M'],
+    [999_999_999, '1G'],
     [1_200_000, '1.2M'],
   ])('formats %d tokens as %s without a trailing .0', (tokens, expected) => {
     expect(formatTokenCountShort(tokens)).toBe(expected)
@@ -221,8 +226,8 @@ describe('usage footer degradation', () => {
         totals: { ...base.totals, input: 1_234_567, output: 999_999 },
         cost: { usdMicros: 18_427_310, source: 'estimated', subscription: false },
       },
-      '本会话累计  输入 1.2M · 输出 1000k · 费用 约 $18.43',
-      '会话  输入 1.2M · 输出 1000k · 约 $18.43',
+      '本会话累计  输入 1.2M · 输出 1M · 费用 约 $18.43',
+      '会话  输入 1.2M · 输出 1M · 约 $18.43',
     ],
     [
       'tiny',

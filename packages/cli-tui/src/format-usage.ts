@@ -18,13 +18,16 @@ function nonNegativeInteger(value: number, label: string): void {
 export function formatTokenCount(tokens: number): string {
   nonNegativeInteger(tokens, 'token count')
   if (tokens < 1_000) return String(tokens)
-  if (tokens < 1_000_000) return `${(tokens / 1_000).toFixed(1)}k`
-  return `${(tokens / 1_000_000).toFixed(1)}M`
+  // Round first, then pick the unit, so 999_999 carries to `1.0M` rather than reading `1000.0k`.
+  const rounded = (size: number) => Number((tokens / size).toFixed(1))
+  if (rounded(1e3) < 1_000) return `${(tokens / 1e3).toFixed(1)}k`
+  if (rounded(1e6) < 1_000) return `${(tokens / 1e6).toFixed(1)}M`
+  return `${(tokens / 1e9).toFixed(1)}G`
 }
 
 /** `formatTokenCount` without the trailing `.0` (`1.0M` -> `1M`), as the composer rail draws it. */
 export function formatTokenCountShort(tokens: number): string {
-  return formatTokenCount(tokens).replace(/\.0(?=[kM]$)/, '')
+  return formatTokenCount(tokens).replace(/\.0(?=[kMG]$)/, '')
 }
 
 /** Renders the exact integer-micro value, trimming only zeroes beyond the required three decimals. */
