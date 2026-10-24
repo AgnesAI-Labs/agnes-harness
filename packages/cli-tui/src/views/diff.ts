@@ -158,7 +158,7 @@ export function statsMark(input: DiffInput, ansi: ThemedAnsi): string {
  */
 export function renderDiff(input: DiffInput, width: number, ansi: ThemedAnsi, locale: string): string[] {
   const hunks = opsOf(input)
-  const digits = String(Math.max(1, ...hunks.flat().map((op) => op.no))).length
+  const digits = String(hunks.flat().reduce((max, op) => Math.max(max, op.no), 1)).length
   const head = `${ansi.bold(escapeControl(input.path))}${input.wholeFile ? ` ${ansi.dim(tt('diff.wholeFile', locale))}` : ''} ${statsMark(input, ansi)}`
   const rows = [fitLine(head, width)]
   hunks.forEach((ops, h) => {

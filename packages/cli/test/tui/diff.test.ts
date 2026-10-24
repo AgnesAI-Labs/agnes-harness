@@ -137,3 +137,8 @@ it('marks the changed words of an edited line, and only on paired lines', () => 
   const long = `${'word '.repeat(110)}end`
   expect(edit(long, `${long}!`).join('')).not.toContain('\x1b[1m\x1b[4m')
 })
+
+it('draws a diff with hundreds of thousands of lines without overflowing the argument limit', () => {
+  const rows = draw('write', { path: 'huge.txt', content: lines(300_000) })
+  expect(rows[0]).toContain('+300000 -0')
+})
