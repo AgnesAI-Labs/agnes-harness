@@ -84,11 +84,12 @@ export async function createWorktree(
 }
 
 /**
- * Removes the worktree when it has no changes. A dirty worktree, one whose state cannot be read, and one git
- * refuses to remove are kept. Never forced, and the branch is never deleted.
+ * Removes the worktree when it has no changes. A dirty worktree (ignored files such as .env or node_modules
+ * count: `git worktree remove` would delete them), one whose state cannot be read, and one git refuses to
+ * remove are kept. Never forced, and the branch is never deleted.
  */
 export async function cleanupWorktree(info: WorktreeInfo): Promise<WorktreeOutcome> {
-  const status = await git(info.path, ['status', '--porcelain'])
+  const status = await git(info.path, ['status', '--porcelain', '--ignored'])
   if (status.code !== 0 || status.out.trim() !== '') return { info, removed: false }
   const root = await repoRoot(info.path)
   if (!root) return { info, removed: false }

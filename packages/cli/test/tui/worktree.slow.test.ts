@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -114,6 +115,19 @@ describe('WorktreeKeeper', () => {
     expect(existsSync(clean.path)).toBe(false)
     expect(existsSync(dirty.path)).toBe(true)
     expect(branches(root)).toEqual(expect.arrayContaining(['agh/clean', 'agh/dirty']))
+  })
+
+  it('keeps a worktree that holds only git-ignored files, since removing it would lose them', async () => {
+    const root = repo(true)
+    writeFileSync(join(root, '.gitignore'), '.worktrees/\n.env\n')
+    git(root, 'commit', '-q', '-am', 'ignore .env')
+    const keeper = new WorktreeKeeper()
+    const info = await createWorktree(root, 'envonly', 'en')
+    keeper.adopt('s1', info)
+    writeFileSync(join(info.path, '.env'), 'SECRET=1')
+    const [outcome] = await keeper.finish()
+    expect(outcome?.removed).toBe(false)
+    expect(readFileSync(join(info.path, '.env'), 'utf8')).toBe('SECRET=1')
   })
 })
 
