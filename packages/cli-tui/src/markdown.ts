@@ -1,4 +1,5 @@
 import { Lexer, type Token, type Tokens } from 'marked'
+import { wrapText } from './component.js'
 import { type CodeRun, highlight } from './highlight.js'
 import { renderLatex } from './latex.js'
 import { displayMathSource, MATH_FENCES, mathLexerOptions } from './latex-markdown.js'
@@ -376,7 +377,15 @@ export function completeBlocks(text: string): number {
 export function renderMarkdown(md: string, width: number, ansi: ThemedAnsi): string[] {
   if (!Number.isFinite(width)) throw new Error('invalid markdown width')
   const clean = stripVT(md).replace(CONTROL, '').replaceAll('\t', '    ')
-  return blocks(Lexer.lex(clean, mathLexerOptions()), Math.max(1, Math.trunc(width)), ansi)
+  const w = Math.max(1, Math.trunc(width))
+  try {
+    return blocks(Lexer.lex(clean, mathLexerOptions()), w, ansi)
+  } catch (error) {
+    // Thousands of nested quotes or emphasis openers (a model stuck repeating itself) overflow the
+    // recursive lexer; the text is still shown, unstyled.
+    if (!(error instanceof RangeError)) throw error
+    return wrapText(clean, w)
+  }
 }
 
 /** A leading part of a longer text: the blank line that separates it from what follows is kept. */
