@@ -5,6 +5,7 @@ import { listSessionChoices } from './commands.js'
 import { escapeControl } from './component.js'
 import { formatUsdMicros } from './format-usage.js'
 import { tt } from './locale-extended.js'
+import { probeLanguageServers } from './lsp-probe.js'
 import { waitingIn } from './queue-commands.js'
 import { oneLine } from './session-commands.js'
 
@@ -44,11 +45,29 @@ async function statusSlash(app: TuiApp): Promise<SlashResult> {
     ['status.cost', cost],
     ['status.queued', state.status === 'fulfilled' ? String(waitingIn(state.value.pending).length) : NONE],
     ['status.yolo', timeline ? tt(timeline.yolo ? 'status.on' : 'status.off', locale) : NONE],
+    // Daemon-side paths, shown as the daemon reports them, one per row.
+    ['status.dirs', mine?.additionalDirectories?.map(oneLine).join('\n') || tt('status.none', locale)],
+    // Over --connect this machine's PATH says nothing about the daemon's.
+    [
+      'status.lsp',
+      remote
+        ? tt('status.none', locale)
+        : probeLanguageServers(app.cwd)
+            .map(([label, found]) => `${label} ${found ? '✓' : '✗'}`)
+            .join(' · '),
+    ],
   ]
   const labels = rows.map(([key]) => tt(key, locale))
   const width = Math.max(...labels.map((label) => [...label].length))
   return {
-    text: rows.map(([, value], i) => `${(labels[i] as string).padEnd(width, ' ')}  ${value}`).join('\n'),
+    text: rows
+      .map(([, value], i) =>
+        value
+          .split('\n')
+          .map((part, n) => `${(n === 0 ? (labels[i] as string) : '').padEnd(width, ' ')}  ${part}`)
+          .join('\n'),
+      )
+      .join('\n'),
     presentation: 'transcript',
   }
 }

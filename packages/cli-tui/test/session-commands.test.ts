@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { type ContentBlock, rpcError } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
@@ -642,6 +642,42 @@ describe('small info commands', () => {
     expect(text).toMatch(/AGH_HOME\s+-$/m)
     expect(text).toMatch(/Model\s+-$/m)
     expect(text).toMatch(/Queued inputs\s+-$/m)
+  })
+
+  it('/status lists the extra directories and which language servers this PATH offers', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-status-'))
+    try {
+      const exe = (dir: string, name: string) => {
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, name), '#!/bin/sh\n', { mode: 0o755 })
+      }
+      const work = join(root, 'work')
+      exe(join(root, 'bin'), 'gopls')
+      exe(join(root, 'bin'), 'typescript-language-server')
+      exe(join(work, 'node_modules', '.bin'), 'basedpyright-langserver') // inside the workspace: skipped
+      vi.stubEnv('PATH', [join(work, 'node_modules', '.bin'), join(root, 'bin')].join(delimiter))
+      const here = (o: Record<string, unknown>, list: unknown[]) => {
+        const app = status(o, { timeline: { usage, yolo: false } }, { pending: [] }, list)
+        return Object.assign(app, { cwd: work })
+      }
+      const dirs = ['/x/one', '/x/two']
+      const text = (
+        await runSlash(here({}, [{ ...meta('cur', work), additionalDirectories: dirs }]), '/status')
+      ).text
+      expect(text).toMatch(/Extra directories {2}\/x\/one\n {19}\/x\/two\n/)
+      expect(text).toMatch(/Language servers\s+TS ✓ · Python ✗ · Go ✓$/m)
+      // Without extra directories it says none; after the binary shows up on a safe PATH it is found.
+      exe(join(root, 'bin'), 'pyright-langserver')
+      const plain = (await runSlash(here({}, [meta('cur', work)]), '/status')).text
+      expect(plain).toMatch(/Extra directories {2}none$/m)
+      expect(plain).toMatch(/Python ✓/)
+      // Over --connect the local PATH says nothing about the daemon.
+      const remote = (await runSlash(here({ remote: true }, [meta('cur', work)]), '/status')).text
+      expect(remote).toMatch(/Language servers\s+none$/m)
+    } finally {
+      vi.unstubAllEnvs()
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   const replies = (...texts: string[]) =>

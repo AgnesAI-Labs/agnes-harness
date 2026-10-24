@@ -55,7 +55,7 @@ node agnes.mjs
 | 模型/预设 | `/model`、`/model main ROUTE/MODEL`、`/preset NAME` |
 | 工具 | `/tools` 列出本会话的工具，每个标明开或关，关着的会写明原因。`/tools deny 名称...` 关掉工具，`/tools only 名称...` 只留下这些；两者都会先用一句话确认，因为收紧在会话内无法撤销，输入 `/tools confirm` 才执行（`/tools cancel` 放弃）。名称必须是列表里的精确工具名，不支持通配符，出现未知名称会拒绝整个请求；在 `deny` 或 `only` 之后可以用 Tab 补全。它只能收紧：不可能打开 profile 或 preset 已经关掉的工具；想把工具找回来，要新建会话或从改动之前分叉。只有会话属主能操作，旧版 daemon 不支持时会明确说明，而不是假装生效 |
 | 上下文/用量 | `/context`、`/usage`、`/cost` |
-| 状态 | `/status` 一屏显示会话、预设、模型、工作区、`AGH_HOME`、连接方式（本机 daemon 或 `--connect`）、上下文用量、花费、排队输入和 YOLO；读不到的值显示 `-` |
+| 状态 | `/status` 一屏显示会话、预设、模型、工作区、`AGH_HOME`、连接方式（本机 daemon 或 `--connect`）、上下文用量、花费、排队输入、YOLO、会话的额外目录（`--add-dir`）和本机 PATH 上有哪些语言服务器（TypeScript、Python、Go）；`--connect` 时语言服务器一行显示「无」，因为本机 PATH 说明不了 daemon 的情况；读不到的值显示 `-` |
 | 复制 | `/copy` 把最近一条回复复制到剪贴板，`/copy N` 复制倒数第 N 条，`/copy code` 复制最近一条回复里的最后一个代码块 |
 | 剪贴板图片 | Ctrl-V 或 `/paste` 把系统剪贴板里的图片作为附件（终端只会转发粘贴的文字，不会转发图片）。macOS 用 `osascript`，Linux 用 `wl-paste` 或 `xclip`，Windows 用 PowerShell；超时 5 秒、上限 20 MB；图片先写入 `<AGH_HOME>/tmp/` 下仅本人可读的文件，按 `/attach` 的方式上传（`--connect` 下同样如此），随后删除。草稿里出现 `[图片 #N]` 标记，只有发送时标记还在文字里，图片才随下一条消息发出；Backspace 整体删除标记。没有图片、缺少工具或超时时，状态栏说明原因，不附加任何东西。目前只读取 PNG 格式的剪贴板图片；macOS 上在 Finder 里复制的图片文件则直接附加该文件（png、jpeg、gif 或 webp） |
 | 拖入图片文件 | 把图片文件拖进终端（或粘贴其路径）即可附加。当一次粘贴只含已存在的 png、jpeg、gif 或 webp 文件的路径（绝对路径、`~/` 路径或 `file://` URL，可带引号或用反斜杠转义空格，以空格或换行分隔）时，每个文件都按 `/attach` 的方式上传并显示 `[图片 #N]` 标记。其他粘贴（文字夹着路径、文件不存在、不是图片）按文字插入，`--connect` 下的所有粘贴也一样。上传失败时状态栏说明原因，路径留在草稿里。以路径开头的消息，如 `/srv/pics/a.png 描述一下`，是普通消息；只有 `/` 加命令名才是命令 |

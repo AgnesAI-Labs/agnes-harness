@@ -96,6 +96,8 @@ export type SessionChoice = {
   lastSeq: number
   preset: string | null
   title?: string
+  /** Extra directories bound to the session (paths on the daemon's machine); absent when none. */
+  additionalDirectories?: string[]
   /** Set by the /rewind picker: choosing forks this session at that completed-turn boundary. */
   forkAt?: number
   /** With `forkAt`: the prompt of that turn, put back in the editor after the fork. */
@@ -179,6 +181,7 @@ export async function listSessionChoices(session: Session, resumableFrom?: strin
       lastSeq: item.lastSeq,
       preset: item.preset,
       ...(item.title ? { title: item.title } : {}),
+      ...(item.additionalDirectories?.length ? { additionalDirectories: item.additionalDirectories } : {}),
     }))
     .sort((a, b) => {
       const aTime = Date.parse(a.lastMessageAt ?? a.createdAt)
