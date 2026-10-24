@@ -35,6 +35,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.worktreeSummary',
   },
   { name: '/cd', args: '<dir>', descriptionKey: 'commands.cd', summaryKey: 'commands.cdSummary' },
+  {
+    name: '/add-dir',
+    args: '<dir>',
+    descriptionKey: 'commands.addDir',
+    summaryKey: 'commands.addDirSummary',
+  },
   { name: '/tree', descriptionKey: 'commands.tree', summaryKey: 'commands.treeSummary' },
   {
     name: '/import',

@@ -7,6 +7,16 @@ import { inheritFreshSession } from './composer-memory.js'
 import { tt } from './locale-extended.js'
 import { freshTuiSessionKey } from './session-key.js'
 
+/** The directory a slash argument names on this machine (`~`, or relative to the session workspace), and whether it exists. */
+export async function localDirectory(app: TuiApp, arg: string): Promise<{ dir: string; isDir: boolean }> {
+  const dir = resolve(app.cwd, arg === '~' || arg.startsWith('~/') ? homedir() + arg.slice(1) : arg)
+  const isDir = await stat(dir).then(
+    (s) => s.isDirectory(),
+    () => false,
+  )
+  return { dir, isDir }
+}
+
 /**
  * `/cd <dir>`: the workspace of a session cannot change, so this registers the directory and opens a fresh
  * session there, then switches to it. The old session stays resumable; its conversation does not follow
@@ -17,11 +27,7 @@ export async function cdSlash(app: TuiApp, line: string): Promise<SlashResult> {
   if (app.o.remote) return { text: tt('cd.remote', locale) }
   const arg = line.trim().replace(/^\S+\s*/, '')
   if (!arg) return { text: tt('cd.usage', locale) }
-  const dir = resolve(app.cwd, arg === '~' || arg.startsWith('~/') ? homedir() + arg.slice(1) : arg)
-  const isDir = await stat(dir).then(
-    (s) => s.isDirectory(),
-    () => false,
-  )
+  const { dir, isDir } = await localDirectory(app, arg)
   if (!isDir) return { text: tt('cd.notDir', locale, { path: dir }) }
   if (dir === resolve(app.cwd)) return { text: tt('cd.same', locale, { dir }) }
   const client = app.session.client

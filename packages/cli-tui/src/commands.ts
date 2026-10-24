@@ -8,6 +8,7 @@ import type {
 } from '@agnes/protocol'
 import { closestNames } from '@agnes/protocol/command-line'
 import type { Session } from '@agnes/sdk'
+import { addDirSlash } from './add-dir-command.js'
 import { agentsSlash } from './agent-commands.js'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
@@ -198,6 +199,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     cmd === '/new' ||
     cmd === '/worktree' ||
     (cmd === '/cd' && args.length > 0) ||
+    (cmd === '/add-dir' && args.length > 0) ||
     cmd === '/fork' ||
     (cmd === '/rewind' && args.length > 0) ||
     (cmd === '/resume' && args.length > 0 && args[0] !== 'all')
@@ -447,6 +449,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return worktreeSlash(app, line)
     case '/cd':
       return cdSlash(app, line)
+    case '/add-dir':
+      return addDirSlash(app, line)
     case '/btw': {
       const question = line.trim().replace(/^\S+\s*/, '')
       if (!question) return { text: tt('btw.usage', locale) }

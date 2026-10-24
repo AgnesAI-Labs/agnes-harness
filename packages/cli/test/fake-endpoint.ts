@@ -189,7 +189,11 @@ export function scriptedEndpoint(
     /** The `error` a failed turn's turn/end row carries. */
     turnEndError?: { code: string; message: string }
     /** What the handshake advertises under `agentCapabilities._meta['ai.agnes.harness']`; none by default, like an older daemon. */
-    harnessCapabilities?: { hardTurnBudget?: boolean; turnMaxSteps?: boolean }
+    harnessCapabilities?: {
+      hardTurnBudget?: boolean
+      turnMaxSteps?: boolean
+      forkAdditionalDirectories?: boolean
+    }
   } = {},
 ): FakeEndpoint {
   const reply = opts.reply ?? 'hello from fake'

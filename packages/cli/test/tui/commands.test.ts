@@ -118,7 +118,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(73)
+    expect(SLASH_COMMANDS).toHaveLength(74)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -128,6 +128,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/handoff',
       '/worktree',
       '/cd',
+      '/add-dir',
       '/tree',
       '/import',
       '/sessions',
@@ -909,6 +910,109 @@ describe('runSlash', () => {
         expect(opened(remote.ep)).toBe(base)
       } finally {
         await remote.client.close()
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('/add-dir forks the session with the directory after registering it; refusals change nothing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-add-dir-'))
+    const target = join(root, 'lib')
+    const file = join(root, 'a-file')
+    mkdirSync(target)
+    writeFileSync(file, 'x')
+    const wire = (ep: { calls: Array<{ method: string }> }) =>
+      ep.calls.filter((c) => c.method === '_agnes/v1/workspace.add' || c.method === '_agnes/v1/submit').length
+    try {
+      // Refusals. The default projection has no completed turn.
+      const idle = await unstartedApp(undefined, undefined, undefined, { cwd: root })
+      try {
+        const base = wire(idle.ep)
+        for (const line of ['/add-dir', '/add-dir nope', '/add-dir a-file', '/add-dir lib']) {
+          const r = await runSlash(idle.app, line)
+          expect(r.switchSession, line).toBeUndefined()
+          expect(r.text, line).toBeTruthy()
+        }
+        expect((await runSlash(idle.app, '/add-dir lib')).text).toContain('agh --add-dir')
+        Object.defineProperty(idle.app, 'busy', { get: () => true })
+        expect((await runSlash(idle.app, '/add-dir lib')).switchSession).toBeUndefined()
+        expect(wire(idle.ep)).toBe(base)
+      } finally {
+        await idle.client.close()
+      }
+      const remote = await unstartedApp(undefined, undefined, undefined, { cwd: root, remote: true })
+      try {
+        const r = await runSlash(remote.app, '/add-dir lib')
+        expect(r.switchSession).toBeUndefined()
+        expect(r.text).toBeTruthy()
+        expect(wire(remote.ep)).toBe(0)
+      } finally {
+        await remote.client.close()
+      }
+      // Success: registers the directory, then forks at the latest completed turn with it.
+      const ep = scriptedEndpoint({ harnessCapabilities: { forkAdditionalDirectories: true } })
+        .on('_agnes/v1/session.projectUI', (params) => ({
+          sessionId: (params as { sessionId: string }).sessionId,
+          upto: 0,
+          generation: 1,
+          opState: null,
+          turns: [
+            {
+              id: 't1',
+              turn: 1,
+              startSeq: 2,
+              endSeq: 5,
+              startedAt: '2026-10-03T00:00:00Z',
+              status: 'completed',
+              nodeIds: [],
+              usage: {
+                totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+                reasoningComplete: true,
+                billingComplete: true,
+                calls: [],
+              },
+              inherited: false,
+              forkable: true,
+            },
+          ],
+          nodes: [],
+          usage: {
+            totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+            context: { tokens: 0, window: 128_000, autoCompact: true },
+            model: { route: 'deepseek', id: 'deepseek-v4-flash', thinking: 'off' },
+          },
+        }))
+        .on('_agnes/v1/submit', (params) =>
+          (params as { kind?: string }).kind === 'fork'
+            ? { replayed: false, result: { sessionId: FORKED_ID } }
+            : { seq: 1, replayed: false },
+        )
+      const client = createClient({ transport: { kind: 'inproc', endpoint: ep } })
+      try {
+        const session = await client.session.new({ cwd: root })
+        const app = new TuiApp({
+          session,
+          term: new FakeTerminal({ columns: 90, rows: 24 }),
+          header: 'Agnes',
+          cwd: root,
+        })
+        const r = await runSlash(app, '/add-dir lib')
+        expect(r.switchSession?.id).toBe(FORKED_ID)
+        const order = ep.calls
+          .map((c) => c.method)
+          .filter((m) => m === '_agnes/v1/workspace.add' || m === '_agnes/v1/submit')
+        expect(order).toEqual(['_agnes/v1/workspace.add', '_agnes/v1/submit'])
+        expect(ep.calls.find((c) => c.method === '_agnes/v1/workspace.add')?.params).toEqual({ path: target })
+        expect(ep.calls.find((c) => c.method === '_agnes/v1/submit')?.params).toMatchObject({
+          kind: 'fork',
+          payload: { sessionId: session.id, at: 5, additionalDirectories: [target] },
+        })
+        expect(r.text).toContain(FORKED_ID)
+        expect(r.text).toContain(session.id)
+        expect(r.text).toContain(target)
+      } finally {
+        await client.close()
       }
     } finally {
       rmSync(root, { recursive: true, force: true })
