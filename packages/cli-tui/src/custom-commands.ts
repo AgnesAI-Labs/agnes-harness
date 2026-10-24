@@ -41,11 +41,13 @@ const hidesText = (body: string): boolean =>
 const oneLine = (s: string): string => escapeControl(s).replace(/\s+/g, ' ').trim()
 
 /** `---` frontmatter with flat `key: value` lines; anything it does not understand stays in the body. */
-function parse(text: string): { fields: Record<string, string>; body: string } {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text)
+function parse(raw: string): { fields: Record<string, string>; body: string } {
+  const text = raw.replace(/^\uFEFF/, '')
+  // The empty block is tried first: otherwise its lazy body would run on to a later `---` rule.
+  const m = /^---\r?\n(?:---|([\s\S]*?)\r?\n---)[ \t]*(?:\r?\n|$)/.exec(text)
   if (!m) return { fields: {}, body: text }
   const fields: Record<string, string> = {}
-  for (const row of (m[1] as string).split(/\r?\n/)) {
+  for (const row of (m[1] ?? '').split(/\r?\n/)) {
     const kv = /^([A-Za-z-]+):\s*(.*)$/.exec(row)
     if (kv) fields[kv[1] as string] = (kv[2] as string).replace(/^(['"])(.*)\1$/, '$2').trim()
   }
