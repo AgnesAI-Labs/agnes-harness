@@ -141,7 +141,6 @@ export class Renderer {
     this.lastCursorKey = ''
     this.paste = new PasteAssembler(this.term.pasteBursts === true)
     process.once('exit', this.onExit)
-    this.term.enterRaw()
     // Save the shell screen/cursor before painting. Never clear its scrollback (ED3). `runTui`
     // may already have claimed it while opening the session; entering 1049 a second time is not
     // a harmless no-op on every terminal, so only clear that existing alternate buffer here.
@@ -150,6 +149,9 @@ export class Renderer {
       this.term.write('\x1b[?1049h\x1b[H\x1b[2J')
       this.screenEntered = true
     }
+    // The kitty keyboard flag stack is per screen, so enhancement is pushed only once the alternate
+    // screen is the current one (and popped before leaving it, see stop()).
+    this.term.enterRaw()
     // Bracketed paste (2004): a paste arrives wrapped, so it cannot be mistaken for typing. Focus
     // reporting (1004) sends ESC [ I and ESC [ O as the window gains and loses the user's attention.
     this.term.write('\x1b[?2004h\x1b[?1004h')
@@ -384,18 +386,19 @@ export class Renderer {
     this.scheduled = false
     this.offInput?.()
     this.offResize?.()
+    // Pop the keyboard enhancement on the screen it was pushed on, before leaving the alternate screen.
+    if (wasActive) this.term.leaveRaw()
     try {
       this.selection = undefined
       this.dragging = false
       this.term.write(
         `${this.images?.reset() ?? ''}\x1b[?1004l\x1b[?2004l${this.mouse ? '\x1b[?1006l\x1b[?1002l' : ''}\x1b[?1049l\x1b[?25h`,
       )
-      this.screenEntered = false
       const columns = this.term.size().columns
       for (const line of transcript)
         for (const wrapped of historyLines(line, columns)) this.term.write(`${wrapped}\r\n`)
     } finally {
-      if (wasActive) this.term.leaveRaw()
+      this.screenEntered = false
     }
   }
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CURSOR_MARKER, createAnsi } from '../../src/tui/ansi.js'
+import { Renderer } from '../../src/tui/renderer.js'
 import {
   detectCapabilities,
   displayWidth,
@@ -290,6 +291,34 @@ describe('NodeTerminal', () => {
     expect(kitty.stdout.out).toEqual(['\x1b[>1u'])
     expect(plain.stdout.out).toEqual([])
     expect(plain.stdin.raw).toBe(true)
+  })
+
+  it('pushes and pops the keyboard mode on the alternate screen across start, suspend, resume and stop', () => {
+    const { stdin, stdout } = fakeStreams()
+    const term = new NodeTerminal(stdin, stdout, { TERM_PROGRAM: 'kitty' })
+    const renderer = new Renderer(term, { render: () => ['x'] })
+    const marks = ['\x1b[>1u', '\x1b[<u', '\x1b[?1049h', '\x1b[?1049l']
+    const seq = () =>
+      stdout.out
+        .join('')
+        .split('\x1b')
+        .map((part) => marks.find((m) => `\x1b${part}`.startsWith(m)))
+        .filter(Boolean)
+    renderer.start()
+    const resume = renderer.suspend()
+    resume()
+    renderer.stop()
+    // The kitty flag stack is per screen: every push follows 1049h and every pop precedes 1049l.
+    expect(seq()).toEqual([
+      '\x1b[?1049h',
+      '\x1b[>1u',
+      '\x1b[<u',
+      '\x1b[?1049l',
+      '\x1b[?1049h',
+      '\x1b[>1u',
+      '\x1b[<u',
+      '\x1b[?1049l',
+    ])
   })
 
   it('pops the keyboard mode it pushed, and only that', () => {
