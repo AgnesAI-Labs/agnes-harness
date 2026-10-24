@@ -132,8 +132,11 @@ export class Timeline implements Component {
     if (this.offset === 0 || this.leftAt === undefined || this.size <= this.leftAt) return undefined
     // With a draft End moves the cursor, so the hint names another key bound to the jump when there is one.
     const keys = boundKeys('timeline-bottom')
-    const key = hasDraft ? (keys.find((k) => k !== 'end') ?? keys[0]) : keys.includes('end') ? 'end' : keys[0]
-    return tt('scroll.newBelow', this.o.locale ?? 'en', { key: keyText(key ?? '', '-') })
+    const key = hasDraft ? keys.find((k) => k !== 'end') : keys.includes('end') ? 'end' : keys[0]
+    const locale = this.o.locale ?? 'en'
+    return key === undefined
+      ? tt('scroll.newBelowBare', locale)
+      : tt('scroll.newBelow', locale, { key: keyText(key, '-') })
   }
 
   /** End jumps back to the newest rows and follows new output again; with a draft only Ctrl-End does, since End moves the cursor. */

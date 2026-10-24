@@ -160,12 +160,9 @@ export class BusyInput {
     const text = escapeControl(textOf(blocks).replace(/\s+/g, ' ').trim() || 'attachment')
     if (kind === 'steer') return host.notice(tt('busy.steered', locale, { text }))
     if (fellBack) return host.notice(tt('busy.steerFallback', locale), 'warning')
-    host.notice(
-      tt(this.hinted ? 'busy.queued' : 'busy.hint', locale, {
-        text,
-        key: keyText(boundKeys('steer')[0] ?? ''),
-      }),
-    )
+    const steerKey = boundKeys('steer')[0]
+    const id = this.hinted ? 'busy.queued' : steerKey === undefined ? 'busy.hintNoKey' : 'busy.hint'
+    host.notice(tt(id, locale, { text, key: keyText(steerKey ?? '') }))
     this.hinted = true
   }
 }

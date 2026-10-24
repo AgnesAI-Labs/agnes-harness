@@ -3,7 +3,7 @@ import type { Colour } from '../ansi.js'
 import { slashCommand } from '../commands.js'
 import { type Component, escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
-import { boundKeys } from '../keymap.js'
+import { boundKeys, keyText } from '../keymap.js'
 import { type ExtendedKey, tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
@@ -50,14 +50,14 @@ const FIELD: readonly (readonly Dust[])[] = (() => {
   })
 })()
 
+/** A key as the tips spell it (`ctrl+alt+x`), from the keymap's own names so a rename cannot drift. */
+const keyLabel = (name: string): string => keyText(name).toLowerCase()
+
 const START_COMMANDS = [
   ['/model', 'welcome.cmdModel'],
   ['/resume', 'welcome.cmdResume'],
   ['/skills', 'welcome.cmdSkills'],
 ] as const
-
-/** A key as the user presses it, spelled from the keymap's own names so a rename cannot drift. */
-const keyLabel = (name: string): string => name.replace('-', '+')
 
 /**
  * The built-in tips. Each one names something that works in this build; `fresh` marks a feature new

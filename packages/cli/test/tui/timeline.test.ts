@@ -353,6 +353,25 @@ it('names the jump key the user bound, not the default', () => {
   }
 })
 
+it.each([
+  ['only End is bound and a draft exists', ['end'], true],
+  ['nothing is bound', [], false],
+])('omits the key clause when %s', (_name, bound, hasDraft) => {
+  installKeymap(new Keymap(new Map([['timeline-bottom', bound]])))
+  try {
+    const t = new Timeline({ rows: () => 8, nodeView: view })
+    const nodes = [1, 2, 3, 4, 5, 6].map((n) => user(String(n), String(n)))
+    t.apply(timeline(nodes.slice(0, 5)))
+    t.render(30)
+    t.scroll(-1)
+    t.render(30)
+    t.apply(timeline(nodes))
+    expect(t.newOutputHint(hasDraft)).toBe('↓ New output below')
+  } finally {
+    installKeymap(new Keymap())
+  }
+})
+
 it('offers the way back only when output arrived while scrolled up, and End or Ctrl-End returns to the bottom', () => {
   const t = new Timeline({ rows: () => 8, nodeView: view, locale: 'zh-CN' })
   const nodes = [1, 2, 3, 4, 5, 6].map((n) => user(String(n), String(n)))

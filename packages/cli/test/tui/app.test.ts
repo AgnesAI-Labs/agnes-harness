@@ -23,6 +23,7 @@ import { expect, it, vi } from 'vitest'
 import { type Colour, createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
 import { runSlash, SLASH_COMMANDS } from '../../src/tui/commands.js'
+import { installKeymap, Keymap } from '../../src/tui/keymap.js'
 import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
 import { type Tone, TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
@@ -1713,6 +1714,23 @@ it('sends a message that starts with a file path as a prompt, while /foo is stil
     expect(h.submits).toHaveLength(0)
   } finally {
     await h.dispose()
+  }
+})
+
+it('the first queued-message hint drops the steer clause when no key is bound to steering', async () => {
+  installKeymap(new Keymap(new Map([['steer', []]])))
+  const h = await busyHarness()
+  try {
+    h.type('a')
+    await vi.waitFor(() => expect(h.prompts).toEqual(['a']))
+    h.type('b')
+    await vi.waitFor(async () =>
+      expect(await h.shown()).toContain('Queued: b · sent when the turn ends · /queue manages'),
+    )
+    expect(await h.shown()).not.toContain('steers the running turn')
+  } finally {
+    await h.dispose()
+    installKeymap(new Keymap())
   }
 })
 
