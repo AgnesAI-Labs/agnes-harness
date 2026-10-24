@@ -335,7 +335,7 @@ it('opens files directly without changing the draft on cancel and still accepts 
   }
 })
 
-it('cycles catalog tasks, adopts only a completed empty hint, and keeps ordinary Tab focus navigation', async () => {
+it('adopts the whole catalog sentence mid-animation and keeps ordinary Tab focus navigation', async () => {
   vi.useFakeTimers()
   const examples = ['Review the sample patch.', 'Read the sales CSV.'] as const
   const { host, prompt, handle } = mount(
@@ -345,34 +345,74 @@ it('cycles catalog tasks, adopts only a completed empty hint, and keeps ordinary
   const hint = () => host.querySelector('.composer-example-hint')
   expect(prompt.placeholder).toBe(idle.input.placeholder)
   expect(hint()?.getAttribute('aria-hidden')).toBe('true')
-  expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
-  await act(async () => vi.advanceTimersByTime(55 * examples[0].length))
-  expect(hint()?.textContent).toContain(examples[0])
-  expect(hint()?.querySelector('kbd')?.textContent).toBe('Tab')
+  // The offer is honest from the first frame: the full sentence is already available to Tab.
+  expect(host.querySelector('#composer-suggestion')?.textContent).toContain(examples[0])
   expect(key(prompt, { key: 'Tab', shiftKey: true }).defaultPrevented).toBe(false)
-  await act(async () =>
-    vi.advanceTimersByTime(2200 + Math.ceil(examples[0].length / 2) * 18 + 350 + 55 * examples[1].length),
-  )
-  expect(hint()?.textContent).toContain(examples[1])
-  await act(async () => {
-    prompt.focus()
-  })
-  prompt.value = 'a scripted draft'
-  expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
-  prompt.value = ''
+  // Mid-animation the ghost shows a prefix, but Tab adopts the whole sentence.
+  await act(async () => vi.advanceTimersByTime(55 * 4))
+  expect(hint()?.textContent).toContain(examples[0].slice(0, 4))
+  expect(hint()?.textContent).not.toContain(examples[0])
+  expect(hint()?.querySelector('kbd')?.textContent).toBe('Tab')
   let adopted: KeyboardEvent | undefined
   await act(async () => {
     adopted = key(prompt, { key: 'Tab' })
   })
   expect(adopted?.defaultPrevented).toBe(true)
-  expect(handle.getDraft()).toBe(examples[1])
-  expect(prompt.selectionStart).toBe(examples[1].length)
-  expect(prompt.selectionEnd).toBe(examples[1].length)
+  expect(handle.getDraft()).toBe(examples[0])
+  expect(prompt.selectionStart).toBe(examples[0].length)
+  expect(prompt.selectionEnd).toBe(examples[0].length)
   expect(hint()).toBeNull()
+  // With content there is nothing to adopt, so Tab navigates normally.
+  await act(async () => {
+    type(prompt, 'a scripted draft')
+  })
   expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
+  // Deleting the draft offers the suggestion again, ready to adopt.
+  await act(async () => {
+    type(prompt, '')
+  })
+  expect(hint()).not.toBeNull()
+  let readopted: KeyboardEvent | undefined
+  await act(async () => {
+    readopted = key(prompt, { key: 'Tab' })
+  })
+  expect(readopted?.defaultPrevented).toBe(true)
+  expect(handle.getDraft()).toBe(examples[0])
 })
 
-it('stops on typing and paste, resumes only empty and unfocused, and stops for attachments', async () => {
+it('adopts a visible suggestion from a Tab pressed outside the input', async () => {
+  vi.useFakeTimers()
+  const examples = ['Review the sample patch.'] as const
+  const { host, prompt, handle } = mount(
+    { examplePrompts: examples },
+    { ...idle, input: { ...idle.input, exampleHint: true } },
+  )
+  expect(host.querySelector('.composer-example-hint')).not.toBeNull()
+  // An editable field elsewhere keeps Tab for itself.
+  const field = document.createElement('input')
+  document.body.append(field)
+  field.focus()
+  let kept: KeyboardEvent | undefined
+  await act(async () => {
+    kept = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    field.dispatchEvent(kept)
+  })
+  expect(kept?.defaultPrevented).toBe(false)
+  expect(handle.getDraft()).toBe('')
+  // The page, not the textarea, has focus — the case where Tab used to move focus instead.
+  field.remove()
+  prompt.blur()
+  let pressed: KeyboardEvent | undefined
+  await act(async () => {
+    pressed = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    document.body.dispatchEvent(pressed)
+  })
+  expect(pressed?.defaultPrevented).toBe(true)
+  expect(handle.getDraft()).toBe(examples[0])
+  expect(document.activeElement).toBe(prompt)
+})
+
+it('stops on typing, resumes as soon as the draft is empty, and keeps Escape dismissal', async () => {
   vi.useFakeTimers()
   const { host, prompt, handle } = mount(
     { examplePrompts: ['Review the patch.'] },
@@ -387,23 +427,25 @@ it('stops on typing and paste, resumes only empty and unfocused, and stops for a
   expect(hint()).toBeNull()
   expect(prompt.value).toBe('my task')
   expect(handle.getDraft()).toBe('my task')
+  // Deleting the draft while still focused brings the suggestion back and Tab can adopt it.
+  await act(async () => {
+    type(prompt, '')
+  })
+  expect(hint()).not.toBeNull()
+  expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(true)
+  // Escape is the person closing it: typing and deleting again must not reopen it.
+  await act(async () => {
+    key(prompt, { key: 'Escape' })
+  })
+  expect(hint()).toBeNull()
+  await act(async () => {
+    type(prompt, 'again')
+  })
   await act(async () => {
     type(prompt, '')
   })
   expect(hint()).toBeNull()
-  await act(async () => {
-    prompt.blur()
-  })
-  expect(hint()).not.toBeNull()
-  await act(async () => {
-    prompt.focus()
-    prompt.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: new DataTransfer() }))
-  })
-  expect(hint()).toBeNull()
-  await act(async () => {
-    prompt.blur()
-  })
-  expect(hint()).not.toBeNull()
+  expect(key(prompt, { key: 'Tab' }).defaultPrevented).toBe(false)
   await act(async () =>
     handle.restoreAttachmentBlocks([
       { type: 'file', name: 'notes.txt', data: 'aGVsbG8=', mimeType: 'text/plain' },
@@ -495,7 +537,8 @@ it('uses the shared ghost seam for live follow-up hints and invalidates dismisse
   await act(async () => {
     handle.setDraft('')
   })
-  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  // Adopting pauses the hint only while the draft has content; an empty draft offers it again.
+  expect(host.querySelector('.composer-example-hint')).not.toBeNull()
   await act(async () =>
     handle.render({
       ...idle,
@@ -540,6 +583,19 @@ it('uses the shared ghost seam for live follow-up hints and invalidates dismisse
     type(prompt, 'my own question')
   })
   expect(host.querySelector('.composer-example-hint')).toBeNull()
+  await act(async () => {
+    type(prompt, '')
+  })
+  // Deleting the draft clears the typing pause, so the same turn's suggestion returns.
+  expect(host.querySelector('.composer-example-hint')).not.toBeNull()
+  // Escape is a deliberate close and survives the emptied draft.
+  await act(async () => {
+    key(prompt, { key: 'Escape' })
+  })
+  expect(host.querySelector('.composer-example-hint')).toBeNull()
+  await act(async () => {
+    type(prompt, 'ask again')
+  })
   await act(async () => {
     type(prompt, '')
   })

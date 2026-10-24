@@ -118,7 +118,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     handleDrop,
   } = useComposerAttachments({ view, dependencies, prepareUploadSession, onAttachmentsChange, onError })
 
-  const [focused, setFocused] = useState(false)
   const hasAttachments = attachments.length + pendingCount + uploads.chips.length > 0
   const example = useComposerHint(
     examplePrompts,
@@ -134,12 +133,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     dependencies.loadHint,
     dependencies.subscribeHintInvalidation,
   )
-  const { pause, resume } = example
-  useEffect(() => {
-    if (draft || hasAttachments) pause()
-    else if (!focused) resume()
-  }, [draft, hasAttachments, focused, pause, resume])
-
   // What React last rendered into the textarea; a host edit is pending while it differs from draftRef.
   const renderedDraft = useRef(initialDraft)
   const pendingCaret = useRef<number>()
@@ -148,8 +141,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     draftRef.current = value
     setDraft(value)
     onDraftChange(value)
-    // Native input adoption and hint dismissal must share the same edit, after the value is owned.
-    example.pause()
   }
   const adoptDraft = useRef(changeDraft)
   adoptDraft.current = changeDraft
@@ -158,6 +149,36 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     pendingCaret.current = start + text.length
     changeDraft(draftRef.current.slice(0, start) + text + draftRef.current.slice(end))
   }
+  // The suggestion belongs to the page, not to the textarea: while it is on screen, Tab adopts it
+  // even when the caret is elsewhere. Only a focused editable field or an open dialog keeps Tab.
+  const adoptSuggestion = useRef<(() => void) | undefined>(undefined)
+  adoptSuggestion.current = example.adoptText
+    ? () => {
+        editDraft(0, 0, example.adoptText)
+        prompt.current?.focus()
+      }
+    : undefined
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the listener reads the latest draft and attachments through refs.
+  useEffect(() => {
+    if (!example.visible) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      const adopt = adoptSuggestion.current
+      if (!adopt || event.key !== 'Tab' || event.defaultPrevented) return
+      if (event.shiftKey || event.metaKey || event.ctrlKey || event.altKey || event.isComposing) return
+      const active = document.activeElement as HTMLElement | null
+      if (active && (active.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName)))
+        return
+      if (active?.closest('[role="dialog"], .ant-modal-wrap')) return
+      // A modal anywhere on the page owns Tab, even when focus sits on the body behind it.
+      if (document.querySelector('dialog[open], [role="dialog"], .ant-modal-wrap')) return
+      if (currentDraft() || attachmentsRef.current.length || pendingCountRef.current || uploads.count())
+        return
+      event.preventDefault()
+      adopt()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [example.visible])
   const mentions = useFileMentions({ prompt, draftRef, editDraft })
   const mentionTokensInDraft = mentionTokens(draft, mentions.mentions)
   const currentDraft = () =>
@@ -339,14 +360,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         data-agnes-region-owner="builtin"
         data-agnes-region-unit="composer"
         data-example-hint={example.visible || undefined}
-        onFocusCapture={() => {
-          setFocused(true)
-          if (draftRef.current || hasAttachments) example.pause()
-        }}
-        onBlurCapture={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
-        }}
-        onPasteCapture={() => example.pause()}
         data-busy={view.send.mode === 'busy'}
         onDragOver={(event: DragEvent<HTMLFormElement>) => {
           if (event.dataTransfer.types.includes('Files')) event.preventDefault()
@@ -378,7 +391,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               {example.text}
               <span className="composer-example-caret" />
             </span>
-            {example.complete && (
+            {example.adoptText && (
               <span className="composer-example-adopt">
                 <kbd>{t('composer.example.tab')}</kbd> {t('composer.example.adopt')}
               </span>
@@ -404,7 +417,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
               const native = event.nativeEvent as KeyboardEvent
               if (event.key === 'Escape' && example.visible && !native.isComposing) {
                 event.preventDefault()
-                example.pause()
+                // Closing the ghost is a decision; the emptied draft must not bring it back.
+                example.dismiss()
                 return false
               }
               if (
@@ -414,15 +428,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 !event.metaKey &&
                 !event.altKey &&
                 !native.isComposing &&
-                example.complete &&
+                example.adoptText &&
                 !currentDraft() &&
                 !attachmentsRef.current.length &&
                 !pendingCountRef.current &&
                 !uploads.count()
               ) {
                 event.preventDefault()
-                editDraft(0, 0, example.text)
-                example.pause()
+                editDraft(0, 0, example.adoptText)
                 return false
               }
               // A file chip is one piece of text: Backspace and Delete take it whole.
@@ -594,8 +607,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           }}
         />
         <span id="composer-suggestion" className="visually-hidden">
-          {example.complete
-            ? `${example.text} — ${t('composer.example.tab')} ${t('composer.example.adopt')}`
+          {example.adoptText
+            ? `${example.adoptText} — ${t('composer.example.tab')} ${t('composer.example.adopt')}`
             : ''}
         </span>
         <span id="composer-image-hint" className="visually-hidden">

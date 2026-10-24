@@ -18,7 +18,8 @@ export function useComposerHint(
   useEffect(() => subscribeInvalidation?.(() => setRevision((value) => value + 1)), [subscribeInvalidation])
   const previous = useRef<HintScope>()
   const [suggestion, setSuggestion] = useState<{ key: string; text: string }>()
-  const [dismissed, setDismissed] = useState<string>()
+  // Closing the hint on purpose is the person's decision and outlives an emptied draft.
+  const [dismissedByUser, setDismissedByUser] = useState<ReadonlySet<string>>(() => new Set())
   const key = scope ? JSON.stringify([scope.sessionId, scope.turn, revision]) : ''
   const sessionId = scope?.sessionId
   const turn = scope?.turn
@@ -48,15 +49,23 @@ export function useComposerHint(
       .catch(() => undefined)
     return () => abort.abort()
   }, [sessionId, turn, completed, load, key])
-  const pause = useCallback(() => setDismissed(key), [key])
-  const resume = useCallback(() => undefined, [])
+  const dismiss = useCallback(() => {
+    setDismissedByUser((keys) => {
+      if (keys.has(key)) return keys
+      const next = new Set(keys)
+      next.add(key)
+      return next
+    })
+  }, [key])
   if (home) return catalog
-  const visible = eligible && completed === true && suggestion?.key === key && dismissed !== key
+  // `eligible` already means an empty draft with nothing attached, so no separate typing pause is
+  // needed: a late edit that re-set one used to keep the suggestion hidden for the whole turn.
+  const visible = eligible && completed === true && suggestion?.key === key && !dismissedByUser.has(key)
   return {
     visible,
     text: visible ? suggestion.text : '',
-    complete: visible,
-    pause,
-    resume,
+    // The turn suggestion has no animation: an available text is adoptable as soon as it is shown.
+    adoptText: visible ? suggestion.text : '',
+    dismiss,
   }
 }
