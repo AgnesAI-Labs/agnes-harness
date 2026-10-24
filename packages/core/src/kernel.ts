@@ -696,6 +696,9 @@ export class Kernel {
         ...(this.o.contractForModel ? { contractForModel: this.o.contractForModel } : {}),
         children,
         ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        // Root sessions and children both carry their binding as identity; a child inherits its
+        // parent's extras and runs under the parent's policy as ceiling, so the list stays honest.
+        ...(workspaceIdentity?.extraRoots?.length ? { extraDirectories: workspaceIdentity.extraRoots } : {}),
         ...(workspaceInvocation ? { workspaceInvocation } : {}),
         ...(this.o.workspacePublication ? { workspacePublication: this.o.workspacePublication } : {}),
         ...(so.workspaceLease ? { workspaceLease: so.workspaceLease } : {}),

@@ -46,6 +46,7 @@ describe('extra directories in a session binding', () => {
     const first = await open(dataDir, root, [extra])
     try {
       const session = await first.session()
+      expect(session.d.extraDirectories).toEqual([extra])
       const invoke = session.d.workspaceInvocation
       if (!invoke) throw new Error('session has no workspace invocation')
       await expect(invoke.run((view) => view.fs().read(join(extra, 'lib.txt')))).resolves.toEqual(
@@ -67,7 +68,8 @@ describe('extra directories in a session binding', () => {
 
     const same = await open(dataDir, root, [extra])
     try {
-      await expect(same.session()).resolves.toBeDefined()
+      // The kernel hands the binding's list to the session deps, so a reopened session still reports it.
+      await expect(same.session()).resolves.toMatchObject({ d: { extraDirectories: [extra] } })
     } finally {
       await same.host.close()
     }

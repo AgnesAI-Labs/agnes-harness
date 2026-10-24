@@ -34,6 +34,8 @@ export type RuntimeSnapshotFacts = {
   disclosure: string
   enforcement: string
   cwd: string
+  /** Sorted canonical extra directories the session may use; absent when it has none. */
+  extraDirectories?: string[]
 }
 
 /**

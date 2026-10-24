@@ -59,6 +59,7 @@ export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentF
 /** The counterpart request-scoped facts, built off the same ctx — see RuntimeSnapshotFacts. */
 export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeSnapshotFacts {
   const platform = deps.adapters.platform
+  const extras = ctx.session.d.extraDirectories
   return {
     // Use the session clock so replay and a fixed-clock test retain their original UTC date.
     date: new Date(ctx.session.d.clock()).toISOString().slice(0, 10),
@@ -70,6 +71,8 @@ export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeS
     disclosure: ctx.preset.disclosure,
     enforcement: platform.capability(SANDBOX).level,
     cwd: ctx.session.d.cwd,
+    // Paths only, never contents; omitted when empty so sessions without extras stay byte-identical.
+    ...(extras?.length ? { extraDirectories: [...extras].sort() } : {}),
   }
 }
 

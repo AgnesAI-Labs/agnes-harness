@@ -508,6 +508,8 @@ export type SessionDeps = {
   imported?: SessionStart['imported']
   delegation?: SessionStart['delegation']
   cwd: string
+  /** Extra directories this session's workspace binding admits (paths only); omitted when none. */
+  extraDirectories?: readonly string[]
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
   /** Trusted resolved profile value. Omission preserves the safe manual default. */

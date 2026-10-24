@@ -13,6 +13,7 @@ function ctxFor(over: {
   disclosure?: 'standard' | 'hybrid' | 'code'
   disclosed?: string[]
   cwd?: string
+  extraDirectories?: string[]
   now?: number
   model?: string
   route?: string
@@ -23,6 +24,7 @@ function ctxFor(over: {
       key: 'agnes:local:demo:cli:workspace:abcd',
       d: {
         cwd: over.cwd ?? '/w/repo',
+        ...(over.extraDirectories ? { extraDirectories: over.extraDirectories } : {}),
         agnesVersion: '0.1.0',
         clock: () => over.now ?? Date.parse('2026-09-09T04:00:00.000Z'),
       },
@@ -117,6 +119,17 @@ describe('the prompt operation', () => {
     expect(first?.promptSections).toEqual(second?.promptSections)
     expect(first?.runtimeContext).toMatchObject({ environment: { date: '2026-09-09' } })
     expect(second?.runtimeContext).toMatchObject({ environment: { date: '2026-12-25' } })
+  })
+
+  it("lists a session's extra directories sorted, and leaves the facts untouched without them", () => {
+    const env = (extraDirectories?: string[]): Record<string, unknown> => {
+      const ctx = ctxFor({ ...(extraDirectories ? { extraDirectories } : {}) })
+      const c = createPromptOperation(deps).contribute?.(ctx)
+      return (c?.runtimeContext?.environment ?? {}) as Record<string, unknown>
+    }
+    expect(env(['/z/lib', '/a/data']).extraDirectories).toEqual(['/a/data', '/z/lib'])
+    expect('extraDirectories' in env([])).toBe(false)
+    expect('extraDirectories' in env()).toBe(false)
   })
 
   it('states the offered-tool and discovery rules in the tail runtime context', () => {
