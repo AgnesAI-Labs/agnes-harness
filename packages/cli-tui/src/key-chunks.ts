@@ -99,7 +99,7 @@ export class KeyChunker {
   }
 
   /** Delivers the held partial sequence as it is. */
-  private flush(): void {
+  flush(): void {
     this.clearTimer()
     const held = this.held
     this.held = ''

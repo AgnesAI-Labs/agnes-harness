@@ -1,3 +1,4 @@
+import { KEY_HOLD_MS } from './key-chunks.js'
 import { PASTE_END, PASTE_START } from './keys.js'
 
 // ponytail: a timing heuristic, not knowledge. Fast typists, key-repeat or an input method that
@@ -22,6 +23,9 @@ export class PasteAssembler {
   private run = 0
   private last = Number.NEGATIVE_INFINITY
   private holdUntil = Number.NEGATIVE_INFINITY
+  /** The start of a paste start marker that the last chunk ended inside of. */
+  private tail = ''
+  private timer: ReturnType<typeof setTimeout> | undefined
 
   constructor(
     private readonly bursts = false,
@@ -41,14 +45,45 @@ export class PasteAssembler {
     return /[\r\n]/.test(chunk) ? PASTE_START + chunk + PASTE_END : chunk
   }
 
-  push(data: string): string[] {
+  /** Drops a held marker start (the renderer stopped). */
+  clear(): void {
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
+    this.tail = ''
+  }
+
+  /**
+   * `idle` receives the held start of a marker that nothing completed within KEY_HOLD_MS (a lone Esc,
+   * an ordinary `ESC [ 2` key): it is the one hold, so the caller delivers it without holding again.
+   */
+  push(data: string, idle?: (parts: string[]) => void): string[] {
     const out: string[] = []
-    let rest = data
+    if (this.timer) clearTimeout(this.timer)
+    this.timer = undefined
+    let rest = this.tail + data
+    // A held start the new chunk does not continue goes on as its own chunk, so the key reader still
+    // sees Esc and a following key as two keys rather than one Alt chord.
+    if (this.tail && !rest.startsWith(PASTE_START) && !PASTE_START.startsWith(rest)) {
+      out.push(this.tail)
+      rest = data
+    }
+    this.tail = ''
     while (rest) {
       if (this.held === undefined) {
         const at = rest.indexOf(PASTE_START)
         if (at < 0) {
-          out.push(this.burst(rest))
+          let cut = Math.min(PASTE_START.length - 1, rest.length)
+          while (cut > 0 && !PASTE_START.startsWith(rest.slice(-cut))) cut--
+          if (cut > 0 && idle) {
+            this.tail = rest.slice(-cut)
+            this.timer = setTimeout(() => {
+              this.timer = undefined
+              const held = this.tail
+              this.tail = ''
+              idle([held])
+            }, KEY_HOLD_MS)
+          } else cut = 0
+          if (rest.length > cut) out.push(this.burst(rest.slice(0, rest.length - cut)))
           break
         }
         if (at > 0) out.push(rest.slice(0, at))

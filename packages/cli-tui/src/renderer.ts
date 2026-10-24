@@ -167,12 +167,21 @@ export class Renderer {
       this.renderNow()
     })
     const keys = new KeyChunker((key) => this.input(key))
-    const off = this.term.onInput((d) => {
-      for (const part of this.paste.push(d)) keys.push(part)
-    })
+    const feed = (parts: string[]) => {
+      for (const part of parts) keys.push(part)
+    }
+    const off = this.term.onInput((d) =>
+      feed(
+        this.paste.push(d, (held) => {
+          feed(held)
+          keys.flush()
+        }),
+      ),
+    )
     this.offInput = () => {
       off()
       keys.clear()
+      this.paste.clear()
     }
     try {
       this.renderNow()

@@ -130,12 +130,21 @@ export class FooterRenderer implements ScreenRenderer {
     const keys = new KeyChunker((key) => {
       if (this.root.handleInput?.(key)) this.requestRender()
     })
-    const off = this.term.onInput((d) => {
-      for (const part of this.paste.push(d)) keys.push(part)
-    })
+    const feed = (parts: string[]) => {
+      for (const part of parts) keys.push(part)
+    }
+    const off = this.term.onInput((d) =>
+      feed(
+        this.paste.push(d, (held) => {
+          feed(held)
+          keys.flush()
+        }),
+      ),
+    )
     this.offInput = () => {
       off()
       keys.clear()
+      this.paste.clear()
     }
     this.anchor()
   }

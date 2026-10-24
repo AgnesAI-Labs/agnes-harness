@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KEY_HOLD_MS, KeyChunker, splitKeys } from '../src/key-chunks.js'
+import { PasteAssembler } from '../src/paste.js'
 
 const keys = (s: string) => splitKeys(s).tokens
 
@@ -96,5 +97,56 @@ describe('KeyChunker', () => {
     chunker.clear()
     vi.advanceTimersByTime(1000)
     expect(out).toEqual([])
+  })
+})
+
+describe('PasteAssembler in front of KeyChunker', () => {
+  beforeEach(() => vi.useFakeTimers())
+  afterEach(() => vi.useRealTimers())
+  const wire = () => {
+    const out: string[] = []
+    const keys = new KeyChunker((k) => out.push(k))
+    const feed = (parts: string[]) => {
+      for (const p of parts) keys.push(p)
+    }
+    const idle = (parts: string[]) => {
+      feed(parts)
+      keys.flush()
+    }
+    const paste = new PasteAssembler()
+    return { out, send: (d: string) => feed(paste.push(d, idle)) }
+  }
+  const whole = '\x1b[200~line1\rline2\x1b[201~'
+
+  it('recognises a paste start marker cut at every position', () => {
+    for (let i = 1; i < 6; i++) {
+      const { out, send } = wire()
+      const data = `${whole}x`
+      send(data.slice(0, i))
+      send(data.slice(i))
+      vi.advanceTimersByTime(KEY_HOLD_MS * 3)
+      expect(out, `cut at ${i}`).toEqual([whole, 'x'])
+    }
+  })
+
+  it('keeps a held Esc apart from a next chunk that does not continue the marker', () => {
+    const { out, send } = wire()
+    send('\x1b')
+    send('j')
+    vi.advanceTimersByTime(KEY_HOLD_MS * 3)
+    expect(out).toEqual(['\x1b', 'j'])
+  })
+
+  it('still delivers a lone Esc and a CSI key ending a chunk within one hold time', () => {
+    const { out, send } = wire()
+    send('a\x1b')
+    vi.advanceTimersByTime(KEY_HOLD_MS)
+    expect(out).toEqual(['a', '\x1b'])
+    send('\x1b[20')
+    vi.advanceTimersByTime(KEY_HOLD_MS)
+    send('0~')
+    vi.advanceTimersByTime(KEY_HOLD_MS * 3)
+    expect(out.slice(2).join('')).toBe('\x1b[20' + '0~')
+    expect(out).not.toContain(whole)
   })
 })
