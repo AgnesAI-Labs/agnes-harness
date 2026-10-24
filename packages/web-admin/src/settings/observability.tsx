@@ -175,12 +175,7 @@ function ObservabilitySettingsPanel({ canSave }: { canSave: boolean }) {
             onBlur={settings.flush}
           />
         </SettingsItem>
-        <SettingsItem
-          label={t('headers')}
-          description={t('headerHint')}
-          info={t('headerHelp')}
-          data-testid="otlp-headers"
-        >
+        <SettingsItem label={t('headers')} description={t('headerHint')} data-testid="otlp-headers">
           <span className="agnes-settings-toolbar-row">
             <Field
               label={t('headerName')}

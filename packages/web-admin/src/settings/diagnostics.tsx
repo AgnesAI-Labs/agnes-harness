@@ -2,7 +2,6 @@ import type { DiagnosticRecord, DiagnosticsExportResult } from '@agnes/protocol'
 import type { DoctorResult } from '@agnes/protocol/gen/app-server'
 import {
   appServerErrorMessage,
-  Banner,
   Button,
   Dialog,
   FIRST_RUN_NAMESPACE,
@@ -220,7 +219,7 @@ export function DiagnosticsPanel({
   )
   return (
     <>
-      {notice === 'copyFailed' && (
+      {notice === 'copyFailed' && stack.length === 0 && (
         <StatusMessage
           kind="error"
           data-testid="diagnostics-notice"
@@ -312,6 +311,8 @@ export function DiagnosticsPanel({
               lookup={lookup}
               limit={bundle?.limits.errors ?? 0}
               failure={error ? (appServerErrorMessage(failure, locale) ?? t('readFailedHelp')) : undefined}
+              notice={notice}
+              onRetryCopy={() => copyRetry.current()}
               onRetry={() => setReads((value) => value + 1)}
               onClear={clear}
               copy={copy}
@@ -352,9 +353,10 @@ export function DiagnosticsPanel({
           </>
         }
       >
-        <div data-testid="diagnostics-export-details">
-          <p>{t('exportHelp')}</p>
-          <Banner tone="warning">{t('exportReview')}</Banner>
+        <div data-testid="diagnostics-export-details" className="agnes-diagnostics-export-grid">
+          <p>{t('exportIncludes')}</p>
+          <p>{t('exportExcludes')}</p>
+          <p className="agnes-diagnostics-export-note">{t('exportSelection')}</p>
         </div>
       </Dialog>
     </>

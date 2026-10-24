@@ -123,7 +123,7 @@ it.each([false, true])(
     )
     expect(host.querySelector('[data-testid="otlp-privacy"]')).not.toBeNull()
     expect(host.querySelector('[data-testid="otlp-worker"]')?.textContent).toContain(
-      'No Worker is currently running',
+      'No background worker is currently running',
     )
     await click(host, 'settings-subpage-back')
     await click(host, 'diagnostics-errors-row')
@@ -142,9 +142,7 @@ it.each([false, true])(
     await act(async () =>
       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })),
     )
-    expect(host.querySelector('[data-testid="diagnostics-found"]')?.textContent).toContain(
-      'will contain only this one',
-    )
+    expect(host.querySelector('[data-testid="diagnostics-found"]')?.textContent).toContain('Found 1 record')
     await click(host, 'settings-subpage-back')
     await click(host, 'settings-subpage-back')
     // Export says what the bundle contains first, then exports the selected error.
@@ -153,7 +151,7 @@ it.each([false, true])(
     )
     expect(download).not.toHaveBeenCalled()
     expect(document.querySelector('[data-testid="diagnostics-export-details"]')?.textContent).toContain(
-      'Review deployment metadata',
+      'Included: versions',
     )
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[data-testid="diagnostics-export-confirm"]')?.click(),
@@ -429,7 +427,7 @@ it('lists kinds by day with filters and the real limit, and says what a lookup f
       [...host.querySelectorAll('[data-testid="diagnostics-error"]')].map((row) =>
         row.getAttribute('data-kind'),
       )
-    expect(text('diagnostics-summary')).toContain('3 recent records retained, in 2 kinds.')
+    expect(text('diagnostics-summary')).toContain('3 records, in 2 kinds.')
     expect(
       [...host.querySelectorAll('[data-testid="diagnostics-day"]')].map((day) => day.textContent),
     ).toEqual(['TodayOctober 19 · 1 kinds · 2 times', 'YesterdayOctober 18 · 1 kinds · 1 times'])
@@ -456,13 +454,13 @@ it('lists kinds by day with filters and the real limit, and says what a lookup f
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })),
       )
     }
-    // Not found explains the scope; clearing returns to the list.
+    // Not found says only that the ID is not here; clearing returns to the list.
     await lookup(id(9))
-    expect(text('diagnostics-not-found')).toContain('latest 1,000 records')
+    expect(text('diagnostics-not-found')).toContain('No record with this ID')
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="diagnostics-not-found"] button')?.click(),
     )
-    expect(text('diagnostics-summary')).toContain('3 recent records')
+    expect(text('diagnostics-summary')).toContain('3 records')
     // Found opens that kind's page on the found ID; back, the list holds only that kind, counted as it counts it.
     found = [errors[1]!]
     await lookup(id(2))
@@ -565,7 +563,7 @@ it('renders safe translated failures, rejects invalid DTOs, and cancels an unmou
     ),
   )
   expect(idle.querySelector('[data-testid="diagnostics-worker"]')?.textContent).toContain(
-    'No Worker is currently running',
+    'No background worker is currently running',
   )
   expect(idle.querySelector('[data-testid="otlp-state"]')?.textContent).toContain('Disabled')
 })

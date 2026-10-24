@@ -134,6 +134,7 @@
   }
   .agnes-diagnostics-lookup {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--s8);
     min-width: 0;
@@ -158,7 +159,7 @@
   }
   .agnes-diagnostics-filter-count {
     margin-inline-start: var(--s4);
-    color: var(--agnes-text-tertiary);
+    color: var(--agnes-text-secondary);
     font-variant-numeric: tabular-nums;
   }
   .agnes-diagnostics-day {
@@ -180,14 +181,30 @@
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-semibold);
   }
+  /* The list reads as three columns: kind, summary with time, count. Category stays neutral;
+     the dot carries the fact that every entry is an error, so kind colours mean only kind. */
+  .agnes-diagnostics-errors .agnes-diagnostics-error.agnes-settings-drill {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--s4) var(--s12);
+  }
+  .agnes-diagnostics-kind-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s8);
+    min-width: 4.5rem;
+  }
+  .agnes-diagnostics-severity {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: var(--agnes-status-danger-solid);
+  }
   .agnes-diagnostics-kind {
     justify-content: center;
-    min-width: 4.5rem;
-    font-weight: var(--font-weight-semibold);
-  }
-  .agnes-diagnostics-kind[data-kind="plugin"] {
-    color: var(--agnes-status-info-text);
-    background: var(--agnes-status-info-bg);
+    font-weight: var(--font-weight-regular);
   }
   /* The count never yields to the message; the message wraps instead. */
   .agnes-diagnostics-error.agnes-settings-drill > .agnes-settings-value {
@@ -233,8 +250,33 @@
     justify-content: space-between;
     gap: var(--s8) var(--s12);
     padding: var(--s12) var(--s16);
-    color: var(--agnes-text-tertiary);
+    color: var(--agnes-text-secondary);
     font-size: var(--font-size-sm);
+  }
+  /* The summary and the retention note are read, not skimmed: one step above tertiary. */
+  .agnes-diagnostics-errors .agnes-diagnostics-summary {
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  /* The export dialog explains scope as two short columns, not one long paragraph. */
+  .agnes-diagnostics-export-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s8) var(--s16);
+  }
+  .agnes-diagnostics-export-grid p {
+    margin: 0;
+    color: var(--agnes-text-secondary);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+  }
+  .agnes-diagnostics-export-grid .agnes-diagnostics-export-note {
+    grid-column: 1 / -1;
+  }
+  @media (max-width: 560px) {
+    .agnes-diagnostics-export-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
   }
   /* The read states are one card: mark, what happened and why, then the one action. */
   .agh-empty-state.agnes-diagnostics-state {

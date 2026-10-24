@@ -548,7 +548,7 @@ it('loads registered diagnostics independently of the plugin catalog with one tr
     await vi.waitFor(() => expect(occupancy?.querySelector('[data-testid="pin-row"]')).toBeNull())
     // The page names itself once; the open subpage has its own title and the refresh.
     expect([...host.querySelectorAll('h2')].map((h) => h.textContent)).toEqual([
-      'Runtime & diagnostics',
+      'Run diagnostics',
       'Plugin file cleanup',
     ])
     expect(
@@ -691,7 +691,7 @@ it('keeps advanced composition reachable behind technical details while leading 
       ),
     )
     await vi.waitFor(() => expect(host.querySelector('[data-testid="run-config-technical"]')).not.toBeNull())
-    expect(host.textContent).toContain('First choose who answers on the Agents page')
+    expect(host.textContent).toContain('These settings only affect new sessions')
     const technical = host.querySelector<HTMLElement>('[data-testid="run-config-technical"]')
     const toggle = technical?.querySelector<HTMLButtonElement>(':scope > button')
     if (!technical || !toggle) throw new Error('technical details missing')

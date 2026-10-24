@@ -3,7 +3,8 @@ import type { HTMLAttributes, ReactNode } from 'react'
 export type EmptyStateProps = Omit<HTMLAttributes<HTMLElement>, 'title'> & {
   icon: ReactNode
   title: ReactNode
-  description: ReactNode
+  /** Omitted when the title already says everything; an empty paragraph would add blank space. */
+  description?: ReactNode
   /** At most one primary and one secondary action. */
   actions?: ReactNode
   help?: ReactNode
@@ -23,7 +24,7 @@ export function EmptyState({
         {icon}
       </div>
       <h3>{title}</h3>
-      <p>{description}</p>
+      {description ? <p>{description}</p> : null}
       {actions && <div className="agh-empty-state-actions">{actions}</div>}
       {help && <div className="agh-empty-state-help">{help}</div>}
     </section>

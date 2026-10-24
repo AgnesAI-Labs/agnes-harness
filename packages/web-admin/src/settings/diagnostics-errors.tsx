@@ -11,7 +11,7 @@ import {
   SettingsGroup,
   SettingsItem,
   SettingsTag,
-  type SettingsTagTone,
+  StatusMessage,
   useSettingsSubpages,
   useUiText,
 } from '@agnes/web-ui'
@@ -24,12 +24,6 @@ const RECENT = 5
 /** How many of a kind's latest occurrences its details list. */
 const OCCURRENCES = 3
 type Filter = 'all' | ErrorKind
-const TONES: Record<ErrorKind, SettingsTagTone> = {
-  permission: 'brand',
-  provider: 'warn',
-  plugin: 'muted',
-  other: 'muted',
-}
 
 export type ErrorGroup = {
   kind: ErrorKind
@@ -40,8 +34,6 @@ export type ErrorGroup = {
   recent: DiagnosticRecord[]
 }
 const kindKey = (record: DiagnosticRecord) => `${record.name}\u0000${record.cause ?? ''}\u0000${record.code}`
-/** The list's own page id; an error's page opens under it. */
-const LIST_ID = 'errors'
 
 /**
  * The page id of a kind of error: its key as base64url, so it is stable across reads, differs
@@ -114,6 +106,8 @@ export function RecentErrors({
   lookup,
   limit,
   failure,
+  notice,
+  onRetryCopy,
   onRetry,
   onClear,
   copy,
@@ -125,6 +119,9 @@ export function RecentErrors({
   limit: number
   /** Set when the read failed: what to tell the user. */
   failure?: string | undefined
+  /** A failure from the page's last action, shown beside the details that raised it. */
+  notice?: string | undefined
+  onRetryCopy(): void
   onRetry(): void
   onClear(): void
   copy(value: string, done: string): void
@@ -193,9 +190,12 @@ export function RecentErrors({
         data-kind={group.kind}
         className="agnes-diagnostics-error"
         leading={
-          <SettingsTag tone={TONES[group.kind]} data-kind={group.kind} className="agnes-diagnostics-kind">
-            {t(`filter.${group.kind}`)}
-          </SettingsTag>
+          <span className="agnes-diagnostics-kind-cell">
+            <span className="agnes-diagnostics-severity" aria-hidden="true" />
+            <SettingsTag tone="muted" data-kind={group.kind} className="agnes-diagnostics-kind">
+              {t(`filter.${group.kind}`)}
+            </SettingsTag>
+          </span>
         }
         label={message(record)}
         hint={
@@ -213,15 +213,23 @@ export function RecentErrors({
         value={t(group.count === 1 ? 'occurrences.one' : 'occurrences', { count: number(group.count) })}
       >
         <p className="agnes-diagnostics-when" data-testid="diagnostics-error-summary">
-          <SettingsTag tone={TONES[group.kind]} data-kind={group.kind} className="agnes-diagnostics-kind">
+          <SettingsTag tone="muted" data-kind={group.kind} className="agnes-diagnostics-kind">
             {t(`filter.${group.kind}`)}
           </SettingsTag>
           <span>
-            {t('last')} {clock(record.at)}
+            {t(group.count === 1 ? 'occurrences.one' : 'occurrences', { count: number(group.count) })}
           </span>
-          {group.count > 1 && <span>{`${t('first')} ${clock(group.first.at)}`}</span>}
         </p>
         <SettingsBlock className="agnes-diagnostics-details" data-testid="diagnostics-error-details">
+          {notice === 'copyFailed' && (
+            <StatusMessage
+              kind="error"
+              data-testid="diagnostics-notice"
+              action={{ label: t('retry'), onSelect: onRetryCopy }}
+            >
+              {t(notice)}
+            </StatusMessage>
+          )}
           <SettingsItem label={t('id')}>
             <span className="agnes-diagnostics-id">
               <code data-testid="diagnostics-error-id">{id}</code>
@@ -289,7 +297,7 @@ export function RecentErrors({
           data-testid="diagnostics-not-found"
           icon={<Icon name="search" />}
           title={t('notFound')}
-          description={t('notFoundHelp', { count: number(limit) })}
+          description=""
           actions={
             <Button size="small" onClick={onClear}>
               {t('clearLookup')}
@@ -338,7 +346,7 @@ export function RecentErrors({
     : filtered.filter((group, i) => i < RECENT || errorDrillId(group.latest) === open)
   return (
     <>
-      <p className="agnes-settings-note" data-testid="diagnostics-summary">
+      <p className="agnes-settings-note agnes-diagnostics-summary" data-testid="diagnostics-summary">
         {t('summary', { records: number(records.length), kinds: number(groups.length) })}
       </p>
       <Segmented<Filter>
@@ -357,7 +365,15 @@ export function RecentErrors({
         onChange={setFilter}
       />
       <SettingsGroup data-testid="diagnostics-list">
-        {!shown.length && <SettingsItem label={t('empty')} />}
+        {!shown.length && (
+          <EmptyState
+            className="agnes-diagnostics-state"
+            data-testid="diagnostics-filter-empty"
+            icon={<Icon name="search" />}
+            title={t('empty')}
+            description={t('emptyHelp')}
+          />
+        )}
         {byDay(shown).map((day) => {
           const label = day.key === today ? t('today') : day.key === yesterday ? t('yesterday') : undefined
           const date = new Intl.DateTimeFormat(locale, { month: 'long', day: 'numeric' }).format(

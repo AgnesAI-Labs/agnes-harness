@@ -13,8 +13,7 @@ export const shellCatalog: LocaleCatalog = {
     providerCount: '{kinds} kinds · {count}',
     generationHelp: 'Move sessions to the current plugin version',
     localShort: 'Rescan and trust workspace plugins',
-    runConfigIntro:
-      'First choose who answers on the Agents page. Run configuration decides how it works; Permissions decide what it may do. These are defaults for new conversations.',
+    runConfigIntro: 'These settings only affect new sessions.',
     compositionDetailsHelp:
       'Bundles layer reusable plugin settings; Preset IDs identify permission profiles. These advanced defaults apply to all new sessions, including agents. Review the effective configuration before saving.',
     isolationDetails: 'Isolation technical details',
@@ -68,7 +67,7 @@ export const shellCatalog: LocaleCatalog = {
     agentBundlesHelp: 'Ready-made combinations of plugins and permissions for new sessions.',
     agentContext: 'Context & compression',
     doctor: 'Runtime diagnostics',
-    diagnostics: 'Runtime & diagnostics',
+    diagnostics: 'Run diagnostics',
     'system-prompt': 'System prompt',
     technicalDetails: 'Technical details',
     runtimeDetailsHelp:
@@ -209,8 +208,7 @@ export const shellCatalog: LocaleCatalog = {
     providerCount: '{kinds} 类 · {count} 个',
     generationHelp: '把会话迁移到当前插件版本',
     localShort: '重新加载、信任工作区插件',
-    runConfigIntro:
-      '先在智能体页选择由谁回答；运行配置决定它怎样完成任务；权限决定它可以做什么。这里只设置新对话的默认值。',
+    runConfigIntro: '以下设置只影响新会话。',
     compositionDetailsHelp:
       'Bundle 叠加可复用的插件设置；Preset 标识对应权限方案。这些高级默认值作用于所有新会话，包括智能体；保存前请查看最终生效配置。',
     isolationDetails: '隔离保护技术详情',

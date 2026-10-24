@@ -197,7 +197,6 @@ export function CustomInstructions({
             onChange={(event) => edit('personaSuffix', event.currentTarget.value, 'idle')}
             onBlur={config.flush}
           />
-          {snapshot && !canSave && !replaced && <p className="agnes-settings-note">{t('readOnly')}</p>}
         </SettingsExpand>
       </SettingsBlock>
       {snapshot && !canSave && !replaced && <p className="agnes-settings-note">{t('readOnly')}</p>}
