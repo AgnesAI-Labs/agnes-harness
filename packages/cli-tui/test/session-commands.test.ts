@@ -149,6 +149,26 @@ describe('session slash commands', () => {
     expect((await runSlash(app, '/rewind')).text).toBe(tt('session.noTurns', 'en'))
   })
 
+  it('/handoff clears its working notice when the session was switched during the summary call', async () => {
+    const notices: unknown[] = []
+    let btwDone: (v: { text: string }) => void = () => {}
+    const btw = vi.fn(() => new Promise<{ text: string }>((r) => (btwDone = r)))
+    const app = appWith(
+      { session: { btw } },
+      {},
+      {
+        statusBar: { setNotice: (n: unknown) => notices.push(n) },
+        renderer: { requestRender: () => {} },
+      },
+    )
+    const running = runSlash(app, '/handoff')
+    ;(app as unknown as { session: unknown }).session = { id: 'other', client: {} }
+    btwDone({ text: 'summary' })
+    await running
+    expect(notices.at(-1)).toBeUndefined()
+    expect(notices).toHaveLength(2)
+  })
+
   it('/fork forks at the latest completed turn, or turn N, through the same call as /rewind', async () => {
     const turn = (n: number, endSeq: number | undefined, forkable: boolean) => ({
       id: `t${n}`,

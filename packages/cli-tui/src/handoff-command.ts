@@ -34,7 +34,10 @@ export async function handoffSlash(app: TuiApp, line: string): Promise<SlashResu
   app.renderer.requestRender()
   const answer = await s.client.session.btw(s.id, handoffQuestion(line.trim().replace(/^\S+\s*/, '')))
   // A session switch while the call ran leaves nothing to hand off from.
-  if (app.session !== s) return {}
+  if (app.session !== s) {
+    app.statusBar.setNotice(undefined)
+    return {}
+  }
   const summary = answer.text.trim()
   const choices = await listSessionChoices(s).catch(() => [])
   const oldTitle = oneLine(choices.find((c) => c.sessionId === s.id)?.title ?? s.id)
