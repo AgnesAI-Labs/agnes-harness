@@ -16,6 +16,15 @@ describe('formatUsageReport cache section', () => {
     expect(text).toContain('缓存命中率（累计）：50.0%')
   })
 
+  it('puts the cost source in parentheses that suit the language', () => {
+    const usage: UsageView = {
+      ...baseUsage,
+      cost: { usdMicros: 12_000, source: 'estimated', subscription: false },
+    }
+    expect(formatUsageReport(usage, 'en')).toMatch(/\$0\.012 \([^（）]+\)/)
+    expect(formatUsageReport(usage, 'zh-CN')).toMatch(/\$0\.012（[^()]+）/)
+  })
+
   it('says no data yet when the provider has never reported a cache row', () => {
     const text = formatUsageReport(baseUsage, 'zh-CN')
     expect(text).toContain('缓存命中率（累计）：暂无数据')
