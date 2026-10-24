@@ -29,7 +29,11 @@ function fit(text: string, maxBytes: number): string {
   return `${cut.replace(/�$/, '')}\n… (truncated)`
 }
 
-/** The block appended to a write/edit result: errors only, nothing at all when there are none. */
+/**
+ * The block appended to a write/edit result: errors only, nothing at all when there are none.
+ * cli-tui recognises it by the head line `LSP found N error(s) in PATH:` and the `line:col message`
+ * rows (packages/cli-tui/src/views/lsp-note.ts); change the format there too.
+ */
 export function formatAuto(
   path: string,
   diags: readonly Diagnostic[],

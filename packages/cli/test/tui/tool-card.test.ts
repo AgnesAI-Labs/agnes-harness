@@ -463,6 +463,37 @@ it('shows +a -b after an edit title and no preview, then the diff when expanded'
   )
 })
 
+it('shows language-server errors on a write or edit card: badge, three rows, the remainder by N', () => {
+  const rows = [1, 2, 3, 4, 5].map((n) => `${n}:1 bad ${n} (ts 2322)`)
+  // The result texts are joined with no separator, and a clipped preview can hold fewer rows than N.
+  const note = (n: number, shown: string[]) =>
+    `created a.ts (5 chars)LSP found ${n} errors in a.ts:\n${shown.join('\n')}`
+  const card = new ToolCard(editNode(editArgs, { resultPreview: note(5, rows) }), { locale: 'en' })
+  const out = card.render(70)
+  expect(out[0]).toContain('+2 -1 · 5 LSP errors')
+  expect(out.slice(1).map((r) => r.trim())).toEqual([
+    '1:1 bad 1 (ts 2322)',
+    '2:1 bad 2 (ts 2322)',
+    '3:1 bad 3 (ts 2322)',
+    '… 2 more',
+  ])
+  const clipped = new ToolCard(editNode(editArgs, { resultPreview: note(9, rows.slice(0, 4)) })).render(70)
+  expect(clipped[0]).toContain('· 9 LSP errors')
+  expect(clipped.at(-1)?.trim()).toBe('… 6 more')
+  expect(
+    new ToolCard(editNode(editArgs, { resultPreview: note(1, rows.slice(0, 1)) })).render(70)[0],
+  ).toContain('· 1 LSP error')
+  expect(
+    new ToolCard(editNode(editArgs, { resultPreview: note(2, rows) }), { locale: 'zh-CN' }).render(70)[0],
+  ).toContain('· LSP 错误 2 个')
+  // Without a note, and for other tools, nothing changes; the note starts its own line when opened.
+  expect(new ToolCard(editNode(editArgs, { resultPreview: 'edited' })).render(70)).toHaveLength(1)
+  expect(new ToolCard({ ...node, resultPreview: note(2, rows) }).render(70)[0]).not.toContain('LSP errors')
+  card.toggle()
+  expect(card.render(70).join('\n')).toMatch(/Result: created a\.ts \(5 chars\)\s*\n.*LSP found 5 errors/)
+  expect(card.render(70).join('\n')).not.toContain('\x1b')
+})
+
 const call = (n: number, name: string, over: Partial<typeof node> = {}): typeof node => ({
   ...node,
   id: `t${n}`,

@@ -8,6 +8,7 @@ import { displayWidth } from '../terminal.js'
 import { paintsColour, type ThemedAnsi, TuiTheme } from '../theme.js'
 import type { ToolDetailState } from '../tool-detail.js'
 import { type DiffInput, diffFromArgsText, renderDiff, statsMark } from './diff.js'
+import { parseLspNote, splitLspNote } from './lsp-note.js'
 import { type CardFacts, type CardKind, cardHead, cardKind, planSteps, STEP_MARK } from './special-card.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
@@ -224,12 +225,24 @@ export class ToolCard implements Component {
       if (parsed?.text !== text) parsed = { text, input: diffFromArgsText(node.name, text) }
       return parsed?.input
     }
+    // Language-server errors that write and edit report after saving; the head line's N is the count.
+    const lsp = () => (changes ? parseLspNote(node.resultPreview) : undefined)
     this.stats = () => {
       const input = diff()
-      return input ? ` ${statsMark(input, ansi)}` : ''
+      const note = lsp()
+      const badge = note
+        ? ` ${ansi.fg('danger', tt(note.count === 1 ? 'card.lspErrors.one' : 'card.lspErrors.other', locale, { n: note.count }))}`
+        : ''
+      return `${input ? ` ${statsMark(input, ansi)}` : ''}${badge}`
     }
     let shown: { width: number; rows: string[] } | undefined
     this.preview = (width) => {
+      const note = lsp()
+      if (note && note.errors.length > 0) {
+        const rows = note.errors.slice(0, PREVIEW_ROWS).map((row) => escapeControl(row))
+        if (note.count > PREVIEW_ROWS) rows.push(tt('card.lspMore', locale, { n: note.count - PREVIEW_ROWS }))
+        return rows.map((row) => fitLine(`    ${ansi.fg('danger', row)}`, width))
+      }
       const text = changes ? undefined : node.resultPreview
       if (!text || kind !== undefined) return []
       if (shown?.width !== width) {
@@ -279,7 +292,8 @@ export class ToolCard implements Component {
       // A fetched record can be long and the card draws on every frame: wrap it once per width.
       let wrapped: { value: string; width: number; lines: string[] } | undefined
       this.rail.push((width) => {
-        const value = read()
+        const got = read()
+        const value = got !== undefined && label === 'Result' && changes ? splitLspNote(got) : got
         if (value === undefined) return []
         if (wrapped?.value !== value || wrapped.width !== width)
           wrapped = { value, width, lines: wrapIndented(escapeControl(value), width - LABEL_WIDTH - 1) }
