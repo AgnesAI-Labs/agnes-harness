@@ -5,7 +5,7 @@ import { privateStateRoots } from '../src/paths.js'
 import {
   compileWorkspacePolicy,
   intersectWorkspacePlan,
-  memoryRequiresFileIsolation,
+  memoryFileIsolation,
   normalizeSandboxStaticConfig,
   sandboxStaticConfigHash,
 } from '../src/workspace-policy.js'
@@ -66,11 +66,43 @@ describe('Host workspace policy compiler', () => {
         sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
       })
       for (const config of [l0, conditional]) {
-        expect(memoryRequiresFileIsolation(true, support, config)).toBe(support !== 'unimplemented')
-        expect(memoryRequiresFileIsolation(true, support, { ...config, required: true })).toBe(true)
-        expect(memoryRequiresFileIsolation(false, support, config)).toBe(false)
+        expect(memoryFileIsolation(true, support, config)).toBe(
+          support === 'unimplemented' ? 'none' : 'required',
+        )
+        expect(memoryFileIsolation(true, support, { ...config, required: true })).toBe('required')
+        expect(memoryFileIsolation(false, support, config)).toBe('none')
       }
-      expect(memoryRequiresFileIsolation(true, support, { ...l0, onUnavailable: 'deny' })).toBe(true)
+      expect(memoryFileIsolation(true, support, { ...l0, onUnavailable: 'deny' })).toBe('required')
+    },
+  )
+
+  it.each(['implemented', 'unknown'] as const)(
+    'lets explicit full-access keep memory without a usable %s OS boundary unless isolation is required',
+    (support) => {
+      // The shipped permission-full-access overlay: tool policy plus explicit unconfined L0.
+      const fullAccess = normalizeSandboxStaticConfig({
+        providers: { 'tool-policy': { provider: 'full-access' } },
+        sandbox: { level: 'L0', on_unavailable: 'allow' },
+      })
+      expect(fullAccess.access).toBe('full-access')
+      // Preferred: the runtime still requests L1 (memory tree denied where the OS enforces it) but
+      // does not refuse unconfined execution when the probe fails.
+      expect(memoryFileIsolation(true, support, fullAccess)).toBe('preferred')
+      expect(memoryFileIsolation(false, support, fullAccess)).toBe('none')
+      // A deployment that demands confinement still wins.
+      expect(memoryFileIsolation(true, support, { ...fullAccess, required: true })).toBe('required')
+      // Neither the platform nor an unconfined sandbox setting relaxes other permissions.
+      for (const policy of ['default', 'read-only']) {
+        const restricted = normalizeSandboxStaticConfig({
+          providers: { 'tool-policy': { provider: policy } },
+          sandbox: { level: 'L0', on_unavailable: 'allow' },
+        })
+        expect(memoryFileIsolation(true, support, restricted)).toBe('required')
+      }
+      const ask = normalizeSandboxStaticConfig({
+        sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' },
+      })
+      expect(memoryFileIsolation(true, support, ask)).toBe('required')
     },
   )
 

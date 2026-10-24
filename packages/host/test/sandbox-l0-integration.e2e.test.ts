@@ -149,6 +149,10 @@ async function assembleWithSandbox(opts: {
   workspace?: string
   hookDelayMs?: number
   memory?: boolean
+  /** The base recipe's tool policy; `full-access` is what the explicit permission overlay selects. */
+  toolPolicy?: string
+  /** Every OS boundary probe fails, as in a container without bubblewrap. */
+  osBoundaryUnavailable?: boolean
 }): Promise<Fixture> {
   const workspace = opts.workspace ?? scratch('agnes-l0-ws-')
   const dataDir = scratch('agnes-l0-data-')
@@ -193,7 +197,13 @@ async function assembleWithSandbox(opts: {
   const mods: Record<string, PackageModule> = {
     '@agnes/base': {
       id: '@agnes/base',
-      sandboxWorkspaceProbe,
+      sandboxWorkspaceProbe: opts.osBoundaryUnavailable
+        ? (input) =>
+            sandboxWorkspaceProbe({
+              ...input,
+              probeExec: async () => ({ code: 1, stdout: '', stderr: '', truncated: false, timedOut: false }),
+            })
+        : sandboxWorkspaceProbe,
       sandboxImplementation,
       ...(opts.memory
         ? {
@@ -243,6 +253,7 @@ async function assembleWithSandbox(opts: {
       presets: {
         base: {
           name: 'base',
+          ...(opts.toolPolicy ? { providers: { 'tool-policy': { provider: opts.toolPolicy } } } : {}),
           sandbox: {
             level: 'L0',
             ...(opts.extraAllow ? { extra_paths: opts.extraAllow } : {}),
@@ -656,6 +667,61 @@ describe('no backend: process creation default-denies, and the marker proves not
   })
 })
 
+describe('memory under an unavailable OS boundary', () => {
+  const fullAccess = { toolPolicy: 'full-access', sandboxPreset: { level: 'L0', on_unavailable: 'allow' } }
+  const printMarker = (marker: string) =>
+    process.platform === 'win32'
+      ? `[System.IO.File]::WriteAllText('${marker.replaceAll("'", "''")}', 'x')`
+      : `printf x > "${marker}"`
+
+  it('explicit full-access keeps memory installed and runs commands unconfined', async () => {
+    const f = await assembleWithSandbox({ ...fullAccess, memory: true, osBoundaryUnavailable: true })
+    try {
+      const marker = join(f.workspace, 'marker-full-access.txt')
+      const out = await f.seam.exec([SHELL_SENTINEL, printMarker(marker)], { cwd: f.workspace })
+      expect(out.code).toBe(0)
+      expect(existsSync(marker)).toBe(true)
+      expect(f.seam.enforcement()).toEqual({ level: 'partial', scope: ['file'] })
+      expect(f.a.providers.catalog().some((entry) => entry.kind === 'memory')).toBe(true)
+    } finally {
+      await f.a.rollback.unwind()
+    }
+  })
+
+  it('a deployment that requires the sandbox still refuses explicit full-access', async () => {
+    const err = await assembleWithSandbox({
+      toolPolicy: 'full-access',
+      sandboxPreset: { level: 'L0', on_unavailable: 'allow', required: true },
+      memory: true,
+      osBoundaryUnavailable: true,
+    }).catch((e: unknown) => e)
+    expect(code(err)).toBe('E_SANDBOX_WORKSPACE')
+  })
+
+  // `default` is the tool policy of the workspace-write permission.
+  it.each(['default', 'read-only'])(
+    'an unconfined recipe with the %s tool policy still refuses commands while memory is installed',
+    async (toolPolicy) => {
+      const f = await assembleWithSandbox({
+        toolPolicy,
+        sandboxPreset: { level: 'L0', on_unavailable: 'allow' },
+        memory: true,
+        osBoundaryUnavailable: true,
+      })
+      try {
+        const marker = join(f.workspace, 'marker-restricted.txt')
+        const err = await f.seam
+          .exec([SHELL_SENTINEL, printMarker(marker)], { cwd: f.workspace })
+          .catch((e: unknown) => e)
+        expect(code(err)).toBe('SANDBOX_UNAVAILABLE')
+        expect(existsSync(marker)).toBe(false)
+      } finally {
+        await f.a.rollback.unwind()
+      }
+    },
+  )
+})
+
 const actualSeatbelt = it.runIf(existsSync('/usr/bin/sandbox-exec'))
 actualSeatbelt(
   'executes through the real Seatbelt boundary before opening a required-L1 session',
@@ -688,6 +754,27 @@ actualSeatbelt(
     }
   },
 )
+
+actualSeatbelt('explicit full-access still denies the memory tree where Seatbelt can enforce it', async () => {
+  const f = await assembleWithSandbox({
+    toolPolicy: 'full-access',
+    sandboxPreset: { level: 'L0', on_unavailable: 'allow' },
+    memory: true,
+  })
+  try {
+    expect(f.seam.enforcement()).toEqual({ level: 'full', scope: ['file', 'network', 'process'] })
+    const outside = join(f.homeDir, 'full-access-outside.txt')
+    expect((await f.seam.exec(['/usr/bin/touch', outside], { cwd: f.workspace })).code).toBe(0)
+    expect(existsSync(outside)).toBe(true)
+    const memoryRoot = join(f.dataDir, 'memory')
+    mkdirSync(memoryRoot, { recursive: true })
+    const tampered = join(memoryRoot, 'shell.md')
+    expect((await f.seam.exec(['/usr/bin/touch', tampered], { cwd: f.workspace })).code).not.toBe(0)
+    expect(existsSync(tampered)).toBe(false)
+  } finally {
+    await f.a.rollback.unwind()
+  }
+})
 
 describe('the binding is held to the seam on every reading of the policy', () => {
   it('a session refuses a per-session sandbox override whose policy digest differs from the bound one', async () => {

@@ -109,17 +109,31 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
   })
 }
 
-/** Only the trusted local caller supplies an unimplemented fact. Explicit L0 alone never waives memory isolation. */
-export function memoryRequiresFileIsolation(
+/**
+ * How a registered memory provider's private tree constrains command execution:
+ * - `none`: no constraint (no provider, or a trusted local backend without OS isolation that the
+ *   preset explicitly permits to run unconfined).
+ * - `preferred`: request the OS boundary and deny the memory tree where it can be enforced, but run
+ *   unconfined when it cannot. Only the explicit full-access permission selects this: like other
+ *   agent harnesses' full-access modes, it trusts the user and their environment, so memory stays
+ *   enabled and is an ordinary file to an unconfined shell.
+ * - `required`: refuse unconfined execution. `required: true` always lands here.
+ * Only the trusted local caller supplies an unimplemented fact.
+ */
+export type MemoryFileIsolation = 'none' | 'preferred' | 'required'
+
+export function memoryFileIsolation(
   registered: boolean,
   implementation: 'implemented' | 'unimplemented' | 'unknown',
   config: SandboxStaticConfig,
-): boolean {
+): MemoryFileIsolation {
+  if (!registered) return 'none'
   const permitted =
     !config.required &&
     ((config.level === 'L1' && config.onUnavailable === 'allow-if-unimplemented') ||
       (config.level === 'L0' && config.onUnavailable === 'allow'))
-  return registered && !(implementation === 'unimplemented' && permitted)
+  if (implementation === 'unimplemented' && permitted) return 'none'
+  return config.access === 'full-access' && !config.required ? 'preferred' : 'required'
 }
 
 export function sandboxStaticConfigHash(config: SandboxStaticConfig): string {
