@@ -427,6 +427,8 @@ export class ComputerUseToolRuntime {
       parameters: ComputerUseParams,
       meta: {
         requiresImageInput: true,
+        deferLoading: true,
+        discoveryGroup: 'Computer Use',
         isReadOnly: false,
         isDestructive: true,
         isConcurrencySafe: false,

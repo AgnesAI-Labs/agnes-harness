@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/pharma-gmp",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -122,6 +122,7 @@
             "present",
             "ask_user_question",
             "read",
+            "ui_guide",
             "ui_render",
             "skill_read",
             "pharma_record",
@@ -150,6 +151,7 @@
               "present",
               "ask_user_question",
               "read",
+              "ui_guide",
               "ui_render",
               "skill_read",
               "pharma_record",
@@ -216,6 +218,7 @@
             "present",
             "ask_user_question",
             "read",
+            "ui_guide",
             "ui_render",
             "skill_read",
             "pharma_record"
@@ -231,6 +234,7 @@
               "present",
               "ask_user_question",
               "read",
+              "ui_guide",
               "ui_render",
               "skill_read",
               "pharma_record"
@@ -284,6 +288,7 @@
             "present",
             "ask_user_question",
             "read",
+            "ui_guide",
             "ui_render",
             "skill_read",
             "pharma_record"
@@ -299,6 +304,7 @@
               "present",
               "ask_user_question",
               "read",
+              "ui_guide",
               "ui_render",
               "skill_read",
               "pharma_record"
@@ -352,6 +358,7 @@
             "present",
             "ask_user_question",
             "read",
+            "ui_guide",
             "ui_render",
             "skill_read",
             "schedule_create",
@@ -370,6 +377,7 @@
               "present",
               "ask_user_question",
               "read",
+              "ui_guide",
               "ui_render",
               "skill_read",
               "schedule_create",
@@ -426,6 +434,7 @@
             "present",
             "ask_user_question",
             "read",
+            "ui_guide",
             "ui_render",
             "skill_read",
             "pharma_release"
@@ -441,6 +450,7 @@
               "present",
               "ask_user_question",
               "read",
+              "ui_guide",
               "ui_render",
               "skill_read",
               "pharma_release"

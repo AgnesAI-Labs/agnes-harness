@@ -793,7 +793,7 @@ describe('deriveRequest', () => {
       const out = deriveRequest({ ...base(), surface, ...NO_RC })
       expect(out.request.messages.map((m) => m.role)).toEqual(['assistant', 'user', 'assistant'])
       // The recovery guidance deliberately revises the fixed prefix; this shape still adds no bridge.
-      expect(out.header.derived_hash).toBe('7a87b50fae49fabc89b9f39195e5842cbd5f0626b3ec423e2f8fb494dc82aac3')
+      expect(out.header.derived_hash).toBe('b69357ab60e5d0532ccd35c95a2d9cbf3c8120f74cb4f2af0c04f523316dec9e')
     })
   })
 
@@ -840,7 +840,8 @@ describe('deriveRequest', () => {
         runtimeContext: {},
         sections: [
           { id: 'late', order: 900, text: 'L', source: 'x' },
-          { id: 'persona', order: 100, text: 'P', source: 'code' },
+          { id: 'persona', order: 1, text: 'P', source: 'code' },
+          { id: 'plugin:guidance', order: 20, text: 'plugin', source: 'plugin' },
         ],
       },
       harnessEntries: [
@@ -860,6 +861,7 @@ describe('deriveRequest', () => {
       'core:untrusted-envelope',
       'core:tool-recovery',
       'persona',
+      'plugin:guidance',
       'harness:memory',
       'late',
     ])

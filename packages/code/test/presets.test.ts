@@ -217,6 +217,7 @@ describe('standard.yaml', () => {
         'web_fetch',
         'web_search',
         'ask_user_question',
+        'ui_guide',
         'ui_render',
         'ui_update',
         'ui_close',
@@ -298,6 +299,7 @@ describe('standard.yaml', () => {
     expect((doc.model as { prompt_sections: string[] }).prompt_sections).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
     ])
     expect((doc.model as { contract_id: string }).contract_id).toBe('agnes-model-contract@v1')
@@ -452,6 +454,7 @@ describe('channel', () => {
     expect((doc.model as { prompt_sections: string[] }).prompt_sections).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
       'channel-style',
     ])

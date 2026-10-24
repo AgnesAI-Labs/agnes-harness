@@ -1,6 +1,6 @@
 {
   "name": "@agnes/mcp-helper",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Connect MCP servers to Agnes Harness through approved host requests",
   "type": "module",
   "license": "Apache-2.0",

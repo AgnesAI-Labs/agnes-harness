@@ -49,11 +49,12 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   // space, so a future row claiming 0 would collide with it at the wire even though nothing here
   // scans derive.ts to notice.
   { id: 'core:untrusted-envelope', order: 0, owner: 'core' },
-  { id: 'persona', order: 100, owner: 'code' },
+  { id: 'persona', order: 1, owner: 'code' },
   { id: 'environment', order: 110, owner: 'code' },
   // Live repository guidance supplied by the official context-rules extension.
   { id: 'core:child-receipts', order: 112, owner: 'core' },
   { id: 'workflow:receipts', order: 113, owner: 'base' },
+  { id: 'tools-available', order: 115, owner: 'code' },
   { id: 'memory:index', order: 131, owner: 'core' },
   { id: 'agents-md', order: 120, owner: 'base' },
   { id: 'coding-doctrine', order: 130, owner: 'code' },
@@ -63,7 +64,6 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'skills', order: 160, owner: 'base' },
   { id: 'plan-mode', order: 162, owner: 'base' },
   { id: 'persistent-goal', order: 164, owner: 'base' },
-  { id: 'plugin-creator', order: 165, owner: 'base' },
   { id: 'session-query', order: 168, owner: 'base' },
   { id: 'channel-style', order: 170, owner: 'code' },
   // packages/core/src/request/contribute.ts's harnessSections(), which folds harness register
@@ -129,10 +129,10 @@ describe('prompt section order table has one claimant per order, across both con
   })
 
   it('the two extractors are not dead regexes: each matches its own file shape and not the other', () => {
-    const codeLiteral = "{ id: 'persona', order: 100, source: 'file', owner: 'code' },"
+    const codeLiteral = "{ id: 'persona', order: 1, source: 'file', owner: 'code' },"
     const hookLiteral =
       "{\n        id: 'example-section',\n        order: 999,\n        content: 'x',\n      }"
-    expect(extract(CODE_SECTION_RE, codeLiteral)).toEqual([{ id: 'persona', order: 100 }])
+    expect(extract(CODE_SECTION_RE, codeLiteral)).toEqual([{ id: 'persona', order: 1 }])
     expect(extract(HOOK_SECTION_RE, hookLiteral)).toEqual([{ id: 'example-section', order: 999 }])
     expect(extract(HOOK_SECTION_RE, codeLiteral)).toEqual([])
     expect(extract(CODE_SECTION_RE, hookLiteral)).toEqual([])

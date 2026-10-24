@@ -13,7 +13,7 @@ model:
     fast: { route: default, model: default }
     verifier: { route: default, model: default }
   # Leave compaction unselected so it follows the session's primary model.
-  prompt_sections: [persona, environment]
+  prompt_sections: [persona, environment, tools-available]
 disclosure: standard
 tools: { core: [read, grep, find, ls], allow: [read, grep, find, ls] }
 mcp: { defer: true }

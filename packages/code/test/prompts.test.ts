@@ -20,9 +20,10 @@ const shippedFiles = readdirSync(promptsDir)
 describe('prompt section order table', () => {
   it('registers every section at its frozen order', () => {
     expect(PROMPT_SECTIONS.map((s) => [s.id, s.order])).toEqual([
-      ['persona', 100],
+      ['persona', 1],
       ['environment', 110],
       ['workflow:receipts', 113],
+      ['tools-available', 115],
       ['agents-md', 120],
       ['coding-doctrine', 130],
       ['code-doctrine', 140],
@@ -30,7 +31,6 @@ describe('prompt section order table', () => {
       ['skills', 160],
       ['plan-mode', 162],
       ['persistent-goal', 164],
-      ['plugin-creator', 165],
       ['session-query', 168],
       ['channel-style', 170],
     ])
@@ -55,12 +55,12 @@ describe('prompt section order table', () => {
       'skills',
       'plan-mode',
       'persistent-goal',
-      'plugin-creator',
       'session-query',
     ])
     expect(byOwner('code')).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
       'code-doctrine',
       'tools:sdk',
@@ -87,8 +87,7 @@ describe('prompt section order table', () => {
     'persona.md': 'persona',
   }
   // Loaded directly by renderTools() (code-mode/environment.ts), not registered in PROMPT_SECTIONS:
-  // their content moved out of the assembled system prompt and into the runtime-context tail message,
-  // so there is no section id left for them to serve.
+  // the renderer selects the available/none variant for the tools-available section.
   const NON_SECTION_FILES = ['tools-available.md', 'tools-none.md']
 
   it('ships exactly the prompt files the table accounts for', () => {
@@ -174,22 +173,15 @@ const PROMPT_TEXT: Record<string, string> = {
     '',
     "Reply in the user's language unless they request another language. Keep that language throughout each reply, including progress updates and narration before and after tool calls. English tool descriptions, results, examples, or source text do not change the reply language; preserve exact code, identifiers, paths, and quotations when needed.",
     '',
-    "Understand the user's goal and inspect relevant information before acting. Distinguish plans from actions you have actually taken, and explain results clearly.",
-    "For questions about the workspace or a named local file, read the actual file relative to the session's working directory. Use that file as the source for calculations and conclusions. Demo fixture tools read their packaged examples, not workspace files; use them only when the user requests that demo data. State the source and do not substitute fixture values or a requested target for values read from the file.",
+    "Understand the user's goal and inspect relevant information before acting. Distinguish plans from actions you have actually taken, and explain results clearly. Describe material limitations in ordinary language; keep incidental runtime diagnostics in the execution record.",
+    "For questions about the workspace or a named local file, read the actual file relative to the session's working directory. Use that file as the source for calculations and conclusions. State the source and do not substitute example data or a requested target for observed values.",
     'You do not claim a task is done until the evidence for it exists in this session.',
     'When you cannot do something, you say so plainly and stop; you never simulate a result.',
     '',
-    'Before delivering, reconcile internal contradictions (including dates, times and totals) against the source and correct your output. Do not invent unstated facts, such as calling an event free when only its budget is known. When the source makes the answer clear, complete the correction yourself; ask the user only for a genuinely unresolved decision.',
+    'Before delivering, reconcile internal contradictions (including dates, times and totals) against the source and correct your output. Do not infer unstated facts from related information. When the source makes the answer clear, complete the correction yourself; ask the user only for a genuinely unresolved decision.',
   ].join('\n'),
-  'tools-available': [
-    'Use only tools offered in this request. When a capability is missing, use tool_search if offered, then tool_describe to load a matching deferred tool for subsequent requests. Discovery grants no execution permission. If discovery finds nothing, explain the missing capability. Filesystem, command and network access require the corresponding tools.',
-    '',
-    '| User needs | Tool |',
-    '| --- | --- |',
-    '| A file to open or download | `present` |',
-    '| One question or choice | `ask_user_question` |',
-    '| Tables, charts, forms or dashboards in the UI; plain text and outlines stay in the reply | `ui_render` |',
-  ].join('\n'),
+  'tools-available':
+    'Use only tools offered in this request. When a capability is missing, use tool_search if offered, then tool_describe to load a matching deferred tool for subsequent requests. For plugin or Skill authoring, search for the version-matched authoring guide first, then describe the tools it recommends. Discovery grants no execution permission. If discovery finds nothing, explain the missing capability. Filesystem, command and network access require the corresponding tools.',
   'tools-none': [
     'You have no tools on this request. The harness registered none, so you cannot read or write files, run commands, or reach the network. Answer from this conversation alone, and say plainly when a question needs a capability you do not have.',
   ].join('\n'),
@@ -338,7 +330,7 @@ it('composes deployment persona around plugin sections and makes full replacemen
   expect(defaults.find((section) => section.id === 'persona')?.source).toBe('@agnes/code/prompts/persona.md')
   const persona = defaults.find((section) => section.id === 'persona')!.text
   expect(persona).toContain('reconcile internal contradictions')
-  expect(persona).toContain('Do not invent unstated facts')
+  expect(persona).toContain('Do not infer unstated facts')
   expect(persona).toContain('complete the correction yourself')
   const customized = defaultSystemPrompt.compose(
     { personaPrefix: 'opening', personaSuffix: 'closing', replyStyle: 'concise' },

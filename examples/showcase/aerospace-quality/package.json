@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/aerospace-quality",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
@@ -150,6 +150,7 @@
             "aero_skill_candidate",
             "skill_read",
             "aero_briefing",
+            "ui_guide",
             "ui_render"
           ]
         },
@@ -249,6 +250,7 @@
             "aero_quality",
             "skill_read",
             "aero_briefing",
+            "ui_guide",
             "ui_render"
           ]
         },
@@ -302,6 +304,7 @@
             "present",
             "skill_read",
             "aero_briefing",
+            "ui_guide",
             "ui_render"
           ]
         },

@@ -51,7 +51,6 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:plugin_install_local',
     'tool:plugin_candidate_write',
     'tool:plugin_candidate_read',
-    'hook:context',
   ],
   'agnes/mcp-search': ['tool:tool_search', 'tool:tool_describe'],
   'agnes/hooks-runner': [
@@ -69,6 +68,7 @@ const SUPPLIED: Record<string, string[]> = {
     'hook:approval_request',
   ],
   'agnes/intelligent-ui': [
+    'tool:ui_guide',
     'tool:ui_render',
     'tool:ui_update',
     'tool:ui_close',

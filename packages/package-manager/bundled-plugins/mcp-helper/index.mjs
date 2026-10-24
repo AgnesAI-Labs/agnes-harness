@@ -56,7 +56,8 @@ export const mcpHelper = {
         isOpenWorld: true,
         replay: 'never',
         costHint: {},
-        deferLoading: false,
+        deferLoading: true,
+        discoveryGroup: 'MCP connections',
         requiresApproval: 'never',
       },
       async execute(input, ctx) {

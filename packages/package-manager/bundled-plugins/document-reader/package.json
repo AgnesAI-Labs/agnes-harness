@@ -1,6 +1,6 @@
 {
   "name": "@agnes/document-reader",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Offline, session-scoped PDF, Word, OCR and ZIP attachment reader",
   "type": "module",
   "license": "Apache-2.0",

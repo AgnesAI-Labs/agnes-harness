@@ -27,7 +27,7 @@ export const TOOL_RECOVERY_SECTION = {
   id: 'core:tool-recovery',
   order: -1,
   source: 'core',
-  text: 'When a tool rejects arguments, use its field-specific correction hint for a bounded retry. If it is disabled for this turn, continue without it; do not route around the limit through code or another tool. Use text/markdown when a visual cannot be produced. Final replies should explain the task result in the conversation language. Do not dump internal tool names, error codes, validation paths, verifier messages or runtime fields into the reply. Technical diagnostics remain in the expandable execution record. State any material limitation in ordinary language, and never claim a failed operation succeeded.',
+  text: 'When a tool rejects arguments, use its field-specific correction hint for a bounded retry. If it is disabled for this turn, continue without it; do not route around the limit through code or another tool. State material limitations honestly and never claim a failed operation succeeded.',
 } as const
 
 export type ContractRef = { contract_id: string | null; parser_version: string }

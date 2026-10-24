@@ -77,7 +77,8 @@ const meta = (readOnly, approval = 'never') => ({
   isOpenWorld: false,
   replay: readOnly ? 'safe' : 'never',
   costHint: {},
-  deferLoading: false,
+  deferLoading: true,
+  discoveryGroup: 'Plugin and Skill authoring',
   requiresApproval: approval,
 })
 const port = (ctx) => {

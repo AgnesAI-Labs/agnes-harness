@@ -5,7 +5,7 @@ extends: standard
 # daemon alone: a channel adapter is a long-lived process, never a terminal and never an editor.
 surfaces: [daemon]
 # channel-style goes last, so it qualifies the doctrine above it rather than being qualified by it.
-model: { prompt_sections: [persona, environment, coding-doctrine, channel-style] }
+model: { prompt_sections: [persona, environment, tools-available, coding-doctrine, channel-style] }
 # The approval becomes a card in the conversation rather than a prompt on a terminal. Parking is
 # what makes that possible: the turn ends, the card waits, and whoever is in the channel answers it.
 approval: { on_unavailable: park }

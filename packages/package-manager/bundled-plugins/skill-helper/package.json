@@ -1,6 +1,6 @@
 {
   "name": "@agnes/skill-helper",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Controlled Skill import and creation for Agnes Harness",
   "type": "module",
   "license": "MIT",

@@ -15,6 +15,7 @@ function ctxFor(over: {
   cwd?: string
   extraDirectories?: string[]
   now?: number
+  promptSections?: string[]
   model?: string
   route?: string
   presetName?: string
@@ -29,7 +30,11 @@ function ctxFor(over: {
         clock: () => over.now ?? Date.parse('2026-09-09T04:00:00.000Z'),
       },
     },
-    preset: { name: over.presetName ?? 'standard', disclosure: over.disclosure ?? 'standard' },
+    preset: {
+      name: over.presetName ?? 'standard',
+      disclosure: over.disclosure ?? 'standard',
+      ...(over.promptSections ? { model: { promptSections: over.promptSections } } : {}),
+    },
     state: null,
     snapshot: { defs: [], byName: new Map() },
     signal: new AbortController().signal,
@@ -75,10 +80,19 @@ describe('the prompt operation', () => {
 
   it('carries the frozen order of every section it contributes, in table order', () => {
     const sections = contribute(ctxFor({}))
-    expect(sections.map((s) => s.id)).toEqual(['persona', 'environment', 'coding-doctrine'])
+    expect(sections.map((s) => s.id)).toEqual([
+      'persona',
+      'environment',
+      'tools-available',
+      'coding-doctrine',
+    ])
     const table = new Map(PROMPT_SECTIONS.map((s) => [s.id, s.order]))
     expect(sections.map((s) => s.order)).toEqual(sections.map((s) => table.get(s.id)))
     expect(sections.map((s) => s.order)).toEqual([...sections.map((s) => s.order)].sort((a, b) => a - b))
+    expect(sections[0]?.id).toBe('persona')
+    expect(sections[0]?.order).toBeLessThan(
+      Math.min(...PROMPT_SECTIONS.filter((s) => s.owner === 'base').map((s) => s.order)),
+    )
     for (const s of sections)
       expect(s.source).toBe(
         ['persona', 'coding-doctrine', 'code-doctrine', 'channel-style'].includes(s.id)
@@ -132,17 +146,21 @@ describe('the prompt operation', () => {
     expect('extraDirectories' in env()).toBe(false)
   })
 
-  it('states the offered-tool and discovery rules in the tail runtime context', () => {
+  it('renders tool guidance as prompt text, keeping runtime context limited to facts', () => {
     const op = createPromptOperation(deps)
-    const some = op.contribute?.(ctxFor({ disclosed: ['read', 'write', 'grep'] }))
-    expect(some?.promptSections?.map((s) => s.id)).not.toContain('tools-available')
-    expect(some?.runtimeContext).toMatchObject({
-      tools: { complete: expect.stringContaining('Use only tools offered in this request') },
-    })
-    const none = op.contribute?.(ctxFor({ disclosed: [] }))
-    expect(none?.runtimeContext).toMatchObject({
-      tools: { complete: expect.stringContaining('You have no tools on this request') },
-    })
+    for (const disclosed of [['read', 'write', 'grep'], []]) {
+      const c = op.contribute?.(
+        ctxFor({
+          disclosed,
+          promptSections: ['persona', 'environment', 'tools-available', 'coding-doctrine'],
+        }),
+      )
+      expect(c?.promptSections?.find((s) => s.id === 'tools-available')?.text).toContain(
+        disclosed.length ? 'Use only tools offered in this request' : 'You have no tools on this request',
+      )
+      expect(c?.runtimeContext).not.toHaveProperty('tools')
+      expect(JSON.stringify(c?.runtimeContext)).not.toContain('tool_search')
+    }
   })
 
   // The two doctrine sections are the pair that can lie about what the model can do, so each is
@@ -154,6 +172,7 @@ describe('the prompt operation', () => {
     expect(with_.map((s) => s.id)).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
       'code-doctrine',
       'tools:sdk',
@@ -162,7 +181,7 @@ describe('the prompt operation', () => {
 
   it('drops the direct-editing rules under the code preset', () => {
     const ids = contribute(ctxFor({ disclosure: 'code', disclosed: ['run_code'] })).map((s) => s.id)
-    expect(ids).toEqual(['persona', 'environment', 'code-doctrine', 'tools:sdk'])
+    expect(ids).toEqual(['persona', 'environment', 'tools-available', 'code-doctrine', 'tools:sdk'])
   })
 
   it('keeps the assembled system string byte-identical across a model switch, a preset-name switch, and a cwd change, holding disclosure fixed', () => {

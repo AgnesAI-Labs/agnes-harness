@@ -4,7 +4,7 @@
 
 标准预设通过官方 `defineTool` 插件披露以下工具。部署能力和文件系统策略仍然生效。新的 local-dev 和 enterprise 模板允许问答与交付物需要的投影能力；现有托管配置需要显式允许该能力。
 
-标准预设直接提供 `ui_render`、`ui_update` 和 `ui_close`。`ui_submit` 是内部界面动作目标，不进入模型工具 schema 或发现目录。历史会话工具（`session_search`、`session_trace`、`session_event_search`、`session_event_read`、`session_event_trace`）与 MCP 资源工具（`list_mcp_resources`、`list_mcp_resource_templates`、`read_mcp_resource`）按需加载，每类在列表中占一行。MCP 服务器的工具遵循该服务器的工具加载方式（见 [MCP](../guide/mcp.zh-CN.md#mcp-工具如何提供给模型)）。延迟工具在每次请求的 `available_deferred_tools` 提示段中按名称排序，每项一句话，或每个 `discoveryGroup` 一行并附工具数量；描述最多 250 个字符，目录最多 8 KiB，省略项通过 `tool_search` 查找。通过 `tool_describe` 加载匹配工具后，schema 会进入后续模型请求；加载状态跨压缩和会话重开保留，工具调用仍受会话目录、模型能力、参数验证和授权约束。业务 Loop 可通过 `prepareRequest({ tools: [...] })` 选择模型工具，或通过受控工具端口执行。
+标准预设直接提供 `ui_render`、`ui_update`、`ui_close` 和 `ui_guide`。构造界面前调用 `ui_guide` 获取完整组件 schema、数据契约和示例；render/update 的模型参数采用精简结构，服务仍在发布前执行完整协议、动作和数据校验。插件/Skill 创作、Skill 管理、MCP 连接管理、文档读取与 Computer Use 通过 `tool_search` 与 `tool_describe` 按意图加载。创作指引由版本匹配的指南工具返回，不再注入普通会话。`ui_submit` 是内部界面动作目标，不进入模型工具 schema 或发现目录。历史会话工具（`session_search`、`session_trace`、`session_event_search`、`session_event_read`、`session_event_trace`）与 MCP 资源工具（`list_mcp_resources`、`list_mcp_resource_templates`、`read_mcp_resource`）按需加载，每类在列表中占一行。MCP 服务器的工具遵循该服务器的工具加载方式（见 [MCP](../guide/mcp.zh-CN.md#mcp-工具如何提供给模型)）。延迟工具在每次请求的 `available_deferred_tools` 提示段中按名称排序，每项一句话，或每个 `discoveryGroup` 一行并附工具数量；描述最多 250 个字符，目录最多 8 KiB，省略项通过 `tool_search` 查找。通过 `tool_describe` 加载匹配工具后，schema 会进入后续模型请求；加载状态跨压缩和会话重开保留，工具调用仍受会话目录、模型能力、参数验证和授权约束。业务 Loop 可通过 `prepareRequest({ tools: [...] })` 选择模型工具，或通过受控工具端口执行。
 
 | 工具 | 输入与行为 |
 | --- | --- |

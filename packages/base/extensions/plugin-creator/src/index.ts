@@ -14,6 +14,8 @@ const meta = {
   isOpenWorld: false,
   replay: 'never' as const,
   requiresApproval: 'always' as const,
+  deferLoading: true,
+  discoveryGroup: 'Plugin and Skill authoring',
 }
 const candidateId = Type.String({ pattern: '^candidate-[a-f0-9]{32}$' }),
   expectedHash = Type.String({ pattern: '^sha256-[a-f0-9]{64}$' })
@@ -160,20 +162,9 @@ export const pluginCreatorTools = [
   }),
 ] as const
 export default defineAgnesPlugin({
-  inject: ['tools', 'hooks'],
+  inject: ['tools'],
   apply(ctx: Context) {
     const disposers = pluginCreatorTools.map((tool) => ctx.tools.register(tool))
-    disposers.push(
-      ctx.hooks.register('context', () => ({
-        sections: [
-          {
-            id: 'plugin-creator',
-            order: 165,
-            content: creatorAssets.authoringContextGuidance,
-          },
-        ],
-      })),
-    )
     return () => {
       for (const dispose of disposers.reverse()) dispose()
     }

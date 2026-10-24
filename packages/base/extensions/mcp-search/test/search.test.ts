@@ -6,6 +6,7 @@ import { MetadataToolIndex, type ToolIndex } from '../../../src/mcp/index-table.
 import { MemFts } from '../../../testkit/mem-fts.js'
 import { MemNamespace } from '../../../testkit/seam-init.js'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
+import { pluginCreatorTools } from '../../plugin-creator/src/index.js'
 import { createWebSearchTool } from '../../tools-web/src/search.js'
 import { toolDescribeTool, toolSearchTool } from '../src/search-tools.js'
 
@@ -372,7 +373,7 @@ describe('tool_search / tool_describe', () => {
         schema: JSON.stringify(tool.parameters),
       })),
     )
-    for (const query of ['tavily', 'search tool', 'queries']) {
+    for (const query of ['public web', 'search tool', 'queries']) {
       const result = await toolSearchTool(index).execute({ query, limit: 2 }, ctx)
       const text = (result.content[0] as { text: string }).text
       expect(text).toMatch(query === 'search tool' ? /^search_panel —/ : /^web_search —/)
@@ -536,6 +537,60 @@ describe('tool_search / tool_describe', () => {
     })
     expect(await toolDescribeTool(index).execute({ name: 'ui_render' }, ctx)).toMatchObject({ isError: true })
     expect(disclosed).toEqual(['ui_render'])
+  })
+
+  it('keeps plugin and Skill authoring absent from ordinary requests, then offers described tools', async () => {
+    const registry = new ToolRegistry()
+    const index = new MemFts()
+    const add = (tool: ToolDef) =>
+      registry.add(tool, {
+        source: 'test',
+        trust: 'builtin',
+        packageIdentity: 'test-authoring',
+        packageVersion: '1.0.0',
+      })
+    add(toolSearchTool(index))
+    add(toolDescribeTool(index))
+    for (const tool of pluginCreatorTools) add(tool)
+    const helper = await import(
+      new URL('../../../../package-manager/bundled-plugins/plugin-helper/index.mjs', import.meta.url).href
+    )
+    const skills = await import(
+      new URL('../../../../package-manager/bundled-plugins/skill-helper/index.mjs', import.meta.url).href
+    )
+    helper.pluginHelper.apply({ tools: { register: add } })
+    skills.skillHelper.apply({ tools: { register: add } })
+    const authoring = registry
+      .snapshot(0)
+      .defs.filter((tool) => tool.name.startsWith('plugin_') || tool.name.startsWith('skill_helper_'))
+    const provider = fakeProvider([
+      toolTurn('tool_search', { query: 'plugin_creator_guide' }),
+      ...authoring.map((tool) => toolTurn('tool_describe', { name: tool.name })),
+      textTurn('ready'),
+    ])
+    const preset = presetDefaults()
+    preset.compaction.agentCallable = false
+    const { session } = await openSession({ provider, registry, preset })
+    try {
+      await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'build a plugin' }] })
+      await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      const first = provider.requests[0]!
+      expect(first.tools.map((tool) => tool.name)).toEqual(
+        expect.arrayContaining(['tool_search', 'tool_describe']),
+      )
+      for (const tool of authoring) {
+        expect(first.tools.map((t) => t.name)).not.toContain(tool.name)
+        expect(provider.requests.at(-1)!.tools.map((t) => t.name)).toContain(tool.name)
+      }
+      expect(authoring.length).toBeGreaterThanOrEqual(14)
+      const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
+      expect(results[0]?.data).toMatchObject({
+        content: [{ text: expect.stringContaining('plugin_creator_guide') }],
+      })
+      expect(results.every((row) => !(row.data as { isError?: boolean }).isError)).toBe(true)
+    } finally {
+      await session.close()
+    }
   })
 
   it('finds deferred MCP tools by name, description and server name', async () => {

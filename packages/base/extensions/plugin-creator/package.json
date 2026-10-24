@@ -11,8 +11,7 @@
         "export": "default",
         "apiRange": "^5.0.0",
         "inject": [
-          "tools",
-          "hooks"
+          "tools"
         ],
         "capabilities": {
           "tools": {
@@ -26,9 +25,7 @@
               "plugin_candidate_read"
             ]
           },
-          "hooks": [
-            "context"
-          ],
+          "hooks": [],
           "slots": [],
           "events": false,
           "artifacts": true,
