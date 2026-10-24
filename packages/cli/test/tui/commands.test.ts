@@ -2213,7 +2213,8 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       throw refuse
     }
     await expect(runSlash(app, '/attach blob.xyz')).rejects.toBe(refuse)
-    expect(calls.map((call) => call.operation)).toEqual(['start'])
+    // The SDK owns this intake, so it releases it after the refusal; no chunk is ever sent.
+    expect(calls.map((call) => call.operation)).toEqual(['start', 'cancel'])
     app.session.client.call = real
     const error = Object.assign(new Error('refused'), { data: { reason: 'ATTACHMENT_QUOTA' } })
     app.session.client.call = async () => {
