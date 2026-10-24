@@ -211,8 +211,16 @@ it('review: full access retains private-home and must-read-first hard refusals',
     expect(results).toHaveLength(2)
     for (const result of results) {
       expect(result.data).toMatchObject({ isError: true })
-      expect(JSON.stringify(result.data)).toContain('read existing.txt in this session before')
     }
+    for (const text of [
+      'write refused: read existing.txt in this session before overwriting it',
+      'edit refused: read "existing.txt" in this session before editing it',
+    ])
+      expect(results.map((result) => result.data)).toContainEqual(
+        expect.objectContaining({
+          content: expect.arrayContaining([expect.objectContaining({ type: 'text', text })]),
+        }),
+      )
     expect(readFileSync(join(dataDir, 'existing.txt'), 'utf8')).toBe('original content')
     const port = session.d.workspaceInvocation
     if (!port) throw new Error('No workspace invocation')

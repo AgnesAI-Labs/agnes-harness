@@ -19,7 +19,7 @@ const require = createRequire(join(presentationRoot, 'packages/web/package.json'
 const { build, version: esbuildVersion } = require('esbuild')
 const digest = (bytes) => `sha256-${createHash('sha256').update(bytes).digest('hex')}`
 const json = (data) => `${JSON.stringify(data, null, 2)}\n`
-const payloadRoot = (name) => join(presentationRoot, 'packages/package-manager/bundled-plugins', name)
+const defaultOutputRoot = join(presentationRoot, 'packages/package-manager/bundled-plugins')
 
 async function inputHash(inputs) {
   const paths = new Set([
@@ -99,11 +99,15 @@ export async function verifyPresentation(root) {
 }
 
 /** Independently compile before accepting cached bytes. Only source changes or missing outputs rebuild. */
-export async function buildPresentations({ check = false, force = false } = {}) {
+export async function buildPresentations({
+  check = false,
+  force = false,
+  outputRoot = defaultOutputRoot,
+} = {}) {
   const results = []
   let createdForCheck = false
   for (const [name, entry] of Object.entries(presentationEntries)) {
-    const root = payloadRoot(name)
+    const root = join(outputRoot, name)
     let previous
     try {
       previous = await verifyPresentation(root)
@@ -165,5 +169,5 @@ export async function buildPresentations({ check = false, force = false } = {}) 
     if (check) createdForCheck = true
     results.push(record)
   }
-  return createdForCheck ? buildPresentations({ check: true }) : results
+  return createdForCheck ? buildPresentations({ check: true, outputRoot }) : results
 }
