@@ -125,6 +125,7 @@ export function PluginToolbar({
           {leading}
           <Popover
             trigger="click"
+            placement="bottomRight"
             content={
               <>
                 <KindFilter

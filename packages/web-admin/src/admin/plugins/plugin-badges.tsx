@@ -210,6 +210,9 @@ export function KindFilter({
         virtual={false}
         aria-label={t('kind.filter')}
         value={value || 'all'}
+        // The value is short (「全部」) but the options are not: let the list size to them.
+        popupMatchSelectWidth={false}
+        styles={{ popup: { root: { minWidth: '10rem' } } }}
         onChange={(kind) => onChange(kind === 'all' ? '' : kind)}
         options={[
           { value: 'all', label: t('kind.all') },

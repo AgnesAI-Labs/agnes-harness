@@ -347,6 +347,12 @@ it('shows declared kinds and observable states without guessing draining or rest
   expect(builtins.textContent).toBe('')
   const filter = await mount(createElement(KindFilter, { value: '', onChange: vi.fn(), t }))
   expect(filter.querySelector('[role="combobox"]')?.getAttribute('aria-label')).toBe('Capability')
+  // The trigger reads 「All」; the list sizes to its longest option instead of matching the trigger.
+  await act(async () => {
+    filter.querySelector('[role="combobox"]')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+  })
+  const popup = document.querySelector<HTMLElement>('.ant-select-dropdown')
+  expect(popup?.style.minWidth).toBe('10rem')
   expect(sessionLoopSelection({})).toBeUndefined()
   expect(sessionLoopSelection({ loop: { id: 'old-session-loop', version: '1.0.0' } })).toEqual({
     id: 'old-session-loop',

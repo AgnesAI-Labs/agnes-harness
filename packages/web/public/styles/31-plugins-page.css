@@ -108,7 +108,7 @@
   .home-page-section-heading small,
   .plugins-page-summary {
     color: var(--agnes-text-tertiary);
-    font-size: 0.78125rem;
+    font-size: var(--font-size-caption);
     font-weight: 400;
     white-space: nowrap;
   }
@@ -142,7 +142,7 @@
   .plugins-page-note {
     margin: 0;
     color: var(--agnes-text-tertiary);
-    font-size: 0.78125rem;
+    font-size: var(--font-size-caption);
   }
   .plugins-page-note .agnes-ui-button {
     height: auto;
@@ -180,6 +180,12 @@
     flex: 1;
     margin: 0;
   }
+  /* The capability shortcuts read as one row and wrap instead of overflowing a narrow page. */
+  .plugins-page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s8);
+  }
   .plugins-page-resources {
     min-width: 0;
     display: grid;
@@ -212,17 +218,18 @@
   }
   .plugins-page-callout span {
     color: var(--agnes-text-secondary);
-    font-size: 0.78125rem;
+    font-size: var(--font-size-caption);
   }
   .plugins-page-gallery {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
     gap: var(--s12);
   }
+  /* Header, summary, footer, and the optional failed-check line under the footer. */
   .plugins-page-card {
     min-width: 0;
     display: grid;
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto 1fr auto auto;
     gap: var(--s10, 0.625rem);
     padding: var(--s16);
     border: 1px solid var(--agnes-line-primary);
@@ -245,13 +252,17 @@
     font-size: var(--font-size-body);
     font-weight: var(--font-weight-semibold);
   }
+  /* The title is a button: as a block it can clip one line and keep the ellipsis, like an agent
+     card's heading. An inline-flex button would clip the text without drawing the ellipsis. */
   .plugins-page-card .plugins-page-card-title {
+    display: block;
     max-width: 100%;
     height: auto;
     padding: 0;
     overflow: hidden;
     font: inherit;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .plugins-page-card > p {
     margin: 0;
@@ -262,6 +273,7 @@
     line-height: 1.6;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
   }
   .plugins-page-card > footer {
     display: flex;
@@ -273,7 +285,7 @@
   .form-hint {
     margin: 0;
     color: var(--agnes-text-tertiary);
-    font-size: 0.78125rem;
+    font-size: var(--font-size-caption);
     line-height: 1.6;
   }
   .dialog-step:empty,
@@ -291,9 +303,6 @@
   /* The plugin detail: the on/off switch sits in the header, actions on the tab they belong to. */
   .plugin-detail-heading > .switch {
     margin-inline-start: auto;
-  }
-  .plugin-detail .plugin-facts {
-    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
   }
   .plugin-detail-actions {
     display: flex;
@@ -316,7 +325,7 @@
   .confirm-facts > section > h3 {
     margin: 0 0 var(--s4);
     color: var(--agnes-text-secondary);
-    font-size: 0.78125rem;
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
   }
   /* A built-in capability's detail and the configuration its settings tab holds. */
@@ -337,7 +346,7 @@
     margin: var(--s20, 1.25rem) 0 var(--s8);
     padding-inline: var(--s4);
     color: var(--agnes-text-secondary);
-    font-size: 0.78125rem;
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
   }
   .plugins-page-builtin-label small {
@@ -361,7 +370,7 @@
   }
   .capability-panel .agnes-settings-section-heading small {
     color: var(--agnes-text-tertiary);
-    font-size: 0.78125rem;
+    font-size: var(--font-size-caption);
   }
   .capability-form {
     min-width: 0;
@@ -377,30 +386,32 @@
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--s12);
   }
-  /* Each field already splits its own label and value, so this list is one track per row. The
-     shared technical-details rule still gives every `dl` two tracks; letting both apply nests
-     the field inside the label column and squeezes long values into one character per line. */
-  .capability-facts {
+  /* Plugin and capability details share one field grid: one field per row, its label beside its
+     value. Some markup wraps each pair in a div and some leaves dt/dd bare; a wrapper spans both
+     tracks and repeats them, so neither shape nests a value inside the label column. */
+  :is(.plugin-facts, .capability-facts) {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--s8);
-    margin: 0;
+    grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr);
+    gap: var(--s8) var(--s12);
   }
-  .capability-facts > div {
+  :is(.plugin-facts, .capability-facts) > div {
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr);
     gap: var(--s12);
     min-width: 0;
+  }
+  .capability-facts {
+    margin: 0;
     font-size: var(--font-size-sm);
   }
-  .capability-facts dt {
+  :is(.plugin-facts, .capability-facts) dt {
     min-width: 0;
     overflow-wrap: anywhere;
     color: var(--agnes-text-secondary);
     font-size: var(--font-size-xs);
   }
-  .capability-facts dd {
+  :is(.plugin-facts, .capability-facts) dd {
     margin: 0;
     min-width: 0;
     overflow-wrap: anywhere;
@@ -550,9 +561,6 @@
   }
 
   /* A check that stopped: one line under the card, with its retry. */
-  .plugins-page-card {
-    grid-template-rows: auto 1fr auto auto;
-  }
   .plugins-page-card-error {
     display: flex;
     flex-wrap: wrap;
@@ -598,7 +606,7 @@
     margin: 0;
     padding-inline-start: var(--s4);
     color: var(--agnes-text-secondary);
-    font-size: 0.78125rem;
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
   }
   .install-review .agnes-settings-item {
