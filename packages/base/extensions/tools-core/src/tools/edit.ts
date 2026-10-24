@@ -5,7 +5,6 @@ import type { FileChangeRecorder } from '../file-change.js'
 import { displayPath, fsFailure, toolFailure } from '../guards/feedback.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
-import { looksTruncated } from '../guards/truncation.js'
 import { crlf, usesCrlf } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
 import { matchLocations, mismatchFeedback } from './edit-feedback.js'
@@ -106,13 +105,14 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions) {
           // literal text instead of expanding into content the model never wrote.
           text = text.replace(oldText, () => newText)
         }
-        const t = looksTruncated(original, text)
-        if (t.truncated)
-          return toolFailure(
-            ctx,
-            'FS_TRUNCATION_GUARD',
-            `edit refused (truncation guard): ${t.reason}. No edits were written; preserve the rest of the file and use smaller targeted replacements.`,
-          )
+        // No truncation guard here, unlike write. That guard catches a rewrite that silently lost
+        // the end of a file, and an edit cannot lose anything silently: every removed byte is named
+        // in an oldText that had to match exactly. A size ratio would refuse large intended
+        // deletions (one side of a merge conflict, a dead section), and a bracket count would refuse
+        // a batch split across calls, while splitting the same change into smaller edits does not
+        // change either total. Nor is a newText cut off by the output limit a case for this tool:
+        // the turn drops every tool call of a response that stopped at max_tokens, because its
+        // arguments were cut off mid-serialisation.
         try {
           await ctx.fs.write(args.path, text)
         } catch (e) {

@@ -75,6 +75,45 @@ describe('write', () => {
     expect(dec.decode(ctx.mem.files.get('/work/proj/big.ts'))).toBe('x'.repeat(100))
   })
 
+  // The shape of the run that found this: resolving a merge conflict legitimately left the file at
+  // about a third of its size, and the refusal offered no way to say that was the intent.
+  const conflicted = `intro\n<<<<<<< HEAD\n${'ours line\n'.repeat(20)}=======\n${'theirs line\n'.repeat(8)}>>>>>>> branch\n`
+  const resolved = `intro\n${'theirs line\n'.repeat(8)}`
+
+  it('refuses a large shrink with the way to confirm it, and writes it once confirmed', async () => {
+    const ctx = await observedCtxOf({ files: { 'about.md': conflicted } })
+    const r = await writeTool.execute({ path: 'about.md', content: resolved }, ctx)
+    expect(r.isError).toBe(true)
+    expect(r.details).toMatchObject({ code: 'FS_TRUNCATION_GUARD' })
+    expect(textOf(r)).toMatch(/new content is 3\d% of the original/)
+    expect(textOf(r)).toContain('resend the same write with allowShrink: true')
+    expect(textOf(r)).toContain('use edit to change only the part you mean to')
+    expect(textOf(r)).not.toContain('smaller targeted replacements')
+    expect(dec.decode(ctx.mem.files.get('/work/proj/about.md'))).toBe(conflicted)
+    const ok = await writeTool.execute({ path: 'about.md', content: resolved, allowShrink: true }, ctx)
+    expect(ok.isError).toBeUndefined()
+    expect(textOf(ok)).toBe(`overwrote about.md (${resolved.length} chars)`)
+    expect(dec.decode(ctx.mem.files.get('/work/proj/about.md'))).toBe(resolved)
+  })
+
+  it('lets allowShrink empty a file, the explicit second statement the guard asks for', async () => {
+    const ctx = await observedCtxOf({ files: { 'big.ts': 'x'.repeat(100) } })
+    const r = await writeTool.execute({ path: 'big.ts', content: '', allowShrink: true }, ctx)
+    expect(r.isError).toBeUndefined()
+    expect(dec.decode(ctx.mem.files.get('/work/proj/big.ts'))).toBe('')
+  })
+
+  it('still refuses a confirmed shrink that leaves brackets open, without offering the flag', async () => {
+    const original = `function a() {\n${'  keep()\n'.repeat(30)}}\n`
+    const ctx = await observedCtxOf({ files: { 'a.js': original } })
+    const r = await writeTool.execute({ path: 'a.js', content: 'function a() {\n', allowShrink: true }, ctx)
+    expect(r.isError).toBe(true)
+    expect(r.details).toMatchObject({ code: 'FS_TRUNCATION_GUARD' })
+    expect(textOf(r)).toContain('unbalanced {')
+    expect(textOf(r)).not.toContain('allowShrink')
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.js'))).toBe(original)
+  })
+
   it.each([
     ['EACCES', 'EACCES: permission denied'],
     ['E_FS_DENIED', 'E_FS_DENIED: /locked.ts is outside every allow rule'],
@@ -308,16 +347,55 @@ describe('edit', () => {
     expect(r.details).toEqual({ path: 'a.txt', bytes: 5 })
   })
 
-  it('refuses an edit that truncates the file', async () => {
-    const ctx = await observedCtxOf({ files: { 'a.ts': `${'x'.repeat(100)}DROP` } })
-    const r = await editTool.execute(
-      { path: 'a.ts', edits: [{ oldText: 'x'.repeat(100), newText: '' }] },
+  it('applies a large intended deletion, because every removed byte is named in oldText', async () => {
+    // Resolving a merge conflict by dropping one side leaves about 30% of the file. The truncation
+    // guard used to refuse it and advise smaller replacements, which add up to the same total.
+    const ours = `${'  ours = compute(1, [2, 3])\n'.repeat(24)}`
+    const original = `head\n<<<<<<< HEAD\n${ours}=======\n  theirs = compute(4, [5, 6])\n>>>>>>> branch\n${'tail\n'.repeat(40)}`
+    const ctx = await observedCtxOf({ files: { 'about.md': original } })
+    // A batch whose oldText does not match still fails as a whole and writes nothing.
+    const missing = await editTool.execute(
+      {
+        path: 'about.md',
+        edits: [
+          { oldText: `<<<<<<< HEAD\n${ours}=======\n`, newText: '' },
+          { oldText: '>>>>>>> other\n', newText: '' },
+        ],
+      },
       ctx,
     )
-    expect(r.isError).toBe(true)
-    expect(textOf(r)).toContain('truncation guard')
-    expect(r.details).toMatchObject({ code: 'FS_TRUNCATION_GUARD' })
-    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(`${'x'.repeat(100)}DROP`)
+    expect(missing.isError).toBe(true)
+    expect(missing.details).toMatchObject({ code: 'FS_EDIT_NOT_FOUND' })
+    expect(dec.decode(ctx.mem.files.get('/work/proj/about.md'))).toBe(original)
+    const r = await editTool.execute(
+      {
+        path: 'about.md',
+        edits: [
+          { oldText: `<<<<<<< HEAD\n${ours}=======\n`, newText: '' },
+          { oldText: '>>>>>>> branch\n', newText: '' },
+        ],
+      },
+      ctx,
+    )
+    expect(r.isError).toBeUndefined()
+    const after = dec.decode(ctx.mem.files.get('/work/proj/about.md'))
+    expect(after).toBe(`head\n  theirs = compute(4, [5, 6])\n${'tail\n'.repeat(40)}`)
+    expect(after.length / original.length).toBeLessThan(0.4)
+  })
+
+  it('applies an edit that removes everything, and one that leaves brackets open for a later call', async () => {
+    const ctx = await observedCtxOf({
+      files: { 'a.ts': `${'x'.repeat(100)}DROP`, 'b.ts': 'f() {\n  g()\n}\n' },
+    })
+    const r = await editTool.execute(
+      { path: 'a.ts', edits: [{ oldText: `${'x'.repeat(100)}DROP`, newText: '' }] },
+      ctx,
+    )
+    expect(r.isError).toBeUndefined()
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe('')
+    const open = await editTool.execute({ path: 'b.ts', edits: [{ oldText: '}\n', newText: '' }] }, ctx)
+    expect(open.isError).toBeUndefined()
+    expect(dec.decode(ctx.mem.files.get('/work/proj/b.ts'))).toBe('f() {\n  g()\n')
   })
 })
 
@@ -470,6 +548,15 @@ describe('write refuses to replace a file that changed after it was read', () =>
     expect(textOf(await overwrite(a, 'z'))).toContain('stale read')
   })
 
+  it('does not let allowShrink past a stale read', async () => {
+    const { a, b } = twoSessions('x'.repeat(100))
+    await read(a)
+    put(b, 'y'.repeat(100))
+    const r = await writeTool.execute({ path: 'shared.txt', content: 'z', allowShrink: true }, a)
+    expect(r.details).toEqual({ code: 'FS_STALE_VERSION', path: 'shared.txt' })
+    expect(onDisk(a)).toBe('y'.repeat(100))
+  })
+
   it('refuses a file that was read and then deleted, and read of the missing file clears the way', async () => {
     const ctx = ctxOf({ files: { 'shared.txt': base } })
     await read(ctx)
@@ -503,6 +590,13 @@ describe('write leaves alone what the session has not seen', () => {
     const ctx = ctxOf({ files: { 'shared.txt': 'old\n' } })
     expect((await overwrite(ctx, 'new\n')).details).toEqual({ code: 'FS_NOT_OBSERVED', path: 'shared.txt' })
     expect(onDisk(ctx)).toBe('old\n')
+  })
+
+  it('does not let allowShrink overwrite a file that was never read', async () => {
+    const ctx = ctxOf({ files: { 'shared.txt': 'x'.repeat(100) } })
+    const r = await writeTool.execute({ path: 'shared.txt', content: 'z', allowShrink: true }, ctx)
+    expect(r.details).toEqual({ code: 'FS_NOT_OBSERVED', path: 'shared.txt' })
+    expect(onDisk(ctx)).toBe('x'.repeat(100))
   })
 
   it('does not take another session’s read as its own', async () => {

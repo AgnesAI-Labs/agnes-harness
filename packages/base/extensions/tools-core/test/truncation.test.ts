@@ -19,6 +19,19 @@ describe('looksTruncated', () => {
     })
   })
 
+  it('lets allowShrink waive the size signal, emptying included, and nothing else', () => {
+    expect(looksTruncated('a'.repeat(100), 'b'.repeat(30), { allowShrink: true })).toEqual({
+      truncated: false,
+    })
+    expect(looksTruncated('hello', '', { allowShrink: true })).toEqual({ truncated: false })
+    expect(looksTruncated(`f(){ ${'x'.repeat(100)} }`, 'f(){', { allowShrink: true })).toMatchObject({
+      truncated: true,
+      kind: 'unbalanced',
+      reason: 'unbalanced {',
+    })
+    expect(looksTruncated('a'.repeat(100), 'b'.repeat(30))).toMatchObject({ kind: 'shrink' })
+  })
+
   it('rejects newly unbalanced brackets', () => {
     expect(looksTruncated('f(){ return 1 }', 'f(){ return 1')).toMatchObject({
       truncated: true,

@@ -9,6 +9,10 @@
     },
     "content": {
       "type": "string"
+    },
+    "allowShrink": {
+      "description": "Set true only to confirm that content is intentionally much shorter than the existing file (for example, a section deleted or a merge conflict resolved), after a truncation guard refusal or when you know the file shrinks by more than half. Leave unset otherwise.",
+      "type": "boolean"
     }
   },
   "required": [

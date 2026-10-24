@@ -82,13 +82,18 @@ export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) 
         }
         const content = writeContent(args.path, args.content, old)
         const after = enc.encode(content)
-        const t = looksTruncated(old, content)
+        const t = looksTruncated(old, content, { allowShrink: args.allowShrink === true })
         if (t.truncated)
           return {
             content: [
               {
                 type: 'text',
-                text: `write refused (truncation guard): ${t.reason}. Re-emit the full intended content, or use edit to change part of the file.`,
+                // Only a size refusal can be confirmed; an unbalanced rewrite is not made whole by
+                // saying it was meant, so its message does not offer the flag.
+                text:
+                  t.kind === 'shrink'
+                    ? `write refused (truncation guard): ${t.reason}. Nothing was written. If the file is meant to shrink this much (a section deleted, a merge conflict resolved), resend the same write with allowShrink: true. If the rest of the file should stay, re-emit the full intended content, or use edit to change only the part you mean to.`
+                    : `write refused (truncation guard): ${t.reason}, which the original did not leave open - this is what a cut-off rewrite looks like. Nothing was written. Re-emit the full intended content, or use edit to change only the part you mean to.`,
               },
             ],
             isError: true,
