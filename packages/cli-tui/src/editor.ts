@@ -93,6 +93,8 @@ export class Editor implements Component, VimTarget {
   private readonly store: PromptHistory
   private search: HistorySearch | undefined
   private histIdx = -1
+  /** The draft Up replaced when history browsing began; Down past the newest entry brings it back. */
+  private stashed = ''
   private kitty = false
   private viewportStart = 0
   private renderedWidth = 1
@@ -282,6 +284,7 @@ export class Editor implements Component, VimTarget {
           this.menuIndex = (this.menuIndex - 1 + choices) % choices
         } else if (!this.moveVertically(-1) && this.histIdx + 1 < this.history.length) {
           // History starts only past the first line of a multi-line draft.
+          if (this.histIdx < 0) this.stashed = this.text
           this.histIdx++
           this.setText(this.history[this.histIdx] as string)
         }
@@ -294,9 +297,9 @@ export class Editor implements Component, VimTarget {
           if (this.histIdx > 0) {
             this.histIdx--
             this.setText(this.history[this.histIdx] as string)
-          } else {
+          } else if (this.histIdx === 0) {
             this.histIdx = -1
-            this.setText('')
+            this.setText(this.stashed)
           }
         }
         return true

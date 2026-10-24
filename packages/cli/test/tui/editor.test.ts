@@ -1184,7 +1184,7 @@ describe('Editor multi-line navigation', () => {
     e.handleInput('\x1b[A')
     expect(e.text).toBe('older')
     e.handleInput('\x1b[B')
-    expect(e.text).toBe('')
+    expect(e.text).toBe('one\ntwo')
     const f = draft('a\nb', 0, ['older'])
     f.handleInput('\x1b[A')
     expect(f.text).toBe('older')
