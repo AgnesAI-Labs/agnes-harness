@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { thinkingMode } from '@agnes/cli-tui'
+import { KEY_HOLD_MS, thinkingMode } from '@agnes/cli-tui'
 import { attachmentLink, rpcError } from '@agnes/protocol'
 import { createClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
@@ -388,6 +388,7 @@ describe('runSlash', () => {
         expect((await screenOf(term, 60, 20)).join('\n')).toContain('left over from yesterday'),
       )
       term.feed('\x1b')
+      await new Promise((r) => setTimeout(r, KEY_HOLD_MS + 10))
       for (const ch of '/mouse') term.feed(ch)
       term.feed('\r')
       await vi.waitFor(() => expect(readFileSync(historyPath, 'utf8')).toContain('"text":"/mouse"'))

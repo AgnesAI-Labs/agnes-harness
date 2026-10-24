@@ -1,6 +1,7 @@
 import { ANSI_RE, defang } from './ansi.js'
 import { type Component, CURSOR_MARKER } from './component.js'
 import { type ImageLayer, type ImageMark, takeMark } from './inline-image.js'
+import { KeyChunker } from './key-chunks.js'
 import { type MouseEvent, parseMouse } from './keys.js'
 import { PasteAssembler } from './paste.js'
 import { displayWidth, type Terminal } from './terminal.js'
@@ -165,9 +166,14 @@ export class Renderer {
       this.term.write(`${this.images?.reset() ?? ''}\x1b[H\x1b[2J`)
       this.renderNow()
     })
-    this.offInput = this.term.onInput((d) => {
-      for (const part of this.paste.push(d)) this.input(part)
+    const keys = new KeyChunker((key) => this.input(key))
+    const off = this.term.onInput((d) => {
+      for (const part of this.paste.push(d)) keys.push(part)
     })
+    this.offInput = () => {
+      off()
+      keys.clear()
+    }
     try {
       this.renderNow()
     } catch (error) {

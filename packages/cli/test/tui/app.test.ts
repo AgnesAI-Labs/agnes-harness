@@ -64,8 +64,8 @@ it('keyboard input reaches real core through SDK/daemon and renders the projecte
     // In the foreground the first turn ended without a bell; in the background the next one rings once.
     expect(bells()).toBe(0)
     term.feed('\x1b[O')
-    term.feed('second question')
-    term.feed('\r')
+    // Text and Enter in one stdin chunk (a stalled event loop, tmux send-keys) still submit.
+    term.feed('second question\r')
     await vi.waitFor(async () => expect((await screenOf(term, 80, 24)).join('\n')).toContain('next answer'))
     await vi.waitFor(() => expect(app?.busy).toBe(false))
     await vi.waitFor(() => expect(bells()).toBe(1))
@@ -623,7 +623,7 @@ it('keeps a tall draft cursor visible and submits all original lines through act
     app = new TuiApp({ session, term, header: 'Agnes' })
     await app.start()
     const draft = Array.from({ length: 15 }, (_, i) => `draft ${i}`).join('\n')
-    term.feed(draft)
+    term.feed(draft.replaceAll('\n', '\x1b\r'))
     await vi.waitFor(async () => {
       const screen = await emulate(term, 30, 12)
       expect(screen.lines.some((line) => line.includes('draft 14'))).toBe(true)
