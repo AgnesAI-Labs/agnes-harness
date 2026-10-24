@@ -52,12 +52,15 @@ const SGR = /\x1b\[[0-9;]*m/g
 
 type Span = { start: number; end: number; uri: string }
 
-/** Drops what a sentence puts after a URL: closing punctuation, and a `)` that has no `(` before it. */
+const count = (s: string, ch: string): number => s.split(ch).length - 1
+
+/** Drops what a sentence puts after a URL: closing punctuation, and a `)` with no `(` to close. */
 function trimUrl(url: string): string {
   let out = url
   for (;;) {
     const last = out.at(-1) ?? ''
-    if (/[.,;:!?'"\]}]/.test(last) || (last === ')' && !out.includes('('))) out = out.slice(0, -1)
+    if (/[.,;:!?'"\]}]/.test(last) || (last === ')' && count(out, ')') > count(out, '(')))
+      out = out.slice(0, -1)
     else return out
   }
 }
