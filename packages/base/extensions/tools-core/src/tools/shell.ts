@@ -2,6 +2,7 @@ import { SHELL_SENTINEL, type ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import { type ShellJobs, standaloneShellJobs } from '../../../jobs/src/registry.js'
 import { runShellJob } from '../../../jobs/src/shell.js'
+import { failureCode, toolFailure } from '../guards/feedback.js'
 import { guardedResult } from '../guards/output.js'
 import { shellGuidance, timeoutGuidance } from '../shell-guidance.js'
 import { ShellParams } from './schemas.js'
@@ -48,6 +49,7 @@ export function createShellTool(jobs?: ShellJobs) {
             },
           ],
           isError: true,
+          details: { code: 'SHELL_BACKGROUND_UNAVAILABLE' },
         }
       // The call runs for the preset default unless the caller asks for time, and a caller may ask for
       // up to the call's limit (`ctx.timeoutMs`, which the deployment sets for this tool); a request
@@ -72,10 +74,11 @@ export function createShellTool(jobs?: ShellJobs) {
       } catch (e) {
         // A refusal to launch (no interpreter, sandbox denial) is reported to the model as a failed
         // call, which it can react to, rather than as an exception that ends the turn.
-        return {
-          content: [{ type: 'text', text: `command could not be started: ${(e as Error).message}` }],
-          isError: true,
-        }
+        return toolFailure(
+          ctx,
+          failureCode(e, 'SHELL_START_FAILED'),
+          `command could not be started (${failureCode(e, 'SHELL_START_FAILED')}); check the selected interpreter and cwd with available file tools; choose an allowed command or ask the user to adjust access.`,
+        )
       }
       const parts: string[] = shellGuidance(ctx, args.command, r.stoppedProcesses)
       if (r.stdout) parts.push(r.stdout.replace(/\n$/, ''))
@@ -91,13 +94,21 @@ export function createShellTool(jobs?: ShellJobs) {
         parts.push(
           `[timed out after ${timeoutMs}ms${requested !== undefined && requested > timeoutMs ? ` (requested ${requested}ms, capped)` : ''}: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`,
         )
-        return { ...(await guardedResult(ctx, parts.join('\n'))), isError: true }
+        return {
+          ...(await guardedResult(ctx, parts.join('\n'))),
+          isError: true,
+          details: { code: 'SHELL_TIMEOUT' },
+        }
       }
+      if (r.code !== 0)
+        parts.push(
+          'Command failed; inspect the output and current state, correct the command/arguments, then retry.',
+        )
       parts.push(`[exit ${r.code}]${r.truncated ? ' [output truncated by sandbox]' : ''}`)
       const out = await guardedResult(ctx, parts.join('\n'))
       // Strictly zero, not "not positive": a process killed by a signal is reported with a negative
       // code, and `> 0` would call that a success.
-      return r.code === 0 ? out : { ...out, isError: true }
+      return r.code === 0 ? out : { ...out, isError: true, details: { code: 'SHELL_EXIT', exitCode: r.code } }
     },
   })
 }

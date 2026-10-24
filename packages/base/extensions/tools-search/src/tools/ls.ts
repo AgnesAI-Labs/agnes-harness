@@ -1,9 +1,10 @@
 import type { FsEntry, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
+import { fsFailure } from '../../../tools-core/src/guards/feedback.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { LsParams } from '../../../tools-core/src/tools/schemas.js'
 import { type FoundPath, referencedResult } from './references.js'
-import { allowed, SEARCH_META, searchPathError, toolError } from './walk.js'
+import { allowed, SEARCH_META, searchPathError } from './walk.js'
 
 const DEFAULT_LIMIT = 500
 
@@ -27,7 +28,7 @@ export const lsTool = defineTool({
     try {
       entries = await ctx.fs.list(dir)
     } catch (e) {
-      return toolError(`ls failed: ${(e as Error).message}`)
+      return fsFailure(ctx, 'ls', dir, e)
     }
     const kept = entries
       .filter((e) => allowed(ctx, `${abs}/${e.name}`))
@@ -35,7 +36,7 @@ export const lsTool = defineTool({
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
     const lines = kept.slice(0, args.limit ?? DEFAULT_LIMIT).map((e) => `${e.name}${MARK[e.kind]}`)
     const shown = lines.length
-    if (kept.length > shown) lines.push(`[${kept.length - shown} more]`)
+    if (kept.length > shown) lines.push(`[${kept.length - shown} more; increase limit or narrow path]`)
     const hidden = entries.length - kept.length
     if (hidden > 0) lines.push(`[${hidden} entries not listed: denied by policy]`)
     const rows = lines.slice(0, shown)

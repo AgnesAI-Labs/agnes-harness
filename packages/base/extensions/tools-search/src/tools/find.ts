@@ -38,7 +38,8 @@ export const findTool = defineTool({
       ...walkNotes(report, 50000),
       ...(atLimit ? [`[limit ${limit} reached; narrow the search]`] : []),
     ].join('\n')
-    if (failed) return { ...(await guardedResult(ctx, text)), isError: true }
+    if (failed)
+      return { ...(await guardedResult(ctx, text)), isError: true, details: { code: 'FS_SEARCH_UNREADABLE' } }
     return referencedResult(ctx, text, lines, found, found.length, atLimit || report.truncated)
   },
 })

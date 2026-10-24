@@ -2,6 +2,7 @@ import type { Bytes, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import type { LspSessions } from '../../../lsp/src/registry.js'
 import type { FileChangeRecorder } from '../file-change.js'
+import { fsFailure } from '../guards/feedback.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { ABSENT, observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
@@ -49,10 +50,7 @@ export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) 
           // truncation guard off on precisely the reads that failed for a reason, and the overwrite
           // would go ahead against a file nobody could look at. Anything else is a failed call.
           if ((e as { code?: string }).code !== 'ENOENT')
-            return {
-              content: [{ type: 'text', text: `write failed before writing: ${(e as Error).message}` }],
-              isError: true,
-            }
+            return fsFailure(ctx, 'write before writing', args.path, e)
           existed = false
         }
         const seen = observedVersion(ctx.session.key, abs)
@@ -94,6 +92,7 @@ export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) 
               },
             ],
             isError: true,
+            details: { code: 'FS_TRUNCATION_GUARD' },
           }
         try {
           await ctx.fs.write(args.path, after)
@@ -102,10 +101,7 @@ export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) 
           // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
           // outcome is unknown, and nothing in it would say the policy said no.
           if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
-          return {
-            content: [{ type: 'text', text: `write failed before writing: ${(e as Error).message}` }],
-            isError: true,
-          }
+          return fsFailure(ctx, 'write before writing', args.path, e)
         }
         if (record)
           try {

@@ -81,6 +81,24 @@ describe('read', () => {
     },
   )
 
+  it.each([
+    ['ATTACHMENT_TOO_LARGE', '100 MiB', 'bounded client windows'],
+    ['ATTACHMENT_HASH_MISMATCH', 'integrity', 'upload it again'],
+    ['ATTACHMENT_UNAVAILABLE', 'unavailable', 'session-file://list'],
+    ['ATTACHMENT_DATA', 'invalid', 'text export'],
+  ])('reports a refused original %s without reflecting backend text', async (code, cause, next) => {
+    const ctx = ctxOf()
+    ctx.session.readAttachment = async () => {
+      throw Object.assign(new Error('/private/backend sk-private-backend-value-123456789'), { code })
+    }
+    const result = await readTool.execute({ path: 'session-file://3/1' }, ctx)
+    expect(result.details).toMatchObject({ code })
+    expect(textOf(result)).toContain(cause)
+    expect(textOf(result)).toContain(next)
+    expect(JSON.stringify(result)).not.toContain('/private/backend')
+    expect(ctx.calls.read).toEqual([])
+  })
+
   it('pages a long attachment line without losing its middle or confusing list offsets', async () => {
     const base = ctxOf()
     const bytes = new TextEncoder().encode('中'.repeat(12000))
@@ -179,8 +197,28 @@ describe('read', () => {
     expect(textOf(missing)).toContain('ENOENT')
     const bin = await readTool.execute({ path: 'b.bin' }, ctx)
     expect(bin.isError).toBe(true)
+    expect(bin.details).toMatchObject({ code: 'FS_BINARY' })
     expect(bin.content[0]).toMatchObject({ type: 'text', text: expect.stringContaining('binary') })
     expect(textOf(bin)).toContain('5 bytes')
+  })
+
+  it.each([
+    ['ENOENT', 'path does not exist', 'use ls/find'],
+    ['EISDIR', 'directory', 'use ls'],
+    ['ENOTDIR', 'not a directory', 'correct the path'],
+    ['EACCES', 'permission denied', 'accessible path'],
+    ['E_FS_DENIED', 'denied by file policy', 'allowed path'],
+  ])('reports %s with safe path and recovery, without backend details', async (code, cause, next) => {
+    const ctx = ctxOf({
+      readErrors: { 'a.txt': { code, message: '/private/secret-root sk-private-backend-value-123456789' } },
+    })
+    const result = await readTool.execute({ path: 'a.txt' }, ctx)
+    expect(result.details).toMatchObject({ code })
+    expect(textOf(result)).toContain('a.txt')
+    expect(textOf(result)).toContain(cause)
+    expect(textOf(result)).toContain(next)
+    expect(JSON.stringify(result)).not.toContain('/private/secret-root')
+    expect(JSON.stringify(result)).not.toContain('sk-private')
   })
 
   it('scans only the first 8 KB for the NUL that marks a binary file', async () => {
@@ -332,6 +370,7 @@ describe('read of an artifact the output guard stored', () => {
     const r = await readTool.execute({ path }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain(message)
+    expect(r.details).toMatchObject({ code: 'FS_ARTIFACT_READ' })
     // A refusal that can be decided from the locator alone never reaches the store.
     expect(ctx.calls.artifactGets).toHaveLength(asked)
   })

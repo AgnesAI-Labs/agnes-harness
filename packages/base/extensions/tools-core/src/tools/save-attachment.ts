@@ -4,7 +4,11 @@ import { withFileLock } from '../guards/mutation-queue.js'
 import { normalizeWorkspacePath } from '../paths.js'
 
 export const SAVE_ATTACHMENT_MAX_BYTES = 100 * 1024 * 1024
-const fail = (text: string): ToolResult => ({ content: [{ type: 'text', text }], isError: true })
+const fail = (text: string): ToolResult => ({
+  content: [{ type: 'text', text }],
+  isError: true,
+  details: { code: 'FS_ATTACHMENT_COPY' },
+})
 const reserved = /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?$/iu
 const utf8 = new TextEncoder()
 
@@ -35,7 +39,10 @@ export async function saveAttachment(path: string, saveTo: string, ctx: ToolCont
     )
   if (!validSaveTarget(saveTo))
     return fail('save_to must be a plain relative workspace path without reserved names or traversal.')
-  if (!ctx.fs.create) return fail('Exclusive workspace creation is unavailable in this runtime.')
+  if (!ctx.fs.create)
+    return fail(
+      'Exclusive workspace creation is unavailable in this runtime; download the original through the client.',
+    )
   if (active >= 2 || sessions.has(ctx.session.key))
     return fail('An original copy is already in progress; retry after it finishes.')
   const target = normalizeWorkspacePath(saveTo, ctx.cwd)
@@ -46,7 +53,10 @@ export async function saveAttachment(path: string, saveTo: string, ctx: ToolCont
     ctx.signal.throwIfAborted()
     // The session port resolves authority before a workspace lock or mutation is reached.
     const original = await ctx.session.readAttachment?.({ path, maxBytes: SAVE_ATTACHMENT_MAX_BYTES })
-    if (!original) return fail('The original is unavailable in this session and lane.')
+    if (!original)
+      return fail(
+        'The original is unavailable in this session and lane; use session-file://list or session-image://list to choose an available original.',
+      )
     if (original.bytes.length > SAVE_ATTACHMENT_MAX_BYTES)
       return fail('The original exceeds 100 MiB. Download it through bounded client windows instead.')
     return await withFileLock(target.abs, async () => {

@@ -75,7 +75,11 @@ it.each([
 ])('refuses a decoded memory/pixel boundary before sending pixels: %j', async (change) => {
   codec.metadata = { ...metadata, ...change }
   const f = context()
-  expect(await readLocalImage(png, 'large.png', f.ctx)).toMatchObject({ isError: true })
+  expect(await readLocalImage(png, 'large.png', f.ctx)).toMatchObject({
+    isError: true,
+    details: { code: 'FS_IMAGE_DECODE_LIMIT' },
+    content: [{ text: expect.stringContaining('Resize/export') }],
+  })
   expect(f.images).toEqual([])
 })
 

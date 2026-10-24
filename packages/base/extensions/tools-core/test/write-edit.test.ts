@@ -64,6 +64,7 @@ describe('write', () => {
     const r = await writeTool.execute({ path: 'big.ts', content: 'y'.repeat(10) }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('truncation guard')
+    expect(r.details).toMatchObject({ code: 'FS_TRUNCATION_GUARD' })
     expect(dec.decode(ctx.mem.files.get('/work/proj/big.ts'))).toBe('x'.repeat(100))
   })
 
@@ -90,7 +91,9 @@ describe('write', () => {
       })
       const result = await writeTool.execute({ path: 'locked.ts', content: 'y' }, ctx)
       expect(result.isError).toBe(true)
-      expect(textOf(result)).toBe(`write failed before writing: ${message}`)
+      expect(textOf(result)).toContain('write before writing failed')
+      expect(textOf(result)).toContain('choose an')
+      expect(result.details).toMatchObject({ code })
       expect(dec.decode(ctx.mem.files.get('/work/proj/locked.ts'))).toBe('x'.repeat(100))
     },
   )
@@ -108,7 +111,8 @@ describe('a file that is readable but not writable', () => {
     const ctx = await locked()
     const result = await writeTool.execute({ path: 'state.yaml', content: 'name: b\n' }, ctx)
     expect(result.isError).toBe(true)
-    expect(textOf(result)).toBe(`write failed before writing: ${message}`)
+    expect(textOf(result)).toContain('denied by file policy')
+    expect(result.details).toMatchObject({ code: 'E_FS_DENIED' })
     expect(dec.decode(ctx.mem.files.get('/work/proj/state.yaml'))).toBe('name: a\n')
   })
 
@@ -119,7 +123,8 @@ describe('a file that is readable but not writable', () => {
       ctx,
     )
     expect(result.isError).toBe(true)
-    expect(textOf(result)).toBe(`edit failed: ${message}`)
+    expect(textOf(result)).toContain('denied by file policy')
+    expect(result.details).toMatchObject({ code: 'E_FS_DENIED' })
     expect(dec.decode(ctx.mem.files.get('/work/proj/state.yaml'))).toBe('name: a\n')
   })
 
@@ -179,6 +184,91 @@ describe('edit', () => {
     expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(original)
   })
 
+  it.each([
+    ['header\n\tvalue = 1  \nfooter', '    value = 1', 'whitespace/indentation-only', '2: "\\tvalue = 1  "'],
+    ['header\nvalue = 1\r\nfooter', 'value = 1\nfooter', 'line-ending difference', '2:'],
+    ['header\nvalue = 1\nfooter', 'value = 1\r\nfooter', 'line-ending difference', '2: "value = 1"'],
+    ['header\nname = “café”\nfooter', 'name = "café"', 'quote/unicode-normalisation', '2: "name = “café”"'],
+    ['header\nname = "cafe\u0301"\nfooter', 'name = "café"', 'quote/unicode-normalisation', '2:'],
+    ['header\nfirst = 1\nlast = 3', 'first = 1\nlast = 2', 'surrounding lines', '2: "first = 1"'],
+    [
+      'same = 1\nwrong context\nsame = 1\nwanted context!\n',
+      'same = 1\nwanted context?',
+      'similar text',
+      'Candidate at line 3:',
+    ],
+  ])('diagnoses mismatches without fuzzy replacement: %j', async (original, oldText, cause, excerpt) => {
+    const ctx = await observedCtxOf({ files: { 'a.ts': original } })
+    const result = await editTool.execute({ path: 'a.ts', edits: [{ oldText, newText: 'changed' }] }, ctx)
+    expect(result.details).toMatchObject({ code: 'FS_EDIT_NOT_FOUND' })
+    expect(textOf(result)).toContain(cause)
+    expect(textOf(result)).toContain(excerpt)
+    expect(textOf(result)).toContain('No edits from this call were written')
+    expect(textOf(result)).toContain('copy actual text exactly')
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(original)
+  })
+
+  it('names an earlier edit as the cause and rolls back the whole batch', async () => {
+    const ctx = await observedCtxOf({ files: { 'a.ts': 'value = 1\nfooter' } })
+    const result = await editTool.execute(
+      {
+        path: 'a.ts',
+        edits: [
+          { oldText: 'value = 1', newText: 'value = 2' },
+          { oldText: 'value = 1', newText: 'value = 3' },
+        ],
+      },
+      ctx,
+    )
+    expect(textOf(result)).toContain('already replaced by an earlier edit in this same call')
+    expect(textOf(result)).toContain('resend the whole batch')
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe('value = 1\nfooter')
+  })
+
+  it('diagnoses a stale read without blocking exact edits to another region', async () => {
+    const ctx = await observedCtxOf({ files: { 'a.ts': 'value = 1\nfooter' } })
+    ctx.mem.files.set('/work/proj/a.ts', new TextEncoder().encode('value = 2\nfooter'))
+    const result = await editTool.execute(
+      { path: 'a.ts', edits: [{ oldText: 'value = 1', newText: 'value = 3' }] },
+      ctx,
+    )
+    expect(textOf(result)).toContain('File changed since the session last read it')
+    expect(textOf(result)).toContain('2')
+    const exact = await editTool.execute(
+      { path: 'a.ts', edits: [{ oldText: 'footer', newText: 'FOOTER' }] },
+      ctx,
+    )
+    expect(exact.isError).toBeUndefined()
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe('value = 2\nFOOTER')
+  })
+
+  it('reports capped 1-based start lines for ambiguous and overlapping matches', async () => {
+    const ctx = await observedCtxOf({ files: { 'a.ts': 'header\nvalue\nvalue\n'.repeat(15) } })
+    const result = await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'value', newText: 'x' }] }, ctx)
+    expect(result.details).toMatchObject({ code: 'FS_AMBIGUOUS_EDIT' })
+    expect(textOf(result)).toContain('match start lines: 2, 3, 5, 6')
+    expect(textOf(result)).toContain('first 20 shown')
+    expect(textOf(result)).toContain('distinguishing surrounding lines')
+  })
+
+  it('bounds candidate work and guards excerpts, including secrets before clipping and spill', async () => {
+    const secret = `sk-${'s'.repeat(300)}`
+    const ctx = await observedCtxOf({ files: { 'a.ts': `name = “value” ${secret}\n` }, outputMaxBytes: 200 })
+    const result = await editTool.execute(
+      { path: 'a.ts', edits: [{ oldText: 'name = "value"', newText: 'name = "next"' }] },
+      ctx,
+    )
+    const all = JSON.stringify(result) + ctx.calls.artifacts.map((a) => dec.decode(a.bytes)).join('')
+    expect(all).not.toContain('sk-ssss')
+    expect(all).toContain('REDACTED')
+    expect(result.content.some((b) => b.type === 'ref')).toBe(true)
+    ctx.mem.files.set('/work/proj/a.ts', new TextEncoder().encode('value\n'.repeat(50000)))
+    const big = await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'missing', newText: 'x' }] }, ctx)
+    expect(JSON.stringify(big) + ctx.calls.artifacts.map((a) => dec.decode(a.bytes)).join('')).toContain(
+      'Candidate scan skipped',
+    )
+  })
+
   it('replaces the match literally, not as a replacement pattern', async () => {
     // String.replace expands `$&` and friends in the replacement, so a newText carrying one would
     // otherwise write text that appears nowhere in the model's request.
@@ -206,6 +296,7 @@ describe('edit', () => {
     const r = await editTool.execute({ path: 'b.bin', edits: [{ oldText: 'a', newText: 'z' }] }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain(error)
+    expect(r.details).toMatchObject({ code: error === 'binary' ? 'FS_BINARY' : 'FS_ENCODING' })
     expect([...(ctx.mem.files.get('/work/proj/b.bin') as Uint8Array)]).toEqual([...bytes])
   })
 
@@ -225,6 +316,7 @@ describe('edit', () => {
     )
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('truncation guard')
+    expect(r.details).toMatchObject({ code: 'FS_TRUNCATION_GUARD' })
     expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(`${'x'.repeat(100)}DROP`)
   })
 })
@@ -526,13 +618,15 @@ describe('observed edit matches current content', () => {
     expect(onDisk(a)).toBe('ONE\ntwo\nTHREE\n')
   })
 
-  it('still reports a missing oldText as before, without any staleness wording', async () => {
+  it('reports a missing oldText with the stale read diagnosis', async () => {
     const { a, b } = twoSessions('one\ntwo\n')
     await read(a)
     await read(b)
     await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'two', newText: 'TWO' }] }, b)
     const r = await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'two', newText: '2' }] }, a)
-    expect(textOf(r)).toBe('edit 1: oldText not found')
+    expect(textOf(r)).toContain('oldText not found')
+    expect(textOf(r)).toContain('File changed since the session last read it')
+    expect(r.details).toMatchObject({ code: 'FS_EDIT_NOT_FOUND' })
   })
 
   it('lets two sessions make 25 edits each to one file, every one of them landing', async () => {
