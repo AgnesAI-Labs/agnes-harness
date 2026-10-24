@@ -296,7 +296,7 @@ describe('NodeTerminal', () => {
   it('pushes and pops the keyboard mode on the alternate screen across start, suspend, resume and stop', () => {
     const { stdin, stdout } = fakeStreams()
     const term = new NodeTerminal(stdin, stdout, { TERM_PROGRAM: 'kitty' })
-    const renderer = new Renderer(term, { render: () => ['x'] })
+    const renderer = new Renderer(term, { render: () => ['x'], invalidate() {} })
     const marks = ['\x1b[>1u', '\x1b[<u', '\x1b[?1049h', '\x1b[?1049l']
     const seq = () =>
       stdout.out
