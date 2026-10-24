@@ -45,6 +45,7 @@ import { terminalSetupSlash } from './terminal-setup-command.js'
 import type { ThemePreference } from './theme-preference.js'
 import { thinkingMode } from './thinking.js'
 import { toolNameCandidates, toolsSlash } from './tool-filter-command.js'
+import { trustSlash } from './trust-command.js'
 import { undoSlash } from './undo-commands.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
 import { worktreeSlash } from './worktree-command.js'
@@ -436,6 +437,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return grantsSlash(app, line)
     case '/permissions':
       return permissionsSlash(app, args, (next) => grantsSlash(app, next))
+    case '/trust':
+      return trustSlash(app, args)
     case '/deliverables':
       return deliverablesSlash(app, line)
     case '/agents':

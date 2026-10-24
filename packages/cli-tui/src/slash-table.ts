@@ -151,6 +151,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.permissionsSummary',
   },
   {
+    name: '/trust',
+    args: '[confirm]',
+    descriptionKey: 'commands.trust',
+    summaryKey: 'commands.trustSummary',
+  },
+  {
     name: '/deliverables',
     args: '[save <n|id> [path]]',
     descriptionKey: 'commands.deliverables',

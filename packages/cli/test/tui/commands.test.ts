@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -118,7 +119,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(76)
+    expect(SLASH_COMMANDS).toHaveLength(77)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -158,6 +159,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/yolo',
       '/grants',
       '/permissions',
+      '/trust',
       '/deliverables',
       '/attach',
       '/paste',
@@ -1566,6 +1568,291 @@ describe('runSlash', () => {
         for (const line of ['/permissions nope', '/permissions revoke', '/permissions revoke 1 2']) {
           expect((await runSlash(app, line)).text).toContain('用法：/permissions')
         }
+      } finally {
+        await client.close()
+      }
+    })
+  })
+
+  describe('/trust', () => {
+    const HASH = `sha256-${'a'.repeat(64)}`
+    const WORKSPACE = '/work/repo'
+    const digestOf = (text: string) =>
+      `sha256-${createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex')}`
+    const HOOKS = JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo hi' }] }] },
+    })
+    type Row = { state: 'untrusted' | 'trusted' | 'changed'; pluginCount?: number; hasHooks?: boolean }
+    type Options = {
+      /** The hooks.json text the daemon serves; 'fail' makes the read throw. */
+      hooks?: string
+      /** What the row's hooksDigest says; defaults to the digest of `hooks`. */
+      digest?: string | null
+      /** The root session.list reports for this session; null leaves it out. */
+      cwd?: string | null
+      /** Installed packages; defaults to as many local workspace plugins as the row counts. */
+      plugins?: { id: string; version: string; source: { ref: string } }[] | 'fail'
+      truncated?: boolean
+    }
+    /** A session whose admin client answers the runtime snapshot and records trustWorkspace calls. */
+    const setup = async (rows: Row[], options: Options = {}) => {
+      const hooks = options.hooks ?? HOOKS
+      const made = await unstartedApp(undefined, undefined, undefined, { cwd: WORKSPACE })
+      const id = made.app.session.id
+      made.ep
+        .on('_agnes/v1/session.list', () => ({
+          items: [
+            {
+              sessionId: id,
+              createdAt: '2026-01-01T00:00:00Z',
+              lastSeq: 1,
+              generation: 1,
+              preset: 'standard',
+              ...(options.cwd === null ? {} : { cwd: options.cwd ?? WORKSPACE }),
+            },
+          ],
+        }))
+        .on('_agnes/v1/session.workspace.read', () => {
+          if (hooks === 'fail') throw new Error('unreadable')
+          return {
+            revision: 'r',
+            observedAt: '2026-10-24T00:00:00Z',
+            path: '.agh/hooks.json',
+            size: 1,
+            binary: false,
+            truncated: options.truncated ?? false,
+            text: hooks,
+          }
+        })
+      const trusted: unknown[] = []
+      const fail = { current: undefined as unknown }
+      const admin = {
+        call: async () => ({
+          workspaceDeployments: rows.map((row) => ({
+            deployDir: WORKSPACE,
+            path: WORKSPACE,
+            manifestId: 'local-workspace',
+            trustHash: HASH,
+            ...(row.hasHooks
+              ? { hooksDigest: options.digest === null ? undefined : (options.digest ?? digestOf(hooks)) }
+              : {}),
+            ...row,
+          })),
+        }),
+        clientId: async () => 'tui-client',
+        packages: {
+          list: async () => {
+            if (options.plugins === 'fail') throw new Error('list failed')
+            return {
+              packages:
+                options.plugins ??
+                Array.from({ length: rows[0]?.pluginCount ?? 0 }, (_, i) => ({
+                  id: `repo-plugin-${i}`,
+                  version: '1.0.0',
+                  source: { ref: `local:workspace/repo-plugin-${i}` },
+                })),
+            }
+          },
+          trustWorkspace: async (params: unknown) => {
+            trusted.push(params)
+            if (fail.current) throw fail.current
+            return { hash: HASH }
+          },
+        },
+      }
+      const app = new TuiApp({
+        session: made.app.session,
+        term: new FakeTerminal({ columns: 90, rows: 24 }),
+        header: 'Agnes',
+        locale: 'zh-CN',
+        profile: 'local-dev',
+        cwd: WORKSPACE,
+        controlClient: admin as never,
+      })
+      return { ...made, app, trusted, fail }
+    }
+    const untrusted: Row = { state: 'untrusted', pluginCount: 2, hasHooks: true }
+
+    it('lists plugins and hooks and asks for confirmation while untrusted, and says nothing to confirm once trusted', async () => {
+      const { app, client } = await setup([untrusted])
+      try {
+        const text = (await runSlash(app, '/trust')).text ?? ''
+        expect(text).toContain('状态: 未信任')
+        expect(text).toContain('本地插件: 2')
+        expect(text).toContain('repo-plugin-0@1.0.0')
+        expect(text).toContain('repo-plugin-1@1.0.0')
+        expect(text).toContain('PreToolUse[Bash] command: echo hi')
+        expect(text).toContain('/trust confirm')
+      } finally {
+        await client.close()
+      }
+      const done = await setup([{ state: 'trusted', pluginCount: 1, hasHooks: true }])
+      try {
+        const text = (await runSlash(done.app, '/trust')).text ?? ''
+        expect(text).toContain('状态: 已信任')
+        expect(text).not.toContain('/trust confirm')
+        expect((await runSlash(done.app, '/trust confirm')).text).toContain('已经是已信任')
+        expect(done.trusted).toEqual([])
+      } finally {
+        await done.client.close()
+      }
+    })
+
+    it('shows a changed workspace as needing trust again, and says so when there is nothing to trust', async () => {
+      const changed = await setup([{ state: 'changed', hasHooks: false }])
+      try {
+        expect((await runSlash(changed.app, '/trust')).text).toContain('已变更，需要重新信任')
+      } finally {
+        await changed.client.close()
+      }
+      const none = await setup([])
+      try {
+        expect((await runSlash(none.app, '/trust')).text).toBe('这个工作区没有需要信任的 hooks 或本地插件。')
+      } finally {
+        await none.client.close()
+      }
+    })
+
+    it('confirms with the hash that was shown, only after /trust, and says when trust takes effect', async () => {
+      const { app, client, trusted } = await setup([untrusted])
+      try {
+        expect((await runSlash(app, '/trust confirm')).text).toContain('没有等待确认')
+        expect(trusted).toEqual([])
+        await runSlash(app, '/trust')
+        const text = (await runSlash(app, '/trust confirm')).text ?? ''
+        expect(trusted).toEqual([
+          {
+            profile: 'local-dev',
+            clientId: 'tui-client',
+            commandId: expect.any(String),
+            deployDir: WORKSPACE,
+            expectedHash: HASH,
+          },
+        ])
+        expect(text).toContain(`已信任 ${WORKSPACE}`)
+        expect(text).toContain('下一次 hook 运行')
+        expect(text).toContain('本地插件只在新会话里加载')
+        expect((await runSlash(app, '/trust confirm')).text).toContain('没有等待确认')
+        expect(trusted).toHaveLength(1)
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('asks to run /trust again when the daemon says the files changed, and shows other refusals as they come', async () => {
+      const { app, client, fail } = await setup([untrusted])
+      try {
+        await runSlash(app, '/trust')
+        fail.current = {
+          code: -32011,
+          data: { code: 'SEMANTIC_REJECTED', reason: 'E_PACKAGE_PREVIEW_STALE' },
+        }
+        expect((await runSlash(app, '/trust confirm')).text).toContain('工作区内容变了，请重新运行 /trust')
+        expect((await runSlash(app, '/trust confirm')).text).toContain('没有等待确认')
+        await runSlash(app, '/trust')
+        const denied = { code: -32006, data: { code: 'CAPABILITY_DENIED' } }
+        fail.current = denied
+        await expect(runSlash(app, '/trust confirm')).rejects.toBe(denied)
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('never offers confirm when the screen cannot show everything the hash covers', async () => {
+      const many = JSON.stringify({
+        hooks: {
+          Stop: Array.from({ length: 23 }, (_, i) => ({ hooks: [{ type: 'command', command: `run ${i}` }] })),
+        },
+      })
+      const cases: [string, Options, string][] = [
+        ['more than 20 hooks', { hooks: many }, '还有 3 条 hook 没有显示'],
+        ['an unreadable file', { hooks: 'fail' }, 'hooks 内容读取失败'],
+        ['malformed json', { hooks: '{"hooks": [' }, 'hooks 内容读取失败'],
+        ['a truncated read', { truncated: true }, 'hooks 内容读取失败'],
+        ['a plugin count mismatch', { plugins: [] }, '插件清单与数量对不上'],
+        ['a failed plugin listing', { plugins: 'fail' }, '读不到插件清单'],
+        ['shown bytes that are not what the hash covers', { digest: digestOf('other') }, '请重新运行 /trust'],
+        ['no hooks digest from the daemon', { digest: null }, '请重新运行 /trust'],
+        [
+          'a hook whose type the runner does not know',
+          { hooks: JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'agent', command: 'x' }] }] } }) },
+          'hooks 内容读取失败',
+        ],
+      ]
+      for (const [name, options, reason] of cases) {
+        const made = await setup([untrusted], options)
+        try {
+          const text = (await runSlash(made.app, '/trust')).text ?? ''
+          expect(text, name).toContain(reason)
+          expect(text, name).toContain("agh profile trust '/work/repo'")
+          expect(text, name).not.toContain('确认信任：/trust confirm')
+          expect((await runSlash(made.app, '/trust confirm')).text, name).toContain('没有等待确认')
+          expect(made.trusted, name).toEqual([])
+        } finally {
+          await made.client.close()
+        }
+      }
+    })
+
+    it('shows the field the hook type runs, not a decoy field beside it', async () => {
+      const hooks = JSON.stringify({
+        hooks: {
+          Stop: [{ hooks: [{ type: 'http', url: 'https://hooks.example/stop', command: 'echo decoy' }] }],
+        },
+      })
+      const made = await setup([untrusted], { hooks })
+      try {
+        const text = (await runSlash(made.app, '/trust')).text ?? ''
+        expect(text).toContain('Stop http: https://hooks.example/stop')
+        expect(text).not.toContain('decoy')
+      } finally {
+        await made.client.close()
+      }
+    })
+
+    it('refuses to review without the daemon-reported workspace root, and matches the root exactly', async () => {
+      const missing = await setup([untrusted], { cwd: null })
+      try {
+        expect((await runSlash(missing.app, '/trust')).text).toContain('没有报告本会话的工作区根目录')
+        expect((await runSlash(missing.app, '/trust confirm')).text).toContain('没有等待确认')
+        expect(missing.trusted).toEqual([])
+      } finally {
+        await missing.client.close()
+      }
+      const elsewhere = await setup([untrusted], { cwd: '/work/other' })
+      try {
+        expect((await runSlash(elsewhere.app, '/trust')).text).toContain('没有需要信任')
+      } finally {
+        await elsewhere.client.close()
+      }
+    })
+
+    it('wraps a long hook line instead of cutting it, and keeps hook and plugin text inert', async () => {
+      const long = `${'x'.repeat(100)}END`
+      const hooks = JSON.stringify({
+        hooks: {
+          Stop: [
+            { hooks: [{ type: 'command', command: long }] },
+            { hooks: [{ type: 'command', command: 'echo \u001b[31mred\u001b[0m\nrm ‮gpj.exe​﻿' }] },
+          ],
+        },
+      })
+      const plugins = [{ id: 'evil‮plugin', version: '1', source: { ref: 'local:workspace/evil' } }]
+      const { app, client } = await setup([{ state: 'untrusted', pluginCount: 1, hasHooks: true }], {
+        hooks,
+        plugins,
+      })
+      try {
+        const text = (await runSlash(app, '/trust')).text ?? ''
+        expect(text).toContain('END')
+        expect(text.replace(/\s+/g, '')).toContain(`Stopcommand:${long}`)
+        expect(text.includes('\u001b')).toBe(false)
+        expect(/\p{Cf}/u.test(text)).toBe(false)
+        expect(text).toContain('\\u{202E}')
+        expect(text).toContain('\\u{200B}')
+        expect(text).toContain('\\u{FEFF}')
+        expect(text).toContain('evil\\u{202E}plugin@1')
+        expect(text).toContain('/trust confirm')
       } finally {
         await client.close()
       }
