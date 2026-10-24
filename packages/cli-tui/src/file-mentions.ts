@@ -35,7 +35,9 @@ export function mentionToken(before: string): { start: number; query: string } |
 
 /** What accepting an item writes: a file closes the mention, a folder stays open to choose inside it. */
 export function mentionText(item: MentionItem): string {
-  const quote = /\s/u.test(item.id) ? '"' : ''
+  // The bare form stops at whitespace and at a second `@`; only the quoted form carries them.
+  // ponytail: a `"` in a name has no quoted form, so such a file stays unmentionable.
+  const quote = /[\s@]/u.test(item.id) ? '"' : ''
   return item.directory ? `@${quote}${item.id}/` : `@${quote}${item.id}${quote} `
 }
 
