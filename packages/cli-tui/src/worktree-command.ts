@@ -32,7 +32,7 @@ export async function worktreeSlash(app: TuiApp, line: string): Promise<SlashRes
 
 /** After any session switch: leaves the previous worktree behind (removing it if clean) and shows the new one. */
 export async function worktreeSwitched(app: TuiApp, sessionId: string): Promise<void> {
-  const left = await app.worktrees.switched(sessionId)
+  const left = await app.worktrees.switched(sessionId, app.cwd)
   app.refreshWorkspace()
   const lines = [...(left ? [outcomeLine(left, app.locale)] : []), ...app.worktrees.takeNotes()]
   if (lines.length > 0) app.noteLocal('/worktree', lines.join('\n'))

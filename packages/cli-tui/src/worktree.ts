@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync, lstatSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import type { Locale } from './locale.js'
 import { tt } from './locale-extended.js'
 
@@ -140,8 +140,17 @@ export class WorktreeKeeper {
     return this.active
   }
 
-  /** The session shown changed: the worktree being left is cleaned. Returns what happened to it. */
-  async switched(sessionId: string): Promise<WorktreeOutcome | undefined> {
+  /**
+   * The session shown changed: the worktree being left is cleaned. Returns what happened to it. A session
+   * whose workspace `cwd` lies in a worktree of this run (a `/new` started inside it) belongs to that worktree.
+   */
+  async switched(sessionId: string, cwd?: string): Promise<WorktreeOutcome | undefined> {
+    const within = (info: WorktreeInfo) => {
+      const rel = cwd === undefined ? '..' : relative(info.path, cwd)
+      return !rel.startsWith('..') && !isAbsolute(rel)
+    }
+    const home = this.owned.has(sessionId) ? undefined : [...this.owned.values()].find(within)
+    if (home) this.owned.set(sessionId, home)
     const next = this.owned.get(sessionId)
     const left = this.active
     this.active = next
