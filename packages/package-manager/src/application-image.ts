@@ -1,14 +1,35 @@
 import { createHash } from 'node:crypto'
-import sharp from 'sharp'
+import { createRequire } from 'node:module'
 
+type Codec = typeof import('sharp')
 const MAX_PIXELS = 1024 * 1024
 const checked = new Map<string, Promise<void>>()
+let loaded: Codec | undefined
+
+// Loaded on first use, never by a static import. sharp is a native package that ships beside the
+// bundles in node_modules rather than inside them: bundled statically, a single-executable build
+// fails as soon as this module is evaluated, because the injected script's require only knows Node
+// builtins, and that took daemon start down with it. A require created from this module resolves
+// node_modules beside the executable in that build, beside dist/local in a local build and in the
+// workspace in development. Only an application with image assets needs the codec at all.
+function codec(): Codec {
+  if (loaded) return loaded
+  try {
+    loaded = createRequire(import.meta.url)('sharp') as Codec
+    return loaded
+  } catch {
+    // Fails closed with its own code: an asset that could not be decoded is not the same report as
+    // a runtime that cannot decode any image.
+    throw new Error('application-asset-codec-unavailable')
+  }
+}
 
 /** Decode all frames, with bounded input, pixels, output and codec time. Never just trust magic bytes. */
 export async function validateApplicationImage(bytes: Buffer, mime: string): Promise<void> {
   const key = createHash('sha256').update(mime).update(bytes).digest('hex')
   const cached = checked.get(key)
   if (cached) return cached
+  const sharp = codec()
   const decode = async (data: Buffer) => {
     const image = sharp(data, { failOn: 'warning', limitInputPixels: MAX_PIXELS, animated: true }).timeout({
       seconds: 2,

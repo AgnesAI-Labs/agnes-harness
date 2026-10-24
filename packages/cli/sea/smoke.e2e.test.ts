@@ -199,6 +199,8 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
       const loaded = new Set(
         extensions[0]?.detail.map((line) => (JSON.parse(line) as { id: string }).id) ?? [],
       )
+      // The fixture ceiling withholds services and projections, so the official extensions that
+      // declare either (schedule, heads-up, workflow and the like) are not in this set.
       expect(loaded).toEqual(
         new Set([
           'agnes/tools-core',
@@ -218,7 +220,7 @@ describe.skipIf(!bin || !harness)('SEA smoke', () => {
           'agnes/plan-mode',
           'agnes/mcp-resources',
           'agnes/session-query',
-          'agnes/schedule',
+          'agnes/lsp',
         ]),
       )
       expect(
