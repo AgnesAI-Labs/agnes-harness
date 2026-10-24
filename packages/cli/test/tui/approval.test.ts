@@ -258,16 +258,18 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
 const FAKE_SID = 'agnes:local:default:cli:dm:main'
 
 async function appOnApprovalNode(
-  n: ApprovalNode,
+  shown: ApprovalNode | ApprovalNode[],
   decide: (params: unknown) => unknown,
 ): Promise<{ app: TuiApp; term: FakeTerminal; ep: FakeEndpoint; client: ReturnType<typeof createClient> }> {
+  const nodes = [shown].flat()
+  const n = nodes.at(-1) as ApprovalNode
   const timeline: UITimeline = {
     sessionId: FAKE_SID,
     upto: n.seq,
     generation: 1,
     opState: null,
     turns: [],
-    nodes: [n],
+    nodes,
   }
   const ep = new FakeEndpoint()
     .on('initialize', () => ({
@@ -319,6 +321,33 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
       )
       // A real, successful decide over the real app never leaves an error mark behind.
       expect((await screenOf(term, 60, 12)).join('\n')).not.toContain('✗')
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
+  it('keys reach an older pending approval once the newer one is decided', async () => {
+    const { app, term, ep, client } = await appOnApprovalNode(
+      [
+        node({ id: 'ap-old', seq: 8, decisionRef: { sessionId: 's', id: 'tk-old', revision: 1 } }),
+        node({ id: 'ap-new', seq: 9, state: 'decided', decision: { verdict: 'allowed-once', via: 'local' } }),
+      ],
+      () => ({ seq: 1, revision: 2, commandId: 'tk-old:1:allowed-once', digest: '0'.repeat(64) }),
+    )
+    try {
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 60, 12)).join('\n')).toContain('tk-old'.slice(0, 6)),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 700)) // the settle period
+      term.feed('1')
+      await vi.waitFor(() =>
+        expect(ep.calls.some((c) => c.method === '_agnes/v1/approval.decide')).toBe(true),
+      )
+      expect(ep.calls.find((c) => c.method === '_agnes/v1/approval.decide')?.params).toMatchObject({
+        id: 'tk-old',
+      })
     } finally {
       await app.stop()
       await client.close()

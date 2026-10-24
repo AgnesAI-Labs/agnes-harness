@@ -753,7 +753,7 @@ export class TuiApp {
     const approvals = value.nodes.filter((node) => node.kind === 'approval')
     const approvalIds = new Set(approvals.map((node) => node.id))
     for (const id of this.approvalCards.keys()) if (!approvalIds.has(id)) this.approvalCards.delete(id)
-    this.latestApproval = approvals.at(-1)?.id
+    this.latestApproval = approvals.findLast((node) => node.state === 'pending' && node.decisionRef)?.id
     this.timeline.apply(value, {
       ...(options.opening ? { opening: true } : {}),
       ...(options.window ? { hasEarlier: options.window.hasEarlier } : {}),
