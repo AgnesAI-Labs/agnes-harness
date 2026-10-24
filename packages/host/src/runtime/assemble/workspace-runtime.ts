@@ -251,12 +251,13 @@ function workspaceSandboxPolicy(
   const requiresFileIsolation = memoryIsolation === 'required'
   const sandboxConfig =
     memoryIsolation !== 'none'
-    ? {
-        ...requestedSandbox,
-        level: 'L1' as const,
-        onUnavailable: requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
-      }
-    : requestedSandbox
+      ? {
+          ...requestedSandbox,
+          level: 'L1' as const,
+          onUnavailable:
+            requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
+        }
+      : requestedSandbox
   return { implementation, unconfined, requiresFileIsolation, sandboxConfig }
 }
 

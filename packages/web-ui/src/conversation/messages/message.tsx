@@ -150,6 +150,12 @@ export function nativeContent(
           {t('timeline.toolSourcePending', { names: node.sources.join(t('timeline.conflictOpsJoiner')) })}
         </div>
       )
+    case 'memory-external-change':
+      return (
+        <div className="node-body" role="status" data-testid="memory-external-change-notice">
+          {t('timeline.memoryExternalChange', { names: node.paths.join(t('timeline.conflictOpsJoiner')) })}
+        </div>
+      )
     case 'workspace-undo':
       return (
         <div className="node-body" role="status" data-testid="workspace-undo-notice">

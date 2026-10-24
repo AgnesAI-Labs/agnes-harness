@@ -1283,13 +1283,13 @@ describe('context-sections and contribute-conflict projection', () => {
     })
   })
 
-  it('projects a tool-source-pending diagnostic into a notice and drops one with no sources', async () => {
-    const row = (seq: number, data: unknown) =>
+  it('projects tool-source-pending and memory-external-change diagnostics into notices and drops empty ones', async () => {
+    const row = (seq: number, data: unknown, type = 'x/core/tool-source-pending') =>
       ({
         seq,
         ts: '2026-10-14T00:00:00.000Z',
         id: `01K00000000000000000000${seq}`,
-        type: 'x/core/tool-source-pending',
+        type,
         data,
         actor: { id: 'system', org: 'local', role: 'system', deptPath: [], attrs: {} },
         origin: 'system',
@@ -1299,10 +1299,18 @@ describe('context-sections and contribute-conflict projection', () => {
         ignorable: true,
       }) as Event
     const cell = new UIProjectionCell('k', 'main')
-    cell.apply([row(1, { kind: 'mcp', sources: ['Tracker', 7] }), row(2, { sources: [] })])
+    cell.apply([
+      row(1, { kind: 'mcp', sources: ['Tracker', 7] }),
+      row(2, { sources: [] }),
+      row(3, { paths: ['MEMORY.md', 9, ''] }, 'x/core/memory-external-change'),
+      row(4, { paths: [] }, 'x/core/memory-external-change'),
+    ])
     const { nodes } = await cell.view()
     expect(nodes.filter((node) => node.kind === 'tool-source-pending')).toEqual([
       { kind: 'tool-source-pending', id: '01K000000000000000000001', seq: 1, sources: ['Tracker'] },
+    ])
+    expect(nodes.filter((node) => node.kind === 'memory-external-change')).toEqual([
+      { kind: 'memory-external-change', id: '01K000000000000000000003', seq: 3, paths: ['MEMORY.md'] },
     ])
   })
 

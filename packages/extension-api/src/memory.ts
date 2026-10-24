@@ -18,6 +18,11 @@ export type MemorySnapshot = Readonly<{
   revision: string
   content: string
   omitted: boolean
+  /**
+   * Memory file names changed outside the provider since it last wrote or acknowledged them (for
+   * example by an unconfined shell). Injection still proceeds; the session shows a notice.
+   */
+  externalChanges?: readonly string[]
 }>
 export type MemoryFilePort = Readonly<{
   read(path: string, options?: { offset?: number; limit?: number }): Promise<Uint8Array>

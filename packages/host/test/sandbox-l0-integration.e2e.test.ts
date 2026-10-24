@@ -755,26 +755,29 @@ actualSeatbelt(
   },
 )
 
-actualSeatbelt('explicit full-access still denies the memory tree where Seatbelt can enforce it', async () => {
-  const f = await assembleWithSandbox({
-    toolPolicy: 'full-access',
-    sandboxPreset: { level: 'L0', on_unavailable: 'allow' },
-    memory: true,
-  })
-  try {
-    expect(f.seam.enforcement()).toEqual({ level: 'full', scope: ['file', 'network', 'process'] })
-    const outside = join(f.homeDir, 'full-access-outside.txt')
-    expect((await f.seam.exec(['/usr/bin/touch', outside], { cwd: f.workspace })).code).toBe(0)
-    expect(existsSync(outside)).toBe(true)
-    const memoryRoot = join(f.dataDir, 'memory')
-    mkdirSync(memoryRoot, { recursive: true })
-    const tampered = join(memoryRoot, 'shell.md')
-    expect((await f.seam.exec(['/usr/bin/touch', tampered], { cwd: f.workspace })).code).not.toBe(0)
-    expect(existsSync(tampered)).toBe(false)
-  } finally {
-    await f.a.rollback.unwind()
-  }
-})
+actualSeatbelt(
+  'explicit full-access still denies the memory tree where Seatbelt can enforce it',
+  async () => {
+    const f = await assembleWithSandbox({
+      toolPolicy: 'full-access',
+      sandboxPreset: { level: 'L0', on_unavailable: 'allow' },
+      memory: true,
+    })
+    try {
+      expect(f.seam.enforcement()).toEqual({ level: 'full', scope: ['file', 'network', 'process'] })
+      const outside = join(f.homeDir, 'full-access-outside.txt')
+      expect((await f.seam.exec(['/usr/bin/touch', outside], { cwd: f.workspace })).code).toBe(0)
+      expect(existsSync(outside)).toBe(true)
+      const memoryRoot = join(f.dataDir, 'memory')
+      mkdirSync(memoryRoot, { recursive: true })
+      const tampered = join(memoryRoot, 'shell.md')
+      expect((await f.seam.exec(['/usr/bin/touch', tampered], { cwd: f.workspace })).code).not.toBe(0)
+      expect(existsSync(tampered)).toBe(false)
+    } finally {
+      await f.a.rollback.unwind()
+    }
+  },
+)
 
 describe('the binding is held to the seam on every reading of the policy', () => {
   it('a session refuses a per-session sandbox override whose policy digest differs from the bound one', async () => {

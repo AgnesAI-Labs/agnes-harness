@@ -100,6 +100,7 @@ export const CORE_DIAG_NAMES = [
   'context-breakdown',
   'request-media-window',
   'tool-source-pending',
+  'memory-external-change',
 ] as const
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 

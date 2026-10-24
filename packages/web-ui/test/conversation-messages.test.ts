@@ -144,16 +144,26 @@ describe('W3b projected message DOM', () => {
     expect(notice?.textContent).not.toContain('timeline.ledgerRecovery')
   })
 
-  it('quietly names tool sources a turn started without', async () => {
+  it('quietly names tool sources a turn started without and memory changed outside its provider', async () => {
     const store = createConversationProjectionStore({
       sessionId: 'session',
-      nodes: [{ kind: 'tool-source-pending', id: 'pending', seq: 3, sources: ['Tracker', 'Wiki'] }],
+      nodes: [
+        { kind: 'tool-source-pending', id: 'pending', seq: 3, sources: ['Tracker', 'Wiki'] },
+        { kind: 'memory-external-change', id: 'memory', seq: 4, paths: ['MEMORY.md', 'style.md'] },
+      ],
     })
     await mount(store)
     const notice = host.querySelector('[data-testid="tool-source-pending-notice"]')
     expect(notice?.getAttribute('role')).toBe('status')
     expect(notice?.textContent).toBe(
       t('timeline.toolSourcePending', { names: `Tracker${t('timeline.conflictOpsJoiner')}Wiki` }),
+    )
+    const memory = host.querySelector('[data-testid="memory-external-change-notice"]')
+    expect(memory?.getAttribute('role')).toBe('status')
+    expect(memory?.textContent).toBe(
+      t('timeline.memoryExternalChange', {
+        names: `MEMORY.md${t('timeline.conflictOpsJoiner')}style.md`,
+      }),
     )
   })
 

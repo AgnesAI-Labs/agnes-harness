@@ -298,6 +298,9 @@ export async function assembleRequestPrefix(
   if (memory) {
     if (!(await s.d.log.scan({ type: 'x/core/memory-private', limit: 1 })).length)
       await s.d.log.append([s.ev('x/core/memory-private', { files: 1 }, { ignorable: true })])
+    // A file changed outside the provider (e.g. by an unconfined shell) is still injected; say so.
+    if (memory.externalChanges?.length)
+      await s.diag('memory-external-change', { paths: [...memory.externalChanges] })
     contribs.push({
       op: 'memory',
       promptSections: [

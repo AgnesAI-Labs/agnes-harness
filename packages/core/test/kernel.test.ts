@@ -395,7 +395,7 @@ describe('Kernel (I1 assembly)', () => {
 
   it('the diagnostic name set is closed and holds the names written outside the kernel', () => {
     expect(new Set(CORE_DIAG_NAMES).size).toBe(CORE_DIAG_NAMES.length)
-    expect(CORE_DIAG_NAMES).toHaveLength(24)
+    expect(CORE_DIAG_NAMES).toHaveLength(25)
     expect(CORE_DIAG_NAMES).toContain('ledger-tail-recovered')
     expect(CORE_DIAG_NAMES).toContain('request-media-window')
     expect(CORE_DIAG_NAMES).toContain('registers-rebuilt')
@@ -405,6 +405,7 @@ describe('Kernel (I1 assembly)', () => {
     expect(CORE_DIAG_NAMES).toContain('tool-policy-refused-on-resume')
     expect(CORE_DIAG_NAMES).toContain('hook-compact-plan-ignored')
     expect(CORE_DIAG_NAMES).toContain('tool-source-pending')
+    expect(CORE_DIAG_NAMES).toContain('memory-external-change')
   })
 })
 
@@ -772,6 +773,42 @@ describe('Kernel per-session hook factory', () => {
       await k.close()
     },
   )
+
+  it('injects memory changed outside its provider and records a notice naming the files', async () => {
+    const provider = fakeProvider([textTurn('done')])
+    const k = base({
+      provider,
+      memoryFor: () => ({
+        root: '/memory',
+        snapshot: async () => ({
+          revision: 'r1',
+          content: 'Prefer tabs.',
+          omitted: false,
+          externalChanges: ['MEMORY.md'],
+        }),
+        files: (fallback) => fallback,
+        inspect: async () => {
+          throw new Error('unused')
+        },
+        configure: async () => {
+          throw new Error('unused')
+        },
+        readFile: async () => {
+          throw new Error('unused')
+        },
+        editFile: async () => {
+          throw new Error('unused')
+        },
+      }),
+    })
+    const s = await k.session('memory-changed', sessionOpts)
+    await s.enqueue('next-turn', { content: [{ type: 'text', text: 'hello' }], actor })
+    await s.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(JSON.stringify(provider.requests[0]?.messages)).toContain('Prefer tabs.')
+    const notices = await s.scan({ type: 'x/core/memory-external-change', limit: 10 })
+    expect(notices.map((row) => row.data)).toEqual([{ paths: ['MEMORY.md'] }])
+    await k.close()
+  })
 
   it('resets only on accepted new turns, not on idle runs', async () => {
     let resets = 0

@@ -3600,6 +3600,23 @@
           }
         },
         {
+          "description": "Memory files that changed outside the memory provider, for example through an unconfined shell under full access, since it last wrote or acknowledged them. The turn still injected them.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "paths"],
+          "properties": {
+            "kind": { "const": "memory-external-change" },
+            "id": { "type": "string" },
+            "seq": { "type": "integer" },
+            "paths": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": { "type": "string", "maxLength": 128 }
+            }
+          }
+        },
+        {
           "type": "object",
           "additionalProperties": false,
           "required": ["kind", "id", "seq", "diagnosticId", "validThroughSeq"],

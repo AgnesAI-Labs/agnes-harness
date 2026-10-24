@@ -104,6 +104,8 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'timeline.unsupportedLabel': 'Unsupported content',
     'timeline.conflictLabel': 'Context configuration conflict',
     'timeline.toolSourcePending': '{names} is still connecting; this turn runs without it.',
+    'timeline.memoryExternalChange':
+      'Memory {names} changed outside the memory provider (for example by a shell command) and was loaded as is. Review it in memory settings.',
     'timeline.ledgerRecovery':
       'Recovered the valid log through event {seq}. The damaged tail was quarantined; uncertain tool effects will not be replayed. Diagnostic ID: {diagnosticId}',
     'timeline.workspaceUndone': 'Undid turn {turn} file changes: {count} restored.',
@@ -501,6 +503,8 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'timeline.unsupportedLabel': '暂不支持的内容',
     'timeline.conflictLabel': '上下文配置冲突',
     'timeline.toolSourcePending': '{names} 还在连接，本轮先不使用它',
+    'timeline.memoryExternalChange':
+      '记忆 {names} 在记忆提供方之外被修改（例如 shell 命令），已按现状载入。可在记忆设置中查看。',
     'timeline.ledgerRecovery':
       '已恢复至有效日志事件 {seq}。损坏尾部已隔离，不会重放结果不确定的工具操作。诊断编号：{diagnosticId}',
     'timeline.workspaceUndone': '已撤销第 {turn} 轮的文件改动：恢复 {count} 个。',

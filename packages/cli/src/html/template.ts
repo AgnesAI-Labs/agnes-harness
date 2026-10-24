@@ -80,6 +80,8 @@ function renderNode(node: UINode): string {
     }
     case 'tool-source-pending':
       return `<section class="node minor">${escapeHtml(node.sources.join(', '))} still connecting; this turn runs without it</section>`
+    case 'memory-external-change':
+      return `<section class="node minor">Memory ${escapeHtml(node.paths.join(', '))} changed outside the memory provider and was loaded as is</section>`
     case 'workspace-undo':
       return `<section class="node minor">${
         node.conflicts > 0
