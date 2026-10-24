@@ -49,11 +49,27 @@ export function diffFromArgsText(tool: string, text: string | undefined): DiffIn
 
 const split = (text: string): string[] => (text === '' ? [] : text.replace(/\n$/, '').split('\n'))
 
+const NO_NEWLINE = '\\ No newline at end of file'
+
+/** Only the final newline changed: the last line as a `-`/`+` pair, and git's marker under the side that lacks it. */
+function finalNewlineOps(lines: string[], oldNewline: boolean, newNewline: boolean): Op[] {
+  const last = lines.length
+  const ops: Op[] = lines.slice(0, -1).map((text, i) => ({ mark: ' ', text, no: i + 1 }))
+  const marker = (): Op => ({ mark: ' ', text: NO_NEWLINE, no: last })
+  ops.push({ mark: '-', text: lines[last - 1] as string, no: last })
+  if (!oldNewline) ops.push(marker())
+  ops.push({ mark: '+', text: lines[last - 1] as string, no: last })
+  if (!newNewline) ops.push(marker())
+  return ops
+}
+
 /** Line ops of one hunk: common ends trimmed, LCS on the middle, or a plain replace past the cap. */
 function hunkOps(hunk: DiffHunk, budget: { cells: number }): Op[] {
   diffWork.hunks++
   const a = split(hunk.oldText)
   const b = split(hunk.newText)
+  if (a.length > 0 && hunk.oldText !== hunk.newText && a.join('\n') === b.join('\n'))
+    return finalNewlineOps(a, hunk.oldText.endsWith('\n'), hunk.newText.endsWith('\n'))
   let head = 0
   while (head < a.length && head < b.length && a[head] === b[head]) head++
   let tail = 0

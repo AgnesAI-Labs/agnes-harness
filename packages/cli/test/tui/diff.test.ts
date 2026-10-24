@@ -142,3 +142,22 @@ it('draws a diff with hundreds of thousands of lines without overflowing the arg
   const rows = draw('write', { path: 'huge.txt', content: lines(300_000) })
   expect(rows[0]).toContain('+300000 -0')
 })
+
+it('shows an edit that only adds or removes the final newline the way git does', () => {
+  const edit = (oldText: string, newText: string) =>
+    draw('edit', { path: 'n', edits: [{ oldText, newText }] }).map((r) => r.trimEnd())
+  expect(edit('a\nb', 'a\nb\n')).toEqual([
+    'n +1 -1',
+    ' 1   a',
+    ' 2 - b',
+    ' 2   \\ No newline at end of file',
+    ' 2 + b',
+  ])
+  expect(edit('a\nb\n', 'a\nb')).toEqual([
+    'n +1 -1',
+    ' 1   a',
+    ' 2 - b',
+    ' 2 + b',
+    ' 2   \\ No newline at end of file',
+  ])
+})
