@@ -187,6 +187,7 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/follow-up-hint',
       'agnes/heads-up',
       'agnes/schedule',
+      'agnes/lsp',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
       expect(listed(h, id)?.loaded, id).toBe(true)

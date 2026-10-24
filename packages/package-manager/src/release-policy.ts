@@ -46,6 +46,7 @@ export const RELEASE_EXTENSION_IDS: ReadonlySet<string> = new Set([
   'agnes/follow-up-hint',
   'agnes/heads-up',
   'agnes/schedule',
+  'agnes/lsp',
 ])
 export const RELEASE_HOOK_RANKS: ReadonlyMap<string, number> = new Map(
   [...new Set(['agnes/skills', ...RELEASE_EXTENSION_IDS])].map((id, index) => [`ext:${id}`, index]),

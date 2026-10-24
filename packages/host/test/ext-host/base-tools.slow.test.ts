@@ -408,6 +408,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/follow-up-hint',
         'agnes/heads-up',
         'agnes/schedule',
+        'agnes/lsp',
       ])
       const byId = (id: string) => status.find((entry) => entry.id === id)
       const skills = byId('agnes/skills')
@@ -1249,7 +1250,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // mcp-search 2, computer-use 1, plugin-creator 6, exit_plan_mode, and the three stable MCP
     // resource tools, workflow and workflow_status, session-query 5, two goal tools, and the four
     // schedule reminders.
-    expect(host.kernel.tools.size).toBe(62)
+    expect(host.kernel.tools.size).toBe(63)
     for (const name of [
       'subagent_list',
       'subagent_send_message',

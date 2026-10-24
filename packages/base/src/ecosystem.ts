@@ -21,6 +21,7 @@ import interactionExtension from '../extensions/interaction/src/index.js'
 import { createJobsExtension } from '../extensions/jobs/src/index.js'
 import { shellJobsFor } from '../extensions/jobs/src/registry.js'
 import { createJobsWebExtension } from '../extensions/jobs-web/src/index.js'
+import { createLspExtension, lspFor } from '../extensions/lsp/src/index.js'
 import mcpResourcesExtension from '../extensions/mcp-resources/src/index.js'
 import { mcpSearchExtension } from '../extensions/mcp-search/src/index.js'
 import { mcpCatalogHubFor } from '../extensions/mcp-server/src/catalog-hub.js'
@@ -196,6 +197,9 @@ const bundled = {
   'agnes/plugin-creator': (): BundledPlugin => pluginCreatorExtension,
   'agnes/tools-core': (init: SeamInitContext): BundledPlugin =>
     createToolsCoreExtension(shellJobsFor(init.signal)),
+  // Shares one registry with tools-core (as jobs does): applying this extension is what turns the
+  // language servers on for the write/edit results too.
+  'agnes/lsp': (init: SeamInitContext): BundledPlugin => createLspExtension(lspFor(init.signal)),
   'agnes/jobs-web': (init: SeamInitContext): BundledPlugin =>
     createJobsWebExtension(shellJobsFor(init.signal)),
   'agnes/jobs': (init: SeamInitContext): BundledPlugin => createJobsExtension(shellJobsFor(init.signal)),
