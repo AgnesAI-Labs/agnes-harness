@@ -193,7 +193,7 @@ it('invalidates the attention inbox after completed, parked and cancelled turns'
         ts: '2026-10-24T00:00:00Z',
         type: 'turn/end',
         data: { reason, lastAssistantSeq: null },
-      } as LedgerEvent)
+      } as unknown as LedgerEvent)
       expect(changed).toHaveBeenCalledTimes(seq + 1)
     }
     await controller.followEvent(session, {
