@@ -8,6 +8,7 @@ import { forkTitle } from '../session-actions.js'
 import { bindWebSession, loadWebSession } from '../session-binding.js'
 import { sessionPermissionLevel } from '../session-permission.js'
 import { receiptFromTurns, recordRunEvent, webView } from '../view.js'
+import { broadcast } from './global-events.js'
 import type { SessionBindingOwner } from './session-owner.js'
 
 export function createSessionController(
@@ -391,6 +392,9 @@ export function createSessionController(
 
   /** What watching the event stream used to do per event: titles, the list, the run receipt. */
   async function followEvent(session: Session, event: LedgerEvent): Promise<void> {
+    // Durable automation state is observed before this event reaches the client.
+    // Reread the inbox even when this reply parks again and still needs approval.
+    if (event.type === 'turn/end') broadcast('agnes:automation-invalidated')
     if (['x/core/permission-projection-invalidated', 'x/core/yolo-switch'].includes(event.type))
       context.invalidateSessionRuntime(session.id)
     const epoch = context.sessionBinding.capture()
