@@ -31,6 +31,7 @@ import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { memorySlash } from './memory-command.js'
 import { parseNotifyMode } from './notify.js'
+import { permissionsSlash } from './permissions-command.js'
 import { queueSlash } from './queue-commands.js'
 import { rateSlash } from './rate-command.js'
 import { recapSlash } from './recap-command.js'
@@ -433,6 +434,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return undoSlash(app, args)
     case '/grants':
       return grantsSlash(app, line)
+    case '/permissions':
+      return permissionsSlash(app, args, (next) => grantsSlash(app, next))
     case '/deliverables':
       return deliverablesSlash(app, line)
     case '/agents':

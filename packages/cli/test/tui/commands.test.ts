@@ -118,7 +118,7 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(75)
+    expect(SLASH_COMMANDS).toHaveLength(76)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
@@ -157,6 +157,7 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/model',
       '/yolo',
       '/grants',
+      '/permissions',
       '/deliverables',
       '/attach',
       '/paste',
@@ -1398,6 +1399,177 @@ describe('runSlash', () => {
     } finally {
       await client.close()
     }
+  })
+
+  describe('/permissions', () => {
+    const grants = [
+      { grantId: 'g-1', toolId: 'bash', lifetime: 'session', createdAt: '2026-01-01T00:00:00Z', scope: 'x' },
+      {
+        grantId: 'g-2',
+        toolId: 'bash',
+        lifetime: 'always',
+        createdAt: '2026-01-02T00:00:00Z',
+        scope: 'shell:prefix:["git","push"]',
+      },
+    ]
+    const runtime = (policy?: Record<string, unknown>) => ({
+      sessionKey: 'k',
+      loaded: policy !== undefined,
+      generation: { current: true, state: 'active' },
+      providers: [],
+      seams: [],
+      restartRequired: [],
+      ...(policy ? { policy } : {}),
+    })
+    const policyOf = (enforcement?: { level: string; scope: string[] }, provider = 'seatbelt') => ({
+      approvalMode: 'on-request',
+      permission: { policy: 'workspace-write', principal: 'me' },
+      toolPolicy: 'p',
+      toolRuntime: 't',
+      readOnly: false,
+      sandbox: { provider, onUnavailable: 'deny', ...(enforcement ? { enforcement } : {}) },
+    })
+    /** A session with the daemon answering for every source; `override` swaps a handler for one case. */
+    const setup = async (policy?: Record<string, unknown>) => {
+      const made = await unstartedApp()
+      made.ep
+        .on('_agnes/v1/session.runtime', () => runtime(policy))
+        .on('_agnes/v1/session.tools', () => toolsResult({ web_fetch: 'session-deny' }))
+        .on('_agnes/v1/session.projectUI', () => ({
+          sessionId: 'x',
+          upto: 0,
+          generation: 1,
+          opState: null,
+          turns: [],
+          nodes: [],
+          yolo: true,
+        }))
+        .on('_agnes/v1/session.list', () => ({
+          items: [
+            {
+              sessionId: made.app.session.id,
+              createdAt: '2026-01-01T00:00:00Z',
+              lastSeq: 1,
+              generation: 1,
+              preset: 'standard',
+              additionalDirectories: ['/srv/extra\u001b[31m'],
+            },
+          ],
+        }))
+        .on('_agnes/v1/approvalGrants.forSession', () => ({ grants }))
+        .on('_agnes/v1/approvalGrants.revokeForSession', (params) => ({
+          ...(grants.find((g) => g.grantId === (params as { grantId: string }).grantId) as object),
+          revokedAt: '2026-01-03T00:00:00Z',
+        }))
+      return made
+    }
+
+    it('shows level, yolo, sandbox, disabled tools, extra directories and numbered grants on one screen', async () => {
+      const { app, client } = await setup(policyOf({ level: 'full', scope: ['process'] }))
+      try {
+        const r = await runSlash(app, '/permissions')
+        expect(r.presentation).toBe('transcript')
+        expect(r.text).toBe(
+          [
+            '权限',
+            '  级别: 可改工作区',
+            '  yolo: 开',
+            '  审批模式: on-request',
+            '沙箱',
+            '  seatbelt (full)',
+            '工具',
+            '  已禁用：web_fetch',
+            '额外目录',
+            '  /srv/extra[31m',
+            '放行规则',
+            `  1\tg-1\tbash\tsession\t2026-01-01T00:00:00Z\tx`,
+            `  2\tg-2\tbash\talways\t2026-01-02T00:00:00Z\tprefix: git push`,
+            '撤销：`/permissions revoke <序号>`；按历史审批推荐规则：在 shell 里运行 `agh approvals suggest`',
+          ].join('\n'),
+        )
+        expect(r.text).not.toContain('\u001b')
+        // The grant rows are the same lines /grants prints.
+        const asGrants = (await runSlash(app, '/grants')).text as string
+        for (const row of asGrants.split('\n')) expect(r.text).toContain(row)
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('warns without OS-level process isolation, in the warning colour only on the warning row', async () => {
+      const { app, ep, client } = await setup(policyOf({ level: 'partial', scope: ['fs'] }, 'local'))
+      try {
+        const r = await runSlash(app, '/permissions')
+        expect(r.text).toContain('  local (partial)\n  ⚠ 没有系统级进程隔离')
+        const view = app.localCommandView('/permissions', r.text as string)
+        const colour = createAnsi('256')
+        const warn = view.render(80).find((row) => row.includes('⚠')) as string
+        expect(warn).toContain('\u001b[')
+        expect(warn).not.toBe(colour.dim('x'))
+        // The plain transcript copy of the output (below the echoed command) carries no escape sequence.
+        expect(view.transcript?.(80).slice(1).join('\n')).not.toContain('\u001b')
+        // Process-level isolation, or a full level, or a non-local provider: no warning.
+        for (const [enforcement, provider] of [
+          [{ level: 'partial', scope: ['process'] }, 'local'],
+          [{ level: 'full', scope: [] }, 'local'],
+          [{ level: 'none', scope: [] }, 'other'],
+        ] as const) {
+          ep.on('_agnes/v1/session.runtime', () =>
+            runtime(policyOf({ ...enforcement, scope: [...enforcement.scope] }, provider)),
+          )
+          expect((await runSlash(app, '/permissions')).text).not.toContain('⚠')
+        }
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('says the session is not loaded instead of guessing a sandbox', async () => {
+      const { app, client } = await setup()
+      try {
+        const text = (await runSlash(app, '/permissions')).text as string
+        expect(text).toContain('沙箱\n  会话未加载')
+        expect(text).toContain('审批模式: 会话未加载')
+        expect(text).not.toContain('⚠')
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('shows - for the part whose source fails and keeps the others', async () => {
+      const { app, ep, client } = await setup(policyOf({ level: 'full', scope: ['process'] }))
+      ep.on('_agnes/v1/session.runtime', () => {
+        throw rpcError('METHOD_NOT_FOUND')
+      })
+      try {
+        const text = (await runSlash(app, '/permissions')).text as string
+        expect(text).toContain('沙箱\n  -')
+        expect(text).toContain('审批模式: -')
+        expect(text).toContain('yolo: 开')
+        expect(text).toContain('已禁用：web_fetch')
+        expect(text).toContain('/srv/extra')
+        expect(text).toContain('g-2')
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('revokes through the same path as /grants revoke, and shows usage for anything else', async () => {
+      const { app, ep, client } = await setup(policyOf())
+      try {
+        const viaGrants = await runSlash(app, '/grants revoke 1')
+        const viaPermissions = await runSlash(app, '/permissions revoke 1')
+        expect(viaPermissions).toEqual(viaGrants)
+        expect(viaPermissions.text).toContain('已撤销 g-1')
+        const revokes = ep.calls.filter((c) => c.method === '_agnes/v1/approvalGrants.revokeForSession')
+        expect(revokes.map((c) => (c.params as { grantId: string }).grantId)).toEqual(['g-1', 'g-1'])
+        for (const line of ['/permissions nope', '/permissions revoke', '/permissions revoke 1 2']) {
+          expect((await runSlash(app, line)).text).toContain('用法：/permissions')
+        }
+      } finally {
+        await client.close()
+      }
+    })
   })
 
   it('/yolo switches on through the real setYolo call', async () => {

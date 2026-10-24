@@ -42,10 +42,23 @@ export function localCommandView(
     const echo = new Text(`${ansi.bold(ansi.fg('accent', '›'))} ${ansi.bold(escapeControl(command.trim()))}`)
     const text = escapeControl(output)
     const diff = /^\/diff(\s|$)/.test(command.trim())
-    const styled = new VStack([
-      echo,
-      diff ? diffRows(text, ansi) : quiet ? new Text(text, { style: (s) => ansi.dim(s) }) : new Text(text),
-    ])
+    // `/permissions`: the one line that starts with the warning sign is the isolation warning.
+    const warn = /^\/permissions(\s|$)/.test(command.trim())
+    const body = diff
+      ? diffRows(text, ansi)
+      : warn
+        ? new VStack(
+            text.split('\n').map(
+              (line) =>
+                new Text(line, {
+                  style: (s) => (line.trimStart().startsWith('⚠') ? ansi.fg('warning', s) : ansi.dim(s)),
+                }),
+            ),
+          )
+        : quiet
+          ? new Text(text, { style: (s) => ansi.dim(s) })
+          : new Text(text)
+    const styled = new VStack([echo, body])
     const plain = new VStack([echo, new Text(text)])
     return { render: (w) => styled.render(w), transcript: (w) => plain.render(w), invalidate() {} }
   }

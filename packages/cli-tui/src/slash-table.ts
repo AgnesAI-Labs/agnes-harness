@@ -145,6 +145,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.grantsSummary',
   },
   {
+    name: '/permissions',
+    args: '[revoke <n|id>]',
+    descriptionKey: 'commands.permissions',
+    summaryKey: 'commands.permissionsSummary',
+  },
+  {
     name: '/deliverables',
     args: '[save <n|id> [path]]',
     descriptionKey: 'commands.deliverables',

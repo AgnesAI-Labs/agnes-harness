@@ -4,6 +4,7 @@ import { CHROME_DICT, type ChromeKey } from './locale-chrome.js'
 import { CONFIG_DICT, type ConfigKey } from './locale-config.js'
 import { DISPLAY_DICT, type DisplayKey } from './locale-display.js'
 import { PAGER_DICT, type PagerKey } from './locale-pager.js'
+import { PERMISSIONS_DICT, type PermissionsKey } from './locale-permissions.js'
 import { QUICK_DICT, type QuickAction, type QuickKey } from './locale-quick.js'
 import { VIM_DICT, type VimKey } from './locale-vim.js'
 
@@ -47,6 +48,7 @@ export type KeysKey =
   | ChromeKey
   | VimKey
   | ConfigKey
+  | PermissionsKey
   | DisplayKey
 
 export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
@@ -159,6 +161,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     ...CHROME_DICT.en,
     ...VIM_DICT.en,
     ...CONFIG_DICT.en,
+    ...PERMISSIONS_DICT.en,
     ...DISPLAY_DICT.en,
   },
   'zh-CN': {
@@ -270,6 +273,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     ...CHROME_DICT['zh-CN'],
     ...VIM_DICT['zh-CN'],
     ...CONFIG_DICT['zh-CN'],
+    ...PERMISSIONS_DICT['zh-CN'],
     ...DISPLAY_DICT['zh-CN'],
   },
 }
