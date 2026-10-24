@@ -118,6 +118,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     selectedJobs,
     resolveActor,
     resolveNewSessionActor,
+    effectivePackageAdmin,
   } = state
   const feeds = new Map<string, Feed>()
   const attached = new Map<string, AttachedFeed>()
@@ -163,6 +164,14 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     hasSessionFact: (sessionId: string) =>
       supervisorRegistry.get(sessionId) !== undefined ||
       workspaceCatalog.sessionPath(sessionId) !== undefined,
+    configurationReadOnly: (context) =>
+      configurationReadOnly(async () =>
+        effectivePackageAdmin?.service.call(
+          '_agnes/v1/packages.list',
+          { profile: o.profile.name },
+          localPackageAdminAuthority(['packages.read'])(context),
+        ),
+      ),
     limits: {
       subscribeBufferEvents: o.config.limits.subscribeBufferEvents,
       subscribeBufferBytes: o.config.limits.subscribeBufferBytes,
@@ -181,7 +190,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     artifactRead: artifactRead !== undefined,
     ...(o.lockedPackageMutations !== undefined ? { lockedPackageMutations: o.lockedPackageMutations } : {}),
     ...(host.computerUse ? { computerUse: host.computerUse } : {}),
-    forkSession: async (sessionId, at, childKey, credential, principalId) => {
+    forkSession: async (sessionId, at, childKey, credential, principalId, additionalDirectories) => {
       const denyFork = (): never => {
         throw rpcError('CAPABILITY_DENIED', {
           method: 'session.fork',
@@ -203,6 +212,8 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
         const childBinding = await workspaceCatalog.authorizeAndBind(
           ownedChildKey,
           parentBinding.canonicalRoot,
+          // The child keeps every directory the parent had; admission checks the union as a whole.
+          [...new Set([...(parentBinding.extraRoots ?? []), ...(additionalDirectories ?? [])])],
         )
         const created = await supervisorRegistry.fork({
           parent: sessionId,
@@ -630,7 +641,7 @@ function registerExtensionEndpoints(
   // Lets `agnes serve`'s separate OS process (see runWebCommand) bridge createMountProxy's
   // lookup() across the connection this same endpoint() closure serves; reads the live
   // `surfaceController` set below by the same startup sequence.
-  // M4 (final review, Minor): gated the same way `registerPackageAdmin`/`registerResourceControl`
+  // Gated the same way `registerPackageAdmin`/`registerResourceControl`
   // above restrict themselves off remote WSS -- this method's only real consumer is the local CLI
   // process bridging the same-machine `agnes serve` process boundary (see
   // `packages/cli/launch/surface-mounts.ts`); a remote WSS client has no legitimate reason to read

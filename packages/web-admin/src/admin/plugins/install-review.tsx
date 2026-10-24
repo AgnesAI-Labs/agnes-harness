@@ -20,9 +20,9 @@ import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './local
 import type { InstallReviewState } from './types.js'
 
 /**
- * The one page that asks before a package is installed: the plugins marketplace, 添加插件 and a
+ * The one page that asks before a package is installed: the plugins marketplace, Add plugin and a
  * business agent's one-click start all show it. Only what the reader judges is up front (what it
- * gets, whether its source is verified); hashes, paths and the full record sit under 技术详情,
+ * gets, whether its source is verified); hashes, paths and the full record sit under Technical details,
  * collapsed, where long values wrap instead of running off the page.
  */
 export function InstallReview({
@@ -54,7 +54,7 @@ export function InstallReview({
   lead?: ReactNode
   /** Sections the reader judges first, such as what an update changes. */
   before?: ReactNode
-  /** Rows of 「它会获得什么」; the sandbox and network row is always added after them. */
+  /** Rows of 「What it will get」; the sandbox and network row is always added after them. */
   gets: ReactNode
   getsNote?: ReactNode
   /** Whether the publisher evidence was verified; undefined when nothing was reported. */
@@ -168,9 +168,9 @@ export function PluginInstallReview({
 }: {
   review: InstallReviewState
   name: string
-  /** The package's kind in words, such as 执行方式（Agent Loop）. */
+  /** The package's kind in words, such as Execution method (Agent Loop). */
   kind: string | undefined
-  /** Where it ranks as a source, such as 官方示例. */
+  /** Where it ranks as a source, such as Official example. */
   tier: string | undefined
   t: Text
   onCancel(): void

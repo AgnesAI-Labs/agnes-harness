@@ -38,8 +38,20 @@ export const ShellParams = Type.Object(
   { additionalProperties: false },
 )
 
+// `allowShrink` is the one way to confirm that an overwrite is meant to leave the file much
+// smaller. It only reaches the size check: read-first and stale-read refusals come before it, so it
+// can only apply to the version of the file the model actually read.
 export const WriteParams = Type.Object(
-  { path: Path, content: Type.String() },
+  {
+    path: Path,
+    content: Type.String(),
+    allowShrink: Type.Optional(
+      Type.Boolean({
+        description:
+          'Set true only to confirm that content is intentionally much shorter than the existing file (for example, a section deleted or a merge conflict resolved), after a truncation guard refusal or when you know the file shrinks by more than half. Leave unset otherwise.',
+      }),
+    ),
+  },
   { additionalProperties: false },
 )
 

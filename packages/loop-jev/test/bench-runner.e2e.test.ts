@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process'
+import { execFile, spawn, spawnSync } from 'node:child_process'
 import {
   chmodSync,
   existsSync,
@@ -15,8 +15,14 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { promisify } from 'node:util'
 import { type FakeSystemOne, startFakeSystemOne } from '@agnes/ai/testkit'
-import { createConfigurationService, createCredentialStore, initializeHomeLocked } from '@agnes/host'
+import {
+  createConfigurationService,
+  createCredentialStore,
+  createSecretsFile,
+  initializeHomeLocked,
+} from '@agnes/host'
 import { afterAll, describe, expect, it } from 'vitest'
 
 const out = mkdtempSync(join(tmpdir(), 'agnes-jev-bench-'))
@@ -202,6 +208,18 @@ async function settingsHome(o: {
 }
 
 describe('bench runner', () => {
+  it('injects nested files using native paths and refuses paths outside the workspace', async () => {
+    const { writeTurnFiles } = await import(new URL('../bench/run.mjs', import.meta.url).href)
+    const workspace = join(out, 'injected')
+    mkdirSync(workspace)
+    writeTurnFiles(workspace, [{ name: '资料 folder/nested.txt', content: 'fixture' }])
+    expect(readFileSync(join(workspace, '资料 folder', 'nested.txt'), 'utf8')).toBe('fixture')
+    for (const name of ['.', '../escaped.txt', join(out, 'absolute-outside.txt')])
+      expect(() => writeTurnFiles(workspace, [{ name, content: 'refused' }])).toThrow('leaves the workspace')
+    expect(existsSync(join(out, 'escaped.txt'))).toBe(false)
+    expect(existsSync(join(out, 'absolute-outside.txt'))).toBe(false)
+  })
+
   it('plans the cells without booting in --dry-run', () => {
     const r = runSync([
       '--suite',
@@ -227,13 +245,57 @@ describe('bench runner', () => {
       'typesafe-systemone',
       'scripted',
     ])
-    expect(profile.adapters.secrets).toEqual({ kind: 'file', path: join(out, 'dry', 'home', 'credentials') })
+    expect(profile.adapters.secrets).toEqual({ kind: 'file', path: join(out, 'dry', 'home', 'secrets') })
+    expect(createSecretsFile({ dir: profile.adapters.secrets.path }).resolve('secret://jev/key')).toBe(
+      'TEST-KEY-0123456789',
+    )
     expect(r.stdout).toContain('mini')
     expect(readdirSync(join(out, 'dry'))).not.toContain('records.jsonl')
     // A plan installs nothing: the Jev package goes into the home only when a host is about to boot.
     expect(existsSync(join(out, 'dry', 'home', 'profiles', 'local-dev', 'agnes-lock.json'))).toBe(false)
     expect(r.stderr).not.toContain('warning')
   })
+
+  it('releases the fake endpoint when profile publication fails', async () => {
+    const setup = new URL('../bench/setup.mjs', import.meta.url).href
+    const script = `
+      import fs from 'node:fs';
+      import { Server } from 'node:net';
+      import { syncBuiltinESMExports } from 'node:module';
+      let listening = false;
+      const listen = Server.prototype.listen;
+      Server.prototype.listen = function (...args) {
+        this.once('listening', () => { listening = true });
+        return Reflect.apply(listen, this, args);
+      };
+      const write = fs.writeFileSync;
+      fs.writeFileSync = function (file, ...args) {
+        if (listening && String(file).endsWith('profile.yaml'))
+          throw Object.assign(new Error('expected profile publication refusal'), { code: 'EIO' });
+        return write(file, ...args);
+      };
+      syncBuiltinESMExports();
+      const { prepareFakeHome } = await import(${JSON.stringify(setup)});
+      try {
+        await prepareFakeHome(${JSON.stringify(join(out, 'failed-profile'))});
+        throw new Error('profile publication should fail');
+      } catch (error) {
+        if (error.code !== 'EIO') throw error;
+        console.log('EXPECTED_PROFILE_FAILURE');
+      }
+    `
+    const result = await promisify(execFile)(
+      process.execPath,
+      ['--import', 'tsx', '--input-type=module', '--eval', script],
+      {
+        env: childEnv(),
+        timeout: 60_000,
+        windowsHide: true,
+      },
+    )
+    // A leaked listening endpoint keeps this process alive until the watchdog kills it.
+    expect(result.stdout.trim()).toBe('EXPECTED_PROFILE_FAILURE')
+  }, 75_000)
 
   it('refuses setups whose numbers would not hold', () => {
     const plan = (extra: string[], env: Record<string, string> = {}) =>
@@ -242,7 +304,11 @@ describe('bench runner', () => {
     const repo = join(out, 'tmp-repo')
     mkdirSync(join(repo, '.git'), { recursive: true })
     mkdirSync(join(repo, 'tmp'), { recursive: true })
-    const inRepo = plan([], { TMPDIR: join(repo, 'tmp') })
+    const inRepo = plan([], {
+      TMPDIR: join(repo, 'tmp'),
+      TEMP: join(repo, 'tmp'),
+      TMP: join(repo, 'tmp'),
+    })
     expect(inRepo.status).toBe(2)
     expect(inRepo.stderr).toContain(`inside the git work tree ${realpathSync(repo)}`)
     const profile = plan(['--profile', 'bench'])

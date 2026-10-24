@@ -406,7 +406,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'agnes/context-rules',
         'agnes/time-context',
         'agnes/follow-up-hint',
+        'agnes/heads-up',
         'agnes/schedule',
+        'agnes/lsp',
       ])
       const byId = (id: string) => status.find((entry) => entry.id === id)
       const skills = byId('agnes/skills')
@@ -524,7 +526,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(provider.calls[0]?.tools.map((tool) => tool.name)).toContain('ask_user_question')
       expect(
         provider.calls[0]?.tools.map((tool) => tool.name).filter((name) => name.startsWith('ui_')),
-      ).toEqual(['ui_close', 'ui_render', 'ui_update'])
+      ).toEqual(['ui_close', 'ui_guide', 'ui_render', 'ui_update'])
       expect(provider.calls[0]?.system).toContain('LIVE_RULE_V1')
       expect(provider.calls[1]?.system).toContain('LIVE_RULE_V2')
       expect(JSON.stringify(provider.calls[0]?.messages)).toContain('Time zone:')
@@ -1248,7 +1250,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     // mcp-search 2, computer-use 1, plugin-creator 6, exit_plan_mode, and the three stable MCP
     // resource tools, workflow and workflow_status, session-query 5, two goal tools, and the four
     // schedule reminders.
-    expect(host.kernel.tools.size).toBe(62)
+    expect(host.kernel.tools.size).toBe(63)
     for (const name of [
       'subagent_list',
       'subagent_send_message',
@@ -1633,7 +1635,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
           .snapshot()
           .entries('tool_call')
           .map((entry) => entry.meta.source),
-      ).toEqual(['agnes/hooks-runner'])
+        // heads-up only observes tool calls (it always answers allow); hooks-runner is the one that blocks.
+      ).toEqual(['agnes/hooks-runner', 'agnes/heads-up'])
       const session = await host.createSession({ cwd: dataDir })
       const payload = {
         toolUseId: 'tool-1',

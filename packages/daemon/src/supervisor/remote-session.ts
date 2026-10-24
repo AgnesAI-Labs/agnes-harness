@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { PreviewSnapshotEntry } from '@agnes/daemon-foundation/registry'
 import type { WorkspaceBindingEnvelope } from '@agnes/daemon-foundation/storage/workspaces'
 import { FEEDBACK_PROVIDER_ID } from '@agnes/host'
-import type { Actor, EventEnvelope } from '@agnes/protocol'
+import type { Actor, EventEnvelope, SessionToolFilter } from '@agnes/protocol'
 import type {
   DeliverablesRead,
   DeliverablesReadResult,
@@ -271,7 +271,9 @@ export class RemoteSession {
       try {
         if ((await this.link.command('latest', { register: 'op.state', key: 'main' })) == null)
           completed = true
-      } catch {}
+      } catch {
+        // A lost reply leaves the lease for startup recovery.
+      }
       throw error
     } finally {
       o.signal.removeEventListener('abort', onAbort)
@@ -462,6 +464,16 @@ export class RemoteSession {
     return result.effectiveFromSeq
   }
 
+  /** The worker holds the session and its ledger; a refused request comes back as the public rejection. */
+  async setToolFilter(filter: unknown): Promise<{ seq: number; filter: SessionToolFilter }> {
+    const result = (await this.link.command('setToolFilter', { filter })) as {
+      effectiveFromSeq: number
+      filter: SessionToolFilter
+    }
+    this.lastSeq = Math.max(this.lastSeq, result.effectiveFromSeq)
+    return { seq: result.effectiveFromSeq, filter: result.filter }
+  }
+
   async setModel(sel: unknown): Promise<number> {
     const result = (await this.link.command('setModel', { sel })) as { effectiveFromSeq: number }
     this.lastSeq = Math.max(this.lastSeq, result.effectiveFromSeq)
@@ -492,7 +504,9 @@ export class RemoteSession {
         if ((await this.link.command('latest', { register: 'op.state', key: 'main' })) == null) {
           released = true
         }
-      } catch {}
+      } catch {
+        // A lost reply leaves the lease for startup recovery.
+      }
       if (released) {
         this.manualTurnReserved = false
         this.onTurnBoundary?.()

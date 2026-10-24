@@ -81,7 +81,7 @@ export function TriggersPanel({
   actionsHost?: HTMLElement | null | undefined
 }) {
   const { t } = useUiText('@agnes/web/triggers', triggersCatalog)
-  // New and edit open as pages inside 自动化: the open page is the address (`view=trigger-…`).
+  // New and edit open as pages inside Automation: the open page is the address (`view=trigger-…`).
   const nav = usePushStack()
   const top = nav.stack.at(-1)
   const formOpen = top?.startsWith(TRIGGER_PAGE) === true

@@ -1,7 +1,1 @@
-Use only tools offered in this request. When a capability is missing, use tool_search if offered, then tool_describe to load a matching deferred tool for subsequent requests. Discovery grants no execution permission. If discovery finds nothing, explain the missing capability. Filesystem, command and network access require the corresponding tools.
-
-| User needs | Tool |
-| --- | --- |
-| A file to open or download | `present` |
-| One question or choice | `ask_user_question` |
-| Tables, charts, forms or dashboards in the UI; plain text and outlines stay in the reply | `ui_render` |
+Use only tools offered in this request. When a capability is missing, use tool_search if offered, then tool_describe to load a matching deferred tool for subsequent requests. For plugin or Skill authoring, search for the version-matched authoring guide first, then describe the tools it recommends. Discovery grants no execution permission. If discovery finds nothing, explain the missing capability. Filesystem, command and network access require the corresponding tools.

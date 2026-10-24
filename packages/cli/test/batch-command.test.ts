@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,7 @@ import { commandHelp } from '../src/command-help.js'
 import { batchCommand, parseBatchArgs } from '../src/commands/batch.js'
 import { scopedBatchClient } from '../src/commands/batch-client.js'
 import { runBatchCli } from '../src/commands/batch-runtime.js'
+import { FakeEndpoint } from './fake-endpoint.js'
 
 const id = 'b123456abcdef'
 const dirs: string[] = []
@@ -60,7 +61,7 @@ describe('batch thin client', () => {
       input: { dir: 'missing-folder', spec: { budget: 2, concurrency: 4 } },
     })
     expect(calls[0]!.input.id).toMatch(/^b[0-9a-f]{12}$/u)
-    expect(connect).toHaveBeenCalledWith({ cwd: '/workspace', profile: 'synthetic' })
+    expect(connect).toHaveBeenCalledWith({ cwd: resolve('/workspace'), profile: 'synthetic' })
     expect(close).toHaveBeenCalledOnce()
     expect(JSON.parse(output[0]!)).toMatchObject({ status: 'running' })
     await batchCommand(
@@ -80,7 +81,7 @@ describe('batch thin client', () => {
     )
     expect(calls[1]).toMatchObject({
       input: {
-        workspaceRoot: '/workspace',
+        workspaceRoot: resolve('/workspace'),
         extensions: ['txt', 'jpg'],
         spec: {
           budget: Number.MAX_SAFE_INTEGER,
@@ -166,7 +167,7 @@ describe('batch thin client', () => {
   })
   it('uses the actual SDK scoped facade and preserves native approval and unknown receipts', async () => {
     const client = createClient({
-      transport: { kind: 'unix', path: '/synthetic-unused.sock' },
+      transport: { kind: 'inproc', endpoint: new FakeEndpoint() },
       auth: { kind: 'local' },
       journal: memoryJournal(),
     })
@@ -214,7 +215,7 @@ describe('batch thin client', () => {
     const signals = new EventEmitter(),
       stdout = new PassThrough()
     const client = createClient({
-      transport: { kind: 'unix', path: '/synthetic-unused.sock' },
+      transport: { kind: 'inproc', endpoint: new FakeEndpoint() },
       auth: { kind: 'local' },
       journal: memoryJournal(),
     })

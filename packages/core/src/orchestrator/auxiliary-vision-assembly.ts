@@ -65,7 +65,7 @@ export function consumeAuxiliaryVisionNotDispatchedAuthority(
 }
 
 /**
- * Internal composition capability. It is deliberately not re-exported from `@agnes/core`; P0 stays
+ * Internal composition capability. It is deliberately not re-exported from `@agnes/core`; auxiliary vision stays
  * closed until the Host owns a reviewed issuer/wiring path rather than passing a caller-authored flag.
  */
 export function mintAuxiliaryVisionProductionAdmission(): AuxiliaryVisionProductionAdmission {

@@ -21,7 +21,7 @@ import {
 describe('agnes.jev after a crash during a Jev call', () => {
   useLoopback()
   it('treats the interrupted call as spent and arbitrates next', async () => {
-    const dataDir = jevDataDir()
+    const dataDir = await jevDataDir()
     let hang = true
     const answer = jevAnswers([PICK_RESPOND])
     let arrived!: () => void
@@ -100,7 +100,7 @@ const lastSaved = (rows: Event[]) =>
 describe('agnes.jev after a restart while the stop gate holds its answer', () => {
   useLoopback()
   it('neither finishes the parked turn again nor asks again, and starts the next turn afresh', async () => {
-    const dataDir = jevDataDir()
+    const dataDir = await jevDataDir()
     const fake = await startJev(jevAnswers([PICK_RESPOND]))
     const seams = parkingGate()
     const first = await bootJevLoop({ dataDir, fake, main: [textReply('First answer.')], seams })

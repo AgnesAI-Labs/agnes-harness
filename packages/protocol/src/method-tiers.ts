@@ -194,6 +194,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/session.setPreset': 'client',
   '_agnes/v1/session.setModel': 'client',
   '_agnes/v1/session.setYolo': 'client',
+  '_agnes/v1/session.setToolFilter': 'client',
   '_agnes/v1/approval.decide': 'client',
   '_agnes/v1/decision.list': 'client',
   '_agnes/v1/participant.join': 'client',

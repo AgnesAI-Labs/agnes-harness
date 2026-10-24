@@ -1,4 +1,20 @@
 import type { Locale } from './locale.js'
+import { ADD_DIR_DICT, type AddDirKey } from './locale-add-dir.js'
+import { BANG_DICT, type BangKey } from './locale-bang.js'
+import { BG_DICT, type BgKey } from './locale-bg.js'
+import { CD_DICT, type CdKey } from './locale-cd.js'
+import { DALTONIZED_DICT, type DaltonizedKey } from './locale-daltonized.js'
+import { HANDOFF_DICT, type HandoffKey } from './locale-handoff.js'
+import { HEADS_UP_DICT, type HeadsUpKey } from './locale-heads-up.js'
+import { MEMORY_DICT, type MemoryKey } from './locale-memory.js'
+import { PROMPT_CLICK_DICT, type PromptClickKey } from './locale-prompt-click.js'
+import { SESSION_ACTION_DICT, type SessionActionKey } from './locale-session-actions.js'
+import { SESSION_VIEW_DICT, type SessionViewKey } from './locale-session-view.js'
+import { SHELL_UX_DICT, type ShellUxKey } from './locale-shell-ux.js'
+import { TERMINAL_SETUP_DICT, type TerminalSetupKey } from './locale-terminal-setup.js'
+import { TOOL_FILTER_DICT, type ToolFilterKey } from './locale-tool-filter.js'
+import { TREE_DICT, type TreeKey } from './locale-tree.js'
+import { WORKTREE_DICT, type WorktreeKey } from './locale-worktree.js'
 
 /**
  * Strings of the terminal-level surfaces: pasted blocks, the exit hint, mouse and clipboard tips and
@@ -8,6 +24,11 @@ import type { Locale } from './locale.js'
 export const TERMINAL_KEYS = [
   'paste.chip',
   'resume.hint',
+  'exit.ran',
+  'exit.messages',
+  'exit.approvals',
+  'exit.queued',
+  'exit.pending',
   'commands.mouse',
   'commands.mouseSummary',
   'mouse.on',
@@ -45,6 +66,9 @@ export const TERMINAL_KEYS = [
   'status.cost',
   'status.queued',
   'status.yolo',
+  'status.dirs',
+  'status.lsp',
+  'status.none',
   'status.on',
   'status.off',
   'commands.copy',
@@ -92,14 +116,62 @@ export const TERMINAL_KEYS = [
   'custom.empty',
   'custom.more',
   'custom.hidden',
+  'commands.notify',
+  'commands.notifySummary',
+  'notify.set',
+  'notify.ephemeral',
+  'notify.overridden',
+  'notify.usage',
+  'notify.done',
+  'notify.approval',
+  'notify.error',
+  'notify.agent',
 ] as const
 
-export type TerminalKey = (typeof TERMINAL_KEYS)[number]
+export type TerminalKey =
+  | (typeof TERMINAL_KEYS)[number]
+  | SessionActionKey
+  | MemoryKey
+  | BgKey
+  | TerminalSetupKey
+  | HeadsUpKey
+  | ShellUxKey
+  | SessionViewKey
+  | TreeKey
+  | HandoffKey
+  | BangKey
+  | WorktreeKey
+  | AddDirKey
+  | PromptClickKey
+  | ToolFilterKey
+  | CdKey
+  | DaltonizedKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
+    ...SESSION_ACTION_DICT.en,
+    ...MEMORY_DICT.en,
+    ...BG_DICT.en,
+    ...TERMINAL_SETUP_DICT.en,
+    ...HEADS_UP_DICT.en,
+    ...SHELL_UX_DICT.en,
+    ...SESSION_VIEW_DICT.en,
+    ...TREE_DICT.en,
+    ...HANDOFF_DICT.en,
+    ...BANG_DICT.en,
+    ...WORKTREE_DICT.en,
+    ...ADD_DIR_DICT.en,
+    ...PROMPT_CLICK_DICT.en,
+    ...TOOL_FILTER_DICT.en,
+    ...CD_DICT.en,
+    ...DALTONIZED_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
+    'exit.ran': 'This run lasted {duration}',
+    'exit.messages': 'messages: {n}',
+    'exit.approvals': 'approvals: {n}',
+    'exit.queued': 'queued messages: {n}',
+    'exit.pending': 'Still waiting until you resume: {items}',
     'commands.mouse':
       'Switch mouse reporting on or off for this run. Off, the terminal selects and copies text itself',
     'commands.mouseSummary': 'Toggle mouse reporting',
@@ -141,6 +213,9 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'status.cost': 'Cost',
     'status.queued': 'Queued inputs',
     'status.yolo': 'YOLO',
+    'status.dirs': 'Extra directories',
+    'status.lsp': 'Language servers',
+    'status.none': 'none',
     'status.on': 'on',
     'status.off': 'off',
     'commands.copy': 'Copy the last reply (or the nth from the end, or its last code block) to the clipboard',
@@ -192,10 +267,42 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'custom.more': '… and {count} more characters not shown; read {path} for all of it',
     'custom.hidden':
       'Not run: {path} contains invisible formatting characters that could hide part of the text',
+    'commands.notify':
+      'Desktop notifications while the terminal is in the background: on (a system notification where the terminal has one, a bell elsewhere), bell, or off',
+    'commands.notifySummary': 'Set background notifications',
+    'notify.set': 'Notifications: {mode}',
+    'notify.ephemeral': 'Notifications: {mode} (this run only; the choice could not be saved)',
+    'notify.overridden': 'AGH_NOTIFY={env} is set and wins over this choice ({mode})',
+    'notify.usage': 'usage: /notify [on|bell|off]',
+    'notify.done': 'done',
+    'notify.approval': 'approval waiting',
+    'notify.error': 'error',
+    'notify.agent': 'subagent finished',
   },
   'zh-CN': {
+    ...SESSION_ACTION_DICT['zh-CN'],
+    ...MEMORY_DICT['zh-CN'],
+    ...BG_DICT['zh-CN'],
+    ...TERMINAL_SETUP_DICT['zh-CN'],
+    ...HEADS_UP_DICT['zh-CN'],
+    ...SHELL_UX_DICT['zh-CN'],
+    ...SESSION_VIEW_DICT['zh-CN'],
+    ...TREE_DICT['zh-CN'],
+    ...HANDOFF_DICT['zh-CN'],
+    ...BANG_DICT['zh-CN'],
+    ...WORKTREE_DICT['zh-CN'],
+    ...ADD_DIR_DICT['zh-CN'],
+    ...PROMPT_CLICK_DICT['zh-CN'],
+    ...TOOL_FILTER_DICT['zh-CN'],
+    ...CD_DICT['zh-CN'],
+    ...DALTONIZED_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
+    'exit.ran': '本次运行了 {duration}',
+    'exit.messages': '消息数：{n}',
+    'exit.approvals': '待审批：{n}',
+    'exit.queued': '排队的消息：{n}',
+    'exit.pending': '恢复会话前仍在等待：{items}',
     'commands.mouse': '本次运行内开关鼠标上报；关闭后由终端自己选择和复制文字',
     'commands.mouseSummary': '开关鼠标上报',
     'mouse.on': '鼠标上报已开启：在应用内拖选即可复制，滚轮滚动对话',
@@ -233,6 +340,9 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'status.cost': '花费',
     'status.queued': '排队输入',
     'status.yolo': 'YOLO',
+    'status.dirs': '额外目录',
+    'status.lsp': '语言服务器',
+    'status.none': '无',
     'status.on': '开',
     'status.off': '关',
     'commands.copy': '复制最近一条回复（或倒数第 n 条，或其中最后一个代码块）到剪贴板',
@@ -283,5 +393,16 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     'custom.empty': '命令 {name} 展开后为空',
     'custom.more': '……另有 {count} 个字符未显示，完整内容见 {path}',
     'custom.hidden': '未运行：{path} 含有不可见的格式字符，可能藏有看不到的内容',
+    'commands.notify':
+      '终端在后台时的提醒：on（终端支持则发系统通知，否则响铃）、bell（只响铃）、off（关闭）',
+    'commands.notifySummary': '设置后台提醒',
+    'notify.set': '提醒：{mode}',
+    'notify.ephemeral': '提醒：{mode}（仅本次运行，设置未能保存）',
+    'notify.overridden': '已设置 AGH_NOTIFY={env}，优先于这个选择（{mode}）',
+    'notify.usage': '用法：/notify [on|bell|off]',
+    'notify.done': '已完成',
+    'notify.approval': '等待审批',
+    'notify.error': '出错',
+    'notify.agent': '子 agent 已完成',
   },
 }

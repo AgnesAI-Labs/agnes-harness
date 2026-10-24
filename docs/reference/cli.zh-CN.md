@@ -19,6 +19,7 @@
 | `agh --mode text\|json\|stream-json` | 自动 print（`stream-json`：每个事件一行，最后是结果行）；ACP 为单独模式 |
 | `agh --model main=ROUTE/MODEL` | 显式槽位与运行目录中的路由/模型 |
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | 普通运行选项，不是所有转发子命令均支持。`LEVEL` 为 `read-only`、`workspace-write`、`full-access` 或 `default`（部署默认），只作用于新会话 |
+| `agh --append-system-prompt 文本` / `--append-system-prompt-file 路径` | 把所有者的文本（1 到 8192 个字符，文件不超过 8 KiB，且不能是符号链接）追加到新会话的系统提示词；与恢复选项或 `--agent` 同用会报错 |
 | `agh --continue` / `agh --resume ID` | 互斥；恢复最近/指定会话。`--continue` 优先接回本终端窗格上次用的会话（同目录、未归档），见 [CLI 指南](../guide/cli.zh-CN.md) |
 | `agh --no-alt-screen` | 仅交互模式：保留 shell 屏幕，把已定稿的回合写入终端自己的滚动区；限制见 [CLI 指南](../guide/cli.zh-CN.md) |
 | `agh (--ephemeral\|--standalone) --ignore-rules` / `--safe-mode` | 仅私有 host（共享 daemon 或 `--connect` 下以退出码 2 拒绝）：跳过自定义斜杠命令 / 另外关闭非内置插件并在 TUI 状态栏标记。指令文件、hooks 和 MCP server 暂不跳过，见 [CLI 指南](../guide/cli.zh-CN.md) |

@@ -1,11 +1,14 @@
 import type { ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
+import type { LspSessions } from '../../../lsp/src/registry.js'
 import type { FileChangeRecorder } from '../file-change.js'
+import { displayPath, fsFailure, toolFailure } from '../guards/feedback.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
-import { looksTruncated } from '../guards/truncation.js'
 import { crlf, usesCrlf } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
+import { matchLocations, mismatchFeedback } from './edit-feedback.js'
+import { withLspNote } from './lsp-note.js'
 import { isBinary, MAX_READ_BYTES } from './read.js'
 import { EditParams } from './schemas.js'
 
@@ -13,22 +16,7 @@ import { EditParams } from './schemas.js'
 const dec = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true })
 const enc = new TextEncoder()
 
-function occurrences(hay: string, needle: string): number {
-  let n = 0
-  let i = 0
-  for (;;) {
-    const j = hay.indexOf(needle, i)
-    if (j < 0) return n
-    n++
-    i = j + 1
-  }
-}
-
-function fail(text: string): ToolResult {
-  return { content: [{ type: 'text', text }], isError: true }
-}
-
-export function createEditTool(record?: FileChangeRecorder) {
+export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions) {
   return defineTool({
     name: 'edit',
     description:
@@ -45,29 +33,43 @@ export function createEditTool(record?: FileChangeRecorder) {
       deferLoading: false,
       requiresApproval: 'destructive',
     },
-    execute: (args, ctx): Promise<ToolResult> => {
+    execute: async (args, ctx): Promise<ToolResult> => {
       // Keyed on the resolved path rather than on the argument: `a.ts` and `/work/proj/a.ts` are one
       // file, and two spellings taking two locks is the same as taking no lock at all.
       const abs = normalizeWorkspacePath(args.path, ctx.cwd).abs
-      return withFileLock(abs, async () => {
+      const wrote: { text?: string } = {}
+      const result = await withFileLock<ToolResult>(abs, async () => {
         let bytes: Uint8Array
         try {
           bytes = await ctx.fs.read(args.path)
         } catch (e) {
-          return fail(`edit failed: ${(e as Error).message}`)
+          return fsFailure(ctx, 'edit', args.path, e)
         }
         // Decoding bytes that are not text and writing the decoded form back replaces every invalid
         // sequence with U+FFFD, which destroys the file while reporting success.
-        if (isBinary(bytes)) return fail(`binary file (${bytes.byteLength} bytes); edit only works on text`)
+        if (isBinary(bytes))
+          return toolFailure(
+            ctx,
+            'FS_BINARY',
+            `edit refused: binary file (${bytes.byteLength} bytes); use a format-aware tool or ask for a text version.`,
+          )
         let original: string
         try {
           original = dec.decode(bytes)
         } catch {
-          return fail('edit failed: file is not valid UTF-8')
+          return toolFailure(
+            ctx,
+            'FS_ENCODING',
+            'edit failed: file is not valid UTF-8; inspect its encoding with shell and convert a copy to UTF-8 before editing.',
+          )
         }
         if (observedVersion(ctx.session.key, abs) === undefined)
           return {
-            ...fail(`edit refused: read ${args.path} in this session before editing it`),
+            ...(await toolFailure(
+              ctx,
+              'FS_NOT_OBSERVED',
+              `edit refused: read ${displayPath(ctx, args.path)} in this session before editing it`,
+            )),
             details: { code: 'FS_NOT_OBSERVED', path: args.path },
           }
         let text = original
@@ -75,21 +77,48 @@ export function createEditTool(record?: FileChangeRecorder) {
         for (const [i, e] of args.edits.entries()) {
           const oldText = normalize(e.oldText)
           const newText = normalize(e.newText)
-          const n = occurrences(text, oldText)
-          if (n === 0) return fail(`edit ${i + 1}: oldText not found`)
-          if (n > 1) return fail(`edit ${i + 1}: ambiguous (${n} matches); include more context`)
+          const { count: n, lines } = matchLocations(text, oldText)
+          if (n === 0) {
+            const seen = observedVersion(ctx.session.key, abs)
+            const now = await versionOf(ctx, args.path, bytes, MAX_READ_BYTES)
+            const stale =
+              seen !== UNKNOWN_VERSION && now !== undefined && seen !== now
+                ? ' File changed since the session last read it; read the current range and merge your change.'
+                : ''
+            const earlier =
+              i > 0 && original.includes(oldText)
+                ? ' Text already replaced by an earlier edit in this same call; later edits must target the intermediate content. Candidate excerpts below show that intermediate content, not the on-disk file.'
+                : ''
+            return toolFailure(
+              ctx,
+              'FS_EDIT_NOT_FOUND',
+              `edit ${i + 1}: oldText not found.${stale}${earlier} No edits from this call were written; correct and resend the whole batch.\n${mismatchFeedback(text, oldText)}`,
+            )
+          }
+          if (n > 1)
+            return toolFailure(
+              ctx,
+              'FS_AMBIGUOUS_EDIT',
+              `edit ${i + 1}: ambiguous (${n} matches); match start lines: ${lines.join(', ')}${n > lines.length ? ' (first 20 shown)' : ''}. Include distinguishing surrounding lines in oldText. No edits from this call were written; resend the whole batch.`,
+            )
           // A function replacement, so `$&` and the other replacement patterns in newText stay
           // literal text instead of expanding into content the model never wrote.
           text = text.replace(oldText, () => newText)
         }
-        const t = looksTruncated(original, text)
-        if (t.truncated) return fail(`edit refused (truncation guard): ${t.reason}`)
+        // No truncation guard here, unlike write. That guard catches a rewrite that silently lost
+        // the end of a file, and an edit cannot lose anything silently: every removed byte is named
+        // in an oldText that had to match exactly. A size ratio would refuse large intended
+        // deletions (one side of a merge conflict, a dead section), and a bracket count would refuse
+        // a batch split across calls, while splitting the same change into smaller edits does not
+        // change either total. Nor is a newText cut off by the output limit a case for this tool:
+        // the turn drops every tool call of a response that stopped at max_tokens, because its
+        // arguments were cut off mid-serialisation.
         try {
           await ctx.fs.write(args.path, text)
         } catch (e) {
           // See write: a read-only file is refused here, and the refusal has to stay a named one.
           if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
-          return fail(`edit failed: ${(e as Error).message}`)
+          return fsFailure(ctx, 'edit', args.path, e)
         }
         if (record)
           try {
@@ -111,6 +140,7 @@ export function createEditTool(record?: FileChangeRecorder) {
           (await versionOf(ctx, args.path, enc.encode(text), MAX_READ_BYTES)) ?? UNKNOWN_VERSION,
         )
         const delta = text.split('\n').length - original.split('\n').length
+        wrote.text = text
         return {
           content: [
             {
@@ -121,6 +151,7 @@ export function createEditTool(record?: FileChangeRecorder) {
           details: { path: args.path, bytes: enc.encode(text).byteLength },
         }
       })
+      return wrote.text === undefined ? result : withLspNote(lsp, ctx, abs, wrote.text, result)
     },
   })
 }

@@ -60,7 +60,7 @@ export type McpCheckedCatalog = Readonly<{
 }>
 
 /**
- * All limits are mandatory when media is enabled. P0 has not frozen production values, so an
+ * All limits are mandatory when media is enabled. Production evidence has not frozen the limits, so an
  * omitted policy disables MCP images instead of silently installing guessed defaults.
  * `maxBlocks` counts the provider-facing pair emitted for every selected image: one untrusted label
  * plus one image block. It is deliberately distinct from `maxImages`.
@@ -536,7 +536,7 @@ export async function registerRemoteToolsStrict(
      * candidate connection or an old generation retained by the Host.
      */
     ownsConnection?: boolean
-    /** Explicit trusted policy; omission safely disables media until P0 freezes production caps. */
+    /** Explicit trusted policy; omission safely disables media until production evidence freezes the caps. */
     mediaLimits?: McpMediaLimits
   } = {},
 ): Promise<Disposer> {

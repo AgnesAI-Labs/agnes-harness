@@ -5,6 +5,8 @@ import { join } from 'node:path'
 import { createProvider, getApiKeyProvider, type WireEvent } from '@agnes/ai'
 import { FakeAdapter, ScriptedProvider } from '@agnes/ai/testkit'
 import { defaultLoopPlugin } from '@agnes/base'
+import { loadAllPresets } from '@agnes/code'
+import { CompactionRunner } from '@agnes/core'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
@@ -483,6 +485,109 @@ function twoRouteHostOptions(
 }
 
 describe('replaySwitchesOnOpen', () => {
+  it.each([
+    ['standard', false],
+    ['minimal', false],
+    ['standard', true],
+  ] as const)(
+    'compacts after a primary switch and reopen with %s (explicit summary: %s)',
+    async (preset, explicit) => {
+      const dataDir = scratch()
+      const models = [modelRecord('gw', 'default-model'), modelRecord('gw', 'chat-model')].map((record) => ({
+        ...record,
+        contextWindow: 128000,
+      }))
+      const expected = explicit ? 'default-model' : 'chat-model'
+      const provider = new ScriptedProvider({
+        models,
+        scripts: [
+          (request) =>
+            request.kind === 'summary' && request.model !== expected
+              ? [
+                  {
+                    type: 'error',
+                    reason: 'error',
+                    code: 'TRANSPORT',
+                    message: 'wrong summary target',
+                    retryable: false,
+                  },
+                ]
+              : [
+                  {
+                    type: 'text_delta',
+                    delta: request.kind === 'summary' ? 'A short summary.' : 'A complete answer.',
+                  },
+                  { type: 'done', reason: 'stop' },
+                ],
+        ],
+      })
+      const options: TestHostOptions = {
+        dataDir,
+        presets: loadAllPresets(),
+        allowed: ['standard', 'minimal'],
+        disableSessionTitle: true,
+        profileInputs: {
+          user: {
+            name: 'local-dev',
+            provider: {
+              package: '@agnes/ai',
+              routes: [
+                { route: 'gw', api: 'openai-completions', baseUrl: 'https://example.invalid/v1', models },
+              ],
+            },
+          },
+        },
+        provider,
+      }
+      const first = await createTestHost(options)
+      unwinds.push(() => first.host.close())
+      const original = await first.host.createSession({ cwd: dataDir, preset })
+      if (explicit) await original.setModel({ slot: 'compaction', route: 'gw', model: expected })
+      await original.setModel({ slot: 'primary', route: 'gw', model: 'chat-model' })
+      const turn = async (session: typeof original, text: string) => {
+        await session.enqueue('next-turn', { actor: session.d.actor, content: [{ type: 'text', text }] })
+        expect(await session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+          reason: 'completed',
+        })
+      }
+      await turn(original, 'Synthetic history. '.repeat(100))
+      await first.host.close()
+      const second = await createTestHost(options)
+      unwinds.push(() => second.host.close())
+      const reopened = await second.host.createSession({ cwd: dataDir, key: original.key })
+      await turn(reopened, 'Continue the task.')
+      reopened.compaction = new CompactionRunner({
+        plan: async (payload) => {
+          const surface = payload.getSurface()
+          const start = surface[0]
+          const end = surface.at(-2)
+          const kept = surface.at(-1)
+          if (!start || !end || !kept) throw new Error('missing compactable history')
+          return {
+            summarizeRange: [start.seq, end.seq],
+            keepFromSeq: kept.seq,
+            prompts: { system: 'Summarize safely.', history: 'Summarize the earlier task.' },
+            maxTokens: 96,
+            details: { readFiles: [], modifiedFiles: [] },
+          }
+        },
+        onCompact: async () => undefined,
+      })
+      await reopened.requestCompaction({ actor: reopened.d.actor, admissionId: 'switched-primary' })
+      const compacted = await reopened.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(compacted.error).toBeUndefined()
+      expect(compacted.reason).toBe('completed')
+      expect(
+        provider.calls
+          .filter((request) => request.kind === 'summary')
+          .map(({ route, model }) => ({ route, model })),
+      ).toEqual([{ route: 'gw', model: expected }])
+      expect(await reopened.scan({ type: 'x/core/compaction-end', limit: 10 })).toHaveLength(1)
+      expect(await reopened.scan({ type: 'x/core/compaction-failed', limit: 10 })).toEqual([])
+      await turn(reopened, 'Continue after compaction.')
+    },
+  )
+
   it('snapshots defaults for new sessions and preserves them when the configured defaults change', async () => {
     const dataDir = scratch()
     const provider = (contextWindow: number, thinking: 'high' | 'low') =>

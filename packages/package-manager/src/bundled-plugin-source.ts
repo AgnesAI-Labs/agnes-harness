@@ -9,21 +9,21 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'skill-helper',
     id: '@agnes/skill-helper',
-    version: '0.3.1',
+    version: '0.3.2',
     license: 'MIT',
     ref: BUNDLED_SKILL_HELPER_REF,
   },
   {
     name: 'mcp-helper',
     id: '@agnes/mcp-helper',
-    version: '0.1.1',
+    version: '0.1.2',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/mcp-helper',
   },
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.17',
+    version: '0.2.18',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
@@ -46,7 +46,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'document-reader',
     id: '@agnes/document-reader',
-    version: '0.1.3',
+    version: '0.1.4',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/document-reader',
   },

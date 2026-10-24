@@ -16,11 +16,11 @@ function freeze<T>(value: T): T {
   return value
 }
 
-function scrub(tool: Pick<ToolDef, 'name' | 'description' | 'parameters'>): ToolSchema {
+function scrub(tool: Pick<ToolDef, 'name' | 'description' | 'parameters' | 'modelParameters'>): ToolSchema {
   return {
     name: sanitize(tool.name),
     description: sanitize(tool.description),
-    parameters: sanitizeJson(tool.parameters),
+    parameters: sanitizeJson(tool.modelParameters ?? tool.parameters),
   }
 }
 
@@ -28,14 +28,18 @@ function scrub(tool: Pick<ToolDef, 'name' | 'description' | 'parameters'>): Tool
 export function prepareToolSchema(tool: ToolDef): void {
   const schema = freeze(scrub(tool))
   immutable.add(schema)
-  prepared.set(tool.parameters, { name: tool.name, description: tool.description, schema })
+  prepared.set(tool.modelParameters ?? tool.parameters, {
+    name: tool.name,
+    description: tool.description,
+    schema,
+  })
 }
 
-export function modelToolSchema({ name, description, parameters }: ToolDef): ToolSchema {
-  const cached = prepared.get(parameters)
+export function modelToolSchema({ name, description, parameters, modelParameters }: ToolDef): ToolSchema {
+  const cached = prepared.get(modelParameters ?? parameters)
   return cached?.name === name && cached.description === description
     ? cached.schema
-    : scrub({ name, description, parameters })
+    : scrub({ name, description, parameters: modelParameters ?? parameters })
 }
 
 // Retain only the last disclosure for each leading schema. A long-lived catalog must not

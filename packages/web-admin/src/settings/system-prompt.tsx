@@ -39,8 +39,8 @@ function openSettings(id: string) {
 }
 
 /**
- * 提示词 in 运行配置: two rows, each a subpage. 完整替换默认提示词 replaces the default prompt as a
- * whole, applied with an explicit 「应用替换」 after 「我已理解」; 当前提示词预览 shows the sections a
+ * Prompts in Runtime configuration: two rows, each a subpage. 「Replace the entire default prompt」 replaces the default prompt as a
+ * whole, applied with an explicit 「Apply replacement」 after 「I understand」; Current prompt preview shows the sections a
  * new session (or one chosen session) gets, each expanding in place with copy.
  */
 export function PromptRows({ canSave, api = browserApi }: { canSave: boolean; api?: PromptApi }) {

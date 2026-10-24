@@ -8,7 +8,7 @@ import { createTestHost, type TestHostOptions } from '@agnes/host/testkit'
 import { readDevelopmentPlugin } from '@agnes/package-manager'
 import type { Context } from '@agnes/plugin-runtime'
 import type { InferenceEvent } from '@agnes/protocol'
-import { ConfigEmptyParams } from '@agnes/protocol/gen/agnes-v1'
+import { ConfigEmptyParams, WorkspaceAddParams } from '@agnes/protocol/gen/agnes-v1'
 import { say } from '../../daemon-rpc/test/host.js'
 
 // A `WorkerPool.workerEntry` override (the same extension point `worker-pool.e2e.test.ts`'s own
@@ -46,7 +46,7 @@ const gateFd = Number(env.AGNES_GATE_FD ?? 3)
 const gate = Number.isInteger(gateFd) && gateFd >= 0 ? createReadStream('', { fd: gateFd }) : null
 
 async function permissionFixture(dataDir: string): Promise<Partial<TestHostOptions>> {
-  if (env.AGNES_FAKE_WORKER_PERMISSION !== '1') return {}
+  if (env.AGNES_FAKE_WORKER_PERMISSION !== '1' && env.AGNES_FAKE_WORKER_READ !== '1') return {}
   const packageId = '@fixture/permission'
   const directory = join(dataDir, 'permission-plugin')
   mkdirSync(directory, { recursive: true })
@@ -77,41 +77,68 @@ async function permissionFixture(dataDir: string): Promise<Partial<TestHostOptio
   const plugin = {
     inject: ['tools'],
     apply(ctx: Context) {
-      ctx.tools.register({
-        name: 'permission_probe',
-        description: 'Plain permission test tool',
-        // The probe has no arguments; the RPC import also carries hundreds of unrelated $defs.
-        parameters: ConfigEmptyParams.$defs.ConfigEmptyParams,
-        meta: {
-          isReadOnly: false,
-          isDestructive: true,
-          isConcurrencySafe: false,
-          isOpenWorld: false,
-          replay: 'never',
-          costHint: {},
-          deferLoading: false,
-          requiresApproval: 'always',
-        },
-        execute: async (_input: unknown, context: ToolContext) => {
-          if (env.AGNES_FAKE_WORKER_MCP === '1') {
-            if (!context.mcpManage) throw new Error('Missing MCP management port')
-            const prepared = (await context.mcpManage.request({
-              action: 'prepare',
-              definition: {
-                serverId: 'revocation-probe',
-                displayName: 'Revocation probe',
-                transport: { kind: 'http', url: 'https://mcp.example.test/api' },
-                secretBinding: { kind: 'none' },
-              },
-            })) as { proposalId: string }
-            await context.mcpManage.request({ action: 'commit', proposalId: prepared.proposalId })
-          }
-          if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
-            appendFileSync(join(dataDir, 'permission-dispatched'), 'yes\n')
-          else writeFileSync(join(dataDir, 'permission-dispatched'), 'yes')
-          return { content: [{ type: 'text', text: 'ran' }] }
-        },
-      })
+      if (env.AGNES_FAKE_WORKER_READ === '1')
+        // Reads through the invocation's own file fence, as the session's tools do.
+        ctx.tools.register({
+          name: 'fence_read',
+          description: 'Reads one file through the session file fence',
+          // Any params schema with a required string `path`.
+          parameters: WorkspaceAddParams.$defs.WorkspaceAddParams,
+          meta: {
+            isReadOnly: true,
+            isDestructive: false,
+            isConcurrencySafe: true,
+            isOpenWorld: false,
+            replay: 'never',
+            costHint: {},
+            deferLoading: false,
+            requiresApproval: 'never',
+          },
+          execute: async (input: unknown, context: ToolContext) => {
+            const { path } = input as { path: string }
+            const text = await context.fs.read(path).then(
+              (bytes) => new TextDecoder().decode(bytes),
+              (error: { code?: string }) => `FS_ERROR:${error.code ?? 'unknown'}`,
+            )
+            return { content: [{ type: 'text', text }] }
+          },
+        })
+      if (env.AGNES_FAKE_WORKER_PERMISSION === '1')
+        ctx.tools.register({
+          name: 'permission_probe',
+          description: 'Plain permission test tool',
+          // The probe has no arguments; the RPC import also carries hundreds of unrelated $defs.
+          parameters: ConfigEmptyParams.$defs.ConfigEmptyParams,
+          meta: {
+            isReadOnly: false,
+            isDestructive: true,
+            isConcurrencySafe: false,
+            isOpenWorld: false,
+            replay: 'never',
+            costHint: {},
+            deferLoading: false,
+            requiresApproval: 'always',
+          },
+          execute: async (_input: unknown, context: ToolContext) => {
+            if (env.AGNES_FAKE_WORKER_MCP === '1') {
+              if (!context.mcpManage) throw new Error('Missing MCP management port')
+              const prepared = (await context.mcpManage.request({
+                action: 'prepare',
+                definition: {
+                  serverId: 'revocation-probe',
+                  displayName: 'Revocation probe',
+                  transport: { kind: 'http', url: 'https://mcp.example.test/api' },
+                  secretBinding: { kind: 'none' },
+                },
+              })) as { proposalId: string }
+              await context.mcpManage.request({ action: 'commit', proposalId: prepared.proposalId })
+            }
+            if (env.AGNES_FAKE_WORKER_RECOVERY === '1')
+              appendFileSync(join(dataDir, 'permission-dispatched'), 'yes\n')
+            else writeFileSync(join(dataDir, 'permission-dispatched'), 'yes')
+            return { content: [{ type: 'text', text: 'ran' }] }
+          },
+        })
     },
   }
   return {
@@ -195,6 +222,48 @@ void runWorker(
                     return
                   }
                   yield* say('completed queue input')
+                },
+              },
+            }
+          : {}),
+        // `read <path>` prompts call a fixture tool that reads through the session file fence; its outcome is appended to read-log.jsonl.
+        ...(env.AGNES_FAKE_WORKER_READ === '1'
+          ? {
+              provider: {
+                models: () => [fakeModel({ route: 'faux', id: 'faux-1' })],
+                async *infer(request): AsyncIterable<InferenceEvent> {
+                  yield { type: 'sent', stamp: { ...stampFor(request), parser_version: PARSER_VERSION } }
+                  const textOf = (message: (typeof request.messages)[number]) =>
+                    message.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
+                  const askIndex = request.messages.findLastIndex(
+                    (message) => message.role === 'user' && /^read \//.test(textOf(message)),
+                  )
+                  const ask = request.messages[askIndex]
+                  const result = request.messages.slice(askIndex + 1).find((m) => m.role === 'tool_result')
+                  if (request.kind !== 'summary' && ask && !result) {
+                    yield {
+                      type: 'toolcall_end',
+                      via: 'native',
+                      call: {
+                        toolUseId: '',
+                        name: 'fence_read',
+                        args: { path: textOf(ask).slice('read '.length) },
+                        ordinal: 0,
+                      },
+                    }
+                    yield { type: 'done', reason: 'toolUse' }
+                    return
+                  }
+                  if (ask && result)
+                    appendFileSync(
+                      join(profile.dataDir, 'read-log.jsonl'),
+                      `${JSON.stringify({
+                        path: textOf(ask).slice('read '.length),
+                        isError: result.role === 'tool_result' && result.isError === true,
+                        text: textOf(result),
+                      })}\n`,
+                    )
+                  yield* say('read finished')
                 },
               },
             }

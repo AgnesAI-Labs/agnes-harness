@@ -694,9 +694,9 @@ function renderReconnect(phase: ReconnectPhase): void {
   setReconnectNotice(phase, () => reconnect.retry())
   if (phase !== 'idle') setConnection(phase === 'stalled' ? 'closed' : 'reconnecting')
 }
-// 客户端模块底座（WC8）：Cordis 根 + 五个宿主服务 + workbench.panel 挂载点。
-// 名册真源是 `_agnes/v1/clientModules.list`（P1a）；profile 要等 config.get() 才报出，
-// 之前名册按空处理（fail-closed，不加载任何模块）。
+// Client module foundation: Cordis root, five host services and a workbench.panel mount point.
+// The roster authority is `_agnes/v1/clientModules.list`; profile becomes available after config.get(),
+// until then treat the roster as empty (fail-closed, loading no modules).
 const customModuleListeners = new Set<() => void>()
 const moduleExtIds = new Map<string, string[]>()
 let profileName = ''
@@ -730,7 +730,7 @@ const rosterSource: RosterSource = {
     }
   },
 }
-// 时间线卡片的按包认领（WC9）：fill.extId 命中注册项归属包的名册 extIds 才认领。
+// Claim timeline cards by package: fill.extId must match roster extIds of the package owning the registration.
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const references = composerReferences(prepareComposerSession, renderControls)
@@ -973,7 +973,7 @@ const clientModules = await startClientModules({
 })
 const tracePanel = clientModules.trace as NonNullable<typeof clientModules.trace>
 if (!tracePanel) throw new Error('missing trace region')
-// Every «在轨迹中查看» link (requests, tools, changes, deliverables, feedback) opens the trace.
+// Every «View in trace» link (requests, tools, changes, deliverables, feedback) opens the trace.
 factChainLinks.register((target) => tracePanel.focusFact?.(target) ?? false)
 const openSettingsTerminal = (event: Event) => {
   settings.close()
@@ -1040,7 +1040,7 @@ if (!conversationRuntime) throw new Error('missing conversation region')
 const renderer = clientModules.transcript as NonNullable<typeof clientModules.transcript>
 if (!renderer) throw new Error('missing transcript region')
 
-// 渲染时取词：t 只在渲染/组装瞬间调用；语言切换后由订阅重跑渲染函数，命令式区域整体重建。
+// Translate at render/assembly time only; locale subscriptions rerun rendering and rebuild imperative regions.
 const t: Translate = (key, vars) => clientModules.locale.t(key, vars)
 const workspaceController = createWorkspaceController(appSessionContext, hosts.newSession)
 setLocaleTranslator(t)
@@ -1200,7 +1200,7 @@ let permissionRefreshPending = false
 let permissionConnectionEpoch = 0
 let sessionYoloEnabled: boolean | undefined
 let permissionSelectionSeq = 0
-// daemon 自己报出的 profile（config.get() 后才知道）；皮肤清单与客户端模块名册都必须把它传回去。
+// The daemon-reported profile, known after config.get(); pass it back for both skins and client module rosters.
 const receipts = new Map<string, RunReceipt>()
 const sessionLabels = new Map<string, string>()
 const sessionTitles = new Map<string, string>()
@@ -1606,9 +1606,9 @@ const dockControlsHost = hosts.dockControls
 function renderControls(): void {
   composerController.renderControls()
 }
-// 流式期间每个事件都会让轨迹面板全量走查一遍节点，长会话里比时间线本身还贵。
-// busy 时把面板喂食节流到 500ms（尾沿补一帧，喂的是最新视图）；终态与空闲路径
-// 立即刷，保证收尾状态不迟到。节流在 app 调用侧，region 挂载本身保持同步语义。
+// During streaming every event makes the trace panel walk all nodes, costing more than the timeline in long sessions.
+// While busy, throttle panel updates to 500ms with a trailing update using the latest view; terminal and idle paths
+// flush immediately so final state is timely. Throttle at the app call site; region mounting remains synchronous.
 const TRACE_THROTTLE_MS: number = 500
 let tracePaintedAt = 0
 let traceTrailing: ReturnType<typeof setTimeout> | undefined
@@ -2174,7 +2174,7 @@ const packageNotices = coalesceBurst(() => {
   broadcast('agnes:plugins-invalidated')
   void modelRefresh.request().catch(showError)
 }, 100)
-// 名册失效推送（WC10）：packages_changed 只是失效提示，收到后必须重读名册。
+// Roster invalidation push: packages_changed is only a hint; reread the roster on receipt.
 client.on('notice', (payload) => {
   const incoming = payload as { kind?: unknown; detail?: unknown }
   if (incoming.kind === 'automation_attention') {
@@ -2410,14 +2410,12 @@ run(async () => {
   else if (empty) {
     await awaitModels()
     if (!sessionBinding.isCurrent(startupSelection)) return
-    await beginNewDraft(
-      configured &&
-        !startupSection &&
-        !startupTerminal &&
-        !startupMoved &&
-        !homeNavigation.getSnapshot() &&
-        !guided,
-    )
+    // Finishing or skipping the guide already starts a draft. Its Host catalogs must not
+    // delay account setup; that draft still waits for the same catalogs before submission.
+    if (!guided)
+      await beginNewDraft(
+        configured && !startupSection && !startupTerminal && !startupMoved && !homeNavigation.getSnapshot(),
+      )
   } else {
     scheduleClientRosterRead(true)
     sessionPending = false

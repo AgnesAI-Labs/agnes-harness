@@ -99,6 +99,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
       permission: string | null
       agent: string | null
       bundles: string | null
+      systemPromptAppend: string | null
       loop: string | null
       promise: Promise<SessionEntry>
     }
@@ -119,6 +120,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
           pending.permission !== (o.permission ?? null) ||
           pending.agent !== (o.agent === undefined ? null : JSON.stringify([o.agent, o.agentDigest])) ||
           pending.bundles !== (o.bundles === undefined ? null : JSON.stringify(o.bundles)) ||
+          pending.systemPromptAppend !== (o.systemPromptAppend ?? null) ||
           pending.loop !== (o.loop ? JSON.stringify(o.loop) : null)
         )
           throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: o.key })
@@ -131,6 +133,7 @@ export class SupervisorRegistry implements Registry<SessionEntry> {
         permission: o.permission ?? null,
         agent: o.agent === undefined ? null : JSON.stringify([o.agent, o.agentDigest]),
         bundles: o.bundles === undefined ? null : JSON.stringify(o.bundles),
+        systemPromptAppend: o.systemPromptAppend ?? null,
         loop: o.loop ? JSON.stringify(o.loop) : null,
         promise,
       })

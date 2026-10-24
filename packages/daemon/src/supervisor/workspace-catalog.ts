@@ -1,4 +1,5 @@
 import { mkdir } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { SessionWorkspacePort } from '@agnes/daemon-foundation/storage/lister'
 import type { Tables } from '@agnes/daemon-foundation/storage/table'
@@ -33,8 +34,9 @@ export async function openWorkspaceCatalog(input: {
     input.clock,
     tables ? new WorkspaceBindingIndex(tables.table('workspace_bindings')) : new MemoryWorkspaceBindings(),
     chatsRoot,
+    { protectedRoots: [input.dataDir, join(homedir(), '.ssh')] },
   )
-  // The CLI/launcher supplied startup root is one of D44's two authority sources. Register it
+  // The CLI/launcher supplied startup root is one of the workspace catalog's two authority sources. Register it
   // once before resource-control resolves its default workspace; ambient cwd never grants this.
   if (input.workspaceRoot) await catalog.add(input.workspaceRoot)
   await catalog.add(chatsRoot)

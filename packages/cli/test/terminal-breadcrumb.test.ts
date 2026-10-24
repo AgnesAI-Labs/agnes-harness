@@ -1,6 +1,7 @@
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { sessionToOpen } from '../src/modes/print.js'
@@ -51,7 +52,7 @@ describe('--continue with a terminal pane breadcrumb', () => {
   const resume = (b: Booted, crumb?: ReturnType<typeof terminalBreadcrumb>) =>
     sessionToOpen(b, parseArgs(['--continue']), cwd, crumb)
 
-  it('gives two panes in one directory each their own session, and 0600 files', async () => {
+  it('gives two panes in one directory each their own session, and private files', async () => {
     const h = home()
     const a = terminalBreadcrumb(h, env('%1'))
     const b = terminalBreadcrumb(h, env('%2'))
@@ -62,8 +63,9 @@ describe('--continue with a terminal pane breadcrumb', () => {
     const dir = join(h, 'terminal-sessions')
     const files = readdirSync(dir)
     expect(files).toHaveLength(2)
+    expect(hasPrivateDaclSync(dir)).toBe(true)
     for (const f of files) {
-      expect(statSync(join(dir, f)).mode & 0o777).toBe(0o600)
+      expect(hasPrivateDaclSync(join(dir, f))).toBe(true)
       expect(f).toMatch(/^[0-9a-f]{32}$/)
     }
   })
@@ -102,5 +104,12 @@ describe('--continue with a terminal pane breadcrumb', () => {
     const c = terminalBreadcrumb(blocked, env('%1'))
     expect(() => c?.write('pane-a', cwd)).not.toThrow()
     expect(c?.read(cwd)).toBeUndefined()
+    // A directory at the destination refuses publication and leaves no temporary file.
+    const name = readdirSync(dir)[0] as string
+    rmSync(join(dir, name))
+    mkdirSync(join(dir, name))
+    expect(() => a?.write('replacement', cwd)).not.toThrow()
+    expect(readdirSync(dir)).toEqual([name])
+    expect(a?.read(cwd)).toBeUndefined()
   })
 })

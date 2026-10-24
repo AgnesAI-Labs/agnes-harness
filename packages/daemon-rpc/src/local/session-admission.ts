@@ -18,7 +18,7 @@ export type SessionAdmissionPort = {
 /**
  * The durable half of session/new: claim the key for this principal and bind the workspace.
  * Opening the ledger and activateNew stay with the caller, because import must not activate until
- * the body has landed (and F01 has rolled back a failed body).
+ * the body has landed (and the import path has rolled back a failed body).
  */
 export async function reserveOwnedSession(input: {
   ownership: SessionPrincipalOwnership
@@ -26,6 +26,7 @@ export async function reserveOwnedSession(input: {
   principalId: string
   sessionKey: string
   canonicalRoot: string
+  extraRoots?: readonly string[]
   hasSessionFact: boolean
 }): Promise<{ envelope: WorkspaceBindingEnvelope; reservedNew: boolean }> {
   let reservedNew = false
@@ -51,7 +52,11 @@ export async function reserveOwnedSession(input: {
       throw new SessionAdmissionDenied(input.sessionKey)
     }
   }
-  const envelope = await input.workspaces.authorizeAndBind(input.sessionKey, input.canonicalRoot)
+  const envelope = await input.workspaces.authorizeAndBind(
+    input.sessionKey,
+    input.canonicalRoot,
+    input.extraRoots,
+  )
   return { envelope, reservedNew }
 }
 

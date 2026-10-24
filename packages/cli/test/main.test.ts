@@ -458,6 +458,8 @@ describe('main', () => {
       // Enter before the session is ready only keeps the draft, so wait for the real app's welcome.
       await vi.waitFor(() => expect(h.out()).toContain('Agnes AI'), { timeout: 10_000 })
       input.write('keyboard from main')
+      // Text and Enter in one instant would read as a paste on a terminal without bracketed paste.
+      await new Promise((resolve) => setTimeout(resolve, 40))
       input.write('\r')
       await vi.waitFor(() => expect(h.out()).toContain('main says hi'), { timeout: 10_000 })
       // Wait for the persisted terminal turn to reach the projected idle state before quitting.

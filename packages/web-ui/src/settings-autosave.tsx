@@ -63,7 +63,7 @@ export type Autosave<T> = {
   set(next: T, when?: 'now' | 'idle'): void
   /** Save a pending text edit at once: on blur. */
   flush(): void
-  /** The last save failed; the group label offers 「重试」. */
+  /** The last save failed; the group label offers 「Retry」. */
   failed: boolean
   retry(): void
   busy: boolean

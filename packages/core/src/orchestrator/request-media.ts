@@ -430,7 +430,7 @@ function finishPrepared(
 
 /**
  * Freezes candidate order, capability routing, the latest-three policy and all media budgets before
- * provider dispatch. The caller supplies explicit caps because P0 measurements, not this module,
+ * provider dispatch. The caller supplies explicit caps because production measurements, not this module,
  * own their production values. Any selected-byte failure aborts the whole preflight.
  */
 export function prepareRequestMedia(

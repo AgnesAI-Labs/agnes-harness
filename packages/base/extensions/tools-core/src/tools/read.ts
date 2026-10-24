@@ -1,5 +1,6 @@
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
+import { failureCode, fsFailure, toolFailure } from '../guards/feedback.js'
 import { observe, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { byteLength, describeFailure, parseSpillLocator, splitByBytes } from '../guards/output.js'
 import { normalizeWorkspacePath } from '../paths.js'
@@ -98,16 +99,28 @@ export async function loadSpilledLines(ctx: ToolContext, path: string): Promise<
   if (ref.size > MAX_ARTIFACT_READ_BYTES)
     return {
       ok: false,
-      message: `artifact is ${ref.size} bytes, too large to read (limit ${MAX_ARTIFACT_READ_BYTES})`,
+      message: `artifact is ${ref.size} bytes, too large to read (limit ${MAX_ARTIFACT_READ_BYTES}); rerun the producer with narrower output`,
     }
   let bytes: Uint8Array
   try {
     bytes = await ctx.artifacts.get(ref)
-  } catch (e) {
-    return { ok: false, message: describeFailure(e) }
+  } catch (error) {
+    const detail = describeFailure(error)
+    const cause = detail.startsWith('artifact size mismatch:')
+      ? 'artifact size mismatch'
+      : detail.startsWith('artifact not found:')
+        ? 'artifact not found'
+        : 'artifact unavailable'
+    return {
+      ok: false,
+      message: `${cause}; use the complete locator from this session or rerun the producer with narrower output`,
+    }
   }
   if (isBinary(bytes))
-    return { ok: false, message: `binary content (${bytes.byteLength} bytes); it cannot be shown as text` }
+    return {
+      ok: false,
+      message: `binary content (${bytes.byteLength} bytes); use a format-aware tool or ask for a text export`,
+    }
   let notes = ''
   if (bytes.byteLength > MAX_READ_BYTES) {
     bytes = bytes.subarray(0, MAX_READ_BYTES)
@@ -209,6 +222,8 @@ export const readTool = defineTool({
   async execute(args, ctx): Promise<ToolResult> {
     if (args.save_to !== undefined) return saveAttachment(args.path, args.save_to, ctx)
     if (args.path.startsWith('session-file://')) {
+      let failure =
+        'original unavailable in this session; use session-file://list to select an available original'
       try {
         const file = await ctx.session.readAttachment?.({
           path: args.path,
@@ -225,21 +240,27 @@ export const readTool = defineTool({
           // biome-ignore lint/suspicious/noControlCharactersInRegex: Match binary magic bytes, including mislabeled PDFs and archives.
           /^(%PDF-|PK\x03\x04|\x1f\x8b|\x89PNG|\xff\xd8|GIF8|RIFF|\xd0\xcf\x11\xe0)/u.test(header) ||
           header.slice(4, 8) === 'ftyp'
-        )
+        ) {
+          failure =
+            'unsupported binary format; use an available document-reading tool for PDF, Word or ZIP, or ask for a text export'
           throw new Error(
             'The original was uploaded, but this plain-text read tool cannot parse this binary format. For PDF, Word or ZIP, try an available document-reading tool. Native pi-ai file/audio/video input is unavailable. If no suitable tool can read it, explain the limitation; do not claim to have read it.',
           )
+        }
         const encoding =
           file.bytes[0] === 0xff && file.bytes[1] === 0xfe
             ? 'utf-16le'
             : file.bytes[0] === 0xfe && file.bytes[1] === 0xff
               ? 'utf-16be'
               : 'utf-8'
+        failure = `invalid ${encoding} text; use a format-aware tool or request a text export`
         const text = new TextDecoder(encoding, { fatal: true }).decode(file.bytes)
         if (args.path === 'session-file://list') return { content: [{ type: 'text', text }] }
         // biome-ignore lint/suspicious/noControlCharactersInRegex: Binary detection must reject embedded control bytes.
-        if (/[\u0000-\u0008\u000b\u000e-\u001f]/u.test(text))
+        if (/[\u0000-\u0008\u000b\u000e-\u001f]/u.test(text)) {
+          failure = 'binary content in decoded text; use a format-aware tool or request a text export'
           throw new Error('Binary content cannot be read as text.')
+        }
         const lines = attachmentLines(text)
         return {
           content: [
@@ -256,21 +277,34 @@ export const readTool = defineTool({
           ],
         }
       } catch (error) {
-        return {
-          content: [{ type: 'text', text: `Attachment read failed: ${describeFailure(error)}` }],
-          isError: true,
+        const code = failureCode(error, 'FS_ATTACHMENT_READ')
+        const causes: Record<string, string> = {
+          ATTACHMENT_TOO_LARGE:
+            'original exceeds the attachment read byte limit (at most 100 MiB); download through bounded client windows',
+          ATTACHMENT_HASH_MISMATCH: 'original failed integrity verification; ask the user to upload it again',
+          ATTACHMENT_UNAVAILABLE:
+            'original is unavailable; use session-file://list or ask the user to upload it again',
+          ATTACHMENT_DATA: 'original data or encoding is invalid; ask the user for a valid text export',
         }
+        return toolFailure(
+          ctx,
+          causes[code] ? code : 'FS_ATTACHMENT_READ',
+          `Attachment read failed: ${causes[code] ?? failure}.`,
+        )
       }
     }
     if (args.path.startsWith('session-image://')) {
       if (!ctx.session.readImages)
-        return { content: [{ type: 'text', text: 'Session image reloading is unavailable.' }], isError: true }
+        return toolFailure(
+          ctx,
+          'FS_IMAGE_UNAVAILABLE',
+          'Session image reloading is unavailable; ask for a supported image or use another available image tool.',
+        )
       return ctx.session.readImages(args)
     }
     if (args.path.startsWith('artifact://')) {
       const spilled = await loadSpilledLines(ctx, args.path)
-      if (!spilled.ok)
-        return { content: [{ type: 'text', text: `read failed: ${spilled.message}` }], isError: true }
+      if (!spilled.ok) return toolFailure(ctx, 'FS_ARTIFACT_READ', `read failed: ${spilled.message}`)
       // A page is already within the output limit, and it is not put back into the store: the text
       // it came from is what the model reads on from, by offset.
       return {
@@ -294,23 +328,24 @@ export const readTool = defineTool({
       // Having been told the file is not there is what a session now knows of it. Keeping an older
       // version would leave a write that creates the file refused for a change the model has seen.
       if ((e as { code?: string }).code === 'ENOENT') observe(ctx.session.key, abs, undefined)
-      return { content: [{ type: 'text', text: `read failed: ${(e as Error).message}` }], isError: true }
+      return fsFailure(ctx, 'read', args.path, e)
     }
     if (localImageMime(bytes)) {
-      if (bytes.length > MAX_READ_BYTES)
-        bytes = await ctx.fs.read(args.path, { offset: 0, limit: 20 * 1024 * 1024 + 1 })
+      if (bytes.length > MAX_READ_BYTES) {
+        try {
+          bytes = await ctx.fs.read(args.path, { offset: 0, limit: 20 * 1024 * 1024 + 1 })
+        } catch (error) {
+          return fsFailure(ctx, 'read image', args.path, error)
+        }
+      }
       return readLocalImage(bytes, args.path, ctx, args.max_edge)
     }
     if (isBinary(bytes))
-      return {
-        content: [
-          {
-            type: 'text',
-            text: `binary file (${bytes.byteLength} bytes); use shell tools to inspect it`,
-          },
-        ],
-        isError: true,
-      }
+      return toolFailure(
+        ctx,
+        'FS_BINARY',
+        `binary file (${bytes.byteLength} bytes); use shell tools or a format-aware tool to inspect it`,
+      )
     // What this session has now seen of the file, taken from the whole of what came back and before
     // the cut below, so that `write` can refuse to replace it once it has changed. A page of a file
     // counts as having read the file.

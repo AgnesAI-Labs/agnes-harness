@@ -1,5 +1,4 @@
 import {
-  appServerErrorMessage,
   Badge,
   Banner,
   Button,
@@ -41,9 +40,10 @@ import { flushSync } from 'react-dom'
 import { captureRequest, useRequestScope } from './async-request.js'
 import { searchConfigSchema } from './config-schemas.js'
 import { useSettingsOverlay } from './overlay.js'
+import { searchFailureMessage } from './search-feedback.js'
 import { SEARCH_NAMESPACE, searchCatalog } from './search-locale.js'
 
-/** The page that adds or edits a search service, pushed over 网页搜索. */
+/** The page that adds or edits a search service, pushed over Web search. */
 const EDITOR_PAGE = 'search-engine'
 const PROVIDER_IDS = ['brave', 'tavily', 'exa', 'perplexity', 'searxng'] as const
 type ProviderId = (typeof PROVIDER_IDS)[number]
@@ -67,6 +67,7 @@ type SearchStatus = {
   invalid: boolean
   defaultProvider: ProviderId | null
   providers: SearchRow[]
+  verifiedProvider?: ProviderId
 }
 type SearchHit = { title: string; url: string; snippet: string }
 
@@ -112,7 +113,7 @@ function integer(value: string, min: number, max: number): number | undefined {
 async function readJson(response: Response): Promise<unknown> {
   if (!response.ok) {
     const body = (await response.json().catch(() => undefined)) as { error?: unknown } | undefined
-    throw Object.assign(new Error('search unavailable'), { envelope: body?.error })
+    throw Object.assign(new Error('search unavailable'), { envelope: body?.error ?? body })
   }
   return response.json() as Promise<unknown>
 }
@@ -127,7 +128,7 @@ export function SearchPanel({
   fetcher?: typeof fetch
 }) {
   const { t: ux } = useUiText(SEARCH_NAMESPACE, searchCatalog)
-  // Adding or editing a service is a page over 网页搜索 (`search-engine`), not a dialog.
+  // Adding or editing a service is a page over Web search (`search-engine`), not a dialog.
   const pages = usePushStack()
   const editor = pages.stack.at(-1) === EDITOR_PAGE
   const leaveEditor = () => {
@@ -156,7 +157,10 @@ export function SearchPanel({
   const [issues, setIssues] = useState<readonly ConfigIssue[]>([])
   const invalid = (name: string) => issues.some((issue) => issue.path === `/${name}`)
   const [hits, setHits] = useState<SearchHit[]>([])
+  const [verified, setVerified] = useState<Record<string, boolean | undefined>>({})
   useSettingsOverlay(!!confirmClear)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: verification observations belong to this connection and refresh.
+  useEffect(() => setVerified({}), [fetcher, canSave, reload])
   const selected = status?.providers.find((row) => row.id === providerId)
   // biome-ignore lint/correctness/useExhaustiveDependencies: each page or connection starts a fresh operation scope.
   useEffect(() => {
@@ -272,6 +276,10 @@ export function SearchPanel({
       // A closed dialog stops rendering, so the key leaves the field before the dialog closes.
       flushSync(() => setApiKey(''))
       setStatus(value)
+      setVerified((current) => ({
+        ...current,
+        [providerId]: value.verifiedProvider === providerId ? true : undefined,
+      }))
       reportSuccess('search', t('searchSaved'))
       leaveEditor()
     } catch (error) {
@@ -300,34 +308,38 @@ export function SearchPanel({
     setHits([])
     setElapsed(undefined)
     const started = performance.now()
+    const testedProvider = status?.defaultProvider ?? providerId
     try {
       const response = await fetcher('/admin/api/search/test', {
         method: 'POST',
         credentials: 'same-origin',
         signal: request.signal ?? null,
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ provider: status?.defaultProvider ?? providerId, query: probe }),
+        body: JSON.stringify({ provider: testedProvider, query: probe }),
       })
       const value = (await response.json()) as {
         ok?: boolean
         error?: unknown
+        code?: unknown
         message?: string
         results?: SearchHit[]
       }
       if (!request.isCurrent()) return
       if (!response.ok || !value.ok) {
-        setProbeFailure(appServerErrorMessage(value.error, document.documentElement.lang) ?? ux('testFailed'))
+        setProbeFailure(searchFailureMessage(value.error ?? value, ux) ?? ux('testFailed'))
+        setVerified((current) => ({ ...current, [testedProvider]: false }))
         return
       }
       setHits(Array.isArray(value.results) ? value.results : [])
+      setVerified((current) => ({ ...current, [testedProvider]: true }))
       setNotice('tested')
       reportSuccess('search-test', ux('testCompleted'))
     } catch (error) {
       if (!request.isCurrent()) return
       setProbeFailure(
-        appServerErrorMessage((error as { envelope?: unknown })?.envelope, document.documentElement.lang) ??
-          ux('testFailed'),
+        searchFailureMessage((error as { envelope?: unknown })?.envelope, ux) ?? ux('testFailed'),
       )
+      setVerified((current) => ({ ...current, [testedProvider]: false }))
     } finally {
       if (request.isCurrent()) {
         setElapsed(Math.round(performance.now() - started))
@@ -356,12 +368,12 @@ export function SearchPanel({
             // A disabled service cannot stay the default (the daemon refuses it); clear it, as the editor does.
             defaultProvider: patch.makeDefault
               ? row.id
-              : patch.enabled === false && row.isDefault
+              : (patch.enabled === false || patch.clearKey) && row.isDefault
                 ? null
                 : status.defaultProvider,
             provider: {
               id: row.id,
-              enabled: patch.enabled ?? row.enabled,
+              enabled: patch.clearKey ? false : (patch.enabled ?? row.enabled),
               endpoint: row.endpoint,
               maxResults: row.maxResults,
               timeoutMs: row.timeoutMs,
@@ -374,6 +386,10 @@ export function SearchPanel({
       if (!request.isCurrent()) return
       if (!isStatus(value)) throw new Error('invalid search status')
       setStatus(value)
+      setVerified((current) => ({
+        ...current,
+        [row.id]: value.verifiedProvider === row.id ? true : undefined,
+      }))
       setConfirmClear(undefined)
       reportSuccess('search', t('searchSaved'))
     } catch (failure) {
@@ -403,7 +419,7 @@ export function SearchPanel({
   const problem = failed
     ? t('searchUnavailable')
     : error
-      ? (appServerErrorMessage(errorEnvelope, document.documentElement.lang) ?? t(error))
+      ? (searchFailureMessage(errorEnvelope, ux) ?? t(error))
       : status?.invalid
         ? t('searchInvalid')
         : ''
@@ -429,8 +445,14 @@ export function SearchPanel({
           {row.isDefault && <Tag tone="info">{ux('default')}</Tag>}
           {row.enabled &&
             (row.ready ? (
-              <Badge tone="ok">
-                {ux(row.id === status?.defaultProvider && status.configured ? 'connected' : 'ready')}
+              <Badge tone={verified[row.id] === true ? 'ok' : verified[row.id] === false ? 'bad' : 'warn'}>
+                {ux(
+                  verified[row.id] === true
+                    ? 'tested'
+                    : verified[row.id] === false
+                      ? 'verificationFailed'
+                      : 'unverified',
+                )}
               </Badge>
             ) : (
               <Tag tone="warn">{t('searchNotReady')}</Tag>
@@ -724,7 +746,7 @@ export function SearchPanel({
             kind="error"
             action={{ label: ux('retry'), onSelect: () => void save({ preventDefault() {} }), busy }}
           >
-            {appServerErrorMessage(errorEnvelope, document.documentElement.lang) ?? t(error)}
+            {searchFailureMessage(errorEnvelope, ux) ?? t(error)}
           </StatusMessage>
         )}
         <SettingsToolbar className="capability-save">

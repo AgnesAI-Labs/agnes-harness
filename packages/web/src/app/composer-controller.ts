@@ -22,7 +22,7 @@ import { renderWorkbench, unmountWorkbenchSoon } from '../workbench/dock.js'
 /** Ends the progress of the session being opened, while one is. */
 let endSessionRead: (() => void) | undefined
 
-/** The draft's workspace chip. The managed chats workspace reads as no choice: 「选择工作区」. */
+/** The draft's workspace chip. The managed chats workspace reads as no choice: 「Choose workspace」. */
 export function composerWorkspaceView(input: {
   selected: WorkspaceEntry | undefined
   rows: readonly WorkspaceEntry[]

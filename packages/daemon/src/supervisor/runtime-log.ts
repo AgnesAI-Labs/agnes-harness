@@ -1,7 +1,9 @@
 import { existsSync, lstatSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { createFileAudit } from '@agnes/host'
+import { publicErrorContract } from '@agnes/protocol'
 import { workerBootFailureCode } from '@agnes/worker-runtime'
+import { bestEffortOperations } from './best-effort.js'
 
 const KINDS = new Set([
   'worker.log',
@@ -84,8 +86,13 @@ export function openRuntimeLog(
         if (Number.isSafeInteger(data[key]) && Number(data[key]) >= 0) detail[key] = data[key]
       if (typeof data.level === 'string' && ['info', 'warn', 'error'].includes(data.level))
         detail.level = data.level
-      if (typeof data.code === 'string' && (CODES.has(data.code) || workerBootFailureCode(data.code)))
+      if (
+        typeof data.code === 'string' &&
+        (CODES.has(data.code) || workerBootFailureCode(data.code) || publicErrorContract(data.code))
+      )
         detail.code = data.code
+      if (record.kind === 'daemon.error' && bestEffortOperations.some((label) => label === data.operation))
+        detail.operation = data.operation
       if (typeof data.signal === 'string' && /^SIG[A-Z]{2,12}$/.test(data.signal)) detail.signal = data.signal
       write(record.kind, detail)
     },

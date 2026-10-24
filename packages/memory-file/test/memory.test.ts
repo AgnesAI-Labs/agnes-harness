@@ -226,6 +226,41 @@ describe('file memory contract', () => {
     })
   })
 
+  it('reports files changed outside the provider once while still injecting them', async () => {
+    const f = await fixture()
+    await f.session.configure({ mode: 'auto' })
+    // No baseline yet: the first observation records one instead of reporting a change.
+    await writeFile(f.index, 'Pre-existing preference')
+    expect((await f.session.snapshot(1))?.externalChanges).toBeUndefined()
+    // Agent writes through the provider, human edits and other sessions' commits are acknowledged.
+    await f.files(1).write(f.index, 'Agent preference')
+    expect((await f.session.snapshot(2))?.externalChanges).toBeUndefined()
+    const current = await f.session.readFile('MEMORY.md')
+    await f.session.editFile('MEMORY.md', 'Human preference', current.hash)
+    expect((await f.session.snapshot(3))?.externalChanges).toBeUndefined()
+    const two = f.open('two')
+    await two
+      .files(fallback, { sessionKey: 'two', turn: 1 }, new AbortController().signal, async () => ({
+        status: 'approved',
+      }))
+      .write(f.index, 'Other session preference')
+    expect((await f.session.snapshot(4))?.externalChanges).toBeUndefined()
+    // A shell under full access writes the files directly.
+    await writeFile(f.index, 'Shell preference')
+    await writeFile(join(f.session.root, 'topic.md'), 'Shell topic')
+    const tampered = await f.session.snapshot(5)
+    expect(tampered?.externalChanges).toEqual(['MEMORY.md', 'topic.md'])
+    expect(tampered?.content).toContain('Shell preference')
+    expect(await f.session.snapshot(5)).toEqual(tampered)
+    expect((await f.session.snapshot(6))?.externalChanges).toBeUndefined()
+    await rm(join(f.session.root, 'topic.md'))
+    expect((await f.session.snapshot(7))?.externalChanges).toEqual(['topic.md'])
+    // Memory off injects nothing and so reports nothing.
+    await writeFile(f.index, 'Shell while off')
+    await f.session.configure({ mode: 'off' })
+    expect(await f.session.snapshot(8)).toBeUndefined()
+  })
+
   it('rejects over-cap or secret-like candidates without truncating or approving them', async () => {
     const f = await fixture()
     await f.session.configure({ mode: 'ask', indexMaxBytes: 200, indexMaxLines: 5 })

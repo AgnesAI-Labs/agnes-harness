@@ -75,6 +75,7 @@ class AttemptFailed extends Error {
 export class Scheduler {
   private timer: ReturnType<typeof setInterval> | undefined
   private readonly aborts = new Map<string, AbortController>()
+  private readonly active = new Map<string, Promise<void>>()
   private ticking: Promise<unknown> = Promise.resolve()
   private accepting = true
 
@@ -84,7 +85,7 @@ export class Scheduler {
     if (this.timer || !this.accepting) return
     this.timer = setInterval(() => {
       this.ticking = this.ticking
-        .then(() => (this.accepting ? this.tick() : undefined))
+        .then(() => (this.accepting ? this.tick(false) : undefined))
         .catch((error: unknown) => this.options.log?.(String(error)))
     }, this.options.limits.tickMs)
     this.timer.unref()
@@ -94,6 +95,7 @@ export class Scheduler {
     this.stopIntake()
     this.abortActive()
     await this.ticking
+    await Promise.allSettled(this.active.values())
   }
 
   /** Fence admitted jobs before a surrounding shutdown ladder starts awaiting other drains. */
@@ -133,10 +135,15 @@ export class Scheduler {
     })
   }
 
-  async tick(): Promise<{ claimed: number; requeued: number; dead: number }> {
+  /** Manual ticks wait for their batch; background polling only admits work into the shared bound. */
+  async tick(waitForCompletion = true): Promise<{ claimed: number; requeued: number; dead: number }> {
     if (!this.accepting) return { claimed: 0, requeued: 0, dead: 0 }
     const now = this.options.clock()
-    const reclaimed = this.options.repo.reclaimStalled(now, this.options.limits.maxStalled)
+    const reclaimed = this.options.repo.reclaimStalled(
+      now,
+      this.options.limits.maxStalled,
+      new Set(this.active.keys()),
+    )
     for (const jobId of reclaimed.dead) {
       const job = this.options.repo.get(jobId)
       this.options.notices.emit('job_dead', {
@@ -149,8 +156,25 @@ export class Scheduler {
     this.options.repo.promoteDelayed(now)
     if (!this.accepting)
       return { claimed: 0, requeued: reclaimed.requeued.length, dead: reclaimed.dead.length }
-    const claimed = this.options.repo.claimDue(now, this.options.owner, this.options.limits.lockMs, 16)
-    await Promise.all(claimed.map((job) => this.dispatch(job)))
+    const claimed = this.options.repo.claimDue(
+      now,
+      this.options.owner,
+      this.options.limits.lockMs,
+      16 - this.active.size,
+    )
+    const pending = claimed.map((job) => {
+      // Register before dispatch: callbacks may synchronously stop intake or enter another tick.
+      const work = Promise.resolve()
+        .then(() => this.dispatch(job))
+        .finally(() => {
+          this.active.delete(job.idempotencyKey)
+        })
+      this.active.set(job.idempotencyKey, work)
+      // Background dispatch must always observe failures; manual callers still receive rejection.
+      if (!waitForCompletion) void work.catch((error: unknown) => this.options.log?.(String(error)))
+      return work
+    })
+    if (waitForCompletion) await Promise.all(pending)
     return { claimed: claimed.length, requeued: reclaimed.requeued.length, dead: reclaimed.dead.length }
   }
 

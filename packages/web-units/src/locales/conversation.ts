@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from './index.js'
 
-/** 对话骨架的组件内文案。经 `ConversationProps.translate` 注入。 */
+/** Conversation skeleton component text, injected through `ConversationProps.translate`. */
 export const conversationLocaleCatalog: LocaleCatalog = {
   en: {
     'conversation.references': 'Referenced sources',

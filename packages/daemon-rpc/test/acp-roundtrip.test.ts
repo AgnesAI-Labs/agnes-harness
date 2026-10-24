@@ -348,6 +348,70 @@ describe('local endpoint: ACP round trip', () => {
     await h.close()
   })
 
+  it('appends owner text to a new session prompt and refuses every request it cannot honour', async () => {
+    const h = await openTestHost()
+    const create = vi.spyOn(h.host, 'createSession').mockRejectedValue(new Error('stop after capture'))
+    // An embedded endpoint has no package control plane to lock; a configured one must answer healthily.
+    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+    const healthy = h.endpoint({
+      clock: () => Date.now(),
+      pollMs: 5,
+      packageAdmin: { service: { call: async () => ({ packages: [] }) } as never },
+    })
+    const locked = h.endpoint({
+      clock: () => Date.now(),
+      pollMs: 5,
+      packageAdmin: { service: { call: async () => ({ unhealthy: true }) } as never },
+    })
+    for (const e of [ep, healthy, locked]) {
+      await e.handle(init)
+      await addWorkspace(e, h.dataDir)
+    }
+    const open = (e: typeof ep, id: number, meta: Record<string, unknown>) =>
+      e.handle({
+        jsonrpc: '2.0',
+        id,
+        method: 'session/new',
+        params: { cwd: h.dataDir, mcpServers: [], _meta: { 'ai.agnes.harness': meta } },
+      }) as Promise<{ result?: { sessionId: string }; error?: { data?: { reason?: string } } }>
+    const text = 'Always answer in French.'
+    await open(ep, 2, { systemPromptAppend: text, sessionKey: 'agnes:append:a' })
+    await open(healthy, 11, { systemPromptAppend: text, sessionKey: 'agnes:append:c' })
+    expect(create.mock.calls.map((call) => call[0])).toEqual([
+      expect.objectContaining({ systemPromptAppend: text }),
+      expect.objectContaining({ systemPromptAppend: text }),
+    ])
+    const refused = async (e: typeof ep, id: number, meta: Record<string, unknown>) =>
+      (await open(e, id, meta)).error?.data?.reason
+    expect(await refused(ep, 4, { systemPromptAppend: text, agent: 'acme/pkg#agent' })).toBe(
+      'invalid agent selection',
+    )
+    for (const [id, value] of [
+      [5, ''],
+      [6, 'x'.repeat(8193)],
+      [7, 'a\0b'],
+      [8, 5],
+    ] as const)
+      expect(await refused(ep, id, { systemPromptAppend: value, sessionKey: `agnes:append:bad${id}` })).toBe(
+        'invalid systemPromptAppend',
+      )
+    expect(create).toHaveBeenCalledTimes(2)
+    // A reused ledger keeps its pinned prompt: appending to an existing session is refused, not ignored.
+    const existing = vi.spyOn(h.host.kernel, 'get').mockReturnValue({} as never)
+    expect(await refused(ep, 9, { systemPromptAppend: text, sessionKey: 'agnes:append:a' })).toBe(
+      'systemPromptAppend applies only to a new session',
+    )
+    existing.mockRestore()
+    // A package control plane that is not healthy refuses the way systemPrompt.save does.
+    expect(await refused(locked, 10, { systemPromptAppend: text, sessionKey: 'agnes:append:b' })).toBe(
+      'E_ADMIN_READ_ONLY',
+    )
+    await ep.close()
+    await healthy.close()
+    await locked.close()
+    await h.close()
+  })
+
   it('rejects non-empty mcpServers and a second in-flight prompt', async () => {
     const h = await openTestHost({ provider: slowProvider(50) })
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })

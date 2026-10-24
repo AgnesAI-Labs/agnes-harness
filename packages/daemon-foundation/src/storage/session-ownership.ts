@@ -18,9 +18,12 @@ export interface SessionPrincipalOwnership {
     boundarySeq: number,
   ): boolean
   resolve(sessionId: string): ActiveSessionPrincipal | undefined
+  /** Fork parent and boundary ledger seq of an active forked session; callers scope by principal first. */
+  lineage(sessionId: string): ForkLineage | undefined
   activeSessionIds(principalId: string): readonly string[]
 }
 
+export type ForkLineage = Readonly<{ parent: string; forkAt: number }>
 type ReservationKind = 'new' | 'fork'
 type ReservationState = 'pending' | 'active'
 type OwnershipRow = {
@@ -184,6 +187,18 @@ export class SessionPrincipalOwnershipIndex implements SessionPrincipalOwnership
       const reservation = this.read(sessionId)
       return reservation?.state === 'active'
         ? Object.freeze({ active: true, principalId: reservation.principalId })
+        : undefined
+    } catch {
+      throw unavailable()
+    }
+  }
+
+  lineage(sessionId: string): ForkLineage | undefined {
+    if (!validIdentity(sessionId)) return undefined
+    try {
+      const r = this.read(sessionId)
+      return r?.state === 'active' && r.kind === 'fork'
+        ? Object.freeze({ parent: r.parentSessionId!, forkAt: r.boundarySeq! })
         : undefined
     } catch {
       throw unavailable()
@@ -359,6 +374,13 @@ export class MemorySessionPrincipalOwnership implements SessionPrincipalOwnershi
     const reservation = this.owners.get(sessionId)
     return reservation?.state === 'active'
       ? Object.freeze({ active: true, principalId: reservation.principalId })
+      : undefined
+  }
+
+  lineage(sessionId: string): ForkLineage | undefined {
+    const r = validIdentity(sessionId) ? this.owners.get(sessionId) : undefined
+    return r?.state === 'active' && r.kind === 'fork'
+      ? Object.freeze({ parent: r.parentSessionId!, forkAt: r.boundarySeq! })
       : undefined
   }
 

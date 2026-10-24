@@ -28,6 +28,7 @@ export const CONFIGURATION_ERROR_CODES = [
   'CONFIG_SUBSCRIPTION_MODEL',
   'CONFIG_SUBSCRIPTION_FAILED',
   'CONFIG_MODEL_UNAVAILABLE',
+  'CONFIG_CHAT_MODEL_REQUIRED',
   'CONFIG_REVISION_CONFLICT',
   'CONFIG_PERSIST_FAILED',
   'CONFIG_INVALID_STATE',
@@ -69,13 +70,15 @@ export class ConfigurationError extends Error {
                               ? 'The provider catalogue is unavailable.'
                               : code === 'CONFIG_TEST_FAILED'
                                 ? 'The provider connection test failed.'
-                                : code === 'CONFIG_MODEL_UNAVAILABLE'
-                                  ? 'The selected model is unavailable.'
-                                  : code === 'CONFIG_REVISION_CONFLICT'
-                                    ? 'Configuration changed; reload and try again.'
-                                    : code === 'CONFIG_PERSIST_FAILED'
-                                      ? 'Configuration could not be saved.'
-                                      : 'The saved configuration is invalid.',
+                                : code === 'CONFIG_CHAT_MODEL_REQUIRED'
+                                  ? 'Image and video generation models cannot be used for chat. Choose a chat model.'
+                                  : code === 'CONFIG_MODEL_UNAVAILABLE'
+                                    ? 'The selected model is unavailable.'
+                                    : code === 'CONFIG_REVISION_CONFLICT'
+                                      ? 'Configuration changed; reload and try again.'
+                                      : code === 'CONFIG_PERSIST_FAILED'
+                                        ? 'Configuration could not be saved.'
+                                        : 'The saved configuration is invalid.',
     )
     this.name = 'ConfigurationError'
     if (field) this.message = `${field}: ${this.message}`

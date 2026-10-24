@@ -19,6 +19,7 @@
           "tools": {
             "prefix": "ui_",
             "names": [
+              "ui_guide",
               "ui_render",
               "ui_update",
               "ui_close",

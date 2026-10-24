@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -400,6 +400,82 @@ describe('runPrint in text mode', () => {
     })
   })
 
+  describe('--timeout and --output-file', () => {
+    // A turn that never ends on its own: it answers only once a cancel command has been submitted.
+    async function hung(): Promise<FakeEndpoint> {
+      const ep = scriptedEndpoint()
+      ep.on('session/prompt', async (_p, e) => {
+        while (!e.calls.some((c) => JSON.stringify(c.params ?? {}).includes('"cancel"')))
+          await new Promise((r) => setTimeout(r, 5))
+        return {
+          stopReason: 'cancelled',
+          _meta: {
+            'ai.agnes.harness': {
+              phase: 'terminalQuiescence',
+              promptTurnId: '1',
+              eventSequence: 1,
+              generation: 1,
+              lane: 'main',
+              turnEnd: { reason: 'aborted' },
+            },
+          },
+        }
+      })
+      return ep
+    }
+
+    it('cancels the turn at the deadline and exits 124 with the reason on stderr', async () => {
+      const o = io()
+      const code = await runPrint(await booted(await hung()), parseArgs(['-p', 'q', '--timeout', '0.05']), o)
+      expect(code).toBe(124)
+      expect(o.err()).toContain('agh: timeout after 0.05s; turn cancelled (exit 124)')
+      expect(o.err()).not.toContain('turn ended')
+    })
+
+    it.each([['0'], ['abc'], ['86401'], ['1e2']])(
+      '--timeout %j is a usage error and nothing is sent',
+      async (v) => {
+        const ep = scriptedEndpoint()
+        const e = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--timeout', v]), io()).catch(
+          (x: unknown) => x,
+        )
+        expect(e).toMatchObject({ name: expect.stringMatching(/UsageError/), code: 2 })
+        expect(ep.calls.map((c) => c.method)).not.toContain('session/prompt')
+      },
+    )
+
+    it('a turn that ends before the deadline keeps exit 0', async () => {
+      expect(await runPrint(await booted(), parseArgs(['-p', 'q', '--timeout', '30']), io())).toBe(0)
+    })
+
+    it('writes the final text to --output-file and still prints it', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'agh-print-out-'))
+      try {
+        const o = { ...io(), cwd: dir }
+        const code = await runPrint(
+          await booted(scriptedEndpoint({ reply: 'to a file' })),
+          parseArgs(['-p', 'q', '--output-file', 'out.txt']),
+          o,
+        )
+        expect(code).toBe(0)
+        expect(o.out()).toBe('to a file\n')
+        expect(readFileSync(join(dir, 'out.txt'), 'utf8')).toBe('to a file\n')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('an unwritable --output-file is a CommandError', async () => {
+      const e = await runPrint(
+        await booted(),
+        parseArgs(['-p', 'q', '--output-file', 'missing-dir/out.txt']),
+        io(),
+      ).catch((x: unknown) => x)
+      expect(e).toMatchObject({ code: 1 })
+      expect((e as Error).message).toContain('--output-file missing-dir/out.txt')
+    })
+  })
+
   it('the two remaining refusals say two different things', async () => {
     const said: string[] = []
     for (const argv of [
@@ -466,6 +542,56 @@ describe('runPrint in text mode', () => {
     const promptIndex = ep.calls.findIndex((c) => c.method === 'session/prompt')
     expect(setModelIndex).toBeGreaterThanOrEqual(0)
     expect(setModelIndex).toBeLessThan(promptIndex)
+  })
+
+  it('--tools and --disallowed-tools narrow the session before anything else is sent, resumed or not', async () => {
+    for (const argv of [
+      ['-p', 'q'],
+      ['-p', 'q', '--resume', FAKE_SESSION_ID],
+    ]) {
+      const ep = scriptedEndpoint()
+      ep.on('_agnes/v1/session.setToolFilter', () => ({ effectiveFromSeq: 3, filter: { allow: ['read'] } }))
+      const args = [...argv, '--tools', 'read', '--disallowed-tools', 'bash,web_fetch']
+      expect(await runPrint(await booted(ep), parseArgs(args), io())).toBe(0)
+      const methods = ep.calls.map((c) => c.method)
+      const at = methods.indexOf('_agnes/v1/session.setToolFilter')
+      expect(at).toBeGreaterThanOrEqual(0)
+      expect(at).toBeLessThan(methods.indexOf('session/prompt'))
+      expect(at).toBeLessThan(methods.indexOf('_agnes/v1/session.attach'))
+      expect(ep.calls[at]?.params).toMatchObject({
+        sessionId: FAKE_SESSION_ID,
+        allow: ['read'],
+        deny: ['bash', 'web_fetch'],
+        commandId: expect.any(String),
+      })
+    }
+  })
+
+  it('an older daemon, or a name the session does not have, stops the run before any prompt is sent', async () => {
+    const old = scriptedEndpoint()
+    const o = io()
+    const e = await runPrint(await booted(old), parseArgs(['-p', 'q', '--tools', 'read']), o).catch(
+      (x: unknown) => x,
+    )
+    expect(e).toMatchObject({
+      name: 'CommandError',
+      message: expect.stringContaining('cannot limit a session'),
+    })
+    expect(old.calls.map((c) => c.method)).not.toContain('session/prompt')
+
+    const strict = scriptedEndpoint().on('_agnes/v1/session.setToolFilter', () => {
+      throw Object.assign(new Error('rejected'), {
+        code: -32011,
+        data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool', names: ['nope'] },
+      })
+    })
+    const rejected = await runPrint(
+      await booted(strict),
+      parseArgs(['-p', 'q', '--disallowed-tools', 'nope']),
+      io(),
+    ).catch((x: unknown) => x)
+    expect(rejected).toMatchObject({ message: expect.stringContaining('nope') })
+    expect(strict.calls.map((c) => c.method)).not.toContain('session/prompt')
   })
 
   // Not refused: on a new session a preset travels on session/new, where daemon checks it against
@@ -759,4 +885,110 @@ it('keeps unknown turn failures generic without printing their code or private l
   } finally {
     await connected.close()
   }
+})
+
+describe('runPrint --append-system-prompt', () => {
+  const dirs: string[] = []
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+  })
+  const scratch = (): string => {
+    const d = mkdtempSync(join(tmpdir(), 'agh-append-'))
+    dirs.push(d)
+    return d
+  }
+  const metaOf = (ep: FakeEndpoint): Record<string, unknown> | undefined =>
+    (
+      ep.calls.find((c) => c.method === 'session/new')?.params as
+        | { _meta: Record<string, Record<string, unknown>> }
+        | undefined
+    )?._meta['ai.agnes.harness']
+  /** A daemon that reports the session's prompt back with `applied` text (or none, like an old one). */
+  const daemon = (applied?: string) =>
+    scriptedEndpoint().on('_agnes/v1/systemPrompt.get', () => ({
+      config: {},
+      effect: 'new-sessions',
+      hash: 'a'.repeat(64),
+      preview: 'session-assembled',
+      sections: [
+        { id: 'core', order: 1, source: 'core', text: applied === undefined ? 'base' : `base\n\n${applied}` },
+      ],
+    }))
+  const methodsOf = (ep: FakeEndpoint) => ep.calls.map((c) => c.method)
+
+  it('sends the text on a fresh session and reads the prompt back before the first prompt', async () => {
+    const ep = daemon('Answer in French.')
+    const code = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt', 'Answer in French.']),
+      io(),
+    )
+    expect(code).toBe(0)
+    expect(metaOf(ep)).toMatchObject({ systemPromptAppend: 'Answer in French.' })
+    expect(String(metaOf(ep)?.sessionKey)).toContain(':cli:session:')
+    const methods = methodsOf(ep)
+    expect(methods.indexOf('_agnes/v1/systemPrompt.get')).toBeGreaterThan(methods.indexOf('session/new'))
+    expect(methods.indexOf('_agnes/v1/systemPrompt.get')).toBeLessThan(methods.indexOf('session/prompt'))
+    expect(ep.calls.find((c) => c.method === '_agnes/v1/systemPrompt.get')?.params).toEqual({
+      sessionId: FAKE_SESSION_ID,
+    })
+  })
+
+  it('reads --append-system-prompt-file from the working directory', async () => {
+    const dir = scratch()
+    writeFileSync(join(dir, 'rules.md'), 'Be brief.\n')
+    const ep = daemon('Be brief.\n')
+    const code = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt-file', 'rules.md']),
+      { ...io(), cwd: dir },
+    )
+    expect(code).toBe(0)
+    expect(metaOf(ep)).toMatchObject({ systemPromptAppend: 'Be brief.\n' })
+  })
+
+  it('refuses a symlinked, oversize, empty, NUL or missing file before any session exists', async () => {
+    const dir = scratch()
+    writeFileSync(join(dir, 'real.md'), 'text')
+    symlinkSync(join(dir, 'real.md'), join(dir, 'link.md'))
+    writeFileSync(join(dir, 'big.md'), 'x'.repeat(8193))
+    writeFileSync(join(dir, 'empty.md'), '')
+    writeFileSync(join(dir, 'nul.md'), 'a\0b')
+    for (const file of ['link.md', 'big.md', 'empty.md', 'nul.md', 'missing.md']) {
+      const ep = daemon('text')
+      const e = await runPrint(
+        await booted(ep),
+        parseArgs(['-p', 'q', '--append-system-prompt-file', file]),
+        {
+          ...io(),
+          cwd: dir,
+        },
+      ).catch((x: unknown) => x)
+      expect(e, file).toMatchObject({ name: 'UsageError', code: 2 })
+      expect(methodsOf(ep), file).not.toContain('session/new')
+    }
+  })
+
+  it('does not send the first prompt when an older daemon ignored the field', async () => {
+    const ep = daemon()
+    const e = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt', 'Answer in French.']),
+      io(),
+    ).catch((x: unknown) => x)
+    expect(e).toMatchObject({ name: 'CommandError' })
+    expect((e as Error).message).toContain('did not apply')
+    expect(methodsOf(ep)).not.toContain('session/prompt')
+  })
+
+  it('does not send the first prompt when the daemon cannot report the prompt back', async () => {
+    const ep = scriptedEndpoint()
+    const e = await runPrint(
+      await booted(ep),
+      parseArgs(['-p', 'q', '--append-system-prompt', 'x']),
+      io(),
+    ).catch((x: unknown) => x)
+    expect(e).toMatchObject({ name: 'CommandError' })
+    expect(methodsOf(ep)).not.toContain('session/prompt')
+  })
 })

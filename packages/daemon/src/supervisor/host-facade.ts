@@ -12,7 +12,7 @@ import { workerComputerUseStatusSource } from './service-worker.js'
 import type { WorkerPool } from './worker-pool.js'
 /**
  * A `Host`-shaped facade for the per-connection `AgnesContext.host` field: the supervisor process
- * holds no kernel at all ("supervisor 不持内核" - the daemon design's own name for this split), so
+ * holds no kernel at all, so
  * there is no real `Assembled` route/preset table to build a genuine `Host` from without also
  * assembling one (which is exactly what a worker process is for). Grepping every `cx.host.` access
  * in `local/methods/acp.ts` and `local/methods/agnes.ts` shows the RPC handlers only ever touch

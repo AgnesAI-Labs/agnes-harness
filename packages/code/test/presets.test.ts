@@ -217,6 +217,7 @@ describe('standard.yaml', () => {
         'web_fetch',
         'web_search',
         'ask_user_question',
+        'ui_guide',
         'ui_render',
         'ui_update',
         'ui_close',
@@ -298,6 +299,7 @@ describe('standard.yaml', () => {
     expect((doc.model as { prompt_sections: string[] }).prompt_sections).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
     ])
     expect((doc.model as { contract_id: string }).contract_id).toBe('agnes-model-contract@v1')
@@ -308,10 +310,12 @@ describe('standard.yaml', () => {
   // host resolves against the deployment's own adapter list — a product recipe never names a
   // concrete provider or model.
   it('routes name ai routes, never concrete models', () => {
-    const route = (doc.model as { route: Record<string, unknown> }).route
-    expect(Object.keys(route).sort()).toEqual(['compaction', 'escalation', 'fast', 'primary', 'verifier'])
-    for (const [slot, target] of Object.entries(route))
-      expect(target, slot).toEqual({ route: 'default', model: 'default' })
+    for (const name of ['standard', 'minimal']) {
+      const route = (loadPreset(name).model as { route: Record<string, unknown> }).route
+      expect(Object.keys(route).sort(), name).toEqual(['escalation', 'fast', 'primary', 'verifier'])
+      for (const [slot, target] of Object.entries(route))
+        expect(target, `${name}: ${slot}`).toEqual({ route: 'default', model: 'default' })
+    }
   })
 
   it('carries the workspace edit/write allow rule and nothing wider', () => {
@@ -450,6 +454,7 @@ describe('channel', () => {
     expect((doc.model as { prompt_sections: string[] }).prompt_sections).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
       'channel-style',
     ])

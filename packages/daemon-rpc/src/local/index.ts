@@ -406,6 +406,14 @@ export function createLocalEndpoint(
   const journal = opts.journal ?? new MemoryJournal(clock)
   const lockedPackageMutations = lockedPackageMutationStatusSource(host)
   const computerUse = computerUseStatusSource(host)
+  const packagesReadOnly = (context: import('@agnes/daemon-foundation/local/endpoint').CallContext) =>
+    configurationReadOnly(async () =>
+      opts.packageAdmin?.service.call(
+        '_agnes/v1/packages.list',
+        { profile: host.profile.name },
+        localPackageAdminAuthority(['packages.read'])(context),
+      ),
+    )
   const cx = {
     host,
     registry,
@@ -426,6 +434,10 @@ export function createLocalEndpoint(
     sessionOwnership,
     hasSessionFact: (sessionId: string) =>
       host.kernel.get(sessionId) !== undefined || host.sessionGeneration?.(sessionId) !== undefined,
+    // An embedded endpoint has no package control plane that could be locked, so only a configured
+    // one can say "read-only"; the diagnostics gate below stays closed without it.
+    configurationReadOnly: (context: import('@agnes/daemon-foundation/local/endpoint').CallContext) =>
+      opts.packageAdmin === undefined ? Promise.resolve(false) : packagesReadOnly(context),
   }
   const preferences = new SessionPreferencesStore()
   const lister = withSessionPreferences(opts.lister ?? new RegistryLister(registry), preferences)
@@ -485,7 +497,7 @@ export function createLocalEndpoint(
       artifactRead: artifactReadConfigured,
       ...(lockedPackageMutations ? { lockedPackageMutations } : {}),
       ...(computerUse ? { computerUse } : {}),
-      forkSession: async (sessionId, at, childKey, credential, principalId) => {
+      forkSession: async (sessionId, at, childKey, credential, principalId, additionalDirectories) => {
         const denyFork = (): never => {
           throw rpcError('CAPABILITY_DENIED', {
             method: 'session.fork',
@@ -509,11 +521,18 @@ export function createLocalEndpoint(
         }
         try {
           const parentBinding = await workspaces.restoreBinding(sessionId)
-          await workspaces.authorizeAndBind(ownedChildKey, parentBinding.canonicalRoot)
+          const childBinding = await workspaces.authorizeAndBind(
+            ownedChildKey,
+            parentBinding.canonicalRoot,
+            // The child keeps every directory the parent had; admission checks the union as a whole.
+            [...new Set([...(parentBinding.extraRoots ?? []), ...(additionalDirectories ?? [])])],
+          )
           const entry = await registry.fork({
             parent: sessionId,
             at,
             childKey: ownedChildKey,
+            // Host judges the child's directories by the same rule as under the supervisor.
+            binding: childBinding,
             ...(credential === undefined ? {} : { credential }),
           })
           if (!sessionOwnership.activateFork(sessionId, entry.key, ownerPrincipal, at)) denyFork()
@@ -564,14 +583,7 @@ export function createLocalEndpoint(
     authority:
       opts.packageAdmin?.authority ??
       (cx.auth.config.transport === 'unix' ? localPackageAdminAuthority() : denyPackageAdminAuthority),
-    readOnly: (context) =>
-      configurationReadOnly(async () =>
-        opts.packageAdmin?.service.call(
-          '_agnes/v1/packages.list',
-          { profile: host.profile.name },
-          localPackageAdminAuthority(['packages.read'])(context),
-        ),
-      ),
+    readOnly: packagesReadOnly,
     requireSessionOwner: requireSessionOwner(cx),
     registry,
     profileHash: host.profile.hash,

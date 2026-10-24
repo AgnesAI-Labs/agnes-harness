@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { type ContentBlock, rpcError } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,7 @@ import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
 import { deliverableBasename } from '../src/deliverable-files.js'
 import { tt } from '../src/locale-extended.js'
+import { displayWidth } from '../src/terminal.js'
 import { TuiTheme } from '../src/theme.js'
 import { localCommandView } from '../src/views/local-command.js'
 
@@ -148,6 +149,111 @@ describe('session slash commands', () => {
     expect((await runSlash(app, '/rewind')).text).toBe(tt('session.noTurns', 'en'))
   })
 
+  it('/fork forks at the latest completed turn, or turn N, through the same call as /rewind', async () => {
+    const turn = (n: number, endSeq: number | undefined, forkable: boolean) => ({
+      id: `t${n}`,
+      turn: n,
+      startSeq: n * 10,
+      ...(endSeq ? { endSeq } : {}),
+      forkable,
+    })
+    const turns = [turn(1, 12, true), turn(2, 22, true), turn(3, undefined, false)]
+    const projectUIOpening = vi.fn(async () => ({ timeline: { turns, nodes: [] } }))
+    const fork = vi.fn(async () => ({ id: 'child' }))
+    const app = appWith({ session: { fork } }, { projectUIOpening })
+    const latest = await runSlash(app, '/fork')
+    expect(fork).toHaveBeenLastCalledWith('cur', 22)
+    expect(latest.switchSession).toMatchObject({ id: 'child' })
+    expect(latest.text).toBe(tt('fork.done', 'en', { turn: 2, id: 'cur' }))
+    await runSlash(app, '/fork 1')
+    expect(fork).toHaveBeenLastCalledWith('cur', 12)
+    await runSlash(app, '/rewind 12')
+    expect(fork).toHaveBeenLastCalledWith('cur', 12)
+    fork.mockClear()
+    for (const line of ['/fork 3', '/fork 9'])
+      expect((await runSlash(app, line)).text).toBe(
+        tt('fork.notForkable', 'en', { turn: Number(line.slice(6)) }),
+      )
+    for (const line of ['/fork x', '/fork 0', '/fork 1 2'])
+      expect((await runSlash(app, line)).text).toBe(tt('fork.usage', 'en'))
+    const busy = appWith({ session: { fork } }, { projectUIOpening }, { busy: true })
+    expect((await runSlash(busy, '/fork')).text).toBe(tt('fork.busy', 'en'))
+    projectUIOpening.mockResolvedValueOnce({ timeline: { turns: [turn(3, undefined, false)], nodes: [] } })
+    expect((await runSlash(app, '/fork')).text).toBe(tt('fork.noTurns', 'en'))
+    expect(fork).not.toHaveBeenCalled()
+  })
+
+  it('/recap assembles the local card, cuts a long request, and leaves out what it cannot read', async () => {
+    const longRequest = `fix ${'the parser '.repeat(40)}now`
+    const plan = {
+      kind: 'tool',
+      id: 'p1',
+      seq: 3,
+      name: 'update_plan',
+      toolUseId: 'p1',
+      status: 'completed',
+      summary: '',
+      argsPreview: JSON.stringify({
+        plan: [
+          { step: 'read', status: 'completed' },
+          { step: 'write the fix', status: 'in_progress' },
+          { step: 'test', status: 'pending' },
+        ],
+      }),
+    }
+    const timeline = {
+      turns: [{ turn: 1 }, { turn: 2 }],
+      nodes: [
+        { kind: 'user', id: 'u1', seq: 1, content: [{ type: 'text', text: 'older' }] },
+        { kind: 'user', id: 'u2', seq: 2, content: [{ type: 'text', text: longRequest }] },
+        { kind: 'user', id: 'u3', seq: 4, origin: 'system', content: [{ type: 'text', text: 'injected' }] },
+        plan,
+      ],
+      usage: { context: { tokens: 500, window: 1000 } },
+    }
+    const session = {
+      projectUIOpening: vi.fn(async () => ({ timeline })),
+      workspaceChanges: vi.fn(async () => ({ files: [{ path: 'a.ts' }, { path: 'b.ts' }] })),
+    }
+    const client = {
+      session: {
+        list: vi.fn(async () => ({ items: [{ ...meta('cur', '/w/a'), title: 'Parser work' }] })),
+        runtime: vi.fn(async () => ({ sessionKey: 'k' })),
+      },
+      call: vi.fn(async () => ({ schedules: [{}, {}, {}] })),
+    }
+    const text = (await runSlash(appWith(client, session), '/recap')).text ?? ''
+    const rows = Object.fromEntries(text.split('\n').map((row) => row.split(/ {2,}/) as [string, string]))
+    expect(rows[tt('recap.session', 'en')]).toBe('Parser work (cur)')
+    expect(rows[tt('recap.turns', 'en')]).toBe('2')
+    expect(rows[tt('recap.request', 'en')]).toBe(
+      `${[...longRequest.replace(/\s+/g, ' ')].slice(0, 200).join('')}…`,
+    )
+    expect(rows[tt('recap.plan', 'en')]).toBe('1/3 · write the fix')
+    expect(rows[tt('recap.files', 'en')]).toBe('2')
+    expect(rows[tt('recap.schedules', 'en')]).toBe('3')
+    expect(rows[tt('recap.context', 'en')]).toBe('500 / 1000 (50.0%)')
+    expect(rows[tt('recap.background', 'en')]).toBeUndefined()
+    // Every source failing leaves the session id only, never a placeholder.
+    const failing = {
+      projectUIOpening: vi.fn(async () => Promise.reject(new Error('x'))),
+      workspaceChanges: vi.fn(async () => Promise.reject(new Error('x'))),
+    }
+    const broken = {
+      session: { list: vi.fn(async () => Promise.reject(new Error('x'))), runtime: vi.fn() },
+      call: vi.fn(),
+    }
+    expect((await runSlash(appWith(broken, failing), '/recap')).text).toBe(
+      `${tt('recap.session', 'en')}  cur`,
+    )
+  })
+
+  it('/images hands its arguments to the inline image switch', async () => {
+    const command = vi.fn(() => 'done')
+    expect(await runSlash(appWith({}, {}, { images: { command } }), '/images off')).toEqual({ text: 'done' })
+    expect(command).toHaveBeenCalledWith(['off'], 'en')
+  })
+
   it('/new <dir> creates the session in that directory and shows a daemon refusal as it comes', async () => {
     const created = vi.fn(async () => {
       throw new Error('workspace not authorised')
@@ -175,10 +281,17 @@ describe('/grants', () => {
     }))
     const app = appWith({ approval: { sessionGrants, revokeSessionGrant } })
     expect((await runSlash(app, '/grants')).text).toBe(
-      '1\tg1\tshell[31m\tsession\t2026-10-22T00:00:00Z\ta b\n2\tg2\tshell[31m\talways\t2026-10-22T00:00:00Z\ta b',
+      '1  g1  shell[31m  session  2026-10-22T00:00:00Z  a b\n2  g2  shell[31m  always  2026-10-22T00:00:00Z  a b',
     )
     expect(sessionGrants).toHaveBeenCalledWith('cur')
-    expect((await runSlash(app, '/grants revoke 2')).text).toContain('revoked g2\t')
+    // the renderer strips control characters: columns must stay apart without them
+    const shown = ((await runSlash(app, '/grants')).text as string).replace(
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: mirrors the renderer
+      /[\x00-\x1f\x7f-\x9f]/g,
+      '',
+    )
+    expect(shown).not.toMatch(/g1shell|1g1/)
+    expect((await runSlash(app, '/grants revoke 2')).text).toContain('revoked g2  ')
     await runSlash(app, '/grants revoke g1')
     expect(revokeSessionGrant.mock.calls).toEqual([
       ['cur', 'g2'],
@@ -539,6 +652,57 @@ describe('small info commands', () => {
     expect(text).toMatch(/Queued inputs\s+-$/m)
   })
 
+  it('/status lists the extra directories and which language servers this PATH offers', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-status-'))
+    try {
+      const exe = (dir: string, name: string) => {
+        mkdirSync(dir, { recursive: true })
+        writeFileSync(join(dir, name), '#!/bin/sh\n', { mode: 0o755 })
+      }
+      const work = join(root, 'work')
+      exe(join(root, 'bin'), 'gopls')
+      exe(join(root, 'bin'), 'typescript-language-server')
+      exe(join(work, 'node_modules', '.bin'), 'basedpyright-langserver') // inside the workspace: skipped
+      vi.stubEnv('PATH', [join(work, 'node_modules', '.bin'), join(root, 'bin')].join(delimiter))
+      const here = (o: Record<string, unknown>, list: unknown[]) => {
+        const app = status(o, { timeline: { usage, yolo: false } }, { pending: [] }, list)
+        return Object.assign(app, { cwd: work })
+      }
+      const dirs = ['/x/one', '/x/two']
+      const text = (
+        await runSlash(here({}, [{ ...meta('cur', work), additionalDirectories: dirs }]), '/status')
+      ).text
+      expect(text).toMatch(/Extra directories {2}\/x\/one\n {19}\/x\/two\n/)
+      expect(text).toMatch(/Language servers\s+TS ✓ · Python ✗ · Go ✓$/m)
+      // Without extra directories it says none; after the binary shows up on a safe PATH it is found.
+      exe(join(root, 'bin'), 'pyright-langserver')
+      const plain = (await runSlash(here({}, [meta('cur', work)]), '/status')).text
+      expect(plain).toMatch(/Extra directories {2}none$/m)
+      expect(plain).toMatch(/Python ✓/)
+      // Over --connect the local PATH says nothing about the daemon.
+      const remote = (await runSlash(here({ remote: true }, [meta('cur', work)]), '/status')).text
+      expect(remote).toMatch(/Language servers\s+none$/m)
+    } finally {
+      vi.unstubAllEnvs()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('/status aligns every value at one display column when labels are wide (zh-CN)', async () => {
+    const app = Object.assign(
+      status({}, { timeline: { usage, yolo: false } }, { pending: [] }, [
+        { ...meta('cur', '/w/a'), additionalDirectories: ['/x/one', '/x/two'] },
+      ]),
+      { locale: 'zh-CN' as const },
+    )
+    const lines = ((await runSlash(app, '/status')).text ?? '').split('\n')
+    // Value column = display width of everything before the first non-space after the label gap.
+    const cols = lines.map((line) => displayWidth(line.match(/^(.*?\S?\s{2,})(?=\S)/)?.[1] ?? ''))
+    expect(lines.length).toBeGreaterThan(10)
+    expect(new Set(cols).size).toBe(1)
+    expect(cols[0]).toBeGreaterThan(0)
+  })
+
   const replies = (...texts: string[]) =>
     appWith(
       {},
@@ -654,6 +818,17 @@ describe('small info commands', () => {
     // Any other command keeps the dim style; a `+` there means nothing.
     const other = localCommandView(ansi)('/status', '+not a diff').render(40)
     expect(other).toContain(ansi.dim('+not a diff'))
+  })
+
+  it('/diff marks the changed words of a paired -/+ line, also on a wrapped row', () => {
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+    const mark = (s: string) => ansi.bold(ansi.underline(s))
+    const text = '-let total = price * 2 + tax\n+let total = cost * 2 + tax'
+    const wide = localCommandView(ansi)('/diff', text).render(60)
+    expect(wide).toContain(ansi.fg('danger', `-let total = ${mark('price')} * 2 + tax`))
+    expect(wide).toContain(ansi.fg('success', `+let total = ${mark('cost')} * 2 + tax`))
+    const narrow = localCommandView(ansi)('/diff', text).render(14)
+    expect(narrow.join('')).toContain(mark('price'))
   })
 
   it('/init submits a fixed message that depends on AGENTS.md, and writes nothing itself', async () => {

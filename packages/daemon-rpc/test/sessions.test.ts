@@ -153,6 +153,9 @@ describe('SessionRegistry', () => {
     await expect(reg.open({ ...request, preset: 'changed' })).rejects.toMatchObject({
       data: { code: 'ID_CONFLICT' },
     })
+    await expect(reg.open({ ...request, systemPromptAppend: 'different' })).rejects.toMatchObject({
+      data: { code: 'ID_CONFLICT' },
+    })
 
     await reg.closeAll()
     await h.close()

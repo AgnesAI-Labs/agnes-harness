@@ -94,13 +94,13 @@ it.each([
     ).toBe(true)
     expect(result.entries.find((entry) => entry.id === '@agnes/skill-helper')).toMatchObject({
       id: '@agnes/skill-helper',
-      version: '0.3.1',
+      version: '0.3.2',
       sourceId: 'builtin-plugins',
       source: { type: 'file', ref: 'file:./bundled-plugins/skill-helper' },
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/mcp-helper')).toMatchObject({
       id: '@agnes/mcp-helper',
-      version: '0.1.1',
+      version: '0.1.2',
       source: { ref: 'file:./bundled-plugins/mcp-helper' },
     })
     expect(result.entries.find((entry) => entry.id === '@agnes/goal-ui')).toMatchObject({
@@ -126,7 +126,7 @@ it.each([
       })
     expect(result.entries.find((entry) => entry.id === '@agnes/document-reader')).toMatchObject({
       id: '@agnes/document-reader',
-      version: '0.1.3',
+      version: '0.1.4',
       source: { ref: 'file:./bundled-plugins/document-reader' },
     })
     for (const pkg of OPTIONAL_BUNDLED_PACKAGES)

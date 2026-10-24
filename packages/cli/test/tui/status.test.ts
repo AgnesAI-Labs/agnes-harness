@@ -34,6 +34,23 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     expect(new StatusBar(PLAIN, 'en', true).render(80)[0]).toContain('safe mode')
   })
 
+  it('shows the preset, and a loud full-access marker only while yolo is on', () => {
+    const s = new StatusBar(PLAIN)
+    expect(s.render(80)[0]).not.toContain('preset')
+    expect(new StatusBar(PLAIN, 'en', false, '(default)').render(80)[0]).not.toContain('preset')
+    s.setPreset('strict')
+    expect(s.render(80)[0]).toContain('preset strict')
+    s.setUsage(undefined, true)
+    const line = s.render(80)[0] as string
+    expect(line).toContain('⚠ full access')
+    expect(line).not.toContain('preset strict')
+    s.setUsage(undefined)
+    expect(s.render(80)[0]).toContain('preset strict')
+    const zh = new StatusBar(PLAIN, 'zh-CN')
+    zh.setUsage(undefined, true)
+    expect(zh.render(80)[0]).toContain('完全访问')
+  })
+
   it('renders the projected usage as a separate Pi-style footer and clears it', () => {
     const s = new StatusBar(PLAIN)
     s.setUsage({
@@ -175,5 +192,34 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     expect(rows()).toEqual([note, 'F1 Export'])
     note = undefined
     expect(rows()).toEqual(['F1 Export'])
+  })
+})
+
+describe('status bar with fields turned off', () => {
+  const hide = (...hidden: string[]) => ({ shows: (field: string) => !hidden.includes(field) })
+  const bar = (...hidden: string[]) => {
+    const s = new StatusBar(PLAIN, 'en', false, 'review', hide(...hidden) as never)
+    s.setSlots([{ text: 'extension note', level: 'info' }])
+    s.setLink('reconnecting')
+    s.setBudget(95, 100)
+    s.setParked('tk-abcdefgh')
+    s.setNotice('something failed', 'error')
+    return s.render(200)[0] as string
+  }
+
+  it('drops the fields that were turned off and nothing else', () => {
+    const all = bar()
+    for (const text of ['extension note', 'reconnecting', 'preset review']) expect(all).toContain(text)
+    expect(bar('slots')).not.toContain('extension note')
+    expect(bar('link')).not.toContain('reconnecting')
+    expect(bar('preset')).not.toContain('preset review')
+    expect(bar('slots')).toContain('reconnecting')
+  })
+
+  it('never hides the budget warning, a parked approval ticket or an error notice', () => {
+    const line = bar('model', 'preset', 'usage', 'cwd', 'branch', 'link', 'slots')
+    expect(line).toContain('credits 95/100')
+    expect(line).toContain('parked tk-abcde')
+    expect(line).toContain('something failed')
   })
 })

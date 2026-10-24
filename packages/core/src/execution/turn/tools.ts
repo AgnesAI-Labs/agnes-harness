@@ -43,6 +43,7 @@ import { verifiedToolMeta } from '../../step/history.js'
 import { modelAllowsTool, modelVisibleTool } from '../../step/model-tools.js'
 import type { ChainStep, SessionImpl, StepOutcome } from '../../step/session.js'
 import { summarizeCall } from '../../step/summarize-call.js'
+import { toolFilterRule } from '../../step/tool-filter.js'
 import { dispatchable } from '../../step/tool-recovery.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { resolveModel } from './inference.js'
@@ -352,6 +353,15 @@ export async function approveAndExecute(
   // settlement. New/planned calls are still refused before hooks, approval, or effect intent.
   const def = t.snapshot.byName.get(call.name)
   if (!def) return { result: await refuse(s, call.toolUseId, 'TOOL_NOT_FOUND', `unknown tool ${call.name}`) }
+  if (!o.resumeDispatch && toolFilterRule(s.toolFilter, call.name))
+    return {
+      result: await refuse(
+        s,
+        call.toolUseId,
+        'TOOL_NOT_FOUND',
+        `tool ${call.name} is turned off for this session`,
+      ),
+    }
   if (!o.resumeDispatch && !modelAllowsTool(def, s.computerUseAllowed()))
     return {
       result: await refuse(s, call.toolUseId, 'TOOL_NOT_DISCLOSED', modelCapabilityUnavailable.message),

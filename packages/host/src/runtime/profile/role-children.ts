@@ -68,7 +68,7 @@ export function createRoleChildren(deps: {
       return child
     },
     async resolve(parent, input) {
-      const ref = parseAgentRef(input)
+      const ref = input
       // Copy synchronous parent state before the first await; resources enter its workspace below.
       // Never retain a live parent authorization link after admission.
       const parentPreset = structuredClone(parent.preset)
@@ -116,12 +116,17 @@ export function createRoleChildren(deps: {
         parentAuthority?.humanApprovals !== false &&
         !(trigger?.origin === 'system' && trigger.actor.attrs.unattendedApproval === 'refuse')
       const parentResources = await parentHost.captureSessionCapabilities(parent.key, workspace)
-      const role = (await catalogue()).find((entry) => entry.ref === ref)
+      const available = await catalogue()
+      const role = available.find((entry) => entry.ref === ref)
       if (!role)
         throw new HostError(
           'E_PRESET_UNSUPPORTED',
-          `Role is not delegable by the adopted application: ${ref}`,
+          available.length
+            ? `unknown role ${input}; available: ${available.map((entry) => entry.ref).join(', ')}`
+            : 'no roles are declared in this session; omit role',
         )
+      // Only trusted declared references reach the protocol parser.
+      parseAgentRef(ref)
       const reviewed = await deps.resolve(ref)
       const candidate = await deps.open({ sessionKey: '', tree: reviewed.tree, profile: reviewed.profile })
       if (!candidate.host.captureSessionCapabilities)

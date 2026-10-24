@@ -1,7 +1,8 @@
 import { basename, relative, sep } from 'node:path'
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
-import { guardedResult, refBlock, spillLocator } from '../../../tools-core/src/guards/output.js'
+import { fsFailure, scrubFeedback, toolFailure } from '../../../tools-core/src/guards/feedback.js'
+import { cutHead, guardedResult, refBlock, spillLocator } from '../../../tools-core/src/guards/output.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { MAX_ARTIFACT_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { FindParams, GrepParams } from '../../../tools-core/src/tools/schemas.js'
@@ -86,7 +87,10 @@ async function result(
   const full = [...(lines.length ? lines : ['no matches']), ...notes].join('\n')
   const bytes = new TextEncoder().encode(full)
   if (bytes.length > MAX_ARTIFACT_READ_BYTES)
-    return toolError('search output exceeds the 32 MiB artifact limit; narrow the search')
+    return toolError(
+      `search output is ${bytes.length} bytes, exceeding the 32 MiB artifact limit; narrow path/pattern`,
+      'FS_SEARCH_SIZE_LIMIT',
+    )
   if (lines.length <= limit) return guard(full)
   // Always spill on the caller's row limit, even if the byte guard would allow all rows.
   try {
@@ -137,7 +141,7 @@ export const ripgrepFindTool = defineTool({
       return result(ctx, lines, limit, listing.notes, { found, shown, partial: listing.partial })
     } catch (e) {
       if (unavailable(e)) return fallbackFind.execute(args, ctx)
-      return toolError(`find failed: ${String(e)}`)
+      return fsFailure(ctx, 'find', args.path ?? ctx.cwd, e)
     }
   },
 })
@@ -236,10 +240,16 @@ export const ripgrepGrepTool = defineTool({
         listing.notes,
         failed ? undefined : { found, shown, partial },
       )
-      return failed ? { ...response, isError: true } : response
+      return failed ? { ...response, isError: true, details: { code: 'FS_SEARCH_UNREADABLE' } } : response
     } catch (e) {
       if (unavailable(e)) return artifactGrep.execute(args, ctx)
-      return toolError(`grep failed: ${String(e)}`)
+      if (e instanceof Error && e.message.includes('regex parse error'))
+        return toolFailure(
+          ctx,
+          'FS_INVALID_PATTERN',
+          `grep pattern ${cutHead(scrubFeedback(JSON.stringify(args.pattern)), 160)} is not a valid regular expression; correct it or use literal=true.`,
+        )
+      return fsFailure(ctx, 'grep (check pattern or use literal=true)', args.path ?? ctx.cwd, e)
     }
   },
 })

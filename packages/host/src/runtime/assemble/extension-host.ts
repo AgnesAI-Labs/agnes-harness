@@ -10,6 +10,7 @@ import { createBuiltinRowHost } from '@agnes/host-extensions/ext-host/builtin-ro
 import { createExtensionFactorySelector } from '@agnes/host-extensions/ext-host/extension-isolation-selector'
 import { createManagedExtHost } from '@agnes/host-extensions/ext-host/index'
 import { ServiceRegistry } from '@agnes/host-extensions/ext-host/services'
+import { bestEffort } from '../../best-effort.js'
 import { compositionTools } from '../profile/composition-visibility.js'
 import type { AssemblyContext } from './context.js'
 import type { createEcosystemContexts } from './ecosystem-context.js'
@@ -120,7 +121,7 @@ export function createExtensionHost(
           },
           { snapshot },
         )
-        .catch(() => undefined)
+        .catch(bestEffort(deps.log, 'extension-shutdown'))
     }
   }
   const managed = createManagedExtHost({

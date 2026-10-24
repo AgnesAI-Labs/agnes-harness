@@ -258,6 +258,13 @@ it('rereads metadata on focus even when the paging revision is unchanged', async
     loading: false,
     groups: [expect.objectContaining({ loading: false }), expect.anything()],
   })
+  // Archiving the remaining row publishes a new revision and refreshes the first page automatically.
+  s.ui.invalidateSession('a0')
+  s.revision('v2')
+  s.list.mockResolvedValueOnce({ items: [], total: 0, revision: 'v2' })
+  await s.ui.refresh()
+  expect(s.ui.rows()).toEqual([])
+  expect(s.ui.snapshot().groups[0]).toMatchObject({ stale: false, loading: false, total: 0 })
 })
 
 it('shares focus and visibility refreshes through both summary and row reads without using an old cursor', async () => {

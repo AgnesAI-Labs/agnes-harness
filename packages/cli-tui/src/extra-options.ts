@@ -1,4 +1,8 @@
+import type { UITimeline } from '@agnes/protocol'
+import type { ClipboardImagePort } from './clipboard-image.js'
+import type { ExportRequest } from './export-command.js'
 import type { ExternalRoots } from './external-sessions.js'
+import type { SuspendIO } from './suspend.js'
 
 /** TuiApp options added by later features, kept here so app.ts does not grow. */
 export type TuiExtraOptions = {
@@ -8,8 +12,18 @@ export type TuiExtraOptions = {
   safeMode?: boolean
   /** Called with the new session's id once /new, /resume or a picker choice made it the current one. */
   onSessionSwitch?: (sessionId: string) => void
+  /** Mouse reporting at startup; `false` starts with it off. Absent means on, and `/mouse` toggles it either way. */
+  mouse?: boolean
+  /** Called with every projected timeline and, when the projection reported a window, whether older history is not loaded. */
+  onTimeline?: (timeline: UITimeline, hasEarlier?: boolean) => void
   /** `/import`: brings one external session file into this machine's home. Absent unless the local daemon form. */
   importSession?: (file: string, from?: string) => Promise<{ key: string }>
+  /** Reads the clipboard's image for Ctrl-V and `/paste`; defaults to the system clipboard tools. */
+  clipboard?: ClipboardImagePort
+  /** `/export`: writes the session to a file with the code behind `agh export`. Absent unless the local daemon form. */
+  exportSession?: (request: ExportRequest) => Promise<void>
   /** Where `/import` looks for Claude Code and codex sessions; defaults to `~/.claude/projects` and `~/.codex/sessions`. */
   externalRoots?: ExternalRoots
+  /** Ctrl-Z's signal source; tests inject one so nothing really stops. */
+  suspendIO?: SuspendIO
 }

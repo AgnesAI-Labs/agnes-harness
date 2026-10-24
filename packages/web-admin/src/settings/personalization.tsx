@@ -36,7 +36,7 @@ import { promptCatalog } from './system-prompt-locale.js'
 type Instruction = 'personaPrefix' | 'personaSuffix' | 'replyStyle'
 type Style = 'default' | 'concise' | 'detailed' | 'custom'
 
-/** The fixed texts 简洁 and 详细 write, in either language, so a saved one reads back as its choice. */
+/** The fixed texts Concise and Detailed write, in either language, so a saved one reads back as its choice. */
 const STYLE_TEXTS: Readonly<Record<'concise' | 'detailed', readonly string[]>> = {
   concise: [promptCatalog.en.conciseText ?? '', promptCatalog['zh-CN'].conciseText ?? ''],
   detailed: [promptCatalog.en.detailedText ?? '', promptCatalog['zh-CN'].detailedText ?? ''],
@@ -49,8 +49,8 @@ export function replyStyleChoice(text: string | undefined): Style {
 }
 
 /**
- * 个性化 on the General page: what the user wants the agent to do (a borderless text area), the
- * reply style (默认 / 简洁 / 详细 / 自定义, all written to the one reply-style field) and the closing
+ * Personalization on the General page: what the user wants the agent to do (a borderless text area), the
+ * reply style (Default / Concise / Detailed / Custom, all written to the one reply-style field) and the closing
  * instruction in a subpage. Each edit saves itself; only a failure shows, at the group label. While
  * a full replacement prompt is in use, or the connection may not save, everything is read-only.
  */
@@ -205,7 +205,7 @@ export function CustomInstructions({
 }
 
 /**
- * 个性化 and 记忆 on the General page. Neither is behind the advanced switch; memory is read only
+ * Personalization and Memory on the General page. Neither is behind the advanced switch; memory is read only
  * once the page is on screen.
  */
 export function Personalization({

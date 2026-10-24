@@ -12,10 +12,10 @@ import { systemInputText } from '../user-presentation.js'
 import { AttachmentImage, type AttachmentReader } from './attachment-image.js'
 import { SubtaskDetailsButton } from './subtask-details.js'
 
-/** 缩略图固定 72×56，和输入框里的待发图片同尺寸：图片不再按原图比例把消息撑长。 */
+/** Fixed 72×56 thumbnails match pending composer images, preventing the original aspect ratio from stretching messages. */
 export const USER_MESSAGE_IMAGE_THUMBNAIL = { width: 72, height: 56 } as const
 
-/** 历史消息里的图片按服务端同一套预算重新判一遍，超出的一张只显示占位说明。 */
+/** Recheck historical images against the same server budgets; show only a placeholder for any over the limit. */
 export function imageBlobBytes(bytes: Uint8Array): ArrayBuffer {
   const copy = new ArrayBuffer(bytes.byteLength)
   new Uint8Array(copy).set(bytes)
@@ -61,7 +61,7 @@ export function UserMessageImage({
       </span>
     )
   if (!previewUrl) return null
-  // antd 的 Image 自带点击放大预览（缩放、旋转、多图左右切换），比自绘弹层省事。
+  // antd Image provides click-to-preview with zoom, rotation and multi-image navigation, avoiding a custom overlay.
   return (
     <Image
       className="user-message-image"
@@ -73,15 +73,15 @@ export function UserMessageImage({
   )
 }
 
-/** 一条用户消息的全部内联图片。 */
+/** All inline images in one user message. */
 export function UserMessageImages({ node, t }: { node: Extract<UINode, { kind: 'user' }>; t: Translate }) {
   const images = node.content.filter((block) => block.type === 'image')
   if (images.length === 0) return null
   let imageBytes = 0
-  // 同一条消息里可以粘贴重复的图片：内容摘要相同就靠出现次数区分 key，否则 React 会认成同一张。
+  // A message may repeat an image: distinguish equal content digests by occurrence or React treats them as one image.
   const imageKeys = new Map<string, number>()
   return (
-    // 同一条消息的图片归到一个预览组：点开大图后能用左右箭头在几张之间翻。
+    // Group images from one message for left/right navigation in the full-size preview.
     <Image.PreviewGroup>
       <div className="user-message-images">
         {images.map((block, index) => {

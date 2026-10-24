@@ -23,7 +23,7 @@ export function WorkspaceMenu({
   runningCount: number
   newSession(): void
   action?: ((action: 'reveal' | 'remove', workspace: WorkspaceEntry) => Promise<void>) | undefined
-  /** The daemon-managed chats workspace: only 「新建会话」, never reveal or remove. */
+  /** The daemon-managed chats workspace: only 「New session」, never reveal or remove. */
   managed?: boolean
 }) {
   const trigger = useRef<HTMLButtonElement>(null)

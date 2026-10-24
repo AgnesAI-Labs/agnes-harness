@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { access, copyFile, mkdir, readFile, realpath, writeFile } from 'node:fs/promises'
-import { devNull } from 'node:os'
 import { dirname, join } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
@@ -36,7 +35,7 @@ test('workspace dock previews and mentions a file that the agent reads', async (
           cwd: runtime.workspace,
           timeout: 10_000,
           maxBuffer: 4096,
-          env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: devNull },
+          env: { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
         },
         (error) => (error ? reject(error) : done()),
       )

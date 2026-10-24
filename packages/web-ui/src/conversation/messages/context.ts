@@ -11,7 +11,7 @@ export type CostNode = Extract<UINode, { kind: 'cost' }>
 
 export type ApprovalNode = Extract<UINode, { kind: 'approval' }>
 
-/** 组件未拿到宿主注入时的兜底：显示 key 本身，让漏接线在界面上可见。 */
+/** Fallback without host injection: show the key itself to make missing wiring visible. */
 export const fallbackT: Translate = (key) => key
 
 export interface ConversationMarkdownState {

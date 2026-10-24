@@ -15,7 +15,7 @@ type Inside = {
   submitBlocks(blocks: unknown, draft?: string, steer?: boolean): Promise<void>
 }
 
-async function openApp() {
+async function openApp(extra: Partial<ConstructorParameters<typeof TuiApp>[0]> = {}) {
   const ep = scriptedEndpoint().on('_agnes/v1/session.projectUI', (params) => ({
     sessionId: (params as { sessionId: string }).sessionId,
     upto: 0,
@@ -32,7 +32,7 @@ async function openApp() {
   const client = createClient({ transport: { kind: 'inproc', endpoint: ep } })
   const session = await client.session.new({ cwd: '/tmp' })
   const term = new FakeTerminal({ columns: 80, rows: 24 })
-  const app = new TuiApp({ session, term, header: 'Agnes' })
+  const app = new TuiApp({ session, term, header: 'Agnes', ...extra })
   await app.start()
   const inside = app as unknown as Inside
   return {
@@ -84,6 +84,51 @@ it('Alt-Enter steers the draft into a running turn, and types a newline when idl
     term.feed('later')
     term.feed('\x1b\r')
     expect(steered).toEqual([['later', true]])
+  } finally {
+    await close()
+  }
+})
+
+it('Ctrl-Z on an empty prompt hands the terminal back, stops, and repaints when continued; with a draft it still undoes', async () => {
+  const events: string[] = []
+  let resume = () => {}
+  const suspendIO = {
+    platform: 'linux',
+    stop: () => void events.push('stop'),
+    onContinue: (fn: () => void) => {
+      resume = fn
+    },
+  }
+  const { app, term, inside, close } = await openApp({ suspendIO })
+  try {
+    term.feed('ab')
+    term.feed('\x1a')
+    expect(events).toEqual([])
+    expect(inside.editor.text).toBe('')
+    term.feed('\x1a')
+    expect(events).toEqual(['stop'])
+    expect(term.raw).toBe(false)
+    expect(term.writes.join('')).toContain('\x1b[?2004l')
+    expect(term.writes.join('')).toContain('\x1b[?1049l\x1b[?25h')
+    const before = term.writes.length
+    resume()
+    expect(term.raw).toBe(true)
+    const painted = term.writes.slice(before).join('')
+    expect(painted).toContain('\x1b[?1049h')
+    expect(painted).toContain('\x1b[?2004h')
+    expect(app.busy).toBe(false)
+  } finally {
+    await close()
+  }
+})
+
+it('Ctrl-Z never suspends on win32', async () => {
+  const stop = vi.fn()
+  const { term, close } = await openApp({ suspendIO: { platform: 'win32', stop, onContinue: vi.fn() } })
+  try {
+    term.feed('\x1a')
+    expect(stop).not.toHaveBeenCalled()
+    expect(term.raw).toBe(true)
   } finally {
     await close()
   }

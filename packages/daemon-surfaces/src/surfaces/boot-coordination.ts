@@ -41,7 +41,7 @@ export async function coordinateSurfacesOnBoot(deps: {
   signal: AbortSignal
 }): Promise<ResolvedDeployment | undefined> {
   if (deps.enabled === false) return undefined
-  // C1 (final review, Critical): `resolveDeployment` and `controller.start` can both fail for reasons
+  // `resolveDeployment` and `controller.start` can both fail for reasons
   // entirely outside the daemon's control -- a bad artifact, a health-probe timeout, a `harnessRange`
   // mismatch, or a package removed from the inventory while a deploy still references it. None of
   // those are a reason to take the WHOLE daemon down: `startSupervisor`'s own outer try/catch (this

@@ -95,6 +95,7 @@ import { projectPluginPrimaryStatus, projectPluginReadStatus } from './primary-s
 import type { PackageProfileDirectory } from './project.js'
 import { publicationAdmission, publicationMetadata } from './publication-admission.js'
 import { packageReadOperation } from './read-operation.js'
+import { packageSourceFailure } from './source-failure.js'
 import { type TrustParams, trustAndRefresh } from './trust-workspace.js'
 
 export type PackageActivationActual = PackageInstalledDescriptor['actual']
@@ -274,8 +275,10 @@ function packageError(error: unknown): PackageAdminError {
   const detail =
     raw.detail && typeof raw.detail === 'object' ? (raw.detail as Record<string, unknown>) : undefined
   const blockers = safeBlockers(detail?.blockers)
+  const sourceFailure = packageSourceFailure(code, detail?.reason)
   return {
     code,
+    ...(sourceFailure ? { sourceFailure } : {}),
     safeMessage: safeMessage[code],
     blockers,
     diagnostics: safeAuthoringDiagnostics(detail?.diagnostics),
@@ -417,7 +420,7 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
   const checked = validatePackageAdminData('PackageCatalogDescriptor', value)
   if (!checked.ok) throw rpcError('SEMANTIC_REJECTED', { reason: 'E_PACKAGE_STATE' })
   const entry = checked.value as PackageCatalogDescriptor
-  // Keep the canonical PM4 source. It is the inspect/install input, and its grammar already rejects
+  // Keep the canonical package source. It is the inspect/install input, and its grammar already rejects
   // credentials and absolute file paths; replacing it with a display label would break the digest
   // confirmation binding.
   const projected: PackageCatalogDescriptor = {

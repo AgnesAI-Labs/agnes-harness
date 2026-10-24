@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { type ParsedArgs, parseArgs, resolveMode, usage } from '../src/args.js'
+import { COMMANDS, type ParsedArgs, parseArgs, resolveMode, usage } from '../src/args.js'
 import { UsageError } from '../src/errors.js'
+import { mistypedCommand } from '../src/suggest.js'
 import { refuseTurnCapsOutsidePrint } from '../src/turn-caps.js'
 
 const throws = (argv: string[]): UsageError => {
@@ -117,6 +118,24 @@ describe('parseArgs: the common forms', () => {
         permission: level,
       })
     expect(parseArgs(['--resume', 'sid']).resume).toBe('sid')
+  })
+
+  it('--tools and --disallowed-tools record exact names, deduplicated, for a new or resumed session', () => {
+    expect(
+      parseArgs(['--tools', 'read_file,grep,read_file', '--disallowed-tools', 'bash']).toolFilter,
+    ).toEqual({
+      allow: ['read_file', 'grep'],
+      deny: ['bash'],
+    })
+    expect(parseArgs(['-p', 'go', '--disallowed-tools', 'bash,web_fetch']).toolFilter).toEqual({
+      deny: ['bash', 'web_fetch'],
+    })
+    expect(parseArgs(['resume', 'sid', '--tools', 'read_file']).toolFilter).toEqual({ allow: ['read_file'] })
+    expect(parseArgs(['--resume', 'sid', '--tools', 'read_file']).toolFilter).toEqual({
+      allow: ['read_file'],
+    })
+    expect(parseArgs(['go']).toolFilter).toBeUndefined()
+    expect(usage()).toContain('--disallowed-tools')
   })
 
   it('-h/-v are the short spellings of --help/--version', () => {
@@ -242,6 +261,15 @@ describe('parseArgs: subcommands', () => {
     ])
   })
 
+  it('a lone word one typo from a command is still a prompt, but is named for the hint', () => {
+    expect(parseArgs(['sesions']).positional).toEqual(['sesions'])
+    expect(mistypedCommand(parseArgs(['sesions']), COMMANDS)).toBe('sessions')
+    expect(mistypedCommand(parseArgs(['sessions']), COMMANDS)).toBeUndefined()
+    expect(mistypedCommand(parseArgs(['-p', 'sesions']), COMMANDS)).toBeUndefined()
+    expect(mistypedCommand(parseArgs(['fix', 'the', 'bug']), COMMANDS)).toBeUndefined()
+    expect(mistypedCommand(parseArgs(['hello']), COMMANDS)).toBeUndefined()
+  })
+
   it('a word that is not a command is a prompt, not an error', () => {
     const unknown = parseArgs(['doctorr'])
     expect(unknown.command).toBeUndefined()
@@ -267,6 +295,8 @@ describe('parseArgs: subcommands', () => {
 describe('parseArgs: every rejection says which check fired', () => {
   it.each([
     [['--bogus'], 'unknown flag --bogus'],
+    [['--jsno'], 'unknown flag --jsno; did you mean --json?'],
+    [['--no-alt-scren'], 'unknown flag --no-alt-scren; did you mean --no-alt-screen?'],
     [['-x'], 'unknown flag -x'],
     [['--profile'], '--profile needs a value'],
     [['--profile', '--preset', 'b'], '--profile needs a value'],
@@ -293,17 +323,47 @@ describe('parseArgs: every rejection says which check fired', () => {
     [['--model', 'pri mary=gateway/x'], '--model expects <slot>=<route>/<model>'],
     [['--model', 'primary.fast=gateway/x'], '--model expects <slot>=<route>/<model>'],
     [['--model', '1=gateway/x'], '--model expects <slot>=<route>/<model>'],
+    [['--tools'], '--tools needs a value'],
+    [['--disallowed-tools', '--json'], '--disallowed-tools needs a value'],
+    [
+      ['--tools', 'read,'],
+      '--tools expects comma-separated tool names (letters, digits, underscore; no wildcards)',
+    ],
+    [
+      ['--tools', 'read*'],
+      '--tools expects comma-separated tool names (letters, digits, underscore; no wildcards)',
+    ],
+    [
+      ['--disallowed-tools', 'a b'],
+      '--disallowed-tools expects comma-separated tool names (letters, digits, underscore; no wildcards)',
+    ],
+    [
+      ['--tools', Array.from({ length: 129 }, (_, n) => `t${n}`).join(',')],
+      '--tools names more than 128 tools',
+    ],
+    [['--tools', 'a', '--tools', 'b'], '--tools was given twice; list every tool in one value'],
+    [
+      ['sessions', '--tools', 'a'],
+      '--tools and --disallowed-tools apply only when starting or resuming a session',
+    ],
+    [
+      ['--mode', 'acp', '--disallowed-tools', 'a'],
+      '--tools and --disallowed-tools apply only when starting or resuming a session',
+    ],
   ])('%j is rejected with %s', (argv, message) => {
     expect(throws(argv as string[]).message).toBe(message)
   })
 
-  it.each([['--max-budget'], ['--max-turns']])('%s is refused outside -p and allowed with it', (flag) => {
-    for (const mode of ['tui', 'acp'])
-      expect(() => refuseTurnCapsOutsidePrint(parseArgs([flag, '1']), mode)).toThrow(
-        `${flag} is supported only with -p`,
-      )
-    expect(() => refuseTurnCapsOutsidePrint(parseArgs(['-p', flag, '1']), 'print')).not.toThrow()
-  })
+  it.each([['--max-budget'], ['--max-turns'], ['--timeout'], ['--output-file']])(
+    '%s is refused outside -p and allowed with it',
+    (flag) => {
+      for (const mode of ['tui', 'acp'])
+        expect(() => refuseTurnCapsOutsidePrint(parseArgs([flag, '1']), mode)).toThrow(
+          `${flag} is supported only with -p`,
+        )
+      expect(() => refuseTurnCapsOutsidePrint(parseArgs(['-p', flag, '1']), 'print')).not.toThrow()
+    },
+  )
 
   it('a rejection is a UsageError and carries exit code 2', () => {
     const e = throws(['--bogus'])
@@ -437,6 +497,22 @@ it('selects a versioned loop, including a scoped id, and refuses missing version
     ['resume', 'id', '--loop', 'dag@1'],
   ])
     expect(() => parseArgs(argv)).toThrow(UsageError)
+})
+
+it('appends to a new session prompt only: refuses a resume, an agent, both flags and a missing value', () => {
+  expect(parseArgs(['-p', 'hi', '--append-system-prompt', 'Be brief.']).appendSystemPrompt).toBe('Be brief.')
+  expect(parseArgs(['-p', 'hi', '--append-system-prompt-file', 'rules.md']).appendSystemPromptFile).toBe(
+    'rules.md',
+  )
+  for (const argv of [
+    ['--append-system-prompt'],
+    ['--append-system-prompt', 'a', '--append-system-prompt-file', 'b'],
+    ['--continue', '--append-system-prompt', 'a'],
+    ['--resume', 'id', '--append-system-prompt-file', 'a'],
+    ['resume', 'id', '--append-system-prompt', 'a'],
+    ['--agent', '@acme/kit#review', '--append-system-prompt', 'a'],
+  ])
+    expect(() => parseArgs(argv), argv.join(' ')).toThrow(UsageError)
 })
 
 it('recognizes help before forwarding commands and leaves stdio arguments as data', () => {

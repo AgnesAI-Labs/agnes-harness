@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
 import { buildRuntimeTarget, createPluginRow } from '@agnes/plugin-runtime/host'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach } from 'vitest'
 import { createTestHost, type TestHostOptions } from '../../testkit/index.js'
 
@@ -20,7 +21,9 @@ afterEach(() => {
 export const scratch = (): string => {
   const d = mkdtempSync(join(tmpdir(), 'agnes-plugin-extension-'))
   dirs.push(d)
-  return d
+  const directory = join(d, 'private')
+  createPrivateDirectorySync(directory)
+  return directory
 }
 export const settle = () => new Promise((resolve) => setTimeout(resolve, 50))
 

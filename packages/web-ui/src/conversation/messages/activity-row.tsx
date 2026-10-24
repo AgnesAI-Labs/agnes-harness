@@ -50,7 +50,7 @@ export function ActivityRow({
   /** Full text of a truncated target. */
   tooltip?: string | undefined
   state?: ActivityState
-  /** Short reason beside a failed or waiting step, e.g. 退出码 1. */
+  /** Short reason beside a failed or waiting step, e.g. exit code 1. */
   note?: string | undefined
   expanded: boolean
   onToggle: () => void

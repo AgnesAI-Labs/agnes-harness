@@ -1,6 +1,6 @@
 import type { ChildProcess } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { DaemonDiscovery, DaemonScope } from '@agnes/daemon'
@@ -8,6 +8,7 @@ import * as daemon from '@agnes/daemon'
 import * as host from '@agnes/host'
 import type { Client, CreateClientOptions } from '@agnes/sdk'
 import * as sdk from '@agnes/sdk'
+import { createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as sources from '../../package-manager/src/sources.js'
 import { ensureLocalBackend as ensureWebBackend } from '../launch/backend.js'
@@ -692,9 +693,12 @@ describe('ensureLocalBackend', () => {
     let path = ''
     const spawnDaemon = ({ env }: SpawnDaemonInput) => {
       path = env[STARTUP_DIAGNOSTIC_ENV] ?? ''
-      writeFileSync(path, JSON.stringify({ message: 'daemon or package mutation lock is held' }), {
-        mode: 0o600,
-      })
+      const diagnostic = createPrivateFileSync(path)
+      try {
+        writeFileSync(diagnostic, JSON.stringify({ message: 'daemon or package mutation lock is held' }))
+      } finally {
+        closeSync(diagnostic)
+      }
       queueMicrotask(() => {
         ;(child as unknown as { exitCode: number | null }).exitCode = 1
         child.emit('exit', 1, null)

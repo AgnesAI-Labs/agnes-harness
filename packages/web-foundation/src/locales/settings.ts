@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-client'
 
-/** 设置域文案（S 线）：配置错误码译文（§8.2 设置负责人翻译）、外观、OAuth、选择器与账户面板。 */
+/** Settings text: translated configuration errors, appearance, OAuth, pickers and account panels. */
 export const settingsLocaleCatalog: LocaleCatalog = {
   en: {
     'settings.config.part.home': 'Home directory',
@@ -49,6 +49,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'accounts.compatible.add': 'Add',
     'accounts.compatible.manualPlaceholder': 'Type a model ID, then Enter',
     'accounts.compatible.manualStill': 'You can still add models by hand.',
+    'accounts.compatible.error.notConfigured': 'Not configured. Enter an API key to list models.',
     'accounts.compatible.error.network': 'Could not reach this address.',
     'accounts.compatible.error.timeout': 'The endpoint did not answer in time.',
     'accounts.compatible.error.redirect': 'The endpoint redirected; enter the final address.',
@@ -95,6 +96,8 @@ export const settingsLocaleCatalog: LocaleCatalog = {
       'The local credential store is unavailable. Check filesystem access and native build support; see data/audit/configuration.jsonl for the path and error code.',
     'settings.config.providerUnavailable':
       'The provider model catalog is unavailable. Check the network or base URL.',
+    'settings.config.verificationUnknown':
+      'Credential validity is unknown. The service returned no usable chat model list.',
     'settings.config.testFailed': 'The provider connection test failed. Check the address and key.',
     'settings.config.subscriptionAuth':
       'The upstream rejected the subscription authorization or access. Re-authorize and verify the signed-in account.',
@@ -118,6 +121,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.account.detailsTitle': 'Account details',
     'settings.account.addTitle': 'Add account',
     'settings.account.editContext': 'Edit the connection and default model',
+    'settings.state.notConfigured': 'Not configured',
     'settings.state.reading': 'Reading the configuration…',
     'settings.state.readFailed': 'Reading the configuration failed. Retry.',
     'settings.state.connectionChanged':
@@ -266,6 +270,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'accounts.compatible.add': '添加',
     'accounts.compatible.manualPlaceholder': '输入模型 ID 后回车',
     'accounts.compatible.manualStill': '仍可手动添加模型。',
+    'accounts.compatible.error.notConfigured': '未配置。请填写 API Key 后重新获取模型列表。',
     'accounts.compatible.error.network': '连不上这个地址。',
     'accounts.compatible.error.timeout': '连接超时。',
     'accounts.compatible.error.redirect': '地址发生了跳转，请填写最终地址。',
@@ -306,6 +311,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.config.credentialStore':
       '本地凭据存储不可用。请检查文件系统访问权限和本机构建支持；具体路径及错误码见 data/audit/configuration.jsonl。',
     'settings.config.providerUnavailable': '服务商模型目录不可用，请检查网络或 Base URL。',
+    'settings.config.verificationUnknown': '无法确认凭据是否有效。服务未返回可用的对话模型列表。',
     'settings.config.testFailed': '服务商连接测试未通过，请检查地址和密钥。',
     'settings.config.subscriptionAuth': '上游拒绝了订阅授权或访问权限，请重新授权并核对登录账号。',
     'settings.config.subscriptionQuota': '上游报告额度或余额不足，请检查订阅用量。',
@@ -324,6 +330,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.account.detailsTitle': '账户详情',
     'settings.account.addTitle': '添加账户',
     'settings.account.editContext': '编辑连接与默认模型',
+    'settings.state.notConfigured': '未配置',
     'settings.state.reading': '正在读取配置…',
     'settings.state.readFailed': '配置读取失败，请重试。',
     'settings.state.connectionChanged': '连接信息已变更，正在重新测试；此前的模型列表已失效。',

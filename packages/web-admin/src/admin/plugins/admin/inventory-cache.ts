@@ -43,15 +43,18 @@ function invalidateInventory() {
 }
 
 async function fetchInventory(api: PluginAdminApi, verifiedList?: PackageListResult) {
-  const [list, surfaceFeed, tree, runtimeCatalog, composition, bundledCatalog] = await Promise.all([
+  const [list, surfaceFeed, tree, bundledCatalog] = await Promise.all([
     verifiedList ?? api.list(),
     api.surfaceLinks().catch(() => undefined),
     api.treeList().catch(() => undefined),
-    api.runtime().catch(() => undefined),
-    api.composition().catch(() => undefined),
     readBundledCatalog(api).catch(() => []),
   ])
-  return { list, surfaceFeed, tree, runtimeCatalog, composition, bundledCatalog }
+  // These catalogs only describe presentation. A slow Host must not block a verified inventory.
+  const presentation = Promise.all([
+    api.runtime().catch(() => undefined),
+    api.composition().catch(() => undefined),
+  ]).then(([runtimeCatalog, composition]) => ({ runtimeCatalog, composition }))
+  return { list, surfaceFeed, tree, presentation, bundledCatalog }
 }
 
 /** The caller supplies a newly read context, never a remembered permission decision. */

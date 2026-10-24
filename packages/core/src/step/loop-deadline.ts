@@ -1,6 +1,7 @@
 import { CoreError } from '@agnes/core-common/types'
 import { armTimeout } from '@agnes/core-effects/effects/wrap'
 import type { LoopDriver, LoopStepOutcome } from '@agnes/extension-api'
+import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from './session.js'
 
 const DEFAULT_LOOP_STEP_IDLE_MS = 30 * 60_000
@@ -111,7 +112,7 @@ export function stepWithinLoopDeadline(s: SessionImpl, driver: LoopDriver): Prom
       s.loopScope.expire()
       void Promise.resolve()
         .then(() => driver.cancel())
-        .catch(() => undefined)
+        .catch(bestEffort(s.d.logger, 'expired-loop-cancel'))
     },
   })
 }

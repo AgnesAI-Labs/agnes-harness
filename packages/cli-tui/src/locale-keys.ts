@@ -1,13 +1,33 @@
 import type { ActionId } from './keymap.js'
 import type { Locale } from './locale.js'
+import { CHROME_DICT, type ChromeKey } from './locale-chrome.js'
+import { CONFIG_DICT, type ConfigKey } from './locale-config.js'
+import { DISPLAY_DICT, type DisplayKey } from './locale-display.js'
+import { PAGER_DICT, type PagerKey } from './locale-pager.js'
+import { PERMISSIONS_DICT, type PermissionsKey } from './locale-permissions.js'
+import { QUICK_DICT, type QuickAction, type QuickKey } from './locale-quick.js'
+import { TRUST_DICT, type TrustKey } from './locale-trust.js'
+import { VIM_DICT, type VimKey } from './locale-vim.js'
 
 /**
  * Strings of the key binding table: one description per action, the scope names, and what /keys and
  * the startup notice say. Kept beside the other locale files so locale-extended.ts stays small.
  */
-export const KEYS_SCOPES = ['global', 'editor', 'search', 'picker', 'panel', 'approval', 'secret'] as const
+export const KEYS_SCOPES = [
+  'global',
+  'editor',
+  'vim',
+  'search',
+  'picker',
+  'panel',
+  'pager',
+  'cards',
+  'approval',
+  'secret',
+] as const
 export type KeysKey =
-  | `keys.act.${ActionId}`
+  | `keys.act.${Exclude<ActionId, QuickAction | 'suspend'>}`
+  | QuickKey
   | `keys.scope.${(typeof KEYS_SCOPES)[number]}`
   | 'keys.title'
   | 'keys.fixed'
@@ -25,9 +45,17 @@ export type KeysKey =
   | 'keys.names'
   | 'commands.keys'
   | 'commands.keysSummary'
+  | PagerKey
+  | ChromeKey
+  | VimKey
+  | ConfigKey
+  | PermissionsKey
+  | TrustKey
+  | DisplayKey
 
 export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
   en: {
+    ...QUICK_DICT.en,
     'keys.act.interrupt': 'Interrupt the running turn; press twice to quit',
     'keys.act.quit': 'Quit when the draft is empty and nothing is running',
     'keys.act.card-toggle': 'Expand or fold the latest tool card',
@@ -40,6 +68,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.act.timeline-page-down': 'Scroll the conversation down one page',
     'keys.act.steer': 'Send the draft into the running turn',
     'keys.act.queue-recall': 'Take the newest queued message back into an empty draft',
+    'keys.act.thinking-cycle': 'Switch the model to its next thinking level',
     'keys.act.submit': 'Send the draft (or accept the highlighted menu item)',
     'keys.act.newline': 'Insert a line break',
     'keys.act.delete-back': 'Delete the character before the cursor',
@@ -63,6 +92,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.act.undo': 'Undo the last edit',
     'keys.act.redo': 'Redo the undone edit',
     'keys.act.external-edit': 'Edit the draft in your own editor',
+    'keys.act.paste-image': 'Attach the image on the clipboard',
     'keys.act.search-older': 'Show an older history match',
     'keys.act.search-erase': 'Erase a search character',
     'keys.act.search-cancel': 'Leave the search and keep the draft',
@@ -86,15 +116,31 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.act.approval-down': 'Select the option below',
     'keys.act.approval-page-up': 'Page the details up',
     'keys.act.approval-page-down': 'Page the details down',
+    'keys.act.approval-allow-once': 'Allow once (after the card has settled)',
+    'keys.act.approval-allow-always': 'Always allow: the first persistent scope the card lists',
+    'keys.act.approval-reject': 'Reject',
     'keys.act.secret-submit': 'Submit the value',
     'keys.act.secret-erase': 'Erase a character',
     'keys.act.secret-back': 'Go back',
     'keys.act.secret-abort': 'Abort the flow',
+    'keys.act.pager-open': 'Open the whole conversation in a pager overlay',
+    'keys.act.pager-close': 'Close the pager and return to where you were',
+    'keys.act.pager-up': 'Scroll up one line',
+    'keys.act.pager-down': 'Scroll down one line',
+    'keys.act.pager-page-up': 'Scroll up one page (loads earlier history at the top)',
+    'keys.act.pager-page-down': 'Scroll down one page',
+    'keys.act.pager-top': 'Jump to the top',
+    'keys.act.pager-bottom': 'Jump to the newest output',
+    'keys.act.pager-search': 'Search the conversation: type a query, Enter jumps to the first match',
+    'keys.act.pager-next': 'Next match (wraps around)',
+    'keys.act.pager-prev': 'Previous match (wraps around)',
+    'keys.act.pager-copy': 'Copy the whole message the current match is in',
     'keys.scope.global': 'Global',
     'keys.scope.editor': 'Prompt editor',
     'keys.scope.search': 'History search',
     'keys.scope.picker': 'Pickers',
     'keys.scope.panel': 'Report panels',
+    'keys.scope.pager': 'Conversation pager (Ctrl-T)',
     'keys.scope.approval': 'Approval dialog',
     'keys.scope.secret': 'Secret and text prompts',
     'keys.title': 'Key bindings',
@@ -113,8 +159,16 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.names': 'Key names: {names}',
     'commands.keys': 'List the key bindings in force, marking overrides from keybindings.json',
     'commands.keysSummary': 'List key bindings',
+    ...PAGER_DICT.en,
+    ...CHROME_DICT.en,
+    ...VIM_DICT.en,
+    ...CONFIG_DICT.en,
+    ...PERMISSIONS_DICT.en,
+    ...TRUST_DICT.en,
+    ...DISPLAY_DICT.en,
   },
   'zh-CN': {
+    ...QUICK_DICT['zh-CN'],
     'keys.act.interrupt': '中断正在运行的回合；连按两次退出',
     'keys.act.quit': '草稿为空且没有回合运行时退出',
     'keys.act.card-toggle': '展开或折叠最近一张工具卡',
@@ -127,6 +181,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.act.timeline-page-down': '对话向下翻一页',
     'keys.act.steer': '把草稿送进正在运行的回合',
     'keys.act.queue-recall': '把最新排队的消息取回空草稿',
+    'keys.act.thinking-cycle': '把模型切到下一个思考档位',
     'keys.act.submit': '发送草稿（或选定菜单项）',
     'keys.act.newline': '插入换行',
     'keys.act.delete-back': '删除光标前一个字符',
@@ -150,6 +205,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.act.undo': '撤销上一次编辑',
     'keys.act.redo': '重做被撤销的编辑',
     'keys.act.external-edit': '用你自己的编辑器编辑草稿',
+    'keys.act.paste-image': '把剪贴板里的图片作为附件',
     'keys.act.search-older': '显示更早的历史匹配',
     'keys.act.search-erase': '删除一个搜索字符',
     'keys.act.search-cancel': '退出搜索并保留草稿',
@@ -173,15 +229,31 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.act.approval-down': '选中下一个选项',
     'keys.act.approval-page-up': '详情向上翻页',
     'keys.act.approval-page-down': '详情向下翻页',
+    'keys.act.approval-allow-once': '允许一次（卡片稳定后才生效）',
+    'keys.act.approval-allow-always': '一直允许：选卡片列出的第一个持久范围',
+    'keys.act.approval-reject': '拒绝',
     'keys.act.secret-submit': '提交输入',
     'keys.act.secret-erase': '删除一个字符',
     'keys.act.secret-back': '返回',
     'keys.act.secret-abort': '中止流程',
+    'keys.act.pager-open': '在翻阅层中打开完整对话',
+    'keys.act.pager-close': '关闭翻阅层，回到原来的位置',
+    'keys.act.pager-up': '向上滚一行',
+    'keys.act.pager-down': '向下滚一行',
+    'keys.act.pager-page-up': '向上翻一页（到顶后加载更早的记录）',
+    'keys.act.pager-page-down': '向下翻一页',
+    'keys.act.pager-top': '跳到顶部',
+    'keys.act.pager-bottom': '跳到最新输出',
+    'keys.act.pager-search': '搜索对话：输入关键词，回车跳到第一个匹配',
+    'keys.act.pager-next': '下一个匹配（到末尾后回到开头）',
+    'keys.act.pager-prev': '上一个匹配（到开头后回到末尾）',
+    'keys.act.pager-copy': '复制当前匹配所在的整条消息',
     'keys.scope.global': '全局',
     'keys.scope.editor': '输入框',
     'keys.scope.search': '历史搜索',
     'keys.scope.picker': '选择器',
     'keys.scope.panel': '报告面板',
+    'keys.scope.pager': '对话翻阅层（Ctrl-T）',
     'keys.scope.approval': '审批弹窗',
     'keys.scope.secret': '密钥与文本输入',
     'keys.title': '键位',
@@ -200,5 +272,12 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'keys.names': '可用键名：{names}',
     'commands.keys': '列出当前生效的键位，并标出 keybindings.json 的覆盖',
     'commands.keysSummary': '列出键位',
+    ...PAGER_DICT['zh-CN'],
+    ...CHROME_DICT['zh-CN'],
+    ...VIM_DICT['zh-CN'],
+    ...CONFIG_DICT['zh-CN'],
+    ...PERMISSIONS_DICT['zh-CN'],
+    ...TRUST_DICT['zh-CN'],
+    ...DISPLAY_DICT['zh-CN'],
   },
 }

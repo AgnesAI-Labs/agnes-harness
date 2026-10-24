@@ -1,3 +1,5 @@
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createClient } from '@agnes/sdk'
 import { afterEach, describe, expect, it } from 'vitest'
 import { parseArgs } from '../src/args.js'
@@ -74,8 +76,9 @@ describe('schedules command', () => {
 
   it('add sends the selector the flag names, a derived title and the new-session target', async () => {
     const reply = { list: { schedules: [] }, upsert: view() }
+    const cwd = join(tmpdir(), 'agnes-schedule-测试')
     const every = await run(
-      ['schedules', 'add', '--prompt', 'ping the team', '--every', '30m', '--cwd', '/work'],
+      ['schedules', 'add', '--prompt', 'ping the team', '--every', '30m', '--cwd', cwd],
       reply,
     )
     expect(every.calls).toEqual([
@@ -85,7 +88,7 @@ describe('schedules command', () => {
           title: 'ping the team',
           prompt: 'ping the team',
           selector: { every_seconds: 1800 },
-          target: { kind: 'new-session', cwd: '/work' },
+          target: { kind: 'new-session', cwd },
         },
       ],
     ])

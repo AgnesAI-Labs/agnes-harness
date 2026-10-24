@@ -154,11 +154,9 @@ it('shows the diagnostic ID that the unconfirmed-operation copy tells the person
   expect(appServerErrorMessage(error, 'zh-CN')).toBe(
     `无法确认操作结果。 请使用诊断 ID 检查状态。 诊断 ID：${id}`,
   )
-  // A malformed ID is never echoed, and classes that do not point at an ID stay unchanged.
+  // Malformed IDs never render; definite refusals retain their diagnostic ID too.
   expect(
     appServerErrorMessage({ ...error, data: { ...error.data, diagnosticId: 'x<b>' } }, 'en'),
   ).not.toContain('x<b>')
-  expect(
-    appServerErrorMessage({ data: { code: 'APPROVAL_REJECTED', diagnosticId: id } }, 'en'),
-  ).not.toContain(id)
+  expect(appServerErrorMessage({ data: { code: 'APPROVAL_REJECTED', diagnosticId: id } }, 'en')).toContain(id)
 })

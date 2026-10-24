@@ -550,6 +550,12 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "index",
       },
       {
+        "name": "sqlite_autoindex_workspace_binding_extra_roots_1",
+        "sql": null,
+        "tbl_name": "workspace_binding_extra_roots",
+        "type": "index",
+      },
+      {
         "name": "sqlite_autoindex_workspace_bindings_1",
         "sql": null,
         "tbl_name": "workspace_bindings",
@@ -803,6 +809,15 @@ exports[`fresh data directory schema > creates every database at its final schem
         "name": "sqlite_sequence",
         "sql": "CREATE TABLE sqlite_sequence(name,seq)",
         "tbl_name": "sqlite_sequence",
+        "type": "table",
+      },
+      {
+        "name": "workspace_binding_extra_roots",
+        "sql": "CREATE TABLE workspace_binding_extra_roots (
+        session_key TEXT PRIMARY KEY,
+        roots TEXT NOT NULL
+      )",
+        "tbl_name": "workspace_binding_extra_roots",
         "type": "table",
       },
       {

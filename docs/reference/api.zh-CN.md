@@ -10,6 +10,11 @@
 
 API 随源码演进，`@agnes/*` 目前通过仓库 workspace 解析。使用与源码版本匹配的接口和示例。
 
+校验错误通过 `data.code`、`data.key` 和 `data.path` 定位拒绝的字段。
+Union 诊断使用兼容分支的字段错误，或所有兼容分支共有的约束；字面量判别字段不匹配的分支
+不能提供其他形状的字段提示。形状仍有歧义时保留 `ENUM`。缺失字段报告父路径和缺失键。
+这些诊断细化错误位置，不改变载荷是否通过校验，描述也不会回显拒绝值。
+
 ## 选择正确入口
 
 | 使用方 | 入口 | 典型操作 |
@@ -56,7 +61,7 @@ ACP 回放根据历史 `turn/start` 的序号推导 `_meta["ai.agnes.harness"].p
 
 Web 创建 SDK 连接时设置 `sessionRestoreHistory: 'none'`，使保留了工作区提示的新建、分叉或直接附加句柄在 worker 回收后也只做准入恢复。其他 SDK 客户端默认 `'full'`；显式 `session.load` 仍为该句柄保留完整重放，即使连接的恢复默认值不同。
 
-`client.session.fork(parentId, at, { cwd? })` 可为子句柄保留父会话已知的工作区提示。Web 的 turn 和侧栏分叉都会传递它。该提示仅留在客户端；后端从父绑定派生子会话权限，恢复时仍会重新核对提示。
+`client.session.fork(parentId, at, { cwd? })` 可为子句柄保留父会话已知的工作区提示。Web 的 turn 和侧栏分叉都会传递它。该提示仅留在客户端；后端从父绑定派生子会话权限，恢复时仍会重新核对提示。`session.fork(parentId, at, { additionalDirectories })`（线上是 `_agnes/v1/session.fork` 和 `fork` 提交的负载）让子会话拥有父会话的额外目录再加上所列目录，父会话不变。daemon 对合并后的列表按 `session/new` 的规则准入（绝对路径、已登记、不受保护、合计最多 8 个，超出则拒绝而不截断）。SDK 只在 `initialize.agentCapabilities._meta["ai.agnes.harness"].forkAdditionalDirectories: true` 时才发送，否则抛出 `unsupported`，也不会 fork。
 
 `client.session.btw(sessionId, question)` 基于当前对话回答一个旁问（1 至 4000 字符），不进 transcript：账本里只多一条 `side-call` 的费用行，模型不能调用工具；回合进行中只看到该回合之前已完成的部分。同一会话同时只能有一个旁问（`SESSION_BUSY`）；单次请求或树预算不足是 `SEMANTIC_REJECTED`（`reason: 'BUDGET'`），60 秒超时是 `REQUEST_TIMEOUT`。模型一旦被调用，超时或失败也会写入 `side-call` 费用行（标记为中断）。
 
@@ -144,7 +149,7 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 
 每个 id 是会话 UI 投影（`session.projectUI` / `session.view` 的 `nodes`）里 `kind: "user"` 节点的 `id`，即 `user/message` 事件的账本 id：26 位 ULID，刷新、daemon 重启和分叉后都不变。列表保持给定顺序，重复的 id 只保留第一次出现的位置，最多 200 个，每个 1–128 个字符且不含控制字符；空列表即清空；没有书签时不返回 `bookmarks` 字段。id 不与对话记录核对，对应提问不在界面上时这个书签只是匹配不到。调用是幂等的，所有者与本地凭据检查和 `session.rename` 相同；未知会话以 `SESSION_NOT_FOUND` 拒绝。
 
-`session.list` 的行（`SessionMeta`）在 `title`、`archived` 旁带同样的 `bookmarks` 字段。分叉会按原顺序复制提问位于继承历史内（分叉边界及之前）的书签，父会话的列表不变。目前没有删除会话的接口；归档的会话保留书签。
+`session.list` 的行（`SessionMeta`）在 `title`、`archived` 旁带同样的 `bookmarks` 字段。分叉会按原顺序复制提问位于继承历史内（分叉边界及之前）的书签，父会话的列表不变。目前没有删除会话的接口；归档的会话保留书签。`session.list` 的行在会话有额外目录时还带 `additionalDirectories`（按绑定顺序排列，是 daemon 所在机器上的路径），没有则不出现该字段。
 
 ## 置顶会话
 
@@ -167,6 +172,8 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 ## 智能体解析与启动
 
 SDK 支持 `client.session.new({ cwd, agent: '@acme/kit#review' })`，调用方无需了解 Bundle 组合。`client.agents.resolve(ref)`（RPC `_agnes/v1/agents.resolve`）返回精确选择、模型、权限摘要、来源身份和最终有效配置摘要；审阅过的调用可传 `agentDigest`，发生漂移即拒绝。不能同时传入 `loop`、`bundles` 或 `preset`。会话/工作区授权仍走普通创建链路；普通会话保留已有模型 fallback。
+
+`session/new` 接受 `_meta['ai.agnes.harness'].systemPromptAppend`（SDK：`client.session.new({ cwd, systemPromptAppend })`），即只给这一个新会话的系统提示词追加所有者文本。长度 1 到 8192 个字符，不能含 NUL，只追加不替换：它被并入收尾指令 `personaSuffix`（原有内容、一个空行、再接追加内容），因此出现在 `session/start` 行的 `systemPrompt.config` 与 hash 中，随 resume 和 fork 保留，不新增 ledger 事件。以下情况会拒绝（`SEMANTIC_REJECTED`，不创建会话）：与 `agent` 同用、会话已存在、包管理控制面报告配置只读（`E_ADMIN_READ_ONLY`，与 `systemPrompt.save` 同一检查；内嵌 endpoint 没有可锁定的控制面）、部署使用 `fullOverride`、合并后的 `personaSuffix` 超过 8192 个字符。不认识该字段的旧 daemon 会静默忽略，所以需要这段文本的客户端应在发第一条提示前，用新的 `sessionId` 读 `_agnes/v1/systemPrompt.get` 并检查各段。
 
 宿主启动 facade 使用 prepare → review → start(ticket, operationId)。start 只返回会话 ID 和可选的已审阅草稿。草稿编辑后通过普通 submit、使用独立 commandId 提交；重试 start 不发送任何提示词。不确定或失败的 operation 不会重新派发。普通启动没有安装、信任或移除权限；示例管理仍受经依赖版本校验的 `exampleOf` 限制。
 

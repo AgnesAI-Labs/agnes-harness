@@ -84,7 +84,7 @@ export type WorkerResourceBootstrapInput = Readonly<{
    */
   agnesHomeDir?: string
   /**
-   * The shared session worker (stage 2b step 3, D107'): its MCP servers are Host rows, one per
+   * The shared session worker: its MCP servers are Host rows, one per
    * server, each owning its own connection. This generation then connects nothing -- the manager gets
    * no MCP input -- and hands the validated entries back as `mcpEntries`. Omitted, the manager
    * connects them as before; dedicated resource-control service workers keep that path unchanged.

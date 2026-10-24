@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
-import { devNull, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { join, sep } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
   readWorkspaceInfo,
@@ -12,7 +12,7 @@ import {
 
 // realpath: git reports /private/var/... on macOS, where tmpdir() says /var/...
 const home = realpathSync(mkdtempSync(join(tmpdir(), 'agh-workspace-info-')))
-const env = { ...process.env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1' }
+const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' }
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...args], {
     cwd,
@@ -95,7 +95,7 @@ describe('workspace info for the composer rail', () => {
     const me = join(home, 'me')
     expect(tildePath(join(me, 'x'), me)).toBe('~/x')
     expect(tildePath(me, me)).toBe('~')
-    expect(tildePath(join(home, 'mel', 'x'), me)).toBe(join(home, 'mel', 'x'))
+    expect(tildePath(join(home, 'mel', 'x'), me)).toBe(join(home, 'mel', 'x').split(sep).join('/'))
   })
 
   it('keeps one probe in flight and reruns once for refreshes asked meanwhile', async () => {

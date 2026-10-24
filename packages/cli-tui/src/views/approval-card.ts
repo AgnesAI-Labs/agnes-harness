@@ -1,6 +1,7 @@
 import type { UINode } from '@agnes/protocol'
 import { type Component, escapeControl, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
+import { actionFor } from '../keymap.js'
 import { parseKey } from '../keys.js'
 import { type Locale, type LocaleKey, t } from '../locale.js'
 import { tt } from '../locale-extended.js'
@@ -77,11 +78,21 @@ export class ApprovalCard implements Component {
     return this.phase === 'pending'
   }
 
+  /** Which decision this card asks for; a different one restarts the misclick guard. */
+  get key(): string | undefined {
+    const ref = this.n.decisionRef
+    return this.phase === 'pending' && ref ? `${ref.id}:${ref.revision}` : undefined
+  }
+
   constructor(
     private readonly n: ApprovalNode,
     private readonly o: {
       ansi: ThemedAnsi
       locale?: Locale
+      /** Whether single keys would count now (approval-settle.ts); the key hints dim until they do. */
+      settled?(): boolean
+      /** Whether y, a, n and r may decide: not while the prompt holds a draft, where they are text. */
+      letters?(): boolean
       onDecide(
         ref: NonNullable<ApprovalNode['decisionRef']>,
         verdict: Verdict,
@@ -115,15 +126,31 @@ export class ApprovalCard implements Component {
 
   invalidate(): void {}
 
-  handleInput(data: string): boolean {
+  /**
+   * `settled`: the card had sat untouched long enough before this key. Until then no key decides
+   * and text falls through to the prompt's draft, so typing already under way never lands here.
+   * y, a and n are shortcuts for the numbered decisions, and only while the prompt is empty: `a`
+   * takes the session scope and does nothing when the card does not list it. A permanent grant is
+   * never one letter; it takes its number.
+   */
+  handleInput(data: string, settled = this.o.settled?.() ?? true): boolean {
     if (this.phase !== 'pending' || !this.n.decisionRef) return false
     if (this.reason !== null) return this.typeReason(data)
-    if (data === 'r' && this.n.options.includes('reject_once')) {
+    if (!settled) return false
+    const actions = actionsOf(this.n, this.o.locale ?? 'en')
+    const letters = this.o.letters?.() ?? true
+    const letter = letters ? actionFor('approval', data) : undefined
+    if (letter === 'approval-allow-once') return this.decide('allowed-once')
+    if (letter === 'approval-allow-always')
+      return actions.some((a) => a.verdict === 'allowed-session') ? this.decide('allowed-session') : true
+    if (letter === 'approval-reject')
+      return this.n.options.includes('reject_once') ? this.decide('rejected') : true
+    if (letters && data === 'r' && this.n.options.includes('reject_once')) {
       this.reason = ''
       return true
     }
     if (!/^[1-9]$/.test(data)) return false
-    const action = actionsOf(this.n, this.o.locale ?? 'en')[Number(data) - 1]
+    const action = actions[Number(data) - 1]
     if (!action) return false
     return this.decide(action.verdict)
   }
@@ -189,14 +216,30 @@ export class ApprovalCard implements Component {
     if (!n.decisionRef) return [fitLine(`${ansi.fg('warning', '▲')} ${summary}`, width)]
     const locale = this.o.locale ?? 'en'
     // A key chip needs a background to read as one; without colour the brackets carry it.
-    const chip = paintsColour(ansi)
-      ? (key: string) => ansi.bg('accent', ansi.fg('onAccent', ` ${key} `))
-      : (key: string) => ansi.bold(`[${key}]`)
+    const lit = this.o.settled?.() ?? true
+    const chip = !lit
+      ? (key: string) => `[${key}]`
+      : paintsColour(ansi)
+        ? (key: string) => ansi.bg('accent', ansi.fg('onAccent', ` ${key} `))
+        : (key: string) => ansi.bold(`[${key}]`)
+    // The single-key shortcut rides after the label: y, a and n on once, session and reject.
+    const actions = actionsOf(n, locale)
+    const letterOf = (action: Action): string =>
+      action.verdict === 'allowed-session'
+        ? 'a'
+        : action.verdict === 'allowed-once'
+          ? 'y'
+          : action.verdict === 'rejected'
+            ? 'n'
+            : ''
     const keys = [
-      ...actionsOf(n, locale).map((action, i) => `${chip(String(i + 1))} ${action.label}`),
+      ...actions.map(
+        (action, i) =>
+          `${chip(String(i + 1))} ${action.label}${letterOf(action) ? ` (${letterOf(action)})` : ''}`,
+      ),
       ...(n.options.includes('reject_once') ? [`${chip('r')} ${t('approval.rejectReason', locale)}`] : []),
     ].join('  ')
-    const rail = ansi.fg('warning', '│ ')
+    const rail = ansi.raw ? '' : ansi.fg('warning', '│ ')
     const origin = [
       n.origin?.package && t('approval.from', locale, { value: escapeControl(n.origin.package) }),
       n.origin?.role && t('approval.role', locale, { value: escapeControl(n.origin.role) }),
@@ -247,7 +290,7 @@ export class ApprovalCard implements Component {
             `${rail}${ansi.fg('faint', `${t('approval.reasonPrompt', locale)}: `)}${this.reason}▏`,
             width,
           )
-        : fitLine(`${rail}${this.phase === 'deciding' ? '…' : keys}`, width),
+        : fitLine(`${rail}${this.phase === 'deciding' ? '…' : lit ? keys : ansi.dim(keys)}`, width),
     ]
   }
 }

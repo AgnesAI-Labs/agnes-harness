@@ -4,7 +4,7 @@
 
 标准预设通过官方 `defineTool` 插件披露以下工具。部署能力和文件系统策略仍然生效。新的 local-dev 和 enterprise 模板允许问答与交付物需要的投影能力；现有托管配置需要显式允许该能力。
 
-标准预设直接提供 `ui_render`、`ui_update` 和 `ui_close`。`ui_submit` 是内部界面动作目标，不进入模型工具 schema 或发现目录。历史会话工具（`session_search`、`session_trace`、`session_event_search`、`session_event_read`、`session_event_trace`）与 MCP 资源工具（`list_mcp_resources`、`list_mcp_resource_templates`、`read_mcp_resource`）按需加载，每类在列表中占一行。MCP 服务器的工具遵循该服务器的工具加载方式（见 [MCP](../guide/mcp.zh-CN.md#mcp-工具如何提供给模型)）。延迟工具在每次请求的 `available_deferred_tools` 提示段中按名称排序，每项一句话，或每个 `discoveryGroup` 一行并附工具数量；描述最多 250 个字符，目录最多 8 KiB，省略项通过 `tool_search` 查找。通过 `tool_describe` 加载匹配工具后，schema 会进入后续模型请求；加载状态跨压缩和会话重开保留，工具调用仍受会话目录、模型能力、参数验证和授权约束。业务 Loop 可通过 `prepareRequest({ tools: [...] })` 选择模型工具，或通过受控工具端口执行。
+标准预设直接提供 `ui_render`、`ui_update`、`ui_close` 和 `ui_guide`。构造界面前调用 `ui_guide` 获取完整组件 schema、数据契约和示例；render/update 的模型参数采用精简结构，服务仍在发布前执行完整协议、动作和数据校验。插件/Skill 创作、Skill 管理、MCP 连接管理、文档读取与 Computer Use 通过 `tool_search` 与 `tool_describe` 按意图加载。创作指引由版本匹配的指南工具返回，不再注入普通会话。`ui_submit` 是内部界面动作目标，不进入模型工具 schema 或发现目录。历史会话工具（`session_search`、`session_trace`、`session_event_search`、`session_event_read`、`session_event_trace`）与 MCP 资源工具（`list_mcp_resources`、`list_mcp_resource_templates`、`read_mcp_resource`）按需加载，每类在列表中占一行。MCP 服务器的工具遵循该服务器的工具加载方式（见 [MCP](../guide/mcp.zh-CN.md#mcp-工具如何提供给模型)）。延迟工具在每次请求的 `available_deferred_tools` 提示段中按名称排序，每项一句话，或每个 `discoveryGroup` 一行并附工具数量；描述最多 250 个字符，目录最多 8 KiB，省略项通过 `tool_search` 查找。通过 `tool_describe` 加载匹配工具后，schema 会进入后续模型请求；加载状态跨压缩和会话重开保留，工具调用仍受会话目录、模型能力、参数验证和授权约束。业务 Loop 可通过 `prepareRequest({ tools: [...] })` 选择模型工具，或通过受控工具端口执行。
 
 | 工具 | 输入与行为 |
 | --- | --- |
@@ -16,6 +16,7 @@
 | `job_list` | `{}` 列出当前会话与分支的运行中和已完成任务。 |
 | `job_output` | `{"jobId":"返回的任务ID","waitMs":1000}` 读取输出和状态，可选等待最多 60 秒，并受工具期限限制。长输出存为可读取产物。 |
 | `job_kill` | `{"jobId":"返回的任务ID"}` 终止当前会话拥有的任务及进程组。 |
+| `lsp_diagnostics` | `{"paths":["src/a.ts"],"severity":"error"}` 向语言服务器查询最多 20 个文件的错误（TypeScript/JavaScript、Python、Go；Rust 仅限受信任的工作区）；`severity` 为 `error`、`warning` 或 `all`。按需加载。只读：服务器以不执行工作区代码的静态分析模式启动。`write` 和 `edit` 也会把被修改文件的错误附在结果后。详见[代码诊断](../guide/lsp.zh-CN.md)。 |
 | `schedule_create` | 创建定时任务。`after_seconds`、`at`、`every_seconds`、`daily`、`weekly`、`cron` 只能提供其中一项，并用 `target` 选择在哪里运行：`new_session` 每次运行都在当前会话的工作区开一个新会话（适合重复的工作）；`current_session` 把提示发到当前会话，空闲时开始一轮，运行中则并入（适合一次性提醒）。结果里的 `runsIn` 说明在哪里运行。 |
 | `schedule_list` | 列出当前会话创建或接收的有效定时任务、运行位置、下次运行和最近的运行记录。 |
 | `schedule_update` | 修改当前会话创建或接收的定时任务。`after_seconds` 只能在创建时使用；不传 `target` 则保持不变。运行过程中修改提示、日程或运行位置返回 `schedule_conflict`。 |
@@ -28,7 +29,9 @@
 
 `structured` 里的路径相对于工作区根目录、以 `/` 分隔，只取自文本显示出来的内容：`ls` 在 `limit` 之内列出的条目、`find` 显示的文件、`grep` 显示的行里有匹配的文件。显示出来但在工作区之外的路径、写成 JSON 字符串后超过 1024 字节的路径，以及在分隔符是 `/` 的系统上名字里含反斜杠的路径不会列入；`total` 计入工具找到的每条路径，包括这些路径和超出行数限制后找到的路径。因策略拒绝而跳过的路径既不列入也不计数，也不会让列表标记为 truncated。列表比 `total` 短、搜索本身不完整，或输出防护截断了文本时，`truncated` 为 true；截断之后，只有完整名字仍显示在文本里的路径保留引用。失败的结果和对已存产物的 `grep` 不带 `structured`。任何工具的结果只要 `structured` 带这个 schema，`run_code` 脚本拿到的就是它的文本。
 
-使用 `write` 或 `edit` 修改已有文本文件之前，必须在同一会话读取该文件。缺少观察记录时返回 `FS_NOT_OBSERVED`；成功修改会记录新版本。新文件可以直接创建。观察记录有数量上限，且仅在当前进程有效：宿主重启或记录被淘汰后需要重新读取。二进制读取、失败读取和产物读取不会解锁工作区修改。已有的过期版本检查和截断防护仍然生效。`write` 为 `.bat`/`.cmd` 使用 CRLF，并保留已有文件一致的 CRLF；`edit` 可用 LF 文本匹配并替换一致 CRLF 文件中的多行内容。两者保留已有 UTF-8 BOM；版本记录、字节数和审阅回执均对应实际写入字节。
+使用 `write` 或 `edit` 修改已有文本文件之前，必须在同一会话读取该文件。缺少观察记录时返回 `FS_NOT_OBSERVED`；成功修改会记录新版本。新文件可以直接创建。观察记录有数量上限，且仅在当前进程有效：宿主重启或记录被淘汰后需要重新读取。二进制读取、失败读取和产物读取不会解锁工作区修改。过期版本检查仍然生效。`write` 还会拒绝看起来被截断的覆盖写入（`FS_TRUNCATION_GUARD`）：新内容不足原内容的 40%，或留下原文件没有的未闭合括号或引号。确实要大幅缩小文件（包括清空文件）时，用 `allowShrink: true` 确认；它只豁免大小检查，不会绕过先读后写和过期版本检查。`edit` 不做截断检查，因为删除的每个字节都由精确匹配的 `oldText` 指明。`write` 为 `.bat`/`.cmd` 使用 CRLF，并保留已有文件一致的 CRLF；`edit` 可用 LF 文本匹配并替换一致 CRLF 文件中的多行内容。两者保留已有 UTF-8 BOM；版本记录、字节数和审阅回执均对应实际写入字节。
+
+精确编辑失败时，`FS_EDIT_NOT_FOUND` 最多返回三个候选区域、从 1 开始的行号与 JSON 转义的短摘录；可检测时说明空白/缩进、换行、引号/Unicode 差异、同次调用中前项已替换，或读取后文件已变更。诊断不会自动应用模糊替换。候选扫描上限为文件 256 Ki 字符/20,000 行、查找块 8,192 字符/80 行；超限时建议先 grep，再读取小范围。歧义匹配返回 `FS_AMBIGUOUS_EDIT` 及前 20 个匹配起始行号。任一编辑失败，整批均未写入；修正后须重新发送整批。失败摘录先脱敏，再经过既有输出防护。文件系统拒绝返回稳定错误码及恢复动作，不回显底层原始异常。
 
 Web 问答使用同一个预设 surface 表单，提供单选、多选与自由文本控件。TUI 读取同一批 surface：单个问题可输入标签或编号，多选使用逗号分隔标签或编号，多个问题使用以问题 id 为键的 JSON 对象。两者均通过 `ui.action` 进入普通 deferred `ui_submit` 收集工具。无效、陈旧回答及普通工具策略拒绝保留表单；成功回答关闭表单，经 SC1 保留认证 actor 与 untrusted 内容送达 Agent。回答不授予工具权限。`timeoutMs` 只限制等待，晚答仍有效。重新加载从账本恢复表单与动作回执。渠道显示编号选项，通过需认证的 Web 链接回答；`outbound.webUrl` 应配置为可访问的 Web 基址。
 
@@ -59,7 +62,7 @@ const searchProvider: SearchProvider = {
 // 在已有 createHost(profile, dependencies) 参数中加入 searchProvider。
 ```
 
-提供方负责凭据、传输和厂商选择。工具不接收密钥，也不选择厂商。设置中的网页搜索可配置 Brave、Tavily、Exa、Perplexity 或自建 SearXNG。端点、结果上限、超时和速率限制保存在配置档数据目录。工具调用和设置页测试共用该目录中的同一速率窗口。API 密钥只写入 `secret://search/<provider>`，位于主目录的 secrets（`<home>/secrets`）。配置档未指定其他路径时，文件适配器也读取该目录。原先落在 `<dataDir>/secrets` 的存储会迁移过去。没有就绪的默认提供方时，工具返回 `WEB_SEARCH_UNAVAILABLE`。部署方传入的 `SearchProvider` 会替换该注册表。规范化摘要包含 Citations 列表。提供方失败返回通用错误，不在日志中泄露凭据。
+提供方负责凭据、传输和厂商选择。工具不接收密钥，也不选择厂商。设置中的网页搜索可配置 Brave、Tavily、Exa、Perplexity 或自建 SearXNG。端点、结果上限、超时和速率限制保存在配置档数据目录。保存启用的连接或新密钥前，会先用候选配置进行一次最小搜索；验证失败会保留原配置和密钥。停用或移除密钥不需要联网。验证、工具调用和设置页测试共用同一速率窗口，也可能消耗服务商额度。API 密钥只写入 `secret://search/<provider>`，位于主目录的 secrets（`<home>/secrets`）。配置档未指定其他路径时，文件适配器也读取该目录。原先落在 `<dataDir>/secrets` 的存储会迁移过去。没有就绪的默认提供方时，工具返回 `WEB_SEARCH_UNAVAILABLE`。部署方传入的 `SearchProvider` 会替换该注册表。规范化摘要包含 Citations 列表。页面区分“已配置，尚未验证”和本次页面中“测试通过”的状态。失败按认证、权限、付费、限流、超时和连接问题显示固定提示，不在日志中泄露凭据。官方结果行通过可选的 `SearchResult.provider` 字段声明实际使用的服务；全部结果都标明同一服务时，工具会在 `Search service` 标题和 `details.provider` 中明确返回。空结果、混合服务结果或未声明身份的自定义提供方不推断服务名称。
 
 持久 shell：为 `shell` 设置 `persistent:true`，可选择 `shell:"bash"|"zsh"|"pwsh"`。返回命令的 `jobId` 与解释器的 `sessionId`，后续调用保留 cwd、环境变量和解释器变量。可传 `sessionId` 选择现有解释器；忙碌时拒绝另一条命令，终止命令会关闭解释器。交互式 stdin 请使用 PTY。
 

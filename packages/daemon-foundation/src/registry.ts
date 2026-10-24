@@ -39,6 +39,7 @@ export interface Registry<Entry> {
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
+    systemPromptAppend?: string
     loop?: LoopSelection
     credential?: unknown
     historySignal?: AbortSignal

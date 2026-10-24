@@ -18,6 +18,7 @@ function harness() {
     '_agnes/v1/session.setPreset': () => ({ effectiveFromSeq: 2 }),
     '_agnes/v1/session.setModel': () => ({ effectiveFromSeq: 2 }),
     '_agnes/v1/session.setYolo': () => ({ effectiveFromSeq: 2 }),
+    '_agnes/v1/session.setToolFilter': () => ({ effectiveFromSeq: 2, filter: { deny: ['bash'] } }),
     '_agnes/v1/session.list': () => ({ items: [] }),
     '_agnes/v1/workspace.list': () => ({ items: [] }),
     '_agnes/v1/workspace.add': () => ({
@@ -100,6 +101,12 @@ describe('method surface: setPreset / setModel / session.list / session.fork', (
       async () => (await s()).setYolo(true),
       '_agnes/v1/session.setYolo',
       { sessionId: 's', enabled: true },
+    ],
+    [
+      'session.setToolFilter',
+      async () => (await s()).setToolFilter({ deny: ['bash'] }, { commandId: 'tf1' }),
+      '_agnes/v1/session.setToolFilter',
+      { sessionId: 's', commandId: 'tf1', deny: ['bash'] },
     ],
     ['session.list', () => c.session.list({ limit: 5 }), '_agnes/v1/session.list', { limit: 5 }],
     [

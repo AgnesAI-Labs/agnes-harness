@@ -101,7 +101,7 @@ it('[M-09/unit] neither completion nor @ attachments throw in an unreadable or m
     for (const cwd of [dirs.unreadable, '/nonexistent-agnes-dbh-m09']) {
       expect(() => attachmentsFrom('see @x', cwd), cwd).not.toThrow()
       expect(attachmentsFrom('see @x', cwd), cwd).toEqual([{ type: 'text', text: 'see @x' }])
-      expect(completeToken('/he'), cwd).toEqual(['/help'])
+      expect(completeToken('/he'), cwd).toEqual(['/help', '/heads-up'])
     }
   } finally {
     dirs.cleanup()

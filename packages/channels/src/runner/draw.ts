@@ -153,6 +153,15 @@ export function whatToDraw(
       return {
         blocks: [{ kind: 'text', markdown: `${node.sources.join('、')} 还在连接，本轮先不使用它` }],
       }
+    case 'memory-external-change':
+      return {
+        blocks: [
+          {
+            kind: 'text',
+            markdown: `记忆 ${node.paths.join('、')} 在记忆提供方之外被修改，已按现状载入`,
+          },
+        ],
+      }
     case 'workspace-undo':
       return {
         blocks: [

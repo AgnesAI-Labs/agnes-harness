@@ -145,7 +145,7 @@ export function webView(
     busy: timeline.opState !== null,
     statusLabel: phaseKey ? t('timeline.status.runningPhase', { phase: phaseLabel }) : phaseLabel,
     ...(approval ? { approval } : {}),
-    // WC9：slot 节点不再被丢弃；时间线为它保留稳定容器，认领未命中时显示占位。
+    // Keep a stable timeline container for slot nodes; show a placeholder when no claim matches.
     nodes: timeline.nodes,
     ...(verification ? { statusState: 'not-verified' as const } : {}),
     status: approval

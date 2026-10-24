@@ -84,7 +84,7 @@ export type SummaryResult = {
   cause?: string
 }
 
-// Matches DeriveInput['toolCalls']'s per-item shape exactly (not a narrower projection of it): C1
+// Matches DeriveInput['toolCalls']'s per-item shape exactly (not a narrower projection of it): summary generation
 // passes this array straight into deriveRequest as toolCalls, since a summary now replays real
 // tool_result nodes and derive re-attaches each one's originating call the same way an ordinary
 // turn's derivation does. toolUseId and ordinal exist for that re-attachment, not for anything read

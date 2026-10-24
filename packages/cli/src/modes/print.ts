@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { writeFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 import type { EffectIntent, EffectSettled, EventEnvelope, ToolCall, TurnEndReason } from '@agnes/protocol'
 import { publicErrorHelp } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
@@ -12,10 +14,12 @@ import {
 } from '../errors.js'
 import { checkStructured, loadOutputSchema, schemaInstruction } from '../output-schema.js'
 import { timingMark } from '../timing.js'
-import { parseTurnCaps, requireTurnCaps } from '../turn-caps.js'
+import { parseTimeoutMs, parseTurnCaps, requireTurnCaps } from '../turn-caps.js'
 import type { Booted, ParsedArgs } from '../types.js'
+import { resolveAppendSystemPrompt, verifyAppendApplied } from './append-system-prompt.js'
 import { readPromptInput } from './prompt-input.js'
 import { cliEventLine, cliResultLine, findParkedTicket, lastAssistantText } from './result-line.js'
+import { applyToolFilter } from './tool-filter.js'
 
 export type Breadcrumb = {
   /** The session last used in this terminal pane for `cwd`, if one was left. Never throws. */
@@ -128,6 +132,8 @@ async function openSession(
   p: ParsedArgs,
   cwd: string,
   breadcrumb?: Breadcrumb,
+  append?: string,
+  locale = 'en',
 ): Promise<Session> {
   // `session/load` rather than attach: a session this daemon has not opened yet is not in its
   // registry, and attach requires one. Load opens it from the ledger and replays it, which is what
@@ -140,16 +146,30 @@ async function openSession(
   const resume = await sessionToOpen(booted, p, cwd, breadcrumb)
   if (resume !== undefined) return booted.client.session.load(resume, { cwd })
   await booted.client.workspace.add(cwd)
-  return booted.client.session.new({
+  const extraDirs = p.addDir
+    ? await (await import('./add-dir.js')).addDirectoriesFor(booted.client, p, locale)
+    : {}
+  const session = await booted.client.session.new({
     cwd,
+    ...extraDirs,
     ...(p.preset ? { preset: p.preset } : {}),
     ...(p.permission !== undefined || !p.agent ? { permission: p.permission ?? 'default' } : {}),
     ...(p.loop ? { loop: p.loop } : {}),
     ...(p.agent ? { agent: p.agent } : {}),
-    ...(p.agent || p.loop || p.newSession
+    ...(append === undefined ? {} : { systemPromptAppend: append }),
+    ...(p.agent || p.loop || p.newSession || append !== undefined
       ? { sessionKey: `agnes:local:${booted.profileName}:cli:${p.loop ? 'loop' : 'session'}:${randomUUID()}` }
       : {}),
   })
+  if (append !== undefined) {
+    try {
+      await verifyAppendApplied(booted.client, session.id, append)
+    } catch (error) {
+      await session.detach().catch(() => undefined)
+      throw error
+    }
+  }
+  return session
 }
 
 /** Resolves to true if `p` settled within `ms`, false if the deadline came first. */
@@ -198,6 +218,7 @@ function errorCause(error: unknown, locale = 'en'): string {
 export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Promise<number> {
   refuseWhatCannotBeHonoured(p)
   const caps = parseTurnCaps(p)
+  const timeoutMs = parseTimeoutMs(p)
   // Both machine modes keep stderr quiet; stream-json only adds one stdout line per event.
   const machine = p.mode === 'json' || p.mode === 'stream-json'
   // Switched off before the result line so a late row cannot land after it.
@@ -221,6 +242,8 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
   }
   const early = signalledBeforePrompt()
   if (early !== undefined) return early
+  // A bad flag or file is a usage error before the session exists.
+  const append = await resolveAppendSystemPrompt(p, io.cwd)
 
   // Heterogeneous by design: a row this client dropped arrives as `kind: 'invalid-event'` from sdk
   // itself, a daemon notice arrives with the daemon's own kind. Discriminating on `kind` is the only
@@ -233,9 +256,11 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
 
   try {
     await requireTurnCaps(booted.client, caps)
-    const session = await openSession(booted, p, io.cwd, io.breadcrumb)
+    const session = await openSession(booted, p, io.cwd, io.breadcrumb, append, io.locale)
     io.breadcrumb?.write(session.id, io.cwd)
     io.stderr.write(`Session: ${session.id}\n`)
+    // Before the model switch, attach and the one prompt: the agent never sees a tool the user took away.
+    if (p.toolFilter) await applyToolFilter(session, p.toolFilter)
     // Before attach/prompt, not after: setModel takes effect for the next request onward, so it has
     // to land before the one prompt this invocation is about to send, not race it.
     if (p.model) await session.setModel(p.model)
@@ -288,6 +313,16 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
       }
     })()
 
+    // The deadline starts with the prompt and uses the same cancel a signal does. Whether it fired is
+    // remembered here because the turn itself only reports `aborted`.
+    let timedOut = false
+    const deadline =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(() => {
+            timedOut = true
+            void session.cancel().catch(() => undefined)
+          }, timeoutMs)
     let outcome: Outcome
     let threw = false
     let thrownError: unknown
@@ -301,6 +336,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
       thrownError = (e as { data?: { error?: unknown } }).data?.error
       outcome = { reason, lastSeq: session.lastSeq }
     }
+    clearTimeout(deadline)
     const drained = await settleWithin(collector, threw ? ERROR_DRAIN_MS : DRAIN_MS)
     if (!drained && !threw)
       io.stderr.write(
@@ -325,6 +361,11 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     // while `aborted` was pinned to 130 and a SIGTERM raced it.
     const signal = io.signal?.()
     let exitCode: number = signal ? SIGNAL_EXIT_CODES[signal] : exitCodeForReason(reason)
+    // A signal still wins; a turn that finished before the cancel landed keeps its own code.
+    if (timedOut && !signal && reason !== 'completed') {
+      exitCode = ExitCode.TIMEOUT
+      io.stderr.write(`agh: timeout after ${p.timeout}s; turn cancelled (exit ${ExitCode.TIMEOUT})\n`)
+    }
     const ticket = reason === 'parked' ? findParkedTicket(events) : undefined
     const text = lastAssistantText(events)
     // Only a turn that completed is checked; any other ending keeps its own code and prints as before.
@@ -335,6 +376,16 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
       for (const line of structured.errors) io.stderr.write(`agh: output schema: ${line}\n`)
     }
     streaming = false
+    if (p.outputFile !== undefined) {
+      try {
+        await writeFile(
+          resolve(io.cwd, p.outputFile),
+          structured?.ok ? `${JSON.stringify(structured.value)}\n` : text ? `${text}\n` : '',
+        )
+      } catch (e) {
+        throw new CommandError(`--output-file ${p.outputFile}: ${(e as Error).message}`)
+      }
+    }
     if (machine) {
       // The result line is last in both machine modes; stream-json has already written the events.
       io.stdout.write(
@@ -361,7 +412,12 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     // retry at all -- so a wrapper reading the integer alone either retries forever or gives up on a
     // turn that would have succeeded. The word is what tells them apart. An `error` turn also names
     // its cause: without it the caller cannot tell a bad key from an unknown model from an outage.
-    if (exitCode !== 0 && exitCode !== ExitCode.SCHEMA_MISMATCH && !machine) {
+    if (
+      exitCode !== 0 &&
+      exitCode !== ExitCode.SCHEMA_MISMATCH &&
+      exitCode !== ExitCode.TIMEOUT &&
+      !machine
+    ) {
       const cause = errorCause((ended?.data as { error?: unknown } | null)?.error ?? thrownError, io.locale)
       io.stderr.write(
         `agh: ${signal ? `${signal}; ` : ''}turn ended: ${reason} (exit ${exitCode})${cause ? `: ${cause}` : ''}\n`,

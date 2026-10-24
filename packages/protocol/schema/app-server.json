@@ -197,6 +197,14 @@
               }
             },
             {
+              "const": "CONFIG_CHAT_MODEL_REQUIRED",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.chatModelRequired",
+                "copy": "chatModelRequired"
+              }
+            },
+            {
               "const": "CONFIG_MODEL_UNAVAILABLE",
               "x-public-error": {
                 "rpc": "SEMANTIC_REJECTED",
@@ -1960,6 +1968,7 @@
                 "appServer.errors.conflict",
                 "appServer.errors.timeout",
                 "appServer.errors.unavailable",
+                "appServer.errors.chatModelRequired",
                 "appServer.errors.credentialRequired",
                 "appServer.errors.credentialRejected",
                 "appServer.errors.credentialStore",
@@ -4006,6 +4015,16 @@
       "zh-CN": {
         "reason": "会话或资源不可用。",
         "action": "请刷新资源列表。"
+      }
+    },
+    "chatModelRequired": {
+      "en": {
+        "reason": "Image and video generation models cannot be used for chat.",
+        "action": "Choose a chat-capable model in model settings."
+      },
+      "zh-CN": {
+        "reason": "图片或视频生成模型不能用于对话。",
+        "action": "请在模型设置中选择支持对话的模型。"
       }
     },
     "credentialRequired": {

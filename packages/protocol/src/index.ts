@@ -188,10 +188,16 @@ export type {
   SessionSendNowParams,
   SessionSetModelParams,
   SessionSetPresetParams,
+  SessionSetToolFilterParams,
+  SessionSetToolFilterResult,
   SessionSetYoloParams,
   SessionSidebarListParams,
   SessionSteerParams,
   SessionSteerResult,
+  SessionToolFilter,
+  SessionToolFilterName,
+  SessionToolFilterNames,
+  SessionToolFilterRequest,
   SessionUndoFile,
   SessionUndoParams,
   SessionUndoPathReason,
@@ -736,7 +742,12 @@ export {
   sessionArtifactRoots,
 } from './session-artifacts.js'
 export * from './session-capabilities.js'
-export { parseAgentRef, parseSessionBundles } from './session-composition.js'
+export {
+  parseAgentRef,
+  parseSessionBundles,
+  parseSystemPromptAppend,
+  SYSTEM_PROMPT_APPEND_MAX,
+} from './session-composition.js'
 export * from './session-integrity.js'
 export * from './session-runtime.js'
 export * from './session-tools.js'

@@ -40,6 +40,7 @@ import type {
 import { ProviderError } from '@agnes/extension-api'
 import type { Actor, ApprovalMode, Provider, SessionStart } from '@agnes/protocol'
 import { isProfileDecisionJournal } from '@agnes/protocol'
+import { bestEffort } from './best-effort.js'
 import { recoverChildCompletions } from './child/completion-notice.js'
 import { KernelChildren } from './child/factory.js'
 import { readRoleDelegation } from './child/role-snapshot.js'
@@ -53,6 +54,7 @@ import { ResourceRegistry } from './registry/resources.js'
 import { SlotRegistry } from './registry/slots.js'
 import { ToolRegistry } from './registry/tools.js'
 import type { ContractRef } from './request/derive.js'
+import { APPEND_REFUSED, appendToSystemPromptConfig } from './request/system-prompt.js'
 import type { CurrentRuntimeLookup, RuntimePromptPreloader } from './runtime/current.js'
 import { CORE_OPS, type CoreOpName, replacementFor, validateReplacements } from './step/reentry.js'
 import {
@@ -64,6 +66,7 @@ import {
   type SessionDeps,
   SessionImpl,
 } from './step/session.js'
+import { restoreToolFilter } from './step/tool-filter.js'
 
 /**
  * The closed set of `x/core/*` diagnostic names. Five of them are written outside this file:
@@ -97,6 +100,7 @@ export const CORE_DIAG_NAMES = [
   'context-breakdown',
   'request-media-window',
   'tool-source-pending',
+  'memory-external-change',
 ] as const
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 
@@ -187,6 +191,8 @@ export type SessionOptions = {
     resolve(selection?: { id: string; version: string }): import('@agnes/extension-api').SystemPromptProvider
   }
   toolFilter?: import('@agnes/extension-api').ChildAgentToolFilter
+  /** Owner text appended to a NEW session's pinned prompt (closing instructions); refused on resume or fork. */
+  systemPromptAppend?: string
   loop?: LoopSelection
   /** Host defaults affect new sessions only; reopening uses the ledger identity. */
   defaultLoop?: LoopSelection | (() => Promise<LoopSelection | undefined>)
@@ -553,7 +559,7 @@ export class Kernel {
     } catch (error) {
       // Abandoned rather than closed: a writer whose open never finished is marked faulted before its
       // lease is handed back.
-      await forked?.abandon().catch(() => undefined)
+      await forked?.abandon().catch(bestEffort(logger, 'fork-abandon'))
       throw error
     }
     const { log, tracker, surface, ui, registersRebuilt } = tracked
@@ -570,13 +576,21 @@ export class Kernel {
       const persistedPrompt = tracker.state.session?.systemPrompt
       if (persistedPrompt && !promptPort)
         throw new CoreError('E_ENVELOPE', 'pinned system prompt provider is unavailable')
+      if (so.systemPromptAppend !== undefined && (!promptPort || tracker.state.session || so.parent))
+        throw new CoreError(
+          'E_ENVELOPE',
+          'system prompt append applies only to a new session',
+          APPEND_REFUSED,
+        )
       if (promptPort) {
         const parentPrompt = so.parent ? this.sessions.get(so.parent.key)?.d.systemPrompt : undefined
         const config: import('@agnes/protocol').SystemPromptConfig = tracker.state.session
           ? structuredClone(persistedPrompt?.config ?? {})
           : parentPrompt
             ? structuredClone(parentPrompt.config)
-            : await promptPort.config()
+            : so.systemPromptAppend === undefined
+              ? await promptPort.config()
+              : appendToSystemPromptConfig(await promptPort.config(), so.systemPromptAppend)
         const identity =
           persistedPrompt?.provider ??
           (parentPrompt
@@ -683,6 +697,9 @@ export class Kernel {
         ...(this.o.contractForModel ? { contractForModel: this.o.contractForModel } : {}),
         children,
         ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        // Root sessions and children both carry their binding as identity; a child inherits its
+        // parent's extras and runs under the parent's policy as ceiling, so the list stays honest.
+        ...(workspaceIdentity?.extraRoots?.length ? { extraDirectories: workspaceIdentity.extraRoots } : {}),
         ...(workspaceInvocation ? { workspaceInvocation } : {}),
         ...(this.o.workspacePublication ? { workspacePublication: this.o.workspacePublication } : {}),
         ...(so.workspaceLease ? { workspaceLease: so.workspaceLease } : {}),
@@ -730,7 +747,7 @@ export class Kernel {
         ...(so.historySignal ? [so.historySignal] : []),
       ])
       const cancelCreation = () => {
-        void session.close().catch(() => undefined)
+        void session.close().catch(bestEffort(logger, 'cancelled-session-close'))
       }
       creationSignal.addEventListener('abort', cancelCreation, { once: true })
       try {
@@ -756,6 +773,8 @@ export class Kernel {
           session.hooks = lifecyclePort(session, sessionHooks, logger)
         }
         so.historySignal?.throwIfAborted()
+        // Before anything can resume or run: a damaged filter row refuses the open, never "no filter".
+        await restoreToolFilter(session)
         const reason = forked ? 'new' : session.state.session ? 'resume' : 'new'
         resumed = reason === 'resume'
         await session.start()

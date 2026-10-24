@@ -56,7 +56,9 @@ function nodeLinks(root: string): readonly SkillLink[] {
     try {
       const path = realpathSync(join(root, entry.name))
       found.push({ path, dir: statSync(path).isDirectory() })
-    } catch {}
+    } catch {
+      // Ignore broken links; the next scan can observe a repaired target.
+    }
   }
   return found
 }
@@ -166,7 +168,9 @@ export function createSkillWatcher(o: {
       let found: readonly SkillLink[] = []
       try {
         found = listLinks(path)
-      } catch {}
+      } catch {
+        // An unreadable link list cannot authorize additional watches.
+      }
       const wanted = new Map(found.map((link) => [link.path, link]))
       for (const [linkPath, linkHandle] of linked)
         if (!wanted.has(linkPath)) {
@@ -184,7 +188,9 @@ export function createSkillWatcher(o: {
             linked.delete(link.path)
           }
           linked.set(link.path, watch(link.path, link.dir, onEvent, drop))
-        } catch {}
+        } catch {
+          // Watch setup races with removal; the next scan retries.
+        }
       }
     }
     const reset = () => {

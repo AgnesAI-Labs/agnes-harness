@@ -1,18 +1,21 @@
 import type { Bytes, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
+import type { LspSessions } from '../../../lsp/src/registry.js'
 import type { FileChangeRecorder } from '../file-change.js'
+import { fsFailure } from '../guards/feedback.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { ABSENT, observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
 import { usesCrlf, writeContent } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
+import { withLspNote } from './lsp-note.js'
 import { MAX_READ_BYTES } from './read.js'
 import { WriteParams } from './schemas.js'
 
 const dec = new TextDecoder('utf-8', { ignoreBOM: true })
 const enc = new TextEncoder()
 
-export function createWriteTool(record?: FileChangeRecorder) {
+export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) {
   return defineTool({
     name: 'write',
     description:
@@ -29,11 +32,12 @@ export function createWriteTool(record?: FileChangeRecorder) {
       deferLoading: false,
       requiresApproval: 'destructive',
     },
-    execute: (args, ctx): Promise<ToolResult> => {
+    execute: async (args, ctx): Promise<ToolResult> => {
       // Keyed on the resolved path rather than on the argument: `a.ts` and `/work/proj/a.ts` are one
       // file, and two spellings taking two locks is the same as taking no lock at all.
       const abs = normalizeWorkspacePath(args.path, ctx.cwd).abs
-      return withFileLock(abs, async () => {
+      const wrote: { text?: string } = {}
+      const result = await withFileLock<ToolResult>(abs, async () => {
         let old = ''
         let oldBytes: Bytes = new Uint8Array()
         let existed = true
@@ -46,10 +50,7 @@ export function createWriteTool(record?: FileChangeRecorder) {
           // truncation guard off on precisely the reads that failed for a reason, and the overwrite
           // would go ahead against a file nobody could look at. Anything else is a failed call.
           if ((e as { code?: string }).code !== 'ENOENT')
-            return {
-              content: [{ type: 'text', text: `write failed before writing: ${(e as Error).message}` }],
-              isError: true,
-            }
+            return fsFailure(ctx, 'write before writing', args.path, e)
           existed = false
         }
         const seen = observedVersion(ctx.session.key, abs)
@@ -81,16 +82,22 @@ export function createWriteTool(record?: FileChangeRecorder) {
         }
         const content = writeContent(args.path, args.content, old)
         const after = enc.encode(content)
-        const t = looksTruncated(old, content)
+        const t = looksTruncated(old, content, { allowShrink: args.allowShrink === true })
         if (t.truncated)
           return {
             content: [
               {
                 type: 'text',
-                text: `write refused (truncation guard): ${t.reason}. Re-emit the full intended content, or use edit to change part of the file.`,
+                // Only a size refusal can be confirmed; an unbalanced rewrite is not made whole by
+                // saying it was meant, so its message does not offer the flag.
+                text:
+                  t.kind === 'shrink'
+                    ? `write refused (truncation guard): ${t.reason}. Nothing was written. If the file is meant to shrink this much (a section deleted, a merge conflict resolved), resend the same write with allowShrink: true. If the rest of the file should stay, re-emit the full intended content, or use edit to change only the part you mean to.`
+                    : `write refused (truncation guard): ${t.reason}, which the original did not leave open - this is what a cut-off rewrite looks like. Nothing was written. Re-emit the full intended content, or use edit to change only the part you mean to.`,
               },
             ],
             isError: true,
+            details: { code: 'FS_TRUNCATION_GUARD' },
           }
         try {
           await ctx.fs.write(args.path, after)
@@ -99,10 +106,7 @@ export function createWriteTool(record?: FileChangeRecorder) {
           // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
           // outcome is unknown, and nothing in it would say the policy said no.
           if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
-          return {
-            content: [{ type: 'text', text: `write failed before writing: ${(e as Error).message}` }],
-            isError: true,
-          }
+          return fsFailure(ctx, 'write before writing', args.path, e)
         }
         if (record)
           try {
@@ -126,6 +130,7 @@ export function createWriteTool(record?: FileChangeRecorder) {
           abs,
           (await versionOf(ctx, args.path, after, MAX_READ_BYTES)) ?? UNKNOWN_VERSION,
         )
+        wrote.text = content
         return {
           content: [
             {
@@ -136,6 +141,7 @@ export function createWriteTool(record?: FileChangeRecorder) {
           details: { path: args.path, bytes: after.byteLength },
         }
       })
+      return wrote.text === undefined ? result : withLspNote(lsp, ctx, abs, wrote.text, result)
     },
   })
 }

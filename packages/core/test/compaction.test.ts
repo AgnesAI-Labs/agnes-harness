@@ -494,7 +494,7 @@ describe('production compaction phase', () => {
       ...session.hooks,
       context: async (sections) => {
         contextCalls++
-        return { sections, additionalContext: '' }
+        return { sections, additionalContext: '', untrustedContext: 'tainted' }
       },
     }
     session.compaction = new CompactionRunner({
@@ -516,6 +516,10 @@ describe('production compaction phase', () => {
     await session.requestCompaction({ actor, admissionId: 'nonzero-range' })
     expect(await session.runCompaction()).toEqual({ phase: 'checkpoint' })
     expect(contextCalls).toBe(1)
+    // A cold compaction assembles the prefix too, but writes no [hook data] row.
+    expect(JSON.stringify(await session.scan({ type: 'user/message', limit: 1000 }))).not.toContain(
+      '[hook data]',
+    )
     const summary = provider.requests[2]
     expect(summary?.tools).toEqual([])
     expect(summary?.system).toContain('narrow only')

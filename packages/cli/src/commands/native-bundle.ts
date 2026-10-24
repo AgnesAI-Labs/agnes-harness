@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { closeSync, constants, fsyncSync, openSync, writeFileSync } from 'node:fs'
-import { link, lstat, mkdir, open, rename, rm } from 'node:fs/promises'
+import { link, lstat, open, rename, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { createPlatform } from '@agnes/host'
 import type { ArtifactReadResult, ArtifactRef, EventEnvelope } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
-import { createPrivateFileSync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
+import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 
 const FORMAT = 'agnes-native/v1'
 const MAX_ARTIFACT_BYTES = 32 * 1024 * 1024
@@ -126,8 +126,7 @@ export async function writeNativeBundle(
   const sidecar = `${path}.artifacts`
   let published = false
   let manifestPublished = false
-  await mkdir(stage, { mode: 0o700 })
-  if (createPlatform().os === 'win32') windowsEnsurePrivateDirectorySync(stage)
+  createPrivateDirectorySync(stage)
   try {
     const written = new Set<string>()
     for (const original of originals) {
@@ -148,9 +147,8 @@ export async function writeNativeBundle(
     const bytes = Buffer.concat([header, raw])
     // Exclusive publication avoids replacing either half of an existing bundle.
     await privateWrite(join(stage, 'manifest'), bytes)
-    await mkdir(sidecar, { mode: 0o700 })
+    createPrivateDirectorySync(sidecar)
     published = true
-    if (createPlatform().os === 'win32') windowsEnsurePrivateDirectorySync(sidecar)
     for (const digest of written) await rename(join(stage, digest), join(sidecar, digest))
     syncDirectory(sidecar)
     await link(join(stage, 'manifest'), path)

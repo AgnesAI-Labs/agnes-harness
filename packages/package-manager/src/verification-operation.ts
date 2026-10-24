@@ -48,6 +48,18 @@ function settledDigest(directory: string, key: string): string | undefined {
   return undefined
 }
 
+/**
+ * The digest an opted-in read of this process already verified for this exact AGH-stored tree, if
+ * its root has not been replaced since. Lets a writer that hard-links the tree skip hashing it again.
+ */
+export function settledTreeDigest(
+  directory: string,
+  identity: Parameters<typeof verifiedDirectoryDigest>[1],
+): string | undefined {
+  const key = directoryKey(directory, identity, false)
+  return key === undefined ? undefined : settledDigest(directory, key)
+}
+
 /** Records a digest only when the root was not replaced while it was being hashed. */
 function settleTree(
   directory: string,
@@ -108,6 +120,24 @@ export function withoutPackageVerification(action: () => unknown): unknown {
   } finally {
     invalidatePackageVerification()
     invalidate(parent)
+  }
+}
+
+/**
+ * Generation snapshots only: leaves any read operation without discarding settled trees. Linking an
+ * AGH-stored tree into a generation changes no package bytes, so it is not a write gate; a failure
+ * still invalidates everything, like any refusal.
+ */
+export function outsidePackageVerification<T>(action: () => T): T {
+  const refused = (error: unknown): never => {
+    invalidatePackageVerification()
+    throw error
+  }
+  try {
+    const result = operations.run(undefined, action)
+    return (result instanceof Promise ? result.catch(refused) : result) as T
+  } catch (error) {
+    return refused(error)
   }
 }
 

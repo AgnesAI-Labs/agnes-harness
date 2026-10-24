@@ -54,7 +54,7 @@ it('reuses context hooks within a turn and moves changed context to a tail note'
     ...session.hooks,
     context: async (sections) => {
       calls++
-      return { sections, additionalContext: contextText }
+      return { sections, additionalContext: contextText, untrustedContext: '' }
     },
   }
   expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
@@ -79,6 +79,30 @@ it('reuses context hooks within a turn and moves changed context to a tail note'
   expect(next.messages.at(-1)?.content).toEqual([{ type: 'text', text: '[hook context]\nsecond' }])
 })
 
+it('writes untrustedContext once as an untrusted [hook data] row while the cached prefix is reused', async () => {
+  const { session, provider } = await primed(
+    [toolTurn('read', { path: 'a' }), toolTurn('read', { path: 'b' }), textTurn('done')],
+    readRegistry(),
+  )
+  session.hooks = {
+    ...session.hooks,
+    context: async (sections) => ({ sections, additionalContext: '', untrustedContext: 'tainted advice' }),
+  }
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'completed',
+  )
+  expect(provider.requests).toHaveLength(3)
+  const rows = (await session.scan({ type: 'user/message', limit: 1000 })).filter((e) =>
+    JSON.stringify(e.data).includes('[hook data]'),
+  )
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.trust).toBe('untrusted')
+  const text = JSON.stringify(provider.requests.at(-1)?.messages)
+  expect(text).toContain('[hook data]')
+  expect(text).toContain('<untrusted')
+  expect(text).not.toContain('[hook context]')
+})
+
 it('recomputes the context hook when the primary model changes mid-turn', async () => {
   const { session } = await primed([toolTurn('read', { path: 'a' }), textTurn('done')], readRegistry())
   let calls = 0
@@ -90,7 +114,7 @@ it('recomputes the context hook when the primary model changes mid-turn', async 
     },
     context: async (sections) => {
       calls++
-      return { sections, additionalContext: 'same' }
+      return { sections, additionalContext: 'same', untrustedContext: '' }
     },
   }
   expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(

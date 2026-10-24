@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { ProcessIdentity } from '@agnes/host'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { acquireManagedLease } from '../src/managed/lease.js'
 import { allocateManagedListeners } from '../src/managed/listeners.js'
@@ -20,7 +21,9 @@ afterEach(async () => {
 function directory() {
   const d = mkdtempSync(join(tmpdir(), 'agh-managed-unit-'))
   directories.push(d)
-  return d
+  const privateDirectory = join(d, 'private')
+  createPrivateDirectorySync(privateDirectory)
+  return privateDirectory
 }
 const selector = { profileId: 'one', owner: 'sample/plugin', serviceId: 'sample' }
 function fixture(

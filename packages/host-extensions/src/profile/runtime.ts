@@ -32,6 +32,7 @@ import {
   ProfileServiceCallParams as CallSchema,
   ProfileServiceOperationParams as OperationSchema,
 } from '@agnes/protocol/gen/extension-service'
+import { bestEffort } from '../best-effort.js'
 import { frozenJson } from '../ext-host/frozen-json.js'
 import type { ServiceAuthority } from '../ext-host/service-invocation.js'
 import type { ServiceRegistry } from '../ext-host/services.js'
@@ -446,12 +447,14 @@ export function createProfileServiceRuntime(deps: {
         if (!inspectJsonData(output, cap.maxResultBytes).ok || !id.entry.output(output))
           throw rpcError('INTERNAL_ERROR')
         receipt = { state: 'completed', operationId, output, ...(control ? { controlGrant: control } : {}) }
-      } catch {
+      } catch (error) {
+        bestEffort(deps.log, 'profile-effect-execution')(error)
         receipt = { state: 'unknown', operationId, code: 'OUTCOME_UNKNOWN' }
       }
       try {
         await log.locked(() => log.write({ ...(log.operations.get(key) ?? row), receipt }))
-      } catch {
+      } catch (error) {
+        bestEffort(deps.log, 'profile-effect-receipt-write')(error)
         return { state: 'unknown', operationId, code: 'OUTCOME_UNKNOWN' }
       }
       deps.audit({

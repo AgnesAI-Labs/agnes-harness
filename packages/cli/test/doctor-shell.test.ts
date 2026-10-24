@@ -64,7 +64,7 @@ it('keeps non-Windows diagnostics independent of PowerShell', async () => {
     'os linux x64',
     'bubblewrap=installed; install bubblewrap and enable user namespaces for L1. Presence alone does not verify the boundary.',
     'Landlock ABI=6; diagnostic only, AGH currently uses bubblewrap for Linux command isolation.',
-    'Unavailable L1 refuses commands by default. Explicit full-access runs without OS confinement.',
+    'Unavailable L1 refuses commands by default. Explicit full-access runs commands without OS confinement and keeps memory enabled; the shell can then change memory files directly.',
     'Computer Use is unsupported by the current pinned Linux driver admission; a graphical session alone cannot enable it.',
     'sandbox.l1=unavailable',
     'sandbox.l1.reason=test sandbox unavailable',

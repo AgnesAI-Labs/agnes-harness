@@ -56,7 +56,7 @@ export function createConversationToolCard(
       icon = reactIcon(options.icon(iconName))
     }
     element.dataset.status = next.status
-    // 无障碍标签要带上工具名：只报状态会让读屏用户听不出是哪次调用。
+    // Include the tool name in the accessible label: status alone does not identify the call to screen-reader users.
     element.setAttribute(
       'aria-label',
       options.translate('tool.card.aria', {

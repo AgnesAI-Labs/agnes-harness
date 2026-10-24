@@ -1,6 +1,7 @@
 import { requireChildControl } from '@agnes/core-child-control/child/store'
 import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
 import { CoreError } from '@agnes/core-common/types'
+import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 
 /** Preserve the failed-attach hook without delivering completion into a parent's pending gate. */
@@ -19,7 +20,7 @@ export async function reportFailedCreation(
       outcome: record?.state === 'cancelled' ? 'cancelled' : 'failed',
       credits: Math.max(0, credits),
     })
-    .catch(() => undefined)
+    .catch(bestEffort(parent.d.logger, 'failed-child-end-hook'))
 }
 
 export async function cancelOpenAttempt(

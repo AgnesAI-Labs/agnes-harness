@@ -2,6 +2,7 @@ import type { McpServerDefinitionInput, McpServerDescriptor, SkillDescriptor } f
 import type { JSX } from 'react'
 import { useState } from 'react'
 import { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
+import { McpToolCatalog, type ToolCatalog } from './mcp-tool-catalog.js'
 import { SettingsAdvanced, SettingsInput, SettingsSaveBar, SettingsState } from './settings-layout.js'
 import { Button } from './ui/button.js'
 import { Disclosure } from './ui/disclosure.js'
@@ -15,7 +16,7 @@ export type ResourceDetailAction = Readonly<{
   className?: string
   disabled?: boolean
   title?: string
-  /** 动作摘要：由壳统一走确认框 → 提交 → 轮询的链路。 */
+  /** Action summary: the shell consistently runs confirmation → submission → polling. */
   summary: string
   run(): Promise<{ operationId: string } | undefined>
 }>
@@ -45,7 +46,7 @@ function FactList({
   )
 }
 
-/** 进行中操作的进度行：渲染在详情滚动区末尾，取消走壳的确认链。 */
+/** Progress row for an active operation, at the end of the scrollable detail area; cancellation uses the shell confirmation flow. */
 export type ResourceProgress = Readonly<{
   text: string
   canCancel: boolean
@@ -82,7 +83,7 @@ function DetailHead({
   )
 }
 
-/** Skill 详情体。同名覆盖优先级的输入与保存在此组件内闭环，数值交给壳校验与确认。 */
+/** Skill detail body. Override-priority editing and saving stay in this component; the shell validates and confirms the value. */
 export function SkillDetailContent({
   skill,
   disabled,
@@ -240,9 +241,7 @@ type StatusPanel = readonly (readonly [string, string])[]
 type McpToolDisclosure = NonNullable<McpServerDefinitionInput['toolDisclosure']>
 const TOOL_DISCLOSURE_MODES: readonly McpToolDisclosure[] = ['auto', 'always', 'on-demand']
 
-type ToolCatalog = { names: readonly string[]; nextCursor: string | undefined }
-
-/** MCP 详情体。「查看连接状态/工具目录」的异步面板在此组件内管理，api 调用由壳回调。 */
+/** MCP detail body. This component manages async connection-status/tool-catalog panels; shell callbacks perform API calls. */
 export function McpDetailContent({
   server,
   disabled,
@@ -337,12 +336,10 @@ export function McpDetailContent({
             variant="plain"
             className="confirm-review-section"
             defaultOpen
-            summary={t('mcp.tools.title', { count: catalog.names.length })}
+            summary={t('mcp.tools.title', { count: catalog.items.length })}
           >
             <div>
-              {catalog.names.map((name) => (
-                <p key={name}>{name}</p>
-              ))}
+              <McpToolCatalog items={catalog.items} />
               {catalog.nextCursor && (
                 <Button
                   htmlType="button"
@@ -351,7 +348,7 @@ export function McpDetailContent({
                   onClick={() =>
                     void onTools(catalog.nextCursor).then((next) =>
                       setCatalog({
-                        names: [...catalog.names, ...next.names],
+                        items: [...catalog.items, ...next.items],
                         nextCursor: next.nextCursor,
                       }),
                     )

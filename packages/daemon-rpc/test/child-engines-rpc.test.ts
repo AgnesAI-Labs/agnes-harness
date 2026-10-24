@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,6 +6,7 @@ import { codexChildAgentsPlugin, DISABLED_CHILD_ENGINES } from '@agnes/base'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { childAgentKind } from '@agnes/extension-api'
 import { createConfigurationService } from '@agnes/host'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 import { registerConfiguration } from '../src/local/methods/config.js'
 
@@ -18,7 +19,9 @@ function document(codex: { enabled: boolean; command: string; args: string[]; al
 }
 
 it('enables Codex through the admin RPC and starts a child with the fake CLI', async () => {
-  const home = await mkdtemp(join(tmpdir(), 'agh-child-engines-'))
+  const scratch = await mkdtemp(join(tmpdir(), 'agh-child-engines-'))
+  const home = join(scratch, 'home')
+  createPrivateDirectorySync(home)
   const service = createConfigurationService({ home, profile: 'local-dev' })
   const file = join(home, 'profiles', 'local-dev', 'configuration.json')
   const ep = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
@@ -100,6 +103,10 @@ it('enables Codex through the admin RPC and starts a child with the fake CLI', a
       await handle.dispose()
     }
   } finally {
-    await ep.close()
+    try {
+      await ep.close()
+    } finally {
+      await rm(scratch, { recursive: true, force: true })
+    }
   }
 })

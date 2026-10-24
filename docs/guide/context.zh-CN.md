@@ -32,6 +32,10 @@
 
 `ask_user_question` 默认立即继续；`timeoutMs` 最多 60000 毫秒，可选择限时等待。等待期间显示问题卡片，取消会清理等待，晚答仍作为有效的普通用户输入送达。回答不授予工具执行权限。可在 Web、TUI 中使用 `/skill invoke NAME ARGUMENTS`，也可使用上下文调用表单。
 
-扩展作者可以在 `context` hook 返回 `refreshOnRequest: true`，让该贡献者在每次模型请求前刷新；其他贡献者仍保留每轮快照。变化的时钟信息使用 `additionalContext` 尾部注释，仓库规则使用系统 section。
+扩展作者可以在 `context` hook 返回 `refreshOnRequest: true`，让该贡献者在每次模型请求前刷新；其他贡献者仍保留每轮快照。`sections` 中的上下文项可声明 `delivery: 'stable-section'`（默认值）或 `delivery: 'live-note'`。稳定的会话策略使用 section；目标状态、工作流和子代理回执、记忆索引、仓库规则等变化事实使用 live note。每项以注册来源和 `id` 标识，保持标识稳定并返回完整当前文本。Core 仅在文本变化时追加可信尾部消息；省略先前可见的项会发送失效通知。仓库规则按文件分项，以可读 Markdown 和路径/作用域标题呈现，基线每文件一次，随后只发送新增、修改和移除。`additionalContext` 仍可提供合并的时钟或 hook 附注。
+
+live note 复用现有请求附注路径：所有文本经过清洗，与请求原子落账。去重以可见账本历史为准，恢复和 fork 会复用未变化的项；压缩遮蔽某项后，下一个普通请求会重新发送当前内容。机制不使用进程内已发送标记，也不改变账本格式。hook 合同为增量扩展，已记录请求仍保留原始正文。
+
+`additionalContext` 会作为可信的 harness 附注呈现，只应放扩展自己写的文本。由模型根据外部材料（工具输出、网页、文件）生成的文本必须改用 `untrustedContext` 返回。Core 会把它记成不可信的 `[hook data]` 附注并套上不可信内容信封，模型只把它当数据，不当指令。两个字段各有 8192 字节上限，不可信文本挤不掉可信上下文。
 
 `getSurface()` 中的 `messageKind` 区分真实输入和自动生成的 `runtime_context` 注释；压缩计划选择用户问题时应跳过后者。

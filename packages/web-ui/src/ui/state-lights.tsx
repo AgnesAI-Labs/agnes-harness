@@ -2,22 +2,20 @@ import type { JSX } from 'react'
 import { ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog } from '../locales/admin.js'
 import { useUiText } from '../ui-locale.js'
 
-/**
- * 语义色档。颜色不进 JS，只作为 `data-tone`，由 style.css 里的 token 决定。
- */
+/** Semantic tones. Keep colors out of JS: pass only `data-tone`, with colors determined by style.css tokens. */
 export type StateTone = 'ok' | 'warn' | 'off' | 'bad' | 'unknown'
 
 export type StateLight = Readonly<{
-  /** 这一格看的是什么：信任 / 期望 / 实际。 */
+  /** What this cell represents: trust / desired / actual. */
   label: string
-  /** 这一格的取值（已翻译成用户可读文案）。 */
+  /** This cell's value, translated into readable text. */
   value: string
   tone: StateTone
 }>
 
 /**
- * 状态指示灯行。DOM 契约与 style.css 的 `.state-lights` 样式一一对应：灯本体是纯装饰，
- * 圆点 aria-hidden，完整语义留在 `title` 与可见文字里供读屏。
+ * Status light row. The DOM contract matches style.css `.state-lights`: lights are decorative,
+ * dots are aria-hidden, and full semantics remain in `title` and visible text for screen readers.
  */
 export function StateLights({ states }: { states: readonly StateLight[] }): JSX.Element {
   const { t } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
@@ -42,7 +40,7 @@ export function StateLights({ states }: { states: readonly StateLight[] }): JSX.
 }
 
 export type StateSwitchProps = Readonly<{
-  /** 无障碍名，例如「启用 GitHub」。 */
+  /** Accessible name, such as Enable GitHub. */
   label: string
   id?: string | undefined
   testId?: string | undefined
@@ -51,14 +49,14 @@ export type StateSwitchProps = Readonly<{
   checked: boolean
   busy?: boolean | undefined
   disabled: boolean
-  /** 用户拨动开关时调用。调用方负责确认流程与忙碌态，本组件不改状态。 */
+  /** Called when the user toggles. The caller owns confirmation and busy state; this component changes no state. */
   onToggle(next: boolean): void
 }>
 
 /**
- * Switch 开关。用 `role="switch"` 而不是 checkbox：它支持列表行和布尔设置，状态由调用方持有。
- * `checked` 由调用方按用户可感知的实际结果计算；点击只发出下一步请求，不提前改视觉状态。
- * 不采用 antd Switch：行内动作语义、title、stopPropagation 与 `.switch` 皮肤契约都要保真。
+ * Switch uses `role="switch"` rather than checkbox for list rows and boolean settings; the caller owns state.
+ * The caller derives `checked` from the observable result; clicks request a change without optimistic visual updates.
+ * Avoid antd Switch to preserve inline action semantics, title, stopPropagation and the `.switch` skin contract.
  */
 export function StateSwitch({
   label,
@@ -86,7 +84,7 @@ export function StateSwitch({
       title={label}
       disabled={disabled}
       onClick={(event) => {
-        // 行本身也是可点区域（打开详情）；拨开关不该顺带把详情弹出来。
+        // The row also opens details; toggling must not open them as well.
         event.stopPropagation()
         if (disabled) return
         onToggle(!checked)

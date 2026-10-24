@@ -232,7 +232,7 @@ const savedOnly = (value: string, known: readonly { key: string }[]): boolean =>
 export const schedulePageId = (id: string | undefined) => (id ? `schedule-${id}` : 'schedule-new')
 
 /**
- * New or edit scheduled task: a page opened inside 自动化 (「‹ 返回」, breadcrumb, a link of its own),
+ * New or edit scheduled task: a page opened inside Automation (「‹ Back」, breadcrumb, a link of its own),
  * the form in the page and its two actions at the end.
  */
 export function ScheduleEditor({

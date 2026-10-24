@@ -37,7 +37,7 @@ const isolationTone: Record<RuntimeSecurityStatus['platform']['l1']['level'], St
   unprobed: 'neutral',
 }
 /**
- * 默认权限 and the default preset for new sessions. They are separate fields of the saved defaults:
+ * Default permissions and the default preset for new sessions. They are separate fields of the saved defaults:
  * choosing one keeps the other, and a permission level is never written as a preset.
  */
 export function PermissionDefaults({

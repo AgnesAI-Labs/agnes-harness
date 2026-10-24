@@ -40,15 +40,16 @@ export async function cancelTurn(session: Session, locale: string): Promise<stri
 /**
  * A send that failed twice may still have reached the daemon with only its answer lost. Sending the same
  * command id once more is the SDK's own check: it resolves only when the daemon holds the command.
+ * A failed check (including an unreadable journal) leaves the outcome unknown.
  */
-async function reachedDaemon(session: Session, commandId: string): Promise<boolean> {
+async function reachedDaemon(session: Session, commandId: string): Promise<boolean | undefined> {
   try {
     if (!(await session.client.journal.pending(session.id)).some((c) => c.commandId === commandId))
       return false
     await session.checkCommand(commandId)
     return true
   } catch {
-    return false
+    return undefined
   }
 }
 
@@ -75,6 +76,9 @@ export class BusyInput {
 
   private kept: ContentBlock[] = []
 
+  private readonly chips = new Map<string, { block: ContentBlock; sessionId: string }>()
+  private readonly chipOrigins = new WeakMap<ContentBlock, { chip: string; sessionId: string }>()
+
   constructor(private readonly host: BusyHost) {}
 
   /** Attachments of a queued message taken back into the editor: they travel with the next message. */
@@ -82,8 +86,17 @@ export class BusyInput {
     this.kept = blocks
   }
 
-  takeKept(): ContentBlock[] {
-    return this.kept.splice(0)
+  /** A clipboard image uploaded to `sessionId`, shown in the draft as `chip`; it travels only if the chip is still in the text sent. */
+  attach(chip: string, block: ContentBlock, sessionId: string): void {
+    this.chips.set(chip, { block, sessionId })
+    this.chipOrigins.set(block, { chip, sessionId })
+  }
+
+  takeKept(text = ''): ContentBlock[] {
+    const here = this.host.session().id
+    const chips = [...this.chips].filter(([chip, c]) => c.sessionId === here && text.includes(chip))
+    this.chips.clear()
+    return [...this.kept.splice(0), ...chips.map(([, c]) => c.block)]
   }
 
   /** An idle prompt. A daemon that refuses it as busy did not record it, so it is queued instead. */
@@ -126,9 +139,17 @@ export class BusyInput {
         return send()
       })
     } catch (error) {
-      if (unsure(error)) host.notice(tt('busy.unsure', locale), 'warning')
-      else if (await reachedDaemon(session, commandId)) host.notice(tt('busy.landed', locale), 'warning')
+      const reached = unsure(error) ? undefined : await reachedDaemon(session, commandId)
+      if (reached === undefined) host.notice(tt('busy.unsure', locale), 'warning')
+      else if (reached) host.notice(tt('busy.landed', locale), 'warning')
       else {
+        // Restore the image-to-chip binding only for a definitely unsent draft in its original
+        // session. Keeping all blocks would resend images even after their chips were removed.
+        if (host.session() !== session) return
+        for (const block of blocks) {
+          const origin = this.chipOrigins.get(block)
+          if (origin?.sessionId === session.id) this.chips.set(origin.chip, { block, sessionId: session.id })
+        }
         host.restore(draft)
         host.notice(tt('busy.kept', locale), 'error')
       }

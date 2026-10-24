@@ -16,11 +16,13 @@ function versionViolations(
   current: { version: string },
   changed: readonly string[],
 ): string[] {
-  return previous.version === current.version &&
-    changed.some(
-      (file) => file.startsWith(`${directory}/`) && shippedContent(file.slice(directory.length + 1)),
-    )
-    ? [`${previous.name}: shipped content changed at ${current.version}; bump the package version`]
+  const shipped = changed.filter(
+    (file) => file.startsWith(`${directory}/`) && shippedContent(file.slice(directory.length + 1)),
+  )
+  return previous.version === current.version && shipped.length
+    ? [
+        `${previous.name}: shipped content changed at ${current.version}; bump the package version: ${shipped.join(', ')}`,
+      ]
     : []
 }
 
@@ -63,7 +65,7 @@ it('requires a version change when a previously bundled package changes shipped 
     const current = JSON.parse(readFileSync(join(root, file), 'utf8'))
     violations.push(...versionViolations(directory, previous, current, changed))
   }
-  expect(violations).toEqual([])
+  expect(violations, `bundled version comparison base: ${base}`).toEqual([])
   const previous = { name: '@community/kit', version: '1.0.0' }
   expect(versionViolations('kit', previous, previous, ['kit/client/panel.js'])).not.toEqual([])
   expect(versionViolations('kit', previous, previous, ['kit/src/tool.ts'])).not.toEqual([])

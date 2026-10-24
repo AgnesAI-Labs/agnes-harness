@@ -9,16 +9,23 @@ export const KEY_NAMES = [
   'ctrl-d',
   'ctrl-o',
   'ctrl-r',
+  'ctrl-t',
+  'ctrl-x',
   'ctrl-a',
   'ctrl-b',
   'ctrl-e',
   'ctrl-f',
   'ctrl-g',
+  'ctrl-v',
   'ctrl-k',
   'ctrl-u',
   'ctrl-w',
   'ctrl-y',
   'alt-y',
+  'alt-p',
+  'ctrl-s',
+  'ctrl-l',
+  'alt-shift-p',
   'ctrl-z',
   'ctrl-shift-z',
   'ctrl-end',
@@ -31,6 +38,7 @@ export const KEY_NAMES = [
   'left',
   'right',
   'tab',
+  'shift-tab',
   'backspace',
   'pgup',
   'pgdn',
@@ -64,16 +72,21 @@ const SEQ = new Map<string, KeyName>([
   ['\x04', 'ctrl-d'],
   ['\x0f', 'ctrl-o'],
   ['\x12', 'ctrl-r'],
+  ['\x14', 'ctrl-t'],
+  ['\x18', 'ctrl-x'],
   ['\x01', 'ctrl-a'],
   ['\x02', 'ctrl-b'],
   ['\x05', 'ctrl-e'],
   ['\x06', 'ctrl-f'],
   ['\x07', 'ctrl-g'],
+  ['\x16', 'ctrl-v'],
   ['\x0b', 'ctrl-k'],
   ['\x15', 'ctrl-u'],
   ['\x17', 'ctrl-w'],
   ['\x19', 'ctrl-y'],
   ['\x1a', 'ctrl-z'],
+  ['\x13', 'ctrl-s'],
+  ['\x0c', 'ctrl-l'],
   // Word keys: Alt-B/F/D and Alt-Backspace arrive as an escape prefix, Ctrl/Alt with an arrow as a modified CSI.
   ['\x1bb', 'word-left'],
   ['\x1b[1;5D', 'word-left'],
@@ -83,9 +96,12 @@ const SEQ = new Map<string, KeyName>([
   ['\x1b[1;3C', 'word-right'],
   ['\x1bd', 'word-delete'],
   ['\x1by', 'alt-y'],
+  ['\x1bp', 'alt-p'],
+  ['\x1bP', 'alt-shift-p'],
   ['\x1b\x7f', 'word-delete-back'],
   ['\x1b[1;5F', 'ctrl-end'],
   ['\t', 'tab'],
+  ['\x1b[Z', 'shift-tab'],
   ['\x7f', 'backspace'],
   ['\b', 'backspace'],
   ['\x1b[A', 'up'],
@@ -162,9 +178,12 @@ export function parseKey(data: string, kitty: boolean): Key {
     const code = Number(m[1])
     const mods = (Number(m[2] ?? '1') - 1) & 7
     if (code === 13 && kitty) return { name: mods === 1 ? 'shift-enter' : mods === 2 ? 'alt-enter' : 'enter' }
+    if (code === 9 && mods === 1) return { name: 'shift-tab' }
     if (code === 27 && mods === 0) return { name: 'esc' }
     if (code === 122 && mods === 5) return { name: 'ctrl-shift-z' }
     if (code === 121 && mods === 2) return { name: 'alt-y' }
+    if (code === 112 && mods === 2) return { name: 'alt-p' }
+    if ((code === 112 && mods === 3) || (code === 80 && mods === 2)) return { name: 'alt-shift-p' }
     const ctrl = mods === 4 && code >= 97 && code <= 122 ? SEQ.get(String.fromCharCode(code - 96)) : undefined
     if (ctrl) return { name: ctrl }
   }

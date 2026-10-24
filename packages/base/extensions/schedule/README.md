@@ -51,6 +51,10 @@ The tools take `target: "new_session" | "current_session"`. A new-session task f
 
 ## Runs
 
+The daemon admits up to 16 jobs at a time across ticks. A long-running job does not block later due
+jobs while capacity remains. Shutdown stops admission, aborts active work and waits for its cleanup;
+unfinished shutdown leases remain available for the next daemon to reclaim.
+
 Run history keeps the latest 50 runs per task (20 are returned). Outcomes: `running` (a turn started), `waiting_approval` (that turn's session has an open approval; computed when listing), `ran` (the turn ended), `delivered` (the prompt joined a turn that was already running), `failed` with a `reason` code (`workspace_missing`, `loop_missing`, `bundle_unavailable`, `preset_not_allowed`, `model_missing`, `session_unavailable`, `start_failed`, `turn_error`) and an optional detail. A failed occurrence of a repeating task does not end it; the next occurrence is scheduled.
 
 `schedules.control` runs a task now (its job becomes due at once; a repeating rule continues from that run), pauses it (the queued job is cancelled; a run in progress finishes) or resumes it (a new job counted from now; a one-time task whose moment has passed returns `not_future`).

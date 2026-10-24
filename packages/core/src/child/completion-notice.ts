@@ -3,6 +3,7 @@ import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
 import { isTerminalChildState } from '@agnes/core-child-control/child/types'
 import { sha256Hex } from '@agnes/core-common/request/hash'
 import type { SystemInput } from '@agnes/protocol'
+import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { childResultCollected, childResultSequence } from './collected-result.js'
 import { recordedChildRole } from './roles.js'
@@ -162,6 +163,8 @@ export async function recoverChildCompletions(parent: SessionImpl): Promise<void
   const rows = await storage.listByParent(parent.key).catch(() => [])
   for (const row of rows) {
     if (row.creationPhase !== 'committed' || !isTerminalChildState(row.state)) continue
-    await deliverChildCompletion(parent, row, row.state as ChildOutcome).catch(() => undefined)
+    await deliverChildCompletion(parent, row, row.state as ChildOutcome).catch(
+      bestEffort(parent.d.logger, 'child-completion-recovery'),
+    )
   }
 }

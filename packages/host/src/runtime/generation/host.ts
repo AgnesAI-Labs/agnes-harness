@@ -28,6 +28,7 @@ import {
   type RuntimeTarget,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
+import { bestEffort, bestEffortSync } from '../../best-effort.js'
 import { combinedSecurityStatus } from '../lifecycle/admin-security-status.js'
 import type { Host, HostOptions } from '../lifecycle/host.js'
 import { createHostFacade } from '../lifecycle/host-facade.js'
@@ -183,11 +184,8 @@ export async function createRuntimeGenerationHost(
     failed: () => failures.keys(),
   })
   const recordHead = (id: string): void => {
-    try {
-      store.setHead(headKey, id)
-    } catch {
-      // The pointer is a shortcut; the next worker snapshots afresh.
-    }
+    // The pointer is a shortcut; the next worker snapshots afresh after a failed write.
+    bestEffortSync(options.log, 'generation-head-write', () => store.setHead(headKey, id))
   }
   const ensureCurrent = async (): Promise<LiveGeneration> => {
     if (current) return current
@@ -394,7 +392,7 @@ export async function createRuntimeGenerationHost(
         }).target,
       )
     } catch (error) {
-      await host.close().catch(() => undefined)
+      await host.close().catch(bestEffort(options.log, 'generation-host-rollback'))
       throw error
     }
     const generation = { snapshot, host }
@@ -503,7 +501,7 @@ export async function createRuntimeGenerationHost(
       collector = setTimeout(
         () => {
           collector = undefined
-          void enqueue(collect).catch(() => undefined)
+          void enqueue(collect).catch(bestEffort(options.log, 'generation-collection'))
         },
         Math.min(2_147_483_647, Math.max(1, Math.min(next - Date.now(), busy ? 1000 : Infinity))),
       )
@@ -728,7 +726,8 @@ export async function createRuntimeGenerationHost(
       // bodies, factory closures or executable archives with no session references.
       try {
         await store.collect(new Set([...live.keys(), ...opening.keys()]))
-      } catch {
+      } catch (error) {
+        bestEffort(options.log, 'failed-generation-collection')(error)
         /* Preserve the activation error. */
       }
       throw error
@@ -1059,14 +1058,14 @@ export async function createRuntimeGenerationHost(
               await close()
             } finally {
               generation.host.kernel.sessions.delete(key)
-              if (!closed) void enqueue(collect).catch(() => undefined)
+              if (!closed) void enqueue(collect).catch(bestEffort(options.log, 'generation-collection'))
             }
           }
           failures.delete(pin.generationId)
           return session
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          if (!closed) void enqueue(collect).catch(() => undefined)
+          if (!closed) void enqueue(collect).catch(bestEffort(options.log, 'generation-collection'))
           if (message.includes('E_GENERATION_') || message.startsWith('Loop '))
             failures.set(pin.generationId, generationFailure(error))
           throw translateSessionFailure(error, key)
@@ -1232,6 +1231,7 @@ export async function createRuntimeGenerationHost(
       }
       claim(initial)
       for (const generation of live.values()) claim(generation.host)
+      // The allSettled owner below reports these errors; this only prevents early unhandled rejections.
       for (const close of hosts.values()) void close.catch(() => undefined)
       closing = (async () => {
         await calls.drain()
@@ -1251,7 +1251,7 @@ export async function createRuntimeGenerationHost(
     if (!options.deferInitialGeneration) await ensureCurrent()
   } catch (error) {
     releaseRunning()
-    await initial.close().catch(() => undefined)
+    await initial.close().catch(bestEffort(options.log, 'initial-generation-rollback'))
     throw error
   }
   return registerHostIdle(

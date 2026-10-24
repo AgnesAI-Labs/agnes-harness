@@ -7,6 +7,8 @@ export interface SearchProvider {
 }
 
 export interface SearchResult {
+  /** Optional backend identity for this result, supplied by the host, never inferred from content. */
+  provider?: string
   query: string
   title: string
   url: string

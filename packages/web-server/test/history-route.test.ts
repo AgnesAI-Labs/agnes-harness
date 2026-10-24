@@ -85,6 +85,25 @@ describe('history search route', () => {
 
   it('rejects a cross-site request, a non-GET, and a second owner', async () => {
     const dir = seed()
+    for (const [site, status] of [
+      [[], 200],
+      [['same-origin', 'cross-site'], 200],
+      [['none', 'cross-site'], 200],
+      [['cross-site', 'same-origin'], 403],
+    ] as const) {
+      expect(
+        (
+          await handleHistorySearch({
+            method: 'GET',
+            search: '?q=alpha',
+            origin: undefined,
+            site: [...site],
+            expectedOrigin: origin,
+            searchHistory: async () => ({ items: [], truncated: false }),
+          })
+        ).status,
+      ).toBe(status)
+    }
     expect((await call(dir, '?q=alpha', { site: 'cross-site' })).status).toBe(403)
     expect((await call(dir, '?q=alpha', { method: 'POST' })).status).toBe(405)
     const side = new DatabaseSync(join(dir, 'tables', 'other.db'))

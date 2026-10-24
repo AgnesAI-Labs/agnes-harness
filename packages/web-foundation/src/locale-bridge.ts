@@ -2,8 +2,8 @@ import type { LocaleVars } from '@agnes/web-client'
 import { webLocaleCatalog } from './locale-catalog.js'
 
 /**
- * web 包内部命令式代码的取词桥：宿主启动时 `setLocaleTranslator` 注入 `LocaleService#t`。
- * 调用方必须在渲染/组装瞬间调用 `tr()`，不缓存结果——切换语言后下一次渲染即生效。
+ * Translation bridge for imperative web code: the host injects `LocaleService#t` via `setLocaleTranslator` at startup.
+ * Call `tr()` during rendering/assembly without caching its result, so locale changes apply on the next render.
  */
 let translator: (key: string, vars?: LocaleVars) => string = (key, vars) => {
   const locale = typeof document !== 'undefined' && document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en'

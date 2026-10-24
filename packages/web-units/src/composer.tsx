@@ -318,9 +318,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     </Tooltip>
   )
 
-  // 队列排在输入卡之外、它的上方。排队的消息和正在写的草稿是两件事，同处一张卡里会被读成
-  // 一件事。卡片样式（含必须挂在区域钩子上的 backdrop-filter）仍留在
-  // [data-agnes-region="composer"]，队列只是它的前一个兄弟节点。
+  // Place the queue outside and above the composer card. Queued messages and the current draft are separate;
+  // putting them in one card would imply otherwise. Keep card styling, including backdrop-filter on the region hook,
+  // on [data-agnes-region="composer"]; the queue is only its preceding sibling.
   const queueSection = renderComposerQueue({
     view,
     dependencies,

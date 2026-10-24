@@ -70,6 +70,7 @@ export * from './release-policy.js'
 export type {
   RuntimePin,
   RuntimePinPurpose,
+  RuntimePinRecords,
   RuntimeSnapshot,
   RuntimeSnapshotCollection,
   RuntimeSnapshotPinRequest,

@@ -14,8 +14,12 @@ it.runIf(process.platform === 'darwin').each(['symlink', 'socket', 'directory', 
       path = value
       return open(value)
     })
-    const gate = openLoopbackGate()
-    observer.mockRestore()
+    let gate: ReturnType<typeof openLoopbackGate>
+    try {
+      gate = openLoopbackGate()
+    } finally {
+      observer.mockRestore()
+    }
     const directory = dirname(path)
     const moved = `${directory}-original`
     const peerPath = `${directory}/peer`

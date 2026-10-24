@@ -191,7 +191,9 @@ export function demoReply(request: RequestBody): ModelAdapterEvent[] {
       !message.content.some(
         (part) =>
           part.type === 'text' &&
-          /^(?:\[(?:runtime context|hook context|skill loaded)\]\n|<untrusted id=")/.test(part.text),
+          /^(?:\[(?:runtime context|hook context|skill loaded)\]\n|\[live context [a-f0-9]{64}\]\n|<untrusted id=")/.test(
+            part.text,
+          ),
       ),
   )
   const scheduled =

@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import { createJobsServiceFixture, fakeToolContext } from '@agnes/base/testkit'
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { MemoryJournal } from '@agnes/daemon-foundation/local/ports'
@@ -87,9 +88,19 @@ it('uses narrow authenticated service grants, replays open receipts and refuses 
           commandId: `kill-${params.sessionId}-${params.jobId}`,
         }),
       ).toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
-    expect(
-      await call('control', { sessionId: 'read-only', operation: 'open', commandId: 'deny' }),
-    ).toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
+    for (const [sessionId, operation, extra] of [
+      ['read-only', 'open', {}],
+      ['read-only', 'run', { command: 'ls' }],
+      ['foreign', 'run', { command: 'ls' }],
+    ] as const)
+      expect(
+        await call('control', {
+          sessionId,
+          operation,
+          commandId: `deny-${sessionId}-${operation}`,
+          ...extra,
+        }),
+      ).toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
     expect(await call('read', { sessionId: 'disabled' })).toMatchObject({
       error: { data: { code: 'CAPABILITY_DENIED' } },
     })
@@ -111,7 +122,7 @@ it.each([undefined, 0, 3])(
   'validates real jobs service results through RPC with stoppedProcesses=%s',
   async (stoppedProcesses) => {
     const { jobs, services } = createJobsServiceFixture()
-    const tool = fakeToolContext({ sessionKey: 's1' })
+    const tool = fakeToolContext({ sessionKey: 's1', cwd: resolve('/work/proj') })
     const receipt = { code: 0, ...(stoppedProcesses === undefined ? {} : { stoppedProcesses }) }
     let finish!: (exit: ProcessExit) => void
     tool.sandbox.openProcess = async () => ({
@@ -208,6 +219,22 @@ it.each([undefined, 0, 3])(
       expect(await call('read', { jobId: terminal.id })).toMatchObject({
         result: { job: { id: terminal.id, status: 'killed' } },
       })
+      // `run` returns a human-owned, non-PTY shell job that passes the result schema.
+      expect(await call('control', { operation: 'run', command: 'ls', commandId: 'run' })).toMatchObject({
+        result: { output: { owner: 'human', kind: 'shell', command: 'ls', status: 'running' } },
+      })
+      for (const params of [
+        { command: '' },
+        { command: 'x'.repeat(8193) },
+        { command: 'a\0b' },
+        { command: 'ls', timeoutMs: 999 },
+        { command: 'ls', timeoutMs: 600001 },
+        { command: 'ls', timeoutMs: 1.5 },
+        {},
+      ])
+        expect(await call('control', { operation: 'run', commandId: 'bad', ...params })).toMatchObject({
+          error: { code: -32602 },
+        })
     } finally {
       await jobs.dispose()
       await ep.close()

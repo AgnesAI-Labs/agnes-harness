@@ -109,6 +109,7 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
+import { bestEffort } from '../best-effort.js'
 import {
   childLifecycle,
   childLifecycleRevoked,
@@ -198,6 +199,7 @@ import {
   validateTurnOverrides,
 } from './step-cap.js'
 import { sessionToolCatalog } from './tool-catalog.js'
+import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } from './tool-filter.js'
 import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
@@ -350,10 +352,12 @@ export type HookPort = {
     proposedReason: string
     verifier?: VerifierVerdict
   }): Promise<{ action: 'stop' } | { action: 'continue'; note: string }>
-  context(sections: PromptSection[]): Promise<{ sections: PromptSection[]; additionalContext: string }>
+  context(
+    sections: PromptSection[],
+  ): Promise<{ sections: PromptSection[]; additionalContext: string; untrustedContext: string }>
   refreshContext?(
     sections: PromptSection[],
-  ): Promise<{ sections: PromptSection[]; additionalContext: string }>
+  ): Promise<{ sections: PromptSection[]; additionalContext: string; untrustedContext: string }>
   beforeRequest(out: DeriveOutput, slot: string, attempt: number): Promise<DeriveOutput>
   requestPatch?(payload: HookPayloadMap['before_request']): Promise<HookReturnMap['before_request']>
   beforeStep(p: {
@@ -379,7 +383,7 @@ export type BeforeCompactHookSelection =
 export const noopHooks: HookPort = {
   toolCall: async () => ({ allow: true }),
   turnStopping: async () => ({ action: 'stop' }),
-  context: async (s) => ({ sections: s, additionalContext: '' }),
+  context: async (s) => ({ sections: s, additionalContext: '', untrustedContext: '' }),
   beforeRequest: async (o) => o,
   beforeStep: async () => ({}),
 }
@@ -504,6 +508,8 @@ export type SessionDeps = {
   imported?: SessionStart['imported']
   delegation?: SessionStart['delegation']
   cwd: string
+  /** Extra directories this session's workspace binding admits (paths only); omitted when none. */
+  extraDirectories?: readonly string[]
   netFetch: ToolContextDeps['netFetch']
   publicFetch?: ToolContextDeps['publicFetch']
   /** Trusted resolved profile value. Omission preserves the safe manual default. */
@@ -555,7 +561,7 @@ export type TurnMemory = {
   budgetAdmission?: { step: number; cap: number | null; creditsUsed: number }
   snapshot: RegistrySnapshot
   /** Context-hook output is frozen for identical assembly inputs within this turn. */
-  prefix?: { key: string; sections: PromptSection[]; additionalContext: string }
+  prefix?: { key: string; sections: PromptSection[]; additionalContext: string; untrustedContext: string }
   /** A null result means this turn already tried the Host-owned Skill preloader. */
   preload?: RuntimePromptPreload | null
   nonce: string
@@ -858,13 +864,30 @@ export class SessionImpl {
   currentTools(): ToolRegistry {
     const tools = this.d.currentRuntime?.current(this.key)?.tools ?? this.d.registry
     const allow = this.roleAuthority?.tools.ids ?? this.preset.tools.allow
-    if (allow === undefined) return tools
-    // One view per registry and list, so repeated lookups in a turn share it.
-    if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
-      this.allowedTools = { source: tools, allow, view: new ToolRegistryView(tools, allow, allow) }
-    return this.allowedTools.view
+    let view = tools
+    if (allow !== undefined) {
+      // One view per registry and list, so repeated lookups in a turn share it.
+      if (this.allowedTools?.source !== tools || this.allowedTools.allow !== allow)
+        this.allowedTools = { source: tools, allow, view: new ToolRegistryView(tools, allow, allow) }
+      view = this.allowedTools.view
+    }
+    if (this.toolFilter === NO_TOOL_FILTER) return view
+    // The session filter sits on top of preset and profile, so it can only take tools away.
+    if (this.filteredView?.source !== view || this.filteredView.filter !== this.toolFilter)
+      this.filteredView = {
+        source: view,
+        filter: this.toolFilter,
+        view: filteredTools(view, () => this.toolFilter),
+      }
+    return this.filteredView.view
   }
   private allowedTools?: { source: ToolRegistry; allow: readonly string[]; view: ToolRegistry }
+  private filteredView?: { source: ToolRegistry; filter: SessionToolFilter; view: ToolRegistry }
+  /** Narrowed only by `setToolFilter`, and rebuilt from the ledger on open. Never widened. */
+  toolFilter: SessionToolFilter = NO_TOOL_FILTER
+  setToolFilter(request: unknown): Promise<{ seq: Seq; filter: SessionToolFilter }> {
+    return setToolFilter(this, request)
+  }
 
   /** Read-only catalog from the same model filtering and authorized discovery as this session. */
   toolCatalog(): import('@agnes/protocol').SessionToolsResult {
@@ -2056,7 +2079,7 @@ export class SessionImpl {
     }
     this.turnEndError = undefined
     const cancelled = () => opts.signal.aborted || this.abortRevision !== abortRevision
-    const onAbort = () => void this.abort().catch(() => undefined)
+    const onAbort = () => void this.abort().catch(bestEffort(this.d.logger, 'session-abort'))
     opts.signal.addEventListener('abort', onAbort, { once: true })
     // A phase edge that reports where it went without writing where it went leaves step() reading
     // the same phase forever. Bound consecutive edges without a committed program-counter change,

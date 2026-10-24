@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   CompositionSessionStore,
@@ -18,6 +18,7 @@ import {
   writeLock,
 } from '@agnes/package-manager'
 import { type AgentPlan, jcs, sha256Hex, validatePackageAdminCall } from '@agnes/protocol'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { afterEach, expect, it } from 'vitest'
 import { createAgentLaunches } from '../src/packages/agent-launches.js'
 import { Applications } from '../src/packages/applications.js'
@@ -29,8 +30,10 @@ afterEach(async () => {
   for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true })
 })
 async function fixture(resolveAgent?: (profile: string, ref: string) => Promise<AgentPlan>) {
-  const home = await mkdtemp(join(tmpdir(), 'agh-applications-'))
-  homes.push(home)
+  const root = await mkdtemp(join(tmpdir(), 'agh-applications-'))
+  homes.push(root)
+  const home = join(root, 'home')
+  createPrivateDirectorySync(home)
   const directory = join(home, 'profiles', 'local-dev')
   await mkdir(directory, { recursive: true })
   const config = createConfigurationService({ home, profile: 'local-dev' })
@@ -408,7 +411,8 @@ it('installs, previews and adopts the Acme application through a real locking pa
     ),
     policySnapshot: { capabilityCeiling: ['tools', 'ui'], workspacePackages: 'require-project-trust' },
   })
-  const source = parseSource(`file:${fileURLToPath(new URL('../../../examples/acme', import.meta.url))}`)
+  const example = fileURLToPath(new URL('../../../examples/acme', import.meta.url))
+  const source = parseSource(`file:${example.split(sep).join('/')}`)
   const inspected = await manager.inspect(f.directory, source)
   expect(inspected.blockers).toEqual([])
   const installed = await manager.install(f.directory, source, { expectedIntegrity: inspected.integrity })

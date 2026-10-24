@@ -12,6 +12,7 @@ import {
   toProviderRequest,
 } from '@agnes/core'
 import type { InferenceEvent } from '@agnes/protocol'
+import { bestEffort } from '../../best-effort.js'
 import type { HostSession } from '../lifecycle/host.js'
 
 export type SideQuestionFailure = 'budget' | 'unavailable' | 'timeout' | 'failed'
@@ -25,6 +26,20 @@ export class SideQuestionError extends Error {
     super(message)
     this.name = 'SideQuestionError'
   }
+}
+
+/** Which auxiliary slots a review may use, in order; the first one with a configured model wins. */
+export type SideQuestionSlot = 'verifier' | 'fast'
+
+export type SideQuestionOptions = {
+  timeoutMs?: number
+  signal?: AbortSignal
+  /** Use the first configured auxiliary slot instead of the primary model (no primary fallback). */
+  slots?: readonly SideQuestionSlot[]
+  system?: string
+  maxTokens?: number
+  /** Names the cost row and request key, default `btw`. */
+  label?: string
 }
 
 export type SideQuestionAnswer = { text: string; model: string; credits?: number }
@@ -47,7 +62,7 @@ const MAX_TEXT = 16_000
 export async function askSideQuestion(
   s: HostSession,
   question: string,
-  options: { timeoutMs?: number; signal?: AbortSignal } = {},
+  options: SideQuestionOptions = {},
 ): Promise<SideQuestionAnswer> {
   const work = () => ask(s, question, options)
   return s.d.withModelSnapshot ? s.d.withModelSnapshot(work) : work()
@@ -56,16 +71,24 @@ export async function askSideQuestion(
 async function ask(
   s: HostSession,
   question: string,
-  options: { timeoutMs?: number; signal?: AbortSignal },
+  options: SideQuestionOptions,
 ): Promise<SideQuestionAnswer> {
   if (s.closingOrClosed) throw new SideQuestionError('unavailable', 'session is closed')
-  const route = s.preset.model.route.primary
-  const modelId =
-    s.preset.model.id.primary ??
-    s.d.provider.models().find((m) => m.route === route && m.slot === 'primary')?.id
-  const model =
-    route && modelId ? s.d.provider.models().find((m) => m.route === route && m.id === modelId) : undefined
-  if (!route || !modelId || !model) throw new SideQuestionError('unavailable', 'primary model unavailable')
+  const label = options.label ?? 'btw'
+  const find = (slot: 'primary' | SideQuestionSlot) => {
+    const route = s.preset.model.route[slot]
+    const id =
+      s.preset.model.id[slot] ??
+      (slot === 'primary'
+        ? s.d.provider.models().find((m) => m.route === route && m.slot === 'primary')?.id
+        : undefined)
+    const model =
+      route && id ? s.d.provider.models().find((m) => m.route === route && m.id === id) : undefined
+    return route && id && model ? { slot, route, modelId: id, model } : undefined
+  }
+  const picked = options.slots ? options.slots.map(find).find((x) => x !== undefined) : find('primary')
+  if (!picked) throw new SideQuestionError('unavailable', 'side model unavailable')
+  const { route, modelId, model } = picked
 
   const abort = new AbortController()
   const cancel = () => abort.abort()
@@ -132,17 +155,17 @@ async function ask(
       surface,
       disclosed: [],
       toolCalls,
-      model: { slot: 'primary', ...target },
+      model: { slot: picked.slot, ...target },
       contract: s.d.contractForModel?.(target) ?? s.d.contract,
       nonce: randomBytes(16).toString('hex'),
       envelopeNonceFor: (seq) => s.envelopeNonceFor(seq),
       envelopeCache: s.envelopeCache,
-      summaryPlan: { system: SYSTEM, instruction: question },
+      summaryPlan: { system: options.system ?? SYSTEM, instruction: question },
     })
-    const maxTokens = Math.min(MAX_TOKENS, model.maxTokens)
-    derived = applyBeforeRequestPatches(derived, [{ ext: 'host:btw', patch: { maxTokens } }])
+    const maxTokens = Math.min(options.maxTokens ?? MAX_TOKENS, model.maxTokens)
+    derived = applyBeforeRequestPatches(derived, [{ ext: `host:${label}`, patch: { maxTokens } }])
     const wire = toProviderRequest(derived.request, {
-      sessionKey: `btw:${randomUUID()}`,
+      sessionKey: `${label}:${randomUUID()}`,
       derivedHash: derived.header.derived_hash,
     })
 
@@ -153,10 +176,21 @@ async function ask(
       stopped,
     )
     const hold = Math.max(projected.credits, conservativeModelCredits(tokens, maxTokens, model.cost))
-    const cap = s.preset.budget.perRequestCap
+    // An auxiliary review honours the open turn's budget override exactly like `generate` does.
+    let cap = s.preset.budget.perRequestCap
+    if (options.slots) {
+      const override = (await s.scan({ type: 'x/core/turn-budget', order: 'desc', limit: 1 }))[0]?.data as
+        | { turn?: number; hard?: boolean; creditsCap?: number | null }
+        | undefined
+      const turnNo = (start?.data as { turn?: number } | undefined)?.turn
+      if (override && override.turn === turnNo) {
+        if (override.hard) throw new SideQuestionError('budget', 'turn budget is hard-capped')
+        cap = override.creditsCap ?? cap
+      }
+    }
     if (!Number.isFinite(hold) || (cap !== null && hold > cap))
       throw new SideQuestionError('budget', 'side question exceeds the per-request budget')
-    const effectId = `btw:${randomUUID()}`
+    const effectId = `${label}:${randomUUID()}`
     if (s.preset.treeBudgetCredits !== null) {
       const store = s.d.log.storage
       if (!hasChildControl(store) || !start)
@@ -204,6 +238,7 @@ async function ask(
           if (event.type === 'error' || event.type === 'toolcall_end' || event.type === 'deviation') break
         }
       } finally {
+        // Early stream cancellation can reject return(); settlement remains owned by this request.
         void iterator.return?.().catch(() => undefined)
       }
     } catch (error) {
@@ -257,7 +292,10 @@ async function ask(
     options.signal?.removeEventListener('abort', cancel)
     abort.abort()
     // Still held only when the provider was never called or accounting itself failed.
-    if (permit) await permit.store.releaseReservation(permit.id).catch(() => undefined)
+    if (permit)
+      await permit.store
+        .releaseReservation(permit.id)
+        .catch(bestEffort(s.d.logger, 'side-question-reservation-release'))
   }
 }
 

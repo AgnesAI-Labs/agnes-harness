@@ -39,18 +39,15 @@ export function validateSections(specs: ReadonlyArray<PromptSectionSpec>): Reado
 }
 
 /**
- * The assembled system prompt in order. Order 0 is the model contract prefix, which the provider
- * injects and this package never touches, so it is not listed. The numbers are frozen: they are
- * gaps of ten so a section can be inserted later without renumbering the ones around it.
+ * The contributed system prompt in order. Core prepends its untrusted-envelope rule outside
+ * this table. Identity comes before plugin guidance; the remaining stable slots leave room
+ * for additions without unrelated renumbering.
  */
 export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSections([
-  { id: 'persona', order: 100, source: 'file', owner: 'code' },
+  { id: 'persona', order: 1, source: 'file', owner: 'code' },
   { id: 'environment', order: 110, source: 'dynamic', owner: 'code' },
   { id: 'workflow:receipts', order: 113, source: 'dynamic', owner: 'base' },
-  // Order 115, formerly 'tools-available', is retired rather than reassigned: the tool list moved
-  // to the runtime-context tail message (code-mode/prompts.ts's contribute()), and the gaps of ten
-  // exist precisely so a retirement like this one does not force renumbering everything below it.
-  //
+  { id: 'tools-available', order: 115, source: 'dynamic', owner: 'code' },
   // Live repository rules contributed by the official context-rules extension.
   { id: 'agents-md', order: 120, source: 'dynamic', owner: 'base' },
   { id: 'coding-doctrine', order: 130, source: 'file', owner: 'code' },
@@ -61,7 +58,6 @@ export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSection
   { id: 'skills', order: 160, source: 'dynamic', owner: 'base' },
   { id: 'plan-mode', order: 162, source: 'dynamic', owner: 'base' },
   { id: 'persistent-goal', order: 164, source: 'dynamic', owner: 'base' },
-  { id: 'plugin-creator', order: 165, source: 'dynamic', owner: 'base' },
   { id: 'session-query', order: 168, source: 'dynamic', owner: 'base' },
   { id: 'channel-style', order: 170, source: 'file', owner: 'code' },
 ])

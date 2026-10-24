@@ -10,6 +10,8 @@ import {
   manageMemory,
   type ResolvedProfile,
   sessionPermissionCatalog,
+  ToolFilterError,
+  toolFilterRejection,
 } from '@agnes/host'
 import { exporterHealth } from '@agnes/observability'
 import { withPackageVerification } from '@agnes/package-manager'
@@ -508,6 +510,19 @@ export async function handleCommand(
     case 'setPreset': {
       return { effectiveFromSeq: await o.host.setSessionPreset(session.key, String(p.preset)) }
     }
+    case 'setToolFilter': {
+      try {
+        const { seq, filter } = await session.setToolFilter(p.filter)
+        return { effectiveFromSeq: seq, filter }
+      } catch (error) {
+        // A refused request crosses the worker boundary as the public rejection, not an internal error.
+        if (error instanceof ToolFilterError) {
+          const { name, data } = toolFilterRejection(error)
+          throw rpcError(name, data)
+        }
+        throw error
+      }
+    }
     case 'setModel': {
       const sel = p.sel as { slot: string; route: string; model: string }
       o.host.validateModelSwitch(sel, session.key)
@@ -602,7 +617,7 @@ export async function handleCommand(
  * when this returns `true`, and a failed reload must never throw out of `run` — the turn proceeds on
  * the safely applied resource set; an uncertain MCP apply or failed compensation refuses admission.
  *
- * MCP (stage 2b step 3): the snapshot's servers are applied as Host rows, one per server
+ * MCP: the snapshot's servers are applied as Host rows, one per server
  * (`o.resources.mcpRows`). Host swaps only a row whose definition changed and unmounts only a removed
  * server's row; every other server keeps its connection. The rows own their connections, so this
  * generation holds none, and applying rows is idempotent against the snapshot: a retry after a later
@@ -612,7 +627,7 @@ export async function handleCommand(
  * explicitly — `reloadEcosystemExtension`'s own `managed.load()` resolves with `{ loaded: false,
  * error }` rather than throwing (packages/host-extensions/src/ext-host/managed-host.ts), so a silent failure
  * would otherwise be missed. `tool_search`'s Skill listing (agnes/mcp-search) reads whatever
- * generation agnes/skills serves, so nothing else needs reloading (design §3.9, D123).
+ * generation agnes/skills serves, so nothing else needs reloading.
  *
  * On failure the new generation is closed, never adopted. Closing it only closes its (empty) MCP
  * manager: MCP rows are independent of it. Staleness stays set so every later turn retries — so

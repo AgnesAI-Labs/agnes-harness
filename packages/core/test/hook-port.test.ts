@@ -91,9 +91,17 @@ describe('SessionHookPort', () => {
     await expect(port.turnStopping({ turn: 1, step: 1, proposedReason: 'completed' })).resolves.toEqual({
       action: 'stop',
     })
-    await expect(port.context([])).resolves.toEqual({ sections: [], additionalContext: '' })
+    await expect(port.context([])).resolves.toEqual({
+      sections: [],
+      additionalContext: '',
+      untrustedContext: '',
+    })
     const existing = [{ id: 'additional-context', order: 199, text: 'existing', source: 'caller' }]
-    await expect(port.context(existing)).resolves.toEqual({ sections: [], additionalContext: '' })
+    await expect(port.context(existing)).resolves.toEqual({
+      sections: [],
+      additionalContext: '',
+      untrustedContext: '',
+    })
     expect(await port.beforeRequest(request, 'primary', 0)).toBe(request)
   })
 

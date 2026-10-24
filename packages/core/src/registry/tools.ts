@@ -71,6 +71,9 @@ export class ToolRegistry {
     const candidateDefinition: ToolDef = {
       ...input,
       parameters: cloneFrozenSchema(input.parameters),
+      ...(input.modelParameters === undefined
+        ? {}
+        : { modelParameters: cloneFrozenSchema(input.modelParameters) }),
       meta: materializedMeta as ToolMeta,
     }
     // The author-facing package owns what "well formed" means: the name grammar, required safety

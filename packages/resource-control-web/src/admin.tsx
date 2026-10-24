@@ -36,7 +36,7 @@ import {
   unmountRegion,
 } from '@agnes/web-ui'
 import { $, type ResourceNotice, renderNotice } from './admin-dom.js'
-import { ResourceAdminApi, ResourceAdminApiError } from './api.js'
+import { resourceAdminError as errorOf, ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
 import {
   createMcpForm,
@@ -48,14 +48,14 @@ import {
 import { mountMcpPresets } from './mcp-presets.js'
 import { pollResourceOperation, watchMcpPanel } from './mcp-refresh.js'
 import { mountMcpWizard } from './mcp-wizard.js'
-import { type ResourceCompletion, reportResourceCompleted } from './operation-feedback.js'
+import { type ResourceCompletion, ResourcePageFeedback } from './operation-feedback.js'
 import { resourceActionMenu, skillDetailActions } from './skill-actions.js'
 import { SkillsPage } from './skills-page.js'
 
 export { registerSkillPagePanels, type SkillPagePanels } from './skills-page.js'
 
 import { type ResourceAdminSurface, renderSettingsChrome } from './settings-chrome.js'
-import type { ResourceAdminContext, ResourceAdminError } from './types.js'
+import type { ResourceAdminContext } from './types.js'
 
 export type { ResourceAdminSurface } from './settings-chrome.js'
 
@@ -91,13 +91,6 @@ export type ResourceScope = Readonly<{ tab: Tab; workspaceId?: string }>
 function normalizeWorkspaceId(workspaceId?: string): string | undefined {
   return workspaceId && /^[a-f0-9]{64}$/.test(workspaceId) ? workspaceId : undefined
 }
-const errorOf = (error: unknown): ResourceAdminError =>
-  error instanceof ResourceAdminApiError
-    ? error.details
-    : {
-        code: 'RESOURCE_ADMIN_UNAVAILABLE',
-        message: 'The resource admin service is temporarily unavailable. Try again later.',
-      }
 const resourceAdminCatalogs = {
   [RESOURCE_ADMIN_LOCALE_NAMESPACE]: resourceAdminLocaleCatalog,
   [RESOURCE_LIST_LOCALE_NAMESPACE]: resourceListLocaleCatalog,
@@ -118,7 +111,7 @@ async function confirmEffect(summary: string, t: LocaleTranslator = activeResour
   })
 }
 
-/** 详情三段式：头部固定 / 中段滚动 / 动作固定。操作按钮因此永远留在可视区内。 */
+/** Three-part detail layout: fixed header / scrolling body / fixed actions, keeping action buttons visible. */
 class ResourceAdminPage {
   readonly lifetime = new AbortController()
   readonly #locale: UiLocaleSource
@@ -135,6 +128,7 @@ class ResourceAdminPage {
   #selected: string | undefined
   #detailTrigger: HTMLElement | undefined
   #generation = 0
+  readonly #feedback = new ResourcePageFeedback()
   #operations = new Map<string, ResourceOperation>()
   #activeOperation: string | undefined
   #activeSkillId: string | undefined
@@ -220,6 +214,7 @@ class ResourceAdminPage {
     const nextWorkspace = normalizeWorkspaceId(scope.workspaceId)
     const tabChanged = this.#tab !== scope.tab
     const workspaceChanged = this.#workspaceId !== nextWorkspace
+    if (tabChanged || workspaceChanged) this.#feedback.clear()
     this.#tab = scope.tab
     this.#workspaceId = nextWorkspace
     this.#selected = undefined
@@ -294,8 +289,8 @@ class ResourceAdminPage {
       this.#loadedTab = this.#tab
       this.#loadedWorkspace = this.#workspaceId
       this.#loadState = this.#items.length ? 'ready' : 'empty'
-      // 详情是模态框，选中即等于弹出。所以这里只能"选中的资源消失了就清掉"，
-      // 不能再像双列抽屉时代那样替用户选中第一项——那会让一进 Tab 就弹出一个详情。
+      // Details are modal, so selecting opens them. Only clear selection when the selected resource disappears;
+      // do not auto-select the first item as the old two-column drawer did, or merely entering a tab would open details.
       if (this.#selected !== undefined && !this.#items.some((item) => item.resourceId === this.#selected))
         this.#selected = undefined
       if (!preserveNotice) {
@@ -322,7 +317,7 @@ class ResourceAdminPage {
     this.#detailTrigger = trigger
     this.render()
   }
-  /** 详情打开一次即可：重复 render 不能反复打开（showModal 会抛 InvalidStateError）。 */
+  /** Open details once: repeated renders must not reopen them (showModal would throw InvalidStateError). */
   openDetail(label: string): void {
     detail.setAttribute('aria-label', label)
     // The page holding the detail names it in its address by this id.
@@ -355,6 +350,7 @@ class ResourceAdminPage {
   }
   setTab(tab: Tab): void {
     if (this.#tab === tab) return
+    this.#feedback.clear()
     this.#tab = tab
     this.#selected = undefined
     void this.#ensureLoaded()
@@ -411,6 +407,7 @@ class ResourceAdminPage {
     const api = this.api()
     const generation = this.#generation
     const workspace = this.#workspaceId
+    const publish = this.#feedback.capture()
     this.#activeSkillId = skillId
     this.#activeOperation = receipt.operationId
     this.setNotice('notice.submitted')
@@ -441,8 +438,8 @@ class ResourceAdminPage {
         if (index >= 0) this.#items[index] = item
         this.#cursorStale = !!this.#nextCursor
       }
+      if (!publish(op, activeResourceText, completion)) return false
       if (op.state === 'succeeded') {
-        reportResourceCompleted(op, activeResourceText, completion)
         this.setNotice(undefined)
       } else if (op.lastSafeError?.message) this.setNotice(resourceFailureKey(op.lastSafeError.code), 'error')
       else this.setNotice('notice.failed', 'error')
@@ -587,9 +584,7 @@ class ResourceAdminPage {
             onTools={async (cursor) => {
               const result = await this.api().mcpTools(selected.serverId, cursor)
               return {
-                names: result.items.map((tool) =>
-                  tool.description ? `${tool.name} — ${tool.description}` : tool.name,
-                ),
+                items: result.items,
                 nextCursor: result.nextCursor,
               }
             }}
@@ -603,7 +598,7 @@ class ResourceAdminPage {
     this.openDetail(this.#itemName(selected))
   }
 
-  /** 在**新**列表里找回资源行（React 键控行复用 DOM，焦点可精确归还）。 */
+  /** Find the resource row in the **new** list; React keyed rows reuse DOM for precise focus restoration. */
   #rowOf(resourceId: string): HTMLElement | undefined {
     return (
       list.querySelector<HTMLElement>(`.resource-row[data-resource-id="${CSS.escape(resourceId)}"]`) ??
@@ -723,7 +718,7 @@ class ResourceAdminPage {
     )
   }
 
-  /** 动作规格统一走壳的确认链：确认框 → 提交 → track 轮询。 */
+  /** Route action specs through the shell confirmation flow: confirm → submit → track polling. */
   #detailActions(item: Item): readonly ResourceDetailAction[] {
     const disabled = !this.writable() || this.#activeOperation !== undefined
     const specs: ResourceDetailAction[] = []
@@ -788,7 +783,7 @@ class ResourceAdminPage {
         if (receipt) await this.track(receipt)
       }
     } catch (error) {
-      // 旧 button() helper 的错误路径：动作失败必须落到页面通知，不能静默。
+      // Error path of the old button() helper: action failures must reach the page notice, never stay silent.
       this.showError(error)
       this.render()
     }
@@ -814,6 +809,7 @@ class ResourceAdminPage {
     this.#localeCleanup?.()
     // A later mount already took the shared form, dialogs and hosts over.
     if (activePage !== this) return
+    this.#feedback.clear()
     activePage = undefined
     stopMcpRefresh?.()
     stopMcpRefresh = undefined
@@ -914,7 +910,7 @@ export type ResourceAdminMount = Readonly<{
   dispose(): void
   /** Re-scopes to the workbench's current workspace, or clears the scope when none is selected. */
   setWorkspace(workspaceId?: string): Promise<void>
-  /** 设置页把「技能」和「MCP」做成两条独立 Tab，由宿主决定打开哪一类。 */
+  /** Settings exposes Skills and MCP as separate tabs; the host chooses which category to open. */
   setTab(tab: Tab): void
   /** Open one resource's detail, as a click on its row does. */
   select(resourceId: string): void
@@ -967,7 +963,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   })
   mcpPresets.localize()
 
-  // 详情是模态框：点遮罩、按 Escape、点「关闭详情」都要走同一条收尾路径（含焦点归还）。
+  // Modal details use the same cleanup path, including focus restoration, for backdrop clicks, Escape and Close details.
   // The dialogs and the form are shared between mounts: every listener leaves with its mount.
   const stop = page.lifetime
   const bound = { signal: stop.signal }
@@ -986,7 +982,7 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
     },
     bound,
   )
-  // 添加 / 编辑 MCP 的弹窗同样点遮罩关闭。
+  // Add/edit MCP dialogs also close on backdrop clicks.
   dialog.addEventListener(
     'click',
     (event) => {
@@ -1009,8 +1005,8 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
   $('mcp-cancel', 'button').addEventListener('click', () => dialog.close(), bound)
   mcpTransport.addEventListener('change', () => syncTransport(activeResourceText), bound)
   mcpSecretKind.addEventListener('change', () => syncTransport(activeResourceText), bound)
-  // input/change 都在 form 上冒泡：文本框逐字触发 input，select 触发 change。
-  // 必须包一层箭头函数——addEventListener 会把 Event 对象当第一个参数传进去。
+  // input/change bubble to form: text fields emit input for each character; selects emit change.
+  // Wrap in an arrow function: addEventListener passes the Event object as the first argument.
   form.addEventListener('input', () => syncMcpFieldFeedback(), bound)
   form.addEventListener('change', () => syncMcpFieldFeedback(), bound)
   const submit = (event: SubmitEvent) => {
@@ -1055,15 +1051,11 @@ export function mountResourceAdmin(options: ResourceAdminOptions = {}): Resource
       if (stop.signal.aborted) return
       editing = undefined
       if (dialog.open) dialog.close()
-      await page.track(
-        receipt,
-        creating
-          ? {
-              message: activeResourceText('notice.created', { name: definition.displayName }),
-              effect: { kind: 'enable-required', message: activeResourceText('notice.enableRequired') },
-            }
-          : undefined,
-      )
+      await page.track(receipt, {
+        message: activeResourceText(creating ? 'notice.created' : 'notice.updated', {
+          name: definition.displayName,
+        }),
+      })
     })()
       .catch((cause) => {
         if (stop.signal.aborted) return

@@ -103,7 +103,7 @@ export class PosixRootGroupOwner {
 /**
  * Tracks descendants while their parent relationship is still observable. A detached direct child
  * remains linked by PPID and is therefore captured before the root exits. An arbitrary double-fork
- * can reparent to pid 1 before any userspace snapshot sees it; this fake/P0 helper deliberately does
+ * can reparent to pid 1 before any userspace snapshot sees it; this fake evidence helper deliberately does
  * not claim to close that unprovable gap. A production POSIX owner needs a kernel ownership boundary.
  */
 export class PosixDescendantTracker {

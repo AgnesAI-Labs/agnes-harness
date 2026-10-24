@@ -1,3 +1,7 @@
+import { presets as basePresets } from '@agnes/base'
+import { presets as codePresets } from '@agnes/code'
+import { resolvePreset } from '@agnes/host-common/presets/resolve'
+import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { createPosixPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import type { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
@@ -33,6 +37,36 @@ const workspace = (level: 'full' | 'partial') => ({
   state: 'ready' as const,
   enforcement: { level, scope: ['file', 'network', 'process'] },
 })
+
+it.each([
+  { sandbox: { level: 'L1' as const }, permissions: [] },
+  { sandbox: { required: true }, permissions: ['workspace-write'] },
+])(
+  'reports a custom recipe without advertising refused permission overlays: $sandbox',
+  ({ sandbox, permissions }) => {
+    const presets: Record<string, PresetDoc> = {
+      ...basePresets,
+      ...codePresets,
+      standard: { ...codePresets.standard, name: 'standard', sandbox },
+    }
+    const custom = {
+      ...profile,
+      presets: { allowed: ['standard'] },
+      permissions: { allowed: ['workspace-write', 'full-access'] },
+    } as ResolvedProfile
+    // Reporting an unavailable combination never changes the resolver's refusal.
+    expect(() => resolvePreset('standard', presets, { permission: 'full-access' })).toThrowError(
+      expect.objectContaining({
+        code: 'E_PRESET_UNSUPPORTED',
+        detail: expect.objectContaining({ reason: 'permission-axis' }),
+      }),
+    )
+    const status = adminSecurityStatus(custom, createPosixPlatform(), presets, [], noWorkspaces)
+    expect(status.presetPolicies).toEqual([expect.objectContaining({ id: 'standard', level: 'L1' })])
+    expect(status.permissionPolicies?.map((policy) => policy.id)).toEqual(permissions)
+    expect(Value.Check(RuntimeSecurityStatus, status)).toBe(true)
+  },
+)
 
 it('reports unprobed before any workspace probe, the measurement after, and a real failure with its reason', async () => {
   expect((await hostStatus()).platform.l1).toEqual({ level: 'unprobed', scope: [] })

@@ -2,6 +2,7 @@ import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { describe, expect, it } from 'vitest'
 import { deriveMcpName, formatMcpCommand, parseMcpCommand } from '../src/mcp-command.js'
 import { MCP_FORM_LIMITS, type McpFormFieldSnapshot, mcpFormIssues } from '../src/mcp-form-validation.js'
+import { localScriptWorkspace, workspaceContains } from '../src/mcp-workspace.js'
 
 const base: McpFormFieldSnapshot = {
   transport: 'stdio',
@@ -128,6 +129,50 @@ describe('MCP form live validation mirrors the runtime schema', () => {
     expect(messages({ ...http(''), secretKind: 'http-bearer', secretText: '' }, submit).join('\n')).toContain(
       'credential reference',
     )
+  })
+
+  it.each([
+    ['node', '/srv/mcp/node_modules/@vendor/server/dist/index.js', '/srv/mcp'],
+    ['/usr/local/bin/node', '/srv/mcp/server.mjs', '/srv/mcp'],
+    ['python3', '/srv/mcp/server.py', '/srv/mcp'],
+    ['python3.12', '/srv/mcp/server.py', '/srv/mcp'],
+    ['C:\\Program Files\\nodejs\\node.exe', 'C:\\MCP Tools\\node_modules\\server\\index.js', 'C:\\MCP Tools'],
+  ])('requires a reviewed directory for the local script %s %s', (executable, argsText, directory) => {
+    const script = { ...base, executable, argsText, sandboxProfile: 'network' }
+    expect(localScriptWorkspace(executable, argsText)).toBe(directory)
+    expect(messages(script, live)).toEqual([])
+    expect(mcpFormIssues(script, submit)).toContainEqual({
+      field: 'mcp-workspace',
+      message: expect.stringContaining('local script and its dependencies'),
+    })
+    expect(messages({ ...script, workspacePath: directory }, submit)).toEqual([])
+    expect(messages({ ...script, workspacePath: 'relative/folder' }, submit)).toContainEqual(
+      expect.stringContaining('absolute'),
+    )
+    expect(messages({ ...script, sandboxProfile: 'off-with-warning' }, submit)).toEqual([])
+    expect(workspaceContains(directory, directory)).toBe(true)
+    expect(workspaceContains(`${directory}-other`, directory)).toBe(false)
+  })
+
+  it('keeps package launchers, inline code, remote services and explicit path aliases usable', () => {
+    for (const [executable, argsText] of [
+      ['npx', '-y\nfixture-mcp'],
+      ['node', '-e\nconsole.log(1)'],
+      ['python3', '-m\nfixture_server'],
+    ] as const)
+      expect(messages({ ...base, executable, argsText }, submit)).toEqual([])
+    expect(
+      messages({ ...http('https://example.com/mcp'), workspacePath: 'ignored/for/http' }, submit),
+    ).toEqual([])
+    // The browser cannot resolve aliases on a remote daemon. An explicit directory remains reviewable.
+    expect(
+      messages(
+        { ...base, executable: 'node', argsText: '/private/tmp/mcp/server.js', workspacePath: '/tmp/mcp' },
+        submit,
+      ),
+    ).toEqual([])
+    expect(workspaceContains('/srv/mcp/./', '/srv/mcp/sub/../')).toBe(true)
+    expect(workspaceContains('c:\\MCP Tools', 'C:\\mcp tools\\sub')).toBe(true)
   })
 })
 

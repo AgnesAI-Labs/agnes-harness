@@ -50,11 +50,21 @@ it('forwards one bounded raw chunk and refuses oversize or foreign-origin bodies
   })
 })
 it('preserves actionable limit errors and hides backend details', async () => {
-  expect(
-    await request(Buffer.alloc(1), {}, async () => {
-      throw rpcError('SEMANTIC_REJECTED', { reason: 'UPLOAD_SIZE_LIMIT' })
-    }),
-  ).toEqual({ status: 413, payload: { error: 'UPLOAD_SIZE_LIMIT' } })
+  for (const [reason, status] of [
+    ['UPLOAD_SIZE_LIMIT', 413],
+    ['UPLOAD_CHUNK_LIMIT', 413],
+    ['UPLOAD_TYPE_LIMIT', 415],
+    ['UPLOAD_INVALID', 400],
+    ['UPLOAD_BUSY', 409],
+    ['ATTACHMENT_INVALID', 409],
+    ['UPLOAD_UNAVAILABLE', 409],
+  ] as const) {
+    expect(
+      await request(Buffer.alloc(1), {}, async () => {
+        throw rpcError('SEMANTIC_REJECTED', { reason })
+      }),
+    ).toEqual({ status, payload: { error: reason } })
+  }
   expect(
     await request(Buffer.alloc(1), {}, async () => {
       throw new Error('/private/server/path')

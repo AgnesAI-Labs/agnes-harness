@@ -14,10 +14,12 @@ import type { ChildWorkspaceLifecycle } from '@agnes/core-effects/workspace/runt
 import { forkChecks } from '@agnes/core-ledger/log/fork-seed'
 import type { ChildAgentListing, ChildAgentResult, ChildAgentStatus } from '@agnes/extension-api'
 import type { Actor } from '@agnes/protocol'
+import { bestEffort } from '../best-effort.js'
 import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
 import { recordChildResultCollected } from './collected-result.js'
 import { deliverChildCompletion } from './completion-notice.js'
+import { childControlMetrics } from './control-metrics.js'
 import { cancelOpenAttempt, reportFailedCreation } from './creation.js'
 import { bindChildLifecycle, childLifecycle } from './lifecycle.js'
 import { childModels, resolveChildModel } from './model-scope.js'
@@ -103,7 +105,7 @@ export class KernelChildren implements ChildrenFactory {
       if (kind !== 'spawn' || opts.model !== undefined)
         throw new CoreError('E_ENVELOPE', 'role cannot be combined with fork or model')
       const roles = this.kernel.o.childRoles
-      if (!roles) throw new CoreError('E_UNSUPPORTED', 'Application role delegation is unavailable')
+      if (!roles) throw new CoreError('E_UNSUPPORTED', 'no roles are declared in this session; omit role')
       opts = { ...opts, resolvedRole: await roles.resolve(parent, opts.role) }
     }
     const store = requireChildControl(parent.d.log.storage)
@@ -313,7 +315,7 @@ export class KernelChildren implements ChildrenFactory {
       .then(() => {
         if (this.residents.get(childKey)?.idle()) this.pump(childKey)
       })
-      .catch(() => undefined)
+      .catch(bestEffort(resident.child.d.logger, 'resident-child-pump'))
   }
 
   private open(
@@ -453,16 +455,17 @@ export class KernelChildren implements ChildrenFactory {
       const child = this.session(attempt.childKey)
       if (handle)
         await reportFailedCreation(parent, attempt.childKey, child?.state.creditsUsed ?? 0).catch(
-          () => undefined,
+          bestEffort(parent.d.logger, 'failed-child-creation-report'),
         )
       if (child) {
         workspaceCloseDelegated = true
         // Never publish a completion/cost for a handle that was not admitted. That would also
         // wait on the very parent verification which invalidated this attempt.
-        await child.d.log.abandon().catch(() => undefined)
+        await child.d.log.abandon().catch(bestEffort(parent.d.logger, 'child-abandon'))
         await this.dropLocalChild(attempt.childKey, child)
       }
-      if (!workspaceCloseDelegated) await workspace?.close().catch(() => undefined)
+      if (!workspaceCloseDelegated)
+        await workspace?.close().catch(bestEffort(parent.d.logger, 'child-workspace-close'))
       this.handles.delete(attempt.childKey)
       if (cancellationError)
         throw new AggregateError([error, cancellationError], 'child open and durable cancellation failed')
@@ -521,7 +524,7 @@ export class KernelChildren implements ChildrenFactory {
         record.state === 'interrupted' ||
         record.state === 'creating'
       )
-        void cached.run(record.inputText).catch(() => undefined)
+        void cached.run(record.inputText).catch(bestEffort(parent.d.logger, 'child-resume'))
       return cached
     }
     return resumeRoleChild(parent, record, this.kernel.o.childRoles, {
@@ -702,7 +705,7 @@ export class KernelChildren implements ChildrenFactory {
       if (stored && isTerminalChildState(stored)) outcome = stored as typeof outcome
       await parent.hooks
         .subagentEnd?.({ childKey: record.childKey, outcome, credits: Math.max(0, child.state.creditsUsed) })
-        .catch(() => undefined)
+        .catch(bestEffort(parent.d.logger, 'child-end-hook'))
       const cost = (await child.scan({ type: 'cost/ledger', order: 'desc', limit: 1 }).catch(() => []))[0]
       const credits = Math.max(0, child.state.creditsUsed)
       await parent.d.log
@@ -718,8 +721,10 @@ export class KernelChildren implements ChildrenFactory {
               : { creditSource: 'unknown' as const }),
           }),
         ])
-        .catch(() => undefined) // Only after the terminal state is durable; a missed delivery is repaired by the parent's recovery scan.
-      await deliverChildCompletion(parent, record, outcome, { credits }).catch(() => undefined)
+        .catch(bestEffort(parent.d.logger, 'child-cost-write')) // Only after the terminal state is durable; a missed delivery is repaired by the parent's recovery scan.
+      await deliverChildCompletion(parent, record, outcome, { credits }).catch(
+        bestEffort(parent.d.logger, 'child-completion-delivery'),
+      )
     }
     const handle: ChildHandle = {
       key: record.childKey,
@@ -816,7 +821,7 @@ export class KernelChildren implements ChildrenFactory {
               await deliverChildCompletion(parent, record, 'completed', {
                 credits: Math.max(0, child.state.creditsUsed),
                 continuable: true,
-              }).catch(() => undefined)
+              }).catch(bestEffort(parent.d.logger, 'child-continuation-delivery'))
             queueMicrotask(() => this.pump(record.childKey))
             return { text, lastSeq: child.lastSeq }
           }
@@ -921,7 +926,7 @@ export class KernelChildren implements ChildrenFactory {
     if (kind === 'spawn' || opts.resident) handle.run = (input) => this.detached(() => run(input))
     await parent.hooks
       .subagentStart?.({ childKey: record.childKey, kind, budget: opts.budget ?? null })
-      .catch(() => undefined)
+      .catch(bestEffort(parent.d.logger, 'child-start-hook'))
     checkParent()
     return handle
   }
@@ -1010,7 +1015,7 @@ export class KernelChildren implements ChildrenFactory {
       const result = await child.run(input.task)
       return { id: child.key, text: result.text }
     } finally {
-      await child.close().catch(() => undefined)
+      await child.close().catch(bestEffort(parent.d.logger, 'fork-close'))
     }
   }
 
@@ -1118,48 +1123,22 @@ export class KernelChildren implements ChildrenFactory {
     if (!record || !this.owns(record, parent.key))
       throw new CoreError('E_CHILD_NOT_FOUND', 'Child is not owned by this parent')
     const child = this.session(childKey)
-    let totalTokens: number | null = null
-    {
-      const costs = await parent.d.log.storage.scan(childKey, {
-        type: 'cost/ledger',
-        fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
-        limit: 500,
-      })
-      const tokens = costs.map((row) => {
-        const tokens = (row.data as { tokens?: { input?: number; output?: number } }).tokens
-        return typeof tokens?.input === 'number' && typeof tokens.output === 'number'
-          ? tokens.input + tokens.output
-          : undefined
-      })
-      if (costs.length && costs.length < 500 && tokens.every((value) => typeof value === 'number'))
-        totalTokens = tokens.reduce<number>((sum, value) => sum + (value ?? 0), 0)
-    }
-    const first = await parent.d.log.storage.scan(childKey, {
-      type: 'turn/start',
-      fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
-      limit: 1,
-    })
-    const last = await parent.d.log.storage.scan(childKey, {
-      type: 'turn/end',
-      fromSeq: (record.boundarySeq + 1) as typeof record.boundarySeq,
-      order: 'desc',
-      limit: 1,
-    })
-    const end = child?.op() ? parent.d.clock() : last[0] ? Date.parse(last[0].ts) : null
-    const start = first[0] ? Date.parse(first[0].ts) : null
     return {
       id: childKey,
       parentId: parent.key,
       providerId: 'in-process',
       status: this.childStatus(record),
       controls: {
-        stop: child?.d.loopFactory.controls?.interrupt === true && child.op() !== null,
+        stop:
+          !isTerminalChildState(record.state) &&
+          child?.d.loopFactory.controls?.interrupt === true &&
+          child.op() !== null,
         continue:
+          !isTerminalChildState(record.state) &&
           child?.d.loopFactory.controls?.steer === true &&
           (this.continueWaiters.has(childKey) || this.residents.has(childKey)),
       },
-      durationMs: start !== null && end !== null ? Math.max(0, end - start) : null,
-      totalTokens,
+      ...(await childControlMetrics(parent, record, child?.op() != null)),
     }
   }
 

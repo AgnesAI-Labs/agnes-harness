@@ -10,7 +10,7 @@ import type { WorkspaceBinding } from '@agnes/host-common/workspace-authority'
 import {
   compileWorkspacePolicy,
   intersectWorkspacePlan,
-  memoryRequiresFileIsolation,
+  memoryFileIsolation,
   normalizeSandboxStaticConfig,
 } from '@agnes/host-common/workspace-policy'
 import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
@@ -238,7 +238,7 @@ function workspaceSandboxPolicy(
     !requestedSandbox.required &&
     ((requestedSandbox.level === 'L1' && requestedSandbox.onUnavailable === 'allow-if-unimplemented') ||
       (requestedSandbox.level === 'L0' && requestedSandbox.onUnavailable === 'allow'))
-  const requiresFileIsolation = memoryRequiresFileIsolation(
+  const memoryIsolation = memoryFileIsolation(
     ctx.live.pluginTree
       .get()
       .root.providers.catalog()
@@ -246,13 +246,18 @@ function workspaceSandboxPolicy(
     implementation,
     requestedSandbox,
   )
-  const sandboxConfig = requiresFileIsolation
-    ? {
-        ...requestedSandbox,
-        level: 'L1' as const,
-        onUnavailable: requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
-      }
-    : requestedSandbox
+  // Preferred isolation still requests L1 so an available OS boundary denies the memory tree; only
+  // required isolation refuses execution when that boundary is missing.
+  const requiresFileIsolation = memoryIsolation === 'required'
+  const sandboxConfig =
+    memoryIsolation !== 'none'
+      ? {
+          ...requestedSandbox,
+          level: 'L1' as const,
+          onUnavailable:
+            requestedSandbox.level === 'L1' ? requestedSandbox.onUnavailable : ('allow' as const),
+        }
+      : requestedSandbox
   return { implementation, unconfined, requiresFileIsolation, sandboxConfig }
 }
 
@@ -366,6 +371,7 @@ export function createWorkspaceRuntimeFactory(
             ...(ctx.profile.adapters?.secrets.path ? { secretsDir: ctx.profile.adapters.secrets.path } : {}),
           }),
           semantics: sessionFence.semantics,
+          ...(binding.extraRoots.length ? { extraRoots: binding.extraRoots } : {}),
           staticConfig: sandboxConfig,
           canonicalize: (path, options) => sessionFence.fs.canonicalize(path, options),
         })

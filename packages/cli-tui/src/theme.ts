@@ -39,27 +39,36 @@ export type TuiThemeName = 'light' | 'dark' | 'mono'
 export type ThemedAnsi = Omit<Ansi, 'fg' | 'bg'> & {
   fg: (c: Tone | Colour, s: string) => string
   bg: (c: Tone | Colour, s: string) => string
+  /** True while `/raw` is on: views leave out the bars, rails and shading that a terminal copy would carry along. */
+  readonly raw?: boolean
 }
 
 /** Mutable session theme. Components keep one façade, so switching takes effect on the next frame. */
 export class TuiTheme {
   private current: TuiThemeName
+  private tones: Partial<Record<Tone, string>> | undefined
+  /** The copy-friendly view (`/raw`); every `ansi()` façade reads it as it draws. */
+  raw = false
 
-  constructor(name: TuiThemeName = 'dark') {
+  constructor(name: TuiThemeName = 'dark', tones?: Partial<Record<Tone, string>>) {
     this.current = name
+    this.tones = tones
   }
 
   get name(): TuiThemeName {
     return this.current
   }
 
-  set(name: TuiThemeName): void {
+  /** `tones` are a custom theme's replacements for the palette's own; mono has no colours to replace. */
+  set(name: TuiThemeName, tones?: Partial<Record<Tone, string>>): void {
     this.current = name
+    this.tones = tones
   }
 
   /** What `tone` looks like in the current theme; mono has no colours. */
   colour(tone: Tone): Colour | undefined {
-    return this.current === 'mono' ? undefined : PALETTE[this.current][tone]
+    if (this.current === 'mono') return undefined
+    return (this.tones?.[tone] as Colour | undefined) ?? PALETTE[this.current][tone]
   }
 
   /** The brand gradient, darkest first; mono has none. */
@@ -98,6 +107,7 @@ export class TuiTheme {
   }
 
   ansi(base: Ansi): ThemedAnsi {
+    const theme = this
     const resolve = (c: Tone | Colour): Colour | undefined =>
       typeof c === 'number' || c.startsWith('#') ? (c as Colour) : this.colour(c as Tone)
     const paint = (layer: 'fg' | 'bg', c: Tone | Colour, text: string): string => {
@@ -115,6 +125,9 @@ export class TuiTheme {
       bg: (c, text) => paint('bg', c, text),
       get reset() {
         return base.reset
+      },
+      get raw() {
+        return theme.raw
       },
     }
   }

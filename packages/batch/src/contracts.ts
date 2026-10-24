@@ -6,7 +6,7 @@ export type { JsonValue as Json } from '@agnes/protocol'
 export type InputReference = {
   artifact?: ArtifactRef
   receipt?: { id: string; scope: AttachmentScope }
-  /** Immutable original copied under the managed service's private area, never a B3 lease. */
+  /** Immutable original copied under the managed service's private area, never an attachment read lease. */
   workspace?: string
   path?: string
   skip?: 'unsupported_type' | 'too_large'

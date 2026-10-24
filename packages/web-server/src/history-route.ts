@@ -10,6 +10,8 @@ import {
   validateMethod,
 } from '@agnes/protocol'
 
+import { acceptsWebRequest } from './server-security.js'
+
 export const HISTORY_SEARCH_PATH = '/api/history-search'
 
 export type HistoryRouteResult = { status: number; body: unknown }
@@ -49,11 +51,11 @@ export async function handleHistorySearch(input: {
     params: AppServerParams<'_agnes/v1/admin.history.search'>,
   ) => Promise<AppServerResult<'_agnes/v1/admin.history.search'>>
 }): Promise<HistoryRouteResult> {
-  const site = Array.isArray(input.site) ? input.site[0] : input.site
   const failure = (status: number, code: string) => ({ status, body: { error: httpRpcError(status, code) } })
   if (
-    (site !== undefined && site !== 'same-origin' && site !== 'none') ||
-    (input.origin !== undefined && input.origin !== input.expectedOrigin)
+    !acceptsWebRequest('history-search', input.expectedOrigin, {
+      headers: { origin: input.origin, 'sec-fetch-site': input.site },
+    })
   )
     return failure(403, 'ORIGIN_REJECTED')
   if (input.method !== 'GET') return failure(405, 'METHOD_NOT_ALLOWED')

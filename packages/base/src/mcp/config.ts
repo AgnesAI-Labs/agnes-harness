@@ -1,8 +1,7 @@
 /**
  * One MCP server's connection settings, as `connectMcp` and `registerRemoteToolsStrict` consume them.
  * Built only from a resource-control definition (`resolvedConfig` in @agnes/resource-control-runtime,
- * `mcpServerConfigFromDefinition` in the mcp-server extension); the old profile-preset reader is gone
- * (design 2026-09-21-resource-rows-design.md D113).
+ * `mcpServerConfigFromDefinition` in the mcp-server extension); the old profile-preset reader is gone.
  */
 export type McpServerConfig = {
   id: string

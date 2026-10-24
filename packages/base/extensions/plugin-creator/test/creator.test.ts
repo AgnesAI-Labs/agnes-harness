@@ -209,12 +209,11 @@ it('reads the bundled creator skill without executing commands and fails closed 
       return () => {}
     },
   } as unknown as ExtensionAPI)
-  expect(sections[0]?.content).toContain('8 KiB')
-  expect(sections[0]?.content).toContain('OUTPUT_LIMIT')
+  expect(sections).toEqual([])
   const context = sections.map((section) => section.content).join('\n')
   expect(Buffer.byteLength(context, 'utf8')).toBeLessThanOrEqual(4096)
-  expect(context).toContain('plugin_helper_guide')
-  expect(context).toContain('plugin_creator_guide')
+  expect(guide).toContain('plugin_helper_guide')
+  expect(guide).toContain('plugin_creator_guide')
   for (const token of THEME_TOKEN_NAMES) {
     expect(context).not.toContain(token)
     expect(guide).toContain(token)

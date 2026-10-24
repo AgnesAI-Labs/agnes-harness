@@ -75,6 +75,8 @@ export interface SchedulesPort {
 export type SessionMetaRow = {
   sessionId: string
   parent?: string
+  /** Ledger seq in `parent` where this session was forked; present with `parent`. */
+  forkAt?: number
   createdAt: string
   lastMessageAt?: string
   lastSeq: number

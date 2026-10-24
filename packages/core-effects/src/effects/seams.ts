@@ -77,7 +77,7 @@ export interface SeamWorkspace {
   readonly shellCommand?: (command: string) => string[]
   readonly execBackend: SandboxExecBackend
   readonly enforcement: Enforcement
-  /** Provider-owned private files require isolation even in a full-access preset. */
+  /** Provider-owned private files require isolation; explicit full-access only prefers it (Host decides). */
   readonly requiredFileIsolation?: boolean
   /**
    * Startup-selected sandbox provider. Absent or `local` keeps the host OS

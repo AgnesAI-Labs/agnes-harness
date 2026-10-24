@@ -12,11 +12,23 @@ import { createSandboxSeam } from '@agnes/host-infrastructure/sandbox-seam'
 import { observabilityPlugin } from '@agnes/observability'
 import { memoryCollector } from '@agnes/observability/testkit'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
-import type { InferenceEvent, JsonValue } from '@agnes/protocol'
+import type { InferenceEvent, JsonValue, RequestBody } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import { baseSeamFactories, createTestHost } from '../testkit/index.js'
 
 const homes: string[] = []
+const memoryIndex = (request: RequestBody | undefined): string =>
+  request?.messages
+    .flatMap((message) =>
+      message.content.flatMap((block) =>
+        block.type === 'text' &&
+        block.text.startsWith('[live context ') &&
+        block.text.includes('\nmemory:index\n')
+          ? [block.text]
+          : [],
+      ),
+    )
+    .at(-1) ?? ''
 // Windows exercises the real unimplemented-backend path, including the memory exception.
 // Other platforms retain the simulated L1 fixture; real OS isolation has separate acceptance tests.
 const nativeWindows = process.platform === 'win32'
@@ -218,7 +230,7 @@ it.each(
         'completed',
       )
       const request = provider?.calls.at(-1)
-      const revision = /Revision: ([a-f0-9]+)/.exec(request?.system ?? '')?.[1]
+      const revision = /Revision: ([a-f0-9]+)/.exec(memoryIndex(request))?.[1]
       expect(request?.traceContext?.memoryRevision).toBe(revision)
       return { session, results: await session.scan({ fromSeq: before + 1, type: 'tool/result', limit: 20 }) }
     }
@@ -327,7 +339,7 @@ it.each(
       })
       const read = await turn('read')
       expect(JSON.stringify(read.results[0]?.data)).toContain('Memory revision:')
-      expect(JSON.stringify(provider.calls.at(-1)?.system)).toContain('Prefer short answers.')
+      expect(memoryIndex(provider.calls.at(-1))).toContain('Prefer short answers.')
       const edited = read.session
       await edited.enqueue('next-turn', {
         actor: edited.d.actor,
@@ -458,18 +470,19 @@ it('pins index and topic revisions across tool requests and a model retry, then 
     await turn()
     expect(provider.calls).toHaveLength(3)
     for (const request of provider.calls) {
-      expect(JSON.stringify(request.system)).toContain('Old preference')
-      expect(JSON.stringify(request.system)).not.toContain('New preference')
+      expect(memoryIndex(request)).toContain('Old preference')
+      expect(memoryIndex(request)).not.toContain('New preference')
+      expect(request.system).not.toContain('Agent memory')
     }
     const results = await session.scan({ type: 'tool/result', limit: 10 })
     expect(results).toHaveLength(1)
     expect(JSON.stringify(results[0]?.data)).toContain('Old topic')
     expect(JSON.stringify(results[0]?.data)).not.toContain('New topic')
-    const revision = /Revision: ([a-f0-9]+)/.exec(JSON.stringify(provider.calls[0]?.system))?.[1]
+    const revision = /Revision: ([a-f0-9]+)/.exec(memoryIndex(provider.calls[0]))?.[1]
     expect(revision).toBeTruthy()
     const traces = new RequestTraceStore(home, 'memory-revision')
     for (const request of provider.calls) {
-      expect(JSON.stringify(request.system)).toContain(`Revision: ${revision}.`)
+      expect(memoryIndex(request)).toContain(`Revision: ${revision}.`)
       expect(request.traceContext?.memoryRevision).toBe(revision)
       const capture = await traces.begin(request)
       await capture.finish()
@@ -477,9 +490,10 @@ it('pins index and topic revisions across tool requests and a model retry, then 
     }
     await turn()
     expect(provider.calls).toHaveLength(4)
-    expect(JSON.stringify(provider.calls.at(-1)?.system)).toContain('New preference')
-    expect(JSON.stringify(provider.calls.at(-1)?.system)).not.toContain(`Revision: ${revision}.`)
-    const refreshed = /Revision: ([a-f0-9]+)/.exec(JSON.stringify(provider.calls.at(-1)?.system))?.[1]
+    expect(memoryIndex(provider.calls.at(-1))).toContain('New preference')
+    expect(memoryIndex(provider.calls.at(-1))).not.toContain(`Revision: ${revision}.`)
+    expect(new Set(provider.calls.map((request) => request.system)).size).toBe(1)
+    const refreshed = /Revision: ([a-f0-9]+)/.exec(memoryIndex(provider.calls.at(-1)))?.[1]
     expect(provider.calls.at(-1)?.traceContext?.memoryRevision).toBe(refreshed)
   } finally {
     await host.close()

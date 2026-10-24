@@ -149,7 +149,7 @@ export function CredentialsPage({
   const pageBody = useRef<HTMLDivElement>(null)
   const pageOpen = pages.stack.includes(CREDENTIAL_PAGE)
   const wasOpen = useRef(false)
-  // Leaving the page by 返回 or the browser drops the draft.
+  // Leaving the page by Back or the browser drops the draft.
   useEffect(() => {
     if (wasOpen.current && !pageOpen) setEditor(undefined)
     wasOpen.current = pageOpen

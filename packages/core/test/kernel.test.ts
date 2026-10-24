@@ -161,6 +161,66 @@ describe('Kernel (I1 assembly)', () => {
     await missing.close()
   })
 
+  it('appends owner text to a new session pinned prompt, keeps it on resume, and refuses what it cannot honour', async () => {
+    const storage = new MemoryStorage()
+    let config: import('@agnes/protocol').SystemPromptConfig = { personaSuffix: 'house rules' }
+    const promptProvider = {
+      id: 'test.prompt',
+      version: '1.0.0',
+      defaults: () => [],
+      compose: (cfg: import('@agnes/protocol').SystemPromptConfig) => [
+        { id: 'profile:suffix', order: 1, source: 'profile:system-prompt', text: cfg.personaSuffix ?? '' },
+      ],
+    }
+    const systemPrompt = { config: async () => config, resolve: () => promptProvider }
+    const k = base({ storage, systemPrompt })
+    const plain = await k.session('plain', sessionOpts)
+    const appended = await k.session('appended', { ...sessionOpts, systemPromptAppend: 'Answer in French.' })
+    const pinned = await appended.systemPromptPreview()
+    expect(pinned.config.personaSuffix).toBe('house rules\n\nAnswer in French.')
+    expect(pinned.hash).not.toBe((await plain.systemPromptPreview()).hash)
+    expect((await appended.scan({ fromSeq: 1, limit: 1 }))[0]?.data).toMatchObject({
+      systemPrompt: { hash: pinned.hash, config: { personaSuffix: 'house rules\n\nAnswer in French.' } },
+    })
+    config = {}
+    expect(
+      (
+        await (
+          await k.session('alone', { ...sessionOpts, systemPromptAppend: 'Only me.' })
+        ).systemPromptPreview()
+      ).config.personaSuffix,
+    ).toBe('Only me.')
+    await k.close()
+    // Resume reads the persisted config back; a stale append option is refused rather than ignored.
+    const k2 = base({ storage, systemPrompt })
+    const again = await k2.session('appended', { ...sessionOpts, writerRunId: 'r2' })
+    expect((await again.systemPromptPreview()).config.personaSuffix).toBe('house rules\n\nAnswer in French.')
+    await k2.close()
+    const k3 = base({ storage, systemPrompt })
+    await expect(
+      k3.session('appended', { ...sessionOpts, writerRunId: 'r3', systemPromptAppend: 'late' }),
+    ).rejects.toThrow('only to a new session')
+    config = { fullOverride: 'replace everything' }
+    await expect(k3.session('full', { ...sessionOpts, systemPromptAppend: 'x' })).rejects.toThrow(
+      'full replacement',
+    )
+    config = { personaSuffix: 'y'.repeat(8000) }
+    await expect(
+      k3.session('merged-over', { ...sessionOpts, systemPromptAppend: 'x'.repeat(200) }),
+    ).rejects.toThrow('exceeds')
+    config = {}
+    await expect(
+      k3.session('over', { ...sessionOpts, systemPromptAppend: 'x'.repeat(8193) }),
+    ).rejects.toThrow('invalid')
+    await expect(k3.session('nul', { ...sessionOpts, systemPromptAppend: 'a\0b' })).rejects.toThrow('invalid')
+    await k3.close()
+    const noPrompt = base({ storage })
+    await expect(noPrompt.session('np', { ...sessionOpts, systemPromptAppend: 'x' })).rejects.toThrow(
+      'only to a new session',
+    )
+    await noPrompt.close()
+  })
+
   it.each(['new', 'resume'] as const)(
     'releases the writer and renewal timer after memory open fails on %s',
     async (mode) => {
@@ -335,7 +395,7 @@ describe('Kernel (I1 assembly)', () => {
 
   it('the diagnostic name set is closed and holds the names written outside the kernel', () => {
     expect(new Set(CORE_DIAG_NAMES).size).toBe(CORE_DIAG_NAMES.length)
-    expect(CORE_DIAG_NAMES).toHaveLength(24)
+    expect(CORE_DIAG_NAMES).toHaveLength(25)
     expect(CORE_DIAG_NAMES).toContain('ledger-tail-recovered')
     expect(CORE_DIAG_NAMES).toContain('request-media-window')
     expect(CORE_DIAG_NAMES).toContain('registers-rebuilt')
@@ -345,6 +405,7 @@ describe('Kernel (I1 assembly)', () => {
     expect(CORE_DIAG_NAMES).toContain('tool-policy-refused-on-resume')
     expect(CORE_DIAG_NAMES).toContain('hook-compact-plan-ignored')
     expect(CORE_DIAG_NAMES).toContain('tool-source-pending')
+    expect(CORE_DIAG_NAMES).toContain('memory-external-change')
   })
 })
 
@@ -712,6 +773,42 @@ describe('Kernel per-session hook factory', () => {
       await k.close()
     },
   )
+
+  it('injects memory changed outside its provider and records a notice naming the files', async () => {
+    const provider = fakeProvider([textTurn('done')])
+    const k = base({
+      provider,
+      memoryFor: () => ({
+        root: '/memory',
+        snapshot: async () => ({
+          revision: 'r1',
+          content: 'Prefer tabs.',
+          omitted: false,
+          externalChanges: ['MEMORY.md'],
+        }),
+        files: (fallback) => fallback,
+        inspect: async () => {
+          throw new Error('unused')
+        },
+        configure: async () => {
+          throw new Error('unused')
+        },
+        readFile: async () => {
+          throw new Error('unused')
+        },
+        editFile: async () => {
+          throw new Error('unused')
+        },
+      }),
+    })
+    const s = await k.session('memory-changed', sessionOpts)
+    await s.enqueue('next-turn', { content: [{ type: 'text', text: 'hello' }], actor })
+    await s.run({ until: 'turn-end', signal: new AbortController().signal })
+    expect(JSON.stringify(provider.requests[0]?.messages)).toContain('Prefer tabs.')
+    const notices = await s.scan({ type: 'x/core/memory-external-change', limit: 10 })
+    expect(notices.map((row) => row.data)).toEqual([{ paths: ['MEMORY.md'] }])
+    await k.close()
+  })
 
   it('resets only on accepted new turns, not on idle runs', async () => {
     let resets = 0

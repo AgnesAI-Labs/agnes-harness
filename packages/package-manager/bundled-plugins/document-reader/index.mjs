@@ -57,7 +57,8 @@ export const documentReader = {
         isOpenWorld: false,
         replay: 'safe',
         costHint: {},
-        deferLoading: false,
+        deferLoading: true,
+        discoveryGroup: 'Document reading',
         requiresApproval: 'never',
       },
       async execute(args, context) {

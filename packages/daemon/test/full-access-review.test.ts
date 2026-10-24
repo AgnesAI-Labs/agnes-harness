@@ -181,7 +181,7 @@ it('review: durable journal retains exact session binding for recovery without t
 })
 
 it('review: public credential params cannot self-sign a full-access permission context', async () => {
-  const root = home()
+  const root = join(home(), 'credential-home')
   const admin = createCredentialAdmin({
     home: root,
     dataDir: join(root, 'data'),

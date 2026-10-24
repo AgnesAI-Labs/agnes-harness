@@ -1,5 +1,6 @@
 export * from './activation.js'
 export * from './mcp.js'
+export * from './mcp-failure.js'
 // The credential resolver is consumed by @agnes/resource-control-worker through this export.
 export * from './mcp-oauth-credentials.js'
 export * from './notify.js'

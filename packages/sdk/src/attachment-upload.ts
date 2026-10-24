@@ -85,7 +85,10 @@ export async function uploadAttachment(
       throw new Error('ATTACHMENT_DATA')
     return result.attachment
   } catch (error) {
-    if (signal.aborted) await cancelAttachmentUpload(client, scope, uploadId).catch(() => undefined)
+    // Only caller-supplied IDs can be resumed. Release SDK-owned intakes on every failure;
+    // explicit cancellation also ends caller-owned intakes. Never retry a lost finish response.
+    if (signal.aborted || options.uploadId === undefined)
+      await cancelAttachmentUpload(client, scope, uploadId).catch(() => undefined)
     throw error
   }
 }

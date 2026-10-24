@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from '@agnes/web-ui'
 
-/** 输入框、会话编排提示与工作区/会话错误说明。宿主组装 view 时渲染取词。 */
+/** Composer, session orchestration hints and workspace/session errors. The host translates while assembling the view. */
 export const composerLocaleCatalog: LocaleCatalog = {
   en: {
     'composer.child.title': 'Sub-agents / workflows',
@@ -8,7 +8,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.child.unknown': 'Unknown',
     'composer.child.stop': 'Stop child',
     'composer.child.continue': 'Continue child',
-    'composer.child.message': 'Continue message',
+    'composer.child.message': 'Message to the child',
     'composer.child.messageRequired': 'Enter a message to continue this child.',
     'composer.child.controlFailed': 'The control action failed: {detail}',
     'composer.child.starting': 'Starting',
@@ -156,7 +156,7 @@ export const composerLocaleCatalog: LocaleCatalog = {
     'composer.child.unknown': '未知',
     'composer.child.stop': '停止子代理',
     'composer.child.continue': '继续子代理',
-    'composer.child.message': '继续消息',
+    'composer.child.message': '发给子代理的消息',
     'composer.child.messageRequired': '请先输入要发送的消息，再继续子代理。',
     'composer.child.controlFailed': '操作未成功：{detail}',
     'composer.child.starting': '正在启动',

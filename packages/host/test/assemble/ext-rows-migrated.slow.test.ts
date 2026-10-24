@@ -51,7 +51,6 @@ const SUPPLIED: Record<string, string[]> = {
     'tool:plugin_install_local',
     'tool:plugin_candidate_write',
     'tool:plugin_candidate_read',
-    'hook:context',
   ],
   'agnes/mcp-search': ['tool:tool_search', 'tool:tool_describe'],
   'agnes/hooks-runner': [
@@ -69,6 +68,7 @@ const SUPPLIED: Record<string, string[]> = {
     'hook:approval_request',
   ],
   'agnes/intelligent-ui': [
+    'tool:ui_guide',
     'tool:ui_render',
     'tool:ui_update',
     'tool:ui_close',
@@ -104,6 +104,13 @@ const SUPPLIED: Record<string, string[]> = {
   // Service registrations belong to the Host service registry, outside Kernel.registrations.
   'agnes/jobs-web': ['hook:shutdown'],
   'agnes/follow-up-hint': ['hook:session_start', 'hook:shutdown'],
+  'agnes/heads-up': [
+    'hook:session_start',
+    'hook:tool_call',
+    'hook:tool_result',
+    'hook:context',
+    'hook:shutdown',
+  ],
   'agnes/plan-mode': ['tool:exit_plan_mode', 'hook:context', 'hook:approval_request'],
   'agnes/context-rules': ['hook:context', 'projection:agnes/context-rules/scopes'],
   'agnes/time-context': ['hook:context', 'projection:agnes/time-context/clock'],
@@ -178,7 +185,9 @@ describe('the builtin extensions that moved to the shared row host', () => {
       'agnes/context-rules',
       'agnes/time-context',
       'agnes/follow-up-hint',
+      'agnes/heads-up',
       'agnes/schedule',
+      'agnes/lsp',
     ])
     for (const [id, registrations] of Object.entries(SUPPLIED)) {
       expect(listed(h, id)?.loaded, id).toBe(true)

@@ -8,6 +8,7 @@ import {
   type ResourceCeilings,
   type RoleAuthority,
   resourceCeilings,
+  type SessionToolFilter,
   selectionAllows,
   type ToolRegistry,
 } from '@agnes/core'
@@ -66,6 +67,8 @@ export type SessionCapabilityInput = {
   childRequest?: { providerId?: string; model?: string }
   resourceRequest?: { kind: 'mcp' | 'skills'; id: string }
   authority?: RoleAuthority
+  /** The live session's tool filter; it only narrows what the preset and profile already allow. */
+  toolFilter?: SessionToolFilter
   /** Snapshot upper bound. These arrays are literal allowlists, including empty denial. */
   resourceScope?: ResourceCeilings | { mcp: readonly string[]; skills: readonly string[] }
   installed?: {
@@ -88,6 +91,19 @@ type CapabilityResolution = SessionCapabilitySet &
   }>
 
 const builtin: CompositionSource = { layer: 'default', name: 'builtin' }
+const filterSource: CompositionSource = { layer: 'session', name: 'tool-filter' }
+/** Only a session that has a filter reports its two rules, so every other session reads as before. */
+function sessionFilterChecks(
+  filter: SessionToolFilter | undefined,
+  name: string,
+): [boolean, string, CompositionSource][] {
+  return filter
+    ? [
+        [!filter.deny?.includes(name), 'session-deny', filterSource],
+        [filter.allow === undefined || filter.allow.includes(name), 'session-allow', filterSource],
+      ]
+    : []
+}
 function immutable<T>(value: T): T {
   if (value && typeof value === 'object') for (const child of Object.values(value)) immutable(child)
   return Object.freeze(value)
@@ -212,6 +228,7 @@ export function resolveSessionCapabilities(input: SessionCapabilityInput): Capab
         source('toolPolicy.allow'),
       ],
       [!selection.toolPolicy?.deny?.includes(tool.name), 'policy-deny', source('toolPolicy.deny')],
+      ...sessionFilterChecks(input.toolFilter, tool.name),
       [mcpToolAllowed(mcpSelection, tool.name, tool.packageId), 'mcp-selection', source('mcp')],
       [
         resourcesCeiling === undefined || mcpToolAllowed(resourcesCeiling.mcp, tool.name),

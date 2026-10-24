@@ -87,6 +87,49 @@ export class MemoryStore {
       throw fault('MEMORY_INVALID_METADATA')
     }
   }
+  /**
+   * Hashes of the memory files as this provider last wrote or acknowledged them. Missing or
+   * unreadable means no baseline, never a change.
+   */
+  acknowledged(): Readonly<Record<string, string>> | undefined {
+    const path = join(this.root, 'acknowledged.json')
+    safe(this.protectedRoot, path)
+    try {
+      if (statSync(path).size > 64 * 1024) return undefined
+      const value = JSON.parse(readFileSync(path, 'utf8')) as { version?: unknown; files?: unknown }
+      if (value.version !== 1 || typeof value.files !== 'object' || value.files === null) return undefined
+      const files = value.files as Record<string, unknown>
+      return Object.values(files).every((hash) => typeof hash === 'string')
+        ? (files as Record<string, string>)
+        : undefined
+    } catch {
+      return undefined
+    }
+  }
+  private acknowledge(files: Readonly<Record<string, string>>): void {
+    this.atomic(join(this.root, 'acknowledged.json'), JSON.stringify({ version: 1, files }))
+  }
+  /**
+   * Names of memory files changed, added or removed outside this provider since it last wrote or
+   * acknowledged them, for example by an unconfined shell under full access. The current state is
+   * then acknowledged, so each change is reported once. The first observation only records a
+   * baseline. This is a notice, not a boundary: whoever can write the files can write the record.
+   */
+  async externalChanges(observed: readonly MemoryFile[]): Promise<string[]> {
+    const known = this.acknowledged()
+    if (known ? sameHashes(known, observed) : observed.length === 0) return []
+    return this.locked(() => {
+      const current = this.files()
+      const before = this.acknowledged()
+      this.acknowledge(hashes(current))
+      if (!before) return []
+      const after = hashes(current)
+      return [...new Set([...Object.keys(before), ...Object.keys(after)])]
+        .filter((path) => before[path] !== after[path])
+        .sort()
+        .slice(0, 16)
+    })
+  }
   atomic(path: string, content: string, verify?: () => void): void {
     safe(this.protectedRoot, path)
     const temporary = `${path}.${randomUUID()}.tmp`
@@ -186,6 +229,10 @@ export class MemoryStore {
       // The file has committed if metadata fails: do not report an unwritten file.
       try {
         this.atomic(join(this.root, 'writer.json'), JSON.stringify(source), admission?.assertActive)
+        this.acknowledge({
+          ...(this.acknowledged() ?? hashes(all)),
+          [candidate.path]: candidate.hash,
+        })
       } catch {
         throw fault('MEMORY_COMMITTED_METADATA_FAILED')
       }
@@ -202,4 +249,13 @@ export class MemoryStore {
       signal,
     )
   }
+}
+
+function hashes(files: readonly MemoryFile[]): Record<string, string> {
+  return Object.fromEntries(files.map((entry) => [entry.path, entry.hash]))
+}
+function sameHashes(known: Readonly<Record<string, string>>, files: readonly MemoryFile[]): boolean {
+  return (
+    Object.keys(known).length === files.length && files.every((entry) => known[entry.path] === entry.hash)
+  )
 }

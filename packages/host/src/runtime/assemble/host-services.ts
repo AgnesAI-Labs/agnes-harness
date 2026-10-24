@@ -32,7 +32,7 @@ export function createHostServices(
         params.input &&
         typeof params.input === 'object' &&
         !Array.isArray(params.input) &&
-        ['open', 'send'].includes(String(params.input.operation))
+        ['open', 'run', 'send'].includes(String(params.input.operation))
       )
         await authorizeServiceProcess(
           kernel.get(params.sessionId),

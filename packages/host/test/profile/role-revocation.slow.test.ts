@@ -79,10 +79,15 @@ it.each(['abort', 'close'] as const)(
   async (action) => {
     let offered!: ApprovalRequest
     let delivery!: AbortSignal
+    let deliveryReady!: () => void
+    const delivered = new Promise<void>((resolve) => {
+      deliveryReady = resolve
+    })
     const fixture = await setupRoleEscalation(
       async (request, signal) => {
         offered = request
         delivery = signal
+        deliveryReady()
         return new Promise((resolve) => {
           signal.addEventListener('abort', () => resolve({ verdict: 'cancelled', reason: 'stopped' }), {
             once: true,
@@ -112,7 +117,8 @@ it.each(['abort', 'close'] as const)(
         content: [{ type: 'text', text: 'Delegate' }],
       })
       running = fixture.parent.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
-      await vi.waitFor(() => expect(offered).toBeDefined())
+      await Promise.race([delivered, running])
+      expect(offered).toBeDefined()
       const ancestor = fixture.host.kernel.get(offered.delegation!.parentSessionKey)!
       const stopped = action === 'abort' ? ancestor.abort(roleHuman) : ancestor.close()
       if (action === 'abort') expect(delivery.aborted).toBe(true)
@@ -190,9 +196,14 @@ it.each(
     let request!: ApprovalRequest
     let delivery!: AbortSignal
     let release!: () => void
+    let deliveryReady!: () => void
+    const delivered = new Promise<void>((resolve) => {
+      deliveryReady = resolve
+    })
     const fixture = await setupRoleEscalation(async (offered, signal) => {
       request = offered
       delivery = signal
+      deliveryReady()
       // Intentionally return a late human answer even if the adapter ignores cancellation.
       return new Promise((resolve) => {
         release = () => resolve({ verdict: 'allowed-once', answeredBy: roleHuman })
@@ -209,7 +220,8 @@ it.each(
       running = fixture.parent
         .run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
         .catch(() => undefined)
-      await vi.waitFor(() => expect(request).toBeDefined())
+      await Promise.race([delivered, running])
+      expect(request).toBeDefined()
       if (order === 'answer-first') release()
       stopping = action === 'close' ? fixture.parent.close() : fixture.parent.abort(roleHuman)
       if (order === 'stop-first') release()

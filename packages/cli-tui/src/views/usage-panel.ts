@@ -9,6 +9,7 @@ import type { ThemedAnsi } from '../theme.js'
 export class UsagePanel implements Component {
   private report: string | undefined
   private title = ''
+  private confirm: { run(): void; hint: string } | undefined
   private offset = 0
   private total = 0
   private height = 1
@@ -17,7 +18,9 @@ export class UsagePanel implements Component {
   constructor(
     private readonly options: { ansi: ThemedAnsi; locale?: string; maxRows(): number; changed(): void },
   ) {}
-  show(text: string, title?: string): void {
+  /** `confirm` makes Enter run an action and close; Esc still just closes. */
+  show(text: string, title?: string, confirm?: { run(): void; hint: string }): void {
+    this.confirm = confirm
     this.title = title ?? tt('usagePanel.title', this.options.locale ?? 'en')
     this.report = escapeControl(text)
     this.offset = 0
@@ -29,12 +32,19 @@ export class UsagePanel implements Component {
   }
   close(): void {
     this.report = undefined
+    this.confirm = undefined
     this.version++
     this.options.changed()
   }
   invalidate(): void {}
   handleInput(data: string): boolean {
     if (this.report === undefined) return false
+    if (this.confirm && parseKey(data, false).name === 'enter') {
+      const { run } = this.confirm
+      this.close()
+      run()
+      return true
+    }
     const action = actionFor('panel', parseKey(data, false).name)
     if (action === 'panel-close' || data === 'q') this.close()
     else {
@@ -56,7 +66,10 @@ export class UsagePanel implements Component {
     const body = {
       render: () => [
         ...lines.slice(this.offset, this.offset + this.height),
-        this.options.ansi.fg('faint', tt('usagePanel.scrollHint', this.options.locale ?? 'en')),
+        this.options.ansi.fg(
+          'faint',
+          this.confirm?.hint ?? tt('usagePanel.scrollHint', this.options.locale ?? 'en'),
+        ),
       ],
       invalidate() {},
     }

@@ -35,6 +35,7 @@ type RemoteOpen = Readonly<{
   agent?: string
   agentDigest?: string
   bundles?: readonly string[]
+  systemPromptAppend?: string
   loop?: LoopSelection
   credential?: unknown
   parent?: string
@@ -316,6 +317,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
+    systemPromptAppend?: string
     loop?: LoopSelection
     credential?: unknown
     historySignal?: AbortSignal
@@ -341,6 +343,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
       if (o.bundles !== undefined && JSON.stringify(o.bundles) !== JSON.stringify(existing.reopen.bundles))
         throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
+      if (o.systemPromptAppend !== undefined && o.systemPromptAppend !== existing.reopen.systemPromptAppend)
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
       return existing
     }
     const pending = this.opening.get(key)
@@ -350,6 +354,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         o.agent !== undefined &&
         (o.agent !== entry.reopen.agent || o.agentDigest !== entry.reopen.agentDigest)
       )
+        throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
+      if (o.systemPromptAppend !== undefined && o.systemPromptAppend !== entry.reopen.systemPromptAppend)
         throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
       return entry
     }
@@ -450,6 +456,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       ...(o.agent !== undefined ? { agent: o.agent } : {}),
       ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
+      ...(o.systemPromptAppend !== undefined ? { systemPromptAppend: o.systemPromptAppend } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.parent && o.forkAt !== undefined ? { parent: { key: o.parent, boundarySeq: o.forkAt } } : {}),
     })

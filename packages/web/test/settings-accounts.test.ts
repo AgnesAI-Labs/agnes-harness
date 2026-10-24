@@ -445,6 +445,16 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
     [...(panel?.querySelectorAll('button') ?? [])]
       .find((button) => button.textContent === zhT('accounts.compatible.fetch'))
       ?.click()
+  // Entering an untouched relay reports missing configuration, never a rejected credential.
+  h.config.test.mockResolvedValueOnce({
+    models: [],
+    verified: false,
+    catalogueError: { reason: 'http', status: 401 },
+  } as never)
+  fetchModels()
+  await vi.waitFor(() => expect(panel?.textContent).toContain('未配置'))
+  expect(h.doc.getElementById('config-error')?.textContent).toBe('')
+  expect(panel?.textContent).not.toContain('被拒')
   // A failed listing says why, and is not an error.
   h.config.test.mockResolvedValueOnce({
     models: [],

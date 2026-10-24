@@ -1,11 +1,13 @@
 import { IncomingMessage, type ServerResponse } from 'node:http'
 import { Socket } from 'node:net'
+import { validateAgainst } from '@agnes/protocol'
 import type { WebhookRequest, WebhookResult, WebhookSnapshot } from '@agnes/protocol/gen/app-server'
+import { WebhookRequest as WebhookRequestSchema } from '@agnes/protocol/gen/app-server'
 import { describe, expect, it } from 'vitest'
 import { webhookRoute } from '../src/webhook-route.js'
 
 const origin = 'http://127.0.0.1:4177'
-function setup(enabled = true) {
+function setup(enabled = true, deliveryResult?: WebhookResult) {
   const inputs: WebhookRequest[] = []
   const snapshot: WebhookSnapshot = {
     config: { enabled, path: '/hooks/business', maxPayloadBytes: 16 },
@@ -14,8 +16,10 @@ function setup(enabled = true) {
     secretRefs: [],
   }
   const route = webhookRoute(origin, async (input): Promise<WebhookResult> => {
+    if (!validateAgainst(WebhookRequestSchema, input).ok) throw new Error('Invalid webhook request')
     inputs.push(input)
     if (input.action !== 'deliver') return { snapshot }
+    if (deliveryResult) return deliveryResult
     return {
       delivery: {
         id: 'receipt',
@@ -104,6 +108,22 @@ describe('webhook HTTP boundary', () => {
         })
       ).status,
     ).toBe(400)
+    for (const input of [
+      { action: 'list', unexpected: true },
+      { action: 'list', ruleId: 123 },
+      { action: 'list', config: { enabled: 'yes' } },
+      null,
+    ])
+      expect(
+        (
+          await f.send({
+            path: '/api/triggers',
+            headers: { origin: [origin] },
+            body: Buffer.from(JSON.stringify(input)),
+          })
+        ).status,
+      ).toBe(400)
+    const beforeList = f.inputs.length
     expect(
       (
         await f.send({
@@ -113,6 +133,42 @@ describe('webhook HTTP boundary', () => {
         })
       ).status,
     ).toBe(200)
+    expect(f.inputs.slice(beforeList)).toEqual([{ action: 'list' }])
     expect(f.inputs.some((input) => input.action === 'deliver')).toBe(false)
   })
+})
+
+it('preserves delivery status HTTP mappings and the missing-delivery fallback', async () => {
+  for (const [status, httpStatus] of [
+    ['accepted', 202],
+    ['duplicate', 409],
+    ['rate-limited', 429],
+    ['capacity', 429],
+    ['bad-signature', 401],
+    ['too-large', 413],
+    ['disabled', 404],
+    ['failed', 503],
+    ['invalid-payload', 422],
+    ['pending', 422],
+    ['no-rule', 422],
+    ['replay', 422],
+    ['unknown', 422],
+    ['waiting_approval', 422],
+    ['needs_attention', 422],
+    ['ran', 422],
+  ] as const) {
+    const delivery = { id: 'synthetic', at: 1, status }
+    const f = setup(true, { delivery })
+    expect(await f.send()).toMatchObject({ status: httpStatus, body: { delivery } })
+    expect(
+      (
+        await f.send({
+          path: '/api/triggers',
+          headers: { origin: [origin] },
+          body: Buffer.from('{"action":"test","ruleId":"synthetic"}'),
+        })
+      ).status,
+    ).toBe(200)
+  }
+  expect((await setup(true, {}).send()).status).toBe(422)
 })

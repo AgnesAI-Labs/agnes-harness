@@ -427,7 +427,7 @@ export function CandidateInbox({
     <section className="plugin-candidates" data-testid="plugin-candidates" aria-label={t('candidates.title')}>
       <SettingsToolbar>
         {selected && !reviewSurface ? (
-          // A candidate is a view inside the list: 「‹ 候选 › 包名」, the list is the way back.
+          // A candidate is a view inside the list: 「‹ Candidates › Package name」, the list is the way back.
           <PushCrumbs
             title={selected.packageId}
             crumbs={[t('candidates.title')]}

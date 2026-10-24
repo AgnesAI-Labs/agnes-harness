@@ -86,30 +86,30 @@ async function lastStamp(t: Harness) {
 }
 
 /**
- * Requests without a tail note, stamped by the code before tail notes existed. Moving the loop
- * options out of the default request path and adding the note must leave every byte where it was:
- * the header stamps and the wire body the provider receives.
+ * Requests without a tail note, including the current tool-failure feedback doctrine. A tail
+ * note must leave the system/tool prefix bytes intact; these stamps also pin the exact wire body
+ * and distinguish intentional prompt revisions from tail-note changes.
  */
 const VISIBLE_HISTORY = {
-  derived_hash: '4d886c48f04d496bfac283f006572419c82051e3391d92b2cd3aff6f8b8fcb3a',
-  prompt_prefix_hash: 'a75e539dfe03f87a733c91fd3f0563fc5792a379023364c222c578a61a7f7684',
+  derived_hash: '96791eeeda746391a7bcc8c19bf214dd2faccaa12b84d8b1895798e2b416705d',
+  prompt_prefix_hash: '1a3bb8bbd72eee85547c19fd4ac3e15432cfd4a60213848e3ac47fa12a1ae206',
   tool_schema_hash: '429a05563ea25f28b6a0e7cc07e8224321d1050acd09c8a51670f90fdaf15f83',
-  wire: '6481a95f44ef12a66d571074cad2f0864aafacddd7368bb5d65844c531cde61f',
+  wire: 'f707f02af7f83ef9708b4aaa6f44112d3890b53737b957b39e5a376a311745e7',
 }
 const UNCHANGED = {
   defaultLoop: VISIBLE_HISTORY,
   noOptions: VISIBLE_HISTORY,
   systemAndSampling: {
-    derived_hash: 'c5632ded3730bbc443902077a60cdcbfba1407b2aa88a5e81b1bd5af9ef87857',
-    prompt_prefix_hash: 'fe63b85f013f3caeb935a0e44544674fcee60cf90f62a04ee78a9fa9664d50be',
+    derived_hash: 'd03501e250ccff7eeff69fcd4b52d76f279a487b0780d37afece21741b18f59e',
+    prompt_prefix_hash: 'e47a807eca7b55548be4979c95145948682fa057e0164778b8fa1af269b4c1a7',
     tool_schema_hash: '429a05563ea25f28b6a0e7cc07e8224321d1050acd09c8a51670f90fdaf15f83',
-    wire: '249c5c80bfc9168ad51ed52b1bf81fb7a51b070095167707c1babf30965317b3',
+    wire: 'dc178d6b6fe1df96574c69ca57d19a218e35ada8f6115dfcc3f730b3d0ad032e',
   },
   customMessages: {
-    derived_hash: '189168dbac0b6dd8a51ecd32111e690a55be59966047e4bf1443879559f75f3d',
-    prompt_prefix_hash: 'a75e539dfe03f87a733c91fd3f0563fc5792a379023364c222c578a61a7f7684',
+    derived_hash: '6a881d34abbc14404ae965dc333d1303da7e81ad87d6fc25512757df50578084',
+    prompt_prefix_hash: '1a3bb8bbd72eee85547c19fd4ac3e15432cfd4a60213848e3ac47fa12a1ae206',
     tool_schema_hash: '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
-    wire: 'cd51f4cbd306968a087ba878b865dec978b60f26f64f324578bb7442e3be200f',
+    wire: 'e53acd39d8cfac0abaac6c7f396519fafbaf9fefad7706f14baaee7c77f47a09',
   },
 }
 const PINNED_OPTIONS: Record<Exclude<keyof typeof UNCHANGED, 'defaultLoop'>, LoopRequestOptions> = {
@@ -274,7 +274,11 @@ describe('a tail note on a loop request', () => {
     }
     const hooks: HookPort = {
       ...noopHooks,
-      context: async (sections) => ({ sections, additionalContext: 'from a context hook' }),
+      context: async (sections) => ({
+        sections,
+        additionalContext: 'from a context hook',
+        untrustedContext: '',
+      }),
     }
     await withLoop(
       async (t) => {

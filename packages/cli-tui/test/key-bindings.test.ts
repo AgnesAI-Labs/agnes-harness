@@ -14,7 +14,14 @@ import { UsagePanel } from '../src/views/usage-panel.js'
 // contract the key binding table (keymap.ts) has to keep: it drives real components and checks what
 // the key does, so it passes before and after the bindings move into one declaration.
 
-type Seen = { text: string; cursor: number; submitted: string[]; cancels: boolean[]; external: number }
+type Seen = {
+  text: string
+  cursor: number
+  submitted: string[]
+  cancels: boolean[]
+  external: number
+  images: number
+}
 type Case = {
   name: string
   keys: string[]
@@ -33,12 +40,14 @@ function drive(c: Case): Seen & { handled: boolean } {
   const submitted: string[] = []
   const cancels: boolean[] = []
   let external = 0
+  let images = 0
   const history = new PromptHistory()
   for (const h of [...(c.history ?? [])].reverse()) history.add(h)
   const e = new Editor({
     onSubmit: (t) => submitted.push(t),
     onCancelKey: (d) => cancels.push(d),
     onExternalEdit: () => void external++,
+    onPasteImage: () => void images++,
     history,
     busy: () => c.busy === true,
     ...(c.complete ? { complete: c.complete } : {}),
@@ -50,7 +59,7 @@ function drive(c: Case): Seen & { handled: boolean } {
   }
   let handled = false
   for (const k of c.keys) handled = e.handleInput(k)
-  return { text: e.text, cursor: e.cursor, submitted, cancels, external, handled }
+  return { text: e.text, cursor: e.cursor, submitted, cancels, external, images, handled }
 }
 
 const S = 'ab cd ef'
@@ -187,6 +196,12 @@ const editorCases: Case[] = [
     keys: ['\x07'],
     text: 'hi',
     want: { external: 1, text: 'hi' },
+  },
+  {
+    name: 'ctrl-v asks the app for the clipboard image and types nothing',
+    keys: ['\x16'],
+    text: 'hi',
+    want: { images: 1, text: 'hi' },
   },
   { name: 'alt-up is swallowed', keys: ['\x1b[1;3A'], text: 'hi', handled: true, want: { text: 'hi' } },
   {
@@ -380,6 +395,50 @@ describe('key bindings: approval modal', () => {
   ])('%s', async (_n, keys, want) => {
     const { answer } = await run(keys as string[])
     expect(await answer).toEqual(want)
+  })
+  it.each([
+    ['y allows once', 'y', { optionId: 'a' }],
+    ['n rejects', 'n', { optionId: 'r' }],
+  ])('%s', async (_n, key, want) => {
+    const { answer } = await run([key])
+    expect(await answer).toEqual(want)
+  })
+  it('before the card has settled only esc, paging and the selection act; text is left to the draft', async () => {
+    const modal = new PermissionModal(vi.fn(), { maxRows: () => 12 })
+    const answer = modal.ask(request, { signal: new AbortController().signal })
+    modal.render(80)
+    for (const k of ['y', 'a', 'n', '1', '2', '3']) expect(modal.handleInput(k, false)).toBe(false)
+    expect(modal.handleInput('\r', false)).toBe(true)
+    expect(modal.handleInput('\x1b[A', false)).toBe(true)
+    expect(modal.count).toBe(1)
+    modal.handleInput('\x1b', false)
+    expect(await answer).toEqual({ unanswered: 'detached' })
+  })
+  it('a decides nothing: an always-allow takes its number', async () => {
+    const modal = new PermissionModal(vi.fn(), { maxRows: () => 12 })
+    const answer = modal.ask(request, { signal: new AbortController().signal })
+    expect(modal.render(80).join('\n')).not.toContain('[a]')
+    expect(modal.handleInput('a')).toBe(true)
+    expect(modal.count).toBe(1)
+    modal.handleInput('2')
+    expect(await answer).toEqual({ optionId: 'al' })
+  })
+  it('leaves the letters to the prompt while it holds a draft; numbers still decide', async () => {
+    const modal = new PermissionModal(vi.fn(), { maxRows: () => 12, letters: () => false })
+    const answer = modal.ask(request, { signal: new AbortController().signal })
+    modal.render(80)
+    for (const k of ['y', 'a', 'n']) expect(modal.handleInput(k, true)).toBe(false)
+    expect(modal.count).toBe(1)
+    modal.handleInput('1', true)
+    expect(await answer).toEqual({ optionId: 'a' })
+  })
+  it('a new question gets a new head, so the guard restarts', () => {
+    const modal = new PermissionModal(vi.fn())
+    void modal.ask(request, { signal: new AbortController().signal })
+    const first = modal.head
+    void modal.ask(request, { signal: new AbortController().signal })
+    modal.handleInput('\x1b')
+    expect(modal.head).not.toBe(first)
   })
   it('pgdn and pgup page the details, down and up move the selection', async () => {
     const { modal } = await run([])

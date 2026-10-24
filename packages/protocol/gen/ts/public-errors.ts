@@ -190,6 +190,16 @@ const PUBLIC_ERROR_COPY = {
       "action": "请刷新资源列表。"
     }
   },
+  "chatModelRequired": {
+    "en": {
+      "reason": "Image and video generation models cannot be used for chat.",
+      "action": "Choose a chat-capable model in model settings."
+    },
+    "zh-CN": {
+      "reason": "图片或视频生成模型不能用于对话。",
+      "action": "请在模型设置中选择支持对话的模型。"
+    }
+  },
   "credentialRequired": {
     "en": {
       "reason": "A provider credential is required.",
@@ -462,6 +472,7 @@ export const PUBLIC_ERROR_CONTRACT = {
   "CONFIG_FAILED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: {  } },
   "CONFIG_INVALID_INPUT": { rpc: "INVALID_PARAMS", messageKey: "appServer.errors.invalidParams", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["invalidParams"], reasons: {  } },
   "CONFIG_INVALID_STATE": { rpc: "INVALID_PARAMS", messageKey: "appServer.errors.invalidParams", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["invalidParams"], reasons: {  } },
+  "CONFIG_CHAT_MODEL_REQUIRED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.chatModelRequired", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["chatModelRequired"], reasons: {  } },
   "CONFIG_MODEL_UNAVAILABLE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
   "CONFIG_PERSIST_FAILED": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["rejected"], reasons: {  } },
   "CONFIG_PROVIDER_UNAVAILABLE": { rpc: "SEMANTIC_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: {  } },
@@ -679,6 +690,7 @@ export const PUBLIC_ERROR_MESSAGES = {
   "appServer.errors.conflict": PUBLIC_ERROR_COPY["conflict"],
   "appServer.errors.timeout": PUBLIC_ERROR_COPY["timeout"],
   "appServer.errors.unavailable": PUBLIC_ERROR_COPY["unavailable"],
+  "appServer.errors.chatModelRequired": PUBLIC_ERROR_COPY["chatModelRequired"],
   "appServer.errors.credentialRequired": PUBLIC_ERROR_COPY["credentialRequired"],
   "appServer.errors.credentialRejected": PUBLIC_ERROR_COPY["credentialRejected"],
   "appServer.errors.credentialStore": PUBLIC_ERROR_COPY["credentialStore"],

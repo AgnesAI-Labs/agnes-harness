@@ -1,6 +1,5 @@
 {
   "packages/base/src/computer-use/locked-package.ts": 1235,
-  "packages/cli-tui/src/app.ts": 920,
   "packages/core-ledger/src/project/ui.ts": 1081,
   "packages/core/src/child/factory.ts": 1172,
   "packages/core/src/execution/turn/inference.ts": 1402,

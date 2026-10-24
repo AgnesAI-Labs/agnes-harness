@@ -145,7 +145,11 @@ describe('official search providers', () => {
     })
     expect(saved.status).toBe(200)
     expect(JSON.stringify(saved.body)).not.toContain(KEY)
-    expect(saved.body).toMatchObject({ configured: true, defaultProvider: 'brave' })
+    expect(saved.body).toMatchObject({
+      configured: true,
+      defaultProvider: 'brave',
+      verifiedProvider: 'brave',
+    })
     expect(store.values.get(searchSecretRef('brave'))).toBe(KEY)
     const file = readFileSync(searchConfigPath(dir), 'utf8')
     expect(file).not.toContain(KEY)
@@ -167,6 +171,7 @@ describe('official search providers', () => {
       }),
     ])
     expect(JSON.stringify(result)).not.toContain(KEY)
+    expect(result.details).toEqual({ provider: 'brave' })
     expect(calls[0]?.url).not.toContain(KEY)
     const failed = jsonFetch({ error: KEY }, 401)
     const broken = createOfficialSearchProvider({
@@ -178,14 +183,19 @@ describe('official search providers', () => {
       broken.search(['agnes'], { signal: new AbortController().signal, timeoutMs: 15000 }),
     ).rejects.toThrow(/HTTP 401/)
     const failure = await createWebSearchTool(broken).execute({ queries: ['agnes'] }, fakeToolContext())
-    expect(JSON.stringify(failure)).toContain('WEB_SEARCH_FAILED')
+    expect(JSON.stringify(failure)).toContain('WEB_SEARCH_AUTH_FAILED')
     expect(JSON.stringify(failure)).not.toContain(KEY)
   })
 
   it('limits the request rate and reports timeouts without a configured provider', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agh-search-limit-'))
     const store = credentials()
-    const admin = createSearchAdmin({ dataDir: dir, credentials: store, now: () => 1_000 })
+    const admin = createSearchAdmin({
+      dataDir: dir,
+      credentials: store,
+      fetchImpl: jsonFetch({ results: [] }).fetchImpl,
+      now: () => 1_000,
+    })
     await admin.handle('PUT', 'search', {
       defaultProvider: 'searxng',
       provider: {
@@ -194,7 +204,7 @@ describe('official search providers', () => {
         endpoint: 'http://127.0.0.1:8080',
         maxResults: 1,
         timeoutMs: 1000,
-        ratePerMinute: 1,
+        ratePerMinute: 2,
       },
     })
     const { fetchImpl } = jsonFetch({ results: [] })
@@ -242,7 +252,7 @@ describe('official search providers', () => {
         endpoint: 'http://127.0.0.1:8080',
         maxResults: 1,
         timeoutMs: 1000,
-        ratePerMinute: 1,
+        ratePerMinute: 2,
       },
     }
     const admin = createSearchAdmin({ dataDir: dir, credentials: store, fetchImpl, now: () => 5_000 })
@@ -272,7 +282,104 @@ describe('official search providers', () => {
         now: () => 90_000,
         resolveSecret: () => undefined,
       }),
-    ).execute({ queries: ['four'] }, fakeToolContext())
+    ).execute({ queries: ['four', 'five'] }, fakeToolContext())
     expect(laterTool.details).toEqual({ code: 'SEARCH_RATE_LIMITED' })
+  })
+
+  it.each([
+    [401, 'SEARCH_AUTH_FAILED'],
+    [402, 'SEARCH_PAYMENT_REQUIRED'],
+    [403, 'SEARCH_ACCESS_DENIED'],
+    [429, 'SEARCH_RATE_LIMITED'],
+    [500, 'SEARCH_FAILED'],
+    ['network', 'SEARCH_NETWORK_FAILED'],
+    ['timeout', 'SEARCH_TIMEOUT'],
+  ])(
+    'rejects an unverified edit for %s without replacing working configuration or credentials',
+    async (failure, code) => {
+      const dir = mkdtempSync(join(tmpdir(), 'agh-search-verify-'))
+      const store = credentials()
+      let reject = false
+      const admin = createSearchAdmin({
+        dataDir: dir,
+        credentials: store,
+        fetchImpl: async () => {
+          if (!reject) return Response.json({ results: [] })
+          if (failure === 'network') throw new Error(`private upstream ${KEY}`)
+          if (failure === 'timeout') throw new DOMException(KEY, 'TimeoutError')
+          return Response.json({ message: KEY }, { status: Number(failure) })
+        },
+      })
+      const original = {
+        defaultProvider: 'exa',
+        provider: { id: 'exa', enabled: true, maxResults: 5 },
+        apiKey: KEY,
+      }
+      expect((await admin.handle('PUT', 'search', original)).status).toBe(200)
+      const before = readFileSync(searchConfigPath(dir), 'utf8')
+      reject = true
+      const refused = await admin.handle('PUT', 'search', {
+        ...original,
+        provider: { ...original.provider, maxResults: 3 },
+        apiKey: 'test-new-key',
+      })
+      expect(refused).toMatchObject({ status: 422, body: { ok: false, code } })
+      expect(JSON.stringify(refused)).not.toContain(KEY)
+      expect(store.values.get(searchSecretRef('exa'))).toBe(KEY)
+      expect(readFileSync(searchConfigPath(dir), 'utf8')).toBe(before)
+      const probe = await admin.handle('POST', 'search/test', { provider: 'exa', query: 'test' })
+      expect(probe.body).toMatchObject({ ok: false, code })
+      expect(JSON.stringify(probe)).not.toContain(KEY)
+      expect(
+        (
+          await admin.handle('PUT', 'search', {
+            defaultProvider: null,
+            provider: { ...original.provider, enabled: false },
+          })
+        ).status,
+      ).toBe(200)
+      expect(
+        (
+          await admin.handle('PUT', 'search', {
+            defaultProvider: null,
+            provider: { ...original.provider, enabled: false },
+            apiKey: '',
+          })
+        ).status,
+      ).toBe(200)
+      expect(store.values.has(searchSecretRef('exa'))).toBe(false)
+    },
+  )
+
+  it('reports the backend actually used by each search after the saved default changes', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-search-identity-'))
+    const store = credentials()
+    const { fetchImpl } = jsonFetch({
+      web: { results: [{ title: 'B', url: 'https://example.com/b', description: 'B' }] },
+      results: [{ title: 'E', url: 'https://example.com/e', highlights: ['E'] }],
+    })
+    const admin = createSearchAdmin({ dataDir: dir, credentials: store, fetchImpl })
+    const tool = createWebSearchTool(
+      createOfficialSearchProvider({
+        dataDir: dir,
+        fetchImpl,
+        resolveSecret: (ref) => store.values.get(ref),
+      }),
+    )
+    for (const id of ['brave', 'exa'] as const) {
+      expect(
+        (
+          await admin.handle('PUT', 'search', {
+            defaultProvider: id,
+            provider: { id, enabled: true },
+            apiKey: KEY,
+          })
+        ).status,
+      ).toBe(200)
+      const result = await tool.execute({ queries: ['a'] }, fakeToolContext())
+      expect(result.details).toEqual({ provider: id })
+      expect(result.content[0]).toMatchObject({ text: expect.stringContaining(`Search service: ${id}`) })
+      expect(JSON.stringify(result)).not.toContain(KEY)
+    }
   })
 })

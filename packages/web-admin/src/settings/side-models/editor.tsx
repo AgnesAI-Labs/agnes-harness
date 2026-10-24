@@ -40,7 +40,7 @@ const COSTS = [
   ['costCacheWrite', 'side.costCacheWrite', 'cache-write'],
 ] as const
 
-/** Adding or editing one side model: 基本信息, 连接 and 模型, then the optional test and save. */
+/** Adding or editing one side model: Basic information, Connection and Model, then the optional test and save. */
 export function SideModelEditor(props: SideModelEditorProps) {
   const { t } = useUiText(SIDE_MODELS_NAMESPACE, sideModelsCatalog)
   const { draft, busy, fieldError, endpointChanged } = props

@@ -14,6 +14,8 @@ export type WorkspaceDeployment = {
   trustHash?: string
   pluginCount?: number
   hasHooks?: boolean
+  /** Digest of the hooks.json bytes `trustHash` commits to. */
+  hooksDigest?: string
   /** `changed`: trusted once, but its files no longer match the hash that was signed. */
   state: 'untrusted' | 'trusted' | 'changed'
 }

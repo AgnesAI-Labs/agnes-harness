@@ -48,7 +48,7 @@ export class SessionService extends Service {
     return this.currentSessionId
   }
 
-  /** 仅宿主调用。 */
+  /** Host-only call. */
   setSession(sessionId: string | undefined, readiness?: 'connecting' | 'ready' | 'history-only'): void {
     if (
       sessionId === this.currentSessionId &&

@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import type { Page } from '@playwright/test'
 import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
@@ -136,7 +136,7 @@ test.describe('shipped agent acceptance', () => {
           await source.getByRole('combobox', { name: 'Source type', exact: true }).selectOption('file')
           await source
             .getByRole('textbox', { name: 'Source reference', exact: true })
-            .fill(`file:${resolve(agent.directory)}`)
+            .fill(`file:${resolve(agent.directory).split(sep).join('/')}`)
           await source.getByRole('button', { name: 'Check source', exact: true }).click()
           await page
             .getByTestId('install-review')
@@ -153,7 +153,8 @@ test.describe('shipped agent acceptance', () => {
             )
             .toBe('running')
         }
-        if (agent.directory.startsWith('examples/fde/')) await installDeveloperExample(page, agent.directory)
+        if (agent.directory.startsWith(join('examples', 'fde') + sep))
+          await installDeveloperExample(page, agent.directory)
         await homePage(page, 'agents')
         const general = agent.ref === 'builtin:general'
         const draft = agent.launch.prompt?.text.en

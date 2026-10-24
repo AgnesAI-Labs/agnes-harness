@@ -67,3 +67,5 @@ const ids = await discoverLocalModels({
 Discovery refuses redirects, userinfo/query/fragment in the URL, invalid/duplicate ids, more than 4096 models or a response over 1 MiB. It has a five-second deadline and sends no Authorization header for keyless servers. Failure does not fall back to a vendor catalog.
 
 Add `compat.recordFile: /absolute/responses.jsonl` to record the local adapter's model replies for [replay](headless.md). The file must not exist. One adapter instance writes one file; use one route when the trace will be replayed. A model record's zero cost denotes local billing configuration, not missing token usage: runtime usage events still populate metrics.
+
+Known Agnes image and video generation IDs are excluded from conversation model lists, including relay accounts. They cannot be saved as chat defaults or auxiliary chat models. If an older account selected one, choose a chat-capable model before starting a session or schedule. Image-input chat models remain available.

@@ -35,7 +35,7 @@ export interface DecisionAuthority {
   readonly refuseApprovals?: boolean
   readonly delegatedToolApprovals?: boolean
   readonly key: string
-  /** A profile journal uses AR1 without creating a session or granting session access. */
+  /** A profile journal uses decision commands without creating a session or granting session access. */
   readonly profileId?: string
   readonly lane: string
   readonly lastSeq: Seq

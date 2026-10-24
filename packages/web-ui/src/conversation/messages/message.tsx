@@ -150,6 +150,12 @@ export function nativeContent(
           {t('timeline.toolSourcePending', { names: node.sources.join(t('timeline.conflictOpsJoiner')) })}
         </div>
       )
+    case 'memory-external-change':
+      return (
+        <div className="node-body" role="status" data-testid="memory-external-change-notice">
+          {t('timeline.memoryExternalChange', { names: node.paths.join(t('timeline.conflictOpsJoiner')) })}
+        </div>
+      )
     case 'workspace-undo':
       return (
         <div className="node-body" role="status" data-testid="workspace-undo-notice">
@@ -229,7 +235,7 @@ function MessageView({
       {...(node.kind === 'tool'
         ? {
             'data-status': node.status,
-            // 无障碍标签要带上工具名：只报状态会让读屏用户听不出是哪次调用。
+            // Include the tool name in the accessible label: status alone does not identify the call to screen-reader users.
             'aria-label': props.t('tool.card.aria', {
               name: baseToolTitle(node.name, props.t) ?? node.presentation?.title ?? node.name,
               status: toolOutcome(node, props.t).label,

@@ -9,6 +9,8 @@ export type WorkspaceBinding = Readonly<{
   workspaceId: string
   authorityRevision: number
   canonicalRoot: string
+  /** Canonical extra directories admitted into this session's file fence; empty when none. */
+  extraRoots: readonly string[]
   readonly [workspaceBindingBrand]: true
 }>
 
@@ -18,7 +20,12 @@ export type AuthenticatedWorkspaceBindingEnvelope = Readonly<{
   workspaceId: string
   revision: number
   canonicalRoot: string
+  /** Absent on bindings written before extra directories existed: no extra directories. */
+  extraRoots?: readonly string[]
 }>
+
+/** Most extra directories one session may carry. */
+export const MAX_EXTRA_ROOTS = 8
 
 const issued = new WeakSet<object>()
 
@@ -43,11 +50,20 @@ function checkedRoot(value: unknown): string {
   return value
 }
 
+function checkedExtraRoots(value: unknown): readonly string[] {
+  if (value === undefined) return Object.freeze([])
+  if (!Array.isArray(value) || value.length > MAX_EXTRA_ROOTS) throw fault('invalid extra directories')
+  const roots = value.map(checkedRoot)
+  if (new Set(roots).size !== roots.length) throw fault('duplicate extra directory')
+  return Object.freeze(roots)
+}
+
 function issue(input: {
   sessionKey: string
   workspaceId: string
   authorityRevision: number
   canonicalRoot: string
+  extraRoots: readonly string[]
 }): WorkspaceBinding {
   const binding = Object.freeze({ ...input }) as WorkspaceBinding
   issued.add(binding)
@@ -76,8 +92,21 @@ export class WorkspaceBindingAuthority {
       workspaceId: envelope.workspaceId,
       authorityRevision: envelope.revision,
       canonicalRoot: checkedRoot(envelope.canonicalRoot),
+      extraRoots: checkedExtraRoots(envelope.extraRoots),
     })
   }
+}
+
+/** Whether two bindings grant the same authority: key, workspace, revision, root and extra roots. */
+export function sameWorkspaceBindingAuthority(left: WorkspaceBinding, right: WorkspaceBinding): boolean {
+  return (
+    left.sessionKey === right.sessionKey &&
+    left.workspaceId === right.workspaceId &&
+    left.authorityRevision === right.authorityRevision &&
+    left.canonicalRoot === right.canonicalRoot &&
+    left.extraRoots.length === right.extraRoots.length &&
+    left.extraRoots.every((root, index) => root === right.extraRoots[index])
+  )
 }
 
 /** Fork inheritance can change only the session key; root and authority revision stay identical. */
@@ -88,7 +117,39 @@ export function inheritWorkspaceBinding(parent: WorkspaceBinding, childSessionKe
     workspaceId: parent.workspaceId,
     authorityRevision: parent.authorityRevision,
     canonicalRoot: parent.canonicalRoot,
+    extraRoots: parent.extraRoots,
   })
+}
+
+/**
+ * Whether `child` is `parent` grown by extra directories the daemon admitted: the child's own key (`childSessionKey`),
+ * the same workspace, revision and root, and the parent's extra roots kept in their order inside a strictly
+ * longer child list. The daemon keeps the list sorted, so a new root may land between old ones; a
+ * prefix test would refuse that. Dropping, reordering or swapping a root, or any other change, is
+ * not an extension. Both bindings must be Host-issued; the new roots passed that check on issue.
+ */
+export function extendsWorkspaceBinding(
+  parent: WorkspaceBinding,
+  child: WorkspaceBinding,
+  childSessionKey: string,
+): boolean {
+  assertWorkspaceBinding(parent)
+  assertWorkspaceBinding(child)
+  return (
+    child.sessionKey === childSessionKey &&
+    child.workspaceId === parent.workspaceId &&
+    child.authorityRevision === parent.authorityRevision &&
+    child.canonicalRoot === parent.canonicalRoot &&
+    child.extraRoots.length > parent.extraRoots.length &&
+    isSubsequence(parent.extraRoots, child.extraRoots)
+  )
+}
+
+/** Every item of `part` appears in `whole`, in the same relative order. */
+function isSubsequence(part: readonly string[], whole: readonly string[]): boolean {
+  let next = 0
+  for (const item of whole) if (item === part[next]) next++
+  return next === part.length
 }
 
 /** CLI in-process authority is permanently restricted to the one canonical startup root. */
@@ -109,6 +170,7 @@ export class CliWorkspaceAuthority {
       workspaceId: this.workspaceId,
       authorityRevision: 1,
       canonicalRoot: this.canonicalRoot,
+      extraRoots: Object.freeze([]),
     })
   }
 }

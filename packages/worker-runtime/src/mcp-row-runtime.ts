@@ -6,6 +6,7 @@ import {
   type McpToolCatalogPage,
   validateResourceControlData,
 } from '@agnes/protocol'
+import { mcpConnectionFailure } from '@agnes/resource-control-runtime'
 import {
   type McpServerRowsResult,
   type McpServerSnapshotEntry,
@@ -46,12 +47,13 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
         : {}),
     }
   if (event.state === 'unavailable') {
+    const failure = mcpConnectionFailure(event.error)
     const code =
       event.reason === 'exhausted'
         ? 'MCP_RECONNECT_EXHAUSTED'
         : event.reason === 'lost'
           ? 'MCP_CONNECTION_LOST'
-          : 'MCP_CONNECT_FAILED'
+          : failure.code
     return {
       serverId,
       connectionState: 'unavailable',
@@ -61,8 +63,7 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
       observedAt: observedAt(),
       lastSafeError: {
         code,
-        // SafeError.message is 1..256 chars; an arbitrary error's own message can be longer or empty.
-        message: String(event.error).slice(0, 256) || 'MCP connection failed',
+        message: failure.message,
       },
     }
   }
@@ -76,9 +77,11 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
   }
 }
 
-/** A skipped entry never becomes a row, so no connection status event will ever describe it: this is
- *  its only status, synthesized once per `apply()` straight from `mcpServerRowsFromDefinitions`'s
- *  reason (design §3.3 - "按快照不挂行 → 立即...返回 disabled 或 unavailable"). */
+/**
+ * A skipped entry never becomes a row, so no connection status event will ever describe it: this is
+ * its only status, synthesized once per `apply()` straight from `mcpServerRowsFromDefinitions`'s
+ * reason, immediately returning disabled or unavailable for entries omitted by the snapshot.
+ */
 function statusForSkip(serverId: string, reason: string): McpStatus {
   const base = {
     serverId,
@@ -112,7 +115,7 @@ export type McpRowApplyResult = Readonly<{
   rowIds: readonly string[]
   skipped: McpServerRowsResult['skipped']
   /** Every server this apply() was given, with its settled status: the observed outcome for a
-   *  (re)started row once its first attempt's result landed or the cap elapsed (§3.8, D120), an
+   *  (re)started row once its first attempt's result landed or the cap elapsed, an
    *  unchanged row's carried-over status, or a skipped entry's synthesized one. This is what
    *  `resourceMcpApply` returns to the daemon synchronously - no wait for an async status frame. */
   statuses: ReadonlyMap<string, McpStatus>
@@ -144,7 +147,7 @@ export type McpRowRuntime = Readonly<{
 }>
 
 /**
- * The shared session worker's MCP supply (stage 2b step 3, D107'): one Host `ext:` row per server,
+ * The shared session worker's MCP supply: one Host `ext:` row per server,
  * derived from the resource snapshot the worker already reads. Boot and every `resource.stale`
  * reload call the same `apply`, with the snapshot's full entry list.
  *
@@ -157,7 +160,7 @@ export type McpRowRuntime = Readonly<{
  * `apply` resolves once the rows it (re)mounted finished their first connection attempt, or after
  * `firstAttemptTimeoutMs`: the caller runs it at a turn boundary, so a server enabled or edited before
  * a turn is usable in that turn, as it was when the resource manager connected everything up front
- * (design §3.8, D120). Host's own apply never waits on a connection (D118).
+ *. Host's own apply never waits on a connection.
  *
  * Which rows are "ours" is tracked here rather than matched by id prefix: `agnes/mcp-*` also names
  * other builtin extensions. Only a successful apply replaces that set; a rejected apply leaves Host on
@@ -171,7 +174,7 @@ export function createMcpRowRuntime(
     opener: McpServerOpener
     /** Update the Windows worker's private executable policy before any newly enabled row starts. */
     beforeApply?(entries: readonly McpServerSnapshotEntry[]): Promise<void>
-    /** Upper bound on waiting for started rows' first connection attempts (design §3.8, D120). */
+    /** Upper bound on waiting for started rows' first connection attempts. */
     firstAttemptTimeoutMs?: number
     /** Every server's live `McpStatus` as it changes, including a skip's synthesized one (design
      *  §3.2) - the daemon's only source of MCP status once management-plane connections are gone.

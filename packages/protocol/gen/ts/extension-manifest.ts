@@ -1,5 +1,6 @@
 // generated from schema by tools/gen.ts — do not edit
 import { Type, type Static } from '@sinclair/typebox'
+import { importValidationSchema, prepareValidationSchemas } from '@agnes/protocol-validation'
 import { FormatRegistry } from '@sinclair/typebox'
 
 if (!FormatRegistry.Has('agnes-plugin-docs-url')) FormatRegistry.Set('agnes-plugin-docs-url', (value) => { try { const url = new URL(value); return value === value.trim() && !/[\x00-\x20\x7f-\x9f]/.test(value) && value.startsWith('https://') && url.protocol === 'https:' && url.username === '' && url.password === ''; } catch { return false; } })
@@ -47,79 +48,81 @@ export const ExtensionManifestSchema = Type.Module({
   "SurfaceServiceGrant": Type.Object({ "extension": Type.String({ minLength: 1, maxLength: 256, pattern: "^[a-z0-9-]+/[a-z0-9-]+$" }), "name": Type.String({ minLength: 1, maxLength: 128, pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$" }), "range": Type.String({ minLength: 1, maxLength: 64, pattern: "^(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*)(?: +(?:(?:>=|<=|>|<|=|\\^|~)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|\\^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)|(?:0|[1-9][0-9]*)(?:\\.(?:0|[1-9][0-9]*))?\\.(?:x|\\*)|\\*))*$" }) }, { additionalProperties: false }),
 })
 
-export const Capabilities = ExtensionManifestSchema.Import('Capabilities')
+export const Capabilities = importValidationSchema(ExtensionManifestSchema, 'Capabilities')
 export type Capabilities = Static<typeof Capabilities>
-export const SkinContribution = ExtensionManifestSchema.Import('SkinContribution')
+export const SkinContribution = importValidationSchema(ExtensionManifestSchema, 'SkinContribution')
 export type SkinContribution = Static<typeof SkinContribution>
-export const SkinTokenValue = ExtensionManifestSchema.Import('SkinTokenValue')
+export const SkinTokenValue = importValidationSchema(ExtensionManifestSchema, 'SkinTokenValue')
 export type SkinTokenValue = Static<typeof SkinTokenValue>
-export const ClientContribution = ExtensionManifestSchema.Import('ClientContribution')
+export const ClientContribution = importValidationSchema(ExtensionManifestSchema, 'ClientContribution')
 export type ClientContribution = Static<typeof ClientContribution>
-export const ExtensionManifest = ExtensionManifestSchema.Import('ExtensionManifest')
+export const ExtensionManifest = importValidationSchema(ExtensionManifestSchema, 'ExtensionManifest')
 export type ExtensionManifest = Static<typeof ExtensionManifest>
-export const HookEvent = ExtensionManifestSchema.Import('HookEvent')
+export const HookEvent = importValidationSchema(ExtensionManifestSchema, 'HookEvent')
 export type HookEvent = Static<typeof HookEvent>
-export const UiSlotName = ExtensionManifestSchema.Import('UiSlotName')
+export const UiSlotName = importValidationSchema(ExtensionManifestSchema, 'UiSlotName')
 export type UiSlotName = Static<typeof UiSlotName>
-export const SeamName = ExtensionManifestSchema.Import('SeamName')
+export const SeamName = importValidationSchema(ExtensionManifestSchema, 'SeamName')
 export type SeamName = Static<typeof SeamName>
-export const UiComponentDeclaration = ExtensionManifestSchema.Import('UiComponentDeclaration')
+export const UiComponentDeclaration = importValidationSchema(ExtensionManifestSchema, 'UiComponentDeclaration')
 export type UiComponentDeclaration = Static<typeof UiComponentDeclaration>
-export const PluginMetadata = ExtensionManifestSchema.Import('PluginMetadata')
+export const PluginMetadata = importValidationSchema(ExtensionManifestSchema, 'PluginMetadata')
 export type PluginMetadata = Static<typeof PluginMetadata>
-export const PluginMetadataLocale = ExtensionManifestSchema.Import('PluginMetadataLocale')
+export const PluginMetadataLocale = importValidationSchema(ExtensionManifestSchema, 'PluginMetadataLocale')
 export type PluginMetadataLocale = Static<typeof PluginMetadataLocale>
-export const HomeContributionDeclaration = ExtensionManifestSchema.Import('HomeContributionDeclaration')
+export const HomeContributionDeclaration = importValidationSchema(ExtensionManifestSchema, 'HomeContributionDeclaration')
 export type HomeContributionDeclaration = Static<typeof HomeContributionDeclaration>
-export const PluginLocalizedText = ExtensionManifestSchema.Import('PluginLocalizedText')
+export const PluginLocalizedText = importValidationSchema(ExtensionManifestSchema, 'PluginLocalizedText')
 export type PluginLocalizedText = Static<typeof PluginLocalizedText>
-export const PluginProvide = ExtensionManifestSchema.Import('PluginProvide')
+export const PluginProvide = importValidationSchema(ExtensionManifestSchema, 'PluginProvide')
 export type PluginProvide = Static<typeof PluginProvide>
-export const AgentRef = ExtensionManifestSchema.Import('AgentRef')
+export const AgentRef = importValidationSchema(ExtensionManifestSchema, 'AgentRef')
 export type AgentRef = Static<typeof AgentRef>
-export const BundleLaunch = ExtensionManifestSchema.Import('BundleLaunch')
+export const BundleLaunch = importValidationSchema(ExtensionManifestSchema, 'BundleLaunch')
 export type BundleLaunch = Static<typeof BundleLaunch>
-export const ApplicationTemplate = ExtensionManifestSchema.Import('ApplicationTemplate')
+export const ApplicationTemplate = importValidationSchema(ExtensionManifestSchema, 'ApplicationTemplate')
 export type ApplicationTemplate = Static<typeof ApplicationTemplate>
-export const DeclaredAgent = ExtensionManifestSchema.Import('DeclaredAgent')
+export const DeclaredAgent = importValidationSchema(ExtensionManifestSchema, 'DeclaredAgent')
 export type DeclaredAgent = Static<typeof DeclaredAgent>
-export const PresentationRole = ExtensionManifestSchema.Import('PresentationRole')
+export const PresentationRole = importValidationSchema(ExtensionManifestSchema, 'PresentationRole')
 export type PresentationRole = Static<typeof PresentationRole>
-export const ApplicationAsset = ExtensionManifestSchema.Import('ApplicationAsset')
+export const ApplicationAsset = importValidationSchema(ExtensionManifestSchema, 'ApplicationAsset')
 export type ApplicationAsset = Static<typeof ApplicationAsset>
-export const ApplicationBrand = ExtensionManifestSchema.Import('ApplicationBrand')
+export const ApplicationBrand = importValidationSchema(ExtensionManifestSchema, 'ApplicationBrand')
 export type ApplicationBrand = Static<typeof ApplicationBrand>
-export const ApplicationRoleTarget = ExtensionManifestSchema.Import('ApplicationRoleTarget')
+export const ApplicationRoleTarget = importValidationSchema(ExtensionManifestSchema, 'ApplicationRoleTarget')
 export type ApplicationRoleTarget = Static<typeof ApplicationRoleTarget>
-export const ApplicationPresentation = ExtensionManifestSchema.Import('ApplicationPresentation')
+export const ApplicationPresentation = importValidationSchema(ExtensionManifestSchema, 'ApplicationPresentation')
 export type ApplicationPresentation = Static<typeof ApplicationPresentation>
-export const ApplicationPageRef = ExtensionManifestSchema.Import('ApplicationPageRef')
+export const ApplicationPageRef = importValidationSchema(ExtensionManifestSchema, 'ApplicationPageRef')
 export type ApplicationPageRef = Static<typeof ApplicationPageRef>
-export const ApplicationWorkbench = ExtensionManifestSchema.Import('ApplicationWorkbench')
+export const ApplicationWorkbench = importValidationSchema(ExtensionManifestSchema, 'ApplicationWorkbench')
 export type ApplicationWorkbench = Static<typeof ApplicationWorkbench>
-export const ApplicationPanelTab = ExtensionManifestSchema.Import('ApplicationPanelTab')
+export const ApplicationPanelTab = importValidationSchema(ExtensionManifestSchema, 'ApplicationPanelTab')
 export type ApplicationPanelTab = Static<typeof ApplicationPanelTab>
-export const ApplicationWorkAction = ExtensionManifestSchema.Import('ApplicationWorkAction')
+export const ApplicationWorkAction = importValidationSchema(ExtensionManifestSchema, 'ApplicationWorkAction')
 export type ApplicationWorkAction = Static<typeof ApplicationWorkAction>
-export const ApplicationWorkObject = ExtensionManifestSchema.Import('ApplicationWorkObject')
+export const ApplicationWorkObject = importValidationSchema(ExtensionManifestSchema, 'ApplicationWorkObject')
 export type ApplicationWorkObject = Static<typeof ApplicationWorkObject>
-export const ApplicationWorkbenchText = ExtensionManifestSchema.Import('ApplicationWorkbenchText')
+export const ApplicationWorkbenchText = importValidationSchema(ExtensionManifestSchema, 'ApplicationWorkbenchText')
 export type ApplicationWorkbenchText = Static<typeof ApplicationWorkbenchText>
-export const ProjectionCapability = ExtensionManifestSchema.Import('ProjectionCapability')
+export const ProjectionCapability = importValidationSchema(ExtensionManifestSchema, 'ProjectionCapability')
 export type ProjectionCapability = Static<typeof ProjectionCapability>
-export const ServiceCapability = ExtensionManifestSchema.Import('ServiceCapability')
+export const ServiceCapability = importValidationSchema(ExtensionManifestSchema, 'ServiceCapability')
 export type ServiceCapability = Static<typeof ServiceCapability>
-export const ParametersSchema = ExtensionManifestSchema.Import('ParametersSchema')
+export const ParametersSchema = importValidationSchema(ExtensionManifestSchema, 'ParametersSchema')
 export type ParametersSchema = Static<typeof ParametersSchema>
-export const StreamDeclaration = ExtensionManifestSchema.Import('StreamDeclaration')
+export const StreamDeclaration = importValidationSchema(ExtensionManifestSchema, 'StreamDeclaration')
 export type StreamDeclaration = Static<typeof StreamDeclaration>
-export const StreamScope = ExtensionManifestSchema.Import('StreamScope')
+export const StreamScope = importValidationSchema(ExtensionManifestSchema, 'StreamScope')
 export type StreamScope = Static<typeof StreamScope>
-export const ManagedServiceDescriptor = ExtensionManifestSchema.Import('ManagedServiceDescriptor')
+export const ManagedServiceDescriptor = importValidationSchema(ExtensionManifestSchema, 'ManagedServiceDescriptor')
 export type ManagedServiceDescriptor = Static<typeof ManagedServiceDescriptor>
-export const SurfaceArtifact = ExtensionManifestSchema.Import('SurfaceArtifact')
+export const SurfaceArtifact = importValidationSchema(ExtensionManifestSchema, 'SurfaceArtifact')
 export type SurfaceArtifact = Static<typeof SurfaceArtifact>
-export const SurfaceServiceGrant = ExtensionManifestSchema.Import('SurfaceServiceGrant')
+export const SurfaceServiceGrant = importValidationSchema(ExtensionManifestSchema, 'SurfaceServiceGrant')
 export type SurfaceServiceGrant = Static<typeof SurfaceServiceGrant>
 export const Root = ExtensionManifest
 export type Root = ExtensionManifest
+
+prepareValidationSchemas([Capabilities, SkinContribution, SkinTokenValue, ClientContribution, ExtensionManifest, HookEvent, UiSlotName, SeamName, UiComponentDeclaration, PluginMetadata, PluginMetadataLocale, HomeContributionDeclaration, PluginLocalizedText, PluginProvide, AgentRef, BundleLaunch, ApplicationTemplate, DeclaredAgent, PresentationRole, ApplicationAsset, ApplicationBrand, ApplicationRoleTarget, ApplicationPresentation, ApplicationPageRef, ApplicationWorkbench, ApplicationPanelTab, ApplicationWorkAction, ApplicationWorkObject, ApplicationWorkbenchText, ProjectionCapability, ServiceCapability, ParametersSchema, JsonValue, StreamDeclaration, StreamScope, ManagedServiceDescriptor, SurfaceArtifact, SurfaceServiceGrant])

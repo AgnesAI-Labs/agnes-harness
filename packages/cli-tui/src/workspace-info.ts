@@ -22,7 +22,12 @@ export type WorkspaceProbe = (cwd: string) => Promise<WorkspaceInfo>
 const TIMEOUT_MS = 1_000
 
 export function tildePath(path: string, home = homedir()): string {
-  return home && (path === home || path.startsWith(home + sep)) ? `~${path.slice(home.length)}` : path
+  // Display paths only: Git uses '/', including on Windows; filesystem callers retain native paths.
+  const display = path.split(sep).join('/')
+  const base = home.split(sep).join('/')
+  return base && (display === base || display.startsWith(`${base}/`))
+    ? `~${display.slice(base.length)}`
+    : display
 }
 
 /** One fixed-argument git call without a shell; any failure, timeout or missing git reads as no answer. */
@@ -84,7 +89,7 @@ export async function readWorkspaceInfo(
  * last request always sees the state it was asked about.
  */
 export function workspaceRefresher(
-  cwd: string,
+  cwd: string | (() => string),
   probe: WorkspaceProbe,
   apply: (info: WorkspaceInfo) => void,
 ): () => void {
@@ -92,7 +97,7 @@ export function workspaceRefresher(
   let again = false
   const run = (): void => {
     running = true
-    void probe(cwd)
+    void probe(typeof cwd === 'string' ? cwd : cwd())
       .then(apply, () => {})
       .finally(() => {
         running = false

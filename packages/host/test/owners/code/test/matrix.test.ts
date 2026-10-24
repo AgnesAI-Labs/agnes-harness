@@ -87,6 +87,7 @@ describe('preset matrix through the host resolver', () => {
     expect((doc.model as { prompt_sections: string[] }).prompt_sections).toEqual([
       'persona',
       'environment',
+      'tools-available',
       'coding-doctrine',
       'channel-style',
     ])
@@ -94,7 +95,6 @@ describe('preset matrix through the host resolver', () => {
     // and contract are still there beside the replaced list.
     expect((doc.model as { contract_id: string }).contract_id).toBe('agnes-model-contract@v1')
     expect(Object.keys((doc.model as { route: Record<string, unknown> }).route).sort()).toEqual([
-      'compaction',
       'escalation',
       'fast',
       'primary',
@@ -113,6 +113,7 @@ describe('preset matrix through the host resolver', () => {
         'web_fetch',
         'web_search',
         'ask_user_question',
+        'ui_guide',
         'ui_render',
         'ui_update',
         'ui_close',

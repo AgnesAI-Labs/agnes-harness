@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { thinkingMode } from '@agnes/cli-tui'
@@ -42,6 +43,7 @@ async function unstartedApp(
   ],
   composerSelectionPath?: string,
   themePreferencePath?: string,
+  appOptions: { cwd?: string; remote?: boolean } = {},
 ) {
   const ep = scriptedEndpoint()
     .on('_agnes/v1/session.budget', () => ({
@@ -110,18 +112,25 @@ async function unstartedApp(
     locale: 'zh-CN',
     ...(composerSelectionPath ? { composerSelectionPath } : {}),
     ...(themePreferencePath ? { themePreferencePath } : {}),
+    ...appOptions,
   })
   return { app, ep, client, term }
 }
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(48)
+    expect(SLASH_COMMANDS).toHaveLength(77)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
+      '/exit',
       '/new',
       '/resume',
+      '/handoff',
+      '/worktree',
+      '/cd',
+      '/add-dir',
+      '/tree',
       '/import',
       '/sessions',
       '/pin',
@@ -134,21 +143,31 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/computer-use',
       '/doctor',
       '/rewind',
+      '/fork',
       '/undo',
       '/compact',
       '/goal',
       '/plan',
       '/preset',
+      '/tools',
       '/theme',
+      '/notify',
       '/keys',
       '/mouse',
       '/thinking',
       '/model',
       '/yolo',
       '/grants',
+      '/permissions',
+      '/trust',
       '/deliverables',
       '/attach',
+      '/paste',
+      '/schedule',
+      '/loop',
       '/export',
+      '/rate',
+      '/heads-up',
       '/refine',
       '/packages',
       '/install',
@@ -161,11 +180,24 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
       '/jobs',
       '/queue',
       '/status',
+      '/recap',
       '/copy',
       '/diff',
       '/init',
       '/review',
+      '/terminal-setup',
+      '/bg',
+      '/memory',
       '/btw',
+      '/todos',
+      '/expand',
+      '/statusline',
+      '/title',
+      '/borders',
+      '/raw',
+      '/images',
+      '/vim',
+      '/config',
     ])
   })
 
@@ -175,7 +207,9 @@ describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
     expect(slashCommand('/compact')?.args).toBe('[instructions]')
     expect(slashCommand('/plan')?.args).toBe('[on|off|status|pending|instruction]')
     expect(slashCommand('/preset')?.args).toBe('<name>')
-    expect(slashCommand('/theme')?.args).toBe('[auto|light|dark|mono]')
+    expect(slashCommand('/theme')?.args).toBe(
+      '[auto|light|dark|dark-daltonized|light-daltonized|mono|custom:<name>]',
+    )
     expect(slashCommand('/model')?.args).toBe('[<slot> <route>/<model> [<thinking>]]')
     expect(slashCommand('/install')?.args).toBe('<source>|confirm|cancel')
     expect(slashCommand('/package')?.args).toContain('rollback')
@@ -269,7 +303,7 @@ describe('runSlash', () => {
       })
       expect(app.themeName).toBe('dark')
       await expect(runSlash(app, '/theme neon')).resolves.toMatchObject({
-        text: 'usage: /theme [auto|light|dark|mono]',
+        text: 'usage: /theme [auto|light|dark|dark-daltonized|light-daltonized|mono|custom:<name>]',
       })
       expect(ep.calls.some((call) => call.method.includes('theme'))).toBe(false)
     } finally {
@@ -297,6 +331,25 @@ describe('runSlash', () => {
       })
       expect(writes().split(on)).toHaveLength(3)
       expect(writes().indexOf(off)).toBeLessThan(writes().lastIndexOf(on))
+    } finally {
+      await running.stop()
+      await client.close()
+    }
+  })
+
+  it('starts with mouse reporting off when the option says so, and /mouse still turns it on', async () => {
+    const { app, client } = await unstartedApp()
+    const term = new FakeTerminal({ columns: 60, rows: 20 })
+    const running = new TuiApp({ session: app.session, term, header: 'Agnes', mouse: false })
+    try {
+      await running.start()
+      const on = '\x1b[?1002h\x1b[?1006h'
+      const writes = () => term.writes.join('')
+      expect(writes()).not.toContain(on)
+      await expect(runSlash(running, '/mouse')).resolves.toMatchObject({
+        text: expect.stringContaining('on:'),
+      })
+      expect(writes().split(on)).toHaveLength(2)
     } finally {
       await running.stop()
       await client.close()
@@ -497,6 +550,132 @@ describe('runSlash', () => {
     }
   })
 
+  it('! runs a shell line through session.jobs.control run and never sends it as a prompt or a command', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    const job = (over: Record<string, unknown> = {}) => ({
+      id: 'sh1',
+      owner: 'human',
+      ownerSessionId: 'cur',
+      kind: 'shell',
+      command: 'ls',
+      cwd: '/tmp',
+      status: 'running',
+      code: null,
+      truncated: false,
+      ...over,
+    })
+    let unsupported = false
+    ep.on('_agnes/v1/session.jobs.control', () => {
+      if (unsupported) throw rpcError('METHOD_NOT_FOUND')
+      return { output: job() }
+    })
+    ep.on('_agnes/v1/session.jobs.read', () => ({
+      jobs: [],
+      completions: [],
+      job: job({ status: 'completed', code: 0, stdout: 'file-a\nfile-b\n' }),
+    }))
+    ep.on('session/prompt', () => ({ stopReason: 'end_turn' }))
+    const prompts = () => ep.calls.filter((call) => call.method === 'session/prompt')
+    const command = vi.spyOn(app, 'command')
+    const submit = vi.spyOn(app, 'submit')
+    try {
+      await app.start()
+      await app.runInput('!ls')
+      expect(ep.calls.find((call) => call.method === '_agnes/v1/session.jobs.control')?.params).toMatchObject(
+        {
+          operation: 'run',
+          command: 'ls',
+        },
+      )
+      expect(prompts()).toEqual([])
+      expect(command).not.toHaveBeenCalled()
+      expect(submit).not.toHaveBeenCalled()
+      expect(app.editor.text).toBe('[Shell #1]')
+      await vi.waitFor(async () => {
+        const screen = (await screenOf(term, 100, 24)).join('\n')
+        expect(screen).toContain('$ ls')
+        expect(screen).toContain('file-b')
+        expect(screen).toContain('退出码 0')
+      })
+      // The chip travels with the next message as a text block.
+      await app.runInput('[Shell #1] what are these?')
+      expect(prompts()).toHaveLength(1)
+      expect(JSON.stringify(prompts()[0]?.params)).toContain('file-a')
+      // `!!` leaves no chip behind.
+      app.editor.clear()
+      await app.runInput('!!ls')
+      expect(app.editor.text).toBe('')
+      // Pasted text that starts with ! is a prompt, not a shell line: only the typed draft decides.
+      const runs = () =>
+        ep.calls.filter(
+          (call) =>
+            call.method === '_agnes/v1/session.jobs.control' &&
+            (call.params as { operation?: string }).operation === 'run',
+        ).length
+      const ran = runs()
+      const sent = prompts().length
+      await app.runInput('!rm -rf ~', '[Pasted #1 · 3 lines]')
+      expect(runs()).toBe(ran)
+      expect(prompts()).toHaveLength(sent + 1)
+      // A shell line that holds a chip is refused, not expanded into the command.
+      await app.runInput('!echo [Pasted #1 · 3 lines]', '!echo [Pasted #1 · 3 lines]', true)
+      expect(runs()).toBe(ran)
+      expect(prompts()).toHaveLength(sent + 1)
+      // A daemon without the operation: a notice, the draft comes back, nothing is sent as a prompt.
+      unsupported = true
+      await app.runInput('!ls')
+      expect(app.editor.text).toBe('!ls')
+      await vi.waitFor(async () =>
+        expect((await screenOf(term, 100, 24)).join('\n')).toContain('这个 daemon 不支持 ! 命令'),
+      )
+      expect(prompts()).toHaveLength(2)
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
+  it('Ctrl-C during a ! command sends SIGINT, then kill, and does not quit', async () => {
+    const { app, client, ep, term } = await unstartedApp()
+    const running = {
+      id: 'sh1',
+      owner: 'human',
+      ownerSessionId: 'cur',
+      kind: 'shell',
+      command: 'sleep 99',
+      cwd: '/tmp',
+      status: 'running',
+      code: null,
+      truncated: false,
+    }
+    ep.on('_agnes/v1/session.jobs.control', (params) =>
+      (params as { operation: string }).operation === 'run' ? { output: running } : { output: { ok: true } },
+    )
+    ep.on('_agnes/v1/session.jobs.read', () => ({ jobs: [], completions: [], job: running }))
+    let quit = 0
+    app.onQuit = () => quit++
+    const controls = () =>
+      ep.calls.filter((call) => call.method === '_agnes/v1/session.jobs.control').map((call) => call.params)
+    try {
+      await app.start()
+      void app.runInput('!sleep 99')
+      await vi.waitFor(() => expect(controls()).toHaveLength(1))
+      term.feed('\x03')
+      term.feed('\x03')
+      await vi.waitFor(() => expect(controls()).toHaveLength(3))
+      expect(controls().slice(1)).toMatchObject([
+        { operation: 'signal', signal: 'SIGINT', jobId: 'sh1' },
+        { operation: 'kill', jobId: 'sh1' },
+      ])
+      expect(quit).toBe(0)
+    } finally {
+      await app.stop()
+      await client.close()
+      await ep.close()
+    }
+  })
+
   it('/queue lists the daemon queue, including what Alt+Enter steered in, without sending anything', async () => {
     const { app, client, ep, term } = await unstartedApp()
     try {
@@ -580,12 +759,15 @@ describe('runSlash', () => {
       // The help line carries the one-line description, not just the name.
       expect(help.text).toContain('退出')
       expect(await runSlash(app, '/quit')).toEqual({ quit: true })
+      expect(await runSlash(app, '/exit')).toEqual({ quit: true })
       const unknown = await runSlash(app, '/nope')
       expect(unknown.text).toContain('unknown')
       expect(unknown.text).toContain('/help')
       expect(unknown.text).not.toContain('/packages')
       const singular = await runSlash(app, '/session')
       expect(singular.text).toBe('unknown command /session; did you mean /sessions?')
+      expect((await runSlash(app, '/modl')).text).toBe('unknown command /modl; did you mean /model?')
+      expect((await runSlash(app, '/zzzzzz')).text).toContain('use /help')
       expect(ep.calls.some((call) => call.method === 'session/load')).toBe(false)
       expect(ep.calls.some((call) => call.method === '_agnes/v1/session.attach')).toBe(false)
     } finally {
@@ -681,6 +863,163 @@ describe('runSlash', () => {
       expect(app.session.id).not.toBe('other-id')
     } finally {
       await client.close()
+    }
+  })
+
+  it('/cd registers the directory, opens a session there and names the old one; refusals open nothing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-cd-'))
+    const target = join(root, 'target')
+    const file = join(root, 'a-file')
+    mkdirSync(target)
+    writeFileSync(file, 'x')
+    const opened = (ep: { calls: Array<{ method: string }> }) =>
+      ep.calls.filter((c) => c.method === 'session/new' || c.method === '_agnes/v1/workspace.add').length
+    try {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { cwd: root })
+      try {
+        const base = opened(ep)
+        // Refusals: no argument, missing directory, a file, the current directory.
+        for (const line of ['/cd', '/cd nope', '/cd a-file', '/cd .', `/cd ${root}`]) {
+          const r = await runSlash(app, line)
+          expect(r.switchSession, line).toBeUndefined()
+          expect(r.text, line).toBeTruthy()
+        }
+        expect(opened(ep)).toBe(base)
+        // Success: a relative path, resolved against the session cwd.
+        const ok = await runSlash(app, '/cd target')
+        expect(ok.switchSession?.id).toBeDefined()
+        expect(
+          ep.calls.find(
+            (c) => c.method === '_agnes/v1/workspace.add' && JSON.stringify(c.params).includes(target),
+          ),
+        ).toBeDefined()
+        expect(ep.calls.filter((c) => c.method === 'session/new').at(-1)?.params).toMatchObject({
+          cwd: target,
+        })
+        expect(ok.text).toContain(app.session.id)
+        expect(ok.text).toContain(target)
+        await runSlash(app, '/cd ~')
+        expect(ep.calls.filter((c) => c.method === 'session/new').at(-1)?.params).toMatchObject({
+          cwd: homedir(),
+        })
+      } finally {
+        await client.close()
+      }
+      const remote = await unstartedApp(undefined, undefined, undefined, { cwd: root, remote: true })
+      try {
+        const base = opened(remote.ep)
+        const r = await runSlash(remote.app, '/cd target')
+        expect(r.switchSession).toBeUndefined()
+        expect(r.text).toBeTruthy()
+        expect(opened(remote.ep)).toBe(base)
+      } finally {
+        await remote.client.close()
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('/add-dir forks the session with the directory after registering it; refusals change nothing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-add-dir-'))
+    const target = join(root, 'lib')
+    const file = join(root, 'a-file')
+    mkdirSync(target)
+    writeFileSync(file, 'x')
+    const wire = (ep: { calls: Array<{ method: string }> }) =>
+      ep.calls.filter((c) => c.method === '_agnes/v1/workspace.add' || c.method === '_agnes/v1/submit').length
+    try {
+      // Refusals. The default projection has no completed turn.
+      const idle = await unstartedApp(undefined, undefined, undefined, { cwd: root })
+      try {
+        const base = wire(idle.ep)
+        for (const line of ['/add-dir', '/add-dir nope', '/add-dir a-file', '/add-dir lib']) {
+          const r = await runSlash(idle.app, line)
+          expect(r.switchSession, line).toBeUndefined()
+          expect(r.text, line).toBeTruthy()
+        }
+        expect((await runSlash(idle.app, '/add-dir lib')).text).toContain('agh --add-dir')
+        Object.defineProperty(idle.app, 'busy', { get: () => true })
+        expect((await runSlash(idle.app, '/add-dir lib')).switchSession).toBeUndefined()
+        expect(wire(idle.ep)).toBe(base)
+      } finally {
+        await idle.client.close()
+      }
+      const remote = await unstartedApp(undefined, undefined, undefined, { cwd: root, remote: true })
+      try {
+        const r = await runSlash(remote.app, '/add-dir lib')
+        expect(r.switchSession).toBeUndefined()
+        expect(r.text).toBeTruthy()
+        expect(wire(remote.ep)).toBe(0)
+      } finally {
+        await remote.client.close()
+      }
+      // Success: registers the directory, then forks at the latest completed turn with it.
+      const ep = scriptedEndpoint({ harnessCapabilities: { forkAdditionalDirectories: true } })
+        .on('_agnes/v1/session.projectUI', (params) => ({
+          sessionId: (params as { sessionId: string }).sessionId,
+          upto: 0,
+          generation: 1,
+          opState: null,
+          turns: [
+            {
+              id: 't1',
+              turn: 1,
+              startSeq: 2,
+              endSeq: 5,
+              startedAt: '2026-10-03T00:00:00Z',
+              status: 'completed',
+              nodeIds: [],
+              usage: {
+                totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+                reasoningComplete: true,
+                billingComplete: true,
+                calls: [],
+              },
+              inherited: false,
+              forkable: true,
+            },
+          ],
+          nodes: [],
+          usage: {
+            totals: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+            context: { tokens: 0, window: 128_000, autoCompact: true },
+            model: { route: 'deepseek', id: 'deepseek-v4-flash', thinking: 'off' },
+          },
+        }))
+        .on('_agnes/v1/submit', (params) =>
+          (params as { kind?: string }).kind === 'fork'
+            ? { replayed: false, result: { sessionId: FORKED_ID } }
+            : { seq: 1, replayed: false },
+        )
+      const client = createClient({ transport: { kind: 'inproc', endpoint: ep } })
+      try {
+        const session = await client.session.new({ cwd: root })
+        const app = new TuiApp({
+          session,
+          term: new FakeTerminal({ columns: 90, rows: 24 }),
+          header: 'Agnes',
+          cwd: root,
+        })
+        const r = await runSlash(app, '/add-dir lib')
+        expect(r.switchSession?.id).toBe(FORKED_ID)
+        const order = ep.calls
+          .map((c) => c.method)
+          .filter((m) => m === '_agnes/v1/workspace.add' || m === '_agnes/v1/submit')
+        expect(order).toEqual(['_agnes/v1/workspace.add', '_agnes/v1/submit'])
+        expect(ep.calls.find((c) => c.method === '_agnes/v1/workspace.add')?.params).toEqual({ path: target })
+        expect(ep.calls.find((c) => c.method === '_agnes/v1/submit')?.params).toMatchObject({
+          kind: 'fork',
+          payload: { sessionId: session.id, at: 5, additionalDirectories: [target] },
+        })
+        expect(r.text).toContain(FORKED_ID)
+        expect(r.text).toContain(session.id)
+        expect(r.text).toContain(target)
+      } finally {
+        await client.close()
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 
@@ -912,6 +1251,614 @@ describe('runSlash', () => {
     }
   })
 
+  const toolsResult = (off: Record<string, string> = {}) => {
+    const source = { layer: 'default' as const, name: 'x' }
+    const names = ['bash', 'read_file', 'web_fetch']
+    const items = (ids: string[]) =>
+      ids.map((id) => ({
+        id,
+        enabled: !(id in off),
+        reasons:
+          id in off
+            ? [{ rule: off[id] as string, source: { layer: 'session' as const, name: 'tool-filter' } }]
+            : [],
+      }))
+    return {
+      sessionId: 'x',
+      tools: names
+        .filter((n) => !(n in off))
+        .map((name) => ({
+          name,
+          description: '',
+          parameters: {},
+          source: 's',
+          deferred: false,
+          readOnly: false,
+        })),
+      resources: [],
+      capabilities: {
+        preset: 'standard',
+        bundles: [],
+        codePin: { legacy: false, packages: [] },
+        loop: { value: { id: 'l', version: '1' }, source },
+        modelRoutes: { value: null, source },
+        permissions: { preset: 'standard', policy: 'p', toolRuntime: 't', readOnly: false, source },
+        sandbox: { provider: 'none', onUnavailable: 'allow' as const, source },
+        compaction: { engine: null, source },
+        persistence: { provider: 'sqlite', source },
+        tools: items(names),
+        mcp: [],
+        skills: [],
+        modelAdapters: [],
+        childEngines: [],
+        childModels: [],
+        uiModules: [],
+        surfaces: [],
+        packages: [],
+        plugins: [],
+        selectedModelAdapters: [],
+      },
+    }
+  }
+
+  it('/tools lists every tool with its state and why it is off', async () => {
+    const { app, ep, client } = await unstartedApp()
+    ep.on('_agnes/v1/session.tools', () => toolsResult({ web_fetch: 'session-deny', bash: 'session-allow' }))
+    try {
+      const text = (await runSlash(app, '/tools')).text ?? ''
+      expect(text.split('\n')[0]).toBe('工具：1 个开启，2 个关闭')
+      expect(text).toMatch(/bash\s+关\s+不在本会话的允许列表内/)
+      expect(text).toMatch(/read_file\s+开$/m)
+      expect(text).toMatch(/web_fetch\s+关\s+已在本会话内关闭/)
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('/tools deny and /tools only ask once, narrow only on confirm, and keep one commandId for a retry', async () => {
+    const { app, ep, client } = await unstartedApp()
+    let calls = 0
+    ep.on('_agnes/v1/session.tools', () => toolsResult(calls ? { bash: 'session-deny' } : {}))
+    ep.on('_agnes/v1/session.setToolFilter', (params) => {
+      calls++
+      if (calls === 1) throw Object.assign(new Error('x'), { code: -32603, data: { code: 'INTERNAL' } })
+      return { effectiveFromSeq: 12, filter: { deny: (params as { deny: string[] }).deny } }
+    })
+    const sent = () => ep.calls.filter((c) => c.method === '_agnes/v1/session.setToolFilter')
+    try {
+      expect((await runSlash(app, '/tools nonsense')).text).toContain('用法')
+      expect((await runSlash(app, '/tools deny')).text).toContain('至少写出一个工具名')
+      expect((await runSlash(app, '/tools deny bash nope')).text).toContain('没有这个工具：nope')
+      expect((await runSlash(app, '/tools confirm')).text).toContain('没有等待确认')
+      const asked = (await runSlash(app, '/tools deny bash')).text ?? ''
+      expect(asked).toContain('无法撤销')
+      expect(asked).toContain('bash')
+      expect(sent()).toHaveLength(0)
+      // A dropped answer keeps the confirmation, and the retry carries the same commandId.
+      await expect(runSlash(app, '/tools confirm')).rejects.toBeDefined()
+      const done = (await runSlash(app, '/tools confirm')).text ?? ''
+      expect(done).toContain('自 seq 12 起生效：2 个开启，1 个关闭')
+      expect(sent()).toHaveLength(2)
+      const ids = sent().map((call) => (call.params as { commandId: string }).commandId)
+      expect(ids[0]).toBe(ids[1])
+      expect(sent()[1]?.params).toMatchObject({ deny: ['bash'] })
+      expect(sent()[1]?.params).not.toHaveProperty('allow')
+      expect((await runSlash(app, '/tools confirm')).text).toContain('没有等待确认')
+
+      expect((await runSlash(app, '/tools only read_file,web_fetch')).text).toContain(
+        '只留下 read_file, web_fetch',
+      )
+      ep.on('_agnes/v1/session.setToolFilter', (params) => ({
+        effectiveFromSeq: 13,
+        filter: { allow: (params as { allow: string[] }).allow },
+      }))
+      await runSlash(app, '/tools confirm')
+      expect(sent().at(-1)?.params).toMatchObject({ allow: ['read_file', 'web_fetch'] })
+      expect((await runSlash(app, '/tools cancel')).text).toContain('已放弃')
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('/tools refuses on an old daemon, for a non-owner and for an unknown name, and never pretends it applied', async () => {
+    const { app, ep, client } = await unstartedApp()
+    ep.on('_agnes/v1/session.tools', () => toolsResult())
+    try {
+      await runSlash(app, '/tools deny bash')
+      // No session.setToolFilter handler: the endpoint answers METHOD_NOT_FOUND like an older daemon.
+      expect((await runSlash(app, '/tools confirm')).text).toContain('不能限制会话的工具')
+      expect((await runSlash(app, '/tools confirm')).text).toContain('没有等待确认')
+
+      await runSlash(app, '/tools deny bash')
+      ep.on('_agnes/v1/session.setToolFilter', () => {
+        throw Object.assign(new Error('denied'), { code: -32006, data: { code: 'CAPABILITY_DENIED' } })
+      })
+      expect((await runSlash(app, '/tools confirm')).text).toContain('只有会话属主')
+
+      await runSlash(app, '/tools deny bash')
+      ep.on('_agnes/v1/session.setToolFilter', () => {
+        throw Object.assign(new Error('unknown'), {
+          code: -32011,
+          data: { code: 'TOOL_FILTER_REJECTED', reason: 'unknown-tool', names: ['bash'] },
+        })
+      })
+      expect((await runSlash(app, '/tools confirm')).text).toContain('没有这个工具：bash')
+    } finally {
+      await client.close()
+    }
+  })
+
+  it('/tools completes tool names that are on, only after /tools deny or only, once the catalog is known', async () => {
+    const { app, ep, client } = await unstartedApp()
+    ep.on('_agnes/v1/session.tools', () => toolsResult({ web_fetch: 'session-deny' }))
+    try {
+      expect(completeToken('re', app, '/tools deny ')).toEqual([])
+      await vi.waitFor(() => expect(completeToken('re', app, '/tools deny ')).toEqual(['read_file']))
+      expect(completeToken('', app, '/tools only read_file ')).toEqual(['bash', 'read_file'])
+      expect(completeToken('re', app, 'please re')).toEqual([])
+      expect(completeToken('re', app, '/tools ')).toEqual([])
+      expect(completeToken('/to', app)).toContain('/tools')
+    } finally {
+      await client.close()
+    }
+  })
+
+  describe('/permissions', () => {
+    const grants = [
+      { grantId: 'g-1', toolId: 'bash', lifetime: 'session', createdAt: '2026-01-01T00:00:00Z', scope: 'x' },
+      {
+        grantId: 'g-2',
+        toolId: 'bash',
+        lifetime: 'always',
+        createdAt: '2026-01-02T00:00:00Z',
+        scope: 'shell:prefix:["git","push"]',
+      },
+    ]
+    const runtime = (policy?: Record<string, unknown>) => ({
+      sessionKey: 'k',
+      loaded: policy !== undefined,
+      generation: { current: true, state: 'active' },
+      providers: [],
+      seams: [],
+      restartRequired: [],
+      ...(policy ? { policy } : {}),
+    })
+    const policyOf = (enforcement?: { level: string; scope: string[] }, provider = 'seatbelt') => ({
+      approvalMode: 'on-request',
+      permission: { policy: 'workspace-write', principal: 'me' },
+      toolPolicy: 'p',
+      toolRuntime: 't',
+      readOnly: false,
+      sandbox: { provider, onUnavailable: 'deny', ...(enforcement ? { enforcement } : {}) },
+    })
+    /** A session with the daemon answering for every source; `override` swaps a handler for one case. */
+    const setup = async (policy?: Record<string, unknown>) => {
+      const made = await unstartedApp()
+      made.ep
+        .on('_agnes/v1/session.runtime', () => runtime(policy))
+        .on('_agnes/v1/session.tools', () => toolsResult({ web_fetch: 'session-deny' }))
+        .on('_agnes/v1/session.projectUI', () => ({
+          sessionId: 'x',
+          upto: 0,
+          generation: 1,
+          opState: null,
+          turns: [],
+          nodes: [],
+          yolo: true,
+        }))
+        .on('_agnes/v1/session.list', () => ({
+          items: [
+            {
+              sessionId: made.app.session.id,
+              createdAt: '2026-01-01T00:00:00Z',
+              lastSeq: 1,
+              generation: 1,
+              preset: 'standard',
+              additionalDirectories: ['/srv/extra\u001b[31m'],
+            },
+          ],
+        }))
+        .on('_agnes/v1/approvalGrants.forSession', () => ({ grants }))
+        .on('_agnes/v1/approvalGrants.revokeForSession', (params) => ({
+          ...(grants.find((g) => g.grantId === (params as { grantId: string }).grantId) as object),
+          revokedAt: '2026-01-03T00:00:00Z',
+        }))
+      return made
+    }
+
+    it('shows level, yolo, sandbox, disabled tools, extra directories and numbered grants on one screen', async () => {
+      const { app, client } = await setup(policyOf({ level: 'full', scope: ['process'] }))
+      try {
+        const r = await runSlash(app, '/permissions')
+        expect(r.presentation).toBe('transcript')
+        expect(r.text).toBe(
+          [
+            '权限',
+            '  级别: 可改工作区',
+            '  yolo: 开',
+            '  审批模式: on-request',
+            '沙箱',
+            '  seatbelt (full)',
+            '工具',
+            '  已禁用：web_fetch',
+            '额外目录',
+            '  /srv/extra[31m',
+            '放行规则',
+            `  1  g-1  bash  session  2026-01-01T00:00:00Z  x`,
+            `  2  g-2  bash  always  2026-01-02T00:00:00Z  prefix: git push`,
+            '撤销：`/permissions revoke <序号>`；按历史审批推荐规则：在 shell 里运行 `agh approvals suggest`',
+          ].join('\n'),
+        )
+        expect(r.text).not.toContain('\u001b')
+        // The grant rows are the same lines /grants prints.
+        const asGrants = (await runSlash(app, '/grants')).text as string
+        for (const row of asGrants.split('\n')) expect(r.text).toContain(row)
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('warns without OS-level process isolation, in the warning colour only on the warning row', async () => {
+      const { app, ep, client } = await setup(policyOf({ level: 'partial', scope: ['fs'] }, 'local'))
+      try {
+        const r = await runSlash(app, '/permissions')
+        expect(r.text).toContain('  local (partial)\n  ⚠ 没有系统级进程隔离')
+        const view = app.localCommandView('/permissions', r.text as string)
+        const colour = createAnsi('256')
+        const warn = view.render(80).find((row) => row.includes('⚠')) as string
+        expect(warn).toContain('\u001b[')
+        expect(warn).not.toBe(colour.dim('x'))
+        // The plain transcript copy of the output (below the echoed command) carries no escape sequence.
+        expect(view.transcript?.(80).slice(1).join('\n')).not.toContain('\u001b')
+        // Process-level isolation, or a full level, or a non-local provider: no warning.
+        for (const [enforcement, provider] of [
+          [{ level: 'partial', scope: ['process'] }, 'local'],
+          [{ level: 'full', scope: [] }, 'local'],
+          [{ level: 'none', scope: [] }, 'other'],
+        ] as const) {
+          ep.on('_agnes/v1/session.runtime', () =>
+            runtime(policyOf({ ...enforcement, scope: [...enforcement.scope] }, provider)),
+          )
+          expect((await runSlash(app, '/permissions')).text).not.toContain('⚠')
+        }
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('says the session is not loaded instead of guessing a sandbox', async () => {
+      const { app, client } = await setup()
+      try {
+        const text = (await runSlash(app, '/permissions')).text as string
+        expect(text).toContain('沙箱\n  会话未加载')
+        expect(text).toContain('审批模式: 会话未加载')
+        expect(text).not.toContain('⚠')
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('shows - for the part whose source fails and keeps the others', async () => {
+      const { app, ep, client } = await setup(policyOf({ level: 'full', scope: ['process'] }))
+      ep.on('_agnes/v1/session.runtime', () => {
+        throw rpcError('METHOD_NOT_FOUND')
+      })
+      try {
+        const text = (await runSlash(app, '/permissions')).text as string
+        expect(text).toContain('沙箱\n  -')
+        expect(text).toContain('审批模式: -')
+        expect(text).toContain('yolo: 开')
+        expect(text).toContain('已禁用：web_fetch')
+        expect(text).toContain('/srv/extra')
+        expect(text).toContain('g-2')
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('revokes through the same path as /grants revoke, and shows usage for anything else', async () => {
+      const { app, ep, client } = await setup(policyOf())
+      try {
+        const viaGrants = await runSlash(app, '/grants revoke 1')
+        const viaPermissions = await runSlash(app, '/permissions revoke 1')
+        expect(viaPermissions).toEqual(viaGrants)
+        expect(viaPermissions.text).toContain('已撤销 g-1')
+        const revokes = ep.calls.filter((c) => c.method === '_agnes/v1/approvalGrants.revokeForSession')
+        expect(revokes.map((c) => (c.params as { grantId: string }).grantId)).toEqual(['g-1', 'g-1'])
+        for (const line of ['/permissions nope', '/permissions revoke', '/permissions revoke 1 2']) {
+          expect((await runSlash(app, line)).text).toContain('用法：/permissions')
+        }
+      } finally {
+        await client.close()
+      }
+    })
+  })
+
+  describe('/trust', () => {
+    const HASH = `sha256-${'a'.repeat(64)}`
+    const WORKSPACE = '/work/repo'
+    const digestOf = (text: string) =>
+      `sha256-${createHash('sha256').update(Buffer.from(text, 'utf8')).digest('hex')}`
+    const HOOKS = JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo hi' }] }] },
+    })
+    type Row = { state: 'untrusted' | 'trusted' | 'changed'; pluginCount?: number; hasHooks?: boolean }
+    type Options = {
+      /** The hooks.json text the daemon serves; 'fail' makes the read throw. */
+      hooks?: string
+      /** What the row's hooksDigest says; defaults to the digest of `hooks`. */
+      digest?: string | null
+      /** The root session.list reports for this session; null leaves it out. */
+      cwd?: string | null
+      /** Installed packages; defaults to as many local workspace plugins as the row counts. */
+      plugins?: { id: string; version: string; source: { ref: string } }[] | 'fail'
+      truncated?: boolean
+    }
+    /** A session whose admin client answers the runtime snapshot and records trustWorkspace calls. */
+    const setup = async (rows: Row[], options: Options = {}) => {
+      const hooks = options.hooks ?? HOOKS
+      const made = await unstartedApp(undefined, undefined, undefined, { cwd: WORKSPACE })
+      const id = made.app.session.id
+      made.ep
+        .on('_agnes/v1/session.list', () => ({
+          items: [
+            {
+              sessionId: id,
+              createdAt: '2026-01-01T00:00:00Z',
+              lastSeq: 1,
+              generation: 1,
+              preset: 'standard',
+              ...(options.cwd === null ? {} : { cwd: options.cwd ?? WORKSPACE }),
+            },
+          ],
+        }))
+        .on('_agnes/v1/session.workspace.read', () => {
+          if (hooks === 'fail') throw new Error('unreadable')
+          return {
+            revision: 'r',
+            observedAt: '2026-10-24T00:00:00Z',
+            path: '.agh/hooks.json',
+            size: 1,
+            binary: false,
+            truncated: options.truncated ?? false,
+            text: hooks,
+          }
+        })
+      const trusted: unknown[] = []
+      const fail = { current: undefined as unknown }
+      const admin = {
+        call: async () => ({
+          workspaceDeployments: rows.map((row) => ({
+            deployDir: WORKSPACE,
+            path: WORKSPACE,
+            manifestId: 'local-workspace',
+            trustHash: HASH,
+            ...(row.hasHooks
+              ? { hooksDigest: options.digest === null ? undefined : (options.digest ?? digestOf(hooks)) }
+              : {}),
+            ...row,
+          })),
+        }),
+        clientId: async () => 'tui-client',
+        packages: {
+          list: async () => {
+            if (options.plugins === 'fail') throw new Error('list failed')
+            return {
+              packages:
+                options.plugins ??
+                Array.from({ length: rows[0]?.pluginCount ?? 0 }, (_, i) => ({
+                  id: `repo-plugin-${i}`,
+                  version: '1.0.0',
+                  source: { ref: `local:workspace/repo-plugin-${i}` },
+                })),
+            }
+          },
+          trustWorkspace: async (params: unknown) => {
+            trusted.push(params)
+            if (fail.current) throw fail.current
+            return { hash: HASH }
+          },
+        },
+      }
+      const app = new TuiApp({
+        session: made.app.session,
+        term: new FakeTerminal({ columns: 90, rows: 24 }),
+        header: 'Agnes',
+        locale: 'zh-CN',
+        profile: 'local-dev',
+        cwd: WORKSPACE,
+        controlClient: admin as never,
+      })
+      return { ...made, app, trusted, fail }
+    }
+    const untrusted: Row = { state: 'untrusted', pluginCount: 2, hasHooks: true }
+
+    it('lists plugins and hooks and asks for confirmation while untrusted, and says nothing to confirm once trusted', async () => {
+      const { app, client } = await setup([untrusted])
+      try {
+        const text = (await runSlash(app, '/trust')).text ?? ''
+        expect(text).toContain('状态: 未信任')
+        expect(text).toContain('本地插件: 2')
+        expect(text).toContain('repo-plugin-0@1.0.0')
+        expect(text).toContain('repo-plugin-1@1.0.0')
+        expect(text).toContain('PreToolUse[Bash] command: echo hi')
+        expect(text).toContain('/trust confirm')
+      } finally {
+        await client.close()
+      }
+      const done = await setup([{ state: 'trusted', pluginCount: 1, hasHooks: true }])
+      try {
+        const text = (await runSlash(done.app, '/trust')).text ?? ''
+        expect(text).toContain('状态: 已信任')
+        expect(text).not.toContain('/trust confirm')
+        expect((await runSlash(done.app, '/trust confirm')).text).toContain('已经是已信任')
+        expect(done.trusted).toEqual([])
+      } finally {
+        await done.client.close()
+      }
+    })
+
+    it('shows a changed workspace as needing trust again, and says so when there is nothing to trust', async () => {
+      const changed = await setup([{ state: 'changed', hasHooks: false }])
+      try {
+        expect((await runSlash(changed.app, '/trust')).text).toContain('已变更，需要重新信任')
+      } finally {
+        await changed.client.close()
+      }
+      const none = await setup([])
+      try {
+        expect((await runSlash(none.app, '/trust')).text).toBe('这个工作区没有需要信任的 hooks 或本地插件。')
+      } finally {
+        await none.client.close()
+      }
+    })
+
+    it('confirms with the hash that was shown, only after /trust, and says when trust takes effect', async () => {
+      const { app, client, trusted } = await setup([untrusted])
+      try {
+        expect((await runSlash(app, '/trust confirm')).text).toContain('没有等待确认')
+        expect(trusted).toEqual([])
+        await runSlash(app, '/trust')
+        const text = (await runSlash(app, '/trust confirm')).text ?? ''
+        expect(trusted).toEqual([
+          {
+            profile: 'local-dev',
+            clientId: 'tui-client',
+            commandId: expect.any(String),
+            deployDir: WORKSPACE,
+            expectedHash: HASH,
+          },
+        ])
+        expect(text).toContain(`已信任 ${WORKSPACE}`)
+        expect(text).toContain('下一次 hook 运行')
+        expect(text).toContain('本地插件只在新会话里加载')
+        expect((await runSlash(app, '/trust confirm')).text).toContain('没有等待确认')
+        expect(trusted).toHaveLength(1)
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('asks to run /trust again when the daemon says the files changed, and shows other refusals as they come', async () => {
+      const { app, client, fail } = await setup([untrusted])
+      try {
+        await runSlash(app, '/trust')
+        fail.current = {
+          code: -32011,
+          data: { code: 'SEMANTIC_REJECTED', reason: 'E_PACKAGE_PREVIEW_STALE' },
+        }
+        expect((await runSlash(app, '/trust confirm')).text).toContain('工作区内容变了，请重新运行 /trust')
+        expect((await runSlash(app, '/trust confirm')).text).toContain('没有等待确认')
+        await runSlash(app, '/trust')
+        const denied = { code: -32006, data: { code: 'CAPABILITY_DENIED' } }
+        fail.current = denied
+        await expect(runSlash(app, '/trust confirm')).rejects.toBe(denied)
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('never offers confirm when the screen cannot show everything the hash covers', async () => {
+      const many = JSON.stringify({
+        hooks: {
+          Stop: Array.from({ length: 23 }, (_, i) => ({ hooks: [{ type: 'command', command: `run ${i}` }] })),
+        },
+      })
+      const cases: [string, Options, string][] = [
+        ['more than 20 hooks', { hooks: many }, '还有 3 条 hook 没有显示'],
+        ['an unreadable file', { hooks: 'fail' }, 'hooks 内容读取失败'],
+        ['malformed json', { hooks: '{"hooks": [' }, 'hooks 内容读取失败'],
+        ['a truncated read', { truncated: true }, 'hooks 内容读取失败'],
+        ['a plugin count mismatch', { plugins: [] }, '插件清单与数量对不上'],
+        ['a failed plugin listing', { plugins: 'fail' }, '读不到插件清单'],
+        ['shown bytes that are not what the hash covers', { digest: digestOf('other') }, '请重新运行 /trust'],
+        ['no hooks digest from the daemon', { digest: null }, '请重新运行 /trust'],
+        [
+          'a hook whose type the runner does not know',
+          { hooks: JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'agent', command: 'x' }] }] } }) },
+          'hooks 内容读取失败',
+        ],
+      ]
+      for (const [name, options, reason] of cases) {
+        const made = await setup([untrusted], options)
+        try {
+          const text = (await runSlash(made.app, '/trust')).text ?? ''
+          expect(text, name).toContain(reason)
+          expect(text, name).toContain("agh profile trust '/work/repo'")
+          expect(text, name).not.toContain('确认信任：/trust confirm')
+          expect((await runSlash(made.app, '/trust confirm')).text, name).toContain('没有等待确认')
+          expect(made.trusted, name).toEqual([])
+        } finally {
+          await made.client.close()
+        }
+      }
+    })
+
+    it('shows the field the hook type runs, not a decoy field beside it', async () => {
+      const hooks = JSON.stringify({
+        hooks: {
+          Stop: [{ hooks: [{ type: 'http', url: 'https://hooks.example/stop', command: 'echo decoy' }] }],
+        },
+      })
+      const made = await setup([untrusted], { hooks })
+      try {
+        const text = (await runSlash(made.app, '/trust')).text ?? ''
+        expect(text).toContain('Stop http: https://hooks.example/stop')
+        expect(text).not.toContain('decoy')
+      } finally {
+        await made.client.close()
+      }
+    })
+
+    it('refuses to review without the daemon-reported workspace root, and matches the root exactly', async () => {
+      const missing = await setup([untrusted], { cwd: null })
+      try {
+        expect((await runSlash(missing.app, '/trust')).text).toContain('没有报告本会话的工作区根目录')
+        expect((await runSlash(missing.app, '/trust confirm')).text).toContain('没有等待确认')
+        expect(missing.trusted).toEqual([])
+      } finally {
+        await missing.client.close()
+      }
+      const elsewhere = await setup([untrusted], { cwd: '/work/other' })
+      try {
+        expect((await runSlash(elsewhere.app, '/trust')).text).toContain('没有需要信任')
+      } finally {
+        await elsewhere.client.close()
+      }
+    })
+
+    it('wraps a long hook line instead of cutting it, and keeps hook and plugin text inert', async () => {
+      const long = `${'x'.repeat(100)}END`
+      const hooks = JSON.stringify({
+        hooks: {
+          Stop: [
+            { hooks: [{ type: 'command', command: long }] },
+            { hooks: [{ type: 'command', command: 'echo \u001b[31mred\u001b[0m\nrm ‮gpj.exe​﻿' }] },
+          ],
+        },
+      })
+      const plugins = [{ id: 'evil‮plugin', version: '1', source: { ref: 'local:workspace/evil' } }]
+      const { app, client } = await setup([{ state: 'untrusted', pluginCount: 1, hasHooks: true }], {
+        hooks,
+        plugins,
+      })
+      try {
+        const text = (await runSlash(app, '/trust')).text ?? ''
+        expect(text).toContain('END')
+        expect(text.replace(/\s+/g, '')).toContain(`Stopcommand:${long}`)
+        expect(text.includes('\u001b')).toBe(false)
+        expect(/\p{Cf}/u.test(text)).toBe(false)
+        expect(text).toContain('\\u{202E}')
+        expect(text).toContain('\\u{200B}')
+        expect(text).toContain('\\u{FEFF}')
+        expect(text).toContain('evil\\u{202E}plugin@1')
+        expect(text).toContain('/trust confirm')
+      } finally {
+        await client.close()
+      }
+    })
+  })
+
   it('/yolo switches on through the real setYolo call', async () => {
     const { app, ep, client } = await unstartedApp()
     try {
@@ -983,12 +1930,18 @@ describe('runSlash', () => {
     }
   })
 
-  it('/export only ever suggests the command line; it never touches the wire', async () => {
+  it('/export has no daemon call of its own: it says so without a CLI-injected writer and hands the request to one', async () => {
     const { app, ep, client } = await unstartedApp()
     try {
       const before = ep.calls.length
-      const r = await runSlash(app, '/export --html')
-      expect(r.text).toBe(`run: agh export ${app.session.id} --html`)
+      expect((await runSlash(app, '/export --html')).text).toMatch(/--connect/)
+      const requests: unknown[] = []
+      Object.assign(app.o, { exportSession: async (request: unknown) => void requests.push(request) })
+      const r = await runSlash(app, '/export html out.html')
+      expect(requests).toEqual([
+        { sessionId: app.session.id, format: 'html', out: expect.stringMatching(/out\.html$/) },
+      ])
+      expect(r.text).toContain('out.html')
       expect(ep.calls.length).toBe(before)
     } finally {
       await client.close()
@@ -1014,12 +1967,12 @@ describe('runSlash', () => {
 describe('completeToken', () => {
   it('matches commands; an unmatched prefix returns empty, not everything', () => {
     // Exact single match.
-    expect(completeToken('/he')).toEqual(['/help'])
+    expect(completeToken('/he')).toEqual(['/help', '/heads-up'])
     // Reverse-verification (required): a prefix matching nothing returns an empty list, never the
     // full table.
     expect(completeToken('/zzzz')).toEqual([])
     // A prefix shared by several commands returns all of them, not one arbitrarily.
-    expect(completeToken('/re')).toEqual(['/resume', '/rename', '/rewind', '/refine', '/review'])
+    expect(completeToken('/re')).toEqual(['/resume', '/rename', '/rewind', '/refine', '/recap', '/review'])
     // '@' mentions have their own menu; a plain word has nothing to complete against.
     expect(completeToken('@REA')).toEqual([])
     expect(completeToken('plain')).toEqual([])
@@ -1101,7 +2054,7 @@ describe('app.ts wiring: key routing through the editor reaches the real command
     const term = new FakeTerminal({ columns: 40, rows: 12 })
     const app = new TuiApp({ session, term, header: 'Agnes', locale: 'zh-CN' })
     await app.start()
-    return { app, term, client }
+    return { app, term, client, ep }
   }
 
   it('typing "/quit" and Enter reaches command() and calls onQuit', async () => {
@@ -1222,6 +2175,97 @@ describe('app.ts wiring: key routing through the editor reaches the real command
       await app.stop()
       await client.close()
     }
+  })
+
+  describe('/handoff', () => {
+    const OLD = 'agnes:local:default:cli:dm:main'
+    const NEW = 'agnes:local:default:cli:dm:handoff'
+    const handoffApp = (btw: () => unknown) => {
+      let created = 0
+      return liveApp((ep) => {
+        ep.on('session/new', () => ({ sessionId: created++ === 0 ? OLD : NEW }))
+        ep.on('_agnes/v1/session.btw', btw)
+        ep.on('_agnes/v1/session.rename', () => ({ title: 'x' }))
+      })
+    }
+    const methods = (ep: { calls: Array<{ method: string }> }, name: string) =>
+      ep.calls.filter((c) => c.method === name)
+
+    it('previews the summary, then Enter opens a titled fresh session that starts from it', async () => {
+      const { app, term, client, ep } = await handoffApp(() => ({ text: 'GOAL: ship it', model: 'm' }))
+      try {
+        term.feed('/handoff mind the tests')
+        term.feed('\r')
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 40, 12)).join('\n')).toContain('GOAL: ship it'),
+        )
+        const question = (
+          methods(ep, '_agnes/v1/session.btw')[0] as unknown as { params: { question: string } }
+        ).params.question
+        expect(question).toContain('Next step')
+        expect(question).toContain('mind the tests')
+        expect([...question].length).toBeLessThanOrEqual(4000)
+        // Nothing is created before the user confirms.
+        expect(methods(ep, 'session/new')).toHaveLength(1)
+        term.feed('\r')
+        await vi.waitFor(() => expect(app.session.id).toBe(NEW))
+        await vi.waitFor(() => expect(methods(ep, 'session/prompt').length).toBeGreaterThan(0))
+        const sent = JSON.stringify(methods(ep, 'session/prompt').at(-1))
+        expect(sent).toContain(NEW)
+        expect(sent).toContain(OLD)
+        expect(sent).toContain('GOAL: ship it')
+        const rename = methods(ep, '_agnes/v1/session.rename')[0] as unknown as { params: unknown }
+        expect(rename.params).toMatchObject({ sessionId: NEW, title: expect.stringMatching(/^交接：/) })
+        // The old session is neither prompted nor renamed.
+        expect(
+          methods(ep, 'session/prompt').some((c) => JSON.stringify(c).includes(`"sessionId":"${OLD}"`)),
+        ).toBe(false)
+      } finally {
+        await app.stop()
+        await client.close()
+      }
+    })
+
+    it('Esc creates nothing', async () => {
+      const { app, term, client, ep } = await handoffApp(() => ({ text: 'GOAL: ship it', model: 'm' }))
+      try {
+        term.feed('/handoff')
+        term.feed('\r')
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 40, 12)).join('\n')).toContain('GOAL: ship it'),
+        )
+        term.feed('\x1b')
+        await vi.waitFor(async () =>
+          expect((await screenOf(term, 40, 12)).join('\n')).not.toContain('GOAL: ship it'),
+        )
+        expect(methods(ep, 'session/new')).toHaveLength(1)
+        expect(app.session.id).toBe(OLD)
+      } finally {
+        await app.stop()
+        await client.close()
+      }
+    })
+
+    it('creates nothing when the summary call fails, and refuses while a turn runs', async () => {
+      const { app, term, client, ep } = await handoffApp(() => {
+        throw new Error('budget exhausted')
+      })
+      try {
+        term.feed('/handoff')
+        term.feed('\r')
+        await vi.waitFor(async () => expect((await screenOf(term, 40, 12)).join('\n')).toContain('请求失败'))
+        expect(methods(ep, 'session/new')).toHaveLength(1)
+        expect(app.session.id).toBe(OLD)
+        const before = methods(ep, '_agnes/v1/session.btw').length
+        Object.defineProperty(app, 'busy', { get: () => true })
+        const refused = await runSlash(app, '/handoff')
+        expect(refused.text).toContain('Ctrl-C')
+        expect(methods(ep, '_agnes/v1/session.btw')).toHaveLength(before)
+      } finally {
+        await app.stop()
+        await client.close()
+      }
+    })
   })
 
   it('/btw says so when the daemon does not know the method', async () => {
@@ -1456,7 +2500,8 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       throw refuse
     }
     await expect(runSlash(app, '/attach blob.xyz')).rejects.toBe(refuse)
-    expect(calls.map((call) => call.operation)).toEqual(['start'])
+    // The SDK owns this intake, so it releases it after the refusal; no chunk is ever sent.
+    expect(calls.map((call) => call.operation)).toEqual(['start', 'cancel'])
     app.session.client.call = real
     const error = Object.assign(new Error('refused'), { data: { reason: 'ATTACHMENT_QUOTA' } })
     app.session.client.call = async () => {

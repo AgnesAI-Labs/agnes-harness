@@ -20,27 +20,35 @@ export function describeValidationErrors(errors: readonly ValidationError[]): st
   return `${path ? `${path} ` : ''}${first.message}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`
 }
 
-/** Look inside union members for a deeper field failure; bound diagnostics for wide/nested unions. */
+/** Prefer a uniquely matching shape; never diagnose a field from a different discriminant. */
 function specificUnionError(error: ValueError): ValueError {
-  let best = error
-  let depth = error.path.split('/').length
   let remaining = 64
-  const visit = (value: ValueError, level: number): void => {
-    if (level >= 8 || remaining <= 0) return
+  const visit = (value: ValueError, level: number): ValueError => {
+    if (value.type !== ValueErrorType.Union || level >= 8 || remaining <= 0) return value
+    const candidates: ValueError[][] = []
     for (const member of value.errors) {
+      const errors: ValueError[] = []
       for (const nested of member) {
-        if (remaining-- <= 0) return
-        const nestedDepth = nested.path.split('/').length
-        if (nestedDepth > depth) {
-          best = nested
-          depth = nestedDepth
-        }
-        if (nested.type === ValueErrorType.Union) visit(nested, level + 1)
+        if (remaining-- <= 0) return value
+        errors.push(nested)
       }
+      // A literal mismatch is a different tagged shape, not a correction hint for this one.
+      if (errors.some((item) => item.type === ValueErrorType.Literal)) continue
+      if (errors.length && errors.every((item) => item.path.length > value.path.length))
+        candidates.push(errors)
     }
+    // Shared constraints (such as list.limit) are useful even when several shapes match.
+    // Otherwise keep the union diagnostic when the intended shape is ambiguous.
+    const best = candidates[0]?.find((item) =>
+      candidates.every((errors) =>
+        errors.some(
+          (other) => other.type === item.type && other.path === item.path && other.message === item.message,
+        ),
+      ),
+    )
+    return best ? visit(best, level + 1) : value
   }
-  visit(error, 0)
-  return best
+  return visit(error, 0)
 }
 
 function classify(e: ValueError): ValidationError {

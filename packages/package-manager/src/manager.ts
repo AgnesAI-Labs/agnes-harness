@@ -49,6 +49,7 @@ import {
   localWorkspaceRoot,
   localWorkspaceTrustHash,
 } from './local-workspace-trust.js'
+import { entryOf, writable } from './lock-state.js'
 import { type LockEntry, type Lockfile, readLock, withLock, writeLock } from './lockfile.js'
 import { readBundledManifest } from './manifest.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
@@ -71,6 +72,7 @@ import {
   type RuntimeSnapshotCollection,
   type RuntimeSnapshotPinRequest,
   type RuntimeSnapshotStore,
+  readRuntimePinRecords,
   recoverRuntimeSnapshotStoreAsync,
   releaseRuntimePinsStore,
   resolveRuntimePinStore,
@@ -165,6 +167,7 @@ export interface PackageManager {
   ): Promise<void>
   collectRuntimeSnapshots(profileDir: string): Promise<RuntimeSnapshotCollection>
   listRuntimePins(profileDir: string): Promise<readonly RuntimePin[]>
+  runtimePinRecords(profileDir: string): Promise<ReturnType<typeof readRuntimePinRecords>>
   setEnabled(
     profileDir: string,
     id: string,
@@ -228,30 +231,11 @@ export type ManagerOptions = {
   runtimeCheckpoint?: (point: RuntimeSnapshotCommitPoint) => void
   sourceAdapters?: readonly PackageSourceAdapter[]
   residueCheck?: (id: string) => Promise<string[]>
-  /**
-   * A Worker's own manager: `runtimePluginSnapshots` hashes AGH-stored trees once per process and
-   * reuses them while their directories are not replaced. Every other reader leaves this unset.
-   */
+  /** Worker-only: hash AGH-stored trees once per process while their directories stay in place. */
   settleStoredTrees?: boolean
 }
 
 export { readBundledManifest } from './manifest.js'
-
-function entryOf(lock: Lockfile, id: string): LockEntry {
-  const entry = own(lock.packages, id)
-  if (!entry)
-    throw new PackageError('E_DEP_MISSING', `${id} is not installed`, {
-      detail: { id, reason: 'not-installed' },
-    })
-  return entry
-}
-
-function writable(lock: Lockfile): void {
-  if (lock.resolvedProfileHash === null)
-    throw new PackageError('E_LOCK_MISMATCH', 'profile must be resolved before packages can be changed', {
-      detail: { reason: 'unresolved-lock' },
-    })
-}
 
 export function createPackageManager(options: ManagerOptions): PackageManager {
   const verificationCache: InventoryVerificationCache = new Map()
@@ -772,8 +756,7 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
       })
     },
     async runtimePluginSnapshots(profileDir) {
-      // One read boundary, as the daemon's shared reader uses: the before/after inventory reads share
-      // this read's verified digests. Only a Worker's manager settles AGH-stored trees.
+      // One read boundary, as the daemon's reader uses: inventory reads share its verified digests.
       return withPackageVerification(
         () =>
           readRuntimePluginSnapshots(profileDir, {
@@ -832,6 +815,10 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
     },
     async listRuntimePins(profileDir) {
       return locked(profileDir, async () => readPins(profileDir), {}, true)
+    },
+    async runtimePinRecords(profileDir) {
+      // Lock-free and unhashed: the state file is replaced atomically, so this is one committed state.
+      return readRuntimePinRecords(storeFor(profileDir))
     },
     async setEnabled(profileDir, id, enabled, opts) {
       return manager.enable(profileDir, id, enabled, opts)

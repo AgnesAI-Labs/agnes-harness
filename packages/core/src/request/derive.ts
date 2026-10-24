@@ -17,6 +17,7 @@ import {
 import { harnessSections, type Merged, type PromptSection } from './contribute.js'
 import type { EnvelopeCache } from './envelope-cache.js'
 import { type InlineImagePolicy, selectInlineImages } from './inline-images.js'
+import { LIVE_CONTEXT_PREFIX, liveContextNotes } from './live-context.js'
 import { type LedgerRequest, mintFrom, type RequestBody, type RequestMessage } from './mint.js'
 import { composeSystemPrompt, type PinnedSystemPrompt } from './system-prompt.js'
 import { modelToolSchema, toolSchemaHash } from './tool-schema.js'
@@ -26,7 +27,7 @@ export const TOOL_RECOVERY_SECTION = {
   id: 'core:tool-recovery',
   order: -1,
   source: 'core',
-  text: 'When a tool rejects arguments, use its field-specific correction hint for a bounded retry. If it is disabled for this turn, continue without it; do not route around the limit through code or another tool. Use text/markdown when a visual cannot be produced. Final replies should explain the task result in the conversation language. Do not dump internal tool names, error codes, validation paths, verifier messages or runtime fields into the reply. Technical diagnostics remain in the expandable execution record. State any material limitation in ordinary language, and never claim a failed operation succeeded.',
+  text: 'When a tool rejects arguments, use its field-specific correction hint for a bounded retry. If it is disabled for this turn, continue without it; do not route around the limit through code or another tool. State material limitations honestly and never claim a failed operation succeeded.',
 } as const
 
 export type ContractRef = { contract_id: string | null; parser_version: string }
@@ -88,7 +89,7 @@ export type DeriveInput = {
     quote?: { node: SurfaceNode; text: string }
   }
   /** The exact, already scrubbed prefix of a primary request sent in this turn. */
-  mintedPrefix?: Pick<RequestBody, 'sections' | 'tools'>
+  mintedPrefix?: Pick<RequestBody, 'sections' | 'tools'> & { memoryRevision?: string }
   /**
    * The tool uses the model asked for, each named by the assistant message that asked for it. It
    * is a second input rather than a surface kind because `tool/call` is not something the model
@@ -652,13 +653,13 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
           },
         ]
       : blocksOf(d.content)
-    // A nested-result note may carry an untrusted result's trust for its preview; its header is
+    // A nested-result or hook-data note may carry untrusted text after its header; the header is
     // still the harness's own words and is scrubbed, not enveloped.
     const nestedHeader =
       node.event.origin === 'system' &&
       d.kind === 'runtime_context' &&
       blocks[0]?.type === 'text' &&
-      String(blocks[0].text).startsWith(NESTED_RESULT_PREFIX)
+      [NESTED_RESULT_PREFIX, HOOK_DATA_PREFIX].some((prefix) => String(blocks[0]?.text).startsWith(prefix))
         ? blocks[0]
         : undefined
     for (const b of blocks) {
@@ -727,6 +728,12 @@ export const SKILL_LOADED_PREFIX = '[skill loaded]\n'
  */
 export const NESTED_RESULT_PREFIX = '[nested result]\n'
 /**
+ * The first line of a note carrying extension text derived from untrusted material (the `context`
+ * hook's `untrustedContext`). Its first block is the harness's header; the text rides in the block
+ * after it, on a row whose trust is `untrusted`, so derive envelopes it.
+ */
+export const HOOK_DATA_PREFIX = '[hook data]\n'
+/**
  * Every prefix a later derivation reads a Core note back by. A loop's note may not begin with one: a
  * committed note that did would be taken for the snapshot or note it imitates.
  */
@@ -735,6 +742,8 @@ export const RESERVED_NOTE_PREFIXES: readonly string[] = Object.freeze([
   HOOK_CONTEXT_PREFIX,
   SKILL_LOADED_PREFIX,
   NESTED_RESULT_PREFIX,
+  HOOK_DATA_PREFIX,
+  LIVE_CONTEXT_PREFIX,
 ])
 
 /** The user line placed between a summary and an assistant message that directly follows it. */
@@ -876,7 +885,9 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     TOOL_RECOVERY_SECTION,
     ...composeSystemPrompt(
       input.systemPrompt,
-      input.merged.sections,
+      input.merged.sections
+        .filter((section) => section.delivery !== 'live-note')
+        .map(({ delivery: _delivery, ...section }) => section),
       harnessSections(input.harnessEntries),
     ).map((s) => ({
       id: sanitize(s.id),
@@ -978,7 +989,8 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   if (input.kind === 'turn') {
     const rank = (prefix: string) =>
       prefix === HOOK_CONTEXT_PREFIX ? 0 : prefix === SKILL_LOADED_PREFIX ? 1 : 2
-    for (const note of [...(input.notes ?? [])].sort((a, b) => rank(a.prefix) - rank(b.prefix))) {
+    const candidates = [...(input.notes ?? []), ...liveContextNotes(input.merged.sections, input.surface)]
+    for (const note of candidates.sort((a, b) => rank(a.prefix) - rank(b.prefix))) {
       const previous = lastNoteText(input.surface, note.prefix)
       if (note.dedup.kind === 'present') {
         const key = sanitize(note.dedup.key)
@@ -1180,7 +1192,8 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   }
   if (
     input.memoryRevision !== undefined &&
-    request.sections.some((section) => section.id === 'memory:index' && section.source === 'memory')
+    (input.merged.sections.some((section) => section.id === 'memory:index' && section.source === 'memory') ||
+      (input.kind === 'summary' && input.mintedPrefix?.memoryRevision === input.memoryRevision))
   )
     memoryRevisions.set(request, input.memoryRevision)
   if (input.media !== undefined)

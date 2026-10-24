@@ -1,5 +1,6 @@
 import { createAnsi } from './ansi.js'
 import { type Component, escapeControl } from './component.js'
+import { resolvePreference } from './custom-theme.js'
 import { Editor } from './editor.js'
 import { actionFor } from './keymap.js'
 import { parseKey } from './keys.js'
@@ -39,7 +40,11 @@ export class ProvisionalComposer {
   ) {
     const preference = readTheme(o.themePreferencePath)
     this.followBackground = preference === 'auto'
-    const theme = new TuiTheme(preference === 'auto' ? resolveAuto(term.background) : preference)
+    // A custom theme that cannot be read is the app's to report; until then this shows `auto`.
+    const resolved = resolvePreference(preference, o.themePreferencePath, term.background)
+    const { name, tones } =
+      'problem' in resolved ? { name: resolveAuto(term.background), tones: undefined } : resolved
+    const theme = new TuiTheme(name, tones)
     this.theme = theme
     const ansi = theme.ansi(createAnsi(term.caps.color))
     this.status = new StatusBar(ansi, o.locale)

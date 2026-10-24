@@ -281,8 +281,8 @@ export async function scanSkills(
         rootKey: scan.root,
         scope,
         state: candidates ? 'stale' : 'unavailable',
-        // 失败时带上原因码（只含原因，不含路径/目录名）：页面因此能说清"为什么这个来源没有结果"，
-        // 而不只是"刷新失败"。用户在 2026-09-15 遇到过 38 个技能集体消失却毫无线索。
+        // Include a reason code on failure (no paths/directory names), so the page explains why a source has no results
+        // instead of only Refresh failed. On 2026-09-15, a user lost all 38 skills without any clue to the cause.
         diagnostic: { code: scan.diagnostic.code },
         ...(key ? { workspaceId: key } : {}),
       })

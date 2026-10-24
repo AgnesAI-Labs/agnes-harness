@@ -1,8 +1,8 @@
 /**
- * 客户端模块子系统启动（WC8）：浏览器里新建一棵 Cordis Context 树，挂五个宿主服务，
- * 在具名挂载点注册应用内 portal。服务与 controller 保持原有状态归属。
+ * Start client modules: create a browser Cordis Context tree, attach five host services and register
+ * in-app portals at named mount points. Services and controllers retain their existing state ownership.
  *
- * 第一段前端轨没有真实名册源（P1a），reconciler 处于 idle：不加载任何模块（fail-closed）。
+ * Without a real roster source, the reconciler stays idle and loads no modules (fail-closed).
  */
 import { Context } from '@agnes/cordis'
 import {
@@ -119,10 +119,10 @@ export interface ClientModulesRuntime {
   trace?: TraceRegionMount
   rightbar?: RightbarRegionMount
   settings?: SettingsRegionMount
-  /** 挂载点容器卸载（页面卸载时浏览器回收；提供显式路径便于测试）。 */
+  /** Unmount mount-point containers (the browser handles page unload; the explicit path supports tests). */
   dispose(): Promise<void>
 }
-/** 认领解析器：fill.extId 是否命中某注册项归属包（WC9 按包认领）。真源 = 名册 extIds（P1a）。 */
+/** Resolve claims by matching fill.extId against roster extIds of the package owning a registration. */
 export type ClaimResolver = (entry: SlotEntry, extId: string) => boolean
 export async function startClientModules(options: {
   /** Raw, host-owned SDK client. `clientModule()` exposes a narrower facade to each module. */
@@ -133,13 +133,13 @@ export async function startClientModules(options: {
   clientServiceCaller?: ClientServiceCaller | undefined
   /** Separate authorized effect relay; absent keeps effect commands fail-closed. */
   clientEffectCaller?: ClientEffectCaller | undefined
-  /** 名册源；缺省 = idle（fail-closed，不加载任何模块）。 */
+  /** Roster source; omission leaves reconciliation idle, loading no modules (fail-closed). */
   rosterSource?: RosterSource | undefined
-  /** 宿主容器：workbench.panel 挂载点的父节点（B4：具体位置随布局定，这里由调用方给）。 */
+  /** Host container: parent of the workbench.panel mount point; the caller supplies its layout-dependent location. */
   panelContainer?: HTMLElement | undefined
-  /** 迁移中的宿主区域；容器本身仍由 app.ts 管理 hidden/ARIA。 */
+  /** Host region being migrated; app.ts still manages hidden/ARIA on the container itself. */
   emptyStateContainer?: HTMLElement | undefined
-  /** 迁移中的侧栏地标；外壳仍由静态 layout/CSS 所有。 */
+  /** Sidebar landmark being migrated; static layout/CSS still owns the shell. */
   sidebarContainer?: HTMLElement | undefined
   sidebar?:
     | {
@@ -165,7 +165,7 @@ export async function startClientModules(options: {
   settings?: import('../region-slots.js').SettingsRegionOptions | undefined
   /** Host permission bridge for plugin-contributed browser commands. Defaults to deny. */
   authorizeCommand?: CommandAuthorizer | undefined
-  /** 时间线 slot 节点的认领解析器；缺省一律未认领（无名册时显示占位）。 */
+  /** Claim resolver for timeline slot nodes; defaults to unclaimed, showing placeholders without a roster. */
   claim?: ClaimResolver | undefined
 }): Promise<ClientModulesRuntime> {
   const ctx = new Context()
@@ -248,7 +248,7 @@ export async function startClientModules(options: {
       window.removeEventListener('agnes:locale-changed', onLocaleChanged)
     }
   })
-  // workbench.panel 挂载点：宿主划定的容器 + React root（WC8）。
+  // workbench.panel mount point: host-defined container plus React root.
   const panelRoots: AntdRoot[] = []
   const panelContainer = options.panelContainer
   if (panelContainer) {
@@ -582,7 +582,7 @@ export async function startClientModules(options: {
     },
   }
 }
-/** 默认认领：无名册 = 一律未认领（占位）。 */
+/** Default claim: no roster means every slot is unclaimed (placeholder). */
 export const unclaimed: ClaimResolver = () => false
 export type { AgnesClient }
 export { createReconciler }

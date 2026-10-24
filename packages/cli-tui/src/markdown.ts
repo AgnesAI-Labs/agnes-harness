@@ -1,5 +1,8 @@
 import { Lexer, type Token, type Tokens } from 'marked'
 import { type CodeRun, highlight } from './highlight.js'
+import { renderLatex } from './latex.js'
+import { displayMathSource, MATH_FENCES, mathLexerOptions } from './latex-markdown.js'
+import { fenceClosed, mermaidBlock } from './mermaid.js'
 import type { Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
@@ -21,7 +24,7 @@ const HEADING: Record<number, Style> = { 1: { bold: true, tone: 'accent' }, 2: {
 const shades = (ansi: ThemedAnsi) => ansi.bg('codeBg', ' ') !== ' '
 
 /** Consume terminal commands without allowing an OSC terminator to swallow preceding CSI text. */
-function stripVT(text: string): string {
+export function stripVT(text: string): string {
   let out = ''
   for (let i = 0; i < text.length; i++) {
     let code = text.charCodeAt(i)
@@ -69,6 +72,11 @@ function inline(tokens: Token[], ansi: ThemedAnsi, style: Style = PLAIN): Span[]
       return link.href === plain(label)
         ? label
         : [...label, span(` (${link.href})`, { ...style, tone: 'faint' })]
+    }
+    if (token.type === 'math') {
+      const { raw, text } = token as Tokens.Generic
+      const math = ansi.raw ? undefined : renderLatex(String(text), { display: false })
+      return [math === undefined ? span(String(raw), style) : span(math, { ...style, tone: 'accent' })]
     }
     if (token.type === 'del') return inline((token as Tokens.Del).tokens, ansi, style)
     if (token.type === 'br') return [span('\n', style)]
@@ -222,8 +230,40 @@ function paintCode(body: string, runs: CodeRun[] | undefined, ansi: ThemedAnsi):
   return out.map((run) => ansi.fg(run.tone ?? 'surfaceFg', run.text)).join('')
 }
 
+/** Cuts a line into rows of at most `width` columns without losing a character. */
+function hardWrap(line: string, width: number): string[] {
+  const rows: string[] = ['']
+  for (const { segment } of graphemes.segment(line)) {
+    const last = rows.length - 1
+    if (rows[last] !== '' && displayWidth(rows[last] + segment) > width) rows.push(segment)
+    else rows[last] += segment
+  }
+  return rows
+}
+
+/** A formula as Unicode lines in the accent tone, indented; undefined when it has to stay source. */
+function mathBlock(src: string, width: number, ansi: ThemedAnsi): string[] | undefined {
+  const math = ansi.raw ? undefined : renderLatex(src, { display: true })
+  return math
+    ?.split('\n')
+    .flatMap((line) => hardWrap(`  ${line}`, width).map((row) => ansi.fg('accent', row)))
+}
+
 function code(token: Tokens.Code, width: number, ansi: ThemedAnsi): string[] {
   const lang = token.lang?.trim().split(/\s/)[0] ?? ''
+  const math = MATH_FENCES.has(lang) ? mathBlock(token.text, width, ansi) : undefined
+  if (math) return math
+  const diagram =
+    lang === 'mermaid' && !ansi.raw && fenceClosed(token.raw)
+      ? mermaidBlock(token.text, width, ansi)
+      : undefined
+  if (diagram) return diagram
+  // Raw view: the language on a line of its own, then the code as it is, so a copy is the code itself.
+  if (ansi.raw)
+    return [
+      ...(lang ? [ansi.dim(lang)] : []),
+      ...token.text.split('\n').flatMap((line) => hardWrap(line, width)),
+    ]
   const label = lang && width - displayWidth(lang) >= 10 ? ` ${lang} ` : ''
   const shaded = shades(ansi)
   const runs = shaded ? highlight(token.text, lang) : undefined
@@ -252,6 +292,14 @@ function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = 
       case 'paragraph':
       case 'text': {
         const text = token as Tokens.Text
+        const formula = displayMathSource(text.raw)
+        if (formula !== undefined && !ansi.raw) {
+          out.push(
+            ...(mathBlock(formula, width, ansi) ??
+              code({ type: 'code', raw: formula, text: formula }, width, ansi)),
+          )
+          break
+        }
         out.push(...wrap(inline(text.tokens ?? Lexer.lexInline(text.text), ansi, base), width, ansi))
         break
       }
@@ -275,7 +323,7 @@ function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = 
         out.push(...table(token as Tokens.Table, width, ansi, base))
         break
       case 'blockquote': {
-        const prefix = width > 2 ? `${ansi.fg('accentSoft', '▎')} ` : ''
+        const prefix = width > 2 && !ansi.raw ? `${ansi.fg('accentSoft', '▎')} ` : ''
         const quote = { ...base, italic: true, tone: 'muted' } as const
         out.push(
           ...blocks(
@@ -325,7 +373,7 @@ export function completeBlocks(text: string): number {
 export function renderMarkdown(md: string, width: number, ansi: ThemedAnsi): string[] {
   if (!Number.isFinite(width)) throw new Error('invalid markdown width')
   const clean = stripVT(md).replace(CONTROL, '').replaceAll('\t', '    ')
-  return blocks(Lexer.lex(clean, { gfm: true }), Math.max(1, Math.trunc(width)), ansi)
+  return blocks(Lexer.lex(clean, mathLexerOptions()), Math.max(1, Math.trunc(width)), ansi)
 }
 
 /** A leading part of a longer text: the blank line that separates it from what follows is kept. */

@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { BatchError, type Input, type InputReference } from './contracts.js'
 
 export interface SnapshotArtifacts {
-  /** Captures original bytes in owned files or in a real scoped B3 artifact store. */
+  /** Captures original bytes in owned files or in a real scoped attachment artifact store. */
   put(bytes: Uint8Array, metadata: { batch: string; digest: string; name: string }): Promise<InputReference>
   discard?(input: InputReference): Promise<void>
 }

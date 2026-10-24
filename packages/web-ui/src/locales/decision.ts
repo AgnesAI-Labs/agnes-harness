@@ -1,6 +1,6 @@
 import type { LocaleCatalog } from './index.js'
 
-/** 时间线上审批结果与前缀审批选项的文案。从对话区目录拆出，宿主与独立消费方共用。 */
+/** Timeline approval outcomes and prefix-approval choices, split from the conversation catalog for shared host/standalone use. */
 export const decisionLocaleCatalog = {
   en: {
     'timeline.decision.allowedOnce': 'Allowed once',

@@ -24,6 +24,7 @@ import {
   resourceWorkerObservation,
 } from '@agnes/resource-control-daemon'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
+import { bestEffort } from './best-effort.js'
 import type { DaemonConfig } from './config.js'
 import type { RequestFrame } from './frames.js'
 import type {
@@ -58,6 +59,7 @@ type SessionWorkerAcquireOptions = Readonly<{
   agent?: string
   agentDigest?: string
   bundles?: readonly string[]
+  systemPromptAppend?: string
   loop?: LoopSelection
   parent?: { key: string; boundarySeq: number }
 }>
@@ -266,6 +268,7 @@ export class WorkerPool {
         ...(opts.agent !== undefined ? { agent: opts.agent } : {}),
         ...(opts.agentDigest !== undefined ? { agentDigest: opts.agentDigest } : {}),
         ...(opts.bundles !== undefined ? { bundles: opts.bundles } : {}),
+        ...(opts.systemPromptAppend !== undefined ? { systemPromptAppend: opts.systemPromptAppend } : {}),
         ...(opts.loop ? { loop: opts.loop } : {}),
         ...(opts.resume ? { resume: true } : {}),
         ...(opts.parent ? { parent: opts.parent } : {}),
@@ -875,7 +878,7 @@ export class WorkerPool {
       if (!slot || !channel) continue
       slot.channels.delete(key)
       slot.sessions.delete(key)
-      void channel.closeSession(reason).catch(() => undefined)
+      void channel.closeSession(reason).catch(bestEffort(this.o.onRuntimeLog, 'worker-session-retire'))
     }
   }
 

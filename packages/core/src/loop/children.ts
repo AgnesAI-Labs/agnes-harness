@@ -6,9 +6,12 @@ import type {
   ChildAgentHandle,
   ChildAgentParentScope,
   ChildAgentSessionService,
+  ChildAgentToolFilter,
 } from '@agnes/extension-api'
+import { narrowChildToolFilter } from '../child/tool-filter.js'
 import type { LoopScope } from '../step/loop-deadline.js'
 import type { SessionImpl } from '../step/session.js'
+import { NO_TOOL_FILTER } from '../step/tool-filter.js'
 
 /** Read the parent's current ceiling, including already held/settled tree spend. */
 async function remainingBudget(s: SessionImpl): Promise<number | undefined> {
@@ -105,7 +108,13 @@ export class LoopChildren {
       cwd: s.d.cwd,
       signal: this.lifetime.signal,
       ...(s.preset.treeBudgetCredits === null ? {} : { budget: s.preset.treeBudgetCredits }),
-      ...(s.d.loopChildToolFilter ? { toolFilter: s.d.loopChildToolFilter } : {}),
+      // Live: the session filter may be narrowed after this scope is bound.
+      get toolFilter() {
+        return narrowChildToolFilter(
+          s.d.loopChildToolFilter,
+          s.toolFilter === NO_TOOL_FILTER ? undefined : s.toolFilter,
+        ) as ChildAgentToolFilter
+      },
     }
     this.bound = s.d.loopChildren ?? s.d.bindLoopChildren?.(parent)
   }

@@ -61,6 +61,7 @@ it('keeps official extensions and privileged CU tools in the built distribution'
       'agnes/privacy',
       'agnes/tools-web',
       'agnes/follow-up-hint',
+      'agnes/heads-up',
     ]) {
       expect(rows, id).toContainEqual(expect.objectContaining({ id, loaded: true, trust: 'builtin' }))
     }

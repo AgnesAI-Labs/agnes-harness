@@ -1,9 +1,11 @@
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import { createClient, memoryJournal } from '@agnes/sdk'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 
 // Use the same built-distribution opt-in as shared-local-delivery acceptance. No source/mock Host.
@@ -14,12 +16,12 @@ it.skipIf(!entry)(
     if (!entry) throw new Error('AGNES_LOCAL_CLI must point to a built distribution')
     const root = await mkdtemp(join(tmpdir(), 'agh-startup-perf-'))
     let child: ChildProcess | undefined
-    let owner: { pid: number; socketPath: string } | undefined
+    let owner: { pid: number; processStartId: string; socketPath: string } | undefined
     let client: ReturnType<typeof createClient> | undefined
     try {
       const home = join(root, 'home'),
         cwd = join(root, 'workspace')
-      await mkdir(home, { mode: 0o700 })
+      createPrivateDirectorySync(home)
       await mkdir(cwd)
       const listener = createServer()
       await new Promise<void>((done) => listener.listen(0, '127.0.0.1', done))
@@ -33,9 +35,13 @@ it.skipIf(!entry)(
           cwd,
           env: {
             PATH: process.env.PATH,
-            TMPDIR: process.env.TMPDIR,
+            SystemRoot: process.env.SystemRoot,
+            TMPDIR: tmpdir(),
+            TEMP: tmpdir(),
+            TMP: tmpdir(),
             LANG: 'en_US.UTF-8',
             HOME: home,
+            USERPROFILE: home,
             AGH_HOME: home,
             AGNES_PROFILE: 'local-dev',
             AGNES_WEB_ORIGIN: origin,
@@ -43,14 +49,15 @@ it.skipIf(!entry)(
           stdio: ['ignore', 'pipe', 'pipe'],
         })
         let output = ''
+        let diagnostic = ''
         const timeout = setTimeout(() => reject(new Error('CLI ready timeout')), 30_000)
         child.once('error', (error) => {
           clearTimeout(timeout)
           reject(error)
         })
-        child.once('exit', (code) => {
+        child.once('close', (code) => {
           clearTimeout(timeout)
-          reject(new Error(`CLI exited before ready: ${code}`))
+          reject(new Error(`CLI exited before ready: ${code}\n${diagnostic}`))
         })
         child.stdout?.on('data', (chunk: Buffer) => {
           output += chunk.toString()
@@ -59,13 +66,21 @@ it.skipIf(!entry)(
             done()
           }
         })
-        child.stderr?.resume()
+        child.stderr?.on('data', (chunk: Buffer) => {
+          diagnostic = (diagnostic + chunk.toString()).slice(-4000)
+        })
       })
       const readyMs = performance.now() - started
       owner = JSON.parse(await readFile(join(home, 'daemon', 'owner.json'), 'utf8'))
       if (!owner) throw new Error('daemon did not publish ownership')
       client = createClient({
-        transport: { kind: 'unix', path: owner.socketPath },
+        transport: {
+          kind: 'unix',
+          path: owner.socketPath,
+          ...(owner.socketPath.startsWith('\\\\.\\pipe\\')
+            ? { serverIdentity: { pid: owner.pid, processStartId: owner.processStartId } }
+            : {}),
+        },
         auth: { kind: 'local' },
         journal: memoryJournal(),
       })
@@ -93,31 +108,17 @@ it.skipIf(!entry)(
         await exited
         clearTimeout(kill)
       }
-      if (!owner) {
-        try {
-          owner = JSON.parse(await readFile(join(root, 'home', 'daemon', 'owner.json'), 'utf8'))
-        } catch {
-          /* Failed before publishing ownership. */
-        }
-      }
-      if (owner) {
-        const pid = owner.pid
-        try {
-          process.kill(owner.pid, 'SIGTERM')
-        } catch {
-          /* Already stopped. */
-        }
-        const deadline = performance.now() + 10_000
-        while (performance.now() < deadline) {
-          try {
-            process.kill(owner.pid, 0)
-          } catch {
-            break
-          }
-          await new Promise((done) => setTimeout(done, 50))
-        }
-        expect(() => process.kill(pid, 0), 'fixture daemon must stop before cleanup').toThrow()
-      }
+      // The verified stop command drains workers too; killing only the PID can leave their
+      // workspace handles open on Windows and hide the timing assertion behind an EBUSY.
+      await promisify(execFile)(
+        process.execPath,
+        [resolve(entry), 'daemon', 'stop', '--home', join(root, 'home'), '--profile', 'local-dev'],
+        {
+          env: { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot },
+          windowsHide: true,
+          timeout: 15_000,
+        },
+      )
       await rm(root, { recursive: true, force: true })
     }
   },

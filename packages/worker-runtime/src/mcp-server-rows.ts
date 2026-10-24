@@ -36,8 +36,10 @@ export type McpServerSnapshotEntry = Readonly<{
 
 export type McpServerRowsResult = Readonly<{
   rows: readonly Readonly<DynamicExtension>[]
-  /** A definition this snapshot carries but that will not become a row, with why. Never a reason to
-   * fail the whole derivation -- design doc §3.1: "失败只排除这一个服务器...绝不让它变成整棵树被拒". */
+  /**
+   * A definition this snapshot carries but that will not become a row, with why. Never a reason to
+   * fail the whole derivation: a failure excludes only this server, never the entire tree.
+   */
   skipped: readonly Readonly<{ serverId: string; reason: string }>[]
 }>
 
@@ -46,8 +48,8 @@ function hash8(text: string): string {
 }
 
 /**
- * Derives one Host-owned `ext:` row per non-OAuth MCP server in a snapshot (stage 2b step 3, D102/
- * D107'). Pure: the same `entries` (by value) always derives the same `rows`/`skipped` -- every
+ * Derives one Host-owned `ext:` row per non-OAuth MCP server in a snapshot. Pure: the same `entries`
+ * (by value) always derives the same `rows`/`skipped` -- every
  * field of the returned `DynamicExtension`s is computed from `entries` and `opener` alone, and
  * `opener` is definition-agnostic (one instance serves every row, see `McpServerOpener`'s own doc
  * comment), so it never makes two calls with the same input diverge. A row's `factory` closure is a
@@ -57,9 +59,9 @@ function hash8(text: string): string {
  * Which servers become rows is exactly which servers the resource manager would connect
  * (`resource-control-runtime/src/mcp.ts` `connectManaged`): `desired === 'enabled'` and
  * `trust === 'trusted'`. OAuth-bound definitions are also filtered out here, not deferred to the
- * opener: design §3.4 (D105/D109) -- OAuth is not supported by this path.
+ * opener: OAuth is not supported by this path.
  *
- * Per-server precheck (design §3.1 "逐服务器预检"): each definition is re-validated against the
+ * Per-server precheck: each definition is re-validated against the
  * protocol schema; one that fails is skipped with a reason and never turns the rest of the batch --
  * let alone the tree -- into a failure. (`assertPublishableRows`, the other half of that precheck,
  * inspects row `config`; these rows never carry one, see below.)

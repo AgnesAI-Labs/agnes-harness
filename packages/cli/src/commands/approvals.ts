@@ -20,7 +20,9 @@ export async function approvalsCommand(p: ParsedArgs, client: NodeClient, io: IO
     if (p.json) io.stdout.write(`${JSON.stringify(result)}\n`)
     else
       io.stdout.write(
-        result.grants.length ? `${result.grants.map(grantLine).join('\n')}\n` : 'no approval grants\n',
+        result.grants.length
+          ? `${result.grants.map((g) => grantLine(g)).join('\n')}\n`
+          : 'no approval grants\n',
       )
     return ExitCode.OK
   }

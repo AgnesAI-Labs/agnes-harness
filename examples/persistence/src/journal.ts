@@ -10,7 +10,8 @@ import {
   writeFileSync,
   writeSync,
 } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { syncDirectorySync } from '@agnes/system-node'
 import { type Change, digest, type Frame, readJournalTail, replaceDamagedJournal } from './journal-tail.js'
 
 export function fail(code: string, message: string): never {
@@ -33,6 +34,7 @@ export class Journal {
 
   constructor(directory: string) {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
+    directory = resolve(directory)
     this.path = join(directory, 'store.jsonl')
     this.lock = join(directory, 'writer.json')
     if (
@@ -135,12 +137,7 @@ export class Journal {
       }
       this.fd = openSync(this.path, 'a', 0o600)
       fsyncSync(this.fd)
-      const directoryFd = openSync(directory, 'r')
-      try {
-        fsyncSync(directoryFd)
-      } finally {
-        closeSync(directoryFd)
-      }
+      syncDirectorySync(directory)
     } catch (error) {
       if (this.fd >= 0) {
         try {

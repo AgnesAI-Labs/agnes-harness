@@ -1,6 +1,6 @@
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { VStack } from '../src/component.js'
 import { editInExternal, externalEditNotice, splitCommand } from '../src/external-editor.js'
@@ -18,7 +18,8 @@ const scratch = (): string => {
 }
 
 // A real, non-interactive editor: node runs the script on the file it is given.
-const node = (script: string): string => `${JSON.stringify(process.execPath)} -e ${JSON.stringify(script)}`
+const node = (script: string): string =>
+  `${JSON.stringify(process.execPath.split(sep).join('/'))} -e ${JSON.stringify(script)}`
 const NL = 'String.fromCharCode(10)'
 
 describe('splitCommand', () => {
@@ -33,6 +34,25 @@ describe('splitCommand', () => {
     ])
     expect(splitCommand('vim "a \\" b" $HOME `x`')).toEqual(['vim', 'a " b', '$HOME', '`x`'])
     expect(splitCommand('   ')).toEqual([])
+  })
+  it('keeps native Windows paths and applies Windows quote escaping without shell expansion', () => {
+    expect(splitCommand(String.raw`C:\Windows\System32\notepad.exe`, 'windows')).toEqual([
+      String.raw`C:\Windows\System32\notepad.exe`,
+    ])
+    expect(
+      splitCommand(
+        String.raw`"C:\Program Files\Editor\editor.exe" --wait "" "tail\\" "a\"b" %HOME%`,
+        'windows',
+      ),
+    ).toEqual([String.raw`C:\Program Files\Editor\editor.exe`, '--wait', '', 'tail\\', 'a"b', '%HOME%'])
+    expect(splitCommand(String.raw`C:\Editors\O'Neil\editor.exe`, 'windows')).toEqual([
+      String.raw`C:\Editors\O'Neil\editor.exe`,
+    ])
+    expect(splitCommand('editor.exe "a""b"', 'windows')).toEqual(['editor.exe', 'a"b'])
+    expect(splitCommand(String.raw`'C:\Program Files\Editor\editor.exe' --wait`, 'windows')).toEqual([
+      String.raw`C:\Program Files\Editor\editor.exe`,
+      '--wait',
+    ])
   })
 })
 
@@ -50,9 +70,10 @@ describe('editInExternal', () => {
   }
 
   it('replaces the draft with the file on exit 0, from a private file that is gone afterwards', async () => {
-    const script = `const fs=require('fs');const f=process.argv[1];fs.writeFileSync(f,fs.readFileSync(f,'utf8').toUpperCase()+(fs.statSync(f).mode&0o777).toString(8)+${NL})`
+    // POSIX mode bits are not a Windows ACL verdict; retain that assertion only on POSIX.
+    const script = `const fs=require('fs');const f=process.argv[1];if(process.platform!=='win32'&&(fs.statSync(f).mode&0o777)!==0o600)throw Error('draft is not private');fs.writeFileSync(f,fs.readFileSync(f,'utf8').toUpperCase()+${NL})`
     const { result, tmpDir } = run({ EDITOR: node(script) }, 'hello\nworld')
-    expect(await result).toEqual({ kind: 'edited', text: 'HELLO\nWORLD600' })
+    expect(await result).toEqual({ kind: 'edited', text: 'HELLO\nWORLD' })
     expect(readdirSync(tmpDir)).toEqual([])
   })
 
@@ -73,6 +94,32 @@ describe('editInExternal', () => {
     expect(externalEditNotice({ kind: 'unset' }, 'zh-CN')?.text).toContain('$EDITOR')
     expect(externalEditNotice({ kind: 'cancelled', code: 3 }, 'zh-CN')?.text).toContain('已取消')
     expect(externalEditNotice({ kind: 'edited', text: '' }, 'en')).toBeUndefined()
+    if (sep === '\\') {
+      const batch = run({ EDITOR: 'editor.cmd' })
+      expect(await batch.result).toMatchObject({
+        kind: 'failed',
+        reason: expect.stringContaining('native .exe'),
+      })
+      expect(readdirSync(batch.tmpDir)).toEqual([])
+    }
+  })
+
+  it('cleans the draft and interrupt handler when terminal suspension or restoration fails', async () => {
+    const before = process.listeners('SIGINT')
+    for (const failure of ['suspend', 'resume'] as const) {
+      const tmpDir = scratch()
+      const fail = () => {
+        throw new Error(`fixture ${failure} failed`)
+      }
+      const result = await editInExternal('draft', {
+        env: { EDITOR: node('0') },
+        tmpDir,
+        suspend: failure === 'suspend' ? fail : () => fail,
+      })
+      expect(result).toEqual({ kind: 'failed', reason: `fixture ${failure} failed` })
+      expect(process.listeners('SIGINT')).toEqual(before)
+      expect(readdirSync(tmpDir)).toEqual([])
+    }
   })
 
   it('leaves the alternate screen, mouse, paste mode and raw mode while it runs, and restores each after', async () => {

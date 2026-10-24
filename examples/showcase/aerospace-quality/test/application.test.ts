@@ -23,7 +23,7 @@ it('public package inspection resolves the third-party application, eight profil
     await rm(clean, { recursive: true, force: true })
   }
   expect(inspected.snapshot.packageId).toBe('@agnes-showcase/aerospace-quality')
-  expect(inspected.snapshot.version).toBe('1.1.2')
+  expect(inspected.snapshot.version).toBe('1.1.4')
   expect(tools.find((tool) => tool.name === 'aero_report')?.meta.attestsHistory).toBe(true)
   expect(inspected.snapshot.application?.id).toBe('qiongxu-aerospace-quality')
   expect(inspected.snapshot.application?.agents).toHaveLength(5)

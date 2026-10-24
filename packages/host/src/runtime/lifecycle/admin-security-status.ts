@@ -1,3 +1,4 @@
+import { isHostError } from '@agnes/host-common/errors'
 import { allowedPermissions } from '@agnes/host-common/presets/admission'
 import { overlayName, type Permission } from '@agnes/host-common/presets/permission'
 import { presetProvider } from '@agnes/host-common/presets/provider'
@@ -64,7 +65,17 @@ export function adminSecurityStatus(
     // A catalogue without the permission documents (a hand-built one) has nothing to describe.
     permissionPolicies: allowedPermissions(profile)
       .filter((permission) => presets[overlayName(permission)] !== undefined)
-      .map((permission) => securityPolicy(permission, presets, profile, permission)),
+      .flatMap((permission) => {
+        try {
+          return [securityPolicy(permission, presets, profile, permission)]
+        } catch (error) {
+          // Fixed-policy recipes and required isolation can refuse an overlay. Reporting that
+          // unavailable choice must not fail the status read or relax session admission.
+          if (isHostError(error, 'E_PRESET_UNSUPPORTED') && error.detail?.reason === 'permission-axis')
+            return []
+          throw error
+        }
+      }),
     workspaces: [...sessions].map((session) => {
       const workspace = workspaces.securityStatus(session.key)
       return {

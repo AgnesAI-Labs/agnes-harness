@@ -32,6 +32,7 @@ async function check(
     name: 'checked',
     description: 'schema-checked',
     parameters: schema,
+    modelParameters: Type.Object({}, { additionalProperties: true }),
     meta: {
       ...(limit ? { invalidArgumentLimit: limit } : {}),
       isReadOnly: true,
@@ -231,11 +232,16 @@ describe('tool argument boundary', () => {
     ])
     expect(out.reached).toEqual([])
     expect(out.provider.requests[1]?.tools.map((t) => t.name)).toContain('checked')
+    expect(out.provider.requests[0]?.tools.find((t) => t.name === 'checked')?.parameters).toEqual({
+      type: 'object',
+      properties: {},
+      additionalProperties: true,
+    })
     expect(out.provider.requests[2]?.tools.map((t) => t.name)).not.toContain('checked')
     expect(JSON.stringify(out.provider.requests[2]?.messages)).toContain(
       'Continue with other available tools and answer in text/markdown',
     )
-    expect(JSON.stringify(out.provider.requests[2]?.system)).toContain('Do not dump internal tool names')
+    expect(JSON.stringify(out.provider.requests[2]?.system)).toContain('do not route around the limit')
     const nodes = (await out.session.projectUI()).nodes.filter((n) => n.kind === 'tool')
     expect(nodes.slice(0, 2).map((n) => n.argumentRecovery)).toEqual([
       { disabled: false, presentational: false },

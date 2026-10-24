@@ -30,7 +30,7 @@ const PREFIXES: readonly (readonly [string, ErrorKind])[] = [
   ['E_SEAM_PIN_', 'plugin'],
 ]
 
-/** The kind shown as the row's tag and filter: the cause decides first, then the name; unknown is 其他. */
+/** The kind shown as the row's tag and filter: the cause decides first, then the name; unknown is Other. */
 export function errorKind(record: Pick<DiagnosticRecord, 'name' | 'cause'>): ErrorKind {
   for (const code of [record.cause, record.name]) {
     if (!code) continue

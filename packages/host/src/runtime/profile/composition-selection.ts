@@ -11,7 +11,13 @@ import type { PluginRow } from '@agnes/plugin-runtime/host'
 import type { Host } from '../lifecycle/host.js'
 import { capabilityEnabled, resolveSessionCapabilities } from './session-capabilities.js'
 
-export type CompositionContainer = { host: Host; tree: ResolvedComposition; draining?: boolean }
+export type CompositionContainer = {
+  host: Host
+  tree: ResolvedComposition
+  draining?: boolean
+  /** What the last runtime target applied here makes it run; unset once anything else changed it. */
+  applied?: string
+}
 
 /** Compile a preset tree into a separate Host profile, without changing an existing session. */
 export function profileForComposition(profile: ResolvedProfile, tree: ResolvedComposition): ResolvedProfile {

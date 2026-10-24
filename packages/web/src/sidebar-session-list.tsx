@@ -34,7 +34,7 @@ import { WorkspaceMenu } from './workspace-menu.js'
 
 type Row = SidebarNavigationOptions['sessions'][number]
 
-/** How many sessions a workspace shows before 「展开显示」. */
+/** How many sessions a workspace shows before 「Show more」. */
 export const RECENT_SESSIONS = 5
 
 /**
@@ -180,7 +180,7 @@ function SessionRowLabel({
   active: boolean
   running: boolean
   workspaceName?: string
-  /** Offers 「取消置顶」 in the menu; a grouped list shows that through its heading instead. */
+  /** Offers 「Unpin」 in the menu; a grouped list shows that through its heading instead. */
   pinned: boolean
   /** The row-end pin mark, used only where no heading carries the pinned group. */
   pinnedMark: boolean

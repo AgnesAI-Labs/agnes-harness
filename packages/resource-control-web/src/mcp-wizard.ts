@@ -4,6 +4,7 @@ import { $ } from './admin-dom.js'
 import { CREDENTIALS_CHANGED, CredentialsApi } from './credentials-api.js'
 import { deriveMcpName, formatMcpCommand, parseMcpCommand } from './mcp-command.js'
 import { mountMcpCredentialCreate } from './mcp-credentials.js'
+import { mountMcpWorkspace } from './mcp-workspace.js'
 
 /** A presentation adapter over the existing form: managed definitions and confirmation are unchanged. */
 export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
@@ -52,7 +53,10 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     const saved = credential.closest('label')
     if (saved) saved.hidden = on
     $('mcp-credential-status', 'p').hidden = on
+    $('mcp-token-env-row', 'label').hidden = remote || !credential.value
+    $('mcp-token-env', 'input').required = !remote && !!credential.value
     picker.sync()
+    workspace.refresh()
   }
   let editingMode = false
   let fallbackId = `mcp-service-${crypto.randomUUID().slice(0, 8)}`
@@ -60,6 +64,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   const labels = new Map<string, string>()
   let loadVersion = 0
   const transport = $('mcp-transport', 'select')
+  const workspace = mountMcpWorkspace({ text, sync, signal: abort.signal })
   const submit = $('mcp-form', 'form').querySelector<HTMLButtonElement>('[type="submit"]')!
   const back = $('mcp-back', 'button')
   function stage(editing: boolean, configuring: boolean) {
@@ -89,6 +94,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     } catch {
       command.setCustomValidity(text()('wizard.commandError'))
     }
+    workspace.refresh()
   }
   function filled() {
     identity.disabled = editingMode
@@ -107,6 +113,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     const env = /^([A-Z][A-Z0-9_]*)=/.exec(binding)?.[1]
     if (env) $('mcp-token-env', 'input').value = env
     choices(selected)
+    syncOAuth()
     command.setCustomValidity('')
   }
   function choices(selected?: string) {
@@ -205,6 +212,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
         ...$('mcp-args', 'textarea').value.split('\n').filter(Boolean),
       ])
       command.setCustomValidity('')
+      workspace.refresh()
     })
   on(credential, 'change', applyCredential)
   on($('mcp-token-env', 'input'), 'input', () => {
@@ -213,7 +221,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   on(transport, 'change', () => {
     command.disabled = transport.value !== 'stdio'
     $('mcp-command-row', 'label').hidden = transport.value !== 'stdio'
-    syncOAuth()
+    applyCredential()
     deriveName()
   })
   async function loadCredentials() {
@@ -263,6 +271,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     picker.destroy()
     picker = createSelectPicker(credential, { label: text()('wizard.credential') })
     choices(credential.value || undefined)
+    workspace.refresh()
     const agent = document.getElementById('mcp-method-agent') as HTMLAnchorElement | null
     if (agent) agent.href = '/?' + new URLSearchParams({ new: '1', prompt: text()('wizard.agentPrompt') })
   }

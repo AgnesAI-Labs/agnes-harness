@@ -118,7 +118,7 @@ export class FooterRenderer implements ScreenRenderer {
     this.lastCursorKey = ''
     this.height = 0
     this.columns = 0
-    this.paste = new PasteAssembler()
+    this.paste = new PasteAssembler(this.term.pasteBursts === true)
     process.once('exit', this.onExit)
     this.term.enterRaw()
     // No alternate screen and no mouse reporting: the shell page stays, and the terminal keeps the wheel
@@ -213,6 +213,10 @@ export class FooterRenderer implements ScreenRenderer {
     return false
   }
 
+  readonly mouseReporting = false
+
+  setMouse(): void {}
+
   requestRender(): void {
     if (!this.active || this.scheduled) return
     this.scheduled = true
@@ -222,6 +226,14 @@ export class FooterRenderer implements ScreenRenderer {
       this.scheduled = false
       this.renderNow()
     })
+  }
+
+  /** The footer rows are drawn again in full; the conversation above them is the terminal's own scrollback and stays. */
+  redraw(): void {
+    if (!this.active || !this.ready) return
+    this.lastFrame = []
+    this.lastCursorKey = ''
+    this.renderNow()
   }
 
   renderNow(): void {

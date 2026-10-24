@@ -19,6 +19,7 @@ import { withSessionFileAccess } from '@agnes/host-common/session-file-access'
 import {
   assertWorkspaceBinding,
   inheritWorkspaceBinding,
+  sameWorkspaceBindingAuthority,
   type WorkspaceBinding,
 } from '@agnes/host-common/workspace-authority'
 import type { WorkspacePolicyPlan } from '@agnes/host-common/workspace-policy'
@@ -231,12 +232,7 @@ const unavailableHookSandbox: WorkspaceHookSandbox = Object.freeze({
 })
 
 function sameBinding(left: WorkspaceBinding, right: WorkspaceBinding): boolean {
-  return (
-    left.sessionKey === right.sessionKey &&
-    left.workspaceId === right.workspaceId &&
-    left.authorityRevision === right.authorityRevision &&
-    left.canonicalRoot === right.canonicalRoot
-  )
+  return sameWorkspaceBindingAuthority(left, right)
 }
 
 /** Owns publication, invocation leases, child aliases and the one reverse-order runtime cleanup. */

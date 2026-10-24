@@ -55,6 +55,7 @@ export type HeadlessOptions = {
   permission?: string
   agent?: string
   loop?: LoopSelection
+  systemPromptAppend?: string
   model?: Parameters<Session['setModel']>[0]
   runId?: string
   signal?: AbortSignal
@@ -92,6 +93,7 @@ export async function runHeadless(
       : {}),
     ...(options.loop ? { loop: options.loop } : {}),
     ...(options.agent ? { agent: options.agent } : {}),
+    ...(options.systemPromptAppend === undefined ? {} : { systemPromptAppend: options.systemPromptAppend }),
   })
   // Explicitly deny permission requests: an unattended consumer cannot grant authority.
   const offPermission = session.onPermissionRequest(async () => ({ verdict: 'rejected' }))

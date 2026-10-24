@@ -429,8 +429,10 @@
       "./extensions/context-rules",
       "./extensions/time-context",
       "./extensions/follow-up-hint",
+      "./extensions/heads-up",
       "./extensions/schedule",
-      "./extensions/intelligent-ui"
+      "./extensions/intelligent-ui",
+      "./extensions/lsp"
     ],
     "metadata": {
       "displayName": "AGH essentials",

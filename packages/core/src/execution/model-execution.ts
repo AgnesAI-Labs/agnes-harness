@@ -2,6 +2,7 @@ import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
 import type { EffectHandle, EffectOutcome } from '@agnes/core-effects/effects/effect'
 import type { CostLedger } from '@agnes/extension-api/seams'
 import type { InferenceEvent, RequestBody, Timing } from '@agnes/protocol'
+import { bestEffort } from '../best-effort.js'
 import { settleTreeSpend } from '../child/runtime-budget.js'
 import type { RequestHeaderData } from '../request/derive.js'
 import { runCoreReplacement } from '../step/reentry.js'
@@ -143,8 +144,11 @@ export class ModelExecution {
     if (!this.providerIterator || this.providerClosed) return
     this.providerClosed = true
     try {
-      void Promise.resolve(this.providerIterator.return?.()).catch(() => undefined)
-    } catch {
+      void Promise.resolve(this.providerIterator.return?.()).catch(
+        bestEffort(this.s.d.logger, 'provider-close'),
+      )
+    } catch (error) {
+      bestEffort(this.s.d.logger, 'provider-close')(error)
       /* provider cleanup cannot hold settlement */
     }
   }
@@ -215,7 +219,9 @@ export class ModelExecution {
         this.signal,
         (source) => {
           if (source && typeof source[Symbol.asyncIterator] === 'function')
-            void Promise.resolve(source[Symbol.asyncIterator]().return?.()).catch(() => undefined)
+            void Promise.resolve(source[Symbol.asyncIterator]().return?.()).catch(
+              bestEffort(s.d.logger, 'late-provider-close'),
+            )
         },
       )
       if (!source || typeof source[Symbol.asyncIterator] !== 'function')

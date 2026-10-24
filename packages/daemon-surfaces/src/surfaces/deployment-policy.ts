@@ -31,7 +31,7 @@ export function buildDeploymentPolicy(input: {
 
 function readOverrides(profileDir: string, deployDir: string): Record<string, readonly unknown[]> {
   const file = join(profileDir, 'deployment-policy.json')
-  // M7 (final review, Minor): RC5's security argument (module doc above) is that this file lives
+  // The deployment policy security argument (module doc above) is that this file lives
   // OUTSIDE the customer-authored deploy directory. `package-manager/src/workspace.ts`'s
   // `isContained` treats `rel === ''` as contained, so a profile where `deployDir === profileDir`
   // (an operator ran `agnes profile trust <profileDir>` pointing straight at the profile root, not a

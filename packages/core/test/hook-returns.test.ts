@@ -15,7 +15,9 @@ const valid: { [E in HookEvent]: HookReturnMap[E] } = {
   },
   before_step: { block: false },
   context: {
-    sections: [{ id: 'a', order: 5, content: 'author text', source: 'untrusted source' }],
+    sections: [
+      { id: 'a', order: 5, content: 'author text', source: 'untrusted source', delivery: 'live-note' },
+    ],
     additionalContext: 'note',
   },
   before_request: { patch: { maxTokens: 10, samplingParams: { temperature: 0 }, metadata: { test: true } } },
@@ -107,7 +109,7 @@ describe('author hook return boundary', () => {
   it('maps context content to wire text and lets core18 stamp registered provenance', () => {
     const wire = contextReturnToWire(valid.context)
     expect(wire).toEqual({
-      sections: [{ id: 'a', order: 5, text: 'author text' }],
+      sections: [{ id: 'a', order: 5, text: 'author text', delivery: 'live-note' }],
       additionalContext: 'note',
     })
     const transformed = applyContextResults([], [{ ext: 'agnes/registered', result: wire }])
@@ -116,8 +118,16 @@ describe('author hook return boundary', () => {
       order: 5,
       text: 'author text',
       source: 'agnes/registered',
+      delivery: 'live-note',
     })
     expect(JSON.stringify(transformed)).not.toContain('untrusted source')
+  })
+
+  it('accepts untrustedContext on a context return and still rejects unknown keys', () => {
+    expect(authorHookReturn('context', { untrustedContext: 'data' })).toEqual({ untrustedContext: 'data' })
+    expect(() => authorHookReturn('context', { untrustedContext: 'data', trustedContext: 'x' })).toThrow(
+      'invalid author hook return',
+    )
   })
 
   it.each([

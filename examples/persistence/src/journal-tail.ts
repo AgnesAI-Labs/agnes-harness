@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { closeSync, fsyncSync, openSync, renameSync, writeFileSync } from 'node:fs'
+import { closeSync, fsyncSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { createPrivateFileSync, renameWriteThroughSync, syncDirectorySync } from '@agnes/system-node'
 
 export type Change = [string, unknown] | [string]
 export type Frame = {
@@ -68,12 +69,18 @@ export function readJournalTail(bytes: Buffer) {
 }
 
 function durableWrite(path: string, bytes: Uint8Array) {
-  writeFileSync(path, bytes, { flag: 'wx', mode: 0o600 })
-  const fd = openSync(path, 'r')
+  const fd = createPrivateFileSync(path)
+  let complete = false
   try {
+    writeFileSync(fd, bytes)
     fsyncSync(fd)
+    complete = true
   } finally {
-    closeSync(fd)
+    try {
+      closeSync(fd)
+    } finally {
+      if (!complete) rmSync(path, { force: true })
+    }
   }
 }
 
@@ -90,18 +97,16 @@ export function replaceDamagedJournal(
   const diagnosticId = (audit[1] as { diagnosticId: string }).diagnosticId
   const quarantineFile = `${path}.tail-${diagnosticId}.bin`
   durableWrite(quarantineFile, bytes.subarray(badOffset))
-  const parent = openSync(dirname(path), 'r')
+  syncDirectorySync(dirname(path))
+  const staged = `${path}.recovery-${randomUUID()}.tmp`
+  durableWrite(
+    staged,
+    Buffer.concat([bytes.subarray(0, badOffset), Buffer.from(`${JSON.stringify(frame)}\n`)]),
+  )
   try {
-    fsyncSync(parent)
-    const staged = `${path}.recovery-${randomUUID()}.tmp`
-    durableWrite(
-      staged,
-      Buffer.concat([bytes.subarray(0, badOffset), Buffer.from(`${JSON.stringify(frame)}\n`)]),
-    )
-    renameSync(staged, path)
-    fsyncSync(parent)
+    renameWriteThroughSync(staged, path)
   } finally {
-    closeSync(parent)
+    rmSync(staged, { force: true })
   }
   return { diagnosticId, quarantineFile }
 }

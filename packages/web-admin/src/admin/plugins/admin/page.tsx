@@ -96,7 +96,7 @@ const ACTIVE_REFRESH_MAX_MS = 3_000
 // "Release all" can see far more orphans than one release call accepts, so it batches.
 const PIN_RELEASE_BATCH_SIZE = 64
 
-type SourceInlineError = { code: string; message: string }
+type SourceInlineError = AdminError
 type PendingConfirm = {
   title: string | (() => string)
   description: string | (() => string)
@@ -390,6 +390,7 @@ export class PluginAdminPage {
   #query = ''
   #queryRaw = ''
   #generation = 0
+  #inventoryGeneration = 0
   #pendingConfirm: PendingConfirm | undefined
   #confirmActionDisabled = false
   #confirmTrigger: HTMLElement | undefined
@@ -476,7 +477,7 @@ export class PluginAdminPage {
 
   bind(): void {
     const bound = { signal: this.#lifetime.signal }
-    // 详情是模态框：点遮罩、按 Escape 都要走同一条收尾路径（含焦点归还与「不要立刻重开」）。
+    // Modal details share one cleanup path for backdrop clicks and Escape, including focus restoration and preventing immediate reopening.
     this.#detail.addEventListener(
       'cancel',
       (event) => {
@@ -540,9 +541,12 @@ export class PluginAdminPage {
     if (this.#lifetime.signal.aborted) return false
     const reuse = this.#reuseInventory && !!this.#surface
     this.#reuseInventory = false
-    const generation = ++this.#generation
+    const generation = ++this.#inventoryGeneration
+    this.#generation++
+    const current = () => !this.#lifetime.signal.aborted && generation === this.#inventoryGeneration
     this.#state = {
       ...this.#state,
+      inventoryAuthoritative: false,
       loading: true,
       ...(this.#refreshOptions.preserveError ? {} : { error: undefined }),
     }
@@ -550,10 +554,12 @@ export class PluginAdminPage {
     let resolvedContext: AdminContext | undefined
     try {
       const { context, inventory } = await PluginAdminApi.overview()
-      if (generation !== this.#generation) return false
+      if (!current()) return false
       resolvedContext = context
-      if (JSON.stringify(this.#state.context) !== JSON.stringify(context) || !this.#api)
+      if (JSON.stringify(this.#state.context) !== JSON.stringify(context) || !this.#api) {
         this.#api = new PluginAdminApi(context)
+        this.#generation++
+      }
       // Context remains useful even when inventory cannot be read: its recovery flag must still
       // disable effects, while read-only catalog calls may remain available.
       this.#state = { ...this.#state, context }
@@ -562,13 +568,17 @@ export class PluginAdminPage {
           code: 'E_ADMIN_READ_ONLY',
           message: 'The package inventory could not be verified. Administration is read-only.',
         })
-      // Independent read models can load together. Optional feeds never block a valid inventory.
-      const { list, surfaceFeed, tree, runtimeCatalog, composition, bundledCatalog } =
-        await readInventorySnapshot(this.#api, context, reuse, inventory)
-      if (generation !== this.#generation) return false
+      // The verified inventory and small indexes gate effects; optional presentation does not.
+      const { list, surfaceFeed, tree, presentation, bundledCatalog } = await readInventorySnapshot(
+        this.#api,
+        context,
+        reuse,
+        inventory,
+      )
+      if (!current()) return false
       this.#bundledCatalog = bundledCatalog
-      this.#presentationRuntime = runtimeCatalog
-      this.#presentationComposition = composition
+      this.#presentationRuntime = undefined
+      this.#presentationComposition = undefined
       const surfaceLinks = surfaceFeed?.surfaces ?? []
       this.#state = rememberInventory({
         ...this.#state,
@@ -582,20 +592,28 @@ export class PluginAdminPage {
         connection: 'connected',
       })
       this.render()
+      void presentation
+        .then(({ runtimeCatalog, composition }) => {
+          if (!current() || !this.#state.inventoryAuthoritative) return
+          this.#presentationRuntime = runtimeCatalog
+          this.#presentationComposition = composition
+          this.render()
+        })
+        .catch((error: unknown) => {
+          if (current()) this.showError(error)
+        })
       if (!this.#surface) {
         try {
           const { orphans } = await this.#api.pinsInspect()
-          if (generation !== this.#generation) return false
+          if (!current()) return false
           this.#orphanPinList = [...orphans]
           this.#orphanPinErrors = new Map()
           this.#orphanPinNotice = undefined
           this.#orphanPinFetchError = undefined
         } catch (error) {
-          // Orphan-pin visibility is supplementary to the primary installed-package view above;
-          // a failure here must not turn an otherwise-successful refresh into an offline state. But
-          // a stale list must not keep being shown as current once it is no longer verified, and the
-          // failure must be visible rather than silent -- so clear the list and surface a status.
-          if (generation !== this.#generation) return false
+          // Pin visibility is supplementary: clear stale data and report its failure without
+          // turning an otherwise verified inventory into an offline state.
+          if (!current()) return false
           this.#orphanPinList = []
           this.#orphanPinErrors = new Map()
           this.#orphanPinFetchError = {
@@ -607,7 +625,7 @@ export class PluginAdminPage {
       this.restoreOperations(context)
       if (this.#tab === 'discover') await this.loadCatalog()
     } catch (error) {
-      if (generation !== this.#generation) return false
+      if (!current()) return false
       const detail = safeMessage(error)
       this.#state = {
         ...this.#state,
@@ -892,7 +910,7 @@ export class PluginAdminPage {
     return this.#sourceMode === 'update' ? this.#t('source.intro.update') : this.#t('source.intro.install')
   }
 
-  /** React 渲染后 input 由组件持有，首焦点交给表单第一个可交互元素。 */
+  /** After React renders, the component owns input; give initial focus to the form's first interactive element. */
   #sourceDialogFocusTarget(): HTMLElement | undefined {
     return this.#sourceDialog.querySelector<HTMLElement>('select, input, button') ?? undefined
   }
@@ -987,11 +1005,7 @@ export class PluginAdminPage {
         // A check the add form started reports on the form, which is still open.
         this.#flow.sourceCheck = undefined
         this.#sourceBusy = false
-        if (failed)
-          this.#sourceError = {
-            code: operationFailure(operation).code,
-            message: operation.error?.safeMessage ?? '',
-          }
+        if (failed) this.#sourceError = operationFailure(operation)
         this.render()
         if (failed) return
       }
@@ -1129,34 +1143,15 @@ export class PluginAdminPage {
 
   effectApi(permission: string): PluginAdminApi | undefined {
     if (this.#lifetime.signal.aborted) return undefined
-    if (!this.#api || !this.#state.context) {
-      this.showError({
-        code: 'ADMIN_UNAVAILABLE',
-        message: this.#t('error.session'),
-      })
+    const refuse = (code: string, message: string) => {
+      this.showError({ code, message })
       return undefined
     }
-    if (this.#state.context.readOnly) {
-      this.showError({
-        code: 'RECOVERY_READ_ONLY',
-        message: this.#t('error.read-only'),
-      })
-      return undefined
-    }
-    if (this.#state.loading || this.#state.connection !== 'connected') {
-      this.showError({
-        code: 'ADMIN_UNAVAILABLE',
-        message: this.#t('error.restoring'),
-      })
-      return undefined
-    }
-    if (!this.can(permission)) {
-      this.showError({
-        code: 'ADMIN_FORBIDDEN',
-        message: this.#t('error.forbidden'),
-      })
-      return undefined
-    }
+    if (!this.#api || !this.#state.context) return refuse('ADMIN_UNAVAILABLE', this.#t('error.session'))
+    if (this.#state.context.readOnly) return refuse('RECOVERY_READ_ONLY', this.#t('error.read-only'))
+    if (!this.#state.inventoryAuthoritative || this.#state.loading || this.#state.connection !== 'connected')
+      return refuse('ADMIN_UNAVAILABLE', this.#t('error.restoring'))
+    if (!this.can(permission)) return refuse('ADMIN_FORBIDDEN', this.#t('error.forbidden'))
     return this.#api
   }
 
@@ -1169,6 +1164,7 @@ export class PluginAdminPage {
       !this.#lifetime.signal.aborted &&
       !!this.#state.context &&
       !this.#state.context.readOnly &&
+      this.#state.inventoryAuthoritative &&
       !this.#state.loading &&
       this.#state.connection === 'connected' &&
       this.can(permission)
@@ -1229,8 +1225,8 @@ export class PluginAdminPage {
     this.render()
   }
 
-  errorMessage(error: AdminError): string {
-    return this.#t(adminErrorKey(error.code))
+  errorMessage(error: AdminError, operation?: PackageOperation['operation']): string {
+    return this.#t(adminErrorKey(error.code, operation, error.sourceFailure))
   }
 
   track(
@@ -1355,7 +1351,7 @@ export class PluginAdminPage {
     renderPluginView.call(this.viewContext())
   }
 
-  /** React 键控行会复用 DOM：键盘焦点跟随 data-plugin-id 保留，无需手工恢复。 */
+  /** React keyed rows reuse DOM: keyboard focus follows data-plugin-id without manual restoration. */
 
   /** A page surface draws its rows in its own tree, outside the host this controller renders into. */
   get #rows(): ParentNode {
@@ -1643,7 +1639,7 @@ export class PluginAdminPage {
   selectItem(item: PackageInstalledDescriptor | PackageCatalogDescriptor): void {
     if (manageExample(this, item)) return
     this.#ownsDialogs(true)
-    // React 键控行复用 DOM：触发行查询自渲染结果，详情关闭后焦点可以精确归还。
+    // React keyed rows reuse DOM: find the trigger row in rendered results for precise focus restoration after details close.
     this.#detailTrigger =
       this.#rows.querySelector<HTMLElement>(`.plugin-row[data-plugin-id="${CSS.escape(item.id)}"]`) ??
       undefined

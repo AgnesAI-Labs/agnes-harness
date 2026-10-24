@@ -1,5 +1,6 @@
 import { CoreError, roleAuthority } from '@agnes/core'
 import { isProfileDecisionJournal, rpcError } from '@agnes/protocol'
+import { bestEffort } from '../../best-effort.js'
 import { restoreRolePolicy, roleWorkspacePreset } from '../sessions/role-policy.js'
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
@@ -18,6 +19,8 @@ import {
   type AuthenticatedWorkspaceBindingEnvelope,
   assertWorkspaceBinding,
   CliWorkspaceAuthority,
+  extendsWorkspaceBinding,
+  sameWorkspaceBindingAuthority,
   type WorkspaceBinding,
   WorkspaceBindingAuthority,
 } from '@agnes/host-common/workspace-authority'
@@ -203,7 +206,7 @@ export interface Host {
   applyModelProfile(next: ResolvedProfile): Promise<void | HostPublicationReport>
   readonly profile: ResolvedProfile
   readonly kernel: Kernel
-  /** ERRATA B19: cli reads it for `agnes models` and for --probe. */
+  /** cli reads it for `agnes models` and for --probe. */
   readonly provider: Assembled['provider']
   readonly providerFingerprint: string | null
   /** Read-only descriptions from the currently assembled adapter registry. */
@@ -271,6 +274,9 @@ export interface Host {
     sessionKey?: string,
   ): void
 }
+
+/** Core's ROLE_DELEGATION row type; any such row in a parent's history marks a role lineage. */
+const ROLE_DELEGATION_ROW = 'x/core/role-delegation'
 
 export async function createHost(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {
   if (
@@ -570,6 +576,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
               invocation: WorkspaceInvocationPort
             }>
           | undefined
+        let forkExtension = false
         let pendingChildWorkspace: Awaited<ReturnType<SessionWorkspaceRuntimeTable['reserve']>> | undefined
         if (o.binding && o.parent) {
           const binding = o.binding as WorkspaceBinding
@@ -579,31 +586,44 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             throw new HostError('E_WORKSPACE_REQUIRED', 'fork child needs a stable session key', {
               detail: { reason: 'child-session-key-required' },
             })
-          pendingChildWorkspace = await workspaceRuntimes.reserve(o.parent.key, childKey)
-          const inherited = pendingChildWorkspace.runtime.binding
-          if (
-            binding.sessionKey !== inherited.sessionKey ||
-            binding.workspaceId !== inherited.workspaceId ||
-            binding.authorityRevision !== inherited.authorityRevision ||
-            binding.canonicalRoot !== inherited.canonicalRoot
-          ) {
-            await pendingChildWorkspace.close()
-            pendingChildWorkspace = undefined
-            throw new HostError(
-              'E_WORKSPACE_UNTRUSTED',
-              'fork binding does not inherit its parent workspace',
-              {
-                detail: { reason: 'fork-binding-mismatch' },
-              },
-            )
+          const reserved = await workspaceRuntimes.reserve(o.parent.key, childKey)
+          if (sameWorkspaceBindingAuthority(binding, reserved.runtime.binding)) {
+            pendingChildWorkspace = reserved
+            workspace = Object.freeze({
+              runtime: reserved.runtime,
+              lifecycle: reserved,
+              children: workspaceRuntimes,
+              invocation: reserved.invocation,
+            })
+          } else {
+            let extension = extendsWorkspaceBinding(reserved.runtime.binding, binding, childKey)
+            // A role session's file fence comes from its captured delegation, which a fork scan does
+            // not carry over (readRoleDelegation skips the inherited prefix), so a fresh runtime
+            // opened for the child would fall back to the default policy. The parent's own history
+            // also holds any role row it inherited, so a fork of a role session is covered too.
+            // Fail closed: only the exact-inherit path, sharing the parent's runtime, may fork them.
+            const roleParent =
+              extension &&
+              (await a.adapters.storage.scan(o.parent.key, { type: ROLE_DELEGATION_ROW, limit: 1 })).length >
+                0
+            if (roleParent) extension = false
+            await reserved.close()
+            // A daemon-admitted extension opens the child's own runtime from its own binding below;
+            // it never shares the parent's.
+            if (!extension)
+              throw new HostError(
+                'E_WORKSPACE_UNTRUSTED',
+                roleParent
+                  ? 'a fork of a role session cannot add directories'
+                  : 'fork binding does not inherit its parent workspace',
+                {
+                  detail: { reason: roleParent ? 'fork-extension-role-session' : 'fork-binding-mismatch' },
+                },
+              )
+            forkExtension = true
           }
-          workspace = Object.freeze({
-            runtime: pendingChildWorkspace.runtime,
-            lifecycle: pendingChildWorkspace,
-            children: workspaceRuntimes,
-            invocation: pendingChildWorkspace.invocation,
-          })
-        } else if (o.binding) {
+        }
+        if (o.binding && (!o.parent || forkExtension)) {
           const openWorkspaceRuntime = opts.openWorkspaceRuntime ?? a.openWorkspaceRuntime
           const binding = o.binding as WorkspaceBinding
           const inheritedView = o.parent ? a.kernel.get(o.parent.key)?.preset : undefined
@@ -651,7 +671,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             children: workspaceRuntimes,
             invocation: workspaceRuntimes.invocation(binding.sessionKey),
           })
-        } else if (o.parent) {
+        } else if (o.parent && !o.binding) {
           const childKey = o.key
           if (!childKey)
             throw new HostError('E_WORKSPACE_REQUIRED', 'fork child needs a stable session key', {
@@ -680,7 +700,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             throw error
           }
           if (pendingChildWorkspace && !pendingChildWorkspace.commit()) {
-            await s.close().catch(() => undefined)
+            await s.close().catch(bestEffort(opts.log, 'unpublished-session-close'))
             throw new HostError('E_WORKSPACE_CLOSED', 'fork workspace closed before publication', {
               detail: { reason: 'child-workspace-commit-lost' },
             })
@@ -689,8 +709,10 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           // Kernel keeps a live session in its table on a duplicate-open mismatch. That session owns
           // the existing workspace entry, so only an open that left no live session is rolled back.
           if (o.binding && !a.kernel.get(o.binding.sessionKey))
-            await workspaceRuntimes.close(o.binding.sessionKey).catch(() => undefined)
-          await pendingChildWorkspace?.close().catch(() => undefined)
+            await workspaceRuntimes
+              .close(o.binding.sessionKey)
+              .catch(bestEffort(opts.log, 'session-workspace-rollback'))
+          await pendingChildWorkspace?.close().catch(bestEffort(opts.log, 'child-workspace-rollback'))
           throw error
         }
         const offObservation = a.observeSession(s.key)

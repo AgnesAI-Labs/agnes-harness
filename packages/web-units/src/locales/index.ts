@@ -1,4 +1,4 @@
-/** web-units 不依赖 web-client：本地定义与 `LocaleService` 目录同构的类型（结构兼容即可）。 */
+/** web-units does not depend on web-client: define structurally compatible `LocaleService` catalog types locally. */
 export type LocaleDictionary = Record<string, string>
 
 export type LocaleCatalog = { en: LocaleDictionary; 'zh-CN': LocaleDictionary }
@@ -12,7 +12,7 @@ import { sidebarLocaleCatalog } from './sidebar.js'
 import { toolLocaleCatalog } from './tool.js'
 import { topbarLocaleCatalog } from './topbar.js'
 
-/** 组件内置文案目录，由宿主以命名空间 `@agnes/web-units` 注册进 `LocaleService`。 */
+/** Built-in component catalog registered by the host in `LocaleService` under `@agnes/web-units`. */
 export const WEB_UNITS_LOCALE_NAMESPACE = '@agnes/web-units'
 
 const DICTS = [

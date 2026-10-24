@@ -143,7 +143,7 @@ describe('ls references', () => {
   it('lists only the entries the limit shows', async () => {
     const ctx = ctxOf({ files: Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`f${i}.txt`, ''])) })
     const r = await lsTool.execute({ limit: 2 }, ctx)
-    expect(textOf(r).split('\n')).toEqual(['f0.txt', 'f1.txt', '[3 more]'])
+    expect(textOf(r).split('\n')).toEqual(['f0.txt', 'f1.txt', '[3 more; increase limit or narrow path]'])
     expect(r.structured).toMatchObject({
       references: [
         { kind: 'file', path: 'f0.txt' },

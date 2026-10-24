@@ -49,6 +49,10 @@
                         "type": "string"
                       },
                       {
+                        "const": "run",
+                        "type": "string"
+                      },
+                      {
                         "const": "send",
                         "type": "string"
                       },
@@ -115,6 +119,16 @@
                         "type": "string"
                       }
                     ]
+                  },
+                  "command": {
+                    "minLength": 1,
+                    "maxLength": 8192,
+                    "type": "string"
+                  },
+                  "timeoutMs": {
+                    "minimum": 1000,
+                    "maximum": 600000,
+                    "type": "integer"
                   }
                 },
                 "required": [

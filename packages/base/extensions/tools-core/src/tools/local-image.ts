@@ -10,7 +10,11 @@ export const MAX_PROGRESSIVE_PIXELS = 16_000_000
 export const MAX_PROGRESSIVE_DECODED_BYTES = 64 * 1024 * 1024
 export const MAX_CONCURRENT_DECODES = 2
 export const IMAGE_PREPARE_TIMEOUT_MS = 30_000
-const fail = (text: string): ToolResult => ({ content: [{ type: 'text', text }], isError: true })
+const fail = (text: string, code = 'FS_IMAGE_INVALID'): ToolResult => ({
+  content: [{ type: 'text', text }],
+  isError: true,
+  details: { code },
+})
 
 function codec(): Codec | undefined {
   if (loaded) return loaded
@@ -116,13 +120,25 @@ export async function readLocalImage(
         },
       ],
     }
-  if (bytes.length > MAX_IMAGE_FILE_BYTES) return fail('Workspace images are limited to 20 MiB.')
+  if (bytes.length > MAX_IMAGE_FILE_BYTES)
+    return fail(
+      `Workspace image is ${bytes.length} bytes (limit ${MAX_IMAGE_FILE_BYTES}); resize/compress it before reading.`,
+      'FS_IMAGE_SIZE_LIMIT',
+    )
   const mimeType = localImageMime(bytes)
-  if (!mimeType) return fail('Only PNG and JPEG images are supported.')
-  if (mimeType === 'image/png' && animatedPng(bytes)) return fail('Animated images are unsupported.')
+  if (!mimeType)
+    return fail(
+      'Only PNG and JPEG images are supported; convert a copy to single-frame PNG/JPEG.',
+      'FS_IMAGE_FORMAT',
+    )
+  if (mimeType === 'image/png' && animatedPng(bytes))
+    return fail('Animated images are unsupported; export one frame as PNG/JPEG.', 'FS_IMAGE_FORMAT')
   const sharp = codec()
   if (!sharp)
-    return fail('The image codec is unavailable. Text reads and ordinary sessions remain available.')
+    return fail(
+      'The image codec is unavailable; ask the user to install/repair the image codec or use another available image tool.',
+      'FS_IMAGE_CODEC_UNAVAILABLE',
+    )
   const deadline = performance.now() + IMAGE_PREPARE_TIMEOUT_MS
   try {
     await slot(ctx.signal, deadline)
@@ -143,11 +159,12 @@ export async function readLocalImage(
         height < 1 ||
         (metadata.pages ?? 1) !== 1
       )
-        return fail('The image is invalid or animated; only single-frame PNG and JPEG are supported.')
+        return fail('The image is invalid or animated; export a valid single-frame PNG/JPEG and retry.')
       const sample = { uchar: 1, char: 1, ushort: 2, short: 2 }[
         metadata.depth as 'uchar' | 'char' | 'ushort' | 'short'
       ]
-      if (!sample) return fail('The image sample depth is unsupported.')
+      if (!sample)
+        return fail('The image sample depth is unsupported; export an 8-bit PNG/JPEG.', 'FS_IMAGE_FORMAT')
       const pixels = width * height
       const decodedBytes = pixels * Math.max(4, metadata.channels ?? 4) * sample
       if (
@@ -156,10 +173,13 @@ export async function readLocalImage(
         (metadata.isProgressive &&
           (pixels > MAX_PROGRESSIVE_PIXELS || decodedBytes > MAX_PROGRESSIVE_DECODED_BYTES))
       )
-        return fail('The image exceeds safe decoded pixel or memory limits.')
+        return fail(
+          `The image is ${width}x${height} (${pixels} pixels, estimated ${decodedBytes} decoded bytes); exceeds safe decoder limits. Resize/export a smaller non-progressive PNG/JPEG.`,
+          'FS_IMAGE_DECODE_LIMIT',
+        )
       const edge = maxEdge ?? 1456
       if (!Number.isSafeInteger(edge) || edge < 8 || edge > 1456)
-        return fail('max_edge must be between 8 and 1456.')
+        return fail(`max_edge=${edge} is invalid; use an integer between 8 and 1456.`, 'FS_IMAGE_EDGE')
       const scale = Math.min(
         1,
         Math.min(edge, policy.maxWidth) / width,
@@ -185,7 +205,10 @@ export async function readLocalImage(
         targetWidth = Math.floor(targetWidth * 0.7)
         targetHeight = Math.floor(targetHeight * 0.7)
       }
-      return fail('The image cannot fit the active model image limits.')
+      return fail(
+        'The image cannot fit the active model image limits; use a smaller crop or select a model with larger image limits.',
+        'FS_IMAGE_MODEL_LIMIT',
+      )
     }
     const work = prepare()
     work.then(release, release)
@@ -194,8 +217,8 @@ export async function readLocalImage(
     ctx.signal.throwIfAborted()
     return fail(
       error instanceof Deadline
-        ? 'Image preparation exceeded its total time limit.'
-        : 'The image is invalid or exceeds safe decoder limits.',
+        ? 'Image preparation exceeded its total time limit; resize the source image before retrying.'
+        : 'The image is invalid, the decoder is busy, or decoder limits were exceeded; wait for active reads or export a smaller valid PNG/JPEG.',
     )
   }
 }

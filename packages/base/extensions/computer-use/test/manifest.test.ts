@@ -39,6 +39,7 @@ describe('computer-use extension boundary', () => {
 
     expect(registered.map((tool) => tool.name)).toEqual(['computer_use'])
     expect(checkToolDef(registered[0] as ToolDef)).toEqual({ ok: true })
+    expect(registered[0]?.meta).toMatchObject({ deferLoading: true, requiresImageInput: true })
     expect(registered.map((tool) => tool.name)).not.toContain('capture')
     expect(compact).toBeTypeOf('function')
     expect(shutdown).toBeTypeOf('function')

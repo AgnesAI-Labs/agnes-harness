@@ -69,7 +69,9 @@ describe('RemoteSession switch result bridge', () => {
       alive: true,
       async command(method: string, params: unknown) {
         calls.push([method, params])
-        return { effectiveFromSeq: method === 'setPreset' ? 7 : method === 'setModel' ? 9 : 11 }
+        return method === 'setToolFilter'
+          ? { effectiveFromSeq: 13, filter: { deny: ['bash'] } }
+          : { effectiveFromSeq: method === 'setPreset' ? 7 : method === 'setModel' ? 9 : 11 }
       },
     }
     const session = new RemoteSession('s', 'run', 1, link as never, '/workspace')
@@ -80,10 +82,13 @@ describe('RemoteSession switch result bridge', () => {
     expect(session.lastSeq).toBe(9)
     expect(await session.setYolo(true, operator)).toBe(11)
     expect(session.lastSeq).toBe(11)
+    expect(await session.setToolFilter({ deny: ['bash'] })).toEqual({ seq: 13, filter: { deny: ['bash'] } })
+    expect(session.lastSeq).toBe(13)
     expect(calls).toEqual([
       ['setPreset', { preset: 'standard' }],
       ['setModel', { sel: { slot: 'primary', route: 'faux', model: 'faux-1' } }],
       ['setYolo', { enabled: true, actor: operator }],
+      ['setToolFilter', { filter: { deny: ['bash'] } }],
     ])
   })
 

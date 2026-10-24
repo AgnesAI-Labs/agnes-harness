@@ -500,6 +500,7 @@ export function createSubmissionController(
         throw new Error(context.t('app.session.selectionChanged'))
       const opening = context.open(created.id, {
         created,
+        preserveSending: true,
         workspace,
         // Opening a session for an upload clears the composer; carry the text the user already
         // typed into the new draft session instead of dropping it.

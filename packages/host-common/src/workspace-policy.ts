@@ -109,17 +109,31 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
   })
 }
 
-/** Only the trusted local caller supplies an unimplemented fact. Explicit L0 alone never waives memory isolation. */
-export function memoryRequiresFileIsolation(
+/**
+ * How a registered memory provider's private tree constrains command execution:
+ * - `none`: no constraint (no provider, or a trusted local backend without OS isolation that the
+ *   preset explicitly permits to run unconfined).
+ * - `preferred`: request the OS boundary and deny the memory tree where it can be enforced, but run
+ *   unconfined when it cannot. Only the explicit full-access permission selects this: like other
+ *   agent harnesses' full-access modes, it trusts the user and their environment, so memory stays
+ *   enabled and is an ordinary file to an unconfined shell.
+ * - `required`: refuse unconfined execution. `required: true` always lands here.
+ * Only the trusted local caller supplies an unimplemented fact.
+ */
+export type MemoryFileIsolation = 'none' | 'preferred' | 'required'
+
+export function memoryFileIsolation(
   registered: boolean,
   implementation: 'implemented' | 'unimplemented' | 'unknown',
   config: SandboxStaticConfig,
-): boolean {
+): MemoryFileIsolation {
+  if (!registered) return 'none'
   const permitted =
     !config.required &&
     ((config.level === 'L1' && config.onUnavailable === 'allow-if-unimplemented') ||
       (config.level === 'L0' && config.onUnavailable === 'allow'))
-  return registered && !(implementation === 'unimplemented' && permitted)
+  if (implementation === 'unimplemented' && permitted) return 'none'
+  return config.access === 'full-access' && !config.required ? 'preferred' : 'required'
 }
 
 export function sandboxStaticConfigHash(config: SandboxStaticConfig): string {
@@ -158,6 +172,17 @@ function samePath(left: string, right: string, semantics: WorkspacePathSemantics
   return pathIdentity(left, semantics) === pathIdentity(right, semantics)
 }
 
+/** Whether `inner` is `outer` or lies below it. */
+function contains(
+  api: typeof posix | typeof win32,
+  outer: string,
+  inner: string,
+  semantics: WorkspacePathSemantics,
+): boolean {
+  const rel = api.relative(pathIdentity(outer, semantics), pathIdentity(inner, semantics))
+  return rel === '' || (!rel.startsWith('..') && !api.isAbsolute(rel))
+}
+
 function policyDigest(
   semantics: WorkspacePathSemantics,
   workspaceRoot: string,
@@ -191,6 +216,8 @@ export async function compileWorkspacePolicy(
     homeDir: string
     /** Host-owned roots that only explicit mediated capabilities may access. */
     protectedPaths?: readonly string[]
+    /** Extra directories the session binding admitted: data only, with the same integrity denies. */
+    extraRoots?: readonly string[]
     semantics: WorkspacePathSemantics
     staticConfig: SandboxStaticConfig
     canonicalize(path: string, options?: { base?: string }): Promise<string>
@@ -216,13 +243,31 @@ export async function compileWorkspacePolicy(
   const homeDir = await canonical(input.homeDir, 'home directory')
   const below = (base: string, leaf: string, field: string): Promise<string> =>
     canonical(api.join(base, leaf), field)
+  const sessionExtra = await Promise.all(
+    (input.extraRoots ?? []).map(async (path) => {
+      const root = await canonical(path, 'extra directory')
+      if (!samePath(root, path, input.semantics)) throw fault('extra directory identity changed')
+      return root
+    }),
+  )
+  const ssh = await below(homeDir, '.ssh', 'home ssh directory')
+  for (const root of sessionExtra)
+    for (const guarded of [dataDir, ssh])
+      if (contains(api, root, guarded, input.semantics) || contains(api, guarded, root, input.semantics))
+        throw fault('extra directory overlaps protected state')
+  // The extras join the static config, so its hash, the policy digest and every readiness cache key
+  // that is derived from them change with the session's directory list.
+  const staticConfig: SandboxStaticConfig = sessionExtra.length
+    ? Object.freeze({
+        ...input.staticConfig,
+        extraPaths: Object.freeze([...input.staticConfig.extraPaths, ...sessionExtra]),
+      })
+    : input.staticConfig
   const extraAllow = await Promise.all(
-    input.staticConfig.extraPaths.map((path) =>
-      canonical(path, 'sandbox extra path', { base: workspaceRoot }),
-    ),
+    staticConfig.extraPaths.map((path) => canonical(path, 'sandbox extra path', { base: workspaceRoot })),
   )
   const configuredDeny = await Promise.all(
-    input.staticConfig.denyPaths.map((path) => canonical(path, 'sandbox deny path', { base: workspaceRoot })),
+    staticConfig.denyPaths.map((path) => canonical(path, 'sandbox deny path', { base: workspaceRoot })),
   )
   const workspaceIsDataDir = samePath(workspaceRoot, dataDir, input.semantics)
   const rules: FsRule[] = [
@@ -267,6 +312,18 @@ export async function compileWorkspacePolicy(
       ),
     )),
     ...(await Promise.all(
+      sessionExtra.flatMap((root) =>
+        ['.git', ...WORKSPACE_SECRET_DIRS].map(
+          async (leaf): Promise<FsRule> => ({
+            effect: 'deny',
+            path: await below(root, leaf, 'host integrity path'),
+            source: 'host-integrity',
+            hard: true,
+          }),
+        ),
+      ),
+    )),
+    ...(await Promise.all(
       (input.protectedPaths ?? []).map(
         async (path): Promise<FsRule> => ({
           effect: 'deny',
@@ -279,45 +336,37 @@ export async function compileWorkspacePolicy(
     ...extraAllow.map((path): FsRule => ({ effect: 'allow', path, source: 'extra', hard: false })),
     ...configuredDeny.map((path): FsRule => ({ effect: 'deny', path, source: 'preset', hard: false })),
   ]
-  const networkAllow = Object.freeze([...input.staticConfig.networkAllow])
+  const networkAllow = Object.freeze([...staticConfig.networkAllow])
   const policy: FsPolicy = Object.freeze({
     workspaceRoot,
     rules: Object.freeze(rules.map((rule) => Object.freeze(rule))),
     networkAllow,
-    ...(input.staticConfig.loopbackServe ? { loopbackServe: true } : {}),
-    digest: policyDigest(
-      input.semantics,
-      workspaceRoot,
-      rules,
-      networkAllow,
-      input.staticConfig.loopbackServe,
-    ),
+    ...(staticConfig.loopbackServe ? { loopbackServe: true } : {}),
+    digest: policyDigest(input.semantics, workspaceRoot, rules, networkAllow, staticConfig.loopbackServe),
   })
   validateFsPolicy(policy)
   return Object.freeze({
     policy,
-    staticConfig: input.staticConfig,
-    staticConfigHash: sandboxStaticConfigHash(input.staticConfig),
+    staticConfig,
+    staticConfigHash: sandboxStaticConfigHash(staticConfig),
     semantics: Object.freeze({ ...input.semantics }),
     backendOptions: Object.freeze({
       cwd: workspaceRoot,
       allowPaths: Object.freeze(
-        input.staticConfig.access === 'read-only'
+        staticConfig.access === 'read-only'
           ? []
-          : input.staticConfig.access === 'full-access'
+          : staticConfig.access === 'full-access'
             ? ['/']
             : rules.filter((rule) => rule.effect === 'allow').map((rule) => rule.path),
       ),
       denyPaths: Object.freeze(
         rules
-          .filter(
-            (rule) => rule.effect === 'deny' && (input.staticConfig.access !== 'full-access' || rule.hard),
-          )
+          .filter((rule) => rule.effect === 'deny' && (staticConfig.access !== 'full-access' || rule.hard))
           .map((rule) => rule.path),
       ),
       networkAllow,
-      ...(input.staticConfig.loopbackServe ? { loopbackServe: true } : {}),
-      ...(input.staticConfig.access === 'full-access' ? { network: 'allow' as const, fullAccess: true } : {}),
+      ...(staticConfig.loopbackServe ? { loopbackServe: true } : {}),
+      ...(staticConfig.access === 'full-access' ? { network: 'allow' as const, fullAccess: true } : {}),
     }),
   })
 }

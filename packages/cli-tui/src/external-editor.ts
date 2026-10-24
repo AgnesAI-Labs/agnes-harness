@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import type { Editor } from './editor.js'
 import { tt } from './locale-extended.js'
 import type { ScreenRenderer } from './renderer.js'
@@ -13,8 +13,8 @@ export type ExternalEdit =
   | { kind: 'unset' }
   | { kind: 'failed'; reason: string }
 
-/** Words of a command line the way a shell reads them: spaces split, quotes and backslashes group. */
-export function splitCommand(line: string): string[] {
+/** Literal argv only: POSIX quoting or native Windows backslash/quote rules, without expansion. */
+export function splitCommand(line: string, dialect: 'posix' | 'windows' = 'posix'): string[] {
   const chars = Array.from(line)
   const words: string[] = []
   let word = ''
@@ -23,11 +23,27 @@ export function splitCommand(line: string): string[] {
   for (let i = 0; i < chars.length; i++) {
     const c = chars[i] as string
     const next = i + 1 < chars.length ? (chars[i + 1] as string) : undefined
+    if (dialect === 'windows' && c === '\\' && quote !== "'") {
+      let end = i
+      while (chars[end] === '\\') end++
+      const count = end - i
+      word += '\\'.repeat(chars[end] === '"' ? Math.floor(count / 2) : count)
+      if (chars[end] === '"' && count % 2) {
+        word += '"'
+        end++
+      }
+      i = end - 1
+      started = true
+      continue
+    }
     if (quote) {
-      if (c === quote) quote = undefined
+      if (c === quote && quote === '"' && dialect === 'windows' && next === '"') {
+        word += '"'
+        i++
+      } else if (c === quote) quote = undefined
       else if (quote === '"' && c === '\\' && next !== undefined && '"\\$`'.includes(next)) word += chars[++i]
       else word += c
-    } else if (c === "'" || c === '"') {
+    } else if (c === '"' || (c === "'" && (dialect === 'posix' || !started))) {
       quote = c
       started = true
     } else if (c === '\\' && next !== undefined) {
@@ -48,6 +64,10 @@ export function splitCommand(line: string): string[] {
 
 function run(program: string, args: string[]): Promise<number | null> {
   return new Promise((resolve, reject) => {
+    if (sep === '\\' && /\.(cmd|bat)$/i.test(program)) {
+      reject(new Error('Windows external editors require a native .exe, not a .cmd/.bat wrapper'))
+      return
+    }
     const child = spawn(program, args, { stdio: 'inherit' })
     child.on('error', reject)
     child.on('close', (code) => resolve(code))
@@ -64,7 +84,10 @@ export async function editInExternal(
   draft: string,
   o: { env: NodeJS.ProcessEnv; tmpDir: string; suspend(): () => void },
 ): Promise<ExternalEdit> {
-  const [program, ...args] = splitCommand(o.env.VISUAL?.trim() || o.env.EDITOR?.trim() || '')
+  const [program, ...args] = splitCommand(
+    o.env.VISUAL?.trim() || o.env.EDITOR?.trim() || '',
+    sep === '\\' ? 'windows' : 'posix',
+  )
   if (!program) return { kind: 'unset' }
   let dir: string | undefined
   try {
@@ -74,14 +97,17 @@ export async function editInExternal(
     await writeFile(file, draft, { mode: 0o600 })
     // Cooked mode would let a Ctrl-C reach this process too; the editor, not the TUI, is being interrupted.
     const ignore = (): void => {}
-    process.on('SIGINT', ignore)
     const resume = o.suspend()
+    process.on('SIGINT', ignore)
     let code: number | null
     try {
       code = await run(program, [...args, file])
     } finally {
-      resume()
-      process.off('SIGINT', ignore)
+      try {
+        resume()
+      } finally {
+        process.off('SIGINT', ignore)
+      }
     }
     if (code !== 0) return { kind: 'cancelled', code }
     // Editors end a file with a newline the user did not type.

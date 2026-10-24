@@ -6,209 +6,51 @@ import type {
   SlotName,
   ThinkingLevel,
 } from '@agnes/protocol'
+import { closestNames } from '@agnes/protocol/command-line'
 import type { Session } from '@agnes/sdk'
+import { addDirSlash } from './add-dir-command.js'
 import { agentsSlash } from './agent-commands.js'
 import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
+import { bgSlash } from './bg-command.js'
 import { startBtw } from './btw.js'
+import { cdSlash } from './cd-command.js'
+import { pasteClipboardImage } from './clipboard-image.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
+import { configSlash } from './config-command.js'
 import { customCommandsFor, customHelp, customSlash } from './custom-commands.js'
 import { deliverablesSlash } from './deliverable-files.js'
+import { exportSlash } from './export-command.js'
 import { listExternalSessions } from './external-sessions.js'
 import { grantsSlash } from './grant-commands.js'
+import { handoffSlash } from './handoff-command.js'
+import { headsUpSlash } from './heads-up.js'
 import { infoSlash } from './info-commands.js'
 import { jobsSlash } from './job-commands.js'
 import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
+import { memorySlash } from './memory-command.js'
+import { parseNotifyMode } from './notify.js'
+import { permissionsSlash } from './permissions-command.js'
 import { queueSlash } from './queue-commands.js'
+import { rateSlash } from './rate-command.js'
+import { recapSlash } from './recap-command.js'
 import type { ResourceCommandKind } from './resource-controller.js'
-import { oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
+import { scheduleSlash } from './schedule-commands.js'
+import { forkAt, forkSlash, oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
+import { sessionTree } from './session-tree.js'
+import { SLASH_COMMANDS, type SlashCommand } from './slash-table.js'
+import { terminalSetupSlash } from './terminal-setup-command.js'
 import type { ThemePreference } from './theme-preference.js'
 import { thinkingMode } from './thinking.js'
+import { toolNameCandidates, toolsSlash } from './tool-filter-command.js'
+import { trustSlash } from './trust-command.js'
 import { undoSlash } from './undo-commands.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
+import { worktreeSlash } from './worktree-command.js'
 
-export type SlashCommand = {
-  name: string
-  /** Argument shape shown dimmed next to the name in the slash menu, e.g. `<seq>`. */
-  args?: string
-  /** Locale key of the one-line description; translated when the menu renders. */
-  descriptionKey: ExtendedKey
-  /** Locale key of the short summary shown beside the name in the slash menu. */
-  summaryKey: ExtendedKey
-}
-
-export const SLASH_COMMANDS: readonly SlashCommand[] = [
-  { name: '/help', descriptionKey: 'commands.help', summaryKey: 'commands.helpSummary' },
-  { name: '/quit', descriptionKey: 'commands.quit', summaryKey: 'commands.quitSummary' },
-  { name: '/new', args: '[dir]', descriptionKey: 'commands.new', summaryKey: 'commands.newSummary' },
-  {
-    name: '/resume',
-    args: '[id|all]',
-    descriptionKey: 'commands.resume',
-    summaryKey: 'commands.resumeSummary',
-  },
-  {
-    name: '/import',
-    args: '[<file> [--from claude-code|codex|pi|auto]]',
-    descriptionKey: 'commands.import',
-    summaryKey: 'commands.importSummary',
-  },
-  { name: '/sessions', descriptionKey: 'commands.sessions', summaryKey: 'commands.sessionsSummary' },
-  { name: '/pin', descriptionKey: 'commands.pin', summaryKey: 'commands.pinSummary' },
-  { name: '/unpin', descriptionKey: 'commands.unpin', summaryKey: 'commands.unpinSummary' },
-  {
-    name: '/rename',
-    args: '<title>',
-    descriptionKey: 'commands.rename',
-    summaryKey: 'commands.renameSummary',
-  },
-  { name: '/archive', descriptionKey: 'commands.archive', summaryKey: 'commands.archiveSummary' },
-  {
-    name: '/search',
-    args: '<query>',
-    descriptionKey: 'commands.search',
-    summaryKey: 'commands.searchSummary',
-  },
-  { name: '/cost', descriptionKey: 'commands.cost', summaryKey: 'commands.costSummary' },
-  { name: '/usage', descriptionKey: 'commands.usage', summaryKey: 'commands.usageSummary' },
-  {
-    name: '/computer-use',
-    args: 'status',
-    descriptionKey: 'commands.computerUse',
-    summaryKey: 'commands.computerUseSummary',
-  },
-  {
-    name: '/doctor',
-    args: 'computer-use',
-    descriptionKey: 'commands.doctor',
-    summaryKey: 'commands.doctorSummary',
-  },
-  { name: '/rewind', args: '[seq]', descriptionKey: 'commands.rewind', summaryKey: 'commands.rewindSummary' },
-  {
-    name: '/undo',
-    args: '[turn|confirm|cancel]',
-    descriptionKey: 'commands.undo',
-    summaryKey: 'commands.undoSummary',
-  },
-  {
-    name: '/compact',
-    args: '[instructions]',
-    descriptionKey: 'commands.compact',
-    summaryKey: 'commands.compactSummary',
-  },
-  {
-    name: '/goal',
-    args: '[create|edit|pause|resume|complete|clear] ...',
-    descriptionKey: 'commands.goal',
-    summaryKey: 'commands.goalSummary',
-  },
-  {
-    name: '/plan',
-    args: '[on|off|status|pending|instruction]',
-    descriptionKey: 'commands.plan',
-    summaryKey: 'commands.planSummary',
-  },
-  {
-    name: '/preset',
-    args: '<name>',
-    descriptionKey: 'commands.preset',
-    summaryKey: 'commands.presetSummary',
-  },
-  {
-    name: '/theme',
-    args: '[auto|light|dark|mono]',
-    descriptionKey: 'commands.theme',
-    summaryKey: 'commands.themeSummary',
-  },
-  { name: '/keys', descriptionKey: 'commands.keys', summaryKey: 'commands.keysSummary' },
-  { name: '/mouse', descriptionKey: 'commands.mouse', summaryKey: 'commands.mouseSummary' },
-  { name: '/thinking', descriptionKey: 'commands.thinking', summaryKey: 'commands.thinkingSummary' },
-  {
-    name: '/model',
-    args: '[<slot> <route>/<model> [<thinking>]]',
-    descriptionKey: 'commands.model',
-    summaryKey: 'commands.modelSummary',
-  },
-  { name: '/yolo', args: '[on|off]', descriptionKey: 'commands.yolo', summaryKey: 'commands.yoloSummary' },
-  {
-    name: '/grants',
-    args: '[revoke <n|id>]',
-    descriptionKey: 'commands.grants',
-    summaryKey: 'commands.grantsSummary',
-  },
-  {
-    name: '/deliverables',
-    args: '[save <n|id> [path]]',
-    descriptionKey: 'commands.deliverables',
-    summaryKey: 'commands.deliverablesSummary',
-  },
-  {
-    name: '/attach',
-    args: '<path>',
-    descriptionKey: 'commands.attach',
-    summaryKey: 'commands.attachSummary',
-  },
-  { name: '/export', descriptionKey: 'commands.export', summaryKey: 'commands.exportSummary' },
-  { name: '/refine', descriptionKey: 'commands.refine', summaryKey: 'commands.refineSummary' },
-  { name: '/packages', descriptionKey: 'commands.packages', summaryKey: 'commands.packagesSummary' },
-  {
-    name: '/install',
-    args: '<source>|confirm|cancel',
-    descriptionKey: 'commands.install',
-    summaryKey: 'commands.installSummary',
-  },
-  {
-    name: '/package',
-    args: '[status|catalog|inspect|trust|enable|disable|update|rollback|remove|operation|cancel] ...',
-    descriptionKey: 'commands.package',
-    summaryKey: 'commands.packageSummary',
-  },
-  { name: '/skills', descriptionKey: 'commands.skills', summaryKey: 'commands.skillsSummary' },
-  {
-    name: '/skill',
-    args: 'invoke <name> [arguments]|refresh|trust ...',
-    descriptionKey: 'commands.skill',
-    summaryKey: 'commands.skillSummary',
-  },
-  { name: '/mcp', args: '<action> ...', descriptionKey: 'commands.mcp', summaryKey: 'commands.mcpSummary' },
-  { name: '/context', descriptionKey: 'commands.context', summaryKey: 'commands.contextSummary' },
-  {
-    name: '/agents',
-    args: '[stop <n|id>|resume <n|id> <message>]',
-    descriptionKey: 'commands.agents',
-    summaryKey: 'commands.agentsSummary',
-  },
-  {
-    name: '/jobs',
-    args: '[stop <n|id>]',
-    descriptionKey: 'commands.jobs',
-    summaryKey: 'commands.jobsSummary',
-  },
-  {
-    name: '/queue',
-    args: '[edit|drop|now|steer <n>]',
-    descriptionKey: 'commands.queue',
-    summaryKey: 'commands.queueSummary',
-  },
-  { name: '/status', descriptionKey: 'commands.status', summaryKey: 'commands.statusSummary' },
-  { name: '/copy', args: '[n|code]', descriptionKey: 'commands.copy', summaryKey: 'commands.copySummary' },
-  {
-    name: '/diff',
-    args: '[turn] [path]',
-    descriptionKey: 'commands.diff',
-    summaryKey: 'commands.diffSummary',
-  },
-  { name: '/init', descriptionKey: 'commands.init', summaryKey: 'commands.initSummary' },
-  {
-    name: '/review',
-    args: '[scope]',
-    descriptionKey: 'commands.review',
-    summaryKey: 'commands.reviewSummary',
-  },
-  { name: '/btw', args: '<question>', descriptionKey: 'commands.btw', summaryKey: 'commands.btwSummary' },
-]
+export { SLASH_COMMANDS, type SlashCommand }
 
 export function slashCommand(name: string): SlashCommand | undefined {
   return SLASH_COMMANDS.find((c) => c.name === name)
@@ -216,7 +58,7 @@ export function slashCommand(name: string): SlashCommand | undefined {
 
 const isBuiltin = (name: string): boolean => slashCommand(name) !== undefined
 
-/** 描述在渲染期翻译：编辑器菜单每次重绘都会经此取词。 */
+/** Translate descriptions at render time: each editor-menu redraw resolves its text here. */
 export function slashCommandFor(
   name: string,
   locale: string,
@@ -257,6 +99,8 @@ export type SessionChoice = {
   lastSeq: number
   preset: string | null
   title?: string
+  /** Extra directories bound to the session (paths on the daemon's machine); absent when none. */
+  additionalDirectories?: string[]
   /** Set by the /rewind picker: choosing forks this session at that completed-turn boundary. */
   forkAt?: number
   /** With `forkAt`: the prompt of that turn, put back in the editor after the fork. */
@@ -340,6 +184,7 @@ export async function listSessionChoices(session: Session, resumableFrom?: strin
       lastSeq: item.lastSeq,
       preset: item.preset,
       ...(item.title ? { title: item.title } : {}),
+      ...(item.additionalDirectories?.length ? { additionalDirectories: item.additionalDirectories } : {}),
     }))
     .sort((a, b) => {
       const aTime = Date.parse(a.lastMessageAt ?? a.createdAt)
@@ -358,11 +203,19 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   // /resume only opens the picker, which refuses the choice itself.
   const opens =
     cmd === '/new' ||
+    cmd === '/worktree' ||
+    (cmd === '/cd' && args.length > 0) ||
+    (cmd === '/add-dir' && args.length > 0) ||
+    cmd === '/fork' ||
     (cmd === '/rewind' && args.length > 0) ||
     (cmd === '/resume' && args.length > 0 && args[0] !== 'all')
   if (opens && app.refuseSwitch()) return {}
   const s = app.session
   const c = s.client
+  if (cmd === '/paste') {
+    await pasteClipboardImage(app)
+    return {}
+  }
   if (cmd === '/attach') {
     const path = line.trim().slice('/attach'.length).trim()
     if (!path) throw new Error('Usage: /attach <path>')
@@ -433,11 +286,14 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
               `  ${(usages[index] as string).padEnd(usageWidth + 2)}${tt(command.descriptionKey, locale)}`,
           ),
           ...customHelp(app, isBuiltin),
+          '',
+          tt('bang.help', locale),
         ].join('\n'),
         presentation: 'transcript',
       }
     }
     case '/quit':
+    case '/exit':
       return { quit: true }
     case '/computer-use': {
       if (args.length !== 1 || args[0] !== 'status')
@@ -481,6 +337,12 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         return { sessionChoices, sessionScope: { scope: everywhere ? 'all' : 'workspace', reload } }
       }
       return { text: everywhere ? 'no sessions' : 'no other sessions in this workspace' }
+    }
+    case '/tree': {
+      const sessionChoices = await sessionTree(app)
+      return sessionChoices.length
+        ? { sessionChoices, sessionPickerTitle: 'picker.treeTitle' }
+        : { text: tt('tree.none', locale) }
     }
     case '/import': {
       // Importing writes through a local Host, which only the shared local daemon form leaves free.
@@ -558,17 +420,25 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       if (!Number.isInteger(at)) return { text: 'usage: /rewind [seq]' }
       // The daemon forks a session only for its owner and only at a completed turn boundary; any
       // other request is refused there, and that refusal is shown as it comes.
-      const switchSession = await c.session.fork(s.id, at)
+      const switchSession = await forkAt(app, at)
       // The fork has happened; a projection that cannot name the prompt only costs the refill.
       const prompt = await rewindPrompt(app, at).catch(() => undefined)
       return prompt
         ? { switchSession, draft: prompt }
         : { switchSession, text: tt('session.rewoundNoPrompt', locale) }
     }
+    case '/recap':
+      return recapSlash(app)
+    case '/fork':
+      return forkSlash(app, args)
     case '/undo':
       return undoSlash(app, args)
     case '/grants':
       return grantsSlash(app, line)
+    case '/permissions':
+      return permissionsSlash(app, args, (next) => grantsSlash(app, next))
+    case '/trust':
+      return trustSlash(app, args)
     case '/deliverables':
       return deliverablesSlash(app, line)
     case '/agents':
@@ -583,6 +453,14 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/init':
     case '/review':
       return infoSlash(app, cmd, line)
+    case '/handoff':
+      return handoffSlash(app, line)
+    case '/worktree':
+      return worktreeSlash(app, line)
+    case '/cd':
+      return cdSlash(app, line)
+    case '/add-dir':
+      return addDirSlash(app, line)
     case '/btw': {
       const question = line.trim().replace(/^\S+\s*/, '')
       if (!question) return { text: tt('btw.usage', locale) }
@@ -590,6 +468,9 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       startBtw(app, question)
       return {}
     }
+    case '/schedule':
+    case '/loop':
+      return scheduleSlash(app, cmd, line)
     case '/pin':
     case '/unpin':
     case '/rename':
@@ -634,17 +515,38 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       const name = args[0]
       if (!name) return { text: 'usage: /preset <name>' }
       const r = await s.setPreset(name)
+      app.statusBar.setPreset(name)
       return { text: `preset ${name} from seq ${r.effectiveFromSeq}` }
     }
+    case '/tools':
+      return toolsSlash(app, args)
     case '/theme': {
       const name = args[0]
       if (args.length === 0) {
         app.showThemePicker()
         return {}
       }
-      if (args.length !== 1 || !['auto', 'light', 'dark', 'mono'].includes(name ?? ''))
-        return { text: 'usage: /theme [auto|light|dark|mono]' }
-      return { text: app.setTheme(name as ThemePreference) }
+      if (
+        args.length !== 1 ||
+        !(
+          ['auto', 'light', 'dark', 'mono', 'dark-daltonized', 'light-daltonized'].includes(name ?? '') ||
+          name?.startsWith('custom:')
+        )
+      )
+        return { text: 'usage: /theme [auto|light|dark|dark-daltonized|light-daltonized|mono|custom:<name>]' }
+      return { text: app.themes.set(name as ThemePreference) }
+    }
+    case '/notify': {
+      const next = args.length === 0 ? undefined : parseNotifyMode(args.length === 1 ? args[0] : undefined)
+      if (args.length > 0 && !next) return { text: tt('notify.usage', locale) }
+      const saved = next ? app.notify.set(next) : true
+      const mode = app.notify.saved
+      return {
+        text: [
+          tt(saved ? 'notify.set' : 'notify.ephemeral', locale, { mode }),
+          ...(app.notify.overridden ? [tt('notify.overridden', locale, { env: app.notify.mode, mode })] : []),
+        ].join('\n'),
+      }
     }
     case '/thinking':
       return { text: tt(thinkingMode.toggle() ? 'thinking.open' : 'thinking.folded', app.locale) }
@@ -697,8 +599,43 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         text: `routine approvals skipped from seq ${r.effectiveFromSeq}; the current preset and its domain confirmations remain in effect. Explicit denies, OS permissions and command sandbox limits still apply. /yolo off asks again.`,
       }
     }
+    case '/rate':
+      return rateSlash(app, line)
+    case '/heads-up':
+      return headsUpSlash(app, line)
     case '/export':
-      return { text: `run: agh export ${s.id}${args.includes('--html') ? ' --html' : ''}` }
+      return exportSlash(app, line)
+    case '/memory':
+      return memorySlash(app, line)
+    case '/bg':
+      return bgSlash(app, line)
+    case '/todos': {
+      const note = args.length > 1 ? undefined : app.planPanel.setMode(args[0])
+      return { text: note ?? tt('todos.usage', locale) }
+    }
+    case '/statusline': {
+      const text = app.statusLine.command(args)
+      return text === undefined ? {} : { text }
+    }
+    case '/title':
+      return { text: app.windowTitle.command(args, locale) }
+    case '/borders':
+      return { text: app.borders.command(args, locale) }
+    case '/raw':
+      return { text: app.raw.toggle(locale) }
+    case '/images':
+      return { text: app.images.command(args, locale) }
+    case '/config':
+      return configSlash(app, args, (next) => runSlash(app, next))
+    case '/vim':
+      return { text: app.editor.vim?.command(args, locale) ?? '' }
+    case '/expand':
+      if (args.length !== 1 || (args[0] !== 'all' && args[0] !== 'none'))
+        return { text: tt('expand.usage', locale) }
+      app.cards.setAll(args[0] === 'all')
+      return { text: tt(args[0] === 'all' ? 'expand.all' : 'expand.none', locale) }
+    case '/terminal-setup':
+      return terminalSetupSlash(app, line)
     case '/refine':
       // `harness/refine` exists as a raw ledger event type (protocol session-v1 schema), but
       // UITimeline/UINode has no kind that projects it -- there is no 'notice' or 'refine' UINode
@@ -734,18 +671,22 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     default:
       return (
         customSlash(app, cmd, line, isBuiltin) ?? {
-          text:
-            cmd === '/session'
-              ? 'unknown command /session; did you mean /sessions?'
-              : `unknown command ${cmd}; use /help to list commands`,
+          text: unknownCommand(cmd, app),
         }
       )
   }
 }
 
+/** The refusal for a slash command nobody defined; it names the closest one but never runs it. */
+function unknownCommand(cmd: string, app: TuiApp): string {
+  const near = closestNames(cmd, completeToken('/', app))[0]
+  return `unknown command ${cmd}; ${near ? `did you mean ${near}?` : 'use /help to list commands'}`
+}
+
 /** '/…' completes against the command table and the custom commands; '@' mentions have their own menu (file-mentions.ts). */
-export function completeToken(prefix: string, app?: TuiApp): string[] {
-  if (!prefix.startsWith('/')) return []
+export function completeToken(prefix: string, app?: TuiApp, before?: string): string[] {
+  if (!prefix.startsWith('/'))
+    return (app && before !== undefined && toolNameCandidates(app, prefix, before)) || []
   const builtin = SLASH_COMMANDS.filter((cmd) => cmd.name.startsWith(prefix)).map((cmd) => cmd.name)
   if (!app) return builtin
   const custom = [...customCommandsFor(app, isBuiltin).commands.keys()].map((name) => `/${name}`)

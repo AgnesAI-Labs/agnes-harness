@@ -1,5 +1,6 @@
 import type { FsEntry, ToolContext, ToolMeta, ToolResult } from '@agnes/extension-api'
 import { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+import { displayPath } from '../../../tools-core/src/guards/feedback.js'
 import { normalizeWorkspacePath } from '../../../tools-core/src/paths.js'
 import { MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 
@@ -31,8 +32,8 @@ export const SEARCH_META: ToolMeta = {
   requiresApproval: 'never',
 }
 
-export function toolError(text: string): ToolResult {
-  return { content: [{ type: 'text', text }], isError: true }
+export function toolError(text: string, code = 'FS_SEARCH_FAILED'): ToolResult {
+  return { content: [{ type: 'text', text }], isError: true, details: { code } }
 }
 
 /** Lexical precheck only; the filesystem port independently enforces the session's access scope. */
@@ -46,9 +47,13 @@ export function searchPathError(ctx: ToolContext, tool: string, path: string): T
   if (allowed(ctx, path)) return undefined
   if (!normalizeWorkspacePath(path, ctx.session.workspaceRoot).inside)
     return toolError(
-      `${tool} refused: ${path} is outside the workspace. Switch to Full permissions (完全权限) or select the target directory as the workspace (选择目标目录作为工作区).`,
+      `${tool} refused: path is outside the workspace. Select the target directory as the workspace (选择目标目录作为工作区) or ask the user to switch to Full permissions (完全权限).`,
+      'FS_OUTSIDE_WORKSPACE',
     )
-  return toolError(`${tool} refused: ${path} is denied by policy`)
+  return toolError(
+    `${tool} refused: ${displayPath(ctx, path)} is denied by policy; choose an allowed path or ask the user to adjust access.`,
+    'E_FS_DENIED',
+  )
 }
 
 export type WalkEntry = { rel: string; abs: string; kind: FsEntry['kind'] }
@@ -92,12 +97,18 @@ export function walkNotes(report: WalkReport, maxEntries: number): string[] {
   if (report.skipped.size > 0) out.push(`[not searched: ${[...report.skipped].sort().join(', ')}]`)
   if (report.denied > 0)
     out.push(`[${report.denied} path(s) skipped: outside the workspace or denied by policy]`)
-  if (report.unreadable > 0) out.push(`[${report.unreadable} path(s) could not be read]`)
+  if (report.unreadable > 0)
+    out.push(
+      `[${report.unreadable} path(s) could not be read; use ls on an accessible parent and correct the path/access]`,
+    )
   out.push(...report.failures.map((failure) => `[${failure}]`))
-  if (report.binary) out.push(`[${report.binary} binary file(s) not searched]`)
+  if (report.binary) out.push(`[${report.binary} binary file(s) not searched; use a format-aware tool]`)
   if (report.oversize > 0)
-    out.push(`[${report.oversize} file(s) skipped: larger than ${MAX_READ_BYTES} bytes]`)
-  if (report.truncated) out.push(`[stopped after ${maxEntries} entries; the tree was not fully walked]`)
+    out.push(
+      `[${report.oversize} file(s) skipped: larger than ${MAX_READ_BYTES} bytes; narrow to a smaller file or use a bounded shell search]`,
+    )
+  if (report.truncated)
+    out.push(`[stopped after ${maxEntries} entries; the tree was not fully walked; narrow path or pattern]`)
   return out
 }
 

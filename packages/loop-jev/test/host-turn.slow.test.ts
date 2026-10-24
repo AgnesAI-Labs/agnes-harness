@@ -21,7 +21,7 @@ describe('agnes.jev in a real host with a loopback Jev', () => {
   it('lists the workspace without the model, then answers with one inference request', async () => {
     const fake = await startJev(jevAnswers([PICK_LS, PICK_RESPOND]))
     const kit = await bootJevLoop({
-      dataDir: jevDataDir(),
+      dataDir: await jevDataDir(),
       fake,
       main: [textReply('The workspace has a credentials folder.')],
     })

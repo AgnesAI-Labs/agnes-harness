@@ -11,8 +11,8 @@
     color: var(--agnes-text-primary);
     background: var(--agnes-bg-page);
   }
-  /* 输入类控件用自己的语义角色（底色/文字/边框），button 不吃这一组。
-   此前输入框与页面同底、占位符与真实值同色，控件不"像"控件。 */
+  /* Input controls use their own semantic background/text/border roles; buttons do not use this group.
+     Previously inputs shared the page background and placeholders the text color, obscuring their control affordance. */
   input,
   select,
   textarea {
@@ -64,8 +64,8 @@
     outline: none;
   }
 
-  /* 表单控件吃 outline 会和自身边框叠成双层，看着又粗又脏。
-   改成「边框变色 + 一圈柔和品牌环」，既克制又仍然醒目。 */
+  /* An outline doubles up with form-control borders, looking heavy and cluttered.
+     Use a changed border color plus a soft brand ring for a restrained but visible focus state. */
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {

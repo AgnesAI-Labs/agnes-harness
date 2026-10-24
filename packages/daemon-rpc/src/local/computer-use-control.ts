@@ -523,7 +523,7 @@ export function projectComputerUseDriverLockBlockers(blockers: readonly string[]
 function fixedDriverLockBlockers(): ControlPlaneBlocker[] {
   try {
     const decision = evaluateFixedComputerUseDriverAdmission()
-    // This P0-closed control plane must never become an admission path, even if the checked-in
+    // This admission-blocked control plane must never become an admission path, even if the checked-in
     // candidate is accidentally changed to ready. Treat that impossible state as incompatible.
     return projectComputerUseDriverLockBlockers(
       decision.allowed ? ['lock:unexpected-admission-enabled'] : decision.blockers,
@@ -533,7 +533,7 @@ function fixedDriverLockBlockers(): ControlPlaneBlocker[] {
   }
 }
 
-/** P0-closed service for authenticated permissions and filtered-doctor RPCs. It has no driver,
+/** Admission-blocked service for authenticated permissions and filtered-doctor RPCs. It has no driver,
  * process, filesystem or platform dependency, so it cannot probe, install, repair or start CUA. */
 export function createBlockedComputerUseControlPlane(
   source?: LockedPackageMutationStatusSource,

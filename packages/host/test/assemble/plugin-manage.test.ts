@@ -49,6 +49,14 @@ it('binds builtin authoring to the real package, pinned generation, row and invo
         {
           type: 'toolcall_end',
           via: 'native',
+          call: { toolUseId: '', name: 'tool_describe', args: { name: 'plugin_scaffold' }, ordinal: 0 },
+        },
+        { type: 'done', reason: 'toolUse' },
+      ],
+      [
+        {
+          type: 'toolcall_end',
+          via: 'native',
           call: {
             toolUseId: '',
             name: 'plugin_scaffold',

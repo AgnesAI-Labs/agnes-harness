@@ -38,6 +38,7 @@ export default defineConfig({
   test: {
     exclude,
     globalSetup: [
+      fileURLToPath(new URL('./tools/native-test-setup.mjs', import.meta.url)),
       ensureJevPayload,
       fileURLToPath(new URL('./tools/presentation-test-setup.mjs', import.meta.url)),
     ],

@@ -4,13 +4,16 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { COMMANDS } from './args.js'
 import type { bootDefault as BootDefault } from './boot/default.js'
 import type { LocalBootDeps } from './boot/local.js'
 import { installSignalLadder } from './boot/signals.js'
 import { dispatchProfileCli, isProfileCommand, prepareCommandArgs, resolveMode } from './command-entry.js'
 import { commandHelp } from './command-help.js'
 import type { BranchContext } from './commands/bin-branches.js'
+import type { ExportIntoRequest } from './commands/export-into.js'
 import { BootError, ExitCode, SIGNAL_EXIT_CODES, type SignalName, UsageError } from './errors.js'
+import { mistypedCommand } from './suggest.js'
 import { timingMark } from './timing.js'
 import { refuseTurnCapsOutsidePrint } from './turn-caps.js'
 import type { Booted } from './types.js'
@@ -420,6 +423,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const mode = resolveMode(p, { stdin: io.stdin.isTTY === true, stdout: io.stdout.isTTY === true })
     if (mode !== 'print' && mode !== 'tui' && mode !== 'acp')
       throw new UsageError(`agh ${mode} is not available in this build; use -p`)
+    const near = mistypedCommand(p, COMMANDS)
+    if (near)
+      io.stderr.write(`note: ${p.positional[0]} is sent as a prompt; did you mean the command ${near}?\n`)
     if (p.outputSchema !== undefined && mode !== 'print')
       throw new UsageError('--output-schema is supported only with -p')
     refuseTurnCapsOutsidePrint(p, mode)
@@ -428,6 +434,12 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     const acpMode = mode === 'acp' ? await import('./modes/acp.js') : undefined
     const printMode = mode === 'print' ? await import('./modes/print.js') : undefined
     const { resolveLocale } = await import('./tui/locale.js')
+    if (p.addDir !== undefined)
+      (await import('./add-dir.js')).resolveAddDirs(p, mode, io, resolveLocale(io.env))
+    const worktreeFlag = p.worktree !== undefined ? await import('./worktree.js') : undefined
+    const worktree = await worktreeFlag?.openWorktreeFlag(p, mode, io, resolveLocale(io.env))
+    if (worktree && mode === 'print')
+      io.stderr.write(worktreeFlag?.printWorktreeStart(worktree, resolveLocale(io.env)) ?? '')
     // The composer goes up before the daemon is reached; it keeps what is typed while that happens.
     // The opening composer draws on the alternate screen, which --no-alt-screen never enters.
     const openingMode = p.noAltScreen ? undefined : tuiMode
@@ -454,6 +466,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       booted = await bootDefault(p, deps, { useEmbedded: Object.keys(boot).length > 0 })
     } catch (error) {
       opening?.abandon()
+      if (worktree) await worktreeFlag?.printWorktreeEnd(worktree, resolveLocale(io.env))
       throw error
     }
     let stashed: string | undefined
@@ -544,6 +557,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
           : tuiMode
             ? tuiMode.runTui(booted, p, {
                 ...(opening ? { opening } : {}),
+                ...(worktree ? { worktree } : {}),
                 ...(stashed ? { draft: stashed } : {}),
                 env: io.env,
                 stdin: io.stdin,
@@ -558,7 +572,8 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                 historyPath: join(resolveHome(io.env), 'tui-history.jsonl'),
                 commandsDir: join(home, 'commands'),
                 ...(breadcrumb ? { breadcrumb } : {}),
-                // Needs this machine's own Host, which only the shared local daemon form leaves free.
+                // /import needs this machine's own Host and /export a second connection to the daemon that
+                // holds the session; only the shared local daemon form leaves both free.
                 ...(p.connect === undefined &&
                 !p.standalone &&
                 !p.ephemeral &&
@@ -572,6 +587,13 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                           { cwd: p.cwd ?? io.cwd, env: io.env },
                           file,
                           from,
+                        ),
+                      exportSession: async (request: ExportIntoRequest) =>
+                        (await import('./commands/export-into.js')).exportInto(
+                          p,
+                          (args) => bootDefault(args, deps),
+                          { cwd: p.cwd ?? io.cwd },
+                          request,
                         ),
                     }
                   : {}),
@@ -601,6 +623,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     } finally {
       opening?.abandon()
       await Promise.race([booted.close().catch(() => undefined), exited])
+      // The TUI reports its own worktrees on the way out; the one-shot form does it here, on stderr.
+      if (worktree && mode === 'print')
+        io.stderr.write((await worktreeFlag?.printWorktreeEnd(worktree, resolveLocale(io.env))) ?? '')
     }
   } catch (e) {
     return (await import('./command-failure.js')).reportCommandFailure(e, p.command, io)

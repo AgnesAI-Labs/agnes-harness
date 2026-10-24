@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -687,7 +687,12 @@ describe('ui data source resolution', () => {
     const root = mkdtempSync(join(tmpdir(), 'agh-ui-source-dev-'))
     const profile = join(root, 'profile')
     mkdirSync(profile, { recursive: true })
-    const packageDir = fileURLToPath(new URL('../../../examples/fde/finance-reconcile/', import.meta.url))
+    const shipped = fileURLToPath(new URL('../../../examples/fde/finance-reconcile/', import.meta.url))
+    const shippedManifest = join(shipped, 'package.json')
+    const original = readFileSync(shippedManifest, 'utf8')
+    const packageDir = join(root, 'development-package')
+    // Development generations link back to their source. Mutate only a throwaway copy.
+    cpSync(shipped, packageDir, { recursive: true })
     const source = await readDevelopmentPlugin(packageDir, 'local-dev')
     const packageId = source.snapshot.packageId
     const row = createPluginRow({
@@ -737,6 +742,7 @@ describe('ui data source resolution', () => {
       expect(granted.atoms).not.toContain('uiData:finance.other.read')
     } finally {
       rmSync(root, { recursive: true, force: true })
+      expect(readFileSync(shippedManifest, 'utf8')).toBe(original)
     }
   })
 

@@ -8,7 +8,7 @@ type DataAttributes = { [name: `data-${string}`]: string | number | boolean | un
 
 /**
  * One way to go deeper: a page opens in place of the current one (push). Its header is a breadcrumb
- * (上一级 › 当前) whose levels lead back; the browser's back button returns one level; with a route, the
+ * (Parent › Current) whose levels lead back; the browser's back button returns one level; with a route, the
  * address names the open page so it can be linked to directly.
  */
 
@@ -79,8 +79,8 @@ export type PushNavigation = {
   stack: readonly string[]
   open(id: string): void
   /**
-   * Swap the top page for another without a new history entry: a flow that moves on (添加插件 →
-   * 审阅 → 插件详情), so back leaves the flow instead of landing on a finished step.
+   * Swap the top page for another without a new history entry: a flow that moves on (Add plugin →
+   * Review → Plugin details), so back leaves the flow instead of landing on a finished step.
    */
   replace(id: string): void
   /** Return one level; through the browser's history when this frame put the level there. */
@@ -276,13 +276,13 @@ export function usePushNavigation({
 }
 
 /**
- * The header of an open page: the breadcrumb is the way back, with no separate 返回 beside it and
- * no leading ‹ (「模型与账户 › 添加账户」); the level just above this page is the back control (named
- * 「返回到 …」, it goes back one step through history), and every earlier level jumps to its own
+ * The header of an open page: the breadcrumb is the way back, with no separate Back beside it and
+ * no leading ‹ (「Models and accounts › Add account」); the level just above this page is the back control (named
+ * 「Back to …」, it goes back one step through history), and every earlier level jumps to its own
  * page. Then the title, an optional line under it and the page's actions. Focus moves to the
  * title when the page opens, as it does for a new page.
  *
- * `line` is the settings header: one line where the breadcrumb is the title (「通用 › 记忆文件」, the
+ * `line` is the settings header: one line where the breadcrumb is the title (「General › Memory files」, the
  * current level is the heading), the page's actions sit at its end and the description is only read
  * to assistive tech. A top level page passes no crumbs and shows its title alone.
  */
@@ -382,8 +382,8 @@ export function PushHeader({
 }
 
 /**
- * The way back as a breadcrumb: 「上一级 › 当前」, with no leading ‹. The level just above is the back
- * control (「返回到 …」); every earlier level jumps to itself. A view with no shared page header (a
+ * The way back as a breadcrumb: 「Parent › Current」, with no leading ‹. The level just above is the back
+ * control (「Back to …」); every earlier level jumps to itself. A view with no shared page header (a
  * detail inside a list, a filtered list) uses this alone. With `heading` the breadcrumb is the page
  * title: the current level is the page heading, and a top level shows only its title.
  */
@@ -486,7 +486,7 @@ type PushFrame = PushNavigation & {
 const PushContext = createContext<PushFrame | undefined>(undefined)
 
 /**
- * A region that pages push into: a full page (Agent FDE, 插件, 自动化) or a pane. The root content
+ * A region that pages push into: a full page (Agent FDE, Plugins, Automation) or a pane. The root content
  * stays mounted under open pages, so its state (scroll, filters) survives a round trip.
  */
 export function PushStack({

@@ -98,7 +98,13 @@ export function openMemory(input: {
     root: paths.root,
     async snapshot(turn) {
       if (store.configuration().mode === 'off') return undefined
-      return capture(turn).snapshot
+      if (turnSnapshot?.turn === turn) return turnSnapshot.value.snapshot
+      const value = capture(turn)
+      const externalChanges = await store.externalChanges(value.files)
+      if (!externalChanges.length) return value.snapshot
+      const snapshot = Object.freeze({ ...value.snapshot, externalChanges: Object.freeze(externalChanges) })
+      turnSnapshot = { turn, value: { ...value, snapshot } }
+      return snapshot
     },
     files(fallback, source, signal, approve): MemoryFilePort {
       const get = (path: string): MemoryFile => {

@@ -8,14 +8,8 @@ import { displayWidth } from '../terminal.js'
 import { paintsColour, type ThemedAnsi, TuiTheme } from '../theme.js'
 import type { ToolDetailState } from '../tool-detail.js'
 import { type DiffInput, diffFromArgsText, renderDiff, statsMark } from './diff.js'
-import {
-  type CardFacts,
-  type CardKind,
-  cardHead,
-  cardKind,
-  type PlanStep,
-  planSteps,
-} from './special-card.js'
+import { parseLspNote, splitLspNote } from './lsp-note.js'
+import { type CardFacts, type CardKind, cardHead, cardKind, planSteps, STEP_MARK } from './special-card.js'
 
 type ToolNode = Extract<UINode, { kind: 'tool' }>
 
@@ -73,12 +67,6 @@ const STATUS_GLYPH: Record<string, string> = {
 // Without colour the running and failed diamonds would be indistinguishable from a finished one.
 const COLOURLESS_GLYPH: Record<string, string> = { running: '◈', failed: '✗', error: '✗' }
 const LABEL_WIDTH = 'Enforcement:'.length
-const STEP_MARK: Record<PlanStep['status'], [string, Tone]> = {
-  todo: ['[ ]', 'faint'],
-  doing: ['[>]', 'accent'],
-  done: ['[x]', 'success'],
-  blocked: ['[!]', 'danger'],
-}
 // A collapsed plan card shows this many steps; Ctrl-O shows them all.
 const COLLAPSED_STEPS = 10
 // A collapsed card previews this many screen rows of its result.
@@ -127,6 +115,7 @@ export class ToolCard implements Component {
   private readonly summary: string
   private readonly kind: CardKind | undefined
   private readonly look: () => Look
+  private readonly raw: () => boolean
   private readonly right: (expanded: boolean) => string
   /** A plan card's steps, painted, one per row. */
   private readonly stepRows: string[] = []
@@ -158,6 +147,7 @@ export class ToolCard implements Component {
     } = {},
   ) {
     const ansi = options.ansi ?? new TuiTheme('mono').ansi(createAnsi('none'))
+    this.raw = () => ansi.raw === true
     this.onAction = options.onAction ?? (() => {})
     this.onExpand = options.onExpand ?? (() => {})
     const locale = options.locale ?? 'en'
@@ -235,12 +225,24 @@ export class ToolCard implements Component {
       if (parsed?.text !== text) parsed = { text, input: diffFromArgsText(node.name, text) }
       return parsed?.input
     }
+    // Language-server errors that write and edit report after saving; the head line's N is the count.
+    const lsp = () => (changes ? parseLspNote(node.resultPreview) : undefined)
     this.stats = () => {
       const input = diff()
-      return input ? ` ${statsMark(input, ansi)}` : ''
+      const note = lsp()
+      const badge = note
+        ? ` ${ansi.fg('danger', tt(note.count === 1 ? 'card.lspErrors.one' : 'card.lspErrors.other', locale, { n: note.count }))}`
+        : ''
+      return `${input ? ` ${statsMark(input, ansi)}` : ''}${badge}`
     }
     let shown: { width: number; rows: string[] } | undefined
     this.preview = (width) => {
+      const note = lsp()
+      if (note && note.errors.length > 0) {
+        const rows = note.errors.slice(0, PREVIEW_ROWS).map((row) => escapeControl(row))
+        if (note.count > PREVIEW_ROWS) rows.push(tt('card.lspMore', locale, { n: note.count - PREVIEW_ROWS }))
+        return rows.map((row) => fitLine(`    ${ansi.fg('danger', row)}`, width))
+      }
       const text = changes ? undefined : node.resultPreview
       if (!text || kind !== undefined) return []
       if (shown?.width !== width) {
@@ -290,7 +292,8 @@ export class ToolCard implements Component {
       // A fetched record can be long and the card draws on every frame: wrap it once per width.
       let wrapped: { value: string; width: number; lines: string[] } | undefined
       this.rail.push((width) => {
-        const value = read()
+        const got = read()
+        const value = got !== undefined && label === 'Result' && changes ? splitLspNote(got) : got
         if (value === undefined) return []
         if (wrapped?.value !== value || wrapped.width !== width)
           wrapped = { value, width, lines: wrapIndented(escapeControl(value), width - LABEL_WIDTH - 1) }
@@ -322,6 +325,10 @@ export class ToolCard implements Component {
     this.collapsedState = !this.collapsedState
     if (!this.collapsedState) this.onExpand()
   }
+  /** Opens (`true`) or folds it; asking for the state it already has does nothing. */
+  setOpen(open: boolean): void {
+    if (open === this.collapsedState) this.toggle()
+  }
   clickHead(): void {
     this.toggle()
   }
@@ -351,12 +358,16 @@ export class ToolCard implements Component {
         ...(hidden > 0 ? [fitLine(`    ${this.more}`, width)] : []),
       ]
     }
-    const inner = Math.max(1, width - 3)
+    // Raw view: the body without the rail, and no closing line.
+    const raw = this.raw()
+    const inner = Math.max(1, width - (raw ? 0 : 3))
     const rail = look.paint('│')
     return [
       spread(`${head}${this.stats()}`, this.right(true), width),
-      ...this.rail.flatMap((rows) => rows(inner)).map((line) => fitLine(` ${rail} ${line}`, width)),
-      fitLine(look.closing, width),
+      ...this.rail
+        .flatMap((rows) => rows(inner))
+        .map((line) => fitLine(raw ? line : ` ${rail} ${line}`, width)),
+      ...(raw ? [] : [fitLine(look.closing, width)]),
     ]
   }
 }

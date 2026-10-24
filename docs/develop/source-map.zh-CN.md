@@ -76,4 +76,8 @@ CSS 片段保留原来的级联顺序，同一领域的后置覆盖仍在后面�
 
 异步目录校验使用现有的受限元数据读取池扫描同层目录：最多同时读取四个目录，每个目录最多同时检查四个条目。文件读取仍限制为每次遍历最多四个句柄和 1 MiB 暂存内存。完整性、路径边界、链接和文件变化检查均保留；失败或取消后，先等待所有已开始的读取结束，再返回。
 
+CLI/TUI 插件来源在输入入口规范化本机路径分隔符，后端来源校验不变。Ctrl-G 保留 POSIX 引号规则，Windows 原生程序使用不展开变量的参数规则。工作区 Git 状态在 Windows 上也使用 Git 能识别的 `/dev/null` 写法，并继续禁用钩子、过滤器和网络操作。终端工作区标签仅在显示时统一分隔符，使 Git 与 Windows 本机路径能一致缩写。工程脚本的 npm 命令复用[工具链检查](../../tools/toolchain/check.mjs)中选定 Node 的启动方式。历史页面对比在隔离目录中安装各版本的锁定依赖，成功或失败后均清理临时目录。[文档验收脚本](../../tools/public-docs/smoke.mjs)使用系统临时目录，连接 Windows 管道时校验守护进程身份。
+
+终端输入层仅在查询期间缓存有界的光标回复片段，超时后释放未完成的输入。[原件导出](../../packages/cli/src/commands/native-bundle.ts)在各平台复用已有私有目录创建方法，建立暂存和原件目录。[旧凭据迁移](../../packages/host-infrastructure/src/adapters/file-secrets-dir.ts)同样用它创建新的目标目录，读取时不修补权限。[安全状态汇总](../../packages/host/src/runtime/lifecycle/admin-security-status.ts)不展示配方解析器明确拒绝的权限档位；会话授权和其他错误仍按原有规则处理。插件指南限制文本预览大小，结构化结果仍保留完整的标准模板。
+
 会话展示按职责拆为 [Web controllers](../../packages/web/src/app)、[区域挂载](../../packages/web/src/regions)、[时间线节点宿主](../../packages/web/src/timeline-node-host.tsx)、[composer](../../packages/web-units/src/composer)、[消息与回合](../../packages/web-ui/src/conversation/messages) 和 [客户端对账](../../packages/web/src/client-modules/reconcile)。原入口保留现有导出。

@@ -188,7 +188,7 @@ function Diff({ before, after, label }: { before: string; after: string; label: 
   )
 }
 
-/** «请求内容»: the logical request in folded sections, or the JSON actually sent. */
+/** «Request contents»: the logical request in folded sections, or the JSON actually sent. */
 export function RequestContent({ state }: { state: RequestTraceState }) {
   const { t, snapshot, attempt, previous, compare } = state
   const [mode, setMode] = useState<'logical' | 'wire'>('logical')
@@ -352,7 +352,7 @@ function tokenSummary(tokens: unknown, missing: string): string {
   )
 }
 
-/** «用量»'s request half: the sending attempt and the tokens the provider reported or we estimated. */
+/** «Usage»'s request half: the sending attempt and the tokens the provider reported or we estimated. */
 export function RequestUsage({ state }: { state: RequestTraceState }) {
   const { t, snapshot, attempt, attemptIndex } = state
   if (!snapshot) return <RequestStatus state={state} />
@@ -407,7 +407,7 @@ export function RequestUsage({ state }: { state: RequestTraceState }) {
   )
 }
 
-/** Capture details and the explicit local delete, folded inside «来源». */
+/** Capture details and the explicit local delete, folded inside «Provenance». */
 export function RequestCapture({
   state,
   clear,

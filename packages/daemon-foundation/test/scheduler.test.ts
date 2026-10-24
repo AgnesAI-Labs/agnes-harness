@@ -94,6 +94,87 @@ function scheduler(
 }
 
 describe('Scheduler', () => {
+  it('admits later jobs within the shared concurrency bound and drains active work on stop', async () => {
+    vi.useFakeTimers()
+    const tables = sqliteTables()
+    let instance: Scheduler | undefined
+    const releases = new Map<string, () => void>()
+    const signals = new Map<string, AbortSignal>()
+    const started: string[] = []
+    try {
+      const clock = () => Date.now()
+      const repo = new JobsRepo(tables.table('jobs'), clock)
+      const registry = fakeRegistry().registry
+      registry.open = async (options) => {
+        const key = options.key ?? ''
+        const entry = await fakeRegistry().registry.open(options)
+        entry.session.run = async ({ signal }) => {
+          started.push(key)
+          signals.set(key, signal)
+          if (key === 'failed') throw new Error('synthetic run failure')
+          if (key !== 'fast') await new Promise<void>((resolve) => releases.set(key, resolve))
+          return { reason: 'completed', lastSeq: 1 }
+        }
+        return entry
+      }
+      instance = new Scheduler({
+        repo,
+        registry,
+        clock,
+        owner: 'owner',
+        notices: { emit() {} } as never,
+        limits: { tickMs: 10, lockMs: 5, maxStalled: 5 },
+        workspaces: workspaceAuthority(),
+        ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+        activationBarrier: createExtensionActivationBarrier(),
+      })
+      repo.insert(row('slow', { sessionKey: 'slow' }))
+      instance.start()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(started).toEqual(['slow'])
+      repo.insert(row('fast', { sessionKey: 'fast' }))
+      await vi.advanceTimersByTimeAsync(10)
+      expect(repo.get('fast')?.status).toBe('completed')
+      expect(repo.get('slow')).toMatchObject({ status: 'active', stalledCounter: 0 })
+      repo.insert(row('failed', { sessionKey: 'failed', maxAttempts: 1 }))
+      await vi.advanceTimersByTimeAsync(10)
+      expect(repo.get('failed')?.status).toBe('failed')
+
+      for (let n = 0; n < 16; n++) {
+        const key = `held-${String(n).padStart(2, '0')}`
+        repo.insert(row(key, { sessionKey: key }))
+      }
+      await vi.advanceTimersByTimeAsync(30)
+      expect(repo.activeSince()).toHaveLength(16)
+      expect(repo.waitingDepth(0).reduce((total, entry) => total + entry.depth, 0)).toBe(1)
+      expect(new Set(started).size).toBe(started.length)
+      expect(await instance.tick()).toEqual({ claimed: 0, requeued: 0, dead: 0 })
+      releases.get('held-00')?.()
+      await vi.advanceTimersByTimeAsync(10)
+      expect(repo.get('held-15')?.status).toBe('active')
+
+      let stopped = false
+      const stopping = instance.stop().then(() => {
+        stopped = true
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      for (const [key, signal] of signals)
+        if (key !== 'fast' && key !== 'failed' && key !== 'held-00') expect(signal.aborted).toBe(true)
+      expect(stopped).toBe(false)
+      for (const release of releases.values()) release()
+      await stopping
+      expect(repo.get('slow')?.status).toBe('active')
+      const count = started.length
+      await vi.advanceTimersByTimeAsync(100)
+      expect(started).toHaveLength(count)
+    } finally {
+      for (const release of releases.values()) release()
+      await instance?.stop()
+      await tables.close()
+      vi.useRealTimers()
+    }
+  })
+
   it('does not start a scheduled remote turn across an activation cutover', async () => {
     const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
     repo.insert(row('activation-race'))

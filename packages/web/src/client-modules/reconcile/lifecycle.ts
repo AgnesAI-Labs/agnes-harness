@@ -47,8 +47,8 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
     setPhase,
   } = context
 
-  // 回收从未提交给 state 的 fiber（apply 失败/超时或 epoch 失配）：state.fiber 还没见过它，
-  // 名册移除的卸载分支捕获不到，不在这里 dispose 就是泄漏。dispose 失败只记日志。
+  // Reclaim a fiber never committed to state (apply failure/timeout or epoch mismatch): state.fiber has not seen it,
+  // so roster-removal cleanup cannot catch it. Failing to dispose here leaks; disposal failures are logged only.
   async function discardUncommitted(
     fiber: { dispose(): Promise<void> | void } | undefined,
     rowId: string,
@@ -244,8 +244,8 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           return
         }
 
-        // fiber 先由本次 run 局部持有，通过 epoch 检查后才提交给 state；旧 registry 早已删除，
-        // 因此 apply 期间不会出现同包双挂。
+        // This run holds the fiber locally until the epoch check passes, then commits it to state. The old registry is gone,
+        // so apply never mounts the same package twice.
         let fiber: { dispose(): Promise<void> | void } | undefined
         try {
           await lifecycle('refresh', rowId)
@@ -311,7 +311,7 @@ export function createReconcileLifecycle(context: ReconcileLifecycleContext) {
           )
       }
     }
-    // 同包串行：所有应用排队在前一个之后（WC10）。
+    // Serialize within each package: queue each application after the previous one.
     state.chain = state.chain.then(run, run)
     return state.chain
   }

@@ -7,7 +7,13 @@ import {
   assertWorkspaceBindingEnvelope,
   type WorkspaceBindingEnvelope,
 } from '@agnes/daemon-foundation/storage/workspaces'
-import { type Host, type HostSession, loadSessionTitle, type WorkspaceBinding } from '@agnes/host'
+import {
+  type Host,
+  type HostSession,
+  loadSessionTitle,
+  sameWorkspaceBindingAuthority,
+  type WorkspaceBinding,
+} from '@agnes/host'
 import type { LoopSelection } from '@agnes/protocol'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 
@@ -27,7 +33,7 @@ export type SessionEntry = {
   backlog: EventEnvelope[]
   backlogTruncated: boolean
   tailError: unknown
-  /** What listeners threw, oldest first and bounded. Nothing acts on these in I1; they exist so a
+  /** What listeners threw, oldest first and bounded. Nothing acts on these yet; they exist so a
    *  contained failure is recorded somewhere rather than only not crashing. */
   listenerErrors: unknown[]
   ac: AbortController
@@ -47,12 +53,7 @@ const LISTENER_ERRORS_MAX = 100
 
 function sameBinding(a: WorkspaceBinding | undefined, b: WorkspaceBinding | undefined): boolean {
   if (!a || !b) return a === b
-  return (
-    a.sessionKey === b.sessionKey &&
-    a.workspaceId === b.workspaceId &&
-    a.authorityRevision === b.authorityRevision &&
-    a.canonicalRoot === b.canonicalRoot
-  )
+  return sameWorkspaceBindingAuthority(a, b)
 }
 
 export class SessionRegistry implements Registry<SessionEntry> {
@@ -67,6 +68,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       permission: string | null
       agent: string | null
       bundles: string | null
+      systemPromptAppend: string | null
       loop: string | null
       binding: WorkspaceBinding | undefined
       promise: Promise<SessionEntry>
@@ -95,6 +97,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
+    systemPromptAppend?: string
     loop?: LoopSelection
     credential?: unknown
     historySignal?: AbortSignal
@@ -113,6 +116,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
       ...(o.agent !== undefined ? { agent: o.agent } : {}),
       ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
+      ...(o.systemPromptAppend !== undefined ? { systemPromptAppend: o.systemPromptAppend } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.credential === undefined ? {} : { credential: o.credential }),
       ...(accepted ? { key: accepted.sessionKey, binding: accepted } : {}),
@@ -123,6 +127,8 @@ export class SessionRegistry implements Registry<SessionEntry> {
         if (o.agent !== undefined) await this.host.createSession(request)
         if (
           existing.session.d.cwd !== request.cwd ||
+          // A live session keeps the prompt it started with; an append can only apply to a new one.
+          request.systemPromptAppend !== undefined ||
           (request.preset !== undefined && existing.session.preset.name !== request.preset) ||
           // `default` names whatever the deployment default is, which only the Host resolves.
           (request.permission !== undefined &&
@@ -146,6 +152,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
           pending.agent !==
             (request.agent === undefined ? null : JSON.stringify([request.agent, request.agentDigest])) ||
           pending.bundles !== (request.bundles === undefined ? null : JSON.stringify(request.bundles)) ||
+          pending.systemPromptAppend !== (request.systemPromptAppend ?? null) ||
           pending.loop !== (request.loop ? JSON.stringify(request.loop) : null) ||
           !sameBinding(pending.binding, request.binding)
         )
@@ -159,6 +166,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
         permission: request.permission ?? null,
         agent: request.agent === undefined ? null : JSON.stringify([request.agent, request.agentDigest]),
         bundles: request.bundles === undefined ? null : JSON.stringify(request.bundles),
+        systemPromptAppend: request.systemPromptAppend ?? null,
         loop: request.loop ? JSON.stringify(request.loop) : null,
         binding: request.binding,
         promise,
@@ -181,6 +189,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
     agent?: string
     agentDigest?: string
     bundles?: readonly string[]
+    systemPromptAppend?: string
     loop?: LoopSelection
     credential?: unknown
     historySignal?: AbortSignal
@@ -296,7 +305,7 @@ export class SessionRegistry implements Registry<SessionEntry> {
           // with a cursor. Nothing tells a client it was dropped for throwing, so detaching would
           // leave a connection silently subscribed to nothing. The cost is that a permanently broken
           // listener goes on being called once per event and its stream keeps holes it is never told
-          // about; the failures are recorded on the entry, and acting on them is I1 debt.
+          // about; the failures are recorded on the entry, and acting on them remains unimplemented.
           for (const l of entry.listeners) {
             try {
               l(e)

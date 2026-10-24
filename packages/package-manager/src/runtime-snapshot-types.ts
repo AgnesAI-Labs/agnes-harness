@@ -49,7 +49,24 @@ export type RuntimeSnapshotPinRequest = Readonly<{
 
 export type RuntimeSnapshotCollection = Readonly<{
   removed: readonly string[]
+  /** Referenced snapshots, plus verified unused Windows trees whose rename is temporarily blocked. */
   retained: readonly string[]
+}>
+
+/**
+ * The pin and snapshot bookkeeping alone, decoded and shape-checked but with no tree hashed. Enough to
+ * decide whether anything needs releasing or collecting; the write that follows verifies under the lock.
+ */
+export type RuntimePinRecords = Readonly<{
+  pins: readonly Readonly<{
+    pinId: string
+    purpose: RuntimePinPurpose
+    packageId: string
+    snapshotId: string
+    integrity: string
+    treeIntegrity: string
+  }>[]
+  snapshotIds: readonly string[]
 }>
 
 export type RuntimeSnapshotStore = PackageStore

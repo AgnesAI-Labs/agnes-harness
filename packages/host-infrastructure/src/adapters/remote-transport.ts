@@ -9,7 +9,7 @@ export { type RemoteTransport, RemoteTransportClosed } from '@agnes/core'
 /**
  * The test double for Stage A: it satisfies the contract without a network, running commands on this
  * machine under a scratch root. It is not a sandbox and claims to be none - assembly reports the
- * remote posture, and sandbox.l1 stays unattested (spec RA11).
+ * remote posture, and sandbox.l1 stays unattested.
  */
 export function createLoopbackTransport(_opts: { root: string }): RemoteTransport {
   let open = true

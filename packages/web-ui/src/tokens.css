@@ -2,27 +2,28 @@
 @import "./components.css";
 @layer ui {
   /* ═══════════════════════════════════════════════════════════════════════
-   Web UI 组件层 · 主题桥：--agnes-* → --ant-*
-   组件消费统一的语义主题变量。
+     Web UI component layer · theme bridge: --agnes-* → --ant-*
+     Components consume shared semantic theme variables.
 
-   这是 antd 组件的主题唯一通道。zeroRuntime 预构建的 antd.css 里样式值
-   引用 --ant-* CSS 变量（v6 cssVar 模式）；本文件把 --ant-* 指到仓库既有的
-   --agnes-* 语义 token（权威在 packages/web/public/style.css token 区），
-   浅/深色随既有机制（:root 浅色、.dark 深色覆盖）自动生效。
+     This is the sole theme channel for antd components. Prebuilt zeroRuntime antd.css references
+     --ant-* CSS variables (v6 cssVar mode); this file maps them to the existing --agnes-* semantic
+     tokens, whose authority is the token section in packages/web/public/style.css.
+     The existing :root light and .dark overrides apply automatically.
 
-   红线：
-   - 禁止在此写具体色值——只允许 var() 引用 --agnes-*、--radius-* 和 --font-* 尺度。
-   - 禁止用 ConfigProvider 运行时主题切色（zeroRuntime 静态 CSS 下无效）。
-   - prefixCls 保持默认 ant-，本文件不与 CSS 重新编译绑定。
+     Boundaries:
+     - Never write literal colors here; only var() references to --agnes-*, --radius-* and --font-* scales.
+     - Do not switch colors through ConfigProvider runtime themes; zeroRuntime static CSS ignores them.
+     - Keep the default ant- prefixCls; this file is independent of CSS recompilation.
 
-   桥接全部全局语义变量；组件私有 --ant-*-* 的颜色默认值同样映射到语义 token，
-   避免静态组件带入浅色值。Ant Design X（@agnes/web-ui/x）的子树在运行时以同一个
-   `agnes-theme` 变量键生成样式，因此同样经由本文件取色，不需要第二套主题。
-   ═══════════════════════════════════════════════════════════════════════ */
+     Bridge all global semantic variables, including component-private --ant-*-* color defaults,
+     so static components do not carry light-only colors. Ant Design X (@agnes/web-ui/x) subtrees
+     generate styles at runtime using the same `agnes-theme` variable key, so they also get colors
+     through this bridge without a second theme.
+     ═══════════════════════════════════════════════════════════════════════ */
 
   :root,
   :root .agnes-theme {
-    /* Brand / 链接 */
+    /* Brand / links */
     --ant-color-primary: var(--agnes-brand-primary);
     --ant-color-primary-hover: var(--agnes-brand-primary);
     --ant-color-primary-active: var(--agnes-brand-primary);
@@ -38,7 +39,7 @@
     --ant-color-primary-text-active: var(--agnes-text-emphasis);
     --ant-color-highlight: var(--agnes-status-danger-text);
 
-    /* 文字 */
+    /* Text */
     --ant-color-text: var(--agnes-text-primary);
     --ant-color-text-secondary: var(--agnes-text-secondary);
     --ant-color-text-tertiary: var(--agnes-text-tertiary);
@@ -54,7 +55,7 @@
     --ant-color-icon: var(--agnes-icon-secondary);
     --ant-color-icon-hover: var(--agnes-text-primary);
 
-    /* 背景层级 */
+    /* Background layers */
     --ant-color-bg-layout: var(--agnes-bg-page);
     --ant-color-bg-base: var(--agnes-bg-surface);
     --ant-color-bg-container: var(--agnes-bg-surface);
@@ -80,7 +81,7 @@
     --ant-color-bg-solid-hover: var(--agnes-text-primary);
     --ant-color-bg-solid-active: var(--agnes-text-primary);
 
-    /* 边框（antd border 比 border-secondary 深；agnes line-primary 重于 secondary） */
+    /* Borders (antd border is darker than border-secondary; agnes line-primary is heavier than secondary) */
     --ant-color-border: var(--agnes-line-primary);
     --ant-color-border-secondary: var(--agnes-line-primary);
     --ant-color-split: var(--agnes-line-primary);
@@ -88,7 +89,7 @@
     --ant-color-border-bg: var(--agnes-bg-surface);
     --ant-control-outline: var(--agnes-brand-focus-ring);
 
-    /* 状态 */
+    /* Status */
     --ant-color-error: var(--agnes-status-danger-text);
     --ant-color-error-hover: var(--agnes-status-danger-text);
     --ant-color-error-active: var(--agnes-status-danger-text);
@@ -136,7 +137,7 @@
     --ant-color-info-text-hover: var(--agnes-status-info-text);
     --ant-color-info-text-active: var(--agnes-status-info-text);
 
-    /* 尺度（无深浅维度） */
+    /* Scales (independent of light/dark theme) */
     --ant-font-size: var(--font-size-body);
     --ant-font-size-sm: var(--font-size-sm);
     --ant-font-size-lg: var(--font-size-lg);

@@ -37,6 +37,93 @@ const check = scheduleTargetCheck({
 })
 
 describe('new-session schedule targets', () => {
+  it.each(['check', 'initialize', 'create'] as const)(
+    'cancels preparation during %s without continuing session setup',
+    async (phase) => {
+      const tables = sqliteTables()
+      const repo = new JobsRepo(tables.table('jobs'), () => 10_000)
+      let release!: () => void
+      let entered!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const ready = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      const wait = async () => {
+        entered()
+        await gate
+      }
+      let preparing = false
+      let closed = false
+      const operations: string[] = []
+      const client = vi.spyOn(sdk, 'createClient').mockImplementation(
+        () =>
+          ({
+            initialize: async () => {
+              operations.push('initialize')
+              if (phase === 'initialize') await wait()
+            },
+            createSession: async () => {
+              operations.push('create')
+              if (phase === 'create') await wait()
+              return { id: 'created-session' }
+            },
+            call: async () => {
+              operations.push('configure')
+            },
+            close: async () => {
+              closed = true
+              release()
+            },
+          }) as unknown as sdk.NodeClient,
+      )
+      const tasks = scheduledTasks({
+        db: openDaemonScheduleDb(tables.table('schedules')),
+        jobs: repo.scheduleJobs(),
+        clock: () => 10_000,
+        socketPath: '/synthetic-unused',
+        serverIdentity: { pid: 1, processStartId: 'synthetic' },
+        sources: {
+          normalize: async (path) => {
+            if (preparing && phase === 'check') await wait()
+            return path
+          },
+          workspaces: async () => [{ path: '/synthetic', available: true }],
+          catalog: async () => ({ loops: [], modelAdapters: [] }),
+          presets: () => [],
+        },
+      })
+      try {
+        const saved = await tasks.upsert({
+          title: 'Synthetic',
+          prompt: 'Synthetic',
+          selector: { every_seconds: 60 },
+          target: { kind: 'new-session', cwd: '/synthetic' },
+        })
+        if (!('id' in saved)) throw new Error('schedule missing')
+        const job = repo.get(`schedule:${saved.id}:1`)
+        if (!job) throw new Error('job missing')
+        const controller = new AbortController()
+        preparing = true
+        const result = tasks.hooks.prepare(job, controller.signal)
+        await ready
+        controller.abort()
+        release()
+        await expect(result).rejects.toThrow()
+        expect(operations).toEqual(
+          phase === 'check' ? [] : phase === 'initialize' ? ['initialize'] : ['initialize', 'create'],
+        )
+        expect(closed).toBe(phase !== 'check')
+      } finally {
+        release()
+        await tasks.close()
+        client.mockRestore()
+        await tables.close()
+      }
+    },
+  )
+
   it('accepts a registered workspace with an available loop, bundle, preset and model', async () => {
     expect(await check({ kind: 'new-session', cwd: '/work/app/' })).toBeUndefined()
     expect(
@@ -133,8 +220,9 @@ it('records a scheduled park and notifies the owner and bound channel through th
     'p',
   )
   automation.schedules = tasks
+  let seq = 0
   const event = (type: string, data: unknown) =>
-    ({ type, data, seq: 1, ts: new Date(now).toISOString() }) as import('@agnes/protocol').EventEnvelope
+    ({ type, data, seq: ++seq, ts: new Date(now).toISOString() }) as import('@agnes/protocol').EventEnvelope
   const decision = {
     handle: { id: 'd', sessionId: 's' },
     request: { expiresAt: new Date(now + 86400_000).toISOString() },
@@ -152,12 +240,12 @@ it('records a scheduled park and notifies the owner and bound channel through th
           origin: 'system',
           actor: { attrs: { unattendedApproval: 'notify' } },
         })
-        return 1
+        return ++seq
       },
       run: async () => {
         automation.observe('s', event('turn/start', { turn: 1, trigger: 'prompt' }))
         automation.observe('s', event('decision/state', decision))
-        automation.observe('s', event('turn/end', { turn: 1, reason: 'parked' }))
+        automation.observe('s', event('turn/end', { reason: 'parked' }))
         return { reason: 'parked', lastSeq: 4 }
       },
     },
@@ -202,7 +290,7 @@ it('records a scheduled park and notifies the owner and bound channel through th
       }),
     )
     automation.observe('s', event('turn/start', { turn: 2, trigger: 'approval-resume' }))
-    automation.observe('s', event('turn/end', { turn: 2, reason: 'completed' }))
+    automation.observe('s', event('turn/end', { reason: 'completed' }))
     expect(await read()).toMatchObject({ outcome: 'ran' })
   } finally {
     await scheduler.stop()

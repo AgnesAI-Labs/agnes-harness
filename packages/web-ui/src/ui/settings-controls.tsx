@@ -12,8 +12,8 @@ type DataAttributes = { [name: `data-${string}`]: string | number | boolean | un
 
 /**
  * A labelled run of rows: the bare noun above, its actions on the right of the label, the rows in
- * one quiet outline. A failed save is told at the label (「保存失败 · 重试」); a failed read is one
- * line with 「重试」 that leaves what was already shown in place.
+ * one quiet outline. A failed save is told at the label (「Save failed · Retry」); a failed read is one
+ * line with 「Retry」 that leaves what was already shown in place.
  */
 export function SettingsBlock({
   label,
@@ -66,8 +66,8 @@ export function SettingsBlock({
           {actions && <span className="agnes-settings-block-actions">{actions}</span>}
         </div>
       )}
-      {/* Reads show the shared way: nothing for 200 ms, then a placeholder, 「仍在读取…」 after
-       3 s; a failed read is one line with 重试 and keeps what was already shown. */}
+      {/* Reads show the shared way: nothing for 200 ms, then a placeholder, 「Still reading…」 after
+       3 s; a failed read is one line with Retry and keeps what was already shown. */}
       {(state || hasContent) && (
         <Loadable
           loading={state === 'loading'}
@@ -86,7 +86,7 @@ export function SettingsBlock({
 
 export type SettingsTagTone = 'ok' | 'warn' | 'error' | 'muted' | 'brand'
 
-/** The one status mark settings use: 正常 / 需要注意 / 失败 / 未启用 / 默认. */
+/** The one status mark settings use: Normal / Needs attention / Failed / Disabled / Default. */
 export function SettingsTag({
   tone,
   children,
@@ -104,7 +104,7 @@ export function SettingsTag({
 }
 
 /**
- * A number chosen from a few presets: 默认 (nothing stored), the presets, and 自定义, which keeps
+ * A number chosen from a few presets: Default (nothing stored), the presets, and Custom, which keeps
  * any other stored value and edits it in its own field.
  */
 export function SettingsPresetSelect({
@@ -126,9 +126,9 @@ export function SettingsPresetSelect({
   /** The accessible name: the row's label. */
   label: string
   defaultLabel?: string
-  /** Whether 默认 (nothing stored) is a choice; off for settings that always hold a number. */
+  /** Whether Default (nothing stored) is a choice; off for settings that always hold a number. */
   allowDefault?: boolean
-  /** The custom field's unit, e.g. 「秒」; the field shows `value / scale`. */
+  /** The custom field's unit, e.g. 「seconds」; the field shows `value / scale`. */
   unit?: string
   scale?: number
   disabled?: boolean | undefined

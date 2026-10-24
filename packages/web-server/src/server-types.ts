@@ -54,7 +54,7 @@ export type WebServerOptions = {
    */
   skinAsset?: (pathname: string) => SkinAssetResolution | Promise<SkinAssetResolution>
   /**
-   * Optional same-origin client module asset resolver for `/plugins/*` (design WC3). Same contract
+   * Optional same-origin client module asset resolver for `/plugins/*`. Same contract
    * as `skinAsset`: it receives the request pathname and answers with either an absolute file path,
    * the bytes themselves, or null. Path authority lives in the resolver (the daemon answers only
    * from its immutable snapshots), so this server never learns where packages are installed; it owns

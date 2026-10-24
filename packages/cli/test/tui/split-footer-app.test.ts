@@ -237,7 +237,7 @@ it('--no-alt-screen puts a divider between sessions at /new and keeps both conve
     asked(term, 'alpha question')
     await vi.waitFor(async () => expect(times(await all(), 'alpha answer')).toBe(1))
     await vi.waitFor(() => expect(app.busy).toBe(false))
-    asked(term, '/new')
+    await app.runInput('/new')
     await vi.waitFor(async () => expect((await all()).join('\n')).toContain('── session '))
     asked(term, 'beta question')
     await vi.waitFor(async () => expect(times(await all(), 'beta answer')).toBe(1))

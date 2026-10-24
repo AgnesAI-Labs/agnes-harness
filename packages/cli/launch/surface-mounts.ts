@@ -8,7 +8,7 @@ type MountProxyLookup = Parameters<typeof createMountProxy>[0]['lookup']
 /** Retry only after a failed read; healthy connections have no periodic mount queries. */
 export const SURFACE_MOUNT_REFRESH_MS = 8_000
 
-/** Reserved URL prefixes the Web server answers with its own fixed branches (design WC3): the admin
+/** Reserved URL prefixes the Web server answers with its own fixed branches: the admin
  *  surfaces, the skin asset route and the client module asset route. A Surface mount at or under one
  *  of these could never receive traffic anyway (every fixed branch returns before mountProxy is
  *  consulted), so the rows are dropped from the fetched table instead of being proxied -- this turns

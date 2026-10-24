@@ -1,7 +1,8 @@
 import { isAbsolute, join } from 'node:path'
 import type { ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
-import { guardedResult } from '../../../tools-core/src/guards/output.js'
+import { scrubFeedback } from '../../../tools-core/src/guards/feedback.js'
+import { cutHead, guardedResult } from '../../../tools-core/src/guards/output.js'
 import { isBinary, loadSpilledLines, MAX_READ_BYTES } from '../../../tools-core/src/tools/read.js'
 import { GrepParams } from '../../../tools-core/src/tools/schemas.js'
 import { type FoundPath, referencedResult } from './references.js'
@@ -43,8 +44,11 @@ export const grepTool = defineTool({
         args.literal ? args.pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : args.pattern,
         args.ignoreCase ? 'i' : '',
       )
-    } catch (e) {
-      return toolError(`invalid pattern: ${(e as Error).message}`)
+    } catch {
+      return toolError(
+        `invalid pattern ${cutHead(scrubFeedback(JSON.stringify(args.pattern)), 160)}; correct the regular expression or set literal=true for exact text.`,
+        'FS_INVALID_PATTERN',
+      )
     }
     const glob = args.glob ? globToRegExp(args.glob) : undefined
     const report = newWalkReport()
@@ -76,7 +80,7 @@ export const grepTool = defineTool({
       // A stored output is one file, whatever glob says. Whole lines are searched, so a match is not
       // lost to a fold, and each is reported at the row where its line begins: the offset to read from.
       const spilled = await loadSpilledLines(ctx, args.path)
-      if (!spilled.ok) return toolError(spilled.message)
+      if (!spilled.ok) return toolError(spilled.message, 'FS_ARTIFACT_READ')
       searchLines(
         `artifact://${args.path.slice('artifact://'.length, 'artifact://'.length + 12)}`,
         spilled.logical,
@@ -84,7 +88,10 @@ export const grepTool = defineTool({
       )
       // Past the byte ceiling only the start was searched, which "no matches" must not hide.
       const notes = [...(spilled.notes ? [spilled.notes.trimEnd()] : [])]
-      if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
+      if (atLimit)
+        notes.push(
+          `[limit ${limit} reached; there may be more matches; narrow path/pattern or increase limit]`,
+        )
       return guardedResult(ctx, [out.length > 0 ? out.join('\n') : 'no matches', ...notes].join('\n'))
     }
     const denied = searchPathError(ctx, 'grep', root)
@@ -126,7 +133,8 @@ export const grepTool = defineTool({
         })
     }
     const notes = walkNotes(report, MAX_ENTRIES)
-    if (atLimit) notes.push(`[limit ${limit} reached; there may be more matches]`)
+    if (atLimit)
+      notes.push(`[limit ${limit} reached; there may be more matches; narrow path/pattern or increase limit]`)
     const failed = report.searched === 0 && (report.unreadable > 0 || report.binary > 0)
     const partial =
       atLimit || report.truncated || report.unreadable > 0 || report.oversize > 0 || report.binary > 0
@@ -134,7 +142,8 @@ export const grepTool = defineTool({
       out.length > 0 ? out.join('\n') : failed ? 'nothing could be searched' : 'no matches',
       ...notes,
     ].join('\n')
-    if (failed) return { ...(await guardedResult(ctx, text)), isError: true }
+    if (failed)
+      return { ...(await guardedResult(ctx, text)), isError: true, details: { code: 'FS_SEARCH_UNREADABLE' } }
     return referencedResult(ctx, text, out, found, found.length, partial)
   },
 })

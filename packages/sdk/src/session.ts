@@ -20,6 +20,7 @@ import {
   type SessionAttachResult,
   type SessionBudgetResult,
   type SessionDeliverablesResult,
+  type SessionJob,
   type SessionJobsControlParams,
   type SessionJobsControlResult,
   type SessionJobsReadResult,
@@ -28,6 +29,8 @@ import {
   type SessionProjectUIOpeningParams,
   type SessionProjectUIParams,
   type SessionProjectUIPatchParams,
+  type SessionSetToolFilterResult,
+  type SessionToolFilterRequest,
   type SessionUndoPreviewResult,
   type SessionUndoResult,
   type SessionWorkspaceChangesParams,
@@ -540,6 +543,21 @@ export class Session {
     })
   }
 
+  /** Runs one non-interactive shell command on the daemon host; poll `jobsRead(job.id)` for output. */
+  async jobsRun(
+    command: string,
+    options: { timeoutMs?: number; commandId?: string } = {},
+  ): Promise<SessionJob> {
+    const { output } = await this.jobsControl({
+      operation: 'run',
+      command,
+      ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options.commandId === undefined ? {} : { commandId: options.commandId }),
+    })
+    if (!('id' in output)) throw new Error('session.jobs.control run returned no job')
+    return output
+  }
+
   workspaceChanges(
     input: Omit<SessionWorkspaceChangesParams, 'sessionId'> = {},
   ): Promise<SessionWorkspaceChangesResult> {
@@ -591,6 +609,25 @@ export class Session {
     return this.client.call<EffectiveFromResult>('_agnes/v1/session.setPreset', {
       sessionId: this.id,
       preset,
+    })
+  }
+
+  /**
+   * Narrows the tools this session may use, for the rest of the session: `deny` is added to what is
+   * already denied, `allow` is intersected with any earlier `allow`. Nothing in the session can
+   * widen it again, so to get a tool back start a new session or fork from before the call. Names
+   * are exact tool names from `tools()`; an unknown name refuses the whole call. Owner only. A retry
+   * with the same `commandId` returns the first attempt's result. An older daemon answers
+   * METHOD_NOT_FOUND (-32601): the filter was not applied.
+   */
+  setToolFilter(
+    filter: SessionToolFilterRequest,
+    opts: { commandId?: string } = {},
+  ): Promise<SessionSetToolFilterResult> {
+    return this.client.call<SessionSetToolFilterResult>('_agnes/v1/session.setToolFilter', {
+      sessionId: this.id,
+      commandId: opts.commandId ?? crypto.randomUUID(),
+      ...filter,
     })
   }
 

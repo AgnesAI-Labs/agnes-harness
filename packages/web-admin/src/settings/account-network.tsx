@@ -11,7 +11,7 @@ import {
 import { fieldError } from './account-form.js'
 
 const NETWORK_KEYS = ['connectMs', 'requestMs', 'streamIdleMs'] as const
-/** Second presets per timeout; 自定义 keeps any other stored value. */
+/** Second presets per timeout; Custom keeps any other stored value. */
 const PRESETS: Readonly<Record<(typeof NETWORK_KEYS)[number], readonly number[]>> = {
   connectMs: [5, 10, 30],
   requestMs: [30, 60, 120, 300],
@@ -48,7 +48,7 @@ export function accountNetworkFields(root: HTMLElement | null, t: Translate, onC
     if (!root) return
     renderRegion(
       root,
-      // Three equal controls side by side; 自定义 turns its own column into a seconds field.
+      // Three equal controls side by side; Custom turns its own column into a seconds field.
       <fieldset
         className="account-network"
         data-testid="account-network-timeouts"

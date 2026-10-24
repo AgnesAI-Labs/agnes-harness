@@ -26,6 +26,7 @@ import {
 import { copyPackageTreeSync } from './copy-tree.js'
 import { PackageError } from './errors.js'
 import { hashFileReads, mapFileChecks, walkFileChecks } from './file-read-pool.js'
+import { checkoutGitSource } from './git-source.js'
 import { extractPluginArchive } from './plugin-archives.js'
 import { checkCancelled } from './ports.js'
 import { fetchNpmProvenance } from './provenance.js'
@@ -335,8 +336,11 @@ export function readPackageJson(dir: string): PackageJson {
   try {
     if (statSync(file).size > MAX_JSON) throw new Error('too large')
     text = readFileSync(file, 'utf8')
-  } catch {
-    throw sourceError('package source has no readable package.json', 'package-json')
+  } catch (error) {
+    throw sourceError(
+      'package source has no readable package.json',
+      errorCode(error) === 'ENOENT' ? 'package-json-missing' : 'package-json',
+    )
   }
   let value: unknown
   try {
@@ -715,54 +719,7 @@ export async function fetchSource(
         break
       }
       case 'git': {
-        const raw = checked.ref.slice(4)
-        const split = raw.lastIndexOf('#')
-        const url = split < 0 ? raw : raw.slice(0, split)
-        const requested = split < 0 ? 'HEAD' : raw.slice(split + 1)
-        let commit = requested
-        mkdirSync(payload)
-        const prefix = [
-          '-c',
-          'core.hooksPath=/dev/null',
-          '-c',
-          'core.attributesFile=/dev/null',
-          '-c',
-          'protocol.file.allow=never',
-        ]
-        const git = (args: string[]): Promise<{ stdout: string }> =>
-          exec('git', [...prefix, ...args], { cwd: opts.cwd })
-        if (!/^[a-f0-9]{40}$/.test(commit)) {
-          const refs = (
-            await git([
-              'ls-remote',
-              '--',
-              url,
-              requested === 'HEAD' ? 'HEAD' : 'refs/heads/' + requested,
-              'refs/tags/' + requested,
-              'refs/tags/' + requested + '^{}',
-            ])
-          ).stdout
-          const rows = refs
-            .trim()
-            .split('\n')
-            .map((line) => line.split(/\s+/))
-            .filter((row) => /^[a-f0-9]{40}$/.test(row[0] ?? ''))
-          const selected = rows.find((row) => row[1]?.endsWith('^{}')) ?? rows[0]
-          if (!selected?.[0] || (rows.length > 1 && !rows.some((row) => row[1]?.endsWith('^{}'))))
-            throw sourceError('Git ref is unavailable or ambiguous; supply a commit', 'git-ref')
-          commit = selected[0]
-        }
-        resolvedSource = { type: 'git', ref: 'git:' + url + '#' + commit }
-        await git(['init', '--quiet', payload])
-        await git(['-C', payload, 'remote', 'add', 'origin', url])
-        await git(['-C', payload, 'fetch', '--quiet', '--depth', '1', 'origin', commit])
-        await git(['-C', payload, 'checkout', '--quiet', '--detach', 'FETCH_HEAD'])
-        const head = (await git(['-C', payload, 'rev-parse', 'HEAD'])).stdout.trim()
-        if (head !== commit)
-          throw new PackageError('E_LOCK_MISMATCH', 'git checkout differs from the pinned commit', {
-            detail: { reason: 'commit' },
-          })
-        rmSync(join(payload, '.git'), { recursive: true, force: true })
+        resolvedSource = await checkoutGitSource(checked.ref, payload, opts.cwd, exec, opts.signal)
         pkg = metadata(payload)
         integrity = hashDirectory(payload)
         break

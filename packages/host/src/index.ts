@@ -9,6 +9,8 @@ export {
   type ScanRead,
   scanAll,
   scanPages,
+  ToolFilterError,
+  toolFilterRejection,
 } from '@agnes/core'
 export {
   ARTIFACT_RECLAIMED_FAILURE,
@@ -120,6 +122,7 @@ export * from '@agnes/host-common/quiet-state'
 export {
   type AuthenticatedWorkspaceBindingEnvelope,
   CliWorkspaceAuthority,
+  sameWorkspaceBindingAuthority,
   type WorkspaceBinding,
 } from '@agnes/host-common/workspace-authority'
 export * from '@agnes/host-common/workspace-policy'

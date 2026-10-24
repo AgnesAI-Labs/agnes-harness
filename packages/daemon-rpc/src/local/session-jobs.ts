@@ -61,7 +61,7 @@ export function registerSessionJobs(
         const inspection = await services.inspectService(input, proof, call.signal)
         if (inspection.kind !== 'effect') throw rpcError('CAPABILITY_DENIED')
         const control = p as SessionJobsControlParams
-        if (control.operation !== 'open') {
+        if (control.operation !== 'open' && control.operation !== 'run') {
           const snapshot = (
             await services.callService(
               { sessionId, extension, service: 'jobs.read', input: {} },

@@ -1,6 +1,7 @@
 import type { Disposer, ToolDef } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
 import { type ShellJobs, standaloneShellJobs } from '../../jobs/src/registry.js'
+import { type LspSessions, standaloneLsp } from '../../lsp/src/registry.js'
 import { type FileChangeRecorder, fileChangeReceipt } from './file-change.js'
 import { createEditTool, editTool } from './tools/edit.js'
 import { readTool } from './tools/read.js'
@@ -20,7 +21,10 @@ export const TOOLS_CORE: readonly ToolDef[] = [readTool, writeTool, editTool, sh
 // sandbox implementation can substitute an interpreter for it without importing a tool module.
 export { SHELL_SENTINEL } from './tools/shell.js'
 
-export function createToolsCoreExtension(jobs: ShellJobs = standaloneShellJobs) {
+export function createToolsCoreExtension(
+  jobs: ShellJobs = standaloneShellJobs,
+  lsp: LspSessions = standaloneLsp,
+) {
   return defineAgnesPlugin({
     inject: ['tools', 'hooks', 'eventLog'],
     apply(plugin: Context) {
@@ -30,8 +34,8 @@ export function createToolsCoreExtension(jobs: ShellJobs = standaloneShellJobs) 
       }
       const tools = [
         readTool,
-        createWriteTool(record),
-        createEditTool(record),
+        createWriteTool(record, lsp),
+        createEditTool(record, lsp),
         createShellTool(jobs),
         todoTool,
       ]

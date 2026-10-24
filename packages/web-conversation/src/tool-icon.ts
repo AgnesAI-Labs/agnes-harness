@@ -1,9 +1,10 @@
-/** 工具行前缀图标：按工具名给一个字形。
+/**
+ * Tool-row prefix icon: choose a glyph by tool name.
  *
- *  路径数据取自客户端的依赖 `lucide-react@0.575`（`dist/esm/icons/*.js`），
- *  与页面其余 .icon 同为 24 网格描边字形，故直接复用 `.icon` 的 stroke 口径。
- *  客户端的 `components/icons/toolcalls/*` 是 11×11 的彩色圆角块（含渐变），
- *  与本页的单色描边体系不同族，故不采用那套。
+ * Path data comes from the client dependency `lucide-react@0.575` (`dist/esm/icons/*.js`).
+ * Like the page's other .icon glyphs, these use a 24-unit stroke grid, so reuse `.icon` stroke styling.
+ * The client's `components/icons/toolcalls/*` are 11×11 colored rounded blocks with gradients,
+ * a different family from this page's monochrome strokes, so they are not used.
  */
 
 import { createElement, type ReactElement } from 'react'
@@ -54,7 +55,7 @@ const WRENCH: Glyph = [
   ],
 ]
 
-/** 名字里出现这些片段就用对应字形；顺序即优先级（先匹配到者胜）。 */
+/** Name fragments mapped to glyphs in priority order; the first match wins. */
 const MATCHERS: readonly (readonly [pattern: RegExp, glyph: Glyph])[] = [
   [/(search|grep|find|query|lookup)/i, SEARCH],
   [/(shell|bash|exec|run|command|terminal)/i, TERMINAL],
@@ -86,7 +87,7 @@ export function toolIconReact(name: string): ReactElement {
   )
 }
 
-/** 生成工具行的前缀图标元素（样式沿用 `.icon`，另加 `tool-icon` 供布局微调）。 */
+/** Create a tool-row prefix icon using `.icon` styling plus `tool-icon` for layout adjustments. */
 export function toolIcon(name: string): SVGSVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   svg.setAttribute('class', 'icon tool-icon')

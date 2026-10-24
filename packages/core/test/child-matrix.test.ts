@@ -369,6 +369,12 @@ describe('recovery descriptor and close reasons', () => {
     const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'x' })
     await child.cancel?.()
     expect((await storage.lookupByKey(child.key))?.state).toBe('cancelled')
+    expect(await new KernelChildren(k, () => parent).humanControlState(child.key)).toMatchObject({
+      status: 'cancelled',
+      controls: { stop: false, continue: false },
+      totalTokens: 0,
+      durationMs: 0,
+    })
     await k.close()
   })
 
@@ -573,6 +579,11 @@ describe('subagent cost isolation', () => {
     expect(parent.state.creditsUsed).toBe(0)
     const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'cost' })
     await child.run('cost')
+    expect(await new KernelChildren(k, () => parent).humanControlState(child.key)).toMatchObject({
+      totalTokens: 15,
+      durationMs: 0,
+      controls: { stop: false, continue: false },
+    })
     expect(parent.state.lastLedgerTokens).toBeNull()
     expect(parent.state.creditsUsed).toBe(0)
     const rows = await parent.scan({ type: 'subagent/cost', limit: 5 })

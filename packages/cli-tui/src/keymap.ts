@@ -1,5 +1,42 @@
 import type { KeyName } from './keys.js'
 
+/** Letters the approval scope reads as keys: single-key decisions, never rebindable. */
+export type ApprovalLetter = 'y' | 'a' | 'n'
+/** Letters the pager reads while it is open: search, next and previous match, copy. */
+export type PagerLetter = '/' | 'n' | 'N' | 'c'
+/** What the tool card focus reads besides named keys: expand all, fold all, and the space bar. */
+export type CardLetter = 'a' | 'z' | 'space'
+/** What the prompt's vim normal mode reads: a typed letter or sequence, or the one named key it takes. */
+export type VimSeq =
+  | 'h'
+  | 'j'
+  | 'k'
+  | 'l'
+  | 'w'
+  | 'b'
+  | 'e'
+  | '0'
+  | '^'
+  | '$'
+  | 'gg'
+  | 'G'
+  | 'i'
+  | 'a'
+  | 'I'
+  | 'A'
+  | 'o'
+  | 'O'
+  | 'x'
+  | 'dd'
+  | 'dw'
+  | 'D'
+  | 'cw'
+  | 'C'
+  | 'p'
+  | 'P'
+  | 'u'
+type BoundKey = KeyName | ApprovalLetter | PagerLetter | CardLetter | VimSeq
+
 /**
  * Every key binding, declared once. A scope is a place that reads keys; inside one scope a key means
  * one action. Code asks `actionFor(scope, key)` and switches on the action, never on the key.
@@ -19,6 +56,15 @@ export const BINDINGS = [
   { id: 'timeline-page-down', scope: 'global', keys: ['pgdn'] },
   { id: 'steer', scope: 'global', keys: ['alt-enter'] },
   { id: 'queue-recall', scope: 'global', keys: ['alt-up'] },
+  { id: 'thinking-cycle', scope: 'global', keys: ['shift-tab'] },
+  { id: 'model-next', scope: 'global', keys: ['alt-p'] },
+  { id: 'model-prev', scope: 'global', keys: ['alt-shift-p'] },
+  { id: 'draft-stash', scope: 'global', keys: ['ctrl-s'] },
+  { id: 'redraw', scope: 'global', keys: ['ctrl-l'] },
+  // Only on an empty prompt (root-input.ts); with a draft the editor's undo below gets the key.
+  { id: 'suspend', scope: 'global', keys: ['ctrl-z'] },
+  { id: 'pager-open', scope: 'global', keys: ['ctrl-t'] },
+  { id: 'cards-focus', scope: 'global', keys: ['ctrl-x'] },
   // The prompt editor.
   { id: 'submit', scope: 'editor', keys: ['enter'] },
   { id: 'newline', scope: 'editor', keys: ['alt-enter', 'shift-enter'] },
@@ -43,6 +89,38 @@ export const BINDINGS = [
   { id: 'undo', scope: 'editor', keys: ['ctrl-z'] },
   { id: 'redo', scope: 'editor', keys: ['ctrl-shift-z'] },
   { id: 'external-edit', scope: 'editor', keys: ['ctrl-g'] },
+  { id: 'paste-image', scope: 'editor', keys: ['ctrl-v'] },
+  // The prompt's vim normal mode (`/vim`): Esc leaves insert mode, and these letters act while the mode is
+  // normal. A number before a movement repeats it. Not rebindable; every other key keeps its editor meaning.
+  { id: 'vim-normal', scope: 'vim', keys: ['esc'], fixed: true },
+  { id: 'vim-left', scope: 'vim', keys: ['h'], fixed: true },
+  { id: 'vim-down', scope: 'vim', keys: ['j'], fixed: true },
+  { id: 'vim-up', scope: 'vim', keys: ['k'], fixed: true },
+  { id: 'vim-right', scope: 'vim', keys: ['l'], fixed: true },
+  { id: 'vim-word', scope: 'vim', keys: ['w'], fixed: true },
+  { id: 'vim-word-back', scope: 'vim', keys: ['b'], fixed: true },
+  { id: 'vim-word-end', scope: 'vim', keys: ['e'], fixed: true },
+  { id: 'vim-line-start', scope: 'vim', keys: ['0'], fixed: true },
+  { id: 'vim-line-first', scope: 'vim', keys: ['^'], fixed: true },
+  { id: 'vim-line-end', scope: 'vim', keys: ['$'], fixed: true },
+  { id: 'vim-top', scope: 'vim', keys: ['gg'], fixed: true },
+  { id: 'vim-bottom', scope: 'vim', keys: ['G'], fixed: true },
+  { id: 'vim-insert', scope: 'vim', keys: ['i'], fixed: true },
+  { id: 'vim-append', scope: 'vim', keys: ['a'], fixed: true },
+  { id: 'vim-insert-start', scope: 'vim', keys: ['I'], fixed: true },
+  { id: 'vim-append-end', scope: 'vim', keys: ['A'], fixed: true },
+  { id: 'vim-open-below', scope: 'vim', keys: ['o'], fixed: true },
+  { id: 'vim-open-above', scope: 'vim', keys: ['O'], fixed: true },
+  { id: 'vim-delete-char', scope: 'vim', keys: ['x'], fixed: true },
+  { id: 'vim-delete-line', scope: 'vim', keys: ['dd'], fixed: true },
+  { id: 'vim-delete-word', scope: 'vim', keys: ['dw'], fixed: true },
+  { id: 'vim-delete-to-end', scope: 'vim', keys: ['D'], fixed: true },
+  { id: 'vim-change-word', scope: 'vim', keys: ['cw'], fixed: true },
+  { id: 'vim-change-to-end', scope: 'vim', keys: ['C'], fixed: true },
+  { id: 'vim-paste', scope: 'vim', keys: ['p'], fixed: true },
+  { id: 'vim-paste-before', scope: 'vim', keys: ['P'], fixed: true },
+  { id: 'vim-undo', scope: 'vim', keys: ['u'], fixed: true },
+  { id: 'vim-redo', scope: 'vim', keys: ['ctrl-r'], fixed: true },
   // Ctrl-R history search; any other key accepts the match and then does what it always does.
   { id: 'search-older', scope: 'search', keys: ['ctrl-r'] },
   { id: 'search-erase', scope: 'search', keys: ['backspace'] },
@@ -63,6 +141,25 @@ export const BINDINGS = [
   { id: 'panel-down', scope: 'panel', keys: ['down'], fixed: true },
   { id: 'panel-page-up', scope: 'panel', keys: ['pgup'], fixed: true },
   { id: 'panel-page-down', scope: 'panel', keys: ['pgdn'], fixed: true },
+  // The full-conversation pager (Ctrl-T): it takes every key while open.
+  { id: 'pager-close', scope: 'pager', keys: ['esc', 'ctrl-t', 'ctrl-c'], fixed: true },
+  { id: 'pager-up', scope: 'pager', keys: ['up'], fixed: true },
+  { id: 'pager-down', scope: 'pager', keys: ['down'], fixed: true },
+  { id: 'pager-page-up', scope: 'pager', keys: ['pgup'], fixed: true },
+  { id: 'pager-page-down', scope: 'pager', keys: ['pgdn'], fixed: true },
+  { id: 'pager-top', scope: 'pager', keys: ['home'], fixed: true },
+  { id: 'pager-bottom', scope: 'pager', keys: ['end'], fixed: true },
+  { id: 'pager-search', scope: 'pager', keys: ['/'], fixed: true },
+  { id: 'pager-next', scope: 'pager', keys: ['n'], fixed: true },
+  { id: 'pager-prev', scope: 'pager', keys: ['N'], fixed: true },
+  { id: 'pager-copy', scope: 'pager', keys: ['c'], fixed: true },
+  // Tool card focus (Ctrl-X): it takes every key while on; Ctrl-C leaves it and then interrupts as usual.
+  { id: 'cards-exit', scope: 'cards', keys: ['esc', 'ctrl-x', 'ctrl-c'], fixed: true },
+  { id: 'cards-prev', scope: 'cards', keys: ['up'], fixed: true },
+  { id: 'cards-next', scope: 'cards', keys: ['down'], fixed: true },
+  { id: 'cards-toggle', scope: 'cards', keys: ['enter', 'space'], fixed: true },
+  { id: 'cards-expand-all', scope: 'cards', keys: ['a'], fixed: true },
+  { id: 'cards-collapse-all', scope: 'cards', keys: ['z'], fixed: true },
   // The approval dialog: never rebindable, so a changed key cannot approve by accident.
   { id: 'approval-dismiss', scope: 'approval', keys: ['esc', 'ctrl-c'], fixed: true },
   { id: 'approval-confirm', scope: 'approval', keys: ['enter'], fixed: true },
@@ -70,6 +167,10 @@ export const BINDINGS = [
   { id: 'approval-down', scope: 'approval', keys: ['down'], fixed: true },
   { id: 'approval-page-up', scope: 'approval', keys: ['pgup'], fixed: true },
   { id: 'approval-page-down', scope: 'approval', keys: ['pgdn'], fixed: true },
+  // Single-key decisions, live once the card has settled (approval-settle.ts); the same decisions as the numbers.
+  { id: 'approval-allow-once', scope: 'approval', keys: ['y'], fixed: true },
+  { id: 'approval-allow-always', scope: 'approval', keys: ['a'], fixed: true },
+  { id: 'approval-reject', scope: 'approval', keys: ['n'], fixed: true },
   // Secret and text prompts.
   { id: 'secret-submit', scope: 'secret', keys: ['enter'], fixed: true },
   { id: 'secret-erase', scope: 'secret', keys: ['backspace'], fixed: true },
@@ -78,7 +179,7 @@ export const BINDINGS = [
 ] as const satisfies readonly {
   id: string
   scope: string
-  keys: readonly KeyName[]
+  keys: readonly BoundKey[]
   fixed?: true
 }[]
 
@@ -91,7 +192,7 @@ export type ActionOf<S extends Scope> = Extract<Binding, { scope: S }>['id']
 export type Effective = {
   id: ActionId
   scope: Scope
-  keys: readonly KeyName[]
+  keys: readonly BoundKey[]
   fixed: boolean
   overridden: boolean
 }
@@ -115,7 +216,7 @@ export class Keymap {
     for (const row of this.rows) for (const key of row.keys) this.lookup.set(`${row.scope}:${key}`, row.id)
   }
 
-  action<S extends Scope>(scope: S, key: KeyName): ActionOf<S> | undefined {
+  action<S extends Scope>(scope: S, key: string): ActionOf<S> | undefined {
     return this.lookup.get(`${scope}:${key}`) as ActionOf<S> | undefined
   }
 
@@ -131,7 +232,7 @@ export function installKeymap(keymap: Keymap): void {
   current = keymap
 }
 
-export function actionFor<S extends Scope>(scope: S, key: KeyName): ActionOf<S> | undefined {
+export function actionFor<S extends Scope>(scope: S, key: string): ActionOf<S> | undefined {
   return current.action(scope, key)
 }
 

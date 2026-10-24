@@ -145,7 +145,7 @@ export function serviceContext(deps: {
       } satisfies ServiceContext['net']),
       artifacts: Object.freeze({
         get: (ref) => artifacts().get(ref),
-        // Core ArtifactJob lacks public JobStatus fields. S5 owns that jobs adapter.
+        // Core ArtifactJob lacks public JobStatus fields. A separate jobs adapter must supply them.
         poll: refuse,
         put: refuse,
         submitJob: refuse,

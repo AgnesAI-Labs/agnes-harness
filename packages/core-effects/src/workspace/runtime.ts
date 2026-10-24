@@ -435,6 +435,8 @@ export type WorkspaceSessionIdentity = Readonly<{
   workspaceId: string
   authorityRevision: number
   canonicalRoot: string
+  /** Canonical extra directories admitted into the session's file fence; absent or empty when none. */
+  extraRoots?: readonly string[]
 }>
 
 /** Host-owned runtime payload consumed during Kernel session construction only. */

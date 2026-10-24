@@ -23,7 +23,8 @@ const meta = (readOnly) => ({
   isConcurrencySafe: false,
   isOpenWorld: true,
   replay: readOnly ? 'safe' : 'never',
-  deferLoading: false,
+  deferLoading: true,
+  discoveryGroup: 'Skill management',
   requiresApproval: readOnly ? 'never' : 'always',
 })
 const hints = {

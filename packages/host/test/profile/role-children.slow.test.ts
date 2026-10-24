@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { systemPromptPlugin } from '@agnes/code'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
@@ -216,12 +216,13 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
         ...(role ? { role } : {}),
         ...extra,
       })
-    await expect(create(ref('reader'))).rejects.toThrow('not delegable')
+    for (const role of [ref('reader'), 'bread'])
+      await expect(create(role)).rejects.toThrow('no roles are declared in this session; omit role')
     const body = {
       packageId: vendor,
       version: '2.3.4',
       integrity: source.snapshot.integrity,
-      source: { type: 'file' as const, ref: `file:${initial.snapshot.directory}` },
+      source: { type: 'file' as const, ref: `file:${initial.snapshot.directory.split(sep).join('/')}` },
       signature: 'unverified' as const,
       declaration,
       declarationDigest: digest(declaration),
@@ -247,8 +248,10 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
       },
     })
     await expect(fixture.host.resolveAgent?.('@other/application#reader')).resolves.toBeDefined()
-    await expect(create('@other/application#reader')).rejects.toThrow('not delegable')
-    await expect(create(ref('assistant'))).rejects.toThrow('not delegable')
+    for (const role of ['@other/application#reader', ref('assistant'), 'bread'])
+      await expect(create(role)).rejects.toThrow(
+        `unknown role ${role}; available: ${declaration.delegableAgents!.join(', ')}`,
+      )
     await expect(create(ref('reader'), { model: 'gw/m1' })).rejects.toThrow('cannot be combined')
     await expect(
       parent.d.children.createWithKind!('fork', {
@@ -293,6 +296,11 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
         'reader failed ' + JSON.stringify(await parent.d.log.storage.scan(reader.key, { limit: 100 })),
         { cause: error },
       )
+    })
+    const metrics = await parent.controls.state()
+    expect(metrics.children.find((child) => child.id === reader.key)).toMatchObject({
+      totalTokens: expect.any(Number),
+      durationMs: expect.any(Number),
     })
     const request = requests.find((request) => request.sessionKey === reader.key)!
     expect(request.system).toContain('READER_PERSISTENT_PERSONA')

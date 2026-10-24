@@ -12,6 +12,13 @@ When integrating AGH into an application, choose an entry point for your runtime
 
 APIs evolve with the source. `@agnes/*` packages currently resolve through the repository workspace. Use interfaces and examples matching your source revision.
 
+Validation errors identify the rejected field with `data.code`, `data.key` and `data.path`.
+Union diagnostics use a field failure from a compatible shape or a constraint shared by all
+compatible shapes; a mismatched literal discriminator cannot supply another shape's field hint.
+Ambiguous shapes retain `ENUM`. A missing field reports its parent path and the missing key.
+These diagnostics refine error locations without changing which payloads validate, and descriptions
+do not echo rejected values.
+
 <a id="选择正确入口"></a>
 
 ## Choose an entry point
@@ -64,7 +71,7 @@ ACP replay derives `_meta["ai.agnes.harness"].promptTurnId` from the historical 
 
 Web creates its SDK connection with `sessionRestoreHistory: 'none'` so newly created, forked and attached handles with a retained workspace hint also use admission-only recovery after worker reclamation. Other SDK clients default to `'full'`; an explicit `session.load` retains full replay for that handle even when the connection has a different recovery default.
 
-`client.session.fork(parentId, at, { cwd? })` can retain the parent's known workspace hint for child recovery. Web supplies that hint for both turn and sidebar forks. It stays client-side; the backend derives the child's authority from the parent binding and verifies the hint again when restoring.
+`client.session.fork(parentId, at, { cwd? })` can retain the parent's known workspace hint for child recovery. Web supplies that hint for both turn and sidebar forks. It stays client-side; the backend derives the child's authority from the parent binding and verifies the hint again when restoring. `session.fork(parentId, at, { additionalDirectories })` (wire: `_agnes/v1/session.fork` and the `fork` submit payload) gives the child its parent's extra directories plus the listed ones; the parent is unchanged. The daemon admits the union as for `session/new` (absolute, registered, not protected, at most 8 in all, refused rather than truncated). The SDK sends it only after `initialize.agentCapabilities._meta["ai.agnes.harness"].forkAdditionalDirectories: true` and otherwise throws `unsupported` without forking.
 
 `client.session.btw(sessionId, question)` answers a side question (1-4000 characters) from the conversation so far, outside the transcript: nothing is written to the ledger except a `side-call` cost row, the model cannot call tools, and during a running turn only the completed turns before it are shown. One side question per session runs at a time (`SESSION_BUSY`); an exhausted per-request or tree budget is `SEMANTIC_REJECTED` with `reason: 'BUDGET'`, a deadline of 60 seconds is `REQUEST_TIMEOUT`. Once the model has been called, a timeout or failure still writes the `side-call` cost row (marked interrupted).
 
@@ -156,7 +163,7 @@ A session keeps a list of bookmarked user prompts with its other presentation pr
 
 Each id is the `id` of a `kind: "user"` node in the session's UI projection (`session.projectUI` / `session.view` `nodes`). It is the ledger id of the `user/message` event, a 26-character ULID that does not change across reloads, daemon restarts or forks. The list keeps the order given, drops repeats after their first place, holds at most 200 ids of 1–128 characters without control characters, and an empty list clears it; `bookmarks` is absent when nothing is bookmarked. Ids are not checked against the transcript, so a bookmark whose prompt is not shown is simply never matched. The call is idempotent and has the same owner and local-credential checks as `session.rename`; an unknown session is refused with `SESSION_NOT_FOUND`.
 
-`session.list` rows (`SessionMeta`) carry the same `bookmarks` field next to `title` and `archived`. A fork copies the bookmarks whose prompt lies inside the history it inherits (at or before the fork boundary), in their order; the parent keeps its list. There is no session delete; an archived session keeps its bookmarks.
+`session.list` rows (`SessionMeta`) carry the same `bookmarks` field next to `title` and `archived`. A fork copies the bookmarks whose prompt lies inside the history it inherits (at or before the fork boundary), in their order; the parent keeps its list. There is no session delete; an archived session keeps its bookmarks. A `session.list` row also carries `additionalDirectories` (the session's extra directories, in binding order, as paths on the daemon's machine) when it has any, and omits it otherwise.
 
 ## Pinned sessions
 
@@ -179,6 +186,8 @@ These methods are deployment-local administration, blocked in the browser SDK. W
 ## Agent resolution and launch
 
 The SDK accepts `client.session.new({ cwd, agent: '@acme/kit#review' })`; embedders need no Bundle composition knowledge. `client.agents.resolve(ref)` (RPC `_agnes/v1/agents.resolve`) returns the exact selection, models, permission summary, source identities and a digest of the final effective configuration. Reviewed callers can pass `agentDigest` to refuse drift. An agent cannot be combined with `loop`, `bundles` or `preset`. Ordinary session/workspace authorization still applies; ordinary sessions keep their existing model fallback.
+
+`session/new` accepts `_meta['ai.agnes.harness'].systemPromptAppend` (SDK: `client.session.new({ cwd, systemPromptAppend })`), owner text added to that one new session's system prompt. It is 1 to 8192 characters without NUL, and it is appended only: it is merged into the closing instruction `personaSuffix` (existing text, a blank line, then the append), so it appears in the `session/start` row's `systemPrompt.config` and hash, survives resume and fork, and adds no ledger event. It is refused (`SEMANTIC_REJECTED`, nothing created) when combined with `agent`, when the session already exists, when the package control plane reports configuration read-only (`E_ADMIN_READ_ONLY`, the same check as `systemPrompt.save`; an embedded endpoint has none to lock), when the deployment uses `fullOverride`, or when the merged `personaSuffix` would pass 8192 characters. A daemon without this field ignores it silently, so a client that needs the text reads `_agnes/v1/systemPrompt.get` with the new `sessionId` before its first prompt and checks the sections.
 
 The host launch facade uses prepare → review → start(ticket, operationId). Start returns only a session ID and an optional reviewed draft. The user's edited draft goes through ordinary submit with its own commandId; retrying start never sends text. Failed or uncertain operations are not redispatched. Ordinary launches grant no install, trust or removal authority; example management remains restricted by a dependency-version-validated `exampleOf` relation.
 

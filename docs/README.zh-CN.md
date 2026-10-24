@@ -53,6 +53,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [Web 工作台](guide/web.zh-CN.md) | 创建任务、查看历史、管理模型与扩展 |
 | [内置浏览器](guide/browser.zh-CN.md) | 与 AGH 共用网页、测试本地项目和人工接管 |
 | [程序化工具与工作流](guide/code-workflows.zh-CN.md) | TypeScript cell 与持久并行子任务工作流 |
+| [代码诊断（LSP）](guide/lsp.zh-CN.md) | 编辑后的语言服务器错误；需要安装的服务器与安全限制 |
 | [会话与恢复](guide/sessions.zh-CN.md) | 继续任务、导出记录、处理中断 |
 | [插件生命周期](guide/packages.zh-CN.md) | 安装、信任、启用、更新与移除插件 |
 | [通用凭据](guide/credentials.zh-CN.md) | 保存只写 API key 并管理配置引用 |

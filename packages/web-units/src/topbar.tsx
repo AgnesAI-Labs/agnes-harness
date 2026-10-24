@@ -7,7 +7,7 @@ import { type TitleEditRequest, TopbarTitleEditor } from './topbar-title.js'
 
 export type { TopbarStatusDetails } from './run-status.js'
 export type TopbarConnectionState = 'connecting' | 'connected' | 'reconnecting' | 'closed'
-/** 渲染时取词：状态 → key 表，文案在组件内按当前 locale 解析。 */
+/** Translate at render time: map status to key, resolving text inside the component using the current locale. */
 const CONNECTION_LABEL_KEYS: Record<TopbarConnectionState, string> = {
   connecting: 'topbar.connection.connecting',
   connected: 'topbar.connection.connected',

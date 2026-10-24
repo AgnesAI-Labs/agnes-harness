@@ -4,6 +4,7 @@ import { join, resolve, sep } from 'node:path'
 import { checkToolDef, type ToolResult } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { type FakeToolContextOpts, fakeToolContext } from '../../../testkit/tool-context.js'
+import { LspSessions } from '../../lsp/src/registry.js'
 import { fileChangeReceipt } from '../src/file-change.js'
 import { withFileLock } from '../src/guards/mutation-queue.js'
 import { MAX_OBSERVED_ENTRIES } from '../src/guards/observed.js'
@@ -63,6 +64,7 @@ describe('write', () => {
     const r = await writeTool.execute({ path: 'big.ts', content: 'y'.repeat(10) }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('truncation guard')
+    expect(r.details).toMatchObject({ code: 'FS_TRUNCATION_GUARD' })
     expect(dec.decode(ctx.mem.files.get('/work/proj/big.ts'))).toBe('x'.repeat(100))
   })
 
@@ -71,6 +73,45 @@ describe('write', () => {
     const r = await writeTool.execute({ path: 'big.ts', content: '' }, ctx)
     expect(r.isError).toBe(true)
     expect(dec.decode(ctx.mem.files.get('/work/proj/big.ts'))).toBe('x'.repeat(100))
+  })
+
+  // The shape of the run that found this: resolving a merge conflict legitimately left the file at
+  // about a third of its size, and the refusal offered no way to say that was the intent.
+  const conflicted = `intro\n<<<<<<< HEAD\n${'ours line\n'.repeat(20)}=======\n${'theirs line\n'.repeat(8)}>>>>>>> branch\n`
+  const resolved = `intro\n${'theirs line\n'.repeat(8)}`
+
+  it('refuses a large shrink with the way to confirm it, and writes it once confirmed', async () => {
+    const ctx = await observedCtxOf({ files: { 'about.md': conflicted } })
+    const r = await writeTool.execute({ path: 'about.md', content: resolved }, ctx)
+    expect(r.isError).toBe(true)
+    expect(r.details).toMatchObject({ code: 'FS_TRUNCATION_GUARD' })
+    expect(textOf(r)).toMatch(/new content is 3\d% of the original/)
+    expect(textOf(r)).toContain('resend the same write with allowShrink: true')
+    expect(textOf(r)).toContain('use edit to change only the part you mean to')
+    expect(textOf(r)).not.toContain('smaller targeted replacements')
+    expect(dec.decode(ctx.mem.files.get('/work/proj/about.md'))).toBe(conflicted)
+    const ok = await writeTool.execute({ path: 'about.md', content: resolved, allowShrink: true }, ctx)
+    expect(ok.isError).toBeUndefined()
+    expect(textOf(ok)).toBe(`overwrote about.md (${resolved.length} chars)`)
+    expect(dec.decode(ctx.mem.files.get('/work/proj/about.md'))).toBe(resolved)
+  })
+
+  it('lets allowShrink empty a file, the explicit second statement the guard asks for', async () => {
+    const ctx = await observedCtxOf({ files: { 'big.ts': 'x'.repeat(100) } })
+    const r = await writeTool.execute({ path: 'big.ts', content: '', allowShrink: true }, ctx)
+    expect(r.isError).toBeUndefined()
+    expect(dec.decode(ctx.mem.files.get('/work/proj/big.ts'))).toBe('')
+  })
+
+  it('still refuses a confirmed shrink that leaves brackets open, without offering the flag', async () => {
+    const original = `function a() {\n${'  keep()\n'.repeat(30)}}\n`
+    const ctx = await observedCtxOf({ files: { 'a.js': original } })
+    const r = await writeTool.execute({ path: 'a.js', content: 'function a() {\n', allowShrink: true }, ctx)
+    expect(r.isError).toBe(true)
+    expect(r.details).toMatchObject({ code: 'FS_TRUNCATION_GUARD' })
+    expect(textOf(r)).toContain('unbalanced {')
+    expect(textOf(r)).not.toContain('allowShrink')
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.js'))).toBe(original)
   })
 
   it.each([
@@ -89,7 +130,9 @@ describe('write', () => {
       })
       const result = await writeTool.execute({ path: 'locked.ts', content: 'y' }, ctx)
       expect(result.isError).toBe(true)
-      expect(textOf(result)).toBe(`write failed before writing: ${message}`)
+      expect(textOf(result)).toContain('write before writing failed')
+      expect(textOf(result)).toContain('choose an')
+      expect(result.details).toMatchObject({ code })
       expect(dec.decode(ctx.mem.files.get('/work/proj/locked.ts'))).toBe('x'.repeat(100))
     },
   )
@@ -107,7 +150,8 @@ describe('a file that is readable but not writable', () => {
     const ctx = await locked()
     const result = await writeTool.execute({ path: 'state.yaml', content: 'name: b\n' }, ctx)
     expect(result.isError).toBe(true)
-    expect(textOf(result)).toBe(`write failed before writing: ${message}`)
+    expect(textOf(result)).toContain('denied by file policy')
+    expect(result.details).toMatchObject({ code: 'E_FS_DENIED' })
     expect(dec.decode(ctx.mem.files.get('/work/proj/state.yaml'))).toBe('name: a\n')
   })
 
@@ -118,7 +162,8 @@ describe('a file that is readable but not writable', () => {
       ctx,
     )
     expect(result.isError).toBe(true)
-    expect(textOf(result)).toBe(`edit failed: ${message}`)
+    expect(textOf(result)).toContain('denied by file policy')
+    expect(result.details).toMatchObject({ code: 'E_FS_DENIED' })
     expect(dec.decode(ctx.mem.files.get('/work/proj/state.yaml'))).toBe('name: a\n')
   })
 
@@ -178,6 +223,91 @@ describe('edit', () => {
     expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(original)
   })
 
+  it.each([
+    ['header\n\tvalue = 1  \nfooter', '    value = 1', 'whitespace/indentation-only', '2: "\\tvalue = 1  "'],
+    ['header\nvalue = 1\r\nfooter', 'value = 1\nfooter', 'line-ending difference', '2:'],
+    ['header\nvalue = 1\nfooter', 'value = 1\r\nfooter', 'line-ending difference', '2: "value = 1"'],
+    ['header\nname = “café”\nfooter', 'name = "café"', 'quote/unicode-normalisation', '2: "name = “café”"'],
+    ['header\nname = "cafe\u0301"\nfooter', 'name = "café"', 'quote/unicode-normalisation', '2:'],
+    ['header\nfirst = 1\nlast = 3', 'first = 1\nlast = 2', 'surrounding lines', '2: "first = 1"'],
+    [
+      'same = 1\nwrong context\nsame = 1\nwanted context!\n',
+      'same = 1\nwanted context?',
+      'similar text',
+      'Candidate at line 3:',
+    ],
+  ])('diagnoses mismatches without fuzzy replacement: %j', async (original, oldText, cause, excerpt) => {
+    const ctx = await observedCtxOf({ files: { 'a.ts': original } })
+    const result = await editTool.execute({ path: 'a.ts', edits: [{ oldText, newText: 'changed' }] }, ctx)
+    expect(result.details).toMatchObject({ code: 'FS_EDIT_NOT_FOUND' })
+    expect(textOf(result)).toContain(cause)
+    expect(textOf(result)).toContain(excerpt)
+    expect(textOf(result)).toContain('No edits from this call were written')
+    expect(textOf(result)).toContain('copy actual text exactly')
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(original)
+  })
+
+  it('names an earlier edit as the cause and rolls back the whole batch', async () => {
+    const ctx = await observedCtxOf({ files: { 'a.ts': 'value = 1\nfooter' } })
+    const result = await editTool.execute(
+      {
+        path: 'a.ts',
+        edits: [
+          { oldText: 'value = 1', newText: 'value = 2' },
+          { oldText: 'value = 1', newText: 'value = 3' },
+        ],
+      },
+      ctx,
+    )
+    expect(textOf(result)).toContain('already replaced by an earlier edit in this same call')
+    expect(textOf(result)).toContain('resend the whole batch')
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe('value = 1\nfooter')
+  })
+
+  it('diagnoses a stale read without blocking exact edits to another region', async () => {
+    const ctx = await observedCtxOf({ files: { 'a.ts': 'value = 1\nfooter' } })
+    ctx.mem.files.set('/work/proj/a.ts', new TextEncoder().encode('value = 2\nfooter'))
+    const result = await editTool.execute(
+      { path: 'a.ts', edits: [{ oldText: 'value = 1', newText: 'value = 3' }] },
+      ctx,
+    )
+    expect(textOf(result)).toContain('File changed since the session last read it')
+    expect(textOf(result)).toContain('2')
+    const exact = await editTool.execute(
+      { path: 'a.ts', edits: [{ oldText: 'footer', newText: 'FOOTER' }] },
+      ctx,
+    )
+    expect(exact.isError).toBeUndefined()
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe('value = 2\nFOOTER')
+  })
+
+  it('reports capped 1-based start lines for ambiguous and overlapping matches', async () => {
+    const ctx = await observedCtxOf({ files: { 'a.ts': 'header\nvalue\nvalue\n'.repeat(15) } })
+    const result = await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'value', newText: 'x' }] }, ctx)
+    expect(result.details).toMatchObject({ code: 'FS_AMBIGUOUS_EDIT' })
+    expect(textOf(result)).toContain('match start lines: 2, 3, 5, 6')
+    expect(textOf(result)).toContain('first 20 shown')
+    expect(textOf(result)).toContain('distinguishing surrounding lines')
+  })
+
+  it('bounds candidate work and guards excerpts, including secrets before clipping and spill', async () => {
+    const secret = `sk-${'s'.repeat(300)}`
+    const ctx = await observedCtxOf({ files: { 'a.ts': `name = “value” ${secret}\n` }, outputMaxBytes: 200 })
+    const result = await editTool.execute(
+      { path: 'a.ts', edits: [{ oldText: 'name = "value"', newText: 'name = "next"' }] },
+      ctx,
+    )
+    const all = JSON.stringify(result) + ctx.calls.artifacts.map((a) => dec.decode(a.bytes)).join('')
+    expect(all).not.toContain('sk-ssss')
+    expect(all).toContain('REDACTED')
+    expect(result.content.some((b) => b.type === 'ref')).toBe(true)
+    ctx.mem.files.set('/work/proj/a.ts', new TextEncoder().encode('value\n'.repeat(50000)))
+    const big = await editTool.execute({ path: 'a.ts', edits: [{ oldText: 'missing', newText: 'x' }] }, ctx)
+    expect(JSON.stringify(big) + ctx.calls.artifacts.map((a) => dec.decode(a.bytes)).join('')).toContain(
+      'Candidate scan skipped',
+    )
+  })
+
   it('replaces the match literally, not as a replacement pattern', async () => {
     // String.replace expands `$&` and friends in the replacement, so a newText carrying one would
     // otherwise write text that appears nowhere in the model's request.
@@ -205,6 +335,7 @@ describe('edit', () => {
     const r = await editTool.execute({ path: 'b.bin', edits: [{ oldText: 'a', newText: 'z' }] }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain(error)
+    expect(r.details).toMatchObject({ code: error === 'binary' ? 'FS_BINARY' : 'FS_ENCODING' })
     expect([...(ctx.mem.files.get('/work/proj/b.bin') as Uint8Array)]).toEqual([...bytes])
   })
 
@@ -216,15 +347,55 @@ describe('edit', () => {
     expect(r.details).toEqual({ path: 'a.txt', bytes: 5 })
   })
 
-  it('refuses an edit that truncates the file', async () => {
-    const ctx = await observedCtxOf({ files: { 'a.ts': `${'x'.repeat(100)}DROP` } })
-    const r = await editTool.execute(
-      { path: 'a.ts', edits: [{ oldText: 'x'.repeat(100), newText: '' }] },
+  it('applies a large intended deletion, because every removed byte is named in oldText', async () => {
+    // Resolving a merge conflict by dropping one side leaves about 30% of the file. The truncation
+    // guard used to refuse it and advise smaller replacements, which add up to the same total.
+    const ours = `${'  ours = compute(1, [2, 3])\n'.repeat(24)}`
+    const original = `head\n<<<<<<< HEAD\n${ours}=======\n  theirs = compute(4, [5, 6])\n>>>>>>> branch\n${'tail\n'.repeat(40)}`
+    const ctx = await observedCtxOf({ files: { 'about.md': original } })
+    // A batch whose oldText does not match still fails as a whole and writes nothing.
+    const missing = await editTool.execute(
+      {
+        path: 'about.md',
+        edits: [
+          { oldText: `<<<<<<< HEAD\n${ours}=======\n`, newText: '' },
+          { oldText: '>>>>>>> other\n', newText: '' },
+        ],
+      },
       ctx,
     )
-    expect(r.isError).toBe(true)
-    expect(textOf(r)).toContain('truncation guard')
-    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe(`${'x'.repeat(100)}DROP`)
+    expect(missing.isError).toBe(true)
+    expect(missing.details).toMatchObject({ code: 'FS_EDIT_NOT_FOUND' })
+    expect(dec.decode(ctx.mem.files.get('/work/proj/about.md'))).toBe(original)
+    const r = await editTool.execute(
+      {
+        path: 'about.md',
+        edits: [
+          { oldText: `<<<<<<< HEAD\n${ours}=======\n`, newText: '' },
+          { oldText: '>>>>>>> branch\n', newText: '' },
+        ],
+      },
+      ctx,
+    )
+    expect(r.isError).toBeUndefined()
+    const after = dec.decode(ctx.mem.files.get('/work/proj/about.md'))
+    expect(after).toBe(`head\n  theirs = compute(4, [5, 6])\n${'tail\n'.repeat(40)}`)
+    expect(after.length / original.length).toBeLessThan(0.4)
+  })
+
+  it('applies an edit that removes everything, and one that leaves brackets open for a later call', async () => {
+    const ctx = await observedCtxOf({
+      files: { 'a.ts': `${'x'.repeat(100)}DROP`, 'b.ts': 'f() {\n  g()\n}\n' },
+    })
+    const r = await editTool.execute(
+      { path: 'a.ts', edits: [{ oldText: `${'x'.repeat(100)}DROP`, newText: '' }] },
+      ctx,
+    )
+    expect(r.isError).toBeUndefined()
+    expect(dec.decode(ctx.mem.files.get('/work/proj/a.ts'))).toBe('')
+    const open = await editTool.execute({ path: 'b.ts', edits: [{ oldText: '}\n', newText: '' }] }, ctx)
+    expect(open.isError).toBeUndefined()
+    expect(dec.decode(ctx.mem.files.get('/work/proj/b.ts'))).toBe('f() {\n  g()\n')
   })
 })
 
@@ -377,6 +548,15 @@ describe('write refuses to replace a file that changed after it was read', () =>
     expect(textOf(await overwrite(a, 'z'))).toContain('stale read')
   })
 
+  it('does not let allowShrink past a stale read', async () => {
+    const { a, b } = twoSessions('x'.repeat(100))
+    await read(a)
+    put(b, 'y'.repeat(100))
+    const r = await writeTool.execute({ path: 'shared.txt', content: 'z', allowShrink: true }, a)
+    expect(r.details).toEqual({ code: 'FS_STALE_VERSION', path: 'shared.txt' })
+    expect(onDisk(a)).toBe('y'.repeat(100))
+  })
+
   it('refuses a file that was read and then deleted, and read of the missing file clears the way', async () => {
     const ctx = ctxOf({ files: { 'shared.txt': base } })
     await read(ctx)
@@ -410,6 +590,13 @@ describe('write leaves alone what the session has not seen', () => {
     const ctx = ctxOf({ files: { 'shared.txt': 'old\n' } })
     expect((await overwrite(ctx, 'new\n')).details).toEqual({ code: 'FS_NOT_OBSERVED', path: 'shared.txt' })
     expect(onDisk(ctx)).toBe('old\n')
+  })
+
+  it('does not let allowShrink overwrite a file that was never read', async () => {
+    const ctx = ctxOf({ files: { 'shared.txt': 'x'.repeat(100) } })
+    const r = await writeTool.execute({ path: 'shared.txt', content: 'z', allowShrink: true }, ctx)
+    expect(r.details).toEqual({ code: 'FS_NOT_OBSERVED', path: 'shared.txt' })
+    expect(onDisk(ctx)).toBe('x'.repeat(100))
   })
 
   it('does not take another session’s read as its own', async () => {
@@ -525,13 +712,15 @@ describe('observed edit matches current content', () => {
     expect(onDisk(a)).toBe('ONE\ntwo\nTHREE\n')
   })
 
-  it('still reports a missing oldText as before, without any staleness wording', async () => {
+  it('reports a missing oldText with the stale read diagnosis', async () => {
     const { a, b } = twoSessions('one\ntwo\n')
     await read(a)
     await read(b)
     await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'two', newText: 'TWO' }] }, b)
     const r = await editTool.execute({ path: 'shared.txt', edits: [{ oldText: 'two', newText: '2' }] }, a)
-    expect(textOf(r)).toBe('edit 1: oldText not found')
+    expect(textOf(r)).toContain('oldText not found')
+    expect(textOf(r)).toContain('File changed since the session last read it')
+    expect(r.details).toMatchObject({ code: 'FS_EDIT_NOT_FOUND' })
   })
 
   it('lets two sessions make 25 edits each to one file, every one of them landing', async () => {
@@ -615,6 +804,74 @@ describe('a file longer than read returns in full', () => {
     ctx.fs.stat = async () => ({ kind: 'symlink', size: 9, mtimeMs: 2 })
     ctx.mem.files.set(A, big('b'))
     expect((await overwrite(ctx, 'b'.repeat(MAX_READ_BYTES))).isError).toBeUndefined()
+  })
+})
+
+describe('language server errors on write and edit results', () => {
+  const stub = (note: string | undefined, seen: unknown[] = []) =>
+    ({
+      async diagnosticsFor(_ctx: unknown, abs: string, text: string) {
+        // The file lock is already released here: taking it again would hang if it were still held.
+        await withFileLock(abs, async () => undefined)
+        seen.push([abs, text])
+        return note
+      },
+    }) as unknown as LspSessions
+
+  it('appends them as an extra text block after a successful write and a successful edit', async () => {
+    const seen: unknown[] = []
+    const lsp = stub('LSP found 1 error in a.ts:\n1:1 oops', seen)
+    const written = await createWriteTool(undefined, lsp).execute({ path: 'a.ts', content: 'x = 1' }, ctxOf())
+    expect(written.content.map((c) => (c.type === 'text' ? c.text : ''))).toEqual([
+      'created a.ts (5 chars)',
+      'LSP found 1 error in a.ts:\n1:1 oops',
+    ])
+    const ctx = await observedCtxOf({ files: { 'b.ts': 'let a = 1\n' } })
+    const edited = await createEditTool(undefined, lsp).execute(
+      { path: 'b.ts', edits: [{ oldText: '1', newText: '2' }] },
+      ctx,
+    )
+    expect(edited.content).toHaveLength(2)
+    expect(seen).toEqual([
+      ['/work/proj/a.ts', 'x = 1'],
+      ['/work/proj/b.ts', 'let a = 2\n'],
+    ])
+  })
+
+  it('adds nothing when the server has nothing to say, and nothing to a refused write or edit', async () => {
+    const seen: unknown[] = []
+    const quiet = stub(undefined, seen)
+    const ctx = ctxOf({ files: { 'c.ts': 'keep' } })
+    expect(
+      (await createWriteTool(undefined, quiet).execute({ path: 'n.ts', content: 'ok' }, ctx)).content,
+    ).toHaveLength(1)
+    seen.length = 0
+    const loud = stub('LSP found 1 error in c.ts:\n1:1 oops', seen)
+    expect(
+      (await createWriteTool(undefined, loud).execute({ path: 'c.ts', content: 'x' }, ctx)).isError,
+    ).toBe(true)
+    expect(
+      (
+        await createEditTool(undefined, loud).execute(
+          { path: 'c.ts', edits: [{ oldText: 'zz', newText: 'y' }] },
+          ctx,
+        )
+      ).isError,
+    ).toBe(true)
+    expect(seen).toEqual([])
+  })
+
+  it('starts nothing and changes nothing when the lsp extension is not applied', async () => {
+    const ctx = ctxOf()
+    const opened = vi.fn()
+    ctx.sandbox.openProcess = opened as never
+    const result = await createWriteTool(undefined, new LspSessions()).execute(
+      { path: 'a.ts', content: 'x = BAD' },
+      ctx,
+    )
+    expect(textOf(result)).toBe('created a.ts (7 chars)')
+    expect(result.content).toHaveLength(1)
+    expect(opened).not.toHaveBeenCalled()
   })
 })
 

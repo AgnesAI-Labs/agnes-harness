@@ -33,7 +33,7 @@ const healthTone = (status: Health['status'] | undefined) =>
   status === 'ok' ? 'ok' : status === 'backoff' || status === 'rejected' ? 'warn' : 'muted'
 
 /**
- * OTLP export under 集成: one row with its state; its subpage switches export on, sets the collector,
+ * OTLP export under Integrations: one row with its state; its subpage switches export on, sets the collector,
  * header secret references (one row each), the content policy and, one level deeper, the batch and
  * delivery limits. Every change saves itself; the status below can test the collector.
  */

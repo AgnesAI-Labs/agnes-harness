@@ -1,4 +1,12 @@
-import type { ConfigModel, ConfigSaveInput, ConfigTestResult, ModelRecord, RouteDecl } from '@agnes/protocol'
+import type {
+  AuxiliaryModelSlots,
+  ConfigModel,
+  ConfigSaveInput,
+  ConfigTestResult,
+  ModelRecord,
+  RouteDecl,
+  SessionDefaults,
+} from '@agnes/protocol'
 import { ConfigurationError } from './configuration-error.js'
 import { applyModelConfiguration, normalizeConfigModel } from './configuration-models.js'
 import { isPayloadOnlyEntry } from './configuration-payload-only.js'
@@ -56,7 +64,12 @@ function requireAddress(entry: CompatibleEntry, baseUrl: string): void {
  * The models a save declares. Capability fields are not offered for these models, so a row that
  * carries one is refused; a missing capacity takes the default.
  */
-export function compatibleModels(entry: CompatibleEntry, baseUrl: string, value: unknown): ConfigModel[] {
+function compatibleModels(
+  entry: CompatibleEntry,
+  baseUrl: string,
+  value: unknown,
+  chatModelAllowed: (id: string) => boolean,
+): ConfigModel[] {
   requireAddress(entry, baseUrl)
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_MODELS)
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
@@ -69,6 +82,7 @@ export function compatibleModels(entry: CompatibleEntry, baseUrl: string, value:
       model.thinkingEfforts !== undefined
     )
       throw new ConfigurationError('CONFIG_INVALID_INPUT')
+    if (!chatModelAllowed(model.id)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')
     return { ...declared(model.id), ...model }
   })
   if (new Set(models.map((model) => model.id)).size !== models.length)
@@ -78,10 +92,10 @@ export function compatibleModels(entry: CompatibleEntry, baseUrl: string, value:
 
 /**
  * Lists what the endpoint offers, with the given key, the saved one, or none. Every listed id is
- * offered; a listing that fails is not an error but an unverified result that says why, so the
+ * offered unless it is a known generation model; a listing that fails is not an error but an unverified result that says why, so the
  * models can still be typed by hand.
  */
-export async function testCompatibleAccount(
+async function testCompatibleAccount(
   args: {
     entry: CompatibleEntry
     baseUrl: string
@@ -89,6 +103,7 @@ export async function testCompatibleAccount(
     row: Readonly<{ models: ConfigModel[]; credentialRef: string }> | undefined
   },
   deps: {
+    chatModelAllowed: (id: string) => boolean
     list: (api: string, baseUrl: string, credential: string | undefined) => Promise<Listing>
     readCredential: (ref: string) => Promise<{ kind: string; provider: string; value?: string } | null>
   },
@@ -103,7 +118,9 @@ export async function testCompatibleAccount(
   const listing = await deps.list(entry.api, args.baseUrl, args.apiKey ?? saved)
   if ('failure' in listing) return { models: [], verified: false, catalogueError: listing.failure }
   return {
-    models: listing.ids.map((id) => structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id)),
+    models: listing.ids
+      .filter(deps.chatModelAllowed)
+      .map((id) => structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id)),
     verified: true,
   }
 }
@@ -132,7 +149,7 @@ function compatibleModelRecord(
   return applyModelConfiguration(record, model)
 }
 
-export function compatibleRoute(
+function compatibleRoute(
   account: Readonly<{
     route: string
     baseUrl: string
@@ -143,8 +160,12 @@ export function compatibleRoute(
     networkTimeouts?: ConfigSaveInput['networkTimeouts']
   }>,
   api: string,
+  chatModelAllowed: (id: string) => boolean,
 ): RouteDecl & { models: ModelRecord[] } {
-  const models = account.models.map((model) => compatibleModelRecord(account, api, model))
+  if (!chatModelAllowed(account.model)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')
+  const models = account.models
+    .filter((model) => chatModelAllowed(model.id))
+    .map((model) => compatibleModelRecord(account, api, model))
   models.sort((a, b) => (a.id === account.model ? -1 : b.id === account.model ? 1 : 0))
   return {
     route: account.route,
@@ -154,5 +175,34 @@ export function compatibleRoute(
     credentialRef: account.credentialRef,
     displayName: account.label,
     models,
+  }
+}
+
+/** Bind the adapter-owned conversation policy at the existing configuration assembly boundary. */
+export function chatModelPolicy(chatModelAllowed: (id: string) => boolean) {
+  const requireModel = (id: string, payloadOnly = false): void => {
+    if (!payloadOnly && !chatModelAllowed(id)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')
+  }
+  return {
+    requireModel,
+    models: (models: readonly ConfigModel[], payloadOnly: boolean): ConfigModel[] =>
+      models
+        .filter((model) => payloadOnly || chatModelAllowed(model.id))
+        .map((model) => structuredClone(model)),
+    requireSlots(slots: AuxiliaryModelSlots): void {
+      for (const slot of Object.values(slots)) if (slot) requireModel(slot.model)
+    },
+    defaults(defaults: SessionDefaults | undefined): SessionDefaults | undefined {
+      if (defaults?.model) requireModel(defaults.model)
+      return defaults
+    },
+    compatibleModels: (entry: CompatibleEntry, baseUrl: string, value: unknown) =>
+      compatibleModels(entry, baseUrl, value, chatModelAllowed),
+    testCompatibleAccount: (
+      args: Parameters<typeof testCompatibleAccount>[0],
+      deps: Omit<Parameters<typeof testCompatibleAccount>[1], 'chatModelAllowed'>,
+    ) => testCompatibleAccount(args, { ...deps, chatModelAllowed }),
+    compatibleRoute: (account: Parameters<typeof compatibleRoute>[0], api: string) =>
+      compatibleRoute(account, api, chatModelAllowed),
   }
 }

@@ -21,6 +21,8 @@ export function createMcpForm(input: {
     ['mcp-url', 'input'],
     ['mcp-secret', 'textarea'],
     ['mcp-tools', 'textarea'],
+    ['mcp-token-env', 'input'],
+    ['mcp-workspace', 'input'],
   ]
   function mcpFormSnapshot(): McpFormFieldSnapshot {
     return {
@@ -32,19 +34,29 @@ export function createMcpForm(input: {
       url: $('mcp-url', 'input').value.trim(),
       secretText: $('mcp-secret', 'textarea').value.trim(),
       toolsText: $('mcp-tools', 'textarea').value,
+      workspacePath: $('mcp-workspace', 'input').value.trim(),
+      sandboxProfile: $('mcp-sandbox', 'select').value,
     }
   }
   /**
-   * 即时字段校验：正则与上限直接来自后台 schema（mcp-form-validation.ts），在输入阶段就把
-   * 「工具名不合法」这类问题按字段标红提示，而不是等提交后收到笼统的 400「资源管理参数无效」。
-   * 输入过程（requireFilled=false）只看非空值，不在用户还没填到时催促；提交前（true）把
-   * 「必填但为空」也标出来。
+   * Immediate field validation: patterns and limits come from backend schema (mcp-form-validation.ts),
+   * marking issues such as invalid tool names at the field while typing, instead of a generic 400 invalid
+   * resource-management parameters response on submit. During input (requireFilled=false) check only
+   * nonempty values; before submission (true) also flag required-but-empty fields.
    */
   function syncMcpFieldFeedback(
     requireFilled = false,
     t: LocaleTranslator = input.text(),
   ): ReturnType<typeof mcpFormIssues> {
-    const issues = mcpFormIssues(mcpFormSnapshot(), { requireFilled }, t)
+    const snapshot = mcpFormSnapshot()
+    const credential = document.getElementById('mcp-credential') as HTMLSelectElement | null
+    const mapped =
+      snapshot.transport === 'stdio' &&
+      credential?.value &&
+      snapshot.secretText === `${$('mcp-token-env', 'input').value}=${credential.value}`
+    const issues = mcpFormIssues(snapshot, { requireFilled }, t).map((issue) =>
+      mapped && issue.field === 'mcp-secret' ? { ...issue, field: 'mcp-token-env' as const } : issue,
+    )
     for (const [id, tag] of MCP_FIELD_CONTROLS) $(id, tag).removeAttribute('aria-invalid')
     for (const issue of issues) {
       const control = MCP_FIELD_CONTROLS.find(([fieldId]) => fieldId === issue.field)

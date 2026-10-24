@@ -35,6 +35,8 @@ export function nodeText(node: UINode): string {
       return ''
     case 'tool-source-pending':
       return `${node.sources.join(', ')} still connecting; this turn runs without it`
+    case 'memory-external-change':
+      return `Memory ${node.paths.join(', ')} changed outside the memory provider and was loaded as is; review it with /memory`
     case 'workspace-undo':
       return node.conflicts > 0
         ? `Undo of turn ${node.turn} refused: ${node.conflicts} file(s) changed since the turn`

@@ -478,25 +478,31 @@ describe('human Loop controls', () => {
     }
   })
 
-  it('refuses a finished external child', async () => {
-    const listing: ChildAgentListing = {
-      id: 'ext-done',
-      providerId: 'codex',
-      status: 'completed',
-      continuable: false,
-      interrupt: true,
-    }
-    const { parent, k, calls, untrack } = await externalControlSession(listing)
-    try {
-      await expect(
-        parent.controls.apply('child-stop', actor, 'stop-done', undefined, { id: listing.id }),
-      ).rejects.toMatchObject({ code: 'E_RELATION', detail: { reason: 'CONTROL_NOT_RUNNING' } })
-      expect(calls).toEqual([])
-    } finally {
-      untrack()
-      await k.close()
-    }
-  })
+  it.each(['completed', 'failed', 'cancelled'] as const)(
+    'refuses a finished external child (%s)',
+    async (status) => {
+      const listing: ChildAgentListing = {
+        id: 'ext-done',
+        providerId: 'codex',
+        status,
+        continuable: true,
+        interrupt: true,
+      }
+      const { parent, k, calls, untrack } = await externalControlSession(listing)
+      try {
+        expect(
+          (await parent.controls.state()).children.find((row) => row.id === listing.id)?.controls,
+        ).toEqual({ stop: false, continue: false })
+        await expect(
+          parent.controls.apply('child-stop', actor, 'stop-done', undefined, { id: listing.id }),
+        ).rejects.toMatchObject({ code: 'E_RELATION', detail: { reason: 'CONTROL_NOT_RUNNING' } })
+        expect(calls).toEqual([])
+      } finally {
+        untrack()
+        await k.close()
+      }
+    },
+  )
 
   it('refuses a child id that is in both the core store and the external directory', async () => {
     const calls: string[] = []

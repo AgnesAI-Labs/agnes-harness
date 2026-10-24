@@ -349,7 +349,8 @@ describe('PackageManager project trust', () => {
     mkdirSync(join(profileDir, 'deploy', 'broken'))
     writeFileSync(join(profileDir, 'deploy', 'broken', 'manifest.json'), '{ "id": "broken" }')
     cpSync(deployDir, join(profileDir, '.hidden'), { recursive: true })
-    symlinkSync(deployDir, join(profileDir, 'deploy', 'linked'))
+    const directoryLink = process.platform === 'win32' ? 'junction' : 'dir'
+    symlinkSync(deployDir, join(profileDir, 'deploy', 'linked'), directoryLink)
     expect(offered(manager).map((entry) => entry.path)).toEqual(['deploy/xinwei'])
     // A policy that refuses workspace packages offers none.
     const lock = readLock(profileDir, { profile: 'enterprise', agnesVersion: '0.1.0' })

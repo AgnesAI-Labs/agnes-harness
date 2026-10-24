@@ -193,12 +193,12 @@ export function registerSkillHelperTests(test) {
     return Buffer.concat([...locals, central, end])
   }
 
-  test('ordinary AGH plugin registers four discoverable tools', () => {
+  test('ordinary AGH plugin registers four deferred discoverable tools', () => {
     const registered = []
     skillHelper.apply({ tools: { register: (t) => registered.push(t) } })
     assert.equal(registered.length, 4)
     for (const t of registered) {
-      assert.equal(t.meta.deferLoading, false)
+      assert.equal(t.meta.deferLoading, true)
       assert.equal(t.parameters[Symbol.for('TypeBox.Kind')], 'Object')
     }
   })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { CURSOR_MARKER, VStack } from '../../src/tui/component.js'
-import { Editor, type MentionState } from '../../src/tui/editor.js'
+import { Editor, type MentionState, Vim } from '../../src/tui/editor.js'
 import { parseKey, parseMouse } from '../../src/tui/keys.js'
 import { Renderer } from '../../src/tui/renderer.js'
 import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
@@ -34,6 +34,8 @@ describe('parseKey', () => {
     expect(parseKey('\x1b[A', false).name).toBe('up')
     expect(parseKey('\x1b[13;2u', true).name).toBe('shift-enter')
     expect(parseKey('x', false)).toEqual({ name: 'char', ch: 'x' })
+    expect(parseKey('\x1b[Z', false).name).toBe('shift-tab')
+    expect(parseKey('\x1b[9;2u', true).name).toBe('shift-tab')
   })
 
   it('reads SGR mouse reports and drops the buttons the TUI has no use for', () => {
@@ -1208,5 +1210,247 @@ describe('Editor external edit', () => {
     e.handleInput('\x1a')
     expect(e.text).toBe('draft')
     expect(new Editor({ onSubmit() {} }).handleInput('\x07')).toBe(true)
+  })
+})
+
+describe('Editor vim mode', () => {
+  const ESC = '\x1b'
+  const CTRL_R = '\x12'
+  // An editor with vim on, holding `text` in normal mode with the cursor at `at`.
+  const normal = (text: string, at = 0) => {
+    const vim = new Vim()
+    vim.enabled = true
+    vim.mode = 'normal'
+    const log = { sent: [] as string[], cancels: 0 }
+    const e = new Editor({
+      vim,
+      onSubmit: (t) => log.sent.push(t),
+      onCancelKey: () => log.cancels++,
+    })
+    e.setText(text)
+    e.cursor = at
+    return { e, vim, log }
+  }
+  const run = (text: string, at: number, keys: string): [string, number] => {
+    const { e } = normal(text, at)
+    type(e, keys)
+    return [e.text, e.cursor]
+  }
+
+  it.each<[string, string, number, string, number]>([
+    ['h and l stop at the ends of the line', 'foo bar', 4, 'h', 3],
+    ['l stays on the last character', 'foo bar', 6, 'l', 6],
+    ['a count repeats a movement', 'foo bar', 0, '3l', 3],
+    ['a count repeats h', 'foo bar', 3, '2h', 1],
+    ['0 goes to the line start', 'foo bar', 4, '0', 0],
+    ['$ goes to the last character', 'foo bar', 1, '$', 6],
+    ['^ goes to the first non-blank', '  ab', 3, '^', 2],
+    ['w goes to the next word', 'foo bar baz', 0, 'w', 4],
+    ['2w goes two words on', 'foo bar baz', 0, '2w', 8],
+    ['w on the last word stays on its last character', 'foo bar', 4, 'w', 6],
+    ['b goes to the word start', 'foo bar baz', 8, 'b', 4],
+    ['e goes to the word end', 'foo bar baz', 0, 'e', 2],
+    ['e on a word end goes to the next one', 'foo bar baz', 2, 'e', 6],
+    ['j keeps the column', 'one\ntwo\nthree', 6, 'j', 10],
+    ['k goes back up', 'one\ntwo\nthree', 5, 'k', 1],
+    ['j on the last line stays', 'one\ntwo', 5, 'j', 5],
+    ['gg goes to the first line', 'one\ntwo\nthree', 10, 'gg', 0],
+    ['G goes to the last line', 'one\ntwo\nthree', 0, 'G', 8],
+    ['2G names the line', 'one\ntwo\nthree', 0, '2G', 4],
+    ['3gg names the line too', 'one\ntwo\nthree', 0, '3gg', 8],
+    ['an unknown letter is swallowed', 'foo', 1, 'z', 1],
+    ['g and another letter end the command', 'one\ntwo', 5, 'gxk', 1],
+  ])('moves: %s', (_name, text, at, keys, cursor) => {
+    const [after, where] = run(text, at, keys)
+    expect([after, where]).toEqual([text, cursor])
+  })
+
+  it.each<[string, string, number, string, string, number]>([
+    ['i types before the cursor', 'abc', 1, 'iX', 'aXbc', 2],
+    ['a types after it', 'abc', 1, 'aX', 'abXc', 3],
+    ['I types at the first non-blank', '  ab', 3, 'IX', '  Xab', 3],
+    ['A types at the end', 'abc', 0, 'AX', 'abcX', 4],
+    ['o opens a line below', 'abc', 1, 'oX', 'abc\nX', 5],
+    ['O opens a line above', 'abc', 1, 'OX', 'X\nabc', 1],
+    ['x deletes under the cursor', 'abc', 1, 'x', 'ac', 1],
+    ['x on the last character steps the cursor back', 'abc', 2, 'x', 'ab', 1],
+    ['dd removes a middle line', 'one\ntwo\nthree', 5, 'dd', 'one\nthree', 4],
+    ['dd removes the last line', 'one\ntwo\nthree', 10, 'dd', 'one\ntwo', 4],
+    ['dd empties a one-line draft', 'abc', 1, 'dd', '', 0],
+    ['dw removes to the next word', 'foo bar baz', 0, 'dw', 'bar baz', 0],
+    ['dw on the last word stops at the line end', 'foo bar', 4, 'dw', 'foo ', 3],
+    ['D removes to the line end', 'foo bar', 4, 'D', 'foo ', 3],
+    ['cw replaces the word and keeps the space', 'foo bar', 0, 'cwX', 'X bar', 1],
+    ['C replaces to the line end', 'foo bar', 3, 'C!', 'foo!', 4],
+    ['p puts the last cut after the cursor', 'abc', 0, 'xp', 'bac', 1],
+    ['P puts it before', 'abc', 0, 'xP', 'abc', 0],
+    ['p puts a cut line below', 'one\ntwo', 0, 'ddp', 'two\none', 4],
+    ['P puts a cut line above', 'one\ntwo', 0, 'ddP', 'one\ntwo', 0],
+  ])('edits: %s', (_name, text, at, keys, after, cursor) => {
+    expect(run(text, at, keys)).toEqual([after, cursor])
+  })
+
+  it('cancels a command that has a count but is not a movement, rather than doing it once', () => {
+    expect(run('abc', 0, '3x')).toEqual(['abc', 0])
+    expect(run('one\ntwo', 0, '3dd')).toEqual(['one\ntwo', 0])
+    // The count is gone afterwards.
+    expect(run('abc', 0, '3xx')).toEqual(['bc', 0])
+  })
+
+  it('shares the kill ring: a cut here pastes with Ctrl-Y, and a Ctrl-K cut pastes with p', () => {
+    const { e } = normal('abc', 0)
+    type(e, 'x')
+    e.handleInput('i')
+    e.handleInput('\x19')
+    expect(e.text).toBe('abc')
+    const insert = new Editor({ vim: Object.assign(new Vim(), { enabled: true }), onSubmit() {} })
+    type(insert, 'abc def')
+    for (let i = 0; i < 4; i++) insert.handleInput('\x1b[D')
+    insert.handleInput('\x0b')
+    expect(insert.text).toBe('abc')
+    insert.handleInput(ESC)
+    type(insert, 'p')
+    expect(insert.text).toBe('abc def')
+  })
+
+  it('undoes and redoes one command at a time, and u undoes a typing run whole', () => {
+    const vim = Object.assign(new Vim(), { enabled: true })
+    const e = new Editor({ vim, onSubmit() {} })
+    type(e, 'hello')
+    e.handleInput(ESC)
+    type(e, 'xx')
+    expect(e.text).toBe('hel')
+    type(e, 'u')
+    expect(e.text).toBe('hell')
+    type(e, 'u')
+    expect(e.text).toBe('hello')
+    e.handleInput(CTRL_R)
+    expect(e.text).toBe('hell')
+    type(e, 'uu')
+    expect(e.text).toBe('')
+  })
+
+  it('Esc leaves insert mode once and does what it did without vim the second time', () => {
+    const vim = Object.assign(new Vim(), { enabled: true })
+    const log = { cancels: 0 }
+    const e = new Editor({ vim, onSubmit() {}, onCancelKey: () => log.cancels++ })
+    type(e, 'draft')
+    e.handleInput(ESC)
+    expect([vim.mode, e.text, e.cursor, log.cancels]).toEqual(['normal', 'draft', 4, 0])
+    e.handleInput(ESC)
+    expect([e.text, log.cancels]).toEqual(['', 1])
+    // A half-typed command is dropped by Esc first.
+    const half = normal('abc', 0)
+    type(half.e, 'd')
+    half.e.handleInput(ESC)
+    expect(half.log.cancels).toBe(0)
+    half.e.handleInput(ESC)
+    expect(half.log.cancels).toBe(1)
+    // Off, Esc is the cancel key at once and the letters are text.
+    const off = new Editor({ vim: new Vim(), onSubmit() {}, onCancelKey: () => log.cancels++ })
+    type(off, 'dd')
+    expect(off.text).toBe('dd')
+    off.handleInput(ESC)
+    expect([off.text, log.cancels]).toEqual(['', 2])
+  })
+
+  it('Esc closes an open @ menu first, before it leaves insert mode', () => {
+    const vim = Object.assign(new Vim(), { enabled: true })
+    const e = new Editor({
+      vim,
+      onSubmit() {},
+      mentions: {
+        get: () => ({ status: 'ready', items: [{ id: 'a.ts', directory: false }] }) as MentionState,
+      },
+    })
+    type(e, 'see @a')
+    e.handleInput(ESC)
+    expect(vim.mode).toBe('insert')
+    e.handleInput(ESC)
+    expect(vim.mode).toBe('normal')
+  })
+
+  it('submits with Enter in normal mode and starts the next prompt in insert mode', () => {
+    const { e, vim, log } = normal('send me', 3)
+    e.handleInput('\r')
+    expect(log.sent).toEqual(['send me'])
+    expect([e.text, vim.mode]).toEqual(['', 'insert'])
+  })
+
+  it('leaves named keys alone in normal mode', () => {
+    const { e } = normal('abc', 2)
+    e.handleInput('\x1b[D')
+    expect(e.cursor).toBe(1)
+    e.handleInput('\x1b[F')
+    expect(e.cursor).toBe(3)
+    type(e, 'h')
+    expect(e.cursor).toBe(2)
+  })
+
+  it('marks the mode in both glyph and wording, and turns the prompt arrow around in normal mode', () => {
+    const vim = Object.assign(new Vim(), { enabled: true })
+    const e = new Editor({ vim, onSubmit() {}, locale: 'zh-CN' })
+    expect(e.vimBadge).toEqual({ normal: false, label: '插入' })
+    expect(e.render(20)[0]).toContain('❯')
+    e.handleInput(ESC)
+    expect(e.vimBadge).toEqual({ normal: true, label: '普通' })
+    expect(e.render(20)[0]).toContain('❮')
+    expect(new Editor({ onSubmit() {} }).vimBadge).toBeUndefined()
+  })
+})
+
+describe('recognised slash command colouring', () => {
+  const ansi = new TuiTheme('light').ansi(createAnsi('256'))
+  const accent = (s: string) => ansi.bold(ansi.fg('accent', s))
+  const known = ['/resume', '/model', '/deploy-it']
+  const make = (a: ReturnType<TuiTheme['ansi']> | null = ansi) =>
+    new Editor({
+      onSubmit() {},
+      complete: (p) => known.filter((c) => c.startsWith(p)),
+      ...(a ? { ansi: a } : {}),
+    })
+  const rows = (e: Editor, width = 40) => e.render(width).map((r) => r.replace(CURSOR_MARKER, ''))
+  const body = (row: string) => row.slice(accent('❯ ').length)
+
+  it('colours a built-in or custom command including the slash, and nothing after it', () => {
+    for (const cmd of ['/resume', '/deploy-it']) {
+      const e = make()
+      e.setText(`${cmd} some argument`)
+      expect(body(rows(e)[0] as string)).toBe(`${accent(cmd)} some argument`)
+    }
+  })
+
+  it('leaves an unknown command, a path and a command on a later line plain', () => {
+    for (const text of ['/foo bar', '/var/x/pic.png', 'say /resume', 'hi\n/resume']) {
+      const e = make()
+      e.setText(text)
+      expect(body(rows(e)[0] as string)).toBe(text.split('\n')[0])
+      if (text.includes('\n')) expect(rows(e)[1]).toBe('  /resume')
+    }
+  })
+
+  it('keeps the cursor marker out of the styled run when the cursor is inside the command', () => {
+    const e = make()
+    e.setText('/resume x')
+    e.cursor = 3
+    expect(e.render(40)[0]).toBe(`${accent('❯ ')}${accent('/re')}${CURSOR_MARKER}${accent('sume')} x`)
+  })
+
+  it('colours both rows of a command the width splits', () => {
+    const e = make()
+    e.setText('/deploy-it')
+    const out = rows(e, 8) // two prompt columns leave six per row
+    expect(out[0]).toContain(accent('/deplo'))
+    expect(out[1]).toContain(accent('y-it'))
+  })
+
+  it('adds no colour without a palette or in mono', () => {
+    const plain = make(null)
+    plain.setText('/resume x')
+    expect(rows(plain)[0]).toBe('❯ /resume x')
+    const mono = make(new TuiTheme('mono').ansi(createAnsi('256')))
+    mono.setText('/resume x')
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: asserting no colour is the point
+    expect(rows(mono)[0]).not.toMatch(/\x1b\[(3\d|9\d|38;)/)
   })
 })

@@ -29,7 +29,7 @@ export type SettingsAccountsProps = {
   t?: Translate
 }
 
-/** 指示灯先看启用状态再看凭据；红色只留给「启用但凭据缺失」，该账户不进入可用模型列表。 */
+/** Indicators check enabled state before credentials; red means enabled with missing credentials, excluding the account from available models. */
 function accountStatus(account: ConfigAccount): 'inactive' | 'ready' | 'missing' {
   if (!account.enabled) return 'inactive'
   return account.credentialConfigured ? 'ready' : 'missing'

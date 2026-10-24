@@ -1,7 +1,7 @@
 /**
- * @agnes/web-client — Agnes 页面内插件的作者 API（web 客户端模块设计 WC6）。
+ * @agnes/web-client — author API for Agnes in-page plugins.
  *
- * 插件写法：
+ * Plugin usage:
  * ```ts
  * import type { ClientContext } from '@agnes/web-client'
  * export const inject = ['slots', 'agnes']
@@ -9,9 +9,9 @@
  *   ctx.slots.register('workbench.panel', MyPanel)
  * }
  * ```
- * 宿主装载时经 `clientModule()` 包装，注册自动绑定插件 fiber。
- * 插件自行创建 React root 并渲染 antd 时，需从当前 document 的 `agnes-csp-nonce` meta
- * 读取 nonce 并传给 `ConfigProvider`；通过宿主 slot 渲染的组件由宿主处理。
+ * The host wraps modules in `clientModule()` at load time, binding registrations to the plugin fiber.
+ * Plugins creating their own React root with antd must read the current document's `agnes-csp-nonce`
+ * meta value and pass it to `ConfigProvider`; the host handles components rendered through host slots.
  */
 
 export type {

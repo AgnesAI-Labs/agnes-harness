@@ -101,7 +101,7 @@ export type SurfaceRelayResponse = Readonly<{
   body?: unknown
 }>
 
-/** Node-only SDK relay shape; F5 deliberately does not add or import an SDK implementation. */
+/** Node-only SDK relay shape; this deliberately does not add or import an SDK implementation. */
 export type SurfaceRelay = {
   request(request: SurfaceRelayRequest): Promise<SurfaceRelayResponse>
   close?(): Promise<void> | void
@@ -365,7 +365,7 @@ function routeTarget(
     path.endsWith('/_agnes/v1')
   )
     return 'unsafe'
-  // I3 (final review, Important): shared match predicate with mount-proxy.ts's `matchMount` (see
+  // Shared match predicate with mount-proxy.ts's `matchMount` (see
   // `mountMatches`'s own doc in types.ts for why the predicate is shared but not the whole
   // table-lookup -- this table's shape, `ResolvedSurface[]` with `mount` nested under
   // `.instance.mount`, differs from mount-proxy.ts's `{mount, host, port}[]`).

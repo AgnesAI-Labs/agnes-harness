@@ -38,7 +38,7 @@ export type MenuProps = {
   triggerMode?: 'click' | 'contextMenu'
   /** Neutral action lists retain text/danger colors and use a visible keyboard focus ring. */
   tone?: 'default' | 'neutral'
-  /** Read after a checked item's label, e.g. 「已选中」. */
+  /** Read after a checked item's label, e.g. 「Selected」. */
   selectedLabel?: string
 }
 type AntMenuItem = NonNullable<AntMenuProps['items']>[number]

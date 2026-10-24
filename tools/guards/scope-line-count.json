@@ -51,6 +51,7 @@
   "packages/base/extensions/artifacts-local": 317,
   "packages/base/extensions/approval-policy": 298,
   "packages/base/extensions/tools-search": 291,
+  "packages/base/extensions/lsp": 969,
   "packages/base/extensions/compaction": 391,
   "packages/base/extensions/fs-checkpoint": 392,
   "packages/base/extensions/sandbox": 744,

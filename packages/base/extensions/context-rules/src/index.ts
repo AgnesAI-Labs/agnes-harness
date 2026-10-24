@@ -1,7 +1,8 @@
+import { createHash } from 'node:crypto'
 import { dirname } from 'node:path'
 import type { ProjectionDef } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin } from '@agnes/plugin-runtime'
-import { loadContextRules } from './files.js'
+import { loadContextRules, RULES_GUIDANCE, renderRuleFile } from './files.js'
 
 type Scopes = { directories: string[] }
 export const rulesProjection: ProjectionDef<Scopes> = {
@@ -46,7 +47,15 @@ export default defineAgnesPlugin({
         )
         return {
           refreshOnRequest: true,
-          sections: [{ id: 'agents-md', order: 120, content: snapshot.content }],
+          sections: [
+            { id: 'agents-md', order: 120, content: RULES_GUIDANCE },
+            ...snapshot.files.map((file) => ({
+              id: `agents-md:${createHash('sha256').update(file.path).digest('hex').slice(0, 48)}`,
+              order: 120,
+              delivery: 'live-note' as const,
+              content: renderRuleFile(file),
+            })),
+          ],
         }
       }),
     ]

@@ -47,7 +47,7 @@ export const PLUGIN_VIEW_PARAM = 'view'
  * A page pushed over the plugins page: a built-in's detail, an installed plugin, a marketplace
  * entry, a skill or MCP server, a review item, running a skill in a new session (`run:<skill>`), the
  * review of a checked install or update (`install:<id>`), or one of the add forms (a plugin, an MCP
- * server, a search service under 网页搜索). `operations` lists running operations, on request.
+ * server, a search service under Web search). `operations` lists running operations, on request.
  */
 export type PluginPage =
   | Readonly<{ kind: 'capability'; id: Capability }>

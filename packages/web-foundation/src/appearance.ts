@@ -33,7 +33,7 @@ import {
 } from './theme.js'
 
 export type AppearanceController = {
-  /** 把各单选组回填成当前偏好。设置可能被其他同源文档改过，打开面板时重新拉一次。 */
+  /** Fill radio groups with current preferences. Reread when opening the panel because another same-origin document may have changed them. */
   sync(): void
 }
 
@@ -44,16 +44,16 @@ const LOCALE_INPUT = 'input[name="agnes-locale"]'
 export type AppearanceLocale = {
   rendered?: boolean
   current(): UiLocale
-  /** 写入偏好并切换语言。文案回填由本模块在调用之后完成。 */
+  /** Persist the preference and switch locale. This module fills translated text after the call. */
   select(locale: UiLocale): void
   text(key: string): string
 }
 
 /**
- * 把设置对话框「通用」分页的单选组接到偏好上。
+ * Bind radio groups on the settings dialog General page to preferences.
  *
- * 变更即时生效；写存储失败只损失持久化，不回滚已应用的外观。
- * 配色、字号和语言各自独立，互不影响。
+ * Changes apply immediately; failed writes only lose persistence without rolling back the appearance.
+ * Theme, font size and locale are independent.
  */
 export function bindAppearance(options: {
   scope: ParentNode
@@ -118,11 +118,11 @@ export function bindAppearance(options: {
 
   for (const input of themeInputs) {
     input.addEventListener('change', () => {
-      // 单选组里只有刚被选中的那个会派发 change；忽略未选中项，避免用旧值覆盖新值。
+      // Only the newly selected radio emits change; ignore unselected entries to avoid overwriting the new value.
       if (!input.checked || !isThemePreference(input.value)) return
       writeThemePreference(options.storage, input.value)
       applyTheme(options.root, resolveTheme(input.value, prefersDark()))
-      // client-modules 的 ThemeService 订阅此事件（不改本模块的内部状态结构）。
+      // The client-modules ThemeService subscribes to this event without changing this module's internal state shape.
       window.dispatchEvent(new CustomEvent('agnes:theme-changed'))
     })
   }
@@ -153,29 +153,29 @@ export function bindAppearance(options: {
   return { sync }
 }
 
-/** 皮肤清单里的一项：只带展示与寻址信息，样式表内容由调用方按需取。 */
+/** Skin manifest entry: display and addressing information only; callers fetch stylesheet contents as needed. */
 export type SkinOption = { id: string; name: string; packageName: string }
 
 export type SkinGroupOptions = {
-  /** 皮肤分组的容器（即包含 `#skin-option-items` 的作用域）。 */
+  /** Skin group container, the scope containing `#skin-option-items`. */
   scope: ParentNode
-  /** 读取当前选择；缓存由选择流程负责写入，这里只读。 */
+  /** Read the current selection; the selection flow writes the cache, while this only reads it. */
   storage: Pick<Storage, 'getItem'>
   /**
-   * 列出已装皮肤。只包含**已启用且已信任**的包声明过的皮肤；失败时抛错，
-   * 由本模块呈现失败态与重试，而不是把失败装扮成「没有皮肤」。
+   * List installed skins declared by **enabled and trusted** packages only. Throw on failure so
+   * this module can display the error and retry instead of disguising it as no skins.
    */
   list: () => Promise<readonly SkinOption[]>
   /**
-   * 选中一份皮肤（`null` = 内置外观）。实现负责取样式表、写缓存并落地；
-   * 抛错表示这次选择没有生效，UI 会提示并保留原选择。
+   * Select a skin (`null` = built-in appearance). The implementation fetches CSS, caches and applies it.
+   * Throwing means selection did not take effect; the UI reports the error and retains the previous choice.
    */
   select: (id: string | null) => Promise<void> | void
 }
 
 export type SkinGroupController = { sync: () => void; refresh: () => Promise<void> }
 
-/** 内置外观那一项的值：空串，与任何合法皮肤 id 都不冲突。 */
+/** The built-in appearance value: an empty string, distinct from every valid skin id. */
 const NO_SKIN = ''
 
 type SkinStatusProps = { status: string | null; failed: boolean; onRetry(): void }
@@ -197,11 +197,11 @@ function skinStatus(props: SkinStatusProps): ReactNode {
 }
 
 /**
- * 把设置「通用 → 外观」里的皮肤单选组接到已装皮肤清单上。
+ * Bind the skin radio group in General → Appearance to the installed skin manifest.
  *
- * 选择**即时生效**：变更只调用 `select`，由它取样式表、写缓存并落地——本模块不持有样式表内容，
- * 因此不需要刷新、也不需要在这里发请求。清单拉取失败是**可见的失败态**，附重试；
- * 选择失败则保留原选择并提示，不静默改状态。
+ * Selection **applies immediately** by calling `select`, which fetches CSS, caches and applies it.
+ * This module owns no stylesheet text, so it needs neither reloads nor requests here. Manifest fetch
+ * failures are **visible with retry**; selection failures retain the previous choice and report the error.
  */
 export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
   const container = options.scope.querySelector<HTMLElement>('#skin-option-items')
@@ -266,13 +266,13 @@ export function bindSkinGroup(options: SkinGroupOptions): SkinGroupController {
         render()
       })
       .catch(() => {
-        // 选择没有生效：回到原选择，而不是把一个假的选中态留在界面上。
+        // Selection did not take effect: restore the previous choice instead of leaving a false selected state.
         selected = previous
         status = tr('settings.appearance.skinNotApplied')
         render()
       })
   }
 
-  // 初始加载由调用方在打开面板时触发（`refresh`），避免绑定即发请求、也避免一次打开拉两遍。
+  // The caller triggers initial loading with `refresh` when opening the panel, avoiding requests on bind or duplicate loads.
   return { sync, refresh }
 }

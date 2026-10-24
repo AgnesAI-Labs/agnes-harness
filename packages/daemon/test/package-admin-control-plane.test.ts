@@ -1176,6 +1176,32 @@ it('projects manager diagnostics with fixed safe text instead of package-provide
   })
   expect(JSON.stringify(failed)).not.toContain(root)
 
+  for (const [reason, sourceFailure] of [
+    ['package-json-missing', 'manifest-missing'],
+    ['package-json', 'manifest-invalid'],
+    ['static-declaration-required', 'not-plugin'],
+    ['git-ref', 'git-ref'],
+    ['git-fetch', 'git-fetch'],
+  ] as const) {
+    const sourceError = new PackageError('E_DEP_MISSING', `private source at ${root}`, {
+      detail: { reason },
+    })
+    const refused = service({
+      manager: {
+        ...manager,
+        inspect: async () => {
+          throw sourceError
+        },
+      },
+    })
+    const receipt = (await refused.call('_agnes/v1/packages.inspect', command(reason), authority)) as {
+      operationId: string
+    }
+    const result = await operation(refused, profile, receipt.operationId)
+    expect(result).toMatchObject({ state: 'failed', error: { code: 'E_PACKAGE_SOURCE', sourceFailure } })
+    expect(JSON.stringify(result)).not.toContain(root)
+  }
+
   // Profile lock contention is a retryable refusal with its own safe text, for effects and reads alike.
   const busy = () =>
     new PackageError('E_LOCK_MISMATCH', `could not acquire the package lock under ${root}`, {

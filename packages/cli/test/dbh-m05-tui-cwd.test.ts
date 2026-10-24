@@ -55,8 +55,10 @@ function ttyIO(cwd: string) {
     },
     raw: () => raw,
     rendered: () => rendered,
-    type: (text: string) => {
+    // Enter a moment after the text: a terminal that reports no bracketed paste takes text and Enter in the same instant for a paste.
+    type: async (text: string) => {
       for (const ch of text) stdin.write(ch)
+      await new Promise((resolve) => setTimeout(resolve, 40))
       stdin.write('\r')
     },
   }
@@ -93,7 +95,7 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
       const newCalls = () => endpoint.calls.filter((c) => c.method === 'session/new')
       // Control: the initial session uses the launch cwd.
       expect(newCalls()[0]?.params).toMatchObject({ cwd: workspace })
-      t.type('/new')
+      await t.type('/new')
       await vi.waitFor(() => expect(newCalls().length).toBe(2), { timeout: 3000 })
       expect((newCalls()[1]?.params as { cwd: string } | undefined)?.cwd).toBe(workspace)
     } finally {
@@ -144,7 +146,7 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
     )
     try {
       await vi.waitFor(() => expect(t.raw()).toBe(true))
-      t.type('/resume')
+      await t.type('/resume')
       // Welcome now lists recent sessions too; wait for the actual resume picker before Enter.
       await vi.waitFor(() => expect(t.rendered()).toContain('Select Session'), { timeout: 3000 })
       expect(t.rendered()).toContain('Other work')
@@ -251,7 +253,7 @@ describe('dbh M-05: TUI slash session commands honour the launch --cwd', () => {
         t.io,
       )
       await vi.waitFor(() => expect(t.raw()).toBe(true))
-      t.type(`/resume ${earlierId}`)
+      await t.type(`/resume ${earlierId}`)
       await vi.waitFor(() => expect(loads.length).toBe(1), { timeout: 5000 })
       const load = loads[0] as { params: { cwd: string }; response: { error?: { data?: { code?: string } } } }
       expect({

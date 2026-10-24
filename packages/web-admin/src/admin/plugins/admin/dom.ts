@@ -1,3 +1,4 @@
+import type { PackageAdminError, PackageOperation } from '@agnes/protocol'
 import { settingsSections } from '@agnes/web-client'
 import { isPageDialog, showDialogHost } from '@agnes/web-ui'
 
@@ -55,7 +56,16 @@ const ERROR_KEYS: Readonly<Record<string, string>> = {
   E_PACKAGE_SOURCE: 'error.source-rejected',
 }
 /** The locale key that explains an admin failure code. */
-export const adminErrorKey = (code: string): string => ERROR_KEYS[code] ?? 'error.operation-failed'
+export const adminErrorKey = (
+  code: string,
+  operation?: PackageOperation['operation'],
+  sourceFailure?: PackageAdminError['sourceFailure'],
+): string =>
+  code === 'E_PACKAGE_SOURCE' && sourceFailure
+    ? `error.source.${sourceFailure}`
+    : code === 'E_PACKAGE_STATE' && operation === 'remove'
+      ? 'error.remove-state'
+      : (ERROR_KEYS[code] ?? 'error.operation-failed')
 
 /** The embedded settings shell marks the runtime page its navigation is on. */
 export function markSettingsPage(page: string, listHost: HTMLElement): void {

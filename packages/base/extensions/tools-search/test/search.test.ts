@@ -136,6 +136,24 @@ describe('grep', () => {
     const r = await grepTool.execute({ pattern: '([', ignoreCase: false }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('invalid pattern')
+    expect(textOf(r)).toContain('literal=true')
+    expect(r.details).toMatchObject({ code: 'FS_INVALID_PATTERN' })
+    const listing = ctx.exec
+    ctx.exec = async (argv, opts) =>
+      argv.includes('--json')
+        ? {
+            code: 2,
+            stdout: '',
+            stderr: 'regex parse error: invalid class /private/backend',
+            truncated: false,
+          }
+        : listing(argv, opts)
+    const registered = TOOLS_SEARCH.find((tool) => tool.name === 'grep')
+    if (!registered) throw new Error('registered grep missing')
+    const primary = await registered.execute({ pattern: '([' }, ctx)
+    expect(primary.details).toMatchObject({ code: 'FS_INVALID_PATTERN' })
+    expect(textOf(primary)).toContain('literal=true')
+    expect(textOf(primary)).not.toContain('/private/backend')
   })
 
   it('shows context lines around a match, marked apart from the match itself', async () => {
@@ -366,6 +384,7 @@ describe('search access scope', () => {
       const denied = await tool.execute(args, selected)
       expect.soft(denied.isError).toBe(true)
       expect.soft(textOf(denied)).toContain('outside the workspace')
+      expect.soft(denied.details).toMatchObject({ code: 'FS_OUTSIDE_WORKSPACE' })
       expect.soft(textOf(denied)).toContain('完全权限')
       expect.soft(textOf(denied)).toContain('选择目标目录作为工作区')
     }
@@ -399,7 +418,7 @@ describe('ls', () => {
       files: Object.fromEntries(Array.from({ length: 5 }, (_, i) => [`f${i}.txt`, ''])),
     })
     const r = await lsTool.execute({ limit: 2 }, ctx)
-    expect(textOf(r).split('\n')).toEqual(['f0.txt', 'f1.txt', '[3 more]'])
+    expect(textOf(r).split('\n')).toEqual(['f0.txt', 'f1.txt', '[3 more; increase limit or narrow path]'])
   })
 
   it('shows at most 500 entries when no limit is given', async () => {
@@ -412,7 +431,7 @@ describe('ls', () => {
     const r = await lsTool.execute({}, ctx)
     const lines = textOf(r).split('\n')
     expect(lines.filter((l) => l.endsWith('.txt'))).toHaveLength(500)
-    expect(lines.at(-1)).toBe('[1 more]')
+    expect(lines.at(-1)).toBe('[1 more; increase limit or narrow path]')
   })
 
   it('says a directory is empty rather than answering with nothing at all', async () => {
@@ -444,6 +463,8 @@ describe('ls', () => {
     const r = await lsTool.execute({ path: 'locked' }, ctx)
     expect(r.isError).toBe(true)
     expect(textOf(r)).toContain('ls failed')
+    expect(textOf(r)).toContain('accessible path')
+    expect(r.details).toMatchObject({ code: 'EACCES' })
     expect(textOf(r)).toContain('EACCES')
   })
 })

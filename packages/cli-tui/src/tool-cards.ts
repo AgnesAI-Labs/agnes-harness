@@ -107,6 +107,17 @@ export class ToolCards {
     return (this.latest !== undefined && this.cards.get(this.latest)?.handleInput(data)) === true
   }
 
+  /**
+   * Opens or folds every card on screen. A card inside a group is left alone: the group draws only its
+   * head row, so opening it would fetch a record nobody can see.
+   */
+  setAll(open: boolean): void {
+    const grouped = [...this.groups.values()]
+    for (const [id, card] of this.cards) if (!grouped.some((group) => group.has(id))) card.setOpen(open)
+    for (const group of grouped) group.setOpen(open)
+    this.o.changed()
+  }
+
   /** Ctrl-O: the latest card, or the group it sits in, which is what the screen shows. */
   toggleLatest(): void {
     if (this.latest === undefined) return

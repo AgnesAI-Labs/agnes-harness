@@ -166,7 +166,7 @@ export class SessionHookPort implements HookPort {
   async context(
     base: PromptSection[],
     refreshOnly = false,
-  ): Promise<{ sections: PromptSection[]; additionalContext: string }> {
+  ): Promise<{ sections: PromptSection[]; additionalContext: string; untrustedContext: string }> {
     const results: CachedContextResult[] = structuredClone(
       refreshOnly ? this.contextResults : this.discovered.contributions,
     )
@@ -177,6 +177,7 @@ export class SessionHookPort implements HookPort {
     const initial = applyContextResults(base, results)
     let sections = initial.sections
     let additionalContext = initial.additionalContext
+    let untrustedContext = initial.untrustedContext
     let overflow = initial.overflow
     for (const [hook, registration] of registrations.entries()) {
       if (refreshOnly && !refresh.has(hook)) continue
@@ -198,6 +199,7 @@ export class SessionHookPort implements HookPort {
             const applied = applyContextResults(base, results)
             sections = applied.sections
             additionalContext = applied.additionalContext
+            untrustedContext = applied.untrustedContext
             overflow = applied.overflow
           },
         },
@@ -219,7 +221,7 @@ export class SessionHookPort implements HookPort {
       }
     }
     this.contextResults = structuredClone(results)
-    return { sections, additionalContext }
+    return { sections, additionalContext, untrustedContext }
   }
 
   async toolResult(p: HookPayloadMap['tool_result']): Promise<HookReturnMap['tool_result']> {

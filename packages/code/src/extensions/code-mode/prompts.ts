@@ -59,6 +59,7 @@ export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentF
 /** The counterpart request-scoped facts, built off the same ctx — see RuntimeSnapshotFacts. */
 export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeSnapshotFacts {
   const platform = deps.adapters.platform
+  const extras = ctx.session.d.extraDirectories
   return {
     // Use the session clock so replay and a fixed-clock test retain their original UTC date.
     date: new Date(ctx.session.d.clock()).toISOString().slice(0, 10),
@@ -70,6 +71,8 @@ export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeS
     disclosure: ctx.preset.disclosure,
     enforcement: platform.capability(SANDBOX).level,
     cwd: ctx.session.d.cwd,
+    // Paths only, never contents; omitted when empty so sessions without extras stay byte-identical.
+    ...(extras?.length ? { extraDirectories: [...extras].sort() } : {}),
   }
 }
 
@@ -93,7 +96,7 @@ export function createPromptOperation(deps: PromptDeps): Operation {
      * Splits what this package tells the model into two channels, not one: text that stays the same
      * for the whole session goes into promptSections, and the facts that can differ from one request
      * to the next request or another session — date, session key, model, preset, disclosure, cwd,
-     * enforcement, and whether the tool list is complete — go into runtimeContext, rendered as a tail message rather
+     * and enforcement — go into runtimeContext, rendered as a tail message rather
      * than folding into system. Disclosure decides which sections apply, and the rule throughout is
      * that a section is contributed only where what it describes is actually present — a prompt
      * naming a tool the model was not offered is worse than a prompt that is short.
@@ -111,6 +114,7 @@ export function createPromptOperation(deps: PromptDeps): Operation {
               : ''),
         ),
       ]
+      sections.push(section('tools-available', renderTools(ctx.disclosed)))
       // The code preset offers run_code alone, and the general working rules are written for an
       // agent that edits and runs things directly.
       if (ctx.preset.disclosure !== 'code')
@@ -137,7 +141,6 @@ export function createPromptOperation(deps: PromptDeps): Operation {
           : sections,
         runtimeContext: {
           environment: runtimeSnapshotFacts(ctx, deps),
-          tools: { complete: renderTools(ctx.disclosed) },
         },
       }
     },

@@ -176,6 +176,15 @@
       "consumers": ["packages/cli", "packages/cli-tui"]
     },
     {
+      "name": "grok-mermaid",
+      "version": "0.2.3",
+      "license": "Apache-2.0",
+      "source": "https://github.com/xl0/grok-mermaid",
+      "purpose": "Terminal Mermaid box-drawing renderer for the CLI.",
+      "rationale": "Dependency-free layout engine that draws Mermaid as Unicode text without a browser or SVG; pinned to an exact version and audited: no install scripts and no filesystem, network or process APIs.",
+      "consumers": ["packages/cli", "packages/cli-tui"]
+    },
+    {
       "name": "isomorphic-git",
       "version": "1.41.9",
       "license": "MIT",

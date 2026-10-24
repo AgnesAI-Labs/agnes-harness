@@ -143,7 +143,11 @@ export function formatKeys(
       '',
     )
   }
-  lines.push(tt('keys.names', locale, { names: [...BINDABLE].join(' ') }))
+  lines.push(
+    tt('keys.names', locale, { names: [...BINDABLE].join(' ') }),
+    tt('keys.promptClick', locale),
+    tt('bang.keys', locale),
+  )
   if (problems.length > 0)
     lines.push(
       '',

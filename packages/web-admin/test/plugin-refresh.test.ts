@@ -18,14 +18,23 @@ it('reads the plugin tree on mount, real changes and one explicit refresh, and r
   vi.useFakeTimers()
   let hidden = false
   vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => (hidden ? 'hidden' : 'visible'))
+  const context = {
+    profile: 'test',
+    clientId: 'web',
+    permissions: ['packages.read'] as const,
+    readOnly: false,
+  }
+  const enabled = {
+    id: '@agnes/fixture',
+    integrity: 'a',
+    desired: 'enabled',
+    actual: 'running',
+    contributions: [],
+  } as never
+  const disabled = { ...(enabled as object), desired: 'installed-disabled' } as never
   const overview = vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({
-    context: {
-      profile: 'test',
-      clientId: 'web',
-      permissions: ['packages.read'],
-      readOnly: false,
-    },
-    inventory: { packages: [] },
+    context,
+    inventory: { packages: [enabled] },
   })
   const tree = vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
   vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
@@ -78,15 +87,30 @@ it('reads the plugin tree on mount, real changes and one explicit refresh, and r
     await vi.advanceTimersByTimeAsync(120_000)
     expect(operation).toHaveBeenCalledTimes(2)
     expect(tree).toHaveBeenCalledTimes(4)
+    let finishOverview: (() => void) | undefined
+    overview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishOverview = () => resolve({ context, inventory: { packages: [disabled] } })
+        }),
+    )
     operation.mockResolvedValue({
       operationId: 'op-running',
-      operation: 'enable',
+      operation: 'disable',
       state: 'completed',
+      packageId: '@agnes/fixture',
+      installed: disabled,
     } as never)
     hidden = false
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.advanceTimersByTimeAsync(0)
     expect(operation).toHaveBeenCalledTimes(3)
+    // A confirmed disable renders before the full inventory refresh can answer.
+    expect(page.viewContext().state.installed[0]?.desired).toBe('installed-disabled')
+    expect(page.viewContext().state.lastOperation?.state).toBe('completed')
+    expect(tree).toHaveBeenCalledTimes(4)
+    finishOverview?.()
+    await vi.advanceTimersByTimeAsync(0)
     expect(tree).toHaveBeenCalledTimes(5)
     overview.mockRejectedValueOnce(new Error('temporary outage'))
     await page.refresh()
@@ -138,28 +162,60 @@ it('coalesces changes during a read into one follow-up and ignores completion af
 it('reuses optional feeds while every refresh obtains a fresh verified overview', async () => {
   vi.useFakeTimers()
   const overview = vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({
-    context: { profile: 'fresh', clientId: 'web', permissions: ['packages.read'], readOnly: false },
+    context: {
+      profile: 'fresh',
+      clientId: 'web',
+      permissions: ['packages.read', 'packages.install'],
+      readOnly: false,
+    },
     inventory: { packages: [] },
   })
   const list = vi.spyOn(PluginAdminApi.prototype, 'list').mockResolvedValue({ packages: [] } as never)
-  const tree = vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+  let finishTree!: (value: Awaited<ReturnType<PluginAdminApi['treeList']>>) => void
+  const pendingTree = new Promise<Awaited<ReturnType<PluginAdminApi['treeList']>>>((resolve) => {
+    finishTree = resolve
+  })
+  const tree = vi
+    .spyOn(PluginAdminApi.prototype, 'treeList')
+    .mockResolvedValue({ nodes: [] } as never)
+    .mockImplementationOnce(() => pendingTree)
   vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
-  vi.spyOn(PluginAdminApi.prototype, 'runtime').mockResolvedValue({ providers: [] } as never)
+  let finishRuntime!: (value: Awaited<ReturnType<PluginAdminApi['runtime']>>) => void
+  const pendingRuntime = new Promise<Awaited<ReturnType<PluginAdminApi['runtime']>>>((resolve) => {
+    finishRuntime = resolve
+  })
+  vi.spyOn(PluginAdminApi.prototype, 'runtime')
+    .mockResolvedValue({ providers: [] } as never)
+    .mockImplementationOnce(() => pendingRuntime)
   vi.spyOn(PluginAdminApi.prototype, 'composition').mockResolvedValue({} as never)
   vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
   const pins = vi.spyOn(PluginAdminApi.prototype, 'pinsInspect').mockRejectedValue(new Error('not allowed'))
+  const inspect = vi.spyOn(PluginAdminApi.prototype, 'inspect').mockRejectedValue(new Error('not ready'))
   for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
     const dialog = document.createElement('dialog')
     dialog.id = id
     document.body.append(dialog)
   }
+  const render = vi.fn(() => null)
   const create = () =>
     new PluginAdminPage({
-      surface: { host: document.body.appendChild(document.createElement('div')), render: () => null },
+      surface: { host: document.body.appendChild(document.createElement('div')), render },
     })
   let page = create()
   try {
-    await page.start()
+    const ready = page.start()
+    await vi.waitFor(() => expect(page.viewContext().state.context?.profile).toBe('fresh'))
+    await page.selectTab('discover')
+    expect(page.viewContext().state.inventoryAuthoritative).toBe(false)
+    expect(page.viewContext().canEffect('packages.install')).toBe(false)
+    expect((await page.inspect({ type: 'file', ref: 'file:./synthetic' }, 'install', document.body)).ok).toBe(
+      false,
+    )
+    expect(inspect).not.toHaveBeenCalled()
+    finishTree({ nodes: [] } as never)
+    await vi.waitFor(() => expect(page.viewContext().canEffect('packages.install')).toBe(true))
+    await ready
+    await page.selectTab('installed')
     expect(overview).toHaveBeenCalledTimes(1)
     expect(tree).toHaveBeenCalledTimes(1)
     expect(list).not.toHaveBeenCalled()
@@ -205,8 +261,15 @@ it('reuses optional feeds while every refresh obtains a fresh verified overview'
     expect(list).not.toHaveBeenCalled()
     expect(page.viewContext().state.inventoryAuthoritative).toBe(false)
     expect(page.viewContext().state.connection).toBe('offline')
+    page.dispose()
+    render.mockClear()
+    finishRuntime({ providers: [] } as never)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(render).not.toHaveBeenCalled()
   } finally {
     page.dispose()
+    finishTree({ nodes: [] } as never)
+    finishRuntime({ providers: [] } as never)
   }
 })
 

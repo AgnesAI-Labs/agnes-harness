@@ -39,7 +39,7 @@ export function permissionIcon(mode: PermissionMode | null): IconName {
   return mode ? PERMISSION_ICONS[mode] : 'shield'
 }
 
-/** 静态 id 行：label/description 渲染时经 tr 取词，不在模块加载期写死。 */
+/** Static id rows: resolve label/description through tr at render time, not module load time. */
 export const PERMISSION_OPTIONS: readonly PermissionOption[] = [
   {
     id: 'view',

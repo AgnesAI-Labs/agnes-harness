@@ -490,9 +490,30 @@ it.each(['en', 'zh-CN'] as const)(
       )
       expect(surface()?.querySelector('a[href="/?session=trigger-session"]')).toBeTruthy()
       expect(surface()?.querySelector('a[href="/?session=finished-session"]')).toBeNull()
+      // A completed reply cannot dismiss an approval the backend still reports as pending.
+      const beforeUnresolved = profileReads()
+      window.dispatchEvent(new CustomEvent('agnes:automation-invalidated'))
+      await vi.waitFor(() => expect(profileReads()).toBeGreaterThan(beforeUnresolved))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(row()?.querySelector('.home-entry-badge')?.textContent).toBe('3')
       automationPending = false
-      window.dispatchEvent(new Event('focus'))
+      window.dispatchEvent(new CustomEvent('agnes:automation-invalidated'))
       await vi.waitFor(() => expect(row()).toBeNull())
+      // Recreating the shell must reread durable state instead of restoring a stale badge.
+      await runtime.dispose()
+      expect(listeners.size).toBe(0)
+      const beforeReload = profileReads()
+      window.dispatchEvent(new CustomEvent('agnes:automation-invalidated'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(profileReads()).toBe(beforeReload)
+      runtime = await mountRenderedIndex({
+        agnes: { call, on, connectionState: 'connected' } as unknown as AgnesClient,
+      })
+      runtime.locale.setLocale(language)
+      await vi.waitFor(() => expect(profileReads()).toBeGreaterThan(beforeReload))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(row()).toBeNull()
+      expect(surface()).toBeNull()
     } finally {
       inventory.mockRestore()
       triggerFetch.mockRestore()

@@ -3,6 +3,7 @@ import type { HostAgnesClient, LocaleService } from '@agnes/web-client'
 import { Button, Dialog, decisionPresentation, getOverlayContainer, Icon, Tooltip } from '@agnes/web-ui'
 import { Approval, type ApprovalHandle, type ApprovalView } from '@agnes/web-units/shell'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { onBroadcast } from '../app/global-events.js'
 import { homeAdmin } from '../pages/admin-api.js'
 import {
   profileExpiry,
@@ -173,6 +174,7 @@ export function ProfileApprovals({
       // The daemon routes this signal to the authorized profile/principal, never as list data.
       if (notice?.kind === 'decisions_changed' || notice?.kind === 'automation_attention') wake()
     })
+    const stopAutomation = onBroadcast('agnes:automation-invalidated', wake)
     let connectionState = client.connectionState
     const stopConnection = client.on?.('connectionStateChanged', (state) => {
       const previous = connectionState
@@ -190,6 +192,7 @@ export function ProfileApprovals({
     return () => {
       alive = false
       stopNotice?.()
+      stopAutomation()
       stopConnection?.()
       refresh.current = async () => {}
       document.removeEventListener('visibilitychange', wake)

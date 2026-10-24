@@ -168,7 +168,7 @@ export function useComposerAttachments({
     let acceptedImages = 0
     for (const file of files) {
       const visual = policy.supported && nativeImageFile(file)
-      // 源图只做粗筛：体积上限留到缩放之后再判，否则大截图会在能被缩小之前就被拒掉。
+      // Only coarsely screen source images: check size limits after resizing so large screenshots can shrink before rejection.
       if (
         (!uploads.available || visual) &&
         file.size > (visual ? MAX_SOURCE_IMAGE_BYTES : MAX_TOTAL_IMAGE_BYTES)
@@ -243,8 +243,8 @@ export function useComposerAttachments({
             onError(new Error(t('composer.image.modelChanged')))
             return
           }
-          // 每张与合计都按缩放后的体积结算，且必须排在解码之前：解码自己也卡同一批上限，
-          // 先解码的话「太大」会被当成「不是有效图片」报出去。
+          // Check per-image and total resized sizes before decoding, which enforces the same limits;
+          // otherwise too-large images would be reported as invalid images.
           const current = attachmentsRef.current
           const total = current.reduce((sum, image) => sum + image.size, 0)
           if (scaled.size > MAX_IMAGE_BYTES || total + scaled.size > MAX_TOTAL_IMAGE_BYTES) {
@@ -298,8 +298,8 @@ export function useComposerAttachments({
             size: scaled.size,
             pixels,
           }
-          // 这里到 publishAttachments 之间没有 await：并发读出的多张图会依次看到彼此已提交的
-          // 体积，不会各自按同一份旧快照判定而一起越过合计上限。
+          // No await occurs before publishAttachments: concurrently read images see previously committed sizes in sequence,
+          // instead of checking the same stale snapshot and together exceeding the total limit.
           publishAttachments([...current, attachment])
         } catch (error) {
           if (readGeneration === generation.current)

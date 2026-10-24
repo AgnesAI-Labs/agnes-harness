@@ -209,7 +209,7 @@ const request = await ctx.prepareRequest({
 
 | 字段 | 含义 |
 | --- | --- |
-| `text` | 1 到 32768 个 UTF-8 字节。清洗之后不得以 Core 附注前缀开头：`[runtime context]`、`[hook context]` 或 `[skill loaded]`，后面各跟一个换行。 |
+| `text` | 1 到 32768 个 UTF-8 字节。清洗之后不得以 Core 附注前缀开头：`[runtime context]`、`[hook context]`、`[hook data]`、`[nested result]` 或 `[skill loaded]`，后面各跟一个换行。 |
 | `commit` | 缺省 `false`：尾注只属于这一次请求。`true`：尾注同时写入历史，见下文。与自带的 `messages` 同时使用会被拒绝。 |
 
 无效的尾注使 `prepareRequest` 在写入任何内容之前抛出 `E_ENVELOPE`。`driveLoop` 的假 `prepareRequest` 不会把尾注加进它记录的请求；要测试尾注，请用完整会话 fixture。

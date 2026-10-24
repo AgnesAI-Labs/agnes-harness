@@ -159,12 +159,11 @@ const SCRIPTED_REPLY = [
  */
 export async function prepareFakeHome(out) {
   const { startFakeSystemOne } = await import('@agnes/ai/testkit')
-  const { initializeHomeLocked } = await import('@agnes/host')
+  const { createCredentialStore, initializeHomeLocked } = await import('@agnes/host')
   const home = join(out, 'home')
   await initializeHomeLocked(home, DEFAULT_PROFILE)
-  const store = join(home, 'credentials')
-  mkdirSync(join(store, 'jev'), { recursive: true, mode: 0o700 })
-  writeFileSync(join(store, 'jev', 'key'), FAKE_KEY, { mode: 0o600 })
+  const store = join(home, 'secrets')
+  await createCredentialStore({ root: home }).putApiKey('secret://jev/key', FAKE_KEY)
   const fake = await startFakeSystemOne()
   const routes = [
     {
@@ -203,14 +202,19 @@ export async function prepareFakeHome(out) {
     },
   ]
   const profileDir = join(home, 'profiles', DEFAULT_PROFILE)
-  mkdirSync(profileDir, { recursive: true, mode: 0o700 })
   // JSON is valid YAML 1.2, so the profile file needs no YAML writer.
   const profile = {
     name: DEFAULT_PROFILE,
     adapters: { secrets: { kind: 'file', path: store } },
     provider: { package: '@agnes/ai', routes },
   }
-  writeFileSync(join(profileDir, 'profile.yaml'), `${JSON.stringify(profile, null, 2)}\n`)
+  try {
+    mkdirSync(profileDir, { recursive: true, mode: 0o700 })
+    writeFileSync(join(profileDir, 'profile.yaml'), `${JSON.stringify(profile, null, 2)}\n`)
+  } catch (error) {
+    await fake.close()
+    throw error
+  }
   return { home, profile: DEFAULT_PROFILE, close: () => fake.close() }
 }
 

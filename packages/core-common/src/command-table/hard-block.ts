@@ -22,7 +22,7 @@ export type HardBlockRule = {
   text?: (squashed: string) => boolean
 }
 
-const basename = (word: string): string => (word.replace(/^\\/, '').split('/').pop() ?? '').toLowerCase()
+const basename = (word: string): string => (word.replace(/^\\/, '').split(/[\\/]/).pop() ?? '').toLowerCase()
 const flags = (words: readonly string[]): string[] => {
   const end = words.indexOf('--')
   return (end < 0 ? words : words.slice(0, end)).filter((word) => word.startsWith('-'))

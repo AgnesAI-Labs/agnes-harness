@@ -110,6 +110,8 @@ describe('parked approval across the CLI one-shot boundary', () => {
       await vi.waitFor(async () =>
         expect((await screenOf(term, 100, 30)).join('\n')).toContain('Awaiting approval: Run command'),
       )
+      // Approval keys count only after the card has sat untouched for 600 ms (approval-settle.ts).
+      await new Promise((resolve) => setTimeout(resolve, 700))
       term.feed('1')
       await vi.waitFor(async () => {
         const timeline = await session.projectUI(undefined, { surface: 'tui' })

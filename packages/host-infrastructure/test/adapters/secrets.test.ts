@@ -3,16 +3,15 @@ import {
   closeSync,
   existsSync,
   lstatSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { isHostError } from '@agnes/host-common/errors'
-import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
+import { createPrivateDirectorySync, createPrivateFileSync, hasPrivateDaclSync } from '@agnes/system-node'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { resolveFileSecretsDirectory } from '../../src/adapters/file-secrets-dir.js'
 import {
@@ -242,7 +241,11 @@ describe('secrets', () => {
 })
 
 function secretFile(dir: string, value: string): void {
-  mkdirSync(join(dir, 'search'), { recursive: true, mode: 0o700 })
+  const parent = dirname(dir)
+  if (!existsSync(parent)) createPrivateDirectorySync(parent)
+  createPrivateDirectorySync(dir)
+  createPrivateDirectorySync(join(dir, 'search'))
+  closeSync(createPrivateFileSync(join(dir, 'search', 'brave')))
   writeFileSync(
     join(dir, 'search', 'brave'),
     `${JSON.stringify({ version: 1, kind: 'api-key', provider: 'search', value })}\n`,
@@ -266,6 +269,8 @@ describe('file secrets directory', () => {
       'migrated-search-key',
     )
     expect(existsSync(join(dataDir, 'secrets'))).toBe(false)
+    expect(hasPrivateDaclSync(join(home, 'secrets'))).toBe(true)
+    expect(hasPrivateDaclSync(join(home, 'secrets', 'search'))).toBe(true)
     if (process.platform !== 'win32') expect(lstatSync(join(home, 'secrets')).mode & 0o777).toBe(0o700)
   })
 

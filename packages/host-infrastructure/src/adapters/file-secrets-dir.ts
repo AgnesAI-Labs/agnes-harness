@@ -1,16 +1,8 @@
-import {
-  chmodSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  realpathSync,
-  renameSync,
-  rmdirSync,
-  rmSync,
-} from 'node:fs'
+import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmdirSync, rmSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { HostError } from '@agnes/host-common/errors'
 import { fileSecretsDir } from '@agnes/host-common/paths'
+import { createPrivateDirectorySync } from '@agnes/system-node'
 
 const LOCK_WAIT_MS = 2_000
 
@@ -106,9 +98,8 @@ function moveStore(source: string, dest: string): void {
   }
   if (!stat.isDirectory()) return
   if (!destExists(dest)) {
-    mkdirSync(dest, { recursive: true, mode: 0o700 })
-    // mkdir honors the umask, and a later credential write refuses any directory that is not 0700.
-    chmodSync(dest, 0o700)
+    // Create with private access on both ACL and mode-based platforms; reads never repair it.
+    createPrivateDirectorySync(dest)
   }
   for (const name of readdirSync(source)) {
     const from = join(source, name)

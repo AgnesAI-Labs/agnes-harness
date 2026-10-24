@@ -743,7 +743,7 @@ const unavailableAuthority: ComputerUseAuthorityResolver = Object.freeze({
   },
 })
 
-/** Production constructor: P0 evidence is evaluated internally and cannot be replaced by a callback. */
+/** Production constructor: production evidence is evaluated internally and cannot be replaced by a callback. */
 export function createComputerUseHostEnforcer(
   lock: ComputerUseDriverLock | unknown,
   evidence: DriverAdmissionEvidence = new Map(),

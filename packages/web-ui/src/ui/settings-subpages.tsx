@@ -37,7 +37,7 @@ const SubpageContext = createContext<SubpageFrame | undefined>(undefined)
 /**
  * A settings page that can drill into subpages: `header` is the page's own header, shown while no
  * subpage is open. A subpage replaces the header and the body in the same dialog; its header line is
- * the breadcrumb (「通用 › 记忆文件」), whose levels and the browser's back button return. The page body stays mounted, so its state
+ * the breadcrumb (「General › Memory files」), whose levels and the browser's back button return. The page body stays mounted, so its state
  * survives. The stack is the shared push navigation (`usePushNavigation`) every page uses.
  */
 export function SettingsSubpageFrame({

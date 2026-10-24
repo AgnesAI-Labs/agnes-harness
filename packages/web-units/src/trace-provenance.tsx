@@ -231,7 +231,7 @@ function AuthoringRecord({ node }: { node: Node<'authoring'> }) {
 }
 
 /**
- * The «来源» record, read in place through the fact-chain read: a request's provenance chain, or a
+ * The «Provenance» record, read in place through the fact-chain read: a request's provenance chain, or a
  * tool call's authorization (with future-call rules), receipt, artifacts and business-UI records.
  * Missing evidence is named, and the last line says what a record can and cannot prove.
  */

@@ -1,6 +1,6 @@
 export type { SystemInput, SystemInputPresentation } from '@agnes/protocol'
-// `@agnes/extension-api` 的作者面版本号（规格 §19，独立 semver）。清单 `apiRange` 与它比对，
-// 不合判 `E_API_RANGE`。
+// `@agnes/extension-api` author API version (independent semver). Compare the manifest `apiRange`
+// against it; a mismatch yields `E_API_RANGE`.
 
 export * from './api-range.js'
 export * from './attachments.js'

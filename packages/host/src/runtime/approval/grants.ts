@@ -271,7 +271,9 @@ export function createApprovalGrantControlPlane(
     for (const listener of [...listeners])
       try {
         listener(structuredClone(grant))
-      } catch {}
+      } catch {
+        // A failed observer cannot undo durable revocation.
+      }
   }
   const management: ApprovalGrantManagement = Object.freeze({
     list: store.list,

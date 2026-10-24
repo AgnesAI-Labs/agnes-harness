@@ -9,7 +9,7 @@ import type {
 import { childAgentKind } from '@agnes/extension-api'
 import { readProviderSelections } from '@agnes/host-providers/assemble/provider-selection'
 import { expect, it } from 'vitest'
-import { installChildAgents } from '../../src/runtime/assemble/child-agents.js'
+import { installChildAgents, scopeWithGeneration } from '../../src/runtime/assemble/child-agents.js'
 
 const signal = () => new AbortController().signal
 
@@ -216,6 +216,37 @@ it('binds parent constraints and refuses handles belonging to another parent sco
   await other.dispose()
   await unregister()
   expect(demo.state.disposed).toEqual(['work'])
+  await root.fiber.dispose()
+})
+
+it('applies a session tool filter narrowed after the scope was bound to children started later', async () => {
+  const root = new Context()
+  const registry = installChildAgents(root, undefined, { provider: 'demo' })
+  const demo = provider('demo', { ...limited, toolFilter: true })
+  const seen: Array<ChildAgentStartOptions['toolFilter']> = []
+  const start = demo.api.start
+  demo.api.start = async (task, options) => {
+    seen.push(options.toolFilter)
+    return start(task, options)
+  }
+  const unregister = root.providers.registerHost(childAgentKind, '@agnes/base', demo.api)
+  // Core's scope reads the session's live filter at each access, as the real one does.
+  let live: ChildAgentStartOptions['toolFilter']
+  const core = {
+    sessionKey: 'parent',
+    cwd: '/tmp',
+    signal: signal(),
+    get toolFilter() {
+      return live
+    },
+  }
+  const scope = registry.forSession(scopeWithGeneration(core as never, 'g1'))
+  await scope.start('first')
+  live = { deny: ['bash'] }
+  await scope.start('second')
+  expect(seen).toEqual([undefined, { deny: ['bash'] }])
+  await scope.dispose()
+  await unregister()
   await root.fiber.dispose()
 })
 

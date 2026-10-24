@@ -5,6 +5,7 @@ import { runHeadless } from '@agnes/sdk'
 import { parseArgs } from '../args.js'
 import { installSignalLadder } from '../boot/signals.js'
 import { ExitCode, exitCodeForReason, SIGNAL_EXIT_CODES, type SignalName, UsageError } from '../errors.js'
+import { resolveAppendSystemPrompt, verifyAppendApplied } from '../modes/append-system-prompt.js'
 import type { Booted, ParsedArgs } from '../types.js'
 
 import { RUN_USAGE } from './run-usage.js'
@@ -42,6 +43,8 @@ export function parseRunArgs(rest: string[]): RunArgs {
         '--profile',
         '--preset',
         '--permission',
+        '--append-system-prompt',
+        '--append-system-prompt-file',
         '--agent',
         '--loop',
         '--model',
@@ -129,6 +132,21 @@ function writeLine(stream: NodeJS.WritableStream, value: unknown): Promise<void>
     stream.write(`${JSON.stringify(value)}\n`, (error?: Error | null) => (error ? reject(error) : resolve()))
   })
 }
+/** Every fresh session proves the daemon applied the appended prompt before the run sends its input. */
+function verifyingClient(client: Booted['client'], append: string): Parameters<typeof runHeadless>[0] {
+  return {
+    createSession: async (options) => {
+      const session = await client.createSession(options)
+      try {
+        await verifyAppendApplied(client, session.id, append)
+      } catch (error) {
+        await session.detach().catch(() => undefined)
+        throw error
+      }
+      return session
+    },
+  }
+}
 /** Sequential folder runs use fresh sessions and stop on a signal; every input gets its own result. */
 export async function runCommand(rest: string[], deps: RunCommandDeps): Promise<number> {
   if (rest.length === 1 && ['--help', '-h'].includes(rest[0]!)) {
@@ -180,6 +198,7 @@ export async function runCommand(rest: string[], deps: RunCommandDeps): Promise<
     // Validate and read the first input before starting a Host or loading any plugins.
     let first = await readInput(inputs[0]!, deps.stdin, ac.signal)
     ac.signal.throwIfAborted()
+    const append = await resolveAppendSystemPrompt(parsed.args, parsed.args.cwd ?? deps.cwd)
     booted = await deps.boot({ bundle: parsed.bundle, args: parsed.args, signal: ac.signal })
     await booted.client.workspace.add(parsed.args.cwd)
     let code: number = ExitCode.OK
@@ -189,7 +208,8 @@ export async function runCommand(rest: string[], deps: RunCommandDeps): Promise<
       try {
         const input = index === 0 ? first : await readInput(inputs[index]!, deps.stdin, ac.signal)
         first = ''
-        const result = await runHeadless(booted.client, {
+        const client = booted.client
+        const result = await runHeadless(append === undefined ? client : verifyingClient(client, append), {
           cwd: parsed.args.cwd,
           input,
           runId,
@@ -199,6 +219,7 @@ export async function runCommand(rest: string[], deps: RunCommandDeps): Promise<
             ? { permission: parsed.args.permission ?? 'default' }
             : {}),
           ...(parsed.args.loop ? { loop: parsed.args.loop } : {}),
+          ...(append === undefined ? {} : { systemPromptAppend: append }),
           ...(parsed.args.agent ? { agent: parsed.args.agent } : {}),
           ...(parsed.args.model ? { model: parsed.args.model } : {}),
           write: (record) => writeLine(deps.stdout, { ...record, input: inputs[index] }),

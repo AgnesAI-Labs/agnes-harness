@@ -136,13 +136,15 @@ const hookContext = (): HookContext => ({
 describe('complete extension API capability boundary', () => {
   it('registers all declared kinds, uses actual core tool/hook registries and disposes them', async () => {
     const h = setup()
-    h.api.registerTool(fixtureTool('fx_one'))
+    const definition = { ...fixtureTool('fx_one'), modelParameters: fixtureTool('fx_one').parameters }
+    h.api.registerTool(definition)
     h.api.registerHook('before_step', () => ({}))
     h.api.registerSlot('status.line', () => ({ text: 'ready', level: 'info' }))
     h.api.registerResource({ id: 'skill', kind: 'skill', name: 'skill', description: 'description' })
     expect(h.bag.size).toBe(4)
     expect(h.tools.size).toBe(1)
     expect(h.tools.resolve('fx_one')).toMatchObject({
+      modelParameters: definition.modelParameters,
       packageIdentity: '@fixture/package',
       packageVersion: '1.0.0',
       executionDomain: 'workspace',

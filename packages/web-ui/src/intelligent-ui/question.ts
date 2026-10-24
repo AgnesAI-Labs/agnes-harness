@@ -8,7 +8,7 @@ export interface QuestionItem {
   label: string
   options: readonly string[]
   multiple: boolean
-  /** Free text is accepted: either beside the options («其他») or as the only answer. */
+  /** Free text is accepted: either beside the options («Other») or as the only answer. */
   freeText: boolean
 }
 export interface QuestionForm {
@@ -123,7 +123,7 @@ export function toggleOption(
   return current.includes(option) ? current.filter((item) => item !== option) : [...current, option]
 }
 
-/** Typing «其他». A single choice becomes the text; a multiple choice keeps its options plus the text. */
+/** Typing «Other». A single choice becomes the text; a multiple choice keeps its options plus the text. */
 export function withOtherText(
   question: QuestionItem,
   value: string | string[] | undefined,

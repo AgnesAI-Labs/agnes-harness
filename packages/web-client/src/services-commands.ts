@@ -50,4 +50,4 @@ export class CommandService extends Service {
   }
 }
 
-/** 宿主绑定的当前模块身份；是版本提示，不是安全凭据（WC6）。 */
+/** Host-bound current module identity: a version hint, not a security credential. */

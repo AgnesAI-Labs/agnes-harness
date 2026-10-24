@@ -1,6 +1,17 @@
 import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
-import { lineColumn, lineStartOf, moveLine, nextWordEnd, prevWordStart } from './edit-motion.js'
+import {
+  lineColumn,
+  lineEndOf,
+  lineStartOf,
+  moveLine,
+  nextBoundaryOf,
+  nextWordEnd,
+  prevBoundaryOf,
+  prevWordStart,
+} from './edit-motion.js'
+import { commandSpan, paintSpan } from './editor-command.js'
+import { GRAPHEMES, offsetAtCell, wrapLine } from './editor-hit.js'
 import { type MentionItem, type MentionState, mentionText, mentionToken } from './file-mentions.js'
 import { type ActionOf, actionFor } from './keymap.js'
 import { type Key, parseKey } from './keys.js'
@@ -11,27 +22,17 @@ import { HistorySearch, PromptHistory } from './prompt-history.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
 import { UndoStack } from './undo.js'
+import type { Vim, VimTarget } from './vim-mode.js'
 
 // Control bytes that must never enter the buffer. A paste can carry them; a newline is kept because
 // a multi-line paste is a legitimate multi-line prompt.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: filtering them is the point
 const CONTROL = /[\x00-\x09\x0b-\x1f\x7f-\x9f]/g
 
-const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
-
-// Offsets in the text at which a character begins. Moving and deleting by these rather than by code
-// unit keeps a combining mark with the letter it sits on and treats a surrogate pair as one keypress.
-function boundaries(text: string): number[] {
-  const out = [0]
-  for (const s of GRAPHEMES.segment(text)) out.push(s.index + s.segment.length)
-  return out
-}
-
 // A paste past either bound shows as one chip in the buffer and goes out in full on submit.
 const PASTE_FOLD_LINES = 10
 const PASTE_FOLD_CHARS = 1000
 
-const PROMPT = '❯ '
 const CONTINUATION = '  '
 
 const MENU_LEFT_MAX = 30
@@ -48,52 +49,26 @@ function truncateTo(text: string, max: number): string {
   return max >= 2 ? `${out}…` : ''
 }
 
-/**
- * Splits one logical line into the visual lines it occupies, breaking on columns rather than on
- * characters. The cursor marker takes no column of its own but is treated as needing one when
- * deciding where to break: a cursor sitting just past the last column of a full line belongs at the
- * start of the next line, not in a column the terminal does not have.
- */
-function wrapLine(line: string, width: number): string[] {
-  const limit = Math.max(1, width)
-  const out: string[] = []
-  let cur = ''
-  let used = 0
-  const pieces = line
-    .split(CURSOR_MARKER)
-    .flatMap((part, i) => [
-      ...(i ? [CURSOR_MARKER] : []),
-      ...Array.from(GRAPHEMES.segment(part), ({ segment }) => segment),
-    ])
-  for (const raw of pieces) {
-    const piece = displayWidth(raw) > limit ? '…' : raw
-    const w = displayWidth(piece)
-    if (used + Math.max(w, 1) > limit && cur !== '') {
-      out.push(cur)
-      cur = ''
-      used = 0
-    }
-    cur += piece
-    used += w
-  }
-  out.push(cur)
-  return out
-}
-
 export type EditorOptions = {
   maxRows?(): number
   placeholder?: string
   locale?: string
-  onSubmit(text: string): void
+  /** `raw` is the draft as typed, before chips are expanded; `chips` says whether it holds any. */
+  onSubmit(text: string, raw: string, chips: boolean): void
   /** `hadDraft`: the key found text in the editor (idle, it then cleared it). */
   onCancelKey?(hadDraft: boolean): void
   /** Ctrl-G: the app hands the draft to the user's own editor and writes the result back with `replaceDraft`. */
   onExternalEdit?(): void
+  /** Ctrl-V: the terminal forwards no image, so the app reads the clipboard itself. */
+  onPasteImage?(): void
+  /** A paste, before it is inserted: true when the app took it over (a dropped image file becomes an attachment). */
+  onPasteText?(text: string): boolean
   /** Sent prompts, kept across runs when it has a file; without it history lasts this editor's lifetime. */
   history?: PromptHistory
   /** True while a turn runs: esc then interrupts it and leaves the draft alone. */
   busy?(): boolean
-  complete?(prefix: string): string[]
+  /** `before` is the draft up to the word being completed, for completions that depend on the command. */
+  complete?(prefix: string, before?: string): string[]
   /** Styles the prompt glyph, placeholder and slash menu; width math always uses the unstyled text. */
   ansi?: ThemedAnsi
   /** Args shape and short summary for a slash-menu candidate (the app passes the command table). */
@@ -102,6 +77,8 @@ export type EditorOptions = {
   mentions?: { get(query: string): MentionState }
   /** The `@` menu's status rows, shown when it has nothing to choose. */
   mentionNotes?: { loading: string; empty: string; failed: string }
+  /** The vim mode of the prompt (`/vim`); without it the editor has no modes. */
+  vim?: Vim
 }
 
 // What the open menu offers: the rows to choose from, how to take one, and a status row when empty.
@@ -110,7 +87,7 @@ type Menu = { labels: string[]; accept(index: number): void; note?: string; slas
 // How many candidates the slash menu shows at once; the rest collapse into ↑/↓ count indicators.
 const MENU_MAX_VISIBLE = 5
 
-export class Editor implements Component {
+export class Editor implements Component, VimTarget {
   text = ''
   cursor = 0
   private readonly store: PromptHistory
@@ -118,6 +95,9 @@ export class Editor implements Component {
   private histIdx = -1
   private kitty = false
   private viewportStart = 0
+  private renderedWidth = 1
+  /** How many text rows the last render drew (the menu above them is not counted). */
+  textRows = 0
   private menuIndex = 0
   private menuStart = 0
   // The text before the cursor when Esc closed the `@` menu: it stays closed until that changes.
@@ -140,6 +120,10 @@ export class Editor implements Component {
 
   constructor(private readonly o: EditorOptions) {
     this.store = o.history ?? new PromptHistory()
+  }
+
+  get vim(): Vim | undefined {
+    return this.o.vim
   }
 
   /** Newest first. */
@@ -165,6 +149,11 @@ export class Editor implements Component {
     this.undo.clear()
   }
 
+  /** True while Ctrl-R history search is open. */
+  get inSearch(): boolean {
+    return this.search !== undefined
+  }
+
   /** Swaps the whole draft for `t` as one undoable step. */
   replaceDraft(t: string): void {
     this.undo.record({ text: this.text, cursor: this.cursor }, false)
@@ -184,7 +173,23 @@ export class Editor implements Component {
     return out
   }
 
+  /** Whether `text` holds a paste or image chip of this draft. */
+  hasChip(text = this.text): boolean {
+    return [...this.pastes.keys()].some((chip) => text.includes(chip))
+  }
+
   invalidate(): void {}
+
+  /** A mouse click on text row `row` (0 is the first row drawn) at column `col` of the last render: the cursor goes there. */
+  moveCursorToCell(row: number, col: number): void {
+    if (this.search) return
+    const at = offsetAtCell(this.text, this.cursor, this.renderedWidth, this.viewportStart + row, col)
+    if (at === undefined) return
+    this.cursor = at
+    this.chain = undefined
+    this.goalColumn = undefined
+    this.undo.endRun()
+  }
 
   handleInput(data: string): boolean {
     const k = parseKey(data, this.kitty)
@@ -193,11 +198,13 @@ export class Editor implements Component {
     if (this.search) return this.searching(k, data)
     const before = { text: this.text, cursor: this.cursor }
     const generation = this.undo.generation
+    // Letters in vim normal mode are commands, not typing: each edit is a step of its own.
+    const typing = k.name === 'char' && !this.o.vim?.normal
     const handled = this.handleKey(k)
     const edited = this.text !== before.text
     // An undo, redo or clear moved the history itself and is not an edit to record.
-    if (edited && generation === this.undo.generation) this.undo.record(before, k.name === 'char')
-    else if (k.name !== 'char') this.undo.endRun()
+    if (edited && generation === this.undo.generation) this.undo.record(before, typing)
+    else if (!typing) this.undo.endRun()
     const vertical = actionFor('editor', k.name)
     if (edited || (vertical !== 'move-up' && vertical !== 'move-down')) this.goalColumn = undefined
     return handled
@@ -209,6 +216,7 @@ export class Editor implements Component {
     // Text, pastes and unreadable escapes are not bindings; every other key means what the table says.
     const stroke =
       k.name === 'char' || k.name === 'paste' || k.name === 'unknown' ? k.name : actionFor('editor', k.name)
+    if (this.vimKey(k, menu)) return true
     switch (stroke) {
       case 'submit': {
         // A trailing backslash is the way to enter a newline on terminals that cannot report
@@ -229,9 +237,12 @@ export class Editor implements Component {
         }
         if (!this.text.trim()) return true
         const t = this.expanded()
+        const raw = this.text
+        const chips = this.hasChip()
         this.store.add(t)
         this.clear()
-        this.o.onSubmit(t)
+        this.o.vim?.insert()
+        this.o.onSubmit(t, raw, chips)
         return true
       }
       case 'newline':
@@ -307,14 +318,14 @@ export class Editor implements Component {
         const m = /(\S+)$/.exec(this.text.slice(0, this.cursor))
         const token = m?.[1]
         if (!token) return true
-        const first = this.o.complete?.(token)?.[0]
+        const first = this.o.complete?.(token, this.text.slice(0, this.cursor - token.length))?.[0]
         if (!first) return true
         this.text = `${this.text.slice(0, this.cursor - token.length)}${first} ${this.text.slice(this.cursor)}`
         this.cursor += first.length - token.length + 1
         return true
       }
       case 'paste':
-        this.paste(k.ch ?? '')
+        if (!this.o.onPasteText?.(k.ch ?? '')) this.paste(k.ch ?? '')
         return true
       case 'history-search':
         this.search = new HistorySearch(this.store, { text: this.text, cursor: this.cursor })
@@ -392,8 +403,60 @@ export class Editor implements Component {
       case 'external-edit':
         this.o.onExternalEdit?.()
         return true
+      case 'paste-image':
+        this.o.onPasteImage?.()
+        return true
       default:
         return false
+    }
+  }
+
+  // Esc leaves insert mode (an open `@` menu takes it first); in normal mode letters are commands and
+  // Ctrl-R redoes. True when the key was a vim key; false leaves it to the ordinary editor.
+  private vimKey(k: Key, menu: Menu | undefined): boolean {
+    const vim = this.o.vim
+    if (!vim?.enabled) return false
+    if (vim.mode === 'insert') {
+      if (k.name !== 'esc' || (menu && !menu.slash)) return false
+      vim.leaveInsert(this)
+      return true
+    }
+    if (k.name === 'esc') return vim.cancelPending()
+    if (k.name === 'char') {
+      for (const { segment } of GRAPHEMES.segment((k.ch ?? '').replace(CONTROL, ''))) vim.press(segment, this)
+      return true
+    }
+    if (actionFor('vim', k.name) === undefined) return false
+    vim.press(k.name, this)
+    return true
+  }
+
+  cut(from: number, to: number, register?: string): void {
+    if (to <= from) return
+    this.ring.add(register ?? this.text.slice(from, to), false, false)
+    this.text = this.text.slice(0, from) + this.text.slice(to)
+    this.cursor = from
+  }
+
+  register(): string | undefined {
+    return this.ring.at(0)
+  }
+
+  undoEdit(): void {
+    this.readlineKey('undo')
+  }
+
+  redoEdit(): void {
+    this.readlineKey('redo')
+  }
+
+  /** The mode marker the composer draws beside the prompt; undefined while vim is off. */
+  get vimBadge(): { normal: boolean; label: string } | undefined {
+    const vim = this.o.vim
+    if (!vim?.enabled) return undefined
+    return {
+      normal: vim.mode === 'normal',
+      label: tt(vim.mode === 'normal' ? 'vim.normal' : 'vim.insert', this.o.locale ?? 'en'),
     }
   }
 
@@ -466,7 +529,7 @@ export class Editor implements Component {
 
   // Terminals paste a newline as a carriage return; tabs would not survive the renderer, and every
   // other control byte is dropped as it is from typed text.
-  private paste(raw: string): void {
+  paste(raw: string): void {
     const text = raw.replace(/\r\n?/g, '\n').replaceAll('\t', '  ').replace(CONTROL, '')
     const lines = text.split('\n').length
     if (lines <= PASTE_FOLD_LINES && text.length <= PASTE_FOLD_CHARS) {
@@ -475,6 +538,12 @@ export class Editor implements Component {
     }
     const chip = tt('paste.chip', this.o.locale ?? 'en', { n: ++this.pasteCount, lines })
     this.pastes.set(chip, text)
+    this.insert(chip)
+  }
+
+  /** Puts a chip such as `[Image #1]` in the draft; Backspace removes it whole, and it goes out as typed. */
+  insertChip(chip: string): void {
+    this.pastes.set(chip, chip)
     this.insert(chip)
   }
 
@@ -488,20 +557,15 @@ export class Editor implements Component {
   }
 
   private lineEnd(): number {
-    const next = this.text.indexOf('\n', this.cursor)
-    return next < 0 ? this.text.length : next
+    return lineEndOf(this.text, this.cursor)
   }
 
   private prevBoundary(): number {
-    const b = boundaries(this.text)
-    let prev = 0
-    for (const x of b) if (x < this.cursor) prev = x
-    return prev
+    return prevBoundaryOf(this.text, this.cursor)
   }
 
   private nextBoundary(): number {
-    for (const x of boundaries(this.text)) if (x > this.cursor) return x
-    return this.text.length
+    return nextBoundaryOf(this.text, this.cursor)
   }
 
   /**
@@ -651,8 +715,13 @@ export class Editor implements Component {
   render(width: number): string[] {
     if (!Number.isFinite(width)) throw new Error('invalid editor width')
     width = Math.max(1, Math.trunc(width))
+    this.renderedWidth = width
+    this.textRows = 0
     if (this.search) return this.renderSearch(this.search, width)
-    const prompt = width > 2 ? PROMPT : width === 2 ? '❯' : ''
+    // In vim normal mode the arrow turns around, so the mode shows even where the rail is too narrow to say it.
+    // A draft that starts with `!` is a shell command: the prompt says so.
+    const arrow = this.o.vim?.normal ? '❮' : this.text.startsWith('!') ? '!' : '❯'
+    const prompt = width > 2 ? `${arrow} ` : width === 2 ? arrow : ''
     const shown = prompt && this.bold(this.paint('accent', prompt))
     const continuation = width > 2 ? CONTINUATION : ' '.repeat(prompt.length)
     const inner = Math.max(1, width - prompt.length)
@@ -662,10 +731,16 @@ export class Editor implements Component {
     }
     const marked = this.text.slice(0, this.cursor) + CURSOR_MARKER + this.text.slice(this.cursor)
     const out: string[] = []
+    // A known command at the head of the draft is coloured; arguments, unknown names and paths stay plain.
+    const span = commandSpan(this.text, this.cursor, (t) => this.o.complete?.(t).includes(t) ?? false)
     for (const [i, logical] of marked.split('\n').entries()) {
       const prefix = i === 0 ? shown : continuation
-      for (const [j, seg] of wrapLine(logical, inner).entries())
-        out.push((j === 0 ? prefix : continuation) + seg)
+      let at = 0
+      for (const [j, seg] of wrapLine(logical, inner).entries()) {
+        const body = i === 0 ? paintSpan(seg, at, span, (t) => this.bold(this.paint('accent', t))) : seg
+        at += seg.length
+        out.push((j === 0 ? prefix : continuation) + body)
+      }
     }
     const requested = this.o.maxRows?.()
     const clamped =
@@ -683,6 +758,7 @@ export class Editor implements Component {
     // transient overlay reacting to what is being typed right now, not part of the draft itself.
     // The footer (status bar + hints) sits below the editor and is unaffected: the menu grows
     // upward out of the editor's own render output.
+    this.textRows = clamped.length
     const menu = this.openMenu()
     return menu ? [...this.renderMenu(menu, width), ...clamped] : clamped
   }

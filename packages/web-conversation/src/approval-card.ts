@@ -92,7 +92,7 @@ function impactOf(tool: string | undefined, kind: unknown, input: unknown, t: Tr
     return typeof v === 'string' && v !== '' ? v : undefined
   }
   const path = field('path') ?? field('file_path')
-  // 目标路径/网址直接拼进句子，中英文都写作「动词 + 空格 + 目标」，所以把空格放进插值值里。
+  // Interpolate the target path/URL into the sentence. Both languages use verb + space + target, so include the space in the value.
   const target = (value: string | undefined): string => (value ? ` ${value}` : '')
   if (tool === 'exit_plan_mode') return t('app.approval.impact.plan')
   if (tool === 'write') return t('app.approval.impact.write', { target: target(path) })

@@ -234,7 +234,7 @@ function AgentCard({
 export type BusinessAgentsData = ReturnType<typeof useBusinessAgents>
 
 /**
- * 业务 Agent · FDE: every business agent as a card, each one click away from a session. The page
+ * Business Agent · FDE: every business agent as a card, each one click away from a session. The page
  * that hosts it owns the title and the refresh action; `data` comes from `useBusinessAgents`.
  */
 export function BusinessAgentGallery({

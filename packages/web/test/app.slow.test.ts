@@ -585,6 +585,12 @@ describe.each(['win32', 'darwin'])('sidebar startup failure recovery (%s)', (pla
     expect(Boolean(document.querySelector('[data-testid="first-run-guide"]'))).toBe(!configured)
     expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(configured)
     expect(binding.loadWebSession).not.toHaveBeenCalled()
+    if (!configured) {
+      const readsCatalog = () => vi.mocked(fetch).mock.calls.some(([url]) => url === '/admin/api/loops')
+      expect(readsCatalog()).toBe(false)
+      document.querySelector<HTMLButtonElement>('[data-testid="first-run-skip"]')?.click()
+      await vi.waitFor(() => expect(readsCatalog()).toBe(true))
+    }
   })
 
   it('still opens a successfully loaded existing session without first-run setup', async () => {
@@ -1253,6 +1259,22 @@ describe('web session selection', () => {
         'agnes-web-composer-selection',
         JSON.stringify({ model: { route: 'local', id: 'model-b' }, permission: 'full' }),
       )
+      vi.mocked(fetch).mockImplementation(async (url) => {
+        if (url === '/admin/api/loops') return Response.json({ revision: 0, defaults: {}, loops: [] })
+        if (url === '/admin/api/model-adapters') return Response.json({ modelAdapters: [] })
+        if (url === '/admin/api/bundles') return Response.json({ catalog: [] })
+        if (url === '/admin/api/runtime')
+          return Response.json({
+            providers: [],
+            presets: [{ id: 'standard', isDefault: true }],
+            permissions: [
+              { id: 'workspace-write', isDefault: true },
+              { id: 'full-access', isDefault: false },
+            ],
+            localPluginFolders: { home: '/synthetic/plugins', workspace: '/synthetic/workspace/plugins' },
+          })
+        return Response.json({ available: false })
+      })
       const timeline = idleTimeline('fresh')
       const fresh = session('fresh', async () => timeline)
       fresh.setYolo.mockImplementation(async (enabled: boolean) => {
@@ -1713,7 +1735,8 @@ describe('web session selection', () => {
           return Response.json({
             providers: [],
             bundles: [],
-            presets: [
+            presets: [{ id: 'standard', isDefault: true }],
+            permissions: [
               { id: 'full-access', isDefault: true },
               { id: 'read-only', isDefault: false },
             ],

@@ -2,7 +2,7 @@ import { type ReactNode, type RefObject, useLayoutEffect, useRef, useState } fro
 import { ActivityIcon, ActivityRow } from './activity-row.js'
 
 /**
- * Reasoning as one step of the process: 思考 · the line it is on. It opens while the model is only
+ * Reasoning as one step of the process: Thinking · the line it is on. It opens while the model is only
  * thinking, closes once when the answer starts, and afterwards follows the reader: later stream
  * updates never override a manual toggle.
  */

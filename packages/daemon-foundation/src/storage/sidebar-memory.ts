@@ -31,7 +31,13 @@ export class MemorySidebarSessions implements SidebarSessionPort {
         cwd = this.sessions.get(key)
       if (!meta || this.preferences.get(key).archived) continue
       const { profileHash: _hash, lastActiveAt: _active, ...metadata } = meta
-      const row = this.preferences.apply({ ...metadata, sessionId: key, ...(cwd ? { cwd } : {}) })
+      const fork = this.owners.lineage(key)
+      const row = this.preferences.apply({
+        ...metadata,
+        sessionId: key,
+        ...(cwd ? { cwd } : {}),
+        ...(fork ? { parent: fork.parent, forkAt: fork.forkAt } : {}),
+      })
       const group = row.pinnedAt
         ? 'pinned'
         : (directories.find((entry) => entry.path === cwd)?.workspaceId ?? 'unassigned')

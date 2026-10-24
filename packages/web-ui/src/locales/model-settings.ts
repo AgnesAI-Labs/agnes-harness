@@ -1,8 +1,8 @@
 import type { LocaleCatalog } from './index.js'
 
 /**
- * 会话级模型配置（composer 模型面板里的「思考强度」与「上下文预算」两段）的文案。
- * 思考档位标签与服务端档位值分开：标签走目录，值（off/low/high…）仍作为选项值原样传递。
+ * Session model settings text for the composer's thinking-effort and context-budget sections.
+ * Effort labels use the catalog, while server effort values (off/low/high…) pass through unchanged as option values.
  */
 export const MODEL_SETTINGS_LOCALE_NAMESPACE = '@agnes/web-ui/model-settings'
 

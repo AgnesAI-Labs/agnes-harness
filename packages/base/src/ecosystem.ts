@@ -10,6 +10,7 @@ import contextRulesExtension from '../extensions/context-rules/src/index.js'
 import deliverablesExtension from '../extensions/deliverables/src/index.js'
 import { createFollowUpHintExtension } from '../extensions/follow-up-hint/src/index.js'
 import goalExtension from '../extensions/goal/src/index.js'
+import { createHeadsUpExtension } from '../extensions/heads-up/src/index.js'
 import {
   type CcHookMap,
   type HooksRunnerExtensionDeps,
@@ -20,6 +21,7 @@ import interactionExtension from '../extensions/interaction/src/index.js'
 import { createJobsExtension } from '../extensions/jobs/src/index.js'
 import { shellJobsFor } from '../extensions/jobs/src/registry.js'
 import { createJobsWebExtension } from '../extensions/jobs-web/src/index.js'
+import { createLspExtension, lspFor } from '../extensions/lsp/src/index.js'
 import mcpResourcesExtension from '../extensions/mcp-resources/src/index.js'
 import { mcpSearchExtension } from '../extensions/mcp-search/src/index.js'
 import { mcpCatalogHubFor } from '../extensions/mcp-server/src/catalog-hub.js'
@@ -186,6 +188,7 @@ const bundled = {
   'agnes/context-rules': (): BundledPlugin => contextRulesExtension,
   'agnes/follow-up-hint': (init: SeamInitContext): BundledPlugin =>
     createFollowUpHintExtension(init.sessionTasks),
+  'agnes/heads-up': (init: SeamInitContext): BundledPlugin => createHeadsUpExtension(init.sessionTasks),
   'agnes/time-context': (): BundledPlugin => timeContextExtension,
 
   'agnes/goal': (): BundledPlugin => goalExtension,
@@ -193,7 +196,10 @@ const bundled = {
   'agnes/deliverables': (): BundledPlugin => deliverablesExtension,
   'agnes/plugin-creator': (): BundledPlugin => pluginCreatorExtension,
   'agnes/tools-core': (init: SeamInitContext): BundledPlugin =>
-    createToolsCoreExtension(shellJobsFor(init.signal)),
+    createToolsCoreExtension(shellJobsFor(init.signal), lspFor(init.signal)),
+  // Shares one registry with tools-core (as jobs does): applying this extension is what turns the
+  // language servers on for the write/edit results too.
+  'agnes/lsp': (init: SeamInitContext): BundledPlugin => createLspExtension(lspFor(init.signal)),
   'agnes/jobs-web': (init: SeamInitContext): BundledPlugin =>
     createJobsWebExtension(shellJobsFor(init.signal)),
   'agnes/jobs': (init: SeamInitContext): BundledPlugin => createJobsExtension(shellJobsFor(init.signal)),
@@ -202,7 +208,7 @@ const bundled = {
     createToolsWebExtension(init.searchProvider ?? officialSearchProvider(init)),
   'agnes/compaction': (): BundledPlugin => compactionExtension,
   'agnes/privacy': (init: SeamInitContext): BundledPlugin => privacyFactory(init),
-  // Cross-server deferred-tool search plus the ready-Skill listing (design §3.9, D123). Host hands it
+  // Cross-server deferred-tool search plus the ready-Skill listing. Host hands it
   // a live Skill view; MCP servers themselves are per-server rows, never an ecosystem extension.
   'agnes/mcp-search': (init: SeamInitContext): BundledPlugin =>
     mcpSearchExtension({

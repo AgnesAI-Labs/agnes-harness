@@ -42,6 +42,16 @@ const envelopeId = (messages: RequestBody['messages'], marker: string) => {
   return /<untrusted id=\\?"([^"]+)/u.exec(JSON.stringify(message))?.[1]
 }
 
+const receiptNotes = (request: RequestBody | undefined) =>
+  request?.messages.filter(
+    (message) =>
+      message.role === 'user' &&
+      message.content.some(
+        (part) =>
+          part.type === 'text' && /^\[live context [a-f0-9]{64}\]\ncore:child-receipts\n/.test(part.text),
+      ),
+  ) ?? []
+
 async function plan(payload: HookPayloadMap['before_compact']) {
   const nodes = payload.getSurface()
   const first = nodes[0]
@@ -276,13 +286,19 @@ it('counts only committed child creations after three proposals, compaction and 
       created.key,
     ])
     await prompt(parent, 'report the actual spawn count')
-    expect(JSON.stringify(provider.requests.at(-1)?.system)).toContain('Successfully created children: 1.')
+    expect(receiptNotes(provider.requests.at(-1))).toHaveLength(1)
+    expect(JSON.stringify(receiptNotes(provider.requests.at(-1)))).toContain(
+      'Successfully created children: 1.',
+    )
+    expect(provider.requests.at(-1)?.system).not.toContain('Authoritative child creation receipts')
     parent.compaction = new CompactionRunner({ plan, onCompact: async () => undefined })
     await parent.requestCompaction({ actor, admissionId: 'receipts-summary' })
     expect((await parent.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
     const summary = provider.requests.findLast((request) => request.kind === 'summary')
     expect(JSON.stringify(summary)).toContain('Successfully created children: 1.')
     expect(parent.surface()[0]?.kind).toBe('summary')
+    // The prior note was summarized away; recovery must reissue current durable receipts.
+    expect(JSON.stringify(parent.surface())).not.toContain('Successfully created children: 1.')
     await kernel.close()
     kernel = create()
     parent = await kernel.session('receipt-parent', {
@@ -294,9 +310,11 @@ it('counts only committed child creations after three proposals, compaction and 
     await prompt(parent, 'resume after compaction')
     const recovered = provider.requests.at(-1)
     expect(JSON.stringify(recovered?.messages)).toContain('unreliable summary')
-    expect(JSON.stringify(recovered?.system)).toContain('Successfully created children: 1.')
-    expect(JSON.stringify(recovered?.system)).toContain('override prose and summaries')
-    expect(JSON.stringify(recovered?.system)).not.toContain('Successfully created children: 3.')
+    expect(receiptNotes(recovered)).toHaveLength(1)
+    expect(JSON.stringify(receiptNotes(recovered))).toContain('Successfully created children: 1.')
+    expect(JSON.stringify(receiptNotes(recovered))).toContain('override prose and summaries')
+    expect(JSON.stringify(receiptNotes(recovered))).not.toContain('Successfully created children: 3.')
+    expect(recovered?.system).not.toContain('Authoritative child creation receipts')
   } finally {
     await kernel.close()
   }

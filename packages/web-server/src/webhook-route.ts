@@ -1,5 +1,23 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { WebhookRequest, WebhookResult } from '@agnes/protocol/gen/app-server'
+import { validateAgainst } from '@agnes/protocol'
+import {
+  type WebhookRequest,
+  WebhookRequest as WebhookRequestSchema,
+  type WebhookResult,
+} from '@agnes/protocol/gen/app-server'
+
+import { acceptsWebRequest } from './server-security.js'
+
+const DELIVERY_STATUS = new Map<string, number>([
+  ['accepted', 202],
+  ['duplicate', 409],
+  ['rate-limited', 429],
+  ['capacity', 429],
+  ['bad-signature', 401],
+  ['too-large', 413],
+  ['disabled', 404],
+  ['failed', 503],
+])
 
 export const TRIGGERS_ADMIN_PATH = '/api/triggers'
 const HEADERS = [
@@ -28,16 +46,11 @@ export function webhookRoute(origin: string, invoke: (input: WebhookRequest) => 
     const path = new URL(request.url ?? '/', origin).pathname
     const admin = path === TRIGGERS_ADMIN_PATH
     if (!admin && !path.startsWith('/hooks/')) return false
-    if (admin && request.url !== TRIGGERS_ADMIN_PATH) {
+    if (admin && !acceptsWebRequest('webhook-path', origin, request, TRIGGERS_ADMIN_PATH)) {
       reply(response, 404, { error: 'UNKNOWN_PATH' })
       return true
     }
-    if (
-      admin &&
-      (request.headers.origin !== origin ||
-        (request.headers['sec-fetch-site'] !== undefined &&
-          request.headers['sec-fetch-site'] !== 'same-origin'))
-    ) {
+    if (admin && !acceptsWebRequest('webhook-admin', origin, request)) {
       reply(response, 403, { error: 'ORIGIN_REJECTED' })
       return true
     }
@@ -48,7 +61,7 @@ export function webhookRoute(origin: string, invoke: (input: WebhookRequest) => 
     try {
       const snapshot = (await invoke({ action: 'list' })).snapshot
       if (!snapshot) throw new Error('Unavailable')
-      if (!admin && request.url !== snapshot.config.path) {
+      if (!admin && !acceptsWebRequest('webhook-path', origin, request, snapshot.config.path)) {
         reply(response, 404, { error: 'UNKNOWN_PATH' })
         return true
       }
@@ -84,11 +97,15 @@ export function webhookRoute(origin: string, invoke: (input: WebhookRequest) => 
       let result: WebhookResult
       if (admin) {
         const input = JSON.parse(body.toString('utf8')) as WebhookRequest
-        if (!['list', 'configure', 'upsert', 'delete', 'test'].includes(input.action)) {
+        if (
+          !validateAgainst(WebhookRequestSchema, input).ok ||
+          !['list', 'configure', 'upsert', 'delete', 'test'].includes(input.action)
+        ) {
           reply(response, 400, { error: 'INVALID_REQUEST' })
           return true
         }
-        result = await invoke(input)
+        // The list above already read this request's snapshot, including validated secret refs.
+        result = input.action === 'list' ? { snapshot } : await invoke(input)
       } else {
         const headers: Record<string, string> = { 'content-type': request.headers['content-type'] ?? '' }
         let ambiguous = false
@@ -102,27 +119,7 @@ export function webhookRoute(origin: string, invoke: (input: WebhookRequest) => 
         result = await invoke({ action: 'deliver', body: body.toString('base64'), headers })
       }
       const status = result.delivery?.status
-      reply(
-        response,
-        admin
-          ? 200
-          : status === 'accepted'
-            ? 202
-            : status === 'duplicate'
-              ? 409
-              : status === 'rate-limited' || status === 'capacity'
-                ? 429
-                : status === 'bad-signature'
-                  ? 401
-                  : status === 'too-large'
-                    ? 413
-                    : status === 'disabled'
-                      ? 404
-                      : status === 'failed'
-                        ? 503
-                        : 422,
-        result,
-      )
+      reply(response, admin ? 200 : (DELIVERY_STATUS.get(status ?? '') ?? 422), result)
     } catch {
       reply(response, 400, { error: 'TRIGGER_REQUEST_FAILED' })
     }

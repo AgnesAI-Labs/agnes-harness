@@ -1,6 +1,15 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { FILE_UPLOAD_CHUNK_BYTES, type FileUploadRequest, type FileUploadResult } from '@agnes/protocol'
 
+import { acceptsWebRequest } from './server-security.js'
+
+const ERROR_STATUS: Readonly<Record<string, number>> = {
+  UPLOAD_SIZE_LIMIT: 413,
+  UPLOAD_CHUNK_LIMIT: 413,
+  UPLOAD_TYPE_LIMIT: 415,
+  UPLOAD_INVALID: 400,
+}
+
 export type FileUploadHandler = (input: FileUploadRequest) => Promise<FileUploadResult>
 async function readBody(request: IncomingMessage, limit: number): Promise<Buffer> {
   const parts: Buffer[] = []
@@ -25,12 +34,7 @@ function json(response: ServerResponse, status: number, value: unknown): void {
 export function fileUploadRoute(origin: string, invoke?: FileUploadHandler) {
   let activeChunks = 0
   return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
-    const site = request.headers['sec-fetch-site']
-    if (
-      (site !== undefined && site !== 'same-origin' && site !== 'none') ||
-      (request.headers.origin !== undefined && request.headers.origin !== origin) ||
-      (request.method === 'POST' && request.headers.origin !== origin)
-    ) {
+    if (!acceptsWebRequest('file-upload', origin, request)) {
       json(response, 403, { error: 'UPLOAD_ORIGIN_DENIED' })
       return
     }
@@ -79,17 +83,7 @@ export function fileUploadRoute(origin: string, invoke?: FileUploadHandler) {
         typeof reason === 'string' && /^(UPLOAD|ATTACHMENT)_[A-Z_]+$/u.test(reason)
           ? reason
           : 'UPLOAD_UNAVAILABLE'
-      json(
-        response,
-        code === 'UPLOAD_SIZE_LIMIT' || code === 'UPLOAD_CHUNK_LIMIT'
-          ? 413
-          : code === 'UPLOAD_TYPE_LIMIT'
-            ? 415
-            : code === 'UPLOAD_INVALID'
-              ? 400
-              : 409,
-        { error: code },
-      )
+      json(response, ERROR_STATUS[code] ?? 409, { error: code })
     } finally {
       if (chunkSlot) activeChunks--
     }

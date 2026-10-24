@@ -1,72 +1,87 @@
-import { randomUUID } from 'node:crypto'
-import type { ContentBlock, UITimeline, UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
-import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
-import { type Branding, DEFAULT_BRANDING, type NodeClient, PreviewMerger, type Session } from '@agnes/sdk'
+import type { ContentBlock, UITimeline } from '@agnes/protocol'
+import { DEFAULT_BRANDING, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
+import type { TuiAppOptions } from './app-options.js'
+import { ApprovalSettle } from './approval-settle.js'
+import { BangShell, isBangLine } from './bang-shell.js'
+import { Borders } from './borders.js'
 import { BusyInput, cancelTurn, textOf } from './busy-input.js'
-import { completeToken, runSlash, type SessionChoice, slashCommandFor } from './commands.js'
-import { type Component, escapeControl, Text, VStack } from './component.js'
+import { CardFocus } from './card-focus.js'
+import { pasteClipboardImage } from './clipboard-image.js'
+import { applyCommandResult } from './command-result.js'
+import { completeToken, runSlash, slashCommandFor } from './commands.js'
+import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
-import { writeComposerMemoryFile } from './composer-memory.js'
+import { DraftStash } from './draft-stash.js'
+import { attachDroppedImages } from './dropped-images.js'
 import { Editor } from './editor.js'
 import { formatTuiErrorNotice } from './error-notice.js'
-import { type ExternalEditorConfig, editDraft } from './external-editor.js'
-import type { TuiExtraOptions } from './extra-options.js'
+import { editDraft } from './external-editor.js'
 import { attachmentsFrom, createMentionSource, type ReferenceMentionSource } from './file-mentions.js'
 import { FooterRenderer } from './footer-renderer.js'
-import { formatTurnSummary } from './format-usage.js'
+import { foldingTerminal } from './glyphs.js'
+import { imageProtocol } from './image-protocol.js'
+import { InlineImages } from './inline-image.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
-import { actionFor } from './keymap.js'
-import { parseKey } from './keys.js'
+import { createLinker } from './links.js'
 import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { renderMarkdownChunk } from './markdown.js'
+import { ModelChooser } from './model-chooser.js'
 import { copyTip, systemCopy, TuiMouse } from './mouse.js'
-import { nodeText } from './node-text.js'
+import { nodeView } from './node-view.js'
+import { NotifyPreference } from './notify.js'
 import { PackageController } from './package-controller.js'
+import { PagerOverlay } from './pager-overlay.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
+import { type PromptArea, promptArea, routeClick } from './prompt-click.js'
 import { PromptHistory } from './prompt-history.js'
+import { RawView } from './raw-view.js'
 import { Renderer, type ScreenRenderer } from './renderer.js'
-import type { ResourceCommandKind, TuiResourceController } from './resource-controller.js'
+import type { TuiResourceController } from './resource-controller.js'
+import { type InputDialog, rootInput } from './root-input.js'
+import { applySwitch, chooseSession, ResourceConfirmations } from './session-switch.js'
+import { isSlashCommandLine } from './slash-table.js'
 import { type ActionItem, collectSlots } from './slots.js'
-import { pendingSurface } from './surface-prompt.js'
-import type { Terminal } from './terminal.js'
-import { resolveAuto } from './terminal-background.js'
+import { StatusLineConfig } from './statusline-config.js'
+import { SurfaceInbox } from './surface-inbox.js'
+import { suspendToShell } from './suspend.js'
 import { TerminalSignals } from './terminal-signals.js'
-import { brandColour, TuiTheme, type TuiThemeName } from './theme.js'
-import { readTheme, saveTheme, type ThemePreference } from './theme-preference.js'
-import { assistantView, LiveView } from './thinking.js'
+import { brandColour, type TuiTheme, type TuiThemeName } from './theme.js'
+import { ThemeController } from './theme-controller.js'
+import { LiveView } from './thinking.js'
 import { ToolCards } from './tool-cards.js'
-import { ApprovalCard } from './views/approval-card.js'
+import { TurnClock } from './turn-clock.js'
+import type { ApprovalCard } from './views/approval-card.js'
 import { Composer } from './views/composer.js'
 import { Hints } from './views/hints.js'
 import { localCommandView } from './views/local-command.js'
-import { UserMessage } from './views/message.js'
-import { ModelPicker, type ModelSelection } from './views/model-picker.js'
+import { ModelPicker } from './views/model-picker.js'
+import { PlanPanel } from './views/plan-panel.js'
 import { SessionPicker } from './views/session-picker.js'
 import { StatusBar } from './views/status-bar.js'
-import { ThemePicker } from './views/theme-picker.js'
+import { StatusLinePicker } from './views/statusline-picker.js'
+import type { ThemePicker } from './views/theme-picker.js'
 import { TIMELINE_RESERVED_ROWS, Timeline } from './views/timeline.js'
 import { UsagePanel } from './views/usage-panel.js'
-import { WelcomeController, type WelcomeOptions } from './welcome-controller.js'
-import { readWorkspaceInfo, tildePath, type WorkspaceProbe, workspaceRefresher } from './workspace-info.js'
+import { Vim } from './vim-mode.js'
+import { WelcomeController } from './welcome-controller.js'
+import { WindowTitle } from './window-title.js'
+import { readWorkspaceInfo, tildePath, workspaceRefresher } from './workspace-info.js'
+import { WorktreeKeeper } from './worktree.js'
 
 export { formatTuiErrorNotice } from './error-notice.js'
 
 export class TuiApp {
-  private attachmentController = new AbortController()
+  // The fields from here to `previewEffects` that carry no `private` are the ones session-switch.ts swaps.
+  attachmentController = new AbortController()
   get attachmentSignal(): AbortSignal {
     return this.attachmentController.signal
   }
-  private surfacePrompt: UiSurfaceRecord | undefined
-  private surfaceCommand: Omit<UiActionParams, 'sessionId'> | undefined
-  private readingSurfaces: Session | undefined
-  private surfaceReadAgain = false
-  private surfaceWatermark = 0
-  private readonly surfaceVersions = new Map<string, number>()
-  private readonly modal: PermissionModal
-  private offPermission: (() => void) | undefined
+  readonly surfaces: SurfaceInbox
+  readonly modal: PermissionModal
+  offPermission: (() => void) | undefined
   // Registered once in `start()` against whichever client the initial session belongs to. A
   // session switch (`applySwitch`) never replaces the underlying `Client` -- the daemon
   // connection outlives any one session -- so these are not re-registered per session.
@@ -75,52 +90,72 @@ export class TuiApp {
   readonly renderer: ScreenRenderer
   // Not readonly: `applySwitch` (a slash command that switches session -- /new, /resume, /rewind)
   // replaces it with a fresh projection built for the newly current session.
-  private projection: TuiProjection
-  private readonly timeline: Timeline
-  private readonly welcome: WelcomeController
-  private readonly cards: ToolCards
+  projection: TuiProjection
+  readonly timeline: Timeline
+  readonly welcome: WelcomeController
+  readonly cards: ToolCards
   private readonly approvalCards = new Map<string, ApprovalCard>()
   private latestApproval: string | undefined
   private reservedRows = TIMELINE_RESERVED_ROWS
   // Rows rendered under the permission modal, measured before the modal itself renders each frame.
   private belowModal = 0
+  // Where the draft's rows were drawn last frame, and whether a picker or panel covered the prompt.
+  private promptArea: PromptArea | undefined
+  private dialogShown = false
   private readonly live: LiveView
   private readonly loader: Loader
-  private turnActive = false
-  private turnStartedAt: number | undefined
-  private currentTurn = 0
-  private ticker: ReturnType<typeof setInterval> | undefined
-  private pendingResourceCommand: { kind: ResourceCommandKind; args: readonly string[] } | undefined
+  readonly clock: TurnClock
   readonly mouse: TuiMouse
   readonly statusBar: StatusBar
+  private readonly models = new ModelChooser(
+    this,
+    () => this.refuseClosed(),
+    () => this.stopped,
+  )
   private readonly hints: Hints
   private hintActions: ActionItem[] = []
-  private readonly editor: Editor
-  private readonly mentions: ReferenceMentionSource
+  readonly editor: Editor
+  private readonly drafts: DraftStash
+  readonly mentions: ReferenceMentionSource
   private readonly composer: Composer
   private readonly theme: TuiTheme
-  private readonly themePicker: ThemePicker
-  private themePreference: ThemePreference
+  readonly themes: ThemeController
+  readonly themePicker: ThemePicker
   readonly usagePanel: UsagePanel
-  private readonly modelPicker: ModelPicker
-  private readonly sessionPicker: SessionPicker
-  private readonly packageController: PackageController
-  private readonly localCommandView: (command: string, output: string, quiet?: boolean) => Component
+  readonly planPanel: PlanPanel
+  readonly statusLine: StatusLinePicker
+  readonly windowTitle: WindowTitle
+  readonly raw: RawView
+  readonly borders: Borders
+  readonly images: InlineImages
+  private readonly pager: PagerOverlay
+  readonly cardFocus: CardFocus
+  readonly modelPicker: ModelPicker
+  readonly sessionPicker: SessionPicker
+  readonly packages: PackageController
+  readonly localCommandView: (command: string, output: string, quiet?: boolean) => Component
   // Streamed text is never in the projected timeline: a streaming node stays empty there, and the
   // live line shows what the previews of every inference still streaming have said.
-  private readonly previews = new PreviewMerger()
-  private readonly previewEffects: string[] = []
-  private stopped = false
+  readonly previews = new PreviewMerger()
+  readonly previewEffects: string[] = []
+  stopped = false
   /** Sessions this run sent a message to: the exit hint is for those only. */
   readonly prompted = new Set<string>()
   private readonly signals: TerminalSignals
+  private readonly settle = new ApprovalSettle(
+    () => this.stopped || this.renderer.requestRender(),
+    () => this.modal.head ?? this.approvalCards.get(this.latestApproval ?? '')?.key,
+  )
+  readonly notify: NotifyPreference
   // Set once the client reports 'closed' (daemon shutting down). The session can never render again,
   // and the SDK would still re-dial on the next call, so input is refused rather than run unseen.
   private closedNotice: string | undefined
   private localTurn = false
   private readonly interrupts = new DoubleCtrlC()
   private readonly escapes = new DoubleEsc()
-  private readonly busyInput = new BusyInput({
+  /** `!cmd` / `!!cmd` shell lines of the prompt. */
+  readonly bang = new BangShell(this)
+  readonly busyInput = new BusyInput({
     session: () => this.o.session,
     locale: () => this.locale,
     notice: (text, tone) => {
@@ -136,73 +171,80 @@ export class TuiApp {
   // an accepted limitation, not an oversight.
   private nextRequestSeq = 1
   onQuit: () => void = () => {}
-  private readonly refreshWorkspace: () => void
+  readonly refreshWorkspace: () => void
+  /** The worktrees this run made; a session in one of them shows its branch on the rail. */
+  readonly worktrees = new WorktreeKeeper()
+  private readonly shown = (): string => this.worktrees.current()?.path ?? this.cwd
 
   constructor(
     // `header` is a back-compat fallback: real callers (`modes/tui.ts`) pass `profile`/`preset`
     // directly; existing tests that only ever set a plain `header` string still get a header line
     // out of it (via `profile: o.profile ?? o.header`), just with an empty preset segment.
-    readonly o: {
-      term: Terminal
-      session: Session
-      header?: string
-      profile?: string
-      preset?: string
-      /** The model the user explicitly chose on argv; omitted when the session default applies. */
-      model?: string
-      /** Resolved once by sdk before construction; session switches retain the same client brand. */
-      branding?: Branding
-      locale?: Locale
-      controlClient?: NodeClient
-      /** Resource commands use this injected port; the chat/session client has no such authority. */
-      resourceController?: TuiResourceController
-      /** The CLI has already entered its alternate screen before opening the session. */
-      screenAlreadyEntered?: boolean
-      /** `--no-alt-screen`: settled turns go into the terminal's own scrollback; only the footer is redrawn. */
-      noAltScreen?: boolean
-      /** Where mouse-selected text goes; defaults to the system clipboard. */
-      copy?: (text: string, fail: () => void) => unknown
-      /** The workspace the CLI opened its first session in (`--cwd`); defaults to `process.cwd()`. */
-      cwd?: string
-      /** True over `--connect`: `@` completion then never falls back to this machine's disk. */
-      remote?: boolean
-      /** Last model and permission for the next fresh session. Omitted in tests that do not inherit. */
-      composerSelectionPath?: string
-      themePreferencePath?: string
-      /** Where sent prompts persist between runs; without it history lasts this run only. */
-      historyPath?: string
-      /** `<AGH_HOME>/commands`: where personal custom slash commands live. */
-      commandsDir?: string
-      /** Ctrl-G's editor command source and temp directory (`<AGH_HOME>/tmp`); tests leave it to the defaults. */
-      externalEditor?: ExternalEditorConfig
-      /** What the launcher knows for the welcome, and what tests pin (see `WelcomeOptions`). */
-      welcome?: WelcomeOptions
-      /** Shown once on the status bar after a fresh session inherits a model or full permission. */
-      initialNotice?: string
-      /** Reads branch and worktree for the composer rail; the gallery injects fixed answers. */
-      probeWorkspace?: WorkspaceProbe
-    } & TuiExtraOptions,
+    readonly o: TuiAppOptions,
   ) {
     // One ansi instance per colour tier for the whole frame: header, status bar, banner, editor
     // chrome and the cards all degrade through the same tier (none emits zero escape sequences).
-    this.themePreference = readTheme(o.themePreferencePath)
-    this.theme = new TuiTheme(
-      this.themePreference === 'auto' ? resolveAuto(o.term.background) : this.themePreference,
-    )
-    const ansi = this.theme.ansi(createAnsi(o.term.caps.color))
+    this.borders = new Borders({
+      path: o.themePreferencePath,
+      env: process.env,
+      changed: () => this.stopped || this.renderer.redraw(),
+    })
+    this.images = new InlineImages({
+      protocol: o.noAltScreen ? undefined : imageProtocol(process.env),
+      path: o.themePreferencePath,
+      raw: () => this.theme.raw,
+      session: () => this.o.session,
+      repaint: () => this.stopped || this.renderer.requestRender(),
+    })
+    this.notify = new NotifyPreference(o.notifyPreferencePath, process.env, () => this.locale)
+    const base = createAnsi(o.term.caps.color)
+    this.themes = new ThemeController({
+      term: o.term,
+      path: o.themePreferencePath,
+      locale: o.locale ?? 'en',
+      base,
+      notice: (text) => this.statusBar.setNotice(text),
+      repaint: () => {
+        this.timeline.refreshViews()
+        this.editor.invalidate()
+        if (!this.stopped) this.renderer.requestRender()
+      },
+    })
+    this.theme = this.themes.theme
+    this.themePicker = this.themes.picker
+    const ansi = this.theme.ansi(base)
     const branding = o.branding ?? DEFAULT_BRANDING
     const locale = o.locale ?? 'en'
     this.hints = new Hints(ansi, () => this.timeline.newOutputHint(this.editor.text !== ''))
     this.loader = new Loader('', ansi)
+    this.clock = new TurnClock(
+      this.loader,
+      () => this.stopped || this.renderer.requestRender(),
+      () => this.refreshWorkspace(),
+    )
     this.live = new LiveView(ansi, locale)
     this.localCommandView = localCommandView(ansi)
-    this.statusBar = new StatusBar(ansi, locale, o.safeMode)
+    this.statusLine = new StatusLinePicker({
+      config: new StatusLineConfig(o.themePreferencePath),
+      ansi,
+      locale,
+      changed: () => this.stopped || this.renderer.requestRender(),
+    })
+    this.statusBar = new StatusBar(ansi, locale, o.safeMode, o.preset, this.statusLine.config)
     this.mouse = new TuiMouse(
       (rows) => this.scrollTimeline(rows),
       o.copy ?? systemCopy((s) => o.term.write(s)),
       copyTip(ansi, locale),
       () => this.stopped || this.renderer.requestRender(),
-      (row) => this.timeline.click(row),
+      (row, col) =>
+        routeClick(
+          this.promptArea,
+          row,
+          col,
+          this.promptClickable(),
+          (r, c) => this.editor.moveCursorToCell(r, c),
+          (r) => !this.pager.open && this.timeline.click(r),
+        ),
     )
     this.welcome = new WelcomeController(o, {
       branding,
@@ -210,7 +252,7 @@ export class TuiApp {
       theme: this.theme,
       locale,
       viewport: () => ({ rows: o.term.size().rows, reserved: this.reservedRows }),
-      shows: () => !this.stopped && !this.turnActive && this.timeline.showsWelcome(),
+      shows: () => !this.stopped && !this.clock.active && this.timeline.showsWelcome(),
       repaint: () => this.stopped || this.renderer.requestRender(),
     })
     this.cards = new ToolCards({
@@ -235,46 +277,26 @@ export class TuiApp {
       // viewport, never into the shell's history.
       top: this.welcome.banner,
       groupView: (nodes) => this.cards.group(nodes),
-      nodeView: (node) => {
-        if (node.kind === 'tool') return this.cards.view(node)
-        if (node.kind === 'approval') {
-          const card = new ApprovalCard(node, {
-            ansi,
-            locale,
-            onDecide: async (ref, verdict, reason) => {
-              if (this.refuseClosed()) return
-              const value =
-                reason ?? (node.presentation?.[locale] ?? node.presentation?.en)?.responseValue ?? null
-              await this.o.session.client.approval.decide({
-                ...ref,
-                commandId: `${ref.id}:${ref.revision}:${verdict}`,
-                response: { option: verdict, value },
-              })
-            },
-            // The decide call's settlement (a rejection adds no ledger event for TuiProjection)
-            // must ask for its own repaint: nothing else in the render loop watches that promise.
-            changed: () => this.stopped || this.renderer.requestRender(),
-          })
-          this.approvalCards.set(node.id, card)
-          return card
-        }
-        if (node.kind === 'assistant') return assistantView(node, ansi, locale)
-        if (node.kind === 'user') {
-          const text = nodeText(node)
-          return new UserMessage(
-            text.startsWith('you: ') ? text.slice('you: '.length) : text,
-            ansi,
-            this.theme,
-            brandColour(branding.accent),
-          )
-        }
-        const text = nodeText(node)
-        return text ? new Text(escapeControl(text)) : new VStack()
-      },
+      nodeView: nodeView({
+        ansi,
+        locale,
+        theme: this.theme,
+        accent: brandColour(branding.accent),
+        cards: this.cards,
+        approvalCards: this.approvalCards,
+        session: () => this.o.session,
+        settled: () => this.settle.settled,
+        letters: () => this.editor.text === '',
+        refuseClosed: () => this.refuseClosed(),
+        repaint: () => this.stopped || this.renderer.requestRender(),
+        images: this.images,
+      }),
     })
     this.modal = new PermissionModal(() => this.stopped || this.renderer.requestRender(), {
       locale,
       ansi,
+      settled: () => this.settle.settled,
+      letters: () => this.editor.text === '',
       // The renderer drops a tall frame's top rows, so the modal gets no more than the rows below it
       // leave: an option it counts as visible has to be on screen.
       maxRows: () => {
@@ -297,9 +319,11 @@ export class TuiApp {
       ansi,
       busy: () => this.busy,
       history: new PromptHistory(o.historyPath),
-      onSubmit: (text) => {
-        void this.runInput(text)
+      onSubmit: (text, raw, chips) => {
+        void this.runInput(text, raw, chips)
       },
+      onPasteText: (text) => attachDroppedImages(this, text),
+      onPasteImage: () => void pasteClipboardImage(this).catch((error) => this.showError(error)),
       onExternalEdit: () =>
         void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor),
       onCancelKey: (hadDraft) => {
@@ -307,7 +331,7 @@ export class TuiApp {
         void this.cancel().catch((error) => this.showError(error))
         this.escapes.press(idle && !hadDraft, () => void this.runInput('/rewind'))
       },
-      complete: (prefix) => completeToken(prefix, this),
+      complete: (prefix, before) => completeToken(prefix, this, before),
       mentions: this.mentions,
       mentionNotes: {
         loading: tt('composer.mentionLoading', locale),
@@ -315,23 +339,21 @@ export class TuiApp {
         failed: tt('composer.mentionFailed', locale),
       },
       menuInfo: (name) => slashCommandFor(name, this.o.locale ?? 'en', this),
+      vim: new Vim(o.themePreferencePath),
     })
     this.editor.setKitty(o.term.caps.kittyKeyboard)
     this.modelPicker = new ModelPicker({
       ansi,
       locale,
       maxRows: () => Math.max(4, o.term.size().rows - 6),
-      onChoose: (choice) => void this.chooseModel(choice),
+      onChoose: (choice) => void this.models.choose(choice),
       changed: () => this.stopped || this.renderer.requestRender(),
-    })
-    this.themePicker = new ThemePicker(ansi, locale, (name) => {
-      this.statusBar.setNotice(this.setTheme(name))
     })
     this.sessionPicker = new SessionPicker({
       ansi,
       locale,
       maxRows: () => Math.max(4, o.term.size().rows - 6),
-      onChoose: (choice) => void this.chooseSession(choice),
+      onChoose: (choice) => void chooseSession(this, choice),
       changed: () => this.stopped || this.renderer.requestRender(),
     })
     this.usagePanel = new UsagePanel({
@@ -340,16 +362,40 @@ export class TuiApp {
       maxRows: () => Math.max(4, o.term.size().rows - 7),
       changed: () => this.stopped || this.renderer.requestRender(),
     })
-    this.packageController = new PackageController(o.controlClient, () => this.profile)
-    this.composer = new Composer(this.editor, ansi, locale)
+    this.pager = new PagerOverlay({
+      theme: this.theme,
+      term: o.term,
+      locale,
+      timeline: this.timeline,
+      loadEarlier: () => this.projection.loadEarlier(),
+      mouse: this.mouse,
+      changed: () => this.stopped || this.renderer.requestRender(),
+    })
+    this.planPanel = new PlanPanel(ansi, locale)
+    this.windowTitle = new WindowTitle({
+      path: o.themePreferencePath,
+      cwd: this.cwd,
+      session: () => this.o.session,
+      changed: () => this.stopped || this.renderer.requestRender(),
+    })
+    this.cardFocus = new CardFocus({
+      timeline: this.timeline,
+      cards: this.cards,
+      ansi,
+      locale,
+      notice: (text) => this.statusBar.setNotice(text),
+      changed: () => this.stopped || this.renderer.requestRender(),
+    })
+    this.packages = new PackageController(o.controlClient, () => this.profile)
+    this.composer = new Composer(this.editor, ansi, locale, this.statusLine.config)
     this.composer.setWorkspace({ root: tildePath(this.cwd), subpath: '' })
     // At startup and after every turn (the agent may have switched branch); never blocks a frame.
-    this.refreshWorkspace = workspaceRefresher(this.cwd, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
+    this.refreshWorkspace = workspaceRefresher(this.shown, o.probeWorkspace ?? readWorkspaceInfo, (info) => {
       this.composer.setWorkspace(info)
       this.welcome.workspace(info)
       if (!this.stopped) this.renderer.requestRender()
     })
-    // Zero rows until the first turn starts (spec RP1.2). `Loader`'s own constructor is
+    // Zero rows until the first turn starts. `Loader`'s own constructor is
     // immediately visible by design (see loader.ts's doc comment), so the app -- not the
     // component -- is what decides a fresh session shows nothing yet.
     this.loader.hide()
@@ -358,6 +404,8 @@ export class TuiApp {
       this.live,
       this.loader,
       this.modal,
+      this.planPanel,
+      this.cardFocus,
       this.composer,
       // Transient command dialogs belong immediately above the footer, not in the conversation.
       // Closed pickers render zero rows, preserving the normal rule/editor/status adjacency.
@@ -365,20 +413,26 @@ export class TuiApp {
       this.themePicker,
       this.sessionPicker,
       this.usagePanel,
+      this.statusLine,
       this.statusBar,
       this.hints,
     ])
     // A pending approval takes every keystroke, so the dialogs give up their rows until it is answered
     // and then reappear unchanged.
-    const dialogs: readonly Component[] = [
+    const dialogs: readonly (Component & InputDialog)[] = [
       this.modelPicker,
       this.themePicker,
       this.sessionPicker,
       this.usagePanel,
+      this.statusLine,
     ]
     root.render = (width) => {
       this.signals.sync()
-      const shown = root.children.filter((child) => !(this.modal.pending && dialogs.includes(child)))
+      // Like the dialogs, the pager gives way to a pending approval and returns unchanged.
+      if (this.pager.open && !this.modal.pending) return this.pager.render(width)
+      const shown = root.children.filter(
+        (child) => !(this.modal.pending && dialogs.some((dialog) => dialog === child)),
+      )
       let rows = 0
       for (const child of shown.toReversed()) {
         if (child === this.modal) this.belowModal = rows
@@ -388,100 +442,132 @@ export class TuiApp {
       const height = o.term.size().rows
       const at = shown.indexOf(this.modal)
       const above = shown.slice(0, at).flatMap((child) => child.render(width))
-      const below = shown.slice(at).flatMap((child) => child.render(width))
+      const belowParts = shown.slice(at).map((child) => child.render(width))
+      const below = belowParts.flat()
       // The input area, from the approval dialog down, sits on the bottom edge; a short
       // conversation leaves its gap above it rather than below.
       const gap =
         Number.isFinite(height) && !o.noAltScreen ? Math.max(0, height - above.length - below.length) : 0
       const screen = [...above, ...Array.from({ length: gap }, () => ''), ...below]
+      const composerAt = shown.slice(at).indexOf(this.composer)
+      this.promptArea =
+        composerAt < 0 || this.pager.open
+          ? undefined
+          : promptArea({
+              screenRows: screen.length,
+              belowComposer: belowParts.slice(composerAt + 1).reduce((n, part) => n + part.length, 0),
+              width,
+              textRows: this.editor.textRows,
+            })
+      // A dialog that is drawn owns the keyboard, so a click must not reach through it to the prompt.
+      this.dialogShown = belowParts.some(
+        (part, i) => part.length > 0 && dialogs.some((d) => d === shown[at + i]),
+      )
       this.mouse.overlay(screen, above.length + gap - 1, width)
       return o.noAltScreen ? screen : this.theme.frame(createAnsi(o.term.caps.color), screen, width, height)
     }
-    const handle = root.handleInput.bind(root)
-    root.handleInput = (data) => {
-      if (this.signals.focus(data)) return true
-      if (this.modal.handleInput(data)) return true
-      if (this.themePicker.handleInput(data)) return true
-      if (this.modelPicker.handleInput(data)) return true
-      if (this.sessionPicker.handleInput(data)) return true
-      if (this.usagePanel.handleInput(data)) return true
-      // Digits reach the persisted approval projection next -- the most recently projected
-      // ApprovalCard, which is only interactive while its node is genuinely pending-with-a-ticket
-      // (the synchronous path's own dialog is the modal above, already tried).
-      // After 'closed' both card kinds are inert: their actions would re-dial the daemon (a parked
-      // ticket survives a restart) and run where nothing renders; digits fall to the editor instead.
-      const inert = this.closedNotice !== undefined
-      if (!inert && this.latestApproval && this.approvalCards.get(this.latestApproval)?.handleInput(data))
-        return true
-      // Numbered actions inside the most recently projected tool card, tried before the digit
-      // reaches anything else. A collapsed card (or one with no matching action) declines, and
-      // the keystroke falls through to the editor like any other character.
-      if (!inert && this.cards.handleInput(data)) return true
-      const key = parseKey(data, o.term.caps.kittyKeyboard)
-      const action = actionFor('global', key.name)
-      if (action === 'card-toggle') {
-        this.cards.toggleLatest()
-        return true
-      }
-      if (action === 'hint-1' || action === 'hint-2' || action === 'hint-3' || action === 'hint-4') {
-        const hint = this.hintActions[Number(action.slice(-1)) - 1]
-        if (hint && !hint.disabled) this.dispatchAction(hint.id)
-        return true
-      }
-      if (this.timeline.jumpKey(key.name, this.editor.text !== '')) return true
-      if (!o.noAltScreen && (action === 'timeline-page-up' || action === 'timeline-page-down')) {
-        const page = Math.max(1, o.term.size().rows - this.reservedRows)
-        this.scrollTimeline(action === 'timeline-page-up' ? -page : page)
-        return true
-      }
-      // Idle Alt+Enter inserts a newline (the editor's own default, reached via `handle(data)`
-      // below). Busy, it steers the draft into the turn in flight, where Enter queues it behind.
-      if (action === 'steer' && this.busy) {
-        const text = this.editor.expanded()
-        if (text.trim() && !this.refuseClosed()) {
-          this.editor.clear()
-          void this.submitBlocks(attachmentsFrom(text, this.cwd, this.o.remote), text, true).catch((error) =>
-            this.showError(error),
-          )
-        }
-        return true
-      }
-      // Alt+Up takes the newest queued message back into an empty editor.
-      if (action === 'queue-recall' && !this.editor.text) {
-        void this.runInput('/queue edit last')
-        return true
-      }
-      if (action === 'interrupt') {
-        this.interrupts.press(
-          () => this.cancel(),
-          () => this.onQuit(),
-          (error) => this.showError(error),
-        )
-        return true
-      }
-      if (action === 'quit' && !this.editor.text && !this.busy) {
-        this.onQuit()
-        return true
-      }
-      return handle(data)
-    }
+    this.drafts = new DraftStash(
+      this.editor,
+      (text, tone) => this.statusBar.setNotice(text, tone),
+      () => this.locale,
+    )
+    root.handleInput = rootInput(
+      {
+        signals: () => this.signals,
+        settle: this.settle,
+        modal: this.modal,
+        dialogs: [this.pager, this.cardFocus, ...dialogs],
+        openPager: () => this.pager.show(),
+        openCards: () => this.cardFocus.enter(),
+        approvalCards: this.approvalCards,
+        latestApproval: () => this.latestApproval,
+        closed: () => this.closedNotice !== undefined,
+        cards: this.cards,
+        models: this.models,
+        stashDraft: () => this.drafts.press(),
+        redraw: () => this.renderer.redraw(),
+        suspend: () => suspendToShell(this.renderer, o.suspendIO),
+        hintActions: () => this.hintActions,
+        dispatchAction: (id) => this.dispatchAction(id),
+        timeline: this.timeline,
+        editor: this.editor,
+        kitty: o.term.caps.kittyKeyboard,
+        noAltScreen: o.noAltScreen,
+        pageRows: () => Math.max(1, o.term.size().rows - this.reservedRows),
+        scroll: (rows) => this.scrollTimeline(rows),
+        busy: () => this.busy,
+        refuseClosed: () => this.refuseClosed(),
+        steer: (text) =>
+          this.submitBlocks(
+            [...attachmentsFrom(text, this.cwd, this.o.remote), ...this.busyInput.takeKept(text)],
+            text,
+            true,
+          ),
+        runInput: (text, raw, chips) => this.runInput(text, raw, chips),
+        interrupts: this.interrupts,
+        shellInterrupt: () => this.bang.interrupt(),
+        cancel: () => this.cancel(),
+        onQuit: () => this.onQuit(),
+        showError: (error) => this.showError(error),
+      },
+      root.handleInput.bind(root),
+    )
     this.signals = new TerminalSignals(
       o.term,
       this.cwd,
-      () => this.turnActive,
+      () => this.clock.active,
       this.modal,
       this.approvalCards,
+      this.notify,
+      this.windowTitle,
     )
+    // Frames, scrollback lines and the exit text all go through the glyph table when `/borders ascii` is on.
+    const term = foldingTerminal(o.term, () => this.borders.ascii)
     this.renderer = o.noAltScreen
-      ? new FooterRenderer(o.term, root, this.timeline)
-      : new Renderer(o.term, root, o.screenAlreadyEntered, this.mouse)
+      ? new FooterRenderer(term, root, this.timeline)
+      : new Renderer(
+          term,
+          root,
+          o.screenAlreadyEntered,
+          this.mouse,
+          o.mouse !== false,
+          createLinker(process.env),
+          this.images.layer,
+        )
+    this.surfaces = new SurfaceInbox({
+      session: () => this.o.session,
+      stopped: () => this.stopped,
+      closed: () => Boolean(this.closedNotice),
+      locale: () => this.locale,
+      statusBar: this.statusBar,
+      appendLocal: (id, view) => this.timeline.appendLocal(id, view),
+      localCommandView: this.localCommandView,
+      repaint: () => this.renderer.requestRender(),
+      showError: (error) => this.showError(error),
+    })
+    this.raw = new RawView({
+      theme: this.theme,
+      renderer: this.renderer,
+      statusBar: this.statusBar,
+      refresh: () => {
+        this.timeline.refreshViews()
+        this.renderer.requestRender()
+      },
+    })
     this.projection = this.makeProjection(o.session)
+  }
+
+  /** A click may move the prompt cursor only while nothing else (approval, pager, card focus, a picker) has the keyboard. */
+  private promptClickable(): boolean {
+    return (
+      !this.pager.open && !this.modal.pending && !this.cardFocus.open && !this.dialogShown && !this.raw.on
+    )
   }
 
   get busy(): boolean {
     // A turn counts whoever started it: the projection shows turns of other clients, and the
     // local flag covers the window before the projection catches up with this client's own prompt.
-    return this.localTurn || this.turnActive
+    return this.localTurn || this.clock.active
   }
 
   /** Refuses, with a notice, while this client's own prompt still belongs to the current session: a
@@ -511,12 +597,13 @@ export class TuiApp {
     return this.o.cwd ?? process.cwd()
   }
 
-  get composerSelectionPath(): string | undefined {
-    return this.o.composerSelectionPath
+  /** A local note under the current session's transcript, headed by the command that caused it. */
+  noteLocal(command: string, text: string): void {
+    this.timeline.appendLocal(this.session.id, this.localCommandView(command, text))
   }
 
-  get packages(): PackageController {
-    return this.packageController
+  get composerSelectionPath(): string | undefined {
+    return this.o.composerSelectionPath
   }
 
   get themeName(): TuiThemeName {
@@ -527,64 +614,27 @@ export class TuiApp {
     this.modelPicker.close()
     this.sessionPicker.close()
     this.usagePanel.close()
-    this.themePicker.show(this.themePreference)
+    this.themes.show()
     if (!this.stopped) this.renderer.requestRender()
-  }
-
-  /** Changes local presentation and persists the preference without touching session data. */
-  setTheme(name: ThemePreference): string {
-    this.themePicker.close()
-    this.themePreference = name
-    this.restyle(name === 'auto' ? resolveAuto(this.o.term.background) : name)
-    return saveTheme(this.o.themePreferencePath, name)
-      ? tt('app.themeSaved', this.locale, { name })
-      : tt('app.themeEphemeral', this.locale, { name })
-  }
-
-  private restyle(name: TuiThemeName): void {
-    this.theme.set(name)
-    this.timeline.refreshViews()
-    this.editor.invalidate()
-    if (!this.stopped) this.renderer.requestRender()
-  }
-
-  /** `auto` takes the terminal's own answer when it comes; a choice made meanwhile wins. */
-  private followBackground(): void {
-    if (this.themePreference !== 'auto') return
-    void this.o.term.queryBackground?.().then((background) => {
-      if (this.themePreference === 'auto' && resolveAuto(background) !== this.theme.name)
-        this.restyle(resolveAuto(background))
-    })
   }
 
   /** Resource control is supplied only by the Node CLI bootstrap, never the chat/session client. */
+  private readonly confirmations = new ResourceConfirmations()
+  readonly queueResourceConfirmation = this.confirmations.queue
+  readonly takeResourceConfirmation = this.confirmations.take
+  readonly cancelResourceConfirmation = this.confirmations.cancel
+
   get resourceController(): TuiResourceController | undefined {
     return this.o.resourceController
   }
 
-  queueResourceConfirmation(kind: ResourceCommandKind, args: readonly string[]): void {
-    this.pendingResourceCommand = { kind, args: [...args] }
-  }
-
-  takeResourceConfirmation(kind: ResourceCommandKind): readonly string[] | undefined {
-    const pending = this.pendingResourceCommand
-    if (!pending || pending.kind !== kind) return undefined
-    this.pendingResourceCommand = undefined
-    return pending.args
-  }
-
-  cancelResourceConfirmation(kind: ResourceCommandKind): boolean {
-    if (!this.pendingResourceCommand || this.pendingResourceCommand.kind !== kind) return false
-    this.pendingResourceCommand = undefined
-    return true
-  }
-
   private scrollTimeline(delta: number): void {
-    if (!this.timeline.scroll(delta)) return
-    void this.projection.loadEarlier().then((ok) => ok && !this.stopped && this.renderer.requestRender())
+    if (this.pager.open) this.pager.scroll(delta)
+    else if (this.timeline.scroll(delta))
+      void this.projection.loadEarlier().then((ok) => ok && !this.stopped && this.renderer.requestRender())
   }
 
-  private makeProjection(session: Session): TuiProjection {
+  makeProjection(session: Session): TuiProjection {
     let opening = true
     return new TuiProjection(session, {
       timeline: (value, window) => {
@@ -636,7 +686,7 @@ export class TuiApp {
     try {
       this.signals.start()
       this.renderer.start()
-      this.followBackground()
+      this.themes.follow()
       await this.projection.start()
     } catch (error) {
       await this.stop()
@@ -681,84 +731,25 @@ export class TuiApp {
   private handleClosed(): void {
     this.closedNotice = t('notice.closed', this.o.locale ?? 'en', { id: escapeControl(this.o.session.id) })
     void this.projection.stop()
-    this.resetTurn()
+    this.clock.reset()
     this.refuseClosed()
   }
 
   /** Every path that would call the daemon after 'closed' routes through here instead. */
-  private refuseClosed(): boolean {
+  refuseClosed(): boolean {
     if (this.closedNotice === undefined) return false
     this.statusBar.setNotice(this.closedNotice)
     if (!this.stopped) this.renderer.requestRender()
     return true
   }
 
-  private resetTurn(): void {
-    this.stopTicker()
-    this.turnActive = false
-    this.turnStartedAt = undefined
-    this.currentTurn = 0
-    this.loader.hide()
-  }
-
-  private async syncSurfaces(): Promise<void> {
-    const session = this.o.session
-    if (this.stopped || this.closedNotice || typeof session.uiRead !== 'function') return
-    if (this.readingSurfaces === session) {
-      this.surfaceReadAgain = true
-      return
-    }
-    this.readingSurfaces = session
-    try {
-      const page = await session.uiRead()
-      let cursor = page.nextCursor
-      while (cursor) {
-        const next = await session.uiRead({ cursor })
-        page.surfaces.push(...next.surfaces)
-        cursor = next.nextCursor
-      }
-      if (this.stopped || this.closedNotice || session !== this.o.session) return
-      if (page.lastSeq < this.surfaceWatermark) {
-        this.surfaceReadAgain = true
-        return
-      }
-      this.surfaceWatermark = page.lastSeq
-      for (const record of page.surfaces) {
-        if (this.surfaceVersions.get(record.surface.id) === record.updatedSeq) continue
-        this.surfaceVersions.set(record.surface.id, record.updatedSeq)
-        this.timeline.appendLocal(
-          session.id,
-          this.localCommandView(
-            record.surface.title,
-            surfaceText(record.surface) +
-              `\n[Open in Web](/?session=${encodeURIComponent(session.id)}&surface=${encodeURIComponent(record.surface.id)})`,
-            false,
-          ),
-        )
-      }
-      const next = pendingSurface(page)
-      // Keep the displayed request binding until submission; backend refuses an old revision.
-      if (!this.surfacePrompt || this.surfacePrompt.surface.id !== next?.surface.id) this.surfacePrompt = next
-      if (this.surfacePrompt) this.statusBar.setNotice(tt('app.surfacePrompt', this.locale))
-      this.renderer.requestRender()
-    } catch (error) {
-      const code = (error as { data?: { code?: string } } | undefined)?.data?.code
-      if (code !== 'CAPABILITY_DENIED' && code !== 'METHOD_NOT_FOUND' && session === this.o.session)
-        this.showError(error)
-    } finally {
-      if (this.readingSurfaces === session) {
-        this.readingSurfaces = undefined
-        if (this.surfaceReadAgain) {
-          this.surfaceReadAgain = false
-          void this.syncSurfaces()
-        }
-      }
-    }
-  }
-
   private apply(value: UITimeline, options: { opening?: boolean; window?: TuiProjectionWindow } = {}): void {
-    void this.syncSurfaces()
+    void this.surfaces.sync()
+    this.o.onTimeline?.(value, options.window?.hasEarlier)
     this.cards.sync(value)
+    this.planPanel.apply(value)
+    this.windowTitle.tick(value)
+    this.signals.watch(value.nodes)
     const approvals = value.nodes.filter((node) => node.kind === 'approval')
     const approvalIds = new Set(approvals.map((node) => node.id))
     for (const id of this.approvalCards.keys()) if (!approvalIds.has(id)) this.approvalCards.delete(id)
@@ -779,9 +770,10 @@ export class TuiApp {
     this.hintActions = slots.actions
     this.hints.set(this.hintActions)
     this.statusBar.setSlots(slots.status)
-    this.applyOpState(value.opState)
+    this.clock.apply(value.opState)
     this.statusBar.setParked(value.opState?.parked?.decisionRef.id)
-    this.statusBar.setUsage(value.usage)
+    this.statusBar.setUsage(value.usage, value.yolo)
+    this.models.current = value.usage?.model
     this.composer.setUsage(value.usage)
     // `UITimeline.budget` (core's project/ui.ts:282,330) rides along on every projection tick for
     // free -- it is read out of the same register snapshot the rest of this timeline was built
@@ -815,59 +807,6 @@ export class TuiApp {
       .catch((error) => this.showError(error))
   }
 
-  /**
-   * Turn-lifecycle edge detection: `value.opState` flips null↔non-null exactly at turn
-   * boundaries (protocol's `UIOperationState`), and both the spinner (RP1) and the local wall
-   * clock (RP3) key off the same two edges, so they are driven from one place rather than two.
-   *
-   * A null↔non-null flip is not the only boundary that matters, though: `opState.turn` can also
-   * change while `opState` stays non-null the whole time, because projection delivery is
-   * debounced (projection.ts's `REPROJECT_DEBOUNCE_MS`) and can coalesce turn N's end and turn
-   * N+1's start into one tick with no intervening `opState: null` ever reaching `apply()`. Left
-   * undetected, that reads as "still turn N" and both fabricates turn N+1's elapsed time (it would
-   * include turn N's own duration plus the idle gap between them) and drops turn N's own summary
-   * silently. This re-baselines on `opState.turn` changing exactly like a fresh turn start, and
-   * accepts that the coalesced turn N never gets its own `✓ turn N · Xs` line -- silently losing
-   * that one summary is far less harmful than showing a fabricated number for the next one.
-   */
-  private applyOpState(opState: UITimeline['opState']): void {
-    const active = opState !== null
-    if (active && (!this.turnActive || opState.turn !== this.currentTurn)) {
-      this.turnStartedAt = Date.now()
-      this.currentTurn = opState.turn
-      this.loader.restart(opState.phase)
-      this.startTicker()
-    } else if (!active && this.turnActive) {
-      this.stopTicker()
-      const elapsedMs = this.turnStartedAt !== undefined ? Date.now() - this.turnStartedAt : undefined
-      this.loader.stop(elapsedMs !== undefined ? formatTurnSummary(this.currentTurn, elapsedMs) : undefined)
-      this.turnStartedAt = undefined
-      this.refreshWorkspace()
-    } else if (active) {
-      this.loader.setLabel(opState.phase)
-    }
-    this.turnActive = active
-  }
-
-  // One shared 80ms ticker, not a timer per component (spec RP1, matching the reference
-  // implementations surveyed for this design). RP1.1 measured Timeline.render() at well under
-  // 1ms per tick even at 1,000 nodes, so this calls the same requestRender() every other repaint
-  // uses rather than a narrower single-row redraw path.
-  private startTicker(): void {
-    if (this.ticker !== undefined) return
-    this.ticker = setInterval(() => {
-      this.loader.tick()
-      if (!this.stopped) this.renderer.requestRender()
-    }, 80)
-    this.ticker.unref()
-  }
-
-  private stopTicker(): void {
-    if (this.ticker === undefined) return
-    clearInterval(this.ticker)
-    this.ticker = undefined
-  }
-
   private renderLive(): void {
     for (let i = this.previewEffects.length - 1; i >= 0; i--)
       if (this.previews.text(this.previewEffects[i] ?? '') === undefined) this.previewEffects.splice(i, 1)
@@ -884,19 +823,24 @@ export class TuiApp {
   showError(error?: unknown): void {
     if (this.stopped) return
     this.statusBar.setNotice(formatTuiErrorNotice(error, this.o.locale ?? 'en'), 'error')
+    this.signals.event('error')
     this.renderer.requestRender()
   }
 
   /** The one way to run a line of user input, for the editor and for the prompt `agnes "…"` starts
    * with alike: routes `/…` to `command()`, everything else to `submit()`, and reports either one's
    * failure on the status bar instead of throwing, so a recoverable turn error keeps the session. */
-  async runInput(text: string): Promise<void> {
+  async runInput(text: string, raw = text, chips = false): Promise<void> {
     if (this.closedNotice !== undefined) {
       // Decide and act on the same normalized text: a padded ' /quit' must not reach submit().
-      if (text.trim() !== '/quit') return void this.refuseClosed()
+      if (text.trim() !== '/quit' && text.trim() !== '/exit') return void this.refuseClosed()
       text = '/quit'
     }
-    const task = text.startsWith('/') ? this.command(text) : this.submit(text)
+    const task = isBangLine(raw)
+      ? this.bang.run(raw, chips)
+      : isSlashCommandLine(text)
+        ? this.command(text)
+        : this.submit(text)
     await task.catch((error: unknown) => this.showError(error))
   }
 
@@ -912,175 +856,34 @@ export class TuiApp {
       await this.submitBlocks(r.content)
     }
     if (r.prompt) await this.submit(r.prompt)
-    if (r.details && r.text !== undefined) {
-      this.statusBar.setNotice(undefined)
-      this.usagePanel.show(r.text, r.title)
-    } else if (r.text !== undefined) {
-      // Explicit transcript output, and every multiline fallback, stays connection-local: Timeline
-      // anchors it beside projected nodes but never manufactures a UINode or writes the ledger.
-      if (r.presentation === 'transcript' || r.text.includes('\n')) {
-        this.statusBar.setNotice(undefined)
-        this.timeline.appendLocal(this.session.id, this.localCommandView(text, r.text))
-      } else {
-        this.statusBar.setNotice(r.text)
-      }
-    }
-    if (r.draft !== undefined) this.editor.setText(r.draft)
-    if (r.keep) this.busyInput.keep(r.keep)
-    if (r.modelChoices) {
-      this.statusBar.setNotice(undefined)
-      this.modelPicker.show(r.modelChoices)
-    }
-    if (r.sessionChoices) {
-      this.statusBar.setNotice(undefined)
-      this.sessionPicker.show(r.sessionChoices, r.sessionPickerTitle, r.sessionScope)
-    }
-    if (r.switchSession) await this.applySwitch(r.switchSession)
+    applyCommandResult(
+      {
+        statusBar: this.statusBar,
+        usagePanel: this.usagePanel,
+        modelPicker: this.modelPicker,
+        sessionPicker: this.sessionPicker,
+        editor: this.editor,
+        busyInput: this.busyInput,
+        appendLocal: (view) => this.timeline.appendLocal(this.session.id, view),
+        localCommandView: this.localCommandView,
+      },
+      text,
+      r,
+    )
+    if (r.switchSession) await applySwitch(this, r.switchSession)
     if (r.quit) this.onQuit()
     if (!this.stopped) this.renderer.requestRender()
-  }
-
-  // Stops the old projection's local subscription, swaps the session this app renders, and starts
-  // a fresh projection against the new one. The old session is left attached at the protocol level
-  // (its own `Client.close()` cleans that up eventually) -- an explicit detach here is a step this
-  // task's own interface spec never asks for, and one this method has no test coverage compelling.
-  private async applySwitch(next: Session): Promise<boolean> {
-    // runSlash and chooseSession refuse up front; a prompt submitted while the daemon was still opening
-    // `next` is caught here.
-    if (this.refuseClosed() || this.refuseSwitch()) return false
-    this.themePicker.close()
-    this.modelPicker.close()
-    this.sessionPicker.close()
-    this.usagePanel.close()
-    this.editor.resetUndo()
-    this.offPermission?.()
-    await this.projection.stop()
-    // stop() may have run before this switch's session arrived or during the await above. It stops only the
-    // projection it finds, so one started from here on would never be stopped: its opening retry timer keeps
-    // the process alive after the TUI has quit. A terminal close during the await is the same case:
-    // starting the next projection would re-dial the daemon.
-    if (this.stopped || this.refuseClosed()) return false
-    // `projection.stop()` only unsubscribes from the old session's ledger events; it never
-    // synthesizes a closing `opState: null` tick for a turn that was still in flight. Left alone,
-    // a mid-turn switch leaves the ticker genuinely running past this point (confirmed reachable:
-    // nothing else stops it once the old projection is torn down) and the loader still labelled
-    // with the old session's turn/phase, so the new session's first idle tick would otherwise
-    // paint a stale, fabricated elapsed time for a turn that belongs to a session no longer even
-    // attached. Reset turn-lifecycle state to exactly what a freshly-constructed TuiApp looks like.
-    this.resetTurn()
-    this.welcome.banner.setModel(undefined)
-    this.surfacePrompt = undefined
-    this.surfaceCommand = undefined
-    this.surfaceVersions.clear()
-    this.surfaceWatermark = 0
-    this.surfaceReadAgain = false
-    this.attachmentController.abort()
-    this.attachmentController = new AbortController()
-    this.mentions.reset()
-    this.o.session = next
-    this.o.onSessionSwitch?.(next.id)
-    this.previews.reset()
-    this.previewEffects.length = 0
-    this.projection = this.makeProjection(next)
-    this.offPermission = next.onPermissionRequest((request, context) => this.modal.ask(request, context))
-    await this.projection.start()
-    return true
-  }
-
-  private async chooseModel(choice: ModelSelection): Promise<void> {
-    if (this.refuseClosed()) return
-    try {
-      const result = await this.o.session.setModel({
-        slot: 'primary',
-        route: choice.route,
-        model: choice.model,
-        ...(choice.thinking === undefined ? {} : { thinking: choice.thinking }),
-      })
-      writeComposerMemoryFile(this.composerSelectionPath, {
-        model: {
-          route: choice.route,
-          id: choice.model,
-          ...(choice.thinking ? { thinking: choice.thinking } : {}),
-        },
-      })
-      this.statusBar.setNotice(
-        `model ${escapeControl(choice.route)}/${escapeControl(choice.model)} from seq ${result.effectiveFromSeq}`,
-        'success',
-      )
-      if (!this.stopped) this.renderer.requestRender()
-    } catch (error) {
-      this.showError(error)
-    }
-  }
-
-  private async chooseSession(choice: SessionChoice): Promise<void> {
-    if (this.refuseClosed()) return
-    // An import row runs `/import FILE` as if typed, so it reports through the same notice.
-    if (choice.importFile !== undefined) return this.runInput(`/import ${choice.importFile}`)
-    try {
-      // The picker stays open during a turn; picking from it is refused before the daemon loads anything.
-      if (this.refuseSwitch()) return this.renderer.requestRender()
-      this.statusBar.setNotice(`Loading session ${escapeControl(choice.sessionId)}…`)
-      this.renderer.requestRender()
-      // A rewind row forks the open session at its completed-turn boundary; any other row resumes.
-      const next =
-        choice.forkAt === undefined
-          ? await this.o.session.client.session.load(choice.sessionId, { cwd: this.cwd })
-          : await this.o.session.client.session.fork(choice.sessionId, choice.forkAt)
-      if (await this.applySwitch(next)) {
-        const turn = choice.title?.match(/^#(\d+)/)?.[1] ?? String(choice.forkAt)
-        if (choice.draft) this.editor.setText(choice.draft)
-        this.statusBar.setNotice(
-          choice.forkAt === undefined
-            ? `Resumed ${escapeControl(choice.sessionId)}`
-            : tt(choice.draft ? 'session.rewound' : 'session.rewoundNoPrompt', this.locale, { turn }),
-          'success',
-        )
-      }
-      if (!this.stopped) this.renderer.requestRender()
-    } catch (error) {
-      this.showError(error)
-    }
   }
 
   async submit(text: string): Promise<void> {
     if (this.stopped) throw new Error('TUI stopped')
     if (!text.trim()) return
     const skillCommand = /^\/skill\s+invoke\s+\S+/.test(text)
-    if (text.startsWith('/') && !skillCommand) throw new Error('Command unavailable')
+    if (isSlashCommandLine(text) && !skillCommand) throw new Error('Command unavailable')
     this.statusBar.setNotice(undefined)
-    if ((this.surfacePrompt || this.surfaceCommand) && !skillCommand) {
-      const record = this.surfacePrompt
-      const session = this.o.session
-      const command =
-        this.surfaceCommand ??
-        (record
-          ? {
-              surfaceId: record.surface.id,
-              revision: record.surface.revision,
-              commandId: randomUUID(),
-              ...numberedSurfaceInput(record.surface, text),
-            }
-          : undefined)
-      if (!command) return
-      this.surfaceCommand = command
-      const receipt = await session.uiAction(command)
-      if (session !== this.o.session || this.stopped) return
-      this.surfaceWatermark = Math.max(this.surfaceWatermark, receipt.seq)
-      this.surfaceCommand = undefined
-      this.surfacePrompt = undefined
-      await this.syncSurfaces()
-      this.statusBar.setNotice(
-        receipt.refusal?.message ?? tt('app.questionSent', this.locale),
-        receipt.status === 'rejected' ? 'error' : 'success',
-      )
-      this.renderer.requestRender()
-      return
-    }
-    await this.submitBlocks(
-      [...attachmentsFrom(text, this.cwd, this.o.remote), ...this.busyInput.takeKept()],
-      text,
-    )
+    if (this.surfaces.pending && !skillCommand) return this.surfaces.answer(text)
+    const kept = this.busyInput.takeKept(text)
+    await this.submitBlocks([...attachmentsFrom(text, this.cwd, this.o.remote), ...kept], text)
   }
 
   /** Sends one input: a prompt when idle; while a turn runs it goes to the daemon queue, or into the turn with `steer`. */
@@ -1112,7 +915,7 @@ export class TuiApp {
     this.mentions.dispose()
     this.attachmentController.abort()
     this.mouse.dispose()
-    this.stopTicker()
+    this.clock.stop()
     this.offPermission?.()
     for (const off of this.offClientEvents) off()
     this.offClientEvents = []

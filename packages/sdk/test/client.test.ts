@@ -763,6 +763,80 @@ it('carries validated loop, preset, permission and ordered bundles on new-sessio
   }
 })
 
+it('sends additionalDirectories only to a daemon that advertises them, and otherwise sends nothing', async () => {
+  for (const advertised of [false, true]) {
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: advertised ? { sessionCapabilities: { additionalDirectories: {} } } : {},
+      }),
+      'session/new': () => ({ sessionId: 'dirs-session' }),
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    try {
+      const created = c.createSession({ cwd: '/w', additionalDirectories: ['/lib/a', '/lib/b'] })
+      if (advertised) {
+        await created
+        expect(f.calls.find((call) => call.method === 'session/new')?.params).toMatchObject({
+          cwd: '/w',
+          additionalDirectories: ['/lib/a', '/lib/b'],
+        })
+      } else {
+        await expect(created).rejects.toThrow('does not support adding directories')
+        expect(f.calls.some((call) => call.method === 'session/new')).toBe(false)
+      }
+      await c.createSession({ cwd: '/w' })
+      expect(f.calls.filter((call) => call.method === 'session/new').at(-1)?.params).not.toHaveProperty(
+        'additionalDirectories',
+      )
+    } finally {
+      await c.close()
+    }
+  }
+})
+
+it('forks with extra directories only against a daemon that advertises them, and otherwise sends no fork', async () => {
+  for (const advertised of [false, true]) {
+    const f = fakeEndpoint({
+      initialize: () => ({
+        protocolVersion: 1,
+        agentCapabilities: advertised
+          ? { _meta: { 'ai.agnes.harness': { forkAdditionalDirectories: true } } }
+          : {},
+      }),
+      '_agnes/v1/submit': () => ({ replayed: false, result: { sessionId: 'child' } }),
+      '_agnes/v1/submit.ack': () => ({}),
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    const submits = () => f.calls.filter((call) => call.method === '_agnes/v1/submit')
+    try {
+      const forked = c.session.fork('parent', 3, { additionalDirectories: ['/lib/a'] })
+      if (advertised) {
+        await forked
+        expect(submits().at(-1)?.params).toMatchObject({
+          kind: 'fork',
+          payload: { sessionId: 'parent', at: 3, additionalDirectories: ['/lib/a'] },
+        })
+      } else {
+        await expect(forked).rejects.toThrow('does not support adding directories when forking')
+        expect(submits()).toHaveLength(0)
+      }
+      await c.session.fork('parent', 3)
+      expect(submits().at(-1)?.params).not.toHaveProperty('payload.additionalDirectories')
+    } finally {
+      await c.close()
+    }
+  }
+})
+
 it('starts the load idle clock after initialization and cancels a stalled restore without creating a handle', async () => {
   vi.useFakeTimers()
   let finish!: () => void

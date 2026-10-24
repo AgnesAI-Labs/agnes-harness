@@ -44,8 +44,8 @@ function ownerIsDead(file: string): boolean {
       process.kill(pid, 0)
       return false
     } catch (error) {
-      // POSIX 用 ESRCH 表示进程不存在；Windows 上 libuv 对已退出/无效 pid 可能直接报 EPERM，
-      // 只认 ESRCH 会让 Windows 的陈旧锁永远无法回收，reclaim 标记残留后彻底死锁。
+      // POSIX uses ESRCH for a missing process; Windows libuv may return EPERM for an exited/invalid pid.
+      // Accepting only ESRCH would prevent stale Windows locks from being reclaimed and leave reclaim markers deadlocked.
       const code = (error as NodeJS.ErrnoException).code
       return code === 'ESRCH' || code === 'EPERM'
     }
@@ -183,8 +183,8 @@ export async function withLock<T>(
           fd = openSync(reclaim, 'wx')
           if (existsSync(lockFile) && ownerIsDead(lockFile)) removeLockArtifact(lockFile)
         } catch {
-          // 抢标记失败即代表有竞争者，但竞争者可能已经被 Kill 或崩溃，标记会永久残留。
-          // 超过陈旧阈值就视为滞留标记，强制回收，否则这条路径会死锁到永久。
+          // Failure to claim the marker means a competitor exists, but it may have been killed or crashed, leaving the marker.
+          // Reclaim markers beyond the stale threshold to prevent this path from deadlocking permanently.
           if (
             existsSync(reclaim) &&
             Date.now() - statSync(reclaim).mtimeMs > STALE_LOCK_MS &&

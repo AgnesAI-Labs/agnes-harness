@@ -326,6 +326,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.setModel',
         '_agnes/v1/session.setPreset',
         '_agnes/v1/session.setYolo',
+        '_agnes/v1/session.setToolFilter',
         '_agnes/v1/session.revealWorkspace',
         '_agnes/v1/session.runtime',
         '_agnes/v1/session.integrity',
@@ -372,7 +373,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(218)
+    expect(Object.keys(METHODS)).toHaveLength(219)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({
@@ -614,7 +615,7 @@ describe('methods (I1 set)', () => {
     ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
     expect(
       errorsOf(validateMethod('_agnes/v1/computerUse.status', 'result', { ...blocked, platform: 'darwin' })),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
+    ).toContainEqual(expect.objectContaining({ path: '/platform', key: 'platform', code: 'UNKNOWN_KEY' }))
     expect(
       validateMethod('_agnes/v1/computerUse.status', 'result', {
         schemaVersion: 1,
@@ -869,7 +870,7 @@ describe('methods (I1 set)', () => {
           },
         }),
       ),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
+    ).toContainEqual(expect.objectContaining({ path: '/patch/changes/0/index', code: 'RANGE' }))
   })
 
   it('validates bounded UI opening and opaque history page contracts', () => {
@@ -1046,7 +1047,7 @@ describe('methods (I1 set)', () => {
     ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
     expect(
       errorsOf(validateMethod('_agnes/v1/daemon.notice', 'params', { detail: {}, at: 't' })),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
+    ).toContainEqual(expect.objectContaining({ path: '', key: 'kind', code: 'MISSING' }))
   })
 
   it('validates the packages_changed profile invalidation payload as a closed contract', () => {
@@ -1241,5 +1242,48 @@ describe('methods (I1 set)', () => {
       errorsOf(validateMethod('_agnes/v1/session.setYolo', 'params', { sessionId: 's' })),
     ).toContainEqual(expect.objectContaining({ code: 'MISSING', key: 'enabled' }))
     expect(validateMethod('_agnes/v1/session.setYolo', 'result', { effectiveFromSeq: 9 }).ok).toBe(true)
+  })
+
+  it('jobs.control run takes a bounded command and timeout and nothing else', () => {
+    const run = { sessionId: 's', commandId: 'c', operation: 'run' }
+    const ok = (extra: Record<string, unknown>) =>
+      validateMethod('_agnes/v1/session.jobs.control', 'params', { ...run, ...extra }).ok
+    expect(ok({ command: 'ls' })).toBe(true)
+    expect(ok({ command: 'x'.repeat(8192), timeoutMs: 1000 })).toBe(true)
+    expect(ok({ command: 'ls', timeoutMs: 600000 })).toBe(true)
+    for (const bad of [
+      {},
+      { command: '' },
+      { command: 'x'.repeat(8193) },
+      { command: 'a\0b' },
+      { command: 'ls', timeoutMs: 999 },
+      { command: 'ls', timeoutMs: 600001 },
+      { command: 'ls', timeoutMs: 1.5 },
+      { command: 'ls', jobId: 'j' },
+      { command: 'ls', shell: 'bash' },
+    ])
+      expect(ok(bad)).toBe(false)
+  })
+
+  it('setToolFilter takes exact names in bounded lists and returns the merged filter', () => {
+    const call = (extra: Record<string, unknown>) =>
+      validateMethod('_agnes/v1/session.setToolFilter', 'params', {
+        sessionId: 's',
+        commandId: 'c',
+        ...extra,
+      })
+    expect(call({ deny: ['bash'], allow: ['bash', 'grep'] }).ok).toBe(true)
+    expect(call({ deny: ['bash*'] }).ok).toBe(false)
+    expect(call({ allow: [] }).ok).toBe(false)
+    expect(call({ deny: Array.from({ length: 129 }, (_, n) => `t${n}`) }).ok).toBe(false)
+    expect(
+      errorsOf(validateMethod('_agnes/v1/session.setToolFilter', 'params', { sessionId: 's', deny: ['a'] })),
+    ).toContainEqual(expect.objectContaining({ code: 'MISSING', key: 'commandId' }))
+    expect(
+      validateMethod('_agnes/v1/session.setToolFilter', 'result', {
+        effectiveFromSeq: 9,
+        filter: { allow: [], deny: ['bash'] },
+      }).ok,
+    ).toBe(true)
   })
 })

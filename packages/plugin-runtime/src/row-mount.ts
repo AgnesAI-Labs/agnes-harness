@@ -637,7 +637,7 @@ function createVerifiedRowRuntime(
         generation: 1,
       })
       const frozen = freezeCommon('builtin', input, snapshot, '')
-      // D74 deliberately trusts the single desired-row builder identity for builtins.
+      // Builtin mounting deliberately trusts the single desired-row builder identity for builtins.
       return createMount(frozen)
     },
   })

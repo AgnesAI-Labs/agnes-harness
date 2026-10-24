@@ -58,7 +58,7 @@ const describedBy = (control: HTMLElement, id: string, add: boolean) => {
   else control.removeAttribute('aria-describedby')
 }
 
-/** The host of an endpoint, for 「正在连接 api.example.com…」. */
+/** The host of an endpoint, for 「Connecting to api.example.com…」. */
 export function endpointHost(url: string): string {
   return endpoint(url).split('/')[0] ?? ''
 }

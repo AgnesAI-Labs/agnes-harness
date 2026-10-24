@@ -36,8 +36,8 @@ type SkinRoster = {
 /**
  * Theme, language and skin preferences of this document.
  *
- * 皮肤清单来自 `config.get()` 报出的 profile——daemon 只接受它自己那一个 profile，所以这里必须把
- * profile 传回去，客户端不能凭参数选目录。
+ * The skin manifest uses the profile reported by `config.get()`. The daemon accepts only its own profile,
+ * so pass it back here; client parameters cannot select a directory.
  */
 export function createAppearanceController(options: {
   locale: LocaleService
@@ -63,11 +63,11 @@ export function createAppearanceController(options: {
       text: (key) => options.locale.t(key),
     },
   })
-  /** 最近一次拉到的清单，供选中时取样式表与 token；清单变了会整体替换。 */
+  /** Most recently fetched manifest, used for selected CSS and tokens; replace it entirely when it changes. */
   let roster: SkinRosterEntry[] = []
-  /** 回落到 `cssUrl` 时的同源取数器；只接受 `/skins/` 下的路径（见 `fetchSkinCss`）。 */
+  /** Same-origin fetcher for the `cssUrl` fallback; accept only `/skins/` paths (see `fetchSkinCss`). */
   const cssOptions = { fetcher: (input: string) => fetch(input), origin: location.origin }
-  /** 每次显式选择 +1：让在途的对账不能把用户刚做的选择覆盖回去。 */
+  /** Increment on every explicit selection so in-flight reconciliation cannot overwrite the user's latest choice. */
   let selection = 0
   let disposed = false
 
@@ -79,16 +79,17 @@ export function createAppearanceController(options: {
     }
   }
 
-  /** 告诉首帧逻辑（以及同源的其他文档）缓存里的皮肤变了。同文档不会收到 storage 事件，故手动派发。 */
+  /** Notify first-frame logic and other same-origin documents that the cached skin changed; dispatch manually because storage events skip this document. */
   const skinChanged = (): void => {
     window.dispatchEvent(new StorageEvent('storage', { key: SKIN_STORAGE_KEY }))
   }
 
   /**
-   * 拿到新清单后把缓存拉回一致。
+   * Reconcile the cache after receiving a new manifest.
    *
-   * 来源被卸载/停用的皮肤必须**停止上色**（设计 §8）；清单只是摘要变化、文本没变时直接换缓存，
-   * 不留闪烁。只有必须联网取文本时才先回落内置观感——那是设计明确接受的那一次闪烁（§5.8）。
+   * Skins whose source was uninstalled/disabled must **stop coloring the page**. If only the digest changes,
+   * replace the cache without flicker. Fall back to the built-in appearance only while fetching new text;
+   * that temporary flicker is accepted.
    */
   async function reconcile(entries: readonly SkinRosterEntry[]): Promise<void> {
     if (disposed) return
@@ -109,12 +110,12 @@ export function createAppearanceController(options: {
     skinChanged()
     try {
       const css = await fetchSkinCss(plan.entry.cssUrl, cssOptions)
-      // 取文本期间用户可能已经换了选择：那就让对账作废，不能把旧皮肤写回去。
+      // The user may have changed selection while text was fetched: discard reconciliation rather than restoring the old skin.
       if (disposed || version !== selection) return
       await cacheSkinEntry(storage, { ...plan.entry, css }, cssOptions)
       skinChanged()
     } catch {
-      // 取不到就保持内置观感，而不是写一份半截缓存。
+      // On fetch failure keep the built-in appearance instead of writing a partial cache.
     }
   }
 
@@ -175,20 +176,20 @@ export function createAppearanceController(options: {
         ...(skin.css === undefined ? {} : { css: skin.css }),
         tokens: skin.tokens ?? {},
       }))
-      // 只有真的拿到清单才能对账：这里的 `[]` 会被读成「皮肤全被卸载」而抹掉用户的选择。
+      // Reconcile only after receiving a manifest: `[]` here would mean all skins were uninstalled and erase the selection.
       await reconcile(roster)
       updateApplicationSkin()
       return roster
     },
     select: async (id) => {
-      // 先记一次选择：取样式表要 await，在途的对账不能在这个窗口里把旧皮肤写回来。
+      // Record selection first: fetching CSS awaits, and in-flight reconciliation must not restore the old skin in that gap.
       selection += 1
       if (id === null) clearSkinCache(storage)
       else {
         const chosen = roster.find((skin) => skin.id === id)
-        // 清单里找不到就是清单刚变过：抛出，让分组回滚到原选择而不是留下假的选中态。
+        // Missing from the manifest means it just changed: throw so the group restores the old choice rather than a false selection.
         if (chosen === undefined) throw new Error(`skin ${id} is not in the current roster`)
-        // 宿主没内联时先取到文本再写缓存，否则会缓存成一份空样式表——点了等于没点（设计 §8）。
+        // If not inlined, fetch text before caching; otherwise an empty cached stylesheet would make selection have no effect.
         await cacheSkinEntry(storage, chosen, cssOptions)
       }
       storage.setItem(SKIN_PREFERENCE_KEY, id ?? 'none')

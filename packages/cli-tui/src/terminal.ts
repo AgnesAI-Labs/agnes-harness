@@ -29,6 +29,8 @@ export interface Terminal {
   queryBackground?(): Promise<Background | undefined>
   /** Where the cursor is, 1-based, as the terminal reports it; undefined where it cannot or does not answer. */
   queryCursor?(): Promise<{ row: number; col: number } | undefined>
+  /** Whether the time input arrives in tells a paste from typing (paste.ts); a fake that feeds synchronously says no. */
+  readonly pasteBursts?: boolean
 }
 
 // The cursor-position report: ESC [ row ; col R. Only read while one was asked for, because the same
@@ -37,6 +39,8 @@ export const CURSOR_QUERY = '\x1b[6n'
 export const CURSOR_TIMEOUT_MS = 250
 // biome-ignore lint/suspicious/noControlCharactersInRegex: matching the escape is the point
 const CURSOR_REPLY = /\x1b\[(\d+);(\d+)R/
+// biome-ignore lint/suspicious/noControlCharactersInRegex: an unfinished cursor report, while a query is pending.
+const CURSOR_PREFIX = /\x1b(?:\[\d*(?:;\d*)?)?$/
 
 // Everything is read from the environment the terminal itself sets. Asking the operating system
 // instead would answer a different question: a Windows console under ConPTY understands the same
@@ -63,6 +67,8 @@ export function detectCapabilities(
 // lands on the letter before it, and a zero-width joiner is not drawn at all. get-east-asian-width
 // answers a property question and reports 1 for all of them, so they are filtered first.
 const ZERO_WIDTH = /^[\p{Mn}\p{Me}\p{Cf}]$/u
+// biome-ignore lint/suspicious/noControlCharactersInRegex: the escape byte starts the sequence
+const OSC8_RE = /\x1b\]8;[^\x1b\x07]*\x1b\\/g
 
 // Asks for the emoji rendering of the character before it, which is drawn in two columns wherever it
 // is honoured. Without this a heart or a keycap measures one column and every wrap boundary and
@@ -83,7 +89,8 @@ const EMOJI_PRESENTATION = '\ufe0f'
  * every row the renderer addresses is off by one.
  */
 export function displayWidth(s: string): number {
-  const chars = [...s.replaceAll(CURSOR_MARKER, '').replace(ANSI_RE, '')]
+  // OSC 8 hyperlink sequences (links.ts) take no columns, whatever text they carry.
+  const chars = [...s.replaceAll(CURSOR_MARKER, '').replace(ANSI_RE, '').replace(OSC8_RE, '')]
   let w = 0
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i] as string
@@ -120,6 +127,8 @@ export class FakeTerminal implements Terminal {
   readonly writes: string[] = []
   caps: Capabilities
   raw = false
+  /** Off unless a test is about pastes: tests feed text and Enter in the same instant. */
+  pasteBursts = false
   background: Background | undefined
   /** What `queryCursor` answers; a test sets where the shell left the cursor. */
   cursor: { row: number; col: number } | undefined
@@ -172,10 +181,12 @@ export class FakeTerminal implements Terminal {
 
 export class NodeTerminal implements Terminal {
   readonly caps: Capabilities
+  readonly pasteBursts = true
   background: Background | undefined
   private asked: Promise<Background | undefined> | undefined
   private answer: ((b: Background | undefined) => void) | undefined
   private cursorAnswer: ((at: { row: number; col: number } | undefined) => void) | undefined
+  private cursorInput = ''
   private cursorLine: Promise<void> = Promise.resolve()
   private readonly handlers = new Set<(data: string) => void>()
   // One stdin listener for every consumer, so a chunk is cleaned of terminal replies exactly once.
@@ -184,11 +195,20 @@ export class NodeTerminal implements Terminal {
     this.answer?.(b)
   })
   private readonly dispatch = (chunk: string | Buffer): void => {
-    let text = String(chunk)
+    let text = this.cursorInput + String(chunk)
+    this.cursorInput = ''
     const reply = this.cursorAnswer ? CURSOR_REPLY.exec(text) : null
     if (reply) {
       text = text.replace(reply[0], '')
       this.cursorAnswer?.({ row: Number(reply[1]), col: Number(reply[2]) })
+    } else if (this.cursorAnswer) {
+      // TTY/ConPTY replies can be split at any byte. Hold only a bounded possible suffix;
+      // unrelated text and keys still reach their existing handlers in order.
+      const prefix = CURSOR_PREFIX.exec(text)
+      if (prefix && prefix[0].length <= 64) {
+        this.cursorInput = prefix[0]
+        text = text.slice(0, prefix.index)
+      }
     }
     const data = this.filter.push(text)
     if (data) for (const h of [...this.handlers]) h(data)
@@ -259,7 +279,10 @@ export class NodeTerminal implements Terminal {
         const done = (at: { row: number; col: number } | undefined): void => {
           clearTimeout(timer)
           this.cursorAnswer = undefined
+          const pending = this.cursorInput
+          this.cursorInput = ''
           resolve(at)
+          if (pending) this.dispatch(pending)
         }
         const timer = setTimeout(() => done(undefined), CURSOR_TIMEOUT_MS)
         this.cursorAnswer = done

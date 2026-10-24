@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createServer, type Server as HttpServer } from 'node:http'
 import { createRequire } from 'node:module'
+import { PassThrough } from 'node:stream'
 import { deflateSync } from 'node:zlib'
 import { checkToolDef, type ResourceEntry, type ToolDef } from '@agnes/extension-api'
 import type { Context } from '@agnes/plugin-runtime'
@@ -1044,7 +1045,7 @@ describe('connectMcp', () => {
       createClient: () => sdkClient,
       createStdioTransport: (params) => {
         stdioParams.push(params)
-        const transport = { kind: 'stdio' }
+        const transport = { kind: 'stdio', stderr: new PassThrough() }
         transports.push(transport)
         return transport as never
       },
@@ -1076,7 +1077,7 @@ describe('connectMcp', () => {
       listResources: vi.fn(async () => ({ resources: [] })),
       listResourceTemplates: vi.fn(async () => ({ resourceTemplates: [] })),
       readResource: vi.fn(async () => ({ contents: [] })),
-      connect: vi.fn(async () => undefined),
+      connect: vi.fn(async (_transport?: unknown) => undefined),
       listTools: vi.fn(async (_params?: { cursor?: string }) => ({
         tools: [
           {
@@ -1099,6 +1100,7 @@ describe('connectMcp', () => {
       {
         command: 'gh-mcp',
         args: ['--stdio'],
+        stderr: 'pipe',
         env: { HOME: '/safe/home', PATH: '/safe/bin', TOKEN: 'resolved' },
       },
     ])
@@ -1234,7 +1236,7 @@ describe('connectMcp', () => {
 
   it('closes a partially connected client and rejects missing transport operands', async () => {
     const { deps, sdkClient } = fakeSdk({ connect: vi.fn(async () => Promise.reject(new Error('no'))) })
-    await expect(connectMcp(stdio, deps)).rejects.toThrow('no')
+    await expect(connectMcp(stdio, deps)).rejects.toMatchObject({ code: 'MCP_STDIO_CLOSED' })
     expect(sdkClient.close).toHaveBeenCalledTimes(1)
 
     const untouched = fakeSdk()
@@ -1243,6 +1245,27 @@ describe('connectMcp', () => {
     ).rejects.toThrow(/cmd/)
     expect(untouched.deps.createClient).toBeTypeOf('function')
     expect(untouched.sdkClient.connect).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['OPENCLAW_ELECTRON_PATH is not set', 'MCP_STDIO_ENV_MISSING'],
+    ['npm error code EACCES', 'MCP_STDIO_ACCESS_DENIED'],
+    ['npm error code ENOTFOUND', 'MCP_STDIO_NETWORK_FAILED'],
+    ['Error: Cannot find module /private/runtime.js', 'MCP_STDIO_RUNTIME_UNAVAILABLE'],
+    ['unexpected private server output', 'MCP_STDIO_CLOSED'],
+  ])('reports a safe startup category for %s', async (stderr, code) => {
+    const { deps } = fakeSdk({
+      connect: vi.fn(async (transport?: unknown) => {
+        const stream = (transport as { stderr: PassThrough }).stderr
+        stream.write('private-secret-value\n' + stderr.slice(0, 8))
+        stream.write(stderr.slice(8))
+        throw new Error('private-secret-value in arbitrary failure')
+      }),
+    })
+    const error = await connectMcp(stdio, deps).catch((error: unknown) => error)
+    expect(error).toMatchObject({ code })
+    expect(String(error)).not.toContain('private-secret-value')
+    expect(String(error)).not.toContain('/private/runtime.js')
   })
 
   it('rejects an unrecognized transport kind instead of silently connecting over Streamable HTTP', async () => {

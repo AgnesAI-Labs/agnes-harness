@@ -84,6 +84,42 @@ it('runs folder inputs in stable order, streams each result and returns the firs
   expect(close).toHaveBeenCalled()
 })
 
+it('appends to every fresh run session and refuses to run when the daemon did not apply it', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'agh-append-run-'))
+  dirs.push(dir)
+  await writeFile(join(dir, 'rules.md'), 'Be brief.')
+  await writeFile(join(dir, 'in.txt'), 'go')
+  const detach = vi.fn(async () => {})
+  const get = vi.fn(async () => ({ sections: [{ text: 'base\n\nBe brief.' }] }))
+  const createSession = vi.fn(async () => ({ id: 'sess', detach }))
+  const run = (append: string[]) =>
+    runCommand(['--bundle', 'pkg#demo', '--input', join(dir, 'in.txt'), '--json', ...append], {
+      cwd: dir,
+      stdin: Readable.from([]),
+      stdout: new Writable({ write: (_c, _e, next) => next() }),
+      boot: async () =>
+        ({
+          client: { workspace: { add: async () => ({}) }, createSession, systemPrompt: { get } },
+          close: async () => {},
+        }) as unknown as Booted,
+      signals: new PassThrough(),
+    })
+  vi.mocked(runHeadless).mockImplementation(async (client, options) => {
+    await client.createSession({
+      cwd: dir,
+      ...(options.systemPromptAppend ? { systemPromptAppend: options.systemPromptAppend } : {}),
+    })
+    return { sessionId: 'sess', reason: 'completed', lastSeq: 1, eventsComplete: true }
+  })
+  expect(await run(['--append-system-prompt-file', 'rules.md'])).toBe(0)
+  expect(vi.mocked(runHeadless).mock.calls[0]?.[1].systemPromptAppend).toBe('Be brief.')
+  expect(get).toHaveBeenCalledWith({ sessionId: 'sess' })
+  // An older daemon ignored the field: the session is dropped and the input is reported as failed.
+  get.mockResolvedValueOnce({ sections: [{ text: 'base' }] })
+  expect(await run(['--append-system-prompt', 'Be brief.'])).toBe(1)
+  expect(detach).toHaveBeenCalledTimes(1)
+})
+
 it('loads Host bundle documents and applies a transient selection without mutating stored inputs', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'agh-bundle-'))
   dirs.push(dir)

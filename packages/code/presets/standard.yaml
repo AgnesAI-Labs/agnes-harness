@@ -8,18 +8,18 @@ extends: base
 surfaces: [cli, sdk, acp, daemon]
 model:
   contract_id: agnes-model-contract@v1
-  # Five of the seven slots; image and video are absent, which means "not supported here".
+  # Compaction follows the session's primary model unless a deployment explicitly selects it.
+  # Image and video are absent, which means "not supported here".
   # `default` is a placeholder on both fields: the deployment's adapter list decides which provider
   # and which model it resolves to. A product recipe never names a concrete model.
   route:
     primary: { route: default, model: default }
     escalation: { route: default, model: default }
     fast: { route: default, model: default }
-    compaction: { route: default, model: default }
     verifier: { route: default, model: default }
-  prompt_sections: [persona, environment, coding-doctrine]
+  prompt_sections: [persona, environment, tools-available, coding-doctrine]
 disclosure: standard
-tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch, web_search, ask_user_question, ui_render, ui_update, ui_close, ui_submit, present, job_output, job_list, job_kill, schedule_create, schedule_list, schedule_update, schedule_delete] }
+tools: { core: [read, write, edit, shell, grep, find, ls, todo, web_fetch, web_search, ask_user_question, ui_guide, ui_render, ui_update, ui_close, ui_submit, present, job_output, job_list, job_kill, schedule_create, schedule_list, schedule_update, schedule_delete] }
 mcp: { defer: true }
 # No cumulative step ceiling: completion, cancellation and failure end a normal task.
 budget: { per_request_cap: 4000, max_steps: null }

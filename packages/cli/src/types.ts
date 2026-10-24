@@ -69,13 +69,23 @@ export type ParsedArgs = {
   /** A permission level, or `default` for the deployment default; travels with `preset` on session/new. */
   permission?: 'read-only' | 'workspace-write' | 'full-access' | 'default'
   agent?: string
+  /** `--append-system-prompt`: text added to a NEW session's system prompt. */
+  appendSystemPrompt?: string
+  /** `--append-system-prompt-file`: the same text, read from a local regular file. */
+  appendSystemPromptFile?: string
   loop?: LoopSelection
+  /** `--tools` / `--disallowed-tools`: narrows the session's tools; applied before anything is sent. */
+  toolFilter?: { allow?: string[]; deny?: string[] }
   cwd?: string
   /** Explicit Computer Use rescue store; bypasses profile/package resolution. */
   dataDir?: string
   candidateHash?: string
   reviewHash?: string
   newSession?: boolean
+  /** `--worktree[=name]`: run the new session in its own git worktree; `''` asks for a time-based name. */
+  worktree?: string
+  /** `--add-dir <dir>` (repeatable): extra directories for the new session's file fence; absolute once resolved. */
+  addDir?: string[]
   continue: boolean
   resume?: string
   connect?: string
@@ -110,6 +120,10 @@ export type ParsedArgs = {
   maxBudget?: string
   /** `--max-turns` raw value; `-p` only, range-checked by `parseTurnCaps`. */
   maxTurns?: string
+  /** `--timeout` raw seconds; `-p` only, range-checked by `parseTimeoutMs`. */
+  timeout?: string
+  /** `-p --output-file`: also write the final text to this file. Long option only: `-o` is `--out` of export. */
+  outputFile?: string
   /** `sessions list --last`: only the most recently active session. */
   last?: boolean
   /** Private host only: also skip hooks, non-built-in plugins and MCP servers (see parseArgs for what is honoured). */

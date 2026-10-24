@@ -629,3 +629,47 @@ it('uses the shared ghost seam for live follow-up hints and invalidates dismisse
   expect(host.querySelector('.composer-example-hint')).toBeNull()
   expect(loadHint).toHaveBeenCalledTimes(5)
 })
+
+it.each(['running', 'idle', 'interrupted', 'completed', 'failed', 'cancelled'] as const)(
+  'shows only usable child controls and labels follow-ups (%s)',
+  (status) => {
+    const active = !['completed', 'failed', 'cancelled'].includes(status)
+    const { host } = mount(
+      {
+        onChildControl: async () => {},
+        dependencies: {
+          ...dependencies,
+          translate: (key, vars) =>
+            (webUnitsLocaleCatalog['zh-CN'][key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) =>
+              String(vars?.[name] ?? name),
+            ),
+        },
+      },
+      {
+        ...idle,
+        children: [
+          {
+            id: 'child',
+            parentId: 'parent',
+            providerId: 'in-process',
+            status,
+            controls: { stop: status === 'running', continue: active },
+            totalTokens: 15,
+            durationMs: 1200,
+          },
+        ],
+      },
+    )
+    expect(host.querySelector('[data-testid="child-stop"]') !== null).toBe(status === 'running')
+    expect(host.querySelector('[data-testid="child-continue"]') !== null).toBe(active)
+    const metrics = host.querySelector('[data-testid="child-control-metrics"]')?.textContent
+    expect(metrics).toContain('15')
+    expect(metrics).toContain('1.2')
+    const input = host.querySelector('[data-testid="child-continue-message"]')
+    expect(input !== null).toBe(active)
+    if (active) {
+      expect(input?.getAttribute('placeholder')).toBe('发给子代理的消息')
+      expect(input?.getAttribute('aria-label')).toBe('发给子代理的消息')
+    }
+  },
+)

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { AttachedFeed } from '@agnes/daemon-foundation/local/attached'
 import {
   type AttachPrefs,
+  type CallContext,
   connActor,
   type Handler,
   type LocalEndpoint,
@@ -50,6 +51,8 @@ import type { SessionEntry } from '../sessions.js'
 // load agnes.ts back at runtime in the other direction.
 import { mapCore } from './agnes.js'
 import { registerSessionIntegrity } from './session-integrity.js'
+import { admitSystemPromptAppend } from './session-prompt-append.js'
+import { applyOpenToolFilter, parseOpenToolFilter } from './session-switches.js'
 import { throwWorkspaceRpcError } from './workspaces.js'
 
 export type LocalContext = {
@@ -72,6 +75,8 @@ export type LocalContext = {
   sessionOwnership?: SessionPrincipalOwnership
   /** Trusted durable/live existence check. Supervisor implementations must not touch a worker kernel. */
   hasSessionFact?: (sessionId: string) => boolean
+  /** The same read-only check `systemPrompt.save` makes; absent means it cannot be made. */
+  configurationReadOnly?: (context: CallContext) => Promise<boolean>
   /**
    * Fired exactly around the window `session/prompt` below holds `entry.inflight` for one session -
    * started only by the connection that actually wins the SESSION_BUSY race (a concurrent second
@@ -452,6 +457,8 @@ export function throwSessionOpenRpcError(error: unknown, sessionId = ''): never 
         : {}),
     })
   }
+  if (e?.code === 'E_ENVELOPE' && (e.reason ?? e.detail?.reason) === 'system-prompt-append')
+    throw rpcError('SEMANTIC_REJECTED', { reason: 'systemPromptAppend refused' })
   // By reason, as a worker returns it: the message may have been withheld on the way here.
   if (e?.code === 'E_PRESET_UNSUPPORTED') {
     const reason = e.reason ?? e.detail?.reason
@@ -585,7 +592,15 @@ export function registerAcp(
       protocolVersion: 1,
       agentCapabilities: {
         loadSession: true,
-        _meta: { 'ai.agnes.harness': { hardTurnBudget: true, turnMaxSteps: true, sessionOpen: true } },
+        ...(cx.workspaces.admitsExtraRoots ? { sessionCapabilities: { additionalDirectories: {} } } : {}),
+        _meta: {
+          'ai.agnes.harness': {
+            hardTurnBudget: true,
+            turnMaxSteps: true,
+            sessionOpen: true,
+            ...(cx.workspaces.admitsExtraRoots ? { forkAdditionalDirectories: true } : {}),
+          },
+        },
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
       _meta: {
@@ -606,7 +621,7 @@ export function registerAcp(
   ep.register('authenticate', async () => ({}))
 
   ep.register('session/new', async (params, c) => {
-    const p = params as { cwd: string; mcpServers: unknown[] }
+    const p = params as { cwd: string; mcpServers: unknown[]; additionalDirectories?: string[] }
     if (p.mcpServers.length > 0) throw rpcError('SEMANTIC_REJECTED', { reason: 'mcpServers must be empty' })
     if (
       cx.auth.config.transport === 'ws' &&
@@ -630,7 +645,8 @@ export function registerAcp(
         (h.loop !== undefined ||
           h.bundles !== undefined ||
           h.preset !== undefined ||
-          h.permission !== undefined)) ||
+          h.permission !== undefined ||
+          h.systemPromptAppend !== undefined)) ||
       (h.agentDigest !== undefined && (!agent || !agentDigest || !/^sha256-[a-f0-9]{64}$/.test(agentDigest)))
     )
       throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid agent selection' })
@@ -663,6 +679,7 @@ export function registerAcp(
     const permission = h.permission
     if (permission !== undefined && (typeof permission !== 'string' || !SESSION_PERMISSIONS.has(permission)))
       throw rpcError('SEMANTIC_REJECTED', { reason: 'invalid permission' })
+    const toolFilter = parseOpenToolFilter(h.toolFilter)
     let entry: SessionEntry
     let workspace: Awaited<ReturnType<WorkspaceCatalog['validate']>>
     try {
@@ -670,6 +687,8 @@ export function registerAcp(
     } catch (error) {
       throwWorkspaceRpcError(error)
     }
+    // Admitted before any key is reserved, so a refused directory leaves nothing behind.
+    const extraRoots = await cx.workspaces.admitExtraRoots(workspace.path, p.additionalDirectories ?? [])
     // Default creation reuses the canonical workspace ledger. An explicit loop needs a fresh
     // ledger because loop identity is immutable; otherwise reuse could silently select the old loop.
     // Session IDs are opaque to storage and ownership. Supplying sessionKey still reuses that exact
@@ -681,11 +700,16 @@ export function registerAcp(
             cx.host.profile,
             await cx.resolveNewSessionActor(c.conn.credential, 'session'),
             workspace.path,
-          )}${agent ? `:agent:${randomUUID()}` : loop ? `:loop:${randomUUID()}` : bundles !== undefined ? `:composition:${randomUUID()}` : ''}`
+          )}${agent ? `:agent:${randomUUID()}` : loop ? `:loop:${randomUUID()}` : bundles !== undefined ? `:composition:${randomUUID()}` : extraRoots.length ? `:dirs:${randomUUID()}` : ''}`
     const hasSessionFact =
       cx.registry.get(requestedKey) !== undefined ||
       cx.workspaces.sessionPath(requestedKey) !== undefined ||
       cx.hasSessionFact?.(requestedKey) === true
+    const systemPromptAppend = await admitSystemPromptAppend(h.systemPromptAppend, {
+      existingSession: hasSessionFact,
+      context: c,
+      configurationReadOnly: cx.configurationReadOnly,
+    })
     const ownership = cx.sessionOwnership
     if (!ownership) return denyOwnership('session/new', requestedKey)
     let reservedNew = false
@@ -697,6 +721,7 @@ export function registerAcp(
         principalId: c.conn.principalId,
         sessionKey: requestedKey,
         canonicalRoot: workspace.path,
+        extraRoots,
         hasSessionFact,
       })
       reservedNew = reserved.reservedNew
@@ -714,10 +739,13 @@ export function registerAcp(
         ...(preset ? { preset } : {}),
         ...(permission ? { permission } : {}),
         ...(bundles !== undefined ? { bundles } : {}),
+        ...(systemPromptAppend === undefined ? {} : { systemPromptAppend }),
         ...(loop ? { loop } : {}),
         key: requestedKey,
         ...(c.conn.credential === undefined ? {} : { credential: c.conn.credential }),
       })
+      // Before activation: until the owner can reach the session, no prompt can run it unfiltered.
+      if (toolFilter) await applyOpenToolFilter(cx, entry.key, toolFilter)
       if (reservedNew && !ownership.activateNew(entry.key, c.conn.principalId))
         denyOwnership('session/new', requestedKey)
     } catch (error) {

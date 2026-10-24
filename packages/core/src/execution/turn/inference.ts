@@ -80,6 +80,7 @@ import { restoreToolArgumentRecovery, toolArgumentsDisabled } from '../../step/t
 import { toolCallPayload } from '../../step/tool-call.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
+import { appendHookData } from './hook-data-note.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
 import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
@@ -279,6 +280,7 @@ export async function assembleRequestPrefix(
   merged: Merged
   disclosed: DeriveInput['disclosed']
   additionalContext: string
+  untrustedContext: string
   preloaded: RuntimePromptPreload | null
   memoryRevision?: string
 }> {
@@ -296,16 +298,23 @@ export async function assembleRequestPrefix(
   if (memory) {
     if (!(await s.d.log.scan({ type: 'x/core/memory-private', limit: 1 })).length)
       await s.d.log.append([s.ev('x/core/memory-private', { files: 1 }, { ignorable: true })])
+    // A file changed outside the provider (e.g. by an unconfined shell) is still injected; say so.
+    if (memory.externalChanges?.length)
+      await s.diag('memory-external-change', { paths: [...memory.externalChanges] })
     contribs.push({
       op: 'memory',
-      promptSections: [{ id: 'memory:index', order: 131, source: 'memory', text: memory.content }],
+      promptSections: [
+        { id: 'memory:index', order: 131, source: 'memory', text: memory.content, delivery: 'live-note' },
+      ],
     })
   }
   const receipts = await childReceiptNarrative(s)
   if (receipts)
     contribs.push({
       op: 'child-receipts',
-      promptSections: [{ id: 'core:child-receipts', order: 112, source: 'core', text: receipts }],
+      promptSections: [
+        { id: 'core:child-receipts', order: 112, source: 'core', text: receipts, delivery: 'live-note' },
+      ],
     })
   const merged = mergeContributions(contribs, t.snapshot)
   for (const conflict of merged.conflicts) await s.diag('contribute-conflict', conflict)
@@ -327,7 +336,11 @@ export async function assembleRequestPrefix(
     t.prefix?.key === prefixKey
       ? s.hooks.refreshContext
         ? await s.hooks.refreshContext(merged.sections)
-        : structuredClone({ sections: t.prefix.sections, additionalContext: t.prefix.additionalContext })
+        : structuredClone({
+            sections: t.prefix.sections,
+            additionalContext: t.prefix.additionalContext,
+            untrustedContext: t.prefix.untrustedContext,
+          })
       : await s.hooks.context(merged.sections)
   t.prefix = { key: prefixKey, ...structuredClone(hookContext) }
   merged.sections = hookContext.sections
@@ -349,6 +362,7 @@ export async function assembleRequestPrefix(
     merged,
     disclosed,
     additionalContext: hookContext.additionalContext,
+    untrustedContext: hookContext.untrustedContext,
     preloaded,
     ...(memory ? { memoryRevision: memory.revision } : {}),
   }
@@ -504,11 +518,10 @@ export async function prepareInferenceRequest(
   // list it reads off `ctx` are already resolved, so an Operation here sees exactly what is about to
   // go out rather than having to recompute either one itself.
   await runSlot(s, 'before-inference', ctx)
-  const { merged, disclosed, additionalContext, preloaded, memoryRevision } = await assembleRequestPrefix(
-    s,
-    ctx,
-    op.meta.triggerSeq,
-  )
+  const { merged, disclosed, additionalContext, untrustedContext, preloaded, memoryRevision } =
+    await assembleRequestPrefix(s, ctx, op.meta.triggerSeq)
+  // A loop's own message list is not the ledger surface, so a row written for it would never be read.
+  if (!options.messages) await appendHookData(s, untrustedContext)
   const { surface, imageIndices } = await attachmentSurface(s, loopRequestHistory(s, merged, options))
   let requestMedia: LedgerPreparedRequestMedia | undefined
   let auxiliaryVision: ReturnType<typeof prepareAuxiliaryVisionDerivedText> | undefined
@@ -1069,6 +1082,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       // carries a failure to the inference owner.
       const written = (row: EventInput): void => {
         const pending = s.d.log.append([row]).then(() => undefined)
+        // Streaming writes report to flushQueue; per-delta diagnostics would duplicate that failure.
         pending.catch(() => undefined)
         flushQueue = Promise.all([flushQueue, pending]).then(() => undefined)
       }

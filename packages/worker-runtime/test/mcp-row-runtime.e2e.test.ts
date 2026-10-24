@@ -905,7 +905,7 @@ describe('createMcpRowRuntime row shape and failure handling', () => {
 
 describe('createMcpRowRuntime against real MCP servers (real-machine collision verification)', () => {
   it.skipIf(process.platform !== 'win32')(
-    'authorizes a trusted enabled Windows executable, then revokes it',
+    'requires sandbox consent before authorizing a trusted enabled Windows executable, then revokes it',
     async () => {
       const scriptDir = await mkdtemp(join(tmpdir(), 'mcp-managed-stdio-'))
       cleanup.push(() => rm(scriptDir, { recursive: true, force: true }))
@@ -933,26 +933,41 @@ describe('createMcpRowRuntime against real MCP servers (real-machine collision v
         ),
         beforeApply: (entries) => syncManagedMcpExecutableAllowlist(entries, [], managed, env, true),
       })
+      const definition = {
+        serverId: 'managed',
+        displayName: 'managed',
+        transport: { kind: 'stdio', executable: process.execPath, args: [script] },
+        secretBinding: { kind: 'none' },
+      } satisfies McpServerDefinitionInput
       const enabled: McpServerSnapshotEntry = {
-        definition: {
-          serverId: 'managed',
-          displayName: 'managed',
-          transport: { kind: 'stdio', executable: process.execPath, args: [script] },
-          secretBinding: { kind: 'none' },
-        },
+        definition,
         revision: 'r1',
         desired: 'enabled',
         trust: 'trusted',
       }
-      const first = await runtime.apply([enabled])
+      const denied = await runtime.apply([enabled])
+      expect(denied.statuses.get('managed')).toMatchObject({
+        connectionState: 'unavailable',
+        lastSafeError: {
+          code: 'MCP_CONNECT_FAILED',
+          message: expect.stringContaining('E_MCP_SANDBOX_UNAVAILABLE'),
+        },
+      })
+      const name = `${mcpStablePrefix('managed')}read`
+      expect(tool(host, name)).toBeUndefined()
+      const consented: McpServerSnapshotEntry = {
+        ...enabled,
+        revision: 'r2',
+        definition: { ...definition, sandboxProfile: 'off-with-warning' },
+      }
+      const first = await runtime.apply([consented])
       expect(
         first.statuses.get('managed')?.connectionState,
         JSON.stringify(first.statuses.get('managed')),
       ).toBe('ready')
       expect(env.AGNES_MCP_STDIO_ALLOWLIST).toBe(process.execPath)
-      const name = `${mcpStablePrefix('managed')}read`
       expect(tool(host, name)).toBeDefined()
-      await runtime.apply([{ ...enabled, desired: 'disabled' }])
+      await runtime.apply([{ ...consented, desired: 'disabled' }])
       expect(managed).toEqual([])
       expect(env.AGNES_MCP_STDIO_ALLOWLIST).toBeUndefined()
       expect(tool(host, name)).toBeUndefined()
@@ -1122,19 +1137,39 @@ describe('a session MCP row whose catalog holds tools the model cannot be shown'
     expect(page?.catalogRevision).toBe(status?.catalogRevision)
   })
 
-  it('reports a connection failure with an empty message as a valid status', async () => {
+  it.each([
+    ['', 'MCP_CONNECT_FAILED'],
+    ['stdio-child', 'MCP_STDIO_ENV_MISSING'],
+    [
+      Object.assign(new Error('private-secret-value'), { code: 'MCP_STDIO_ENV_MISSING' }),
+      'MCP_STDIO_ENV_MISSING',
+    ],
+    [Object.assign(new Error('private-secret-value'), { code: 401 }), 'MCP_AUTH_FAILED'],
+  ])('reports a safe valid connection failure for %s', async (error, code) => {
     const host = await testHost()
     const failing: McpServerOpener = {
       connect: async () => {
-        throw ''
+        if (error === 'stdio-child')
+          return connectMcp({
+            id: 'alpha',
+            transport: 'stdio',
+            defer: false,
+            cmd: [
+              process.execPath,
+              '-e',
+              'process.stderr.write("private-secret-value\\nOPENCLAW_ELECTRON_PATH is not set\\n"); process.exit(1)',
+            ],
+          })
+        throw error
       },
     }
     const result = await createMcpRowRuntime({ host, opener: failing }).apply([entry('alpha')])
     const status = result.statuses.get('alpha')
     expect(status).toMatchObject({
       connectionState: 'unavailable',
-      lastSafeError: { code: 'MCP_CONNECT_FAILED', message: 'MCP connection failed' },
+      lastSafeError: { code },
     })
+    expect(status?.lastSafeError?.message).not.toContain('private-secret-value')
     expect(validateResourceControlData('McpStatus', status).ok).toBe(true)
   })
 })

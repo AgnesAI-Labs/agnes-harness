@@ -37,6 +37,7 @@ import {
   parseAgentRef,
   parseLoopSelection,
   parseSessionBundles,
+  parseSystemPromptAppend,
   projectClientModuleRows,
   rpcError,
   type SessionApprovalGrant,
@@ -68,6 +69,7 @@ import { type PermissionHandler, type PermissionRequest, unansweredPermission } 
 import { type ReconnectOptions, Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
 import { Session } from './session.js'
+import { requireAdditionalDirectories, requireForkAdditionalDirectories } from './session-directories.js'
 import { resendPending, submitForkCommand } from './submit.js'
 import { textFor } from './text.js'
 import { inprocTransport, type RpcEndpoint } from './transport/inproc.js'
@@ -175,6 +177,23 @@ type Schema = Parameters<typeof validateAgainst>[0]
 
 // Reserved for generated-but-unlisted methods; empty means no call bypasses METHODS validation.
 const UNLISTED: Record<string, { params?: Schema; result?: Schema }> = {}
+
+/** What `session/new` takes from a client. */
+export type NewSessionOptions = {
+  cwd: string
+  preset?: string
+  /** `read-only`, `workspace-write`, `full-access`, or `default` for the deployment default. */
+  permission?: string
+  agent?: string
+  agentDigest?: string
+  bundles?: readonly string[]
+  /** Owner text appended to this new session's system prompt (1 to 8192 characters); never a replacement. */
+  systemPromptAppend?: string
+  sessionKey?: string
+  loop?: LoopSelection
+  /** Extra directories for this new session's file fence; the daemon must advertise support. */
+  additionalDirectories?: readonly string[]
+}
 
 export class Client {
   private readonly sessionHistory = new Map<string, 'full' | 'none'>()
@@ -451,7 +470,7 @@ export class Client {
   }
 
   /**
-   * Web client modules contributed by installed packages (design WC2/WC3). The page calls `list`
+   * Web client modules contributed by installed packages. The page calls `list`
    * directly; `read` is for the launcher's asset proxy — the path stays in the `/plugins/` URL
    * space and the daemon answers only from its immutable snapshots.
    */
@@ -478,17 +497,7 @@ export class Client {
       this.call('_agnes/v1/clientModules.callEffect', input),
   }
 
-  createSession(options: {
-    cwd: string
-    preset?: string
-    /** `read-only`, `workspace-write`, `full-access`, or `default` for the deployment default. */
-    permission?: string
-    agent?: string
-    agentDigest?: string
-    bundles?: readonly string[]
-    sessionKey?: string
-    loop?: LoopSelection
-  }): Promise<Session> {
+  createSession(options: NewSessionOptions): Promise<Session> {
     return this.session.new(options)
   }
 
@@ -506,20 +515,19 @@ export class Client {
       ),
     runtime: (id: string): Promise<SessionRuntimeDescriptor> =>
       this.call('_agnes/v1/session.runtime', { sessionId: id }),
-    new: async (o: {
-      cwd: string
-      preset?: string
-      permission?: string
-      agent?: string
-      agentDigest?: string
-      bundles?: readonly string[]
-      sessionKey?: string
-      loop?: LoopSelection
-    }): Promise<Session> => {
+    new: async (o: NewSessionOptions): Promise<Session> => {
+      const extra = o.additionalDirectories ?? []
+      if (extra.length) requireAdditionalDirectories((await this.initialize()).capabilities)
       const meta: Record<string, unknown> = {}
       if (o.agent !== undefined) {
         meta.agent = parseAgentRef(o.agent)
-        if (o.loop || o.bundles !== undefined || o.preset || o.permission !== undefined)
+        if (
+          o.loop ||
+          o.bundles !== undefined ||
+          o.preset ||
+          o.permission !== undefined ||
+          o.systemPromptAppend !== undefined
+        )
           throw new TypeError('agent cannot be combined with execution overrides')
       }
       if (o.agentDigest !== undefined) meta.agentDigest = o.agentDigest
@@ -527,9 +535,12 @@ export class Client {
       if (o.preset) meta.preset = o.preset
       if (o.agent === undefined) meta.permission = o.permission ?? 'default'
       if (o.bundles !== undefined) meta.bundles = parseSessionBundles(o.bundles)
+      if (o.systemPromptAppend !== undefined)
+        meta.systemPromptAppend = parseSystemPromptAppend(o.systemPromptAppend)
       if (o.sessionKey) meta.sessionKey = o.sessionKey
       const r = await this.call<{ sessionId: string }>('session/new', {
         cwd: o.cwd,
+        ...(extra.length ? { additionalDirectories: [...extra] } : {}),
         mcpServers: [],
         _meta: { [META_KEY]: meta },
       })
@@ -607,8 +618,15 @@ export class Client {
         { sessionId, question },
         { timeoutMs: Math.max(this.timeouts.request, 75_000), ...options },
       ),
-    fork: async (id: string, at: number, o: { cwd?: string } = {}): Promise<Session> => {
-      const childId = await submitForkCommand(this, id, at)
+    /** `additionalDirectories` are added to the parent's own for the child; the parent is unchanged. */
+    fork: async (
+      id: string,
+      at: number,
+      o: { cwd?: string; additionalDirectories?: readonly string[] } = {},
+    ): Promise<Session> => {
+      const extra = o.additionalDirectories ?? []
+      if (extra.length) requireForkAdditionalDirectories((await this.initialize()).capabilities)
+      const childId = await submitForkCommand(this, id, at, undefined, extra)
       return this.sessionHandle(childId, o.cwd)
     },
   }

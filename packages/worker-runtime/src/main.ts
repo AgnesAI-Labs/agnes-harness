@@ -12,6 +12,7 @@ import {
   type WorkerResourceBootstrapInput,
 } from '@agnes/resource-control-worker'
 import { decodeArtifactMediaResponse } from './artifact-media-response.js'
+import { bestEffort } from './best-effort.js'
 import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
@@ -258,7 +259,7 @@ export async function runWorker(
     // same on-disk root, not a shared in-memory handle).
     createOAuthCredentialStore: () => createCredentialStore({ root: agnesHome(env) }),
     // The shared session worker supplies MCP as Host rows, one per server, each owning its own
-    // connection (stage 2b step 3, D107'); its resource generation connects nothing itself. The
+    // connection; its resource generation connects nothing itself. The
     // resource-control service workers keep the manager path.
     ...(workerKind === 'session' ? { mcpRows: true } : {}),
   }
@@ -282,11 +283,13 @@ export async function runWorker(
     resourcesClosed = true
 
     await idleResourcePreparation
-    await hostedSessions?.closeAll().catch(() => undefined)
+    await hostedSessions?.closeAll().catch(bestEffort(deps.log ?? sessionLog, 'hosted-sessions-close'))
     sharedChannel.closeAll()
 
-    await host?.close().catch(() => undefined)
-    await resourceSlot.generation?.runtime.mcp.close().catch(() => undefined)
+    await host?.close().catch(bestEffort(deps.log ?? sessionLog, 'worker-host-close'))
+    await resourceSlot.generation?.runtime.mcp
+      .close()
+      .catch(bestEffort(deps.log ?? sessionLog, 'worker-resources-close'))
     link.destroy()
   }
   const assemble = async <T>(operation: Promise<T>): Promise<T> => {

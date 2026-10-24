@@ -444,6 +444,11 @@ export interface ToolDef<P extends TSchema = TSchema> {
   name: string
   description: string
   parameters: P
+  /**
+   * Optional model-facing schema for tools that disclose a larger contract on demand. This is
+   * presentation only: parameters remains the execution, classification and authorization schema.
+   */
+  modelParameters?: TSchema
   meta: ToolMeta
   /**
    * Stable author-supplied classifier version used in the tool-definition fingerprint. Required
@@ -775,6 +780,14 @@ export function checkToolDef(
   else {
     const problem = parametersProblem(d.parameters)
     if (problem) problems.push(problem)
+  }
+  if (d.modelParameters !== undefined) {
+    if (typeof d.modelParameters !== 'object' || d.modelParameters === null)
+      problems.push('modelParameters: expected schema object')
+    else {
+      const problem = parametersProblem(d.modelParameters)
+      if (problem) problems.push(problem.replace(/^parameters:/, 'modelParameters:'))
+    }
   }
   if (typeof d.execute !== 'function') problems.push('execute: expected function')
   const hasClassifier = typeof d.classify === 'function'

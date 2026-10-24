@@ -16,6 +16,7 @@ import {
   validateComposition,
 } from '@agnes/host-common/profile/composition'
 import { resolveProfile } from '@agnes/host-common/profile/resolve'
+import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import { createPluginRow } from '@agnes/plugin-runtime/host'
 import {
   SessionCapabilitySet,
@@ -36,6 +37,7 @@ import {
   capabilityEnabled,
   resolveSessionCapabilities,
 } from '../../src/runtime/profile/session-capabilities.js'
+import { pluginHost, pluginRow, pluginSource, targetOf } from '../assemble/plugin-extension-fixture.js'
 
 const env = {
   platform: { os: 'linux' as const, arch: 'x64', capabilities: {} },
@@ -628,3 +630,77 @@ it.each(['mcp', 'skills'] as const)(
     expect(empty.tools.every((tool) => !tool.enabled)).toBe(true)
   },
 )
+
+it('reports a session tool filter as the last word on a tool, and only a filtered session shows its rules', () => {
+  const input = {
+    selection: { toolPolicy: { deny: ['write'] } },
+    installed: {
+      tools: ['read', 'write', 'search'].map((name) => ({ name, readOnly: false })),
+    },
+  }
+  const plain = resolveSessionCapabilities(input)
+  expect(plain.tools.flatMap((tool) => tool.reasons).some((r) => r.rule.startsWith('session-'))).toBe(false)
+  const filtered = resolveSessionCapabilities({
+    ...input,
+    toolFilter: { allow: ['read', 'write'], deny: ['read'] },
+  })
+  const by = (id: string) => filtered.tools.find((tool) => tool.id === id)
+  const source = { layer: 'session', name: 'tool-filter' }
+  expect(by('read')).toMatchObject({ enabled: false, reasons: [{ rule: 'session-deny', source }] })
+  expect(by('search')).toMatchObject({ enabled: false, reasons: [{ rule: 'session-allow', source }] })
+  // The profile already turned `write` off; the session allow list cannot bring it back.
+  expect(by('write')).toMatchObject({ enabled: false, reasons: [{ rule: 'policy-deny' }] })
+  expect(filtered.tools.filter((tool) => tool.enabled)).toEqual([])
+})
+
+it('applies disabled-plugin, config and resource changes after skipping an equivalent composition', async () => {
+  const source = pluginSource("ctx.tools.register(tool('review_composition'))")
+  const f = await pluginHost(source, { profileInputs: { user: { name: 'local-dev', composition: {} } } })
+  try {
+    const row = pluginRow()
+    expect(await f.host.applyRuntimeTarget(targetOf([row]))).toMatchObject({ ok: true })
+    const before = f.host.pluginGenerationStatus!().currentGenerationId
+    expect(before).toEqual(expect.any(String))
+    expect(await f.host.applyRuntimeTarget(targetOf([row]))).toMatchObject({ ok: true })
+    expect(f.host.pluginGenerationStatus!().currentGenerationId).toEqual(before)
+    const resourceTarget = buildCompleteRuntimeTarget({
+      rows: [row],
+      resources: { mcp: [], skills: { review: 'new resource' } },
+    }).target
+    expect(await f.host.applyRuntimeTarget(resourceTarget)).toMatchObject({ ok: true })
+    expect(f.host.runtimeTargetSnapshot!().resource.resources).toEqual(resourceTarget.resource.resources)
+    expect(
+      await f.host.applyRuntimeTarget(targetOf([{ ...row, config: { revision: 'changed' } }])),
+    ).toMatchObject({ ok: true })
+    expect(f.host.runtimeTargetSnapshot!().tree.rows.find((entry) => entry.id === row.id)?.config).toEqual({
+      revision: 'changed',
+    })
+    expect(await f.host.applyRuntimeTarget(targetOf([{ ...row, disabled: true }]))).toMatchObject({
+      ok: true,
+    })
+    expect(f.host.kernel.tools.list().map((tool) => tool.name)).not.toContain('review_composition')
+  } finally {
+    await f.host.close()
+  }
+})
+
+// Enabled-row equality currently bypasses the container's changed source authority.
+it.fails('refuses revoked source trust when only a disabled row outside the composition changes', async () => {
+  const source = pluginSource("ctx.tools.register(tool('review_trust'))")
+  let trusted = true
+  const f = await pluginHost(source, {
+    profileInputs: { user: { name: 'local-dev', composition: {} } },
+    runtimePluginSources: async () => [{ ...source, trusted }],
+  })
+  try {
+    const row = pluginRow()
+    const excluded = pluginRow('ext:acme/excluded', 'unused', true)
+    expect(await f.host.applyRuntimeTarget(targetOf([row, excluded]))).toMatchObject({ ok: true })
+    trusted = false
+    // Effective enabled rows are identical, but their authority has changed since publication.
+    const result = await f.host.applyRuntimeTarget(targetOf([row]))
+    expect(result.ok).toBe(false)
+  } finally {
+    await f.host.close()
+  }
+})

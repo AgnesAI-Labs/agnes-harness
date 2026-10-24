@@ -19,15 +19,15 @@ export type ModelPickerOption = {
   route: string
   label?: string
   contextWindow?: number
-  /** 模型声明的「档位 → provider 取值」映射；缺省表示任意合法档位都接受。 */
+  /** Model-declared effort-to-provider-value mapping; absence accepts any valid effort level. */
   thinkingLevelMap?: Record<string, string>
 }
 
-/** 面板里「思考强度」与「上下文预算」两段的会话现状；字段与宿主侧 ModelPickerSettings 对齐。 */
+/** Session state for panel thinking-effort and context-budget sections; aligned with host ModelPickerSettings fields. */
 export type ModelPickerSettings = {
   thinking?: ThinkingLevel
   contextWindow?: number
-  /** 模型目录容量，同时是预算校验的上界。 */
+  /** Model catalog capacity, also the upper bound for budget validation. */
   capacity: number
   thinkingLevelMap?: Record<string, string>
 }
@@ -49,7 +49,7 @@ export type ModelPickerProps = {
   state: ModelPickerState
   onError(error: unknown): void
   onSelect(option: ModelPickerOption): Promise<boolean>
-  /** 面板内改档位或预算时的提交口；缺省时面板只渲染模型列表。 */
+  /** Submission port for panel effort/budget changes; without it the panel renders only the model list. */
   onSettingsChange?(settings: ModelSettings): Promise<boolean>
   onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
@@ -97,7 +97,7 @@ export interface ComposerDependencies {
   /** Trigger plus popover for the draft workspace; without it the chip opens `onWorkspace` directly. */
   WorkspacePicker?: ComponentType<WorkspacePickerProps>
   UsagePanel: ComponentType<{ usage: UsageView | undefined; connected: boolean; t?: Translate }>
-  /** 上传前把超出模型视觉上限的图片缩小；缺省时按原图发送。 */
+  /** Resize images exceeding model vision limits before upload; omission sends originals. */
   downscaleImage?(file: File, policy?: ReturnType<typeof userImagePolicy>): Promise<File>
   isSubmitShortcut(event: {
     key: string
@@ -139,7 +139,7 @@ export interface ComposerView {
   model: ModelPickerState
   modelSettings?: {
     settings: ModelSettings
-    /** 模型目录容量，不是本会话已保存的预算。 */
+    /** Model catalog capacity, not the budget saved for this session. */
     contextWindow: number
     thinkingLevelMap?: Record<string, string> | undefined
   }
@@ -236,7 +236,7 @@ export interface ComposerSlots {
   right?: ReactNode
 }
 
-/** 会话设置只在已知模型上有值；缺失时面板退化成纯模型列表。 */
+/** Session settings exist only for known models; otherwise the panel degrades to a plain model list. */
 export function pickerState(view: ComposerView): ModelPickerState {
   const settings = view.modelSettings
   if (!settings) return view.model

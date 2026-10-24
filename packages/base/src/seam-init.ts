@@ -155,6 +155,17 @@ export interface SessionTasks {
     },
     signal: AbortSignal,
   ): Promise<string | undefined>
+  /**
+   * Bounded read-only review of the live conversation, allowed while a turn is running (unlike
+   * `generate`). Uses the verifier slot, else fast, never the primary model; about 300 output
+   * tokens; resolves `undefined` when no auxiliary model is configured, the session is closed, the
+   * budget refuses it or the deadline passes. `data` is untrusted text appended to the request.
+   */
+  review(
+    session: SessionRef,
+    input: { label: string; system: string; data: string; timeoutMs?: number },
+    signal: AbortSignal,
+  ): Promise<string | undefined>
 }
 
 /** The two primary-key child-control calls a subagent worktree binding needs, and nothing else. */

@@ -148,6 +148,8 @@ describe('rendered composer region', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
     const onError = vi.fn()
     runtime = await mountRenderedIndex({ composer: { onError } })
+    const skillPrompt = 'Use $fixture-skill to review this attachment'
+    runtime.composer?.setDraft(skillPrompt)
     // The standalone fixture starts disconnected; app.ts normally supplies this model/input state.
     runtime.composer?.render(readyView)
     const prompt = document.querySelector<HTMLTextAreaElement>('#prompt')
@@ -169,6 +171,8 @@ describe('rendered composer region', () => {
       slotRender,
     )
     expect(onError).not.toHaveBeenCalled()
+    expect(runtime.composer?.getDraft()).toBe(skillPrompt)
+    expect(prompt.value).toBe(skillPrompt)
 
     runtime.session.setSession('another-session')
 

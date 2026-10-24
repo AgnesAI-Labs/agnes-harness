@@ -51,7 +51,7 @@ export function formatUsdApprox(micros: number): string {
 }
 
 /**
- * RP3: the local wall clock from prompt to yield, tool calls included -- the span an operator
+ * The local wall clock from prompt to yield, tool calls included -- the span an operator
  * actually waited. The provider's own TTFT/duration pair (rendered by `formatCallUsage` in
  * usage-details.ts) does not add up to this by itself: neither field counts tool execution,
  * approval waits, or retry backoff.

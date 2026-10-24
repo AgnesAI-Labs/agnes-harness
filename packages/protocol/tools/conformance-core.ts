@@ -81,7 +81,7 @@ export type Fixture = {
   name?: MethodName | HookEvent | UiSlotName | string
   side?: 'params' | 'result' | 'payload' | 'return'
   payload?: unknown
-  expect?: { errorCode?: number; dataCode?: string; key?: string }
+  expect?: { errorCode?: number; dataCode?: string; key?: string; path?: string }
   // Sequence rows only: the recorded frames and which invariants the recording is meant to satisfy.
   frames?: Frame[]
   invariants?: SequenceInvariant[]
@@ -413,6 +413,8 @@ export function runFixtureLine(f: Fixture): {
     return { id: f.id, pass: false, detail: `data.code ${String(err.data.code)} ≠ ${e.dataCode}` }
   if (e.key !== undefined && err.data.key !== e.key)
     return { id: f.id, pass: false, detail: `key ${String(err.data.key)} ≠ ${e.key}` }
+  if (e.path !== undefined && err.data.path !== e.path)
+    return { id: f.id, pass: false, detail: `path ${String(err.data.path)} ≠ ${e.path}` }
   return { id: f.id, pass: true }
 }
 

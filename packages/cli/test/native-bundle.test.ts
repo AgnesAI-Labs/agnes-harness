@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -18,6 +26,7 @@ import {
   sessionArtifactRoots,
 } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
+import { hasPrivateDaclSync } from '@agnes/system-node'
 import { expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { formatAgnes } from '../src/commands/export.js'
@@ -298,11 +307,15 @@ it('publishes nothing when the authorized original bytes have the wrong digest a
     ).rejects.toThrow('digest')
     expect(existsSync(path)).toBe(false)
     expect(existsSync(`${path}.artifacts`)).toBe(false)
+    expect(readdirSync(dir)).toEqual([])
     await writeNativeBundle(path, events, formatAgnes(events), client(), 's')
+    expect(hasPrivateDaclSync(path)).toBe(true)
+    expect(hasPrivateDaclSync(`${path}.artifacts`)).toBe(true)
     const before = readFileSync(path)
     await expect(writeNativeBundle(path, events, formatAgnes(events), client(), 's')).rejects.toThrow()
     expect(readFileSync(path)).toEqual(before)
     expect(readFileSync(join(`${path}.artifacts`, ref.sha256))).toEqual(original)
+    expect(readdirSync(dir).sort()).toEqual(['bundle.agnes', 'bundle.agnes.artifacts'])
     expect(() => bundleOriginals([{ data: { uri: `artifact://${ref.sha256}` } }])).toThrow('identity')
   } finally {
     rmSync(dir, { recursive: true, force: true })

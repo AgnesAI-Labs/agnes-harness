@@ -81,6 +81,7 @@ import { registerIntelligentUi } from './intelligent-ui.js'
 import { registerSchedules } from './schedules.js'
 import { registerSessionBtw } from './session-btw.js'
 import { registerSessionGrants } from './session-grants.js'
+import { dispatchToolFilter, registerSessionSwitches } from './session-switches.js'
 import { registerSessionUndo, undoOf, undoResultFromFact } from './session-undo.js'
 import { registerToolRecordReads } from './tool-records.js'
 
@@ -125,6 +126,8 @@ export type AgnesContext = LocalContext & {
     childKey?: string,
     credential?: unknown,
     principalId?: string,
+    /** Directories the child may reach in addition to the parent's; absent means none added. */
+    additionalDirectories?: readonly string[],
   ) => Promise<JournalResult>
   /** Host's principals seam resolver. Optional for supervisor/transport adapters that do not fit
    * participant or approval identity support. */
@@ -133,6 +136,14 @@ export type AgnesContext = LocalContext & {
   /** Persistent in production, memory-backed in the embedded endpoint. A supervisor that has not
    * fitted the port keeps the bounded open-registry fallback below. */
   tickets?: TicketPort
+}
+
+/** The submit payload is open-ended JSON, so the optional directory list is checked before it reaches a fork. */
+function forkDirectories(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string'))
+    throw rpcError('INVALID_PARAMS', { reason: 'additionalDirectories must be a list of paths' })
+  return value
 }
 
 export type Family = { name: string; methods: string[]; guidance: string }
@@ -488,6 +499,7 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       'session.btw',
       'session.setPreset',
       'session.setModel',
+      'session.setToolFilter',
       'session.setYolo',
       'approvalGrants.forSession',
       'approvalGrants.revokeForSession',
@@ -720,9 +732,9 @@ export function registerAgnes(
     return grant
   })
   ep.register('_agnes/v1/computerUse.status', async (_params, c): Promise<ComputerUseStatusResult> => {
-    // This handler is deliberately a P0 gate report, not a probe. Authentication must have been
+    // This handler is deliberately an admission-evidence gate report, not a probe. Authentication must have been
     // established by initialize/authGate, and answering it must never resolve, install or start a
-    // driver. When the P0 evidence gate is complete a later contract may widen these closed states.
+    // driver. When the production evidence gate is complete a later contract may widen these closed states.
     return computerUseControl.status(c.conn, _params)
   })
   ep.register(
@@ -1180,62 +1192,33 @@ export function registerAgnes(
     })
     const scope = new Set(sessionIds)
     return {
-      items: r.items.filter((item) => scope.has(item.sessionId)),
+      items: r.items
+        .filter((item) => scope.has(item.sessionId))
+        .map((item) => {
+          const fork = cx.sessionOwnership?.lineage(item.sessionId)
+          const extra = cx.workspaces.extraRoots(item.sessionId)
+          const listed = extra.length > 0 ? { ...item, additionalDirectories: [...extra] } : item
+          return fork ? { ...listed, parent: fork.parent, forkAt: fork.forkAt } : listed
+        }),
       ...(r.cursor !== undefined ? { next: r.cursor } : {}),
     }
   })
   ep.register('_agnes/v1/session.fork', async (params, c) => {
-    const p = params as { sessionId: string; at: number; childKey?: string }
+    const p = params as { sessionId: string; at: number; childKey?: string; additionalDirectories?: string[] }
     requireOwner('session.fork', p.sessionId, c)
     const r = await runQueued(cx.commandQueue, p.sessionId, neverAbort(), () =>
-      cx.forkSession(p.sessionId, p.at, p.childKey, c.conn.credential, c.conn.principalId),
+      cx.forkSession(
+        p.sessionId,
+        p.at,
+        p.childKey,
+        c.conn.credential,
+        c.conn.principalId,
+        p.additionalDirectories,
+      ),
     )
     return r.result as { sessionId: string }
   })
   registerSessionBtw(ep, cx, requireOwner)
-  ep.register('_agnes/v1/session.setPreset', async (params, c) => {
-    const p = params as { sessionId: string; preset: string }
-    requireOwner('session.setPreset', p.sessionId, c)
-    const entry = cx.registry.require(p.sessionId)
-    try {
-      const resolved = cx.host.validatePresetSwitch(p.preset, p.sessionId)
-      return {
-        effectiveFromSeq: await runQueued(cx.commandQueue, p.sessionId, neverAbort(), () =>
-          entry.session.setPreset(resolved.view),
-        ),
-      }
-    } catch (e) {
-      return mapCore(e)
-    }
-  })
-  ep.register('_agnes/v1/session.setModel', async (params, c) => {
-    const p = params as {
-      sessionId: string
-      slot: string
-      route: string
-      model: string
-      thinking?: ThinkingLevel | null
-      contextWindow?: number | null
-    }
-    const sel = {
-      slot: p.slot,
-      route: p.route,
-      model: p.model,
-      ...(p.thinking === undefined ? {} : { thinking: p.thinking }),
-      ...(p.contextWindow === undefined ? {} : { contextWindow: p.contextWindow }),
-    }
-    requireOwner('session.setModel', p.sessionId, c)
-    try {
-      cx.host.validateModelSwitch(sel, p.sessionId)
-      return {
-        effectiveFromSeq: await runQueued(cx.commandQueue, p.sessionId, neverAbort(), () =>
-          cx.registry.require(p.sessionId).session.setModel(sel),
-        ),
-      }
-    } catch (e) {
-      return mapCore(e)
-    }
-  })
   // No host validation gate: unlike preset/model, there is no route table a boolean bypass flag
   // could fall outside of, so there is nothing here for `cx.host` to check before it lands.
   ep.register('_agnes/v1/session.setYolo', async (params, c) => {
@@ -1672,6 +1655,8 @@ export function registerAgnes(
         const result = await undoOf(entry.session, input)
         return { seq: result.seq, result }
       }
+      case 'setToolFilter':
+        return dispatchToolFilter(cx, payload)
       case 'fork':
         return cx.forkSession(
           sessionId,
@@ -1679,6 +1664,7 @@ export function registerAgnes(
           payload.childKey as string | undefined,
           c.conn.credential,
           c.conn.principalId,
+          forkDirectories(payload.additionalDirectories),
         )
       case 'jobs.enqueue': {
         if (!cx.jobs) throw rpcError('CAPABILITY_DENIED', { method: 'jobs.enqueue' })
@@ -1798,6 +1784,8 @@ export function registerAgnes(
       const result = undoResultFromFact(String(payload.sessionId), event.seq, event.data as never)
       return { seq: result.seq, result }
     }
+    // Narrowing twice with the same lists changes nothing, so an unknown outcome is settled by running it again.
+    if (kind === 'setToolFilter') return dispatchToolFilter(cx, payload)
     if (kind === 'jobs.enqueue' && cx.jobs && typeof payload.idempotencyKey === 'string') {
       try {
         await cx.jobs.poll(payload.idempotencyKey)
@@ -1813,6 +1801,7 @@ export function registerAgnes(
         payload.childKey,
         c.conn.credential,
         c.conn.principalId,
+        forkDirectories(payload.additionalDirectories),
       )
     return undefined
   }
@@ -1839,6 +1828,7 @@ export function registerAgnes(
       kind === 'compact' ||
       kind === 'undo' ||
       kind === 'fork' ||
+      kind === 'setToolFilter' ||
       kind === 'jobs.enqueue'
     )
       requireOwner(`submit.${kind}`, sessionId, c)
@@ -1946,6 +1936,7 @@ export function registerAgnes(
   })
   ep.register('_agnes/v1/session.control', (params, c) => sugar('control', params, c))
   registerSessionUndo(ep, cx.registry, requireOwner, submit)
+  registerSessionSwitches(ep, cx, requireOwner, submit)
   ep.register('_agnes/v1/apis.list', async (_params, c) => {
     const pr = cx.host.profile
     // This list is what every conversation picker offers and what a client takes its default model

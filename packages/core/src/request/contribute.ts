@@ -4,7 +4,14 @@ import type { RegistrySnapshot } from '../registry/tools.js'
 
 // Owned here: the author-facing package does not publish this name, and every core module that
 // assembles a request reads it from this file.
-export type PromptSection = { id: string; order: number; text: string; source: string }
+export type PromptSection = {
+  id: string
+  order: number
+  text: string
+  source: string
+  /** Omitted means stable-section. Live items become durable, latest-deduplicated tail notes. */
+  delivery?: 'stable-section' | 'live-note'
+}
 
 export type Contribution = {
   op: string

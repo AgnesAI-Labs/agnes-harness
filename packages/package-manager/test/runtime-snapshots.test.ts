@@ -1,9 +1,11 @@
 import {
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -12,8 +14,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { openCanonicalFileSync } from '@agnes/system-node'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
   activeRuntimePinId,
@@ -27,6 +30,12 @@ import {
   writeLock,
 } from '../src/index.js'
 import * as sourceModule from '../src/sources.js'
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>()
+  return { ...actual, renameSync: vi.fn(actual.renameSync) }
+})
+const { renameSync: realRenameSync } = await vi.importActual<typeof import('node:fs')>('node:fs')
 
 const id = 'acme/runtime-snapshot'
 const source = parseSource('file:./source')
@@ -106,7 +115,10 @@ beforeEach(() => {
   })
 })
 
-afterEach(() => rmSync(root, { recursive: true, force: true }))
+afterEach(() => {
+  vi.mocked(renameSync).mockImplementation(realRenameSync)
+  rmSync(root, { recursive: true, force: true })
+})
 
 it('lets a worker read validated active snapshots while a package effect owns the lock', async () => {
   const manifestFile = join(sourceDir, 'package.json')
@@ -448,6 +460,86 @@ it.each(['runtime-prepared', 'runtime-snapshot-moved', 'runtime-state-written'] 
   },
 )
 
+it.each([
+  { code: 'EPERM', damaged: false, realHandle: true },
+  { code: 'EBUSY', damaged: false, realHandle: false },
+  { code: 'EIO', damaged: false, realHandle: false },
+  { code: 'EPERM', damaged: true, realHandle: false },
+])(
+  'retains a busy Windows snapshot without hiding damage: $code / $damaged',
+  async ({ code, damaged, realHandle }) => {
+    const m = await installTrusted()
+    const selected = await identity()
+    const request = {
+      pinId: 'gc-reader',
+      operationId: 'gc-reader',
+      packageId: id,
+      purpose: 'active' as const,
+      selector: {
+        kind: 'installed' as const,
+        expectedIntegrity: selected.integrity,
+        expectedTreeIntegrity: selected.treeIntegrity,
+      },
+    }
+    const pin = await m.pinRuntimeSnapshot(profile, request)
+    const release = () =>
+      m.releaseRuntimePin(profile, {
+        pinId: pin.pinId,
+        expectedSnapshotId: pin.snapshot.snapshotId,
+      })
+    await release()
+    const data = join(pin.snapshot.directory, 'data.json')
+    const original = readFileSync(data, 'utf8')
+    const fd = sep === '\\' && realHandle ? openCanonicalFileSync(data) : undefined
+    if (fd === undefined)
+      vi.mocked(renameSync).mockImplementation((from, to) => {
+        // Native real paths may spell the temporary root differently (/var versus /private/var).
+        if (basename(String(from)) === pin.snapshot.snapshotId) {
+          if (damaged) writeFileSync(data, 'damaged')
+          throw Object.assign(new Error('snapshot rename refused'), { code })
+        }
+        realRenameSync(from, to)
+      })
+    const journal = join(profile, '.agnes-runtime-transaction.json')
+    try {
+      if (sep === '\\' && code !== 'EIO') {
+        if (damaged) {
+          await expect(m.collectRuntimeSnapshots(profile)).rejects.toMatchObject({
+            code: 'E_PACKAGE_INTEGRITY',
+          })
+          expect(existsSync(journal)).toBe(true)
+          expect(readFileSync(data, 'utf8')).toBe('damaged')
+        } else {
+          expect(await m.collectRuntimeSnapshots(profile)).toEqual({
+            removed: [],
+            retained: [pin.snapshot.snapshotId],
+          })
+          expect(existsSync(journal)).toBe(false)
+        }
+      } else {
+        await expect(m.collectRuntimeSnapshots(profile)).rejects.toMatchObject({ code })
+        expect(existsSync(journal)).toBe(true)
+      }
+      expect(existsSync(pin.snapshot.directory)).toBe(true)
+    } finally {
+      if (fd !== undefined) closeSync(fd)
+    }
+    vi.mocked(renameSync).mockImplementation(realRenameSync)
+    writeFileSync(data, original)
+    await m.recover(profile)
+    await m.pinRuntimeSnapshot(profile, request)
+    expect(await m.collectRuntimeSnapshots(profile)).toEqual({
+      removed: [],
+      retained: [pin.snapshot.snapshotId],
+    })
+    await release()
+    expect(await m.collectRuntimeSnapshots(profile)).toEqual({
+      removed: [pin.snapshot.snapshotId],
+      retained: [],
+    })
+  },
+)
+
 it.each(['runtime-gc-prepared', 'runtime-gc-moved', 'runtime-gc-state-written'] as const)(
   'recovers collection interrupted at %s without losing a referenced state decision',
   async (point) => {
@@ -728,6 +820,55 @@ it('listRuntimePins enumerates every pin regardless of purpose', async () => {
     expectedSnapshotId: turn.snapshot.snapshotId,
   })
   expect((await m.listRuntimePins(profile)).map((pin) => pin.pinId)).toEqual(['active-v1'])
+})
+
+it('keeps a session turn pin through bookkeeping and locked collection, and refuses corrupt bytes', async () => {
+  const m = await installTrusted()
+  const v1 = await identity()
+  const active = await m.pinRuntimeSnapshot(profile, {
+    pinId: 'active-v1',
+    operationId: 'active-v1',
+    packageId: id,
+    purpose: 'active',
+    selector: { kind: 'installed', expectedIntegrity: v1.integrity, expectedTreeIntegrity: v1.treeIntegrity },
+  })
+  const turn = await m.pinRuntimeSnapshot(profile, {
+    pinId: 'live-session',
+    operationId: 'live-session',
+    packageId: id,
+    purpose: 'turn',
+    selector: {
+      kind: 'snapshot',
+      snapshotId: active.snapshot.snapshotId,
+      expectedIntegrity: v1.integrity,
+      expectedTreeIntegrity: v1.treeIntegrity,
+    },
+  })
+  await m.releaseRuntimePins(profile, [
+    { pinId: active.pinId, expectedSnapshotId: active.snapshot.snapshotId },
+  ])
+  expect(await m.runtimePinRecords(profile)).toMatchObject({
+    pins: [{ pinId: turn.pinId, purpose: 'turn', snapshotId: turn.snapshot.snapshotId }],
+    snapshotIds: [turn.snapshot.snapshotId],
+  })
+  expect(await m.collectRuntimeSnapshots(profile)).toEqual({
+    removed: [],
+    retained: [turn.snapshot.snapshotId],
+  })
+  expect((await m.resolveRuntimePin(profile, { pinId: turn.pinId })).snapshot).toEqual(turn.snapshot)
+  const file = join(turn.snapshot.directory, 'nested.mjs')
+  const original = readFileSync(file, 'utf8')
+  writeFileSync(file, original.replace('v1', 'v2'))
+  // Metadata is explicitly not a health verdict. Verified consumers and deletion still fail closed.
+  expect((await m.runtimePinRecords(profile)).pins.map((pin) => pin.pinId)).toEqual([turn.pinId])
+  await expect(m.resolveRuntimePin(profile, { pinId: turn.pinId })).rejects.toMatchObject({
+    code: 'E_PACKAGE_INTEGRITY',
+  })
+  await expect(m.collectRuntimeSnapshots(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  expect(existsSync(turn.snapshot.directory)).toBe(true)
+  writeFileSync(file, original)
+  await m.releaseRuntimePin(profile, { pinId: turn.pinId, expectedSnapshotId: turn.snapshot.snapshotId })
+  expect((await m.collectRuntimeSnapshots(profile)).removed).toEqual([turn.snapshot.snapshotId])
 })
 
 it('releaseRuntimePins releases a batch in order and keeps earlier releases on a stale pin', async () => {

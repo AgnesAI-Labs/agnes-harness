@@ -438,15 +438,17 @@ const facade = (ctx: any): RowFacade => {
 describe('registration and wind-down', () => {
   it('registers a tool and an observe hook and lists the row', async () => {
     const t = setup()
+    const definition = { ...tool('tool_a'), modelParameters: { type: 'object', description: 'Read guide' } }
     t.host.activate(t.activation)
     await t.mount('row-a', 'ext:acme/a', (ctx, agnes) => {
       expect(agnes).not.toHaveProperty('providers')
-      ctx.tools.register(tool('tool_a') as never)
+      ctx.tools.register(definition as never)
       agnes.on('session_start', () => {})
     })
     await tick()
     const source = pluginRowSource('ext:acme/a')
     expect(t.kernel.tools.get('tool_a')).toBe(source)
+    expect(t.kernel.definitions.get('tool_a')?.modelParameters).toEqual(definition.modelParameters)
     expect(t.kernel.hooks).toEqual([{ event: 'session_start', source }])
     expect(t.kinds('extension.registered').map((e) => e.detail.name)).toEqual(['tool_a', 'session_start'])
     expect(t.kinds('extension.loaded')).toHaveLength(1)

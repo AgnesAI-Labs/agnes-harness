@@ -23,6 +23,7 @@ Find commands by session execution, administration, or extensions. For an end-to
 | `agh --mode text\|json\|stream-json` | Selects print automatically (`stream-json`: one event line per event, then the result line); ACP is separate |
 | `agh --model main=ROUTE/MODEL` | Explicit slot and route/model from the runtime catalog |
 | `agh --profile NAME --preset NAME --permission LEVEL --cwd DIR` | Ordinary run options; not all forwarded subcommands accept them. `LEVEL` is `read-only`, `workspace-write`, `full-access` or `default` (the deployment default) and applies to a new session only |
+| `agh --append-system-prompt TEXT` / `--append-system-prompt-file PATH` | Appends owner text (1 to 8192 characters, file at most 8 KiB, never a symlink) to a new session's system prompt; an error with resume options or `--agent` |
 | `agh --continue` / `agh --resume ID` | Mutually exclusive; resume recent/specified session. `--continue` prefers the session last used in this terminal pane (same directory, not archived); see the [CLI guide](../guide/cli.md) |
 | `agh --no-alt-screen` | Interactive only: keep the shell screen and write finished turns into the terminal's own scrollback; see the [CLI guide](../guide/cli.md) for limits |
 | `agh (--ephemeral\|--standalone) --ignore-rules` / `--safe-mode` | Private host only (refused with exit 2 on the shared daemon or `--connect`): skip custom slash commands / also switch off non-built-in plugins and mark the TUI status bar. Instruction files, hooks and MCP servers are not skipped yet; see the [CLI guide](../guide/cli.md) |

@@ -44,6 +44,8 @@ Core 在 hook、授权和副作用之前拒绝无效工具参数，并返回指�
 
 参见[只读策略示例](../../examples/policies/read-only/)和[循环事件](loop-events.zh-CN.md)。
 
+大型合同通过指南按需读取时，可用可选的 `ToolDef.modelParameters` 提供精简的模型展示 schema。`ToolDef.parameters` 仍是完整执行 schema：Core 在分类、授权、钩子或副作用之前按它校验参数，并保留原有错误参数重试限制。展示 schema 不授予权限，也不改变执行指纹；模型请求的 schema 哈希记录其内容。省略该字段时，仍向模型发送 `parameters`。
+
 设置 `meta.deferLoading: true` 可从初始模型请求中省略工具 schema。官方 `tool_search` 同时搜索当前可用的延迟插件工具与 MCP 索引。查询按词计分，含确切工具名的词优先（例如 `ui_render render detail card UI`）；结果上限与显式 Skill 发现槽位仍生效；`tool_describe` 调用可选端口 `ToolContext.tools.disclose(name): Promise<void>`，使可用 schema 出现在后续请求中。Core 持久化这项选择，并拒绝冻结的 turn 目录之外或当前模型能力不支持的名称。披露与授权独立：调用仍经过原有参数校验、策略、审批与取消通道。已知工作流所需工具的自定义 Loop，可以通过 `prepareRequest({ tools: [...] })` 显式选择确切名称。
 
 何时延迟：每个可见 schema 都会随每次请求发送，模型很少用到的工具每一轮都在消耗 tokens。多数会话都会用到、或必须不经搜索直接调用的工具保持可见（省略 `deferLoading`）。偶尔使用的工具设为 `true`，例如历史查询或管理操作，schema 较大时尤其如此。数量取决于部署的一类工具设为 `'auto'`：turn 目录中的自动工具不超过 15 个且 schema 合计不超过约 4,000 tokens 时，Core 保持它们全部可见，超过任一上限则一起延迟。MCP 服务器默认使用 `'auto'`。延迟工具在一个会话中首次使用时多一次往返；工作流总是连续调用的一组工具应一起保持可见，而不是逐个加载。

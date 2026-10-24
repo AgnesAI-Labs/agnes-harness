@@ -67,7 +67,7 @@ export const MAX_FRAME_BYTES = 144 * 1024 * 1024
 export const MAX_RUNTIME_TARGET_ARTIFACT_BASE64_LENGTH = 16_776_788
 /** Raw-byte ceiling for one JSON-RPC artifact range response. Larger artifacts are read in ranges. */
 export const ARTIFACT_READ_RPC_MAX_BYTES = 1024 * 1024
-/** Default and hard request ceilings for bounded UI projection reads (IP10). */
+/** Default and hard request ceilings for bounded UI projection reads. */
 export const UI_OPENING_DEFAULT_MAX_NODES = 200
 export const UI_OPENING_MAX_NODES = 500
 export const UI_HISTORY_DEFAULT_LIMIT = 100

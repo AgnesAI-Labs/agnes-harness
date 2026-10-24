@@ -1,23 +1,16 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { npmCommand } from '../toolchain/check.mjs'
 import { guardPackage } from './pack-guard.js'
 import { packNpxPackage } from './pack-npx.js'
 import { guardTarball } from './packed-tarball.js'
 
 const repo = resolve(import.meta.dirname, '../..')
-
-function npmPackCommand(): { bin: string; args: string[] } {
-  if (process.platform !== 'win32') return { bin: 'npm', args: [] } // guards-allow-platform: npm.cmd cannot be execFile'd.
-  const cli = join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')
-  if (!existsSync(cli)) throw new Error('Windows packing requires Node with bundled npm')
-  return { bin: process.execPath, args: [cli] }
-}
 
 /** A set with one self-contained CLI tarball for the build host; never publishes. */
 export async function releasePack(
@@ -29,7 +22,7 @@ export async function releasePack(
     const { triple } = await packNpxPackage(stage)
     await guardPackage(stage, triple)
     await mkdir(output, { recursive: true })
-    const npm = npmPackCommand()
+    const npm = npmCommand()
     const packed = execFileSync(
       npm.bin,
       [...npm.args, 'pack', '--json', '--ignore-scripts', '--pack-destination', root],

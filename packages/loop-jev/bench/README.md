@@ -24,7 +24,8 @@ you send back holds nothing else. The sessions' workspaces never live under `--o
 made in the system temp directory and copied to `--out/workspaces` when its cell ends. A workspace
 inside a repository would let the host load that repository's `AGENTS.md`/`CLAUDE.md` into every
 session on both lanes, and let the auto-approved tools reach the repository. The runner refuses to
-start (exit 2) when the temp directory itself is inside a git work tree; point `TMPDIR` elsewhere.
+start (exit 2) when the temp directory itself is inside a git work tree; point `TMPDIR` elsewhere
+(on Windows, set `TEMP` and `TMP`).
 
 ## Running it with real accounts
 
@@ -186,6 +187,10 @@ saved there, Settings supplies the whole `provider` block and the profile's rout
 `--fake` builds such a home by itself under `--out/home`: a loopback stand-in for Jev, the built-in
 scripted chat model that always answers `ok`, and a placeholder key. It checks the plumbing (boot,
 sessions, events, probes, scoring, report) and says nothing about either loop.
+
+The placeholder key uses the normal credential store under `--out/home/secrets`, with private
+access on macOS and Windows. If writing the temporary profile fails, the loopback stand-in closes
+before the error is returned.
 
 ## Implementation notes
 

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { resolve } from 'node:path'
+import { isAbsolute, resolve, sep } from 'node:path'
 import type {
   PackageOperation,
   PackageOperationReceipt,
@@ -30,7 +30,7 @@ export function newPackageCommandId(kind: string): string {
 
 export function parsePackageSource(value: string): PackageSource {
   if (value.startsWith('npm:')) return { type: 'npm', ref: value }
-  if (value.startsWith('file:')) return { type: 'file', ref: value }
+  if (value.startsWith('file:')) return { type: 'file', ref: value.split(sep).join('/') }
   if (value.startsWith('workspace:')) return { type: 'workspace', ref: value }
   if (value.startsWith('git:')) return { type: 'git', ref: value }
   if (value.startsWith('https://'))
@@ -39,14 +39,16 @@ export function parsePackageSource(value: string): PackageSource {
       ref: (/\.(?:zip|tgz|tar(?:\.gz)?)(?:$)/i.test(value) ? 'url:' : 'git:') + value,
     }
   if (value.startsWith('url:')) return { type: 'url', ref: value }
-  if (value.startsWith('path:')) return { type: 'path', ref: value }
+  if (value.startsWith('path:')) return { type: 'path', ref: value.split(sep).join('/') }
   if (
-    value.startsWith('/') ||
+    isAbsolute(value) ||
+    value.startsWith(`.${sep}`) ||
+    value.startsWith(`..${sep}`) ||
     value.startsWith('./') ||
     value.startsWith('../') ||
     /\.(zip|tgz|tar|tar\.gz)$/i.test(value)
   )
-    return { type: 'file', ref: `file:${resolve(value)}` }
+    return { type: 'file', ref: `file:${resolve(value).split(sep).join('/')}` }
   throw new TuiUsageError('Use a git HTTPS URL, folder/archive path, or npm:package@version')
 }
 

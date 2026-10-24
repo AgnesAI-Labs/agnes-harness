@@ -14,7 +14,7 @@ import { pluginPage, pluginPageId } from './route.js'
 const LOCAL_SOURCES = new Set(['file', 'local', 'workspace', 'path'])
 
 /**
- * A finished install or update check, as a page: 「插件 › 安装「<name>」」. It opens by itself when the
+ * A finished install or update check, as a page: 「Plugins › Install 「<name>」」. It opens by itself when the
  * check is done (in place of the add form or the marketplace entry that asked), back cancels it,
  * and it closes once the confirmed operation has finished. A failure stays on it with a retry.
  */
@@ -35,13 +35,25 @@ export function InstallReviewPage({ view }: { view: PluginView | undefined }) {
       if (shown.current === segment) {
         // Back, a breadcrumb or the browser left the review: nothing is installed.
         if (!stack.includes(segment)) {
-          shown.current = undefined
           // The controller commits synchronously; let this commit finish first.
-          if (cancel) queueMicrotask(cancel)
+          let current = true
+          queueMicrotask(() => {
+            if (current && !nav.current.stack.includes(segment)) {
+              shown.current = undefined
+              cancel?.()
+            }
+          })
+          return () => {
+            current = false
+          }
         }
         return
       }
-      shown.current = segment
+      // An earlier snapshot while opening is not a back step. Mark it shown only after commit.
+      if (stack.includes(segment)) {
+        shown.current = segment
+        return
+      }
       const top = stack.at(-1)
       const kind = top ? pluginPage(top)?.kind : undefined
       // The form or entry that asked has done its part; back from the review leaves the flow.

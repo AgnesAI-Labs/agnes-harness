@@ -24,6 +24,26 @@ describe('shell', () => {
     expect(ctx.calls.exec[0]).toEqual([SHELL_SENTINEL, 'echo ready'])
   })
 
+  it.each([
+    ['SHELL_BUSY: wait for the running command before sending another', 'SHELL_BUSY', 'job_output'],
+    ['unsupported shell; choose bash, zsh or pwsh', 'SHELL_INVALID_INTERPRETER', 'bash, zsh or pwsh'],
+    ['shell session is closed or is not a persistent shell', 'SHELL_SESSION_CLOSED', 'omit sessionId'],
+    ['session job limit reached; close a running job first', 'SHELL_JOB_LIMIT', 'job_kill'],
+    ['job cwd must be readable', 'SHELL_CWD_UNREADABLE', 'accessible directory'],
+    ['/private/secret-root sk-private-backend-value-123456789', 'SHELL_JOB_FAILED', 'current state'],
+  ])('returns a bounded recovery action for %s', async (message, code, next) => {
+    const jobs = new ShellJobs()
+    vi.spyOn(jobs, 'start').mockRejectedValue(new Error(message))
+    const ctx = fakeToolContext()
+    const result = await createShellTool(jobs).execute({ command: 'echo ready' }, ctx)
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code })
+    expect(textOf(result)).toContain(next)
+    expect(JSON.stringify(result)).not.toContain('/private/secret-root')
+    expect(JSON.stringify(result)).not.toContain('sk-private')
+    expect(ctx.calls.exec).toEqual([])
+  })
+
   it('has a complete definition with replay never', () => {
     expect(checkToolDef(shellTool)).toEqual({ ok: true })
     expect(shellTool.meta.replay).toBe('never')
@@ -66,7 +86,10 @@ describe('shell', () => {
     const ctx = fakeToolContext({ exec: () => ({ code: 2, stdout: '', stderr: 'boom' }) })
     const r = await shellTool.execute({ command: 'false' }, ctx)
     expect(r.isError).toBe(true)
-    expect(r.content[0]).toEqual({ type: 'text', text: '[stderr]\nboom\n[exit 2]' })
+    expect(r.content[0]).toEqual({
+      type: 'text',
+      text: '[stderr]\nboom\nCommand failed; inspect the output and current state, correct the command/arguments, then retry.\n[exit 2]',
+    })
   })
 
   it('marks a negative exit code as a failure, not a success', async () => {
@@ -75,7 +98,10 @@ describe('shell', () => {
     const ctx = fakeToolContext({ exec: () => ({ code: -1, stdout: 'partial', stderr: '' }) })
     const r = await shellTool.execute({ command: 'killed' }, ctx)
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toBe('partial\n[exit -1]')
+    expect(textOf(r)).toContain('partial\n')
+    expect(textOf(r)).toContain('current state')
+    expect(textOf(r)).toMatch(/\[exit -1\]$/)
+    expect(r.details).toMatchObject({ code: 'SHELL_EXIT', exitCode: -1 })
   })
 
   it('reports an exit code of zero with no output at all', async () => {
@@ -116,7 +142,8 @@ describe('shell', () => {
     })
     const r = await shellTool.execute({ command: 'rm -rf /' }, ctx)
     expect(r.isError).toBe(true)
-    expect(textOf(r)).toContain('sandbox refused to launch')
+    expect(r.details).toMatchObject({ code: 'SHELL_START_FAILED' })
+    expect(textOf(r)).toContain('check the selected interpreter and cwd')
     expect(textOf(r)).toContain('could not be started')
   })
 
@@ -315,7 +342,9 @@ describe('shell timeout', () => {
       exec: () => ({ code: 2, stdout: 'o', stderr: '', timedOut: false }),
     })
     const r = await shellTool.execute({ command: 'false' }, ctx)
-    expect(textOf(r)).toBe('o\n[exit 2]')
+    expect(textOf(r)).toContain('o\n')
+    expect(textOf(r)).not.toContain('timed out')
+    expect(textOf(r)).toMatch(/\[exit 2\]$/)
   })
 
   it('trusts an executor that says the deadline was not the cause, however long the call took', async () => {
@@ -328,7 +357,10 @@ describe('shell timeout', () => {
         return { code: -1, stdout: 'o', stderr: '', timedOut: false }
       },
     })
-    expect(textOf(await shellTool.execute({ command: 'x' }, ctx))).toBe('o\n[exit -1]')
+    const result = await shellTool.execute({ command: 'x' }, ctx)
+    expect(textOf(result)).toContain('o\n')
+    expect(textOf(result)).not.toContain('timed out')
+    expect(textOf(result)).toMatch(/\[exit -1\]$/)
   })
 
   // An exec that never says (a third-party seam, an older host) still has the kernel's cut-off behind

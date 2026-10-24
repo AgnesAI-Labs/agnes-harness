@@ -13,7 +13,7 @@ export function mapTransportError(error: unknown, caller: AbortSignal, timed: Ab
     (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError'))
   )
     throw new SearchProviderError('SEARCH_TIMEOUT', 'The search provider timed out.')
-  throw new SearchProviderError('SEARCH_FAILED', 'The search provider request failed.')
+  throw new SearchProviderError('SEARCH_NETWORK_FAILED', 'The search provider connection failed.')
 }
 
 export async function requestJson(
@@ -30,12 +30,18 @@ export async function requestJson(
     mapTransportError(error, caller, timed)
   }
   if (!response.ok) {
-    const limited = response.status === 429
+    // Classify only the HTTP status; upstream response bodies may contain credentials.
+    const failures = {
+      401: ['SEARCH_AUTH_FAILED', 'The search provider rejected the API key (HTTP 401).'],
+      402: ['SEARCH_PAYMENT_REQUIRED', 'The search provider requires payment or credits (HTTP 402).'],
+      403: ['SEARCH_ACCESS_DENIED', 'The search provider denied access (HTTP 403).'],
+      429: ['SEARCH_RATE_LIMITED', 'The search provider rate limit was reached.'],
+    } as const
+    const failure = failures[response.status as keyof typeof failures]
+    void response.body?.cancel().catch(() => undefined)
     throw new SearchProviderError(
-      limited ? 'SEARCH_RATE_LIMITED' : 'SEARCH_FAILED',
-      limited
-        ? 'The search provider rate limit was reached.'
-        : `The search provider returned HTTP ${response.status}.`,
+      failure?.[0] ?? 'SEARCH_FAILED',
+      failure?.[1] ?? `The search provider returned HTTP ${response.status}.`,
     )
   }
   let raw = ''

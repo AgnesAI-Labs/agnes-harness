@@ -83,7 +83,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
       : (options.translate ?? fallbackT)('settings.selectPicker.fallback', { label: options.label })
     label.textContent = text
     trigger.title = text
-    // 标签与当前值的连接符随语言变化（中文用全角冒号），所以走目录而不是写死。
+    // The separator between label and current value varies by locale (a fullwidth colon in Chinese), so use the catalog.
     trigger.setAttribute(
       'aria-label',
       (options.translate ?? fallbackT)('settings.selectPicker.ariaJoin', {

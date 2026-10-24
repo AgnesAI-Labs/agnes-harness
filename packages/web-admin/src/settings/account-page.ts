@@ -8,10 +8,10 @@ import {
 import { optionalElement } from './dialog.js'
 
 /**
- * The account form as a page of the settings dialog. Adding opens 「添加账户」 and editing opens the
+ * The account form as a page of the settings dialog. Adding opens 「Add account」 and editing opens the
  * account's page, each borrowing the one form the controller owns; leaving the page gives the form
- * back to its fallback dialog. Leaving by 返回 or the browser drops the draft (`onLeave`); a close
- * the controller asked for (a save, 取消) has already done that and is not repeated.
+ * back to its fallback dialog. Leaving by Back or the browser drops the draft (`onLeave`); a close
+ * the controller asked for (a save, Cancel) has already done that and is not repeated.
  */
 export function bindAccountPage(
   settings: HTMLElement,

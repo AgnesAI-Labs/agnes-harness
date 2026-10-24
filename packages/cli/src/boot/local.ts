@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -434,6 +435,8 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
       resolveWorkspaceDirectory,
       () => Date.now(),
       new WorkspaceBindingIndex(daemonTable(ownershipStorage, 'workspace_bindings')),
+      undefined,
+      { protectedRoots: [profile.dataDir, join(homedir(), '.ssh')] },
     )
     // Same authority source as the daemon supervisor: the CLI launch cwd is registered once. Ambient
     // session/new still cannot mint a workspace from an unregistered path.

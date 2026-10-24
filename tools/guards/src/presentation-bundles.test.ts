@@ -24,7 +24,7 @@ function violations(name: string, bytes: number, inputs: readonly string[]) {
 }
 it('keeps every presentation inside its byte/input budget and embeds no host implementation', async () => {
   // Reconstruct metafiles from source rather than trusting an editable generated input list.
-  const records = await buildPresentations({ force: true })
+  const records = await buildPresentations({ check: true })
   expect(records.map((record) => record.name).sort()).toEqual([...PRESENTATION_NAMES].sort())
   expect(records.flatMap((record) => violations(record.name, record.bytes, record.inputs))).toEqual([])
   expect(violations('goal-ui', 1, ['packages/protocol/src/index.ts'])).toContain(

@@ -18,6 +18,8 @@ import {
 } from '@agnes/web-units/shell'
 import { type ReactElement, useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
+import { loadHeadsUp } from '../heads-up.js'
+import { HeadsUpNote } from '../heads-up-view.js'
 import { ModelPickerControl } from '../model-picker.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
 import { ApplicationComposerContext, ApplicationWorkActions } from '../workbench/application-actions.js'
@@ -74,6 +76,7 @@ export function ComposerDshFrame({
           context={{ t: (key) => key }}
         />
         <ApplicationWorkActions />
+        <HeadsUpNote sessionId={sessionId} t={dependencies.translate} />
         <Composer
           ref={setHandle}
           dependencies={dependencies}
@@ -128,7 +131,11 @@ export function mountComposerRegion(
       useSyncExternalStore(locale.subscribe, locale.getSnapshot)
       return <ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />
     },
-    loadHint: loadReplySuggestion,
+    loadHint: (scope, signal) => {
+      // The same finished-turn edge that asks for a reply suggestion also asks for the heads-up.
+      void loadHeadsUp(scope, signal)
+      return loadReplySuggestion(scope, signal)
+    },
     subscribeHintInvalidation: (listener) => {
       const events = ['agnes:packages-changed', 'agnes:session-configuration-changed', 'agnes:settings-route']
       for (const event of events) window.addEventListener(event, listener, true)

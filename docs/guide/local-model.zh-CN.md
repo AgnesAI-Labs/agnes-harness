@@ -67,3 +67,5 @@ const ids = await discoverLocalModels({
 发现会拒绝 redirect、URL 中的 userinfo/query/fragment、无效/重复 ID、超过 4096 个模型或 1 MiB 的响应。超时为五秒；keyless 服务不发送 Authorization header。失败不回退到厂商目录。
 
 添加 `compat.recordFile: /absolute/responses.jsonl` 可录制模型回复，供[回放](headless.zh-CN.md)使用。文件必须不存在。一份 adapter 实例写一个文件；用于回放时使用单一路由。model record 的零 cost 代表本地计费配置，不表示缺少 token usage；runtime usage 事件仍会填入指标。
+
+已知的 Agnes 图片、视频生成模型不会出现在对话模型列表中（包括中转账户），也不能保存为默认或辅助对话模型。如果旧账户已选择此类模型，请先改选支持对话的模型，再启动会话或定时任务。支持图片输入的对话模型仍然可用。

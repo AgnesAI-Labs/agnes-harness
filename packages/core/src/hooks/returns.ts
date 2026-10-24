@@ -60,14 +60,19 @@ function object(value: unknown, keys: readonly string[]): Record<string, unknown
   return value as Record<string, unknown>
 }
 function contextWire(snapshot: unknown): ContextReturn {
-  const value = object(snapshot, ['sections', 'additionalContext', 'refreshOnRequest'])
+  const value = object(snapshot, ['sections', 'additionalContext', 'untrustedContext', 'refreshOnRequest'])
   const result: Record<string, unknown> = { ...value }
   if ('sections' in value) {
     if (!Array.isArray(value.sections)) invalid()
     result.sections = value.sections.map((section: unknown) => {
-      const item = object(section, ['id', 'order', 'content', 'source'])
+      const item = object(section, ['id', 'order', 'content', 'source', 'delivery'])
       if ('source' in item && typeof item.source !== 'string') invalid()
-      return { id: item.id, order: item.order, text: item.content }
+      return {
+        id: item.id,
+        order: item.order,
+        text: item.content,
+        ...('delivery' in item ? { delivery: item.delivery } : {}),
+      }
     })
   }
   if (!validateHook('context', 'return', result).ok) invalid()

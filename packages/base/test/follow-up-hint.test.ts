@@ -28,6 +28,7 @@ async function fixture() {
       return off
     },
     generate,
+    review: vi.fn(async () => undefined),
   }
   const api = {
     registerHook: (name: string, handler: HookHandler<'session_start'>) => {
