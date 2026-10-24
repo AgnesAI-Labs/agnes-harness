@@ -8,8 +8,11 @@ import { tt } from './locale-extended.js'
 import { probeLanguageServers } from './lsp-probe.js'
 import { waitingIn } from './queue-commands.js'
 import { oneLine } from './session-commands.js'
+import { displayWidth } from './terminal.js'
 
 const NONE = '-'
+
+const pad = (s: string, width: number) => s + ' '.repeat(Math.max(0, width - displayWidth(s)))
 
 /** `/status`: what the footer and /cost, /context and /queue know, on one screen. A source that fails shows `-`. */
 async function statusSlash(app: TuiApp): Promise<SlashResult> {
@@ -58,13 +61,13 @@ async function statusSlash(app: TuiApp): Promise<SlashResult> {
     ],
   ]
   const labels = rows.map(([key]) => tt(key, locale))
-  const width = Math.max(...labels.map((label) => [...label].length))
+  const width = Math.max(...labels.map(displayWidth))
   return {
     text: rows
       .map(([, value], i) =>
         value
           .split('\n')
-          .map((part, n) => `${(n === 0 ? (labels[i] as string) : '').padEnd(width, ' ')}  ${part}`)
+          .map((part, n) => `${pad(n === 0 ? (labels[i] as string) : '', width)}  ${part}`)
           .join('\n'),
       )
       .join('\n'),

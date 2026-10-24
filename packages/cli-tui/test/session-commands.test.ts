@@ -10,6 +10,7 @@ import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
 import { deliverableBasename } from '../src/deliverable-files.js'
 import { tt } from '../src/locale-extended.js'
+import { displayWidth } from '../src/terminal.js'
 import { TuiTheme } from '../src/theme.js'
 import { localCommandView } from '../src/views/local-command.js'
 
@@ -678,6 +679,21 @@ describe('small info commands', () => {
       vi.unstubAllEnvs()
       rmSync(root, { recursive: true, force: true })
     }
+  })
+
+  it('/status aligns every value at one display column when labels are wide (zh-CN)', async () => {
+    const app = Object.assign(
+      status({}, { timeline: { usage, yolo: false } }, { pending: [] }, [
+        { ...meta('cur', '/w/a'), additionalDirectories: ['/x/one', '/x/two'] },
+      ]),
+      { locale: 'zh-CN' as const },
+    )
+    const lines = ((await runSlash(app, '/status')).text ?? '').split('\n')
+    // Value column = display width of everything before the first non-space after the label gap.
+    const cols = lines.map((line) => displayWidth(line.match(/^(.*?\S?\s{2,})(?=\S)/)?.[1] ?? ''))
+    expect(lines.length).toBeGreaterThan(10)
+    expect(new Set(cols).size).toBe(1)
+    expect(cols[0]).toBeGreaterThan(0)
   })
 
   const replies = (...texts: string[]) =>
