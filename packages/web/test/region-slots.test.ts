@@ -719,7 +719,7 @@ describe('migrated trace region', () => {
     mount.render([{ kind: 'assistant', id: 'trace-a', seq: 1, text: 'trace content' }], [], {
       hasEarlier: true,
     })
-    expect(trace.textContent).toContain('已加载部分')
+    expect(trace.textContent).toContain('更早记录未加载')
 
     const remove = slots.register(
       { name: TRACE_SLOT as string, id: 'plugin-trace', owner: 'fixture', priority: -1 },

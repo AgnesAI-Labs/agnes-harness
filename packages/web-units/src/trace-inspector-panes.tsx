@@ -244,7 +244,7 @@ export function ToolArgs({
       {row.tool?.args ? (
         <>
           <TraceCode label={traceText('trace.pane.args')} value={row.tool.args} />
-          <p className="trace-raw-note">{traceText('trace.detail.fromPreview')}</p>
+          <p className="trace-raw-note">{traceText('trace.note.tool')}</p>
         </>
       ) : null}
     </>
@@ -350,7 +350,7 @@ export function ToolResultPane({
           {row.tool?.result ? (
             <>
               <TraceCode label={traceText('trace.pane.result')} value={row.tool.result} />
-              <p className="trace-raw-note">{traceText('trace.detail.fromPreview')}</p>
+              <p className="trace-raw-note">{traceText('trace.note.tool')}</p>
             </>
           ) : null}
         </>
@@ -362,23 +362,17 @@ export function ToolResultPane({
 /** What the trace knows about a business-UI view: its title, revision, recorded state and answers. */
 export function UiSnapshot({ row }: { row: TraceRow }) {
   return (
-    <>
-      <TraceCard title={traceText('trace.pane.snapshot')} testId="trace-ui-snapshot">
-        <dl className="trace-fields">
-          {row.surface?.title ? (
-            <TraceField label={traceText('trace.fact.surface')} value={row.surface.title} />
-          ) : null}
-          {row.surface?.revision ? (
-            <TraceField label={traceText('trace.fact.revision')} value={row.surface.revision} />
-          ) : null}
-          <TraceField
-            label={traceText('trace.field.status')}
-            value={row.steps?.at(-1)?.label ?? row.status}
-          />
-        </dl>
-      </TraceCard>
-      <p className="trace-raw-note">{traceText('trace.ui.snapshotNote')}</p>
-    </>
+    <TraceCard title={traceText('trace.pane.snapshot')} testId="trace-ui-snapshot">
+      <dl className="trace-fields">
+        {row.surface?.title ? (
+          <TraceField label={traceText('trace.fact.surface')} value={row.surface.title} />
+        ) : null}
+        {row.surface?.revision ? (
+          <TraceField label={traceText('trace.fact.revision')} value={row.surface.revision} />
+        ) : null}
+        <TraceField label={traceText('trace.field.status')} value={row.steps?.at(-1)?.label ?? row.status} />
+      </dl>
+    </TraceCard>
   )
 }
 

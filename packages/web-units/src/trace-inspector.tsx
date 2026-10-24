@@ -316,9 +316,6 @@ function InspectorView({
               </TraceCard>
             ) : null}
             {request ? <RequestCapture state={request} clear={options.clearModelRequest} /> : null}
-            <p className="trace-readonly" data-testid="trace-readonly">
-              {traceText('trace.facts.recordOnly')}
-            </p>
           </>
         )
       case 'projected':

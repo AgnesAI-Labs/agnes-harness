@@ -198,9 +198,6 @@ it('opens the trace on the linked request with its source tab, never a workbench
       expect.any(AbortSignal),
     ),
   )
-  expect(root.querySelector('[data-testid="trace-readonly"]')?.textContent).toContain(
-    'Saved execution record',
-  )
   // A link for another session is not this trace's to answer.
   expect(panel.focusFact?.({ sessionId: 'other', laneId: 'main', anchor: { kind: 'request', callId } })).toBe(
     false,

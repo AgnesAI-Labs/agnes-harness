@@ -476,7 +476,6 @@ export function buildTraceRows(nodes: readonly UINode[], turns: readonly UITurn[
         : {}),
       preview,
       raw,
-      ...(node.kind === 'tool' ? { rawNote: traceText('trace.note.tool') } : {}),
       ...(attachments.length ? { attachments, rawNote: traceText('trace.note.attachments') } : {}),
       source: nodeSource(node),
       status,
