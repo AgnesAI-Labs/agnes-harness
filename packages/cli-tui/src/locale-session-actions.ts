@@ -31,6 +31,7 @@ export type SessionActionKey =
   | 'schedule.unknown'
   | 'schedule.deleted'
   | 'export.unavailable'
+  | 'export.usage'
   | 'export.done'
   | 'export.failed'
   | 'commands.rate'
@@ -78,6 +79,7 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'schedule.deleted': 'Deleted schedule {id}',
     'export.unavailable':
       'Export needs the shared local daemon connection; it is not available with --connect, --standalone or --ephemeral',
+    'export.usage': 'usage: /export [agnes|html|sharegpt|claude-code] [path]',
     'export.done': 'Exported ({format}, redacted) to {path}',
     'export.failed': 'Export failed: {reason}',
     'commands.rate': 'Rate the latest finished reply up or down, with an optional reason (the Web thumbs)',
@@ -122,6 +124,7 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'schedule.deleted': '已删除定时任务 {id}',
     'export.unavailable':
       '导出需要共享的本机 daemon 连接；使用 --connect、--standalone 或 --ephemeral 时不可用',
+    'export.usage': '用法：/export [agnes|html|sharegpt|claude-code] [路径]',
     'export.done': '已导出（{format}，已脱敏）到 {path}',
     'export.failed': '导出失败：{reason}',
     'commands.rate': '给最近一条已完成的回复点赞或点踩，可附理由（与 Web 的拇指相同）',

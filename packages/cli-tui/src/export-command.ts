@@ -32,6 +32,9 @@ export async function exportSlash(app: TuiApp, line: string): Promise<SlashResul
   if (!write) return { text: tt('export.unavailable', locale) }
   const body = line.trim().slice('/export'.length).trim()
   const first = body.split(/\s+/)[0] ?? ''
+  // Only `--html` is a flag; any other `--word` would otherwise become part of the file name.
+  if (body.split(/\s+/).some((word, i) => word.startsWith('--') && !(i === 0 && word === '--html')))
+    return { text: tt('export.usage', locale) }
   // `--html` is what this command took before it wrote files itself.
   const format: ExportFormat = first === '--html' ? 'html' : isFormat(first) ? first : 'agnes'
   const given = first === '--html' || isFormat(first) ? body.slice(first.length).trim() : body

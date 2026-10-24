@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { type ExportRequest, exportSlash } from '../src/export-command.js'
+import { tt } from '../src/locale-extended.js'
 
 let cwd: string
 beforeEach(() => {
@@ -64,6 +65,16 @@ describe('/export', () => {
       ['html', '/tmp/x.html'],
     ])
   })
+
+  it.each(['/export --format sharegpt', '/export out.html --html', '/export html --bogus', '/export --json'])(
+    '%s is usage, not a file named after the flag',
+    async (line) => {
+      const { app, requests } = harness(async () => {})
+      const r = await exportSlash(app, line)
+      expect(requests).toHaveLength(0)
+      expect(r.text).toBe(tt('export.usage', 'en'))
+    },
+  )
 
   it('expands ~ to the home directory, like /cd', async () => {
     vi.stubEnv('HOME', '/tmp/agh-home')
