@@ -15,9 +15,9 @@ const CLEARED = 'This context item no longer applies.'
 export function liveContextNotes(sections: readonly PromptSection[], surface: readonly SurfaceNode[]) {
   const current = new Map<string, string>()
   for (const section of sections) {
-    if (section.delivery !== 'live-note') continue
+    if (section.delivery !== 'live-note' || !section.text) continue
     const prefix = `${LIVE_CONTEXT_PREFIX}${sha256Hex(canonicalJson([section.source, section.id]))}]\n`
-    current.set(prefix, `${section.id}\n${section.text || CLEARED}`)
+    current.set(prefix, `${section.id}\n${section.text}`)
   }
   for (const node of [...surface].reverse()) {
     if (node.kind !== 'user' || node.event.type !== 'user/message') continue

@@ -372,6 +372,12 @@ describe('deriveRequest', () => {
     expect(JSON.stringify(compacted.notes)).not.toContain('Nested rule')
     commit(compacted)
     assertStable(derive(), 0)
+    items = items.map((section) => ({ ...section, text: '' }))
+    const empty = derive()
+    assertStable(empty, 5)
+    commit(empty)
+    assertStable(derive(), 0)
+    assertStable(derive([]), 0)
   })
 
   it('does not mistake a harness note riding the same message kind for the snapshot', () => {
