@@ -157,6 +157,8 @@ export const RuntimeAdminSnapshot = Type.Object(
             trustHash: Type.Optional(Type.String({ pattern: '^sha256-[a-f0-9]{64}$' })),
             pluginCount: Type.Optional(Type.Integer({ minimum: 0, maximum: 4096 })),
             hasHooks: Type.Optional(Type.Boolean()),
+            /** Digest of the exact `.agh/hooks.json` bytes that `trustHash` commits to. */
+            hooksDigest: Type.Optional(Type.String({ pattern: '^sha256-[a-f0-9]{64}$' })),
             state: Type.Union([Type.Literal('untrusted'), Type.Literal('trusted'), Type.Literal('changed')]),
           },
           { additionalProperties: false },

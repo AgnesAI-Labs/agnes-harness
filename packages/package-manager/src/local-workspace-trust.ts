@@ -117,7 +117,7 @@ export function localWorkspaceDeployment(
         manifestId: 'local-workspace',
         trustHash: localWorkspaceTrustHash(roots, lock),
         pluginCount,
-        ...(hooksDigest ? { hasHooks: true } : {}),
+        ...(hooksDigest ? { hasHooks: true, hooksDigest } : {}),
         state: trusted ? 'trusted' : signed ? 'changed' : 'untrusted',
       },
     ]

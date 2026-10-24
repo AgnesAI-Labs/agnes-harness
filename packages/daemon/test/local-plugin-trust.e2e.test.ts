@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import {
   existsSync,
   mkdirSync,
@@ -120,7 +121,16 @@ it('a fresh home does not evaluate repository plugins or other repository code u
     const client = sdk
     const runtime = () => client.call<RuntimeAdminSnapshot>('_agnes/v1/sessionSelection.runtime', {})
     expect((await runtime()).workspaceDeployments).toContainEqual(
-      expect.objectContaining({ deployDir: workspace, pluginCount: 1, state: 'untrusted' }),
+      expect.objectContaining({
+        deployDir: workspace,
+        pluginCount: 1,
+        state: 'untrusted',
+        hasHooks: true,
+        // The digest of the exact hooks.json bytes that the trust hash commits to.
+        hooksDigest: `sha256-${createHash('sha256')
+          .update(readFileSync(join(workspace, '.agh', 'hooks.json')))
+          .digest('hex')}`,
+      }),
     )
     const offeredHash = (await runtime()).workspaceDeployments?.find(
       (item) => item.deployDir === workspace,
