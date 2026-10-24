@@ -220,8 +220,9 @@ it('records a scheduled park and notifies the owner and bound channel through th
     'p',
   )
   automation.schedules = tasks
+  let seq = 0
   const event = (type: string, data: unknown) =>
-    ({ type, data, seq: 1, ts: new Date(now).toISOString() }) as import('@agnes/protocol').EventEnvelope
+    ({ type, data, seq: ++seq, ts: new Date(now).toISOString() }) as import('@agnes/protocol').EventEnvelope
   const decision = {
     handle: { id: 'd', sessionId: 's' },
     request: { expiresAt: new Date(now + 86400_000).toISOString() },
@@ -239,12 +240,12 @@ it('records a scheduled park and notifies the owner and bound channel through th
           origin: 'system',
           actor: { attrs: { unattendedApproval: 'notify' } },
         })
-        return 1
+        return ++seq
       },
       run: async () => {
         automation.observe('s', event('turn/start', { turn: 1, trigger: 'prompt' }))
         automation.observe('s', event('decision/state', decision))
-        automation.observe('s', event('turn/end', { turn: 1, reason: 'parked' }))
+        automation.observe('s', event('turn/end', { reason: 'parked' }))
         return { reason: 'parked', lastSeq: 4 }
       },
     },
@@ -289,7 +290,7 @@ it('records a scheduled park and notifies the owner and bound channel through th
       }),
     )
     automation.observe('s', event('turn/start', { turn: 2, trigger: 'approval-resume' }))
-    automation.observe('s', event('turn/end', { turn: 2, reason: 'completed' }))
+    automation.observe('s', event('turn/end', { reason: 'completed' }))
     expect(await read()).toMatchObject({ outcome: 'ran' })
   } finally {
     await scheduler.stop()

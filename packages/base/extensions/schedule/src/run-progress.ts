@@ -80,11 +80,17 @@ export function observeProgress(state: RunProgress, event: EventEnvelope, now: n
     }
   } else if (event.type === 'turn/start') {
     const data = event.data as { turn: number; trigger: string }
-    if (state.turn === undefined || data.trigger === 'approval-resume')
+    if (
+      state.turn === undefined ||
+      data.trigger === 'approval-resume' ||
+      (state.needsAttention && Object.keys(state.pending).length === 0)
+    )
       next = { ...next, turn: data.turn, outcome: 'running', needsAttention: false }
   } else if (event.type === 'turn/end') {
-    const data = event.data as { turn: number; reason: string }
-    if (next.turn !== undefined && data.turn !== next.turn) return state
+    // turn/end has no turn number. Only an active run (including an approval continuation)
+    // can finish; an unrelated user turn must not clear an outstanding approval.
+    const data = event.data as { reason: string }
+    if (state.outcome !== 'running') return state
     if (data.reason === 'parked')
       next = {
         ...next,

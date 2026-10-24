@@ -365,7 +365,7 @@ it('checks a new-session target through the port before saving it', async () => 
   })
 })
 
-it.each(['approve', 'expire', 'refuse'] as const)(
+it.each(['approve', 'reply', 'expire', 'refuse'] as const)(
   'tracks a parked run through %s without reporting it ran',
   (action) => {
     let now = NOW
@@ -380,9 +380,17 @@ it.each(['approve', 'expire', 'refuse'] as const)(
       },
     })
     const key = `schedule:${created.id}:1`
-    catalog.recordDispatch(key, { at: now, reason: 'prompt', sessionKey: 'sess' })
+    catalog.recordDispatch(key, { at: now, reason: 'prompt', sessionKey: 'sess', seq: 10 })
+    let seq = 10
     const event = (type: string, data: unknown) =>
-      ({ type, data, seq: 1, ts: new Date(now).toISOString() }) as import('@agnes/protocol').EventEnvelope
+      ({ type, data, seq: ++seq, ts: new Date(now).toISOString() }) as import('@agnes/protocol').EventEnvelope
+    // A cold worker replays the session's earlier turns before this schedule's dispatch.
+    for (const row of [
+      { ...event('turn/start', { turn: 1, trigger: 'prompt' }), seq: 1 },
+      { ...event('turn/end', { reason: 'completed', lastAssistantSeq: null }), seq: 9 },
+    ])
+      catalog.observeSession('sess', row)
+    expect(catalog.read(created.id)?.runs[0]?.outcome).toBe('running')
     catalog.observeSession('sess', event('turn/start', { turn: 1, trigger: 'prompt' }))
     const pending = {
       handle: { id: 'd1', sessionId: 'sess' },
@@ -391,20 +399,28 @@ it.each(['approve', 'expire', 'refuse'] as const)(
       invalidation: null,
       consumption: null,
     }
-    catalog.observeSession('sess', event('decision/state', pending))
-    expect(catalog.observeSession('sess', event('turn/end', { turn: 1, reason: 'parked' }))).toBe(true)
+    const requested = event('decision/state', pending)
+    if (action !== 'reply') catalog.observeSession('sess', requested)
+    expect(catalog.observeSession('sess', event('turn/end', { reason: 'parked' }))).toBe(true)
     catalog.noteSettlement(key, { at: now, nextRunAt: now + 60_000, reason: 'parked' })
     expect(catalog.read(created.id)?.runs[0]).toMatchObject({
-      outcome: 'waiting_approval',
+      outcome: action === 'reply' ? 'needs_attention' : 'waiting_approval',
       reason: 'needs_attention',
     })
     expect(catalog.read(created.id)?.runs[0]?.endedAt).toBeUndefined()
     expect(catalog.hasWaiting(key)).toBe(true)
     catalog.recordFailure(key, { at: now + 1, reason: 'approval_pending_previous_run', sessionKey: 'sess' })
-    expect(catalog.read(created.id)?.runs.map((run) => run.outcome)).toEqual(['waiting_approval', 'failed'])
+    expect(catalog.read(created.id)?.runs.map((run) => run.outcome)).toEqual([
+      action === 'reply' ? 'needs_attention' : 'waiting_approval',
+      'failed',
+    ])
     // Reopening the catalog retains both the pending deadline and the recurring schedule.
     catalog = openScheduleCatalogAt(db, jobs, () => now)
     if (action === 'approve') {
+      // Saying "received" in another turn is not an approval of the parked operation.
+      catalog.observeSession('sess', event('turn/start', { turn: 2, trigger: 'prompt' }))
+      catalog.observeSession('sess', event('turn/end', { reason: 'completed', lastAssistantSeq: null }))
+      expect(catalog.read(created.id)?.runs[0]?.outcome).toBe('waiting_approval')
       catalog.observeSession(
         'sess',
         event('decision/state', {
@@ -412,11 +428,12 @@ it.each(['approve', 'expire', 'refuse'] as const)(
           result: { reason: 'answered', response: { option: 'allowed-once' } },
         }),
       )
-      catalog.observeSession('sess', event('turn/start', { turn: 2, trigger: 'approval-resume' }))
+      const resumed = event('turn/start', { turn: 3, trigger: 'approval-resume' })
+      catalog.observeSession('sess', resumed)
       // Another question after a human continuation must request another notification.
       const second = { ...pending, handle: { id: 'd2', sessionId: 'sess' } }
       catalog.observeSession('sess', event('decision/state', second))
-      expect(catalog.observeSession('sess', event('turn/end', { turn: 2, reason: 'parked' }))).toBe(true)
+      expect(catalog.observeSession('sess', event('turn/end', { reason: 'parked' }))).toBe(true)
       catalog.observeSession(
         'sess',
         event('decision/state', {
@@ -424,8 +441,23 @@ it.each(['approve', 'expire', 'refuse'] as const)(
           result: { reason: 'answered', response: { option: 'allowed-once' } },
         }),
       )
-      catalog.observeSession('sess', event('turn/start', { turn: 3, trigger: 'approval-resume' }))
-      catalog.observeSession('sess', event('turn/end', { turn: 3, reason: 'completed' }))
+      catalog.observeSession('sess', event('turn/start', { turn: 4, trigger: 'approval-resume' }))
+      const finished = event('turn/end', { reason: 'completed', lastAssistantSeq: null })
+      catalog.observeSession('sess', finished)
+      expect(catalog.read(created.id)?.runs[0]).toMatchObject({ outcome: 'ran', endedAt: now })
+      expect(catalog.hasWaiting(key)).toBe(false)
+      catalog = openScheduleCatalogAt(db, jobs, () => now)
+      // Reopening and replaying old pending/continuation rows cannot resurrect a completed run.
+      for (const row of [requested, resumed, finished]) catalog.observeSession('sess', row)
+      expect(catalog.read(created.id)?.runs[0]?.outcome).toBe('ran')
+      expect(catalog.hasWaiting(key)).toBe(false)
+    } else if (action === 'reply') {
+      // A reminder without a pending permission decision can continue with ordinary user input.
+      catalog.observeSession('sess', event('turn/start', { turn: 2, trigger: 'prompt' }))
+      catalog.observeSession('sess', event('turn/end', { reason: 'completed', lastAssistantSeq: null }))
+      expect(catalog.read(created.id)?.runs[0]).toMatchObject({ outcome: 'ran', endedAt: now })
+      catalog = openScheduleCatalogAt(db, jobs, () => now)
+      expect(catalog.hasWaiting(key)).toBe(false)
       expect(catalog.read(created.id)?.runs[0]?.outcome).toBe('ran')
     } else if (action === 'expire') {
       now += 1000
@@ -446,7 +478,7 @@ it.each(['approve', 'expire', 'refuse'] as const)(
     if (action === 'expire') {
       catalog.recordDispatch(key, { at: ++now, reason: 'prompt', sessionKey: 'after-expiry' })
       catalog.observeSession('after-expiry', event('turn/start', { turn: 3, trigger: 'prompt' }))
-      catalog.observeSession('after-expiry', event('turn/end', { turn: 3, reason: 'completed' }))
+      catalog.observeSession('after-expiry', event('turn/end', { reason: 'completed' }))
       expect(catalog.read(created.id)?.runs.at(-1)).toMatchObject({
         outcome: 'ran',
         needsAttention: true,
