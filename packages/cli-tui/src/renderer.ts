@@ -4,6 +4,7 @@ import { type ImageLayer, type ImageMark, takeMark } from './inline-image.js'
 import { type MouseEvent, parseMouse } from './keys.js'
 import { PasteAssembler } from './paste.js'
 import { displayWidth, type Terminal } from './terminal.js'
+import { restoreTitle } from './terminal-signals.js'
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 function historyLines(line: string, columns: number): string[] {
@@ -386,6 +387,7 @@ export class Renderer {
     this.scheduled = false
     this.offInput?.()
     this.offResize?.()
+    restoreTitle(this.term)
     // Pop the keyboard enhancement on the screen it was pushed on, before leaving the alternate screen.
     if (wasActive) this.term.leaveRaw()
     try {

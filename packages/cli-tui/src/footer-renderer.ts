@@ -3,6 +3,7 @@ import { type Component, CURSOR_MARKER } from './component.js'
 import { PasteAssembler } from './paste.js'
 import type { ScreenRenderer } from './renderer.js'
 import { displayWidth, type Terminal } from './terminal.js'
+import { restoreTitle } from './terminal-signals.js'
 
 /** How settled text reaches native scrollback: DECSTBM margins, or scrolling the whole screen. */
 export type ScrollMode = 'region' | 'full'
@@ -370,6 +371,7 @@ export class FooterRenderer implements ScreenRenderer {
     this.scheduled = false
     this.offInput?.()
     this.offResize?.()
+    restoreTitle(this.term)
     try {
       let out = ''
       if (ready) {

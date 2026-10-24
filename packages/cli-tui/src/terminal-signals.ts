@@ -1,4 +1,5 @@
 import { basename } from 'node:path'
+import { folding } from './glyphs.js'
 import type { NotifyEvent, NotifyPreference } from './notify.js'
 import { WindowTitle } from './window-title.js'
 
@@ -11,7 +12,11 @@ const COALESCE_MS = 3000
 const byTerminal = new WeakMap<object, TerminalSignals>()
 
 /** The signals the app built for this terminal output: how code outside the app says something happened. */
-export const signalsFor = (term: object): TerminalSignals | undefined => byTerminal.get(term)
+export const signalsFor = (term: object): TerminalSignals | undefined =>
+  byTerminal.get(folding.get(term) ?? term)
+
+/** Hands the shell its own window title back; the renderers call it whenever they give the terminal up. */
+export const restoreTitle = (term: object): void => signalsFor(term)?.restoreTitle()
 
 /**
  * What takes the user's eyes off the terminal and brings them back: while the window is in the
@@ -54,8 +59,14 @@ export class TerminalSignals {
   stop(): void {
     if (!this.started) return
     this.started = false
+    this.restoreTitle()
+  }
+
+  /** Pops the saved title once; the next `sync()` after the terminal is taken over again saves and sets it afresh. */
+  restoreTitle(): void {
     if (this.pushed) this.term.write('\x1b[23;0t')
     this.pushed = false
+    this.title = ''
   }
 
   /** Consumes a focus report; true when `data` was one. */
