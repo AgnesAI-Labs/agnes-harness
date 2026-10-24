@@ -260,3 +260,10 @@ it('draws closed mermaid fences as box art and leaves everything else as the cod
   theme.raw = true
   expect(text(flow)).toEqual(['mermaid', 'graph TD', '  A[Start] --> B[Finish]'])
 })
+it('keeps GFM task-list checkboxes and wrapped item indent', () => {
+  expect(renderMarkdown('- [ ] todo\n- [x] done item that wraps', 16, none)).toEqual([
+    '• [ ] todo',
+    '• [x] done item',
+    '      that wraps',
+  ])
+})

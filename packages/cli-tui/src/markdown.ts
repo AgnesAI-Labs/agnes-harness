@@ -310,7 +310,8 @@ function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = 
         const list = token as Tokens.List
         list.items.forEach((item, index) => {
           const start = typeof list.start === 'number' ? list.start : 1
-          const bullet = list.ordered ? `${start + index}.` : '•'
+          const mark = item.task ? (item.checked ? ' [x]' : ' [ ]') : ''
+          const bullet = (list.ordered ? `${start + index}.` : '•') + mark
           const fits = width > displayWidth(bullet) + 1
           const indent = fits ? displayWidth(bullet) + 1 : 0
           const prefix = fits ? `${ansi.fg(list.ordered ? 'muted' : 'accentSoft', bullet)} ` : ''
