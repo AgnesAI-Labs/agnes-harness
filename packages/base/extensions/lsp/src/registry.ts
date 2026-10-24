@@ -1,4 +1,4 @@
-import { delimiter, relative, resolve } from 'node:path'
+import { delimiter, join, relative, resolve, sep } from 'node:path'
 import type { ToolContext } from '@agnes/extension-api'
 import { normalizeWorkspacePath } from '../../tools-core/src/paths.js'
 import { LspClient } from './client.js'
@@ -6,7 +6,7 @@ import { DEFAULTS, type LspConfig } from './config.js'
 import { serverEnv } from './env.js'
 import { type FileReport, formatAuto } from './format.js'
 import { launchArgv, resolveBinary, safeEntries } from './resolve.js'
-import { findRoot, type ServerDef, serverFor } from './servers.js'
+import { CACHE_DIR, findRoot, type ServerDef, serverFor } from './servers.js'
 
 /** What the registry reads from a tool context. It is used inside the call and never kept. */
 type Ctx = Pick<ToolContext, 'sandbox' | 'fs' | 'session' | 'cwd' | 'signal' | 'outputMaxBytes'>
@@ -18,6 +18,8 @@ type Entry = {
   root: string
   client?: LspClient
   starting?: Promise<void>
+  /** Settles when the process is open or refused: the part of a start that needs the call's context. */
+  spawned?: Promise<void>
   busy: number
   last: number
   idle?: ReturnType<typeof setTimeout>
@@ -25,6 +27,9 @@ type Entry = {
 }
 
 const ownerOf = (ctx: Pick<Ctx, 'session'>) => `${ctx.session.key}\0${ctx.session.lane}`
+// How long a call waits for the process to open; the rest of the start goes on after the call.
+const SPAWN_WAIT_MS = 5000
+const closedInvocation = (e: unknown) => /E_WORKSPACE_CLOSED|invocation is closed/.test(errorText(e))
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /**
@@ -57,7 +62,9 @@ export class LspSessions {
     try {
       const target = serverFor(abs)
       const got = target && (await this.acquire(ctx, abs, target.def))
-      // A server still starting is not waited for: the next edit finds it ready.
+      // The process must be open before the call ends, or its invocation is closed under the open.
+      // The server's own start is not waited for: the next edit finds it ready.
+      if (got && 'entry' in got) await this.spawnedOf(got.entry)
       if (!got || 'reason' in got || !got.entry.client) return undefined
       const diags = await this.run(got.entry, (client) =>
         client.diagnostics(abs, target.languageId, text, this.cfg.autoWaitMs),
@@ -104,6 +111,7 @@ export class LspSessions {
     const got = await this.acquire(ctx, abs, target.def)
     if ('reason' in got) return { path, note: got.reason }
     const { entry } = got
+    await this.spawnedOf(entry)
     if (!entry.client && entry.starting)
       await Promise.race([
         entry.starting,
@@ -157,7 +165,9 @@ export class LspSessions {
       if (!this.makeRoom(owner)) return { reason: 'too many language servers are running; try again later' }
       entry = { key, owner, def, root, busy: 0, last: Date.now(), closing: false }
       this.entries.set(key, entry)
-      entry.starting = this.launch(ctx, entry)
+      let spawned!: () => void
+      entry.spawned = new Promise<void>((done) => (spawned = done))
+      entry.starting = this.launch(ctx, entry, spawned).finally(spawned)
     }
     return { entry }
   }
@@ -177,7 +187,45 @@ export class LspSessions {
     return true
   }
 
-  private async launch(ctx: Ctx, entry: Entry): Promise<void> {
+  private async spawnedOf(entry: Entry): Promise<void> {
+    await Promise.race([entry.spawned, new Promise((done) => setTimeout(done, SPAWN_WAIT_MS).unref?.())])
+  }
+
+  /**
+   * Makes `dir` exist as a real directory that ignores itself for git (a `.gitignore` holding `*`), so
+   * what a server caches there never shows up as the user's change. A symlink or file in its place, or in
+   * place of a cache path in `env` inside it, is refused, never followed: a clone could have committed one.
+   * Returns the reason it cannot be used, if so.
+   */
+  private async prepareCache(
+    ctx: Ctx,
+    dir: string,
+    env: Record<string, string> = {},
+  ): Promise<string | undefined> {
+    const refuse = `${CACHE_DIR} in the workspace holds something other than plain directories; remove it to enable this server`
+    const kindOf = (path: string) =>
+      ctx.fs.stat(path).then(
+        (s) => s.kind,
+        () => undefined,
+      )
+    for (const path of [dir, ...Object.values(env).filter((value) => value.startsWith(`${dir}${sep}`))]) {
+      const kind = await kindOf(path)
+      if (kind !== undefined && kind !== 'dir') return refuse
+    }
+    const ignore = join(dir, '.gitignore')
+    const ignoreKind = await kindOf(ignore)
+    if (ignoreKind === 'file') return undefined
+    if (ignoreKind !== undefined || !ctx.fs.create) return refuse
+    try {
+      await ctx.fs.create(ignore, new TextEncoder().encode('*\n'))
+    } catch (e) {
+      // Another start made it first; anything else is a real failure.
+      if ((await kindOf(ignore)) !== 'file') throw e
+    }
+    return undefined
+  }
+
+  private async launch(ctx: Ctx, entry: Entry, spawned: () => void): Promise<void> {
     const workspaceRoot = resolve(ctx.session.workspaceRoot)
     if (entry.def.needsTrust && !this.cfg.trusted) return this.fail(entry, entry.def.needsTrust)
     // One filtered PATH for resolving and for the process, so what is checked is what runs.
@@ -212,15 +260,30 @@ export class LspSessions {
       let client: LspClient | undefined
       try {
         // No `signal`: the handle belongs to the session and outlives this call.
-        const proc = await ctx.sandbox.openProcess?.({
-          argv: run.argv,
-          cwd: entry.root,
-          env: { ...base, ...settings?.env },
-        })
+        let proc: Awaited<ReturnType<NonNullable<Ctx['sandbox']['openProcess']>>> | undefined
+        try {
+          if (settings?.cacheDir) {
+            const refused = await this.prepareCache(ctx, settings.cacheDir, settings.env)
+            if (refused) return this.fail(entry, refused)
+          }
+          proc = await ctx.sandbox.openProcess?.({
+            argv: run.argv,
+            cwd: entry.root,
+            env: { ...base, ...settings?.env },
+          })
+        } finally {
+          spawned()
+        }
         if (!proc) throw new Error('no process port')
         client = new LspClient(proc, entry.root, this.cfg.stableMs)
         await client.start(this.cfg.initMs, settings?.initializationOptions)
       } catch (e) {
+        // The call that began the start ended under the open: not the server's fault, so try again next call.
+        if (closedInvocation(e)) {
+          await client?.close()
+          if (this.entries.get(entry.key) === entry) this.entries.delete(entry.key)
+          return
+        }
         reason = errorText(e)
         await client?.close()
         client = undefined

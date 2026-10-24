@@ -20,9 +20,25 @@ export type Opened = {
  */
 export function sandboxHarness(table: Record<string, string[]>) {
   const opened: Opened[] = []
+  // The invocation of the call that is running now. Core closes it when the call returns, and an
+  // open still pending then is refused, as the Host's wrapper does for a closed workspace invocation.
+  let current: { closed: boolean } | undefined
   const open = async (request: Opened['request']): Promise<SandboxProcess> => {
-    const flags = table[basename(request.argv[0] as string)]
-    if (!flags) throw new Error(`spawn ${request.argv[0]} ENOENT`)
+    const invocation = current
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    if (invocation?.closed) throw new Error('E_WORKSPACE_CLOSED: workspace invocation is closed')
+    const listed = table[basename(request.argv[0] as string)]
+    if (!listed) throw new Error(`spawn ${request.argv[0]} ENOENT`)
+    // `--needs-writable-cache` models gopls under a write-confined sandbox: it dies at startup unless its
+    // caches are redirected into the workspace, and it must keep the user's own HOME.
+    const confined = listed.includes('--needs-writable-cache')
+    const flags = listed.filter((flag) => flag !== '--needs-writable-cache')
+    const cache = request.env?.GOPLSCACHE
+    if (
+      confined &&
+      !(cache?.startsWith(`${request.cwd}/`) && request.env?.GOCACHE?.startsWith(`${request.cwd}/`))
+    )
+      flags.push('--exit-on-start')
     const child = spawn(process.execPath, [FAKE, ...flags], { stdio: ['pipe', 'pipe', 'ignore'] })
     const record: Opened = { request, child, exited: false }
     opened.push(record)
@@ -55,9 +71,32 @@ export function sandboxHarness(table: Record<string, string[]>) {
       },
     }
   }
+  /** Runs one tool call and closes its invocation as soon as it returns. */
+  const inInvocation = async <T>(call: () => Promise<T>): Promise<T> => {
+    const invocation = { closed: false }
+    current = invocation
+    try {
+      return await call()
+    } finally {
+      invocation.closed = true
+    }
+  }
   return {
     opened,
     open,
+    /** Makes every call of `lsp` end its invocation on return, like core does. */
+    closing<
+      L extends {
+        diagnosticsFor: (...a: never[]) => Promise<unknown>
+        check: (...a: never[]) => Promise<unknown>
+      },
+    >(lsp: L): L {
+      for (const name of ['diagnosticsFor', 'check'] as const) {
+        const original = lsp[name].bind(lsp) as (...a: unknown[]) => Promise<unknown>
+        ;(lsp as Record<string, unknown>)[name] = (...a: unknown[]) => inInvocation(() => original(...a))
+      }
+      return lsp
+    },
     killAll: () => {
       for (const o of opened) o.child.kill()
     },
@@ -76,6 +115,18 @@ export function lspContext(
     files: { 'package.json': '{}', 'pyproject.toml': '', 'go.mod': '', 'Cargo.toml': '', ...files },
   })
   if (harness) ctx.sandbox.openProcess = harness.open as never
+  // The fake file port has no exclusive create; this one refuses an existing file as the real one does.
+  ctx.fs.create = async (path, data) => {
+    if (
+      await ctx.fs.stat(path).then(
+        () => true,
+        () => false,
+      )
+    )
+      throw new Error('EEXIST')
+    await ctx.fs.write(path, data)
+    return { size: data.byteLength, sha256: '' }
+  }
   return ctx
 }
 

@@ -20,7 +20,7 @@ function setup(
 ) {
   harness = sandboxHarness(table)
   install = fakeInstall(Object.keys(table), withTypescript)
-  const lsp = new LspSessions()
+  const lsp = harness.closing(new LspSessions())
   lsp.configure({
     searchPath: install.searchPath,
     stableMs: 20,
@@ -51,6 +51,67 @@ describe('automatic diagnostics', () => {
     expect(harness.opened[0]?.request.cwd).toBe('/work/proj')
     expect('signal' in (harness.opened[0]?.request ?? {})).toBe(false)
   })
+
+  it('keeps a start alive past the first write, so the second write reports the errors', async () => {
+    const lsp = setup(TSFAKE)
+    const ctx = lspContext(harness)
+    expect(await lsp.diagnosticsFor(ctx, TS, BAD)).toBeUndefined()
+    await sleep(300)
+    expect(await lsp.diagnosticsFor(ctx, TS, BAD)).toContain('bad word on line 1')
+    expect(harness.opened).toHaveLength(1)
+  })
+
+  it('does not remember an open refused by a closed invocation as a failed server', async () => {
+    const lsp = setup(TSFAKE)
+    const ctx = lspContext(harness)
+    // Closes the invocation under the pending open, as a call that ends early does.
+    const open = ctx.sandbox.openProcess as typeof harness.open
+    ctx.sandbox.openProcess = (async () => {
+      await sleep(50)
+      throw new Error('E_WORKSPACE_CLOSED: workspace invocation is closed')
+    }) as never
+    expect(await lsp.diagnosticsFor(ctx, TS, BAD)).toBeUndefined()
+    await sleep(100)
+    ctx.sandbox.openProcess = open as never
+    await until(() => lsp.diagnosticsFor(ctx, TS, BAD))
+    expect(harness.opened).toHaveLength(1)
+  })
+
+  it('gives a server that must write a cache a workspace cache, a hardened env and an ignoring directory', async () => {
+    const lsp = setup({ gopls: ['--needs-writable-cache'] })
+    const ctx = lspContext(harness)
+    expect(await lsp.diagnosticsFor(ctx, '/work/proj/a.go', BAD)).toBeUndefined()
+    await sleep(300)
+    expect(await lsp.diagnosticsFor(ctx, '/work/proj/a.go', BAD)).toContain('bad word on line 1')
+    const env = harness.opened[0]?.request.env ?? {}
+    expect(env).toMatchObject({
+      GOENV: 'off',
+      GOTOOLCHAIN: 'local',
+      GOPROXY: 'off',
+      GOFLAGS: '-mod=readonly',
+      CGO_ENABLED: '0',
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_CONFIG_NOSYSTEM: '1',
+    })
+    // HOME is never moved into the repository, where a clone could have planted config in it.
+    expect(env.HOME?.startsWith('/work/proj')).not.toBe(true)
+    expect(new TextDecoder().decode(await ctx.fs.read('/work/proj/.agnes-lsp/.gitignore'))).toBe('*\n')
+  })
+
+  it.each(['/.agnes-lsp', '/.agnes-lsp/gopls', '/.agnes-lsp/go-build'])(
+    'does not start a server that needs a cache directory when %s is a symlink',
+    async (link) => {
+      const lsp = setup({ gopls: [] })
+      const ctx = lspContext(harness)
+      ctx.fs.stat = (async (p: string) =>
+        p.endsWith(link)
+          ? { kind: 'symlink', size: 0, mtimeMs: 0 }
+          : Promise.reject(new Error('ENOENT'))) as never
+      expect(await lsp.diagnosticsFor(ctx, '/work/proj/a.go', BAD)).toBeUndefined()
+      await sleep(100)
+      expect(harness.opened).toHaveLength(0)
+    },
+  )
 
   it('waits for the version it sent, not for a stale publish', async () => {
     const lsp = setup({ 'typescript-language-server': ['--stale'] })
