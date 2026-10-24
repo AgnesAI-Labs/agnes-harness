@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ContentBlock } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
 import { escapeControl } from './component.js'
+import { boundKeys, keyText } from './keymap.js'
 import { tt } from './locale-extended.js'
 
 export const codeOf = (error: unknown): string | undefined => {
@@ -158,7 +159,12 @@ export class BusyInput {
     const text = escapeControl(textOf(blocks).replace(/\s+/g, ' ').trim() || 'attachment')
     if (kind === 'steer') return host.notice(tt('busy.steered', locale, { text }))
     if (fellBack) return host.notice(tt('busy.steerFallback', locale), 'warning')
-    host.notice(tt(this.hinted ? 'busy.queued' : 'busy.hint', locale, { text }))
+    host.notice(
+      tt(this.hinted ? 'busy.queued' : 'busy.hint', locale, {
+        text,
+        key: keyText(boundKeys('steer')[0] ?? ''),
+      }),
+    )
     this.hinted = true
   }
 }

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { Text } from '../../src/tui/component.js'
 import { assistantView } from '../../src/tui/footer-renderer.js'
+import { installKeymap, Keymap } from '../../src/tui/keymap.js'
 import { renderMarkdown, renderMarkdownChunk } from '../../src/tui/markdown.js'
 import { TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
@@ -334,6 +335,22 @@ it('localizes the earlier-history hint', () => {
   const t = new Timeline(options)
   t.apply(timeline([]), { hasEarlier: true })
   expect(t.render(40)).toEqual(['↑ 更早的记录 · PgUp 加载'])
+})
+
+it('names the jump key the user bound, not the default', () => {
+  installKeymap(new Keymap(new Map([['timeline-bottom', ['ctrl-end']]])))
+  try {
+    const t = new Timeline({ rows: () => 8, nodeView: view })
+    const nodes = [1, 2, 3, 4, 5, 6].map((n) => user(String(n), String(n)))
+    t.apply(timeline(nodes.slice(0, 5)))
+    t.render(30)
+    t.scroll(-1)
+    t.render(30)
+    t.apply(timeline(nodes))
+    expect(t.newOutputHint(false)).toBe('↓ New output below · Ctrl-End to jump back')
+  } finally {
+    installKeymap(new Keymap())
+  }
 })
 
 it('offers the way back only when output arrived while scrolled up, and End or Ctrl-End returns to the bottom', () => {

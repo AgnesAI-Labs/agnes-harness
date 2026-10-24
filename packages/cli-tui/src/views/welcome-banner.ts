@@ -3,7 +3,7 @@ import type { Colour } from '../ansi.js'
 import { slashCommand } from '../commands.js'
 import { type Component, escapeControl } from '../component.js'
 import { fitLine } from '../components/line.js'
-import type { KeyName } from '../keys.js'
+import { boundKeys } from '../keymap.js'
 import { type ExtendedKey, tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
@@ -57,7 +57,7 @@ const START_COMMANDS = [
 ] as const
 
 /** A key as the user presses it, spelled from the keymap's own names so a rename cannot drift. */
-const keyLabel = (name: KeyName): string => name.replace('-', '+')
+const keyLabel = (name: string): string => name.replace('-', '+')
 
 /**
  * The built-in tips. Each one names something that works in this build; `fresh` marks a feature new
@@ -65,8 +65,14 @@ const keyLabel = (name: KeyName): string => name.replace('-', '+')
  */
 export function welcomeTips(locale: string): { text: string; fresh: boolean }[] {
   return [
-    { text: tt('welcome.tipToolDetails', locale, { key: keyLabel('ctrl-o') }), fresh: false },
-    { text: tt('welcome.tipQueue', locale, { key: keyLabel('alt-enter') }), fresh: false },
+    {
+      text: tt('welcome.tipToolDetails', locale, { key: keyLabel(boundKeys('card-toggle')[0] ?? 'ctrl-o') }),
+      fresh: false,
+    },
+    {
+      text: tt('welcome.tipQueue', locale, { key: keyLabel(boundKeys('steer')[0] ?? 'alt-enter') }),
+      fresh: false,
+    },
     { text: tt('welcome.tipMention', locale), fresh: false },
     { text: tt('welcome.tipTheme', locale), fresh: false },
     { text: tt('welcome.tipContext', locale), fresh: false },
