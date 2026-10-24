@@ -121,6 +121,37 @@ export function inheritWorkspaceBinding(parent: WorkspaceBinding, childSessionKe
   })
 }
 
+/**
+ * Whether `child` is `parent` grown by extra directories the daemon admitted: the child's own key (`childSessionKey`),
+ * the same workspace, revision and root, and the parent's extra roots kept in their order inside a strictly
+ * longer child list. The daemon keeps the list sorted, so a new root may land between old ones; a
+ * prefix test would refuse that. Dropping, reordering or swapping a root, or any other change, is
+ * not an extension. Both bindings must be Host-issued; the new roots passed that check on issue.
+ */
+export function extendsWorkspaceBinding(
+  parent: WorkspaceBinding,
+  child: WorkspaceBinding,
+  childSessionKey: string,
+): boolean {
+  assertWorkspaceBinding(parent)
+  assertWorkspaceBinding(child)
+  return (
+    child.sessionKey === childSessionKey &&
+    child.workspaceId === parent.workspaceId &&
+    child.authorityRevision === parent.authorityRevision &&
+    child.canonicalRoot === parent.canonicalRoot &&
+    child.extraRoots.length > parent.extraRoots.length &&
+    isSubsequence(parent.extraRoots, child.extraRoots)
+  )
+}
+
+/** Every item of `part` appears in `whole`, in the same relative order. */
+function isSubsequence(part: readonly string[], whole: readonly string[]): boolean {
+  let next = 0
+  for (const item of whole) if (item === part[next]) next++
+  return next === part.length
+}
+
 /** CLI in-process authority is permanently restricted to the one canonical startup root. */
 export class CliWorkspaceAuthority {
   readonly canonicalRoot: string

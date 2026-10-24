@@ -521,7 +521,7 @@ export function createLocalEndpoint(
         }
         try {
           const parentBinding = await workspaces.restoreBinding(sessionId)
-          await workspaces.authorizeAndBind(
+          const childBinding = await workspaces.authorizeAndBind(
             ownedChildKey,
             parentBinding.canonicalRoot,
             // The child keeps every directory the parent had; admission checks the union as a whole.
@@ -531,6 +531,8 @@ export function createLocalEndpoint(
             parent: sessionId,
             at,
             childKey: ownedChildKey,
+            // Host judges the child's directories by the same rule as under the supervisor.
+            binding: childBinding,
             ...(credential === undefined ? {} : { credential }),
           })
           if (!sessionOwnership.activateFork(sessionId, entry.key, ownerPrincipal, at)) denyFork()

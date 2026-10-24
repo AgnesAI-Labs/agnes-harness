@@ -175,6 +175,7 @@ describe('session.fork additionalDirectories', () => {
     const [one, two] = [temp(), temp()]
     for (const dir of [one, two]) await f.workspaces.add(dir)
     let opened: HostSession | undefined
+    const sessions = new Map<string, HostSession>()
     const createSession = f.host.host.createSession.bind(f.host.host)
     const host = new Proxy(f.host.host, {
       get: (target, property, receiver) =>
@@ -182,6 +183,7 @@ describe('session.fork additionalDirectories', () => {
           ? async (opts: Parameters<typeof createSession>[0]) => {
               const created = await createSession(opts)
               opened ??= created
+              sessions.set(created.key, created)
               return created
             }
           : Reflect.get(target, property, receiver),
@@ -219,6 +221,7 @@ describe('session.fork additionalDirectories', () => {
       two,
       parent,
       fork,
+      sessions,
       session,
       prompt,
       endpoint,
@@ -238,6 +241,19 @@ describe('session.fork additionalDirectories', () => {
       const child = grown.result?.sessionId ?? ''
       expect((await f.workspaces.restoreBinding(child)).extraRoots).toEqual([f.one, f.two].sort())
       expect((await f.workspaces.restoreBinding(f.parent)).extraRoots).toEqual([f.one])
+      // The child's tools run against its own file fence: the parent's directory and the new one,
+      // nothing the parent could not already reach.
+      writeFileSync(join(f.two, 'two.txt'), 'two')
+      const reads = (key: string, dir: string) => {
+        const invoke = f.sessions.get(key)?.d.workspaceInvocation
+        if (!invoke) throw new Error(`no workspace invocation for ${key}`)
+        return invoke.run((view) => view.fs().read(join(dir, dir === f.two ? 'two.txt' : 'a-file.txt')))
+      }
+      expect(f.sessions.get(child)?.d.extraDirectories).toEqual([f.one, f.two].sort())
+      await expect(reads(child, f.two)).resolves.toEqual(new TextEncoder().encode('two'))
+      await expect(reads(f.parent, f.two)).rejects.toMatchObject({ code: 'E_FS_DENIED' })
+      const plainChild = plain.result?.sessionId ?? ''
+      await expect(reads(plainChild, f.two)).rejects.toMatchObject({ code: 'E_FS_DENIED' })
     } finally {
       await f.close()
     }
