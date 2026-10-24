@@ -4086,13 +4086,21 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: "model.json's closed seven-value SlotName enum, reused rather than retyped a second time",
   },
   SessionForkParams: {
-    valid: { sessionId: 's', at: 12 },
+    valid: { sessionId: 's', at: 12, additionalDirectories: ['/a'] },
     invalid: [
       { sessionId: 's' }, // missing required at
       { sessionId: 's', at: 0 }, // boundary: one below minimum:1
       { sessionId: 's', at: 12, childKey: rep(513) }, // boundary: maxLength:512
+      {
+        sessionId: 's',
+        at: 12,
+        additionalDirectories: rep(9)
+          .split('')
+          .map(() => '/a'),
+      }, // boundary: maxItems:8
+      { sessionId: 's', at: 12, additionalDirectories: [''] }, // boundary: item minLength:1
     ],
-    note: 'fork params: sessionId + the seq to fork from, with an optional childKey',
+    note: 'fork params: sessionId + the seq to fork from, with an optional childKey and extra directories',
   },
   SessionBtwParams: {
     valid: { sessionId: 's', question: 'what did we decide?' },

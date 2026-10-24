@@ -126,6 +126,8 @@ export type AgnesContext = LocalContext & {
     childKey?: string,
     credential?: unknown,
     principalId?: string,
+    /** Directories the child may reach in addition to the parent's; absent means none added. */
+    additionalDirectories?: readonly string[],
   ) => Promise<JournalResult>
   /** Host's principals seam resolver. Optional for supervisor/transport adapters that do not fit
    * participant or approval identity support. */
@@ -134,6 +136,14 @@ export type AgnesContext = LocalContext & {
   /** Persistent in production, memory-backed in the embedded endpoint. A supervisor that has not
    * fitted the port keeps the bounded open-registry fallback below. */
   tickets?: TicketPort
+}
+
+/** The submit payload is open-ended JSON, so the optional directory list is checked before it reaches a fork. */
+function forkDirectories(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string'))
+    throw rpcError('INVALID_PARAMS', { reason: 'additionalDirectories must be a list of paths' })
+  return value
 }
 
 export type Family = { name: string; methods: string[]; guidance: string }
@@ -1192,10 +1202,17 @@ export function registerAgnes(
     }
   })
   ep.register('_agnes/v1/session.fork', async (params, c) => {
-    const p = params as { sessionId: string; at: number; childKey?: string }
+    const p = params as { sessionId: string; at: number; childKey?: string; additionalDirectories?: string[] }
     requireOwner('session.fork', p.sessionId, c)
     const r = await runQueued(cx.commandQueue, p.sessionId, neverAbort(), () =>
-      cx.forkSession(p.sessionId, p.at, p.childKey, c.conn.credential, c.conn.principalId),
+      cx.forkSession(
+        p.sessionId,
+        p.at,
+        p.childKey,
+        c.conn.credential,
+        c.conn.principalId,
+        p.additionalDirectories,
+      ),
     )
     return r.result as { sessionId: string }
   })
@@ -1645,6 +1662,7 @@ export function registerAgnes(
           payload.childKey as string | undefined,
           c.conn.credential,
           c.conn.principalId,
+          forkDirectories(payload.additionalDirectories),
         )
       case 'jobs.enqueue': {
         if (!cx.jobs) throw rpcError('CAPABILITY_DENIED', { method: 'jobs.enqueue' })
@@ -1781,6 +1799,7 @@ export function registerAgnes(
         payload.childKey,
         c.conn.credential,
         c.conn.principalId,
+        forkDirectories(payload.additionalDirectories),
       )
     return undefined
   }

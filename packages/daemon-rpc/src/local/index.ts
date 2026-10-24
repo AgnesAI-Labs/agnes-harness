@@ -497,7 +497,7 @@ export function createLocalEndpoint(
       artifactRead: artifactReadConfigured,
       ...(lockedPackageMutations ? { lockedPackageMutations } : {}),
       ...(computerUse ? { computerUse } : {}),
-      forkSession: async (sessionId, at, childKey, credential, principalId) => {
+      forkSession: async (sessionId, at, childKey, credential, principalId, additionalDirectories) => {
         const denyFork = (): never => {
           throw rpcError('CAPABILITY_DENIED', {
             method: 'session.fork',
@@ -524,7 +524,8 @@ export function createLocalEndpoint(
           await workspaces.authorizeAndBind(
             ownedChildKey,
             parentBinding.canonicalRoot,
-            parentBinding.extraRoots,
+            // The child keeps every directory the parent had; admission checks the union as a whole.
+            [...new Set([...(parentBinding.extraRoots ?? []), ...(additionalDirectories ?? [])])],
           )
           const entry = await registry.fork({
             parent: sessionId,

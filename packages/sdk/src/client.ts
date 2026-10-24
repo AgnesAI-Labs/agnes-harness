@@ -69,7 +69,7 @@ import { type PermissionHandler, type PermissionRequest, unansweredPermission } 
 import { type ReconnectOptions, Reconnector } from './reattach.js'
 import { RpcConnection } from './rpc.js'
 import { Session } from './session.js'
-import { requireAdditionalDirectories } from './session-directories.js'
+import { requireAdditionalDirectories, requireForkAdditionalDirectories } from './session-directories.js'
 import { resendPending, submitForkCommand } from './submit.js'
 import { textFor } from './text.js'
 import { inprocTransport, type RpcEndpoint } from './transport/inproc.js'
@@ -618,8 +618,15 @@ export class Client {
         { sessionId, question },
         { timeoutMs: Math.max(this.timeouts.request, 75_000), ...options },
       ),
-    fork: async (id: string, at: number, o: { cwd?: string } = {}): Promise<Session> => {
-      const childId = await submitForkCommand(this, id, at)
+    /** `additionalDirectories` are added to the parent's own for the child; the parent is unchanged. */
+    fork: async (
+      id: string,
+      at: number,
+      o: { cwd?: string; additionalDirectories?: readonly string[] } = {},
+    ): Promise<Session> => {
+      const extra = o.additionalDirectories ?? []
+      if (extra.length) requireForkAdditionalDirectories((await this.initialize()).capabilities)
+      const childId = await submitForkCommand(this, id, at, undefined, extra)
       return this.sessionHandle(childId, o.cwd)
     },
   }

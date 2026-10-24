@@ -56,7 +56,7 @@ ACP 回放根据历史 `turn/start` 的序号推导 `_meta["ai.agnes.harness"].p
 
 Web 创建 SDK 连接时设置 `sessionRestoreHistory: 'none'`，使保留了工作区提示的新建、分叉或直接附加句柄在 worker 回收后也只做准入恢复。其他 SDK 客户端默认 `'full'`；显式 `session.load` 仍为该句柄保留完整重放，即使连接的恢复默认值不同。
 
-`client.session.fork(parentId, at, { cwd? })` 可为子句柄保留父会话已知的工作区提示。Web 的 turn 和侧栏分叉都会传递它。该提示仅留在客户端；后端从父绑定派生子会话权限，恢复时仍会重新核对提示。
+`client.session.fork(parentId, at, { cwd? })` 可为子句柄保留父会话已知的工作区提示。Web 的 turn 和侧栏分叉都会传递它。该提示仅留在客户端；后端从父绑定派生子会话权限，恢复时仍会重新核对提示。`session.fork(parentId, at, { additionalDirectories })`（线上是 `_agnes/v1/session.fork` 和 `fork` 提交的负载）让子会话拥有父会话的额外目录再加上所列目录，父会话不变。daemon 对合并后的列表按 `session/new` 的规则准入（绝对路径、已登记、不受保护、合计最多 8 个，超出则拒绝而不截断）。SDK 只在 `initialize.agentCapabilities._meta["ai.agnes.harness"].forkAdditionalDirectories: true` 时才发送，否则抛出 `unsupported`，也不会 fork。
 
 `client.session.btw(sessionId, question)` 基于当前对话回答一个旁问（1 至 4000 字符），不进 transcript：账本里只多一条 `side-call` 的费用行，模型不能调用工具；回合进行中只看到该回合之前已完成的部分。同一会话同时只能有一个旁问（`SESSION_BUSY`）；单次请求或树预算不足是 `SEMANTIC_REJECTED`（`reason: 'BUDGET'`），60 秒超时是 `REQUEST_TIMEOUT`。模型一旦被调用，超时或失败也会写入 `side-call` 费用行（标记为中断）。
 

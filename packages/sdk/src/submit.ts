@@ -152,6 +152,7 @@ export async function submitForkCommand(
   sessionId: string,
   at: number,
   commandId?: string,
+  additionalDirectories: readonly string[] = [],
 ): Promise<string> {
   const clientId = await client.clientId()
   const id = commandId ?? (await client.journal.nextCommandId(sessionId))
@@ -164,7 +165,12 @@ export async function submitForkCommand(
         clientId,
         commandId: id,
         kind: 'fork',
-        payload: { sessionId, at, childKey },
+        payload: {
+          sessionId,
+          at,
+          childKey,
+          ...(additionalDirectories.length ? { additionalDirectories: [...additionalDirectories] } : {}),
+        },
       },
     },
     clientId,

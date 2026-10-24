@@ -5323,6 +5323,11 @@
         "childKey": {
           "type": "string",
           "maxLength": 512
+        },
+        "additionalDirectories": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "type": "string", "minLength": 1 }
         }
       }
     },

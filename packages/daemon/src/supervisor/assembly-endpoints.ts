@@ -190,7 +190,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     artifactRead: artifactRead !== undefined,
     ...(o.lockedPackageMutations !== undefined ? { lockedPackageMutations: o.lockedPackageMutations } : {}),
     ...(host.computerUse ? { computerUse: host.computerUse } : {}),
-    forkSession: async (sessionId, at, childKey, credential, principalId) => {
+    forkSession: async (sessionId, at, childKey, credential, principalId, additionalDirectories) => {
       const denyFork = (): never => {
         throw rpcError('CAPABILITY_DENIED', {
           method: 'session.fork',
@@ -212,7 +212,8 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
         const childBinding = await workspaceCatalog.authorizeAndBind(
           ownedChildKey,
           parentBinding.canonicalRoot,
-          parentBinding.extraRoots,
+          // The child keeps every directory the parent had; admission checks the union as a whole.
+          [...new Set([...(parentBinding.extraRoots ?? []), ...(additionalDirectories ?? [])])],
         )
         const created = await supervisorRegistry.fork({
           parent: sessionId,

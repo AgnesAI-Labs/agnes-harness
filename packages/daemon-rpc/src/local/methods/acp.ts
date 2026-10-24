@@ -593,7 +593,14 @@ export function registerAcp(
       agentCapabilities: {
         loadSession: true,
         ...(cx.workspaces.admitsExtraRoots ? { sessionCapabilities: { additionalDirectories: {} } } : {}),
-        _meta: { 'ai.agnes.harness': { hardTurnBudget: true, turnMaxSteps: true, sessionOpen: true } },
+        _meta: {
+          'ai.agnes.harness': {
+            hardTurnBudget: true,
+            turnMaxSteps: true,
+            sessionOpen: true,
+            ...(cx.workspaces.admitsExtraRoots ? { forkAdditionalDirectories: true } : {}),
+          },
+        },
         promptCapabilities: { image: true, audio: false, embeddedContext: true },
       },
       _meta: {
