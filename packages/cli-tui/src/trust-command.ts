@@ -3,7 +3,7 @@ import { AGH_DIR, type RuntimeAdminSnapshot } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import type { TuiApp } from './app.js'
 import type { SlashResult } from './commands.js'
-import { wrapText } from './component.js'
+import { visibleLine, wrapText } from './component.js'
 import { tt } from './locale-extended.js'
 import type { TrustKey } from './locale-trust.js'
 import { newPackageCommandId } from './package-admin.js'
@@ -21,10 +21,7 @@ const shown = new WeakMap<object, Shown>()
 const MAX_HOOKS = 20
 const WRAP = 76
 
-/** One inert line of untrusted text; invisible format characters (bidi overrides, zero-width, BOM) are spelled out. */
-const visible = (text: string): string =>
-  // Before oneLine, which would trim a leading or trailing BOM away unseen.
-  oneLine(text.replace(/\p{Cf}/gu, (c) => `\\u{${(c.codePointAt(0) as number).toString(16).toUpperCase()}}`))
+const visible = visibleLine
 
 /**
  * `event[matcher]: command` for each hook in `.agh/hooks.json`, or undefined when the file cannot be read in

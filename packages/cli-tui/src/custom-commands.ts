@@ -3,7 +3,7 @@ import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import type { TuiApp } from './app.js'
-import { escapeControl } from './component.js'
+import { escapeControl, visibleLine } from './component.js'
 import { tt } from './locale-extended.js'
 
 /** One `.md` file that is a slash command. `project` ones come from the repository, so they are not trusted. */
@@ -89,8 +89,9 @@ function readDir(
             name,
             scope,
             shown: scope === 'project' ? `${AGH_DIR}/commands/${file}` : path,
-            description: oneLine(fields.description ?? ''),
-            hint: oneLine(fields['argument-hint'] ?? ''),
+            // A repository's text sits next to the provenance tag, so a bidi override must not reorder it.
+            description: (scope === 'project' ? visibleLine : oneLine)(fields.description ?? ''),
+            hint: (scope === 'project' ? visibleLine : oneLine)(fields['argument-hint'] ?? ''),
             body,
             digest: createHash('sha256').update(path).update(body).digest('hex'),
           })
