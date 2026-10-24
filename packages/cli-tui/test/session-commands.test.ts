@@ -831,6 +831,15 @@ describe('small info commands', () => {
     expect(narrow.join('')).toContain(mark('price'))
   })
 
+  it('/diff styles ---/+++ as file headers only before the first hunk, never inside one', () => {
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+    const text = '--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n--- old comment\n+++ new text\n ctx'
+    const rows = localCommandView(ansi)('/diff', text).render(40)
+    expect(rows).toContain(ansi.fg('faint', '--- a/x'))
+    expect(rows).toContain(ansi.fg('danger', '--- old comment'))
+    expect(rows).toContain(ansi.fg('success', '+++ new text'))
+  })
+
   it('/init submits a fixed message that depends on AGENTS.md, and writes nothing itself', async () => {
     const workspaceRead = vi.fn(async (path: string) => ({ path }))
     const app = appWith({}, { workspaceRead })
