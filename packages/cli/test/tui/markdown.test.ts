@@ -234,3 +234,29 @@ it('shows LaTeX as Unicode, keeps prices, shell variables and code spans as writ
   ])
   expect(text('```math\n\\alpha\n```')).toEqual(['math', '\\alpha'])
 })
+
+it('draws closed mermaid fences as box art and leaves everything else as the code block', () => {
+  const theme = new TuiTheme('light')
+  const ansi = theme.ansi(createAnsi('256'))
+  const flow = '```mermaid\ngraph TD\n  A[Start] --> B[Finish]\n```'
+  const text = (md: string, width = 60) =>
+    renderMarkdown(md, width, ansi).map((row) => stripVTControlCharacters(row))
+  const art = text(flow)
+  expect(art.join('\n')).toMatch(/Start/)
+  expect(art.join('\n')).toMatch(/Finish/)
+  expect(art.join('\n')).toMatch(/[┌─│└]/)
+  expect(art.join('\n')).not.toContain('graph TD')
+  // too wide, unsupported kind, garbage: the ordinary code block
+  expect(text(flow, 9).join('\n')).toContain('graph')
+  expect(text('```mermaid\npie\n  "a": 1\n```').join('\n')).toContain('pie')
+  expect(text('```mermaid\nnot a diagram at all\n```').join('\n')).toContain('not a diagram at all')
+  // streaming: an unclosed fence stays source until it closes
+  expect(text('```mermaid\ngraph TD\n  A[Start] --> B[Finish]').join('\n')).toContain('graph TD')
+  // no colour: no escape sequences, same lines as the plain art
+  const mono = renderMarkdown(flow, 60, none)
+  expect(mono.join('')).not.toContain('\x1b')
+  expect(mono).toEqual(art)
+  // /raw shows the source
+  theme.raw = true
+  expect(text(flow)).toEqual(['mermaid', 'graph TD', '  A[Start] --> B[Finish]'])
+})

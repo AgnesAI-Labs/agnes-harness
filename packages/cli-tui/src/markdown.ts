@@ -2,6 +2,7 @@ import { Lexer, type Token, type Tokens } from 'marked'
 import { type CodeRun, highlight } from './highlight.js'
 import { renderLatex } from './latex.js'
 import { displayMathSource, MATH_FENCES, mathLexerOptions } from './latex-markdown.js'
+import { fenceClosed, mermaidBlock } from './mermaid.js'
 import type { Tone } from './palette.js'
 import { displayWidth } from './terminal.js'
 import type { ThemedAnsi } from './theme.js'
@@ -252,6 +253,11 @@ function code(token: Tokens.Code, width: number, ansi: ThemedAnsi): string[] {
   const lang = token.lang?.trim().split(/\s/)[0] ?? ''
   const math = MATH_FENCES.has(lang) ? mathBlock(token.text, width, ansi) : undefined
   if (math) return math
+  const diagram =
+    lang === 'mermaid' && !ansi.raw && fenceClosed(token.raw)
+      ? mermaidBlock(token.text, width, ansi)
+      : undefined
+  if (diagram) return diagram
   // Raw view: the language on a line of its own, then the code as it is, so a copy is the code itself.
   if (ansi.raw)
     return [

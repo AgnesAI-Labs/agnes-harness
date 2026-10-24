@@ -10,6 +10,7 @@ const BARE_ALLOWED = [
   /^node:/,
   /^marked$/,
   /^get-east-asian-width$/,
+  /^grok-mermaid$/,
 ]
 // A word after a slash, dot or dash (the `/import` command, a `commands.import` key, the `--from` flag) is text, not an import statement.
 const IMPORTS = /(?<![-/.])\b(?:from|import)\s*\(?\s*['"]([^'"]+)['"]/g
