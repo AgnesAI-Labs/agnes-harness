@@ -1,6 +1,8 @@
 import { realpathSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createEditTool } from '../../tools-core/src/tools/edit.js'
+import { createWriteTool } from '../../tools-core/src/tools/write.js'
 import { LspSessions } from '../src/registry.js'
 import { fakeInstall, lspContext, sandboxHarness, sleep } from './harness.js'
 
@@ -110,6 +112,43 @@ describe('automatic diagnostics', () => {
     } finally {
       delete process.env.ANTHROPIC_API_KEY
     }
+  })
+})
+
+describe('through the write and edit tools', () => {
+  const texts = (r: { content: { type: string; text?: string }[] }) => r.content.map((c) => c.text)
+
+  it('adds the errors to the result once the server is warm, and none when the text is clean', async () => {
+    const lsp = setup(TSFAKE)
+    const write = createWriteTool(undefined, lsp)
+    const edit = createEditTool(undefined, lsp)
+    const ctx = lspContext(harness)
+    const first = await write.execute({ path: 'a.ts', content: 'let a = BAD\n' }, ctx)
+    expect(texts(first)).toEqual(['created a.ts (12 chars)'])
+    await vi.waitFor(() => expect(harness.opened).toHaveLength(1))
+    await sleep(300)
+    const again = await write.execute({ path: 'a.ts', content: 'let a = BAD\nlet b = BAD\n' }, ctx)
+    expect(texts(again)).toEqual([
+      'overwrote a.ts (24 chars)',
+      'LSP found 2 errors in a.ts:\n1:9 bad word on line 1 (fake F1)\n2:9 bad word on line 2 (fake F1)',
+    ])
+    const fixed = await edit.execute(
+      { path: 'a.ts', edits: [{ oldText: 'BAD\nlet b = BAD', newText: '1\nlet b = 2' }] },
+      ctx,
+    )
+    expect(texts(fixed)).toEqual(['applied 1 edit(s) to a.ts (+0 lines)'])
+  })
+
+  it('leaves the result alone when the server is too slow', async () => {
+    const lsp = setup({ 'typescript-language-server': ['--delay=600'] }, { autoWaitMs: 100 })
+    const write = createWriteTool(undefined, lsp)
+    const ctx = lspContext(harness)
+    await write.execute({ path: 'a.ts', content: 'BAD\n' }, ctx)
+    await vi.waitFor(() => expect(harness.opened).toHaveLength(1))
+    await sleep(300)
+    expect(texts(await write.execute({ path: 'a.ts', content: 'BAD BAD\n' }, ctx))).toEqual([
+      'overwrote a.ts (8 chars)',
+    ])
   })
 })
 

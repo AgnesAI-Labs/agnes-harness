@@ -1,18 +1,20 @@
 import type { Bytes, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
+import type { LspSessions } from '../../../lsp/src/registry.js'
 import type { FileChangeRecorder } from '../file-change.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { ABSENT, observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
 import { usesCrlf, writeContent } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
+import { withLspNote } from './lsp-note.js'
 import { MAX_READ_BYTES } from './read.js'
 import { WriteParams } from './schemas.js'
 
 const dec = new TextDecoder('utf-8', { ignoreBOM: true })
 const enc = new TextEncoder()
 
-export function createWriteTool(record?: FileChangeRecorder) {
+export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) {
   return defineTool({
     name: 'write',
     description:
@@ -29,11 +31,12 @@ export function createWriteTool(record?: FileChangeRecorder) {
       deferLoading: false,
       requiresApproval: 'destructive',
     },
-    execute: (args, ctx): Promise<ToolResult> => {
+    execute: async (args, ctx): Promise<ToolResult> => {
       // Keyed on the resolved path rather than on the argument: `a.ts` and `/work/proj/a.ts` are one
       // file, and two spellings taking two locks is the same as taking no lock at all.
       const abs = normalizeWorkspacePath(args.path, ctx.cwd).abs
-      return withFileLock(abs, async () => {
+      const wrote: { text?: string } = {}
+      const result = await withFileLock<ToolResult>(abs, async () => {
         let old = ''
         let oldBytes: Bytes = new Uint8Array()
         let existed = true
@@ -126,6 +129,7 @@ export function createWriteTool(record?: FileChangeRecorder) {
           abs,
           (await versionOf(ctx, args.path, after, MAX_READ_BYTES)) ?? UNKNOWN_VERSION,
         )
+        wrote.text = content
         return {
           content: [
             {
@@ -136,6 +140,7 @@ export function createWriteTool(record?: FileChangeRecorder) {
           details: { path: args.path, bytes: after.byteLength },
         }
       })
+      return wrote.text === undefined ? result : withLspNote(lsp, ctx, abs, wrote.text, result)
     },
   })
 }

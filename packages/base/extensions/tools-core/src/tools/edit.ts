@@ -1,11 +1,13 @@
 import type { ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
+import type { LspSessions } from '../../../lsp/src/registry.js'
 import type { FileChangeRecorder } from '../file-change.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
 import { crlf, usesCrlf } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
+import { withLspNote } from './lsp-note.js'
 import { isBinary, MAX_READ_BYTES } from './read.js'
 import { EditParams } from './schemas.js'
 
@@ -28,7 +30,7 @@ function fail(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true }
 }
 
-export function createEditTool(record?: FileChangeRecorder) {
+export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions) {
   return defineTool({
     name: 'edit',
     description:
@@ -45,11 +47,12 @@ export function createEditTool(record?: FileChangeRecorder) {
       deferLoading: false,
       requiresApproval: 'destructive',
     },
-    execute: (args, ctx): Promise<ToolResult> => {
+    execute: async (args, ctx): Promise<ToolResult> => {
       // Keyed on the resolved path rather than on the argument: `a.ts` and `/work/proj/a.ts` are one
       // file, and two spellings taking two locks is the same as taking no lock at all.
       const abs = normalizeWorkspacePath(args.path, ctx.cwd).abs
-      return withFileLock(abs, async () => {
+      const wrote: { text?: string } = {}
+      const result = await withFileLock<ToolResult>(abs, async () => {
         let bytes: Uint8Array
         try {
           bytes = await ctx.fs.read(args.path)
@@ -111,6 +114,7 @@ export function createEditTool(record?: FileChangeRecorder) {
           (await versionOf(ctx, args.path, enc.encode(text), MAX_READ_BYTES)) ?? UNKNOWN_VERSION,
         )
         const delta = text.split('\n').length - original.split('\n').length
+        wrote.text = text
         return {
           content: [
             {
@@ -121,6 +125,7 @@ export function createEditTool(record?: FileChangeRecorder) {
           details: { path: args.path, bytes: enc.encode(text).byteLength },
         }
       })
+      return wrote.text === undefined ? result : withLspNote(lsp, ctx, abs, wrote.text, result)
     },
   })
 }

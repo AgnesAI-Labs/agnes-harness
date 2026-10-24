@@ -4,6 +4,7 @@ import { join, resolve, sep } from 'node:path'
 import { checkToolDef, type ToolResult } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { type FakeToolContextOpts, fakeToolContext } from '../../../testkit/tool-context.js'
+import { LspSessions } from '../../lsp/src/registry.js'
 import { fileChangeReceipt } from '../src/file-change.js'
 import { withFileLock } from '../src/guards/mutation-queue.js'
 import { MAX_OBSERVED_ENTRIES } from '../src/guards/observed.js'
@@ -615,6 +616,74 @@ describe('a file longer than read returns in full', () => {
     ctx.fs.stat = async () => ({ kind: 'symlink', size: 9, mtimeMs: 2 })
     ctx.mem.files.set(A, big('b'))
     expect((await overwrite(ctx, 'b'.repeat(MAX_READ_BYTES))).isError).toBeUndefined()
+  })
+})
+
+describe('language server errors on write and edit results', () => {
+  const stub = (note: string | undefined, seen: unknown[] = []) =>
+    ({
+      async diagnosticsFor(_ctx: unknown, abs: string, text: string) {
+        // The file lock is already released here: taking it again would hang if it were still held.
+        await withFileLock(abs, async () => undefined)
+        seen.push([abs, text])
+        return note
+      },
+    }) as unknown as LspSessions
+
+  it('appends them as an extra text block after a successful write and a successful edit', async () => {
+    const seen: unknown[] = []
+    const lsp = stub('LSP found 1 error in a.ts:\n1:1 oops', seen)
+    const written = await createWriteTool(undefined, lsp).execute({ path: 'a.ts', content: 'x = 1' }, ctxOf())
+    expect(written.content.map((c) => (c.type === 'text' ? c.text : ''))).toEqual([
+      'created a.ts (5 chars)',
+      'LSP found 1 error in a.ts:\n1:1 oops',
+    ])
+    const ctx = await observedCtxOf({ files: { 'b.ts': 'let a = 1\n' } })
+    const edited = await createEditTool(undefined, lsp).execute(
+      { path: 'b.ts', edits: [{ oldText: '1', newText: '2' }] },
+      ctx,
+    )
+    expect(edited.content).toHaveLength(2)
+    expect(seen).toEqual([
+      ['/work/proj/a.ts', 'x = 1'],
+      ['/work/proj/b.ts', 'let a = 2\n'],
+    ])
+  })
+
+  it('adds nothing when the server has nothing to say, and nothing to a refused write or edit', async () => {
+    const seen: unknown[] = []
+    const quiet = stub(undefined, seen)
+    const ctx = ctxOf({ files: { 'c.ts': 'keep' } })
+    expect(
+      (await createWriteTool(undefined, quiet).execute({ path: 'n.ts', content: 'ok' }, ctx)).content,
+    ).toHaveLength(1)
+    seen.length = 0
+    const loud = stub('LSP found 1 error in c.ts:\n1:1 oops', seen)
+    expect(
+      (await createWriteTool(undefined, loud).execute({ path: 'c.ts', content: 'x' }, ctx)).isError,
+    ).toBe(true)
+    expect(
+      (
+        await createEditTool(undefined, loud).execute(
+          { path: 'c.ts', edits: [{ oldText: 'zz', newText: 'y' }] },
+          ctx,
+        )
+      ).isError,
+    ).toBe(true)
+    expect(seen).toEqual([])
+  })
+
+  it('starts nothing and changes nothing when the lsp extension is not applied', async () => {
+    const ctx = ctxOf()
+    const opened = vi.fn()
+    ctx.sandbox.openProcess = opened as never
+    const result = await createWriteTool(undefined, new LspSessions()).execute(
+      { path: 'a.ts', content: 'x = BAD' },
+      ctx,
+    )
+    expect(textOf(result)).toBe('created a.ts (7 chars)')
+    expect(result.content).toHaveLength(1)
+    expect(opened).not.toHaveBeenCalled()
   })
 })
 
