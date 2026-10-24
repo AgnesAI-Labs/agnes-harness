@@ -560,6 +560,14 @@
     border-radius: var(--radius-md);
     object-fit: cover;
   }
+  /* 缩略图的预览覆盖层只是悬停提示，不接管指针：打开预览由图片根节点自己完成，
+   这样覆盖层无论落在哪一层，都挡不住右上角的删除按钮。 */
+  .composer-image-preview .ant-image-cover {
+    pointer-events: none;
+  }
+  .composer-image-preview .ant-image {
+    cursor: pointer;
+  }
   .composer-file-preview {
     position: relative;
     display: grid;
@@ -595,6 +603,8 @@
     position: absolute;
     top: -0.375rem;
     right: -0.375rem;
+    /* 与上面的 pointer-events 配套：按钮显式高于缩略图自身，命中不依赖元素顺序。 */
+    z-index: 1;
     display: grid;
     width: 1.25rem;
     min-height: 1.25rem;

@@ -154,6 +154,13 @@ it('keeps a batch through upload session opening, stores references and cleans a
   const thumbnail = readyRows.find((node) => node.classList.contains('composer-image-preview'))
   expect(thumbnail?.querySelector('img')?.getAttribute('src')).toBe('blob:preview')
   expect(readyRows.filter((node) => node.classList.contains('composer-file-preview'))).toHaveLength(2)
+  // The remove button is a sibling of the preview image, never inside its clickable root. That is
+  // the structure the composer CSS relies on when it keeps the preview cover out of hit testing.
+  const previewRoot = thumbnail?.querySelector('.ant-image')
+  const removeButton = thumbnail?.querySelector('[data-remove-image]')
+  expect(previewRoot?.querySelector('.ant-image-cover')).not.toBeNull()
+  expect(removeButton?.closest('.ant-image')).toBeNull()
+  expect(removeButton?.parentElement).toBe(thumbnail)
   // Clicking it opens the shared preview layer instead of doing nothing.
   await act(async () =>
     thumbnail?.querySelector('img')?.dispatchEvent(new MouseEvent('click', { bubbles: true })),
