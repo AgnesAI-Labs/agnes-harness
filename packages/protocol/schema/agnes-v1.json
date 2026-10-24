@@ -5801,6 +5801,11 @@
         },
         "cwd": {
           "type": "string"
+        },
+        "additionalDirectories": {
+          "type": "array",
+          "maxItems": 8,
+          "items": { "type": "string", "minLength": 1 }
         }
       }
     },

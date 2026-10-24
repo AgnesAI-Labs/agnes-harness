@@ -144,7 +144,7 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 
 每个 id 是会话 UI 投影（`session.projectUI` / `session.view` 的 `nodes`）里 `kind: "user"` 节点的 `id`，即 `user/message` 事件的账本 id：26 位 ULID，刷新、daemon 重启和分叉后都不变。列表保持给定顺序，重复的 id 只保留第一次出现的位置，最多 200 个，每个 1–128 个字符且不含控制字符；空列表即清空；没有书签时不返回 `bookmarks` 字段。id 不与对话记录核对，对应提问不在界面上时这个书签只是匹配不到。调用是幂等的，所有者与本地凭据检查和 `session.rename` 相同；未知会话以 `SESSION_NOT_FOUND` 拒绝。
 
-`session.list` 的行（`SessionMeta`）在 `title`、`archived` 旁带同样的 `bookmarks` 字段。分叉会按原顺序复制提问位于继承历史内（分叉边界及之前）的书签，父会话的列表不变。目前没有删除会话的接口；归档的会话保留书签。
+`session.list` 的行（`SessionMeta`）在 `title`、`archived` 旁带同样的 `bookmarks` 字段。分叉会按原顺序复制提问位于继承历史内（分叉边界及之前）的书签，父会话的列表不变。目前没有删除会话的接口；归档的会话保留书签。`session.list` 的行在会话有额外目录时还带 `additionalDirectories`（按绑定顺序排列，是 daemon 所在机器上的路径），没有则不出现该字段。
 
 ## 置顶会话
 

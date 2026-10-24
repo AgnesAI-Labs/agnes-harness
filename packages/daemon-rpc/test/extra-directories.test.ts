@@ -154,6 +154,15 @@ describe('session/new additionalDirectories', () => {
       })
       await expect(load([], 32)).resolves.not.toHaveProperty('error')
       await expect(load([f.lib], 33)).resolves.not.toHaveProperty('error')
+      // session.list reports the bound directories for that session only.
+      const plain = (await f.create([], 40)).result?.sessionId
+      const listed = (await f.endpoint.handle(request(41, '_agnes/v1/session.list', { limit: 10 }))) as {
+        result: { items: Array<{ sessionId: string; additionalDirectories?: string[] }> }
+      }
+      const byId = new Map(listed.result.items.map((item) => [item.sessionId, item]))
+      expect(byId.get(sessionId)?.additionalDirectories).toEqual([f.lib])
+      expect(plain && byId.get(plain)).toBeDefined()
+      expect(plain && byId.get(plain)).not.toHaveProperty('additionalDirectories')
     } finally {
       await f.close()
     }

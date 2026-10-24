@@ -1196,7 +1196,9 @@ export function registerAgnes(
         .filter((item) => scope.has(item.sessionId))
         .map((item) => {
           const fork = cx.sessionOwnership?.lineage(item.sessionId)
-          return fork ? { ...item, parent: fork.parent, forkAt: fork.forkAt } : item
+          const extra = cx.workspaces.extraRoots(item.sessionId)
+          const listed = extra.length > 0 ? { ...item, additionalDirectories: [...extra] } : item
+          return fork ? { ...listed, parent: fork.parent, forkAt: fork.forkAt } : listed
         }),
       ...(r.cursor !== undefined ? { next: r.cursor } : {}),
     }

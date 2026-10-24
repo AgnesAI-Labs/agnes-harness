@@ -156,7 +156,7 @@ A session keeps a list of bookmarked user prompts with its other presentation pr
 
 Each id is the `id` of a `kind: "user"` node in the session's UI projection (`session.projectUI` / `session.view` `nodes`). It is the ledger id of the `user/message` event, a 26-character ULID that does not change across reloads, daemon restarts or forks. The list keeps the order given, drops repeats after their first place, holds at most 200 ids of 1–128 characters without control characters, and an empty list clears it; `bookmarks` is absent when nothing is bookmarked. Ids are not checked against the transcript, so a bookmark whose prompt is not shown is simply never matched. The call is idempotent and has the same owner and local-credential checks as `session.rename`; an unknown session is refused with `SESSION_NOT_FOUND`.
 
-`session.list` rows (`SessionMeta`) carry the same `bookmarks` field next to `title` and `archived`. A fork copies the bookmarks whose prompt lies inside the history it inherits (at or before the fork boundary), in their order; the parent keeps its list. There is no session delete; an archived session keeps its bookmarks.
+`session.list` rows (`SessionMeta`) carry the same `bookmarks` field next to `title` and `archived`. A fork copies the bookmarks whose prompt lies inside the history it inherits (at or before the fork boundary), in their order; the parent keeps its list. There is no session delete; an archived session keeps its bookmarks. A `session.list` row also carries `additionalDirectories` (the session's extra directories, in binding order, as paths on the daemon's machine) when it has any, and omits it otherwise.
 
 ## Pinned sessions
 

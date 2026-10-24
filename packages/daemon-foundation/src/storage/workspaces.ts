@@ -296,6 +296,11 @@ export class WorkspaceCatalog {
     return this.bindings.get(sessionKey)?.canonicalRoot
   }
 
+  /** The extra directories bound to a session, in binding order; empty when it has none. */
+  extraRoots(sessionKey: string): readonly string[] {
+    return this.bindings.get(sessionKey)?.extraRoots ?? []
+  }
+
   /** Observes explicit workspace registration so Skill discovery can watch it before a session exists. */
   onRegistered(listener: (workspaceId: string, root: string) => void): () => void {
     this.registeredListeners.add(listener)
