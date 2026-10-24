@@ -34,7 +34,7 @@ const withoutDefaultPolicy = (doc: PresetDoc): PresetDoc => {
 describe('permission overlays preserve real recipe documents', () => {
   const names = Object.keys(golden).filter((name) => name !== 'base')
 
-  it.each(names)('%s resolves to the document it had before the split', (name) => {
+  it.each(names)('%s preserves the legacy document except for explicit product revisions', (name) => {
     const resolved = resolvePreset(name, docs)
     const expected = golden[name]!.doc
     // minimal sat on L0 with allow; it now takes the permission's L1. That is the one intended change.
@@ -42,6 +42,19 @@ describe('permission overlays preserve real recipe documents', () => {
       name === 'minimal' ? { sandbox: { level: 'L1', on_unavailable: 'allow-if-unimplemented' } } : {}
     const want = withoutDefaultPolicy(expected) as Record<string, unknown>
     const got = withoutDefaultPolicy(resolved.doc) as Record<string, unknown>
+    if (name !== 'minimal-rl') {
+      // Compaction now follows primary; tool discovery is a prompt section and UI has a guide.
+      // Transform only these reviewed fields, then compare the complete document as before.
+      const model = want.model as { route: Record<string, unknown>; prompt_sections: string[] }
+      expect(model.route.compaction).toEqual({ route: 'default', model: 'default' })
+      delete model.route.compaction
+      const environment = model.prompt_sections.indexOf('environment')
+      expect(environment).toBeGreaterThanOrEqual(0)
+      model.prompt_sections.splice(environment + 1, 0, 'tools-available')
+      const core = (want.tools as { core: string[] }).core
+      const ask = core.indexOf('ask_user_question')
+      if (ask >= 0) core.splice(ask + 1, 0, 'ui_guide')
+    }
     if (name === 'minimal') {
       // The tool allowlist moved from a composition entry to the preset's own `tools.allow`.
       expect(got.tools).toMatchObject({ allow: ['read', 'grep', 'find', 'ls'] })

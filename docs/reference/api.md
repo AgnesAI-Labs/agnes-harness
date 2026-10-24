@@ -12,6 +12,13 @@ When integrating AGH into an application, choose an entry point for your runtime
 
 APIs evolve with the source. `@agnes/*` packages currently resolve through the repository workspace. Use interfaces and examples matching your source revision.
 
+Validation errors identify the rejected field with `data.code`, `data.key` and `data.path`.
+Union diagnostics use a field failure from a compatible shape or a constraint shared by all
+compatible shapes; a mismatched literal discriminator cannot supply another shape's field hint.
+Ambiguous shapes retain `ENUM`. A missing field reports its parent path and the missing key.
+These diagnostics refine error locations without changing which payloads validate, and descriptions
+do not echo rejected values.
+
 <a id="选择正确入口"></a>
 
 ## Choose an entry point

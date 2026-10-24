@@ -20,6 +20,23 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
 ```
 
+`install --frozen-lockfile` alone does not prepare the fast project. Build both native targets
+in each checkout, and rebuild after native source changes. Host builds the PTY relay and, on
+macOS, process-identity and application-identity helpers; system-node builds the native module
+used by owner locks, socket activation and descriptor/tree flushes. Both Vitest projects check
+these prerequisites before collection and report the exact build commands for missing or stale
+artifacts. macOS native contracts must run; a missing module is an environment failure, never a skip.
+
+After those builds, run the complete fast gate from the root:
+
+```sh
+mise exec -- node tools/toolchain/run.mjs exec vitest run --project fast --maxWorkers=2
+```
+
+If an inherited mise activation leaves a different Node first, use command-local
+`MISE_ACTIVATE_AGGRESSIVE=1 mise exec -- node tools/toolchain/run.mjs …`;
+the entry must still report the pinned runtime. Do not edit global PATH.
+
 <a id="静态与自动化检查"></a>
 
 ## Static and automated checks

@@ -771,6 +771,14 @@ it('continues a helper draft through real builtin registration and dispatch into
     const call = async (name: string, args: Record<string, unknown>) => {
       scripts.push(
         [
+          {
+            type: 'toolcall_end',
+            via: 'native',
+            call: { name: 'tool_describe', args: { name }, toolUseId: '', ordinal: 0 },
+          },
+          { type: 'done', reason: 'toolUse' },
+        ] as InferenceEvent[],
+        [
           { type: 'toolcall_end', via: 'native', call: { name, args, toolUseId: '', ordinal: 0 } },
           { type: 'done', reason: 'toolUse' },
         ] as InferenceEvent[],

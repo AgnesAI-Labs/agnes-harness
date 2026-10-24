@@ -16,6 +16,22 @@ mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
 ```
 
+仅执行 `install --frozen-lockfile` 不足以运行 fast 项目。每个 checkout 都须构建这两个原生目标，
+原生源码变化后重新构建。Host 构建 PTY relay，以及 macOS 的进程身份和应用身份 helper；
+system-node 构建 owner lock、socket activation 和描述符/目录树刷盘使用的原生模块。
+两个 Vitest 项目在收集测试前检查这些前置条件，缺失或陈旧时输出准确的构建命令。
+macOS 的原生合同必须执行；模块缺失属于环境失败，不能跳过。
+
+构建完成后，在根目录运行完整 fast 门：
+
+```sh
+mise exec -- node tools/toolchain/run.mjs exec vitest run --project fast --maxWorkers=2
+```
+
+若继承的 mise 激活状态使其他 Node 排在前面，可为本条命令设置
+`MISE_ACTIVATE_AGGRESSIVE=1 mise exec -- node tools/toolchain/run.mjs …`；入口仍须报告固定运行时。
+不要修改全局 PATH。
+
 ## 静态与自动化检查
 
 ```sh

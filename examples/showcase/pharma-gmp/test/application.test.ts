@@ -58,7 +58,7 @@ it('inspects and installs the third-party application with valid raster assets a
     })
     const preview = await manager.inspect(profile, source)
     expect(preview.blockers).toEqual([])
-    expect(preview.version).toBe('1.2.3')
+    expect(preview.version).toBe('1.2.5')
     expect(preview.application?.id).toBe('sableleaf-quality')
     expect(preview.application?.workbench?.tabs).toHaveLength(3)
     expect(preview.application?.workbench?.actions).toHaveLength(5)

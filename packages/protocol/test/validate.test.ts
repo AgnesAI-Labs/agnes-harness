@@ -290,6 +290,17 @@ describe('validation refusal descriptions', () => {
       )
       expect(describeValidationErrors(result.errors)).not.toContain('private-canary')
     }
+    const tagged = Type.Union([
+      Type.Object({ kind: Type.Literal('interval'), everyMs: Type.Integer({ minimum: 10 }) }),
+      Type.Object({ kind: Type.Literal('cron'), expr: Type.String(), tz: Type.String({ maxLength: 4 }) }),
+    ])
+    const wrongZone = validateAgainst(tagged, { kind: 'cron', expr: '* * * * *', tz: 'private-canary' })
+    expect(wrongZone.ok).toBe(false)
+    if (!wrongZone.ok) {
+      expect(wrongZone.errors[0]).toMatchObject({ path: '/tz', key: 'tz', code: 'RANGE' })
+      expect(describeValidationErrors(wrongZone.errors)).not.toContain('everyMs')
+      expect(describeValidationErrors(wrongZone.errors)).not.toContain('private-canary')
+    }
   })
   it('bounds the displayed path without serializing extra rejected data', () => {
     const description = describeValidationErrors([

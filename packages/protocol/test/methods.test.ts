@@ -615,7 +615,7 @@ describe('methods (I1 set)', () => {
     ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
     expect(
       errorsOf(validateMethod('_agnes/v1/computerUse.status', 'result', { ...blocked, platform: 'darwin' })),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
+    ).toContainEqual(expect.objectContaining({ path: '/platform', key: 'platform', code: 'UNKNOWN_KEY' }))
     expect(
       validateMethod('_agnes/v1/computerUse.status', 'result', {
         schemaVersion: 1,
@@ -870,7 +870,7 @@ describe('methods (I1 set)', () => {
           },
         }),
       ),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
+    ).toContainEqual(expect.objectContaining({ path: '/patch/changes/0/index', code: 'RANGE' }))
   })
 
   it('validates bounded UI opening and opaque history page contracts', () => {
@@ -1047,7 +1047,7 @@ describe('methods (I1 set)', () => {
     ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
     expect(
       errorsOf(validateMethod('_agnes/v1/daemon.notice', 'params', { detail: {}, at: 't' })),
-    ).toContainEqual(expect.objectContaining({ code: 'ENUM' }))
+    ).toContainEqual(expect.objectContaining({ path: '', key: 'kind', code: 'MISSING' }))
   })
 
   it('validates the packages_changed profile invalidation payload as a closed contract', () => {
