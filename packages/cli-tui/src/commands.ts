@@ -17,6 +17,7 @@ import { startBtw } from './btw.js'
 import { cdSlash } from './cd-command.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
+import { configSlash } from './config-command.js'
 import { customCommandsFor, customHelp, customSlash } from './custom-commands.js'
 import { deliverablesSlash } from './deliverable-files.js'
 import { exportSlash } from './export-command.js'
@@ -618,6 +619,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return { text: app.raw.toggle(locale) }
     case '/images':
       return { text: app.images.command(args, locale) }
+    case '/config':
+      return configSlash(app, args, (next) => runSlash(app, next))
     case '/vim':
       return { text: app.editor.vim?.command(args, locale) ?? '' }
     case '/expand':

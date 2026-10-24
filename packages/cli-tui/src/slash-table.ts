@@ -305,6 +305,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.vim',
     summaryKey: 'commands.vimSummary',
   },
+  {
+    name: '/config',
+    args: '[name] [value]',
+    descriptionKey: 'commands.config',
+    summaryKey: 'commands.configSummary',
+  },
 ]
 
 /** Whether a line is a slash command: its first token is `/` plus a name with no further `/`. A line

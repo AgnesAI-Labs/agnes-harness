@@ -22,7 +22,7 @@ import {
 import { expect, it, vi } from 'vitest'
 import { type Colour, createAnsi } from '../../src/tui/ansi.js'
 import { TuiApp } from '../../src/tui/app.js'
-import { SLASH_COMMANDS } from '../../src/tui/commands.js'
+import { runSlash, SLASH_COMMANDS } from '../../src/tui/commands.js'
 import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
 import { type Tone, TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
@@ -1330,6 +1330,56 @@ it('/vim edits the prompt with vim keys, marks the mode, and saves the choice be
     await vi.waitFor(async () => expect(await again.screen()).toContain('INSERT'))
   } finally {
     await again.close()
+  }
+})
+
+it('/config lists every preference with its value, follows changes, and forwards NAME VALUE to the command', async () => {
+  const open = await fakeApp('{"theme":"dark","title":"off"}')
+  try {
+    const rows = async () =>
+      Object.fromEntries(
+        ((await runSlash(open.app, '/config')).text ?? '')
+          .split('\n')
+          .slice(1)
+          .map((row) => {
+            const [name, ...rest] = row.split(/\s{2,}/)
+            return [name, rest]
+          }),
+      )
+    const before = await rows()
+    expect(Object.keys(before)).toEqual([
+      'theme',
+      'borders',
+      'images',
+      'vim',
+      'notify',
+      'mouse',
+      'thinking',
+      'todos',
+      'statusline',
+      'title',
+      'raw',
+      'heads-up',
+    ])
+    expect(before).toMatchObject({
+      theme: ['dark', '/theme dark'],
+      vim: ['off', '/vim on'],
+      title: ['off', '/title cwd'],
+      todos: ['auto', '/todos hide'],
+      statusline: ['all shown', '/statusline'],
+    })
+    // The same as typing /vim on, and the table follows.
+    await runSlash(open.app, '/config vim on')
+    expect(open.app.editor.vim?.enabled).toBe(true)
+    expect(open.saved()).toMatchObject({ vim: true })
+    expect((await rows()).vim).toEqual(['on', '/vim on'])
+    await runSlash(open.app, '/config todos hide')
+    expect((await rows()).todos?.[0]).toBe('hide')
+    const unknown = (await runSlash(open.app, '/config nope')).text
+    expect(unknown).toContain('usage: /config [theme|borders|')
+    expect((await runSlash(open.app, '/config config')).text).toBe(unknown)
+  } finally {
+    await open.close()
   }
 })
 

@@ -50,6 +50,11 @@ export class ThemeController {
     return tt(`theme.problem.${problem.code}`, this.o.locale, { detail: problem.detail ?? '' })
   }
 
+  /** The saved choice (`auto`, a built-in name or `custom:<name>`), read by `/config`. */
+  get current(): ThemePreference {
+    return this.preference
+  }
+
   show(): void {
     this.picker.show(this.preference, this.o.path ? listCustomThemes(themesDir(this.o.path)) : [])
   }

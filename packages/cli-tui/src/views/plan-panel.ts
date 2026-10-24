@@ -53,6 +53,11 @@ export class PlanPanel implements Component {
     this.finished = complete && this.plan?.id !== this.retired && (this.finished || running)
   }
 
+  /** The `/todos` mode in force. */
+  get currentMode(): PlanMode {
+    return this.mode
+  }
+
   /** `/todos [auto|show|hide]`: one of the three, or the next one after the current when none is named. */
   setMode(arg?: string): string | undefined {
     const next = arg === undefined ? PLAN_MODES[(PLAN_MODES.indexOf(this.mode) + 1) % PLAN_MODES.length] : arg

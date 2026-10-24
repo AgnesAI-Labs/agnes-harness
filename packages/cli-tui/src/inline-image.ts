@@ -201,6 +201,11 @@ export class InlineImages {
     this.enabled = readPrefs(o.path).images !== false
   }
 
+  /** The `/images` switch itself, whether or not the terminal can draw them. */
+  get switchedOn(): boolean {
+    return this.enabled
+  }
+
   /** Images are drawn now: a confirmed terminal, `/images` on, and not the copy-friendly `/raw` view. */
   get active(): boolean {
     return this.layer !== undefined && this.enabled && !this.o.raw()
