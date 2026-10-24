@@ -27,7 +27,7 @@ afterEach(() => {
 const json = (path: string): unknown => JSON.parse(readFileSync(path, 'utf8'))
 
 describe('preferences file', () => {
-  it('merges a patch into what is there, removes a key set to undefined and ignores a damaged file', () => {
+  it('merges a patch into what is there, removes a key set to undefined and refuses to overwrite a damaged file', () => {
     const path = file()
     expect(updatePrefs(path, { theme: 'dark' })).toBe(true)
     expect(updatePrefs(path, { title: 'cwd', statusLine: { hide: ['cwd'] } })).toBe(true)
@@ -37,8 +37,13 @@ describe('preferences file', () => {
     writeFileSync(path, '[1,2]')
     expect(readPrefs(path)).toEqual({})
     writeFileSync(path, '{broken')
+    expect(updatePrefs(path, { theme: 'light' })).toBe(false)
+    expect(readFileSync(path, 'utf8')).toBe('{broken')
+    writeFileSync(path, ' \n')
     expect(updatePrefs(path, { theme: 'light' })).toBe(true)
-    expect(json(path)).toEqual({ theme: 'light' })
+    writeFileSync(path, '\uFEFF{"title":"cwd"}')
+    expect(updatePrefs(path, { theme: 'dark' })).toBe(true)
+    expect(json(path)).toEqual({ title: 'cwd', theme: 'dark' })
     expect(updatePrefs(undefined, { theme: 'light' })).toBe(false)
   })
 
