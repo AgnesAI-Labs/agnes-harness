@@ -150,8 +150,11 @@ describe('new session request', () => {
           },
         },
         // The session controller selects the new session's draft as it opens it.
-        open: async (id: string, options: { preserveSending?: boolean }) => {
-          text = drafts.select('fixture', id, text, options.preserveSending)
+        open: async (id: string, options: { preserveSending?: boolean; carryDraft?: boolean }) => {
+          text = drafts.select('fixture', id, text, {
+            ...(options.preserveSending ? { preserve: true } : {}),
+            ...(options.carryDraft ? { carry: true } : {}),
+          })
           const { binding: next } = binding.begin(id)
           binding.attach(next, { session })
           context.current = session

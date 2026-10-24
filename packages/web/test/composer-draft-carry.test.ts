@@ -174,7 +174,7 @@ it('keeps typed text when an upload opens the session and persists it under the 
   )
 })
 
-it('asks the attachment session to carry the draft, unlike the send path', async () => {
+it('asks the attachment session to carry the draft into the new session key', async () => {
   const binding = new SessionBindingOwner()
   const created = { id: 'created' } as Session
   const opened: { carryDraft?: boolean; preserveSending?: boolean }[] = []
@@ -198,6 +198,6 @@ it('asks the attachment session to carry the draft, unlike the send path', async
     settingsText: (key: string) => key,
   } as unknown as Parameters<typeof createSubmissionController>[0]
   await expect(createSubmissionController(context).prepareAttachmentSession()).resolves.toBe('created')
-  expect(opened).toEqual([expect.objectContaining({ carryDraft: true })])
-  expect(opened[0]?.preserveSending).toBeUndefined()
+  // carry 把文字写进新会话 key；preserveSending 同时保留提交快照，两者叠加时 carry 生效。
+  expect(opened).toEqual([expect.objectContaining({ carryDraft: true, preserveSending: true })])
 })
