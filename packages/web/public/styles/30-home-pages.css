@@ -63,7 +63,7 @@
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--s10);
+    gap: var(--s12);
     padding: var(--s16);
     border: 1px solid var(--agnes-line-primary);
     border-radius: var(--radius-card);
@@ -77,7 +77,7 @@
   .agent-card > header {
     display: flex;
     align-items: center;
-    gap: var(--s10);
+    gap: var(--s12);
     min-width: 0;
     min-height: 2.125rem;
   }
@@ -109,6 +109,14 @@
     font-size: var(--font-size-sm);
     -webkit-line-clamp: 3;
     line-clamp: 3;
+  }
+  /* A card's quiet fact line: where the agent comes from, or that it is not installed. */
+  .agent-card-meta {
+    margin: 0;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
   }
   /* The clamp sits on the inner span: a clamped box with padding shows the cut line in it. */
   .agent-card-sample {
@@ -190,6 +198,20 @@
   }
 
   /* ── One-click start dialog ─────────────────────────────────────────────── */
+  /* The start page is the PushPage body: one column whose parts sit 20px apart, closed by an
+     action row 16px under the content, as a dialog footer does. */
+  .agent-start-page {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .agent-start-page > * + * {
+    margin-block-start: var(--s20);
+  }
+  .agent-start-page > .agent-start-actions {
+    margin-block-start: var(--s16);
+    padding-top: 0;
+  }
   .agent-start-title {
     display: flex;
     align-items: center;
@@ -204,7 +226,7 @@
     margin: 0 0 var(--s8);
     padding-inline-start: var(--s4);
     color: var(--agnes-text-secondary);
-    font-size: 0.78125rem;
+    font-size: var(--font-size-caption);
     font-weight: var(--font-weight-semibold);
   }
   /* Rows here carry no control: on a narrow screen the copy stays beside its icon. */
@@ -437,9 +459,6 @@
 
 @layer app {
   /* Applications are package-level products; their roles stay within the product card. */
-  .application-card {
-    gap: var(--s12);
-  }
   .application-card header {
     align-items: center;
   }
@@ -455,9 +474,6 @@
     color: var(--agnes-text-secondary);
     font-size: 12px;
     margin: 0 0 6px;
-  }
-  .application-card .agent-card-heading p {
-    margin: 4px 0;
   }
   /* Catalogue copy is bounded so one long entry cannot dwarf the rest of the feed. */
   .application-card .agent-card-summary {
@@ -514,10 +530,5 @@
   .application-card .application-roles p {
     color: var(--agnes-text-secondary);
     font-size: 13px;
-  }
-  @media (max-width: 760px) {
-    .application-preview {
-      flex-wrap: wrap;
-    }
   }
 }

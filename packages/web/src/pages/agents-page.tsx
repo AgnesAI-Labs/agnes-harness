@@ -25,6 +25,7 @@ import {
   Banner,
   Button,
   Disclosure,
+  EmptyState,
   Field,
   Icon,
   IconButton,
@@ -147,9 +148,9 @@ function AgentList({
   return (
     <>
       {data.catalogError !== undefined && <Banner tone="warning">{t('catalogUnavailable')}</Banner>}
-      <SearchBar label={t('search')} value={query} onChange={setQuery} />
+      <SearchBar label={t('search')} placeholder={t('searchPlaceholder')} value={query} onChange={setQuery} />
       {/* One feed: cards keep their own height and pack into columns instead of sharing row heights. */}
-      <div className="agent-gallery agent-feed" data-testid="agents-gallery">
+      <div className="agent-feed" data-testid="agents-gallery">
         {showGeneral && (
           <article className="agent-card" data-testid="general-agent">
             <header>
@@ -160,7 +161,7 @@ function AgentList({
                 <h3>{t('general')}</h3>
               </div>
             </header>
-            <p>{t('generalHelp')}</p>
+            <p className="agent-card-summary">{t('generalHelp')}</p>
             <Disclosure variant="plain" summary={t('otherModes')}>
               <Loadable
                 loading={loops.loading}
@@ -227,14 +228,14 @@ function AgentList({
                 </div>
               </header>
               <p className="agent-card-summary">{card.summary}</p>
-              <p>
+              <p className="agent-card-meta">
                 {t('sourcePlugin')}:{' '}
                 {resolvePluginMetadata(card.entry.metadata, locale)?.displayName ?? card.entry.id}
               </p>
               {installed ? (
                 <PluginPrimaryStatus status={installed.primaryStatus} />
               ) : (
-                <p>{t('state.available')}</p>
+                <p className="agent-card-meta">{t('state.available')}</p>
               )}
               <footer>
                 <Button
@@ -250,9 +251,12 @@ function AgentList({
         })}
       </div>
       {!showGeneral && !shown.length && !shownApplications.length && (
-        <p>
-          {t('emptyTitle')} <Button onClick={() => homeNavigation.open('plugins')}>{t('plugins')}</Button>
-        </p>
+        <EmptyState
+          icon={<Icon name="bot" size={48} />}
+          title={t('noMatchTitle')}
+          description={t('noMatchHelp')}
+          actions={<Button onClick={() => homeNavigation.open('plugins')}>{t('plugins')}</Button>}
+        />
       )}
       {starter.dialog}
       {linkedPage?.startsWith('agent-') && starter.pageId !== linkedPage && (

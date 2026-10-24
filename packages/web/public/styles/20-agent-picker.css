@@ -40,6 +40,20 @@
   .agent-choice small {
     color: var(--agnes-text-tertiary);
   }
+  /* The id beside a choice name is tertiary grey at rest, which disappears on the accent fill of
+     the hovered or picked row; there it follows the row colour. This lives in the app layer
+     because that is where the rest colour above is set, and a later layer wins over an earlier
+     one regardless of specificity. */
+  .ant-select-dropdown
+    .ant-select-item-option-active:not(.ant-select-item-option-disabled)
+    .agent-choice
+    small,
+  .ant-select-dropdown
+    .ant-select-item-option-selected:not(.ant-select-item-option-disabled)
+    .agent-choice
+    small {
+    color: inherit;
+  }
   .session-goal-host {
     width: min(100%, var(--chat-content-width, 48rem));
     margin-inline: auto;

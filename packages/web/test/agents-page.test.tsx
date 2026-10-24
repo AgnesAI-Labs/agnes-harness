@@ -481,6 +481,38 @@ it.each(['en', 'zh-CN'])(
   },
 )
 
+it('names the search scope and offers an empty state when nothing matches', async () => {
+  mock.connect.mockResolvedValue({
+    context: { permissions: [], readOnly: false },
+    api: {
+      catalog: async () => ({ items: [] }),
+      list: async () => ({ packages: [] }),
+      loops: async () => ({ loops: [], revision: 1, defaults: {} }),
+    },
+  })
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(createElement(AgentsPage, { context: { t: (key) => key } })))
+    await vi.waitFor(() => expect(host.querySelector('[data-testid="general-agent"]')).not.toBeNull())
+    const search = host.querySelector<HTMLInputElement>('input[type="search"]')
+    expect(search?.getAttribute('placeholder')).toBe('Search agents…')
+    await act(async () => {
+      if (!search) throw new Error('missing agent search')
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        search,
+        'nothing-matches',
+      )
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(host.querySelector('.agh-empty-state')).not.toBeNull()
+    expect(host.textContent).toContain('No matching agent')
+    expect(host.textContent).toContain('Try fewer or different words.')
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
+
 it.each(['en', 'zh-CN'] as const)(
   'starts covered application actions directly and summarizes changed launches (%s)',
   async (locale) => {
