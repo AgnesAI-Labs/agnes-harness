@@ -59,6 +59,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [Web workbench](guide/web.md) | Create tasks, inspect history, and manage models and extensions |
 | [Built-in browser](guide/browser.md) | Share a web page with AGH, test local projects and take control |
 | [Programmatic tools and workflows](guide/code-workflows.md) | Run TypeScript cells and durable parallel child workflows |
+| [Code diagnostics (LSP)](guide/lsp.md) | Language-server errors after edits; which servers to install and the safety limits |
 | [Sessions and recovery](guide/sessions.md) | Continue tasks, export records, and handle interruptions |
 | [Plugin lifecycle](guide/packages.md) | Install, trust, enable, update, and remove plugins |
 | [Generic credentials](guide/credentials.md) | Save write-only API keys and manage their references |
