@@ -90,6 +90,17 @@ describe('SecretInputView', () => {
     expect(view.handleInput('\x03')).toBe(false)
   })
 
+  it('accepts a bracketed paste the way it accepts typed input', () => {
+    const submitted = vi.fn()
+    const invalid = vi.fn()
+    const view = new SecretInputView({ onSubmit: submitted, onBack: () => {}, onInvalid: invalid })
+    expect(view.handleInput('\x1b[200~\r\nsk-test-key\r\n\x1b[201~')).toBe(true)
+    expect(view.handleInput('\x1b[200~bad key\x1b[201~')).toBe(true)
+    expect(invalid).toHaveBeenCalledExactlyOnceWith('invalid-characters')
+    view.handleInput('\r')
+    expect(submitted).toHaveBeenCalledExactlyOnceWith('sk-test-key')
+  })
+
   it('rejects empty, whitespace and non-printable input without echoing it', () => {
     const submit = vi.fn()
     const invalid = vi.fn()

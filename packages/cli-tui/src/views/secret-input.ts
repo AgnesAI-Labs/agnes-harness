@@ -47,7 +47,9 @@ export class SecretInputView implements Component {
 
   handleInput(data: string): boolean {
     const key = parseKey(data, false)
-    const stroke = key.name === 'char' || key.name === 'unknown' ? key.name : actionFor('secret', key.name)
+    // A bracketed paste carries its text in `ch` just like typing, so it takes the same checks.
+    const name = key.name === 'paste' ? 'char' : key.name
+    const stroke = name === 'char' || name === 'unknown' ? name : actionFor('secret', name)
     switch (stroke) {
       case 'secret-submit': {
         if (!this.#secret && !this.options.allowEmpty) {
