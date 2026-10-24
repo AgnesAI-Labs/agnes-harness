@@ -1330,6 +1330,31 @@ describe('Editor vim mode', () => {
     expect(e.text).toBe('')
   })
 
+  it('undoes a command that enters insert mode together with the text typed after it', () => {
+    const o = normal('abc', 2)
+    type(o.e, 'o')
+    type(o.e, 'def')
+    o.e.handleInput(ESC)
+    type(o.e, 'u')
+    expect(o.e.text).toBe('abc')
+    o.e.handleInput(CTRL_R)
+    expect(o.e.text).toBe('abc\ndef')
+    const c = normal('foo bar', 0)
+    type(c.e, 'cw')
+    type(c.e, 'xyz')
+    c.e.handleInput(ESC)
+    expect(c.e.text).toBe('xyz bar')
+    type(c.e, 'u')
+    expect(c.e.text).toBe('foo bar')
+    // Plain i/a edits nothing first, so u takes back just the typed text.
+    const i = normal('abc', 2)
+    type(i.e, 'i')
+    type(i.e, 'XY')
+    i.e.handleInput(ESC)
+    type(i.e, 'u')
+    expect(i.e.text).toBe('abc')
+  })
+
   it('Esc leaves insert mode once and does what it did without vim the second time', () => {
     const vim = Object.assign(new Vim(), { enabled: true })
     const log = { cancels: 0 }

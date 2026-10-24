@@ -201,11 +201,15 @@ export class Editor implements Component, VimTarget {
     const before = { text: this.text, cursor: this.cursor }
     const generation = this.undo.generation
     // Letters in vim normal mode are commands, not typing: each edit is a step of its own.
-    const typing = k.name === 'char' && !this.o.vim?.normal
+    const wasNormal = !!this.o.vim?.normal
+    const typing = k.name === 'char' && !wasNormal
     const handled = this.handleKey(k)
     const edited = this.text !== before.text
     // An undo, redo or clear moved the history itself and is not an edit to record.
-    if (edited && generation === this.undo.generation) this.undo.record(before, typing)
+    // A normal-mode command that edits and lands in insert mode (o, cw, C...) opens the typing run, so
+    // what is typed next joins its step and one `u` takes back the whole change.
+    const opensInsert = wasNormal && !this.o.vim?.normal
+    if (edited && generation === this.undo.generation) this.undo.record(before, typing || opensInsert)
     else if (!typing) this.undo.endRun()
     const vertical = actionFor('editor', k.name)
     if (edited || (vertical !== 'move-up' && vertical !== 'move-down')) this.goalColumn = undefined
