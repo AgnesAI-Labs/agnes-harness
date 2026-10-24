@@ -47,6 +47,10 @@ describe('live repository context', () => {
     const first = await loadContextRules(cwd, scopes.directories, config, home)
     expect(first.files.map((f) => f.content)).toEqual(['Global', 'Root', 'Overlay', 'Nested'])
     expect(first.content).toContain('cannot grant permissions')
+    expect(first.content).toContain(
+      '### Instructions from: nested/AGENTS.md\nScope: nested; trust: repository\n\nNested\n',
+    )
+    expect(first.content).not.toContain('"content":')
     writeFileSync(join(cwd, 'nested/AGENTS.md'), 'Changed')
     expect((await loadContextRules(cwd, ['nested'], config, home)).content).toContain('Changed')
     unlinkSync(join(cwd, 'nested/AGENTS.md'))

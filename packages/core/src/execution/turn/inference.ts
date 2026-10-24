@@ -300,14 +300,18 @@ export async function assembleRequestPrefix(
       await s.d.log.append([s.ev('x/core/memory-private', { files: 1 }, { ignorable: true })])
     contribs.push({
       op: 'memory',
-      promptSections: [{ id: 'memory:index', order: 131, source: 'memory', text: memory.content }],
+      promptSections: [
+        { id: 'memory:index', order: 131, source: 'memory', text: memory.content, delivery: 'live-note' },
+      ],
     })
   }
   const receipts = await childReceiptNarrative(s)
   if (receipts)
     contribs.push({
       op: 'child-receipts',
-      promptSections: [{ id: 'core:child-receipts', order: 112, source: 'core', text: receipts }],
+      promptSections: [
+        { id: 'core:child-receipts', order: 112, source: 'core', text: receipts, delivery: 'live-note' },
+      ],
     })
   const merged = mergeContributions(contribs, t.snapshot)
   for (const conflict of merged.conflicts) await s.diag('contribute-conflict', conflict)

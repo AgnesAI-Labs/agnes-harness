@@ -17,6 +17,7 @@ import {
 import { harnessSections, type Merged, type PromptSection } from './contribute.js'
 import type { EnvelopeCache } from './envelope-cache.js'
 import { type InlineImagePolicy, selectInlineImages } from './inline-images.js'
+import { LIVE_CONTEXT_PREFIX, liveContextNotes } from './live-context.js'
 import { type LedgerRequest, mintFrom, type RequestBody, type RequestMessage } from './mint.js'
 import { composeSystemPrompt, type PinnedSystemPrompt } from './system-prompt.js'
 import { modelToolSchema, toolSchemaHash } from './tool-schema.js'
@@ -88,7 +89,7 @@ export type DeriveInput = {
     quote?: { node: SurfaceNode; text: string }
   }
   /** The exact, already scrubbed prefix of a primary request sent in this turn. */
-  mintedPrefix?: Pick<RequestBody, 'sections' | 'tools'>
+  mintedPrefix?: Pick<RequestBody, 'sections' | 'tools'> & { memoryRevision?: string }
   /**
    * The tool uses the model asked for, each named by the assistant message that asked for it. It
    * is a second input rather than a surface kind because `tool/call` is not something the model
@@ -742,6 +743,7 @@ export const RESERVED_NOTE_PREFIXES: readonly string[] = Object.freeze([
   SKILL_LOADED_PREFIX,
   NESTED_RESULT_PREFIX,
   HOOK_DATA_PREFIX,
+  LIVE_CONTEXT_PREFIX,
 ])
 
 /** The user line placed between a summary and an assistant message that directly follows it. */
@@ -883,7 +885,9 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     TOOL_RECOVERY_SECTION,
     ...composeSystemPrompt(
       input.systemPrompt,
-      input.merged.sections,
+      input.merged.sections
+        .filter((section) => section.delivery !== 'live-note')
+        .map(({ delivery: _delivery, ...section }) => section),
       harnessSections(input.harnessEntries),
     ).map((s) => ({
       id: sanitize(s.id),
@@ -985,7 +989,8 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   if (input.kind === 'turn') {
     const rank = (prefix: string) =>
       prefix === HOOK_CONTEXT_PREFIX ? 0 : prefix === SKILL_LOADED_PREFIX ? 1 : 2
-    for (const note of [...(input.notes ?? [])].sort((a, b) => rank(a.prefix) - rank(b.prefix))) {
+    const candidates = [...(input.notes ?? []), ...liveContextNotes(input.merged.sections, input.surface)]
+    for (const note of candidates.sort((a, b) => rank(a.prefix) - rank(b.prefix))) {
       const previous = lastNoteText(input.surface, note.prefix)
       if (note.dedup.kind === 'present') {
         const key = sanitize(note.dedup.key)
@@ -1187,7 +1192,8 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   }
   if (
     input.memoryRevision !== undefined &&
-    request.sections.some((section) => section.id === 'memory:index' && section.source === 'memory')
+    (input.merged.sections.some((section) => section.id === 'memory:index' && section.source === 'memory') ||
+      (input.kind === 'summary' && input.mintedPrefix?.memoryRevision === input.memoryRevision))
   )
     memoryRevisions.set(request, input.memoryRevision)
   if (input.media !== undefined)

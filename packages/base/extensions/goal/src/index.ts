@@ -104,6 +104,7 @@ export default defineAgnesPlugin({
           g = state.goal
         return g
           ? {
+              refreshOnRequest: true,
               sections: [
                 {
                   id: 'persistent-goal',
@@ -112,6 +113,7 @@ export default defineAgnesPlugin({
                     'Persistent goal: ' +
                     JSON.stringify(g) +
                     '\nWork toward this objective while active. When achieved call goal_update complete with evidence; when unable to progress call goal_update blocked with a concrete reason. Human input takes priority. Do not claim completion with required work remaining.',
+                  delivery: 'live-note',
                 },
               ],
             }

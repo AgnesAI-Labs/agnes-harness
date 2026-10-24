@@ -100,6 +100,7 @@ export default defineAgnesPlugin({
               id: 'workflow:receipts',
               order: 113,
               content: WORKFLOW_RECEIPT_RULE + '\n' + JSON.stringify(runs.map(workflowReceipts)),
+              delivery: 'live-note',
             },
           ],
         }
