@@ -112,6 +112,13 @@ export class AttachedFeed {
     // A live row arriving mid-replay is held: pushing it now would put a newer row ahead of the older
     // history still being paged in.
     if (this.held) {
+      // A replay is paced by its reader, so a reader that stops draining also stops the replay. The
+      // rows held behind it are the same backlog the overload below bounds; past that, cut it.
+      if (this.held.length >= this.o.limits.subscribeBufferEvents) {
+        this.held = null
+        this.dropOverloaded()
+        return
+      }
       this.held.push(e)
       return
     }
@@ -147,9 +154,12 @@ export class AttachedFeed {
         })
         for (const e of page) {
           if (e.seq <= this.coveredSeq) continue
+          await this.replayRoom()
+          if (this.cut || this.o.ep.isClosed()) return
           this.coveredSeq = e.seq
           this.enqueue(e)
         }
+        if (this.cut || this.o.ep.isClosed()) return
       }
     } finally {
       // `lastSeq` is the storage cut, not merely the greatest row returned by one scan page. Even an
@@ -161,6 +171,20 @@ export class AttachedFeed {
       // Whatever is streaming now started before this viewer was caught up; the snapshot fills it in.
       this.preview?.resync()
     }
+  }
+
+  /**
+   * History is already durable, so a replay can wait for its reader instead of racing it. Without
+   * this a ledger longer than the subscription budget is pushed faster than any real client reads
+   * it and the attach of a long session is cut (or its connection closed) every time it is retried.
+   * Above half the budget the replay waits until the reader has drained to a quarter of it; live
+   * rows still meet the full overload check in enqueue().
+   */
+  private async replayRoom(): Promise<void> {
+    const { subscribeBufferEvents: events, subscribeBufferBytes: bytes } = this.o.limits
+    const p = this.o.ep.pending()
+    if (p.events < events / 2 && p.bytes < bytes / 2) return
+    await this.o.ep.pendingBelow(Math.floor(events / 4), Math.floor(bytes / 4))
   }
 
   private advance(e: EventEnvelope): ReturnType<typeof stampMeta>['meta'] {

@@ -10,7 +10,7 @@
 
 ## 会话、轮次、事件与审批
 
-会话保存身份、历史、workspace 权限和固定的插件代码。`session/prompt` 启动轮次，`session/update` 推送预览。通过 `_agnes/v1/session.attach` 订阅持久化的 `_agnes/v1/session.event`；保存 ledger cursor 用于重连，预览不持久化。prompt 的响应报告停止原因。
+会话保存身份、历史、workspace 权限和固定的插件代码。`session/prompt` 启动轮次，`session/update` 推送预览。通过 `_agnes/v1/session.attach` 订阅持久化的 `_agnes/v1/session.event`；保存 ledger cursor 用于重连，预览不持久化。attach 的历史回放按连接的读取速度推进，任意长度的 ledger 都能完整 attach；实时订阅落后超过缓冲时，会收到 `kind: "overloaded"` 的 `_agnes/v1/daemon.notice` 并被断开，应从 cursor 重新 attach。单帧放不下的响应只让该请求以 `INTERNAL_ERROR`、`data.code: "RESPONSE_TOO_LARGE"` 失败，连接保持打开。prompt 的响应报告停止原因。
 
 可选的 `session/prompt._meta["ai.agnes.harness"].creditLimit` 是该轮次的总 credit 上限：有限、非负且不超过 `Number.MAX_SAFE_INTEGER / 1_000_000`。SDK 对应 `session.prompt(input, { creditLimit })`，并先检查 `initialize.agentCapabilities._meta["ai.agnes.harness"].hardTurnBudget: true`，拒绝旧服务端静默降级。Core 在 inbox 接收和轮次打开时持久绑定额度，使用现有预算存储预留模型请求的保守费用上界，恢复时保留未知占用。缺少存储或目录价格上界时停止执行。有界轮次不允许预算升级、自动标题、无预留的策略模型评审或子代理派发。价格和输出 token 上限仍依赖 provider 合同；缺失或不一致的账单须核对后才能释放调用者预留。
 
