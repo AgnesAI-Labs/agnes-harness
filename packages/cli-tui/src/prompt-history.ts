@@ -5,6 +5,25 @@ const MAX_ENTRIES = 500
 // is read on every start and holds at most MAX_ENTRIES of these.
 const MAX_ENTRY_CHARS = 20_000
 
+/** Prompts in the file, oldest first; a missing file or an unreadable line adds nothing. */
+function fileTexts(path: string): string[] {
+  let raw = ''
+  try {
+    raw = readFileSync(path, 'utf8')
+  } catch (error) {
+    // A rewrite from nothing would erase the history, so only a missing file reads as empty.
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  const texts: string[] = []
+  for (const line of raw.split('\n')) {
+    try {
+      const text = (JSON.parse(line) as { text?: unknown }).text
+      if (typeof text === 'string' && text.length <= MAX_ENTRY_CHARS) texts.push(text)
+    } catch {}
+  }
+  return texts
+}
+
 /**
  * The prompts the user has sent, newest first, kept across runs in a private JSON-lines file.
  * Memory is the source of truth: a file that cannot be read or written (missing home, bad permissions,
@@ -67,9 +86,11 @@ export class PromptHistory {
     const line = (text: string) => `${JSON.stringify({ text })}\n`
     try {
       if (this.lines >= MAX_ENTRIES) {
-        const kept = this.entries.filter((text) => text.length <= MAX_ENTRY_CHARS)
-        writeFileSync(path, kept.toReversed().map(line).join(''), { mode: 0o600 })
-        this.lines = kept.length
+        // Another agh process may have appended since load: rewrite from what the file holds now, so
+        // its prompts survive. This run's memory stays as it is, oversize entries included.
+        const merged = [...fileTexts(path), added].slice(-MAX_ENTRIES)
+        writeFileSync(path, merged.map(line).join(''), { mode: 0o600 })
+        this.lines = merged.length
       } else {
         appendFileSync(path, line(added), { mode: 0o600 })
         this.lines++

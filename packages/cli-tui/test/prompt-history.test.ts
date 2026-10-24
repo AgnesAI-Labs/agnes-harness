@@ -30,6 +30,23 @@ describe('PromptHistory', () => {
     expect(statSync(path).mode & 0o777).toBe(0o600)
   })
 
+  it('keeps prompts another process appended when it rewrites a full file', () => {
+    const path = join(dir, 'h.jsonl')
+    const ours = new PromptHistory(path)
+    for (let i = 0; i < 500; i++) ours.add(`prompt ${i}`)
+    const other = new PromptHistory(path)
+    other.add('from other')
+    ours.add('from ours')
+    const reloaded = new PromptHistory(path).entries
+    expect(reloaded).toHaveLength(500)
+    expect(reloaded.slice(0, 2)).toEqual(['from ours', 'from other'])
+    // Memory stays this run's own: an entry too long for the file survives the rewrite.
+    const long = 'x'.repeat(25_000)
+    ours.add(long)
+    ours.add('after long')
+    expect(ours.entries.slice(0, 3)).toEqual(['after long', long, 'from ours'])
+  })
+
   it('keeps the newest 500, in memory and on disk', () => {
     const path = join(dir, 'h.jsonl')
     const history = new PromptHistory(path)
