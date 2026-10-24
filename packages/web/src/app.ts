@@ -1250,6 +1250,10 @@ const sidebarPages = createSidebarPagination(
           t,
         )
   },
+  // 置顶与临时会话各自是一个分区，不参与「首个工作区自动展开」。
+  (group) =>
+    group.workspaceId !== undefined &&
+    workspaceRows.find((row) => row.workspaceId === group.workspaceId)?.kind === 'chats',
 )
 let selectedWorkspace: WorkspaceEntry | undefined
 let draftingNew = false

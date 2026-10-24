@@ -19,6 +19,7 @@ import type { ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
 import { SessionNavigation } from '../navigation.js'
+import { sidebarGrouping } from '../sidebar-grouping.js'
 import { ApplicationSwitch } from './application-switch.js'
 import {
   type EmptyStateRegionMount,
@@ -55,6 +56,7 @@ export function SidebarDshFrame({
   profileApprovals?: ReactNode
 }) {
   const identity = useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
+  const grouping = useSyncExternalStore(sidebarGrouping.subscribe, sidebarGrouping.getSnapshot)
   const brand = applicationBrand(document.documentElement.lang)
   const outlet = (name: string) => <SlotOutlet name={name as never} hideWhenEmpty />
   return (
@@ -70,7 +72,9 @@ export function SidebarDshFrame({
             {profileApprovals}
           </HomeEntriesNav>
         ),
-        sectionLabel: <SessionListLabel t={dependencies.translate} />,
+        // The grouped view puts 置顶 / 临时会话 / 工作区 inside the list, so the row above it is
+        // only a toolbar: a null label tells the shell not to print a heading it does not own.
+        sectionLabel: grouping === 'workspace' ? null : <SessionListLabel t={dependencies.translate} />,
         sessionTools: <SessionListTools t={dependencies.translate} />,
         brandMark: (
           <SlotOutlet
@@ -121,6 +125,11 @@ export function mountSidebarRegion(
     translate: (key, vars) => locale.t(key, vars),
     renderNavigation: (options) => (
       <SessionNavigation options={options} t={(key, vars) => locale.t(key, vars)} />
+    ),
+    // Single-list view only: pinned rows and the managed chats workspace sit above 「会话」.
+    // The grouped view renders those as sections inside the list and returns null here.
+    renderLeadingNavigation: (options) => (
+      <SessionNavigation leading options={options} t={(key, vars) => locale.t(key, vars)} />
     ),
   }
   if (!registry.spec(SIDEBAR_SLOT))

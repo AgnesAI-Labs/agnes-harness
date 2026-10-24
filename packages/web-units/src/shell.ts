@@ -107,6 +107,7 @@ export {
 export {
   EMPTY_SIDEBAR_STATE,
   type SessionAction,
+  SIDEBAR_ORDER_ANNOUNCE_EVENT,
   Sidebar,
   type SidebarActions,
   type SidebarDependencies,

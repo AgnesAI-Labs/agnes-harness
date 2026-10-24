@@ -18,6 +18,11 @@ export function createSidebarPagination(
   port: Port,
   changed: () => void,
   errorText: (error: unknown) => string,
+  /**
+   * Groups that render as their own sidebar section (currently the managed chats workspace). They
+   * never take the automatic first expansion; the caller maps them from workspace metadata.
+   */
+  isLeadingGroup: (group: Pick<SidebarGroupState, 'groupId' | 'workspaceId'>) => boolean = () => false,
 ) {
   let groups: Group[] = [],
     ready = false,
@@ -167,7 +172,10 @@ export function createSidebarPagination(
         if (!initialised && ready) {
           initialised = true
           if (!touched) {
-            const first = groups.find((group) => group.groupId !== 'pinned' && group.total > 0)
+            // The first workspace opens by default; 置顶 and 临时会话 never do.
+            const first = groups.find(
+              (group) => group.groupId !== 'pinned' && !isLeadingGroup(group) && group.total > 0,
+            )
             if (first) {
               first.opened = true
               reload.push(first)

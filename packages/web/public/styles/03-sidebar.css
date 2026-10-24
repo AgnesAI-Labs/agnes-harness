@@ -162,6 +162,17 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  /* Pinned sessions and the managed chats workspace sit above the heading, outside #sessions.
+     They take the list's spacing; a long pinned list scrolls here instead of being clipped. */
+  .sidebar-leading {
+    min-height: 0;
+    max-height: 40%;
+    display: grid;
+    align-content: start;
+    gap: var(--s4);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
   /* Session list: one folder per workspace. The header collapses the folder and carries its
      new-session action; rows are an Ant Design X Conversations list of our own controls. */
   .workspace-group {
@@ -473,6 +484,62 @@
     margin: 0;
     font-size: var(--font-size-xs);
     font-weight: var(--font-weight-medium);
+  }
+  /* With no label of its own, the heading row is only a toolbar: search, view, add workspace. */
+  .sidebar-section-heading.is-toolbar {
+    justify-content: flex-end;
+    padding-left: 0;
+  }
+  /* The grouped list: three peer sections (置顶 / 临时会话 / 工作区), each folding its own body. */
+  .sidebar-section {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s2);
+  }
+  .sidebar-section-body {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s4);
+  }
+  .sidebar-section-body[hidden] {
+    display: none;
+  }
+  /* Inside 工作区 a project heading is indented one level; the hover surface still fills the row. */
+  .workspace-heading-row.is-nested .workspace-heading {
+    padding-left: calc(var(--s8) + 1rem);
+  }
+  /* The heading name itself is the drag source; the cursor is the only affordance it needs. */
+  .workspace-heading[draggable="true"] {
+    cursor: grab;
+  }
+  .workspace-heading[draggable="true"]:active {
+    cursor: grabbing;
+  }
+  /* The insertion line sits on the heading the pointer is over, before or after its midpoint. */
+  .workspace-heading-row {
+    position: relative;
+  }
+  .workspace-heading-row[data-drop]::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    height: 2px;
+    border-radius: var(--radius-full);
+    background: var(--agnes-brand-focus-ring);
+    pointer-events: none;
+  }
+  .workspace-heading-row[data-drop="before"]::after {
+    top: -1px;
+  }
+  .workspace-heading-row[data-drop="after"]::after {
+    bottom: -1px;
+  }
+  /* The row being dragged dims so the insertion line reads as the destination. */
+  .sidebar-section[data-dragging="true"] > .workspace-heading-row,
+  .workspace-group[data-dragging="true"] > .workspace-heading-row {
+    opacity: 0.5;
   }
   .icon-button.subtle {
     width: 1.75rem;

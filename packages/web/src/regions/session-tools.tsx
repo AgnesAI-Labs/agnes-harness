@@ -4,6 +4,7 @@ import { useSyncExternalStore } from 'react'
 import { navigationHistory } from '../navigation-history.js'
 import { currentMode, type SessionListMode, supportsModes } from '../session-inventory.js'
 import { sidebarGrouping } from '../sidebar-grouping.js'
+import { sidebarOrder } from '../sidebar-order.js'
 
 /** The sidebar asks for the search palette; the workbench owns it. */
 export const SESSION_SEARCH_EVENT = 'agnes:session-search'
@@ -30,6 +31,7 @@ export function SessionListTools({ t }: { t: Translate }) {
   // Two groups under their own headings: how the list is arranged, then which sessions it holds.
   const groupingHeading = t('sidebar.view.grouping')
   const filterHeading = t('sidebar.view.filter')
+  const orderHeading = t('sidebar.order.group')
   const choice = (
     id: string,
     group: string,
@@ -81,6 +83,15 @@ export function SessionListTools({ t }: { t: Translate }) {
     choice('filter-archived', filterHeading, t('sidebar.view.archivedOnly'), 'archive', archived, () =>
       applyMode('archived'),
     ),
+    // A way back from a reorder that went wrong: forget both saved orders in one action.
+    {
+      id: 'order-reset',
+      group: orderHeading,
+      testId: 'session-view-order-reset',
+      label: t('sidebar.order.reset'),
+      icon: <Icon name="grip-vertical" />,
+      onSelect: () => sidebarOrder.reset(),
+    },
   ]
   return (
     <span className="sidebar-session-tools">

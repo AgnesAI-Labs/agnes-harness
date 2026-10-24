@@ -34,6 +34,9 @@ export type SidebarGroupState = SessionGroup & {
 export type SidebarPaging = { groups: SidebarGroupState[]; ready: boolean; loading: boolean; error?: string }
 export type SidebarGroupAction = 'toggle' | 'more' | 'collapse' | 'reload' | 'retry'
 
+/** The navigation reports a completed reorder here; the shell owns the live region. */
+export const SIDEBAR_ORDER_ANNOUNCE_EVENT = 'agnes:sidebar-order-announce'
+
 export interface SidebarNavigationOptions {
   runtimePlatform?: string
 
@@ -68,6 +71,12 @@ export interface SidebarDependencies {
   /** Locale-bound translate (host injects); called during render, never cached. */
   translate: Translate
   renderNavigation(options: SidebarNavigationOptions): ReactNode
+  /**
+   * Sessions the host shows above the section heading (pinned and the managed chats workspace).
+   * The shell omits the block entirely when this returns null; hosts that never show such a
+   * block leave it out.
+   */
+  renderLeadingNavigation?(options: SidebarNavigationOptions): ReactNode
   bindSidebar(narrow: MediaQueryList): SidebarShell
 }
 
@@ -215,6 +224,17 @@ const SidebarBuiltin = forwardRef<
     return () => document.removeEventListener('keydown', onKeydown)
   }, [store])
   const shell = useRef<SidebarShell | undefined>(undefined)
+  // Reordering happens inside the scrolling list; read the result out from the toolbar instead,
+  // so repeated keyboard moves do not re-announce a region that scrolls.
+  const [announcement, setAnnouncement] = useState('')
+  useEffect(() => {
+    const onAnnounce = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail
+      if (typeof detail === 'string') setAnnouncement(detail)
+    }
+    document.addEventListener(SIDEBAR_ORDER_ANNOUNCE_EVENT, onAnnounce)
+    return () => document.removeEventListener(SIDEBAR_ORDER_ANNOUNCE_EVENT, onAnnounce)
+  }, [])
   const t: Translate = dependencies?.translate ?? ((key) => key)
   useImperativeHandle(
     ref,
@@ -249,6 +269,30 @@ const SidebarBuiltin = forwardRef<
       shell.current = undefined
     }
   }, [dependencies])
+  // One options object feeds both render slots: the area above the heading and the list below it.
+  const navigation: SidebarNavigationOptions = {
+    sessions: current.sessions,
+    ...(current.paging ? { paging: current.paging } : {}),
+    ...(actions.groupAction ? { groupAction: actions.groupAction } : {}),
+    ...(actions.refreshGroups ? { refreshGroups: actions.refreshGroups } : {}),
+    workspaces: current.workspaces,
+    labels: current.labels,
+    runningIds: running,
+    ...(current.runtimePlatform ? { runtimePlatform: current.runtimePlatform } : {}),
+    ...(current.currentId ? { currentId: current.currentId } : {}),
+    disabled: false,
+    newDisabled: current.newDisabled,
+    ...(current.next ? { next: current.next } : {}),
+    loadMore: actions.loadMore,
+    action: actions.sessionAction,
+    ...(actions.workspaceAction ? { workspaceAction: actions.workspaceAction } : {}),
+    newSession: actions.newSession,
+    open: actions.openSession,
+  }
+  // A provided `null` means the host owns the heading (the grouped list renders its own section
+  // titles); an absent slot keeps the built-in heading. `??` would turn that null back.
+  const sectionLabel =
+    slots?.sectionLabel === null ? null : (slots?.sectionLabel ?? t('sidebar.sectionHeading'))
   return (
     <div style={{ display: 'contents' }} data-agnes-region-owner="builtin" data-agnes-region-unit="sidebar">
       <div className="sidebar-head">
@@ -281,8 +325,11 @@ const SidebarBuiltin = forwardRef<
         </Tooltip>
       </div>
       {slots?.entries}
-      <div className="sidebar-section-heading">
-        <p className="section-label">{slots?.sectionLabel ?? t('sidebar.sectionHeading')}</p>
+      {dependencies?.renderLeadingNavigation?.(navigation)}
+      <div
+        className={sectionLabel === null ? 'sidebar-section-heading is-toolbar' : 'sidebar-section-heading'}
+      >
+        {sectionLabel !== null && <p className="section-label">{sectionLabel}</p>}
         {slots?.sessionTools}
         <IconButton
           id="workspace-add"
@@ -291,27 +338,12 @@ const SidebarBuiltin = forwardRef<
           onClick={actions.addWorkspace}
         />
         {slots?.workspaces}
+        <span className="visually-hidden" role="status" aria-live="polite">
+          {announcement}
+        </span>
       </div>
       <nav id="sessions" aria-label={t('sidebar.sessionsNav')}>
-        {dependencies?.renderNavigation({
-          sessions: current.sessions,
-          ...(current.paging ? { paging: current.paging } : {}),
-          ...(actions.groupAction ? { groupAction: actions.groupAction } : {}),
-          ...(actions.refreshGroups ? { refreshGroups: actions.refreshGroups } : {}),
-          workspaces: current.workspaces,
-          labels: current.labels,
-          runningIds: running,
-          ...(current.runtimePlatform ? { runtimePlatform: current.runtimePlatform } : {}),
-          ...(current.currentId ? { currentId: current.currentId } : {}),
-          disabled: false,
-          newDisabled: current.newDisabled,
-          ...(current.next ? { next: current.next } : {}),
-          loadMore: actions.loadMore,
-          action: actions.sessionAction,
-          ...(actions.workspaceAction ? { workspaceAction: actions.workspaceAction } : {}),
-          newSession: actions.newSession,
-          open: actions.openSession,
-        })}
+        {dependencies?.renderNavigation(navigation)}
       </nav>
       {slots?.panellist}
       <div className="sidebar-footer">

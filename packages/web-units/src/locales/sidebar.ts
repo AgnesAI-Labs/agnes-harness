@@ -21,6 +21,9 @@ export const sidebarLocaleCatalog: LocaleCatalog = {
     'sidebar.view.archivedOnly': 'Archived only',
     'sidebar.view.selected': 'Selected',
     'sidebar.view.unsupported': 'This view needs a newer host',
+    'sidebar.order.moved': '{name} moved to position {position}',
+    'sidebar.order.group': 'Order',
+    'sidebar.order.reset': 'Reset order',
   },
   'zh-CN': {
     'sidebar.closeNav': '关闭导航',
@@ -41,5 +44,8 @@ export const sidebarLocaleCatalog: LocaleCatalog = {
     'sidebar.view.archivedOnly': '仅显示已归档',
     'sidebar.view.selected': '已选中',
     'sidebar.view.unsupported': '当前宿主不支持这个视图',
+    'sidebar.order.moved': '已将“{name}”移到第 {position} 位',
+    'sidebar.order.group': '顺序',
+    'sidebar.order.reset': '重置顺序',
   },
 }

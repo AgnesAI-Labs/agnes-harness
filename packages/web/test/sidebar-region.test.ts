@@ -2,7 +2,7 @@
 
 import type { PageSessionMeta, WorkspaceEntry } from '@agnes/protocol'
 import { homeEntries, homeNavigation } from '@agnes/web-client'
-import { getByRole } from '@testing-library/dom'
+import { fireEvent, getByRole } from '@testing-library/dom'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -11,6 +11,8 @@ import { NavigationLabel, resetCollapsedGroups } from '../src/navigation.js'
 import { BUILTIN_HOME_ENTRIES } from '../src/pages/entries.js'
 import { SIDEBAR_SLOT } from '../src/region-slots.js'
 import { sessionInventory } from '../src/session-inventory.js'
+import { sidebarGrouping } from '../src/sidebar-grouping.js'
+import { sidebarOrder } from '../src/sidebar-order.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 const session = (id: string, cwd: string): PageSessionMeta['items'][number] =>
@@ -51,8 +53,11 @@ describe('rendered sidebar region', () => {
     await runtime?.dispose()
     runtime = undefined
     resetWebDom()
-    // 折叠记录是模块级状态并写入本地存储，不清会在用例之间串。
+    // 折叠记录与顺序记录是模块级状态并写入本地存储，不清会在用例之间串。
     resetCollapsedGroups()
+    sidebarOrder.reset()
+    sessionInventory.reset()
+    sidebarGrouping.reset()
     vi.unstubAllGlobals()
   })
 
@@ -79,13 +84,13 @@ describe('rendered sidebar region', () => {
 
     const sidebar = document.querySelector('aside.sidebar')
     expect(sidebar?.querySelector('.brand-wordmark-text')?.textContent).toBe('Agnes Harness')
-    expect(sidebar?.querySelector('.workspace-name')?.textContent).toBe('主工作区')
+    expect(sidebar?.querySelector('.workspace-group.is-nested .workspace-name')?.textContent).toBe('主工作区')
     const sessionButton = sidebar?.querySelector<HTMLButtonElement>('[data-session="one"]')
     expect(sessionButton?.getAttribute('aria-current')).toBe('page')
     sessionButton?.click()
     expect(openSession).toHaveBeenCalledWith('one')
 
-    const heading = sidebar?.querySelector<HTMLButtonElement>('.workspace-heading')
+    const heading = sidebar?.querySelector<HTMLButtonElement>('.workspace-group.is-nested .workspace-heading')
     flushSync(() => heading?.click())
     expect((sidebar?.querySelector('.workspace-sessions') as HTMLElement | null)?.hidden).toBe(true)
     flushSync(() => heading?.click())
@@ -202,7 +207,7 @@ describe('rendered sidebar region', () => {
       },
     })
 
-    const heading = document.querySelector<HTMLButtonElement>('.workspace-heading')
+    const heading = document.querySelector<HTMLButtonElement>('.workspace-group.is-nested .workspace-heading')
     const create = document.querySelector<HTMLButtonElement>('.workspace-new-session')
     expect(create?.getAttribute('aria-label')).toBe('New session in “主工作区”')
 
@@ -276,6 +281,113 @@ describe('rendered sidebar region', () => {
     expect(shortcuts()?.[1]?.getAttribute('aria-label')).toBe('在“另一个”中新建会话')
   })
 
+  it('renders 置顶, 临时会话 and 工作区 as peer sections in that order', async () => {
+    const chats: WorkspaceEntry = { ...workspace('/chats', 'chats'), kind: 'chats' }
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: {
+          sessions: [
+            { ...session('pinned', '/workspace'), pinnedAt: '2026-10-20T08:00:00.000Z' },
+            session('chat', '/chats'),
+            session('one', '/workspace'),
+          ],
+          workspaces: [workspace('/workspace', '主工作区'), chats],
+          labels: new Map(),
+          sessionPending: false,
+          newDisabled: false,
+        },
+      },
+    })
+    const sidebar = document.querySelector<HTMLElement>('aside.sidebar')
+    if (!sidebar) throw new Error('missing sidebar')
+    const heading = sidebar.querySelector<HTMLElement>('.sidebar-section-heading')
+    const nav = sidebar.querySelector<HTMLElement>('#sessions')
+    if (!heading || !nav) throw new Error('missing sidebar structure')
+    // 分组视图把三个分区放进列表，前置槽位不再另起一份完整列表。
+    expect(sidebar.querySelector('.sidebar-leading')).toBeNull()
+    const sections = [...nav.querySelectorAll<HTMLElement>('.sidebar-section')]
+    expect(sections.map((section) => section.dataset.section)).toEqual(['pinned', 'chats', 'workspaces'])
+    expect(
+      [...nav.querySelectorAll('.sidebar-section > .workspace-heading-row .workspace-name')].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(['Pinned', 'Chats', 'Workspaces'])
+    expect(
+      [...nav.querySelectorAll('.workspace-group .workspace-name')].map((node) => node.textContent),
+    ).toEqual(['主工作区'])
+    // 三个分区标题共用同一条标题样式，项目标题只用缩进区分层级。
+    expect(nav.querySelectorAll('.sidebar-section > .workspace-heading-row .workspace-heading')).toHaveLength(
+      3,
+    )
+    expect(nav.querySelectorAll('.workspace-group.is-nested .workspace-heading')).toHaveLength(1)
+    // 「工作区」标题不再是外壳那一行，工具条只剩搜索、视图与添加。
+    expect(heading.querySelector('.section-label')).toBeNull()
+    expect(heading.classList.contains('is-toolbar')).toBe(true)
+  })
+
+  it('renders no leading block and keeps the toolbar label out of the grouped view', async () => {
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: {
+          sessions: [session('one', '/workspace')],
+          workspaces: [workspace('/workspace', '主工作区')],
+          labels: new Map(),
+          sessionPending: false,
+          newDisabled: false,
+        },
+      },
+    })
+    const sidebar = document.querySelector<HTMLElement>('aside.sidebar') as HTMLElement
+    expect(sidebar.querySelector('.sidebar-leading')).toBeNull()
+    expect(sidebar.querySelector('.sidebar-section-heading .section-label')).toBeNull()
+    expect(sidebar.querySelector('.sidebar-section-heading')?.classList.contains('is-toolbar')).toBe(true)
+    expect(
+      [...sidebar.querySelectorAll('#sessions .workspace-group .workspace-name')].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(['主工作区'])
+  })
+
+  it('keeps the leading area above the 「会话」 heading in single-list mode', async () => {
+    sidebarGrouping.setGrouping('list')
+    const chats: WorkspaceEntry = { ...workspace('/chats', 'chats'), kind: 'chats' }
+    sessionInventory.bind({
+      list: async () => ({
+        items: [
+          { ...session('pinned', '/workspace'), pinnedAt: '2026-10-20T08:00:00.000Z' },
+          session('chat', '/chats'),
+          session('one', '/workspace'),
+        ],
+      }),
+      restore: vi.fn(),
+      changed: async () => undefined,
+    })
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: {
+          sessions: [session('one', '/workspace')],
+          workspaces: [workspace('/workspace', '主工作区'), chats],
+          labels: new Map(),
+          sessionPending: false,
+          newDisabled: false,
+        },
+      },
+    })
+    const sidebar = document.querySelector<HTMLElement>('aside.sidebar')
+    if (!sidebar) throw new Error('missing sidebar')
+    await vi.waitFor(() => expect(sidebar.querySelector('[data-session="one"]')).not.toBeNull())
+    expect(sidebar.querySelector('.sidebar-section-heading .section-label')?.textContent).toBe('Sessions')
+    const leading = sidebar.querySelector<HTMLElement>('.sidebar-leading')
+    const heading = sidebar.querySelector<HTMLElement>('.sidebar-section-heading')
+    const nav = sidebar.querySelector<HTMLElement>('#sessions')
+    if (!leading || !heading || !nav) throw new Error('missing sidebar structure')
+    expect(leading.querySelector('[data-session="pinned"]')).not.toBeNull()
+    expect(leading.querySelector('[data-session="chat"]')).not.toBeNull()
+    expect(nav.querySelector('[data-session="one"]')).not.toBeNull()
+    expect(nav.querySelector('[data-session="pinned"]')).toBeNull()
+    expect((leading.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0).toBe(true)
+  })
+
   it('disables unavailable workspace shortcuts and omits one for unassigned sessions', async () => {
     const unavailable = { ...workspace('/workspace', '不可用工作区'), available: false }
     runtime = await mountRenderedIndex({
@@ -317,8 +429,10 @@ describe('rendered sidebar region', () => {
     runtime = await mountRenderedIndex({ sidebar: { state } })
 
     const sidebar = document.querySelector('aside.sidebar')
-    const heading = () => sidebar?.querySelector<HTMLButtonElement>('.workspace-heading')
-    const children = () => sidebar?.querySelector('.workspace-sessions') as HTMLElement | null
+    const heading = () =>
+      sidebar?.querySelector<HTMLButtonElement>('.workspace-group.is-nested .workspace-heading')
+    const children = () =>
+      sidebar?.querySelector('.workspace-group .workspace-sessions') as HTMLElement | null
 
     flushSync(() => heading()?.click())
     expect(children()?.hidden).toBe(true)
@@ -342,6 +456,107 @@ describe('rendered sidebar region', () => {
     expect(JSON.parse(localStorage.getItem('agnes.sidebar.collapsed-workspaces.v1') ?? '[]')).toEqual([])
   })
 
+  it('reorders sections and projects by pointer and keyboard, and announces the result', async () => {
+    const chats: WorkspaceEntry = { ...workspace('/chats', 'chats'), kind: 'chats' }
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: {
+          sessions: [
+            { ...session('pinned', '/workspace'), pinnedAt: '2026-10-20T08:00:00.000Z' },
+            session('chat', '/chats'),
+            session('one', '/workspace'),
+            session('two', '/other'),
+          ],
+          workspaces: [workspace('/workspace', '主工作区'), workspace('/other', '另一个'), chats],
+          labels: new Map(),
+          sessionPending: false,
+          newDisabled: false,
+        },
+      },
+    })
+    const sidebar = document.querySelector<HTMLElement>('aside.sidebar')
+    if (!sidebar) throw new Error('missing sidebar')
+    const order = () =>
+      [...sidebar.querySelectorAll<HTMLElement>('#sessions > .sidebar-section')].map(
+        (section) => section.dataset.section,
+      )
+    const sectionRow = (id: string) =>
+      sidebar.querySelector<HTMLElement>(`[data-section="${id}"] > .workspace-heading-row`)
+    const sectionHeading = (id: string) =>
+      sidebar.querySelector<HTMLElement>(`[data-section="${id}"] > .workspace-heading-row .workspace-heading`)
+    const transfer = { setData: vi.fn(), getData: vi.fn(() => ''), effectAllowed: '', dropEffect: '' }
+    // `fireEvent` from @testing-library/dom does not wrap React's act, so flush each step before
+    // the next handler reads the drag state it depends on.
+    const drag = (handle: HTMLElement, target: HTMLElement) => {
+      fireEvent.dragStart(handle, { dataTransfer: transfer })
+      flushSync(() => {})
+      fireEvent.dragOver(target, { dataTransfer: transfer, clientY: 10 })
+      flushSync(() => {})
+      fireEvent.drop(target, { dataTransfer: transfer, clientY: 10 })
+      flushSync(() => {})
+    }
+
+    expect(order()).toEqual(['pinned', 'chats', 'workspaces'])
+    // The heading name is the drag source; no separate handle sits before it.
+    expect(sidebar.querySelector('.sidebar-drag-handle')).toBeNull()
+    expect(sectionHeading('pinned')?.getAttribute('draggable')).toBe('true')
+    drag(sectionHeading('pinned') as HTMLElement, sectionRow('workspaces') as HTMLElement)
+    expect(order()).toEqual(['chats', 'workspaces', 'pinned'])
+    expect(JSON.parse(localStorage.getItem('agnes.sidebar.section-order.v1') ?? '[]')).toEqual([
+      'chats',
+      'workspaces',
+      'pinned',
+    ])
+    // The announcement names the row that moved, not the row it landed on.
+    expect(sidebar.querySelector('.sidebar-section-heading > [role="status"]')?.textContent).toBe(
+      'Pinned moved to position 3',
+    )
+
+    // Keyboard moves the focused section one place and reads the new position out of the toolbar.
+    fireEvent.keyDown(
+      sidebar.querySelector<HTMLElement>(
+        '[data-section="workspaces"] > .workspace-heading-row .workspace-heading',
+      ) as HTMLElement,
+      { key: 'ArrowUp', altKey: true },
+    )
+    flushSync(() => {})
+    expect(order()).toEqual(['workspaces', 'chats', 'pinned'])
+    expect(sidebar.querySelector('.sidebar-section-heading > [role="status"]')?.textContent).toBe(
+      'Workspaces moved to position 1',
+    )
+
+    // Projects move only inside 工作区.
+    const groups = () =>
+      [...sidebar.querySelectorAll('.workspace-group.is-nested .workspace-name')].map(
+        (node) => node.textContent,
+      )
+    const groupNamed = (name: string) =>
+      [...sidebar.querySelectorAll<HTMLElement>('.workspace-group.is-nested')].find(
+        (group) => group.querySelector('.workspace-name')?.textContent === name,
+      )
+    expect(groups()).toEqual(['主工作区', '另一个'])
+    const first = groupNamed('主工作区') as HTMLElement
+    const second = groupNamed('另一个') as HTMLElement
+    drag(
+      first.querySelector<HTMLElement>('.workspace-heading') as HTMLElement,
+      second.querySelector<HTMLElement>('.workspace-heading-row') as HTMLElement,
+    )
+    expect(groups()).toEqual(['另一个', '主工作区'])
+    expect(JSON.parse(localStorage.getItem('agnes.sidebar.workspace-order.v1') ?? '[]')).toEqual([
+      '/other',
+      '/workspace',
+    ])
+    fireEvent.keyDown(
+      groupNamed('主工作区')?.querySelector<HTMLElement>('.workspace-heading') as HTMLElement,
+      { key: 'ArrowUp', altKey: true },
+    )
+    flushSync(() => {})
+    expect(groups()).toEqual(['主工作区', '另一个'])
+    expect(sidebar.querySelector('.sidebar-section-heading > [role="status"]')?.textContent).toBe(
+      '主工作区 moved to position 1',
+    )
+  })
+
   it('teaches the next step when there is no session yet', async () => {
     runtime = await mountRenderedIndex({
       sidebar: {
@@ -356,7 +571,7 @@ describe('rendered sidebar region', () => {
     })
     const nav = document.querySelector('aside.sidebar #sessions')
     // The folder stays so a session can be started in it; the empty state explains the list.
-    expect(nav?.querySelector('.workspace-name')?.textContent).toBe('主工作区')
+    expect(nav?.querySelector('.workspace-group .workspace-name')?.textContent).toBe('主工作区')
     expect(nav?.querySelector('.session-list-empty h3')?.textContent).toBe('No sessions yet')
     expect(nav?.querySelector('[data-session]')).toBeNull()
   })

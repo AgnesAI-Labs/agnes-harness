@@ -10,6 +10,7 @@ import { SessionListLabel, SessionListTools } from '../src/regions/session-tools
 import { sessionInventory } from '../src/session-inventory.js'
 import { resetCollapsedGroups, resetExpandedGroups } from '../src/sidebar-collapse.js'
 import { sidebarGrouping } from '../src/sidebar-grouping.js'
+import { orderSections, sidebarOrder } from '../src/sidebar-order.js'
 import { groupInventoryRows, sortSessionsByActivity } from '../src/sidebar-session-list.js'
 import { zhT } from './helpers/locale.js'
 
@@ -24,6 +25,7 @@ afterEach(() => {
   sidebarGrouping.reset()
   resetCollapsedGroups()
   resetExpandedGroups()
+  sidebarOrder.reset()
   vi.restoreAllMocks()
 })
 
@@ -120,6 +122,7 @@ describe('sidebar heading', () => {
     expect([...document.querySelectorAll('.agh-menu-group-label')].map((node) => node.textContent)).toEqual([
       '分组方式',
       '筛选会话',
+      '顺序',
     ])
     expect(items.map((item) => item.textContent)).toEqual([
       '按工作区',
@@ -127,6 +130,7 @@ describe('sidebar heading', () => {
       '隐藏已归档',
       '全部对话（显示已归档）',
       '仅显示已归档',
+      '重置顺序',
     ])
     expect(items[0]?.getAttribute('data-checked')).toBe('true')
     expect(items[0]?.getAttribute('aria-label')).toBe('按工作区, 已选中')
@@ -138,6 +142,23 @@ describe('sidebar heading', () => {
     await vi.waitFor(() =>
       expect(host.querySelector('#session-view')?.getAttribute('aria-expanded')).toBe('false'),
     )
+  })
+
+  it('resets the saved section and project orders from the view menu', async () => {
+    sidebarOrder.moveSection('pinned', 'workspaces', 'after')
+    sidebarOrder.moveWorkspace(['/alpha', '/beta'], '/beta', '/alpha', 'before')
+    const host = mount(<SessionListTools t={zhT} />)
+    host.querySelector<HTMLButtonElement>('#session-view')?.click()
+    const reset = await vi.waitFor(() => {
+      const found = document.querySelector<HTMLElement>('[data-testid="session-view-order-reset"]')
+      if (!found) throw new Error('the order reset item has not rendered yet')
+      return found
+    })
+    reset.click()
+    expect(orderSections(['pinned', 'chats', 'workspaces'])).toEqual(['pinned', 'chats', 'workspaces'])
+    expect(sidebarOrder.getSnapshot().workspaces).toEqual([])
+    expect(localStorage.getItem('agnes.sidebar.section-order.v1')).toBeNull()
+    expect(localStorage.getItem('agnes.sidebar.workspace-order.v1')).toBeNull()
   })
 
   it('enters and leaves the archived filter from the menu', async () => {
@@ -218,6 +239,91 @@ describe('session navigation', () => {
     expect(host.querySelector('.workspace-group')).toBeNull()
     expect(host.querySelector('.session-workspace-label')?.textContent).toBe('主工作区')
     expect(list).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the activity order inside a project in the full-list view', async () => {
+    sessionInventory.setMode('all')
+    // Created later but last active earlier: creation order and activity order disagree.
+    bind([
+      row('created-later', {
+        cwd: '/workspace',
+        createdAt: '2026-10-05T00:00:00.000Z',
+        lastMessageAt: '2026-10-01T00:00:00.000Z',
+      }),
+      row('active-later', {
+        cwd: '/workspace',
+        createdAt: '2026-10-01T00:00:00.000Z',
+        lastMessageAt: '2026-10-09T00:00:00.000Z',
+      }),
+    ])
+    const host = mount(
+      <SessionNavigation options={options([], [workspace('/workspace', '主工作区')])} t={zhT} />,
+    )
+    await vi.waitFor(() => expect(host.querySelector('[data-session="active-later"]')).not.toBeNull())
+    expect(
+      [...host.querySelectorAll<HTMLElement>('.workspace-group [data-session]')].map(
+        (node) => node.dataset.session,
+      ),
+    ).toEqual(['active-later', 'created-later'])
+  })
+
+  it('renders pinned and chats as peer sections inside the workspace list', async () => {
+    const chats: WorkspaceEntry = { ...workspace('/chats', 'chats'), kind: 'chats' }
+    sessionInventory.setMode('all')
+    bind([
+      row('pinned', { cwd: '/workspace', pinnedAt: '2026-10-02T00:00:00.000Z' }),
+      row('chat', { cwd: '/chats' }),
+      row('one', { cwd: '/workspace' }),
+    ])
+    const input = options([], [workspace('/workspace', '主工作区'), chats])
+    const leading = mount(<SessionNavigation leading options={input} t={zhT} />)
+    const main = mount(<SessionNavigation options={input} t={zhT} />)
+    await vi.waitFor(() => expect(main.querySelector('[data-session="chat"]')).not.toBeNull())
+    // 分组视图的前置槽位不再渲染第二份列表。
+    expect(leading.innerHTML).toBe('')
+    expect(main.querySelector('[data-testid="session-inventory"]')).not.toBeNull()
+    const sections = [...main.querySelectorAll<HTMLElement>('.sidebar-section')]
+    expect(sections.map((section) => section.dataset.section)).toEqual(['pinned', 'chats', 'workspaces'])
+    expect(
+      [...main.querySelectorAll('.sidebar-section > .workspace-heading-row .workspace-name')].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(['置顶', '临时会话', '工作区'])
+    expect(
+      [...main.querySelectorAll('.workspace-group .workspace-name')].map((node) => node.textContent),
+    ).toEqual(['主工作区'])
+    // 每个会话只出现一次，置顶与临时会话没有混进工作区分区。
+    const projects = main.querySelector('[data-section="workspaces"]') as HTMLElement
+    expect(projects.querySelector('[data-session="pinned"]')).toBeNull()
+    expect(projects.querySelector('[data-session="chat"]')).toBeNull()
+    expect(projects.querySelector('[data-session="one"]')).not.toBeNull()
+  })
+
+  it('keeps pinned and chats rows above the flat list in single-list mode', async () => {
+    sidebarGrouping.setGrouping('list')
+    const chats: WorkspaceEntry = { ...workspace('/chats', 'chats'), kind: 'chats' }
+    bind([
+      row('pinned', { cwd: '/workspace', pinnedAt: '2026-10-02T00:00:00.000Z' }),
+      row('chat', { cwd: '/chats' }),
+      row('one', { cwd: '/workspace' }),
+    ])
+    const input = options([], [workspace('/workspace', '主工作区'), chats])
+    const leading = mount(<SessionNavigation leading options={input} t={zhT} />)
+    const main = mount(<SessionNavigation options={input} t={zhT} />)
+    await vi.waitFor(() => expect(leading.querySelector('[data-session="chat"]')).not.toBeNull())
+    const ids = (host: HTMLElement) =>
+      [...host.querySelectorAll<HTMLElement>('[data-session]')].map((node) => node.dataset.session)
+    expect(ids(leading)).toEqual(['pinned', 'chat'])
+    expect(ids(main)).toEqual(['one'])
+    expect(main.querySelector('[data-testid="session-inventory"]')).not.toBeNull()
+  })
+
+  it('marks the managed chats workspace as its own group kind', () => {
+    const groups = groupInventoryRows(
+      [row('chat', { cwd: '/chats' })],
+      [{ ...workspace('/chats', 'chats'), kind: 'chats' }, workspace('/workspace', '主工作区')],
+    )
+    expect(groups.map((group) => group.kind)).toEqual(['chats'])
   })
 
   it('marks archived rows in 全部对话 but still opens and restores them', async () => {

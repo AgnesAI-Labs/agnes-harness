@@ -128,19 +128,37 @@ export function renderWorkspaceOptions(
 }
 
 /**
- * The sidebar list. The default view keeps the host's paged projection: one group per workspace,
- * archived sessions hidden. Every other combination needs the whole list, so it renders the
- * inventory instead — flattened, mixing archived rows in, or showing only the archived ones.
+ * The sidebar list. The default view keeps the host's paged projection: three peer sections
+ * (置顶 / 临时会话 / 工作区), archived sessions hidden. Every other combination needs the whole
+ * list, so it renders the inventory instead — flattened, mixing archived rows in, or showing only
+ * the archived ones. With `leading` and the single-list view, the same data renders just the
+ * pinned and chats rows, for the slot above the section heading; the grouped view renders those
+ * sections inside the list, so the leading slot stays empty.
  */
-export function SessionNavigation(props: { options: SidebarNavigationOptions; t: Translate }) {
+export function SessionNavigation(props: {
+  options: SidebarNavigationOptions
+  t: Translate
+  leading?: boolean
+}) {
   const history = navigationHistory
   const view = useSyncExternalStore(history.subscribe, history.getSnapshot)
   const grouping = useSyncExternalStore(sidebarGrouping.subscribe, sidebarGrouping.getSnapshot)
   const mode = currentMode(view)
   // A host without `setMode` can only show the two-state filter, so the flat list is not offered.
   const flat = grouping === 'list' && typeof history.setMode === 'function'
-  if (mode === 'active' && !flat) return <WorkspaceSessions {...props} />
-  return <InventorySessions {...props} mode={mode} grouped={!flat} />
+  const leading = props.leading ?? false
+  // The shell still calls this slot unconditionally; the grouped view must not render a second list.
+  if (leading && !flat) return null
+  if (mode === 'active' && !flat) return <WorkspaceSessions options={props.options} t={props.t} />
+  return (
+    <InventorySessions
+      options={props.options}
+      t={props.t}
+      mode={mode}
+      grouped={!flat}
+      leading={flat && leading}
+    />
+  )
 }
 
 /** Compatibility mount for consumers outside the sidebar's React tree. */

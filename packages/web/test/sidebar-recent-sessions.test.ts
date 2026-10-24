@@ -2,7 +2,9 @@
 
 import { resolve } from 'node:path'
 import type { PageSessionMeta, SessionGroupsResult, WorkspaceEntry } from '@agnes/protocol'
+import { mountRegion, renderRegion } from '@agnes/web-ui'
 import type { SidebarGroupState } from '@agnes/web-units'
+import { createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readWebStyleSource } from '../../../tools/web-style-source.mjs'
@@ -11,8 +13,10 @@ import {
   renderSessionNavigation,
   resetCollapsedGroups,
   resetExpandedGroups,
+  SessionNavigation,
   shownSessions,
 } from '../src/navigation.js'
+import { sidebarOrder } from '../src/sidebar-order.js'
 import { createSidebarPagination } from '../src/sidebar-pagination.js'
 import { zhT } from './helpers/locale.js'
 
@@ -62,6 +66,7 @@ const titles = (nav: Element) => [...nav.querySelectorAll('.session-title')].map
 afterEach(() => {
   resetExpandedGroups()
   resetCollapsedGroups()
+  sidebarOrder.reset()
   document.body.replaceChildren()
 })
 
@@ -259,7 +264,7 @@ describe('recent sessions per workspace', () => {
       group.opened = false
       flushSync(draw)
       expect(titles(nav)).toEqual([])
-      const heading = nav.querySelector<HTMLButtonElement>('.workspace-heading')
+      const heading = nav.querySelector<HTMLButtonElement>('.workspace-group.is-nested .workspace-heading')
       if (!heading) throw new Error('missing workspace heading')
       expect(heading.getAttribute('aria-expanded')).toBe('false')
       expect(document.getElementById(heading.getAttribute('aria-controls') ?? '')).not.toBeNull()
@@ -306,38 +311,72 @@ describe('recent sessions per workspace', () => {
     })
   })
 
-  it('shows the managed chats workspace as 「临时会话」 with only a new-session action', () => {
+  it('renders the managed chats workspace as its own 「临时会话」 section inside the list', () => {
     const chats: WorkspaceEntry = { ...workspace, path: '/data/chats', name: 'chats', kind: 'chats' }
+    const newSession = vi.fn()
+    const options = {
+      sessions: [session(0), { ...session(1), cwd: chats.path }],
+      workspaces: [workspace, chats],
+      labels: new Map<string, string>(),
+      newSession,
+      open: vi.fn(),
+      action: vi.fn(),
+      workspaceAction: vi.fn(),
+    }
     const nav = document.createElement('nav')
     document.body.append(nav)
-    const newSession = vi.fn()
-    flushSync(() =>
-      renderSessionNavigation(
-        {
-          nav,
-          sessions: [session(0), { ...session(1), cwd: chats.path }],
-          workspaces: [workspace, chats],
-          labels: new Map(),
-          newSession,
-          open: vi.fn(),
-          action: vi.fn(),
-          workspaceAction: vi.fn(),
-        },
-        zhT,
-      ),
-    )
-    const [folder, chatGroup] = [...nav.querySelectorAll<HTMLElement>('.workspace-group')]
-    expect(folder?.querySelector('.workspace-name')?.textContent).toBe('WorkLLM')
-    expect(folder?.querySelector('.workspace-menu-trigger')).not.toBeNull()
-    expect(chatGroup?.querySelector('.workspace-name')?.textContent).toBe('临时会话')
-    expect(chatGroup?.querySelector('.workspace-heading')?.getAttribute('title')).toBe('临时会话')
-    expect(chatGroup?.querySelector('.icon-folder')).toBeNull()
-    expect(chatGroup?.querySelector('.workspace-menu-trigger')).toBeNull()
-    chatGroup?.querySelector<HTMLButtonElement>('.workspace-new-session')?.click()
-    expect(newSession).toHaveBeenCalledWith(chats)
+    const cleanup = mountRegion(nav, createElement(SessionNavigation, { options, t: zhT }))
+    try {
+      const chatsSection = nav.querySelector<HTMLElement>('[data-section="chats"]')
+      if (!chatsSection) throw new Error('the chats section did not render')
+      expect(chatsSection.querySelector('.workspace-name')?.textContent).toBe('临时会话')
+      expect(chatsSection.querySelector('.workspace-heading')?.getAttribute('title')).toBe('临时会话')
+      expect(chatsSection.querySelector('.icon-folder')).toBeNull()
+      expect(chatsSection.querySelector('.workspace-menu-trigger')).toBeNull()
+      expect(titles(chatsSection)).toEqual(['会话 1'])
+      // 工作区分区不再包含临时会话，只剩普通工作区。
+      const projects = nav.querySelector('[data-section="workspaces"]')
+      expect(
+        [...(projects?.querySelectorAll('.workspace-group .workspace-name') ?? [])].map(
+          (node) => node.textContent,
+        ),
+      ).toEqual(['WorkLLM'])
+      expect(titles(projects as HTMLElement)).toEqual(['会话 0'])
+      chatsSection.querySelector<HTMLButtonElement>('.workspace-new-session')?.click()
+      expect(newSession).toHaveBeenCalledWith(chats)
+    } finally {
+      cleanup()
+    }
   })
 
-  it('puts a non-empty 「置顶」 group first with a pin and no workspace actions, offering 「取消置顶」', async () => {
+  it('renders no pinned or chats section when nothing is pinned and there is no chats workspace', () => {
+    const nav = document.createElement('nav')
+    document.body.append(nav)
+    const cleanup = mountRegion(
+      nav,
+      createElement(SessionNavigation, {
+        options: {
+          sessions: [session(0)],
+          workspaces: [workspace],
+          labels: new Map<string, string>(),
+          newSession: vi.fn(),
+          open: vi.fn(),
+        },
+        t: zhT,
+      }),
+    )
+    try {
+      expect(nav.querySelector('[data-section="pinned"]')).toBeNull()
+      expect(nav.querySelector('[data-section="chats"]')).toBeNull()
+      expect(
+        [...nav.querySelectorAll<HTMLElement>('.sidebar-section')].map((node) => node.dataset.section),
+      ).toEqual(['workspaces'])
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('renders a non-empty 「置顶」 section with a pin and no workspace actions, offering 「取消置顶」', async () => {
     const nav = document.createElement('nav')
     document.body.append(nav)
     const group = (groupId: string, items: PageSessionMeta['items']): SidebarGroupState => ({
@@ -352,39 +391,52 @@ describe('recent sessions per workspace', () => {
       loading: false,
       items,
     })
+    const options = (pinned: PageSessionMeta['items']) => ({
+      sessions: [],
+      workspaces: [{ ...workspace, workspaceId: 'a' }],
+      labels: new Map<string, string>(),
+      newSession: vi.fn(),
+      open: vi.fn(),
+      action: vi.fn(),
+      workspaceAction: vi.fn(),
+      paging: {
+        groups: [group('pinned', pinned), group('a', [session(0)])],
+        ready: true,
+        loading: false,
+      },
+    })
     const draw = (pinned: PageSessionMeta['items']) =>
       flushSync(() =>
-        renderSessionNavigation(
-          {
-            nav,
-            sessions: [],
-            workspaces: [{ ...workspace, workspaceId: 'a' }],
-            labels: new Map(),
-            newSession: vi.fn(),
-            open: vi.fn(),
-            action: vi.fn(),
-            workspaceAction: vi.fn(),
-            paging: {
-              groups: [group('pinned', pinned), group('a', [session(0)])],
-              ready: true,
-              loading: false,
-            },
-          },
-          zhT,
-        ),
+        renderRegion(nav, createElement(SessionNavigation, { options: options(pinned), t: zhT })),
       )
-    draw([])
-    expect([...nav.querySelectorAll('.workspace-name')].map((node) => node.textContent)).toEqual(['WorkLLM'])
-    draw([{ ...session(3), pinnedAt: '2026-10-20T08:00:00.000Z' }])
-    const [pinnedGroup, folder] = [...nav.querySelectorAll<HTMLElement>('.workspace-group')]
-    expect(pinnedGroup?.querySelector('.workspace-name')?.textContent).toBe('置顶')
-    expect(pinnedGroup?.querySelector('.workspace-heading')?.getAttribute('title')).toBe('置顶')
-    expect(pinnedGroup?.querySelector('.icon-pinned')).not.toBeNull()
-    expect(pinnedGroup?.querySelector('.workspace-menu-trigger')).toBeNull()
-    expect(titles(pinnedGroup!)).toEqual(['会话 3'])
-    expect(titles(folder!)).toEqual(['会话 0'])
-    flushSync(() => pinnedGroup?.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
-    await vi.waitFor(() => expect(document.querySelector('[role="menuitem"]')?.textContent).toBe('取消置顶'))
+    const cleanup = mountRegion(nav, createElement(SessionNavigation, { options: options([]), t: zhT }))
+    try {
+      draw([])
+      expect(nav.querySelector('[data-section="pinned"]')).toBeNull()
+      expect(
+        [...nav.querySelectorAll('[data-section="workspaces"] .workspace-group .workspace-name')].map(
+          (node) => node.textContent,
+        ),
+      ).toEqual(['WorkLLM'])
+      const pinned = { ...session(3), pinnedAt: '2026-10-20T08:00:00.000Z' }
+      draw([pinned])
+      const pinnedSection = nav.querySelector<HTMLElement>('[data-section="pinned"]')
+      if (!pinnedSection) throw new Error('the pinned section did not render')
+      expect(pinnedSection.querySelector('.workspace-name')?.textContent).toBe('置顶')
+      expect(pinnedSection.querySelector('.workspace-heading')?.getAttribute('title')).toBe('置顶')
+      expect(pinnedSection.querySelector('.icon-pinned')).not.toBeNull()
+      expect(pinnedSection.querySelector('.workspace-menu-trigger')).toBeNull()
+      expect(titles(pinnedSection)).toEqual(['会话 3'])
+      // 置顶已移出工作区分区。
+      const projects = nav.querySelector('[data-section="workspaces"]') as HTMLElement
+      expect(titles(projects)).toEqual(['会话 0'])
+      flushSync(() => pinnedSection.querySelector<HTMLButtonElement>('.session-menu-trigger')?.click())
+      await vi.waitFor(() =>
+        expect(document.querySelector('[role="menuitem"]')?.textContent).toBe('取消置顶'),
+      )
+    } finally {
+      cleanup()
+    }
   })
 
   it('draws the heading tools small and quiet: 24px buttons, 14px icons, darker when pointed at', () => {

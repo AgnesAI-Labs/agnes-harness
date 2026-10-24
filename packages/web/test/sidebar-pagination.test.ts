@@ -18,7 +18,10 @@ const deferred = <T>() => {
   })
   return { promise, resolve, reject }
 }
-function setup(changed = () => {}) {
+function setup(
+  changed = () => {},
+  isLeadingGroup?: (group: { groupId: string; workspaceId?: string }) => boolean,
+) {
   let revision = 'v1',
     ready = true
   const groups = vi.fn(
@@ -47,7 +50,7 @@ function setup(changed = () => {}) {
       }
     },
   )
-  const ui = createSidebarPagination({ groups, list }, changed, () => 'Failed')
+  const ui = createSidebarPagination({ groups, list }, changed, () => 'Failed', isLeadingGroup)
   return {
     ui,
     groups,
@@ -413,4 +416,41 @@ it('shows the pinned area open without taking the default expansion from the fir
       .slice(2)
       .sort(),
   ).toEqual(['a', 'pinned'])
+})
+
+it('never expands the chats group by default, only the first workspace', async () => {
+  const groups = vi.fn(
+    async (): Promise<SessionGroupsResult> => ({
+      ready: true,
+      items: [
+        {
+          groupId: 'chats',
+          workspaceId: 'chats',
+          total: 3,
+          lastMessageAt: null,
+          revision: 'v1',
+          ready: true,
+        },
+        { groupId: 'a', workspaceId: 'a', total: 17, lastMessageAt: null, revision: 'v1', ready: true },
+      ],
+    }),
+  )
+  const list = vi.fn(
+    async (input: { sidebar: { groupId: string } }): Promise<PageSessionMeta> => ({
+      items: [row(0, input.sidebar.groupId)],
+      total: 1,
+      revision: 'v1',
+    }),
+  )
+  const ui = createSidebarPagination(
+    { groups, list },
+    () => {},
+    () => 'Failed',
+    (group) => group.workspaceId === 'chats',
+  )
+  await ui.refresh()
+  expect(ui.snapshot().groups.map((group) => [group.groupId, group.opened])).toEqual([
+    ['chats', false],
+    ['a', true],
+  ])
 })
