@@ -1072,6 +1072,8 @@
   .account-compatible-models .agnes-settings-chip-input {
     width: 16rem;
     max-width: 100%;
+    /* Keep this list's fixed width: the shared chip input grows inside its row. */
+    flex: 0 1 16rem;
   }
   .account-provider-choices > button {
     white-space: normal;

@@ -2571,7 +2571,10 @@
     height: 12px;
   }
   .agnes-settings-chip-input {
-    width: 9rem;
+    /* The add-field carries a whole hint sentence: take 12rem, and more where the chips row has it. */
+    flex: 1 1 12rem;
+    width: auto;
+    min-width: 9rem;
     min-height: var(--s24);
     padding: 0 var(--s8);
     border: 1px dashed var(--agnes-line-primary);
@@ -2964,6 +2967,13 @@
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
+  }
+  /* Chips size to their content, so their row needs its own ceiling: half the row, leaving the
+     description the other half. Below 640px rows wrap, so the control takes the whole line. */
+  @media (min-width: 640px) {
+    .agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control:has(> .agnes-settings-chips) {
+      max-width: 50%;
+    }
   }
   /* A segmented choice spans the column with equal segments. */
   .agnes-settings-item-control > .agh-segmented {
