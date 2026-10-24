@@ -173,3 +173,37 @@ it.each(['x/core/control', 'user/message'])(
     }
   },
 )
+
+it('invalidates the attention inbox after completed, parked and cancelled turns', async () => {
+  const session = { id: 'reminder' } as Session
+  const binding = new SessionBindingOwner()
+  const context = {
+    sessionBinding: binding,
+    refreshSessionControls: async () => {},
+    sessionTitles: new Map([['reminder', 'Reminder']]),
+    receipts: new Map(),
+  }
+  const controller = createSessionController(context as never, binding)
+  const changed = vi.fn()
+  window.addEventListener('agnes:automation-invalidated', changed)
+  try {
+    for (const [seq, reason] of ['completed', 'parked', 'cancelled'].entries()) {
+      await controller.followEvent(session, {
+        seq: seq + 1,
+        ts: '2026-10-24T00:00:00Z',
+        type: 'turn/end',
+        data: { reason, lastAssistantSeq: null },
+      } as LedgerEvent)
+      expect(changed).toHaveBeenCalledTimes(seq + 1)
+    }
+    await controller.followEvent(session, {
+      seq: 4,
+      ts: '2026-10-24T00:00:00Z',
+      type: 'assistant/usage',
+      data: {},
+    } as LedgerEvent)
+    expect(changed).toHaveBeenCalledTimes(3)
+  } finally {
+    window.removeEventListener('agnes:automation-invalidated', changed)
+  }
+})
