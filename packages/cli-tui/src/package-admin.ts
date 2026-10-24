@@ -28,7 +28,8 @@ export function newPackageCommandId(kind: string): string {
   return `${kind}-${randomUUID().replaceAll('-', '')}`
 }
 
-export function parsePackageSource(value: string): PackageSource {
+/** `base` resolves relative local paths; the TUI passes its session workspace, the CLI keeps process.cwd(). */
+export function parsePackageSource(value: string, base: string = process.cwd()): PackageSource {
   if (value.startsWith('npm:')) return { type: 'npm', ref: value }
   if (value.startsWith('file:')) return { type: 'file', ref: value.split(sep).join('/') }
   if (value.startsWith('workspace:')) return { type: 'workspace', ref: value }
@@ -48,7 +49,7 @@ export function parsePackageSource(value: string): PackageSource {
     value.startsWith('../') ||
     /\.(zip|tgz|tar|tar\.gz)$/i.test(value)
   )
-    return { type: 'file', ref: `file:${resolve(value).split(sep).join('/')}` }
+    return { type: 'file', ref: `file:${resolve(base, value).split(sep).join('/')}` }
   throw new TuiUsageError('Use a git HTTPS URL, folder/archive path, or npm:package@version')
 }
 

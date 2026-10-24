@@ -647,11 +647,11 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return { text: await app.packages.packages(), presentation: 'transcript' }
     case '/install': {
       if (args.length > 1) return { text: 'usage: /install <source>|confirm|cancel' }
-      const text = await app.packages.install(args[0])
+      const text = await app.packages.install(args[0], app.cwd)
       return { text, ...(text.includes('\n') ? { presentation: 'transcript' as const } : {}) }
     }
     case '/package':
-      return { text: await app.packages.manage(args), presentation: 'transcript' }
+      return { text: await app.packages.manage(args, app.cwd), presentation: 'transcript' }
     case '/skills':
       if (args.length) return { text: 'usage: /skills' }
       return resourceCommand('resources', ['list', '--kind', 'skill'])

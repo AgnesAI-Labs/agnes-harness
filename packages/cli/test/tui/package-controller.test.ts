@@ -22,6 +22,28 @@ describe('TUI package controller', () => {
     expect(installs).toBe(0)
   })
 
+  it('resolves a relative local source against the session workspace, not process.cwd()', async () => {
+    const sources: unknown[] = []
+    const client = {
+      clientId: async () => 'c',
+      packages: {
+        async inspect(input: { source: unknown }) {
+          sources.push(input.source)
+          throw new Error('stop')
+        },
+      },
+    } as unknown as NodeClient
+    const controller = new PackageController(client, () => 'local-dev')
+    await expect(controller.install('./pkg', '/w/ws')).rejects.toThrow('stop')
+    await expect(controller.install('../x.zip', '/w/ws')).rejects.toThrow('stop')
+    await expect(controller.manage(['inspect', './pkg'], '/w/ws')).rejects.toThrow('stop')
+    expect(sources).toEqual([
+      { type: 'file', ref: 'file:/w/ws/pkg' },
+      { type: 'file', ref: 'file:/w/x.zip' },
+      { type: 'file', ref: 'file:/w/ws/pkg' },
+    ])
+  })
+
   it('clears pending state when an invalid source fails before a chat prompt can be submitted', async () => {
     const controller = new PackageController({} as NodeClient, () => 'local-dev')
     await expect(controller.install('http://untrusted.example/package')).rejects.toThrow(
