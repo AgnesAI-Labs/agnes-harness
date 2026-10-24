@@ -90,7 +90,13 @@ export function applyContextResults(
         // additional-context is this function's own reserved output id, computed below from the
         // accumulated additionalContext strings -- a participant cannot claim it via sections.
         if (id === 'additional-context') continue
-        sections.set(id, { id, order: s.order, text: sanitize(s.text), source: ext })
+        sections.set(id, {
+          id,
+          order: s.order,
+          text: sanitize(s.text),
+          source: ext,
+          ...(s.delivery === undefined ? {} : { delivery: s.delivery }),
+        })
       }
     trusted.add(ext, sanitize(result.additionalContext?.trim() ?? ''), overflow)
     untrusted.add(ext, sanitize(result.untrustedContext?.trim() ?? ''), overflow)

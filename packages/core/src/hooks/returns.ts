@@ -65,9 +65,14 @@ function contextWire(snapshot: unknown): ContextReturn {
   if ('sections' in value) {
     if (!Array.isArray(value.sections)) invalid()
     result.sections = value.sections.map((section: unknown) => {
-      const item = object(section, ['id', 'order', 'content', 'source'])
+      const item = object(section, ['id', 'order', 'content', 'source', 'delivery'])
       if ('source' in item && typeof item.source !== 'string') invalid()
-      return { id: item.id, order: item.order, text: item.content }
+      return {
+        id: item.id,
+        order: item.order,
+        text: item.content,
+        ...('delivery' in item ? { delivery: item.delivery } : {}),
+      }
     })
   }
   if (!validateHook('context', 'return', result).ok) invalid()

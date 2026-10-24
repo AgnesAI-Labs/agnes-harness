@@ -19,7 +19,14 @@ export type HookSpec = {
   replayOnResume: boolean
 }
 
-export type PromptSection = { id: string; order: number; content: string; source?: string }
+export type PromptSection = {
+  id: string
+  order: number
+  content: string
+  source?: string
+  /** Default: stable-section. Live notes append only on change and restore after compaction. */
+  delivery?: 'stable-section' | 'live-note'
+}
 export type SurfaceNode = {
   seq: Seq
   type: 'user/message' | 'assistant/message' | 'tool/result' | 'summary'
