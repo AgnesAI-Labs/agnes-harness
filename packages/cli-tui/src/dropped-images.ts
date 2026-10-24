@@ -86,6 +86,7 @@ export function attachDroppedImages(app: TuiApp, raw: string): boolean {
     app.renderer.requestRender()
   }
   void (async () => {
+    let restored = false
     for (const path of paths) {
       try {
         const block = await uploadLocalAttachment(session, app.cwd, path, signal)
@@ -93,7 +94,8 @@ export function attachDroppedImages(app: TuiApp, raw: string): boolean {
         if (chip) say(tt('paste.drop.attached', locale, { name: basename(path), chip }), 'success')
       } catch (error) {
         if (signal.aborted || app.session !== session) return
-        app.editor.paste(path.includes(' ') ? `"${path}"` : path)
+        app.editor.paste(`${restored ? ' ' : ''}${path.includes(' ') ? `"${path}"` : path}`)
+        restored = true
         const reason = oneLine(error instanceof Error ? error.message : String(error))
         say(tt('paste.drop.failed', locale, { name: basename(path), reason }), 'error')
       }

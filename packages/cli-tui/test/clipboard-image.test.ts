@@ -251,12 +251,13 @@ describe('clipboard image paste', () => {
       expect(uploadedPaths).toEqual([])
     })
 
-    it('keeps the path in the draft when the upload fails', async () => {
+    it('keeps the paths in the draft, apart, when the uploads fail', async () => {
       const file = image('d.png')
+      const other = image('e.png')
       failUpload = true
       const { editor, notices } = harness(withImage)
-      drop(editor, file)
-      await vi.waitFor(() => expect(editor.text).toBe(file))
+      drop(editor, `${file}\n${other}`)
+      await vi.waitFor(() => expect(editor.text).toBe(`${file} ${other}`))
       expect(notices.at(-1)?.[1]).toBe('error')
     })
   })
