@@ -444,11 +444,18 @@ describe('checkToolDef bounds on what a model is shown', () => {
     expect(problems({ parameters: sized(262_145) })).toEqual([
       'parameters: serialized size must be at most 262144 bytes',
     ])
+    expect(problems({ modelParameters: Type.Object({}) })).toEqual([])
+    expect(problems({ modelParameters: undefined })).toEqual([])
+    expect(problems({ modelParameters: null })).toEqual(['modelParameters: expected schema object'])
+    expect(problems({ modelParameters: sized(262_145) })).toEqual([
+      'modelParameters: serialized size must be at most 262144 bytes',
+    ])
   })
 
   it('bounds parameter nesting at 32 with the root at depth 0', () => {
     expect(problems({ parameters: nested(32) })).toEqual([])
     expect(problems({ parameters: nested(33) })).toEqual(['parameters: nesting must be at most 32'])
+    expect(problems({ modelParameters: nested(33) })).toEqual(['modelParameters: nesting must be at most 32'])
   })
 
   it('ignores symbol keys, so a TypeBox schema with its kind markers passes', () => {
@@ -463,6 +470,7 @@ describe('checkToolDef bounds on what a model is shown', () => {
     const cyclic: Record<string, unknown> = { type: 'object', properties: {} }
     ;(cyclic.properties as Record<string, unknown>).self = cyclic
     expect(problems({ parameters: cyclic })).toEqual(['parameters: must be acyclic JSON data'])
+    expect(problems({ modelParameters: cyclic })).toEqual(['modelParameters: must be acyclic JSON data'])
   })
 
   it('reports a schema holding values JSON cannot carry', () => {

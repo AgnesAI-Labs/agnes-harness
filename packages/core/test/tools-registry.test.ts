@@ -269,7 +269,8 @@ describe('ToolRegistry', () => {
       additionalProperties: false,
       [schemaKind]: 'Object',
     }
-    const definition = { ...def('read'), parameters } as unknown as ToolDef
+    const modelParameters = { type: 'object', description: 'Read the guide for the full contract.' }
+    const definition = { ...def('read'), parameters, modelParameters } as unknown as ToolDef
     const r = new ToolRegistry()
     r.add(definition, { source: 's', trust: 'trusted' })
     const registered = r.resolve('read')
@@ -279,12 +280,15 @@ describe('ToolRegistry', () => {
 
     parameters.properties.value.type = 'number'
     parameters.required.push('other')
+    modelParameters.description = 'caller mutation'
 
     expect(registered.parameters).toMatchObject({
       properties: { value: { type: 'string' } },
       required: ['value'],
     })
     expect(registered.definitionFingerprint).toBe(fingerprint)
+    expect(registered.modelParameters).toMatchObject({ description: 'Read the guide for the full contract.' })
+    expect(Object.isFrozen(registered.modelParameters)).toBe(true)
     expect(r.snapshot(2).hash).toBe(snapshotHash)
     expect((registered.parameters as unknown as Record<symbol, unknown>)[schemaKind]).toBe('Object')
     expect(Object.isFrozen(registered.parameters)).toBe(true)

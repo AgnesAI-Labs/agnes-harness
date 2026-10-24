@@ -6,7 +6,6 @@ import {
   UI_SUBMIT_TOOL,
 } from '@agnes/intelligent-ui-contract'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
-import type { UiSurface } from '@agnes/protocol'
 import { UiCloseParams, UiRenderParams, UiUpdateParams } from '@agnes/protocol/gen/intelligent-ui'
 import { Type } from '@sinclair/typebox'
 import { UI_DATA_DESCRIPTION } from './data-contracts.js'
@@ -30,17 +29,14 @@ const meta = {
 }
 /** Display-only surface publication. ui_submit collects answers and must not inherit this flag. */
 const presentational = { ...meta, deferLoading: false, isPresentational: true }
-// Only model-facing structure is abbreviated. The service validates the full protocol schema
-// and component/data/action contracts before publication, including calls from other clients.
-const surfaceParameter = Type.Unsafe<UiSurface>(
-  Type.Object(
-    {},
-    {
-      additionalProperties: true,
-      description:
-        'Complete UiSurface object. Read ui_guide before constructing components, data or actions.',
-    },
-  ),
+// Core retains the full execution schema and retry budget; only the model projection is brief.
+// The service additionally validates component/data/action contracts for every client.
+const surfaceParameter = Type.Object(
+  {},
+  {
+    additionalProperties: true,
+    description: 'Complete UiSurface object. Read ui_guide before constructing components, data or actions.',
+  },
 )
 const renderParameters = Type.Object({ surface: surfaceParameter }, { additionalProperties: false })
 const updateParameters = Type.Object(
@@ -99,7 +95,8 @@ export default defineAgnesPlugin({
           name: 'ui_render',
           description:
             'Show tables, charts, forms or dashboards in the UI. Read ui_guide first for component formats and examples. Plain text stays in the reply. Use titles in the conversation language. If a visual cannot be produced, explain the limitation and use text/markdown.',
-          parameters: renderParameters,
+          parameters: reachableParameters(UiRenderParams),
+          modelParameters: renderParameters,
           meta: presentational,
           async execute(input, ctx) {
             return correctableUiRejection(async () => {
@@ -128,7 +125,8 @@ export default defineAgnesPlugin({
           name: 'ui_update',
           description:
             'Replace an open surface at expectedRevision with revision + 1 after actions finish. Read ui_guide for the complete surface contract.',
-          parameters: updateParameters,
+          parameters: reachableParameters(UiUpdateParams),
+          modelParameters: updateParameters,
           meta: presentational,
           async execute(input, ctx) {
             return correctableUiRejection(async () => {

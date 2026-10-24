@@ -155,10 +155,12 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
         registering()
         let copy: ToolDef
         try {
+          const modelParameters = def.modelParameters
           copy = {
             name: def.name,
             description: def.description,
             parameters: def.parameters,
+            ...(modelParameters === undefined ? {} : { modelParameters }),
             // An installed plugin's tool is not replayed after a crash unless it says it may be.
             meta: { ...structuredClone(def.meta), replay: def.meta?.replay ?? 'never' },
             ...(def.policyVersion === undefined ? {} : { policyVersion: def.policyVersion }),

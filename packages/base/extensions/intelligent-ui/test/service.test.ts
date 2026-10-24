@@ -405,9 +405,14 @@ describe('preset surface contract and ledger lifecycle', () => {
       const tool = tools.find((tool) => tool.name === name)!
       expect(tool.description).toContain('ui_guide')
       expect(
-        Buffer.byteLength(JSON.stringify(tool.parameters)) + Buffer.byteLength(tool.description),
+        Buffer.byteLength(JSON.stringify(tool.modelParameters)) + Buffer.byteLength(tool.description),
       ).toBeLessThan(1500)
-      expect(JSON.stringify(tool.parameters)).not.toContain('$defs')
+      expect(JSON.stringify(tool.modelParameters)).not.toContain('$defs')
+      expect(
+        validateAgainst(tool.parameters, {
+          surface: { ...surface(), components: [{ id: 'unsafe', kind: 'html' }] },
+        }).ok,
+      ).toBe(false)
     }
     const replacement = { ...surface(), revision: 2 }
     const pointerRoot = reachableParameters({ ...UiRenderParams, $ref: '#/$defs/UiRenderParams' })

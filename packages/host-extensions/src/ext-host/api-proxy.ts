@@ -121,10 +121,12 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
       registering()
       if (!caps.tools) refuse('tools not declared')
       try {
+        const modelParameters = def.modelParameters
         def = {
           name: def.name,
           description: def.description,
           parameters: def.parameters,
+          ...(modelParameters === undefined ? {} : { modelParameters }),
           meta: structuredClone(def.meta),
           ...(def.policyVersion === undefined ? {} : { policyVersion: def.policyVersion }),
           ...(def.classify === undefined ? {} : { classify: def.classify }),
