@@ -2058,6 +2058,38 @@ describe('app.ts wiring: key routing through the editor reaches the real command
     return { app, term, client, ep }
   }
 
+  it('a session opened in another directory becomes the workspace later commands use', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-cwd-'))
+    let opened = 0
+    const { app, term, client, ep } = await liveApp((e) =>
+      e
+        .on('session/new', () => ({ sessionId: `agnes:local:default:cli:dm:cwd${++opened}` }))
+        .on('_agnes/v1/session.projectUI', (params) => ({
+          sessionId: (params as { sessionId: string }).sessionId,
+          upto: 0,
+          generation: 1,
+          opState: null,
+          turns: [],
+          nodes: [],
+        })),
+    )
+    const newCwds = () =>
+      ep.calls.filter((c) => c.method === 'session/new').map((c) => (c.params as { cwd: string }).cwd)
+    try {
+      term.feed(`/new ${dir}`)
+      term.feed('\r')
+      await vi.waitFor(() => expect(app.session.id).toBe('agnes:local:default:cli:dm:cwd2'))
+      expect(app.cwd).toBe(dir)
+      term.feed('/new')
+      term.feed('\r')
+      await vi.waitFor(() => expect(newCwds()).toEqual(['/tmp', dir, dir]))
+    } finally {
+      await app.stop()
+      await client.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('typing "/quit" and Enter reaches command() and calls onQuit', async () => {
     const { app, term, client } = await liveApp()
     try {

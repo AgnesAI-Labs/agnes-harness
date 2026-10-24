@@ -28,7 +28,7 @@ export type TuiAppOptions = {
   noAltScreen?: boolean
   /** Where mouse-selected text goes; defaults to the system clipboard. */
   copy?: (text: string, fail: () => void) => unknown
-  /** The workspace the CLI opened its first session in (`--cwd`); defaults to `process.cwd()`. */
+  /** The open session's workspace: first the one the CLI opened in (`--cwd`, else `process.cwd()`), then each switched-to session's. */
   cwd?: string
   /** True over `--connect`: `@` completion then never falls back to this machine's disk. */
   remote?: boolean

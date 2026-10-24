@@ -264,6 +264,11 @@ export class Session {
     this.workspace = cwd || null
   }
 
+  /** The workspace session.new/load supplied for this session, when one did. */
+  get cwd(): string | undefined {
+    return this.workspace ?? undefined
+  }
+
   /** Called when a later explicit load supplies information an older cached handle lacked. */
   rememberWorkspace(cwd: string): void {
     if (cwd) this.workspace = cwd

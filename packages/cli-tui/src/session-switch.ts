@@ -54,6 +54,8 @@ export async function applySwitch(app: TuiApp, next: Session): Promise<boolean> 
   app.attachmentController.abort()
   app.attachmentController = new AbortController()
   app.mentions.reset()
+  // A fork carries no workspace of its own: it stays in the one it was forked from.
+  app.o.cwd = next.cwd ?? app.cwd
   app.o.session = next
   app.o.onSessionSwitch?.(next.id)
   app.previews.reset()
