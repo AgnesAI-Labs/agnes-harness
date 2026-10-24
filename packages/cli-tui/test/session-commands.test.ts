@@ -261,6 +261,10 @@ describe('session slash commands', () => {
     const app = appWith({ session: { new: created } })
     await expect(runSlash(app, '/new ../b')).rejects.toThrow('workspace not authorised')
     expect(created).toHaveBeenCalledWith(expect.objectContaining({ cwd: resolve(app.cwd, '../b') }))
+    vi.stubEnv('HOME', '/tmp/agh-home')
+    await expect(runSlash(app, '/new ~/b')).rejects.toThrow('workspace not authorised')
+    vi.unstubAllEnvs()
+    expect(created).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/tmp/agh-home/b' }))
   })
 })
 

@@ -1,4 +1,3 @@
-import { resolve } from 'node:path'
 import type {
   ComputerUseDoctorResult,
   ComputerUseStatusResult,
@@ -14,7 +13,7 @@ import type { TuiApp } from './app.js'
 import { uploadLocalAttachment } from './attachment-upload.js'
 import { bgSlash } from './bg-command.js'
 import { startBtw } from './btw.js'
-import { cdSlash } from './cd-command.js'
+import { cdSlash, localPath } from './cd-command.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { inheritFreshSession, writeComposerMemoryFile } from './composer-memory.js'
 import { configSlash } from './config-command.js'
@@ -313,7 +312,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       // A directory the daemon has not authorised is refused by the daemon, and shown as it comes.
       const dir = line.trim().slice('/new'.length).trim()
       const created = await c.session.new({
-        cwd: dir ? resolve(app.cwd, dir) : app.cwd,
+        cwd: dir ? localPath(app, dir) : app.cwd,
         sessionKey: freshTuiSessionKey(app.profile),
       })
       const inherited = await inheritFreshSession(created, app.composerSelectionPath, undefined, locale)
@@ -359,7 +358,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
           .trim()
           .replace(/\s+--from\s+\S+$/, '')
         try {
-          const { key } = await app.o.importSession(resolve(app.cwd, file), source)
+          const { key } = await app.o.importSession(localPath(app, file), source)
           return { text: tt('import.done', locale, { key: oneLine(key) }) }
         } catch (error) {
           return {

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { type ExportRequest, exportSlash } from '../src/export-command.js'
 
@@ -63,6 +63,14 @@ describe('/export', () => {
       ['agnes', join(cwd, 'out/my session.jsonl')],
       ['html', '/tmp/x.html'],
     ])
+  })
+
+  it('expands ~ to the home directory, like /cd', async () => {
+    vi.stubEnv('HOME', '/tmp/agh-home')
+    const { app, requests } = harness(async () => {})
+    await exportSlash(app, '/export ~/x.jsonl')
+    vi.unstubAllEnvs()
+    expect(requests[0]?.out).toBe('/tmp/agh-home/x.jsonl')
   })
 
   it('puts the default name inside a directory given as the path', async () => {

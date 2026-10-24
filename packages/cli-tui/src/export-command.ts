@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import type { TuiApp } from './app.js'
+import { localPath } from './cd-command.js'
 import type { SlashResult } from './commands.js'
 import { tt } from './locale-extended.js'
 import { oneLine } from './session-commands.js'
@@ -39,7 +40,7 @@ export async function exportSlash(app: TuiApp, line: string): Promise<SlashResul
     .replace(/\.\d+Z$/, 'Z')
     .replace(/[-:]/g, '')
   const name = `agh-${s.id.replace(/[^\w.-]/g, '_').slice(0, 24)}-${stamp}.${EXTENSION[format]}`
-  const target = given ? resolve(app.cwd, given) : join(app.cwd, name)
+  const target = given ? localPath(app, given) : join(app.cwd, name)
   const out = isDirectory(target) ? join(target, name) : target
   try {
     await write({ sessionId: s.id, format, out })
