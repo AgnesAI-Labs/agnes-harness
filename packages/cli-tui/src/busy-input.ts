@@ -96,7 +96,8 @@ export class BusyInput {
   takeKept(text = ''): ContentBlock[] {
     const here = this.host.session().id
     const chips = [...this.chips].filter(([chip, c]) => c.sessionId === here && text.includes(chip))
-    this.chips.clear()
+    // A chip left out of this message (a draft put aside with Ctrl-S, say) still binds its image.
+    for (const [chip] of chips) this.chips.delete(chip)
     return [...this.kept.splice(0), ...chips.map(([, c]) => c.block)]
   }
 

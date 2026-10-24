@@ -80,6 +80,15 @@ describe('clipboard image paste', () => {
     expect(busyInput.takeKept('the chip was deleted')).toEqual([])
   })
 
+  it('keeps the image of a stashed draft through another send', async () => {
+    const { app, editor, busyInput } = harness(withImage)
+    await pasteClipboardImage(app)
+    const stashed = `${editor.expanded()} describe this`
+    expect(busyInput.takeKept('hi')).toEqual([])
+    expect(busyInput.takeKept(stashed)).toEqual([{ type: 'attachment', id: 'att-1' }])
+    expect(busyInput.takeKept(stashed)).toEqual([])
+  })
+
   it.each([
     ['nothing on the clipboard', { ok: false, reason: 'empty' }, 'warning', /no image/i],
     ['a tool that is missing', { ok: false, reason: 'unavailable', tool: 'xclip' }, 'error', /xclip/],
