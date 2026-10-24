@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { UiActionParams, UiSurfaceRecord } from '@agnes/protocol'
 import { numberedSurfaceInput, surfaceText } from '@agnes/protocol/intelligent-ui'
 import type { Session } from '@agnes/sdk'
+import { codeOf } from './busy-input.js'
 import type { Component } from './component.js'
 import type { Locale } from './locale.js'
 import { tt } from './locale-extended.js'
@@ -119,7 +120,17 @@ export class SurfaceInbox {
         : undefined)
     if (!command) return
     this.command = command
-    const receipt = await session.uiAction(command)
+    let receipt: Awaited<ReturnType<Session['uiAction']>>
+    try {
+      receipt = await session.uiAction(command)
+    } catch (error) {
+      // A daemon refusal frees the form for new text; an answer whose fate is unknown (no daemon code,
+      // or one saying so) is resent as is under the same command id.
+      const code = codeOf(error)
+      if (this.command === command && code && code !== 'UNCERTAIN' && code !== 'OUTCOME_UNKNOWN')
+        this.command = undefined
+      throw error
+    }
     if (session !== host.session() || host.stopped()) return
     this.watermark = Math.max(this.watermark, receipt.seq)
     this.command = undefined
