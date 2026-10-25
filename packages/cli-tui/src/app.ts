@@ -24,7 +24,7 @@ import { imageProtocol } from './image-protocol.js'
 import { InlineImages } from './inline-image.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
 import { createLinker } from './links.js'
-import { type Locale, t } from './locale.js'
+import { type Locale, NOTICE_STATUS, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { renderMarkdownChunk } from './markdown.js'
 import { ModelChooser } from './model-chooser.js'
@@ -701,22 +701,20 @@ export class TuiApp {
   }
 
   // `daemon.notice` payloads are heterogeneous (packages/protocol's `DaemonNotice` is
-  // `{kind, sessionId?, detail, at}` with `detail` an open `JsonValue`); only the two kinds the
-  // spec calls out get a status-bar rendering today, matching what daemon's reclaim path
-  // (packages/daemon-foundation/src/lease/reclaim.ts) and worker pool (packages/daemon/src/supervisor/
-  // worker-pool.ts) actually emit. Anything else is left alone rather than guessed at.
+  // `{kind, sessionId?, detail, at}` with `detail` an open `JsonValue`); only the kinds in
+  // `NOTICE_STATUS` get a status-bar rendering: what daemon's reclaim path (packages/daemon-foundation/
+  // src/lease/reclaim.ts) and worker pool (packages/daemon/src/supervisor/worker-pool.ts) emit, plus the
+  // SDK's own `stream-recovery-failed`. Anything else is left alone rather than guessed at.
   private handleNotice(payload: unknown): void {
     const n = payload as { kind?: string; sessionId?: string; detail?: { lastStep?: number } }
     // The previous session stays attached after /new, /resume and /cd, so its notices still arrive.
     if (n.sessionId !== undefined && n.sessionId !== this.o.session.id) return
-    if (n.kind === 'resumed') {
-      const step = n.detail?.lastStep
-      this.statusBar.setNotice(t('notice.resumed', this.o.locale ?? 'en', { step: step ?? '?' }), 'success')
-    } else if (n.kind === 'worker_crashed') {
-      this.statusBar.setNotice(t('notice.crashed', this.o.locale ?? 'en'), 'error')
-    } else {
-      return
-    }
+    const entry = NOTICE_STATUS.get(n.kind ?? '')
+    if (!entry) return
+    this.statusBar.setNotice(
+      t(entry[0], this.o.locale ?? 'en', { step: n.detail?.lastStep ?? '?' }),
+      entry[1],
+    )
     if (!this.stopped) this.renderer.requestRender()
   }
 

@@ -171,6 +171,14 @@ it('renders localized daemon notices delivered through the real SDK Client event
     const screen = (await screenOf(term, 80, 24)).join('\n')
     expect(screen).toContain('上次停在第 9 步，已续跑')
     expect(screen).not.toContain('执行中断')
+
+    // The SDK gives up re-subscribing and sends only this; without a message the timeline just freezes.
+    endpoint.pushNotice({ kind: 'stream-recovery-failed', sessionId: session.id } as never)
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain(
+        '实时更新已中断，请用 /resume 重新打开本会话',
+      ),
+    )
   } finally {
     await app.stop()
     await client.close()
