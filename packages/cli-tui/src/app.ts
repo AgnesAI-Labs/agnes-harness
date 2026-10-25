@@ -851,6 +851,8 @@ export class TuiApp {
     }
     if (owner !== this.o.session && !r.switchSession) return // the session it was for is gone
     if (r.prompt) await this.submit(r.prompt)
+    // Switch first: local output anchors to the session shown, and the next session's timeline drops older anchors.
+    if (r.switchSession) await applySwitch(this, r.switchSession, ticket)
     applyCommandResult(
       {
         statusBar: this.statusBar,
@@ -865,7 +867,6 @@ export class TuiApp {
       text,
       r,
     )
-    if (r.switchSession) await applySwitch(this, r.switchSession, ticket)
     if (r.quit) this.onQuit()
     if (!this.stopped) this.renderer.requestRender()
   }

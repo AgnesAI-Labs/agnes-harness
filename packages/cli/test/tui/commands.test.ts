@@ -927,6 +927,29 @@ describe('runSlash', () => {
     }
   })
 
+  it('/cd keeps its multi-line confirmation on screen in the session it switched to', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-cd-'))
+    mkdirSync(join(root, 'target'))
+    const path = join(root, 'composer-selection.json')
+    writeFileSync(path, JSON.stringify({ model: { route: 'deepseek', id: 'deepseek-v4-pro' } }))
+    const { app, client, term, ep } = await unstartedApp(undefined, path, undefined, { cwd: root })
+    try {
+      let opened = 0
+      ep.on('session/new', () => ({ sessionId: `agnes:local:default:cli:dm:cd${++opened}` }))
+      await app.start()
+      const before = app.session.id
+      await app.command('/cd target')
+      expect(app.session.id).not.toBe(before)
+      const screen = (await screenOf(term, 90, 24)).join('\n')
+      expect(screen).toContain(before)
+      expect(screen).toContain('deepseek-v4-pro')
+    } finally {
+      await app.stop()
+      await client.close()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('/add-dir forks the session with the directory after registering it; refusals change nothing', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agh-add-dir-'))
     const target = join(root, 'lib')
