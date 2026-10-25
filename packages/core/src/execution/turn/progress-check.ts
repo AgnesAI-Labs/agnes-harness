@@ -2,6 +2,7 @@ import type { OpStateObj } from '@agnes/core-common/step/op-state'
 import type { Event, Seq } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import { PROGRESS_CHECK_PREFIX } from '../../request/derive.js'
+import { withNoteLanguage } from '../../request/note-language.js'
 import type { SessionImpl, TurnMemory } from '../../step/session.js'
 import { progressChecked } from '../../step/turn-restore.js'
 import { wrapUpDue } from './turn-limits.js'
@@ -109,11 +110,11 @@ function reason(t: Tally, steps: number, every: number): string | undefined {
 
 export function progressCheckText(check: number, turn: number, step: number, why: string): string {
   const since = check === 1 ? 'since this turn began' : 'since the last progress check'
-  return `Progress check ${check} (turn ${turn}, step ${step})
+  return withNoteLanguage(`Progress check ${check} (turn ${turn}, step ${step})
 ${why} Before your next action, answer in three short lines:
 1. Done-check: the check that proves this request is done, and whether it passes now.
 2. Progress: what changed in that check's result ${since}.
-3. Decision: FINISH (it passes: stop and report), CONTINUE (name the next concrete step) or SWITCH (this approach is not moving the result: name the more direct approach you take instead), and why.`
+3. Decision: FINISH (it passes: stop and report), CONTINUE (name the next concrete step) or SWITCH (this approach is not moving the result: name the more direct approach you take instead), and why.`)
 }
 
 /**

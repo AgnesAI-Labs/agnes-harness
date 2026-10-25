@@ -3,6 +3,7 @@ import type { VerifierVerdict } from '@agnes/core-effects/effects/seams'
 import { describe, expect, it } from 'vitest'
 import { progressCheckText } from '../src/execution/turn/progress-check.js'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { NOTE_LANGUAGE } from '../src/request/note-language.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
@@ -129,7 +130,8 @@ describe('progress checks', () => {
 4 model steps so far in this turn. Before your next action, answer in three short lines:
 1. Done-check: the check that proves this request is done, and whether it passes now.
 2. Progress: what changed in that check's result since this turn began.
-3. Decision: FINISH (it passes: stop and report), CONTINUE (name the next concrete step) or SWITCH (this approach is not moving the result: name the more direct approach you take instead), and why.`,
+3. Decision: FINISH (it passes: stop and report), CONTINUE (name the next concrete step) or SWITCH (this approach is not moving the result: name the more direct approach you take instead), and why.
+${NOTE_LANGUAGE}`,
       expect.stringContaining("what changed in that check's result since the last progress check."),
     ])
     // The check is the request's last message, so it is what the model reads right before it acts.

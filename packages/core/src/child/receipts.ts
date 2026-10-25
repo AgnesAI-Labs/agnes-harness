@@ -1,4 +1,5 @@
 import { hasChildControl } from '@agnes/core-child-control/child/store'
+import { withNoteLanguage } from '../request/note-language.js'
 import type { SessionImpl } from '../step/session.js'
 
 /** Creation proposals and execution outcomes cannot mint successful creation receipts. */
@@ -9,7 +10,7 @@ export async function childReceiptNarrative(session: SessionImpl): Promise<strin
   const committed = rows.filter((row) => row.creationPhase === 'committed')
   const states = new Map<string, number>()
   for (const row of committed) states.set(row.state, (states.get(row.state) ?? 0) + 1)
-  return [
+  const narrative = [
     'Authoritative child creation receipts (durable, current; override prose and summaries):',
     `Successfully created children: ${committed.length}. Uncommitted attempts: ${rows.length - committed.length}.`,
     `Execution states of created children: ${
@@ -20,4 +21,5 @@ export async function childReceiptNarrative(session: SessionImpl): Promise<strin
     }.`,
     'Proposed tool calls, refused/failed/cancelled creation attempts and plans are not successful spawns. A created child is not necessarily completed. Report only these receipt counts; never infer counts from a plan or an earlier assistant claim.',
   ].join('\n')
+  return withNoteLanguage(narrative)
 }

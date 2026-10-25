@@ -1,4 +1,5 @@
 import type { PromptSection } from '../../request/contribute.js'
+import { withNoteLanguage } from '../../request/note-language.js'
 import type { SessionImpl, TurnMemory } from '../../step/session.js'
 import { turnMaxSteps } from '../../step/step-cap.js'
 import { type TurnTimeLimit, turnTimeLimit } from '../../step/time-limit.js'
@@ -131,9 +132,13 @@ const KIND_NAME: Record<Kind, string> = { time: 'time limit', steps: 'step limit
 export function limitNoteText(limits: TurnLimits, notice: LimitNotice): string {
   const all = describe(limits)
   if (notice.level === 0)
-    return `${TITLE}\nThis turn has limits: ${all}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first.`
+    return withNoteLanguage(
+      `${TITLE}\nThis turn has limits: ${all}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first.`,
+    )
   const threshold = LIMIT_THRESHOLDS[notice.level - 1] as number
-  return `${TITLE}\n${Math.round(threshold * 100)}% of this turn's ${KIND_NAME[notice.kind]} is used: ${remaining(limits, notice.kind, threshold)}. ${ADVICE[notice.level - 1]}\nLimits for this turn: ${all}.`
+  return withNoteLanguage(
+    `${TITLE}\n${Math.round(threshold * 100)}% of this turn's ${KIND_NAME[notice.kind]} is used: ${remaining(limits, notice.kind, threshold)}. ${ADVICE[notice.level - 1]}\nLimits for this turn: ${all}.`,
+  )
 }
 
 /**
@@ -173,11 +178,15 @@ export function turnTimeText(limit: TurnTimeLimit, now: number): string {
   const left = limit.deadlineAt - now
   const total = formatDuration(limit.timeLimitMs)
   if (left <= 0)
-    return `This turn's ${total} time limit is reached. End now with a short reply saying what is done, how it was checked and what remains.`
+    return withNoteLanguage(
+      `This turn's ${total} time limit is reached. End now with a short reply saying what is done, how it was checked and what remains.`,
+    )
   const step = (ms: number) => Math.floor(ms / CLOCK_STEP_MS) * CLOCK_STEP_MS
   const used = Math.min(limit.timeLimitMs, Math.max(0, now - (limit.deadlineAt - limit.timeLimitMs)))
   const remaining = left < CLOCK_STEP_MS ? 'less than 10s' : `about ${formatDuration(step(left))}`
-  return `${formatDuration(step(used))} of this turn's ${total} time limit used, ${remaining} left. Measured at this request, it replaces any earlier time figure: do not conclude that the time limit is reached unless this note says so.`
+  return withNoteLanguage(
+    `${formatDuration(step(used))} of this turn's ${total} time limit used, ${remaining} left. Measured at this request, it replaces any earlier time figure: do not conclude that the time limit is reached unless this note says so.`,
+  )
 }
 
 /** The measured time for the request being assembled, or none when the turn has no time limit. */
