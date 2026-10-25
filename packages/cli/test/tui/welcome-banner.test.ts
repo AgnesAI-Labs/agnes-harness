@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ANSI_RE, createAnsi } from '../../src/tui/ansi.js'
 import { installKeymap, Keymap } from '../../src/tui/keymap.js'
+import type { KeyName } from '../../src/tui/keys.js'
 import { displayWidth } from '../../src/tui/terminal.js'
 import { TuiTheme, type TuiThemeName } from '../../src/tui/theme.js'
 import { WelcomeBanner, type WelcomeFacts, welcomeTips } from '../../src/tui/views/welcome-banner.js'
@@ -361,7 +362,7 @@ describe('welcome motion', () => {
 })
 
 it('spells every separator of a multi-modifier binding in the tips', () => {
-  installKeymap(new Keymap(new Map([['card-toggle', ['ctrl-alt-x']]])))
+  installKeymap(new Keymap(new Map([['card-toggle', ['ctrl-alt-x' as KeyName]]])))
   try {
     expect(
       welcomeTips('en')

@@ -4,6 +4,7 @@ import { createAnsi } from '../../src/tui/ansi.js'
 import { Text } from '../../src/tui/component.js'
 import { assistantView } from '../../src/tui/footer-renderer.js'
 import { installKeymap, Keymap } from '../../src/tui/keymap.js'
+import type { KeyName } from '../../src/tui/keys.js'
 import { renderMarkdown, renderMarkdownChunk } from '../../src/tui/markdown.js'
 import { TuiTheme } from '../../src/tui/theme.js'
 import { Timeline } from '../../src/tui/views/timeline.js'
@@ -357,7 +358,7 @@ it.each([
   ['only End is bound and a draft exists', ['end'], true],
   ['nothing is bound', [], false],
 ])('omits the key clause when %s', (_name, bound, hasDraft) => {
-  installKeymap(new Keymap(new Map([['timeline-bottom', bound]])))
+  installKeymap(new Keymap(new Map([['timeline-bottom', bound as KeyName[]]])))
   try {
     const t = new Timeline({ rows: () => 8, nodeView: view })
     const nodes = [1, 2, 3, 4, 5, 6].map((n) => user(String(n), String(n)))
