@@ -3124,3 +3124,58 @@ it('a click on the slash menu above the prompt leaves the cursor alone', async (
     await h.close()
   }
 })
+
+it('a slow slash command whose session was replaced does not submit its prompt to the new session', async () => {
+  let news = 0
+  let release!: () => void
+  const gate = new Promise<void>((r) => {
+    release = r
+  })
+  const prompts: string[] = []
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: `S${news++}` }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.workspace.read', async () => {
+      await gate
+      throw Object.assign(new Error('nf'), { data: { code: 'NOT_FOUND' } })
+    })
+    .on('session/prompt', (p) => {
+      prompts.push((p as { sessionId: string }).sessionId)
+      return { stopReason: 'end_turn' }
+    })
+    .on('_agnes/v1/session.projectUIOpening', (p) => ({
+      timeline: {
+        sessionId: (p as { sessionId: string }).sessionId,
+        upto: 0,
+        generation: 1,
+        opState: null,
+        turns: [],
+        nodes: [],
+      },
+      history: { hasEarlier: false, startIndex: 0, totalNodes: 0 },
+    }))
+    .on('_agnes/v1/session.detach', () => ({}))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns: 80, rows: 24 })
+  const app = new TuiApp({ session, term, header: 'Agnes' })
+  try {
+    await app.start()
+    term.feed('/init\r')
+    await new Promise((r) => setTimeout(r, 30))
+    term.feed('/new\r')
+    await vi.waitFor(() => expect(app.session.id).toBe('S1'))
+    release()
+    await new Promise((r) => setTimeout(r, 300))
+    expect(prompts).toEqual([])
+  } finally {
+    await app.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})

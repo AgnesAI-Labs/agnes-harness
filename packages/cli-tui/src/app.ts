@@ -851,6 +851,7 @@ export class TuiApp {
       if (this.stopped || owner !== this.o.session) throw new Error('ATTACHMENT_NOT_AUTHORIZED')
       await this.submitBlocks(r.content, undefined, r.steer)
     }
+    if (owner !== this.o.session && !r.switchSession) return // the session it was for is gone
     if (r.prompt) await this.submit(r.prompt)
     applyCommandResult(
       {
