@@ -126,6 +126,8 @@ export class ApprovalCard implements Component {
       letters?(): boolean
       /** Whether the live dialog is asking now: it takes every key, so a pending card says to answer there. */
       dialog?(): boolean
+      /** Whether a newer pending card takes the keys: this one then shows no options to press. */
+      waiting?(): boolean
       onDecide(
         ref: NonNullable<ApprovalNode['decisionRef']>,
         verdict: Verdict,
@@ -374,7 +376,13 @@ export class ApprovalCard implements Component {
       ...(this.reason === null && this.note
         ? [row(ansi.fg('danger', `✗ ${tt('approval.did.failed', locale)} · ${escapeControl(this.note)}`))]
         : []),
-      ...(this.reason !== null ? reasonRows(this.reason) : this.phase === 'deciding' ? [row('…')] : options),
+      ...(this.reason !== null
+        ? reasonRows(this.reason)
+        : this.phase === 'deciding'
+          ? [row('…')]
+          : this.o.waiting?.()
+            ? [row(ansi.fg('faint', tt('approval.waiting', locale)))]
+            : options),
       ...(this.reason === null && this.phase !== 'deciding' && expires
         ? [row(ansi.fg('faint', tt('approval.expires', locale, { time: expires })))]
         : []),

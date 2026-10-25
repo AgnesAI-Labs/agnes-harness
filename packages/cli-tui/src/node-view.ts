@@ -24,6 +24,8 @@ export interface NodeViewHost {
   letters: () => boolean
   /** Whether the live permission dialog is open; pending cards then point to it. */
   dialog?: () => boolean
+  /** Whether a newer pending approval than `id` takes the keys. */
+  waiting?: (id: string) => boolean
   refuseClosed: () => boolean
   repaint: () => void
   /** Draws image attachments inline where the terminal can; without it they stay `[image: ...]` text. */
@@ -42,6 +44,7 @@ export function nodeView(host: NodeViewHost): (node: UINode) => Component {
         settled: host.settled,
         letters: host.letters,
         ...(host.dialog ? { dialog: host.dialog } : {}),
+        waiting: () => host.waiting?.(node.id) ?? false,
         onDecide: async (ref, verdict, reason) => {
           if (host.refuseClosed()) return
           const value =

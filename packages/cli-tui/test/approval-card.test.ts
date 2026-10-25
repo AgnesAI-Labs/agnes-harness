@@ -416,6 +416,21 @@ describe('ApprovalCard single keys and the misclick guard', () => {
   })
 })
 
+describe('ApprovalCard behind a newer request', () => {
+  it('shows no options while a newer pending card takes the keys', () => {
+    let waiting = true
+    const c = new ApprovalCard(node(['allow_once', 'reject_once']), {
+      ansi: PLAIN,
+      onDecide: vi.fn(async () => undefined),
+      waiting: () => waiting,
+    })
+    expect(c.render(100).join('\n')).toContain('Waiting: answer the newer request below first')
+    expect(c.render(100).join('\n')).not.toContain('[1]')
+    waiting = false
+    expect(c.render(100).join('\n')).toContain('[1] Allow once')
+  })
+})
+
 describe('ApprovalCard input it cannot show', () => {
   it('says so when Core carried a content reference instead of the input', () => {
     const render = (args: unknown) =>

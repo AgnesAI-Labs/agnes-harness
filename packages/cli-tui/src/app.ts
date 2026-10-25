@@ -301,6 +301,7 @@ export class TuiApp {
         settled: () => this.settle.settled,
         letters: () => this.editor.text === '',
         dialog: () => this.modal.pending,
+        waiting: (id) => this.latestApproval !== undefined && id !== this.latestApproval,
         refuseClosed: () => this.refuseClosed(),
         repaint: () => this.stopped || this.renderer.requestRender(),
         images: this.images,

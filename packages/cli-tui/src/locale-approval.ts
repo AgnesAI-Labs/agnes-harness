@@ -18,6 +18,7 @@ export type ApprovalKey =
   | 'approval.reasonLabel'
   | 'approval.inDialog'
   | 'approval.argsUnseen'
+  | 'approval.waiting'
   | 'approval.hint.reject'
   | 'approval.hint.back'
   | 'permission.hint.select'
@@ -40,6 +41,7 @@ export const APPROVAL_DICT: Record<Locale, Record<ApprovalKey, string>> = {
     'approval.did.failed': 'Decision not applied',
     'approval.reasonLabel': 'Reason for the model',
     'approval.inDialog': 'Answer in the dialog below',
+    'approval.waiting': 'Waiting: answer the newer request below first',
     'approval.argsUnseen':
       'The input is too large to show here. Allowing runs input this card does not show; the line above is the model’s own description.',
     'approval.hint.reject': 'reject',
@@ -63,6 +65,7 @@ export const APPROVAL_DICT: Record<Locale, Record<ApprovalKey, string>> = {
     'approval.did.failed': '决定未生效',
     'approval.reasonLabel': '给模型的理由',
     'approval.inDialog': '请在下方对话框中作答',
+    'approval.waiting': '等待中：请先处理下方较新的请求',
     'approval.argsUnseen':
       '输入过大，此处无法显示。允许将运行本卡片未显示的输入；上面一行是模型自己写的描述。',
     'approval.hint.reject': '拒绝',
