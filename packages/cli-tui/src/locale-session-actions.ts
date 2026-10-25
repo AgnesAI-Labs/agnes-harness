@@ -34,6 +34,7 @@ export type SessionActionKey =
   | 'export.usage'
   | 'export.done'
   | 'export.failed'
+  | 'export.exists'
   | 'commands.rate'
   | 'commands.rateSummary'
   | 'rate.usage'
@@ -84,6 +85,7 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'export.usage': 'usage: /export [agnes|html|sharegpt|claude-code] [path]',
     'export.done': 'Exported ({format}, redacted) to {path}',
     'export.failed': 'Export failed: {reason}',
+    'export.exists': '{path} already exists; choose another path (nothing was exported)',
     'commands.rate': 'Rate the latest finished reply up or down, with an optional reason (the Web thumbs)',
     'commands.rateSummary': 'Rate the latest reply',
     'rate.usage': 'usage: /rate up|down [reason]',
@@ -132,6 +134,7 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'export.usage': '用法：/export [agnes|html|sharegpt|claude-code] [路径]',
     'export.done': '已导出（{format}，已脱敏）到 {path}',
     'export.failed': '导出失败：{reason}',
+    'export.exists': '{path} 已存在；请换一个路径（未导出任何内容）',
     'commands.rate': '给最近一条已完成的回复点赞或点踩，可附理由（与 Web 的拇指相同）',
     'commands.rateSummary': '给最近回复打分',
     'rate.usage': '用法：/rate up|down [理由]',

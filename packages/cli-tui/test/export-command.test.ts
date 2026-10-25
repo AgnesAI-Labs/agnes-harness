@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -89,6 +89,15 @@ describe('/export', () => {
     const { app, requests } = harness(async () => {})
     await exportSlash(app, '/export sharegpt dump')
     expect(requests[0]?.out.startsWith(join(cwd, 'dump', 'agh-sess-1-'))).toBe(true)
+  })
+
+  it('refuses to replace an existing file and writes nothing', async () => {
+    writeFileSync(join(cwd, 'README.md'), 'keep me')
+    const { app, requests } = harness(async () => {})
+    const r = await exportSlash(app, '/export README.md')
+    expect(requests).toHaveLength(0)
+    expect(r.text).toBe(tt('export.exists', 'en', { path: join(cwd, 'README.md') }))
+    expect(readFileSync(join(cwd, 'README.md'), 'utf8')).toBe('keep me')
   })
 
   it('says why when the CLI injected no writer, and shows a failure instead of throwing', async () => {

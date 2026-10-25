@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { TuiApp } from './app.js'
 import { localPath } from './cd-command.js'
@@ -45,6 +45,8 @@ export async function exportSlash(app: TuiApp, line: string): Promise<SlashResul
   const name = `agh-${s.id.replace(/[^\w.-]/g, '_').slice(0, 24)}-${stamp}.${EXTENSION[format]}`
   const target = given ? localPath(app, given) : join(app.cwd, name)
   const out = isDirectory(target) ? join(target, name) : target
+  // The writer truncates; `agh export` is left as is, so the guard lives here.
+  if (existsSync(out)) return { text: tt('export.exists', locale, { path: oneLine(out) }) }
   try {
     await write({ sessionId: s.id, format, out })
   } catch (error) {
