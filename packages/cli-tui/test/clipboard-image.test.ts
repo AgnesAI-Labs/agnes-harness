@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { rpcError } from '@agnes/protocol'
+import { JsonRpcError } from '@agnes/sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { BusyInput } from '../src/busy-input.js'
@@ -97,6 +99,23 @@ describe('clipboard image paste', () => {
     expect(busyInput.takeKept('hello')).toEqual([])
     Object.assign(app, { session: { id: 's1' } })
     expect(busyInput.takeKept('hello')).toEqual([block])
+  })
+
+  it.each([
+    ['refused before any turn', { code: 'CONFIG_CREDENTIAL_REJECTED' }, 'draft'],
+    ['rejected after its turn ran', { code: 'CONFIG_CREDENTIAL_REJECTED', turnEnd: { reason: 'error' } }, ''],
+  ] as const)('a prompt %s puts the draft back only when no turn ran', async (_name, data, restored) => {
+    const { app, editor, busyInput } = harness(withImage)
+    Object.assign(app.session, {
+      client: {},
+      prompt: async () => {
+        throw new JsonRpcError(rpcError('SEMANTIC_REJECTED', data))
+      },
+    })
+    await expect(busyInput.prompt([{ type: 'text', text: 'draft' }], 'draft')).rejects.toBeInstanceOf(
+      JsonRpcError,
+    )
+    expect(editor.text).toBe(restored)
   })
 
   it.each([

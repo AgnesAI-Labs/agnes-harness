@@ -73,6 +73,9 @@ const rpcName = (error: unknown): string =>
     ? String((error as { rpc: { message?: unknown } }).rpc.message)
     : ''
 
+const hasTurnEnd = (error: unknown): boolean =>
+  (error as { data?: { turnEnd?: unknown } } | null)?.data?.turnEnd !== undefined
+
 /** Replies a daemon gives to a prompt it refused up front, so no turn started. */
 const REFUSALS = new Set([
   'OVERLOADED',
@@ -126,8 +129,9 @@ export class BusyInput {
     } catch (error) {
       if (codeOf(error) === 'SESSION_BUSY') return this.queue(blocks, draft, 'followUp')
       // Only a refusal the daemon sent before any turn began returns the draft; a timeout or a
-      // dropped connection may have started one, and sending it again could repeat it.
-      if (REFUSALS.has(rpcName(error))) this.putBack(this.host.session(), blocks, draft)
+      // dropped connection may have started one, and sending it again could repeat it. `turnEnd`
+      // marks a rejection that came after the turn ran, with the message already in the ledger.
+      if (REFUSALS.has(rpcName(error)) && !hasTurnEnd(error)) this.putBack(this.host.session(), blocks, draft)
       throw error
     }
   }
