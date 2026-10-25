@@ -80,8 +80,9 @@ export function rootInput(
     if (!inert && host.approvalCards.get(host.latestApproval() ?? '')?.handleInput(data, settled)) return true
     // Numbered actions inside the most recently projected tool card, tried before the digit
     // reaches anything else. A collapsed card (or one with no matching action) declines, and
-    // the keystroke falls through to the editor like any other character.
-    if (!inert && host.cards.handleInput(data)) return true
+    // the keystroke falls through to the editor like any other character. A digit typed into a
+    // draft, or one an approval that has not settled declined, is text: it never runs an action.
+    if (!inert && settled && !host.editor.text && host.cards.handleInput(data)) return true
     const key = parseKey(data, host.kitty)
     const action = actionFor('global', key.name)
     if (action === 'thinking-cycle') {
