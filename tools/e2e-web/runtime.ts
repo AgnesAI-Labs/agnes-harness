@@ -177,6 +177,7 @@ export async function isolatedRuntime(
     await cli(['daemon', 'stop'])
     if (failures.length) throw new AggregateError(failures, 'SDK cleanup failed after stopping the runtime')
   }
+  let signIn: ((launchUrl: string) => Promise<void>) | undefined
   const start = async () => {
     const started = Date.now()
     const command =
@@ -192,8 +193,10 @@ export async function isolatedRuntime(
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    let printed = ''
     web.stdout?.on('data', (data) => {
       log += data.toString()
+      printed += data.toString()
     })
     web.stderr?.on('data', (data) => {
       log += data.toString()
@@ -207,7 +210,11 @@ export async function isolatedRuntime(
       if (web !== child) throw new Error('serve startup was cancelled')
       if (child.exitCode !== null) throw new Error(`serve exited: ${log}`)
       try {
-        if ((await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) {
+        // Ready once the launcher printed its one-time sign-in link; the browser context of the
+        // spec trades it for the session cookie, as a person opening the printed link would.
+        const launch = printed.match(/http:\/\/127\.0\.0\.1:\d+\/\?code=[A-Za-z0-9_-]+/)?.[0]
+        if (launch && (await fetch(url, { signal: AbortSignal.timeout(1000) })).ok) {
+          await signIn?.(launch)
           starts.push({ start: started, ready: Date.now() })
           return
         }
@@ -224,9 +231,14 @@ export async function isolatedRuntime(
     url,
     cli,
     start,
+    /** Called with each launch's one-time link once the launcher is ready. */
+    onSignIn: (handler: (launchUrl: string) => Promise<void>) => {
+      signIn = handler
+    },
     starts: () => starts,
     connect: async (transport: 'local' | 'web' = 'local', registerWorkspace = true) => {
       let ws = ''
+      let webToken = ''
       let socketPath = ''
       let serverIdentity: { pid: number; processStartId: string } | undefined
       if (transport === 'web') {
@@ -234,6 +246,8 @@ export async function isolatedRuntime(
         const html = await (await fetch(url)).text()
         ws = html.match(/data-ws="([^"]+)"/)?.[1] ?? ''
         if (!ws) throw new Error('The real workbench did not advertise a daemon WebSocket')
+        // A same-user test process presents the per-launch secret from the 0600 credential file.
+        webToken = JSON.parse(await readFile(join(home, 'daemon/web-credential.json'), 'utf8')).token
       } else {
         const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
         socketPath = owner.socketPath
@@ -245,7 +259,7 @@ export async function isolatedRuntime(
         transport:
           transport === 'local'
             ? { kind: 'unix', path: socketPath }
-            : { kind: 'ws', url: ws, protocols: ['agnes-v1'] },
+            : { kind: 'ws', url: ws, protocols: ['agnes-v1', `agnes-bearer.${webToken}`] },
         transportFactories: {
           unix: () =>
             measured(unixTransport({ path: socketPath, ...(serverIdentity ? { serverIdentity } : {}) })),

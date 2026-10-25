@@ -63,6 +63,7 @@ export {
   startProductionSupervisor,
   startSupervisor,
 } from './supervisor/supervisor.js'
+export { mintWebTicket } from './supervisor/web-ticket.js'
 export {
   createSurfaceController,
   SurfaceControllerError,

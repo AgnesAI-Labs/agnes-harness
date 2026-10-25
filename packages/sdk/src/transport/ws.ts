@@ -29,7 +29,8 @@ export type WsOptions = {
   url: string
   tls?: { ca?: string; rejectUnauthorized?: boolean }
   headers?: Record<string, string>
-  protocols?: string[]
+  /** A function is called once per connection attempt, e.g. to fetch a single-use ticket. */
+  protocols?: string[] | (() => Promise<string[]>)
   pingIntervalMs?: number
   connectTimeoutMs?: number
   socketFactory?: (url: string, options: SocketOptions) => WebSocketLike
@@ -63,13 +64,27 @@ export function wsTransport(options: WsOptions): TransportFactory {
   const socketOptions: SocketOptions = {
     ...options.tls,
     ...(options.headers ? { headers: { ...options.headers } } : {}),
-    ...(options.protocols ? { protocols: [...options.protocols] } : {}),
+    ...(Array.isArray(options.protocols) ? { protocols: [...options.protocols] } : {}),
   }
   const factory = options.socketFactory ?? browserSocket
+  const protocols = typeof options.protocols === 'function' ? options.protocols : undefined
   return async (handlers) => {
     let socket: WebSocketLike
+    let attemptOptions = socketOptions
+    if (protocols) {
+      let resolved: string[]
+      try {
+        resolved = [...(await protocols())]
+      } catch (error) {
+        throw new TransportClosed({
+          reason: 'error',
+          error: error instanceof Error ? error : new Error('WebSocket protocols unavailable'),
+        })
+      }
+      attemptOptions = { ...socketOptions, protocols: resolved }
+    }
     try {
-      socket = factory(address, socketOptions)
+      socket = factory(address, attemptOptions)
     } catch (error) {
       if (factory === browserSocket && error instanceof Unsupported) throw error
       throw new TransportClosed({ reason: 'error', error: new Error('WebSocket connection failed') })

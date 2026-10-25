@@ -4,7 +4,7 @@ English | [简体中文](deployment.zh-CN.md)
 
 [Documentation](../README.md) · [Installation and Linux](install.md#linux-build) · [Security](security.md)
 
-Run one App Server per canonical `AGH_HOME`; use the same home and profile for its clients. Local Web binds loopback and checks exact Origin/Host. The source quickstart is not a public reverse-proxy login deployment: adding a proxy does not create internet user authentication. Keep the local admin surface private. Remote SDK transports require their declared TLS/authentication setup and deployment acceptance.
+Run one App Server per canonical `AGH_HOME`; use the same home and profile for its clients. Local Web binds loopback, requires a per-launch secret delivered through the one-time link that `agh web` prints, and checks exact Origin/Host. The source quickstart is not a public reverse-proxy login deployment: adding a proxy does not create internet user authentication. Keep the local admin surface private. Remote SDK transports require their declared TLS/authentication setup and deployment acceptance.
 
 ## Outbound proxy configuration
 

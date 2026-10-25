@@ -1,4 +1,9 @@
-import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
+import {
+  defaultLoop,
+  defaultModelAdapter,
+  LOCAL_WEB_TICKET_PATH,
+  LOCAL_WEB_TICKET_PROTOCOL_PREFIX,
+} from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
 import { factChainLinks, workbenchNavigation } from '@agnes/web-client'
@@ -667,9 +672,26 @@ const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
 const wsUrl = shellConfig.wsUrl
+// The daemon admits this page only with a single-use ticket that the launcher signs for a page
+// holding its session cookie (set when the launch link's one-time code was opened). A server with
+// no launcher session (static fixtures) has no ticket route and the socket is offered as before.
+let webSessionMissing = false
+async function connectionProtocols(): Promise<string[]> {
+  const response = await fetch(LOCAL_WEB_TICKET_PATH, {
+    method: 'POST',
+    cache: 'no-store',
+    credentials: 'same-origin',
+  })
+  if (response.status === 404) return ['agnes-v1']
+  webSessionMissing = response.status === 401
+  if (!response.ok) throw new Error('WebSocket ticket unavailable')
+  const { ticket } = (await response.json()) as { ticket?: unknown }
+  if (typeof ticket !== 'string') throw new Error('WebSocket ticket unavailable')
+  return ['agnes-v1', `${LOCAL_WEB_TICKET_PROTOCOL_PREFIX}${ticket}`]
+}
 const client = createClient({
   sessionRestoreHistory: 'none',
-  transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
+  transport: { kind: 'ws', url: wsUrl ?? '', protocols: connectionProtocols },
   auth: { kind: 'local' },
   journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
 })
@@ -1502,7 +1524,9 @@ function showError(error: unknown): void {
     error &&
     typeof error === 'object' &&
     'data' in error &&
-    (error.data as { code?: unknown } | undefined)?.code === 'CONFIG_CREDENTIAL_REJECTED'
+    ['CONFIG_CREDENTIAL_REJECTED', 'WEB_SESSION_REQUIRED'].includes(
+      (error.data as { code?: unknown } | undefined)?.code as string,
+    )
   if (sessionRecovery) {
     renderSessionRecovery(message)
     notice.setKind('error')
@@ -2255,6 +2279,9 @@ run(async () => {
   try {
     runtimePlatform = (await client.initialize()).platform
   } catch (error) {
+    // Without the launcher session no reload or retry can help; only the launch link can.
+    if (webSessionMissing)
+      throw Object.assign(new Error(t('app.ws.signInRequired')), { data: { code: 'WEB_SESSION_REQUIRED' } })
     if (!intentionalClose) reconnect.start()
     throw error
   }

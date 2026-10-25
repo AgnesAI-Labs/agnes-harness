@@ -122,8 +122,13 @@ try {
     await runtime.restart()
     startup.push({ run, restartMs: performance.now() - start })
   }
+  const context = await browser.newContext()
+  // Each restart prints a new one-time link; the browser context trades it for the session cookie.
+  runtime.onSignIn(async (launchUrl) => {
+    await context.request.get(launchUrl, { maxRedirects: 0 })
+  })
   await restart(0)
-  const page = await browser.newPage()
+  const page = await context.newPage()
   type RpcTiming = { method: string; start: number; end: number }
   let wire: { frames: number; bytes: number; acpUpdates: number; rpc: RpcTiming[] } | undefined
   page.on('pageerror', (error) => process.stderr.write(`Browser: ${error.message}\n`))

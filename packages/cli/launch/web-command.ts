@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { mintWebTicket } from '@agnes/daemon'
 import {
   agnesHome,
   type CompositionPatch,
@@ -272,6 +273,16 @@ export async function runWebCommand(
         await daemonLink.refresh()
         return daemonLink.backend().web?.url ?? attached.web?.url ?? ''
       },
+      // The browser never holds the daemon's Web secret: a signed-in page asks for a single-use
+      // ticket per connection, signed with the secret of the daemon that is current right now.
+      localSession: {
+        wsTicket: async () => {
+          await daemonLink.refresh()
+          const token = daemonLink.backend().web?.token ?? attached.web?.token
+          if (!token) throw new Error('local daemon Web credential is unavailable')
+          return mintWebTicket(token)
+        },
+      },
       port,
       origin,
       ...(io.developmentReload === undefined ? {} : { developmentReload: io.developmentReload }),
@@ -306,7 +317,7 @@ export async function runWebCommand(
     io.onWebServerReady?.(web)
     const report = io.ensureBackend ? { status: 'ok' as const } : await adminHandler.doctor()
     ;(io.write ?? ((text: string) => process.stdout.write(text)))(
-      `${web.url}/\n${firstRunText(env, 'home')}: ${backend.scope.home}\n${firstRunText(env, 'profile')}: ${backend.scope.profile}\n${firstRunText(env, 'doctor')}: ${firstRunText(env, report.status)} — agh doctor\n`,
+      `${web.launchUrl?.() ?? `${web.url}/`}\n${firstRunText(env, 'home')}: ${backend.scope.home}\n${firstRunText(env, 'profile')}: ${backend.scope.profile}\n${firstRunText(env, 'doctor')}: ${firstRunText(env, report.status)} — agh doctor\n`,
     )
     await waitForSignal(io.signals ?? process)
   } catch (error) {

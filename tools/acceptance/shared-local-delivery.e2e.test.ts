@@ -266,7 +266,7 @@ it.skipIf(!entry)(
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       const webChild = web
-      // The local launcher prints a plain loopback URL. No browser credential is handed off.
+      // The local launcher prints a loopback URL with a one-time code; the daemon secret never leaves it.
       const launchUrl = await new Promise<URL>((done, reject) => {
         let output = ''
         const timer = setTimeout(() => reject(new Error('Web launcher readiness timeout')), 30_000)
@@ -280,7 +280,7 @@ it.skipIf(!entry)(
         })
         webChild.stdout?.on('data', (chunk) => {
           output += String(chunk)
-          const match = output.match(/http:\/\/127\.0\.0\.1:\d+\//)
+          const match = output.match(/http:\/\/127\.0\.0\.1:\d+\/\?code=[A-Za-z0-9_-]+/)
           if (match) {
             clearTimeout(timer)
             done(new URL(match[0]))
@@ -288,6 +288,21 @@ it.skipIf(!entry)(
         })
       })
       expect(launchUrl.hash).toBe('')
+      // Opening the link trades the code for the session cookie, once.
+      const signedIn = await fetch(launchUrl, { redirect: 'manual' })
+      expect(signedIn.status).toBe(303)
+      expect(signedIn.headers.get('location')).toBe('/')
+      const cookie = signedIn.headers.get('set-cookie')?.split(';')[0] ?? ''
+      expect(cookie).toMatch(/^agnes_web_\d+=/)
+      expect((await fetch(launchUrl, { redirect: 'manual' })).headers.get('set-cookie')).toBeNull()
+      const webTicket = async (): Promise<string> => {
+        const issued = await fetch(new URL('/api/ws-ticket', origin), {
+          method: 'POST',
+          headers: { Origin: origin, Cookie: cookie },
+        })
+        expect(issued.status).toBe(200)
+        return ((await issued.json()) as { ticket: string }).ticket
+      }
       const response = await fetch(origin)
       expect(response.status).toBe(200)
       const html = await response.text()
@@ -297,7 +312,7 @@ it.skipIf(!entry)(
         transport: {
           kind: 'ws',
           url: ws,
-          protocols: ['agnes-v1'],
+          protocols: async () => ['agnes-v1', `agnes-ticket.${await webTicket()}`],
         },
         transportFactories: {
           ws: (option) => wsTransport({ ...option, url: ws, headers: { Origin: origin } }),

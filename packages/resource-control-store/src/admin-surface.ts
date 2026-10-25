@@ -47,7 +47,10 @@ const ACTIONS = {
 export type ResourceAdminSurfaceAction = keyof typeof ACTIONS
 export type ResourceAdminSurfaceOptions = Readonly<{
   origin: string
-  /** @deprecated Ignored legacy input; local admin access is exact-origin/Host bound. */
+  /**
+   * @deprecated Ignored legacy input. The launcher's Web server admits a caller with its per-launch
+   * session cookie before this surface runs; the checks here bind it to the exact origin/Host.
+   */
   token?: string
   profile: string
   clientId: string
@@ -139,7 +142,9 @@ function validScope(options: ResourceAdminSurfaceOptions): URL {
 }
 
 /**
- * Local-only, fixed Resource Admin BFF. Error DTOs are intentionally generic: raw exception
+ * Local-only, fixed Resource Admin BFF. It is mounted behind the launcher Web server's per-launch
+ * session gate (`web-server/src/local-session.ts`), which authenticates the caller; the origin,
+ * Host and Fetch Metadata checks below are defence in depth against a browser being steered. Error DTOs are intentionally generic: raw exception
  * text can carry paths, headers, or credentials even when a resource implementation is correct.
  */
 export function createResourceAdminSurface(options: ResourceAdminSurfaceOptions) {
