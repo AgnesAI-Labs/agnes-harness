@@ -57,6 +57,11 @@ export class SharedSessionChannel {
     return this.context.run(Object.freeze({ sessionKey }), operation)
   }
 
+  /** The session whose async work is running now, if any. */
+  sessionInContext(): string | undefined {
+    return this.context.getStore()?.sessionKey
+  }
+
   currentSessionKey(): string {
     const sessionKey = this.context.getStore()?.sessionKey
     if (!sessionKey) throw new Error('worker callback has no session context')
