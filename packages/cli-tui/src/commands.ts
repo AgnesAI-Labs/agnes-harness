@@ -372,7 +372,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       // Importing writes through a local Host, which only the shared local daemon form leaves free.
       if (!app.o.importSession) return { text: tt('import.remote', locale) }
       const from = args.indexOf('--from')
-      const given = from < 0 ? args : args.slice(0, from)
+      const given = from < 0 ? args : [...args.slice(0, from), ...args.slice(from + 2)]
       const source = from < 0 ? undefined : args[from + 1]
       if (from >= 0 && !source) return { text: tt('import.usage', locale) }
       if (given.length > 0) {
@@ -381,7 +381,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
           .trim()
           .slice('/import'.length)
           .trim()
-          .replace(/\s+--from\s+\S+$/, '')
+          .replace(/(^|\s+)--from\s+\S+(?=\s|$)/, '')
+          .trim()
         try {
           const { key } = await app.o.importSession(localPath(app, file), source)
           return { text: tt('import.done', locale, { key: oneLine(key) }) }

@@ -80,6 +80,9 @@ describe('/import', () => {
       text: tt('import.done', 'en', { key: 'agnes:k' }),
     })
     expect(importSession).toHaveBeenCalledWith('/work/proj/my dir/s.jsonl', 'codex')
+    // --from may come first, as in the CLI.
+    await runSlash(a, '/import --from claude my dir/t.jsonl')
+    expect(importSession).toHaveBeenLastCalledWith('/work/proj/my dir/t.jsonl', 'claude')
     vi.stubEnv('HOME', '/tmp/agh-home')
     await runSlash(a, '/import ~/s.jsonl')
     expect(importSession).toHaveBeenLastCalledWith('/tmp/agh-home/s.jsonl', undefined)
