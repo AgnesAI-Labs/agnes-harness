@@ -1205,13 +1205,20 @@ describe('runSlash', () => {
   })
 
   it('/sessions formats the listed page; empty page says so', async () => {
-    const { app, client } = await unstartedApp()
+    const { app, client, ep } = await unstartedApp()
     try {
       const r = await runSlash(app, '/sessions')
       expect(r).toEqual({
         text: 'Recent sessions\n1. claw · seq 9\n   s2\n2. standard · seq 5\n   s1',
         presentation: 'transcript',
       })
+      // A session started without a preset lists as `-`, as on /status, not as "null".
+      ep.on('_agnes/v1/session.list', () => ({
+        items: [
+          { sessionId: 's3', createdAt: '2026-01-03T00:00:00Z', lastSeq: 2, generation: 1, preset: null },
+        ],
+      }))
+      expect((await runSlash(app, '/sessions')).text).toBe('Recent sessions\n1. - · seq 2\n   s3')
     } finally {
       await client.close()
     }

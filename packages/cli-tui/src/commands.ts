@@ -409,7 +409,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/sessions': {
       const choices = (await listSessionChoices(s)).slice(0, 20)
       const rows = choices.flatMap((m, index) => [
-        `${index + 1}. ${m.preset} · seq ${m.lastSeq}`,
+        `${index + 1}. ${m.preset ?? '-'} · seq ${m.lastSeq}`,
         `   ${m.sessionId}`,
       ])
       return {
