@@ -33,6 +33,17 @@ describe('wrapping and padding', () => {
     expect(wrapText('a\n\nb', 4)).toEqual(['a', '', 'b'])
   })
 
+  it('keeps the indentation a line starts with; a wrapped continuation starts at the margin', () => {
+    expect(wrapText('def f():\n    return 1\n        deeper', 40)).toEqual([
+      'def f():',
+      '    return 1',
+      '        deeper',
+    ])
+    expect(wrapText('  ab cd', 5)).toEqual(['  ab', 'cd'])
+    expect(wrapText('ab  cd', 3)[1]).toBe('cd')
+    expect(wrapText('      ', 3).map(displayWidth)).toEqual([2])
+  })
+
   it('padLine measures columns, not code units', () => {
     expect(padLine('中', 4)).toBe('中  ')
     expect(padLine('\x1b[1mab\x1b[22m', 4)).toBe('\x1b[1mab\x1b[22m  ')

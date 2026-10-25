@@ -33,9 +33,11 @@ export function wrapText(text: string, width: number): string[] {
   const limit = Math.max(1, width)
   const out: string[] = []
   for (const para of text.split('\n')) {
-    let line = ''
-    for (const word of para.split(' ')) {
-      const candidate = line ? `${line} ${word}` : word
+    // The indent a line starts with is kept (short of the width); a wrapped continuation starts at the margin.
+    const indent = /^ */.exec(para)?.[0] ?? ''
+    let line = indent.slice(0, limit - 1)
+    for (const word of para.slice(indent.length).split(' ')) {
+      const candidate = line.trim() ? `${line} ${word}` : line + word
       if (displayWidth(candidate) <= limit) {
         line = candidate
         continue

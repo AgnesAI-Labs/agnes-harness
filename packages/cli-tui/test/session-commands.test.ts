@@ -918,7 +918,7 @@ describe('small info commands', () => {
     expect(rows).toContain(ansi.fg('danger', '-old'))
     const green = ansi.fg('success', 'x').split('x')[0] as string
     expect(rows.filter((r) => r.startsWith(green)).length).toBeGreaterThan(1)
-    expect(rows.find((r) => r.includes('context'))).toBe(ansi.dim('context'))
+    expect(rows.find((r) => r.includes('context'))).toBe(ansi.dim(' context'))
     // Any other command keeps the dim style; a `+` there means nothing.
     const other = outputRows(ansi, localCommandView(ansi)('/status', '+not a diff').render(40))
     expect(other).toContain(ansi.dim('+not a diff'))

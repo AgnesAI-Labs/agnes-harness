@@ -2694,7 +2694,7 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     term.feed('help')
     term.feed('\r')
     await vi.waitFor(() =>
-      expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}${SLASH_COMMANDS.at(-1)?.name}`),
+      expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}  ${SLASH_COMMANDS.at(-1)?.name}`),
     )
   } finally {
     await app?.stop()
