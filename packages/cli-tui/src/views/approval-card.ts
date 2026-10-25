@@ -124,6 +124,8 @@ export class ApprovalCard implements Component {
       settled?(): boolean
       /** Whether y, a, n and r may decide: not while the prompt holds a draft, where they are text. */
       letters?(): boolean
+      /** Whether the live dialog is asking now: it takes every key, so a pending card says to answer there. */
+      dialog?(): boolean
       onDecide(
         ref: NonNullable<ApprovalNode['decisionRef']>,
         verdict: Verdict,
@@ -314,7 +316,10 @@ export class ApprovalCard implements Component {
       : []
     // The command already has its own row; a summary that only repeats it would say the same twice.
     const command = shellOf(subject.args)?.command
+    const heading = fitLine(approvalHeading(subject.tool, subject.risk ?? n.risk, ansi, locale), width)
     const said = summary && summary !== command?.trim() ? [row(ansi.bold(summary))] : []
+    // The dialog shows this request in full and owns the keys; a second copy here only pushes it away.
+    if (this.o.dialog?.()) return [heading, ...said, row(ansi.fg('faint', tt('approval.inDialog', locale)))]
     const raw = n.subjectText ? wrapKeep(escapeControl(n.subjectText), inner) : []
     const expires = localTime(n.expiresAt)
     const reasonRows = (reason: string): string[] => {
@@ -337,7 +342,7 @@ export class ApprovalCard implements Component {
       ]
     }
     return [
-      fitLine(approvalHeading(subject.tool, subject.risk ?? n.risk, ansi, locale), width),
+      heading,
       ...said,
       ...(origin.length ? [row(ansi.fg('faint', origin.join(' · ')))] : []),
       ...approvalBody(subject, inner, ansi, locale).map(row),

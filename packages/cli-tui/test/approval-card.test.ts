@@ -108,6 +108,26 @@ it('shows the whole raw subject, last line included, and every option on its own
   expect(text).not.toContain('decision ')
 })
 
+it('points to the open dialog instead of repeating the request, and shows it all again once it closes', () => {
+  const subjectText = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n')
+  let open = true
+  const card = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), subjectText },
+    { ansi: PLAIN, dialog: () => open, onDecide: async () => undefined },
+  )
+  const asked = card.render(80).join('\n')
+  expect(asked).toContain('Needs approval')
+  expect(asked).toContain('control the desktop')
+  expect(asked).toContain('Answer in the dialog below')
+  expect(asked).not.toContain('line 0')
+  expect(asked).not.toContain('[1]')
+  open = false
+  const parked = card.render(80).join('\n')
+  expect(parked).toContain('line 19')
+  expect(parked).toContain('[1]')
+  expect(parked).not.toContain('Answer in the dialog below')
+})
+
 it('wraps a long working directory instead of cutting it', () => {
   const cwd = `/work/${'deep/'.repeat(30)}end`
   const subjectText = JSON.stringify({ call: { name: 'shell', args: { command: 'ls', cwd } } })

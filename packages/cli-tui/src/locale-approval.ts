@@ -16,6 +16,7 @@ export type ApprovalKey =
   | 'approval.did.expired'
   | 'approval.did.failed'
   | 'approval.reasonLabel'
+  | 'approval.inDialog'
   | 'approval.hint.reject'
   | 'approval.hint.back'
   | 'permission.hint.select'
@@ -37,6 +38,7 @@ export const APPROVAL_DICT: Record<Locale, Record<ApprovalKey, string>> = {
     'approval.did.expired': 'Expired',
     'approval.did.failed': 'Decision not applied',
     'approval.reasonLabel': 'Reason for the model',
+    'approval.inDialog': 'Answer in the dialog below',
     'approval.hint.reject': 'reject',
     'approval.hint.back': 'back',
     'permission.hint.select': 'select',
@@ -57,6 +59,7 @@ export const APPROVAL_DICT: Record<Locale, Record<ApprovalKey, string>> = {
     'approval.did.expired': '已过期',
     'approval.did.failed': '决定未生效',
     'approval.reasonLabel': '给模型的理由',
+    'approval.inDialog': '请在下方对话框中作答',
     'approval.hint.reject': '拒绝',
     'approval.hint.back': '返回',
     'permission.hint.select': '选择',
