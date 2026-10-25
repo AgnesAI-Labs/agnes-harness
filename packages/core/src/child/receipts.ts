@@ -3,7 +3,10 @@ import { withNoteLanguage } from '../request/note-language.js'
 import type { SessionImpl } from '../step/session.js'
 
 /** Creation proposals and execution outcomes cannot mint successful creation receipts. */
-export async function childReceiptNarrative(session: SessionImpl): Promise<string | undefined> {
+export async function childReceiptNarrative(
+  session: SessionImpl,
+  language?: string,
+): Promise<string | undefined> {
   if (!hasChildControl(session.d.log.storage)) return undefined
   const rows = await session.d.log.storage.listByParent(session.key)
   if (rows.length === 0) return undefined
@@ -21,5 +24,5 @@ export async function childReceiptNarrative(session: SessionImpl): Promise<strin
     }.`,
     'Proposed tool calls, refused/failed/cancelled creation attempts and plans are not successful spawns. A created child is not necessarily completed. Report only these receipt counts; never infer counts from a plan or an earlier assistant claim.',
   ].join('\n')
-  return withNoteLanguage(narrative)
+  return withNoteLanguage(narrative, language)
 }

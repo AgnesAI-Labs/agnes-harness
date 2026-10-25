@@ -213,8 +213,8 @@ it('review: full access retains private-home and must-read-first hard refusals',
       expect(result.data).toMatchObject({ isError: true })
     }
     for (const text of [
-      'write refused: read existing.txt in this session before overwriting it',
-      'edit refused: read "existing.txt" in this session before editing it',
+      'write refused: read "existing.txt" with the read tool in this session before overwriting it',
+      'edit refused: read "existing.txt" with the read tool in this session before editing it',
     ])
       expect(results.map((result) => result.data)).toContainEqual(
         expect.objectContaining({

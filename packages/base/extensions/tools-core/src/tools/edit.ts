@@ -2,7 +2,7 @@ import type { ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import type { LspSessions } from '../../../lsp/src/registry.js'
 import type { FileChangeRecorder } from '../file-change.js'
-import { displayPath, fsFailure, toolFailure } from '../guards/feedback.js'
+import { fsFailure, notObservedText, toolFailure } from '../guards/feedback.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { crlf, usesCrlf } from '../line-endings.js'
@@ -63,13 +63,11 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions) {
             'edit failed: file is not valid UTF-8; inspect its encoding with shell and convert a copy to UTF-8 before editing.',
           )
         }
+        // The path is the one the model gave, so naming it discloses nothing new; hiding it (as
+        // `displayPath` does outside the workspace) left the model unable to tell which file to read.
         if (observedVersion(ctx.session.key, abs) === undefined)
           return {
-            ...(await toolFailure(
-              ctx,
-              'FS_NOT_OBSERVED',
-              `edit refused: read ${displayPath(ctx, args.path)} in this session before editing it`,
-            )),
+            ...(await toolFailure(ctx, 'FS_NOT_OBSERVED', notObservedText('edit', args.path))),
             details: { code: 'FS_NOT_OBSERVED', path: args.path },
           }
         let text = original

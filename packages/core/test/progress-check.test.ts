@@ -3,7 +3,7 @@ import type { VerifierVerdict } from '@agnes/core-effects/effects/seams'
 import { describe, expect, it } from 'vitest'
 import { progressCheckText } from '../src/execution/turn/progress-check.js'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { NOTE_LANGUAGE } from '../src/request/note-language.js'
+import { noteLanguageLine } from '../src/request/note-language.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
@@ -81,6 +81,7 @@ async function checks(log: Log): Promise<string[]> {
     .map((text) => text.slice(PREFIX.length))
 }
 
+/** An English prompt ("do it"), so the checks name English. */
 const limited = { content: [{ type: 'text' as const, text: 'do it' }], actor, maxSteps: 40 }
 const quiet = (n: number): Call[] => Array.from({ length: n }, () => ({}))
 
@@ -122,8 +123,8 @@ describe('progress checks', () => {
     await session.acceptInput()
     expect((await session.run({ until: 'turn-end', signal })).reason).toBe('completed')
     expect(await checks(log)).toEqual([
-      progressCheckText(1, 1, 5, '4 model steps so far in this turn.'),
-      progressCheckText(2, 1, 10, '4 model steps since the last progress check.'),
+      progressCheckText(1, 1, 5, '4 model steps so far in this turn.', 'English'),
+      progressCheckText(2, 1, 10, '4 model steps since the last progress check.', 'English'),
     ])
     expect(await checks(log)).toEqual([
       `Progress check 1 (turn 1, step 5)
@@ -131,7 +132,7 @@ describe('progress checks', () => {
 1. Done-check: the check that proves this request is done, and whether it passes now.
 2. Progress: what changed in that check's result since this turn began.
 3. Decision: FINISH (it passes: stop and report), CONTINUE (name the next concrete step) or SWITCH (this approach is not moving the result: name the more direct approach you take instead), and why.
-${NOTE_LANGUAGE}`,
+${noteLanguageLine('English')}`,
       expect.stringContaining("what changed in that check's result since the last progress check."),
     ])
     // The check is the request's last message, so it is what the model reads right before it acts.
@@ -168,7 +169,9 @@ ${NOTE_LANGUAGE}`,
     await session.enqueue('next-turn', limited)
     await session.acceptInput()
     await session.run({ until: 'turn-end', signal })
-    expect(await checks(log)).toEqual([progressCheckText(1, 1, 6, '5 tool results in a row failed.')])
+    expect(await checks(log)).toEqual([
+      progressCheckText(1, 1, 6, '5 tool results in a row failed.', 'English'),
+    ])
   })
 
   it('asks early once the model has created many new files, after a few steps', async () => {
@@ -178,7 +181,7 @@ ${NOTE_LANGUAGE}`,
     await session.run({ until: 'turn-end', signal })
     // Eight files land in the first step; the check waits for three steps to have passed.
     expect(await checks(log)).toEqual([
-      progressCheckText(1, 1, 4, '8 new files were created so far in this turn.'),
+      progressCheckText(1, 1, 4, '8 new files were created so far in this turn.', 'English'),
     ])
   })
 
@@ -188,7 +191,7 @@ ${NOTE_LANGUAGE}`,
     await session.acceptInput()
     await session.run({ until: 'turn-end', signal })
     expect(await checks(log)).toEqual([
-      progressCheckText(1, 1, 4, 'The same change was made several times in a row.'),
+      progressCheckText(1, 1, 4, 'The same change was made several times in a row.', 'English'),
     ])
   })
 

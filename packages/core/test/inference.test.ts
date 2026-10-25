@@ -6,7 +6,7 @@ import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
 import { hookSurface } from '../src/execution/turn/compaction-summary.js'
-import { UNATTENDED_NOTE } from '../src/execution/turn/inference.js'
+import { unattendedNote } from '../src/execution/turn/inference.js'
 import { mintAuxiliaryVisionProductionAdmission } from '../src/orchestrator/auxiliary-vision-assembly.js'
 import { loadAuxiliaryVisionPreflight } from '../src/orchestrator/request-media-preflight.js'
 import { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from '../src/orchestrator/request-media-surface.js'
@@ -500,7 +500,7 @@ describe('Inference segment', () => {
     expect(names(0)).toContain('read')
     expect(names(0)).not.toContain('ask_user')
     expect(JSON.stringify(provider.requests[0]?.messages)).toContain(
-      JSON.stringify(UNATTENDED_NOTE).slice(1, -1),
+      JSON.stringify(unattendedNote('English')).slice(1, -1),
     )
     // The system prompt stays the attended one: the note travels as a live tail note.
     expect(provider.requests[0]?.system).not.toContain('unattended')

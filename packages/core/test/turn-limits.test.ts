@@ -1,7 +1,8 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { NOTE_LANGUAGE } from '../src/request/note-language.js'
+import { REQUEST_NOTE_CLOSE, REQUEST_NOTE_OPEN } from '../src/request/derive.js'
+import { NOTE_LANGUAGE, noteLanguageLine } from '../src/request/note-language.js'
 import { turnTimeLimit } from '../src/step/time-limit.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
@@ -49,6 +50,10 @@ async function clocked(deltasMs: number[], preset = presetDefaults()) {
 const signal = new AbortController().signal
 
 const TURN_TIME = '[turn time]\n'
+/** A measured-time note as the request carries it: framed as harness context, not a user turn. */
+const FRAMED = `${REQUEST_NOTE_OPEN}${TURN_TIME}`
+/** The prompts below are English ("do it"), so every note names English. */
+const ENGLISH = noteLanguageLine('English')
 
 /** Every measured-time note the ledger recorded, in order, without its prefix. */
 async function timeNotes(log: Log): Promise<string[]> {
@@ -68,7 +73,7 @@ async function noteRows(log: Log): Promise<number> {
 }
 
 const at = (used: string, left: string) =>
-  `${used} of this turn's 1m40s time limit used, ${left} left. Measured at this request, it replaces any earlier time figure: do not conclude that the time limit is reached unless this note says so.\n${NOTE_LANGUAGE}`
+  `${used} of this turn's 1m40s time limit used, ${left} left. Measured at this request, it replaces any earlier time figure: do not conclude that the time limit is reached unless this note says so.\n${ENGLISH}`
 /** The figures sent at 0, 30, 55, 60, 80, 95 and 97 s into a 100 s limit. */
 const MEASURED = [
   at('0s', 'about 1m40s'),
@@ -85,9 +90,9 @@ type Request = ReturnType<typeof fakeProvider>['requests'][number]
 const lastTime = (request: Request | undefined): string | undefined =>
   (request?.messages ?? [])
     .flatMap((message) => (message.role === 'user' ? message.content : []))
-    .flatMap((block) => (block.type === 'text' && block.text.startsWith(TURN_TIME) ? [block.text] : []))
+    .flatMap((block) => (block.type === 'text' && block.text.startsWith(FRAMED) ? [block.text] : []))
     .at(-1)
-    ?.slice(TURN_TIME.length)
+    ?.slice(FRAMED.length, -REQUEST_NOTE_CLOSE.length)
 
 describe('turn limits the model is told about', () => {
   it('states the limits at turn start, then once each at 50%, 75% and 90% of the nearest, as live notes', async () => {
@@ -104,10 +109,10 @@ describe('turn limits the model is told about', () => {
 
     const limits = 'a time limit of 1m40s (until 2025-09-07 00:01:40 UTC); at most 20 model steps'
     expect(await limitNotes(log)).toEqual([
-      `Turn limits\nThis turn has limits: ${limits}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first.\n${NOTE_LANGUAGE}`,
-      `Turn limits\n50% of this turn's time limit is used: about 50s left (until 2025-09-07 00:01:40 UTC). Prioritise the core requirement: if its result is not in place yet, put a working version in place and check it before refining anything.\nLimits for this turn: ${limits}.\n${NOTE_LANGUAGE}`,
-      `Turn limits\n75% of this turn's time limit is used: about 25s left (until 2025-09-07 00:01:40 UTC). Finish the core requirement now and verify it; skip optional extras and further exploration.\nLimits for this turn: ${limits}.\n${NOTE_LANGUAGE}`,
-      `Turn limits\n90% of this turn's time limit is used: about 10s left (until 2025-09-07 00:01:40 UTC). Wrap up: leave the work in its best checked state and end with a short reply saying what is done, how it was checked and what remains.\nLimits for this turn: ${limits}.\n${NOTE_LANGUAGE}`,
+      `Turn limits\nThis turn has limits: ${limits}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first.\n${ENGLISH}`,
+      `Turn limits\n50% of this turn's time limit is used: about 50s left (until 2025-09-07 00:01:40 UTC). Prioritise the core requirement: if its result is not in place yet, put a working version in place and check it before refining anything.\nLimits for this turn: ${limits}.\n${ENGLISH}`,
+      `Turn limits\n75% of this turn's time limit is used: about 25s left (until 2025-09-07 00:01:40 UTC). Finish the core requirement now and verify it; skip optional extras and further exploration.\nLimits for this turn: ${limits}.\n${ENGLISH}`,
+      `Turn limits\n90% of this turn's time limit is used: about 10s left (until 2025-09-07 00:01:40 UTC). Wrap up: leave the work in its best checked state and end with a short reply saying what is done, how it was checked and what remains.\nLimits for this turn: ${limits}.\n${ENGLISH}`,
     ])
     // The notes travel at the tail: every request carries the same system prompt.
     expect(provider.requests).toHaveLength(7)
@@ -139,10 +144,17 @@ describe('turn limits the model is told about', () => {
 
     expect(provider.requests.map(lastTime)).toEqual(MEASURED)
     for (const request of provider.requests) {
-      // The figure is the request's last message, and the request says it is not history.
+      // The figure is the request's last message, framed as harness context the user did not
+      // write, and the request says it is not history.
       expect(request.messages.at(-1)).toMatchObject({
         role: 'user',
-        content: [{ text: expect.stringMatching(/^\[turn time\]\n/) }],
+        content: [
+          {
+            text: expect.stringMatching(
+              /^<system-reminder>\nHarness runtime note, not a message from the user\.\n\[turn time\]\n[\s\S]*\nThe user writes in English; keep working and replying in English\.\n<\/system-reminder>$/,
+            ),
+          },
+        ],
       })
       expect(request.requestOnlyMessages).toBe(1)
     }
@@ -192,6 +204,7 @@ describe('turn limits the model is told about', () => {
     })
     await session.acceptInput()
     await session.run({ until: 'turn-end', signal })
+    // "go" names no language the script can tell, so the note keeps the wording that names none.
     expect(lastTime(provider.requests[1])).toBe(
       `This turn's 1m40s time limit is reached. End now with a short reply saying what is done, how it was checked and what remains.\n${NOTE_LANGUAGE}`,
     )

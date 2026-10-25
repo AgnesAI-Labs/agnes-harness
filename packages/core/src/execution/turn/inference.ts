@@ -60,7 +60,7 @@ import {
   TURN_TIME_PREFIX,
 } from '../../request/derive.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
-import { withNoteLanguage } from '../../request/note-language.js'
+import { promptLanguage, withNoteLanguage } from '../../request/note-language.js'
 import { toProviderRequest } from '../../request/to-provider.js'
 import {
   attemptProviderCount,
@@ -77,7 +77,7 @@ import {
   toolsForModel,
 } from '../../step/model-tools.js'
 import { runSlot } from '../../step/reentry.js'
-import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
+import type { OpContext, SessionImpl, StepOutcome, TurnMemory } from '../../step/session.js'
 import { restoreToolArgumentRecovery, toolArgumentsDisabled } from '../../step/tool-argument-recovery.js'
 import { toolCallPayload } from '../../step/tool-call.js'
 import { isUnattended } from '../../step/turn-restore.js'
@@ -94,9 +94,11 @@ import { turnLimitSection, turnTimeNote } from './turn-limits.js'
  * What the model is told in a turn whose input declared that nobody attends it. The first line is
  * the title an attended turn's tombstone keeps, so clearing the note does not repeat its body.
  */
-export const UNATTENDED_NOTE = withNoteLanguage(
-  'Unattended run\nThis run is unattended: nobody can answer questions, review a plan or look at a UI surface before it ends, and your final reply is all that is returned. Do not ask the user or wait for input. Finish the task end to end on your own best judgment: where it is ambiguous, choose the most reasonable interpretation, carry it out, and state the assumptions you made in the final reply.',
-)
+export const unattendedNote = (language?: string): string =>
+  withNoteLanguage(
+    'Unattended run\nThis run is unattended: nobody can answer questions, review a plan or look at a UI surface before it ends, and your final reply is all that is returned. Do not ask the user or wait for input. Finish the task end to end on your own best judgment: where it is ambiguous, choose the most reasonable interpretation, carry it out, and state the assumptions you made in the final reply.',
+    language,
+  )
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
 const reportedMediaWindows = new WeakMap<object, Set<RequestMediaScanTruncation['reason']>>()
@@ -266,6 +268,23 @@ async function currentPromptText(s: SessionImpl, triggerSeq: number): Promise<st
     .join('\n')
 }
 
+/** Each turn's prompt language, read once from the trigger row; null when it cannot be told. */
+const turnLanguages = new WeakMap<TurnMemory, string | null>()
+
+/**
+ * The language Core notes name for this turn: the language of the user's prompt, so a note says
+ * "The user writes in English" rather than leaving the model to work out who "the user" is. Read
+ * from the ledger row like the preload, so a recovered turn names the same language.
+ */
+async function turnLanguage(s: SessionImpl, t: TurnMemory, triggerSeq: number): Promise<string | undefined> {
+  let language = turnLanguages.get(t)
+  if (language === undefined) {
+    language = promptLanguage(await currentPromptText(s, triggerSeq)) ?? null
+    turnLanguages.set(t, language)
+  }
+  return language ?? undefined
+}
+
 async function preloadRuntimeSection(
   s: SessionImpl,
   triggerSeq: number,
@@ -321,7 +340,8 @@ export async function assembleRequestPrefix(
       ],
     })
   }
-  const receipts = await childReceiptNarrative(s)
+  const language = await turnLanguage(s, t, triggerSeq)
+  const receipts = await childReceiptNarrative(s, language)
   if (receipts)
     contribs.push({
       op: 'child-receipts',
@@ -339,14 +359,14 @@ export async function assembleRequestPrefix(
           id: 'core:unattended-run',
           order: 116,
           source: 'core',
-          text: UNATTENDED_NOTE,
+          text: unattendedNote(language),
           delivery: 'live-note',
         },
       ],
     })
   // Limits the turn runs under (time, steps, a prompt's credit cap), and how much of the nearest is
   // used: a live note for the same reason as above, re-sent only when it crosses a threshold.
-  const limits = turnLimitSection(s, t)
+  const limits = turnLimitSection(s, t, language)
   if (limits) contribs.push({ op: 'core:turn-limits', promptSections: [limits] })
   const merged = mergeContributions(contribs, t.snapshot)
   for (const conflict of merged.conflicts) await s.diag('contribute-conflict', conflict)
@@ -666,8 +686,9 @@ export async function prepareInferenceRequest(
   }
   await s.ensureEnvelopeEpochs()
   // Measured now, as late as assembly allows, so the figure is as fresh as the request.
-  const turnTime = turnTimeNote(s, t)
-  const progressCheck = await progressCheckNote(s, t, op)
+  const language = await turnLanguage(s, t, op.meta.triggerSeq)
+  const turnTime = turnTimeNote(s, t, language)
+  const progressCheck = await progressCheckNote(s, t, op, language)
   let out = deriveRequest({
     ...(memoryRevision === undefined ? {} : { memoryRevision }),
     ...(s.d.systemPrompt ? { systemPrompt: s.d.systemPrompt } : {}),

@@ -129,15 +129,17 @@ function remaining(limits: TurnLimits, kind: Kind, threshold: number): string {
 
 const KIND_NAME: Record<Kind, string> = { time: 'time limit', steps: 'step limit', credits: 'credit limit' }
 
-export function limitNoteText(limits: TurnLimits, notice: LimitNotice): string {
+export function limitNoteText(limits: TurnLimits, notice: LimitNotice, language?: string): string {
   const all = describe(limits)
   if (notice.level === 0)
     return withNoteLanguage(
       `${TITLE}\nThis turn has limits: ${all}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first.`,
+      language,
     )
   const threshold = LIMIT_THRESHOLDS[notice.level - 1] as number
   return withNoteLanguage(
     `${TITLE}\n${Math.round(threshold * 100)}% of this turn's ${KIND_NAME[notice.kind]} is used: ${remaining(limits, notice.kind, threshold)}. ${ADVICE[notice.level - 1]}\nLimits for this turn: ${all}.`,
+    language,
   )
 }
 
@@ -146,7 +148,11 @@ export function limitNoteText(limits: TurnLimits, notice: LimitNotice): string {
  * whose text changes at each threshold: live-note delivery sends a changed text once and leaves the
  * system prompt, and so its cache, untouched.
  */
-export function turnLimitSection(s: SessionImpl, t: TurnMemory): PromptSection | undefined {
+export function turnLimitSection(
+  s: SessionImpl,
+  t: TurnMemory,
+  language?: string,
+): PromptSection | undefined {
   const limits = currentTurnLimits(s, t)
   if (!limits.time && !limits.steps && !limits.credits) return undefined
   const notice = dueLimitNotice(limits, s.d.clock(), notices.get(t))
@@ -155,7 +161,7 @@ export function turnLimitSection(s: SessionImpl, t: TurnMemory): PromptSection |
     id: 'core:turn-limits',
     order: 114,
     source: 'core',
-    text: limitNoteText(limits, notice),
+    text: limitNoteText(limits, notice, language),
     delivery: 'live-note',
   }
 }
@@ -174,23 +180,25 @@ const CLOCK_STEP_MS = 10_000
  * A recovered turn needs nothing rebuilt: the limit comes back from its own ledger row (see
  * `time-limit.ts`) and the next request measures against that deadline again.
  */
-export function turnTimeText(limit: TurnTimeLimit, now: number): string {
+export function turnTimeText(limit: TurnTimeLimit, now: number, language?: string): string {
   const left = limit.deadlineAt - now
   const total = formatDuration(limit.timeLimitMs)
   if (left <= 0)
     return withNoteLanguage(
       `This turn's ${total} time limit is reached. End now with a short reply saying what is done, how it was checked and what remains.`,
+      language,
     )
   const step = (ms: number) => Math.floor(ms / CLOCK_STEP_MS) * CLOCK_STEP_MS
   const used = Math.min(limit.timeLimitMs, Math.max(0, now - (limit.deadlineAt - limit.timeLimitMs)))
   const remaining = left < CLOCK_STEP_MS ? 'less than 10s' : `about ${formatDuration(step(left))}`
   return withNoteLanguage(
     `${formatDuration(step(used))} of this turn's ${total} time limit used, ${remaining} left. Measured at this request, it replaces any earlier time figure: do not conclude that the time limit is reached unless this note says so.`,
+    language,
   )
 }
 
 /** The measured time for the request being assembled, or none when the turn has no time limit. */
-export function turnTimeNote(s: SessionImpl, t: TurnMemory): string | undefined {
+export function turnTimeNote(s: SessionImpl, t: TurnMemory, language?: string): string | undefined {
   const limit = turnTimeLimit(t)
-  return limit ? turnTimeText(limit, s.d.clock()) : undefined
+  return limit ? turnTimeText(limit, s.d.clock(), language) : undefined
 }
