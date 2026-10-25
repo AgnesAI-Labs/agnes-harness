@@ -128,6 +128,8 @@ export type SlashResult = {
   text?: string
   prompt?: string
   content?: ContentBlock[]
+  /** `content` goes into a running turn (`steer`) instead of queueing behind it. */
+  steer?: true
   details?: boolean
   /** Text to put in the editor, replacing what it holds (the line that ran the command is already gone). */
   draft?: string
@@ -507,9 +509,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
           text: slot?.kind === 'slot' ? String((slot.fill.payload as { text: string }).text) : 'No goal',
         }
       }
-      if (app.busy) await s.steer(line.trim())
-      else await s.prompt(line.trim())
-      return {}
+      // Sent by TuiApp.command like typed input; mid-turn it steers, so `/goal pause` stops the running goal turn.
+      return { content: [{ type: 'text', text: line.trim() }], steer: true }
     }
     case '/plan':
       return c.call<{ active: boolean; text: string }>('_agnes/v1/admin.plan', {

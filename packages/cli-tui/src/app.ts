@@ -839,7 +839,7 @@ export class TuiApp {
     const r = await runSlash(this, text)
     if (r.content) {
       if (this.stopped || owner !== this.o.session) throw new Error('ATTACHMENT_NOT_AUTHORIZED')
-      await this.submitBlocks(r.content)
+      await this.submitBlocks(r.content, undefined, r.steer)
     }
     if (r.prompt) await this.submit(r.prompt)
     applyCommandResult(

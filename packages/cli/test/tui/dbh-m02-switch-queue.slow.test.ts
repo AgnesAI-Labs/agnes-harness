@@ -208,6 +208,19 @@ it('[M-02] /new during the turn says why it stays put, opens nothing, and switch
   })
 })
 
+it("[M-02] a /goal prompt in flight is this client's own turn: /new is refused", async () => {
+  const e = gatedEndpoint()
+  await withApp(e, async (app, term) => {
+    const goal = app.command('/goal create Finish')
+    await vi.waitFor(() => expect(e.prompts()).toHaveLength(1))
+    await app.command('/new')
+    expect(app.session.id).toBe(SID(1))
+    await vi.waitFor(async () => expect(await screen(term)).toContain(REFUSED))
+    e.release()
+    await goal
+  })
+})
+
 it('[M-02] the picker still opens during the turn, but a choice is refused before it loads', async () => {
   const e = gatedEndpoint()
   await withApp(e, async (app, term) => {
