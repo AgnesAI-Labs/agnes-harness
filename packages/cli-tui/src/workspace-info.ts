@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, sep } from 'node:path'
+import { gitCommand } from './git-command.js'
 
 /** What the composer rail says about where the CLI runs. Raw text: the renderer sanitizes it. */
 export type WorkspaceInfo = {
@@ -32,9 +33,12 @@ export function tildePath(path: string, home = homedir()): string {
 
 /** One fixed-argument git call without a shell; any failure, timeout or missing git reads as no answer. */
 function git(cwd: string, args: string[], signal: AbortSignal): Promise<string | undefined> {
+  // A bare `git` on Windows would first run any git.exe in the folder being shown.
+  const program = gitCommand(cwd)
+  if (!program) return Promise.resolve(undefined)
   return new Promise((resolve) => {
     execFile(
-      'git',
+      program,
       args,
       { cwd, signal, encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 },
       (error, out) => resolve(error ? undefined : out),

@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { WorktreeCreateResult, WorktreeEntry, WorktreeFinishResult } from '@agnes/git-worktree-contract'
+import { commandPath } from '@agnes/system-node'
 import type { WorkspaceInvocationResolver } from './workspace-invocation-resolver.js'
 
 /** Internal lease. Plugins never supply sessionKey. */
@@ -97,9 +98,12 @@ export function createGitWorktreeService(options: {
         ? Math.min(30_000, Math.max(1, Math.floor(op.timeoutMs)))
         : 30_000
     const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')))
+    // A bare `git` on Windows would first run any git.exe in the worktree it inspects.
+    const program = commandPath('git', cwd, env)
+    if (!program) return Promise.reject(Object.assign(new Error('git is unavailable'), { code: 'ENOENT' }))
     return new Promise((accept, reject) => {
       execFile(
-        'git',
+        program,
         ['-c', `core.hooksPath=${hooks}`, '-c', 'core.fsmonitor=false', ...argv],
         {
           cwd,

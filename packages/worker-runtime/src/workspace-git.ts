@@ -3,7 +3,7 @@ import { closeSync, fstatSync, readSync } from 'node:fs'
 import { lstat, realpath } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import { openCanonicalFileSync } from '@agnes/system-node'
+import { commandPath, openCanonicalFileSync } from '@agnes/system-node'
 
 export type GitMark = 'modified' | 'added' | 'deleted' | 'untracked' | 'renamed'
 export type GitStatus = {
@@ -99,9 +99,12 @@ function gitRead(
 ): Promise<Buffer | undefined> {
   const remaining = deadline - performance.now()
   if (remaining <= 0) return Promise.resolve(undefined)
+  // A bare `git` on Windows would first run any git.exe in the workspace being inspected.
+  const git = commandPath('git', root)
+  if (!git) return Promise.resolve(undefined)
   return new Promise((resolve) => {
     const child = spawn(
-      'git',
+      git,
       [
         '--no-pager',
         '--no-optional-locks',
