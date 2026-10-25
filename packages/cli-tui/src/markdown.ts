@@ -319,7 +319,8 @@ function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = 
           const indent = fits ? displayWidth(bullet) + 1 : 0
           const prefix = fits ? `${ansi.fg(list.ordered ? 'muted' : 'accentSoft', bullet)} ` : ''
           const content = blocks(item.tokens, Math.max(1, width - indent), ansi, base)
-          out.push(...content.map((line, i) => (i === 0 ? prefix : ' '.repeat(indent)) + line))
+          if (!content.length) out.push(prefix.trimEnd())
+          else out.push(...content.map((line, i) => (i === 0 ? prefix : ' '.repeat(indent)) + line))
         })
         break
       }

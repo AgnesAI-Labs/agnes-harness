@@ -275,6 +275,11 @@ it('keeps GFM task-list checkboxes and wrapped item indent', () => {
     '      that wraps',
   ])
 })
+it('keeps the marker row of an empty list item', () => {
+  expect(renderMarkdown('1.\n2. x\n3.', 40, none)).toEqual(['1.', '2. x', '3.'])
+  expect(renderMarkdown('* a\n* \n* b', 40, none)).toEqual(['• a', '•', '• b'])
+  expect(renderMarkdown('- [ ] \n- b', 40, none)).toEqual(['• [ ]', '• b'])
+})
 it('shows an autolinked address once, and still shows the target of a titled link', () => {
   expect(renderMarkdown('visit www.example.com and foo@bar.com, https://a.example/x', 80, none)).toEqual([
     'visit www.example.com and foo@bar.com, https://a.example/x',
