@@ -316,7 +316,7 @@ it('Ctrl-T pages through the whole conversation, reads older history from its to
     await vi.waitFor(async () => expect(await screen()).toContain('history 9'))
     const before = (await screenOf(term, 60, 12)).filter((l) => l.includes('history'))
     term.feed('\x14')
-    await vi.waitFor(async () => expect(await screen()).toContain('Ctrl-T/Esc close'))
+    await vi.waitFor(async () => expect(await screen()).toContain('esc close'))
     expect(await screen()).toContain('Earlier history')
     expect(history()).toHaveLength(0)
     // At the top, one more step up reads the older page; it lands above what was on screen.
@@ -333,7 +333,7 @@ it('Ctrl-T pages through the whole conversation, reads older history from its to
     term.feed('c')
     expect(copied).toEqual(['history 5'])
     term.feed('\x14')
-    await vi.waitFor(async () => expect(await screen()).not.toContain('Ctrl-T/Esc close'))
+    await vi.waitFor(async () => expect(await screen()).not.toContain('esc close'))
     expect(
       (await screenOf(term, 60, 12)).filter((l) => l.includes('history 8') || l.includes('history 9')),
     ).toEqual(before.filter((l) => l.includes('history 8') || l.includes('history 9')))

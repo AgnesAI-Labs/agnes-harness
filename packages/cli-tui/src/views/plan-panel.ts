@@ -102,7 +102,10 @@ export class PlanPanel implements Component {
     })
     if (steps.length > room)
       rows.push(
-        fitLine(` ${this.ansi.dim(tt('card.more', this.locale, { count: steps.length - room }))}`, width),
+        fitLine(
+          ` ${this.ansi.fg('faint', tt('card.more', this.locale, { count: steps.length - room }))}`,
+          width,
+        ),
       )
     return rows
   }

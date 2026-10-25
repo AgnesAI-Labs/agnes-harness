@@ -54,7 +54,7 @@ describe('PagerOverlay', () => {
     expect(rows).toHaveLength(6)
     // 10 blocks with a blank row between them is 19 rows; the last five show.
     expect(body().filter(Boolean)).toContain('m9')
-    expect(rows.at(-1)).toContain('Ctrl-T/Esc close')
+    expect(rows.at(-1)).toContain('esc close')
     expect(rows.at(-1)).toContain('15-19/19')
   })
 
