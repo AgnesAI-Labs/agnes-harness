@@ -1,6 +1,6 @@
 import type { UINode, UsageView } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { formatContextBreakdown, formatUsageReport } from '../src/usage-details.js'
+import { formatCallUsage, formatContextBreakdown, formatUsageReport } from '../src/usage-details.js'
 
 const baseUsage: UsageView = {
   totals: { input: 100, output: 20, cacheRead: 90, cacheWrite: 0, reasoning: 0 },
@@ -23,6 +23,21 @@ describe('formatUsageReport cache section', () => {
     }
     expect(formatUsageReport(usage, 'en')).toMatch(/\$0\.012 \([^（）]+\)/)
     expect(formatUsageReport(usage, 'zh-CN')).toMatch(/\$0\.012（[^()]+）/)
+  })
+
+  it('rounds float-summed credits like the status bar does', () => {
+    const usage: UsageView = {
+      ...baseUsage,
+      credits: { amount: 0.1 + 0.2, source: 'gateway', complete: true },
+    }
+    expect(formatUsageReport(usage, 'en')).toContain('0.3 credits')
+    expect(formatUsageReport(usage, 'en')).not.toContain('0.30000000000000004')
+  })
+
+  it('rounds the per-call credits and keeps unknown when absent', () => {
+    const node: Extract<UINode, { kind: 'cost' }> = { kind: 'cost', id: 'c1', seq: 1, source: 'gateway' }
+    expect(formatCallUsage({ ...node, credits: 0.1 + 0.2 })).toContain('credits: 0.3 (gateway)')
+    expect(formatCallUsage(node)).toContain('credits: unknown (gateway)')
   })
 
   it('says no data yet when the provider has never reported a cache row', () => {
