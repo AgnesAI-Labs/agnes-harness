@@ -16,6 +16,14 @@ export function displayPath(ctx: ToolContext, path: string): string {
   return p.inside ? JSON.stringify(p.rel || '.') : '[requested path outside workspace]'
 }
 
+/**
+ * The refusal of a change to a file the session has not read. It names the path exactly as the model
+ * gave it (quoted, so a space or a newline cannot blur it), even outside the workspace: the model
+ * wrote it, so echoing it discloses nothing, and it says which tool clears the way.
+ */
+export const notObservedText = (tool: 'edit' | 'write', path: string) =>
+  `${tool} refused: read ${JSON.stringify(path)} with the read tool in this session before ${tool === 'edit' ? 'editing' : 'overwriting'} it`
+
 export const scrubFeedback = (text: string) =>
   redactText(text, { secrets: true, paths: false, pii: false, custom: [] })
     .text.split('\n')

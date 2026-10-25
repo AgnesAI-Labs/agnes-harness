@@ -2,7 +2,7 @@ import type { Bytes, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import type { LspSessions } from '../../../lsp/src/registry.js'
 import type { FileChangeRecorder } from '../file-change.js'
-import { fsFailure } from '../guards/feedback.js'
+import { fsFailure, notObservedText } from '../guards/feedback.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { ABSENT, observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
@@ -59,7 +59,7 @@ export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) 
             content: [
               {
                 type: 'text',
-                text: `write refused: read ${args.path} in this session before overwriting it`,
+                text: notObservedText('write', args.path),
               },
             ],
             isError: true,

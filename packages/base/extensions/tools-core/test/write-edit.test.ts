@@ -592,6 +592,38 @@ describe('write leaves alone what the session has not seen', () => {
     expect(onDisk(ctx)).toBe('old\n')
   })
 
+  it.each([
+    ['shared.txt', 'inside the workspace'],
+    ['/etc/nginx/nginx.conf', 'outside the workspace'],
+  ])('names the path the model gave (%s, %s) and the read tool that clears the way', async (path) => {
+    const ctx = ctxOf({ files: { [path]: 'old\n' } })
+    const edited = await editTool.execute({ path, edits: [{ oldText: 'old', newText: 'new' }] }, ctx)
+    expect(textOf(edited)).toBe(
+      `edit refused: read ${JSON.stringify(path)} with the read tool in this session before editing it`,
+    )
+    expect(edited.details).toEqual({ code: 'FS_NOT_OBSERVED', path })
+    const written = await writeTool.execute({ path, content: 'new\n' }, ctx)
+    expect(textOf(written)).toBe(
+      `write refused: read ${JSON.stringify(path)} with the read tool in this session before overwriting it`,
+    )
+    // Reading the file as the refusal says lets the same edit through.
+    await readTool.execute({ path }, ctx)
+    expect(
+      (await editTool.execute({ path, edits: [{ oldText: 'old', newText: 'new' }] }, ctx)).isError,
+    ).toBeUndefined()
+    expect(dec.decode(ctx.mem.files.get(path.startsWith('/') ? path : `/work/proj/${path}`))).toBe('new\n')
+  })
+
+  it('still hides an outside path in a failure the file system reported', async () => {
+    const ctx = ctxOf({ readErrors: { '/etc/shadow': { code: 'EACCES', message: 'EACCES: /etc/shadow' } } })
+    const result = await editTool.execute(
+      { path: '/etc/shadow', edits: [{ oldText: 'a', newText: 'b' }] },
+      ctx,
+    )
+    expect(textOf(result)).toContain('[requested path outside workspace]')
+    expect(textOf(result)).not.toContain('/etc/shadow')
+  })
+
   it('does not let allowShrink overwrite a file that was never read', async () => {
     const ctx = ctxOf({ files: { 'shared.txt': 'x'.repeat(100) } })
     const r = await writeTool.execute({ path: 'shared.txt', content: 'z', allowShrink: true }, ctx)
