@@ -4,6 +4,7 @@ import type { WireAdapter } from './adapter.js'
 import type { ContractStore } from './contract-store.js'
 import { resolveCredentials } from './credentials.js'
 import { createState, finish, step } from './decode/machine.js'
+import { proseCallRules } from './decode/prose-calls.js'
 import { PARSER_VERSION } from './decode/rules/index.js'
 import type { DecodeContext } from './decode/types.js'
 import { AiSetupError } from './errors.js'
@@ -202,8 +203,16 @@ export async function* runInference(
   // every wire protocol instead of being reimplemented per vendor. Its ordinals and the native
   // calls' come from one counter: they number the calls of a single turn, and a reader must be able
   // to order them without knowing how each one was carried.
+  //
+  // Reading calls out of prose is an opt-in of the model record: the text rules its toolCallFormats
+  // lists beside or instead of `native`. A record that declares only `native` gets none - a native
+  // model that quotes a call in its answer is describing one - and reasoning never yields a call.
   let ordinal = 0
-  const dctx: DecodeContext = { toolNames: opts.toolNames, nextOrdinal: () => ordinal++ }
+  const dctx: DecodeContext = {
+    toolNames: opts.toolNames,
+    recover: proseCallRules(resolved.model.toolCallFormats),
+    nextOrdinal: () => ordinal++,
+  }
   let dstate = createState()
   const flush = (): InferenceEvent[] => {
     const r = finish(dstate, dctx)

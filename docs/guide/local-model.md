@@ -41,7 +41,6 @@ provider:
           maxTokens: 4096
           reasoning: false
           input: [text]
-          toolCallFormats: [native]
           thinkingReplay: drop
           contract_id: null
       models: []
@@ -52,6 +51,8 @@ provider:
 To avoid discovery at startup, omit `discover` and supply full model records in `models` (id/name/api/route/baseUrl/reasoning/input/cost/contextWindow/maxTokens/toolCallFormats/thinkingReplay/contract_id). Use `api: openai-completions` in those model records; the route's `api: local-openai` selects the registry entry. This supports offline startup with a reviewed static catalog.
 
 Choose a returned model id through the existing session model selector, for example `--model primary=local/qwen2.5:7b`. Select `input: [text, image]` only for a model/server that actually accepts images. Tool support depends on both the model and server's OpenAI-compatible implementation. `compat.wireCompat` can pass pi-ai wire compatibility options without changing the AGH configuration keys.
+
+`toolCallFormats` says how a model's tool calls arrive. `native` means in the server's tool-call field; AGH then never turns call-shaped text in the answer into a call, and never reads a call out of reasoning on any route. A model that writes calls as text lists those formats instead or beside `native`, for example `toolCallFormats: [hermes_tool_call]` (`<tool_call>{...}</tool_call>`), `qwen3_coder` (`<function=...>`), `anthropic_invoke` or `inline_json`; calls are then read from the answer text in those formats only. A record that lists no text format gets no text recovery, and `[]` means the same. Discovered model ids containing `qwen` default to `[native, qwen3_coder]`, as the built-in catalog does, because Qwen models are known to write that syntax into their answer; a `toolCallFormats` in `modelDefaults` or a model record replaces that default. Models of an OpenAI-compatible endpoint saved in Settings declare `native` only.
 
 ## Explicit discovery and recording
 

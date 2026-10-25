@@ -41,7 +41,6 @@ provider:
           maxTokens: 4096
           reasoning: false
           input: [text]
-          toolCallFormats: [native]
           thinkingReplay: drop
           contract_id: null
       models: []
@@ -52,6 +51,8 @@ discover: true 在创建 adapter 时读取 /v1/models。容量和能力声明应
 若不希望启动时发现模型，省略 discover，并在 models 中提供完整记录（id/name/api/route/baseUrl/reasoning/input/cost/contextWindow/maxTokens/toolCallFormats/thinkingReplay/contract_id）。model record 使用 api: openai-completions；route 使用 api: local-openai 选择 registry entry。这样可使用已审核的静态目录离线启动。
 
 通过现有会话模型选择器选返回的 ID，例如 `--model primary=local/qwen2.5:7b`。只有模型和服务确实支持图片时才选 input: [text, image]。工具支持同时取决于模型和服务的 OpenAI-compatible 实现。compat.wireCompat 可传入 pi-ai wire compatibility 选项，与 AGH 配置键分开。
+
+`toolCallFormats` 说明模型的工具调用以什么形式返回。`native` 表示通过服务的原生 tool-call 字段返回；此时 AGH 不会把回答中形似调用的文本当作调用执行，且在任何路由上都不从推理中读取调用。若模型以文本形式写出调用，就在 `native` 之外或代替它列出这些格式，例如 `toolCallFormats: [hermes_tool_call]`（`<tool_call>{...}</tool_call>`）、`qwen3_coder`（`<function=...>`）、`anthropic_invoke` 或 `inline_json`；AGH 只按这些格式从回答文本中读取调用。没有列出任何文本格式的记录不做文本恢复，`[]` 也一样。自动发现的模型中 ID 含 `qwen` 的默认取 `[native, qwen3_coder]`，与内置目录一致，因为 Qwen 模型已知会把这种语法写进回答；`modelDefaults` 或模型记录中写明的 `toolCallFormats` 会替换这个默认值。在设置中保存的 OpenAI-compatible 端点，其模型只声明 `native`。
 
 ## 显式发现与录制
 

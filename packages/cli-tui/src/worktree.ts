@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync, lstatSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
+import { gitCommand } from './git-command.js'
 import type { Locale } from './locale.js'
 import { tt } from './locale-extended.js'
 
@@ -28,9 +29,12 @@ export function defaultWorktreeName(now = new Date()): string {
 
 /** One fixed-argument git call without a shell. */
 function git(cwd: string, args: string[]): Promise<{ code: number; out: string; err: string }> {
+  // A bare `git` on Windows would first run any git.exe in the repository.
+  const program = gitCommand(cwd)
+  if (!program) return Promise.resolve({ code: 1, out: '', err: 'git is unavailable' })
   return new Promise((resolve) => {
     execFile(
-      'git',
+      program,
       args,
       { cwd, encoding: 'utf8', windowsHide: true, maxBuffer: 1024 * 1024 },
       (error, out, err) => {

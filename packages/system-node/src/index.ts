@@ -17,6 +17,7 @@ import { open, rename } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 
 export { nodeArtifactGcPreparationRuntime } from './artifact-gc-preparation.js'
+export { commandPath } from './command-path.js'
 
 import { dirname, isAbsolute, join, parse, resolve, toNamespacedPath } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'

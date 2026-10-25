@@ -15,7 +15,8 @@
     "./process-broker": "./runtime/process-broker.mjs",
     "./native": "./dist/native/agnes-system.node",
     "./deployment-network": "./src/deployment-network.ts",
-    "./realpath": "./src/realpath.ts"
+    "./realpath": "./src/realpath.ts",
+    "./command-path": "./src/command-path.ts"
   },
   "scripts": {
     "build:native": "node scripts/build-native.mjs",

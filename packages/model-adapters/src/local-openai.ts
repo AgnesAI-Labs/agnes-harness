@@ -1,4 +1,4 @@
-import { type ManualRoute, PiAdapter } from '@agnes/ai'
+import { type ManualRoute, nativeToolCallFormats, PiAdapter } from '@agnes/ai'
 import type { ModelAdapterConfig, ModelAdapterInstance } from '@agnes/extension-api'
 import { defineModelAdapter } from '@agnes/plugin-runtime'
 import { type ModelRecord, validateModelRecord } from '@agnes/protocol'
@@ -112,7 +112,7 @@ export const localOpenAIAdapter = defineModelAdapter({
             reasoning: false,
             input: ['text'],
             cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-            toolCallFormats: ['native'],
+            toolCallFormats: nativeToolCallFormats(id),
             thinkingReplay: 'drop',
             contract_id: null,
             ...defaults,

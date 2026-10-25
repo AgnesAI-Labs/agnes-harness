@@ -16,7 +16,7 @@ Configure a model, run a small task, and find the Web session from the CLI. Comp
 node agnes.mjs serve
 ```
 
-The default address is `http://127.0.0.1:4177`; use the actual URL printed by your terminal. Local mode opens a normal URL. You do not need to copy a connection token from the address bar or paste daemon credentials into the page.
+Open the link printed by your terminal, for example `http://127.0.0.1:4177/?code=…`. The one-time code signs this browser in for as long as this `agh web` runs and disappears from the address bar after the page loads; later visits to `http://127.0.0.1:4177` in the same browser need no code. You never paste daemon credentials into the page. After restarting `agh web`, open the new link it prints.
 
 With no saved model account or previous session, AGH opens the [first-run guide](getting-started.md). You can skip it at any step. Account setup uses the existing model settings. Choose an account/provider, check the Base URL, enter the API key in the password field, test the connection, select a model from the returned catalog, and save. The page displays configuration status without reading saved plaintext keys back to the browser. Connection tests and conversations may contact the provider and incur charges. Use the [local demo](demo.md) if you do not have a model account.
 

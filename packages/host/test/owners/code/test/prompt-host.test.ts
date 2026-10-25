@@ -11,7 +11,7 @@ import { afterEach, expect, it } from 'vitest'
 const dirs: string[] = []
 // createTestHost binds the production AI parser contract. Core's lower-level fakeProvider defaults
 // to its own parser fixture, so Host integration cases must name the contract they are exercising.
-const HOST_PARSER_VERSION = '2'
+const HOST_PARSER_VERSION = '3'
 afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })

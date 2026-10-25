@@ -458,7 +458,12 @@ export async function summarizeWithRetry(
 ): Promise<SummaryResult> {
   const first = await summarize(s, plan, segment, calls, target, prefix, undefined, signal)
   if (signal.aborted || first.failure === 'cancelled') return first
-  if (segment.wide && first.cause === 'summary called a tool') {
+  // A call the model wrote as text is the same failure as one it made: the decoder reports it as a
+  // deviation rather than a call when the model record does not opt into reading calls from prose.
+  if (
+    segment.wide &&
+    (first.cause === 'summary called a tool' || first.cause === 'summary deviated from the contract')
+  ) {
     const nodes =
       segment.narrowNodes ??
       segment.nodes.filter((node) => node.seq >= plan.summarizeRange[0] && node.seq <= plan.summarizeRange[1])

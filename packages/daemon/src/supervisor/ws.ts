@@ -6,6 +6,7 @@ import type { RpcEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
 import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import { type WebSocket, WebSocketServer } from 'ws'
+import { WEB_TICKET_PROTOCOL_PREFIX, webTicketVerifier } from './web-ticket.js'
 
 export const WS_MAX_MESSAGE_BYTES = MAX_FRAME_BYTES
 const MAX_PENDING = 1_000
@@ -20,12 +21,12 @@ function authorized(header: string | undefined, token: string): boolean {
   )
 }
 
-function protocolBearer(header: string | undefined): string | undefined {
+function protocolValue(header: string | undefined, prefix: string): string | undefined {
   return header
     ?.split(',')
     .map((value) => value.trim())
-    .find((value) => value.startsWith('agnes-bearer.'))
-    ?.slice('agnes-bearer.'.length)
+    .find((value) => value.startsWith(prefix))
+    ?.slice(prefix.length)
 }
 
 function target(addr: string): { host: string; port: number } {
@@ -113,7 +114,10 @@ export async function listenWebSocket(options: {
   addr: string
   cert?: string
   key?: string
-  /** Explicit local mode: validated upgrade grants local single-user authority. */
+  /**
+   * Explicit local mode: an upgrade from this exact page origin that also presents the per-launch
+   * secret (or a single-use ticket signed with it) grants local single-user authority.
+   */
   localOrigin?: string
   token: string
   endpoint(): { endpoint: RpcEndpoint; onClose(): void }
@@ -150,6 +154,7 @@ export async function listenWebSocket(options: {
     handleProtocols: (protocols) => (protocols.has('agnes-v1') ? 'agnes-v1' : false),
   })
   let expectedHost = ''
+  const ticketValid = local ? webTicketVerifier(options.token) : () => false
   server.on('upgrade', (request, socket, head) => {
     if (stopping) {
       socket.destroy()
@@ -159,11 +164,15 @@ export async function listenWebSocket(options: {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
       return
     }
-    const bearer = protocolBearer(request.headers['sec-websocket-protocol'])
+    // Origin and Host only bind a browser; any local process can forge them. The secret is what
+    // admits the caller: a launcher-signed ticket from the page, or the bearer itself from a
+    // same-user process that can read the 0600 credential file.
+    const protocols = request.headers['sec-websocket-protocol']
+    const bearer = protocolValue(protocols, 'agnes-bearer.')
     if (
-      !local &&
       !authorized(request.headers.authorization, options.token) &&
-      !authorized(`Bearer ${bearer ?? ''}`, options.token)
+      !authorized(`Bearer ${bearer ?? ''}`, options.token) &&
+      !ticketValid(protocolValue(protocols, WEB_TICKET_PROTOCOL_PREFIX))
     ) {
       socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
       return

@@ -70,6 +70,7 @@ export {
   runDecodeFixture,
 } from './decode/fixtures.js'
 export { createState, finish, mergeDeltas, step } from './decode/machine.js'
+export { nativeToolCallFormats } from './decode/prose-calls.js'
 export { PARSER_VERSION, RULES, RULES_DIGEST } from './decode/rules/index.js'
 export type { DecodeContext, DecodeInput, DecodeState, Rule } from './decode/types.js'
 export type { AiSetupErrorCode } from './errors.js'

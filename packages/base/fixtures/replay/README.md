@@ -66,6 +66,11 @@ Two extra fields come with it:
 }
 ```
 
+The wire model declares native tool calls only, so the decode chain reads no call out of its prose.
+A case about a model family the shipped catalogue opts into prose recovery names a catalogue model id
+with `"catalogModel": "qwen/qwen3-coder"`, and the wire model takes the `toolCallFormats` the
+catalogue gives that id - which is how `0011-qwen-call-in-text` holds the Qwen opt-in to account.
+
 A wire case is priced by the runner at a stated credit rate rather than the default one, so a number
 asserted here is a fact about that configuration and not about a fallback nobody chose.
 

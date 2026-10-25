@@ -10,6 +10,7 @@ import {
   type ReferenceSearchResult,
   WORKSPACE_SECRET_DIRS,
 } from '@agnes/protocol'
+import { gitCommand } from './git-command.js'
 import type { Locale } from './locale.js'
 import { tt } from './locale-extended.js'
 
@@ -53,9 +54,12 @@ const SKIPPED = new Set(['node_modules'])
 
 /** One fixed-argument git call without a shell; any failure or timeout reads as no answer. */
 function gitFiles(cwd: string, args: string[]): Promise<string[] | undefined> {
+  // A bare `git` on Windows would first run any git.exe in the folder being listed.
+  const program = gitCommand(cwd)
+  if (!program) return Promise.resolve(undefined)
   return new Promise((done) => {
     execFile(
-      'git',
+      program,
       ['ls-files', '-z', ...args],
       { cwd, encoding: 'utf8', windowsHide: true, timeout: 10_000, maxBuffer: 64 * 1024 * 1024 },
       (error, out) => done(error ? undefined : out.split('\0').filter(Boolean)),

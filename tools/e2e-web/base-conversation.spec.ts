@@ -39,6 +39,9 @@ test('base conversation speaks human with a local scripted model and plain appli
   const runtime = await isolatedRuntime('root', { realModel: true })
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
+  runtime.onSignIn(async (launchUrl) => {
+    await page.context().request.get(launchUrl, { maxRedirects: 0 })
+  })
   try {
     await runtime.start()
     const client = await runtime.connect()
