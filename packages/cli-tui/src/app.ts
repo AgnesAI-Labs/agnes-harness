@@ -42,7 +42,13 @@ import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { TuiResourceController } from './resource-controller.js'
 import { type InputDialog, rootInput } from './root-input.js'
 import { rootRender } from './root-layout.js'
-import { applySwitch, beginSwitch, chooseSession, ResourceConfirmations } from './session-switch.js'
+import {
+  applySwitch,
+  beginSwitch,
+  chooseSession,
+  ResourceConfirmations,
+  settleSwitch,
+} from './session-switch.js'
 import { isSlashCommandLine } from './slash-table.js'
 import { type ActionItem, collectSlots } from './slots.js'
 import { StatusLineConfig } from './statusline-config.js'
@@ -844,7 +850,7 @@ export class TuiApp {
     const owner = this.o.session
     const [cmd = '', ...args] = text.trim().split(/\s+/)
     const ticket = opensSwitch(cmd, args) ? beginSwitch(this) : undefined
-    const r = await runSlash(this, text)
+    const r = await settleSwitch(this, ticket, runSlash(this, text))
     if (r.content) {
       if (this.stopped || owner !== this.o.session) throw new Error('ATTACHMENT_NOT_AUTHORIZED')
       await this.submitBlocks(r.content, undefined, r.steer)
