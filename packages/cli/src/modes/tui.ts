@@ -230,7 +230,8 @@ export async function runTui(
     timingMark('session-ready', io.env)
     if (io.signal()) quit()
     const initialPrompt = p.command === 'resume' ? p.positional.slice(1) : p.positional
-    if (!io.signal() && initialPrompt.length > 0) await tui.runInput(initialPrompt.join(' '))
+    // Not awaited: it settles when the turn ends, and a /quit typed meanwhile must still end the run.
+    if (!io.signal() && initialPrompt.length > 0) void tui.runInput(initialPrompt.join(' '))
     await finished
     const signal = io.signal()
     return signal ? SIGNAL_EXIT_CODES[signal] : ExitCode.OK

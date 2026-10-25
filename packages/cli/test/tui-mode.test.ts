@@ -314,6 +314,34 @@ describe('runTui model selection', () => {
     expect(endpoint.calls.map((entry) => entry.method)).not.toContain('_agnes/v1/session.setModel')
   })
 
+  it('/quit exits while the turn of the initial prompt is still running', async () => {
+    let release!: () => void
+    const hold = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const endpoint = scriptedEndpoint().on('session/prompt', async () => {
+      await hold
+      return { stopReason: 'end_turn' }
+    })
+    const io = { ...tuiIO(), signal: () => undefined }
+    io.stdout.resume()
+    let done = false
+    const running = runTui(await booted(endpoint), parseArgs(['--no-alt-screen', 'do', 'it']), io).then(
+      (code) => {
+        done = true
+        return code
+      },
+    )
+    try {
+      await vi.waitFor(() => expect(endpoint.calls.map((c) => c.method)).toContain('session/prompt'))
+      io.stdin.write('/quit\r')
+      await vi.waitFor(() => expect(done).toBe(true))
+      await expect(running).resolves.toBe(0)
+    } finally {
+      release()
+    }
+  })
+
   it('--continue loads the most recently active session in this directory', async () => {
     const endpoint = scriptedEndpoint()
       .on('_agnes/v1/session.list', () => ({
