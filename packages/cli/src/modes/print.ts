@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { constants } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { EffectIntent, EffectSettled, EventEnvelope, ToolCall, TurnEndReason } from '@agnes/protocol'
@@ -384,9 +385,15 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     streaming = false
     if (p.outputFile !== undefined) {
       try {
+        // A checkout can commit the output name as a symlink to a file the run may write, and the
+        // reply can carry secrets: never follow a link, and create the file private.
         await writeFile(
           resolve(io.cwd, p.outputFile),
           structured?.ok ? `${JSON.stringify(structured.value)}\n` : text ? `${text}\n` : '',
+          {
+            flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0),
+            mode: 0o600,
+          },
         )
       } catch (e) {
         throw new CommandError(`--output-file ${p.outputFile}: ${(e as Error).message}`)
