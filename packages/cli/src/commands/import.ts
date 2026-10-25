@@ -25,7 +25,11 @@ const BATCH_SIZE = 500
 
 type AppendEvent = Omit<EventEnvelope, 'seq'>
 
-/** Pack only at a closed-turn boundary: core refuses a transaction ending on an open turn. */
+/**
+ * Pack only at a closed-turn boundary: core refuses a transaction ending on an open turn, because an
+ * open turn must hold a program counter that an export does not carry. A turn is therefore the
+ * smallest unit, and a turn longer than `limit` is appended alone as one transaction of its own.
+ */
 export function importBatches(events: AppendEvent[], limit = BATCH_SIZE): AppendEvent[][] {
   const units: AppendEvent[][] = []
   let turn: AppendEvent[] | undefined
@@ -51,8 +55,6 @@ export function importBatches(events: AppendEvent[], limit = BATCH_SIZE): Append
   const batches: AppendEvent[][] = []
   let batch: AppendEvent[] = []
   for (const unit of units) {
-    if (unit.length > limit)
-      throw new Error(`one imported turn has ${unit.length} events, exceeding batch limit ${limit}`)
     if (batch.length > 0 && batch.length + unit.length > limit) {
       batches.push(batch)
       batch = []
@@ -142,6 +144,9 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         cwd: reserved.binding.canonicalRoot,
         binding: reserved.binding,
         skipSessionStartHooks: true,
+        // Title generation and approval expiry append rows in reply to imported ones; landing between
+        // two batches, one would shift every later row off its exported sequence.
+        skipBackgroundWriters: true,
         requireNew: true,
         ...(imported ? { imported } : {}),
       })
@@ -183,7 +188,14 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
           throw new Error('native import artifact store identity mismatch')
       }
       for (const batch of batches) {
-        await session.append(batch)
+        // Each batch must start right after the last imported row and land contiguously; anything
+        // else means another writer reached the target, and the import is refused and rolled back.
+        const expected = written + 2
+        if (session.lastSeq !== expected - 1)
+          throw new Error(`import target moved to sequence ${session.lastSeq} before row ${expected}`)
+        const { seqs } = await session.append(batch)
+        if (seqs[0] !== expected || seqs.at(-1) !== expected + batch.length - 1)
+          throw new Error(`import batch landed at sequence ${seqs[0]} instead of ${expected}`)
         written += batch.length
       }
       for (const { scope, receipt } of receipts) await attachments?.confirm(scope, receipt.id)

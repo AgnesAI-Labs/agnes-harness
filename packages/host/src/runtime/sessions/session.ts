@@ -89,6 +89,13 @@ export type CreateSessionOptions = {
   /** See core's SessionOptions: a new session opens without `session_start`. In-process only (import). */
   requireNew?: boolean
   skipSessionStartHooks?: boolean
+  /**
+   * Starts none of the Host's own writers on this session (title generation, approval expiry), which
+   * react to committed rows by appending rows of their own. An importer fills the ledger in several
+   * appends and every imported row must land on its exported sequence, so nothing else may write
+   * between them. In-process only (import); a later open of the same session starts them as usual.
+   */
+  skipBackgroundWriters?: boolean
   /** See core's SessionOptions: where an imported ledger came from. In-process only (import). */
   imported?: SessionStart['imported']
   /**

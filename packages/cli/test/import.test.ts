@@ -225,7 +225,7 @@ describe('import command', () => {
     expect(reads).toBe(0)
   })
 
-  it('packs at closed-turn boundaries and refuses a single oversized turn', () => {
+  it('packs at closed-turn boundaries and appends an oversized turn as a batch of its own', () => {
     const row = (type: string): Omit<EventEnvelope, 'seq'> =>
       ({
         ts: new Date(0).toISOString(),
@@ -243,13 +243,15 @@ describe('import command', () => {
       row('turn/end'),
     ]
     expect(importBatches(events).map((batch) => batch.length)).toEqual([499, 3])
-    expect(() =>
+    expect(
       importBatches([
+        row('x/agnes/import/unmapped'),
         row('turn/start'),
         ...Array.from({ length: 499 }, () => row('user/message')),
         row('turn/end'),
-      ]),
-    ).toThrow(/exceeding batch limit/)
+        row('x/agnes/import/unmapped'),
+      ]).map((batch) => batch.length),
+    ).toEqual([1, 501, 1])
   })
 
   it('refuses to append an import to a target that already holds a conversation', async () => {
