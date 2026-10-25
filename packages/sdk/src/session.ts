@@ -459,7 +459,14 @@ export class Session {
     try {
       await this.attachForRecovery(cursor)
     } catch (e) {
-      if (!this.isSessionNotFound(e) || !this.workspace) throw e
+      if (!this.isSessionNotFound(e)) throw e
+      if (!this.workspace) {
+        // The daemon no longer holds this session, and a handle without the workspace session.new
+        // or load supplied cannot reopen it. Retrying fails the same way forever while every
+        // events() reader stays parked, so the handle ends as it would on a final close.
+        await this.onClosed()
+        return
+      }
       await this.restoreAfterReclaim()
     }
   }
