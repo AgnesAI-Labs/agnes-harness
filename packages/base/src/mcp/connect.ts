@@ -14,12 +14,15 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
   ElicitRequestSchema,
+  ErrorCode,
   ListToolsResultSchema,
+  McpError,
   PaginatedResultSchema,
   ResourceListChangedNotificationSchema,
   ToolListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { normalizeRemoteInputSchema } from '../mcp-json-schema.js'
+import { McpCallError } from './call-error.js'
 import type { McpServerConfig } from './config.js'
 import type { McpConnection, McpResourceCallOptions } from './register.js'
 import {
@@ -73,7 +76,7 @@ type SdkClient = {
   callTool(
     params: { name: string; arguments: Record<string, unknown> },
     schema: undefined,
-    options: { signal: AbortSignal },
+    options: { signal: AbortSignal; timeout?: number },
   ): Promise<{ content: unknown[]; isError?: boolean | undefined }>
   close(): Promise<void>
 }
@@ -628,9 +631,34 @@ export async function connectMcp(
       return { contents: page.contents.map((item) => readRemoteResourceContent(item)) }
     },
     async callTool(name, args, opts) {
-      const result = await client.callTool({ name, arguments: callArguments(args) }, undefined, {
-        signal: opts.signal,
-      })
+      if (closed) throw new McpCallError('not_sent', 'MCP connection is closed')
+      let params: { name: string; arguments: Record<string, unknown> }
+      try {
+        params = { name, arguments: callArguments(args) }
+      } catch (error) {
+        throw new McpCallError('not_sent', error instanceof Error ? error.message : 'invalid arguments')
+      }
+      if (opts.signal.aborted) throw new McpCallError('not_sent', 'cancelled before the request was sent')
+      let result: Awaited<ReturnType<SdkClient['callTool']>>
+      try {
+        result = await client.callTool(params, undefined, {
+          signal: opts.signal,
+          ...(opts.timeoutMs === undefined ? {} : { timeout: opts.timeoutMs }),
+        })
+      } catch (error) {
+        // The SDK refuses with this before it writes the request: the transport is already gone.
+        if (error instanceof Error && error.message === 'Not connected')
+          throw new McpCallError('not_sent', error.message)
+        // A JSON-RPC error reply. Timeout and connection-closed share the class but are raised
+        // locally, after the request may have reached the server.
+        if (
+          error instanceof McpError &&
+          error.code !== ErrorCode.RequestTimeout &&
+          error.code !== ErrorCode.ConnectionClosed
+        )
+          throw new McpCallError('answered', error.message)
+        throw error
+      }
       const content = result.content.map(callContent)
       return result.isError === true ? { content, isError: true } : { content }
     },

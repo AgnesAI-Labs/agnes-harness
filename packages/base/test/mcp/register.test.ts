@@ -5,9 +5,11 @@ import { PassThrough } from 'node:stream'
 import { deflateSync } from 'node:zlib'
 import { checkToolDef, type ResourceEntry, type ToolDef } from '@agnes/extension-api'
 import type { Context } from '@agnes/plugin-runtime'
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_READ_BYTES, readTool } from '../../extensions/tools-core/src/tools/read.js'
 import { grepTool } from '../../extensions/tools-search/src/tools/grep.js'
+import { McpCallError } from '../../src/mcp/call-error.js'
 import { connectMcp, MAX_MCP_REDIRECTS, type McpSdkDeps } from '../../src/mcp/connect.js'
 import { mcpPublicToolName } from '../../src/mcp/naming.js'
 import {
@@ -732,13 +734,67 @@ describe('registerRemoteToolsStrict', () => {
     })
   })
 
-  it('turns a call-time outage into an error result without leaking an exception', async () => {
+  // A failure that may have reached the server says nothing about what a tool that changes things
+  // did, so it throws and Core records an unknown outcome rather than the model retrying. A call
+  // refused before sending, one the server answered with an error, and any read stay plain errors.
+  it.each([
+    { tool: 'merge', error: new Error('Request timed out'), expected: 'throws' },
+    {
+      tool: 'merge',
+      error: new McpCallError('not_sent', 'MCP connection is closed'),
+      expected: 'unavailable',
+    },
+    {
+      tool: 'merge',
+      error: new McpCallError('answered', 'MCP error -32602: bad'),
+      expected: 'returned an error',
+    },
+    { tool: 'list_prs', error: new Error('Request timed out'), expected: 'unavailable' },
+  ])(
+    'reports a $tool call that failed with "$error.message" as $expected',
+    async ({ tool, error, expected }) => {
+      const conn = connection()
+      conn.callTool = async () => Promise.reject(error)
+      const { api, tools } = fakeApi()
+      await registerRemoteToolsStrict(api, conn, stdio)
+      const execute = (tools[tool === 'list_prs' ? 0 : 1] as ToolDef).execute({}, ctxOf())
+      if (expected === 'throws') {
+        await expect(execute).rejects.toThrow(`mcp server gh did not answer the call: ${error.message}`)
+        return
+      }
+      await expect(execute).resolves.toEqual({
+        content: [{ type: 'text', text: `mcp server gh ${expected}: ${error.message}` }],
+        isError: true,
+      })
+    },
+  )
+
+  it('gives the remote call the tool deadline instead of the SDK default', async () => {
+    const conn = connection()
+    const seen: Array<number | undefined> = []
+    conn.callTool = async (_name, _args, opts) => {
+      seen.push(opts.timeoutMs)
+      return { content: [{ type: 'text', text: 'ok' }] }
+    }
     const { api, tools } = fakeApi()
-    await registerRemoteToolsStrict(api, connection(), stdio)
+    await registerRemoteToolsStrict(api, conn, stdio)
+    await (tools[1] as ToolDef).execute({}, ctxOf({ timeoutMs: 300_000 }))
+    expect(seen).toEqual([300_000])
+  })
+
+  // The server answered, so the call ran: a tool that changes things is reported as the server
+  // reported it, with the content it could not show left out.
+  it('does not turn unshowable content from a completed write into a failure', async () => {
+    const conn = connection()
+    conn.callTool = async () => ({ content: [imageBlock(SMALL_PNG)] })
+    const { api, tools } = fakeApi()
+    await registerRemoteToolsStrict(api, conn, stdio)
     const result = await (tools[1] as ToolDef).execute({}, ctxOf())
-    expect(result).toEqual({
-      content: [{ type: 'text', text: 'mcp server gh unavailable: boom' }],
-      isError: true,
+    expect(result.isError).toBeUndefined()
+    expect(result.content[0]).toMatchObject({
+      text: expect.stringContaining(
+        'mcp server gh completed the call but returned content that cannot be shown',
+      ),
     })
   })
 
@@ -1193,12 +1249,47 @@ describe('connectMcp', () => {
     expect(sdkClient.listTools).toHaveBeenNthCalledWith(2, { cursor: 'next' })
 
     const signal = new AbortController().signal
-    expect(await conn.callTool('first', { x: 1 }, { signal })).toEqual({
+    expect(await conn.callTool('first', { x: 1 }, { signal, timeoutMs: 300_000 })).toEqual({
       content: [{ type: 'text', text: 'ok' }],
     })
     expect(sdkClient.callTool).toHaveBeenCalledWith({ name: 'first', arguments: { x: 1 } }, undefined, {
       signal,
+      timeout: 300_000,
     })
+  })
+
+  // Only a failure known not to have run the tool is marked as such; a local timeout or a dropped
+  // connection after the request was written is passed on unmarked.
+  it.each([
+    { thrown: new Error('Not connected'), stage: 'not_sent' },
+    { thrown: new McpError(ErrorCode.InvalidParams, 'bad arguments'), stage: 'answered' },
+    { thrown: new McpError(ErrorCode.RequestTimeout, 'Request timed out'), stage: undefined },
+    { thrown: new McpError(ErrorCode.ConnectionClosed, 'Connection closed'), stage: undefined },
+  ])('classifies an SDK "$thrown.message" as $stage', async ({ thrown, stage }) => {
+    const sdkClient = client()
+    sdkClient.callTool = vi.fn(async () => Promise.reject(thrown)) as never
+    const { deps } = fakeSdk(sdkClient)
+    const conn = await connectMcp(stdio, deps)
+    const failure = await conn.callTool('echo', {}, { signal: new AbortController().signal }).catch((e) => e)
+    expect(failure instanceof McpCallError ? failure.stage : undefined).toBe(stage)
+    expect(failure.message).toBe(thrown.message)
+  })
+
+  it('refuses before sending on a closed connection, invalid arguments or a cancelled call', async () => {
+    const { deps, sdkClient } = fakeSdk()
+    const conn = await connectMcp(stdio, deps)
+    const aborted = new AbortController()
+    aborted.abort()
+    for (const [args, signal] of [
+      [[], new AbortController().signal],
+      [{}, aborted.signal],
+    ] as const)
+      await expect(conn.callTool('echo', args, { signal })).rejects.toMatchObject({ stage: 'not_sent' })
+    await conn.close()
+    await expect(conn.callTool('echo', {}, { signal: new AbortController().signal })).rejects.toMatchObject({
+      stage: 'not_sent',
+    })
+    expect(sdkClient.callTool).not.toHaveBeenCalled()
   })
 
   it('passes resolved HTTP credentials only to the transport request init', async () => {

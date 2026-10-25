@@ -739,6 +739,30 @@ describe('tools phase', () => {
     })
   })
 
+  // What an MCP tool that changes things does when its server stops answering after the request left:
+  // it throws. The call settles unknown and is not dispatched again, so the side effect cannot repeat.
+  it('a mutating tool that fails after sending stays unknown and runs once', async () => {
+    let runs = 0
+    const s = await atTools(
+      [toolTurn('shell', { command: 'deploy' })],
+      withTool(
+        shellTool(async () => {
+          runs++
+          throw new Error('mcp server gh did not answer the call: Request timed out')
+        }),
+      ),
+    )
+    await s.session.runToolsPhase()
+    expect(runs).toBe(1)
+    expect((await s.log.scan({ type: 'tool/result', limit: 5 }))[0]?.data).toMatchObject({
+      isError: true,
+      code: 'TOOL_OUTCOME_UNKNOWN',
+    })
+    expect((await s.log.scan({ type: 'effect/settled', limit: 10 })).at(-1)?.data).toMatchObject({
+      outcome: 'unknown',
+    })
+  })
+
   describe('a Stop on a call that is running', () => {
     type Opened = Awaited<ReturnType<typeof atTools>>
     type Row = {

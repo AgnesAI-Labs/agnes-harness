@@ -96,6 +96,14 @@ export async function runShellJob(
     }
   } catch (e) {
     if (id && ctx.signal.aborted) await jobs.kill(ctx, id)
+    // Once the job has an id the command is running or has run, so whatever failed after that was
+    // reading its result. Saying it could not start would invite running it a second time.
+    else if (id)
+      return toolFailure(
+        ctx,
+        'SHELL_JOB_UNREAD',
+        `command started as job ${id}, but its result could not be read; it may still be running or may have finished. Check job_output for ${id} or job_list before running it again.`,
+      )
     if (!id && (e as { code?: string }).code === 'SANDBOX_UNAVAILABLE')
       return toolFailure(
         ctx,

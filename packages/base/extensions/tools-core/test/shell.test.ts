@@ -45,6 +45,17 @@ describe('shell', () => {
     expect(ctx.calls.exec).toEqual([])
   })
 
+  it('says a started job ran when its result cannot be read, instead of that it could not start', async () => {
+    const jobs = new ShellJobs()
+    vi.spyOn(jobs, 'start').mockResolvedValue({ id: 'job-7' } as never)
+    vi.spyOn(jobs, 'wait').mockRejectedValue(new Error('backend lost'))
+    const result = await createShellTool(jobs).execute({ command: 'echo ready' }, fakeToolContext())
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code: 'SHELL_JOB_UNREAD' })
+    expect(textOf(result)).toContain('command started as job job-7')
+    expect(textOf(result)).not.toContain('could not be started')
+  })
+
   it('has a complete definition with replay never', () => {
     expect(checkToolDef(shellTool)).toEqual({ ok: true })
     expect(shellTool.meta.replay).toBe('never')
