@@ -203,6 +203,53 @@ describe('Editor input', () => {
     expect(sub).toEqual([`${'x'.repeat(1001)} tail`])
   })
 
+  it('a paste chip is one unit: cuts take it whole, the cursor steps over it, nothing typed lands inside', () => {
+    const wrap = (s: string) => `\x1b[200~${s}\x1b[201~`
+    const long = Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\r')
+    const chip = '[Pasted #1 · 12 lines]'
+    const fresh = (): { e: Editor; sent: string[] } => {
+      const sent: string[] = []
+      const e = new Editor({ onSubmit: (t) => sent.push(t) })
+      e.handleInput(wrap(long))
+      return { e, sent }
+    }
+    const full = long.replaceAll('\r', '\n')
+    // Every cut that reaches into the chip removes all of it or none of it, never a piece.
+    for (const keys of [
+      ['\x17'],
+      ['\x1b[D', '\x15'],
+      ['\x01', '\x0b'],
+      ['\x01', '\x1bd'],
+      ['\x01', '\x1b[C', '\x0b'],
+    ]) {
+      const { e } = fresh()
+      for (const k of keys) e.handleInput(k)
+      expect([chip, '']).toContain(e.text)
+      expect(e.expanded()).toBe(e.text ? full : '')
+    }
+    // Moving left from the end of the chip and typing puts the text beside it, not inside it.
+    const { e, sent } = fresh()
+    e.handleInput('\x1b[D')
+    type(e, 'X')
+    expect(e.text).toBe(`X${chip}`)
+    e.handleInput('\r')
+    expect(sent).toEqual([`X${full}`])
+    // A click inside the chip lands at one of its ends.
+    const c = fresh().e
+    c.render(40)
+    c.moveCursorToCell(0, 8)
+    expect([0, chip.length]).toContain(c.cursor)
+    // A cut-word-back reaching the chip from the right takes it whole, and the kill ring restores it.
+    const w = fresh().e
+    type(w, ' tail')
+    for (let i = 0; i < 5; i++) w.handleInput('\x1b[D')
+    w.handleInput('\x17')
+    expect(w.text).toBe(' tail')
+    w.handleInput('\x19')
+    expect(w.text).toBe(`${chip} tail`)
+    expect(w.expanded()).toBe(`${full} tail`)
+  })
+
   it('ctrl-r searches the history: older matches on repeat, enter takes one without sending, esc restores the draft', () => {
     const sub: string[] = []
     const e = new Editor({ onSubmit: (t) => sub.push(t) })

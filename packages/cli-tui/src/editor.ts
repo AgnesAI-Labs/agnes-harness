@@ -194,7 +194,7 @@ export class Editor implements Component, VimTarget {
     if (this.search) return
     const at = offsetAtCell(this.text, this.cursor, this.renderedWidth, this.viewportStart + row, col)
     if (at === undefined) return
-    this.cursor = at
+    this.cursor = this.snap(at, at - this.cursor)
     this.chain = undefined
     this.goalColumn = undefined
     this.undo.endRun()
@@ -212,6 +212,7 @@ export class Editor implements Component, VimTarget {
     const typing = k.name === 'char' && !wasNormal
     const handled = this.handleKey(k)
     const edited = this.text !== before.text
+    if (!edited) this.cursor = this.snap(this.cursor, this.cursor - before.cursor)
     // An undo, redo or clear moved the history itself and is not an edit to record.
     // A normal-mode command that edits and lands in insert mode (o, cw, C...) opens the typing run, so
     // what is typed next joins its step and one `u` takes back the whole change.
@@ -447,6 +448,8 @@ export class Editor implements Component, VimTarget {
 
   cut(from: number, to: number, register?: string): void {
     if (to <= from) return
+    from = this.snap(from, -1)
+    to = this.snap(to, 1)
     this.ring.add(register ?? this.text.slice(from, to), false, false)
     this.text = this.text.slice(0, from) + this.text.slice(to)
     this.cursor = from
@@ -478,6 +481,8 @@ export class Editor implements Component, VimTarget {
     const merge = this.prevChain === 'kill'
     this.chain = merge ? 'kill' : undefined
     if (to <= from) return
+    from = this.snap(from, -1)
+    to = this.snap(to, 1)
     this.chain = 'kill'
     this.ring.add(this.text.slice(from, to), merge, before)
     this.text = this.text.slice(0, from) + this.text.slice(to)
@@ -564,6 +569,16 @@ export class Editor implements Component, VimTarget {
   private insert(s: string): void {
     this.text = this.text.slice(0, this.cursor) + s + this.text.slice(this.cursor)
     this.cursor += s.length
+  }
+
+  // A chip is one unit: a position strictly inside one moves to its start (dir < 0) or its end.
+  private snap(pos: number, dir: number): number {
+    for (const chip of this.pastes.keys()) {
+      for (let i = this.text.indexOf(chip); i >= 0; i = this.text.indexOf(chip, i + chip.length)) {
+        if (pos > i && pos < i + chip.length) return dir < 0 ? i : i + chip.length
+      }
+    }
+    return pos
   }
 
   private lineStart(): number {
