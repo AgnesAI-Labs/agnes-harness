@@ -306,7 +306,11 @@ function ModelPanel({
         }
       }}
     >
-      <div hidden={!!panel}>
+      {/*
+        One shrinkable column: the search row and the help line keep their height, so a long catalog
+        takes the remaining space and scrolls inside the list instead of pushing them out of the panel.
+      */}
+      <div className="model-picker-body" hidden={!!panel}>
         {searchable ? (
           <div className="model-picker-search">
             <Icon name="search" />

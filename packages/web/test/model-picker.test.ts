@@ -234,6 +234,27 @@ describe('model picker', () => {
     expect(document.activeElement).toBe(list)
   })
 
+  it('keeps the search row outside the scrolling list inside one shrinkable body', async () => {
+    const many = Array.from({ length: 9 }, (_, index) => ({
+      route: 'bulk',
+      id: `model-${index}`,
+      label: 'Bulk',
+    }))
+    const { trigger } = mountPicker({ options: many, selected: many[0], settings: undefined })
+    await open(trigger)
+    // The body is the flex column that gives way to the list; the search row must stay out of it.
+    const body = document.querySelector<HTMLElement>('#model-picker-popover > .model-picker-body')
+    if (!body) throw new Error('model-picker-body is missing')
+    expect(body.hidden).toBe(false)
+    const search = body.querySelector('.model-picker-search')
+    expect(search).not.toBeNull()
+    expect(search?.closest('.model-picker-list')).toBeNull()
+    const list = body.querySelector('.model-picker-list')
+    expect(list).not.toBeNull()
+    // A direct child of the body so it can take the leftover height.
+    expect(list?.parentElement).toBe(body)
+  })
+
   it('closes on a second click of the trigger', async () => {
     const { trigger } = mountPicker()
     await open(trigger)
@@ -763,6 +784,16 @@ it('lets the popover hug its content and aligns model and session rows in fixed 
   const css = readFileSync(resolve(__dirname, '../public/styles/09-model-picker.css'), 'utf8')
   const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`)).split('}')[0] ?? ''
   expect(rule('  .model-picker')).not.toContain('min-height')
+  // Clip keeps the search row on screen: a scroll container here would scroll the panel itself.
+  expect(rule('  .model-picker')).toMatch(/overflow: clip;/)
+  // The body shrinks; the list is the only scrolling child, and the text rows keep their height.
+  expect(rule('  .model-picker-body')).toMatch(
+    /display: flex;[\s\S]*flex-direction: column;[\s\S]*min-height: 0;/,
+  )
+  expect(css).toMatch(/\.model-picker-search,\s*\.model-picker-help \{\s*flex: none;/)
+  expect(rule('  .model-picker-list')).toMatch(
+    /flex: 1 1 auto;[\s\S]*min-height: 0;[\s\S]*max-height: min\(17rem, calc\(100dvh - 21rem\)\)/,
+  )
   expect(rule('  .model-picker-option')).toMatch(
     /display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) 2.75rem 1.25rem/,
   )

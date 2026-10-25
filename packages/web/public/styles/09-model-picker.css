@@ -62,10 +62,24 @@
     flex-direction: column;
     width: min(23.25rem, calc(100vw - 48px));
     max-height: calc(100dvh - 120px);
+    /* Clip, not hidden: `hidden` makes this a scroll container, and focusing an option then scrolls
+       the panel itself, moving the search row back out of view. */
+    overflow: clip;
     color: var(--agnes-text-primary);
   }
   .model-picker [hidden] {
     display: none;
+  }
+  /* The one shrinkable column: without min-height it cannot give way to the list below it. */
+  .model-picker-body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  /* Rows that keep their height while the list takes what is left. */
+  .model-picker-search,
+  .model-picker-help {
+    flex: none;
   }
   .model-picker-search {
     display: flex;
@@ -78,6 +92,8 @@
     width: 100%;
   }
   .model-picker-list {
+    flex: 1 1 auto;
+    min-height: 0;
     max-height: min(17rem, calc(100dvh - 21rem));
     overflow-y: auto;
     outline: 0;
