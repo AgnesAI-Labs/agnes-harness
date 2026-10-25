@@ -126,6 +126,7 @@ export function generateAll(): Record<string, string> {
     'invalidArgumentLimit',
     'modelVisible',
     'requiresImageInput',
+    'requiresUser',
     'paths',
     'commandArg',
   ]

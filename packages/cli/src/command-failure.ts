@@ -21,6 +21,10 @@ export function safeResourceFailureLine(error: unknown): string | undefined {
 export function safeDaemonDisconnectLine(error: unknown): string | undefined {
   const kind = (error as { kind?: unknown } | null)?.kind
   if (!(error instanceof TransportClosed) && kind !== 'transport-closed') return undefined
+  // The daemon names why it ended the connection; match the fixed code only, never its message.
+  const cause = (error as { info?: { error?: { code?: unknown; data?: { code?: unknown } } } }).info?.error
+  if (cause?.code === AGNES_ERRORS.OVERLOADED && cause.data?.code === 'OVERLOADED')
+    return 'DAEMON_OVERLOADED: local Daemon closed the connection because this command fell behind reading it; retry the command, and report it if it persists.'
   return 'DAEMON_CONNECTION_CLOSED: local Daemon connection closed; retry the command.'
 }
 

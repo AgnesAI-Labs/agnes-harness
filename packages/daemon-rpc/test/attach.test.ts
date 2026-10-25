@@ -439,6 +439,52 @@ describe('AttachedFeed replay ordering', () => {
     expect(seen).toEqual([1, 2, 3, 4])
   })
 
+  it('paces a replay longer than the subscription budget by its reader instead of cutting it', async () => {
+    const { AttachedFeed } = await import('@agnes/daemon-foundation/local/attached')
+    const { LocalEndpoint } = await import('@agnes/daemon-foundation/local/endpoint')
+    const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
+    const rows = Array.from({ length: 40 }, (_, i) => row(i + 1))
+    const session = {
+      scan: async (q: { fromSeq: number; toSeq: number }) =>
+        rows.filter((event) => event.seq >= q.fromSeq && event.seq <= q.toSeq),
+    }
+    let drops = 0
+    const feed = new AttachedFeed({
+      ep,
+      key: 'k',
+      generation: 1,
+      prefs: {
+        cursor: { fromSeq: 0, generation: 1 },
+        filter: { preview: false, acpUpdates: false },
+      },
+      limits: { subscribeBufferEvents: 8, subscribeBufferBytes: 1 << 20 },
+      clock: () => 0,
+      onDrop: () => {
+        drops++
+      },
+    })
+    let replayed = false
+    const replaying = feed.replay(session as never, 0, rows.length).then(() => {
+      replayed = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    // With nobody reading, the replay waits at the budget rather than overrunning it.
+    expect(replayed).toBe(false)
+    expect(ep.pending().events).toBeLessThan(8)
+    const seen: string[] = []
+    const reading = (async () => {
+      for await (const n of ep.notifications) {
+        const params = (n as { params: { event?: { seq: number }; kind?: string } }).params
+        seen.push(params.event ? String(params.event.seq) : `notice:${params.kind}`)
+        if (params.event?.seq === rows.length) break
+      }
+    })()
+    await replaying
+    await reading
+    expect(drops).toBe(0)
+    expect(seen).toEqual(rows.map((r) => String(r.seq)))
+  })
+
   it('notices the overload once and then delivers nothing, however often it is called', async () => {
     // onDrop unhooks the feed in the live wiring, so the map is what usually stops the second call.
     // The feed still has to be safe on its own: a second notice is a second detach instruction, and

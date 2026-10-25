@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -115,6 +116,19 @@ describe('WorktreeKeeper', () => {
     expect(existsSync(dirty.path)).toBe(true)
     expect(branches(root)).toEqual(expect.arrayContaining(['agh/clean', 'agh/dirty']))
   })
+
+  it('keeps a worktree that holds only git-ignored files, since removing it would lose them', async () => {
+    const root = repo(true)
+    writeFileSync(join(root, '.gitignore'), '.worktrees/\n.env\n')
+    git(root, 'commit', '-q', '-am', 'ignore .env')
+    const keeper = new WorktreeKeeper()
+    const info = await createWorktree(root, 'envonly', 'en')
+    keeper.adopt('s1', info)
+    writeFileSync(join(info.path, '.env'), 'SECRET=1')
+    const [outcome] = await keeper.finish()
+    expect(outcome?.removed).toBe(false)
+    expect(readFileSync(join(info.path, '.env'), 'utf8')).toBe('SECRET=1')
+  })
 })
 
 describe('--worktree', () => {
@@ -221,7 +235,7 @@ describe('/worktree', () => {
     }
   })
 
-  it('switching away removes a clean worktree and keeps a dirty one, never the branch', async () => {
+  it('switching away removes a clean worktree and keeps a dirty one, never the branch; /new inside keeps it', async () => {
     const root = repo()
     const { app, term, client } = await liveApp(root)
     try {
@@ -235,8 +249,16 @@ describe('/worktree', () => {
         await vi.waitFor(() => expect(app.session.id).not.toBe(before))
         const path = join(root, '.worktrees', name)
         if (dirty) writeFileSync(join(path, 'wip.txt'), 'x')
-        const inside = app.session.id
+        const first = app.session.id
+        // A fresh session in the same worktree is still working in it.
         term.feed('/new')
+        term.feed('\r')
+        await vi.waitFor(() => expect(app.session.id).not.toBe(first))
+        expect(app.cwd).toBe(path)
+        await vi.waitFor(() => expect(app.worktrees.current()?.path).toBe(path))
+        expect(existsSync(path)).toBe(true)
+        const inside = app.session.id
+        term.feed(`/new ${root}`)
         term.feed('\r')
         await vi.waitFor(() => expect(app.session.id).not.toBe(inside))
         await vi.waitFor(() => expect(existsSync(path)).toBe(dirty))

@@ -111,6 +111,7 @@ class Queue<T> {
   private previews = 0
   private previewBytes = 0
   private previewOverflowed = false
+  private belowWaiters: Array<{ events: number; bytes: number; resolve: () => void }> = []
   /** Called once each time previews that overflowed the budget have drained to half of it. */
   onPreviewLowWater: () => void = () => undefined
 
@@ -148,9 +149,34 @@ class Queue<T> {
     return { events: this.previews, bytes: this.previewBytes }
   }
 
+  /**
+   * Resolves once the non-preview backlog is at or below both marks, or the queue has closed. The
+   * reader advances this backlog only as fast as its transport accepts frames, so a producer that
+   * awaits this is paced by the actual consumer instead of tripping the overload that cuts it.
+   */
+  whenBelow(events: number, bytes: number): Promise<void> {
+    const size = this.size()
+    if (this.closed || (size.events <= events && size.bytes <= bytes)) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.belowWaiters.push({ events, bytes, resolve })
+    })
+  }
+
+  private wakeBelow(): void {
+    if (this.belowWaiters.length === 0) return
+    const size = this.size()
+    const ready = this.belowWaiters.filter(
+      (w) => this.closed || (size.events <= w.events && size.bytes <= w.bytes),
+    )
+    if (ready.length === 0) return
+    this.belowWaiters = this.belowWaiters.filter((w) => !ready.includes(w))
+    for (const w of ready) w.resolve()
+  }
+
   private taken(it: { n: number; preview: boolean }): void {
     if (!it.preview) {
       this.bytes -= it.n
+      this.wakeBelow()
       return
     }
     this.previews -= 1
@@ -176,6 +202,7 @@ class Queue<T> {
     this.closed = true
     this.pump()
     for (const w of this.waiters.splice(0)) w({ value: undefined as never, done: true })
+    this.wakeBelow()
   }
 
   private pump(): void {
@@ -327,6 +354,16 @@ export class LocalEndpoint implements RpcEndpoint {
   /** Everything queued except streamed text: what the overload that cuts a subscription measures. */
   pending(): { events: number; bytes: number } {
     return this.out.size()
+  }
+
+  /** True once close() has run: nothing queued after this reaches the client. */
+  isClosed(): boolean {
+    return this.closed
+  }
+
+  /** Waits until `pending()` is at or below both marks, or the connection's queue has closed. */
+  pendingBelow(events: number, bytes: number): Promise<void> {
+    return this.out.whenBelow(events, bytes)
   }
 
   pendingPreviews(): { events: number; bytes: number } {

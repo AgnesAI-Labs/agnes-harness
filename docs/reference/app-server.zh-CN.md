@@ -10,11 +10,13 @@
 
 ## 会话、轮次、事件与审批
 
-会话保存身份、历史、workspace 权限和固定的插件代码。`session/prompt` 启动轮次，`session/update` 推送预览。通过 `_agnes/v1/session.attach` 订阅持久化的 `_agnes/v1/session.event`；保存 ledger cursor 用于重连，预览不持久化。prompt 的响应报告停止原因。
+会话保存身份、历史、workspace 权限和固定的插件代码。`session/prompt` 启动轮次，`session/update` 推送预览。通过 `_agnes/v1/session.attach` 订阅持久化的 `_agnes/v1/session.event`；保存 ledger cursor 用于重连，预览不持久化。attach 的历史回放按连接的读取速度推进，任意长度的 ledger 都能完整 attach；实时订阅落后超过缓冲时，会收到 `kind: "overloaded"` 的 `_agnes/v1/daemon.notice` 并被断开，应从 cursor 重新 attach。单帧放不下的响应只让该请求以 `INTERNAL_ERROR`、`data.code: "RESPONSE_TOO_LARGE"` 失败，连接保持打开。prompt 的响应报告停止原因。
 
 可选的 `session/prompt._meta["ai.agnes.harness"].creditLimit` 是该轮次的总 credit 上限：有限、非负且不超过 `Number.MAX_SAFE_INTEGER / 1_000_000`。SDK 对应 `session.prompt(input, { creditLimit })`，并先检查 `initialize.agentCapabilities._meta["ai.agnes.harness"].hardTurnBudget: true`，拒绝旧服务端静默降级。Core 在 inbox 接收和轮次打开时持久绑定额度，使用现有预算存储预留模型请求的保守费用上界，恢复时保留未知占用。缺少存储或目录价格上界时停止执行。有界轮次不允许预算升级、自动标题、无预留的策略模型评审或子代理派发。价格和输出 token 上限仍依赖 provider 合同；缺失或不一致的账单须核对后才能释放调用者预留。
 
 可选的 `session/prompt._meta["ai.agnes.harness"].maxSteps` 是 1 到 1000 的整数，限制这一轮的模型步数。SDK 对应 `session.prompt(input, { maxSteps })`，并先检查 `initialize.agentCapabilities._meta["ai.agnes.harness"].turnMaxSteps: true`，旧服务端不能静默忽略它。超出范围的值在入队之前以 `INVALID_PARAMS` 拒绝。Core 用两条 `ignorable` 账本行记录该上限：入队时的 `x/core/inbox-step-cap` 和开回合时的 `x/core/turn-step-cap`，所以恢复后上限仍在，旧版 core 则跳过这两行、不带上限运行。生效值取 preset 的 `budget.max_steps`（`null` 表示不限）与该上限中较小的一个，因此它只能调低。达到上限时该轮以 `max_steps` 结束。上限只属于这一轮，下一次提示词沿用 preset 的上限。
+
+可选的 `session/prompt._meta["ai.agnes.harness"].timeLimitMs` 是 1 到 86400000 的整数毫秒数，表示客户端允许这一轮使用的墙钟时间。SDK 对应 `session.prompt(input, { timeLimitMs })`，并先检查 `initialize.agentCapabilities._meta["ai.agnes.harness"].turnTimeLimit: true`。超出范围的值在入队之前以 `INVALID_PARAMS` 拒绝。Core 在提示词入队时确定截止时间，并用两条 `ignorable` 账本行记录：`x/core/inbox-time-limit` 和 `x/core/turn-time-limit`，所以恢复后仍在。Core 只用它告诉模型截止时间和剩余时间（[回合上限](../guide/headless.zh-CN.md#回合上限)），不会在截止时结束回合。截止时间到达时由客户端取消回合，`agh -p --timeout` 就是这样做的。
 
 声明 `clientCapabilities._meta["ai.agnes.harness"].capabilities.permission: true` 的客户端可以接收服务端 `session/request_permission` 请求。使用原请求 id 和提供的 option id 回复。拒绝、断连和超时均保持拒绝语义。客户端应执行自己的人工确认策略；学习示例默认拒绝全部审批。
 

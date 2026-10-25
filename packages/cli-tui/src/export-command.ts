@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import type { TuiApp } from './app.js'
+import { localPath } from './cd-command.js'
 import type { SlashResult } from './commands.js'
 import { tt } from './locale-extended.js'
 import { oneLine } from './session-commands.js'
@@ -31,6 +32,9 @@ export async function exportSlash(app: TuiApp, line: string): Promise<SlashResul
   if (!write) return { text: tt('export.unavailable', locale) }
   const body = line.trim().slice('/export'.length).trim()
   const first = body.split(/\s+/)[0] ?? ''
+  // Only `--html` is a flag; any other `--word` would otherwise become part of the file name.
+  if (body.split(/\s+/).some((word, i) => word.startsWith('--') && !(i === 0 && word === '--html')))
+    return { text: tt('export.usage', locale) }
   // `--html` is what this command took before it wrote files itself.
   const format: ExportFormat = first === '--html' ? 'html' : isFormat(first) ? first : 'agnes'
   const given = first === '--html' || isFormat(first) ? body.slice(first.length).trim() : body
@@ -39,7 +43,7 @@ export async function exportSlash(app: TuiApp, line: string): Promise<SlashResul
     .replace(/\.\d+Z$/, 'Z')
     .replace(/[-:]/g, '')
   const name = `agh-${s.id.replace(/[^\w.-]/g, '_').slice(0, 24)}-${stamp}.${EXTENSION[format]}`
-  const target = given ? resolve(app.cwd, given) : join(app.cwd, name)
+  const target = given ? localPath(app, given) : join(app.cwd, name)
   const out = isDirectory(target) ? join(target, name) : target
   try {
     await write({ sessionId: s.id, format, out })

@@ -255,6 +255,10 @@ export async function runTui(
         io.stdout.write(`${lines.join('\n')}\n`)
         if (prompted) io.stdout.write(`${tt('resume.hint', locale, { id: escapeControl(session.id) })}\n`)
       }
+      if (app.cancelUnconfirmed)
+        io.stdout.write(
+          `${tt('exit.cancelUnconfirmed', resolveLocale(io.env), { id: escapeControl(session.id) })}\n`,
+        )
       await session.detach().catch(() => undefined)
       // After the detach, so the daemon no longer holds the directory; clean ones go, the rest are named.
       const locale = resolveLocale(io.env)

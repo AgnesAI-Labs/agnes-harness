@@ -37,7 +37,7 @@ export class PackageController {
           .join('\n')
   }
 
-  async install(argument: string | undefined): Promise<string> {
+  async install(argument: string | undefined, cwd?: string): Promise<string> {
     if (!this.client) return 'Package management is unavailable on this connection.'
     if (argument === 'cancel') {
       this.pending = undefined
@@ -46,7 +46,7 @@ export class PackageController {
     if (argument === 'confirm') return this.confirm()
     if (!argument) return this.pending ? 'usage: /install confirm | cancel' : 'usage: /install <source>'
     this.pending = undefined
-    const preview = await inspectPackage(this.client, this.profile(), parsePackageSource(argument))
+    const preview = await inspectPackage(this.client, this.profile(), parsePackageSource(argument, cwd))
     if (preview.blockers.length > 0) return `${formatPreview(preview)}\nInstallation blocked.`
     this.pending = { preview }
     return `${formatPreview(preview)}\nType /install confirm to install, or /install cancel to dismiss.`
@@ -56,7 +56,7 @@ export class PackageController {
    * Package administration deliberately uses the same receipt-then-poll contract as the Web
    * console and the non-interactive CLI. No worker or package-store details cross this boundary.
    */
-  async manage(args: readonly string[]): Promise<string> {
+  async manage(args: readonly string[], cwd?: string): Promise<string> {
     const client = this.client
     if (!client) return 'Package management is unavailable on this connection.'
     const [action = 'status', ...rest] = args
@@ -96,7 +96,7 @@ export class PackageController {
       }
       case 'inspect': {
         if (rest.length !== 1) throw new Error('usage: /package inspect <source>')
-        return formatPreview(await inspectPackage(client, profile, parsePackageSource(require(0, ''))))
+        return formatPreview(await inspectPackage(client, profile, parsePackageSource(require(0, ''), cwd)))
       }
       case 'trust':
         if (rest.length !== 3) throw new Error('usage: /package trust <id> <integrity> <capabilityHash>')
@@ -115,7 +115,7 @@ export class PackageController {
         if (rest.length !== 3) throw new Error('usage: /package update <id> <source> <integrity>')
         return operation('update', {
           id: require(0, ''),
-          source: parsePackageSource(require(1, '')),
+          source: parsePackageSource(require(1, ''), cwd),
           expectedIntegrity: require(2, ''),
         })
       case 'operation': {

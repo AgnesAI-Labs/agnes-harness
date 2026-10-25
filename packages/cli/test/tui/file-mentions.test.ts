@@ -2,8 +2,10 @@ import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { mentionText } from '@agnes/cli-tui'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  attachmentsFrom,
   createMentionSource,
   FileMentionSource,
   listWorkspaceFiles,
@@ -301,6 +303,23 @@ describe('createMentionSource', () => {
         changed,
       })
       await vi.waitFor(() => expect(failing.get('local').status).toBe('failed'))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('accepted mentions with an @ in the path', () => {
+  it('attach the whole file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-mention-at-'))
+    try {
+      mkdirSync(join(dir, 'packages', '@scope'), { recursive: true })
+      writeFileSync(join(dir, 'packages', '@scope', 'x.ts'), 'x')
+      writeFileSync(join(dir, 'icon@2x.png'), 'x')
+      for (const id of ['packages/@scope/x.ts', 'icon@2x.png']) {
+        const links = attachmentsFrom(`look at ${mentionText({ id, directory: false })}`, dir).slice(1)
+        expect(links.map((l) => (l.type === 'resource_link' ? l.name : ''))).toEqual([id])
+      }
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

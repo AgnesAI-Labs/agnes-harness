@@ -597,6 +597,7 @@ export function registerAcp(
           'ai.agnes.harness': {
             hardTurnBudget: true,
             turnMaxSteps: true,
+            turnTimeLimit: true,
             sessionOpen: true,
             ...(cx.workspaces.admitsExtraRoots ? { forkAdditionalDirectories: true } : {}),
           },
@@ -783,6 +784,25 @@ export function registerAcp(
       !(typeof maxSteps === 'number' && Number.isInteger(maxSteps) && maxSteps >= 1 && maxSteps <= 1000)
     )
       throw rpcError('INVALID_PARAMS', { reason: 'invalid turn step cap' })
+    // The client's own wall-clock limit (agh -p --timeout). The client still cancels at the deadline;
+    // core records it so the model is told how much time the turn has.
+    const timeLimitMs = pocket(params).timeLimitMs
+    if (
+      timeLimitMs !== undefined &&
+      !(
+        typeof timeLimitMs === 'number' &&
+        Number.isInteger(timeLimitMs) &&
+        timeLimitMs >= 1 &&
+        timeLimitMs <= 86_400_000
+      )
+    )
+      throw rpcError('INVALID_PARAMS', { reason: 'invalid turn time limit' })
+    // A client with nobody at the keyboard (agh -p, agh run) says so per prompt: the turn it opens
+    // then offers no tool that waits on a person. Per prompt, because the same session may be
+    // resumed in the TUI or Web later and is attended again there.
+    const unattended = pocket(params).unattended
+    if (unattended !== undefined && typeof unattended !== 'boolean')
+      throw rpcError('INVALID_PARAMS', { reason: 'invalid unattended flag' })
     const titleLocale = pocket(params).titleLocale
     if (titleLocale !== undefined && titleLocale !== 'en' && titleLocale !== 'zh-CN')
       throw rpcError('SEMANTIC_REJECTED', { reason: 'unsupported title language' })
@@ -818,14 +838,16 @@ export function registerAcp(
             abort.signal,
           )
           const commandId = randomUUID()
+          const actor = connActor(c.conn)
           await entry.session.enqueue('next-turn', {
             content,
-            actor: connActor(c.conn),
+            actor: unattended ? { ...actor, attrs: { ...actor.attrs, interaction: 'unattended' } } : actor,
             kind: 'prompt',
             commandId,
             ...(titleLocale ? { titleLocale } : {}),
             ...(creditLimit !== undefined ? { budget: creditLimit as number, hardBudget: true } : {}),
             ...(maxSteps !== undefined ? { maxSteps: maxSteps as number } : {}),
+            ...(timeLimitMs !== undefined ? { timeLimitMs: timeLimitMs as number } : {}),
           })
           running = invocation.run(async () => {
             for (;;) {

@@ -237,3 +237,14 @@ export function actionFor<S extends Scope>(scope: S, key: string): ActionOf<S> |
 }
 
 export const currentKeymap = (): Keymap => current
+
+/** The keys bound to `id` now. Hints name these, so a rebinding in keybindings.json cannot leave them stale. */
+export const boundKeys = (id: ActionId): readonly string[] =>
+  current.effective().find((row) => row.id === id)?.keys ?? []
+
+/** A key as hint text spells it: `alt-enter` reads `Alt+Enter`, or `Ctrl-End` with `-` as the separator. */
+export const keyText = (key: string, separator = '+'): string =>
+  key
+    .split('-')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(separator)

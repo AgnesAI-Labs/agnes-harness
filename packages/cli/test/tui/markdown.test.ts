@@ -69,6 +69,14 @@ it('removes untrusted VT sequences and control bytes before styling', () => {
   expect(renderMarkdown('a\x9b31mb\x9d52;c;YQ==\x9cc', 40, none)).toEqual(['abc'])
   expect(renderMarkdown('a\x1bPpayload\x1b\\b\x1b]unfinished', 40, none)).toEqual(['ab'])
 })
+it('shows Markdown nested too deep to parse as plain wrapped text instead of throwing', () => {
+  for (const md of [`${'> '.repeat(3000)}x`, `${'>'.repeat(5000)} a`]) {
+    const rows = renderMarkdown(md, 40, none)
+    expect(rows.length).toBeGreaterThan(0)
+    for (const row of rows) expect(displayWidth(row)).toBeLessThanOrEqual(40)
+  }
+})
+
 it('balances emphasis separately on each wrapped line and preserves graphemes', () => {
   const lines = renderMarkdown('**ab中é👩‍💻z**', 4, new TuiTheme('light').ansi(createAnsi('16')))
   expect(lines.map(stripVTControlCharacters)).toEqual(['ab中', 'é', '👩‍💻', 'z'])
@@ -259,4 +267,17 @@ it('draws closed mermaid fences as box art and leaves everything else as the cod
   // /raw shows the source
   theme.raw = true
   expect(text(flow)).toEqual(['mermaid', 'graph TD', '  A[Start] --> B[Finish]'])
+})
+it('keeps GFM task-list checkboxes and wrapped item indent', () => {
+  expect(renderMarkdown('- [ ] todo\n- [x] done item that wraps', 16, none)).toEqual([
+    '• [ ] todo',
+    '• [x] done item',
+    '      that wraps',
+  ])
+})
+it('shows an autolinked address once, and still shows the target of a titled link', () => {
+  expect(renderMarkdown('visit www.example.com and foo@bar.com, https://a.example/x', 80, none)).toEqual([
+    'visit www.example.com and foo@bar.com, https://a.example/x',
+  ])
+  expect(renderMarkdown('[docs](https://d.example)', 80, none)).toEqual(['docs (https://d.example)'])
 })

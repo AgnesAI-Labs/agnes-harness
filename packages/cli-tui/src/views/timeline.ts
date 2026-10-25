@@ -1,7 +1,7 @@
 import type { UINode, UITimeline } from '@agnes/protocol'
 import { ANSI_RE } from '../ansi.js'
 import type { Component } from '../component.js'
-import { actionFor } from '../keymap.js'
+import { actionFor, boundKeys, keyText } from '../keymap.js'
 import type { KeyName } from '../keys.js'
 import { tt } from '../locale-extended.js'
 import { completeBlocks } from '../markdown.js'
@@ -130,7 +130,13 @@ export class Timeline implements Component {
   /** The footer line for a user reading above the bottom while entries have arrived since they left it. */
   newOutputHint(hasDraft: boolean): string | undefined {
     if (this.offset === 0 || this.leftAt === undefined || this.size <= this.leftAt) return undefined
-    return tt(hasDraft ? 'scroll.newBelowCtrl' : 'scroll.newBelow', this.o.locale ?? 'en')
+    // With a draft End moves the cursor, so the hint names another key bound to the jump when there is one.
+    const keys = boundKeys('timeline-bottom')
+    const key = hasDraft ? keys.find((k) => k !== 'end') : keys.includes('end') ? 'end' : keys[0]
+    const locale = this.o.locale ?? 'en'
+    return key === undefined
+      ? tt('scroll.newBelowBare', locale)
+      : tt('scroll.newBelow', locale, { key: keyText(key, '-') })
   }
 
   /** End jumps back to the newest rows and follows new output again; with a draft only Ctrl-End does, since End moves the cursor. */

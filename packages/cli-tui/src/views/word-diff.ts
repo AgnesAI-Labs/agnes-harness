@@ -113,10 +113,25 @@ export function applyMarks(
   return out + text.slice(at)
 }
 
+/**
+ * Which lines of a unified diff are `---`/`+++` file headers: only those before a file's first hunk
+ * (the start of the text, or a `diff ` / `── ` file line, up to its `@@`). Inside a hunk, a removed
+ * line whose text starts with `-- ` also begins with `--- `.
+ */
+export function fileHeaderLines(lines: readonly string[]): boolean[] {
+  let header = true
+  return lines.map((line) => {
+    if (line.startsWith('@@')) header = false
+    else if (line.startsWith('diff ') || line.startsWith('── ')) header = true
+    return header && /^(\+\+\+|---) /.test(line)
+  })
+}
+
 /** Changed-word ranges for the lines of a unified diff (offsets count the leading `+`/`-`), by line index. */
 export function unifiedMarks(lines: readonly string[]): Map<number, Array<[number, number]>> {
+  const headers = fileHeaderLines(lines)
   const ops: Array<MarkedOp & { at: number }> = lines.map((line, at) => ({
-    mark: /^(\+\+\+|---) /.test(line) ? ' ' : line[0] === '+' ? '+' : line[0] === '-' ? '-' : ' ',
+    mark: headers[at] ? ' ' : line[0] === '+' ? '+' : line[0] === '-' ? '-' : ' ',
     text: line.slice(1),
     at,
   }))

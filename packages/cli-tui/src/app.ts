@@ -171,6 +171,10 @@ export class TuiApp {
   // an accepted limitation, not an oversight.
   private nextRequestSeq = 1
   onQuit: () => void = () => {}
+  /** True when a double Ctrl-C quit before the daemon answered the cancel. */
+  get cancelUnconfirmed(): boolean {
+    return this.interrupts.unconfirmed
+  }
   readonly refreshWorkspace: () => void
   /** The worktrees this run made; a session in one of them shows its branch on the rail. */
   readonly worktrees = new WorktreeKeeper()
@@ -753,7 +757,7 @@ export class TuiApp {
     const approvals = value.nodes.filter((node) => node.kind === 'approval')
     const approvalIds = new Set(approvals.map((node) => node.id))
     for (const id of this.approvalCards.keys()) if (!approvalIds.has(id)) this.approvalCards.delete(id)
-    this.latestApproval = approvals.at(-1)?.id
+    this.latestApproval = approvals.findLast((node) => node.state === 'pending' && node.decisionRef)?.id
     this.timeline.apply(value, {
       ...(options.opening ? { opening: true } : {}),
       ...(options.window ? { hasEarlier: options.window.hasEarlier } : {}),

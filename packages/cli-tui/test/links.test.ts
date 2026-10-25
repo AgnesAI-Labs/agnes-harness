@@ -53,6 +53,8 @@ describe('createLinker', () => {
     )
     expect(link('at /tmp/missing.ts', 80)).toBe('at /tmp/missing.ts')
     expect(link('a/b and 1/2', 80)).toBe('a/b and 1/2')
+    const wiki = 'https://en.wikipedia.org/wiki/Foo_(bar)'
+    expect(link(`x (${wiki}) y`, 80)).toBe(`x (${OPEN(wiki)}${wiki}${CLOSE}) y`)
   })
 
   it('keeps styles in place and the display width unchanged', () => {

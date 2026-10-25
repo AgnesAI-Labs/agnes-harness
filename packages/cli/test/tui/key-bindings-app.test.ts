@@ -117,6 +117,25 @@ it('Ctrl-Z on an empty prompt hands the terminal back, stops, and repaints when 
     expect(painted).toContain('\x1b[?1049h')
     expect(painted).toContain('\x1b[?2004h')
     expect(app.busy).toBe(false)
+    // The shell gets its own window title while stopped; the TUI saves and sets it again on resume.
+    const marks = term.writes.filter((w) => w === '\x1b[22;0t' || w === '\x1b[23;0t')
+    expect(marks).toEqual(['\x1b[22;0t', '\x1b[23;0t', '\x1b[22;0t'])
+    expect(term.writes.indexOf('\x1b[23;0t')).toBeLessThan(
+      term.writes.findIndex((w) => w.includes('\x1b[?1049l')),
+    )
+    await app.stop()
+    expect(term.writes.filter((w) => w === '\x1b[23;0t')).toHaveLength(2)
+  } finally {
+    await close()
+  }
+})
+
+it('a hard exit hands the shell its window title back', async () => {
+  const { term, close } = await openApp()
+  try {
+    expect(term.writes.filter((w) => w === '\x1b[22;0t')).toHaveLength(1)
+    process.emit('exit', 0)
+    expect(term.writes.filter((w) => w === '\x1b[23;0t')).toHaveLength(1)
   } finally {
     await close()
   }

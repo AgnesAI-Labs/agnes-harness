@@ -137,3 +137,27 @@ it('marks the changed words of an edited line, and only on paired lines', () => 
   const long = `${'word '.repeat(110)}end`
   expect(edit(long, `${long}!`).join('')).not.toContain('\x1b[1m\x1b[4m')
 })
+
+it('draws a diff with hundreds of thousands of lines without overflowing the argument limit', () => {
+  const rows = draw('write', { path: 'huge.txt', content: lines(300_000) })
+  expect(rows[0]).toContain('+300000 -0')
+})
+
+it('shows an edit that only adds or removes the final newline the way git does', () => {
+  const edit = (oldText: string, newText: string) =>
+    draw('edit', { path: 'n', edits: [{ oldText, newText }] }).map((r) => r.trimEnd())
+  expect(edit('a\nb', 'a\nb\n')).toEqual([
+    'n +1 -1',
+    ' 1   a',
+    ' 2 - b',
+    ' 2   \\ No newline at end of file',
+    ' 2 + b',
+  ])
+  expect(edit('a\nb\n', 'a\nb')).toEqual([
+    'n +1 -1',
+    ' 1   a',
+    ' 2 - b',
+    ' 2 + b',
+    ' 2   \\ No newline at end of file',
+  ])
+})

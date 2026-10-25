@@ -93,6 +93,8 @@ export class Editor implements Component, VimTarget {
   private readonly store: PromptHistory
   private search: HistorySearch | undefined
   private histIdx = -1
+  /** The draft Up replaced when history browsing began; Down past the newest entry brings it back. */
+  private stashed = ''
   private kitty = false
   private viewportStart = 0
   private renderedWidth = 1
@@ -199,11 +201,15 @@ export class Editor implements Component, VimTarget {
     const before = { text: this.text, cursor: this.cursor }
     const generation = this.undo.generation
     // Letters in vim normal mode are commands, not typing: each edit is a step of its own.
-    const typing = k.name === 'char' && !this.o.vim?.normal
+    const wasNormal = !!this.o.vim?.normal
+    const typing = k.name === 'char' && !wasNormal
     const handled = this.handleKey(k)
     const edited = this.text !== before.text
     // An undo, redo or clear moved the history itself and is not an edit to record.
-    if (edited && generation === this.undo.generation) this.undo.record(before, typing)
+    // A normal-mode command that edits and lands in insert mode (o, cw, C...) opens the typing run, so
+    // what is typed next joins its step and one `u` takes back the whole change.
+    const opensInsert = wasNormal && !this.o.vim?.normal
+    if (edited && generation === this.undo.generation) this.undo.record(before, typing || opensInsert)
     else if (!typing) this.undo.endRun()
     const vertical = actionFor('editor', k.name)
     if (edited || (vertical !== 'move-up' && vertical !== 'move-down')) this.goalColumn = undefined
@@ -282,6 +288,7 @@ export class Editor implements Component, VimTarget {
           this.menuIndex = (this.menuIndex - 1 + choices) % choices
         } else if (!this.moveVertically(-1) && this.histIdx + 1 < this.history.length) {
           // History starts only past the first line of a multi-line draft.
+          if (this.histIdx < 0) this.stashed = this.text
           this.histIdx++
           this.setText(this.history[this.histIdx] as string)
         }
@@ -294,9 +301,9 @@ export class Editor implements Component, VimTarget {
           if (this.histIdx > 0) {
             this.histIdx--
             this.setText(this.history[this.histIdx] as string)
-          } else {
+          } else if (this.histIdx === 0) {
             this.histIdx = -1
-            this.setText('')
+            this.setText(this.stashed)
           }
         }
         return true

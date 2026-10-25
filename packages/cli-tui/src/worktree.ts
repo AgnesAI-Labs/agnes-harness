@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync, lstatSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import type { Locale } from './locale.js'
 import { tt } from './locale-extended.js'
 
@@ -84,11 +84,12 @@ export async function createWorktree(
 }
 
 /**
- * Removes the worktree when it has no changes. A dirty worktree, one whose state cannot be read, and one git
- * refuses to remove are kept. Never forced, and the branch is never deleted.
+ * Removes the worktree when it has no changes. A dirty worktree (ignored files such as .env or node_modules
+ * count: `git worktree remove` would delete them), one whose state cannot be read, and one git refuses to
+ * remove are kept. Never forced, and the branch is never deleted.
  */
 export async function cleanupWorktree(info: WorktreeInfo): Promise<WorktreeOutcome> {
-  const status = await git(info.path, ['status', '--porcelain'])
+  const status = await git(info.path, ['status', '--porcelain', '--ignored'])
   if (status.code !== 0 || status.out.trim() !== '') return { info, removed: false }
   const root = await repoRoot(info.path)
   if (!root) return { info, removed: false }
@@ -139,8 +140,17 @@ export class WorktreeKeeper {
     return this.active
   }
 
-  /** The session shown changed: the worktree being left is cleaned. Returns what happened to it. */
-  async switched(sessionId: string): Promise<WorktreeOutcome | undefined> {
+  /**
+   * The session shown changed: the worktree being left is cleaned. Returns what happened to it. A session
+   * whose workspace `cwd` lies in a worktree of this run (a `/new` started inside it) belongs to that worktree.
+   */
+  async switched(sessionId: string, cwd?: string): Promise<WorktreeOutcome | undefined> {
+    const within = (info: WorktreeInfo) => {
+      const rel = cwd === undefined ? '..' : relative(info.path, cwd)
+      return !rel.startsWith('..') && !isAbsolute(rel)
+    }
+    const home = this.owned.has(sessionId) ? undefined : [...this.owned.values()].find(within)
+    if (home) this.owned.set(sessionId, home)
     const next = this.owned.get(sessionId)
     const left = this.active
     this.active = next

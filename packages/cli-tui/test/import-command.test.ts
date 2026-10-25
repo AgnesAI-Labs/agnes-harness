@@ -80,6 +80,10 @@ describe('/import', () => {
       text: tt('import.done', 'en', { key: 'agnes:k' }),
     })
     expect(importSession).toHaveBeenCalledWith('/work/proj/my dir/s.jsonl', 'codex')
+    vi.stubEnv('HOME', '/tmp/agh-home')
+    await runSlash(a, '/import ~/s.jsonl')
+    expect(importSession).toHaveBeenLastCalledWith('/tmp/agh-home/s.jsonl', undefined)
+    vi.unstubAllEnvs()
     importSession.mockRejectedValueOnce(new Error('bad\x1bfile'))
     expect((await runSlash(a, '/import x.jsonl')).text).toBe(
       tt('import.failed', 'en', { reason: oneLine('bad\x1bfile') }),

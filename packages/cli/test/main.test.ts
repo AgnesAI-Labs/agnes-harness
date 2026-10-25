@@ -198,6 +198,18 @@ describe('main', () => {
       'DAEMON_CONNECTION_CLOSED: local Daemon connection closed; retry the command.',
     )
     expect(safeDaemonDisconnectLine(new Error('/private/bundle/index.js'))).toBeUndefined()
+    // The daemon's own reason for ending the connection is named by its fixed code alone.
+    const overloaded = new TransportClosed({
+      reason: 'eof',
+      error: new JsonRpcError({
+        code: -32001,
+        message: 'OVERLOADED secret=/private/worker.log',
+        data: { code: 'OVERLOADED' },
+      }),
+    })
+    expect(safeDaemonDisconnectLine(overloaded)).toBe(
+      'DAEMON_OVERLOADED: local Daemon closed the connection because this command fell behind reading it; retry the command, and report it if it persists.',
+    )
   })
 
   it('answers --version and --help without booting anything', async () => {
@@ -377,7 +389,7 @@ describe('main', () => {
     const dir = scratch()
     const h = harness(dir)
     expect(await main(['-p', '--model', 'primary=no-such-route/foo', 'hello'], h.io, h.boot)).toBe(1)
-    expect(h.err()).toContain('E_MODEL_UNSUPPORTED: The preset or permission selection was refused.')
+    expect(h.err()).toContain('E_MODEL_UNSUPPORTED: The requested model is not available in this profile.')
     expect(h.err()).not.toMatch(/^\s+at /m)
     expect(h.out()).toBe('')
   })

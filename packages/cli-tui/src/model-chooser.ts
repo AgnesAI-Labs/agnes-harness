@@ -20,8 +20,9 @@ export class ModelChooser {
     private readonly stopped: () => boolean,
   ) {}
 
-  async choose(choice: ModelSelection, thinkingOnly = false): Promise<void> {
-    if (this.closed()) return
+  /** True when the daemon applied the choice; false when it did not (the error is shown). */
+  async choose(choice: ModelSelection, thinkingOnly = false): Promise<boolean> {
+    if (this.closed()) return false
     const { app } = this
     try {
       const result = await app.session.setModel({
@@ -44,8 +45,10 @@ export class ModelChooser {
         'success',
       )
       if (!this.stopped()) app.renderer.requestRender()
+      return true
     } catch (error) {
       app.showError(error)
+      return false
     }
   }
 
@@ -63,8 +66,8 @@ export class ModelChooser {
           if (!this.stopped()) app.renderer.requestRender()
           return
         }
-        await this.choose({ route: current.route, model: current.id, thinking: next }, true)
-        this.current = { ...current, thinking: next }
+        if (await this.choose({ route: current.route, model: current.id, thinking: next }, true))
+          this.current = { ...current, thinking: next }
       } catch (error) {
         app.showError(error)
       }
@@ -84,8 +87,11 @@ export class ModelChooser {
           return
         }
         // Set before the call so a second press while it is in flight goes on from here.
-        this.current = { route: next.route, id: next.model, thinking: next.thinking ?? '' }
-        await this.choose(next)
+        const before = this.current
+        const set = { route: next.route, id: next.model, thinking: next.thinking ?? '' }
+        this.current = set
+        // A refused switch leaves the model that is still in use, unless a projection has reported since.
+        if (!(await this.choose(next)) && this.current === set) this.current = before
       } catch (error) {
         app.showError(error)
       }

@@ -131,6 +131,20 @@ const editorCases: Case[] = [
     want: { text: '' },
   },
   {
+    name: 'down on a fresh draft keeps it',
+    keys: ['\x1b[B'],
+    text: 'hello world',
+    history: ['one'],
+    want: { text: 'hello world' },
+  },
+  {
+    name: 'up then down restores the unsent draft',
+    keys: ['\x1b[A', '\x1b[B'],
+    text: 'hello world',
+    history: ['two', 'one'],
+    want: { text: 'hello world' },
+  },
+  {
     name: 'up moves within a multi-line draft',
     keys: ['\x1b[A'],
     text: 'ab\ncd',

@@ -187,7 +187,11 @@ export async function runHeadless(
     let promptError: unknown
     try {
       options.signal?.throwIfAborted()
-      result = await session.prompt(options.input, options.signal ? { signal: options.signal } : {})
+      // Nobody attends a headless run: the turn offers no tool that waits on a person.
+      result = await session.prompt(options.input, {
+        unattended: true,
+        ...(options.signal ? { signal: options.signal } : {}),
+      })
     } catch (error) {
       promptError = error
     }

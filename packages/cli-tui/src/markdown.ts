@@ -1,4 +1,5 @@
 import { Lexer, type Token, type Tokens } from 'marked'
+import { wrapText } from './component.js'
 import { type CodeRun, highlight } from './highlight.js'
 import { renderLatex } from './latex.js'
 import { displayMathSource, MATH_FENCES, mathLexerOptions } from './latex-markdown.js'
@@ -69,7 +70,9 @@ function inline(tokens: Token[], ansi: ThemedAnsi, style: Style = PLAIN): Span[]
     if (token.type === 'link') {
       const link = token as Tokens.Link
       const label = inline(link.tokens, ansi, { ...style, link: true })
-      return link.href === plain(label)
+      // marked adds the scheme to a bare www. or e-mail autolink; the label is then the same address.
+      return link.href.replace(/^(?:mailto:|https?:\/\/)/, '') === plain(label).replace(/^https?:\/\//, '') ||
+        link.href === plain(label)
         ? label
         : [...label, span(` (${link.href})`, { ...style, tone: 'faint' })]
     }
@@ -310,7 +313,8 @@ function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = 
         const list = token as Tokens.List
         list.items.forEach((item, index) => {
           const start = typeof list.start === 'number' ? list.start : 1
-          const bullet = list.ordered ? `${start + index}.` : '•'
+          const mark = item.task ? (item.checked ? ' [x]' : ' [ ]') : ''
+          const bullet = (list.ordered ? `${start + index}.` : '•') + mark
           const fits = width > displayWidth(bullet) + 1
           const indent = fits ? displayWidth(bullet) + 1 : 0
           const prefix = fits ? `${ansi.fg(list.ordered ? 'muted' : 'accentSoft', bullet)} ` : ''
@@ -373,7 +377,15 @@ export function completeBlocks(text: string): number {
 export function renderMarkdown(md: string, width: number, ansi: ThemedAnsi): string[] {
   if (!Number.isFinite(width)) throw new Error('invalid markdown width')
   const clean = stripVT(md).replace(CONTROL, '').replaceAll('\t', '    ')
-  return blocks(Lexer.lex(clean, mathLexerOptions()), Math.max(1, Math.trunc(width)), ansi)
+  const w = Math.max(1, Math.trunc(width))
+  try {
+    return blocks(Lexer.lex(clean, mathLexerOptions()), w, ansi)
+  } catch (error) {
+    // Thousands of nested quotes or emphasis openers (a model stuck repeating itself) overflow the
+    // recursive lexer; the text is still shown, unstyled.
+    if (!(error instanceof RangeError)) throw error
+    return wrapText(clean, w)
+  }
 }
 
 /** A leading part of a longer text: the blank line that separates it from what follows is kept. */

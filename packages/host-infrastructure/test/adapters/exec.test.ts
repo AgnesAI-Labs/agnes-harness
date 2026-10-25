@@ -58,6 +58,19 @@ describe('exec adapter', () => {
     await new Promise((res) => setTimeout(res, 200))
     expect(() => process.kill(grandchild, 0)).toThrow()
   })
+  it.skipIf(process.platform === 'win32')(
+    'stops and counts background descendants (& and nohup) left when the command ends',
+    async () => {
+      const r = await exec.run(
+        ['/bin/sh', '-c', 'sleep 30 & a=$!; nohup sleep 30 >/dev/null 2>&1 & echo "$a $!"'],
+        { cwd, timeoutMs: 10_000 },
+      )
+      expect(r).toMatchObject({ code: 0, timedOut: false, stoppedProcesses: 2 })
+      expect(r.stdout.trim()).toMatch(/^[0-9]+ [0-9]+$/)
+      await new Promise((res) => setTimeout(res, 200))
+      for (const pid of r.stdout.trim().split(' ').map(Number)) expect(() => process.kill(pid, 0)).toThrow()
+    },
+  )
   it('truncates output past maxOutputBytes, counted in bytes', async () => {
     const r = await runTestNode(exec, ['-e', 'process.stdout.write("x".repeat(5000))'], {
       cwd,

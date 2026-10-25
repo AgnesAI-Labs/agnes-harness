@@ -65,9 +65,19 @@ export function wrapText(text: string, width: number): string[] {
 // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
 const CONTROL = /[\x00-\x1f\x7f-\x9f]/g
 
+// Tab becomes four spaces, as in Markdown and the bang output, so indentation and columns survive.
 export function escapeControl(s: string): string {
-  return s.replace(CONTROL, (c) => (c === '\n' ? c : ''))
+  return s.replace(CONTROL, (c) => (c === '\n' ? c : c === '\t' ? '    ' : ''))
 }
+
+/** One inert line of untrusted text: control characters escaped and invisible format characters (bidi overrides, zero-width, BOM) spelled out. */
+export const visibleLine = (text: string): string =>
+  // Before the trim, which would drop a leading or trailing BOM unseen.
+  escapeControl(
+    text.replace(/\p{Cf}/gu, (c) => `\\u{${(c.codePointAt(0) as number).toString(16).toUpperCase()}}`),
+  )
+    .replace(/\s+/g, ' ')
+    .trim()
 
 export class Text implements Component {
   private cache: { width: number; lines: string[] } | null = null

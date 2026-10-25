@@ -50,22 +50,25 @@ export async function configurationApplication(o: {
   profile(): ResolvedProfile
   present(snapshot: ConfigSnapshot): ConfigSnapshot
   apply(snapshot: ConfigSnapshot): Promise<ConfigSnapshot>
+  /** A saved configuration revision is not running yet: it waits for a daemon restart. */
+  restartPending(): boolean
 }> {
   let profile = o.profile
   const initial = await o.service.get()
   let appliedRevision = initial.executionRevision ?? initial.revision
   if (o.reloadProfile && (await o.reloadProfile()).hash !== profile.hash) appliedRevision = -1
+  // Newest revision this daemon has seen saved; revisions only grow.
+  let savedRevision = initial.executionRevision ?? initial.revision
   let pending = Promise.resolve()
-  const present = (snapshot: ConfigSnapshot): ConfigSnapshot => ({
-    ...snapshot,
-    effect:
-      (snapshot.executionRevision ?? snapshot.revision) === appliedRevision
-        ? 'new-sessions'
-        : 'restart-required',
-  })
+  const present = (snapshot: ConfigSnapshot): ConfigSnapshot => {
+    const revision = snapshot.executionRevision ?? snapshot.revision
+    savedRevision = Math.max(savedRevision, revision)
+    return { ...snapshot, effect: revision === appliedRevision ? 'new-sessions' : 'restart-required' }
+  }
   return {
     profile: () => profile,
     present,
+    restartPending: () => savedRevision !== appliedRevision,
     async apply(snapshot) {
       const operation = pending.then(async () => {
         if (!o.reloadProfile) return

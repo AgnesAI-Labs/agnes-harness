@@ -4,7 +4,7 @@
 
 标准预设通过官方 `defineTool` 插件披露以下工具。部署能力和文件系统策略仍然生效。新的 local-dev 和 enterprise 模板允许问答与交付物需要的投影能力；现有托管配置需要显式允许该能力。
 
-标准预设直接提供 `ui_render`、`ui_update`、`ui_close` 和 `ui_guide`。构造界面前调用 `ui_guide` 获取完整组件 schema、数据契约和示例；render/update 的模型参数采用精简结构，服务仍在发布前执行完整协议、动作和数据校验。插件/Skill 创作、Skill 管理、MCP 连接管理、文档读取与 Computer Use 通过 `tool_search` 与 `tool_describe` 按意图加载。创作指引由版本匹配的指南工具返回，不再注入普通会话。`ui_submit` 是内部界面动作目标，不进入模型工具 schema 或发现目录。历史会话工具（`session_search`、`session_trace`、`session_event_search`、`session_event_read`、`session_event_trace`）与 MCP 资源工具（`list_mcp_resources`、`list_mcp_resource_templates`、`read_mcp_resource`）按需加载，每类在列表中占一行。MCP 服务器的工具遵循该服务器的工具加载方式（见 [MCP](../guide/mcp.zh-CN.md#mcp-工具如何提供给模型)）。延迟工具在每次请求的 `available_deferred_tools` 提示段中按名称排序，每项一句话，或每个 `discoveryGroup` 一行并附工具数量；描述最多 250 个字符，目录最多 8 KiB，省略项通过 `tool_search` 查找。通过 `tool_describe` 加载匹配工具后，schema 会进入后续模型请求；加载状态跨压缩和会话重开保留，工具调用仍受会话目录、模型能力、参数验证和授权约束。业务 Loop 可通过 `prepareRequest({ tools: [...] })` 选择模型工具，或通过受控工具端口执行。
+标准预设直接提供 `ui_render`、`ui_update`、`ui_close` 和 `ui_guide`。构造界面前调用 `ui_guide` 获取完整组件 schema、数据契约和示例；render/update 的模型参数采用精简结构，服务仍在发布前执行完整协议、动作和数据校验。插件/Skill 创作、Skill 管理、MCP 连接管理、文档读取与 Computer Use 通过 `tool_search` 与 `tool_describe` 按意图加载。创作指引由版本匹配的指南工具返回，不再注入普通会话。`ui_submit` 是内部界面动作目标，不进入模型工具 schema 或发现目录。历史会话工具（`session_search`、`session_trace`、`session_event_search`、`session_event_read`、`session_event_trace`）与 MCP 资源工具（`list_mcp_resources`、`list_mcp_resource_templates`、`read_mcp_resource`）按需加载，每类在列表中占一行。MCP 服务器的工具遵循该服务器的工具加载方式（见 [MCP](../guide/mcp.zh-CN.md#mcp-工具如何提供给模型)）。延迟工具在每次请求的 `available_deferred_tools` 提示段中按名称排序，每项一句话，或每个 `discoveryGroup` 一行并附工具数量；描述最多 250 个字符，目录最多 8 KiB，省略项通过 `tool_search` 查找。通过 `tool_describe` 加载匹配工具后，schema 会进入后续模型请求；加载状态跨压缩和会话重开保留，工具调用仍受会话目录、模型能力、参数验证和授权约束。`ask_user_question` 和四个界面工具声明了 `requiresUser`，无人值守的轮次（`agh -p`、`agh run`）不提供它们（见[无人值守的轮次](../guide/headless.zh-CN.md#无人值守的轮次)）。业务 Loop 可通过 `prepareRequest({ tools: [...] })` 选择模型工具，或通过受控工具端口执行。
 
 | 工具 | 输入与行为 |
 | --- | --- |
@@ -35,7 +35,7 @@
 
 Web 问答使用同一个预设 surface 表单，提供单选、多选与自由文本控件。TUI 读取同一批 surface：单个问题可输入标签或编号，多选使用逗号分隔标签或编号，多个问题使用以问题 id 为键的 JSON 对象。两者均通过 `ui.action` 进入普通 deferred `ui_submit` 收集工具。无效、陈旧回答及普通工具策略拒绝保留表单；成功回答关闭表单，经 SC1 保留认证 actor 与 untrusted 内容送达 Agent。回答不授予工具权限。`timeoutMs` 只限制等待，晚答仍有效。重新加载从账本恢复表单与动作回执。渠道显示编号选项，通过需认证的 Web 链接回答；`outbound.webUrl` 应配置为可访问的 Web 基址。
 
-Shell 命令默认获得 `PYTHONUNBUFFERED=1` 和 `PYTHONUTF8=1`。PowerShell 使用 Host 选定的解释器；5.1 以命令文本启动，避免序列化 CLIXML。非 UTF-8 输出按行回退到受支持的实测控制台代码页。超时结果说明空输出和重复超时次数，不猜测原因；已测得的后代清理数量会显示在 shell 结果中。
+Shell 命令默认获得 `PYTHONUNBUFFERED=1` 和 `PYTHONUTF8=1`。PowerShell 使用 Host 选定的解释器；5.1 以命令文本启动，避免序列化 CLIXML。非 UTF-8 输出按行回退到受支持的实测控制台代码页。超时结果说明空输出和重复超时次数，不猜测原因；前台命令结束时，它在自身进程组中留下仍在运行的进程（例如 `server &` 或 `nohup server &`）会被停止，结果会说明停止了几个并提示改用 `background: true`。Linux 上从 `/proc` 计数，因此没有 `ps` 的镜像同样会报告。离开进程组的进程（`setsid`、自行守护化的程序）不会被停止。
 
 后台任务跨轮次保留，但不跨宿主重启。会话关闭时终止并清理全部所属任务。活跃进程句柄会阻止会话因空闲而休眠。清理失败保持可见，并保留句柄供后续重试关闭。每个任务最多捕获 4 MiB 输出，达到上限时会提示。每个会话与分支最多保留 128 个任务，优先淘汰已完成项。进程由选定沙箱提供方负责；缺失交互进程入口时明确拒绝，不回退本地执行。前台调用取消会终止任务；成功返回后台任务的工具调用结束不会终止任务。
 

@@ -1,9 +1,11 @@
 import { ANSI_RE, defang } from './ansi.js'
 import { type Component, CURSOR_MARKER } from './component.js'
 import { type ImageLayer, type ImageMark, takeMark } from './inline-image.js'
+import { KeyChunker } from './key-chunks.js'
 import { type MouseEvent, parseMouse } from './keys.js'
 import { PasteAssembler } from './paste.js'
 import { displayWidth, type Terminal } from './terminal.js'
+import { restoreTitle } from './terminal-signals.js'
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 function historyLines(line: string, columns: number): string[] {
@@ -141,7 +143,6 @@ export class Renderer {
     this.lastCursorKey = ''
     this.paste = new PasteAssembler(this.term.pasteBursts === true)
     process.once('exit', this.onExit)
-    this.term.enterRaw()
     // Save the shell screen/cursor before painting. Never clear its scrollback (ED3). `runTui`
     // may already have claimed it while opening the session; entering 1049 a second time is not
     // a harmless no-op on every terminal, so only clear that existing alternate buffer here.
@@ -150,6 +151,9 @@ export class Renderer {
       this.term.write('\x1b[?1049h\x1b[H\x1b[2J')
       this.screenEntered = true
     }
+    // The kitty keyboard flag stack is per screen, so enhancement is pushed only once the alternate
+    // screen is the current one (and popped before leaving it, see stop()).
+    this.term.enterRaw()
     // Bracketed paste (2004): a paste arrives wrapped, so it cannot be mistaken for typing. Focus
     // reporting (1004) sends ESC [ I and ESC [ O as the window gains and loses the user's attention.
     this.term.write('\x1b[?2004h\x1b[?1004h')
@@ -162,9 +166,23 @@ export class Renderer {
       this.term.write(`${this.images?.reset() ?? ''}\x1b[H\x1b[2J`)
       this.renderNow()
     })
-    this.offInput = this.term.onInput((d) => {
-      for (const part of this.paste.push(d)) this.input(part)
-    })
+    const keys = new KeyChunker((key) => this.input(key))
+    const feed = (parts: string[]) => {
+      for (const part of parts) keys.push(part)
+    }
+    const off = this.term.onInput((d) =>
+      feed(
+        this.paste.push(d, (held) => {
+          feed(held)
+          keys.flush()
+        }),
+      ),
+    )
+    this.offInput = () => {
+      off()
+      keys.clear()
+      this.paste.clear()
+    }
     try {
       this.renderNow()
     } catch (error) {
@@ -384,18 +402,20 @@ export class Renderer {
     this.scheduled = false
     this.offInput?.()
     this.offResize?.()
+    restoreTitle(this.term)
+    // Pop the keyboard enhancement on the screen it was pushed on, before leaving the alternate screen.
+    if (wasActive) this.term.leaveRaw()
     try {
       this.selection = undefined
       this.dragging = false
       this.term.write(
         `${this.images?.reset() ?? ''}\x1b[?1004l\x1b[?2004l${this.mouse ? '\x1b[?1006l\x1b[?1002l' : ''}\x1b[?1049l\x1b[?25h`,
       )
-      this.screenEntered = false
       const columns = this.term.size().columns
       for (const line of transcript)
         for (const wrapped of historyLines(line, columns)) this.term.write(`${wrapped}\r\n`)
     } finally {
-      if (wasActive) this.term.leaveRaw()
+      this.screenEntered = false
     }
   }
 }

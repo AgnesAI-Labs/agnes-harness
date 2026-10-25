@@ -4,6 +4,15 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ## 5.0.0
 
+### Added
+
+- `ToolMeta.requiresUser` (optional, default false): the tool asks a person who is present, or shows them
+  something to act on now (a question, a form, a live UI surface). A turn whose input declares that
+  nobody attends it (`agh -p`, `agh run`, SDK `runHeadless` or `session.prompt(..., { unattended: true })`)
+  leaves the tool out of its catalog: the model is not offered it, discovery cannot find it, and a call
+  to it is refused as an unknown tool. The official `ask_user_question`, `ui_render`, `ui_update`,
+  `ui_close` and `ui_guide` declare it.
+
 Every `agnes.plugins[].apiRange` and `@agnes/extension-api` dependency range (including
 `hostProvidedExternals`) moves from `^4.0.0` to `^5.0.0`; a `^4` range is refused with
 `E_API_RANGE`. The bundled default plugins move with the API. No compatibility shim is provided.

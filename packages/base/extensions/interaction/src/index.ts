@@ -115,6 +115,8 @@ export default defineAgnesPlugin({
             costHint: {},
             deferLoading: false,
             requiresApproval: 'never',
+            // The answer comes from a person; an unattended turn does not offer the tool at all.
+            requiresUser: true,
           },
           async execute(args, ctx) {
             ctx.signal.throwIfAborted()

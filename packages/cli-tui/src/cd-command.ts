@@ -7,9 +7,13 @@ import { inheritFreshSession } from './composer-memory.js'
 import { tt } from './locale-extended.js'
 import { freshTuiSessionKey } from './session-key.js'
 
+/** The path a slash argument names on this machine: `~` expanded, otherwise relative to the session workspace. */
+export const localPath = (app: TuiApp, arg: string): string =>
+  resolve(app.cwd, arg === '~' || arg.startsWith('~/') ? homedir() + arg.slice(1) : arg)
+
 /** The directory a slash argument names on this machine (`~`, or relative to the session workspace), and whether it exists. */
 export async function localDirectory(app: TuiApp, arg: string): Promise<{ dir: string; isDir: boolean }> {
-  const dir = resolve(app.cwd, arg === '~' || arg.startsWith('~/') ? homedir() + arg.slice(1) : arg)
+  const dir = localPath(app, arg)
   const isDir = await stat(dir).then(
     (s) => s.isDirectory(),
     () => false,

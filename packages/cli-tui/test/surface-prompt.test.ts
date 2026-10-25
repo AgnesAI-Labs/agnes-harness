@@ -1,6 +1,7 @@
 import type { JsonValue, UiSurface } from '@agnes/protocol'
 import { numberedSurfaceInput } from '@agnes/protocol/intelligent-ui'
 import { describe, expect, it } from 'vitest'
+import { SurfaceInbox, type SurfaceInboxHost } from '../src/surface-inbox.js'
 import { pendingSurface } from '../src/surface-prompt.js'
 
 // Consumer fixtures use the protocol contract; producer wiring is covered in Host tests.
@@ -87,5 +88,56 @@ describe('surface prompt', () => {
       }),
     ).toBeUndefined()
     expect(pendingSurface({ ...page, surfaces: [{ ...record, status: 'closed' }] })).toBeUndefined()
+  })
+
+  it('builds the next answer from new text after the daemon refuses one, and retries only an unsure send', async () => {
+    const record = {
+      surface: formSurface('q', 'explain', { type: 'string', minLength: 1 }),
+      status: 'open' as const,
+      owner: 'agnes/intelligent-ui',
+      lane: 'main',
+      taskId: 'task',
+      createdSeq: 1,
+      updatedSeq: 1,
+    }
+    let seq = 1
+    const sent: { commandId: string; input: unknown }[] = []
+    const failures: unknown[] = [
+      Object.assign(new Error('refused'), { data: { code: 'UI_RATE_LIMIT' } }),
+      Object.assign(new Error('lost'), { data: { code: 'OUTCOME_UNKNOWN' } }),
+    ]
+    const session = {
+      id: 'session',
+      uiRead: async () => ({ sessionId: 'session', lastSeq: seq, surfaces: [record], actions: [] }),
+      uiAction: async (command: { commandId: string; input: unknown }) => {
+        sent.push(command)
+        const failure = failures.shift()
+        if (failure) throw failure
+        return { status: 'received', seq: ++seq }
+      },
+    }
+    const host = {
+      session: () => session,
+      stopped: () => false,
+      closed: () => false,
+      locale: () => 'en',
+      statusBar: { setNotice: () => {} },
+      appendLocal: () => {},
+      localCommandView: () => ({ render: () => [] }),
+      repaint: () => {},
+      showError: () => {},
+    } as unknown as SurfaceInboxHost
+    const inbox = new SurfaceInbox(host)
+    await inbox.sync()
+    await expect(inbox.answer('first')).rejects.toThrow('refused')
+    await expect(inbox.answer('second')).rejects.toThrow('lost')
+    await inbox.answer('third')
+    expect(sent.map((c) => c.input)).toEqual([
+      { answers: { explain: 'first' } },
+      { answers: { explain: 'second' } },
+      { answers: { explain: 'second' } },
+    ])
+    expect(sent[2]?.commandId).toBe(sent[1]?.commandId)
+    expect(sent[1]?.commandId).not.toBe(sent[0]?.commandId)
   })
 })

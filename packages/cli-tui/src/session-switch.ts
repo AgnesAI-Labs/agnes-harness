@@ -6,6 +6,12 @@ import { tt } from './locale-extended.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { worktreeSwitched } from './worktree-command.js'
 
+async function attach(app: TuiApp, session: Session): Promise<void> {
+  app.projection = app.makeProjection(session)
+  app.offPermission = session.onPermissionRequest((request, context) => app.modal.ask(request, context))
+  await app.projection.start()
+}
+
 // Stops the old projection's local subscription, swaps the session the app renders, and starts
 // a fresh projection against the new one. The old session is left attached at the protocol level
 // (its own `Client.close()` cleans that up eventually) -- an explicit detach here is a step this
@@ -29,6 +35,12 @@ export async function applySwitch(app: TuiApp, next: Session): Promise<boolean> 
   // the process alive after the TUI has quit. A terminal close during the await is the same case:
   // starting the next projection would re-dial the daemon.
   if (app.stopped || app.refuseClosed()) return false
+  // A prompt submitted during that await went to the still-current session, whose cancel a swap would
+  // misroute: stay on it and re-attach what was just torn down.
+  if (app.refuseSwitch()) {
+    await attach(app, app.o.session)
+    return false
+  }
   // `projection.stop()` only unsubscribes from the old session's ledger events; it never
   // synthesizes a closing `opState: null` tick for a turn that was still in flight. Left alone,
   // a mid-turn switch leaves the ticker genuinely running past this point (confirmed reachable:
@@ -42,13 +54,13 @@ export async function applySwitch(app: TuiApp, next: Session): Promise<boolean> 
   app.attachmentController.abort()
   app.attachmentController = new AbortController()
   app.mentions.reset()
+  // A fork carries no workspace of its own: it stays in the one it was forked from.
+  app.o.cwd = next.cwd ?? app.cwd
   app.o.session = next
   app.o.onSessionSwitch?.(next.id)
   app.previews.reset()
   app.previewEffects.length = 0
-  app.projection = app.makeProjection(next)
-  app.offPermission = next.onPermissionRequest((request, context) => app.modal.ask(request, context))
-  await app.projection.start()
+  await attach(app, next)
   await worktreeSwitched(app, next.id)
   return true
 }

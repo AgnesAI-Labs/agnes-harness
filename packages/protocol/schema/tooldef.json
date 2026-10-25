@@ -135,6 +135,10 @@
           "type": "boolean",
           "description": "Optional, defaults to false. Only a model with native image input can discover or execute this tool."
         },
+        "requiresUser": {
+          "type": "boolean",
+          "description": "Optional, defaults to false. The tool asks a person who is present, or shows them something to look at or act on now (a question, a form, a live UI surface). A turn whose input declares that nobody is attending (agh -p, agh run, runHeadless) does not offer it to the model or execute a model call to it."
+        },
         "presentation": {
           "$ref": "session-v1.json#/$defs/ToolPresentation",
           "description": "Optional human-readable action and purpose for cards and approvals. Display only; exact arguments and authorization remain unchanged."

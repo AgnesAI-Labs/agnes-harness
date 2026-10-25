@@ -24,6 +24,21 @@ export type EnqueueMsg = {
   hardBudget?: boolean
   /** Caps the model steps of the one next turn opened by this item; lowers, never raises, the preset's. */
   maxSteps?: number
+  /**
+   * Wall-clock milliseconds the one next turn opened by this item may take. Core tells the model
+   * (see `turn-limits.ts`); the client that set it cancels the turn at the deadline.
+   */
+  timeLimitMs?: number
+}
+
+/**
+ * The actor attribute a client sets on an input when no person attends the turn it opens (`agh -p`,
+ * `agh run`, `runHeadless`). It only takes capability away, so it is honoured from any origin.
+ */
+export const UNATTENDED_ACTOR_ATTR = { key: 'interaction', value: 'unattended' } as const
+
+export function unattendedInput(actor: Pick<Actor, 'attrs'> | undefined): boolean {
+  return actor?.attrs?.[UNATTENDED_ACTOR_ATTR.key] === UNATTENDED_ACTOR_ATTR.value
 }
 
 /** Reference text is external evidence even when embedded in an authenticated human prompt. */

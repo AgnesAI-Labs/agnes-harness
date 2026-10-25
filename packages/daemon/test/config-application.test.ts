@@ -33,7 +33,9 @@ it('reports the revision actually activated and leaves storage/policy changes fo
   })
   revision = 1
   expect(application.present(snapshot()).effect).toBe('restart-required')
+  expect(application.restartPending()).toBe(true)
   expect((await application.apply(snapshot())).effect).toBe('new-sessions')
+  expect(application.restartPending()).toBe(false)
   expect(application.profile().hash).toMatch(/^sha256-[a-f0-9]{64}$/)
   expect(published).toBe(application.profile())
   const accepted = published
@@ -46,6 +48,7 @@ it('reports the revision actually activated and leaves storage/policy changes fo
     revision++
     next = { ...application.profile(), ...change }
     expect((await application.apply(snapshot())).effect).toBe('restart-required')
+    expect(application.restartPending()).toBe(true)
     expect(application.profile()).toBe(accepted)
     expect(published).toBe(accepted)
   }

@@ -10,7 +10,7 @@ export const TURN_CAP_FLAGS = {
   '--output-file': 'outputFile',
 } as const
 
-export type TurnCaps = { creditLimit?: number; maxSteps?: number }
+export type TurnCaps = { creditLimit?: number; maxSteps?: number; timeLimitMs?: number }
 
 /** Largest limit the SDK accepts (`prompt-budget.ts`); refused here so the message names the flag. */
 const MAX_CREDITS = Number.MAX_SAFE_INTEGER / 1_000_000
@@ -34,7 +34,10 @@ export function parseTurnCaps(p: ParsedArgs): TurnCaps {
 /** Longest `--timeout`, in seconds: one day, far below the timer's own limit of about 24 days. */
 const MAX_TIMEOUT_SECONDS = 86_400
 
-/** `--timeout` in milliseconds, or undefined when absent. Not a turn cap: the CLI enforces it itself. */
+/**
+ * `--timeout` in milliseconds, or undefined when absent. The CLI enforces it itself (see print.ts);
+ * `timeLimitCap` also sends it with the prompt so the model is told how much time it has.
+ */
 export function parseTimeoutMs(p: ParsedArgs): number | undefined {
   if (p.timeout === undefined) return undefined
   const n = /^\d+(\.\d+)?$/.test(p.timeout) ? Number(p.timeout) : Number.NaN
@@ -68,4 +71,18 @@ export async function requireTurnCaps(client: Client, caps: TurnCaps): Promise<v
     throw new UsageError('this daemon does not support --max-budget; upgrade it')
   if (caps.maxSteps !== undefined && meta?.turnMaxSteps !== true)
     throw new UsageError('this daemon does not support --max-turns; upgrade it')
+}
+
+/**
+ * `--timeout` as the prompt's time limit, so core can tell the model its deadline. Unlike the caps
+ * above, a daemon without `turnTimeLimit` is not refused: the CLI cancels at the deadline either way,
+ * and such a daemon just runs the turn without the notes.
+ */
+export async function timeLimitCap(client: Client, timeoutMs: number | undefined): Promise<TurnCaps> {
+  if (timeoutMs === undefined) return {}
+  const info = await client.initialize()
+  const meta = (info.capabilities._meta as Record<string, unknown> | undefined)?.['ai.agnes.harness'] as
+    | { turnTimeLimit?: boolean }
+    | undefined
+  return meta?.turnTimeLimit === true ? { timeLimitMs: timeoutMs } : {}
 }

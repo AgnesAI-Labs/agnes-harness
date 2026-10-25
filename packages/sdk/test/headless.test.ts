@@ -100,6 +100,10 @@ it('streams durable JSONL records and per-turn usage, without reusing a session 
         },
       },
     })
+    // Nobody attends a headless run, so its prompt asks for a turn without human-waiting tools.
+    expect(f.calls.find((row) => row.method === 'session/prompt')?.params).toMatchObject({
+      _meta: { [META_KEY]: { unattended: true } },
+    })
     expect(f.calls.at(-1)?.method).toBe('_agnes/v1/session.detach')
   } finally {
     await client.close()

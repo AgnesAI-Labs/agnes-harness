@@ -80,6 +80,15 @@ describe('clipboard image paste', () => {
     expect(busyInput.takeKept('the chip was deleted')).toEqual([])
   })
 
+  it('keeps the image of a stashed draft through another send', async () => {
+    const { app, editor, busyInput } = harness(withImage)
+    await pasteClipboardImage(app)
+    const stashed = `${editor.expanded()} describe this`
+    expect(busyInput.takeKept('hi')).toEqual([])
+    expect(busyInput.takeKept(stashed)).toEqual([{ type: 'attachment', id: 'att-1' }])
+    expect(busyInput.takeKept(stashed)).toEqual([])
+  })
+
   it.each([
     ['nothing on the clipboard', { ok: false, reason: 'empty' }, 'warning', /no image/i],
     ['a tool that is missing', { ok: false, reason: 'unavailable', tool: 'xclip' }, 'error', /xclip/],
@@ -242,12 +251,13 @@ describe('clipboard image paste', () => {
       expect(uploadedPaths).toEqual([])
     })
 
-    it('keeps the path in the draft when the upload fails', async () => {
+    it('keeps the paths in the draft, apart, when the uploads fail', async () => {
       const file = image('d.png')
+      const other = image('e.png')
       failUpload = true
       const { editor, notices } = harness(withImage)
-      drop(editor, file)
-      await vi.waitFor(() => expect(editor.text).toBe(file))
+      drop(editor, `${file}\n${other}`)
+      await vi.waitFor(() => expect(editor.text).toBe(`${file} ${other}`))
       expect(notices.at(-1)?.[1]).toBe('error')
     })
   })

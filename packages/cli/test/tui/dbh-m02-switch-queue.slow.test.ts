@@ -239,6 +239,40 @@ it('[M-02c] a prompt submitted while /new waits on the daemon keeps the TUI on s
   })
 })
 
+it('[M-02c] a prompt submitted while /new waits for the old projection to stop keeps the TUI on s1, attached', async () => {
+  const e = gatedEndpoint()
+  await withApp(e, async (app, term) => {
+    // Hold the old projection's stop, which applySwitch awaits before it swaps sessions.
+    const old = (app as unknown as { projection: { stop(): Promise<void> } }).projection
+    const realStop = old.stop.bind(old)
+    const stopGate = hold()
+    let stopping = false
+    old.stop = async () => {
+      stopping = true
+      await stopGate.gate
+      await realStop()
+    }
+    const switching = app.command('/new')
+    await vi.waitFor(() => expect(stopping).toBe(true))
+    await startTurn(e, app, term)
+    const projections = (sid: string) =>
+      e.endpoint.calls.filter(
+        (c) => c.method.includes('projectUI') && (c.params as { sessionId?: string }).sessionId === sid,
+      ).length
+    const before = projections(SID(1))
+    stopGate.release()
+    await switching
+    expect(app.session.id).toBe(SID(1))
+    await vi.waitFor(async () => expect(await screen(term)).toContain(REFUSED))
+    // The old session's projection is running again; the unused session was never projected.
+    await vi.waitFor(() => expect(projections(SID(1))).toBeGreaterThan(before))
+    expect(projections(SID(2))).toBe(0)
+    term.feed('\x03')
+    await vi.waitFor(() => expect(e.cancels()).toEqual([SID(1)]))
+    e.release()
+  })
+})
+
 it('[M-02c] a prompt submitted while a picked session loads keeps the TUI on s1', async () => {
   const e = gatedEndpoint({ holdOpen: true })
   await withApp(e, async (app, term) => {

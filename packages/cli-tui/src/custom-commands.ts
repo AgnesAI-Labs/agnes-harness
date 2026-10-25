@@ -3,7 +3,7 @@ import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import type { TuiApp } from './app.js'
-import { escapeControl } from './component.js'
+import { escapeControl, visibleLine } from './component.js'
 import { tt } from './locale-extended.js'
 
 /** One `.md` file that is a slash command. `project` ones come from the repository, so they are not trusted. */
@@ -41,11 +41,13 @@ const hidesText = (body: string): boolean =>
 const oneLine = (s: string): string => escapeControl(s).replace(/\s+/g, ' ').trim()
 
 /** `---` frontmatter with flat `key: value` lines; anything it does not understand stays in the body. */
-function parse(text: string): { fields: Record<string, string>; body: string } {
-  const m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text)
+function parse(raw: string): { fields: Record<string, string>; body: string } {
+  const text = raw.replace(/^\uFEFF/, '')
+  // The empty block is tried first: otherwise its lazy body would run on to a later `---` rule.
+  const m = /^---\r?\n(?:---|([\s\S]*?)\r?\n---)[ \t]*(?:\r?\n|$)/.exec(text)
   if (!m) return { fields: {}, body: text }
   const fields: Record<string, string> = {}
-  for (const row of (m[1] as string).split(/\r?\n/)) {
+  for (const row of (m[1] ?? '').split(/\r?\n/)) {
     const kv = /^([A-Za-z-]+):\s*(.*)$/.exec(row)
     if (kv) fields[kv[1] as string] = (kv[2] as string).replace(/^(['"])(.*)\1$/, '$2').trim()
   }
@@ -87,8 +89,9 @@ function readDir(
             name,
             scope,
             shown: scope === 'project' ? `${AGH_DIR}/commands/${file}` : path,
-            description: oneLine(fields.description ?? ''),
-            hint: oneLine(fields['argument-hint'] ?? ''),
+            // A repository's text sits next to the provenance tag, so a bidi override must not reorder it.
+            description: (scope === 'project' ? visibleLine : oneLine)(fields.description ?? ''),
+            hint: (scope === 'project' ? visibleLine : oneLine)(fields['argument-hint'] ?? ''),
             body,
             digest: createHash('sha256').update(path).update(body).digest('hex'),
           })

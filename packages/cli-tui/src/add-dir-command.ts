@@ -17,18 +17,20 @@ export async function addDirSlash(app: TuiApp, line: string): Promise<SlashResul
   const { dir, isDir } = await localDirectory(app, arg)
   if (!isDir) return { text: tt('cd.notDir', locale, { path: dir }) }
   if (app.busy) return { text: tt('fork.busy', locale) }
-  const { timeline } = await app.session.projectUIOpening({ surface: 'tui' })
+  const session = app.session
+  const { timeline } = await session.projectUIOpening({ surface: 'tui' })
+  if (app.session !== session) return {}
   const turn = timeline.turns.findLast((t) => t.forkable && t.endSeq !== undefined)
   if (turn?.endSeq === undefined) return { text: tt('adddir.noTurn', locale) }
-  const client = app.session.client
+  const client = session.client
   await client.workspace.add(dir)
-  const created = await client.session.fork(app.session.id, turn.endSeq, { additionalDirectories: [dir] })
+  const created = await client.session.fork(session.id, turn.endSeq, { additionalDirectories: [dir] })
   return {
     switchSession: created,
     text: tt('adddir.forked', locale, {
       id: escapeControl(created.id),
       dir: escapeControl(dir),
-      old: escapeControl(app.session.id),
+      old: escapeControl(session.id),
     }),
   }
 }

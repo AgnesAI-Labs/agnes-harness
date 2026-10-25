@@ -29,8 +29,11 @@ export function supervisorHostFacade(
   host: Host
   resolveApplicationAgent(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
   update(profile: ResolvedProfile): void
+  /** Lets a model refusal name a saved configuration that waits for a daemon restart. */
+  observeRestartPending(pending: () => boolean): void
 } {
   let profile = initial
+  let restartPending = () => false
   const facade = {
     activationBarrier,
     async resolveAgent(ref: string): Promise<import('@agnes/protocol').AgentPlan> {
@@ -85,9 +88,15 @@ export function supervisorHostFacade(
       // Route and model go in `detail` only: an account route (`account-acct-<uuid>`) in the message
       // trips HostError's leak check, and the code-less error it throws instead reaches the client
       // as INTERNAL rather than PRESET_SWITCH_REJECTED.
+      // A saved account or model change that is not active yet is the likely cause; the fixed reason
+      // tells the operator to restart rather than to pick another preset or permission.
       if (!route || !modelDeclared)
         throw new HostError('E_MODEL_UNSUPPORTED', 'the requested model is not declared', {
-          detail: { route: sel.route, model: sel.model },
+          detail: {
+            route: sel.route,
+            model: sel.model,
+            ...(restartPending() ? { reason: 'restart-required' } : {}),
+          },
         })
     },
   }
@@ -99,6 +108,9 @@ export function supervisorHostFacade(
     host: facade as unknown as Host,
     update(next: ResolvedProfile) {
       profile = next
+    },
+    observeRestartPending(pending: () => boolean) {
+      restartPending = pending
     },
   }
 }

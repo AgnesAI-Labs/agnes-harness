@@ -65,6 +65,10 @@ export class RpcConnection {
   private readonly pending = new Map<JsonRpcId, Pending>()
   private readonly notificationHandlers = new Set<(method: string, params: unknown) => void>()
   private serverRequestHandler: ((method: string, params: unknown) => Promise<unknown>) | null = null
+  // A server about to end the connection sends one error with `id: null` naming why (OVERLOADED,
+  // PARSE_ERROR ...). No request owns it, so it rides on the close it precedes: callers then see a
+  // TransportClosed that says why instead of a bare EOF.
+  private peerError: JsonRpcError | undefined
 
   constructor(
     private readonly factory: TransportFactory,
@@ -86,6 +90,7 @@ export class RpcConnection {
 
   private async doConnect(): Promise<void> {
     const generation = ++this.generation
+    this.peerError = undefined
     const previous = this.transport
     if (previous) {
       await previous.close()
@@ -233,6 +238,10 @@ export class RpcConnection {
     switch (classify(msg)) {
       case 'response': {
         const r = msg as JsonRpcResponse
+        if ((r.id as JsonRpcId | null) === null && r.error) {
+          this.peerError = new JsonRpcError(r.error)
+          return
+        }
         // A response nobody is waiting for - late after a timeout, or an id the server got
         // wrong - is dropped rather than thrown: a throw kills the whole read loop.
         const p = this.takePending(r.id)
@@ -283,7 +292,8 @@ export class RpcConnection {
   private handleClose(info: CloseInfo): void {
     if (!this.open) return
     this.open = false
-    for (const id of [...this.pending.keys()]) this.takePending(id)?.reject(new TransportClosed(info))
-    this.opts.onClose?.(info)
+    const closed = !info.error && this.peerError ? { ...info, error: this.peerError } : info
+    for (const id of [...this.pending.keys()]) this.takePending(id)?.reject(new TransportClosed(closed))
+    this.opts.onClose?.(closed)
   }
 }

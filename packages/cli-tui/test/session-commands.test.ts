@@ -149,6 +149,55 @@ describe('session slash commands', () => {
     expect((await runSlash(app, '/rewind')).text).toBe(tt('session.noTurns', 'en'))
   })
 
+  it('/handoff clears its working notice when the session was switched during the summary call', async () => {
+    const notices: unknown[] = []
+    let btwDone: (v: { text: string }) => void = () => {}
+    const btw = vi.fn(() => new Promise<{ text: string }>((r) => (btwDone = r)))
+    const app = appWith(
+      { session: { btw } },
+      {},
+      {
+        statusBar: { setNotice: (n: unknown) => notices.push(n) },
+        renderer: { requestRender: () => {} },
+      },
+    )
+    const running = runSlash(app, '/handoff')
+    ;(app as unknown as { session: unknown }).session = { id: 'other', client: {} }
+    btwDone({ text: 'summary' })
+    await running
+    expect(notices.at(-1)).toBeUndefined()
+    expect(notices).toHaveLength(2)
+  })
+
+  it('/fork and /add-dir do nothing when the session was switched while the timeline loaded', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agh-fork-race-'))
+    try {
+      const turns = [{ id: 't1', turn: 1, startSeq: 10, endSeq: 12, forkable: true }]
+      const add = vi.fn(async () => ({}))
+      const forkOld = vi.fn(async () => ({ id: 'child' }))
+      const forkNew = vi.fn(async () => ({ id: 'child' }))
+      for (const line of ['/fork', `/add-dir ${dir}`]) {
+        const newer = { id: 'other', client: { workspace: { add }, session: { fork: forkNew } } }
+        const app = appWith(
+          { workspace: { add }, session: { fork: forkOld } },
+          {
+            projectUIOpening: async () => {
+              ;(app as unknown as { session: unknown }).session = newer
+              return { timeline: { turns, nodes: [] } }
+            },
+          },
+        )
+        const r = await runSlash(app, line)
+        expect(r.switchSession).toBeUndefined()
+      }
+      expect(forkOld).not.toHaveBeenCalled()
+      expect(forkNew).not.toHaveBeenCalled()
+      expect(add).not.toHaveBeenCalled()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('/fork forks at the latest completed turn, or turn N, through the same call as /rewind', async () => {
     const turn = (n: number, endSeq: number | undefined, forkable: boolean) => ({
       id: `t${n}`,
@@ -261,6 +310,10 @@ describe('session slash commands', () => {
     const app = appWith({ session: { new: created } })
     await expect(runSlash(app, '/new ../b')).rejects.toThrow('workspace not authorised')
     expect(created).toHaveBeenCalledWith(expect.objectContaining({ cwd: resolve(app.cwd, '../b') }))
+    vi.stubEnv('HOME', '/tmp/agh-home')
+    await expect(runSlash(app, '/new ~/b')).rejects.toThrow('workspace not authorised')
+    vi.unstubAllEnvs()
+    expect(created).toHaveBeenLastCalledWith(expect.objectContaining({ cwd: '/tmp/agh-home/b' }))
   })
 })
 
@@ -829,6 +882,15 @@ describe('small info commands', () => {
     expect(wide).toContain(ansi.fg('success', `+let total = ${mark('cost')} * 2 + tax`))
     const narrow = localCommandView(ansi)('/diff', text).render(14)
     expect(narrow.join('')).toContain(mark('price'))
+  })
+
+  it('/diff styles ---/+++ as file headers only before the first hunk, never inside one', () => {
+    const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+    const text = '--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n--- old comment\n+++ new text\n ctx'
+    const rows = localCommandView(ansi)('/diff', text).render(40)
+    expect(rows).toContain(ansi.fg('faint', '--- a/x'))
+    expect(rows).toContain(ansi.fg('danger', '--- old comment'))
+    expect(rows).toContain(ansi.fg('success', '+++ new text'))
   })
 
   it('/init submits a fixed message that depends on AGENTS.md, and writes nothing itself', async () => {

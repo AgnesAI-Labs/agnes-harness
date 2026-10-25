@@ -161,7 +161,7 @@ export function contextBudgetError(
  * "stop", because running out of steps, running out of credit and waiting on a human are three
  * different endings and the ledger has to say which one happened.
  */
-function admittedStep(s: SessionImpl): number {
+export function admittedStep(s: SessionImpl): number {
   return s.state.openStep.get(s.lane)?.step ?? (s.op()?.step ?? 0) + 1
 }
 

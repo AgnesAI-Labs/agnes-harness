@@ -273,6 +273,7 @@ function snapshotToolMeta(meta: ToolMeta): ToolMeta {
     ...(meta.requiresApproval === undefined ? {} : { requiresApproval: meta.requiresApproval }),
     ...(meta.modelVisible === undefined ? {} : { modelVisible: meta.modelVisible }),
     ...(meta.requiresImageInput === undefined ? {} : { requiresImageInput: meta.requiresImageInput }),
+    ...(meta.requiresUser === true ? { requiresUser: true } : {}),
     ...(meta.commandArg === undefined ? {} : { commandArg: meta.commandArg }),
     ...(meta.paths
       ? {

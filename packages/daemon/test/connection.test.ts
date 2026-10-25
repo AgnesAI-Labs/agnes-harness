@@ -145,6 +145,46 @@ it('enforces the default 1000 in-flight message limit on actual socket traffic',
   await ended
 })
 
+it('holds notifications behind a reader that is not reading instead of closing on it', async () => {
+  // Past 1000 un-flushed writes the connection used to end with OVERLOADED, so replaying a ledger
+  // longer than that to an ordinary client (agh export of a long session) failed on every retry.
+  const ep = endpoint(),
+    w = await wire(ep)
+  w.client.pause()
+  const total = 3000
+  for (let n = 0; n < total; n++)
+    ep.push({ jsonrpc: '2.0', method: 'test/row', params: { n, text: 'x'.repeat(256) } })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  // The socket refused more, so the remainder waits in the endpoint queue that feeds measure.
+  expect(ep.pending().events).toBeGreaterThan(0)
+  w.client.resume()
+  const seen: unknown[] = []
+  for (let n = 0; n < total; n++) seen.push(((await w.next()).params as { n: number }).n)
+  expect(seen).toEqual(Array.from({ length: total }, (_, n) => n))
+  expect(w.client.destroyed).toBe(false)
+  expect(w.closeCount()).toBe(0)
+})
+
+it('fails only the request whose response is over the frame ceiling and keeps the connection', async () => {
+  // A bare endpoint: what is under test is the socket binding, not any method's result schema.
+  const ep: RpcEndpoint = {
+    handle: async (msg) => {
+      const id = (msg as { id: number }).id
+      return { jsonrpc: '2.0', id, result: { text: id === 1 ? 'x'.repeat(MAX_FRAME_BYTES) : 'ok' } }
+    },
+    notifications: { [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }) },
+    close: async () => undefined,
+  }
+  const w = await wire(ep)
+  w.client.write(encodeFrame({ jsonrpc: '2.0', id: 1, method: 'test/large', params: {} }))
+  expect(await w.response(1)).toMatchObject({
+    error: { code: -32603, data: { code: 'RESPONSE_TOO_LARGE' } },
+  })
+  w.client.write(encodeFrame({ jsonrpc: '2.0', id: 2, method: 'test/small', params: {} }))
+  expect(await w.response(2)).toMatchObject({ result: { text: 'ok' } })
+  expect(w.closeCount()).toBe(0)
+})
+
 it('rejects an outbound frame over the configured byte ceiling on a real socket', async () => {
   const ep = endpoint(),
     w = await wire(ep)

@@ -192,9 +192,10 @@ import {
 } from './session-permission-authority.js'
 import { invalidatePermissionProjection } from './session-permission-projection.js'
 import {
+  applyTurnCaps,
   inboxOverrideEvents,
-  inboxStepCap,
-  rehydratedStepCap,
+  inboxTurnCaps,
+  rehydrateTurnCaps,
   turnOverrideEvents,
   validateTurnOverrides,
 } from './step-cap.js'
@@ -203,7 +204,7 @@ import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } 
 import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
-import { rehydratedCallState } from './turn-restore.js'
+import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
 
 type OperationCommon = {
   name: string
@@ -1498,7 +1499,7 @@ export class SessionImpl {
             ...(item.kind === 'steer'
               ? [this.controls.fact('steer', 'queued', msg.actor, { itemId: item.itemId })]
               : []),
-            ...inboxOverrideEvents(this.d.actor, item.itemId, msg),
+            ...inboxOverrideEvents(this.d.actor, item.itemId, msg, this.d.clock()),
           ],
           { beforeFullVerify: 'allow' },
         )
@@ -1625,7 +1626,7 @@ export class SessionImpl {
       const { item, rest } = claimed
       const turn = this.lastTurnNumber() + 1
       const budget = await inboxBudget(this, item.itemId)
-      const stepCap = await inboxStepCap(this, item.itemId)
+      const { stepCap, timeLimit } = await inboxTurnCaps(this, item.itemId)
       const triggerSeq = (this.lastSeq + 2) as Seq
       await this.d.log.append(
         [
@@ -1642,7 +1643,7 @@ export class SessionImpl {
           ...(item.kind === 'steer'
             ? [this.controls.fact('steer', 'delivered', item.actor, { itemId: item.itemId })]
             : []),
-          ...turnOverrideEvents(this.d.actor, turn, budget, stepCap),
+          ...turnOverrideEvents(this.d.actor, turn, budget, stepCap, timeLimit),
         ],
         {
           expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: this.opSeq() },
@@ -1664,12 +1665,12 @@ export class SessionImpl {
         },
       )
       this.hooks.resetTurn?.()
-      this.turn = this.freshTurn()
+      this.turn = attend(this.freshTurn(), item.actor)
       if (budget !== undefined) {
         this.turn.budgetCap = budget.creditsCap
         if (budget.hard) this.turn.hardBudgetCap = budget.creditsCap
       }
-      if (stepCap !== undefined) this.turn.maxStepsCap = stepCap
+      applyTurnCaps(this.turn, stepCap, timeLimit)
       return true
     })
   }
@@ -1870,14 +1871,13 @@ export class SessionImpl {
     await this.restoreGrants()
     await restoreToolDisclosure(this)
     const { lastRow, last, ordinal } = await rehydratedCallState(this, op)
-    const turn = this.freshTurn(ordinal, op.meta.triggerSeq)
+    const turn = await attendRecovered(this, op, this.freshTurn(ordinal, op.meta.triggerSeq))
     const budget = await rehydratedBudget(this, op)
     if (budget !== undefined) {
       turn.budgetCap = budget.creditsCap
       if (budget.hard) turn.hardBudgetCap = budget.creditsCap
     }
-    const stepCap = await rehydratedStepCap(this, op)
-    if (stepCap !== undefined) turn.maxStepsCap = stepCap
+    await rehydrateTurnCaps(this, op, turn)
     if (last?.envelopeNonce) {
       turn.nonce = last.envelopeNonce
       turn.lastHeader = last

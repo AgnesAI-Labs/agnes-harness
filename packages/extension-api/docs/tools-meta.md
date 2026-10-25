@@ -22,5 +22,6 @@ The five safety keys (isReadOnly, isDestructive, isConcurrencySafe, isOpenWorld,
 | `invalidArgumentLimit` | Consecutive invalid argument failures before disabling this tool for the rest of the turn. Default 2. Valid arguments reset the count before exhaustion; exhausted tools cannot be re-enabled within the turn. |
 | `modelVisible` | Optional, defaults to true. false hides the tool from model schemas and discovery; internal invocation and authorization remain available. |
 | `requiresImageInput` | Optional, defaults to false. Only a model with native image input can discover or execute this tool. |
+| `requiresUser` | Optional, defaults to false. The tool asks a person who is present, or shows them something to look at or act on now (a question, a form, a live UI surface). A turn whose input declares that nobody is attending (agh -p, agh run, runHeadless) does not offer it to the model or execute a model call to it. |
 | `paths` | Optional declarations of top-level workspace path arguments. The runtime preflights access before every approval mode; URI schemes delegated to resource services never widen the filesystem fence. |
 | `commandArg` | Optional. Names the top-level string argument that carries the command text this tool runs. The command table matches its rules against that text, whitespace-folded, instead of the canonical JSON of all arguments. |

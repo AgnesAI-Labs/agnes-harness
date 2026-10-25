@@ -71,28 +71,49 @@ export function bindConnection(
     timer = setTimeout(() => socket.destroy(), 1000)
     socket.end(encodeFrame({ jsonrpc: '2.0', id: null, error: rpcError(name) }), () => socket.destroy())
   }
-  const send = (value: JsonRpcMessage) => {
-    if (terminal) return
+  /** False when the socket wants the writer to wait for 'drain' before sending more. */
+  const send = (value: JsonRpcMessage): boolean => {
+    if (terminal) return true
     let bytes: Buffer
     try {
       bytes = encodeFrame(value)
-    } catch {
+    } catch (error) {
+      // A reply too large for one frame fails that request alone, with a code the caller can act
+      // on; closing the connection would turn it into a bare disconnect for every call in flight.
+      const id = (value as { id?: unknown }).id
+      if (
+        error instanceof FrameTooLarge &&
+        !('method' in value) &&
+        (typeof id === 'string' || typeof id === 'number')
+      )
+        return send({ jsonrpc: '2.0', id, error: rpcError('INTERNAL_ERROR', { code: 'RESPONSE_TOO_LARGE' }) })
       stop('INTERNAL_ERROR')
-      return
+      return true
     }
     if (
       writes >= DEFAULT_LIMITS.subscribeBufferEvents ||
       socket.writableLength + bytes.length > DEFAULT_LIMITS.subscribeBufferBytes
     ) {
       stop('OVERLOADED')
-      return
+      return true
     }
     writes++
-    socket.write(bytes, (error) => {
+    return socket.write(bytes, (error) => {
       writes--
       if (error) stop()
     })
   }
+  const drained = () =>
+    new Promise<void>((resolve) => {
+      if (socket.destroyed) return resolve()
+      const done = () => {
+        socket.off('drain', done)
+        socket.off('close', done)
+        resolve()
+      }
+      socket.on('drain', done)
+      socket.on('close', done)
+    })
   socket.on('data', (chunk: Buffer) => {
     if (terminal) return
     let frames: unknown[]
@@ -144,9 +165,13 @@ export function bindConnection(
   socket.once('close', cleanup)
   void (async () => {
     try {
+      // Notifications wait for the socket to drain instead of piling up behind it. The backlog then
+      // stays in the endpoint's queue, where each feed measures it: a replay waits for its reader
+      // and a live subscription that cannot keep up is cut with a typed notice, while the
+      // connection itself (and every other session on it) survives a slow reader.
       for await (const notification of ep.notifications) {
         if (terminal) break
-        send(notification)
+        if (!send(notification) && !terminal) await drained()
       }
     } catch {
       stop('INTERNAL_ERROR')

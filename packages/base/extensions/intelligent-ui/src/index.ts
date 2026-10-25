@@ -27,8 +27,11 @@ const meta = {
   deferLoading: true,
   requiresApproval: 'never' as const,
 }
-/** Display-only surface publication. ui_submit collects answers and must not inherit this flag. */
-const presentational = { ...meta, deferLoading: false, isPresentational: true }
+/**
+ * Display-only surface publication, for a person looking at the UI now: an unattended turn is not
+ * offered it. ui_submit records a person's answer and must inherit neither flag.
+ */
+const presentational = { ...meta, deferLoading: false, isPresentational: true, requiresUser: true }
 // Core retains the full execution schema and retry budget; only the model projection is brief.
 // The service additionally validates component/data/action contracts for every client.
 const surfaceParameter = Type.Object(
@@ -76,7 +79,14 @@ export default defineAgnesPlugin({
             { operation: Type.Union([Type.Literal('render'), Type.Literal('update')]) },
             { additionalProperties: false },
           ),
-          meta: { ...meta, deferLoading: false, isReadOnly: true, isConcurrencySafe: true, replay: 'safe' },
+          meta: {
+            ...meta,
+            deferLoading: false,
+            isReadOnly: true,
+            isConcurrencySafe: true,
+            replay: 'safe',
+            requiresUser: true,
+          },
           async execute({ operation }, ctx) {
             ctx.signal.throwIfAborted()
             const parameters = reachableParameters(operation === 'render' ? UiRenderParams : UiUpdateParams)

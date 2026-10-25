@@ -93,11 +93,16 @@ export function asciiFold(text: string): string {
  * through this, so frames, the lines written into scrollback and the exit text all take the same look.
  */
 export function foldingTerminal(term: Terminal, ascii: () => boolean): Terminal {
-  return new Proxy(term, {
+  const folded = new Proxy(term, {
     get(target, prop) {
       if (prop === 'write') return (s: string) => target.write(ascii() ? asciiFold(s) : s)
       const value = Reflect.get(target, prop, target)
       return typeof value === 'function' ? value.bind(target) : value
     },
   })
+  folding.set(folded, term)
+  return folded
 }
+
+/** The terminal a `foldingTerminal` wraps, for code that keys state by the terminal the app was given. */
+export const folding = new WeakMap<object, object>()

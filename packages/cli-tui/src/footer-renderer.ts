@@ -1,8 +1,10 @@
 import { ANSI_RE, defang } from './ansi.js'
 import { type Component, CURSOR_MARKER } from './component.js'
+import { KeyChunker } from './key-chunks.js'
 import { PasteAssembler } from './paste.js'
 import type { ScreenRenderer } from './renderer.js'
 import { displayWidth, type Terminal } from './terminal.js'
+import { restoreTitle } from './terminal-signals.js'
 
 /** How settled text reaches native scrollback: DECSTBM margins, or scrolling the whole screen. */
 export type ScrollMode = 'region' | 'full'
@@ -125,9 +127,25 @@ export class FooterRenderer implements ScreenRenderer {
     // and text selection. Bracketed paste and focus reporting are the same as the fullscreen app.
     this.term.write('\x1b[?2004h\x1b[?1004h')
     this.offResize = this.term.onResize(() => this.resized())
-    this.offInput = this.term.onInput((d) => {
-      for (const part of this.paste.push(d)) if (this.root.handleInput?.(part)) this.requestRender()
+    const keys = new KeyChunker((key) => {
+      if (this.root.handleInput?.(key)) this.requestRender()
     })
+    const feed = (parts: string[]) => {
+      for (const part of parts) keys.push(part)
+    }
+    const off = this.term.onInput((d) =>
+      feed(
+        this.paste.push(d, (held) => {
+          feed(held)
+          keys.flush()
+        }),
+      ),
+    )
+    this.offInput = () => {
+      off()
+      keys.clear()
+      this.paste.clear()
+    }
     this.anchor()
   }
 
@@ -370,6 +388,7 @@ export class FooterRenderer implements ScreenRenderer {
     this.scheduled = false
     this.offInput?.()
     this.offResize?.()
+    restoreTitle(this.term)
     try {
       let out = ''
       if (ready) {

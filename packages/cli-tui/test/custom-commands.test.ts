@@ -51,6 +51,29 @@ describe('custom slash commands', () => {
     expect((await runSlash(app, '/audit')).prompt).toBe('Review  then say')
   })
 
+  it('reads frontmatter after a BOM and an empty frontmatter block', async () => {
+    mine('bom.md', '\uFEFF---\ndescription: With BOM\n---\nbody one\n')
+    mine('empty.md', '---\n---\nbody two\n')
+    mine('rule.md', '---\n---\nabove\n---\nbelow\n')
+    const app = appFor()
+    expect(slashCommandFor('/bom', 'en', app)).toMatchObject({ description: 'With BOM' })
+    expect(await runSlash(app, '/bom')).toEqual({ prompt: 'body one' })
+    expect(await runSlash(app, '/empty')).toEqual({ prompt: 'body two' })
+    expect(await runSlash(app, '/rule')).toEqual({ prompt: 'above\n---\nbelow' })
+  })
+
+  it('spells out invisible format characters in a project command description and hint', async () => {
+    project('rtl.md', '---\ndescription: x\u202Eevil\nargument-hint: <a\u200Bb>\n---\nbody')
+    const app = appFor()
+    expect(slashCommandFor('/rtl', 'en', app)).toMatchObject({
+      args: '<a\\u{200B}b>',
+      description: expect.stringContaining('x\\u{202E}evil'),
+    })
+    const help = (await runSlash(app, '/help')).text ?? ''
+    expect(help).not.toMatch(/\p{Cf}/u)
+    expect(help).toContain('x\\u{202E}evil')
+  })
+
   it('shows a project command first and sends it on the second run only', async () => {
     project('ship.md', 'Run the build and push $1')
     const app = appFor()

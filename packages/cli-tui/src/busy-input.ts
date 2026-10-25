@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ContentBlock } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
 import { escapeControl } from './component.js'
+import { boundKeys, keyText } from './keymap.js'
 import { tt } from './locale-extended.js'
 
 export const codeOf = (error: unknown): string | undefined => {
@@ -95,7 +96,8 @@ export class BusyInput {
   takeKept(text = ''): ContentBlock[] {
     const here = this.host.session().id
     const chips = [...this.chips].filter(([chip, c]) => c.sessionId === here && text.includes(chip))
-    this.chips.clear()
+    // A chip left out of this message (a draft put aside with Ctrl-S, say) still binds its image.
+    for (const [chip] of chips) this.chips.delete(chip)
     return [...this.kept.splice(0), ...chips.map(([, c]) => c.block)]
   }
 
@@ -158,7 +160,9 @@ export class BusyInput {
     const text = escapeControl(textOf(blocks).replace(/\s+/g, ' ').trim() || 'attachment')
     if (kind === 'steer') return host.notice(tt('busy.steered', locale, { text }))
     if (fellBack) return host.notice(tt('busy.steerFallback', locale), 'warning')
-    host.notice(tt(this.hinted ? 'busy.queued' : 'busy.hint', locale, { text }))
+    const steerKey = boundKeys('steer')[0]
+    const id = this.hinted ? 'busy.queued' : steerKey === undefined ? 'busy.hintNoKey' : 'busy.hint'
+    host.notice(tt(id, locale, { text, key: keyText(steerKey ?? '') }))
     this.hinted = true
   }
 }

@@ -54,6 +54,8 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   // Live repository guidance supplied by the official context-rules extension.
   { id: 'core:child-receipts', order: 112, owner: 'core' },
   { id: 'workflow:receipts', order: 113, owner: 'base' },
+  // packages/core/src/execution/turn/turn-limits.ts: a live note, delivered at the tail.
+  { id: 'core:turn-limits', order: 114, owner: 'core' },
   { id: 'tools-available', order: 115, owner: 'code' },
   { id: 'memory:index', order: 131, owner: 'core' },
   { id: 'agents-md', order: 120, owner: 'base' },
