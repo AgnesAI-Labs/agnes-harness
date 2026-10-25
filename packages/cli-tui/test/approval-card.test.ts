@@ -416,6 +416,24 @@ describe('ApprovalCard single keys and the misclick guard', () => {
   })
 })
 
+describe('ApprovalCard input it cannot show', () => {
+  it('says so when Core carried a content reference instead of the input', () => {
+    const render = (args: unknown) =>
+      new ApprovalCard(
+        {
+          ...node(['allow_once', 'reject_once']),
+          summary: 'Run unit tests',
+          subjectText: JSON.stringify({ call: { name: 'shell', args } }),
+        },
+        { ansi: PLAIN, onDecide: vi.fn(async () => undefined) },
+      )
+        .render(100)
+        .join('\n')
+    expect(render({ contentRef: { sessionId: 's', seq: 4, hash: 'ab' } })).toContain('too large to show here')
+    expect(render({ command: 'npm test' })).not.toContain('too large to show here')
+  })
+})
+
 describe('ApprovalSettle', () => {
   it('settles after the quiet period, restarts on every key and on a different approval', () => {
     vi.useFakeTimers()

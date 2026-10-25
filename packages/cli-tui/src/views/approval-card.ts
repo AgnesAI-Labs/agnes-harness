@@ -344,9 +344,17 @@ export class ApprovalCard implements Component {
         ),
       ]
     }
+    // Core puts a content reference in place of input too large or too deep to carry; then nothing
+    // on the card shows what would run, and the bold line is the model's own description of it.
+    const args = subject.args as Record<string, unknown> | undefined
+    const unseen =
+      args !== null && typeof args === 'object' && Object.keys(args).length === 1 && 'contentRef' in args
+        ? wrapText(tt('approval.argsUnseen', locale), inner).map((line) => row(ansi.fg('danger', line)))
+        : []
     return [
       heading,
       ...said,
+      ...unseen,
       ...(origin.length ? [row(ansi.fg('faint', origin.join(' · ')))] : []),
       ...approvalBody(subject, inner, ansi, locale).map(row),
       ...(presentation?.fields.flatMap((field) =>
