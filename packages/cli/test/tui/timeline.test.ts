@@ -15,6 +15,9 @@ const user = (id: string, text: string): UINode => ({
   seq: 1,
   content: [{ type: 'text', text }],
 })
+/** A tool node showing `text`: tool cards sit tight, so windowing tests count rows without the blank row between other blocks. */
+const tight = (id: string, text: string): UINode =>
+  ({ kind: 'tool', id, seq: 1, toolUseId: id, name: 'x', status: text, summary: '' }) as UINode
 const timeline = (nodes: UINode[]): UITimeline => ({
   sessionId: 's',
   generation: 1,
@@ -52,17 +55,17 @@ it('reuses unchanged nodes and updates full current user/content and tool/status
   t.apply(timeline([user('u', 'first'), tool]))
   expect(factory).toHaveBeenCalledTimes(2)
   t.apply(timeline([user('u', 'changed'), { ...tool, status: 'completed' }]))
-  expect(t.render(30)).toEqual(['changed', 'completed'])
+  expect(t.render(30)).toEqual(['changed', '', 'completed'])
   expect(factory).toHaveBeenCalledTimes(4)
   t.apply(timeline([{ ...tool, status: 'completed' }, user('u', 'changed')]))
-  expect(t.render(30)).toEqual(['completed', 'changed'])
+  expect(t.render(30)).toEqual(['completed', '', 'changed'])
   expect(factory).toHaveBeenCalledTimes(4)
   t.apply(timeline([user('u', 'changed')]))
   expect(t.render(30)).toEqual(['changed'])
 })
 it('uses the default five reserved rows and clamps scrolling in both directions', () => {
   const t = new Timeline({ rows: () => 8, nodeView: view })
-  t.apply(timeline([1, 2, 3, 4].map((n) => user(String(n), String(n)))))
+  t.apply(timeline([1, 2, 3, 4].map((n) => tight(String(n), String(n)))))
   expect(t.render(30)).toEqual(['2', '3', '4'])
   t.scroll(-1)
   expect(t.render(30)).toEqual(['1', '2', '3'])
@@ -121,7 +124,7 @@ it('shows the welcome banner only for an empty conversation and excludes it from
   const t = new Timeline({ rows: () => 8, nodeView: view, top: new Text('BRAND') })
   t.apply(timeline([]))
   expect(t.render(30)).toEqual(['BRAND'])
-  t.apply(timeline([1, 2, 3, 4].map((n) => user(String(n), String(n)))))
+  t.apply(timeline([1, 2, 3, 4].map((n) => tight(String(n), String(n)))))
   expect(t.render(30)).toEqual(['2', '3', '4'])
   expect(t.transcript(30)).toEqual(['1', '2', '3', '4'])
 })
@@ -129,7 +132,7 @@ it('shows the welcome banner only for an empty conversation and excludes it from
 it('reserves the current measured footer height while retaining the legacy default', () => {
   let reserved = 6
   const t = new Timeline({ rows: () => 12, reservedRows: () => reserved, nodeView: view })
-  t.apply(timeline(Array.from({ length: 10 }, (_, i) => user(String(i), String(i)))))
+  t.apply(timeline(Array.from({ length: 10 }, (_, i) => tight(String(i), String(i)))))
   expect(t.render(30)).toHaveLength(6)
   reserved = 9
   expect(t.render(30)).toEqual(['7', '8', '9'])
@@ -218,11 +221,11 @@ it('replaces mutable tool, approval and assistant snapshots instead of appending
 it('windows an opening snapshot and retains one current copy for paging', () => {
   const t = new Timeline({ rows: () => 2, reservedRows: () => 0, nodeView: view })
   const history = Array.from({ length: 1_002 }, (_, index) =>
-    user(`history-${index + 1}`, `history ${index + 1}`),
+    tight(`history-${index + 1}`, `history ${index + 1}`),
   )
   t.apply(timeline(history), { opening: true })
   expect(t.render(40)).toEqual(['history 1001', 'history 1002'])
-  t.apply(timeline([...history, user('live', 'live')]))
+  t.apply(timeline([...history, tight('live', 'live')]))
   expect(t.render(40)).toEqual(['history 1002', 'live'])
   expect(t.transcript(40)).toHaveLength(1_003)
   t.scroll(-10000)
@@ -232,14 +235,14 @@ it('windows an opening snapshot and retains one current copy for paging', () => 
 it('does not carry transcript or viewport state across a session switch', () => {
   const t = new Timeline({ rows: () => 2, reservedRows: () => 0, nodeView: view })
   t.apply({
-    ...timeline([user('same', 'old'), user('old-2', 'old 2'), user('old-3', 'old 3')]),
+    ...timeline([tight('same', 'old'), tight('old-2', 'old 2'), tight('old-3', 'old 3')]),
     sessionId: 'old',
   })
   t.render(40)
   t.scroll(-100)
   t.apply(
     {
-      ...timeline([user('same', 'new'), user('new-2', 'new 2'), user('new-3', 'new 3')]),
+      ...timeline([tight('same', 'new'), tight('new-2', 'new 2'), tight('new-3', 'new 3')]),
       sessionId: 'new',
     },
     { opening: true },
@@ -256,7 +259,7 @@ it('anchors local transcript rows at the current cut and clears them on session 
     ...timeline([user('one', 'one'), { ...user('two', 'two'), seq: 2 }]),
     upto: 2,
   })
-  expect(t.render(40)).toEqual(['one', '› /sessions', 'first', 'second', 'two'])
+  expect(t.render(40)).toEqual(['one', '', '› /sessions', 'first', 'second', '', 'two'])
 
   t.apply({ ...timeline([user('new', 'new')]), sessionId: 'new-session' })
   expect(t.render(40)).toEqual(['new'])
@@ -312,10 +315,10 @@ it('requests an earlier page only when PageUp reaches the loaded window boundary
   const t = new Timeline({ rows: () => 2, reservedRows: () => 0, nodeView: view })
   t.apply(
     timeline([
-      user('tail-1', 'tail 1'),
-      user('tail-2', 'tail 2'),
-      user('tail-3', 'tail 3'),
-      user('tail-4', 'tail 4'),
+      tight('tail-1', 'tail 1'),
+      tight('tail-2', 'tail 2'),
+      tight('tail-3', 'tail 3'),
+      tight('tail-4', 'tail 4'),
     ]),
     { hasEarlier: true },
   )
@@ -375,7 +378,7 @@ it.each([
 
 it('offers the way back only when output arrived while scrolled up, and End or Ctrl-End returns to the bottom', () => {
   const t = new Timeline({ rows: () => 8, nodeView: view, locale: 'zh-CN' })
-  const nodes = [1, 2, 3, 4, 5, 6].map((n) => user(String(n), String(n)))
+  const nodes = [1, 2, 3, 4, 5, 6].map((n) => tight(String(n), String(n)))
   t.apply(timeline(nodes.slice(0, 5)))
   t.render(30)
   expect(t.newOutputHint(false)).toBeUndefined()
@@ -395,13 +398,13 @@ it('offers the way back only when output arrived while scrolled up, and End or C
   expect(t.render(30)).toEqual(['4', '5', '6'])
   expect(t.newOutputHint(false)).toBeUndefined()
   t.scroll(-1)
-  t.apply(timeline([...nodes, user('7', '7')]))
+  t.apply(timeline([...nodes, tight('7', '7')]))
   expect(t.newOutputHint(false)).toBeDefined()
   expect(t.jumpKey('ctrl-end', true)).toBe(true)
   expect(t.render(30)).toEqual(['5', '6', '7'])
   // Scrolling back down by hand also clears it.
   t.scroll(-1)
-  t.apply(timeline([...nodes, user('7', '7'), user('8', '8')]))
+  t.apply(timeline([...nodes, tight('7', '7'), tight('8', '8')]))
   t.scroll(1)
   expect(t.newOutputHint(false)).toBeUndefined()
 })
@@ -641,4 +644,12 @@ describe('split footer: sessions and reconnects', () => {
     t.apply(idleAt([at(40, user('x', 'far later'))]), { hasEarlier: true })
     expect(t.takeSettled(30)).toEqual(['', '⋯ earlier output is not shown here', '', 'far later'])
   })
+})
+
+it('puts one blank row between blocks of different kinds and none inside a run of tool cards', () => {
+  const t = new Timeline({ rows: () => 20, reservedRows: () => 0, nodeView: view })
+  const reply: UINode = { kind: 'assistant', id: 'a', seq: 2, text: 'reply' }
+  t.apply(timeline([user('u', 'ask'), reply, tight('t1', 'one'), tight('t2', 'two'), user('v', 'again')]))
+  expect(t.render(30)).toEqual(['ask', '', 'reply', '', 'one', 'two', '', 'again'])
+  expect(t.transcript(30)).toEqual(['ask', 'reply', 'one', 'two', 'again'])
 })

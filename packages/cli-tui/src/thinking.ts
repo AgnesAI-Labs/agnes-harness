@@ -49,7 +49,6 @@ export function assistantView(
 ): Component {
   return {
     render: (width) => [
-      '',
       ...thinkingRows(node.thinking, { answering: true, width, ansi, locale }),
       ...renderMarkdown(nodeText(node), width, ansi),
     ],

@@ -1,6 +1,7 @@
 import type { ActionId } from './keymap.js'
 import type { Locale } from './locale.js'
 import { CHROME_DICT, type ChromeKey } from './locale-chrome.js'
+import { CHROME_HINT_DICT, type ChromeHintKey } from './locale-chrome-hints.js'
 import { CONFIG_DICT, type ConfigKey } from './locale-config.js'
 import { DIALOG_DICT, type DialogKey } from './locale-dialog.js'
 import { DISPLAY_DICT, type DisplayKey } from './locale-display.js'
@@ -49,6 +50,7 @@ export type KeysKey =
   | PagerKey
   | DialogKey
   | ChromeKey
+  | ChromeHintKey
   | VimKey
   | ConfigKey
   | PermissionsKey
@@ -164,6 +166,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     ...PAGER_DICT.en,
     ...DIALOG_DICT.en,
     ...CHROME_DICT.en,
+    ...CHROME_HINT_DICT.en,
     ...VIM_DICT.en,
     ...CONFIG_DICT.en,
     ...PERMISSIONS_DICT.en,
@@ -278,6 +281,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     ...PAGER_DICT['zh-CN'],
     ...DIALOG_DICT['zh-CN'],
     ...CHROME_DICT['zh-CN'],
+    ...CHROME_HINT_DICT['zh-CN'],
     ...VIM_DICT['zh-CN'],
     ...CONFIG_DICT['zh-CN'],
     ...PERMISSIONS_DICT['zh-CN'],

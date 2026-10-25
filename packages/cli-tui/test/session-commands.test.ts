@@ -859,17 +859,23 @@ describe('small info commands', () => {
     expect((await runSlash(app, '/diff a.ts')).text).toContain('+line 149')
   })
 
+  /** The output rows of a local command, without the faint rail each starts with. */
+  const outputRows = (ansi: ReturnType<TuiTheme['ansi']>, rows: string[]) => {
+    const rail = ` ${ansi.fg('faint', '│')} `
+    return rows.filter((r) => r.startsWith(rail)).map((r) => r.slice(rail.length))
+  }
+
   it('/diff output is tinted by the diff marks, wrapped rows included, and other commands stay dim', () => {
     const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
     const text = '  +1 -1 a.ts\n@@ -1 +1 @@\n-old\n+new line that is long enough to wrap\n context'
-    const rows = localCommandView(ansi)('/diff', text).render(14)
+    const rows = outputRows(ansi, localCommandView(ansi)('/diff', text).render(14))
     expect(rows).toContain(ansi.fg('faint', '@@ -1 +1 @@'))
     expect(rows).toContain(ansi.fg('danger', '-old'))
     const green = ansi.fg('success', 'x').split('x')[0] as string
     expect(rows.filter((r) => r.startsWith(green)).length).toBeGreaterThan(1)
     expect(rows.find((r) => r.includes('context'))).toBe(ansi.dim('context'))
     // Any other command keeps the dim style; a `+` there means nothing.
-    const other = localCommandView(ansi)('/status', '+not a diff').render(40)
+    const other = outputRows(ansi, localCommandView(ansi)('/status', '+not a diff').render(40))
     expect(other).toContain(ansi.dim('+not a diff'))
   })
 
@@ -877,17 +883,17 @@ describe('small info commands', () => {
     const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
     const mark = (s: string) => ansi.bold(ansi.underline(s))
     const text = '-let total = price * 2 + tax\n+let total = cost * 2 + tax'
-    const wide = localCommandView(ansi)('/diff', text).render(60)
+    const wide = outputRows(ansi, localCommandView(ansi)('/diff', text).render(60))
     expect(wide).toContain(ansi.fg('danger', `-let total = ${mark('price')} * 2 + tax`))
     expect(wide).toContain(ansi.fg('success', `+let total = ${mark('cost')} * 2 + tax`))
-    const narrow = localCommandView(ansi)('/diff', text).render(14)
+    const narrow = outputRows(ansi, localCommandView(ansi)('/diff', text).render(14))
     expect(narrow.join('')).toContain(mark('price'))
   })
 
   it('/diff styles ---/+++ as file headers only before the first hunk, never inside one', () => {
     const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
     const text = '--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n--- old comment\n+++ new text\n ctx'
-    const rows = localCommandView(ansi)('/diff', text).render(40)
+    const rows = outputRows(ansi, localCommandView(ansi)('/diff', text).render(40))
     expect(rows).toContain(ansi.fg('faint', '--- a/x'))
     expect(rows).toContain(ansi.fg('danger', '--- old comment'))
     expect(rows).toContain(ansi.fg('success', '+++ new text'))

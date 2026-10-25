@@ -91,7 +91,8 @@ it('colors the compact state glyph and the expanded title status on a colour tie
   expect(open.join('\n')).not.toContain('╭')
   expect(open[0]).toContain(ansi.fg('success', 'done'))
   expect(open[1]).toContain(`${ansi.fg('success', '│')} s `)
-  expect(open.at(-1)).toContain(`${ansi.fg('success', '╰─')} ${ansi.fg('faint', 'ctrl+o')}`)
+  expect(open.at(-1)).toContain(ansi.fg('success', '╰─'))
+  expect(open.at(-1)).toContain('ctrl+o')
   expect(open.every((line) => displayWidth(line) === 40)).toBe(true)
   // none tier: zero escapes anywhere.
   const plain = new ToolCard(
@@ -325,7 +326,7 @@ it('draws a plan as one row per step with its state, and shows only the first ro
   })
   const collapsed = new ToolCard(long).render(40)
   expect(collapsed).toHaveLength(12)
-  expect(collapsed.at(-1)).toBe('    … 3 more'.padEnd(40))
+  expect(collapsed.at(-1)?.trim()).toMatch(/^… 3 more\s+ctrl\+o expand$/)
   const open = new ToolCard(long, { collapsed: false }).render(40).join('\n')
   expect(open).toContain('[ ] s12')
   // Cut-off or foreign arguments leave the plain card.
@@ -436,7 +437,8 @@ it('previews a result by screen rows: wide characters wrap first, then three row
     `    ${'中'.repeat(10)}`,
     `    ${'中'.repeat(10)}`,
   ])
-  expect(rows[4]?.trim()).toBe('… 还有 3 行')
+  expect(rows[4]).toContain('… 还有 3 行')
+  expect(rows[4]).toContain('ctrl+o')
   expect(rows.every((r) => displayWidth(r) === 24)).toBe(true)
   expect(new ToolCard({ ...node, resultPreview: 'a\nb\nc' }).render(40)).toHaveLength(4) // exactly three: no remainder row
   expect(new ToolCard({ ...node, resultPreview: 'x\x1b[2Jy' }).render(40).join('')).not.toContain('\x1b')
@@ -471,15 +473,16 @@ it('shows language-server errors on a write or edit card: badge, three rows, the
   const card = new ToolCard(editNode(editArgs, { resultPreview: note(5, rows) }), { locale: 'en' })
   const out = card.render(70)
   expect(out[0]).toContain('+2 -1 · 5 LSP errors')
-  expect(out.slice(1).map((r) => r.trim())).toEqual([
+  expect(out.slice(1, 4).map((r) => r.trim())).toEqual([
     '1:1 bad 1 (ts 2322)',
     '2:1 bad 2 (ts 2322)',
     '3:1 bad 3 (ts 2322)',
-    '… 2 more',
   ])
+  expect(out[4]).toContain('… 2 more')
+  expect(out[4]).toContain('ctrl+o expand')
   const clipped = new ToolCard(editNode(editArgs, { resultPreview: note(9, rows.slice(0, 4)) })).render(70)
   expect(clipped[0]).toContain('· 9 LSP errors')
-  expect(clipped.at(-1)?.trim()).toBe('… 6 more')
+  expect(clipped.at(-1)).toContain('… 6 more')
   expect(
     new ToolCard(editNode(editArgs, { resultPreview: note(1, rows.slice(0, 1)) })).render(70)[0],
   ).toContain('· 1 LSP error')

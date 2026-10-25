@@ -35,13 +35,13 @@ it('folds the thoughts of a finished reply above its text, and /thinking keeps t
     mono,
     'zh-CN',
   )
-  expect(trimmed(view.render(40))).toEqual(['', '✻ 已思考（79 字）', 'done'])
+  expect(trimmed(view.render(40))).toEqual(['✻ 已思考（79 字）', 'done'])
   expect(trimmed(view.transcript?.(40) ?? [])).toEqual(['done'])
   thinkingMode.toggle()
-  expect(trimmed(view.render(40)).slice(1, 3)).toEqual(['  thought 1', '  thought 2'])
+  expect(trimmed(view.render(40)).slice(0, 2)).toEqual(['  thought 1', '  thought 2'])
   expect(trimmed(view.render(40)).at(-1)).toBe('done')
   // No thoughts, no row.
   expect(
     trimmed(assistantView({ kind: 'assistant', id: 'b', seq: 2, text: 'x' }, mono, 'en').render(40)),
-  ).toEqual(['', 'x'])
+  ).toEqual(['x'])
 })
