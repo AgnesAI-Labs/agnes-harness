@@ -126,7 +126,8 @@ export class PermissionModal implements Component {
       if (key.name === 'char' || key.name === 'paste') return false
       if (!action?.match(/^approval-(up|down|page-up|page-down)$/)) return true
     }
-    if (key.name === 'char' && /^[a-z]$/.test(key.ch ?? '') && !(this.options.letters?.() ?? true))
+    // A draft keeps its letters and digits; arrows and Enter still reach the dialog.
+    if (key.name === 'char' && /^[a-z1-9]$/.test(key.ch ?? '') && !(this.options.letters?.() ?? true))
       return false
     if (action === 'approval-dismiss') question.finish({ unanswered: 'detached' })
     // `a` decides nothing here: the scope of an agent's "always allow" is the agent's, so it takes its number.
@@ -239,7 +240,7 @@ export class PermissionModal implements Component {
         ['reject_once', 'n'],
       ].map(([kind, letter]) => [choices.findIndex((option) => option.kind === kind), letter as string]),
     )
-    const lit = this.options.settled?.() ?? true
+    const lit = (this.options.settled?.() ?? true) && showLetters
     const chip = keycap(ansi, lit)
     const labels = choices.map((option) => optionLabel(option, locale))
     const column = Math.max(

@@ -470,13 +470,15 @@ describe('key bindings: approval modal', () => {
     modal.handleInput('2')
     expect(await answer).toEqual({ optionId: 'al' })
   })
-  it('leaves the letters to the prompt while it holds a draft; numbers still decide', async () => {
+  it('leaves letters and numbers to the prompt while it holds a draft; arrows and Enter still decide', async () => {
     const modal = new PermissionModal(vi.fn(), { maxRows: () => 12, letters: () => false })
     const answer = modal.ask(request, { signal: new AbortController().signal })
     modal.render(80)
-    for (const k of ['y', 'a', 'n']) expect(modal.handleInput(k, true)).toBe(false)
+    for (const k of ['y', 'a', 'n', '1', '2']) expect(modal.handleInput(k, true)).toBe(false)
     expect(modal.count).toBe(1)
-    modal.handleInput('1', true)
+    while (!(modal.render(80).find((l) => l.includes('❯')) ?? '').includes('[1]'))
+      modal.handleInput('\x1b[A', true)
+    modal.handleInput('\r', true)
     expect(await answer).toEqual({ optionId: 'a' })
   })
   it('a new question gets a new head, so the guard restarts', () => {

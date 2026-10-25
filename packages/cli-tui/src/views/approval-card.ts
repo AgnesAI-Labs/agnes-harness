@@ -164,9 +164,10 @@ export class ApprovalCard implements Component {
   /**
    * `settled`: the card had sat untouched long enough before this key. Until then no key decides
    * and text falls through to the prompt's draft, so typing already under way never lands here.
-   * y, a and n are shortcuts for the numbered decisions, and only while the prompt is empty: `a`
-   * takes the session scope and does nothing when the card does not list it. A permanent grant is
-   * never one letter; it takes its number.
+   * y, a and n are shortcuts for the numbered decisions. Letters and numbers alike count only while
+   * the prompt is empty: a digit typed into a draft after a pause is part of the draft, not a grant.
+   * `a` takes the session scope and does nothing when the card does not list it. A permanent grant
+   * is never one letter; it takes its number.
    */
   handleInput(data: string, settled = this.o.settled?.() ?? true): boolean {
     if (this.phase !== 'pending' || !this.n.decisionRef) return false
@@ -184,7 +185,7 @@ export class ApprovalCard implements Component {
       this.reason = ''
       return true
     }
-    if (!/^[1-9]$/.test(data)) return false
+    if (!letters || !/^[1-9]$/.test(data)) return false
     const action = actions[Number(data) - 1]
     if (!action) return false
     return this.decide(action.verdict)
@@ -277,7 +278,7 @@ export class ApprovalCard implements Component {
     const summary = escapeVisible(approvalHeadline(presentation?.title ?? n.summary, subject.args))
     if (this.phase === 'decided' || this.phase === 'failed') return [this.resolvedLine(summary, width)]
     if (!n.decisionRef) return [fitLine(`${ansi.fg('warning', '▲')} ${summary}`, width)]
-    const lit = this.o.settled?.() ?? true
+    const lit = (this.o.settled?.() ?? true) && (this.o.letters?.() ?? true)
     const chip = keycap(ansi, lit)
     const rail = ansi.raw ? '' : ansi.fg('warning', '│ ')
     const inner = width - 2

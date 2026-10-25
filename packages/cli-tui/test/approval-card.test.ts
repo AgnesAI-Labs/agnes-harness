@@ -366,17 +366,15 @@ describe('ApprovalCard single keys and the misclick guard', () => {
     }
   })
 
-  it('leaves the letters to the prompt while it holds a draft; numbers still decide', async () => {
+  it('leaves letters and numbers to the prompt while it holds a draft', () => {
     const onDecide = decide()
     const c = new ApprovalCard(node(['allow_once', 'allow_always', 'reject_once']), {
       ansi: PLAIN,
       onDecide,
       letters: () => false,
     })
-    for (const key of ['y', 'a', 'n', 'r']) expect(c.handleInput(key, true)).toBe(false)
+    for (const key of ['y', 'a', 'n', 'r', '1', '2', '3']) expect(c.handleInput(key, true)).toBe(false)
     expect(onDecide).not.toHaveBeenCalled()
-    expect(c.handleInput('1', true)).toBe(true)
-    await vi.waitFor(() => expect(onDecide).toHaveBeenCalledWith(ref, 'allowed-once'))
   })
 
   it('decides nothing before the card has settled, and leaves the keys to the prompt draft', () => {
