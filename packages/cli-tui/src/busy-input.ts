@@ -119,6 +119,7 @@ export class BusyInput {
 
   /** An idle prompt. A daemon that refuses it as busy did not record it, so it is queued instead. */
   async prompt(blocks: ContentBlock[], draft: string): Promise<void> {
+    if (this.offline(blocks, draft)) return
     try {
       await this.host.session().prompt(blocks)
     } catch (error) {
@@ -128,6 +129,19 @@ export class BusyInput {
       if (REFUSALS.has(rpcName(error))) this.putBack(this.host.session(), blocks, draft)
       throw error
     }
+  }
+
+  /**
+   * While the client is reconnecting or closed a send fails before it leaves the process, and the SDK would then
+   * wait for a turn that never started. Nothing was sent, so the draft goes straight back.
+   */
+  private offline(blocks: ContentBlock[], draft: string): boolean {
+    const session = this.host.session()
+    const state = session.client.connectionState
+    if (state !== 'reconnecting' && state !== 'closed') return false
+    if (this.putBack(session, blocks, draft))
+      this.host.notice(tt('busy.offline', this.host.locale()), 'error')
+    return true
   }
 
   /**
@@ -150,6 +164,7 @@ export class BusyInput {
    * An input that cannot be sent goes back to the editor, unless the daemon turns out to hold it already.
    */
   async queue(blocks: ContentBlock[], draft: string, mode: 'followUp' | 'steer'): Promise<void> {
+    if (this.offline(blocks, draft)) return
     const { host } = this
     const session = host.session()
     const locale = host.locale()

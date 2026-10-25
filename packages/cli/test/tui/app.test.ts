@@ -2084,6 +2084,23 @@ it('queues a prompt the daemon refused as busy exactly once, and shows any other
   } finally {
     await overloaded.dispose()
   }
+  const offline = await busyHarness()
+  try {
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    offline.app.busyInput.attach('[Image #1]', image, offline.app.session.id)
+    vi.spyOn(offline.app.session.client, 'connectionState', 'get').mockReturnValue('reconnecting')
+    offline.type('x [Image #1]')
+    await vi.waitFor(async () =>
+      expect(await offline.shown()).toContain('Not sent: the daemon is not connected'),
+    )
+    // Nothing left the process, no turn is pending, and the draft is back with its image bound.
+    expect(offline.prompts).toEqual([])
+    expect(offline.app.editor.expanded()).toBe('x [Image #1]')
+    expect(offline.app.busyInput.takeKept(offline.app.editor.expanded())).toEqual([image])
+    expect(offline.app.busy).toBe(false)
+  } finally {
+    await offline.dispose()
+  }
 })
 
 it('paints the startup welcome and editor surface once across /new', async () => {
