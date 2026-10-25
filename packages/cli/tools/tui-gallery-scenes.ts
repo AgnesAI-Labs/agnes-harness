@@ -296,7 +296,7 @@ export const SCENES: Scene[] = [
       } as JsonRpcNotification),
     done: ['Always allow'],
   },
-  { id: 'slash-menu', title: 'Open slash menu', timeline: timeline([]), act: typed('/'), done: ['/help'] },
+  { id: 'slash-menu', title: 'Open slash menu', timeline: timeline([]), act: typed('/'), done: ['/exit'] },
   {
     id: 'mention-menu',
     title: 'Open @ file menu',
@@ -446,4 +446,315 @@ export const SCENES: Scene[] = [
     locale: 'zh-CN',
     ready: ['behaviour', '思考 高'],
   }),
+  ...dialogScenes(),
 ]
+
+/** Picker, panel and menu scenes (UI review lane A): each in English, zh-CN and, where layout matters, 60 columns. */
+function dialogScenes(): Scene[] {
+  const DOWN = '\x1b[B'
+  const models = (list: Array<[string, string, boolean?]>) => ({
+    '_agnes/v1/apis.list': () => ({
+      profile: {
+        name: 'local-dev',
+        resolvedProfileHash: 'h',
+        presets: { default: 'standard', allowed: ['standard'] },
+        models: list.map(([route, id, reasoning]) => ({ route, id, ...(reasoning ? { reasoning } : {}) })),
+      },
+      families: [],
+    }),
+  })
+  const MODELS = models([
+    ['deepseek', 'deepseek-v4-pro', true],
+    ['deepseek', 'deepseek-v4-flash'],
+    ['account-kimi', 'kimi-for-coding-highspeed'],
+  ])
+  const MANY = models(
+    Array.from({ length: 20 }, (_, i): [string, string] => [
+      'agnes',
+      `model-${String(i + 1).padStart(2, '0')}`,
+    ]),
+  )
+  const sessions = {
+    'session/load': () => ({}),
+    '_agnes/v1/session.list': () => ({
+      items: [
+        [SID, '2026-10-19T09:00:00Z', 0, undefined],
+        ['agnes:local:default:cli:session:newer', '2026-10-18T12:00:00Z', 14, 'Release checklist'],
+        [
+          'agnes:local:default:cli:session:older',
+          '2026-10-11T08:30:00Z',
+          8,
+          'Refactor the projection window',
+        ],
+        [
+          'agnes:local:default:cli:session:oldest',
+          '2026-09-30T08:30:00Z',
+          31,
+          'Why the status bar flickers on resize in narrow terminals',
+        ],
+      ].map(([sessionId, createdAt, lastSeq, title]) => ({
+        sessionId,
+        createdAt,
+        lastSeq,
+        generation: 1,
+        preset: 'standard',
+        ...(title ? { title } : {}),
+      })),
+    }),
+  }
+  /** Opens a picker with `open`, then types `keys` once its async list has arrived. */
+  const afterOpen =
+    (open: string[], ...keys: string[]) =>
+    (ctx: Ctx) => {
+      typed(...open)(ctx)
+      setTimeout(() => typed(...keys)(ctx), 150)
+    }
+  const zh = { locale: 'zh-CN' } as const
+  const narrow = { cols: 60, rows: 24 } as const
+  const empty = { timeline: timeline([]), ready: ['/workspace/demo'] }
+  const model = { ...empty, handlers: MODELS, act: typed('/model', '\r') }
+  const resume = { ...empty, handlers: sessions, act: typed('/resume', '\r') }
+  return [
+    { id: 'dlg-model', title: 'Model picker', ...model, done: ['Select Model', 'kimi-for-coding-highspeed'] },
+    {
+      id: 'dlg-model-zh-CN',
+      title: 'Model picker, zh-CN',
+      ...zh,
+      ...model,
+      done: ['选择模型', 'kimi-for-coding-highspeed'],
+    },
+    {
+      id: 'dlg-model-60',
+      title: 'Model picker at 60x24',
+      ...narrow,
+      ...model,
+      done: ['kimi-for-coding-highspeed'],
+    },
+    {
+      id: 'dlg-reasoning',
+      title: 'Reasoning-level picker',
+      ...empty,
+      handlers: MODELS,
+      act: afterOpen(['/model', '\r'], '\r'),
+      done: ['Reasoning Level', 'medium'],
+    },
+    {
+      id: 'dlg-reasoning-zh-CN',
+      title: 'Reasoning-level picker, zh-CN',
+      ...zh,
+      ...empty,
+      handlers: MODELS,
+      act: afterOpen(['/model', '\r'], '\r'),
+      done: ['思考等级', 'medium'],
+    },
+    {
+      id: 'dlg-reasoning-60',
+      title: 'Reasoning-level picker at 60x24',
+      ...narrow,
+      ...empty,
+      handlers: MODELS,
+      act: afterOpen(['/model', '\r'], '\r'),
+      done: ['medium'],
+    },
+    {
+      id: 'dlg-sessions',
+      title: 'Session picker, this workspace',
+      ...resume,
+      done: ['Select Session', 'Release checklist'],
+    },
+    {
+      id: 'dlg-sessions-zh-CN',
+      title: 'Session picker, zh-CN',
+      ...zh,
+      ...resume,
+      done: ['选择会话', 'Release checklist'],
+    },
+    {
+      id: 'dlg-sessions-60',
+      title: 'Session picker at 60x24',
+      ...narrow,
+      ...resume,
+      done: ['Release checklist'],
+    },
+    {
+      id: 'dlg-sessions-all',
+      title: 'Session picker after Tab, all workspaces',
+      ...empty,
+      handlers: sessions,
+      act: afterOpen(['/resume', '\r'], '\t'),
+      done: ['all workspaces', 'Release checklist'],
+    },
+    {
+      id: 'dlg-sessions-all-zh-CN',
+      title: 'Session picker after Tab, zh-CN',
+      ...zh,
+      ...empty,
+      handlers: sessions,
+      act: afterOpen(['/resume', '\r'], '\t'),
+      done: ['全部工作区', 'Release checklist'],
+    },
+    { id: 'dlg-theme', title: 'Theme picker', ...empty, act: typed('/theme', '\r'), done: ['Theme'] },
+    {
+      id: 'dlg-theme-zh-CN',
+      title: 'Theme picker, zh-CN',
+      ...zh,
+      ...empty,
+      act: typed('/theme', '\r'),
+      done: ['主题'],
+    },
+    {
+      id: 'dlg-theme-60',
+      title: 'Theme picker at 60x24',
+      ...narrow,
+      ...empty,
+      act: typed('/theme', '\r'),
+      done: ['Theme'],
+    },
+    {
+      id: 'dlg-statusline',
+      title: 'Status line picker',
+      ...empty,
+      act: typed('/statusline', '\r'),
+      done: ['branch'],
+    },
+    {
+      id: 'dlg-statusline-zh-CN',
+      title: 'Status line picker, zh-CN',
+      ...zh,
+      ...empty,
+      act: typed('/statusline', '\r'),
+      done: ['状态'],
+    },
+    {
+      id: 'dlg-statusline-60',
+      title: 'Status line picker at 60x24',
+      ...narrow,
+      ...empty,
+      act: typed('/statusline', '\r'),
+      done: ['branch'],
+    },
+    {
+      id: 'dlg-usage',
+      title: 'Usage panel',
+      timeline: timeline([], { usage }),
+      ready: ['/workspace/demo'],
+      act: typed('/usage', '\r'),
+      done: ['Session usage'],
+    },
+    {
+      id: 'dlg-usage-zh-CN',
+      title: 'Usage panel, zh-CN',
+      ...zh,
+      timeline: timeline([], { usage }),
+      ready: ['/workspace/demo'],
+      act: typed('/usage', '\r'),
+      done: ['会话用量'],
+    },
+    {
+      id: 'dlg-usage-60',
+      title: 'Usage panel at 60x24',
+      ...narrow,
+      timeline: timeline([], { usage }),
+      ready: ['/workspace/demo'],
+      act: typed('/usage', '\r'),
+      done: ['Session usage'],
+    },
+    { id: 'dlg-slash', title: 'Slash menu', ...empty, act: typed('/'), done: ['/exit'] },
+    { id: 'dlg-slash-zh-CN', title: 'Slash menu, zh-CN', ...zh, ...empty, act: typed('/'), done: ['/exit'] },
+    {
+      id: 'dlg-slash-60',
+      title: 'Slash menu at 60x24',
+      ...narrow,
+      ...empty,
+      act: typed('/'),
+      done: ['/exit'],
+    },
+    {
+      id: 'dlg-mention',
+      title: '@ menu',
+      ...empty,
+      files: [
+        'README.md',
+        'packages/cli-tui/src/editor.ts',
+        'packages/cli-tui/src/app.ts',
+        'docs/cli/tui.md',
+      ],
+      act: typed('look at @tui'),
+      done: ['packages/cli-tui/'],
+    },
+    {
+      id: 'dlg-mention-zh-CN',
+      title: '@ menu, zh-CN',
+      ...zh,
+      ...empty,
+      files: [
+        'README.md',
+        'packages/cli-tui/src/editor.ts',
+        'packages/cli-tui/src/app.ts',
+        'docs/cli/tui.md',
+      ],
+      act: typed('look at @tui'),
+      done: ['packages/cli-tui/'],
+    },
+    {
+      id: 'dlg-mention-60',
+      title: '@ menu at 60x24',
+      ...narrow,
+      ...empty,
+      files: [
+        'README.md',
+        'packages/cli-tui/src/editor.ts',
+        'packages/cli-tui/src/app.ts',
+        'docs/cli/tui.md',
+      ],
+      act: typed('look at @tui'),
+      done: ['packages/cli-tui/'],
+    },
+    {
+      id: 'dlg-nomatch',
+      title: 'Picker whose typed filter matches nothing',
+      ...empty,
+      handlers: MODELS,
+      act: afterOpen(['/model', '\r'], 'zzzz'),
+      done: ['zzzz'],
+    },
+    {
+      id: 'dlg-nomatch-zh-CN',
+      title: 'Picker whose typed filter matches nothing, zh-CN',
+      ...zh,
+      ...empty,
+      handlers: MODELS,
+      act: afterOpen(['/model', '\r'], 'zzzz'),
+      done: ['zzzz'],
+    },
+    {
+      id: 'dlg-long',
+      title: 'Long model list, scrolled down',
+      rows: 16,
+      ...empty,
+      handlers: MANY,
+      act: afterOpen(['/model', '\r'], ...Array<string>(12).fill(DOWN)),
+      done: ['❯ 13. agnes/model-13'],
+    },
+    {
+      id: 'dlg-long-zh-CN',
+      title: 'Long model list, scrolled down, zh-CN',
+      rows: 16,
+      ...zh,
+      ...empty,
+      handlers: MANY,
+      act: afterOpen(['/model', '\r'], ...Array<string>(12).fill(DOWN)),
+      done: ['❯ 13. agnes/model-13'],
+    },
+    {
+      id: 'dlg-long-60',
+      title: 'Long model list at 60x24, scrolled down',
+      ...narrow,
+      rows: 16,
+      ...empty,
+      handlers: MANY,
+      act: afterOpen(['/model', '\r'], ...Array<string>(12).fill(DOWN)),
+      done: ['❯ 13. agnes/model-13'],
+    },
+  ]
+}
