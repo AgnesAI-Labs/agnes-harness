@@ -138,7 +138,7 @@ Redraw: Ctrl-L clears the screen and draws everything again, for when another pr
 
 Suspend: on an empty prompt Ctrl-Z hands the terminal back as quitting does, then stops the TUI and returns you to the shell; `fg` brings it back with the same screen, mouse and paste modes, repainted. The session keeps running in the daemon meanwhile. With text in the prompt Ctrl-Z is still undo. Windows has no suspend, so Ctrl-Z stays undo there. The binding is `suspend` in the global scope of `/keys`.
 
-The session, model and theme pickers filter as you type, ignoring case, over each row's title, id and time. The top line reads `Filter: xx (3/20)`: matches out of all rows. Backspace deletes a character, Esc clears the filter first and closes the picker only when it is already empty, and the number keys pick a row only while the filter is empty (otherwise a digit is part of the filter).
+The session, model and theme pickers filter as you type, ignoring case, over each row's title, id and time. The top line reads `⌕ xx  3/20`: matches out of all rows. A session's id and sequence number are searchable but no longer shown on its row. Backspace deletes a character, Esc clears the filter first and closes the picker only when it is already empty, and the number keys pick a row only while the filter is empty (otherwise a digit is part of the filter).
 
 After you scroll up with PageUp or the wheel, a line above the function-key row reads `↓ New output below · End to jump back` once something new has arrived. End (or Ctrl-End) returns to the newest rows and follows new output again. While the input box holds a draft, End keeps moving the cursor to the end of its line, so only Ctrl-End jumps back and the line says so.
 
