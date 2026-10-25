@@ -32,6 +32,7 @@ function optionLabel(option: PermissionRequest['options'][number], locale: Local
   if (option.kind === 'allow_once') return t('approval.allowOnce', locale)
   if (option.kind === 'allow_always') return tt('approval.allowAlways', locale)
   if (option.kind === 'reject_once') return t('approval.reject', locale)
+  if (option.kind === 'reject_always') return tt('approval.rejectAlways', locale)
   return escapeControl(option.name)
 }
 
@@ -271,8 +272,7 @@ export class PermissionModal implements Component {
       .map((line, i) => row(question.detailOffset + i < headingRows ? line : ansi.dim(line)))
     const hints = keyHints(
       [
-        { key: '↑↓', label: tt('permission.hint.select', locale) },
-        { key: '⏎', label: tt('permission.hint.confirm', locale) },
+        // First, so a narrow border keeps it beside esc: what is being approved must stay reachable.
         ...(page.length > 0
           ? [
               {
@@ -285,6 +285,8 @@ export class PermissionModal implements Component {
               },
             ]
           : []),
+        { key: '↑↓', label: tt('permission.hint.select', locale) },
+        { key: '⏎', label: tt('permission.hint.confirm', locale) },
         { key: 'esc', label: tt('permission.hint.close', locale) },
       ],
       ansi,

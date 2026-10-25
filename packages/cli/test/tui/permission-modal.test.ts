@@ -15,6 +15,23 @@ const request: PermissionRequest = {
     { optionId: 'r', name: 'Reject', kind: 'reject_once' },
   ],
 }
+it('keeps the details pager in a narrow bottom border and names every option kind it knows', () => {
+  const modal = new PermissionModal(vi.fn())
+  void modal.ask(
+    {
+      ...request,
+      toolCall: { title: 'write', rawInput: { path: 'a.txt' } },
+      options: [...request.options, { optionId: 'x', name: 'raw-name', kind: 'reject_always' }],
+    },
+    { signal: new AbortController().signal },
+  )
+  const lines = modal.render(44)
+  expect(lines.at(-1)).toContain('pgup/pgdn details')
+  expect(lines.at(-1)).toContain('esc close')
+  expect(lines.join('\n')).toContain('Always reject')
+  expect(lines.join('\n')).not.toContain('raw-name')
+})
+
 it('defaults Enter to rejection and only explicit option selection permits approval', async () => {
   const modal = new PermissionModal(vi.fn())
   const first = modal.ask(request, { signal: new AbortController().signal })
@@ -23,7 +40,7 @@ it('defaults Enter to rejection and only explicit option selection permits appro
   const framed = modal.render(80)
   expect(framed).toHaveLength(5)
   expect(framed[0]).toMatch(/^╭ ▲ Needs approval · write ─+╮$/)
-  expect(framed.at(-1)).toMatch(/^╰ ↑↓ select {2}⏎ confirm {2}pgup\/pgdn details 1-1\/1 {2}esc close ─+╯$/)
+  expect(framed.at(-1)).toMatch(/^╰ pgup\/pgdn details 1-1\/1 {2}↑↓ select {2}⏎ confirm {2}esc close ─+╯$/)
   expect(framed.every((line) => displayWidth(line) === 80 && /^[╭│╰].*[╮│╯]$/.test(line))).toBe(true)
   modal.handleInput('\r')
   expect(await first).toEqual({ optionId: 'r' })

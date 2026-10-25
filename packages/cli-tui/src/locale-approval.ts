@@ -22,6 +22,7 @@ export type ApprovalKey =
   | 'permission.hint.confirm'
   | 'permission.hint.details'
   | 'permission.hint.close'
+  | 'approval.rejectAlways'
 
 export const APPROVAL_DICT: Record<Locale, Record<ApprovalKey, string>> = {
   en: {
@@ -42,6 +43,7 @@ export const APPROVAL_DICT: Record<Locale, Record<ApprovalKey, string>> = {
     'permission.hint.confirm': 'confirm',
     'permission.hint.details': 'details {start}-{end}/{total}',
     'permission.hint.close': 'close',
+    'approval.rejectAlways': 'Always reject',
   },
   'zh-CN': {
     'approval.needs': '需要审批',
@@ -61,5 +63,6 @@ export const APPROVAL_DICT: Record<Locale, Record<ApprovalKey, string>> = {
     'permission.hint.confirm': '确认',
     'permission.hint.details': '详情 {start}-{end}/{total}',
     'permission.hint.close': '关闭',
+    'approval.rejectAlways': '总是拒绝',
   },
 }
