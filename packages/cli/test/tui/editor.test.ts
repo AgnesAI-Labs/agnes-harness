@@ -281,6 +281,18 @@ describe('Editor input', () => {
     e.handleInput('\x1b')
     expect(e.text).toBe('draft')
     expect(e.render(20)[0]).toContain('draft')
+    // A writer outside the keyboard (a steer's clear, an image chip landing) ends the search: esc cannot bring back what it replaced.
+    for (const [write, after] of [
+      [(x: Editor) => x.clear(), ''],
+      [(x: Editor) => x.insertChip('[Image #1]'), 'sent[Image #1]'],
+    ] as const) {
+      const w = new Editor({ onSubmit: () => {} })
+      type(w, 'sent')
+      w.handleInput('\x12')
+      write(w)
+      expect(w.inSearch).toBe(false)
+      expect(w.text).toBe(after)
+    }
   })
 
   it('esc clears and reports, ctrl-c and ctrl-d are left to the application', () => {

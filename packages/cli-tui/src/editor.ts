@@ -147,6 +147,7 @@ export class Editor implements Component, VimTarget {
   /** Every draft source (queue, external editor, history, a failed send) lands here: nothing it holds may act on the terminal. */
   setText(raw: string): void {
     const t = raw.replace(/\r\n?/g, '\n').replaceAll('\t', '  ').replace(CONTROL, '')
+    this.search = undefined // the open search's snapshot of the old draft must not come back on esc
     this.text = t
     this.cursor = t.length
   }
@@ -562,6 +563,7 @@ export class Editor implements Component, VimTarget {
 
   /** Puts a chip such as `[Image #1]` in the draft; Backspace removes it whole, and it goes out as typed. */
   insertChip(chip: string): void {
+    this.search = undefined
     this.pastes.set(chip, chip)
     this.insert(chip)
   }
