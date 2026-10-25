@@ -60,7 +60,7 @@ describe('JobsRepo', () => {
     expect(repo.get('j1')).toMatchObject({ heartbeat: 2_000, leaseUntil: 62_000 })
 
     now = 70_000
-    expect(repo.reclaimStalled(now, 5)).toEqual({ requeued: ['j1'], dead: [] })
+    expect(repo.reclaimStalled(now, 5)).toEqual({ requeued: ['j1'], dead: [], interrupted: [] })
     expect(repo.get('j1')).toMatchObject({ status: 'waiting', stalledCounter: 1, attempts: 0 })
 
     repo.settle('j1', { status: 'completed', result: { seq: 9 } })
@@ -81,7 +81,7 @@ describe('JobsRepo', () => {
     repo.insert(row('stalled', { stalledCounter: 5 }))
     repo.claimDue(now, 'o', 10, 10)
     now = 100
-    expect(repo.reclaimStalled(now, 5)).toEqual({ requeued: [], dead: ['stalled'] })
+    expect(repo.reclaimStalled(now, 5)).toEqual({ requeued: [], dead: ['stalled'], interrupted: [] })
     expect(repo.get('stalled')).toMatchObject({ status: 'dead', error: 'stalled', stalledCounter: 6 })
   })
 

@@ -608,3 +608,166 @@ describe('Scheduler', () => {
     })
   })
 })
+
+describe('Scheduler after an interrupted run', () => {
+  /**
+   * A daemon whose prepare opens a new session per run, like a new-session schedule. `stopIn`
+   * decides where the first daemon is shut down: during the turn, or before the session opens.
+   */
+  function daemon(
+    repo: JobsRepo,
+    clock: () => number,
+    world: { sessions: string[]; prompts: string[]; failures: unknown[]; settled: unknown[] },
+    options: { retryable: boolean; stopIn?: 'run' | 'prepare'; onStop?: () => void },
+  ) {
+    const registry: SchedulerRegistry = {
+      open: async ({ key }) => {
+        const entry = await fakeRegistry().registry.open({ key: key ?? '', cwd: '/workspace' })
+        entry.session.enqueue = async () => {
+          world.prompts.push(key ?? '')
+          return 1
+        }
+        entry.session.run = ({ signal }) =>
+          options.stopIn === 'run'
+            ? new Promise((_resolve, reject) => {
+                signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+                options.onStop?.()
+              })
+            : Promise.resolve({ reason: 'completed', lastSeq: 2 })
+        return entry
+      },
+      get: () => undefined,
+      keys: () => [],
+    }
+    return new Scheduler({
+      repo,
+      registry,
+      notices: { emit: () => undefined } as never,
+      clock,
+      owner: `owner-${world.sessions.length}-${options.stopIn ?? 'done'}`,
+      limits: { tickMs: 1_000, lockMs: 60_000, maxStalled: 5 },
+      workspaces: workspaceAuthority(),
+      ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+      activationBarrier: createExtensionActivationBarrier(),
+      random: () => 0.5,
+      prepare: async (_job: JobRow, signal: AbortSignal, dispatching: () => void) => {
+        if (options.stopIn === 'prepare') {
+          const stopped = new Promise((_resolve, reject) =>
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true }),
+          )
+          options.onStop?.()
+          await stopped
+        }
+        dispatching()
+        const sessionKey = `agnes:schedule:${world.sessions.length}`
+        world.sessions.push(sessionKey)
+        return { sessionKey }
+      },
+      retryable: () => options.retryable,
+      onFailed: (job: JobRow, info: unknown) => world.failures.push([job.idempotencyKey, info]),
+      recurAfterFailure: (job: JobRow) => job.schedule.kind === 'every',
+      onSettled: (job: JobRow, info: unknown) => world.settled.push([job.idempotencyKey, info]),
+    } as never)
+  }
+
+  async function interrupt(
+    repo: JobsRepo,
+    clock: () => number,
+    world: Parameters<typeof daemon>[2],
+    options: { retryable: boolean; stopIn: 'run' | 'prepare' },
+  ) {
+    let stopping: Promise<void> | undefined
+    const first: Scheduler = daemon(repo, clock, world, {
+      ...options,
+      onStop: () => {
+        stopping = first.stop()
+      },
+    })
+    await first.tick()
+    await stopping
+  }
+
+  const world = () => ({
+    sessions: [] as string[],
+    prompts: [] as string[],
+    failures: [] as unknown[],
+    settled: [] as unknown[],
+  })
+
+  it('does not open a second session for a non-retryable job interrupted mid-run', async () => {
+    let now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('schedule:once', { maxAttempts: 3 }))
+    const seen = world()
+    await interrupt(repo, () => now, seen, { retryable: false, stopIn: 'run' })
+    expect(repo.get('schedule:once')).toMatchObject({
+      status: 'active',
+      result: { dispatched: { sessionKey: 'agnes:schedule:0' } },
+    })
+
+    now += 61_000
+    await daemon(repo, () => now, seen, { retryable: false }).tick()
+
+    expect(seen.sessions).toEqual(['agnes:schedule:0'])
+    expect(seen.prompts).toEqual(['agnes:schedule:0'])
+    expect(seen.failures).toEqual([
+      ['schedule:once', { at: now, error: 'interrupted', sessionKey: 'agnes:schedule:0' }],
+    ])
+    expect(repo.get('schedule:once')).toMatchObject({ status: 'failed', error: 'interrupted', attempts: 1 })
+    expect(repo.get('schedule:once')?.result).toBeUndefined()
+  })
+
+  it('moves an interrupted repeating job to its next occurrence instead of running it again', async () => {
+    let now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('schedule:every', { schedule: { kind: 'every', everyMs: 600_000 } }))
+    const seen = world()
+    await interrupt(repo, () => now, seen, { retryable: false, stopIn: 'run' })
+
+    now += 61_000
+    await daemon(repo, () => now, seen, { retryable: false }).tick()
+
+    expect(seen.sessions).toHaveLength(1)
+    expect(repo.get('schedule:every')).toMatchObject({
+      status: 'waiting',
+      error: 'interrupted',
+      attempts: 0,
+      delayUntil: now + 600_000,
+    })
+    expect(seen.settled).toEqual([
+      ['schedule:every', { at: now, nextRunAt: now + 600_000, status: 'waiting' }],
+    ])
+  })
+
+  it('runs a non-retryable job again when it was interrupted before its first side effect', async () => {
+    let now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('schedule:early'))
+    const seen = world()
+    await interrupt(repo, () => now, seen, { retryable: false, stopIn: 'prepare' })
+    expect(seen.sessions).toEqual([])
+
+    now += 61_000
+    await daemon(repo, () => now, seen, { retryable: false }).tick()
+
+    expect(seen.sessions).toEqual(['agnes:schedule:0'])
+    expect(seen.prompts).toEqual(['agnes:schedule:0'])
+    expect(seen.failures).toEqual([])
+    expect(repo.get('schedule:early')).toMatchObject({ status: 'completed', result: { reason: 'completed' } })
+  })
+
+  it('still retries a retryable job interrupted mid-run', async () => {
+    let now = 10_000
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+    repo.insert(row('existing'))
+    const seen = world()
+    await interrupt(repo, () => now, seen, { retryable: true, stopIn: 'run' })
+
+    now += 61_000
+    await daemon(repo, () => now, seen, { retryable: true }).tick()
+
+    expect(seen.prompts).toEqual(['agnes:schedule:0', 'agnes:schedule:1'])
+    expect(seen.failures).toEqual([])
+    expect(repo.get('existing')).toMatchObject({ status: 'completed', stalledCounter: 1 })
+  })
+})

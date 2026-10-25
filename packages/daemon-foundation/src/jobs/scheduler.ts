@@ -3,7 +3,7 @@ import type { Actor, ContentBlock } from '@agnes/protocol'
 import type { NoticeSink } from '../local/notice.js'
 import type { SessionPrincipalOwnership } from '../storage/session-ownership.js'
 import type { WorkspaceBindingEnvelope } from '../storage/workspaces.js'
-import type { JobRow, JobsRepo } from './repo.js'
+import { dispatchMarkOf, type JobRow, type JobsRepo } from './repo.js'
 import { nextAfterCompletion } from './schedule.js'
 
 type SchedulerEntry = {
@@ -51,10 +51,18 @@ type SchedulerOptions = {
   /**
    * Resolves the session a job runs in before it is opened. A job whose row names a placeholder (a
    * scheduled task that opens a new session per run) gets a fresh session here; others return
-   * undefined and run in their own session.
+   * undefined and run in their own session. It calls `dispatching` just before it opens a session,
+   * so an interrupted attempt is known to have possibly run.
    */
-  prepare?(job: JobRow, signal: AbortSignal): Promise<{ sessionKey: string } | undefined>
-  /** False when a failed attempt must not be retried, e.g. one that may already have opened a session. */
+  prepare?(
+    job: JobRow,
+    signal: AbortSignal,
+    dispatching: () => void,
+  ): Promise<{ sessionKey: string } | undefined>
+  /**
+   * False when a failed attempt must not be retried, e.g. one that may already have opened a session.
+   * An attempt interrupted by a shutdown or crash after it was dispatched is not run again either.
+   */
   retryable?(job: JobRow): boolean
   /** A final failure; `sessionKey` is the session the attempt used, when it got that far. */
   onFailed?(job: JobRow, info: { at: number; error: string; sessionKey?: string }): void
@@ -143,7 +151,18 @@ export class Scheduler {
       now,
       this.options.limits.maxStalled,
       new Set(this.active.keys()),
+      {
+        retryable: (job) => this.options.retryable?.(job) !== false,
+        owner: this.options.owner,
+        lockMs: this.options.limits.lockMs,
+      },
     )
+    // The previous owner stopped mid-attempt after the job's first side effect. Running it again
+    // could open a second session or send the prompt twice, so the attempt ends as interrupted.
+    for (const job of reclaimed.interrupted) {
+      this.options.log?.(`job ${job.idempotencyKey} was interrupted after dispatch; not retrying`)
+      this.settleFinalFailure(job, 'interrupted', job.attempts + 1, dispatchMarkOf(job)?.sessionKey)
+    }
     for (const jobId of reclaimed.dead) {
       const job = this.options.repo.get(jobId)
       this.options.notices.emit('job_dead', {
@@ -232,7 +251,7 @@ export class Scheduler {
       if (!this.options.boundWake) return { reason: 'refused' }
       return this.options.boundWake(job, signal)
     }
-    const prepared = await this.options.prepare?.(job, signal)
+    const prepared = await this.options.prepare?.(job, signal, () => this.markDispatched(job))
     const sessionKey = prepared?.sessionKey ?? job.sessionKey
     try {
       return await this.runIn(job, sessionKey, signal)
@@ -259,6 +278,7 @@ export class Scheduler {
       binding,
     })
     signal.throwIfAborted()
+    this.markDispatched(job, sessionKey)
     if ('command' in job.payload && typeof job.payload.command === 'object') {
       if (job.budget !== undefined) throw new Error('a command job cannot carry a turn budget')
       if (job.payload.command.method !== 'resume') {
@@ -330,6 +350,13 @@ export class Scheduler {
     }
   }
 
+  private markDispatched(job: JobRow, sessionKey?: string): void {
+    this.options.repo.markDispatched(job.idempotencyKey, this.options.owner, {
+      at: this.options.clock(),
+      ...(sessionKey ? { sessionKey } : {}),
+    })
+  }
+
   private dispatched(job: JobRow, info: { seq?: number; reason?: string; sessionKey: string }): void {
     this.options.onDispatched?.(job, { at: this.options.clock(), ...info })
   }
@@ -357,27 +384,7 @@ export class Scheduler {
   private settleFailure(job: JobRow, error: string, sessionKey?: string): void {
     const attempts = job.attempts + 1
     if (attempts >= job.maxAttempts || this.options.retryable?.(job) === false) {
-      const at = this.options.clock()
-      this.options.onFailed?.(job, { at, error, ...(sessionKey ? { sessionKey } : {}) })
-      const next =
-        this.options.recurAfterFailure?.(job) === true
-          ? nextAfterCompletion(job.schedule, at, {
-              ...(this.options.random ? { random: this.options.random } : {}),
-            })
-          : null
-      if (next === null) {
-        this.options.repo.settle(job.idempotencyKey, { status: 'failed', error, attempts })
-        if (this.options.onFailed) this.options.onSettled?.(job, { at, nextRunAt: null, status: 'completed' })
-        return
-      }
-      // A failed occurrence does not end a repeating task: the next one starts with fresh attempts.
-      this.options.repo.settle(job.idempotencyKey, {
-        status: 'waiting',
-        error,
-        attempts: 0,
-        delayUntil: next,
-      })
-      this.options.onSettled?.(job, { at, nextRunAt: next, status: 'waiting' })
+      this.settleFinalFailure(job, error, attempts, sessionKey)
       return
     }
     const jitter = 0.8 + 0.4 * (this.options.random ?? Math.random)()
@@ -387,6 +394,30 @@ export class Scheduler {
       attempts,
       delayUntil: this.options.clock() + Math.round(job.backoffMs * 2 ** job.attempts * jitter),
     })
+  }
+
+  private settleFinalFailure(job: JobRow, error: string, attempts: number, sessionKey?: string): void {
+    const at = this.options.clock()
+    this.options.onFailed?.(job, { at, error, ...(sessionKey ? { sessionKey } : {}) })
+    const next =
+      this.options.recurAfterFailure?.(job) === true
+        ? nextAfterCompletion(job.schedule, at, {
+            ...(this.options.random ? { random: this.options.random } : {}),
+          })
+        : null
+    if (next === null) {
+      this.options.repo.settle(job.idempotencyKey, { status: 'failed', error, attempts })
+      if (this.options.onFailed) this.options.onSettled?.(job, { at, nextRunAt: null, status: 'completed' })
+      return
+    }
+    // A failed occurrence does not end a repeating task: the next one starts with fresh attempts.
+    this.options.repo.settle(job.idempotencyKey, {
+      status: 'waiting',
+      error,
+      attempts: 0,
+      delayUntil: next,
+    })
+    this.options.onSettled?.(job, { at, nextRunAt: next, status: 'waiting' })
   }
 
   doctor(): { stalledForever: string[]; waitingDepth: Array<{ sessionKey: string; depth: number }> } {

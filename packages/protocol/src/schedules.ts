@@ -102,7 +102,7 @@ export const ScheduleRun = Type.Object(
     sessionKey: Type.Optional(sessionKey),
     endedAt: Type.Optional(Type.Integer()),
     seq: Type.Optional(Type.Integer()),
-    /** Stable code: workspace_missing, loop_missing, bundle_unavailable, preset_not_allowed, model_missing, session_unavailable, start_failed, turn_error. */
+    /** Stable code: workspace_missing, loop_missing, bundle_unavailable, preset_not_allowed, model_missing, session_unavailable, start_failed, turn_error, interrupted. */
     reason: Type.Optional(Type.String({ maxLength: 64 })),
     detail: Type.Optional(Type.String({ maxLength: 500 })),
   },
