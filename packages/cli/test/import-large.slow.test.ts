@@ -104,7 +104,10 @@ describe('agnes export -> import of a session longer than one import batch', () 
       expect(reexported.code, reexported.err).toBe(0)
       const landed = exportedRows(again)
       // session/start is the target's own, carrying the import marker; every other row is the source's.
-      expect(landed.slice(1)).toEqual(rows.slice(1))
+      // Rows keep their sequence but land as untrusted imported history under the importer's labels.
+      expect(landed.slice(1).map((row) => row.seq)).toEqual(rows.slice(1).map((row) => row.seq))
+      for (const row of landed.slice(1))
+        expect(row).toMatchObject({ origin: 'import:agnes', trust: 'untrusted' })
       expect(landed[0]?.data).toMatchObject({ imported: { source: 'agnes' } })
     },
     300_000,

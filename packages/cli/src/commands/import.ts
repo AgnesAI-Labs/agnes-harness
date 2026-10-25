@@ -89,7 +89,12 @@ const importedMarker = (
   const data = startData(events)
   const marker = data?.imported
   if (marker && typeof marker === 'object' && !Array.isArray(marker))
-    return marker as SessionStart['imported']
+    return source === 'agnes'
+      ? ({
+          ...marker,
+          cwd: (marker as { cwd?: string }).cwd || cwd.slice(0, 4096),
+        } as SessionStart['imported'])
+      : (marker as SessionStart['imported'])
   if (source !== 'agnes') return undefined
   const key = typeof data?.key === 'string' ? data.key : ''
   return { source: 'agnes', sourceId: key.slice(0, 256), cwd: cwd.slice(0, 4096) }
