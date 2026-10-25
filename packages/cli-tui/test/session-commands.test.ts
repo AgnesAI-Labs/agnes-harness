@@ -10,6 +10,7 @@ import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
 import { deliverableBasename } from '../src/deliverable-files.js'
 import { tt } from '../src/locale-extended.js'
+import { chooseSession } from '../src/session-switch.js'
 import { displayWidth } from '../src/terminal.js'
 import { TuiTheme } from '../src/theme.js'
 import { localCommandView } from '../src/views/local-command.js'
@@ -79,6 +80,7 @@ describe('session slash commands', () => {
       workspace: '',
     })
     expect(result.sessionPickerTitle).toBe('picker.searchTitle')
+    expect(result.sessionChoices?.map((c) => c.cwd)).toEqual(['/w', '/w'])
     expect(result.sessionChoices?.map((c) => [c.sessionId, c.title])).toEqual([
       ['s1', 'T — a[31m b'],
       ['s2', 'T — x'],
@@ -98,6 +100,27 @@ describe('session slash commands', () => {
       (await runSlash(app, line)).sessionChoices?.map((c) => c.sessionId).sort()
     expect(await ids('/resume')).toEqual(['b'])
     expect(await ids('/resume all')).toEqual(['b', 'c', 'cur'])
+
+    // Picking a foreign row loads it in its own workspace; a row of this workspace keeps `app.cwd`.
+    const load = vi.fn(async () => {
+      throw new Error('stop after load')
+    })
+    const showError = vi.fn()
+    const pick = {
+      cwd: '/w/a',
+      refuseClosed: () => false,
+      refuseSwitch: () => false,
+      statusBar: { setNotice: vi.fn() },
+      renderer: { requestRender: vi.fn() },
+      o: { session: { client: { session: { load } } } },
+      showError,
+    } as unknown as TuiApp
+    const rows = (await runSlash(app, '/resume all')).sessionChoices ?? []
+    for (const id of ['c', 'b']) await chooseSession(pick, rows.find((r) => r.sessionId === id) as never)
+    expect(load.mock.calls).toEqual([
+      ['c', { cwd: '/w/other' }],
+      ['b', { cwd: '/w/a' }],
+    ])
   })
 
   it('/yolo off sends enabled:false; bare /yolo and on keep enabling', async () => {

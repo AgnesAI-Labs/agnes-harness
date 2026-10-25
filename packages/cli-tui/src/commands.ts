@@ -109,6 +109,8 @@ export type SessionChoice = {
   lastSeq: number
   preset: string | null
   title?: string
+  /** Workspace of a session outside this TUI's: resuming it loads it there (the daemon refuses another workspace). */
+  cwd?: string
   /** Extra directories bound to the session (paths on the daemon's machine); absent when none. */
   additionalDirectories?: string[]
   /** Set by the /rewind picker: choosing forks this session at that completed-turn boundary. */
@@ -195,6 +197,7 @@ export async function listSessionChoices(session: Session, resumableFrom?: strin
       ...(item.lastMessageAt ? { lastMessageAt: item.lastMessageAt } : {}),
       lastSeq: item.lastSeq,
       preset: item.preset,
+      ...(item.cwd && item.cwd !== here ? { cwd: item.cwd } : {}),
       ...(item.title ? { title: item.title } : {}),
       ...(item.additionalDirectories?.length ? { additionalDirectories: item.additionalDirectories } : {}),
     }))

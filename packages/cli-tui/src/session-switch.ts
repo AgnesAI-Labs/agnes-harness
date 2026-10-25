@@ -133,7 +133,7 @@ export async function chooseSession(app: TuiApp, choice: SessionChoice): Promise
     // A rewind row forks the open session at its completed-turn boundary; any other row resumes.
     const next =
       choice.forkAt === undefined
-        ? await app.o.session.client.session.load(choice.sessionId, { cwd: app.cwd })
+        ? await app.o.session.client.session.load(choice.sessionId, { cwd: choice.cwd ?? app.cwd })
         : await app.o.session.client.session.fork(choice.sessionId, choice.forkAt)
     if (await applySwitch(app, next, ticket)) {
       const turn = choice.title?.match(/^#(\d+)/)?.[1] ?? String(choice.forkAt)
