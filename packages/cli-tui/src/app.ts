@@ -700,7 +700,9 @@ export class TuiApp {
   // (packages/daemon-foundation/src/lease/reclaim.ts) and worker pool (packages/daemon/src/supervisor/
   // worker-pool.ts) actually emit. Anything else is left alone rather than guessed at.
   private handleNotice(payload: unknown): void {
-    const n = payload as { kind?: string; detail?: { lastStep?: number } }
+    const n = payload as { kind?: string; sessionId?: string; detail?: { lastStep?: number } }
+    // The previous session stays attached after /new, /resume and /cd, so its notices still arrive.
+    if (n.sessionId !== undefined && n.sessionId !== this.o.session.id) return
     if (n.kind === 'resumed') {
       const step = n.detail?.lastStep
       this.statusBar.setNotice(t('notice.resumed', this.o.locale ?? 'en', { step: step ?? '?' }), 'success')

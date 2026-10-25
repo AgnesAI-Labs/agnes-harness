@@ -150,6 +150,27 @@ it('renders localized daemon notices delivered through the real SDK Client event
     await vi.waitFor(async () =>
       expect((await screenOf(term, 80, 24)).join('\n')).toContain('执行中断，30 秒内自动恢复'),
     )
+
+    // A session-scoped notice for another session (e.g. the one just switched away from) is not ours.
+    endpoint.pushNotice({
+      kind: 'resumed',
+      sessionId: session.id,
+      detail: { lastStep: 9 },
+      at: new Date(0).toISOString(),
+    })
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain('上次停在第 9 步，已续跑'),
+    )
+    endpoint.pushNotice({
+      kind: 'worker_crashed',
+      sessionId: 'agnes:local:default:cli:dm:other',
+      detail: {},
+      at: new Date(0).toISOString(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const screen = (await screenOf(term, 80, 24)).join('\n')
+    expect(screen).toContain('上次停在第 9 步，已续跑')
+    expect(screen).not.toContain('执行中断')
   } finally {
     await app.stop()
     await client.close()
