@@ -133,3 +133,91 @@ it('isolates pagination from later queries and closing, and permits retry after 
     vi.useRealTimers()
   }
 })
+
+it('caps the empty-query list at eight and names both the recent count and the sidebar total', async () => {
+  const { act, createElement } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { SessionSearch } = await import('../src/session-search.js')
+  const { webLocaleCatalog } = await import('@agnes/web-foundation/locale-catalog')
+  const { vi } = await import('vitest')
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  vi.useFakeTimers()
+  const translate = (locale: 'en' | 'zh-CN') => {
+    const dictionary = webLocaleCatalog[locale] as Record<string, string>
+    return (key: string, vars?: Readonly<Record<string, string | number>>) =>
+      (dictionary[key] ?? key).replace(/\{(\w+)\}/g, (match, name: string) =>
+        vars && Object.hasOwn(vars, name) ? String(vars[name]) : match,
+      )
+  }
+  const recent = Array.from({ length: 10 }, (_, index) => ({
+    sessionId: `recent-${index}`,
+    title: `Recent ${index}`,
+    workspace: '/work/app',
+  }))
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const render = (locale: 'en' | 'zh-CN', total?: number) =>
+    act(async () =>
+      root.render(
+        createElement(SessionSearch, {
+          open: true,
+          t: translate(locale),
+          recent,
+          total,
+          titleOf: () => undefined,
+          request: async () => ({
+            items: [
+              {
+                sessionId: 'matched',
+                title: 'Matched session',
+                workspace: '/work/app',
+                snippet: 'refund [refund]',
+                ts: '2026-10-14T00:00:00Z',
+              },
+            ],
+          }),
+          onOpen: () => undefined,
+          onClose: () => undefined,
+        }),
+      ),
+    )
+  const type = async (value: string) => {
+    await act(async () => {
+      const input = document.querySelector<HTMLInputElement>('[data-testid="session-search-input"]')
+      if (!input) throw new Error('Missing search input')
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(180)
+    })
+  }
+  const label = () => document.querySelector('.session-search-label')?.textContent
+  const totalLine = () => document.querySelector('[data-testid="session-search-total"]')?.textContent
+  try {
+    await render('zh-CN', 21)
+    expect(document.querySelectorAll('[data-testid="session-search-option"]')).toHaveLength(8)
+    expect(label()).toBe('最近 8 个会话')
+    expect(totalLine()).toBe('侧栏共 21 个会话')
+    await render('en', 21)
+    expect(label()).toBe('Recent 8 sessions')
+    expect(totalLine()).toBe('21 sessions in the sidebar')
+    await render('en')
+    expect(label()).toBe('Recent 8 sessions')
+    expect(document.querySelector('[data-testid="session-search-total"]')).toBeNull()
+    // A query switches the panel to indexed results, so the sidebar note would mix two counts.
+    await render('en', 21)
+    await type('refund')
+    expect(document.querySelectorAll('[data-testid="session-search-option"]')).toHaveLength(1)
+    expect(document.querySelector('[data-testid="session-search-results"]')?.textContent).toContain(
+      'Matched session',
+    )
+    expect(document.querySelector('.session-search-label')).toBeNull()
+    expect(document.querySelector('[data-testid="session-search-total"]')).toBeNull()
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+    vi.useRealTimers()
+  }
+})

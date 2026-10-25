@@ -1248,6 +1248,8 @@ function updateTitle(id: string, title: string): void {
 let runtimePlatform: string | undefined
 let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
+// The search panel's footer total follows the sidebar snapshot; the panel itself never reads pages.
+let refreshSearchTotal: (() => void) | undefined
 const sidebarPages = createSidebarPagination(
   client.session,
   () => {
@@ -1256,6 +1258,7 @@ const sidebarPages = createSidebarPagination(
     if (selected && !sessionRows.some((row) => row.sessionId === selected.sessionId))
       sessionRows.push(selected)
     updateSidebar()
+    refreshSearchTotal?.()
   },
   (error) => {
     const failure = error as { code?: number; data?: { code?: string }; message?: string }
@@ -1443,17 +1446,27 @@ sessionInventory.bind({
   changed: () => list(),
   error: showError,
 })
+/**
+ * The sidebar's paged total, summed the same way its own empty state counts. The daemon lists a
+ * pinned session only under its pinned group, so summing the groups never counts it twice.
+ */
+function sidebarSessionTotal(): number | undefined {
+  const paging = sidebarPages.snapshot()
+  if (!paging.ready || paging.error) return undefined
+  return paging.groups.reduce((sum, group) => sum + group.total, 0)
+}
 // Search finds a session by what was said in it; opening one leaves any home page.
 const sessionSearch = mountSessionSearch({
   translate: t,
   recent: async () =>
-    sortSessionsByRecency((await client.session.list({ limit: 100 })).items.filter((row) => !row.archived))
-      .slice(0, 8)
-      .map((row) => ({
-        sessionId: row.sessionId,
-        title: row.title || sessionLabels.get(row.sessionId) || '',
-        workspace: row.cwd ?? '',
-      })),
+    sortSessionsByRecency(
+      (await client.session.list({ limit: 100 })).items.filter((row) => !row.archived),
+    ).map((row) => ({
+      sessionId: row.sessionId,
+      title: row.title || sessionLabels.get(row.sessionId) || '',
+      workspace: row.cwd ?? '',
+    })),
+  total: sidebarSessionTotal,
   titleOf: (id) => sessionRows.find((row) => row.sessionId === id)?.title || sessionLabels.get(id),
   open: (id) =>
     run(async () => {
@@ -1465,6 +1478,7 @@ const sessionSearch = mountSessionSearch({
       if (id !== sessionBinding.session?.id || draftingNew) await open(id)
     }),
 })
+refreshSearchTotal = sessionSearch.refresh
 onSurfaceEvent(SESSION_SEARCH_EVENT, (event) =>
   sessionSearch.open(event.target instanceof HTMLElement ? event.target : undefined),
 )

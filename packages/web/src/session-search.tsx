@@ -103,12 +103,16 @@ export function isSessionSearchShortcut(event: KeyboardEvent | globalThis.Keyboa
 
 const workspaceName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
 
+/** The empty state is a shortcut, not the sidebar's full list; it never offers more than this. */
+const RECENT_LIMIT = 8
+
 export function SessionSearch({
   open,
   t,
   recent,
   recentStatus,
   retryRecent,
+  total,
   titleOf,
   request,
   onOpen,
@@ -119,6 +123,8 @@ export function SessionSearch({
   recent: readonly SessionSearchRecent[]
   recentStatus?: 'loading' | 'error' | undefined
   retryRecent?: (() => void) | undefined
+  /** Sessions the sidebar lists in total, for the footer note; undefined while that count is unavailable. */
+  total?: number | undefined
   /** The name the sidebar shows for a session the index has no title for. */
   titleOf(sessionId: string): string | undefined
   request: SessionSearchRequest
@@ -210,7 +216,7 @@ export function SessionSearch({
   }
   const rows: SessionSearchGroup[] = searching
     ? groupSessionHits(hits)
-    : recent.map((row) => ({ ...row, snippets: [], matches: 0 }))
+    : recent.slice(0, RECENT_LIMIT).map((row) => ({ ...row, snippets: [], matches: 0 }))
   const current = rows[Math.min(active, rows.length - 1)]
   const choose = (sessionId: string) => {
     onClose()
@@ -290,7 +296,9 @@ export function SessionSearch({
             />
           </div>
         )}
-        {!searching && rows.length > 0 && <p className="session-search-label">{t('home.search.recent')}</p>}
+        {!searching && rows.length > 0 && (
+          <p className="session-search-label">{t('home.search.recent', { count: rows.length })}</p>
+        )}
         {!searching && recentStatus && (
           <p role={recentStatus === 'error' ? 'alert' : 'status'}>
             {t(recentStatus === 'error' ? 'home.search.unavailable' : 'nav.loading')}
@@ -355,6 +363,12 @@ export function SessionSearch({
                     ? t('home.search.capped')
                     : ''}
         </p>
+        {!searching && total !== undefined && (
+          // Reuse the quiet status-line styling; the footer row stays for paging and key hints.
+          <p className="session-search-status" data-testid="session-search-total">
+            {t('home.search.total', { count: total })}
+          </p>
+        )}
         <div className="session-search-footer">
           {next && (status === 'done' || status === 'error') ? (
             <Button
@@ -392,10 +406,12 @@ export function SessionSearch({
 export function mountSessionSearch(options: {
   translate: Translate
   recent(): readonly SessionSearchRecent[] | Promise<readonly SessionSearchRecent[]>
+  /** Sessions the sidebar lists in total; read on every render so it follows the sidebar snapshot. */
+  total?(): number | undefined
   titleOf?(sessionId: string): string | undefined
   open(sessionId: string): void
   request?: SessionSearchRequest
-}): { open(trigger?: HTMLElement): void; refreshLocale(): void; dispose(): void } {
+}): { open(trigger?: HTMLElement): void; refresh(): void; refreshLocale(): void; dispose(): void } {
   const host = createRegionHost(document.body, 'div')
   let opened = false
   let generation = 0
@@ -419,6 +435,7 @@ export function mountSessionSearch(options: {
           recent={opened ? recent : []}
           recentStatus={recentStatus}
           retryRecent={loadRecent}
+          total={options.total?.()}
           titleOf={(id) => options.titleOf?.(id)}
           request={options.request ?? fetchSessionSearch}
           onOpen={options.open}
@@ -493,6 +510,9 @@ export function mountSessionSearch(options: {
   render()
   return {
     open,
+    refresh() {
+      if (opened) render()
+    },
     refreshLocale: render,
     dispose() {
       opened = false
