@@ -9,6 +9,8 @@ export const BURST_MIN_CHARS = 16
 export const BURST_GAP_MS = 10
 /** After the last character of a burst, Enter is still a newline for this long. */
 export const BURST_ENTER_HOLD_MS = 30
+/** A paste whose end marker has not arrived this long after its last chunk is delivered as received. */
+export const PASTE_IDLE_MS = 2000
 
 /**
  * Puts a bracketed paste back together. A terminal delivers one paste in as many data chunks as the
@@ -26,6 +28,8 @@ export class PasteAssembler {
   /** The start of a paste start marker that the last chunk ended inside of. */
   private tail = ''
   private timer: ReturnType<typeof setTimeout> | undefined
+  /** A paste was delivered without its end marker; more of it may still be on the way. */
+  private orphan = false
 
   constructor(
     private readonly bursts = false,
@@ -50,11 +54,14 @@ export class PasteAssembler {
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
     this.tail = ''
+    this.held = undefined
+    this.orphan = false
   }
 
   /**
    * `idle` receives the held start of a marker that nothing completed within KEY_HOLD_MS (a lone Esc,
    * an ordinary `ESC [ 2` key): it is the one hold, so the caller delivers it without holding again.
+   * It also receives a paste whose end marker never came (PASTE_IDLE_MS after its last chunk), wrapped.
    */
   push(data: string, idle?: (parts: string[]) => void): string[] {
     const out: string[] = []
@@ -69,6 +76,22 @@ export class PasteAssembler {
     }
     this.tail = ''
     while (rest) {
+      if (this.held === undefined && this.orphan) {
+        // The rest of a stalled paste stays a paste, so its newlines do not submit half of it; the
+        // end marker or a chunk with no text in it (Enter, Ctrl-C, an arrow) ends that.
+        const end = rest.indexOf(PASTE_END)
+        if (end >= 0) {
+          if (end > 0) out.push(PASTE_START + rest.slice(0, end) + PASTE_END)
+          this.orphan = false
+          rest = rest.slice(end + PASTE_END.length)
+          continue
+        }
+        if (!rest.startsWith('\x1b') && [...rest].some((c) => c >= ' ' && c !== '\x7f')) {
+          out.push(PASTE_START + rest + PASTE_END)
+          break
+        }
+        this.orphan = false
+      }
       if (this.held === undefined) {
         const at = rest.indexOf(PASTE_START)
         if (at < 0) {
@@ -96,7 +119,18 @@ export class PasteAssembler {
       const from = Math.max(0, this.held.length - PASTE_END.length)
       this.held += rest
       const end = this.held.indexOf(PASTE_END, from)
-      if (end < 0) break
+      if (end < 0) {
+        if (idle) {
+          this.timer = setTimeout(() => {
+            this.timer = undefined
+            const held = this.held ?? ''
+            this.held = undefined
+            this.orphan = true
+            idle([PASTE_START + held + PASTE_END])
+          }, PASTE_IDLE_MS)
+        }
+        break
+      }
       out.push(PASTE_START + this.held.slice(0, end) + PASTE_END)
       rest = this.held.slice(end + PASTE_END.length)
       this.held = undefined
