@@ -52,6 +52,7 @@ describe('author documentation generation', () => {
       'invalidArgumentLimit',
       'modelVisible',
       'requiresImageInput',
+      'requiresUser',
       'paths',
       'commandArg',
     ])

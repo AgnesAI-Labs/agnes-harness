@@ -26,6 +26,16 @@ export type EnqueueMsg = {
   maxSteps?: number
 }
 
+/**
+ * The actor attribute a client sets on an input when no person attends the turn it opens (`agh -p`,
+ * `agh run`, `runHeadless`). It only takes capability away, so it is honoured from any origin.
+ */
+export const UNATTENDED_ACTOR_ATTR = { key: 'interaction', value: 'unattended' } as const
+
+export function unattendedInput(actor: Pick<Actor, 'attrs'> | undefined): boolean {
+  return actor?.attrs?.[UNATTENDED_ACTOR_ATTR.key] === UNATTENDED_ACTOR_ATTR.value
+}
+
 /** Reference text is external evidence even when embedded in an authenticated human prompt. */
 export function inputTainted(item: Pick<InboxItem, 'content' | 'trust' | 'origin'>): boolean {
   return (

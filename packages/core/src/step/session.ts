@@ -203,7 +203,7 @@ import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } 
 import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
-import { rehydratedCallState } from './turn-restore.js'
+import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
 
 type OperationCommon = {
   name: string
@@ -1664,7 +1664,7 @@ export class SessionImpl {
         },
       )
       this.hooks.resetTurn?.()
-      this.turn = this.freshTurn()
+      this.turn = attend(this.freshTurn(), item.actor)
       if (budget !== undefined) {
         this.turn.budgetCap = budget.creditsCap
         if (budget.hard) this.turn.hardBudgetCap = budget.creditsCap
@@ -1870,7 +1870,7 @@ export class SessionImpl {
     await this.restoreGrants()
     await restoreToolDisclosure(this)
     const { lastRow, last, ordinal } = await rehydratedCallState(this, op)
-    const turn = this.freshTurn(ordinal, op.meta.triggerSeq)
+    const turn = await attendRecovered(this, op, this.freshTurn(ordinal, op.meta.triggerSeq))
     const budget = await rehydratedBudget(this, op)
     if (budget !== undefined) {
       turn.budgetCap = budget.creditsCap

@@ -3,6 +3,8 @@ import type { Client } from './client.js'
 import { ProtocolViolation } from './errors.js'
 
 export type TurnLimits = { creditLimit?: number | undefined; maxSteps?: number | undefined }
+/** Per-prompt metadata: the limits above, and whether a person attends the turn. */
+export type TurnOptions = TurnLimits & { unattended?: boolean | undefined }
 
 /** Negotiation is mandatory: older ACP servers silently ignore unknown metadata. */
 export async function checkTurnLimits(
@@ -34,10 +36,14 @@ export async function checkTurnLimits(
 export function promptMetadata(
   titleLocale?: 'en' | 'zh-CN',
   references?: readonly ReferenceSelection[],
-  limits: TurnLimits = {},
+  limits: TurnOptions = {},
 ) {
-  const { creditLimit, maxSteps } = limits
-  return titleLocale || references?.length || creditLimit !== undefined || maxSteps !== undefined
+  const { creditLimit, maxSteps, unattended } = limits
+  return titleLocale ||
+    references?.length ||
+    creditLimit !== undefined ||
+    maxSteps !== undefined ||
+    unattended === true
     ? {
         _meta: {
           'ai.agnes.harness': {
@@ -45,6 +51,7 @@ export function promptMetadata(
             ...(references?.length ? { references } : {}),
             ...(creditLimit === undefined ? {} : { creditLimit }),
             ...(maxSteps === undefined ? {} : { maxSteps }),
+            ...(unattended === true ? { unattended: true } : {}),
           },
         },
       }

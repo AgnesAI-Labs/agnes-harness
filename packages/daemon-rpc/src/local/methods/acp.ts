@@ -783,6 +783,12 @@ export function registerAcp(
       !(typeof maxSteps === 'number' && Number.isInteger(maxSteps) && maxSteps >= 1 && maxSteps <= 1000)
     )
       throw rpcError('INVALID_PARAMS', { reason: 'invalid turn step cap' })
+    // A client with nobody at the keyboard (agh -p, agh run) says so per prompt: the turn it opens
+    // then offers no tool that waits on a person. Per prompt, because the same session may be
+    // resumed in the TUI or Web later and is attended again there.
+    const unattended = pocket(params).unattended
+    if (unattended !== undefined && typeof unattended !== 'boolean')
+      throw rpcError('INVALID_PARAMS', { reason: 'invalid unattended flag' })
     const titleLocale = pocket(params).titleLocale
     if (titleLocale !== undefined && titleLocale !== 'en' && titleLocale !== 'zh-CN')
       throw rpcError('SEMANTIC_REJECTED', { reason: 'unsupported title language' })
@@ -818,9 +824,10 @@ export function registerAcp(
             abort.signal,
           )
           const commandId = randomUUID()
+          const actor = connActor(c.conn)
           await entry.session.enqueue('next-turn', {
             content,
-            actor: connActor(c.conn),
+            actor: unattended ? { ...actor, attrs: { ...actor.attrs, interaction: 'unattended' } } : actor,
             kind: 'prompt',
             commandId,
             ...(titleLocale ? { titleLocale } : {}),

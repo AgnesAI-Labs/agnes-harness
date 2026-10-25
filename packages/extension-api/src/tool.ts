@@ -98,6 +98,12 @@ export interface ToolMeta {
   modelVisible?: boolean
   /** Only models with native image input may discover or execute this tool. Default false. */
   requiresImageInput?: boolean
+  /**
+   * The tool asks a person who is present, or shows them something to act on now (a question, a
+   * form, a live UI surface). Turns whose input declares nobody attending, such as `agh -p`, do not
+   * offer it to the model. Default false.
+   */
+  requiresUser?: boolean
   paths?: readonly WorkspacePathArgument[]
   /**
    * The top-level string argument that carries the command text this tool runs: a shell line, text
@@ -530,7 +536,7 @@ export function checkToolMeta(meta: unknown): CheckResult {
     problems.push('discoveryGroup: expected one line of 1-120 characters | undefined')
   if (m.requiresApproval !== undefined && !RISK.has(String(m.requiresApproval)))
     problems.push('requiresApproval: expected never | destructive | always | undefined')
-  for (const key of ['modelVisible', 'requiresImageInput'] as const)
+  for (const key of ['modelVisible', 'requiresImageInput', 'requiresUser'] as const)
     if (m[key] !== undefined && typeof m[key] !== 'boolean')
       problems.push(`${key}: expected boolean | undefined`)
   if (m.commandArg !== undefined && (typeof m.commandArg !== 'string' || !COMMAND_ARG.test(m.commandArg)))

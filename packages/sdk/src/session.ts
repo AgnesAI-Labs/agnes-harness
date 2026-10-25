@@ -1,6 +1,6 @@
 import type { ReferenceSearchResult, ReferenceSelection } from '@agnes/protocol'
 import { PermissionGate, type PermissionHandler, type PermissionRequest } from './permission.js'
-import { checkTurnLimits, promptMetadata, type TurnLimits, toContentBlocks } from './prompt-budget.js'
+import { checkTurnLimits, promptMetadata, type TurnOptions, toContentBlocks } from './prompt-budget.js'
 
 export type { PermissionOption, PermissionOutcome, PermissionRequest } from './permission.js'
 export { toContentBlocks } from './prompt-budget.js'
@@ -759,12 +759,19 @@ export class Session {
       /** Model steps this prompt may take (1 to 1000); only lowers the preset's ceiling. Refuses servers without `turnMaxSteps`. */
       maxSteps?: number
       references?: readonly ReferenceSelection[]
+      /**
+       * Nobody attends this turn (a script, CI, an evaluation run): the turn offers the model no tool
+       * that waits on a person and tells it to finish on its own judgment. A daemon that predates
+       * the flag ignores it.
+       */
+      unattended?: boolean
     } = {},
   ): Promise<TurnResult> {
     // Captured by identity: the outcome of *this* turn is only the record that was
     // installed while the request was in flight, never one left over from a past turn.
     const before = this.lastTurnEnd
     const limits = { creditLimit: opts.creditLimit, maxSteps: opts.maxSteps }
+    const meta: TurnOptions = { ...limits, ...(opts.unattended ? { unattended: true } : {}) }
     // Skipped, not awaited, with no limit: an extra tick here reorders a prompt against a lazy attach.
     if (limits.creditLimit !== undefined || limits.maxSteps !== undefined)
       await checkTurnLimits(this.client, limits, opts.signal)
@@ -777,7 +784,7 @@ export class Session {
     }
     opts.signal?.addEventListener('abort', onAbort, { once: true })
     try {
-      return await this.requestPrompt(input, before, false, opts.titleLocale, opts.references, limits)
+      return await this.requestPrompt(input, before, false, opts.titleLocale, opts.references, meta)
     } finally {
       opts.signal?.removeEventListener('abort', onAbort)
     }
@@ -789,7 +796,7 @@ export class Session {
     restored = false,
     titleLocale?: 'en' | 'zh-CN',
     references?: readonly ReferenceSelection[],
-    limits?: TurnLimits,
+    limits?: TurnOptions,
   ): Promise<TurnResult> {
     try {
       // No deadline: a turn is bounded by the transport's liveness, not by a stopwatch.

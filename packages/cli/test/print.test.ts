@@ -58,8 +58,11 @@ describe('runPrint in text mode', () => {
     await runPrint(await booted(ep), parseArgs(['-p', 'what', 'is', 'six', 'times', 'seven']), io())
     const prompt = ep.calls.find((c) => c.method === 'session/prompt')?.params as {
       prompt: Array<{ text: string }>
+      _meta?: Record<string, unknown>
     }
     expect(prompt.prompt).toEqual([{ type: 'text', text: 'what is six times seven' }])
+    // Nobody can answer a -p run: its one prompt says so, and the daemon withholds human-waiting tools.
+    expect(prompt._meta).toEqual({ 'ai.agnes.harness': { unattended: true } })
   })
 
   it('takes the prompt off a pipe when there is no positional', async () => {
@@ -320,7 +323,7 @@ describe('runPrint in text mode', () => {
     it('travels as the hard credit limit on the one prompt', async () => {
       const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true } })
       expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '2.5']), io())).toBe(0)
-      expect(promptMeta(ep)).toEqual({ 'ai.agnes.harness': { creditLimit: 2.5 } })
+      expect(promptMeta(ep)).toEqual({ 'ai.agnes.harness': { creditLimit: 2.5, unattended: true } })
     })
 
     it.each([['0'], ['abc'], ['1e3'], ['Infinity'], ['1.'], ['99999999999999999']])(
@@ -362,7 +365,7 @@ describe('runPrint in text mode', () => {
     it('travels as the step cap on the one prompt', async () => {
       const ep = scriptedEndpoint({ harnessCapabilities: { turnMaxSteps: true } })
       expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-turns', '3']), io())).toBe(0)
-      expect(harness(ep)).toEqual({ 'ai.agnes.harness': { maxSteps: 3 } })
+      expect(harness(ep)).toEqual({ 'ai.agnes.harness': { maxSteps: 3, unattended: true } })
     })
 
     it.each([['0'], ['1001'], ['1.5'], ['abc'], ['1e2'], ['']])(
@@ -396,7 +399,7 @@ describe('runPrint in text mode', () => {
     it('travels together with --max-budget', async () => {
       const ep = scriptedEndpoint({ harnessCapabilities: { hardTurnBudget: true, turnMaxSteps: true } })
       await runPrint(await booted(ep), parseArgs(['-p', 'q', '--max-budget', '2', '--max-turns', '4']), io())
-      expect(harness(ep)).toEqual({ 'ai.agnes.harness': { creditLimit: 2, maxSteps: 4 } })
+      expect(harness(ep)).toEqual({ 'ai.agnes.harness': { creditLimit: 2, maxSteps: 4, unattended: true } })
     })
   })
 

@@ -6,6 +6,7 @@ import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
 import { hookSurface } from '../src/execution/turn/compaction-summary.js'
+import { UNATTENDED_NOTE } from '../src/execution/turn/inference.js'
 import { mintAuxiliaryVisionProductionAdmission } from '../src/orchestrator/auxiliary-vision-assembly.js'
 import { loadAuxiliaryVisionPreflight } from '../src/orchestrator/request-media-preflight.js'
 import { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from '../src/orchestrator/request-media-surface.js'
@@ -473,6 +474,49 @@ describe('Inference segment', () => {
     await session.acceptInput()
     expect(await session.runInference()).toEqual({ phase: 'checkpoint' })
     expect(provider.requests[0]?.tools.map((tool) => tool.name)).toContain('computer_use')
+  })
+
+  it('offers no requiresUser tool in an unattended turn, refuses a call to one, and restores both in the next attended turn', async () => {
+    const asked = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'shown' }] }))
+    const registry = readRegistry()
+    const read = readTool(asked) as ToolDef
+    registry.add(
+      { ...read, name: 'ask_user', meta: { ...read.meta, requiresUser: true } },
+      { source: 'agnes/test-interaction', trust: 'builtin' },
+    )
+    const provider = fakeProvider([toolTurn('ask_user', {}), textTurn('done'), textTurn('next')])
+    const { session, log } = await openSession({ provider, registry })
+    const signal = new AbortController().signal
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'recover the file' }],
+      actor: { ...actor, attrs: { interaction: 'unattended' } },
+    })
+    await session.acceptInput()
+    // Recovery rebuilds the same catalog from the trigger message, not from process memory.
+    await session.rehydrateTurn(session.op() as never)
+    expect(session.turn?.snapshot.byName.has('ask_user')).toBe(false)
+    expect((await session.run({ until: 'turn-end', signal })).reason).toBe('completed')
+    const names = (i: number) => provider.requests[i]?.tools.map((tool) => tool.name)
+    expect(names(0)).toContain('read')
+    expect(names(0)).not.toContain('ask_user')
+    expect(JSON.stringify(provider.requests[0]?.messages)).toContain(
+      JSON.stringify(UNATTENDED_NOTE).slice(1, -1),
+    )
+    // The system prompt stays the attended one: the note travels as a live tail note.
+    expect(provider.requests[0]?.system).not.toContain('unattended')
+    expect(asked).not.toHaveBeenCalled()
+    expect((await log.scan({ type: 'tool/result', limit: 1 }))[0]?.data).toMatchObject({
+      code: 'TOOL_NOT_FOUND',
+      isError: true,
+    })
+
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'and now?' }], actor })
+    expect((await session.run({ until: 'turn-end', signal })).reason).toBe('completed')
+    expect(names(2)).toContain('ask_user')
+    expect(provider.requests[2]?.system).toBe(provider.requests[0]?.system)
+    const tail = JSON.stringify(provider.requests[2]?.messages.slice(-2))
+    expect(tail).toContain('Unattended run\\nThis context item no longer applies.')
+    expect(tail).not.toContain('Do not ask the user')
   })
 
   it.each([

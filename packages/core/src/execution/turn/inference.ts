@@ -78,12 +78,20 @@ import { runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome } from '../../step/session.js'
 import { restoreToolArgumentRecovery, toolArgumentsDisabled } from '../../step/tool-argument-recovery.js'
 import { toolCallPayload } from '../../step/tool-call.js'
+import { isUnattended } from '../../step/turn-restore.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
 import { appendHookData } from './hook-data-note.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
 import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
+
+/**
+ * What the model is told in a turn whose input declared that nobody attends it. The first line is
+ * the title an attended turn's tombstone keeps, so clearing the note does not repeat its body.
+ */
+export const UNATTENDED_NOTE =
+  'Unattended run\nThis run is unattended: nobody can answer questions, review a plan or look at a UI surface before it ends, and your final reply is all that is returned. Do not ask the user or wait for input. Finish the task end to end on your own best judgment: where it is ambiguous, choose the most reasonable interpretation, carry it out, and state the assumptions you made in the final reply.'
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
 const reportedMediaWindows = new WeakMap<object, Set<RequestMediaScanTruncation['reason']>>()
@@ -314,6 +322,21 @@ export async function assembleRequestPrefix(
       op: 'child-receipts',
       promptSections: [
         { id: 'core:child-receipts', order: 112, source: 'core', text: receipts, delivery: 'live-note' },
+      ],
+    })
+  // A live note rather than a stable section: it changes with each turn's trigger, so the system
+  // prompt stays cacheable and an attended turn after it clears the note instead of rebuilding.
+  if (isUnattended(t))
+    contribs.push({
+      op: 'core:unattended',
+      promptSections: [
+        {
+          id: 'core:unattended-run',
+          order: 113,
+          source: 'core',
+          text: UNATTENDED_NOTE,
+          delivery: 'live-note',
+        },
       ],
     })
   const merged = mergeContributions(contribs, t.snapshot)

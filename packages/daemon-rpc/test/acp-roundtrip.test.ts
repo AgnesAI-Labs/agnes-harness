@@ -230,6 +230,48 @@ describe('local endpoint: ACP round trip', () => {
     },
   )
 
+  it('records an unattended prompt on its message actor, leaves an ordinary prompt attended, and rejects a malformed flag', async () => {
+    const h = await openTestHost({ script: [say('one'), say('two')] })
+    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+    await ep.handle(init)
+    await addWorkspace(ep, h.dataDir)
+    const created = (await ep.handle({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/new',
+      params: { cwd: h.dataDir, mcpServers: [] },
+    })) as { result: { sessionId: string } }
+    const sessionId = created.result.sessionId
+    const prompt = (meta: Record<string, unknown> | undefined, id: number) =>
+      ep.handle({
+        jsonrpc: '2.0',
+        id,
+        method: 'session/prompt',
+        params: {
+          sessionId,
+          prompt: [{ type: 'text', text: 'hi' }],
+          ...(meta ? { _meta: { 'ai.agnes.harness': meta } } : {}),
+        },
+      })
+    expect(await prompt({ unattended: 'yes' }, 3)).toMatchObject({
+      error: { data: { reason: 'invalid unattended flag' } },
+    })
+    expect(await prompt({ unattended: true }, 4)).toMatchObject({ result: { stopReason: 'end_turn' } })
+    expect(await prompt(undefined, 5)).toMatchObject({ result: { stopReason: 'end_turn' } })
+    const messages = await h.host.kernel
+      .get(sessionId)!
+      .scan({ type: 'user/message', order: 'asc', limit: 10 })
+    // Only the prompts themselves; runtime-context notes are system rows of their own.
+    const prompts = messages.filter((row) => row.origin === 'principal')
+    expect(prompts.map((row) => row.actor.attrs)).toEqual([{ interaction: 'unattended' }, {}])
+    // The unattended turn told the model so; the attended turn after it cleared the note.
+    const notes = messages.filter((row) => row.origin === 'system').map((row) => JSON.stringify(row.data))
+    expect(notes[0]).toContain('This run is unattended')
+    expect(notes.at(-1)).toContain('This context item no longer applies.')
+    await ep.close()
+    await h.close()
+  })
+
   it('accepts the permission capability from clientCapabilities._meta', async () => {
     const h = await openTestHost()
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })

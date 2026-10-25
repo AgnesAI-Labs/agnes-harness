@@ -23,7 +23,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.18',
+    version: '0.2.19',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },

@@ -62,6 +62,14 @@ describe('built-in base tools', () => {
       const names = tools.map((tool) => tool.name)
       for (const name of ['ui_render', 'ui_update', 'ui_close', 'ui_submit', 'ask_user_question', 'present'])
         expect(names, name).toContain(name)
+      // An unattended turn (agh -p, agh run) leaves out exactly the tools that need a person present.
+      // ui_submit records a person's answer and present registers files; neither waits on anyone.
+      expect(
+        tools
+          .filter((tool) => tool.meta.requiresUser === true)
+          .map((tool) => tool.name)
+          .sort(),
+      ).toEqual(['ask_user_question', 'ui_close', 'ui_guide', 'ui_render', 'ui_update'])
       for (const tool of tools) {
         expect(checkToolDef(tool), tool.name).toEqual({ ok: true })
         expect(sanitize(tool.description).length, tool.name).toBeLessThanOrEqual(TOOL_DESCRIPTION_MAX_LENGTH)

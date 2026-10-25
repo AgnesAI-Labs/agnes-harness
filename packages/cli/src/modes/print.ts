@@ -327,7 +327,8 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     let threw = false
     let thrownError: unknown
     try {
-      const r = await session.prompt(blocks, caps)
+      // Nobody attends a -p run, so its turn offers no tool that waits on a person (see headless.md).
+      const r = await session.prompt(blocks, { ...caps, unattended: true })
       outcome = { reason: r.reason, lastSeq: r.lastSeq, ...(r.credits ? { credits: r.credits } : {}) }
     } catch (e) {
       const reason = reasonFromThrow(e)

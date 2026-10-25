@@ -24,7 +24,11 @@ Optional run flags are `--profile`, `--preset`, `--permission LEVEL` (`read-only
 
 The exit code is 0 for completed runs, 1 for errors or incomplete event drains, 2 for usage/startup failures, 3 for parked, 4 for blocked/budget, 5 for max steps, and 130/143/129 for SIGINT/SIGTERM/SIGHUP. Batch continues after an individual failure and returns the first nonzero status. A signal cancels the current prompt and stops the batch; shutdown has a five-second grace period.
 
-Schedules and webhook sessions use their effective permission level. Full access automatically allows and records permission requests before unattended handoff/refusal policy, so no approval prompt parks the run. Other permission levels retain their unattended policy. User questions and explicitly chosen plan/read-only modes retain their behavior.
+Schedules and webhook sessions use their effective permission level. Full access automatically allows and records permission requests before unattended handoff/refusal policy, so no approval prompt parks the run. Other permission levels retain their unattended policy. Explicitly chosen plan/read-only modes retain their behavior.
+
+## Unattended turns
+
+`agh run`, `runHeadless` and `agh -p` (every `--mode`) send their prompt as unattended (`session.prompt(input, { unattended: true })` in the SDK): nobody can answer a question before the run ends. The turn that prompt opens offers the model no tool that waits on or addresses a person who is present (`ToolMeta.requiresUser`): `ask_user_question` and the UI surface tools `ui_render`, `ui_update`, `ui_close` and `ui_guide` are left out of its schemas and discovery, and a call to one is refused as an unknown tool. The model also receives a context note saying that the run is unattended and that it should finish the task on its own judgment and state its assumptions in the final reply. The system prompt is unchanged. The flag belongs to the one prompt: the next turn in the same session, for example after `agh --resume ID` in the TUI or in the Web, is attended again and has every tool back, and its note says the earlier one no longer applies. Approvals are a separate matter: with full access none are asked, and under other levels a one-shot run with no approval handler refuses or parks as described above; it does not wait silently. A daemon that predates the flag ignores it.
 
 ## SDK
 

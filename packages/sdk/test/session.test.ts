@@ -616,7 +616,7 @@ describe('Session', () => {
     }
   })
 
-  it('sends both limits on a server that advertises them', async () => {
+  it('sends both limits on a server that advertises them, and the unattended flag only when asked', async () => {
     const f = fakeEndpoint({
       initialize: () => ({
         protocolVersion: 1,
@@ -633,9 +633,13 @@ describe('Session', () => {
     try {
       const session = await client.createSession({ cwd: '/synthetic' })
       await session.prompt('x', { creditLimit: 2, maxSteps: 3 })
-      expect(f.calls.find((x) => x.method === 'session/prompt')?.params).toMatchObject({
-        _meta: { [META_KEY]: { creditLimit: 2, maxSteps: 3 } },
-      })
+      await session.prompt('y', { unattended: true })
+      const prompts = f.calls.filter((x) => x.method === 'session/prompt').map((x) => x.params)
+      expect(prompts[0]).toMatchObject({ _meta: { [META_KEY]: { creditLimit: 2, maxSteps: 3 } } })
+      expect((prompts[0] as { _meta: Record<string, object> })._meta[META_KEY]).not.toHaveProperty(
+        'unattended',
+      )
+      expect(prompts[1]).toMatchObject({ _meta: { [META_KEY]: { unattended: true } } })
     } finally {
       await client.close()
     }

@@ -55,6 +55,7 @@ interface ToolMeta {
   requiresApproval?: RiskClass | undefined
   modelVisible?: boolean
   requiresImageInput?: boolean
+  requiresUser?: boolean
   paths?: readonly WorkspacePathArgument[]
   commandArg?: string
   isPresentational?: boolean
