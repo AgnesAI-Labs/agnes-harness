@@ -183,8 +183,8 @@ export function rankMentions(entries: readonly Entry[], query: string): MentionI
       gaps += next - at - 1
       at = next
     }
-    // The folder already typed out is where the user is, not a choice.
-    if (gaps < 0 || entry.path === wanted) continue
+    // The folder already typed out is where the user is, not a choice; an exact file still is.
+    if (gaps < 0 || (entry.directory && entry.path === wanted)) continue
     const tier = entry.name.startsWith(wanted)
       ? 0
       : entry.name.includes(wanted)

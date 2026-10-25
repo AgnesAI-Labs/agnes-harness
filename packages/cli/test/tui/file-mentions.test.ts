@@ -53,6 +53,12 @@ describe('FileMentionSource', () => {
     expect(ids('src/')).toEqual(['src/tui/', 'src/app.ts', 'src/tui/app.ts', 'src/tui/editor.ts'])
   })
 
+  it('keeps an exactly typed file offered, first, even when longer names share its prefix', async () => {
+    const { ids } = await ready(['src/index.ts', 'src/index.tsx', 'Makefile', 'docs/Makefile.bak'])
+    expect(ids('src/index.ts')).toEqual(['src/index.ts', 'src/index.tsx'])
+    expect(ids('makefile')).toEqual(['Makefile', 'docs/Makefile.bak'])
+  })
+
   it('turns a failed listing into a state, never a throw', async () => {
     const changed = vi.fn()
     const source = new FileMentionSource(() => {
