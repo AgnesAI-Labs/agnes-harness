@@ -101,6 +101,24 @@ describe('clipboard image paste', () => {
     expect(busyInput.takeKept('hello')).toEqual([block])
   })
 
+  it('keeps attachments taken back from a queued message when the send that carried them is refused', async () => {
+    const { app, editor, busyInput } = harness(withImage)
+    const block = { type: 'resource_link', uri: 'agnes://attachment/att-a' } as const
+    busyInput.keep([block])
+    Object.assign(app.session, {
+      client: { journal: { pending: async () => [] } },
+      followUp: async () => {
+        throw new Error('not sent')
+      },
+    })
+    const blocks = busyInput.takeKept('hi')
+    expect(blocks).toEqual([block])
+    await busyInput.queue(blocks, 'hi', 'followUp')
+    expect(editor.text).toBe('hi')
+    expect(busyInput.takeKept('hi')).toEqual([block])
+    expect(busyInput.takeKept('hi')).toEqual([])
+  })
+
   it.each([
     ['refused before any turn', { code: 'CONFIG_CREDENTIAL_REJECTED' }, 'draft'],
     ['rejected after its turn ran', { code: 'CONFIG_CREDENTIAL_REJECTED', turnEnd: { reason: 'error' } }, ''],

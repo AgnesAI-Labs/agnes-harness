@@ -97,6 +97,7 @@ export class BusyInput {
   private kept: { blocks: ContentBlock[]; sessionId: string } = { blocks: [], sessionId: '' }
 
   private readonly chips = new Map<string, { block: ContentBlock; sessionId: string }>()
+  private readonly keptOrigins = new WeakSet<ContentBlock>()
   private readonly chipOrigins = new WeakMap<ContentBlock, { chip: string; sessionId: string }>()
 
   constructor(private readonly host: BusyHost) {}
@@ -104,6 +105,7 @@ export class BusyInput {
   /** Attachments of a queued message taken back into the editor: they travel with the next message of this session. */
   keep(blocks: ContentBlock[]): void {
     this.kept = { blocks, sessionId: this.host.session().id }
+    for (const block of blocks) this.keptOrigins.add(block)
   }
 
   /** A clipboard image uploaded to `sessionId`, shown in the draft as `chip`; it travels only if the chip is still in the text sent. */
@@ -155,6 +157,11 @@ export class BusyInput {
    */
   private putBack(session: Session, blocks: ContentBlock[], draft: string): boolean {
     if (this.host.session() !== session) return false
+    const back = blocks.filter((block) => this.keptOrigins.has(block))
+    if (back.length) {
+      const rest = this.kept.sessionId === session.id ? this.kept.blocks : []
+      this.kept = { blocks: [...back, ...rest], sessionId: session.id }
+    }
     for (const block of blocks) {
       const origin = this.chipOrigins.get(block)
       if (origin?.sessionId === session.id) this.chips.set(origin.chip, { block, sessionId: session.id })
