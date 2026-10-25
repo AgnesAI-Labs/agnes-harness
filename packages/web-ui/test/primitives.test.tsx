@@ -38,6 +38,13 @@ function render(element: Parameters<typeof mountRegion>[1]) {
 function key(node: Element, name: string) {
   node.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
 }
+function pointer(node: Element, type: 'pointerdown' | 'pointerover' | 'pointerout', pointerType = 'mouse') {
+  // React derives pointerenter/pointerleave from pointerover/pointerout, not from native enter/leave.
+  // A null relatedTarget means the pointer left the element for nothing inside the React tree.
+  node.dispatchEvent(
+    new PointerEvent(type, { bubbles: true, cancelable: true, pointerType, relatedTarget: null }),
+  )
+}
 
 it('keeps tags textual and omits zero actionable counts', () => {
   const host = render(
@@ -130,6 +137,84 @@ it('moves through enabled menu actions, typeahead and danger-last grouping; rest
   await vi.waitFor(() => expect(trigger.getAttribute('aria-expanded')).toBe('false'))
   trigger.click()
   await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('Edit'))
+})
+it('dismisses the menu when content scrolls away or the mouse pointer leaves', async () => {
+  const host = render(
+    createElement(Menu, {
+      label: 'Actions',
+      trigger: createElement(Button, null, 'More'),
+      items: [
+        { id: 'edit', label: 'Edit', onSelect: () => {} },
+        { id: 'copy', label: 'Copy', onSelect: () => {} },
+      ],
+    }),
+  )
+  const trigger = host.querySelector('button')!
+  const menu = () => document.querySelector('[role="menu"]')
+  const expanded = () => trigger.getAttribute('aria-expanded')
+  const settle = () => new Promise((done) => setTimeout(done, 250))
+  const openBy = async (pointerType: string) => {
+    pointer(trigger, 'pointerdown', pointerType)
+    trigger.click()
+    await vi.waitFor(() => expect(expanded()).toBe('true'))
+  }
+  const closed = async () => {
+    await vi.waitFor(() => expect(expanded()).toBe('false'))
+    // happy-dom never fires transition events, so the closing motion is nudged until it unmounts.
+    await vi.waitFor(() => {
+      document.querySelector('.agh-menu-popup')?.dispatchEvent(new Event('transitionend', { bubbles: true }))
+      expect(menu()).toBeNull()
+    })
+  }
+
+  // The menu is portalled outside the pane that scrolls it away, so an outside scroll dismisses it.
+  await openBy('mouse')
+  document.body.dispatchEvent(new Event('scroll'))
+  await closed()
+
+  // Scrolling inside the menu moves its own content, not its anchor.
+  await openBy('mouse')
+  menu()!.dispatchEvent(new Event('scroll'))
+  await settle()
+  expect(expanded()).toBe('true')
+  expect(menu()).not.toBeNull()
+
+  window.dispatchEvent(new Event('resize'))
+  await closed()
+
+  // A mouse that leaves the trigger without entering the menu dismisses it after the grace period.
+  await openBy('mouse')
+  pointer(trigger, 'pointerout')
+  await closed()
+
+  // Crossing the portal gap from the trigger into the menu cancels that dismissal.
+  await openBy('mouse')
+  pointer(trigger, 'pointerout')
+  pointer(menu()!, 'pointerover')
+  await settle()
+  expect(expanded()).toBe('true')
+  expect(menu()).not.toBeNull()
+  key(menu()!.querySelector('[role="menuitem"]')!, 'Escape')
+  await closed()
+
+  // A keyboard session has no pointer origin, so a passing mouse must not close it.
+  trigger.focus()
+  key(trigger, 'ArrowDown')
+  await vi.waitFor(() => expect(expanded()).toBe('true'))
+  pointer(trigger, 'pointerout')
+  await settle()
+  expect(expanded()).toBe('true')
+  expect(menu()).not.toBeNull()
+  key(document.activeElement!, 'Escape')
+  await closed()
+
+  // A touch point lifts right after opening; that is not a mouse leaving.
+  await openBy('touch')
+  pointer(trigger, 'pointerout', 'touch')
+  await settle()
+  expect(expanded()).toBe('true')
+  key(document.activeElement!, 'Escape')
+  await closed()
 })
 it('explains a disabled action immediately on keyboard focus', async () => {
   const host = render(

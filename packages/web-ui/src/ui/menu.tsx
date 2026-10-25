@@ -3,6 +3,8 @@ import {
   cloneElement,
   type HTMLAttributes,
   type ReactElement,
+  type RefObject,
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -41,6 +43,57 @@ export type MenuProps = {
   /** Read after a checked item's label, e.g. 「Selected」. */
   selectedLabel?: string
 }
+type MenuDismissOptions = {
+  open: boolean
+  close(): void
+  anchor: RefObject<HTMLSpanElement | null>
+  popup: RefObject<HTMLDivElement | null>
+}
+
+/**
+ * A portalled menu cannot follow the pane that scrolls it away, so any scroll or resize outside the
+ * popup dismisses it. A mouse pointer leaving both the trigger and the popup dismisses it too, after
+ * a grace period. Touch and keyboard sessions ignore the pointer path: a touch point lifts right
+ * after opening, and a keyboard user may never have aimed at the trigger with a mouse.
+ */
+function useMenuDismiss({ open, close, anchor, popup }: MenuDismissOptions) {
+  const fromPointer = useRef(false)
+  const leave = useRef<ReturnType<typeof setTimeout>>()
+  const cancelLeave = useCallback(() => clearTimeout(leave.current), [])
+  const scheduleLeave = (event: { pointerType: string }) => {
+    if (event.pointerType !== 'mouse' || !fromPointer.current) return
+    cancelLeave()
+    // The popup lives in a portal, so the pointer crosses a gap before it can reach the menu.
+    leave.current = setTimeout(close, 150)
+  }
+  useEffect(() => {
+    if (open) return
+    // Every close path ends the pointer session that armed the timer.
+    cancelLeave()
+    fromPointer.current = false
+  }, [open, cancelLeave])
+  useEffect(() => () => clearTimeout(leave.current), [])
+  // Refs are stable handles: re-subscribing on their reads would only churn listeners.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refs and close are stable; only open gates the listeners.
+  useEffect(() => {
+    if (!open) return
+    const doc = anchor.current?.ownerDocument ?? document
+    const dismiss = (event: Event) => {
+      // Scrolling inside the menu itself is navigation, not movement of its anchor.
+      if (popup.current && event.composedPath().includes(popup.current)) return
+      close()
+    }
+    // Capture sees scrolls of inner panes; the popup is portalled outside them.
+    doc.addEventListener('scroll', dismiss, true)
+    doc.defaultView?.addEventListener('resize', dismiss)
+    return () => {
+      doc.removeEventListener('scroll', dismiss, true)
+      doc.defaultView?.removeEventListener('resize', dismiss)
+    }
+  }, [open])
+  return { fromPointer, cancelLeave, scheduleLeave }
+}
+
 type AntMenuItem = NonNullable<AntMenuProps['items']>[number]
 /** antd owns placement and menu semantics; this adapter preserves the existing keyboard contract. */
 export function Menu({
@@ -149,10 +202,11 @@ export function Menu({
     frame = requestAnimationFrame(ready)
     return () => cancelAnimationFrame(frame)
   }, [open, enabled])
-  const close = () => {
+  const close = useCallback(() => {
     setOpen(false)
     anchor.current?.querySelector<HTMLElement>('button, a, [tabindex]')?.focus({ preventScroll: true })
-  }
+  }, [])
+  const { fromPointer, cancelLeave, scheduleLeave } = useMenuDismiss({ open, close, anchor, popup })
   return (
     <AntDropdown
       open={open}
@@ -181,6 +235,8 @@ export function Menu({
             popup.current = node
             if (node && open) focus(endOnOpen.current ? enabled.at(-1) : enabled[0])
           }}
+          onPointerEnter={cancelLeave}
+          onPointerLeave={scheduleLeave}
           onKeyDownCapture={(event) => {
             if (event.key === 'Escape') {
               event.preventDefault()
@@ -242,6 +298,8 @@ export function Menu({
           'aria-expanded': open,
           'aria-controls': open ? id : undefined,
           onPointerDown: (event) => {
+            // Only a pointer press makes this an interaction the pointer path may dismiss.
+            fromPointer.current = event.pointerType === 'mouse'
             trigger.props.onPointerDown?.(event)
             held.current = false
             if (triggerMode !== 'contextMenu' || event.pointerType === 'mouse') return
@@ -258,8 +316,13 @@ export function Menu({
             clearTimeout(hold.current)
             trigger.props.onPointerCancel?.(event)
           },
+          onPointerEnter: (event) => {
+            cancelLeave()
+            trigger.props.onPointerEnter?.(event)
+          },
           onPointerLeave: (event) => {
             clearTimeout(hold.current)
+            scheduleLeave(event)
             trigger.props.onPointerLeave?.(event)
           },
           onClickCapture: (event) => {
