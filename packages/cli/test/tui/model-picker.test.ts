@@ -125,7 +125,7 @@ it('filters the model list as you type and still picks the original model', () =
   ])
   for (const ch of 'gpt') picker.handleInput(ch)
   const text = picker.render(60).join('\n')
-  expect(text).toContain('Filter: gpt (1/2)')
+  expect(text).toContain('⌕ gpt  1/2')
   expect(text).toContain('openai/GPT-5')
   expect(text).not.toContain('deepseek')
   picker.handleInput('\r')

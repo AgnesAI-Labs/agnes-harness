@@ -1,11 +1,11 @@
+import { FilterSelect } from '@agnes/cli-tui'
 import { expect, it, vi } from 'vitest'
 import { createAnsi } from '../../src/tui/ansi.js'
 import { Text } from '../../src/tui/component.js'
-import { Box } from '../../src/tui/components/box.js'
+import { Box, dialogBox } from '../../src/tui/components/box.js'
 import { fitLine } from '../../src/tui/components/line.js'
 import { List } from '../../src/tui/components/list.js'
 import { Loader } from '../../src/tui/components/loader.js'
-import { FilterSelect } from '@agnes/cli-tui'
 import { Select } from '../../src/tui/components/select.js'
 import { Renderer } from '../../src/tui/renderer.js'
 import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
@@ -50,6 +50,24 @@ it('squares Box corners on request and styles frame and title through the theme 
   // Explicit frame and title styles still win over the themed defaults.
   const custom = new Box(new Text('body'), { title: 'agnes', ansi, border: ansi.dim, titleStyle: (s) => s })
   expect(custom.render(12)[0]).toBe(`${ansi.dim('╭')}${ansi.dim('─')} agnes ${ansi.dim('──╮')}`)
+})
+it('dialogBox puts the title on top and the key hints in the bottom border, closing hint last', () => {
+  const ansi = new TuiTheme('dark').ansi(createAnsi('none'))
+  const box = dialogBox(new Text('body'), {
+    title: 'Pick',
+    ansi,
+    hints: [
+      { key: '↑↓', label: 'select' },
+      { key: '⏎', label: 'confirm' },
+      { key: 'esc', label: 'close' },
+    ],
+  })
+  const wide = box.render(40)
+  expect(wide[0]).toContain('Pick')
+  expect(wide.at(-1)).toContain('↑↓ select  ⏎ confirm  esc close')
+  const narrow = box.render(22)
+  expect(narrow.at(-1)).toContain('esc close')
+  expect(narrow.every((line) => displayWidth(line) === 22)).toBe(true)
 })
 it('Select defaults to first option, clamps navigation, chooses digits and cancels', () => {
   const chosen = vi.fn()

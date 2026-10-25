@@ -33,7 +33,6 @@ export type ChromeKey =
   | 'commands.statuslineSummary'
   | `statusline.field.${StatusField}`
   | 'statusline.title'
-  | 'statusline.hint'
   | 'statusline.always'
   | 'statusline.unsaved'
   | 'statusline.reset'
@@ -86,7 +85,6 @@ export const CHROME_DICT: Record<Locale, Record<ChromeKey, string>> = {
     'statusline.field.link': 'Connection state',
     'statusline.field.slots': 'Extension status line',
     'statusline.title': 'Status line',
-    'statusline.hint': '↑↓ move · Space/Enter show or hide · Esc close',
     'statusline.always': 'Always shown: budget warning, approval ticket, error notices',
     'statusline.unsaved': 'Not saved: the preferences file could not be written',
     'statusline.reset': 'Status line reset: every field is shown',
@@ -138,7 +136,6 @@ export const CHROME_DICT: Record<Locale, Record<ChromeKey, string>> = {
     'statusline.field.link': '连接状态',
     'statusline.field.slots': '扩展状态行',
     'statusline.title': '状态栏',
-    'statusline.hint': '↑↓ 移动 · 空格/回车 显示或隐藏 · Esc 关闭',
     'statusline.always': '始终显示：预算告警、审批暂存票、错误通知',
     'statusline.unsaved': '未保存：偏好文件无法写入',
     'statusline.reset': '状态栏已重置：所有字段都显示',

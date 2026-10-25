@@ -101,7 +101,12 @@ export class FilterSelect implements Component {
     // Nothing to list: the owner's own text with no filter, otherwise the shared "no matches" line.
     const empty = rows.length
       ? rows
-      : [fitLine(faint(escapeControl(this.filter ? tt('dialog.noMatches', locale) : (this.o.emptyText ?? ''))), width)]
+      : [
+          fitLine(
+            faint(escapeControl(this.filter ? tt('dialog.noMatches', locale) : (this.o.emptyText ?? ''))),
+            width,
+          ),
+        ]
     if (!this.filter) return rows.length || this.o.emptyText ? empty : rows
     const shown = `⌕ ${escapeControl(this.filter)}  ${this.matches().length}/${this.o.options.length}`
     return [fitLine(ansi ? ansi.fg('muted', shown) : shown, width), ...empty]

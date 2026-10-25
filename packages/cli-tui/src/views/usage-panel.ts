@@ -1,5 +1,5 @@
 import { type Component, escapeControl, wrapText } from '../component.js'
-import { Box } from '../components/box.js'
+import { dialogBox } from '../components/box.js'
 import { actionFor } from '../keymap.js'
 import { parseKey } from '../keys.js'
 import { tt } from '../locale-extended.js'
@@ -60,19 +60,22 @@ export class UsagePanel implements Component {
   render(width: number): string[] {
     if (this.report === undefined) return []
     const lines = wrapText(this.report, Math.max(1, width - 4))
-    this.height = Math.max(1, this.options.maxRows() - 3)
+    this.height = Math.max(1, this.options.maxRows() - 2)
     this.total = lines.length
     this.offset = Math.max(0, Math.min(this.offset, this.total - this.height))
     const body = {
-      render: () => [
-        ...lines.slice(this.offset, this.offset + this.height),
-        this.options.ansi.fg(
-          'faint',
-          this.confirm?.hint ?? tt('usagePanel.scrollHint', this.options.locale ?? 'en'),
-        ),
-      ],
+      render: () => lines.slice(this.offset, this.offset + this.height),
       invalidate() {},
     }
-    return new Box(body, { title: this.title, ansi: this.options.ansi }).render(width)
+    const locale = this.options.locale ?? 'en'
+    return dialogBox(body, {
+      title: this.title,
+      ansi: this.options.ansi,
+      hints: [
+        { key: '↑↓', label: tt('dialog.scroll', locale) },
+        ...(this.confirm ? [{ key: '⏎', label: this.confirm.hint }] : []),
+        { key: 'esc', label: tt('dialog.close', locale) },
+      ],
+    }).render(width)
   }
 }

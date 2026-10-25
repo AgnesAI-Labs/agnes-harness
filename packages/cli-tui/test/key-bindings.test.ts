@@ -360,7 +360,8 @@ describe('key bindings: report panel', () => {
   })
   it.each([
     ['down', ['\x1b[B'], 'line 1'],
-    ['pgdn', ['\x1b[6~'], 'line 5'],
+    // A page is the panel's body height; the key hints sit in the border, so the body is one row taller than before.
+    ['pgdn', ['\x1b[6~'], 'line 6'],
     ['pgdn then pgup', ['\x1b[6~', '\x1b[5~'], 'line 0'],
     ['down, down, up', ['\x1b[B', '\x1b[B', '\x1b[A'], 'line 1'],
   ])('scrolls: %s', (_n, keys, want) => {

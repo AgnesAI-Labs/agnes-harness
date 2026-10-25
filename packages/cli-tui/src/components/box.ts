@@ -1,6 +1,7 @@
 import { type Component, escapeControl } from '../component.js'
 import { displayWidth } from '../terminal.js'
 import type { ThemedAnsi } from '../theme.js'
+import { type KeyHint, keyHints } from './key-hints.js'
 import { columns, fitLine } from './line.js'
 
 export class Box implements Component {
@@ -18,6 +19,8 @@ export class Box implements Component {
       border?(s: string): string
       /** Style for the escaped title text. Styling after escapeControl keeps untrusted titles inert. */
       titleStyle?(s: string): string
+      /** Sits in the bottom border like the title in the top one; gets the columns it may use and returns styled text. */
+      footer?(room: number): string
     } = {},
   ) {
     this.collapsed = o.collapsed ?? false
@@ -49,12 +52,36 @@ export class Box implements Component {
       (lead ? border('─') : '') +
       heading +
       border(`${'─'.repeat(room - displayWidth(heading))}${tr}`)
+    const foot = this.o.footer?.(Math.max(0, width - 6)) ?? ''
+    const footText = foot ? ` ${foot} ` : ''
+    const footRoom = width - 2 - (footText ? 1 : 0)
+    const footing = displayWidth(footText) <= footRoom ? footText : fitLine(footText, footRoom)
+    const bottom = footing
+      ? border(bl) + border('─') + footing + border(`${'─'.repeat(footRoom - displayWidth(footing))}${br}`)
+      : border(`${bl}${'─'.repeat(width - 2)}${br}`)
     return [
       top,
       ...this.child
         .render(width - 4)
         .map((line) => `${border('│')} ${fitLine(line, width - 4)} ${border('│')}`),
-      border(`${bl}${'─'.repeat(width - 2)}${br}`),
+      bottom,
     ]
   }
+}
+
+/**
+ * The frame every picker and panel wears: rounded, borderStrong, the title only in the top border and the
+ * key hints (move, confirm, others, close) in the bottom one.
+ */
+export function dialogBox(
+  child: Component,
+  o: { title?: string; ansi: ThemedAnsi; hints: readonly KeyHint[] },
+): Box {
+  const { ansi } = o
+  return new Box(child, {
+    ...(o.title === undefined ? {} : { title: o.title }),
+    ansi,
+    border: (s) => ansi.fg('borderStrong', s),
+    footer: (room) => keyHints(o.hints, ansi, room),
+  })
 }

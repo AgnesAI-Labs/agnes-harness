@@ -1,8 +1,8 @@
 import { type Component, escapeControl } from '../component.js'
 import { actionFor } from '../keymap.js'
 import { parseKey } from '../keys.js'
-import type { ThemedAnsi } from '../theme.js'
 import { displayWidth } from '../terminal.js'
+import type { ThemedAnsi } from '../theme.js'
 import { fitLine } from './line.js'
 
 export type SelectOption = {
@@ -103,13 +103,18 @@ export class Select implements Component {
       const num = `${i + 1}. `
       const label = escapeControl(option.label)
       const mark = option.current ? ' ✓' : ''
-      return { i, head, num, label, mark, description: option.description && escapeControl(option.description) }
+      return {
+        i,
+        head,
+        num,
+        label,
+        mark,
+        description: option.description && escapeControl(option.description),
+      }
     })
     const left = (r: (typeof rows)[number]) => displayWidth(`${r.head}${r.num}${r.label}${r.mark}`)
     const showDescription = width >= DESCRIPTION_MIN_WIDTH && rows.some((r) => r.description)
-    const column = showDescription
-      ? Math.min(Math.max(...rows.map(left)), width - 2 - DESCRIPTION_ROOM)
-      : 0
+    const column = showDescription ? Math.min(Math.max(...rows.map(left)), width - 2 - DESCRIPTION_ROOM) : 0
     const lines = rows.map((r) => {
       const selected = r.i === this.idx
       const plain = `${r.head}${r.num}${r.label}${r.mark}`
@@ -122,8 +127,7 @@ export class Select implements Component {
       // Painted after fitting so the selection background spans the whole row.
       return selected && ansi ? ansi.bg('selection', ansi.bold(ansi.fg('accent', line))) : line
     })
-    const more = (arrow: string, count: number) =>
-      fitLine(paint('faint', `  ${arrow} ${count} more`), width)
+    const more = (arrow: string, count: number) => fitLine(paint('faint', `  ${arrow} ${count} more`), width)
     const out = [
       ...(start > 0 ? [more('↑', start)] : []),
       ...lines,

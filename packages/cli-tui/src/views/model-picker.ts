@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from '@agnes/protocol'
 import type { ModelChoice } from '../commands.js'
 import type { Component } from '../component.js'
-import { Box } from '../components/box.js'
+import { type Box, dialogBox } from '../components/box.js'
 import { FilterSelect } from '../components/filter-select.js'
 import { Select } from '../components/select.js'
 import { tt } from '../locale-extended.js'
@@ -58,11 +58,22 @@ export class ModelPicker implements Component {
       },
       onCancel: () => this.close(),
     })
-    this.box = new Box(select, {
+    this.box = dialogBox(select, {
       title: tt('picker.modelTitle', this.o.locale ?? 'en'),
       ansi: this.o.ansi,
+      hints: this.hints('dialog.close'),
     })
     this.o.changed()
+  }
+
+  /** Move, confirm, then the way out: Esc closes the model list but only steps back from the reasoning list. */
+  private hints(out: 'dialog.close' | 'dialog.back') {
+    const locale = this.o.locale ?? 'en'
+    return [
+      { key: '↑↓', label: tt('dialog.select', locale) },
+      { key: '⏎', label: tt('dialog.confirm', locale) },
+      { key: 'esc', label: tt(out, locale) },
+    ]
   }
 
   private showThinking(choice: ModelChoice): void {
@@ -79,11 +90,12 @@ export class ModelPicker implements Component {
       // outermost (model-list) screen actually closes the picker.
       onCancel: () => this.show(this.choices),
     })
-    this.box = new Box(select, {
+    this.box = dialogBox(select, {
       title: tt('picker.reasoningTitle', this.o.locale ?? 'en', {
         model: `${choice.route}/${choice.model}`,
       }),
       ansi: this.o.ansi,
+      hints: this.hints('dialog.back'),
     })
     this.o.changed()
   }

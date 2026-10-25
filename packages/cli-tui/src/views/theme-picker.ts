@@ -1,5 +1,5 @@
 import type { Component } from '../component.js'
-import { Box } from '../components/box.js'
+import { type Box, dialogBox } from '../components/box.js'
 import { FilterSelect } from '../components/filter-select.js'
 import { tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
@@ -36,7 +36,8 @@ export class ThemePicker implements Component {
     const select = new FilterSelect({
       options: names.map((id, i) => ({
         id,
-        label: `${labels[i]}${id === current ? tt('theme.current', locale) : ''}`,
+        label: labels[i] ?? id,
+        ...(id === current ? { current: true } : {}),
         search: id,
       })),
       locale,
@@ -48,9 +49,14 @@ export class ThemePicker implements Component {
       onCancel: () => this.close(),
     })
     for (let i = 0; i < names.indexOf(current); i++) select.handleInput('\x1b[B')
-    this.box = new Box(select, {
+    this.box = dialogBox(select, {
       title: tt('theme.pickerTitle', locale),
       ansi: this.ansi,
+      hints: [
+        { key: '↑↓', label: tt('dialog.select', locale) },
+        { key: '⏎', label: tt('dialog.confirm', locale) },
+        { key: 'esc', label: tt('dialog.close', locale) },
+      ],
     })
   }
   close(): void {

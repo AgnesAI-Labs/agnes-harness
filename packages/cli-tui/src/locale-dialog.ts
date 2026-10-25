@@ -14,6 +14,11 @@ export type DialogKey =
   | 'dialog.scroll'
   | 'dialog.tabAll'
   | 'dialog.tabWorkspace'
+  | 'dialog.untitled'
+  | 'dialog.ago.now'
+  | 'dialog.ago.minutes'
+  | 'dialog.ago.hours'
+  | 'dialog.ago.days'
 
 export const DIALOG_DICT: Record<Locale, Record<DialogKey, string>> = {
   en: {
@@ -26,6 +31,11 @@ export const DIALOG_DICT: Record<Locale, Record<DialogKey, string>> = {
     'dialog.scroll': 'scroll',
     'dialog.tabAll': 'all',
     'dialog.tabWorkspace': 'this workspace',
+    'dialog.untitled': 'Untitled',
+    'dialog.ago.now': 'just now',
+    'dialog.ago.minutes': '{n}m ago',
+    'dialog.ago.hours': '{n}h ago',
+    'dialog.ago.days': '{n}d ago',
   },
   'zh-CN': {
     'dialog.noMatches': '没有匹配项',
@@ -37,5 +47,10 @@ export const DIALOG_DICT: Record<Locale, Record<DialogKey, string>> = {
     'dialog.scroll': '滚动',
     'dialog.tabAll': '全部',
     'dialog.tabWorkspace': '本工作区',
+    'dialog.untitled': '未命名',
+    'dialog.ago.now': '刚刚',
+    'dialog.ago.minutes': '{n} 分钟前',
+    'dialog.ago.hours': '{n} 小时前',
+    'dialog.ago.days': '{n} 天前',
   },
 }

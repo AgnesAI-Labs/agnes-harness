@@ -361,7 +361,7 @@ export const SCENES: Scene[] = [
     title: 'Theme picker',
     timeline: timeline([]),
     act: typed('/theme', '\r'),
-    done: ['Esc cancel'],
+    done: ['esc close'],
   },
   {
     id: 'busy',

@@ -308,7 +308,7 @@ describe('TUI themes', () => {
       const picker = new ThemePicker(new TuiTheme('dark').ansi(createAnsi('none')), 'en', choose)
       picker.show('custom:ocean', ['ocean', 'sunset'])
       const text = picker.render(80).join('\n')
-      expect(text).toContain('Custom · ocean ✓ current')
+      expect(text).toContain('Custom · ocean ✓')
       expect(text).toContain('Custom · sunset')
       picker.handleInput('\x1b[B')
       picker.handleInput('\r')
