@@ -73,6 +73,11 @@ it('removes untrusted VT sequences and control bytes before styling', () => {
   ])
   expect(renderMarkdown('a\x1b[中文 stays', 40, none)).toEqual(['a中文 stays'])
 })
+it('spells out bidi overrides so a code block cannot show one command and hold another', () => {
+  const rows = renderMarkdown('```sh\nls \u202erm -rf ~\u202c\n```\nשלום\u200f', 60, none)
+  expect(rows.join('\n')).toContain('ls \\u{202E}rm -rf ~\\u{202C}')
+  expect(rows.join('\n')).toContain('שלום\u200f')
+})
 it('shows Markdown nested too deep to parse as plain wrapped text instead of throwing', () => {
   for (const md of [`${'> '.repeat(3000)}x`, `${'>'.repeat(5000)} a`]) {
     const rows = renderMarkdown(md, 40, none)

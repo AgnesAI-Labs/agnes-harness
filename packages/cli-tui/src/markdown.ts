@@ -16,6 +16,10 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 // VT sequences are removed first, including their parameters; these are remaining control bytes.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: remove untrusted terminal controls
 const CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g
+// Bidi embeddings, overrides and isolates reorder what follows them, so a code block can show one
+// command and hold another. They are spelled out; the marks (LRM, RLM, ALM) that real right-to-left
+// text uses do not reorder and stay.
+const BIDI = /[\u202a-\u202e\u2066-\u2069]/g
 const span = (text: string, style: Style = PLAIN): Span => ({ text, style })
 const plain = (spans: Span[]) => spans.map((part) => part.text).join('')
 const pad = (text: string, width: number) => text + ' '.repeat(Math.max(0, width - displayWidth(text)))
@@ -388,7 +392,10 @@ export function completeBlocks(text: string): number {
 /** Terminal-only Markdown: HTML is literal text; links/images never trigger I/O. */
 export function renderMarkdown(md: string, width: number, ansi: ThemedAnsi): string[] {
   if (!Number.isFinite(width)) throw new Error('invalid markdown width')
-  const clean = stripVT(md).replace(CONTROL, '').replaceAll('\t', '    ')
+  const clean = stripVT(md)
+    .replace(CONTROL, '')
+    .replace(BIDI, (c) => `\\u{${(c.codePointAt(0) as number).toString(16).toUpperCase()}}`)
+    .replaceAll('\t', '    ')
   const w = Math.max(1, Math.trunc(width))
   try {
     return blocks(Lexer.lex(clean, mathLexerOptions()), w, ansi)
