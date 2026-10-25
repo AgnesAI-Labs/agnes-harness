@@ -342,6 +342,17 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s16);
   }
+  /* A row's run history grows inside its copy column, so centering the row would drag the icon and
+   actions down with every added run; pin them to the row start instead. Scoped to this page only. */
+  .automation-panel .agh-list-row.automation-row {
+    align-items: flex-start;
+  }
+  .automation-panel .agh-list-row.automation-row > .agh-list-row-actions {
+    align-self: flex-start;
+  }
+  .automation-panel .agh-list-row.automation-row > .agh-list-row-icon {
+    margin-block-start: var(--s4);
+  }
   .automation-panel .agh-list-row-copy > p a {
     text-decoration: underline;
     text-underline-offset: 2px;

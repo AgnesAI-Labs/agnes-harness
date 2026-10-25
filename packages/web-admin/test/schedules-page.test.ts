@@ -302,6 +302,13 @@ it('shows each run outcome in plain words, never a started turn as a failure', a
   expect(items[3]?.textContent).toContain(ux('reason.previous_approval_expired'))
   expect(items[3]?.textContent).toContain(ux('needsAttention'))
   expect(items[3]?.querySelector('a')?.getAttribute('href')).toBe('/?session=r1')
+  // DOM behind the top alignment: the actions column is the row's direct child and the run history
+  // sits inside the copy column, so expanding it grows only that column. Layout itself is CSS.
+  const row = must(host.querySelector('[data-testid="schedules-row"]'), 'schedules-row')
+  expect(row.classList.contains('automation-row')).toBe(true)
+  expect(must(row.querySelector('.agh-list-row-actions'), 'row actions').parentElement).toBe(row)
+  const copy = must(row.querySelector('.agh-list-row-copy'), 'row copy')
+  expect(copy.contains(must(row.querySelector('.automation-history'), 'run history'))).toBe(true)
 })
 
 it('pauses, resumes and runs a task now through the daemon', async () => {

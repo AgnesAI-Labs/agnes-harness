@@ -499,6 +499,7 @@ export function SchedulesPage({
                 return (
                   <ListRow
                     key={row.id}
+                    className="automation-row"
                     data-testid="schedules-row"
                     data-status={row.status}
                     data-target={target.kind}
