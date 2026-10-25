@@ -65,6 +65,8 @@ export type PresetView = {
   verifier: { timeoutMs: number; defaultTier: 0 | 1 | 2 }
   repair: { timeoutMs: number }
   completionGate: { minItems: number }
+  /** Model steps between progress checks in a limited or unattended turn (preset `loop.progress_check_steps`). */
+  progressCheck: { everySteps: number }
   compaction: { enabled: boolean; reserveTokens: number; keepRecentTokens: number; agentCallable: boolean }
   telemetry: { invariants: boolean | 'strict'; timing: boolean }
   recovery: { unknownChild: 'model' | 'human' }
@@ -98,6 +100,7 @@ export function presetDefaults(): PresetView {
     verifier: { timeoutMs: 30000, defaultTier: 0 },
     repair: { timeoutMs: 10000 },
     completionGate: { minItems: 3 },
+    progressCheck: { everySteps: 20 },
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, agentCallable: true },
     telemetry: { invariants: false, timing: false },
     recovery: { unknownChild: 'model' },
@@ -229,6 +232,7 @@ export function readPreset(raw: Record<string, unknown>, name: string): PresetVi
     },
     repair: { timeoutMs: pick(raw, 'repair.timeout_ms', d.repair.timeoutMs) },
     completionGate: { minItems: pick(raw, 'completion_gate.min_items', d.completionGate.minItems) },
+    progressCheck: { everySteps: pick(raw, 'loop.progress_check_steps', d.progressCheck.everySteps) },
     compaction: {
       enabled: pick(raw, 'compaction.enabled', d.compaction.enabled),
       reserveTokens: pick(raw, 'compaction.reserve_tokens', d.compaction.reserveTokens),

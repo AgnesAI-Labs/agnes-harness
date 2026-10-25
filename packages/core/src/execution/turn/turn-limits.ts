@@ -83,6 +83,9 @@ export function dueLimitNotice(limits: TurnLimits, now: number, previous?: Limit
   return previous && previous.level >= best.level ? previous : best
 }
 
+/** Whether the turn's limit note has reached its last threshold, the wrap-up. */
+export const wrapUpDue = (t: TurnMemory): boolean => notices.get(t)?.level === LIMIT_THRESHOLDS.length
+
 /** `11m30s`, `45s`, `1h05m`: whole seconds, rounded down so the model never hears it has more. */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))

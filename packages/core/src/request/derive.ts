@@ -735,6 +735,8 @@ export const NESTED_RESULT_PREFIX = '[nested result]\n'
 export const HOOK_DATA_PREFIX = '[hook data]\n'
 /** The first line of the note stating a time-limited turn's measured time (see `turn-limits.ts`). */
 export const TURN_TIME_PREFIX = '[turn time]\n'
+/** The first line of a progress check in a limited or unattended turn (see `progress-check.ts`). */
+export const PROGRESS_CHECK_PREFIX = '[progress check]\n'
 /**
  * Every prefix a later derivation reads a Core note back by. A loop's note may not begin with one: a
  * committed note that did would be taken for the snapshot or note it imitates.
@@ -747,6 +749,14 @@ export const RESERVED_NOTE_PREFIXES: readonly string[] = Object.freeze([
   HOOK_DATA_PREFIX,
   LIVE_CONTEXT_PREFIX,
   TURN_TIME_PREFIX,
+  PROGRESS_CHECK_PREFIX,
+])
+/** Where a Core note sits among a request's notes; a live note ranks 2. */
+const NOTE_RANK: ReadonlyMap<string, number> = new Map([
+  [HOOK_CONTEXT_PREFIX, 0],
+  [SKILL_LOADED_PREFIX, 1],
+  [TURN_TIME_PREFIX, 3],
+  [PROGRESS_CHECK_PREFIX, 4],
 ])
 
 /** The user line placed between a summary and an assistant message that directly follows it. */
@@ -990,15 +1000,9 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     messages.push({ role: 'user', seq: 0, content: [{ type: 'text', text: runtimeContextText }] })
   }
   if (input.kind === 'turn') {
-    // The turn's measured time goes after the live notes, so the threshold note it qualifies is read first.
-    const rank = (prefix: string) =>
-      prefix === HOOK_CONTEXT_PREFIX
-        ? 0
-        : prefix === SKILL_LOADED_PREFIX
-          ? 1
-          : prefix === TURN_TIME_PREFIX
-            ? 3
-            : 2
+    // The live notes come before the turn's measured time, which qualifies the threshold note, and a
+    // progress check goes last, right before the model's next action.
+    const rank = (prefix: string) => NOTE_RANK.get(prefix) ?? 2
     const candidates = [...(input.notes ?? []), ...liveContextNotes(input.merged.sections, input.surface)]
     for (const note of candidates.sort((a, b) => rank(a.prefix) - rank(b.prefix))) {
       const previous = lastNoteText(input.surface, note.prefix)

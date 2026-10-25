@@ -14,12 +14,16 @@ export type VerifyInput = {
   surfaceTailHashes: string[]
   newToolResults: number
   lastFinishReason?: 'stop' | 'length' | 'tool_use' | 'error'
+  /** Step scope, in a turn under a prompt limit or unattended: the turn's last few steps. */
+  history?: Pick<VerifyInput, 'toolCalls' | 'recentToolKeys' | 'surfaceTailHashes' | 'newToolResults'>
 }
 
 /**
  * Tier 0: five pure checks over one step/turn's worth of shape, no model call. `tool`/`step` scope
  * only sees the failure-grade checks (schema, deviation, truncation); `turn`/`task` scope adds the
- * two revision-grade checks (repeat, no-progress) that need a run of history to make sense of.
+ * two revision-grade checks (repeat, no-progress) that need a run of history to make sense of. A
+ * `step` input that carries `history` (a limited or unattended turn) gets them too, over that
+ * history; core turns such a step verdict into a progress check, never into a stop.
  */
 export const verifierT0: SeamFactory<VerifierSeam> = async (ctx) => {
   const loop = (ctx.profile.preset.loop ?? {}) as { repeat_threshold?: number; no_progress_steps?: number }
@@ -33,8 +37,9 @@ export const verifierT0: SeamFactory<VerifierSeam> = async (ctx) => {
       if (x.toolCalls.some((c) => !c.schemaOk && !c.rejected)) fail.push('schema_invalid')
       if (x.deviations > 0) fail.push('tool_call_as_text')
       if (x.lastFinishReason === 'length') fail.push('output_truncated')
-      if (scope === 'turn' || scope === 'task') {
-        const keys = x.recentToolKeys
+      const h = scope === 'turn' || scope === 'task' ? x : scope === 'step' ? x.history : undefined
+      if (h) {
+        const keys = h.recentToolKeys
         // Longest run of an identical (tool, args) key at the tail, not just anywhere in the
         // window: a model that repeats after trying something else in between is not stuck the
         // same way one that repeats back-to-back is.
@@ -43,18 +48,18 @@ export const verifierT0: SeamFactory<VerifierSeam> = async (ctx) => {
         let run = 0
         for (let i = 0; i < keys.length; i++) {
           if (
-            x.toolCalls.length === keys.length &&
-            (x.toolCalls[i]?.isReadOnly === true || x.toolCalls[i]?.rejected === true)
+            h.toolCalls.length === keys.length &&
+            (h.toolCalls[i]?.isReadOnly === true || h.toolCalls[i]?.rejected === true)
           )
             run = 0
           else run = i > 0 && keys[i] === keys[i - 1] ? run + 1 : 1
         }
         if (keys.length >= repeatThreshold && run >= repeatThreshold) revise.push(`repeated_write:${run}`)
-        const h = x.surfaceTailHashes
+        const hashes = h.surfaceTailHashes
         if (
-          h.length >= noProgressSteps &&
-          new Set(h.slice(-noProgressSteps)).size === 1 &&
-          x.newToolResults === 0
+          hashes.length >= noProgressSteps &&
+          new Set(hashes.slice(-noProgressSteps)).size === 1 &&
+          h.newToolResults === 0
         )
           revise.push(`no_progress:${noProgressSteps}`)
       }

@@ -100,6 +100,8 @@ In an exported preset definition, `budget: { max_steps: null }` disables the cei
 
 Already-open sessions keep their in-memory resolved preset. Restart the service and reopen the session, or start a new session, to resolve the updated defaults. Custom presets with explicit numeric ceilings keep those ceilings. Extensions replacing the Budget segment must handle `maxSteps: null` as an absent step ceiling. The internal run-loop guard bounds consecutive edges without a committed program-counter change rather than total task steps, so a progressing task does not spend its allowance.
 
+A turn that runs unattended or under a prompt limit also gets progress checks (see [headless](../guide/headless.md#progress-checks)). `loop: { progress_check_steps: 20 }` sets how many model steps pass between them; omitted, it is 20. It has no effect on ordinary interactive turns.
+
 <a id="skills-同名优先级覆盖"></a>
 
 ## Same-name Skill priority overrides

@@ -5,6 +5,7 @@ import type { RequestHeaderData } from '../request/derive.js'
 import { UNATTENDED_ACTOR_ATTR, unattendedInput } from './inbox.js'
 import { toolsForAttendance } from './model-tools.js'
 import type { SessionImpl, TurnMemory } from './session.js'
+import { turnTimeLimit } from './time-limit.js'
 
 /** Turns whose trigger declared that nobody attends them. Turn memory is per process and rebuilt on recovery. */
 const unattendedTurns = new WeakSet<TurnMemory>()
@@ -23,6 +24,19 @@ export function attend(turn: TurnMemory, trigger: Pick<Actor, 'attrs'> | undefin
 
 export function isUnattended(turn: TurnMemory): boolean {
   return unattendedTurns.has(turn)
+}
+
+/**
+ * A turn that gets progress checks: nobody attends it, or its prompt set a limit of its own (time,
+ * steps or credits). An ordinary interactive turn does not.
+ */
+export function progressChecked(turn: TurnMemory): boolean {
+  return (
+    isUnattended(turn) ||
+    turnTimeLimit(turn) !== undefined ||
+    turn.maxStepsCap !== undefined ||
+    turn.budgetCap !== undefined
+  )
 }
 
 /**

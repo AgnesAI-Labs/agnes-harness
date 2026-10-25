@@ -83,6 +83,7 @@ import { isUnattended } from '../../step/turn-restore.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
 import { appendHookData } from './hook-data-note.js'
+import { progressCheckNote } from './progress-check.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
 import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
@@ -664,6 +665,7 @@ export async function prepareInferenceRequest(
   await s.ensureEnvelopeEpochs()
   // Measured now, as late as assembly allows, so the figure is as fresh as the request.
   const turnTime = turnTimeNote(s, t)
+  const progressCheck = await progressCheckNote(s, t, op)
   let out = deriveRequest({
     ...(memoryRevision === undefined ? {} : { memoryRevision }),
     ...(s.d.systemPrompt ? { systemPrompt: s.d.systemPrompt } : {}),
@@ -691,6 +693,7 @@ export async function prepareInferenceRequest(
       { prefix: HOOK_CONTEXT_PREFIX, text: additionalContext, dedup: { kind: 'latest' } },
       // Empty in a turn without a time limit, which marks an earlier turn's figure as no longer current.
       { prefix: TURN_TIME_PREFIX, text: turnTime ?? '', dedup: { kind: 'latest' } },
+      ...(progressCheck ? [progressCheck] : []),
       ...(preloaded
         ? [
             {
