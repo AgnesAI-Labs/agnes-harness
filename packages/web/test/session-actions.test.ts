@@ -176,8 +176,10 @@ it.each([
     zhT,
   )
   renderWorkspaceOptions(picker, [workspace], () => {}, zhT)
-  expect(nav.querySelector('.workspace-name')?.textContent).toBe(label)
-  expect(nav.querySelector('.workspace-new-session')?.getAttribute('aria-label')).toContain(label)
+  // Section headings share the name class, so read the project's own heading row instead.
+  const project = nav.querySelector('.workspace-group.is-nested')
+  expect(project?.querySelector('.workspace-name')?.textContent).toBe(label)
+  expect(project?.querySelector('.workspace-new-session')?.getAttribute('aria-label')).toContain(label)
   expect(picker.querySelector('.workspace-option-name')?.textContent).toBe(label)
 })
 

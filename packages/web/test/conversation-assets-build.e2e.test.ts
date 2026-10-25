@@ -65,14 +65,22 @@ it('resolves the conversation layer from the shared vendor instead of bundling a
   }
   expect(duplicated).toEqual([])
 
-  const vendor = JSON.parse(await readFile(resolve(output, 'vendor/conversation.js.map'), 'utf8')) as {
-    sources: string[]
+  // The vendor build splits shared modules into hashed chunks that the entry re-exports, so the
+  // entry's own map is empty. Follow its imports to the files that actually carry the sources.
+  const entry = await readFile(resolve(output, 'vendor/conversation.js'), 'utf8')
+  const chunks = [...entry.matchAll(/\.\/(chunk-[\w-]+\.js)/g)].map((match) => `${match[1]}.map`)
+  const vendorSources: string[] = []
+  for (const file of ['conversation.js.map', ...chunks]) {
+    const map = JSON.parse(await readFile(resolve(output, 'vendor', file), 'utf8')) as {
+      sources: string[]
+    }
+    vendorSources.push(...map.sources)
   }
-  expect(vendor.sources.some((source) => source.includes('node_modules/@assistant-ui/'))).toBe(false)
-  expect(vendor.sources.some((source) => source.includes('@ant-design/x-markdown/'))).toBe(true)
-  expect(vendor.sources.some((source) => source.includes('html-react-parser/'))).toBe(true)
+  expect(vendorSources.some((source) => source.includes('node_modules/@assistant-ui/'))).toBe(false)
+  expect(vendorSources.some((source) => source.includes('@ant-design/x-markdown/'))).toBe(true)
+  expect(vendorSources.some((source) => source.includes('html-react-parser/'))).toBe(true)
   expect(
-    vendor.sources.some(
+    vendorSources.some(
       (source) => source.includes('node_modules/react/') || source.includes('node_modules/react-dom/'),
     ),
   ).toBe(false)
