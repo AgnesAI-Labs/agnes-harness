@@ -295,7 +295,6 @@ export class ReferenceMentionSource {
   private wanted: string | undefined
   // Bumped by reset: an answer from the previous session is dropped, not cached.
   private generation = 0
-  private last: readonly MentionItem[] = []
   private disposed = false
 
   constructor(
@@ -314,7 +313,7 @@ export class ReferenceMentionSource {
     if (!this.busy) this.fetch(query)
     if (hit) return hit.state
     const local = this.fallback?.get(query)
-    return local?.status === 'ready' ? local : { status: 'loading', items: this.last }
+    return local?.status === 'ready' ? local : { status: 'loading', items: [] }
   }
 
   dispose(): void {
@@ -325,7 +324,6 @@ export class ReferenceMentionSource {
   /** Forget what the previous session answered; the next `get` asks the current one. */
   reset(): void {
     this.cache.clear()
-    this.last = []
     this.latched = false
     this.generation++
   }
@@ -346,7 +344,6 @@ export class ReferenceMentionSource {
               (item) => item.source === 'file' && item.id && noControls(item.id) && relativeInside(item.id),
             )
             .map((item) => ({ id: item.id, directory: false }))
-          this.last = items
           this.store(query, { status: 'ready', items })
         },
         (error: unknown) => {
