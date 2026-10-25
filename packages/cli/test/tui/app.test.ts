@@ -1630,6 +1630,46 @@ it('keeps a pending approval at its usual page height when nothing below the dia
   }
 })
 
+it('draws an open picker in the composer slot, and a pending approval brings the composer back above it', async () => {
+  const { endpoint } = fakeSessionEndpoint()
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 30 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const screen = async () => (await screenOf(term, 80, 30)).join('\n')
+    const prompt = 'What do you want to do?'
+    await vi.waitFor(async () => expect(await screen()).toContain(prompt))
+    for (const key of ['/theme', '\r']) term.feed(key)
+    await vi.waitFor(async () => expect(await screen()).toContain('esc close'))
+    // One prompt on screen: the picker has the keys, so the composer is not drawn.
+    expect(await screen()).not.toContain(prompt)
+    endpoint.push({
+      jsonrpc: '2.0',
+      id: 'perm-2',
+      method: 'session/request_permission',
+      params: {
+        sessionId: session.id,
+        toolCall: { toolCallId: 'tool-2', status: 'pending', title: 'write', rawInput: { path: 'a.md' } },
+        options: [
+          { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
+        ],
+      },
+    } as JsonRpcNotification)
+    // The approval stays above a visible composer; the picker waits behind it.
+    await vi.waitFor(async () => expect(await screen()).toContain('Allow once'))
+    expect(await screen()).toContain(prompt)
+    expect(await screen()).not.toContain('esc close')
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 /** An app whose first prompt stays in flight until `release()`, so everything typed after it arrives busy. */
 async function busyHarness(
   opts: { answer?: (params: Submitted) => unknown; steer?: boolean; promptError?: unknown } = {},

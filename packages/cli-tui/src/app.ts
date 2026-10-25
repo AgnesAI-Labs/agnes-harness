@@ -35,12 +35,13 @@ import { PackageController } from './package-controller.js'
 import { PagerOverlay } from './pager-overlay.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
-import { type PromptArea, promptArea, routeClick } from './prompt-click.js'
+import { type PromptArea, routeClick } from './prompt-click.js'
 import { PromptHistory } from './prompt-history.js'
 import { RawView } from './raw-view.js'
 import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { TuiResourceController } from './resource-controller.js'
 import { type InputDialog, rootInput } from './root-input.js'
+import { rootRender } from './root-layout.js'
 import { applySwitch, chooseSession, ResourceConfirmations } from './session-switch.js'
 import { isSlashCommandLine } from './slash-table.js'
 import { type ActionItem, collectSlots } from './slots.js'
@@ -430,46 +431,26 @@ export class TuiApp {
       this.usagePanel,
       this.statusLine,
     ]
-    root.render = (width) => {
-      this.signals.sync()
-      // Like the dialogs, the pager gives way to a pending approval and returns unchanged.
-      if (this.pager.open && !this.modal.pending) return this.pager.render(width)
-      const shown = root.children.filter(
-        (child) => !(this.modal.pending && dialogs.some((dialog) => dialog === child)),
-      )
-      let rows = 0
-      for (const child of shown.toReversed()) {
-        if (child === this.modal) this.belowModal = rows
-        if (child !== this.timeline) rows += child.render(width).length
-      }
-      this.reservedRows = Math.max(TIMELINE_RESERVED_ROWS, rows)
-      const height = o.term.size().rows
-      const at = shown.indexOf(this.modal)
-      const above = shown.slice(0, at).flatMap((child) => child.render(width))
-      const belowParts = shown.slice(at).map((child) => child.render(width))
-      const below = belowParts.flat()
-      // The input area, from the approval dialog down, sits on the bottom edge; a short
-      // conversation leaves its gap above it rather than below.
-      const gap =
-        Number.isFinite(height) && !o.noAltScreen ? Math.max(0, height - above.length - below.length) : 0
-      const screen = [...above, ...Array.from({ length: gap }, () => ''), ...below]
-      const composerAt = shown.slice(at).indexOf(this.composer)
-      this.promptArea =
-        composerAt < 0 || this.pager.open
-          ? undefined
-          : promptArea({
-              screenRows: screen.length,
-              belowComposer: belowParts.slice(composerAt + 1).reduce((n, part) => n + part.length, 0),
-              width,
-              textRows: this.editor.textRows,
-            })
-      // A dialog that is drawn owns the keyboard, so a click must not reach through it to the prompt.
-      this.dialogShown = belowParts.some(
-        (part, i) => part.length > 0 && dialogs.some((d) => d === shown[at + i]),
-      )
-      this.mouse.overlay(screen, above.length + gap - 1, width)
-      return o.noAltScreen ? screen : this.theme.frame(createAnsi(o.term.caps.color), screen, width, height)
-    }
+    root.render = rootRender({
+      sync: () => this.signals.sync(),
+      pager: this.pager,
+      modal: this.modal,
+      timeline: this.timeline,
+      composer: this.composer,
+      dialogs,
+      children: () => root.children,
+      rows: () => o.term.size().rows,
+      noAltScreen: o.noAltScreen,
+      textRows: () => this.editor.textRows,
+      frame: (rows, width, height) => this.theme.frame(createAnsi(o.term.caps.color), rows, width, height),
+      overlay: (rows, row, width) => this.mouse.overlay(rows, row, width),
+      report: (l) => {
+        this.belowModal = l.belowModal
+        this.reservedRows = l.reservedRows
+        this.promptArea = l.promptArea
+        this.dialogShown = l.dialogShown
+      },
+    })
     this.drafts = new DraftStash(
       this.editor,
       (text, tone) => this.statusBar.setNotice(text, tone),
