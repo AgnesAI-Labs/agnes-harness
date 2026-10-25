@@ -1,7 +1,8 @@
 import type { Locale } from './locale.js'
 
 /**
- * Labels of the key hints in the timeline and its overlays (tool cards, the Ctrl-T pager), spelled by `keyHints`.
+ * Labels of the key hints in the timeline and its overlays (tool cards, the Ctrl-T pager), spelled by `keyHints`,
+ * and the tool status words locale-extended.ts has no room for.
  * locale-keys.ts merges them into its dictionary, so locale-extended.ts (at the file-size limit) does not change.
  */
 export type ChromeHintKey =
@@ -15,6 +16,7 @@ export type ChromeHintKey =
   | 'chromeHint.newSearch'
   | 'chromeHint.cancel'
   | 'chromeHint.close'
+  | 'tool.status.cancelled'
 
 export const CHROME_HINT_DICT: Record<Locale, Record<ChromeHintKey, string>> = {
   en: {
@@ -28,6 +30,7 @@ export const CHROME_HINT_DICT: Record<Locale, Record<ChromeHintKey, string>> = {
     'chromeHint.newSearch': 'new search',
     'chromeHint.cancel': 'cancel',
     'chromeHint.close': 'close',
+    'tool.status.cancelled': 'cancelled',
   },
   'zh-CN': {
     'chromeHint.expand': '展开',
@@ -40,5 +43,6 @@ export const CHROME_HINT_DICT: Record<Locale, Record<ChromeHintKey, string>> = {
     'chromeHint.newSearch': '重新搜索',
     'chromeHint.cancel': '取消',
     'chromeHint.close': '关闭',
+    'tool.status.cancelled': '已取消',
   },
 }

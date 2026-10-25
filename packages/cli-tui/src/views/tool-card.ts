@@ -80,12 +80,14 @@ const STATUS_KEYS: Record<
   | 'tool.status.failed'
   | 'tool.status.error'
   | 'tool.status.planned'
+  | 'tool.status.cancelled'
 > = {
   completed: 'tool.status.completed',
   running: 'tool.status.running',
   failed: 'tool.status.failed',
   error: 'tool.status.error',
   planned: 'tool.status.planned',
+  cancelled: 'tool.status.cancelled',
 }
 const TOOL_KEYS: Record<string, 'tool.name.read' | 'tool.name.write' | 'tool.name.edit' | 'tool.name.shell'> =
   {
