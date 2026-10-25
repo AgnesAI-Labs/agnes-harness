@@ -272,6 +272,50 @@ describe('local endpoint: ACP round trip', () => {
     await h.close()
   })
 
+  it('passes a prompt time limit to core, which tells the model, and rejects a malformed one', async () => {
+    const h = await openTestHost({ script: [say('ok')] })
+    const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })
+    expect(await ep.handle(init)).toMatchObject({
+      result: { agentCapabilities: { _meta: { 'ai.agnes.harness': { turnTimeLimit: true } } } },
+    })
+    await addWorkspace(ep, h.dataDir)
+    const created = (await ep.handle({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/new',
+      params: { cwd: h.dataDir, mcpServers: [] },
+    })) as { result: { sessionId: string } }
+    const sessionId = created.result.sessionId
+    const prompt = (timeLimitMs: unknown, id: number) =>
+      ep.handle({
+        jsonrpc: '2.0',
+        id,
+        method: 'session/prompt',
+        params: {
+          sessionId,
+          prompt: [{ type: 'text', text: 'hi' }],
+          _meta: { 'ai.agnes.harness': { timeLimitMs } },
+        },
+      })
+    for (const [bad, id] of [
+      [0, 3],
+      [1.5, 4],
+      ['600000', 5],
+      [86_400_001, 6],
+    ] as const)
+      expect(await prompt(bad, id)).toMatchObject({ error: { data: { reason: 'invalid turn time limit' } } })
+    expect(await prompt(600_000, 7)).toMatchObject({ result: { stopReason: 'end_turn' } })
+    const session = h.host.kernel.get(sessionId)!
+    const [row] = await session.scan({ type: 'x/core/turn-time-limit', limit: 1 })
+    expect(row?.data).toMatchObject({ turn: 1, timeLimitMs: 600_000 })
+    const notes = (await session.scan({ type: 'user/message', order: 'asc', limit: 10 }))
+      .filter((r) => r.origin === 'system')
+      .map((r) => JSON.stringify(r.data))
+    expect(notes.some((n) => n.includes('This turn has limits: a time limit of 10m00s'))).toBe(true)
+    await ep.close()
+    await h.close()
+  })
+
   it('accepts the permission capability from clientCapabilities._meta', async () => {
     const h = await openTestHost()
     const ep = h.endpoint({ clock: () => Date.now(), pollMs: 5 })

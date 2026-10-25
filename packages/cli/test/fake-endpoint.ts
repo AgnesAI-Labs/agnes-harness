@@ -192,6 +192,7 @@ export function scriptedEndpoint(
     harnessCapabilities?: {
       hardTurnBudget?: boolean
       turnMaxSteps?: boolean
+      turnTimeLimit?: boolean
       forkAdditionalDirectories?: boolean
     }
   } = {},

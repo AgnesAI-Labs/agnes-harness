@@ -758,6 +758,12 @@ export class Session {
       creditLimit?: number
       /** Model steps this prompt may take (1 to 1000); only lowers the preset's ceiling. Refuses servers without `turnMaxSteps`. */
       maxSteps?: number
+      /**
+       * Wall-clock milliseconds this turn may take (1 to 86400000). The model is told the limit and
+       * how much of it remains; the server does not stop the turn at it, so cancel the turn at the
+       * deadline yourself (`agh -p --timeout` does). Refuses servers without `turnTimeLimit`.
+       */
+      timeLimitMs?: number
       references?: readonly ReferenceSelection[]
       /**
        * Nobody attends this turn (a script, CI, an evaluation run): the turn offers the model no tool
@@ -770,10 +776,10 @@ export class Session {
     // Captured by identity: the outcome of *this* turn is only the record that was
     // installed while the request was in flight, never one left over from a past turn.
     const before = this.lastTurnEnd
-    const limits = { creditLimit: opts.creditLimit, maxSteps: opts.maxSteps }
+    const limits = { creditLimit: opts.creditLimit, maxSteps: opts.maxSteps, timeLimitMs: opts.timeLimitMs }
     const meta: TurnOptions = { ...limits, ...(opts.unattended ? { unattended: true } : {}) }
     // Skipped, not awaited, with no limit: an extra tick here reorders a prompt against a lazy attach.
-    if (limits.creditLimit !== undefined || limits.maxSteps !== undefined)
+    if (limits.creditLimit !== undefined || limits.maxSteps !== undefined || limits.timeLimitMs !== undefined)
       await checkTurnLimits(this.client, limits, opts.signal)
     // Best effort: the turn's own outcome is what the caller gets either way, so a
     // cancel that cannot be sent must not become an unhandled rejection. Held for the

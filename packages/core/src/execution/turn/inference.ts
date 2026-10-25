@@ -85,6 +85,7 @@ import { appendHookData } from './hook-data-note.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
 import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
+import { turnLimitSection } from './turn-limits.js'
 
 /**
  * What the model is told in a turn whose input declared that nobody attends it. The first line is
@@ -339,6 +340,10 @@ export async function assembleRequestPrefix(
         },
       ],
     })
+  // Limits the turn runs under (time, steps, a prompt's credit cap), and how much of the nearest is
+  // used: a live note for the same reason as above, re-sent only when it crosses a threshold.
+  const limits = turnLimitSection(s, t)
+  if (limits) contribs.push({ op: 'core:turn-limits', promptSections: [limits] })
   const merged = mergeContributions(contribs, t.snapshot)
   for (const conflict of merged.conflicts) await s.diag('contribute-conflict', conflict)
   if (t.preload === undefined) t.preload = (await preloadRuntimeSection(s, triggerSeq)) ?? null

@@ -610,17 +610,24 @@ describe('Session', () => {
       )
       for (const maxSteps of [0, 1001, 1.5, NaN])
         await expect(session.prompt('invalid', { maxSteps })).rejects.toThrow('invalid turn step cap')
+      await expect(session.prompt('timed', { timeLimitMs: 1000 })).rejects.toThrow(
+        'server does not support turn time limits',
+      )
+      for (const timeLimitMs of [0, 1.5, 86_400_001, NaN])
+        await expect(session.prompt('invalid', { timeLimitMs })).rejects.toThrow('invalid turn time limit')
       expect(f.calls.filter((row) => row.method === 'session/prompt')).toEqual([])
     } finally {
       await client.close()
     }
   })
 
-  it('sends both limits on a server that advertises them, and the unattended flag only when asked', async () => {
+  it('sends the limits on a server that advertises them, and the unattended flag only when asked', async () => {
     const f = fakeEndpoint({
       initialize: () => ({
         protocolVersion: 1,
-        agentCapabilities: { _meta: { [META_KEY]: { hardTurnBudget: true, turnMaxSteps: true } } },
+        agentCapabilities: {
+          _meta: { [META_KEY]: { hardTurnBudget: true, turnMaxSteps: true, turnTimeLimit: true } },
+        },
       }),
       'session/new': () => ({ sessionId: 'caps' }),
       'session/prompt': () => ({ stopReason: 'end_turn' }),
@@ -632,10 +639,12 @@ describe('Session', () => {
     })
     try {
       const session = await client.createSession({ cwd: '/synthetic' })
-      await session.prompt('x', { creditLimit: 2, maxSteps: 3 })
+      await session.prompt('x', { creditLimit: 2, maxSteps: 3, timeLimitMs: 60_000 })
       await session.prompt('y', { unattended: true })
       const prompts = f.calls.filter((x) => x.method === 'session/prompt').map((x) => x.params)
-      expect(prompts[0]).toMatchObject({ _meta: { [META_KEY]: { creditLimit: 2, maxSteps: 3 } } })
+      expect(prompts[0]).toMatchObject({
+        _meta: { [META_KEY]: { creditLimit: 2, maxSteps: 3, timeLimitMs: 60_000 } },
+      })
       expect((prompts[0] as { _meta: Record<string, object> })._meta[META_KEY]).not.toHaveProperty(
         'unattended',
       )

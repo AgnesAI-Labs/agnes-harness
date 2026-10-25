@@ -406,7 +406,8 @@ describe('runPrint in text mode', () => {
   describe('--timeout and --output-file', () => {
     // A turn that never ends on its own: it answers only once a cancel command has been submitted.
     async function hung(): Promise<FakeEndpoint> {
-      const ep = scriptedEndpoint()
+      // A daemon that takes the time limit: it is told the deadline, and the CLI still enforces it.
+      const ep = scriptedEndpoint({ harnessCapabilities: { turnTimeLimit: true } })
       ep.on('session/prompt', async (_p, e) => {
         while (!e.calls.some((c) => JSON.stringify(c.params ?? {}).includes('"cancel"')))
           await new Promise((r) => setTimeout(r, 5))
@@ -427,10 +428,19 @@ describe('runPrint in text mode', () => {
       return ep
     }
 
+    const sentMeta = (ep: FakeEndpoint) =>
+      (
+        ep.calls.find((c) => c.method === 'session/prompt')?.params as
+          | { _meta?: Record<string, unknown> }
+          | undefined
+      )?._meta
+
     it('cancels the turn at the deadline and exits 124 with the reason on stderr', async () => {
       const o = io()
-      const code = await runPrint(await booted(await hung()), parseArgs(['-p', 'q', '--timeout', '0.05']), o)
+      const ep = await hung()
+      const code = await runPrint(await booted(ep), parseArgs(['-p', 'q', '--timeout', '0.05']), o)
       expect(code).toBe(124)
+      expect(sentMeta(ep)).toEqual({ 'ai.agnes.harness': { timeLimitMs: 50, unattended: true } })
       expect(o.err()).toContain('agh: timeout after 0.05s; turn cancelled (exit 124)')
       expect(o.err()).not.toContain('turn ended')
     })
@@ -449,6 +459,19 @@ describe('runPrint in text mode', () => {
 
     it('a turn that ends before the deadline keeps exit 0', async () => {
       expect(await runPrint(await booted(), parseArgs(['-p', 'q', '--timeout', '30']), io())).toBe(0)
+    })
+
+    it('travels as the time limit with the other caps, and an older daemon is not refused', async () => {
+      const ep = scriptedEndpoint({ harnessCapabilities: { turnMaxSteps: true, turnTimeLimit: true } })
+      const argv = ['-p', 'q', '--timeout', '90', '--max-turns', '7']
+      expect(await runPrint(await booted(ep), parseArgs(argv), io())).toBe(0)
+      expect(sentMeta(ep)).toEqual({
+        'ai.agnes.harness': { maxSteps: 7, timeLimitMs: 90_000, unattended: true },
+      })
+      // Without turnTimeLimit the deadline is the CLI's alone, as before: nothing extra is sent.
+      const older = scriptedEndpoint()
+      expect(await runPrint(await booted(older), parseArgs(['-p', 'q', '--timeout', '90']), io())).toBe(0)
+      expect(sentMeta(older)).toEqual({ 'ai.agnes.harness': { unattended: true } })
     })
 
     it('writes the final text to --output-file and still prints it', async () => {

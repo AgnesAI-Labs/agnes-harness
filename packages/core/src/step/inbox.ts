@@ -24,6 +24,11 @@ export type EnqueueMsg = {
   hardBudget?: boolean
   /** Caps the model steps of the one next turn opened by this item; lowers, never raises, the preset's. */
   maxSteps?: number
+  /**
+   * Wall-clock milliseconds the one next turn opened by this item may take. Core tells the model
+   * (see `turn-limits.ts`); the client that set it cancels the turn at the deadline.
+   */
+  timeLimitMs?: number
 }
 
 /**

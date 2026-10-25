@@ -237,7 +237,7 @@ agh completion fish > ~/.config/fish/completions/agh.fish
 
 `agh -p --max-turns N` 限制一次运行的模型步数。`N` 是 1 到 1000 的整数。它随这一次提示词作为单回合步数上限发送，只能调低 preset 自身的 `budget.max_steps`，不能调高。运行达到上限时该回合以 `max_steps` 结束，退出码为 5（preset 的上限见[配置参考](../reference/configuration.zh-CN.md)）。与 `--continue` 或 `--resume` 一起使用时，只对这一次提示词生效。值超出范围、没有 `-p`，或 daemon 没有声明 `turnMaxSteps` 时，在发出提示词之前以退出码 2 结束，不会被静默忽略。
 
-`agh -p --timeout 秒数` 让运行过久的任务停下来。`秒数` 是大于 0 且不超过 86400 的数字（可以带小数）。期限从发出提示词时开始计时。到期后，CLI 用与 Ctrl-C 相同的方式取消当前回合，向 stderr 写 `agh: timeout after 秒数s; turn cancelled (exit 124)`，并以 124 退出，这与 `timeout(1)` 的退出码一致。回合在取消生效之前已经结束时，保持它自己的退出码；收到信号时仍以信号的退出码为准。值超出范围或没有 `-p` 时，在发出提示词之前以退出码 2 结束。
+`agh -p --timeout 秒数` 让运行过久的任务停下来。`秒数` 是大于 0 且不超过 86400 的数字（可以带小数）。期限从发出提示词时开始计时。到期后，CLI 用与 Ctrl-C 相同的方式取消当前回合，向 stderr 写 `agh: timeout after 秒数s; turn cancelled (exit 124)`，并以 124 退出，这与 `timeout(1)` 的退出码一致。回合在取消生效之前已经结束时，保持它自己的退出码；收到信号时仍以信号的退出码为准。该期限还会作为单回合时间上限（`timeLimitMs`）随提示词发送，让模型知道截止时间和剩余时间（见[回合上限](headless.zh-CN.md#回合上限)）；取消仍由 CLI 执行。daemon 没有声明 `turnTimeLimit` 时不发送时间上限，也不会拒绝运行：CLI 照旧自行执行期限。值超出范围或没有 `-p` 时，在发出提示词之前以退出码 2 结束。
 
 `agh -p --output-file 文件` 在 stdout 输出之外，再把最终文本写入 `文件`（相对 `--cwd`，已存在则覆盖）；stdout 的内容不变。与 `--output-schema` 一起使用时，文件里是紧凑的 JSON 值。无论回合怎样结束都会写文件，回合没有文本时文件为空，这样脚本不会读到上一次的旧答案。文件无法写入时退出码为 1。没有 `-o` 简写：`-o` 已经是 `export`、`computer-use` 和 `diagnostics export` 的 `--out`。没有 `-p` 时退出码为 2。
 

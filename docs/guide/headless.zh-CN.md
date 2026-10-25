@@ -30,6 +30,11 @@ CLI 将临时 profile inputs 交给 Host composition 和常规验证，不保存
 
 `agh run`、`runHeadless` 和 `agh -p`（任何 `--mode`）把提示作为无人值守提示发送（SDK 中为 `session.prompt(input, { unattended: true })`）：运行结束前没有人能回答问题。由该提示开启的轮次不向模型提供需要有人在场、会等待或面向在场用户的工具（`ToolMeta.requiresUser`）：`ask_user_question` 以及界面工具 `ui_render`、`ui_update`、`ui_close`、`ui_guide` 不出现在该轮的工具 schema 和发现结果中，对它们的调用按未知工具拒绝。模型还会收到一条上下文说明：本次运行无人值守，应凭自己的判断完成任务，并在最终回复中写明所作的假设。系统提示不变。该标记只属于这一条提示：同一会话的下一轮（例如在 TUI 或 Web 中 `agh --resume ID` 之后）恢复为有人值守，工具全部恢复，上下文说明会注明先前那条已不再适用。审批是另一回事：完全访问不会询问审批；其他权限级别下，没有审批处理器的一次性运行按上文拒绝或挂起，不会静默等待。早于该标记的 daemon 会忽略它。
 
+
+## 回合上限
+
+提示词自带上限时，模型会通过一条上下文说明得知这一回合的上限，以便安排在上限内完成。提示词可带的上限包括：墙钟时间上限（`agh -p --timeout`、`session.prompt(input, { timeLimitMs })`）、步数上限（`--max-turns`、`maxSteps`）和额度上限（`--max-budget`、`creditLimit`）；只要设了其中一项，说明里就列出生效的步数上限，其中包括 preset 的 `budget.max_steps`。回合的第一次请求列出所有已设置的上限，截止时间以 UTC 时间给出。最接近用尽的那项上限用掉约 50%、75%、90% 时，这条说明各更新一次，写明该上限还剩多少，并依次要求先把核心需求做出来并验证、然后收尾、最后用简短总结结束。触发条件只看时间、步数和额度。这些说明是实时上下文说明：系统提示及其缓存不变；恢复的回合从账本（`x/core/turn-time-limit`、`x/core/turn-step-cap`）重建上限，不会重复已经发过的说明。提示词没有设置任何上述上限的回合（例如普通的交互回合）不会收到说明（仅有 preset 的步数上限不会触发说明），之后这样的回合会注明先前那条已不再适用。Core 不会在时间上限到达时结束回合：由设置它的客户端在截止时取消回合，`agh -p` 就是这样做的。
+
 ## SDK
 
 使用公开的 `@agnes/sdk` helper，连接到经 Host 组装的 profile/bundle。调用方负责启动 client、workspace admission 和 `client.close()`；helper 负责新会话、订阅、权限拒绝和 detach。

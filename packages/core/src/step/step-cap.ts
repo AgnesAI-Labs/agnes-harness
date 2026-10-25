@@ -9,7 +9,17 @@ import {
   type InboxBudgetOverride,
   TURN_BUDGET_EVENT,
 } from './inbox.js'
-import type { SessionImpl } from './session.js'
+import type { SessionImpl, TurnMemory } from './session.js'
+import {
+  INBOX_TIME_LIMIT_EVENT,
+  inboxTimeLimit,
+  rehydrateTimeLimit,
+  setTurnTimeLimit,
+  TURN_TIME_LIMIT_EVENT,
+  type TurnTimeLimit,
+  timeLimitEvent,
+  validTimeLimit,
+} from './time-limit.js'
 
 /**
  * A prompt's own cap on model steps. It travels as two rows of its own, never as a field on the
@@ -74,6 +84,22 @@ export const inboxStepCap = (s: SessionImpl, itemId: string) =>
 export const rehydratedStepCap = (s: SessionImpl, op: OpStateObj) =>
   readCap(s, TURN_STEP_CAP_EVENT, { fromSeq: op.meta.triggerSeq }, (r) => r.turn === op.meta.turn)
 
+/** The step cap and time limit a queued item carries for the turn it opens. */
+export async function inboxTurnCaps(s: SessionImpl, itemId: string) {
+  return { stepCap: await inboxStepCap(s, itemId), timeLimit: await inboxTimeLimit(s, itemId) }
+}
+
+export function applyTurnCaps(turn: TurnMemory, stepCap: number | undefined, timeLimit?: TurnTimeLimit) {
+  if (stepCap !== undefined) turn.maxStepsCap = stepCap
+  setTurnTimeLimit(turn, timeLimit)
+}
+
+/** Recovery: both caps come back off the open turn's own rows. */
+export async function rehydrateTurnCaps(s: SessionImpl, op: OpStateObj, turn: TurnMemory): Promise<void> {
+  applyTurnCaps(turn, await rehydratedStepCap(s, op))
+  await rehydrateTimeLimit(s, op, turn)
+}
+
 /** Ceiling for the open turn: the preset's, lowered by the prompt's own cap. `null` is none. */
 export function turnMaxSteps(s: SessionImpl): number | null {
   if (!s.op()) return s.preset.budget.maxSteps
@@ -83,7 +109,7 @@ export function turnMaxSteps(s: SessionImpl): number | null {
 
 /** What a queued input may carry for the one turn it opens; refused before the inbox changes. */
 export function validateTurnOverrides(
-  msg: Pick<EnqueueMsg, 'budget' | 'hardBudget' | 'maxSteps'>,
+  msg: Pick<EnqueueMsg, 'budget' | 'hardBudget' | 'maxSteps' | 'timeLimitMs'>,
   target: string,
 ): void {
   if (msg.hardBudget !== undefined && (msg.hardBudget !== true || msg.budget === undefined))
@@ -100,12 +126,20 @@ export function validateTurnOverrides(
     if (!validStepCap(msg.maxSteps))
       throw new CoreError('E_ENVELOPE', 'a per-turn step cap must be an integer from 1 to 1000')
   }
+  if (msg.timeLimitMs !== undefined) {
+    if (target !== 'next-turn')
+      throw new CoreError('E_ENVELOPE', 'a per-turn time limit requires next-turn input')
+    if (!validTimeLimit(msg.timeLimitMs))
+      throw new CoreError('E_ENVELOPE', 'a per-turn time limit must be an integer number of ms up to one day')
+  }
 }
 
+/** `now` is when the item is queued: a time limit's deadline is counted from there, as the client's is. */
 export function inboxOverrideEvents(
   actor: Actor,
   itemId: string,
-  msg: Pick<EnqueueMsg, 'budget' | 'hardBudget' | 'maxSteps'>,
+  msg: Pick<EnqueueMsg, 'budget' | 'hardBudget' | 'maxSteps' | 'timeLimitMs'>,
+  now: number,
 ): EventInput[] {
   return [
     ...(msg.budget === undefined
@@ -120,6 +154,15 @@ export function inboxOverrideEvents(
     ...(msg.maxSteps === undefined
       ? []
       : [stepCapEvent(INBOX_STEP_CAP_EVENT, actor, { itemId, maxSteps: msg.maxSteps })]),
+    ...(msg.timeLimitMs === undefined
+      ? []
+      : [
+          timeLimitEvent(INBOX_TIME_LIMIT_EVENT, actor, {
+            itemId,
+            timeLimitMs: msg.timeLimitMs,
+            deadlineAt: now + msg.timeLimitMs,
+          }),
+        ]),
   ]
 }
 
@@ -128,9 +171,13 @@ export function turnOverrideEvents(
   turn: number,
   budget: InboxBudgetOverride | undefined,
   stepCap: number | undefined,
+  timeLimit?: TurnTimeLimit,
 ): EventInput[] {
   return [
     ...(budget === undefined ? [] : [budgetOverrideEvent(TURN_BUDGET_EVENT, actor, { turn, ...budget })]),
     ...(stepCap === undefined ? [] : [stepCapEvent(TURN_STEP_CAP_EVENT, actor, { turn, maxSteps: stepCap })]),
+    ...(timeLimit === undefined
+      ? []
+      : [timeLimitEvent(TURN_TIME_LIMIT_EVENT, actor, { turn, ...timeLimit })]),
   ]
 }

@@ -14,7 +14,7 @@ import {
 } from '../errors.js'
 import { checkStructured, loadOutputSchema, schemaInstruction } from '../output-schema.js'
 import { timingMark } from '../timing.js'
-import { parseTimeoutMs, parseTurnCaps, requireTurnCaps } from '../turn-caps.js'
+import { parseTimeoutMs, parseTurnCaps, requireTurnCaps, timeLimitCap } from '../turn-caps.js'
 import type { Booted, ParsedArgs } from '../types.js'
 import { resolveAppendSystemPrompt, verifyAppendApplied } from './append-system-prompt.js'
 import { readPromptInput } from './prompt-input.js'
@@ -256,6 +256,7 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
 
   try {
     await requireTurnCaps(booted.client, caps)
+    Object.assign(caps, await timeLimitCap(booted.client, timeoutMs))
     const session = await openSession(booted, p, io.cwd, io.breadcrumb, append, io.locale)
     io.breadcrumb?.write(session.id, io.cwd)
     io.stderr.write(`Session: ${session.id}\n`)
