@@ -333,7 +333,7 @@ export async function assembleRequestPrefix(
       promptSections: [
         {
           id: 'core:unattended-run',
-          order: 113,
+          order: 116,
           source: 'core',
           text: UNATTENDED_NOTE,
           delivery: 'live-note',

@@ -2,7 +2,7 @@ import type { OpStateObj } from '@agnes/core-common/step/op-state'
 import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { Actor } from '@agnes/protocol'
 import type { RequestHeaderData } from '../request/derive.js'
-import { unattendedInput } from './inbox.js'
+import { UNATTENDED_ACTOR_ATTR, unattendedInput } from './inbox.js'
 import { toolsForAttendance } from './model-tools.js'
 import type { SessionImpl, TurnMemory } from './session.js'
 
@@ -23,6 +23,18 @@ export function attend(turn: TurnMemory, trigger: Pick<Actor, 'attrs'> | undefin
 
 export function isUnattended(turn: TurnMemory): boolean {
   return unattendedTurns.has(turn)
+}
+
+/**
+ * The actor of an input a parent's turn hands to a child session it opened. A child cannot ask a
+ * person when its parent cannot, so the input of a child opened from an unattended turn declares
+ * the same and the child's turn is narrowed like its parent's. The declaration lands on the child's
+ * own trigger row, so the child's recovery reads it back without the parent. A child of an attended
+ * turn keeps the actor unchanged.
+ */
+export function childInputActor(parent: Pick<SessionImpl, 'turn'>, actor: Actor): Actor {
+  if (!parent.turn || !isUnattended(parent.turn)) return actor
+  return { ...actor, attrs: { ...actor.attrs, [UNATTENDED_ACTOR_ATTR.key]: UNATTENDED_ACTOR_ATTR.value } }
 }
 
 /** Recovery reads the declaration back from the trigger row itself, never from process memory. */

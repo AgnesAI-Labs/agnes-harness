@@ -1,5 +1,28 @@
 import type { TriggerSessionInput } from '@agnes/daemon-admin/webhooks'
+import type { Actor } from '@agnes/protocol'
 import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
+
+/**
+ * The input actor of a webhook delivery. Only the backend mints it; no chat RPC accepts it. A rule
+ * that refuses unanswered approvals has nobody attending its turn, so the turn is also unattended
+ * and offers no tool that waits on a person. Under `notify` the owner answers later in the Web or a
+ * bound channel, so the turn stays attended.
+ */
+export function webhookTriggerActor(
+  input: Pick<TriggerSessionInput, 'trigger' | 'unattendedApproval'>,
+): Actor {
+  return {
+    id: `webhook:${input.trigger.ruleId}`,
+    org: 'webhook',
+    role: 'trigger',
+    deptPath: [],
+    attrs: {
+      ...input.trigger,
+      unattendedApproval: input.unattendedApproval ?? 'notify',
+      ...(input.unattendedApproval === 'refuse' ? { interaction: 'unattended' } : {}),
+    },
+  }
+}
 
 /** Use the same private local SDK path as chat, including workspace ownership and turn admission. */
 export function webhookSessions(

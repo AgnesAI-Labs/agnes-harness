@@ -70,6 +70,16 @@ const PUBLIC_ERROR_COPY = {
       "action": "运行 `agh doctor provider` 查看已配置的路由，并从中选择。"
     }
   },
+  "modelUnknown": {
+    "en": {
+      "reason": "The requested model or route is not in the configured model catalogue.",
+      "action": "Run `agh doctor provider` to list the configured routes and their models, and choose one of them."
+    },
+    "zh-CN": {
+      "reason": "所请求的模型或路由不在已配置的模型目录中。",
+      "action": "运行 `agh doctor provider` 查看已配置的路由及其模型，并从中选择。"
+    }
+  },
   "modelRestart": {
     "en": {
       "reason": "A saved account or model change is not active until the daemon restarts, so the requested model is not loaded yet.",
@@ -556,7 +566,7 @@ export const PUBLIC_ERROR_CONTRACT = {
   "E_PRESET_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: { "permission-axis": PUBLIC_ERROR_COPY["permissionAxis"], "bundle-unavailable": PUBLIC_ERROR_COPY["unavailable"], "preset-not-allowed": PUBLIC_ERROR_COPY["preset"], "clean-home-required": PUBLIC_ERROR_COPY["cleanHome"] } },
   "E_PRESET_UNRESOLVED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: { "no-routes": PUBLIC_ERROR_COPY["unavailable"], "no-models": PUBLIC_ERROR_COPY["unavailable"], "pin-without-route": PUBLIC_ERROR_COPY["unavailable"], "unknown-slot": PUBLIC_ERROR_COPY["unavailable"], "unknown-route": PUBLIC_ERROR_COPY["unavailable"], "model-undeclared": PUBLIC_ERROR_COPY["unavailable"], "no-primary": PUBLIC_ERROR_COPY["unavailable"], "route-unserved": PUBLIC_ERROR_COPY["unavailable"], "model-unserved": PUBLIC_ERROR_COPY["unavailable"], "route-not-assembled": PUBLIC_ERROR_COPY["unavailable"], "route-duplicate": PUBLIC_ERROR_COPY["unavailable"], "reserved-route-name": PUBLIC_ERROR_COPY["unavailable"], "bedrock-region-conflict": PUBLIC_ERROR_COPY["unavailable"] } },
   "E_MODEL_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["model"], reasons: { "restart-required": PUBLIC_ERROR_COPY["modelRestart"] } },
-  "E_MODEL_UNKNOWN": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: {  } },
+  "E_MODEL_UNKNOWN": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["modelUnknown"], reasons: {  } },
   "E_SEAM_INIT": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.internal", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["internal"], reasons: { "provider-unknown": PUBLIC_ERROR_COPY["provider"], "provider-invalid": PUBLIC_ERROR_COPY["provider"], "provider-incompatible": PUBLIC_ERROR_COPY["provider"], "provider-unavailable": PUBLIC_ERROR_COPY["provider"], "provider-duplicate": PUBLIC_ERROR_COPY["provider"] } },
   "E_PERMISSION_REVOKED": { rpc: "CAPABILITY_DENIED", messageKey: "appServer.errors.forbidden", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["permissionRevoked"], reasons: {  } },
   "E_PERMISSION_GRANT_UNAVAILABLE": { rpc: "CAPABILITY_DENIED", messageKey: "appServer.errors.forbidden", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["permissionGrant"], reasons: {  } },

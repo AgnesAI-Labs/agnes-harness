@@ -4,6 +4,7 @@ import { requireChildControl } from '@agnes/core-child-control/child/store'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { CoreError } from '@agnes/core-common/types'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
+import type { ToolDef } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
@@ -567,6 +568,41 @@ describe('a delegated sub-agent with nobody to ask', () => {
     expect((await parent.d.children.inspect?.(child.key))?.receipt).toMatchObject({
       tools: [{ name: 'shell', isError: true }],
     })
+    await k.close()
+  })
+})
+
+describe('a child of an unattended turn', () => {
+  it.each([
+    ['an unattended', true],
+    ['an attended', false],
+  ])('opened from %s turn, offers ask tools only when the parent turn could', async (_label, unattended) => {
+    const storage = new MemoryStorage()
+    const provider = fakeProvider([textTurn('child done')])
+    Object.assign(provider, { models: () => [model()] })
+    const k = kernel({ storage, provider })
+    const shell: ToolDef = shellTool()
+    k.tools.add(shell, { source: 't', trust: 'builtin' })
+    k.tools.add(
+      { ...shell, name: 'ask_user', meta: { ...shell.meta, requiresUser: true } },
+      { source: 't', trust: 'builtin' },
+    )
+    const parent = await k.session('parent', sessionOpts)
+    await parent.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'delegate' }],
+      actor: unattended ? { ...actor, attrs: { interaction: 'unattended' } } : actor,
+    })
+    await parent.acceptInput()
+    const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'work' })
+    await child.run('work')
+    const names = provider.requests[0]?.tools.map((tool) => tool.name)
+    expect(names).toContain('shell')
+    expect(names?.includes('ask_user')).toBe(!unattended)
+    // The declaration sits on the child's own trigger row, so the child's recovery (and any child
+    // it opens in turn) reads it without the parent.
+    const [trigger] = await storage.scan(child.key, { type: 'user/message', limit: 1 })
+    expect(trigger?.actor?.attrs?.interaction).toBe(unattended ? 'unattended' : undefined)
+    expect(JSON.stringify(provider.requests[0]?.messages).includes('This run is unattended')).toBe(unattended)
     await k.close()
   })
 })

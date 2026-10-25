@@ -197,6 +197,19 @@ it('keeps accessor-backed codes closed when their values change during classific
   })
 })
 
+it('describes an unknown model as a catalogue miss, not a preset or permission refusal', () => {
+  const error = normalizeRpcError(rpcError('PRESET_SWITCH_REJECTED', { code: 'E_MODEL_UNKNOWN' }))
+  expect(error.data.publicReason).toBe(
+    'The requested model or route is not in the configured model catalogue.',
+  )
+  expect(error.data.userAction).toContain('agh doctor provider')
+  expect(publicErrorHelp(error, 'zh-CN')).toMatchObject({
+    reason: '所请求的模型或路由不在已配置的模型目录中。',
+    action: expect.stringContaining('agh doctor provider'),
+  })
+  expect(JSON.stringify(error)).not.toContain('preset')
+})
+
 it.each(['E_PRESET_UNSUPPORTED', 'E_PACKAGE_INTEGRITY', 'E_RELATION', 'E_HOME_INVALID'])(
   'preserves actionable clean-home guidance for %s across serialization',
   (code) => {
