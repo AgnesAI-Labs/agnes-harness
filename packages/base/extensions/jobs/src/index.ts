@@ -1,6 +1,7 @@
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { guardedResult } from '../../tools-core/src/guards/output.js'
+import { deadlineWait } from '../../tools-core/src/shell-guidance.js'
 import { createPtyTools } from './pty-tools.js'
 import { type ShellJobs, standaloneShellJobs } from './registry.js'
 
@@ -39,7 +40,12 @@ export function createJobTools(jobs: ShellJobs) {
       async execute(args, ctx) {
         try {
           await jobs.syncChildren(ctx)
-          const job = await jobs.wait(ctx, args.jobId, Math.min(args.waitMs ?? 0, ctx.timeoutMs))
+          const job = await jobs.wait(
+            ctx,
+            args.jobId,
+            // A wait never runs into the turn's deadline; the job itself keeps running.
+            deadlineWait(ctx, Math.min(args.waitMs ?? 0, ctx.timeoutMs)).waitMs,
+          )
           return {
             structured: { jobId: job.id, status: job.status },
             ...(await guardedResult(

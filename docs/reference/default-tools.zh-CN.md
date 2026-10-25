@@ -12,9 +12,9 @@
 | `web_search` | `{"queries":["主题"]}`；一至四条非空查询。宿主提供搜索标题、链接和摘要。没有配置搜索提供方或密钥时返回 `WEB_SEARCH_UNAVAILABLE`，可改用已知 URL 调用 `web_fetch`。 |
 | `ask_user_question` | `{"questions":[{"id":"route","question":"请选择路线","options":["A","B"]}]}`。省略 options 使用自由文本；`multiple:true` 允许多选，`allowFreeText:true` 允许补充答案。一至四个问题，id 必须唯一。`timeoutMs` 默认为 0（立即继续），1–60000 可选择等待至持久化截止时间。同批其他工具仍可执行；晚答作为新输入送达。 |
 | `present` | `{"files":[{"path":"report.pdf","name":"Report.pdf","description":"供审阅"}]}`。注册已存在、可读取的普通文件，将内容复制为会话产物。最多十六个文件，每个文件和总量都不超过 32 MiB。surface 列出名称、说明及产物身份；工具结果保留需授权读取的 artifact 引用。 |
-| `shell` | `{"command":"npm run build","background":true}` 启动会话任务。`timeoutMs` 设置前台等待时间；超时后同一个进程继续在后台运行。`timeoutToBackground:false` 则终止进程。 |
+| `shell` | `{"command":"npm run build","background":true}` 启动会话任务。`timeoutMs` 设置前台等待时间；超时后同一个进程继续在后台运行。`timeoutToBackground:false` 则终止进程。在有时间上限的回合（`agh -p --timeout`）中，前台等待还会在回合截止前结束，预留 15 秒与上限 5% 中的较大者；此时结果会说明回合时间即将用完以及还剩多少。后台任务不受此限制。 |
 | `job_list` | `{}` 列出当前会话与分支的运行中和已完成任务。 |
-| `job_output` | `{"jobId":"返回的任务ID","waitMs":1000}` 读取输出和状态，可选等待最多 60 秒，并受工具期限限制。长输出存为可读取产物。 |
+| `job_output` | `{"jobId":"返回的任务ID","waitMs":1000}` 读取输出和状态，可选等待最多 60 秒，并受工具期限限制；在有时间上限的回合中，等待也像前台 `shell` 一样在回合截止前结束。长输出存为可读取产物。 |
 | `job_kill` | `{"jobId":"返回的任务ID"}` 终止当前会话拥有的任务及进程组。 |
 | `lsp_diagnostics` | `{"paths":["src/a.ts"],"severity":"error"}` 向语言服务器查询最多 20 个文件的错误（TypeScript/JavaScript、Python、Go；Rust 仅限受信任的工作区）；`severity` 为 `error`、`warning` 或 `all`。按需加载。只读：服务器以不执行工作区代码的静态分析模式启动。`write` 和 `edit` 也会把被修改文件的错误附在结果后。详见[代码诊断](../guide/lsp.zh-CN.md)。 |
 | `schedule_create` | 创建定时任务。`after_seconds`、`at`、`every_seconds`、`daily`、`weekly`、`cron` 只能提供其中一项，并用 `target` 选择在哪里运行：`new_session` 每次运行都在当前会话的工作区开一个新会话（适合重复的工作）；`current_session` 把提示发到当前会话，空闲时开始一轮，运行中则并入（适合一次性提醒）。结果里的 `runsIn` 说明在哪里运行。 |

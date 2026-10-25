@@ -57,6 +57,7 @@ import {
   remintRequestWithMaxTokens,
   requestMemoryRevision,
   SKILL_LOADED_PREFIX,
+  TURN_TIME_PREFIX,
 } from '../../request/derive.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
 import { toProviderRequest } from '../../request/to-provider.js'
@@ -85,7 +86,7 @@ import { appendHookData } from './hook-data-note.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
 import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
-import { turnLimitSection } from './turn-limits.js'
+import { turnLimitSection, turnTimeNote } from './turn-limits.js'
 
 /**
  * What the model is told in a turn whose input declared that nobody attends it. The first line is
@@ -661,6 +662,8 @@ export async function prepareInferenceRequest(
     }
   }
   await s.ensureEnvelopeEpochs()
+  // Measured now, as late as assembly allows, so the figure is as fresh as the request.
+  const turnTime = turnTimeNote(s, t)
   let out = deriveRequest({
     ...(memoryRevision === undefined ? {} : { memoryRevision }),
     ...(s.d.systemPrompt ? { systemPrompt: s.d.systemPrompt } : {}),
@@ -686,6 +689,8 @@ export async function prepareInferenceRequest(
     envelopeCache: s.envelopeCache,
     notes: [
       { prefix: HOOK_CONTEXT_PREFIX, text: additionalContext, dedup: { kind: 'latest' } },
+      // Empty in a turn without a time limit, which marks an earlier turn's figure as no longer current.
+      { prefix: TURN_TIME_PREFIX, text: turnTime ?? '', dedup: { kind: 'latest' } },
       ...(preloaded
         ? [
             {

@@ -4,7 +4,13 @@ import { type ShellJobs, standaloneShellJobs } from '../../../jobs/src/registry.
 import { runShellJob } from '../../../jobs/src/shell.js'
 import { failureCode, toolFailure } from '../guards/feedback.js'
 import { guardedResult } from '../guards/output.js'
-import { shellGuidance, timeoutGuidance } from '../shell-guidance.js'
+import {
+  DEADLINE_ADVICE,
+  deadlineStop,
+  deadlineWait,
+  shellGuidance,
+  timeoutGuidance,
+} from '../shell-guidance.js'
 import { ShellParams } from './schemas.js'
 
 export { SHELL_SENTINEL }
@@ -62,7 +68,9 @@ export function createShellTool(jobs?: ShellJobs) {
       // runs, so it has to hold on its own.
       const asked = args.timeoutMs
       const requested = typeof asked === 'number' && Number.isInteger(asked) && asked > 0 ? asked : undefined
-      const timeoutMs = Math.min(requested ?? ctx.defaultTimeoutMs ?? DEFAULT_FOREGROUND_MS, ctx.timeoutMs)
+      const ownTimeoutMs = Math.min(requested ?? ctx.defaultTimeoutMs ?? DEFAULT_FOREGROUND_MS, ctx.timeoutMs)
+      // In a turn with a time limit the command also stops short of the turn's deadline.
+      const { waitMs: timeoutMs, capped: deadlineCapped } = deadlineWait(ctx, ownTimeoutMs)
       let r: Awaited<ReturnType<typeof ctx.exec>>
       const startedAt = Date.now()
       try {
@@ -90,6 +98,16 @@ export function createShellTool(jobs?: ShellJobs) {
         // Last line on purpose, and no exit line: the code of a killed command says nothing, and the UI
         // reads an `[exit N]` line only when it ends the text.
         if (r.truncated) parts.push('[output truncated by sandbox]')
+        if (deadlineCapped) {
+          parts.push(
+            `[${deadlineStop(ctx, timeoutMs)}. The command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. ${DEADLINE_ADVICE}]`,
+          )
+          return {
+            ...(await guardedResult(ctx, parts.join('\n'))),
+            isError: true,
+            details: { code: 'SHELL_TURN_DEADLINE' },
+          }
+        }
         parts.push(timeoutGuidance(ctx, args.command, cwd, !r.stdout && !r.stderr))
         parts.push(
           `[timed out after ${timeoutMs}ms${requested !== undefined && requested > timeoutMs ? ` (requested ${requested}ms, capped)` : ''}: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`,

@@ -437,6 +437,13 @@ export interface ToolContext {
   readonly defaultTimeoutMs?: number
   /** Bytes of one result's text the model sees before the output guard cuts it (preset `tools.output_max_bytes`). */
   readonly outputMaxBytes: number
+  /**
+   * The wall-clock limit of the turn this call runs in, present only when the turn's prompt set one
+   * (`agh -p --timeout`, SDK `prompt({ timeLimitMs })`): the limit's length and its deadline in epoch
+   * milliseconds. A tool that waits on something long (a foreground command) can keep the wait inside
+   * the time the turn has left and say so when it stops there.
+   */
+  readonly turnTimeLimit?: { readonly timeLimitMs: number; readonly deadlineAt: number }
   readonly lease: LeaseView
   readonly log: Logger
 }

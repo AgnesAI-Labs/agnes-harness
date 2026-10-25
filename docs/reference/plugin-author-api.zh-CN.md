@@ -20,7 +20,7 @@ readonly providers: ProviderRegistrationPort
 readonly profileRuntime: import('./profile-runtime.js').PluginProfileRuntimePort
 readonly self: ExtensionContext
 ```
-ToolContext members / 工具调用上下文字段: sessionFiles, decisions, mcpManage, pluginManage, skillInstall, projections, session, store, wake, approval, actor, cwd, exec, fs, net, sandbox, platform, authorize, tools, codeRuntime, runtime, artifacts, subagent, plan, requestCompaction, progress, signal, timeoutMs, defaultTimeoutMs, outputMaxBytes, lease, log.
+ToolContext members / 工具调用上下文字段: sessionFiles, decisions, mcpManage, pluginManage, skillInstall, projections, session, store, wake, approval, actor, cwd, exec, fs, net, sandbox, platform, authorize, tools, codeRuntime, runtime, artifacts, subagent, plan, requestCompaction, progress, signal, timeoutMs, defaultTimeoutMs, outputMaxBytes, turnTimeLimit, lease, log.
 ```ts
 execute(args: Static<P>, ctx: ToolContext): Promise<ToolResult>
 readonly fs: {
