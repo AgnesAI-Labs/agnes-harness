@@ -55,6 +55,12 @@ describe('dbh M-12: /mcp mutating action with a leading flag', () => {
         text: expect.stringContaining('Pending resource operation'),
         executeCalls: [],
       })
+      // --yes takes no value, so the word after it is still the action.
+      const yes = await runSlash(app, '/mcp --yes remove srv')
+      expect({ text: yes.text, executeCalls: execute.mock.calls }).toMatchObject({
+        text: expect.stringContaining('Pending resource operation'),
+        executeCalls: [],
+      })
     } finally {
       await client.close()
     }

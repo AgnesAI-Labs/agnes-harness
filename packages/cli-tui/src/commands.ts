@@ -264,10 +264,10 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
           ? 'resource operation cancelled'
           : 'no pending resource operation',
       }
-    // The resource parser takes each flag with one value, anywhere, and its action is the first other word:
+    // The resource parser takes each flag with one value (--yes with none), anywhere, and its action is the first other word:
     // `--expected-revision <rev> trust srv` is a trust, and must wait for confirm like any other.
     let at = 0
-    while (values[at]?.startsWith('-')) at += 2
+    while (values[at]?.startsWith('-')) at += values[at] === '--yes' ? 1 : 2
     const action = values[at] ?? ''
     const mutating =
       kind === 'resources'
