@@ -207,13 +207,9 @@ export async function listSessionChoices(session: Session, resumableFrom?: strin
     })
 }
 
-/** Dispatches one slash line against the session/client the app currently holds. */
-export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> {
-  const [cmd = '', ...args] = line.trim().split(/\s+/)
-  const locale = app.locale
-  // Refused before the daemon creates, forks or loads a session this app would then not switch to. A bare
-  // /resume only opens the picker, which refuses the choice itself.
-  const opens =
+/** Whether the slash line asks the daemon for a different session. */
+export function opensSwitch(cmd: string, args: readonly string[]): boolean {
+  return (
     cmd === '/new' ||
     cmd === '/clear' ||
     cmd === '/worktree' ||
@@ -222,6 +218,16 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     cmd === '/fork' ||
     (cmd === '/rewind' && args.length > 0) ||
     (cmd === '/resume' && args.length > 0 && args[0] !== 'all')
+  )
+}
+
+/** Dispatches one slash line against the session/client the app currently holds. */
+export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> {
+  const [cmd = '', ...args] = line.trim().split(/\s+/)
+  const locale = app.locale
+  // Refused before the daemon creates, forks or loads a session this app would then not switch to. A bare
+  // /resume only opens the picker, which refuses the choice itself.
+  const opens = opensSwitch(cmd, args)
   if (opens && app.refuseSwitch()) return {}
   const s = app.session
   const c = s.client

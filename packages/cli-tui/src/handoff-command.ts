@@ -4,7 +4,7 @@ import { escapeControl } from './component.js'
 import { tt } from './locale-extended.js'
 import { oneLine } from './session-commands.js'
 import { freshTuiSessionKey } from './session-key.js'
-import { applySwitch } from './session-switch.js'
+import { applySwitch, beginSwitch } from './session-switch.js'
 
 /** The /btw question limit. */
 const MAX_QUESTION = 4000
@@ -52,10 +52,11 @@ export async function handoffSlash(app: TuiApp, line: string): Promise<SlashResu
 async function open(app: TuiApp, oldId: string, oldTitle: string, summary: string): Promise<void> {
   const { locale, session: old } = app
   if (old.id !== oldId || app.refuseSwitch()) return
+  const ticket = beginSwitch(app)
   const client = old.client
   await client.workspace.add(app.cwd)
   const created = await client.session.new({ cwd: app.cwd, sessionKey: freshTuiSessionKey(app.profile) })
-  if (!(await applySwitch(app, created))) return
+  if (!(await applySwitch(app, created, ticket))) return
   app.statusBar.setNotice(tt('handoff.sent', locale, { id: escapeControl(oneLine(oldId)) }), 'success')
   await client.session
     .rename(created.id, `${tt('handoff.titlePrefix', locale)}${oldTitle}`)

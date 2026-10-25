@@ -9,7 +9,7 @@ import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { CardFocus } from './card-focus.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { applyCommandResult } from './command-result.js'
-import { completeToken, runSlash, slashCommandFor } from './commands.js'
+import { completeToken, opensSwitch, runSlash, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { DraftStash } from './draft-stash.js'
@@ -42,7 +42,7 @@ import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { TuiResourceController } from './resource-controller.js'
 import { type InputDialog, rootInput } from './root-input.js'
 import { rootRender } from './root-layout.js'
-import { applySwitch, chooseSession, ResourceConfirmations } from './session-switch.js'
+import { applySwitch, beginSwitch, chooseSession, ResourceConfirmations } from './session-switch.js'
 import { isSlashCommandLine } from './slash-table.js'
 import { type ActionItem, collectSlots } from './slots.js'
 import { StatusLineConfig } from './statusline-config.js'
@@ -844,6 +844,8 @@ export class TuiApp {
   async command(text: string): Promise<void> {
     if (this.stopped) return
     const owner = this.o.session
+    const [cmd = '', ...args] = text.trim().split(/\s+/)
+    const ticket = opensSwitch(cmd, args) ? beginSwitch(this) : undefined
     const r = await runSlash(this, text)
     if (r.content) {
       if (this.stopped || owner !== this.o.session) throw new Error('ATTACHMENT_NOT_AUTHORIZED')
@@ -864,7 +866,7 @@ export class TuiApp {
       text,
       r,
     )
-    if (r.switchSession) await applySwitch(this, r.switchSession)
+    if (r.switchSession) await applySwitch(this, r.switchSession, ticket)
     if (r.quit) this.onQuit()
     if (!this.stopped) this.renderer.requestRender()
   }

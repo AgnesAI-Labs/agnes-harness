@@ -162,6 +162,51 @@ it('[M-10b] stop() landing while a switch waits for the old projection to stop: 
   }
 }, 10_000)
 
+// Two switches in flight: the one the user asked for last is the one shown, however the daemon's replies
+// interleave, and a superseded switch installs nothing.
+it('[switch-last-wins] /new then /new, the slower first request lands last: the second request is the session shown', async () => {
+  const SID3 = 'agnes:local:default:cli:dm:m10-s3'
+  let news = 0
+  const gates: Array<() => void> = []
+  const held = () => new Promise<void>((r) => gates.push(r))
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', async () => {
+      const n = ++news
+      if (n === 1) return { sessionId: SID1 }
+      await held()
+      return { sessionId: n === 2 ? SID2 : SID3 }
+    })
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.detach', () => ({}))
+    .on('_agnes/v1/session.projectUIOpening', (params) =>
+      opening((params as { sessionId: string }).sessionId),
+    )
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const app = new TuiApp({ session, term: new FakeTerminal({ columns: 80, rows: 24 }), header: 'Agnes' })
+  try {
+    await app.start()
+    const first = app.command('/new')
+    await vi.waitFor(() => expect(news).toBe(2))
+    const second = app.command('/new')
+    await vi.waitFor(() => expect(news).toBe(3))
+    gates[1]?.()
+    await second
+    gates[0]?.()
+    await Promise.all([first, second])
+    expect(app.session.id).toBe(SID3)
+  } finally {
+    await app.stop()
+    await client.close()
+    await endpoint.close()
+  }
+}, 10_000)
+
 // Second, independent dynamic source: a real child Node process (tsx) runs the same shutdown order and
 // the observable is whether the process exits by itself once teardown is done (bin.ts relies on the
 // event loop draining). The parent kills it after a bounded wait.
