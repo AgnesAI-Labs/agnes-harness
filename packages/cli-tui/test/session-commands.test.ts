@@ -410,6 +410,11 @@ describe('/deliverables', () => {
       writeFileSync(join(dir, 'keep.txt'), 'mine')
       await expect(runSlash(app, '/deliverables save 1 keep.txt')).rejects.toThrow('already exists')
       expect(readFileSync(join(dir, 'keep.txt'), 'utf8')).toBe('mine')
+      // The refusal's advice works: --force overwrites, wherever it is put, and names no file.
+      await runSlash(app, '/deliverables save 1 --force keep.txt')
+      expect(readFileSync(join(dir, 'keep.txt'))).toEqual(body)
+      await runSlash(app, '/deliverables save 1 --force')
+      expect(existsSync(join(dir, '--force'))).toBe(false)
       expect((await runSlash(app, '/deliverables save 7')).text).toBe(
         tt('deliverables.unknown', 'en', { key: '7' }),
       )

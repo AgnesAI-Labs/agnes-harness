@@ -166,7 +166,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
   },
   {
     name: '/deliverables',
-    args: '[save <n|id> [path]]',
+    args: '[save <n|id> [path] [--force]]',
     descriptionKey: 'commands.deliverables',
     summaryKey: 'commands.deliverablesSummary',
   },

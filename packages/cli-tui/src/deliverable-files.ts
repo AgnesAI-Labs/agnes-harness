@@ -175,7 +175,9 @@ export async function saveDeliverable(
 export async function deliverablesSlash(app: TuiApp, line: string): Promise<SlashResult> {
   const locale = app.locale
   const s = app.session
-  const [verb, key, out, ...extra] = line.trim().split(/\s+/).slice(1)
+  const words = line.trim().split(/\s+/).slice(1)
+  const force = words.includes('--force')
+  const [verb, key, out, ...extra] = words.filter((word) => word !== '--force')
   const files = await listDeliverables(s)
   if (verb === undefined)
     return { text: files.length ? files.map(deliverableLine).join('\n') : tt('deliverables.none', locale) }
@@ -185,6 +187,7 @@ export async function deliverablesSlash(app: TuiApp, line: string): Promise<Slas
   if (!file) return { text: tt('deliverables.unknown', locale, { key: oneLine(key) }) }
   const saved = await saveDeliverable(s.client, s.id, file, {
     cwd: app.cwd,
+    force,
     ...(out ? { out: localPath(app, out) } : {}),
   })
   return {

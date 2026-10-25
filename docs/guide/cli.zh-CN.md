@@ -80,7 +80,7 @@ node agnes.mjs
 | 审批授权 | `/grants` 列出本会话中无需询问即可运行工具的授权（「本会话」与「总是」）；`/grants revoke N\|ID` 撤销一条（需管理员连接） |
 | 权限总览 | `/permissions` 在一屏里只读显示本会话能做什么：权限级别、yolo 和审批模式，沙箱（没有系统级进程隔离时给出警告），被禁用或限定白名单的工具，额外目录，以及与 `/grants` 编号一致的审批授权。读不到的部分显示 `-`。`/permissions revoke N\|ID` 等同于 `/grants revoke`（需管理员连接）。按历史审批推荐规则：在 shell 里运行 `agh approvals suggest` |
 | 工作区信任 | `/trust` 显示本会话工作区的 hooks 和本地插件及其是否已信任：状态（未信任、已信任、信任之后有变更）、按 id 和版本列出的本地插件，以及 `.agh/hooks.json` 里每条 hook 的事件、类型，以及该类型实际执行的命令或 URL（通过 daemon 读取；长行折行显示，不截断；文本惰性显示，双向控制符、零宽字符等不可见格式字符以 `\u{XXXX}` 写出）。它需要 daemon 报告的本会话工作区根目录，并要求部署目录完全一致。只有信任摘要涵盖的内容都已显示时才提供 `/trust confirm`：hooks 文件完整读到并解析成功、最多列出 20 条 hook、所显示字节的摘要与 daemon 在同一份快照里给出的 `hooksDigest` 一致、列出的本地插件数与插件数量一致。否则 `/trust` 会说明原因，并指向 Web 设置或 `agh profile trust <deployDir>`（路径按 shell 规则加了单引号）。`/trust confirm` 只信任上一次 `/trust` 显示的内容：该 `trustHash` 作为 `expectedHash` 发出，中间文件变了 daemon 会拒绝，并提示重新运行 `/trust`。hooks 在已打开的会话里从下一次 hook 运行起生效（每次都检查信任）；本地插件只在新会话里加载，可能还需在 Web 设置里重新扫描。需要 admin 连接，被拒绝时原样显示 daemon 给的原因。daemon 只提供它启动时所在的工作区，所以用 `/cd` 或 `/worktree` 进入的目录会显示没有需要信任的内容。这里不能撤销信任 |
-| 交付物 | `/deliverables` 列出本会话交付的文件；`/deliverables save N\|ID [PATH]` 校验大小与 sha256 后下载 |
+| 交付物 | `/deliverables` 列出本会话交付的文件；`/deliverables save N\|ID [PATH] [--force]` 校验大小与 sha256 后下载（`--force` 覆盖已有文件） |
 | 压缩 | `/compact [instructions]`，结果可能是执行、跳过或失败，按回执判断 |
 | 分叉 | `/rewind` 打开已完成轮次的选择器；`/rewind SEQ` 按序号分叉。都会创建新会话，并把那一轮的提示放回输入框，改完可再发送；不是文件系统回滚 |
 | 就地分叉 | `/fork` 从最近一个已完成回合的末尾分叉并切换到新会话；`/fork N` 从第 N 回合分叉。回合进行中，或第 N 回合不是已完成回合时拒绝。提示里会给出原会话 id，用 `/resume ID` 可回去。走的是和 `/rewind` 相同的 daemon 分叉，不改动输入框 |
