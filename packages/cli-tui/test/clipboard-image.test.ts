@@ -268,12 +268,11 @@ describe('clipboard image paste', () => {
       expect(busyInput.takeKept('[Image #1]')).toEqual([{ type: 'attachment', id: 'att-1' }])
     })
 
-    it('attaches several paths, and follows a symlink to a regular file', async () => {
+    it('attaches several paths', async () => {
       const a = image('a.png')
-      const link = join(dir, 'link.webp')
-      symlinkSync(a, link)
+      const b = image('b.webp')
       const { editor } = harness(withImage)
-      drop(editor, `${a}\n${link}`)
+      drop(editor, `${a}\n${b}`)
       await vi.waitFor(() => expect(editor.text).toBe('[Image #1][Image #2]'))
     })
 
@@ -281,6 +280,14 @@ describe('clipboard image paste', () => {
       ['a non-image file', () => image('a.txt')],
       ['a missing file', () => join(dir, 'missing.png')],
       ['a directory', () => dir],
+      [
+        'a symlink, which could name a secret like an image',
+        () => {
+          const link = join(dir, 'link.png')
+          symlinkSync(image('a.txt'), link)
+          return link
+        },
+      ],
       ['text with a path', () => `look at ${image('b.png')}`],
     ])('leaves %s as pasted text', (_name, text) => {
       const { editor } = harness(withImage)

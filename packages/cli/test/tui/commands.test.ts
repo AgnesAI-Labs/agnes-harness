@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
@@ -2586,6 +2587,11 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       throw error
     }
     await expect(runSlash(app, '/attach a file.txt')).rejects.toBe(error)
+    // A FIFO named like a file is refused at once instead of hanging the open.
+    if (process.platform !== 'win32') {
+      execFileSync('mkfifo', [join(dir, 'pipe.png')])
+      await expect(runSlash(app, '/attach pipe.png')).rejects.toMatchObject({ code: 'ATTACHMENT_BYTES' })
+    }
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

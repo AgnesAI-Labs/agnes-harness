@@ -1,3 +1,4 @@
+import { constants } from 'node:fs'
 import { open } from 'node:fs/promises'
 import { basename, extname, resolve } from 'node:path'
 import { type Session, uploadAttachment } from '@agnes/sdk'
@@ -47,7 +48,9 @@ export async function uploadLocalAttachment(
   path: string,
   signal?: AbortSignal,
 ) {
-  const file = await open(resolve(cwd, path), 'r')
+  // Non-blocking, so a FIFO named like a file fails the regular-file check below instead of
+  // hanging the open in a thread nothing can abort.
+  const file = await open(resolve(cwd, path), constants.O_RDONLY | (constants.O_NONBLOCK ?? 0))
   try {
     const original = await file.stat()
     if (!original.isFile() || original.size > 100 * 1024 * 1024)
