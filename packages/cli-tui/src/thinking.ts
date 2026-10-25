@@ -47,12 +47,20 @@ export function assistantView(
   ansi: ThemedAnsi,
   locale: string,
 ): Component {
+  // Markdown is costly (quadratic on some inputs) and the node is fixed, so repaints reuse the rows
+  // until the width or the theme changes.
+  let memo: { key: string; rows: string[] } | undefined
+  const markdown = (width: number): string[] => {
+    const key = `${width}:${ansi.revision}:${ansi.raw}`
+    if (memo?.key !== key) memo = { key, rows: renderMarkdown(nodeText(node), width, ansi) }
+    return memo.rows
+  }
   return {
     render: (width) => [
       ...thinkingRows(node.thinking, { answering: true, width, ansi, locale }),
-      ...renderMarkdown(nodeText(node), width, ansi),
+      ...markdown(width),
     ],
-    transcript: (width) => renderMarkdown(nodeText(node), width, ansi),
+    transcript: (width) => [...markdown(width)],
     transcriptAfter: (prefix, width) => {
       const text = nodeText(node)
       let same = 0

@@ -45,3 +45,40 @@ it('folds the thoughts of a finished reply above its text, and /thinking keeps t
     trimmed(assistantView({ kind: 'assistant', id: 'b', seq: 2, text: 'x' }, mono, 'en').render(40)),
   ).toEqual(['x'])
 })
+
+it("reuses a finished reply's Markdown rows across repaints until the width or theme changes", () => {
+  const theme = new TuiTheme('dark')
+  const base = theme.ansi(createAnsi('truecolor'))
+  let paints = 0
+  const ansi: typeof base = {
+    ...base,
+    fg: (c, text) => {
+      paints++
+      return base.fg(c, text)
+    },
+    get revision(): number {
+      return base.revision ?? 0
+    },
+    get raw(): boolean {
+      return base.raw ?? false
+    },
+  }
+  const node = { kind: 'assistant', id: 'a', seq: 1, text: '# Title\n\n`code` and **bold**' } as const
+  const view = assistantView(node, ansi, 'en')
+  const first = view.render(40)
+  expect(paints).toBeGreaterThan(0)
+  paints = 0
+  expect(view.render(40)).toEqual(first)
+  expect(view.transcript?.(40)).toHaveLength(first.length)
+  expect(paints).toBe(0)
+  view.render(30)
+  expect(paints).toBeGreaterThan(0)
+  paints = 0
+  theme.set('light')
+  expect(view.render(30)).not.toEqual(first)
+  expect(paints).toBeGreaterThan(0)
+  paints = 0
+  theme.raw = true
+  view.render(30)
+  expect(paints).toBeGreaterThan(0)
+})
