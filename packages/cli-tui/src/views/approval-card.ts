@@ -254,7 +254,7 @@ export class ApprovalCard implements Component {
             this.custom ?? (known ? tt(known, locale) : escapeControl(verdict || 'decided')),
           ]
     const extras = [
-      this.by && tt('approval.by', locale, { name: escapeControl(this.by) }),
+      this.by && tt('approval.by', locale, { name: escapeVisible(this.by) }),
       this.note && escapeControl(this.note),
     ].filter(Boolean)
     const dot = ansi.fg('faint', '·')
@@ -309,12 +309,12 @@ export class ApprovalCard implements Component {
       ...(n.options.includes('reject_once') ? option('r', t('approval.rejectReason', locale)) : []),
     ]
     const origin = [
-      n.origin?.package && t('approval.from', locale, { value: escapeControl(n.origin.package) }),
-      n.origin?.role && t('approval.role', locale, { value: escapeControl(n.origin.role) }),
-      n.origin?.mcpServer && t('approval.mcp', locale, { value: escapeControl(n.origin.mcpServer) }),
+      n.origin?.package && t('approval.from', locale, { value: escapeVisible(n.origin.package) }),
+      n.origin?.role && t('approval.role', locale, { value: escapeVisible(n.origin.role) }),
+      n.origin?.mcpServer && t('approval.mcp', locale, { value: escapeVisible(n.origin.mcpServer) }),
     ].filter(Boolean)
     const stores = n.grantScopes?.length
-      ? wrapText(t('approval.stores', locale, { value: n.grantScopes.map(escapeControl).join(', ') }), inner)
+      ? wrapText(t('approval.stores', locale, { value: n.grantScopes.map(escapeVisible).join(', ') }), inner)
       : []
     // The command already has its own row; a summary that only repeats it would say the same twice.
     const command = shellOf(subject.args)?.command

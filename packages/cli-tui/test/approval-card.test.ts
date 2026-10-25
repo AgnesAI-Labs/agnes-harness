@@ -320,6 +320,18 @@ describe('ApprovalCard facts', () => {
     expect(text).not.toContain('\u001b')
     expect(text).not.toContain('\u0007')
   })
+
+  it('spells out bidi and zero-width characters in the origin and the stored scopes', () => {
+    const text = pending({
+      origin: { package: 'a\u202Eb', role: 'r\u200Bx', mcpServer: 'm\u2066y' },
+      grantScopes: ['s\u202Ez'],
+    })
+      .render(120)
+      .join('\n')
+    expect(text).toContain('a\\u{202E}b')
+    expect(text).toContain('s\\u{202E}z')
+    expect(text).not.toMatch(/[\u202E\u200B\u2066]/)
+  })
 })
 
 describe('ApprovalCard single keys and the misclick guard', () => {
