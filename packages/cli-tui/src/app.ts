@@ -172,6 +172,8 @@ export class TuiApp {
   // an accepted limitation, not an oversight.
   private nextRequestSeq = 1
   onQuit: () => void = () => {}
+  /** True while Ctrl-G has handed the terminal to an external editor. */
+  externalEditorOpen = false
   /** True when a double Ctrl-C quit before the daemon answered the cancel. */
   get cancelUnconfirmed(): boolean {
     return this.interrupts.unconfirmed
@@ -330,8 +332,12 @@ export class TuiApp {
       },
       onPasteText: (text) => attachDroppedImages(this, text),
       onPasteImage: () => void pasteClipboardImage(this).catch((error) => this.showError(error)),
-      onExternalEdit: () =>
-        void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor),
+      onExternalEdit: () => {
+        this.externalEditorOpen = true
+        void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor).finally(() => {
+          this.externalEditorOpen = false
+        })
+      },
       onCancelKey: (hadDraft) => {
         const idle = !this.busy
         void this.cancel().catch((error) => this.showError(error))

@@ -503,6 +503,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         }
       }
       let cancel: () => Promise<void> = async () => undefined
+      let interruptIgnored: () => boolean = () => false
       // Remembered rather than acted on here: the turn the signal cancels ends as `aborted`, and which
       // code that becomes -- 130, 143 or 129 -- is only knowable from the signal that caused it. The
       // ladder exits with the same number by its own route, so the two cannot disagree.
@@ -540,6 +541,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
           onSignal: (s) => {
             signal = s
           },
+          ignoreInterrupt: () => interruptIgnored(),
           ...(io.signals ? { proc: io.signals } : {}),
         },
       )
@@ -565,6 +567,9 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                 cwd: p.cwd ?? io.cwd,
                 registerCancel: (fn) => {
                   cancel = fn
+                },
+                registerInterruptGuard: (fn) => {
+                  interruptIgnored = fn
                 },
                 signal: () => signal,
                 ...(resourceController ? { resourceController } : {}),

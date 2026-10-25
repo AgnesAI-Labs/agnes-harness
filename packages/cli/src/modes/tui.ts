@@ -40,6 +40,8 @@ export async function runTui(
     env: NodeJS.ProcessEnv
     cwd: string
     registerCancel(cancel: () => Promise<void>): void
+    /** Told when SIGINT belongs to a foreground external editor and the ladder must not act on it. */
+    registerInterruptGuard?(ignored: () => boolean): void
     signal(): SignalName | undefined
     resourceController?: TuiResourceController
     composerSelectionPath?: string
@@ -199,6 +201,7 @@ export async function runTui(
       quit = resolve
     })
     tui.onQuit = quit
+    io.registerInterruptGuard?.(() => tui.externalEditorOpen)
     io.registerCancel(async () => {
       try {
         await tui.cancel()
