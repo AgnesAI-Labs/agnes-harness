@@ -56,6 +56,7 @@ import { honouredPrefixes, prefixActivation, prefixCommand } from './prefix-appr
 import { preflightDeclaredPaths, touchesAghConfig } from './preflight-paths.js'
 import { terminalDecisionRefusal } from './terminal-decision-refusal.js'
 import { modelCapabilityUnavailable, toolAvailability } from './tool-availability.js'
+import { toolCallLimits } from './tool-call-limits.js'
 import {
   deliverToolDecision,
   requestToolDecision,
@@ -1269,9 +1270,7 @@ export async function approveAndExecute(
           toolUseId: call.toolUseId,
           name: call.name,
           signal: ac.signal,
-          timeoutMs: softTimeoutMs,
-          defaultTimeoutMs: s.preset.tools.timeoutMs,
-          outputMaxBytes: s.preset.tools.outputMaxBytes,
+          ...toolCallLimits(s, t, softTimeoutMs),
         },
       )
     const invoke = (ctx: ReturnType<typeof context>, attempt: ExecuteAttempt) =>

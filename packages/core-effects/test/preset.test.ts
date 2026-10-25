@@ -47,6 +47,7 @@ describe('preset view', () => {
     expect(d.verifier).toEqual({ timeoutMs: 30000, defaultTier: 0 })
     expect(d.repair).toEqual({ timeoutMs: 10000 })
     expect(d.completionGate).toEqual({ minItems: 3 })
+    expect(d.progressCheck).toEqual({ everySteps: 20 })
     expect(d.telemetry).toEqual({ invariants: false, timing: false })
     expect(d.recovery).toEqual({ unknownChild: 'model' })
     expect(d.deferred).toEqual({ pollMs: 2000 })
@@ -118,6 +119,7 @@ describe('preset view', () => {
         verifier: { timeout_ms: 37, default_tier: 2 },
         repair: { timeout_ms: 41 },
         completion_gate: { min_items: 43 },
+        loop: { progress_check_steps: 7 },
         compaction: {
           enabled: false,
           reserve_tokens: 47,
@@ -150,6 +152,7 @@ describe('preset view', () => {
       verifier: { timeoutMs: 37, defaultTier: 2 },
       repair: { timeoutMs: 41 },
       completionGate: { minItems: 43 },
+      progressCheck: { everySteps: 7 },
       compaction: { enabled: false, reserveTokens: 47, keepRecentTokens: 53, agentCallable: false },
       telemetry: { invariants: 'strict', timing: true },
       recovery: { unknownChild: 'human' },

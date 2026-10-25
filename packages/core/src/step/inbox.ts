@@ -32,8 +32,10 @@ export type EnqueueMsg = {
 }
 
 /**
- * The actor attribute a client sets on an input when no person attends the turn it opens (`agh -p`,
- * `agh run`, `runHeadless`). It only takes capability away, so it is honoured from any origin.
+ * The actor attribute set on an input when no person attends the turn it opens: a headless client
+ * (`agh -p`, `agh run`, `runHeadless`), a schedule or webhook whose unattended policy is `refuse`,
+ * and a child opened from an unattended turn. It only takes capability away, so it is honoured from
+ * any origin.
  */
 export const UNATTENDED_ACTOR_ATTR = { key: 'interaction', value: 'unattended' } as const
 

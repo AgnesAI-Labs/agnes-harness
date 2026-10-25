@@ -9,7 +9,7 @@ import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { CardFocus } from './card-focus.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { applyCommandResult } from './command-result.js'
-import { completeToken, runSlash, slashCommandFor } from './commands.js'
+import { completeToken, opensSwitch, runSlash, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { DraftStash } from './draft-stash.js'
@@ -24,7 +24,7 @@ import { imageProtocol } from './image-protocol.js'
 import { InlineImages } from './inline-image.js'
 import { DoubleCtrlC, DoubleEsc } from './interrupt.js'
 import { createLinker } from './links.js'
-import { type Locale, t } from './locale.js'
+import { type Locale, NOTICE_STATUS, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { renderMarkdownChunk } from './markdown.js'
 import { ModelChooser } from './model-chooser.js'
@@ -35,13 +35,20 @@ import { PackageController } from './package-controller.js'
 import { PagerOverlay } from './pager-overlay.js'
 import { PermissionModal } from './permission-modal.js'
 import { TuiProjection, type TuiProjectionWindow } from './projection.js'
-import { type PromptArea, promptArea, routeClick } from './prompt-click.js'
+import { type PromptArea, routeClick } from './prompt-click.js'
 import { PromptHistory } from './prompt-history.js'
 import { RawView } from './raw-view.js'
 import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { TuiResourceController } from './resource-controller.js'
 import { type InputDialog, rootInput } from './root-input.js'
-import { applySwitch, chooseSession, ResourceConfirmations } from './session-switch.js'
+import { rootRender } from './root-layout.js'
+import {
+  applySwitch,
+  beginSwitch,
+  chooseSession,
+  ResourceConfirmations,
+  settleSwitch,
+} from './session-switch.js'
 import { isSlashCommandLine } from './slash-table.js'
 import { type ActionItem, collectSlots } from './slots.js'
 import { StatusLineConfig } from './statusline-config.js'
@@ -171,6 +178,8 @@ export class TuiApp {
   // an accepted limitation, not an oversight.
   private nextRequestSeq = 1
   onQuit: () => void = () => {}
+  /** True while Ctrl-G has handed the terminal to an external editor. */
+  externalEditorOpen = false
   /** True when a double Ctrl-C quit before the daemon answered the cancel. */
   get cancelUnconfirmed(): boolean {
     return this.interrupts.unconfirmed
@@ -291,6 +300,8 @@ export class TuiApp {
         session: () => this.o.session,
         settled: () => this.settle.settled,
         letters: () => this.editor.text === '',
+        dialog: () => this.modal.pending,
+        waiting: (id) => this.latestApproval !== undefined && id !== this.latestApproval,
         refuseClosed: () => this.refuseClosed(),
         repaint: () => this.stopped || this.renderer.requestRender(),
         images: this.images,
@@ -328,8 +339,12 @@ export class TuiApp {
       },
       onPasteText: (text) => attachDroppedImages(this, text),
       onPasteImage: () => void pasteClipboardImage(this).catch((error) => this.showError(error)),
-      onExternalEdit: () =>
-        void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor),
+      onExternalEdit: () => {
+        this.externalEditorOpen = true
+        void editDraft(this.editor, this.renderer, this.statusBar, locale, o.externalEditor).finally(() => {
+          this.externalEditorOpen = false
+        })
+      },
       onCancelKey: (hadDraft) => {
         const idle = !this.busy
         void this.cancel().catch((error) => this.showError(error))
@@ -430,46 +445,26 @@ export class TuiApp {
       this.usagePanel,
       this.statusLine,
     ]
-    root.render = (width) => {
-      this.signals.sync()
-      // Like the dialogs, the pager gives way to a pending approval and returns unchanged.
-      if (this.pager.open && !this.modal.pending) return this.pager.render(width)
-      const shown = root.children.filter(
-        (child) => !(this.modal.pending && dialogs.some((dialog) => dialog === child)),
-      )
-      let rows = 0
-      for (const child of shown.toReversed()) {
-        if (child === this.modal) this.belowModal = rows
-        if (child !== this.timeline) rows += child.render(width).length
-      }
-      this.reservedRows = Math.max(TIMELINE_RESERVED_ROWS, rows)
-      const height = o.term.size().rows
-      const at = shown.indexOf(this.modal)
-      const above = shown.slice(0, at).flatMap((child) => child.render(width))
-      const belowParts = shown.slice(at).map((child) => child.render(width))
-      const below = belowParts.flat()
-      // The input area, from the approval dialog down, sits on the bottom edge; a short
-      // conversation leaves its gap above it rather than below.
-      const gap =
-        Number.isFinite(height) && !o.noAltScreen ? Math.max(0, height - above.length - below.length) : 0
-      const screen = [...above, ...Array.from({ length: gap }, () => ''), ...below]
-      const composerAt = shown.slice(at).indexOf(this.composer)
-      this.promptArea =
-        composerAt < 0 || this.pager.open
-          ? undefined
-          : promptArea({
-              screenRows: screen.length,
-              belowComposer: belowParts.slice(composerAt + 1).reduce((n, part) => n + part.length, 0),
-              width,
-              textRows: this.editor.textRows,
-            })
-      // A dialog that is drawn owns the keyboard, so a click must not reach through it to the prompt.
-      this.dialogShown = belowParts.some(
-        (part, i) => part.length > 0 && dialogs.some((d) => d === shown[at + i]),
-      )
-      this.mouse.overlay(screen, above.length + gap - 1, width)
-      return o.noAltScreen ? screen : this.theme.frame(createAnsi(o.term.caps.color), screen, width, height)
-    }
+    root.render = rootRender({
+      sync: () => this.signals.sync(),
+      pager: this.pager,
+      modal: this.modal,
+      timeline: this.timeline,
+      composer: this.composer,
+      dialogs,
+      children: () => root.children,
+      rows: () => o.term.size().rows,
+      noAltScreen: o.noAltScreen,
+      textRows: () => this.editor.textRows,
+      frame: (rows, width, height) => this.theme.frame(createAnsi(o.term.caps.color), rows, width, height),
+      overlay: (rows, row, width) => this.mouse.overlay(rows, row, width),
+      report: (l) => {
+        this.belowModal = l.belowModal
+        this.reservedRows = l.reservedRows
+        this.promptArea = l.promptArea
+        this.dialogShown = l.dialogShown
+      },
+    })
     this.drafts = new DraftStash(
       this.editor,
       (text, tone) => this.statusBar.setNotice(text, tone),
@@ -713,20 +708,20 @@ export class TuiApp {
   }
 
   // `daemon.notice` payloads are heterogeneous (packages/protocol's `DaemonNotice` is
-  // `{kind, sessionId?, detail, at}` with `detail` an open `JsonValue`); only the two kinds the
-  // spec calls out get a status-bar rendering today, matching what daemon's reclaim path
-  // (packages/daemon-foundation/src/lease/reclaim.ts) and worker pool (packages/daemon/src/supervisor/
-  // worker-pool.ts) actually emit. Anything else is left alone rather than guessed at.
+  // `{kind, sessionId?, detail, at}` with `detail` an open `JsonValue`); only the kinds in
+  // `NOTICE_STATUS` get a status-bar rendering: what daemon's reclaim path (packages/daemon-foundation/
+  // src/lease/reclaim.ts) and worker pool (packages/daemon/src/supervisor/worker-pool.ts) emit, plus the
+  // SDK's own `stream-recovery-failed`. Anything else is left alone rather than guessed at.
   private handleNotice(payload: unknown): void {
-    const n = payload as { kind?: string; detail?: { lastStep?: number } }
-    if (n.kind === 'resumed') {
-      const step = n.detail?.lastStep
-      this.statusBar.setNotice(t('notice.resumed', this.o.locale ?? 'en', { step: step ?? '?' }), 'success')
-    } else if (n.kind === 'worker_crashed') {
-      this.statusBar.setNotice(t('notice.crashed', this.o.locale ?? 'en'), 'error')
-    } else {
-      return
-    }
+    const n = payload as { kind?: string; sessionId?: string; detail?: { lastStep?: number } }
+    // The previous session stays attached after /new, /resume and /cd, so its notices still arrive.
+    if (n.sessionId !== undefined && n.sessionId !== this.o.session.id) return
+    const entry = NOTICE_STATUS.get(n.kind ?? '')
+    if (!entry) return
+    this.statusBar.setNotice(
+      t(entry[0], this.o.locale ?? 'en', { step: n.detail?.lastStep ?? '?' }),
+      entry[1],
+    )
     if (!this.stopped) this.renderer.requestRender()
   }
 
@@ -854,12 +849,17 @@ export class TuiApp {
   async command(text: string): Promise<void> {
     if (this.stopped) return
     const owner = this.o.session
-    const r = await runSlash(this, text)
+    const [cmd = '', ...args] = text.trim().split(/\s+/)
+    const ticket = opensSwitch(cmd, args) ? beginSwitch(this) : undefined
+    const r = await settleSwitch(this, ticket, runSlash(this, text))
     if (r.content) {
       if (this.stopped || owner !== this.o.session) throw new Error('ATTACHMENT_NOT_AUTHORIZED')
-      await this.submitBlocks(r.content)
+      await this.submitBlocks(r.content, undefined, r.steer)
     }
+    if (owner !== this.o.session && !r.switchSession) return // the session it was for is gone
     if (r.prompt) await this.submit(r.prompt)
+    // Switch first: local output anchors to the session shown, and the next session's timeline drops older anchors.
+    if (r.switchSession) await applySwitch(this, r.switchSession, ticket)
     applyCommandResult(
       {
         statusBar: this.statusBar,
@@ -874,7 +874,6 @@ export class TuiApp {
       text,
       r,
     )
-    if (r.switchSession) await applySwitch(this, r.switchSession)
     if (r.quit) this.onQuit()
     if (!this.stopped) this.renderer.requestRender()
   }

@@ -1,7 +1,7 @@
 import type { PromptSection } from '../../request/contribute.js'
 import type { SessionImpl, TurnMemory } from '../../step/session.js'
 import { turnMaxSteps } from '../../step/step-cap.js'
-import { turnTimeLimit } from '../../step/time-limit.js'
+import { type TurnTimeLimit, turnTimeLimit } from '../../step/time-limit.js'
 import { admittedStep } from './gate.js'
 
 /**
@@ -83,6 +83,9 @@ export function dueLimitNotice(limits: TurnLimits, now: number, previous?: Limit
   return previous && previous.level >= best.level ? previous : best
 }
 
+/** Whether the turn's limit note has reached its last threshold, the wrap-up. */
+export const wrapUpDue = (t: TurnMemory): boolean => notices.get(t)?.level === LIMIT_THRESHOLDS.length
+
 /** `11m30s`, `45s`, `1h05m`: whole seconds, rounded down so the model never hears it has more. */
 export function formatDuration(ms: number): string {
   const total = Math.max(0, Math.floor(ms / 1000))
@@ -150,4 +153,33 @@ export function turnLimitSection(s: SessionImpl, t: TurnMemory): PromptSection |
     text: limitNoteText(limits, notice),
     delivery: 'live-note',
   }
+}
+
+/** The measured time is stated to the nearest 10 s: precise enough to plan with, and not noisy. */
+const CLOCK_STEP_MS = 10_000
+
+/**
+ * The turn's measured time for the request being assembled, in a turn with a time limit. The
+ * threshold notes above say what remained when a threshold was crossed; between them the model knew
+ * the deadline but not the current time, and in one run concluded the limit was reached with minutes
+ * left. This text is measured from the clock at each request and written as a short Core note
+ * (`[turn time]`) deduplicated against the latest one, so a request inside the same 10 s adds nothing.
+ * It is history like any note: the cached prefix stays put, and a recovered turn needs no identical
+ * rebuild, since its next request simply measures again.
+ */
+export function turnTimeText(limit: TurnTimeLimit, now: number): string {
+  const left = limit.deadlineAt - now
+  const total = formatDuration(limit.timeLimitMs)
+  if (left <= 0)
+    return `This turn's ${total} time limit is reached. End now with a short reply saying what is done, how it was checked and what remains.`
+  const step = (ms: number) => Math.floor(ms / CLOCK_STEP_MS) * CLOCK_STEP_MS
+  const used = Math.min(limit.timeLimitMs, Math.max(0, now - (limit.deadlineAt - limit.timeLimitMs)))
+  const remaining = left < CLOCK_STEP_MS ? 'less than 10s' : `about ${formatDuration(step(left))}`
+  return `${formatDuration(step(used))} of this turn's ${total} time limit used, ${remaining} left. This remaining time is measured at this request and is authoritative: do not conclude that the time limit is reached unless this note says so.`
+}
+
+/** The measured time for the request being assembled, or none when the turn has no time limit. */
+export function turnTimeNote(s: SessionImpl, t: TurnMemory): string | undefined {
+  const limit = turnTimeLimit(t)
+  return limit ? turnTimeText(limit, s.d.clock()) : undefined
 }

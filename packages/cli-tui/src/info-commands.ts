@@ -3,7 +3,7 @@ import type { TuiApp } from './app.js'
 import type { SlashResult } from './commands.js'
 import { listSessionChoices } from './commands.js'
 import { escapeControl } from './component.js'
-import { formatUsdMicros } from './format-usage.js'
+import { formatCredits, formatUsdMicros } from './format-usage.js'
 import { tt } from './locale-extended.js'
 import { probeLanguageServers } from './lsp-probe.js'
 import { waitingIn } from './queue-commands.js'
@@ -28,7 +28,7 @@ async function statusSlash(app: TuiApp): Promise<SlashResult> {
   const cost = usage?.cost
     ? formatUsdMicros(usage.cost.usdMicros)
     : usage?.credits
-      ? `${usage.credits.amount} credits`
+      ? `${formatCredits(usage.credits.amount)} credits`
       : NONE
   const context = usage
     ? `${usage.context.tokens} / ${usage.context.window} (${((usage.context.tokens / usage.context.window) * 100).toFixed(1)}%)`

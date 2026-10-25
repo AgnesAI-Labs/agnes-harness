@@ -405,6 +405,11 @@
             "no_progress_steps": {
               "type": "integer",
               "minimum": 1
+            },
+            "progress_check_steps": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Model steps between progress checks in a turn that runs under a prompt limit or unattended. Default 20."
             }
           }
         },

@@ -272,12 +272,19 @@ export class Scheduler {
     }
     if (!('prompt' in job.payload)) throw new Error(`unsupported job payload ${job.idempotencyKey}`)
 
+    const unattendedApproval = this.options.unattendedApproval?.(job) ?? 'notify'
     const actor = {
       id: `job:${job.idempotencyKey}`,
       org: 'local',
       role: 'system',
       deptPath: [],
-      attrs: { unattendedApproval: this.options.unattendedApproval?.(job) ?? 'notify' },
+      // `refuse` declares that nobody will answer this run, so its turn is unattended as well and
+      // offers no tool that waits on a person. `notify` hands decisions to the owner, who answers
+      // later in the Web or a bound channel, so that turn stays attended.
+      attrs: {
+        unattendedApproval,
+        ...(unattendedApproval === 'refuse' ? { interaction: 'unattended' } : {}),
+      },
     } satisfies Actor
     const content: ContentBlock[] =
       typeof job.payload.prompt === 'string'

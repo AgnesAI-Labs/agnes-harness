@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -22,8 +22,8 @@ async function booted(ep: FakeEndpoint = scriptedEndpoint()): Promise<Booted> {
   }
 }
 
-function io(o: { stderrTTY?: boolean; stdin?: string } = {}) {
-  const stdout = new PassThrough()
+function io(o: { stderrTTY?: boolean; stdoutTTY?: boolean; stdin?: string } = {}) {
+  const stdout = Object.assign(new PassThrough(), { isTTY: o.stdoutTTY ?? false })
   const stderr = Object.assign(new PassThrough(), { isTTY: o.stderrTTY ?? false })
   let out = ''
   let err = ''
@@ -51,6 +51,16 @@ describe('runPrint in text mode', () => {
     expect(code).toBe(0)
     expect(o.out()).toBe('answer 42\n')
     expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+  })
+
+  it('keeps escapes in the reply away from a terminal, and passes them through a pipe', async () => {
+    const reply = 'ok\x1b]52;c;cm0gLXJm\x07\x1b[2Jdone'
+    const tty = io({ stdoutTTY: true })
+    await runPrint(await booted(scriptedEndpoint({ reply })), parseArgs(['-p', 'q']), tty)
+    expect(tty.out()).toBe('ok]52;c;cm0gLXJm[2Jdone\n')
+    const pipe = io()
+    await runPrint(await booted(scriptedEndpoint({ reply })), parseArgs(['-p', 'q']), pipe)
+    expect(pipe.out()).toBe(`${reply}\n`)
   })
 
   it('joins a multi-word prompt rather than sending only the first word', async () => {
@@ -486,6 +496,18 @@ describe('runPrint in text mode', () => {
         expect(code).toBe(0)
         expect(o.out()).toBe('to a file\n')
         expect(readFileSync(join(dir, 'out.txt'), 'utf8')).toBe('to a file\n')
+        if (process.platform !== 'win32') expect(statSync(join(dir, 'out.txt')).mode & 0o777).toBe(0o600)
+        if (process.platform !== 'win32') {
+          writeFileSync(join(dir, 'victim'), 'keep')
+          symlinkSync(join(dir, 'victim'), join(dir, 'link.txt'))
+          const linked = await runPrint(
+            await booted(scriptedEndpoint({ reply: 'to a file' })),
+            parseArgs(['-p', 'q', '--output-file', 'link.txt']),
+            { ...io(), cwd: dir },
+          ).catch((x: unknown) => x)
+          expect(linked).toMatchObject({ code: 1 })
+          expect(readFileSync(join(dir, 'victim'), 'utf8')).toBe('keep')
+        }
       } finally {
         rmSync(dir, { recursive: true, force: true })
       }

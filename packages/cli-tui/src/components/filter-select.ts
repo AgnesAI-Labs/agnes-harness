@@ -4,13 +4,11 @@ import { parseKey } from '../keys.js'
 import { tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
 import { fitLine } from './line.js'
-import { Select } from './select.js'
+import { Select, type SelectOption } from './select.js'
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
-export type FilterOption = {
-  id: string
-  label: string
+export type FilterOption = SelectOption & {
   /** Extra text the filter matches besides the label, such as an id or a path. */
   search?: string
 }
@@ -52,9 +50,10 @@ export class FilterSelect implements Component {
   }
 
   private build(): Select {
-    const { onChoose, onCancel, ansi, maxRows } = this.o
+    const { onChoose, onCancel, ansi, maxRows, locale } = this.o
     return new Select({
-      options: this.matches().map(({ id, label }) => ({ id, label })),
+      ...(locale ? { locale } : {}),
+      options: this.matches().map(({ search: _search, ...option }) => option),
       onChoose,
       ...(onCancel ? { onCancel } : {}),
       ...(ansi ? { ansi } : {}),
@@ -96,14 +95,21 @@ export class FilterSelect implements Component {
   }
 
   render(width: number): string[] {
+    const { ansi } = this.o
+    const faint = (text: string) => (ansi ? ansi.italic(ansi.fg('faint', text)) : text)
+    const locale = this.o.locale ?? 'en'
     const rows = this.select.render(width)
-    if (!this.filter)
-      return rows.length || !this.o.emptyText ? rows : [fitLine(escapeControl(this.o.emptyText), width)]
-    const shown = tt('picker.filter', this.o.locale ?? 'en', {
-      q: escapeControl(this.filter),
-      n: this.matches().length,
-      total: this.o.options.length,
-    })
-    return [fitLine(this.o.ansi ? this.o.ansi.fg('muted', shown) : shown, width), ...rows]
+    // Nothing to list: the owner's own text with no filter, otherwise the shared "no matches" line.
+    const empty = rows.length
+      ? rows
+      : [
+          fitLine(
+            faint(escapeControl(this.filter ? tt('dialog.noMatches', locale) : (this.o.emptyText ?? ''))),
+            width,
+          ),
+        ]
+    if (!this.filter) return rows.length || this.o.emptyText ? empty : rows
+    const shown = `⌕ ${escapeControl(this.filter)}  ${this.matches().length}/${this.o.options.length}`
+    return [fitLine(ansi ? ansi.fg('muted', shown) : shown, width), ...empty]
   }
 }

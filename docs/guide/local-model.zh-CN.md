@@ -53,6 +53,8 @@ discover: true 在创建 adapter 时读取 /v1/models。容量和能力声明应
 
 通过现有会话模型选择器选返回的 ID，例如 `--model primary=local/qwen2.5:7b`。只有模型和服务确实支持图片时才选 input: [text, image]。工具支持同时取决于模型和服务的 OpenAI-compatible 实现。compat.wireCompat 可传入 pi-ai wire compatibility 选项，与 AGH 配置键分开。
 
+`toolCallFormats: [native]` 表示工具调用通过服务的原生 tool-call 字段返回；此时 AGH 不会把回答或推理中形似调用的文本当作调用执行。若模型或服务不支持原生工具调用，改为列出它输出的文本格式，例如 `toolCallFormats: [hermes_tool_call]`（`<tool_call>{...}</tool_call>`）、`qwen3_coder`、`anthropic_invoke` 或 `inline_json`。AGH 只按这些格式从回答文本中读取调用，从不从推理中读取。记录中只要含 `native`，即使同时列了文本格式，也不做文本恢复。
+
 ## 显式发现与录制
 
 ```ts

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { constants } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { EffectIntent, EffectSettled, EventEnvelope, ToolCall, TurnEndReason } from '@agnes/protocol'
@@ -29,7 +30,7 @@ export type Breadcrumb = {
 }
 
 export type PrintIO = {
-  stdout: NodeJS.WritableStream
+  stdout: NodeJS.WritableStream & { isTTY?: boolean }
   stderr: NodeJS.WritableStream & { isTTY?: boolean }
   stdin: NodeJS.ReadableStream & { isTTY?: boolean }
   cwd: string
@@ -200,6 +201,10 @@ function reasonFromThrow(e: unknown): TurnEndReason | null {
 }
 
 /** Only schema-owned reasons and actions are public; turn messages may contain provider logs. */
+// C0 except line feed, DEL and C1: a reply cannot reach a terminal as escapes. Tab becomes spaces.
+// biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
+const TERMINAL_CONTROL = /[\x00-\x09\x0b-\x1f\x7f-\x9f]/g
+
 function errorCause(error: unknown, locale = 'en'): string {
   const help = publicErrorHelp(error, locale)
   return help ? `${help.code}: ${help.reason} ${help.action}` : ''
@@ -380,9 +385,15 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     streaming = false
     if (p.outputFile !== undefined) {
       try {
+        // A checkout can commit the output name as a symlink to a file the run may write, and the
+        // reply can carry secrets: never follow a link, and create the file private.
         await writeFile(
           resolve(io.cwd, p.outputFile),
           structured?.ok ? `${JSON.stringify(structured.value)}\n` : text ? `${text}\n` : '',
+          {
+            flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | (constants.O_NOFOLLOW ?? 0),
+            mode: 0o600,
+          },
         )
       } catch (e) {
         throw new CommandError(`--output-file ${p.outputFile}: ${(e as Error).message}`)
@@ -407,7 +418,11 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     } else if (structured?.ok) {
       io.stdout.write(`${JSON.stringify(structured.value)}\n`)
     } else if (text) {
-      io.stdout.write(`${text}\n`)
+      // A terminal would act on escapes in the reply (clipboard writes, title, repaint); a pipe gets
+      // the reply byte for byte.
+      io.stdout.write(
+        `${io.stdout.isTTY ? text.replace(TERMINAL_CONTROL, (c) => (c === '\t' ? '    ' : '')) : text}\n`,
+      )
     }
     // The reason word on every non-zero exit, in text mode as well as json. `blocked` and `budget`
     // share exit 4 by design and want opposite remediations -- raise the budget and retry, or never

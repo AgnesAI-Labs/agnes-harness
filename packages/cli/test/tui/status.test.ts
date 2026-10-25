@@ -10,6 +10,17 @@ const _BRANDING = { accent: '#5E57FE', mark: 'agnes', selfLabel: 'Agnes AI' }
 const PLAIN = new TuiTheme('mono').ansi(createAnsi('none'))
 
 describe('status bar and header (cli 稿 §9.2)', () => {
+  it.each([
+    ['error', '✗ '],
+    ['warning', '▲ '],
+    ['success', '✓ '],
+    ['info', ''],
+  ] as const)('marks a %s notice with "%s"', (tone, mark) => {
+    const s = new StatusBar(PLAIN)
+    s.setNotice('something happened', tone)
+    expect((s.render(80)[0] as string).startsWith(`${mark}something happened`)).toBe(true)
+  })
+
   it('composes slot lines, budget, parked and link state', () => {
     const s = new StatusBar(PLAIN)
     s.setSlots([{ text: '数据截至 9/6', level: 'warn' }])
@@ -172,16 +183,19 @@ describe('status bar and header (cli 稿 §9.2)', () => {
       { id: 'b', label: 'Rerun' },
     ])
     const keyed = (key: string, label: string) =>
-      `${ansi.bold(ansi.fg('accent', key))} ${ansi.fg('faint', label)}`
+      `${ansi.bold(ansi.fg('accentSoft', key))} ${ansi.fg('muted', label)}`
     expect(hints.render(60)[0]).toContain(`${keyed('F1', 'Export')}  ${keyed('F2', 'Rerun')}`)
     const loader = new Loader('thinking', ansi)
     expect(loader.render(30)[0]).toContain(`${ansi.fg('accent', '⠋')} ${ansi.dim('thinking')}`)
     loader.stop('turn 1 · 0.7s')
     expect(loader.render(30)[0]).toContain(`${ansi.fg('success', '✓')} ${ansi.fg('faint', 'turn 1 · 0.7s')}`)
     // Mono keeps the same text and leans on weight and dim instead.
-    const mono = new Hints(new TuiTheme('mono').ansi(createAnsi('256')))
+    const monoAnsi = new TuiTheme('mono').ansi(createAnsi('256'))
+    const mono = new Hints(monoAnsi)
     mono.set([{ id: 'a', label: 'Export' }])
-    expect(mono.render(30)[0]).toContain('\x1b[1mF1\x1b[22m \x1b[2mExport\x1b[22m')
+    expect(mono.render(30)[0]).toContain(
+      `${monoAnsi.bold(monoAnsi.fg('accentSoft', 'F1'))} ${monoAnsi.fg('muted', 'Export')}`,
+    )
   })
   it('shows the way back to the bottom above the F-key row, or alone, only while it is offered', () => {
     let note: string | undefined = '↓ New output below · End to jump back'

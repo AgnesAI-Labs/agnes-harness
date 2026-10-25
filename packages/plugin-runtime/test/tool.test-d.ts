@@ -217,6 +217,7 @@ describe('tool types', () => {
       | 'timeoutMs'
       | 'defaultTimeoutMs'
       | 'outputMaxBytes'
+      | 'turnTimeLimit'
       | 'lease'
       | 'log'
     >()

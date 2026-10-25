@@ -139,6 +139,35 @@ it.each(['open', 'new', 'fork'] as const)(
   },
 )
 
+it('ends the stream of a handle without a workspace that the daemon no longer holds after a reconnect', async () => {
+  // `agh export` restores with no workspace and then attaches. A dropped connection took the
+  // daemon's open with it, so every recovery attach answered SESSION_NOT_FOUND, the reconnect loop
+  // retried it forever and the export's reader waited on a stream that could not resume.
+  let attaches = 0
+  const f = fakeEndpoint({
+    initialize: init,
+    '_agnes/v1/session.attach': () => {
+      if (++attaches === 2) throw rpcError('SESSION_NOT_FOUND', { sessionId: 'gone' })
+      return { generation: 1, lastSeq: 0, resolvedProfileHash: null }
+    },
+  })
+  const client = createClient({
+    transport: { kind: 'inproc', endpoint: f.endpoint },
+    journal: memoryJournal(),
+    authProviders: providers,
+  })
+  try {
+    const session = await client.session.attach('gone')
+    const reader = session.events()[Symbol.asyncIterator]()
+    const next = reader.next()
+    await session.recover()
+    await expect(next).resolves.toMatchObject({ done: true })
+    expect(session.attached).toBe(false)
+  } finally {
+    await client.close()
+  }
+})
+
 it('cancels an opening during a shared handshake without cancelling initialization for the next selection', async () => {
   let finish!: (value: unknown) => void
   const f = fakeEndpoint({

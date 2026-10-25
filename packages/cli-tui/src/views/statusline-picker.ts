@@ -1,5 +1,5 @@
 import type { Component } from '../component.js'
-import { Box } from '../components/box.js'
+import { type Box, dialogBox } from '../components/box.js'
 import { fitLine } from '../components/line.js'
 import { actionFor } from '../keymap.js'
 import { parseKey } from '../keys.js'
@@ -38,11 +38,19 @@ export class StatusLinePicker implements Component {
         return i === this.at ? ansi.bg('selection', ansi.bold(ansi.fg('accent', line))) : line
       }),
       ansi.dim(fitLine(tt('statusline.always', locale), width)),
-      ansi.dim(fitLine(tt(this.saved ? 'statusline.hint' : 'statusline.unsaved', locale), width)),
+      ...(this.saved ? [] : [ansi.dim(fitLine(tt('statusline.unsaved', locale), width))]),
     ]
-    this.box = new Box(
+    this.box = dialogBox(
       { render: rows, invalidate: () => {} },
-      { title: tt('statusline.title', locale), ansi },
+      {
+        title: tt('statusline.title', locale),
+        ansi,
+        hints: [
+          { key: '↑↓', label: tt('dialog.select', locale) },
+          { key: 'space/⏎', label: tt('dialog.toggle', locale) },
+          { key: 'esc', label: tt('dialog.close', locale) },
+        ],
+      },
     )
     this.o.changed()
   }

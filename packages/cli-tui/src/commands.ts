@@ -62,7 +62,16 @@ export function slashCommandFor(
   name: string,
   locale: string,
   app?: TuiApp,
-): { name: string; args?: string; description: string; summary: string } | undefined {
+):
+  | {
+      name: string
+      args?: string
+      description: string
+      summary: string
+      aliasOf?: string
+      aliases?: string[]
+    }
+  | undefined {
   const command = slashCommand(name)
   if (!command) {
     // A custom command shows its file's description; a project one also says where it came from.
@@ -77,8 +86,10 @@ export function slashCommandFor(
       summary: `${from}${custom.description}`,
     }
   }
+  const aliases = SLASH_COMMANDS.filter((c) => c.aliasOf === name).map((c) => c.name)
   return {
     ...command,
+    ...(aliases.length ? { aliases } : {}),
     description: tt(command.descriptionKey, locale),
     summary: tt(command.summaryKey, locale),
   }
@@ -98,6 +109,8 @@ export type SessionChoice = {
   lastSeq: number
   preset: string | null
   title?: string
+  /** Workspace of a session outside this TUI's: resuming it loads it there (the daemon refuses another workspace). */
+  cwd?: string
   /** Extra directories bound to the session (paths on the daemon's machine); absent when none. */
   additionalDirectories?: string[]
   /** Set by the /rewind picker: choosing forks this session at that completed-turn boundary. */
@@ -117,6 +130,8 @@ export type SlashResult = {
   text?: string
   prompt?: string
   content?: ContentBlock[]
+  /** `content` goes into a running turn (`steer`) instead of queueing behind it. */
+  steer?: true
   details?: boolean
   /** Text to put in the editor, replacing what it holds (the line that ran the command is already gone). */
   draft?: string
@@ -182,6 +197,7 @@ export async function listSessionChoices(session: Session, resumableFrom?: strin
       ...(item.lastMessageAt ? { lastMessageAt: item.lastMessageAt } : {}),
       lastSeq: item.lastSeq,
       preset: item.preset,
+      ...(item.cwd && item.cwd !== here ? { cwd: item.cwd } : {}),
       ...(item.title ? { title: item.title } : {}),
       ...(item.additionalDirectories?.length ? { additionalDirectories: item.additionalDirectories } : {}),
     }))
@@ -194,20 +210,27 @@ export async function listSessionChoices(session: Session, resumableFrom?: strin
     })
 }
 
-/** Dispatches one slash line against the session/client the app currently holds. */
-export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> {
-  const [cmd = '', ...args] = line.trim().split(/\s+/)
-  const locale = app.locale
-  // Refused before the daemon creates, forks or loads a session this app would then not switch to. A bare
-  // /resume only opens the picker, which refuses the choice itself.
-  const opens =
+/** Whether the slash line asks the daemon for a different session. */
+export function opensSwitch(cmd: string, args: readonly string[]): boolean {
+  return (
     cmd === '/new' ||
+    cmd === '/clear' ||
     cmd === '/worktree' ||
     (cmd === '/cd' && args.length > 0) ||
     (cmd === '/add-dir' && args.length > 0) ||
     cmd === '/fork' ||
     (cmd === '/rewind' && args.length > 0) ||
     (cmd === '/resume' && args.length > 0 && args[0] !== 'all')
+  )
+}
+
+/** Dispatches one slash line against the session/client the app currently holds. */
+export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> {
+  const [cmd = '', ...args] = line.trim().split(/\s+/)
+  const locale = app.locale
+  // Refused before the daemon creates, forks or loads a session this app would then not switch to. A bare
+  // /resume only opens the picker, which refuses the choice itself.
+  const opens = opensSwitch(cmd, args)
   if (opens && app.refuseSwitch()) return {}
   const s = app.session
   const c = s.client
@@ -218,7 +241,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   if (cmd === '/attach') {
     const path = line.trim().slice('/attach'.length).trim()
     if (!path) throw new Error('Usage: /attach <path>')
-    return { content: [await uploadLocalAttachment(s, app.cwd, path, app.attachmentSignal)] }
+    return { content: [await uploadLocalAttachment(s, app.cwd, localPath(app, path), app.attachmentSignal)] }
   }
   const computerUseStatus = async (): Promise<SlashResult> => {
     const report = await c.call<ComputerUseStatusResult>('_agnes/v1/computerUse.status', {})
@@ -241,10 +264,10 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
           ? 'resource operation cancelled'
           : 'no pending resource operation',
       }
-    // The resource parser takes each flag with one value, anywhere, and its action is the first other word:
+    // The resource parser takes each flag with one value (--yes with none), anywhere, and its action is the first other word:
     // `--expected-revision <rev> trust srv` is a trust, and must wait for confirm like any other.
     let at = 0
-    while (values[at]?.startsWith('-')) at += 2
+    while (values[at]?.startsWith('-')) at += values[at] === '--yes' ? 1 : 2
     const action = values[at] ?? ''
     const mutating =
       kind === 'resources'
@@ -308,9 +331,11 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         }
       return computerUseDoctor()
     }
-    case '/new': {
+    case '/new':
+    // Claude Code's /clear: a fresh session in this workspace; the old conversation stays resumable.
+    case '/clear': {
       // A directory the daemon has not authorised is refused by the daemon, and shown as it comes.
-      const dir = line.trim().slice('/new'.length).trim()
+      const dir = cmd === '/new' ? line.trim().slice('/new'.length).trim() : ''
       const created = await c.session.new({
         cwd: dir ? localPath(app, dir) : app.cwd,
         sessionKey: freshTuiSessionKey(app.profile),
@@ -347,7 +372,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       // Importing writes through a local Host, which only the shared local daemon form leaves free.
       if (!app.o.importSession) return { text: tt('import.remote', locale) }
       const from = args.indexOf('--from')
-      const given = from < 0 ? args : args.slice(0, from)
+      const given = from < 0 ? args : [...args.slice(0, from), ...args.slice(from + 2)]
       const source = from < 0 ? undefined : args[from + 1]
       if (from >= 0 && !source) return { text: tt('import.usage', locale) }
       if (given.length > 0) {
@@ -356,7 +381,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
           .trim()
           .slice('/import'.length)
           .trim()
-          .replace(/\s+--from\s+\S+$/, '')
+          .replace(/(^|\s+)--from\s+\S+(?=\s|$)/, '')
+          .trim()
         try {
           const { key } = await app.o.importSession(localPath(app, file), source)
           return { text: tt('import.done', locale, { key: oneLine(key) }) }
@@ -380,14 +406,14 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
           createdAt: new Date(item.mtimeMs).toISOString(),
           lastSeq: 0,
           preset: item.source,
-          ...(item.title ? { title: oneLine(item.title).slice(0, 60) } : {}),
+          ...(item.title ? { title: [...oneLine(item.title)].slice(0, 60).join('') } : {}),
         })),
       }
     }
     case '/sessions': {
       const choices = (await listSessionChoices(s)).slice(0, 20)
       const rows = choices.flatMap((m, index) => [
-        `${index + 1}. ${m.preset} · seq ${m.lastSeq}`,
+        `${index + 1}. ${m.preset ?? '-'} · seq ${m.lastSeq}`,
         `   ${m.sessionId}`,
       ])
       return {
@@ -493,9 +519,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
           text: slot?.kind === 'slot' ? String((slot.fill.payload as { text: string }).text) : 'No goal',
         }
       }
-      if (app.busy) await s.steer(line.trim())
-      else await s.prompt(line.trim())
-      return {}
+      // Sent by TuiApp.command like typed input; mid-turn it steers, so `/goal pause` stops the running goal turn.
+      return { content: [{ type: 'text', text: line.trim() }], steer: true }
     }
     case '/plan':
       return c.call<{ active: boolean; text: string }>('_agnes/v1/admin.plan', {

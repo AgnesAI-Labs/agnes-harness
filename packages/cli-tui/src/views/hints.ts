@@ -1,5 +1,6 @@
 import { createAnsi } from '../ansi.js'
 import { type Component, escapeControl } from '../component.js'
+import { keyHints } from '../components/key-hints.js'
 import { fitLine } from '../components/line.js'
 import type { ActionItem } from '../slots.js'
 import { type ThemedAnsi, TuiTheme } from '../theme.js'
@@ -22,10 +23,11 @@ export class Hints implements Component {
     const below = this.below()
     const note = below === undefined ? [] : [fitLine(this.ansi.fg('accent', escapeControl(below)), width)]
     if (this.actions.length === 0) return note
-    const pairs = this.actions.map(
-      (a, i) =>
-        `${this.ansi.bold(this.ansi.fg('accent', `F${i + 1}`))} ${this.ansi.fg('faint', escapeControl(a.label))}`,
+    const row = keyHints(
+      this.actions.map((a, i) => ({ key: `F${i + 1}`, label: a.label })),
+      this.ansi,
+      width,
     )
-    return [...note, fitLine(pairs.join('  '), width)]
+    return [...note, fitLine(row, width)]
   }
 }

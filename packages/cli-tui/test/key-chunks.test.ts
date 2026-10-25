@@ -149,4 +149,45 @@ describe('PasteAssembler in front of KeyChunker', () => {
     expect(out.slice(2).join('')).toBe('\x1b[20' + '0~')
     expect(out).not.toContain(whole)
   })
+
+  it('delivers a paste whose end marker never came and lets input go on', () => {
+    const { out, send } = wire()
+    send('\x1b[200~part one')
+    vi.advanceTimersByTime(1500)
+    send(' part two')
+    vi.advanceTimersByTime(1500)
+    expect(out).toEqual([])
+    vi.advanceTimersByTime(600)
+    expect(out).toEqual(['\x1b[200~part one part two\x1b[201~'])
+    send('\x03')
+    expect(out.slice(1)).toEqual(['\x03'])
+  })
+
+  it('keeps the rest of a stalled paste a paste, so its newlines do not submit, until a key or the end marker', () => {
+    const { out, send } = wire()
+    send('\x1b[200~first half')
+    vi.advanceTimersByTime(2100)
+    send(' second\nhalf')
+    vi.advanceTimersByTime(KEY_HOLD_MS * 3)
+    expect(out).toEqual(['\x1b[200~first half\x1b[201~', '\x1b[200~ second\nhalf\x1b[201~'])
+    send('\x1b[201~')
+    vi.advanceTimersByTime(KEY_HOLD_MS * 3)
+    send('\r')
+    expect(out.slice(2)).toEqual(['\r'])
+    // With the end marker lost for good, the first key typed ends it.
+    send('\x1b[200~again')
+    vi.advanceTimersByTime(2100)
+    send('\r')
+    expect(out.slice(3)).toEqual(['\x1b[200~again\x1b[201~', '\r'])
+  })
+
+  it('drops a held paste on clear', () => {
+    const out: string[][] = []
+    const paste = new PasteAssembler()
+    paste.push('\x1b[200~abc', (p) => out.push(p))
+    paste.clear()
+    vi.advanceTimersByTime(5000)
+    expect(out).toEqual([])
+    expect(paste.push('\x03')).toEqual(['\x03'])
+  })
 })

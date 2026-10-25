@@ -12,11 +12,65 @@ async function attach(app: TuiApp, session: Session): Promise<void> {
   await app.projection.start()
 }
 
+const inPlay = new WeakMap<TuiApp, Set<number>>()
+const handedOver = new WeakMap<TuiApp, Set<number>>()
+const counter = new WeakMap<TuiApp, number>()
+const queue = new WeakMap<TuiApp, Promise<unknown>>()
+
+const setOf = (map: WeakMap<TuiApp, Set<number>>, app: TuiApp): Set<number> => {
+  const found = map.get(app) ?? new Set<number>()
+  map.set(app, found)
+  return found
+}
+
+/** Numbers a switch request when the user makes it, before the daemon opens anything: the highest number in play wins. */
+export function beginSwitch(app: TuiApp): number {
+  const ticket = (counter.get(app) ?? 0) + 1
+  counter.set(app, ticket)
+  setOf(inPlay, app).add(ticket)
+  return ticket
+}
+
+/** A request that ended without reaching `applySwitch` gives up its claim, so it cannot cancel an earlier one still loading. */
+export function endSwitch(app: TuiApp, ticket: number | undefined): void {
+  if (ticket !== undefined && !handedOver.get(app)?.has(ticket)) inPlay.get(app)?.delete(ticket)
+}
+
+/** Awaits a slash command opened under `ticket`; one that throws or returns no session to switch to ends its request. */
+export async function settleSwitch<T extends { switchSession?: unknown }>(
+  app: TuiApp,
+  ticket: number | undefined,
+  run: Promise<T>,
+): Promise<T> {
+  try {
+    const result = await run
+    if (!result.switchSession) endSwitch(app, ticket)
+    return result
+  } catch (error) {
+    endSwitch(app, ticket)
+    throw error
+  }
+}
+
 // Stops the old projection's local subscription, swaps the session the app renders, and starts
 // a fresh projection against the new one. The old session is left attached at the protocol level
 // (its own `Client.close()` cleans that up eventually) -- an explicit detach here is a step this
 // task's own interface spec never asks for, and one this method has no test coverage compelling.
-export async function applySwitch(app: TuiApp, next: Session): Promise<boolean> {
+// Switches run one at a time, and one whose request was superseded while the daemon was opening its
+// session installs nothing: the session asked for last is the one shown, whatever order the replies land.
+export function applySwitch(app: TuiApp, next: Session, ticket = beginSwitch(app)): Promise<boolean> {
+  setOf(handedOver, app).add(ticket)
+  const run = (queue.get(app) ?? Promise.resolve()).then(() =>
+    ticket === Math.max(...(inPlay.get(app) ?? [])) ? install(app, next) : false,
+  )
+  queue.set(
+    app,
+    run.catch(() => undefined),
+  )
+  return run
+}
+
+async function install(app: TuiApp, next: Session): Promise<boolean> {
   // runSlash and chooseSession refuse up front; a prompt submitted while the daemon was still opening
   // `next` is caught here.
   if (app.refuseClosed() || app.refuseSwitch()) return false
@@ -70,6 +124,7 @@ export async function chooseSession(app: TuiApp, choice: SessionChoice): Promise
   if (app.refuseClosed()) return
   // An import row runs `/import FILE` as if typed, so it reports through the same notice.
   if (choice.importFile !== undefined) return app.runInput(`/import ${choice.importFile}`)
+  const ticket = beginSwitch(app)
   try {
     // The picker stays open during a turn; picking from it is refused before the daemon loads anything.
     if (app.refuseSwitch()) return app.renderer.requestRender()
@@ -78,9 +133,9 @@ export async function chooseSession(app: TuiApp, choice: SessionChoice): Promise
     // A rewind row forks the open session at its completed-turn boundary; any other row resumes.
     const next =
       choice.forkAt === undefined
-        ? await app.o.session.client.session.load(choice.sessionId, { cwd: app.cwd })
+        ? await app.o.session.client.session.load(choice.sessionId, { cwd: choice.cwd ?? app.cwd })
         : await app.o.session.client.session.fork(choice.sessionId, choice.forkAt)
-    if (await applySwitch(app, next)) {
+    if (await applySwitch(app, next, ticket)) {
       const turn = choice.title?.match(/^#(\d+)/)?.[1] ?? String(choice.forkAt)
       if (choice.draft) app.editor.setText(choice.draft)
       app.statusBar.setNotice(
@@ -93,6 +148,8 @@ export async function chooseSession(app: TuiApp, choice: SessionChoice): Promise
     if (!app.stopped) app.renderer.requestRender()
   } catch (error) {
     app.showError(error)
+  } finally {
+    endSwitch(app, ticket)
   }
 }
 

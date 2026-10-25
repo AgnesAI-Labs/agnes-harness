@@ -43,14 +43,19 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
       },
     )
     const lines = card.render(60).join('\n')
-    expect(lines).toContain('tk-abcde')
-    expect(lines).toContain('2026-09-08T00:00:00Z')
+    // No internal decision id and no raw ISO stamp; the expiry is a local HH:MM.
+    expect(lines).not.toContain('tk-abcde')
+    expect(lines).not.toContain('2026-09-08T00:00:00Z')
+    const at = new Date('2026-09-08T00:00:00Z')
+    expect(lines).toContain(
+      `expires ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`,
+    )
     expect(lines).toContain('[1]')
     expect(lines).toContain('[3]')
     card.handleInput('1')
     await new Promise((r) => setTimeout(r, 0))
     expect(decided).toEqual([[{ sessionId: 's', id: 'tk-abcdef123456', revision: 1 }, 'allowed-once']])
-    expect(card.render(60).join('\n')).toContain('allowed-once')
+    expect(card.render(60).join('\n')).toContain('Allowed once')
   })
 
   it('surfaces the real server rejection reason on decide failure, and shows no error on success', async () => {
@@ -79,7 +84,7 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
         onDecide: async () => {},
       },
     )
-    succeeding.handleInput('3')
+    succeeding.handleInput('1')
     await new Promise((r) => setTimeout(r, 0))
     const out = succeeding.render(60).join('\n')
     expect(out).not.toContain('self-approval')
@@ -96,7 +101,8 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
     )
     const out = card.render(60)
     expect(out).toHaveLength(1)
-    expect(out[0]).toContain('rejected')
+    expect(out[0]).toContain('✗ Rejected')
+    expect(out[0]).not.toContain('->')
     expect(out[0]).not.toContain('[1]')
     for (const locale of ['en', 'zh-CN'] as const) {
       const automatic = new ApprovalCard(
@@ -156,7 +162,8 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
       },
     )
     const out = card.render(80).join('\n')
-    expect(out).toContain('等待审批: shell rm -rf tmp')
+    expect(out).toContain('需要审批')
+    expect(out).toContain('shell rm -rf tmp')
     expect(out).toContain('[1] 允许一次')
     expect(out).toContain('[2] 本会话允许')
     expect(out).toContain('[3] 拒绝')
@@ -168,7 +175,7 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
       node({ state: 'decided', decision: { verdict: 'allowed-once', via: 'local' } }),
       { ansi, onDecide: async () => {} },
     )
-    expect(decided.render(60)[0]).toContain(ansi.fg('success', '✓'))
+    expect(decided.render(60)[0]).toContain(ansi.fg('success', '✓ Allowed once'))
     const expired = new ApprovalCard(
       node({ state: 'expired', decisionRef: { sessionId: 's', id: 'tk-9', revision: 1 }, expiresAt: 'x' }),
       {
@@ -176,7 +183,8 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
         onDecide: async () => {},
       },
     )
-    expect(expired.render(60)[0]).toContain(ansi.fg('danger', '✗'))
+    expect(expired.render(60)[0]).toContain(ansi.fg('faint', '◌ Expired'))
+    expect(expired.render(60)[0]).not.toContain('✗')
     const pending = new ApprovalCard(
       node({ decisionRef: { sessionId: 's', id: 'tk-8', revision: 1 }, expiresAt: 'x' }),
       {
@@ -185,10 +193,11 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
       },
     )
     const rows = pending.render(60)
-    expect(rows[0]).toContain(ansi.bold(ansi.fg('warning', '▲ Awaiting approval:')))
+    expect(rows[0]).toContain(ansi.bold(ansi.fg('warning', '▲ Needs approval')))
     expect(rows[1]).toContain(ansi.fg('warning', '│ '))
-    expect(rows.at(-1)).toContain(`${ansi.bg('accent', ansi.fg('onAccent', ' 1 '))} Allow once`)
-    expect(rows.at(-1)).not.toContain('[1]')
+    const first = rows.find((row) => row.includes('Allow once')) ?? ''
+    expect(first).toContain(`${ansi.bg('accent', ansi.fg('onAccent', ' 1 '))} Allow once`)
+    expect(first).not.toContain('[1]')
     // none tier: the very same cards emit zero escape sequences.
     const plain = new ApprovalCard(
       node({ state: 'decided', decision: { verdict: 'rejected', via: 'local' } }),
@@ -219,7 +228,7 @@ describe('ApprovalCard: the persisted approval projection (distinct from the liv
     )
     const out = card.render(60)
     expect(out).toHaveLength(1)
-    expect(out[0]).toContain('expired')
+    expect(out[0]).toContain('◌ Expired')
     expect(card.handleInput('1')).toBe(false)
   })
 
@@ -300,9 +309,7 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
       () => ({ seq: 1, revision: 2, commandId: 'tk-wire-1:1:allowed-once', digest: '0'.repeat(64) }),
     )
     try {
-      await vi.waitFor(async () =>
-        expect((await screenOf(term, 60, 12)).join('\n')).toContain('tk-wire-1'.slice(0, 8)),
-      )
+      await vi.waitFor(async () => expect((await screenOf(term, 60, 12)).join('\n')).toContain('Allow once'))
       await new Promise((resolve) => setTimeout(resolve, 700)) // the settle period
       term.feed('1')
       await vi.waitFor(() =>
@@ -317,7 +324,7 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
         response: { option: 'allowed-once', value: null },
       })
       await vi.waitFor(async () =>
-        expect((await screenOf(term, 60, 12)).join('\n')).toContain('allowed-once'),
+        expect((await screenOf(term, 60, 12)).join('\n')).toContain('Allowed once'),
       )
       // A real, successful decide over the real app never leaves an error mark behind.
       expect((await screenOf(term, 60, 12)).join('\n')).not.toContain('✗')
@@ -337,9 +344,7 @@ describe('ApprovalCard wired into the real TuiApp (app.ts nodeView / handleInput
       () => ({ seq: 1, revision: 2, commandId: 'tk-old:1:allowed-once', digest: '0'.repeat(64) }),
     )
     try {
-      await vi.waitFor(async () =>
-        expect((await screenOf(term, 60, 12)).join('\n')).toContain('tk-old'.slice(0, 6)),
-      )
+      await vi.waitFor(async () => expect((await screenOf(term, 60, 12)).join('\n')).toContain('Allow once'))
       await new Promise((resolve) => setTimeout(resolve, 700)) // the settle period
       term.feed('1')
       await vi.waitFor(() =>

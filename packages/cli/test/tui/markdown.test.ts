@@ -67,7 +67,16 @@ it('removes untrusted VT sequences and control bytes before styling', () => {
   expect(renderMarkdown('a\x1b[31mb\x07c', 20, none)).toEqual(['abc'])
   expect(renderMarkdown('before\x1b]52;c;YQ==\x07after\x1b[2J\x00', 40, none)).toEqual(['beforeafter'])
   expect(renderMarkdown('a\x9b31mb\x9d52;c;YQ==\x9cc', 40, none)).toEqual(['abc'])
-  expect(renderMarkdown('a\x1bPpayload\x1b\\b\x1b]unfinished', 40, none)).toEqual(['ab'])
+  expect(renderMarkdown('a\x1bPpayload\x1b\\b\x1b]unfinished', 40, none)).toEqual(['abunfinished'])
+  expect(renderMarkdown('before \x1b]0;x then do not run this', 40, none)).toEqual([
+    'before 0;x then do not run this',
+  ])
+  expect(renderMarkdown('a\x1b[中文 stays', 40, none)).toEqual(['a中文 stays'])
+})
+it('spells out bidi overrides so a code block cannot show one command and hold another', () => {
+  const rows = renderMarkdown('```sh\nls \u202erm -rf ~\u202c\n```\nשלום\u200f', 60, none)
+  expect(rows.join('\n')).toContain('ls \\u{202E}rm -rf ~\\u{202C}')
+  expect(rows.join('\n')).toContain('שלום\u200f')
 })
 it('shows Markdown nested too deep to parse as plain wrapped text instead of throwing', () => {
   for (const md of [`${'> '.repeat(3000)}x`, `${'>'.repeat(5000)} a`]) {
@@ -274,6 +283,11 @@ it('keeps GFM task-list checkboxes and wrapped item indent', () => {
     '• [x] done item',
     '      that wraps',
   ])
+})
+it('keeps the marker row of an empty list item', () => {
+  expect(renderMarkdown('1.\n2. x\n3.', 40, none)).toEqual(['1.', '2. x', '3.'])
+  expect(renderMarkdown('* a\n* \n* b', 40, none)).toEqual(['• a', '•', '• b'])
+  expect(renderMarkdown('- [ ] \n- b', 40, none)).toEqual(['• [ ]', '• b'])
 })
 it('shows an autolinked address once, and still shows the target of a titled link', () => {
   expect(renderMarkdown('visit www.example.com and foo@bar.com, https://a.example/x', 80, none)).toEqual([

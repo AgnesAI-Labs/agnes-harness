@@ -99,6 +99,17 @@ it('removes control sequences, expands tabs and clips long lines to the width', 
   expect(rows[2]).toContain('…')
 })
 
+it('spells out bidi and zero-width characters in diff lines and keeps word marks aligned', () => {
+  const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
+  const mark = (s: string) => ansi.bold(ansi.underline(s))
+  const edit = (oldText: string, newText: string) =>
+    renderDiff(diffInput('edit', { path: 'a', edits: [{ oldText, newText }] }) as never, 600, ansi, 'en')
+  const rows = edit('if (user\u202E\u2066 == "admin") {', 'if (user\u202E\u2066 == "root") {').join('\n')
+  expect(rows).not.toMatch(/[\u202E\u2066]/)
+  expect(rows).toContain('user\\u{202E}\\u{2066} == "')
+  expect(rows).toContain(mark('root'))
+})
+
 it('paints removals and additions with the danger and success tones', () => {
   const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
   const input = diffInput('edit', { path: 'a', edits: [{ oldText: 'x', newText: 'y' }] })

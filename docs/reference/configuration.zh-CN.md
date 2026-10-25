@@ -92,6 +92,8 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 已打开的会话继续使用内存中解析好的 preset；重启服务后重新打开会话，或新建会话，会按更新后的默认值重新解析。自定义 preset 若明确配置数字上限，仍保留该限制。替换 Budget 段的扩展需要将 `maxSteps: null` 视为没有步数上限。内部执行循环仅限制程序计数器连续没有提交变化的状态转移，不按整个任务的累计步数计算，因此正常推进的长任务不会消耗这项保护额度。
 
+无人值守或带提示词上限的回合还会收到进度检查（见[无界面运行](../guide/headless.zh-CN.md#进度检查)）。`loop: { progress_check_steps: 20 }` 设置两次检查之间相隔多少个模型步；省略时为 20。它对普通交互回合没有影响。
+
 ## Skills 同名优先级覆盖
 
 默认来源优先级为 workspace 500、runtime 450、AGH user 400、agents 300、claude 200、codex 100、package 50。用户可对非 runtime 候选设置 50–500 的整数覆盖，或传 `null` 恢复来源默认；该数据按 profile/resourceId 保存在资源控制 journal，并随 worker control 快照应用。它不是新 profile YAML 字段，不应手改 journal。

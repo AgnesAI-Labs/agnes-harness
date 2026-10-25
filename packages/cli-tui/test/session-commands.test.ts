@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { type ContentBlock, rpcError } from '@agnes/protocol'
@@ -10,6 +10,7 @@ import type { TuiApp } from '../src/app.js'
 import { runSlash } from '../src/commands.js'
 import { deliverableBasename } from '../src/deliverable-files.js'
 import { tt } from '../src/locale-extended.js'
+import { chooseSession } from '../src/session-switch.js'
 import { displayWidth } from '../src/terminal.js'
 import { TuiTheme } from '../src/theme.js'
 import { localCommandView } from '../src/views/local-command.js'
@@ -79,6 +80,7 @@ describe('session slash commands', () => {
       workspace: '',
     })
     expect(result.sessionPickerTitle).toBe('picker.searchTitle')
+    expect(result.sessionChoices?.map((c) => c.cwd)).toEqual(['/w', '/w'])
     expect(result.sessionChoices?.map((c) => [c.sessionId, c.title])).toEqual([
       ['s1', 'T — a[31m b'],
       ['s2', 'T — x'],
@@ -98,6 +100,27 @@ describe('session slash commands', () => {
       (await runSlash(app, line)).sessionChoices?.map((c) => c.sessionId).sort()
     expect(await ids('/resume')).toEqual(['b'])
     expect(await ids('/resume all')).toEqual(['b', 'c', 'cur'])
+
+    // Picking a foreign row loads it in its own workspace; a row of this workspace keeps `app.cwd`.
+    const load = vi.fn(async () => {
+      throw new Error('stop after load')
+    })
+    const showError = vi.fn()
+    const pick = {
+      cwd: '/w/a',
+      refuseClosed: () => false,
+      refuseSwitch: () => false,
+      statusBar: { setNotice: vi.fn() },
+      renderer: { requestRender: vi.fn() },
+      o: { session: { client: { session: { load } } } },
+      showError,
+    } as unknown as TuiApp
+    const rows = (await runSlash(app, '/resume all')).sessionChoices ?? []
+    for (const id of ['c', 'b']) await chooseSession(pick, rows.find((r) => r.sessionId === id) as never)
+    expect(load.mock.calls).toEqual([
+      ['c', { cwd: '/w/other' }],
+      ['b', { cwd: '/w/a' }],
+    ])
   })
 
   it('/yolo off sends enabled:false; bare /yolo and on keep enabling', async () => {
@@ -283,6 +306,10 @@ describe('session slash commands', () => {
     expect(rows[tt('recap.schedules', 'en')]).toBe('3')
     expect(rows[tt('recap.context', 'en')]).toBe('500 / 1000 (50.0%)')
     expect(rows[tt('recap.background', 'en')]).toBeUndefined()
+    // Wide labels (zh-CN) are padded by display width, so the values line up in one column.
+    const zh = (await runSlash(appWith(client, session, { locale: 'zh-CN' }), '/recap')).text ?? ''
+    const starts = zh.split('\n').map((row) => displayWidth(/^.+? {2,}/.exec(row)?.[0] ?? ''))
+    expect(new Set(starts).size).toBe(1)
     // Every source failing leaves the session id only, never a placeholder.
     const failing = {
       projectUIOpening: vi.fn(async () => Promise.reject(new Error('x'))),
@@ -410,11 +437,26 @@ describe('/deliverables', () => {
       writeFileSync(join(dir, 'keep.txt'), 'mine')
       await expect(runSlash(app, '/deliverables save 1 keep.txt')).rejects.toThrow('already exists')
       expect(readFileSync(join(dir, 'keep.txt'), 'utf8')).toBe('mine')
+      // The refusal's advice works: --force overwrites, wherever it is put, and names no file.
+      await runSlash(app, '/deliverables save 1 --force keep.txt')
+      expect(readFileSync(join(dir, 'keep.txt'))).toEqual(body)
+      await runSlash(app, '/deliverables save 1 --force')
+      expect(existsSync(join(dir, '--force'))).toBe(false)
       expect((await runSlash(app, '/deliverables save 7')).text).toBe(
         tt('deliverables.unknown', 'en', { key: '7' }),
       )
       expect((await runSlash(app, '/deliverables save')).text).toBe(tt('deliverables.usage', 'en'))
+      // `~` names the home directory, as in /cd and /export, not a file literally called "~".
+      const home = join(dir, 'home')
+      mkdirSync(home)
+      vi.stubEnv('HOME', home)
+      await runSlash(app, '/deliverables save 1 ~')
+      expect(readFileSync(join(home, 'r[31m.txt'))).toEqual(body)
+      await runSlash(app, '/deliverables save 1 ~/copy.txt')
+      expect(readFileSync(join(home, 'copy.txt'))).toEqual(body)
+      expect(existsSync(join(dir, '~'))).toBe(false)
     } finally {
+      vi.unstubAllEnvs()
       rmSync(dir, { recursive: true, force: true })
     }
   })
@@ -703,6 +745,13 @@ describe('small info commands', () => {
     expect(text).toMatch(/AGH_HOME\s+-$/m)
     expect(text).toMatch(/Model\s+-$/m)
     expect(text).toMatch(/Queued inputs\s+-$/m)
+    // Credits sum as floats; they read the same as on /usage and the status bar.
+    const credits = status(
+      {},
+      { timeline: { usage: { ...usage, cost: undefined, credits: { amount: 0.1 + 0.2 } } } },
+      { pending: [] },
+    )
+    expect((await runSlash(credits, '/status')).text).toMatch(/Cost\s+0\.3 credits$/m)
   })
 
   it('/status lists the extra directories and which language servers this PATH offers', async () => {
@@ -859,17 +908,23 @@ describe('small info commands', () => {
     expect((await runSlash(app, '/diff a.ts')).text).toContain('+line 149')
   })
 
+  /** The output rows of a local command, without the faint rail each starts with. */
+  const outputRows = (ansi: ReturnType<TuiTheme['ansi']>, rows: string[]) => {
+    const rail = ` ${ansi.fg('faint', '│')} `
+    return rows.filter((r) => r.startsWith(rail)).map((r) => r.slice(rail.length))
+  }
+
   it('/diff output is tinted by the diff marks, wrapped rows included, and other commands stay dim', () => {
     const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
     const text = '  +1 -1 a.ts\n@@ -1 +1 @@\n-old\n+new line that is long enough to wrap\n context'
-    const rows = localCommandView(ansi)('/diff', text).render(14)
+    const rows = outputRows(ansi, localCommandView(ansi)('/diff', text).render(14))
     expect(rows).toContain(ansi.fg('faint', '@@ -1 +1 @@'))
     expect(rows).toContain(ansi.fg('danger', '-old'))
     const green = ansi.fg('success', 'x').split('x')[0] as string
     expect(rows.filter((r) => r.startsWith(green)).length).toBeGreaterThan(1)
-    expect(rows.find((r) => r.includes('context'))).toBe(ansi.dim('context'))
+    expect(rows.find((r) => r.includes('context'))).toBe(ansi.dim(' context'))
     // Any other command keeps the dim style; a `+` there means nothing.
-    const other = localCommandView(ansi)('/status', '+not a diff').render(40)
+    const other = outputRows(ansi, localCommandView(ansi)('/status', '+not a diff').render(40))
     expect(other).toContain(ansi.dim('+not a diff'))
   })
 
@@ -877,17 +932,17 @@ describe('small info commands', () => {
     const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
     const mark = (s: string) => ansi.bold(ansi.underline(s))
     const text = '-let total = price * 2 + tax\n+let total = cost * 2 + tax'
-    const wide = localCommandView(ansi)('/diff', text).render(60)
+    const wide = outputRows(ansi, localCommandView(ansi)('/diff', text).render(60))
     expect(wide).toContain(ansi.fg('danger', `-let total = ${mark('price')} * 2 + tax`))
     expect(wide).toContain(ansi.fg('success', `+let total = ${mark('cost')} * 2 + tax`))
-    const narrow = localCommandView(ansi)('/diff', text).render(14)
+    const narrow = outputRows(ansi, localCommandView(ansi)('/diff', text).render(14))
     expect(narrow.join('')).toContain(mark('price'))
   })
 
   it('/diff styles ---/+++ as file headers only before the first hunk, never inside one', () => {
     const ansi = new TuiTheme('dark').ansi(createAnsi('256'))
     const text = '--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n--- old comment\n+++ new text\n ctx'
-    const rows = localCommandView(ansi)('/diff', text).render(40)
+    const rows = outputRows(ansi, localCommandView(ansi)('/diff', text).render(40))
     expect(rows).toContain(ansi.fg('faint', '--- a/x'))
     expect(rows).toContain(ansi.fg('danger', '--- old comment'))
     expect(rows).toContain(ansi.fg('success', '+++ new text'))

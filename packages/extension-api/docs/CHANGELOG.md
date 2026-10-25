@@ -6,6 +6,11 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ### Added
 
+- `ToolContext.turnTimeLimit` (optional, read-only): `{ timeLimitMs, deadlineAt }` of the turn the call
+  runs in, present only when its prompt set a wall-clock limit (`agh -p --timeout`, SDK
+  `prompt({ timeLimitMs })`); `deadlineAt` is epoch milliseconds. A tool that waits on something long can
+  keep the wait inside the time the turn has left. The official `shell` tool ends a foreground wait
+  before the deadline (leaving the larger of 15 s and 5% of the limit) and says so in its result.
 - `ToolMeta.requiresUser` (optional, default false): the tool asks a person who is present, or shows them
   something to act on now (a question, a form, a live UI surface). A turn whose input declares that
   nobody attends it (`agh -p`, `agh run`, SDK `runHeadless` or `session.prompt(..., { unattended: true })`)

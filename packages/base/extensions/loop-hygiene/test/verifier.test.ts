@@ -41,6 +41,45 @@ describe('verifier T0', () => {
       reasons: ['output_truncated'],
     })
   })
+  it('flags repeats and no progress on step scope only over the history a limited turn hands it', async () => {
+    const v = await verifierT0(fakeSeamInit())
+    const key = 'edit|{"path":"a"}'
+    const history = {
+      toolCalls: [0, 1, 2].map(() => ({
+        name: 'edit',
+        args: { path: 'a' },
+        schemaOk: true,
+        isReadOnly: false,
+      })),
+      recentToolKeys: [key, key, key],
+      surfaceTailHashes: ['h', 'h'],
+      newToolResults: 3,
+    }
+    // The step's own fields hold one call; its history holds the turn's last steps.
+    const step = { ...base, recentToolKeys: [key] }
+    expect(await v.verify('step', step, opts)).toEqual({ verdict: 'pass', reasons: [] })
+    expect(await v.verify('step', { ...step, history }, opts)).toEqual({
+      verdict: 'needs_revision',
+      reasons: ['repeated_write:3'],
+    })
+    const stalled = {
+      ...history,
+      recentToolKeys: [],
+      toolCalls: [],
+      surfaceTailHashes: ['h', 'h', 'h', 'h'],
+      newToolResults: 0,
+    }
+    expect(await v.verify('step', { ...step, history: stalled }, opts)).toEqual({
+      verdict: 'needs_revision',
+      reasons: ['no_progress:4'],
+    })
+    // A failure on the step itself still wins, and tool scope never reads history.
+    expect(await v.verify('step', { ...step, deviations: 1, history }, opts)).toEqual({
+      verdict: 'fail',
+      reasons: ['tool_call_as_text'],
+    })
+    expect(await v.verify('tool', { ...step, history }, opts)).toEqual({ verdict: 'pass', reasons: [] })
+  })
   it('flags repeats and no progress only on turn scope, honouring preset thresholds', async () => {
     const v = await verifierT0(
       fakeSeamInit({ preset: { loop: { repeat_threshold: 2, no_progress_steps: 2 } } }),

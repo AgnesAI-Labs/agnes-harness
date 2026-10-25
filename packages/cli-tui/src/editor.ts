@@ -71,8 +71,14 @@ export type EditorOptions = {
   complete?(prefix: string, before?: string): string[]
   /** Styles the prompt glyph, placeholder and slash menu; width math always uses the unstyled text. */
   ansi?: ThemedAnsi
-  /** Args shape and short summary for a slash-menu candidate (the app passes the command table). */
-  menuInfo?(name: string): { args?: string; summary?: string } | undefined
+  /**
+   * Args shape and short summary for a slash-menu candidate (the app passes the command table). `aliasOf`
+   * folds this command into the row of the one it names when both are candidates; `aliases` are the
+   * other spellings the row shows muted.
+   */
+  menuInfo?(
+    name: string,
+  ): { args?: string; summary?: string; aliasOf?: string; aliases?: readonly string[] } | undefined
   /** Workspace paths for the `@` menu; without it `@` is plain text. */
   mentions?: { get(query: string): MentionState }
   /** The `@` menu's status rows, shown when it has nothing to choose. */
@@ -105,6 +111,7 @@ export class Editor implements Component, VimTarget {
   // The text before the cursor when Esc closed the `@` menu: it stays closed until that changes.
   private dismissed: string | undefined
   private mentionQuery: string | undefined
+  private slashQuery: string | undefined
   // Chip text to the pasted text it stands for; lives only as long as this process.
   private readonly pastes = new Map<string, string>()
   private pasteCount = 0
@@ -140,6 +147,7 @@ export class Editor implements Component, VimTarget {
   /** Every draft source (queue, external editor, history, a failed send) lands here: nothing it holds may act on the terminal. */
   setText(raw: string): void {
     const t = raw.replace(/\r\n?/g, '\n').replaceAll('\t', '  ').replace(CONTROL, '')
+    this.search = undefined // the open search's snapshot of the old draft must not come back on esc
     this.text = t
     this.cursor = t.length
   }
@@ -187,7 +195,7 @@ export class Editor implements Component, VimTarget {
     if (this.search) return
     const at = offsetAtCell(this.text, this.cursor, this.renderedWidth, this.viewportStart + row, col)
     if (at === undefined) return
-    this.cursor = at
+    this.cursor = this.snap(at, at - this.cursor)
     this.chain = undefined
     this.goalColumn = undefined
     this.undo.endRun()
@@ -205,6 +213,7 @@ export class Editor implements Component, VimTarget {
     const typing = k.name === 'char' && !wasNormal
     const handled = this.handleKey(k)
     const edited = this.text !== before.text
+    if (!edited) this.cursor = this.snap(this.cursor, this.cursor - before.cursor)
     // An undo, redo or clear moved the history itself and is not an edit to record.
     // A normal-mode command that edits and lands in insert mode (o, cw, C...) opens the typing run, so
     // what is typed next joins its step and one `u` takes back the whole change.
@@ -440,6 +449,8 @@ export class Editor implements Component, VimTarget {
 
   cut(from: number, to: number, register?: string): void {
     if (to <= from) return
+    from = this.snap(from, -1)
+    to = this.snap(to, 1)
     this.ring.add(register ?? this.text.slice(from, to), false, false)
     this.text = this.text.slice(0, from) + this.text.slice(to)
     this.cursor = from
@@ -471,6 +482,8 @@ export class Editor implements Component, VimTarget {
     const merge = this.prevChain === 'kill'
     this.chain = merge ? 'kill' : undefined
     if (to <= from) return
+    from = this.snap(from, -1)
+    to = this.snap(to, 1)
     this.chain = 'kill'
     this.ring.add(this.text.slice(from, to), merge, before)
     this.text = this.text.slice(0, from) + this.text.slice(to)
@@ -516,7 +529,7 @@ export class Editor implements Component, VimTarget {
         return true
       default: {
         this.search = undefined
-        if (search.hit !== undefined) this.setText(search.hit)
+        if (search.hit !== undefined) this.replaceDraft(search.hit)
         else {
           this.text = search.draft.text
           this.cursor = search.draft.cursor
@@ -550,6 +563,7 @@ export class Editor implements Component, VimTarget {
 
   /** Puts a chip such as `[Image #1]` in the draft; Backspace removes it whole, and it goes out as typed. */
   insertChip(chip: string): void {
+    this.search = undefined
     this.pastes.set(chip, chip)
     this.insert(chip)
   }
@@ -557,6 +571,16 @@ export class Editor implements Component, VimTarget {
   private insert(s: string): void {
     this.text = this.text.slice(0, this.cursor) + s + this.text.slice(this.cursor)
     this.cursor += s.length
+  }
+
+  // A chip is one unit: a position strictly inside one moves to its start (dir < 0) or its end.
+  private snap(pos: number, dir: number): number {
+    for (const chip of this.pastes.keys()) {
+      for (let i = this.text.indexOf(chip); i >= 0; i = this.text.indexOf(chip, i + chip.length)) {
+        if (pos > i && pos < i + chip.length) return dir < 0 ? i : i + chip.length
+      }
+    }
+    return pos
   }
 
   private lineStart(): number {
@@ -588,8 +612,15 @@ export class Editor implements Component, VimTarget {
     if (this.cursor !== this.text.length || !/^\/\S*$/.test(this.text)) return []
     const candidates = this.o.complete?.(this.text) ?? []
     if (candidates.length === 0 || (candidates.length === 1 && candidates[0] === this.text)) return []
-    this.menuIndex = Math.min(this.menuIndex, candidates.length - 1)
-    return candidates
+    // An alias whose command is also listed is shown on that command's row, not as a row of its own.
+    const rows = candidates.filter((name) => {
+      const of = this.o.menuInfo?.(name)?.aliasOf
+      return !(of && candidates.includes(of))
+    })
+    if (this.text !== this.slashQuery) this.menuIndex = 0
+    this.slashQuery = this.text
+    this.menuIndex = Math.min(this.menuIndex, rows.length - 1)
+    return rows
   }
 
   private acceptCandidate(candidate: string): void {
@@ -671,8 +702,10 @@ export class Editor implements Component, VimTarget {
       shown.map((c) => {
         const entry = info(c)
         const nameWidth = 2 + displayWidth(c)
-        const args = entry?.args ? truncateTo(entry.args, cap - nameWidth - 1) : ''
-        return { c, args, summary: entry?.summary, left: nameWidth + (args ? 1 + displayWidth(args) : 0) }
+        const alias = entry?.aliases?.join(' ') ?? ''
+        const named = nameWidth + (alias ? 1 + displayWidth(alias) : 0)
+        const args = entry?.args ? truncateTo(entry.args, cap - named - 1) : ''
+        return { c, alias, args, summary: entry?.summary, left: named + (args ? 1 + displayWidth(args) : 0) }
       })
     const avail = width - 2 - (width >= 5 ? 2 : 0)
     let rows = layout(MENU_LEFT_MAX)
@@ -684,7 +717,8 @@ export class Editor implements Component, VimTarget {
     if (!withSummary) rows = layout(Number.POSITIVE_INFINITY)
     const leftWidth = Math.max(0, ...rows.map((r) => r.left))
     const lines = rows.map((r, i) => {
-      const body = r.args ? `${this.bold(r.c)} ${this.paint('faint', r.args)}` : this.bold(r.c)
+      const name = r.alias ? `${this.bold(r.c)} ${this.paint('muted', r.alias)}` : this.bold(r.c)
+      const body = r.args ? `${name} ${this.paint('faint', r.args)}` : name
       const left = i === selected ? `${this.bold(this.paint('accent', '❯'))} ${body}` : `  ${body}`
       if (!withSummary || !r.summary) return left
       return `${left}${' '.repeat(leftWidth - r.left + 2)}${this.paint('muted', r.summary)}`
@@ -692,9 +726,10 @@ export class Editor implements Component, VimTarget {
     if (note) lines.push(`  ${this.paint('faint', note)}`)
     const above = start
     const below = candidates.length - (start + shown.length)
-    const indicators = [above > 0 ? `↑ ${above} more` : '', below > 0 ? `↓ ${below} more` : ''].filter(
-      Boolean,
-    )
+    const indicators = [
+      above > 0 ? `↑ ${tt('dialog.more', this.o.locale ?? 'en', { n: above })}` : '',
+      below > 0 ? `↓ ${tt('dialog.more', this.o.locale ?? 'en', { n: below })}` : '',
+    ].filter(Boolean)
     if (indicators.length) lines.push(`  ${this.paint('faint', indicators.join('  '))}`)
     // A useful box needs two sides and at least one content column. At widths below that, keep the
     // menu readable and honour the component width contract by dropping only the decoration.

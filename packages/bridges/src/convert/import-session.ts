@@ -6,7 +6,7 @@ import {
   validateEvent,
 } from '@agnes/protocol'
 import { detectSource } from './detect.js'
-import { EnvelopeBuilder } from './envelope.js'
+import { EnvelopeBuilder, IMPORT_ACTOR } from './envelope.js'
 import { importClaudeCode, readClaudeCodeHeader } from './import/claude-code.js'
 import { importCodex, readCodexHeader } from './import/codex.js'
 import { importPi, readPiHeader } from './import/pi.js'
@@ -26,6 +26,46 @@ const isCliResult = (value: unknown): boolean =>
 export const OLDER_EXPORT_FORMAT = 'older export format'
 /** Total source bytes, before decoding or allocating JSON rows. */
 export const MAX_IMPORT_BYTES = 64 * 1024 * 1024
+
+/** Row types a native file may keep: conversation history, exactly what a foreign import produces. */
+const HISTORY_TYPES: ReadonlySet<string> = new Set([
+  'session/start',
+  'turn/start',
+  'turn/end',
+  'step/start',
+  'step/end',
+  'user/message',
+  'assistant/message',
+  'tool/call',
+  'tool/result',
+])
+
+/**
+ * A native file is as foreign as a Claude Code one: its own labels prove nothing. Every row is
+ * relabeled untrusted `import:agnes` under the importer actor, and a row that carries authority
+ * (decisions, effects, budgets, x/core/* state, ...) is replaced by an inert unmapped row at the
+ * same seq, so later rows keep the sequence they point at.
+ */
+function neutralize(event: EventEnvelope, report: Tolerance): EventEnvelope {
+  const keep = HISTORY_TYPES.has(event.type) || event.type.startsWith('x/agnes/import/')
+  // `register` names a Core-owned state cell; an imported row never writes one.
+  const { register: _register, ...rest } = event
+  const labeled: EventEnvelope = { ...rest, actor: IMPORT_ACTOR, origin: 'import:agnes', trust: 'untrusted' }
+  if (event.type === 'session/start') {
+    const data = event.data as Record<string, unknown>
+    const key = typeof data.key === 'string' ? data.key : ''
+    // An earlier import's marker keeps naming where the history first came from; otherwise this one is it.
+    const was = data.imported
+    const imported =
+      was && typeof was === 'object' && !Array.isArray(was)
+        ? was
+        : { source: 'agnes', sourceId: key.slice(0, 256), cwd: '' }
+    return { ...labeled, data: { ...data, imported } as JsonValue }
+  }
+  if (keep) return labeled
+  report.unsupported(`authority-row:${event.type}`)
+  return downgrade(labeled, ['authority row replaced by an inert import row'])
+}
 
 function passThroughAgnes(rows: JsonlRow[], report: Tolerance): EventEnvelope[] {
   const events: EventEnvelope[] = []
@@ -56,7 +96,7 @@ function passThroughAgnes(rows: JsonlRow[], report: Tolerance): EventEnvelope[] 
       continue
     }
     previousSeq = result.value.seq
-    events.push(result.value)
+    events.push(neutralize(result.value, report))
   }
   if (events[0]?.type !== 'session/start')
     throw new ImportError('E_IMPORT_NO_HEADER', 'agnes stream has no valid session/start')

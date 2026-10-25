@@ -12,10 +12,10 @@ export type ResourceTuiPort = Readonly<{
 const unavailable = (): ResourceTuiResult => ({ text: 'resource control is not supported by this Daemon' })
 
 function isMutating(kind: ResourceCommandKind, values: readonly string[]): boolean {
-  // parse() takes each flag with one value, anywhere, and the action is the first other word:
+  // parse() takes each flag with one value (--yes with none), anywhere, and the action is the first other word:
   // `--expected-revision <rev> trust srv` is a trust, and must wait for confirm like any other.
   let at = 0
-  while (values[at]?.startsWith('-')) at += 2
+  while (values[at]?.startsWith('-')) at += values[at] === '--yes' ? 1 : 2
   const action = values[at] ?? ''
   if (kind === 'resources') return action === 'enable' || action === 'disable'
   if (kind === 'skills') return action === 'refresh' || action === 'trust'

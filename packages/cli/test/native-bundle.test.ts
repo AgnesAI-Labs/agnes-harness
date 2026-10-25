@@ -221,7 +221,9 @@ it('round-trips current-product rows and original bytes through the public artif
           thumbnailBytes,
         )
         const body = await imported.scan({ fromSeq: 2, limit: 50 })
-        expect(body).toEqual(rows.slice(1))
+        // Imported rows keep their sequence but arrive as untrusted history, never under their own labels.
+        expect(body.map((row) => row.seq)).toEqual(rows.slice(1).map((row) => row.seq))
+        for (const row of body) expect(row).toMatchObject({ origin: 'import:agnes', trust: 'untrusted' })
         expect(await imported.d.runtime.attachmentStore()?.pendingRoots()).toEqual({
           complete: true,
           roots: [],

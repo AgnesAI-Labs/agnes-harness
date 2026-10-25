@@ -41,12 +41,15 @@ export type ThemedAnsi = Omit<Ansi, 'fg' | 'bg'> & {
   bg: (c: Tone | Colour, s: string) => string
   /** True while `/raw` is on: views leave out the bars, rails and shading that a terminal copy would carry along. */
   readonly raw?: boolean
+  /** Bumps whenever the theme changes in place, so a view that remembers its painted rows knows to repaint. */
+  readonly revision?: number
 }
 
 /** Mutable session theme. Components keep one façade, so switching takes effect on the next frame. */
 export class TuiTheme {
   private current: TuiThemeName
   private tones: Partial<Record<Tone, string>> | undefined
+  private revision = 0
   /** The copy-friendly view (`/raw`); every `ansi()` façade reads it as it draws. */
   raw = false
 
@@ -63,6 +66,7 @@ export class TuiTheme {
   set(name: TuiThemeName, tones?: Partial<Record<Tone, string>>): void {
     this.current = name
     this.tones = tones
+    this.revision++
   }
 
   /** What `tone` looks like in the current theme; mono has no colours. */
@@ -128,6 +132,9 @@ export class TuiTheme {
       },
       get raw() {
         return theme.raw
+      },
+      get revision() {
+        return theme.revision
       },
     }
   }

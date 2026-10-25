@@ -1,5 +1,5 @@
 import type { Component } from '../component.js'
-import { Box } from '../components/box.js'
+import { type Box, dialogBox } from '../components/box.js'
 import { FilterSelect } from '../components/filter-select.js'
 import { tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
@@ -34,11 +34,19 @@ export class ThemePicker implements Component {
       ...custom.map((name) => tt('theme.custom', locale, { name })),
     ]
     const select = new FilterSelect({
-      options: names.map((id, i) => ({
-        id,
-        label: `${labels[i]}${id === current ? tt('theme.current', locale) : ''}`,
-        search: id,
-      })),
+      // A built-in name is `Name · what it looks like`: the second half goes in the description column.
+      // A custom one is `Custom · <file>`, whose file name is the name itself and stays whole.
+      options: names.map((id, i) => {
+        const text = labels[i] ?? id
+        const [label = id, description] = id.startsWith('custom:') ? [text] : text.split(' · ')
+        return {
+          id,
+          label,
+          ...(description ? { description } : {}),
+          ...(id === current ? { current: true } : {}),
+          search: id,
+        }
+      }),
       locale,
       ansi: this.ansi,
       onChoose: (id) => {
@@ -48,9 +56,14 @@ export class ThemePicker implements Component {
       onCancel: () => this.close(),
     })
     for (let i = 0; i < names.indexOf(current); i++) select.handleInput('\x1b[B')
-    this.box = new Box(select, {
+    this.box = dialogBox(select, {
       title: tt('theme.pickerTitle', locale),
       ansi: this.ansi,
+      hints: [
+        { key: '↑↓', label: tt('dialog.select', locale) },
+        { key: '⏎', label: tt('dialog.confirm', locale) },
+        { key: 'esc', label: tt('dialog.close', locale) },
+      ],
     })
   }
   close(): void {

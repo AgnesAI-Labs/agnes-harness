@@ -1,6 +1,9 @@
 import type { UsageView } from '@agnes/protocol'
+import { ANSI_RE, CURSOR_MARKER } from '../ansi.js'
 import { type Component, padLine } from '../component.js'
+import { tt } from '../locale-extended.js'
 import type { StatusLineConfig } from '../statusline-config.js'
+import { displayWidth } from '../terminal.js'
 import type { ThemedAnsi } from '../theme.js'
 import type { WorkspaceInfo } from '../workspace-info.js'
 import { bottomRail, RAIL_MIN_WIDTH, type RailState, topRail } from './composer-rail.js'
@@ -42,9 +45,20 @@ export class Composer implements Component {
     }
     return [
       ` ${topRail(state, frameWidth, this.ansi)}`,
-      ...this.editor.render(inner).map((line) => `   ${padLine(line, inner)}  `),
+      ...this.marked(this.editor.render(inner), inner).map((line) => `   ${padLine(line, inner)}  `),
       ` ${bottomRail(state, frameWidth, this.ansi)}`,
     ]
+  }
+
+  /** An empty prompt shows the placeholder cut to the row; say so with `…` instead of ending mid-word. */
+  private marked(rows: string[], inner: number): string[] {
+    const placeholder = tt('app.composerPlaceholder', this.locale)
+    const first = rows[0]
+    if (rows.length !== 1 || first === undefined) return rows
+    const shown = first.replace(ANSI_RE, '').replaceAll(CURSOR_MARKER, '').slice(2).trimEnd()
+    if (shown === '' || shown.length >= placeholder.length || !placeholder.startsWith(shown)) return rows
+    const kept = displayWidth(shown) + 1 <= inner - 2 ? shown : Array.from(shown).slice(0, -1).join('')
+    return [first.replace(shown, `${kept}…`)]
   }
 
   handleInput(data: string): boolean {

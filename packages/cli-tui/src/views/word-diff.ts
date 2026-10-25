@@ -1,10 +1,10 @@
-import { escapeControl } from '../component.js'
+import { escapeVisible } from '../component.js'
 
 /** A removed or added line of a diff; `marks` are the changed [from, to) ranges of its shown text. */
 export type MarkedOp = { mark: ' ' | '+' | '-'; text: string; marks?: Array<[number, number]> }
 
-/** The text of a diff line as it is drawn: tabs widened and control characters made visible. */
-export const shownText = (text: string): string => escapeControl(text.replaceAll('\t', '  '))
+/** The text of a diff line as it is drawn: tabs widened and control and invisible format characters made visible. */
+export const shownText = (text: string): string => escapeVisible(text.replaceAll('\t', '  '))
 
 // Past these a pair is shown as two plain changed lines: the word compare is a quadratic table, and a
 // line that long is rarely an edit of one word.

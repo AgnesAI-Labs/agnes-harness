@@ -120,7 +120,7 @@ async function scenario(opts: {
     term.feed(opts.key ?? '1')
     await sleep(150)
     return {
-      allowOnceOnScreen: before.includes('1. Allow once'),
+      allowOnceOnScreen: before.includes('[1] Allow once'),
       pickerOnScreen: before.includes('Select Session'),
       responses: structuredClone(responses),
       screen: before,
@@ -150,7 +150,7 @@ it('[boundary] picker open, no usage row: Allow once is on screen and digit 1 se
 
 it('[M-11] picker open with usage row: digit 1 approves only an Allow once that is on screen', async () => {
   const seen = await scenario({ usage: true, picker: true })
-  // Before the fix the frame clipped "1. Allow once" off the top while digit 1 still selected it.
+  // Before the fix the frame clipped "[1] Allow once" off the top while digit 1 still selected it.
   expect(selected(seen.responses), `${JSON.stringify(seen.responses)}\n${seen.screen}`).toEqual(
     seen.allowOnceOnScreen ? ['allow-once'] : [],
   )

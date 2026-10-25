@@ -1,7 +1,13 @@
 import type { ToolContext, ToolResult } from '@agnes/extension-api'
 import { failureCode, toolFailure } from '../../tools-core/src/guards/feedback.js'
 import { guardedResult } from '../../tools-core/src/guards/output.js'
-import { shellGuidance, timeoutGuidance } from '../../tools-core/src/shell-guidance.js'
+import {
+  DEADLINE_ADVICE,
+  deadlineStop,
+  deadlineWait,
+  shellGuidance,
+  timeoutGuidance,
+} from '../../tools-core/src/shell-guidance.js'
 import type { ShellJobs } from './registry.js'
 
 export async function runShellJob(
@@ -27,12 +33,17 @@ export async function runShellJob(
     id = started.id
     const notes = shellGuidance(ctx, args.command)
     const requested = args.timeoutMs
-    const waitMs = Math.min(
+    // In a turn with a time limit the foreground wait also stops short of the turn's deadline; a
+    // background job is not waited on, so nothing is cut down for it.
+    const ownWaitMs = Math.min(
       typeof requested === 'number' && Number.isInteger(requested) && requested > 0
         ? requested
         : (ctx.defaultTimeoutMs ?? 120000),
       Math.max(1, ctx.timeoutMs - 25),
     )
+    const { waitMs, capped } = args.background
+      ? { waitMs: ownWaitMs, capped: false }
+      : deadlineWait(ctx, ownWaitMs)
     const job = args.background ? started : await jobs.wait(ctx, id, waitMs)
     if (job.status === 'running') {
       if (!args.background && args.timeoutToBackground === false) {
@@ -41,11 +52,13 @@ export async function runShellJob(
           content: [
             {
               type: 'text',
-              text: `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n${notes.join('\n')}\n${timeoutGuidance(ctx, args.command, args.cwd ?? ctx.cwd, !job.stdout && !job.stderr)}\n[timed out after ${waitMs}ms; job ${id} and its process group were killed]`,
+              text: capped
+                ? `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n${notes.join('\n')}\n[${deadlineStop(ctx, waitMs)}; job ${id} and its process group were killed. ${DEADLINE_ADVICE}]`
+                : `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n${notes.join('\n')}\n${timeoutGuidance(ctx, args.command, args.cwd ?? ctx.cwd, !job.stdout && !job.stderr)}\n[timed out after ${waitMs}ms; job ${id} and its process group were killed]`,
             },
           ],
           isError: true,
-          details: { code: 'SHELL_TIMEOUT' },
+          details: { code: capped ? 'SHELL_TURN_DEADLINE' : 'SHELL_TIMEOUT' },
         }
       }
       return {
@@ -53,7 +66,7 @@ export async function runShellJob(
         content: [
           {
             type: 'text',
-            text: `${notes.length ? notes.join('\n') + '\n' : ''}background job ${id} started${args.background ? '' : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; use job_output, job_list or job_kill`,
+            text: `${notes.length ? notes.join('\n') + '\n' : ''}background job ${id} started${args.background ? '' : capped ? ` (foreground wait ${deadlineStop(ctx, waitMs)}; the same process continues)` : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; use job_output, job_list or job_kill${capped ? `. ${DEADLINE_ADVICE}` : ''}`,
           },
         ],
         details: {
@@ -83,6 +96,14 @@ export async function runShellJob(
     }
   } catch (e) {
     if (id && ctx.signal.aborted) await jobs.kill(ctx, id)
+    // Once the job has an id the command is running or has run, so whatever failed after that was
+    // reading its result. Saying it could not start would invite running it a second time.
+    else if (id)
+      return toolFailure(
+        ctx,
+        'SHELL_JOB_UNREAD',
+        `command started as job ${id}, but its result could not be read; it may still be running or may have finished. Check job_output for ${id} or job_list before running it again.`,
+      )
     if (!id && (e as { code?: string }).code === 'SANDBOX_UNAVAILABLE')
       return toolFailure(
         ctx,

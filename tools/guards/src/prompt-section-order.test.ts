@@ -18,14 +18,12 @@ const root = repoRoot()
  * at runtime), so the cross-check has to live above both, as a second, independent read of what
  * each package's source literally says.
  *
- * The 'core'-owned rows are fixed reserved values, not scanned claims: unlike the 'code' and
- * 'base' rows, nothing in this file re-reads packages/core's source to confirm they still say
- * what this table says they say. Core is trusted, in-tree source, not the failure mode this guard
- * polices (two independent contributors landing on the same order by accident) — but leaving its
- * orders out of the table entirely is what let this gap exist in the first place: a code or base
- * row could previously claim any of core's orders and pass every check here anyway. Listing them
- * closes that, since the no-duplicate-order check below now covers all three mechanisms' numbers
- * at once.
+ * The 'core'-owned rows are reserved values that packages/core writes as section literals. Leaving
+ * its orders out of the table is what let a code or base row claim any of core's orders and pass
+ * every check here anyway, and what let a new core live note land on an order base already owned
+ * ('core:unattended-run' once shared 113 with 'workflow:receipts'). The table lists them, and the
+ * core scan below checks that every literal section in packages/core/src claims its row, so the
+ * no-duplicate-order check covers all three mechanisms' numbers at once.
  *
  * A change to either side's order without a matching change here is exactly the defect this guard
  * exists to catch: a `packages/base` file registering a context-hook section whose order collides
@@ -51,12 +49,18 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'core:untrusted-envelope', order: 0, owner: 'core' },
   { id: 'persona', order: 1, owner: 'code' },
   { id: 'environment', order: 110, owner: 'code' },
+  // packages/core/src/execution/turn/inference.ts: the note that Computer Use is not offered to
+  // the selected model.
+  { id: 'core:computer-use-model', order: 111, owner: 'core' },
   // Live repository guidance supplied by the official context-rules extension.
   { id: 'core:child-receipts', order: 112, owner: 'core' },
   { id: 'workflow:receipts', order: 113, owner: 'base' },
   // packages/core/src/execution/turn/turn-limits.ts: a live note, delivered at the tail.
   { id: 'core:turn-limits', order: 114, owner: 'core' },
   { id: 'tools-available', order: 115, owner: 'code' },
+  // packages/core/src/execution/turn/inference.ts: the unattended-run live note, delivered at the
+  // tail after the turn-limits note.
+  { id: 'core:unattended-run', order: 116, owner: 'core' },
   { id: 'memory:index', order: 131, owner: 'core' },
   { id: 'agents-md', order: 120, owner: 'base' },
   { id: 'coding-doctrine', order: 130, owner: 'code' },
@@ -72,6 +76,8 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   // entries into the same sorted section list at these two fixed orders.
   { id: 'harness:prompt', order: 180, owner: 'core' },
   { id: 'harness:memory', order: 181, owner: 'core' },
+  // packages/core/src/loop/request-options.ts: a loop's own system text, after everything else.
+  { id: 'loop:system', order: 1000, owner: 'core' },
   // A context hook's additionalContext travels as a tail note, not a section.
 ]
 
@@ -128,6 +134,23 @@ describe('prompt section order table has one claimant per order, across both con
     // Every official base context contributor must fill its canonical section.
     for (const s of CANONICAL_PROMPT_SECTIONS)
       if (s.owner === 'base') expect(seenBaseIds.has(s.id), s.id).toBe(true)
+  })
+
+  it('every literal section in packages/core/src claims its canonical row', () => {
+    const byId = new Map(CANONICAL_PROMPT_SECTIONS.map((s) => [s.id, s]))
+    const seen = new Set<string>()
+    for (const f of listSourceFiles(join(root, 'packages/core/src'))) {
+      if (isTestFile(f)) continue
+      for (const { id, order } of extract(CODE_SECTION_RE, readFileSync(f, 'utf8'))) {
+        const row = byId.get(id)
+        expect(row, `${relative(root, f)} writes section '${id}' that the table does not list`).toBeDefined()
+        expect(order, `${relative(root, f)} writes '${id}' at order ${order}`).toBe(row?.order)
+        seen.add(id)
+      }
+    }
+    // The scan must keep finding core's literal sections, or it checks nothing.
+    for (const id of ['core:untrusted-envelope', 'core:turn-limits', 'core:unattended-run'])
+      expect(seen.has(id), id).toBe(true)
   })
 
   it('the two extractors are not dead regexes: each matches its own file shape and not the other', () => {

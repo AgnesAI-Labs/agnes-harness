@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
+import { escapeControl } from '@agnes/cli-tui'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
 import type { Host, HostSession } from '@agnes/host'
 import type { EventEnvelope, SessionStart } from '@agnes/protocol'
@@ -25,7 +26,11 @@ const BATCH_SIZE = 500
 
 type AppendEvent = Omit<EventEnvelope, 'seq'>
 
-/** Pack only at a closed-turn boundary: core refuses a transaction ending on an open turn. */
+/**
+ * Pack only at a closed-turn boundary: core refuses a transaction ending on an open turn, because an
+ * open turn must hold a program counter that an export does not carry. A turn is therefore the
+ * smallest unit, and a turn longer than `limit` is appended alone as one transaction of its own.
+ */
 export function importBatches(events: AppendEvent[], limit = BATCH_SIZE): AppendEvent[][] {
   const units: AppendEvent[][] = []
   let turn: AppendEvent[] | undefined
@@ -51,8 +56,6 @@ export function importBatches(events: AppendEvent[], limit = BATCH_SIZE): Append
   const batches: AppendEvent[][] = []
   let batch: AppendEvent[] = []
   for (const unit of units) {
-    if (unit.length > limit)
-      throw new Error(`one imported turn has ${unit.length} events, exceeding batch limit ${limit}`)
     if (batch.length > 0 && batch.length + unit.length > limit) {
       batches.push(batch)
       batch = []
@@ -86,7 +89,12 @@ const importedMarker = (
   const data = startData(events)
   const marker = data?.imported
   if (marker && typeof marker === 'object' && !Array.isArray(marker))
-    return marker as SessionStart['imported']
+    return source === 'agnes'
+      ? ({
+          ...marker,
+          cwd: (marker as { cwd?: string }).cwd || cwd.slice(0, 4096),
+        } as SessionStart['imported'])
+      : (marker as SessionStart['imported'])
   if (source !== 'agnes') return undefined
   const key = typeof data?.key === 'string' ? data.key : ''
   return { source: 'agnes', sourceId: key.slice(0, 256), cwd: cwd.slice(0, 4096) }
@@ -142,6 +150,9 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
         cwd: reserved.binding.canonicalRoot,
         binding: reserved.binding,
         skipSessionStartHooks: true,
+        // Title generation and approval expiry append rows in reply to imported ones; landing between
+        // two batches, one would shift every later row off its exported sequence.
+        skipBackgroundWriters: true,
         requireNew: true,
         ...(imported ? { imported } : {}),
       })
@@ -183,7 +194,14 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
           throw new Error('native import artifact store identity mismatch')
       }
       for (const batch of batches) {
-        await session.append(batch)
+        // Each batch must start right after the last imported row and land contiguously; anything
+        // else means another writer reached the target, and the import is refused and rolled back.
+        const expected = written + 2
+        if (session.lastSeq !== expected - 1)
+          throw new Error(`import target moved to sequence ${session.lastSeq} before row ${expected}`)
+        const { seqs } = await session.append(batch)
+        if (seqs[0] !== expected || seqs.at(-1) !== expected + batch.length - 1)
+          throw new Error(`import batch landed at sequence ${seqs[0]} instead of ${expected}`)
         written += batch.length
       }
       for (const { scope, receipt } of receipts) await attachments?.confirm(scope, receipt.id)
@@ -224,7 +242,7 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
       `imported ${written} events into ${key} (source ${converted.report.source}; skipped ${converted.report.skipped.length}, repaired ${converted.report.repaired.length}, branches dropped ${converted.report.branches.dropped})\n`,
     )
     for (const skipped of converted.report.skipped.slice(0, 20))
-      deps.io.stderr.write(`skipped line ${skipped.line}: ${skipped.reason}\n`)
+      deps.io.stderr.write(`skipped line ${skipped.line}: ${escapeControl(skipped.reason)}\n`)
     return ExitCode.OK
   } finally {
     await session.close().catch(() => undefined)

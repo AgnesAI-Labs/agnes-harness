@@ -61,6 +61,18 @@ export function localCommandView(
           : new Text(text)
     const styled = new VStack([echo, body])
     const plain = new VStack([echo, new Text(text)])
-    return { render: (w) => styled.render(w), transcript: (w) => plain.render(w), invalidate() {} }
+    // Laid out like a tool card: one column in, the command as the head, the output on a faint rail.
+    const rail = ` ${ansi.fg('faint', '│')} `
+    return {
+      render: (w) =>
+        ansi.raw
+          ? styled.render(w)
+          : [
+              ...echo.render(Math.max(1, w - 1)).map((row) => ` ${row}`),
+              ...body.render(Math.max(1, w - 3)).map((row) => `${rail}${row}`),
+            ],
+      transcript: (w) => plain.render(w),
+      invalidate() {},
+    }
   }
 }

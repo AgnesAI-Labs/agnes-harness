@@ -180,6 +180,7 @@ export function buildToolContext(
     timeoutMs: number
     defaultTimeoutMs?: number
     outputMaxBytes: number
+    turnTimeLimit?: { timeLimitMs: number; deadlineAt: number }
   },
 ): ToolContext {
   const stepId = `${d.turn}/${d.step}`
@@ -529,6 +530,7 @@ export function buildToolContext(
     timeoutMs: call.timeoutMs,
     ...(call.defaultTimeoutMs === undefined ? {} : { defaultTimeoutMs: call.defaultTimeoutMs }),
     outputMaxBytes: call.outputMaxBytes,
+    ...(call.turnTimeLimit ? { turnTimeLimit: { ...call.turnTimeLimit } } : {}),
     lease: {
       expiresAt: new Date(Date.now() + d.lease.remainingMs()).toISOString(),
       scope: {},

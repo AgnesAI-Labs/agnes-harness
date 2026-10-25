@@ -203,6 +203,53 @@ describe('Editor input', () => {
     expect(sub).toEqual([`${'x'.repeat(1001)} tail`])
   })
 
+  it('a paste chip is one unit: cuts take it whole, the cursor steps over it, nothing typed lands inside', () => {
+    const wrap = (s: string) => `\x1b[200~${s}\x1b[201~`
+    const long = Array.from({ length: 12 }, (_, i) => `line ${i}`).join('\r')
+    const chip = '[Pasted #1 · 12 lines]'
+    const fresh = (): { e: Editor; sent: string[] } => {
+      const sent: string[] = []
+      const e = new Editor({ onSubmit: (t) => sent.push(t) })
+      e.handleInput(wrap(long))
+      return { e, sent }
+    }
+    const full = long.replaceAll('\r', '\n')
+    // Every cut that reaches into the chip removes all of it or none of it, never a piece.
+    for (const keys of [
+      ['\x17'],
+      ['\x1b[D', '\x15'],
+      ['\x01', '\x0b'],
+      ['\x01', '\x1bd'],
+      ['\x01', '\x1b[C', '\x0b'],
+    ]) {
+      const { e } = fresh()
+      for (const k of keys) e.handleInput(k)
+      expect([chip, '']).toContain(e.text)
+      expect(e.expanded()).toBe(e.text ? full : '')
+    }
+    // Moving left from the end of the chip and typing puts the text beside it, not inside it.
+    const { e, sent } = fresh()
+    e.handleInput('\x1b[D')
+    type(e, 'X')
+    expect(e.text).toBe(`X${chip}`)
+    e.handleInput('\r')
+    expect(sent).toEqual([`X${full}`])
+    // A click inside the chip lands at one of its ends.
+    const c = fresh().e
+    c.render(40)
+    c.moveCursorToCell(0, 8)
+    expect([0, chip.length]).toContain(c.cursor)
+    // A cut-word-back reaching the chip from the right takes it whole, and the kill ring restores it.
+    const w = fresh().e
+    type(w, ' tail')
+    for (let i = 0; i < 5; i++) w.handleInput('\x1b[D')
+    w.handleInput('\x17')
+    expect(w.text).toBe(' tail')
+    w.handleInput('\x19')
+    expect(w.text).toBe(`${chip} tail`)
+    expect(w.expanded()).toBe(`${full} tail`)
+  })
+
   it('ctrl-r searches the history: older matches on repeat, enter takes one without sending, esc restores the draft', () => {
     const sub: string[] = []
     const e = new Editor({ onSubmit: (t) => sub.push(t) })
@@ -234,6 +281,18 @@ describe('Editor input', () => {
     e.handleInput('\x1b')
     expect(e.text).toBe('draft')
     expect(e.render(20)[0]).toContain('draft')
+    // A writer outside the keyboard (a steer's clear, an image chip landing) ends the search: esc cannot bring back what it replaced.
+    for (const [write, after] of [
+      [(x: Editor) => x.clear(), ''],
+      [(x: Editor) => x.insertChip('[Image #1]'), 'sent[Image #1]'],
+    ] as const) {
+      const w = new Editor({ onSubmit: () => {} })
+      type(w, 'sent')
+      w.handleInput('\x12')
+      write(w)
+      expect(w.inSearch).toBe(false)
+      expect(w.text).toBe(after)
+    }
   })
 
   it('esc clears and reports, ctrl-c and ctrl-d are left to the application', () => {
@@ -378,6 +437,15 @@ describe('Editor slash menu', () => {
     expect(submitted).toEqual(['/quit'])
   })
 
+  it('typing more of the command puts the highlight back on the top match', () => {
+    const e = new Editor({ onSubmit: () => {}, complete: slashComplete })
+    type(e, '/')
+    for (let i = 0; i < 4; i++) e.handleInput('\x1b[B') // down to /refine
+    type(e, 're')
+    e.handleInput('\t')
+    expect(e.text).toBe('/resume ')
+  })
+
   it('tab accepts the highlighted candidate the same way enter does', () => {
     const e = new Editor({ onSubmit: () => {}, complete: slashComplete })
     type(e, '/h')
@@ -504,6 +572,34 @@ describe('Editor slash menu rendering (pi style)', () => {
     const e = menuEditor()
     type(e, '/')
     expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more'])
+  })
+
+  it('folds an alias into its command row, still completes and submits it', () => {
+    const submitted: string[] = []
+    const e = new Editor({
+      onSubmit: (t) => submitted.push(t),
+      complete: (p) => ['/quit', '/exit', '/queue'].filter((c) => c.startsWith(p)),
+      menuInfo: (n) =>
+        n === '/exit' ? { aliasOf: '/quit' } : n === '/quit' ? { aliases: ['/exit'] } : undefined,
+    })
+    type(e, '/')
+    const rows = unbox(menuRows(e))
+    expect(rows).toEqual(['❯ /quit /exit', '  /queue'])
+    // Down moves past /quit to /queue: the alias has no row of its own to stop on.
+    e.handleInput('\x1b[B')
+    e.handleInput('\r')
+    expect(e.text).toBe('/queue ')
+    // Typed out, the alias still works; a prefix that only matches the alias lists it as its own row.
+    const typed = new Editor({
+      onSubmit: (t) => submitted.push(t),
+      complete: (p) => ['/quit', '/exit'].filter((c) => c.startsWith(p)),
+      menuInfo: (n) => (n === '/exit' ? { aliasOf: '/quit' } : undefined),
+    })
+    type(typed, '/exi')
+    expect(unbox(menuRows(typed))).toEqual(['❯ /exit'])
+    type(typed, 't')
+    typed.handleInput('\r')
+    expect(submitted).toEqual(['/exit'])
   })
 
   it('frames the menu in a rounded border that hugs the widest row', () => {
@@ -1210,6 +1306,22 @@ describe('Editor external edit', () => {
     e.handleInput('\x1a')
     expect(e.text).toBe('draft')
     expect(new Editor({ onSubmit() {} }).handleInput('\x07')).toBe(true)
+  })
+
+  it('taking a Ctrl-R match replaces the draft as one undoable step and ends the typing run', () => {
+    const e = new Editor({ onSubmit() {} })
+    type(e, 'old one')
+    e.handleInput('\r')
+    type(e, 'draft')
+    e.handleInput('\x12')
+    type(e, 'old')
+    e.handleInput('\r')
+    expect(e.text).toBe('old one')
+    type(e, 'x')
+    e.handleInput('\x1a')
+    expect(e.text).toBe('old one')
+    e.handleInput('\x1a')
+    expect(e.text).toBe('draft')
   })
 })
 

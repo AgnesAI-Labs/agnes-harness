@@ -102,7 +102,7 @@ export class HeadsUpWatcher {
       const note = state.text ? cleanNote(state.text) : ''
       if (note && note !== this.shown) {
         this.shown = note
-        app.statusBar.setNotice(`⚑ ${tt('headsUp.label', app.locale)}: ${note}`, 'warning')
+        app.statusBar.setNotice(`${tt('headsUp.label', app.locale)}: ${note}`, 'warning')
         app.renderer.requestRender()
       }
       if (!state.busy) return

@@ -71,7 +71,7 @@ describe('HeadsUpWatcher', () => {
     await vi.waitFor(() => expect(h.calls).toHaveLength(3))
     expect(h.calls[0]).toMatchObject({ service: 'headsup.read', input: { turn: 3 } })
     await vi.waitFor(() => expect(h.notices).toHaveLength(1))
-    expect(h.notices[0]).toEqual(['⚑ Heads-up: Deleted build/ dir', 'warning'])
+    expect(h.notices[0]).toEqual(['Heads-up: Deleted build/ dir', 'warning'])
   })
 
   it('stays quiet when off, on errors, and when a new turn starts first', async () => {

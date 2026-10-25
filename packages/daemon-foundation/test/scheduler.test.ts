@@ -78,8 +78,10 @@ function scheduler(
   registry: SchedulerRegistry,
   clock: () => number,
   emit: (kind: string, options: { sessionId?: string; detail: unknown }) => void = () => undefined,
+  unattendedApproval?: (job: JobRow) => 'notify' | 'refuse',
 ) {
   return new Scheduler({
+    ...(unattendedApproval ? { unattendedApproval } : {}),
     repo,
     registry,
     notices: { emit } as never,
@@ -378,6 +380,26 @@ describe('Scheduler', () => {
     expect(message.actor).toMatchObject({ id: 'job:busy', role: 'system' })
     expect(message.content).toEqual([{ type: 'text', text: 'x' }])
     expect(repo.get('busy')).toMatchObject({ status: 'completed', result: { seq: 5 } })
+  })
+
+  it.each([
+    ['refuse', { unattendedApproval: 'refuse', interaction: 'unattended' }],
+    ['notify', { unattendedApproval: 'notify' }],
+  ] as const)('marks the prompt of a %s job as the policy declares attendance', async (policy, attrs) => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 10_000)
+    repo.insert(row('j'))
+    const { calls, registry } = fakeRegistry()
+    const instance = scheduler(
+      repo,
+      registry,
+      () => 10_000,
+      undefined,
+      () => policy,
+    )
+    await instance.tick()
+    // Nobody answers a `refuse` run, so its turn offers no tool that waits on a person; a `notify`
+    // run hands decisions to the owner and stays attended.
+    expect((calls[1]?.value as { actor: Actor } | undefined)?.actor.attrs).toEqual(attrs)
   })
 
   it('reopens a non-live session only at its persisted workspace and forwards its budget', async () => {

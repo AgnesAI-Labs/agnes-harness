@@ -1,8 +1,13 @@
+import { createAnsi } from '../ansi.js'
 import type { Component } from '../component.js'
-import { wrapText } from '../component.js'
+import { keyHints } from '../components/key-hints.js'
 import { fitLine } from '../components/line.js'
 import { Select } from '../components/select.js'
 import { tt } from '../locale-extended.js'
+import { TuiTheme } from '../theme.js'
+
+// Onboarding draws before any theme is chosen, so its key row is plain.
+const PLAIN = new TuiTheme('mono').ansi(createAnsi('none'))
 
 export type AuthMethodChoice = 'agnes-account' | 'api-key' | 'demo'
 
@@ -49,7 +54,18 @@ export class AuthMethodView implements Component {
   render(width: number): string[] {
     return [
       ...this.select.render(width),
-      ...wrapText(tt('authMethod.hint', this.locale), width).map((line) => fitLine(line, width)),
+      fitLine(
+        keyHints(
+          [
+            { key: '↑↓', label: tt('dialog.select', this.locale) },
+            { key: '⏎', label: tt('dialog.confirm', this.locale) },
+            { key: 'esc', label: tt('dialog.close', this.locale) },
+          ],
+          PLAIN,
+          width,
+        ),
+        width,
+      ),
     ]
   }
 }

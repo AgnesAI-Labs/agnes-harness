@@ -8,7 +8,14 @@ import { tt } from './locale-extended.js'
 /** Titles, snippets and prompts are external text: one inert line each. */
 export const oneLine = (text: string): string => escapeControl(text).replace(/\s+/g, ' ').trim()
 
-type HistoryHit = { sessionId: string; title: string; snippet: string; ts: string; seq?: number }
+type HistoryHit = {
+  sessionId: string
+  title: string
+  snippet: string
+  ts: string
+  seq?: number
+  workspace?: string
+}
 
 /** The text of a turn's user prompt, as sent; the editor sanitizes it when it takes it. */
 export function turnPrompt(nodes: readonly UINode[], ids: readonly string[]): string | undefined {
@@ -19,7 +26,7 @@ export function turnPrompt(nodes: readonly UINode[], ids: readonly string[]): st
 }
 
 function promptPreview(nodes: readonly UINode[], ids: readonly string[]): string | undefined {
-  return oneLine(turnPrompt(nodes, ids) ?? '').slice(0, 80) || undefined
+  return [...oneLine(turnPrompt(nodes, ids) ?? '')].slice(0, 80).join('') || undefined
 }
 
 /** Completed turns the daemon will fork from: `forkable` marks a turn whose boundary is a turn/end. */
@@ -114,6 +121,7 @@ export async function sessionSlash(app: TuiApp, cmd: string, line: string): Prom
           createdAt: hit.ts,
           lastSeq: hit.seq ?? 0,
           preset: null,
+          ...(hit.workspace ? { cwd: hit.workspace } : {}),
           ...(label ? { title: label } : {}),
         })
       }

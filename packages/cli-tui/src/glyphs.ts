@@ -30,7 +30,7 @@ export const GLYPHS: ReadonlyMap<string, string> = new Map<string, string>([
   ['◆', '*'],
   ['◈', '*'],
   ['✦', '*'],
-  ['✻', '*'],
+  ['∴', ':'],
   ['•', '*'],
   ['◇', 'o'],
   ['◉', 'o'],

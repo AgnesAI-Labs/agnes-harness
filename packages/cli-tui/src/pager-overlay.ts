@@ -1,12 +1,14 @@
 import { createAnsi } from './ansi.js'
-import type { Component } from './component.js'
+import { type Component, escapeControl } from './component.js'
+import { type KeyHint, keyHints } from './components/key-hints.js'
 import { fitLine } from './components/line.js'
 import { actionFor } from './keymap.js'
 import { parseKey } from './keys.js'
+import type { ChromeHintKey } from './locale-chrome-hints.js'
 import { tt } from './locale-extended.js'
 import type { TuiMouse } from './mouse.js'
 import { findMatches, highlight, type Match } from './pager-search.js'
-import type { Terminal } from './terminal.js'
+import { displayWidth, type Terminal } from './terminal.js'
 import type { ThemedAnsi, TuiTheme } from './theme.js'
 import type { Timeline } from './views/timeline.js'
 
@@ -230,19 +232,45 @@ export class PagerOverlay implements Component {
     return true
   }
 
-  private statusText(height: number): string {
+  /** The footer: what the pager shows of the conversation, then the keys that work now, `esc close` last. */
+  private footer(height: number, width: number): string {
     const locale = this.o.locale
-    if (this.draft !== undefined) return tt('pager.typing', locale, { query: this.draft })
-    if (this.query === '') {
-      const position = tt('pager.status', locale, {
+    const say = (key: ChromeHintKey): string => tt(key, locale)
+    const close = { key: 'esc', label: say('chromeHint.close') }
+    let status: string
+    let hints: KeyHint[]
+    if (this.draft !== undefined) {
+      status = tt('pager.typing', locale, { query: this.draft })
+      hints = [
+        { key: '⏎', label: say('chromeHint.search') },
+        { key: 'esc', label: say('chromeHint.cancel') },
+      ]
+    } else if (this.query === '') {
+      status = tt('pager.status', locale, {
         from: Math.min(this.top + 1, this.lines.length),
         to: Math.min(this.top + height, this.lines.length),
         total: this.lines.length,
       })
-      return `${tt('pager.hint', locale)} · ${position}`
+      hints = [
+        { key: '↑↓/pgup/pgdn', label: say('chromeHint.scroll') },
+        { key: '/', label: say('chromeHint.search') },
+        close,
+      ]
+    } else {
+      const at = this.found.length === 0 ? 0 : this.cur + 1
+      status = tt('pager.found', locale, { query: this.query, at, total: this.found.length })
+      hints = [
+        { key: 'n/N', label: `${say('chromeHint.next')}/${say('chromeHint.prev')}` },
+        { key: 'c', label: say('chromeHint.copy') },
+        { key: '/', label: say('chromeHint.newSearch') },
+        close,
+      ]
     }
-    const at = this.found.length === 0 ? 0 : this.cur + 1
-    return `${tt('pager.found', locale, { query: this.query, at, total: this.found.length })} · ${tt('pager.hintFound', locale)}`
+    const room = width - displayWidth(status) - 2
+    // A narrow footer keeps the keys and drops the status.
+    return room >= 14
+      ? `${this.ansi.fg('faint', escapeControl(status))}  ${keyHints(hints, this.ansi, room)}`
+      : keyHints(hints, this.ansi, width)
   }
 
   render(width: number): string[] {
@@ -260,7 +288,7 @@ export class PagerOverlay implements Component {
       return hits ? highlight(line, hits, current) : line
     })
     while (body.length < height) body.push('')
-    const rows = [...body, this.ansi.fg('faint', fitLine(this.statusText(height), width))]
+    const rows = [...body, fitLine(this.footer(height, width), width)]
     this.o.mouse.overlay(rows, height, width)
     return this.o.theme.frame(createAnsi(this.o.term.caps.color), rows, width, height + 1)
   }

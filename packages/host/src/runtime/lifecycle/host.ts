@@ -727,15 +727,16 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         // Keep expiry with the Host session rather than with a daemon endpoint. Local, worker and
         // direct Host callers all receive the same lifecycle, and closing any of them stops the wake
         // loop before core releases its writer lease.
-        let expiry: Awaited<ReturnType<typeof startApprovalExpiry>>
+        let expiry: Awaited<ReturnType<typeof startApprovalExpiry>> = { close: async () => undefined }
         try {
-          expiry = await startApprovalExpiry(s, {
-            onError: (error) =>
-              opts.log.error('approval expiry failed', {
-                sessionKey: s.key,
-                message: error instanceof Error ? error.message : String(error),
-              }),
-          })
+          if (!o.skipBackgroundWriters)
+            expiry = await startApprovalExpiry(s, {
+              onError: (error) =>
+                opts.log.error('approval expiry failed', {
+                  sessionKey: s.key,
+                  message: error instanceof Error ? error.message : String(error),
+                }),
+            })
         } catch (error) {
           try {
             await s.close()
@@ -747,7 +748,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         }
         const close = s.close.bind(s)
         let title: Awaited<ReturnType<typeof startSessionTitle>> | undefined
-        if (!opts.disableSessionTitle) {
+        if (!opts.disableSessionTitle && !o.skipBackgroundWriters) {
           try {
             title = await startSessionTitle(s, {
               schedule: scheduleTitle,

@@ -33,9 +33,11 @@ export function wrapText(text: string, width: number): string[] {
   const limit = Math.max(1, width)
   const out: string[] = []
   for (const para of text.split('\n')) {
-    let line = ''
-    for (const word of para.split(' ')) {
-      const candidate = line ? `${line} ${word}` : word
+    // The indent a line starts with is kept (short of the width); a wrapped continuation starts at the margin.
+    const indent = /^ */.exec(para)?.[0] ?? ''
+    let line = indent.slice(0, limit - 1)
+    for (const word of para.slice(indent.length).split(' ')) {
+      const candidate = line.trim() ? `${line} ${word}` : line + word
       if (displayWidth(candidate) <= limit) {
         line = candidate
         continue
@@ -70,14 +72,15 @@ export function escapeControl(s: string): string {
   return s.replace(CONTROL, (c) => (c === '\n' ? c : c === '\t' ? '    ' : ''))
 }
 
-/** One inert line of untrusted text: control characters escaped and invisible format characters (bidi overrides, zero-width, BOM) spelled out. */
-export const visibleLine = (text: string): string =>
-  // Before the trim, which would drop a leading or trailing BOM unseen.
+/** `escapeControl` plus invisible format characters (bidi overrides, zero-width, BOM) spelled out; line structure is kept. */
+export const escapeVisible = (text: string): string =>
+  // Before the trim in `visibleLine`, which would drop a leading or trailing BOM unseen.
   escapeControl(
     text.replace(/\p{Cf}/gu, (c) => `\\u{${(c.codePointAt(0) as number).toString(16).toUpperCase()}}`),
   )
-    .replace(/\s+/g, ' ')
-    .trim()
+
+/** One inert line of untrusted text: `escapeVisible`, whitespace collapsed. */
+export const visibleLine = (text: string): string => escapeVisible(text).replace(/\s+/g, ' ').trim()
 
 export class Text implements Component {
   private cache: { width: number; lines: string[] } | null = null

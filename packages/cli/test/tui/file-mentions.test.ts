@@ -53,6 +53,12 @@ describe('FileMentionSource', () => {
     expect(ids('src/')).toEqual(['src/tui/', 'src/app.ts', 'src/tui/app.ts', 'src/tui/editor.ts'])
   })
 
+  it('keeps an exactly typed file offered, first, even when longer names share its prefix', async () => {
+    const { ids } = await ready(['src/index.ts', 'src/index.tsx', 'Makefile', 'docs/Makefile.bak'])
+    expect(ids('src/index.ts')).toEqual(['src/index.ts', 'src/index.tsx'])
+    expect(ids('makefile')).toEqual(['Makefile', 'docs/Makefile.bak'])
+  })
+
   it('turns a failed listing into a state, never a throw', async () => {
     const changed = vi.fn()
     const source = new FileMentionSource(() => {
@@ -272,6 +278,8 @@ describe('createMentionSource', () => {
     answers[0]?.()
     await vi.waitFor(() => expect(search).toHaveBeenCalledTimes(2))
     expect(search.mock.calls.map(([query]) => query)).toEqual(['a', 'abc'])
+    // The answer for 'a' must not be offered as a choice for the query still in flight.
+    expect(source.get('abc')).toEqual({ status: 'loading', items: [] })
     answers[1]?.()
     await vi.waitFor(() => expect(source.get('abc').items).toEqual([{ id: 'abc.ts', directory: false }]))
     expect(search).toHaveBeenCalledTimes(2)

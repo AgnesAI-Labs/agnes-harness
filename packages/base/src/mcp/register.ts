@@ -20,6 +20,7 @@ import {
 } from '../../extensions/tools-core/src/guards/output.js'
 import { MAX_READ_BYTES } from '../../extensions/tools-core/src/tools/read.js'
 import { normalizeRemoteInputSchema, remoteInputSchema } from '../mcp-json-schema.js'
+import { McpCallError } from './call-error.js'
 import { type McpServerConfig, mcpErrorText, redactMcpSecrets } from './config.js'
 import { mcpPublicToolName, mcpStablePrefix } from './naming.js'
 import { admitMcpResourceTools, bindMcpResourceServer } from './resources.js'
@@ -79,10 +80,14 @@ export const MAX_MCP_TEXT_BLOCKS = 128
 export type McpConnection = {
   id: string
   listTools(options?: { signal?: AbortSignal; timeoutMs?: number }): Promise<McpRemoteTool[]>
+  /**
+   * Rejects with `McpCallError` when the failure is known not to have run the tool: the request never
+   * left, or the server answered it with an error. Any other rejection may have reached the server.
+   */
   callTool(
     name: string,
     args: unknown,
-    opts: { signal: AbortSignal },
+    opts: { signal: AbortSignal; timeoutMs?: number },
   ): Promise<{ content: RemoteContent[]; isError?: boolean }>
   close(): Promise<void>
   /** True only when the server's initialize result advertised the `resources` capability. */
@@ -322,10 +327,20 @@ function remoteDefinition(
     async execute(args, ctx): Promise<ToolResult> {
       let result: Awaited<ReturnType<McpConnection['callTool']>>
       try {
-        result = await conn.callTool(remote.name, args, { signal: ctx.signal })
+        // Core's deadline, not the SDK's 60 s default, so a slow call is not cut off as a failure
+        // while Core still counts it as running.
+        result = await conn.callTool(remote.name, args, { signal: ctx.signal, timeoutMs: ctx.timeoutMs })
       } catch (error) {
+        // A timeout or a dropped connection after the request left says nothing about what the
+        // tool did. A tool that changes things throws, so Core records the outcome as unknown
+        // instead of the model reading a failure and calling it again; reads and idempotent calls
+        // are safe to repeat, and a call refused or answered with an error did not run.
+        if (!(error instanceof McpCallError) && !readOnly && !idempotent)
+          throw new Error(`mcp server ${cfg.id} did not answer the call: ${errorText(error, cfg)}`)
+        const failure =
+          error instanceof McpCallError && error.stage === 'answered' ? 'returned an error' : 'unavailable'
         return {
-          content: [{ type: 'text', text: `mcp server ${cfg.id} unavailable: ${errorText(error, cfg)}` }],
+          content: [{ type: 'text', text: `mcp server ${cfg.id} ${failure}: ${errorText(error, cfg)}` }],
           isError: true,
         }
       }
@@ -410,14 +425,19 @@ function remoteDefinition(
         includePersistedRefs(content, persistedRefs)
         return result.isError === true ? { content, isError: true } : { content }
       } catch (error) {
+        // The server has answered, so the call ran whatever its content looks like. For a tool that
+        // changes things, report it the way the server did: an error here would invite a repeat.
+        const ran = !readOnly && !idempotent
         const content: ToolResult['content'] = [
-          { type: 'text', text: `mcp server ${cfg.id} returned invalid content: ${errorText(error, cfg)}` },
+          {
+            type: 'text',
+            text: ran
+              ? `mcp server ${cfg.id} ${result.isError === true ? 'reported an error' : 'completed the call'} but returned content that cannot be shown: ${errorText(error, cfg)}`
+              : `mcp server ${cfg.id} returned invalid content: ${errorText(error, cfg)}`,
+          },
         ]
         includePersistedRefs(content, persistedRefs)
-        return {
-          content,
-          isError: true,
-        }
+        return ran && result.isError !== true ? { content } : { content, isError: true }
       }
     },
   })

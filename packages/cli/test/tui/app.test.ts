@@ -150,6 +150,35 @@ it('renders localized daemon notices delivered through the real SDK Client event
     await vi.waitFor(async () =>
       expect((await screenOf(term, 80, 24)).join('\n')).toContain('执行中断，30 秒内自动恢复'),
     )
+
+    // A session-scoped notice for another session (e.g. the one just switched away from) is not ours.
+    endpoint.pushNotice({
+      kind: 'resumed',
+      sessionId: session.id,
+      detail: { lastStep: 9 },
+      at: new Date(0).toISOString(),
+    })
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain('上次停在第 9 步，已续跑'),
+    )
+    endpoint.pushNotice({
+      kind: 'worker_crashed',
+      sessionId: 'agnes:local:default:cli:dm:other',
+      detail: {},
+      at: new Date(0).toISOString(),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    const screen = (await screenOf(term, 80, 24)).join('\n')
+    expect(screen).toContain('上次停在第 9 步，已续跑')
+    expect(screen).not.toContain('执行中断')
+
+    // The SDK gives up re-subscribing and sends only this; without a message the timeline just freezes.
+    endpoint.pushNotice({ kind: 'stream-recovery-failed', sessionId: session.id } as never)
+    await vi.waitFor(async () =>
+      expect((await screenOf(term, 80, 24)).join('\n')).toContain(
+        '实时更新已中断，请用 /resume 重新打开本会话',
+      ),
+    )
   } finally {
     await app.stop()
     await client.close()
@@ -316,7 +345,7 @@ it('Ctrl-T pages through the whole conversation, reads older history from its to
     await vi.waitFor(async () => expect(await screen()).toContain('history 9'))
     const before = (await screenOf(term, 60, 12)).filter((l) => l.includes('history'))
     term.feed('\x14')
-    await vi.waitFor(async () => expect(await screen()).toContain('Ctrl-T/Esc close'))
+    await vi.waitFor(async () => expect(await screen()).toContain('esc close'))
     expect(await screen()).toContain('Earlier history')
     expect(history()).toHaveLength(0)
     // At the top, one more step up reads the older page; it lands above what was on screen.
@@ -333,7 +362,7 @@ it('Ctrl-T pages through the whole conversation, reads older history from its to
     term.feed('c')
     expect(copied).toEqual(['history 5'])
     term.feed('\x14')
-    await vi.waitFor(async () => expect(await screen()).not.toContain('Ctrl-T/Esc close'))
+    await vi.waitFor(async () => expect(await screen()).not.toContain('esc close'))
     expect(
       (await screenOf(term, 60, 12)).filter((l) => l.includes('history 8') || l.includes('history 9')),
     ).toEqual(before.filter((l) => l.includes('history 8') || l.includes('history 9')))
@@ -1630,6 +1659,48 @@ it('keeps a pending approval at its usual page height when nothing below the dia
   }
 })
 
+it('draws an open picker in the composer slot, and a pending approval brings the composer back above it', async () => {
+  const { endpoint } = fakeSessionEndpoint()
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  let app: TuiApp | undefined
+  try {
+    const session = await client.session.new({ cwd: '/tmp' })
+    const term = new FakeTerminal({ columns: 80, rows: 30 })
+    app = new TuiApp({ session, term, header: 'Agnes' })
+    await app.start()
+    const screen = async () => (await screenOf(term, 80, 30)).join('\n')
+    const prompt = 'What do you want to do?'
+    await vi.waitFor(async () => expect(await screen()).toContain(prompt))
+    for (const key of ['/theme', '\r']) term.feed(key)
+    await vi.waitFor(async () => expect(await screen()).toContain('Dark colour-blind'))
+    // A theme's look sits in the description column, apart from its name and the current mark.
+    expect(await screen()).toMatch(/1\. Auto ✓ {2,}follow the terminal background/)
+    // One prompt on screen: the picker has the keys, so the composer is not drawn.
+    expect(await screen()).not.toContain(prompt)
+    endpoint.push({
+      jsonrpc: '2.0',
+      id: 'perm-2',
+      method: 'session/request_permission',
+      params: {
+        sessionId: session.id,
+        toolCall: { toolCallId: 'tool-2', status: 'pending', title: 'write', rawInput: { path: 'a.md' } },
+        options: [
+          { optionId: 'allow', name: 'Allow once', kind: 'allow_once' },
+          { optionId: 'reject', name: 'Reject', kind: 'reject_once' },
+        ],
+      },
+    } as JsonRpcNotification)
+    // The approval stays above a visible composer; the picker waits behind it.
+    await vi.waitFor(async () => expect(await screen()).toContain('Allow once'))
+    expect(await screen()).toContain(prompt)
+    expect(await screen()).not.toContain('Dark colour-blind')
+  } finally {
+    await app?.stop()
+    await client.close()
+    await endpoint.close()
+  }
+})
+
 /** An app whose first prompt stays in flight until `release()`, so everything typed after it arrives busy. */
 async function busyHarness(
   opts: { answer?: (params: Submitted) => unknown; steer?: boolean; promptError?: unknown } = {},
@@ -2001,12 +2072,34 @@ it('queues a prompt the daemon refused as busy exactly once, and shows any other
   }
   const overloaded = await busyHarness({ promptError: rpcError('OVERLOADED', {}) })
   try {
-    overloaded.type('x')
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    overloaded.app.busyInput.attach('[Image #1]', image, overloaded.app.session.id)
+    overloaded.type('x [Image #1]')
     await vi.waitFor(async () => expect(await overloaded.shown()).toContain('Request failed'))
     expect(overloaded.submits).toEqual([])
-    expect(overloaded.prompts).toEqual(['x'])
+    expect(overloaded.prompts).toEqual(['x [Image #1]'])
+    // A refusal means no turn started: the draft comes back with its image still bound.
+    expect(overloaded.app.editor.expanded()).toBe('x [Image #1]')
+    expect(overloaded.app.busyInput.takeKept(overloaded.app.editor.expanded())).toEqual([image])
   } finally {
     await overloaded.dispose()
+  }
+  const offline = await busyHarness()
+  try {
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    offline.app.busyInput.attach('[Image #1]', image, offline.app.session.id)
+    vi.spyOn(offline.app.session.client, 'connectionState', 'get').mockReturnValue('reconnecting')
+    offline.type('x [Image #1]')
+    await vi.waitFor(async () =>
+      expect(await offline.shown()).toContain('Not sent: the daemon is not connected'),
+    )
+    // Nothing left the process, no turn is pending, and the draft is back with its image bound.
+    expect(offline.prompts).toEqual([])
+    expect(offline.app.editor.expanded()).toBe('x [Image #1]')
+    expect(offline.app.busyInput.takeKept(offline.app.editor.expanded())).toEqual([image])
+    expect(offline.app.busy).toBe(false)
+  } finally {
+    await offline.dispose()
   }
 })
 
@@ -2601,7 +2694,7 @@ it('colors the user marker, prompt and slash-menu highlight on the light user-tu
     term.feed('help')
     term.feed('\r')
     await vi.waitFor(() =>
-      expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}${SLASH_COMMANDS.at(-1)?.name}`),
+      expect(term.writes.join('')).toContain(`${sgr('fg', 'muted')}  ${SLASH_COMMANDS.at(-1)?.name}`),
     )
   } finally {
     await app?.stop()
@@ -2962,7 +3055,7 @@ it('a terminal close stops a parked approval card from deciding its ticket on th
     ],
   })
   try {
-    await vi.waitFor(async () => expect(await h.screen()).toContain('decision tk-parke'))
+    await vi.waitFor(async () => expect(await h.screen()).toContain('Allow once'))
     await h.stopDaemon()
     h.term.feed('1')
     await new Promise((resolve) => setTimeout(resolve, 300))
@@ -3054,5 +3147,60 @@ it('a click on the slash menu above the prompt leaves the cursor alone', async (
     expect(h.app.editor.text).toBe('/m')
   } finally {
     await h.close()
+  }
+})
+
+it('a slow slash command whose session was replaced does not submit its prompt to the new session', async () => {
+  let news = 0
+  let release!: () => void
+  const gate = new Promise<void>((r) => {
+    release = r
+  })
+  const prompts: string[] = []
+  const endpoint = new FakeEndpoint()
+    .on('initialize', () => ({
+      protocolVersion: 1,
+      agentCapabilities: {},
+      _meta: { agnes: { agnesVersion: '0.0.0-fake' } },
+    }))
+    .on('session/new', () => ({ sessionId: `S${news++}` }))
+    .on('_agnes/v1/session.attach', () => ({ generation: 1, lastSeq: 0, resolvedProfileHash: 'h' }))
+    .on('_agnes/v1/session.workspace.read', async () => {
+      await gate
+      throw Object.assign(new Error('nf'), { data: { code: 'NOT_FOUND' } })
+    })
+    .on('session/prompt', (p) => {
+      prompts.push((p as { sessionId: string }).sessionId)
+      return { stopReason: 'end_turn' }
+    })
+    .on('_agnes/v1/session.projectUIOpening', (p) => ({
+      timeline: {
+        sessionId: (p as { sessionId: string }).sessionId,
+        upto: 0,
+        generation: 1,
+        opState: null,
+        turns: [],
+        nodes: [],
+      },
+      history: { hasEarlier: false, startIndex: 0, totalNodes: 0 },
+    }))
+    .on('_agnes/v1/session.detach', () => ({}))
+  const client = createClient({ transport: { kind: 'inproc', endpoint } })
+  const session = await client.session.new({ cwd: '/tmp' })
+  const term = new FakeTerminal({ columns: 80, rows: 24 })
+  const app = new TuiApp({ session, term, header: 'Agnes' })
+  try {
+    await app.start()
+    term.feed('/init\r')
+    await new Promise((r) => setTimeout(r, 30))
+    term.feed('/new\r')
+    await vi.waitFor(() => expect(app.session.id).toBe('S1'))
+    release()
+    await new Promise((r) => setTimeout(r, 300))
+    expect(prompts).toEqual([])
+  } finally {
+    await app.stop()
+    await client.close()
+    await endpoint.close()
   }
 })

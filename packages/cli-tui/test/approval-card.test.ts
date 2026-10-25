@@ -94,20 +94,86 @@ describe('ApprovalCard prefix offer', () => {
   })
 })
 
-it('keeps the full single-line review subject readable before the choices', () => {
-  const subjectText = 'x'.repeat(100000) + '<EXACT-TAIL>'
+it('shows the whole raw subject, last line included, and every option on its own row', () => {
+  const subjectText = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n')
+  const lines = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), subjectText },
+    { ansi: PLAIN, onDecide: async () => undefined },
+  ).render(80)
+  const text = lines.join('\n')
+  expect(text).toContain('line 19')
+  expect(text).not.toContain('more lines')
+  expect(lines.filter((l) => l.includes('[1]'))).toHaveLength(1)
+  expect(lines.filter((l) => l.includes('[2]'))).toHaveLength(1)
+  expect(text).not.toContain('decision ')
+})
+
+it('points to the open dialog instead of repeating the request, and shows it all again once it closes', () => {
+  const subjectText = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n')
+  let open = true
   const card = new ApprovalCard(
     { ...node(['allow_once', 'reject_once']), subjectText },
-    {
-      ansi: PLAIN,
-      onDecide: async () => undefined,
-    },
+    { ansi: PLAIN, dialog: () => open, onDecide: async () => undefined },
   )
-  const lines = card.render(80)
-  const subject = lines.slice(2, -1)
-  expect(subject.every((line) => line.startsWith(' │ '))).toBe(true)
-  expect(subject.map((line) => line.slice(3).trimEnd()).join('')).toBe(subjectText)
-  expect(lines.at(-1)).toContain('[1]')
+  const asked = card.render(80).join('\n')
+  expect(asked).toContain('Needs approval')
+  expect(asked).toContain('control the desktop')
+  expect(asked).toContain('Answer in the dialog below')
+  expect(asked).not.toContain('line 0')
+  expect(asked).not.toContain('[1]')
+  open = false
+  const parked = card.render(80).join('\n')
+  expect(parked).toContain('line 19')
+  expect(parked).toContain('[1]')
+  expect(parked).not.toContain('Answer in the dialog below')
+})
+
+it('wraps a long working directory instead of cutting it', () => {
+  const cwd = `/work/${'deep/'.repeat(30)}end`
+  const subjectText = JSON.stringify({ call: { name: 'shell', args: { command: 'ls', cwd } } })
+  const text = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), toolName: 'shell', subjectText },
+    { ansi: PLAIN, onDecide: async () => undefined },
+  )
+    .render(60)
+    .map((l) => l.replace(/^ │ /, '').trimEnd())
+  const shown = text.slice(
+    text.indexOf('$ ls') + 1,
+    text.findIndex((l) => l.includes('── Raw input ──')),
+  )
+  expect(shown.join('')).toBe(cwd)
+})
+
+it('spells out bidi and zero-width characters in the command, the directory and the raw subject', () => {
+  const command = 'ls /tmp/\u202Egpj.txt\u202C && cat /etc/ho\u200Bsts'
+  const subjectText = JSON.stringify({ call: { name: 'shell', args: { command, cwd: '/w\u2066x' } } })
+  const text = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), toolName: 'shell', subjectText },
+    { ansi: PLAIN, onDecide: async () => undefined },
+  )
+    .render(120)
+    .join('\n')
+  expect(text).toContain('$ ls /tmp/\\u{202E}gpj.txt\\u{202C} && cat /etc/ho\\u{200B}sts')
+  expect(text).toContain('/w\\u{2066}x')
+  expect(text).not.toMatch(/[\u202E\u202C\u200B\u2066]/)
+})
+
+it('keeps the indentation of the raw subject and shows a shell command on its own rows', () => {
+  const subjectText = JSON.stringify(
+    { call: { name: 'shell', args: { command: 'rm -rf tmp', cwd: '/work' } } },
+    null,
+    2,
+  )
+  const lines = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), toolName: 'shell', summary: 'rm -rf tmp', subjectText },
+    { ansi: PLAIN, onDecide: async () => undefined },
+  )
+    .render(80)
+    .map((l) => l.trimEnd())
+  expect(lines[0]).toContain('Needs approval · shell')
+  expect(lines).toContain(' │ $ rm -rf tmp')
+  expect(lines).toContain(' │ /work')
+  expect(lines.some((l) => l.startsWith(' │     "name": "shell"'))).toBe(true)
 })
 
 // The diff is a reading aid: a write may replace an existing file, and arguments beyond the diffed
@@ -254,6 +320,18 @@ describe('ApprovalCard facts', () => {
     expect(text).not.toContain('\u001b')
     expect(text).not.toContain('\u0007')
   })
+
+  it('spells out bidi and zero-width characters in the origin and the stored scopes', () => {
+    const text = pending({
+      origin: { package: 'a\u202Eb', role: 'r\u200Bx', mcpServer: 'm\u2066y' },
+      grantScopes: ['s\u202Ez'],
+    })
+      .render(120)
+      .join('\n')
+    expect(text).toContain('a\\u{202E}b')
+    expect(text).toContain('s\\u{202E}z')
+    expect(text).not.toMatch(/[\u202E\u200B\u2066]/)
+  })
 })
 
 describe('ApprovalCard single keys and the misclick guard', () => {
@@ -288,17 +366,15 @@ describe('ApprovalCard single keys and the misclick guard', () => {
     }
   })
 
-  it('leaves the letters to the prompt while it holds a draft; numbers still decide', async () => {
+  it('leaves letters and numbers to the prompt while it holds a draft', () => {
     const onDecide = decide()
     const c = new ApprovalCard(node(['allow_once', 'allow_always', 'reject_once']), {
       ansi: PLAIN,
       onDecide,
       letters: () => false,
     })
-    for (const key of ['y', 'a', 'n', 'r']) expect(c.handleInput(key, true)).toBe(false)
+    for (const key of ['y', 'a', 'n', 'r', '1', '2', '3']) expect(c.handleInput(key, true)).toBe(false)
     expect(onDecide).not.toHaveBeenCalled()
-    expect(c.handleInput('1', true)).toBe(true)
-    await vi.waitFor(() => expect(onDecide).toHaveBeenCalledWith(ref, 'allowed-once'))
   })
 
   it('decides nothing before the card has settled, and leaves the keys to the prompt draft', () => {
@@ -307,20 +383,69 @@ describe('ApprovalCard single keys and the misclick guard', () => {
     expect(onDecide).not.toHaveBeenCalled()
   })
 
-  it('dims the hints until settled and lists the letters beside the numbers', () => {
+  it('dims the hints until settled and lists the letters beside the numbers, one option per row', () => {
     let lit = false
     const c = new ApprovalCard(node(['allow_once', 'allow_always', 'reject_once']), {
       ansi: new TuiTheme('dark').ansi(createAnsi('truecolor')),
       onDecide: decide(),
       settled: () => lit,
     })
-    const row = () => c.render(100).at(-1) ?? ''
-    const dim = row()
-    expect(dim).toContain('Allow once (y)')
-    expect(dim).toContain('Allow for this session (a)')
-    expect(dim).toContain('Reject (n)')
+    const rows = () => c.render(100).filter((l) => /Allow once|Allow for this session|Reject/.test(l))
+    const dim = rows()
+    expect(dim).toHaveLength(4)
+    expect(dim[0]).toContain('y')
+    expect(dim[1]).toContain('a')
+    expect(dim[2]).toContain('n')
     lit = true
-    expect(row()).not.toBe(dim)
+    expect(rows()).not.toEqual(dim)
+  })
+
+  it('shows a letter only where the key works now', () => {
+    const rows = (letters: boolean) =>
+      new ApprovalCard(node(['allow_once', 'allow_permanent', 'reject_once']), {
+        ansi: PLAIN,
+        onDecide: decide(),
+        letters: () => letters,
+      })
+        .render(100)
+        .filter((l) => /\[[123]\]/.test(l))
+        .map((l) => l.trimEnd())
+        .join('\n')
+    expect(rows(true)).toMatch(/\[1\] Allow once\s+y\n.*profile\n.*\[3\] Reject\s+n$/)
+    expect(rows(false)).not.toMatch(/ [yn]$/m)
+  })
+})
+
+describe('ApprovalCard behind a newer request', () => {
+  it('shows no options while a newer pending card takes the keys', () => {
+    let waiting = true
+    const c = new ApprovalCard(node(['allow_once', 'reject_once']), {
+      ansi: PLAIN,
+      onDecide: vi.fn(async () => undefined),
+      waiting: () => waiting,
+    })
+    expect(c.render(100).join('\n')).toContain('Waiting: answer the newer request below first')
+    expect(c.render(100).join('\n')).not.toContain('[1]')
+    waiting = false
+    expect(c.render(100).join('\n')).toContain('[1] Allow once')
+  })
+})
+
+describe('ApprovalCard input it cannot show', () => {
+  it('says so when Core carried a content reference instead of the input', () => {
+    const render = (args: unknown) =>
+      new ApprovalCard(
+        {
+          ...node(['allow_once', 'reject_once']),
+          summary: 'Run unit tests',
+          subjectText: JSON.stringify({ call: { name: 'shell', args } }),
+        },
+        { ansi: PLAIN, onDecide: vi.fn(async () => undefined) },
+      )
+        .render(100)
+        .join('\n')
+    expect(render({ contentRef: { sessionId: 's', seq: 4, hash: 'ab' } })).toContain('too large to show here')
+    expect(render({ command: 'npm test' })).not.toContain('too large to show here')
   })
 })
 
@@ -351,5 +476,27 @@ describe('ApprovalSettle', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('ApprovalCard failed decision', () => {
+  it('stays answerable after the decide call is rejected', async () => {
+    const decide = vi.fn(async () => undefined)
+    decide.mockRejectedValueOnce(new Error('TransportClosed: timeout'))
+    const changed = vi.fn()
+    const card = new ApprovalCard(node(['allow_once', 'reject_once']), {
+      ansi: PLAIN,
+      onDecide: decide,
+      changed,
+    })
+    expect(card.handleInput('y')).toBe(true)
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(1))
+    expect(card.pending).toBe(true)
+    expect(card.render(120).join('\n')).toContain('TransportClosed: timeout')
+    expect(card.handleInput('1')).toBe(true)
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(2))
+    expect(decide).toHaveBeenCalledTimes(2)
+    expect(card.pending).toBe(false)
+    expect(card.render(120).join('\n')).not.toContain('TransportClosed')
   })
 })

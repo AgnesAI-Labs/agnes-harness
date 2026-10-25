@@ -1,5 +1,5 @@
 import type { UINode, UsageView } from '@agnes/protocol'
-import { formatTokenCount, formatUsdMicros } from './format-usage.js'
+import { formatCredits, formatTokenCount, formatUsdMicros } from './format-usage.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 
 const CACHE_INVALIDATION_CAUSE_KEYS = {
@@ -15,7 +15,7 @@ const CACHE_INVALIDATION_CAUSE_KEYS = {
 export function formatCallUsage(node: Extract<UINode, { kind: 'cost' }>): string {
   const amount = node.billing
     ? `${formatUsdMicros(node.billing.usdMicros)} (${node.billing.source})`
-    : `credits: ${node.credits ?? 'unknown'} (${node.source})`
+    : `credits: ${node.credits === undefined ? 'unknown' : formatCredits(node.credits)} (${node.source})`
   const tokens = node.tokens
     ? `input ${formatTokenCount(node.tokens.input)} · output ${formatTokenCount(node.tokens.output)} · cache read/write ${node.tokens.cacheRead}/${node.tokens.cacheWrite} · reasoning ${node.tokens.reasoning ?? 'unknown'}`
     : 'token details unavailable'
@@ -50,7 +50,7 @@ export function formatUsageReport(usage?: UsageView, locale = 'en'): string {
     ? `${formatUsdMicros(usage.cost.usdMicros)}${aside(`${tt(usage.cost.source === 'estimated' ? 'usage.estimated' : 'usage.gateway', locale)}${usage.billingComplete === false ? tt('usage.partialMissing', locale) : ''}`)}`
     : tt('usage.notProvided', locale)
   const credits = usage.credits
-    ? `${usage.credits.amount} credits${aside(`${tt(usage.credits.source === 'estimated' ? 'usage.estimated' : 'usage.gateway', locale)}${usage.credits.complete ? '' : tt('usage.partialMissing', locale)}`)}`
+    ? `${formatCredits(usage.credits.amount)} credits${aside(`${tt(usage.credits.source === 'estimated' ? 'usage.estimated' : 'usage.gateway', locale)}${usage.credits.complete ? '' : tt('usage.partialMissing', locale)}`)}`
     : tt('usage.notProvided', locale)
   const hitRate = usage.cache?.hitRate
   const invalidation = usage.cache?.lastInvalidation

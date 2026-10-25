@@ -8,12 +8,10 @@ export const LOCALE_KEYS = [
   'approval.projectCode',
   'approval.reject',
   'approval.rejectReason',
-  'approval.reasonPrompt',
   'approval.from',
   'approval.role',
   'approval.mcp',
   'approval.stores',
-  'approval.waiting',
   'approval.fullAccessBusiness',
   'status.parked',
   'status.fullAccess',
@@ -23,12 +21,11 @@ export const LOCALE_KEYS = [
   'status.catchingUp',
   'notice.resumed',
   'notice.crashed',
+  'notice.streamLost',
   'notice.closed',
-  'permission.heading',
   'permission.candidateTest',
   'permission.toolRequest',
   'permission.resize',
-  'permission.footer',
 ] as const
 
 export type Locale = (typeof LOCALES)[number]
@@ -44,12 +41,10 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
     'approval.allowPrefix': 'Allow commands starting with {prefix} for this session',
     'approval.reject': 'Reject',
     'approval.rejectReason': 'Reject with a reason',
-    'approval.reasonPrompt': 'Reason for the model (Enter rejects, Esc goes back)',
     'approval.from': 'from {value}',
     'approval.role': 'role {value}',
     'approval.mcp': 'MCP server {value}',
     'approval.stores': 'Always allow stores: {value}',
-    'approval.waiting': 'Awaiting approval',
     'approval.fullAccessBusiness': 'auto-confirmed under full access',
     'status.parked': 'parked',
     'status.fullAccess': '⚠ full access',
@@ -59,13 +54,12 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
     'status.catchingUp': 'catching up',
     'notice.resumed': 'stopped at step {step} last time, resumed',
     'notice.crashed': 'execution interrupted, auto-recovery within 30 s',
+    'notice.streamLost': 'live updates stopped; use /resume to reopen this session',
     'notice.closed': 'daemon connection closed; quit and run: agh --resume {id}',
-    'permission.heading': 'Approval',
     'permission.candidateTest':
       'Run the candidate’s Node author tests on this machine: {name} ({hash}). This does not publish, trust or enable anything. Review the source in Settings → Plugins → Candidates before running.',
     'permission.toolRequest': 'tool request',
     'permission.resize': 'Approval: resize or Esc reject',
-    'permission.footer': 'Esc: dismiss · PgUp/PgDn details {start}-{end}/{total}',
   },
   'zh-CN': {
     'approval.allowOnce': '允许一次',
@@ -75,12 +69,10 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
     'approval.allowPrefix': '本会话内以 {prefix} 开头的命令不再询问',
     'approval.reject': '拒绝',
     'approval.rejectReason': '拒绝并说明理由',
-    'approval.reasonPrompt': '给模型的理由（回车拒绝，Esc 返回）',
     'approval.from': '来自 {value}',
     'approval.role': '角色 {value}',
     'approval.mcp': 'MCP 服务 {value}',
     'approval.stores': '始终允许会存入：{value}',
-    'approval.waiting': '等待审批',
     'approval.fullAccessBusiness': '完全访问下自动确认',
     'status.parked': '挂起',
     'status.fullAccess': '⚠ 完全访问',
@@ -90,13 +82,12 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
     'status.catchingUp': '追赶中',
     'notice.resumed': '上次停在第 {step} 步，已续跑',
     'notice.crashed': '执行中断，30 秒内自动恢复',
+    'notice.streamLost': '实时更新已中断，请用 /resume 重新打开本会话',
     'notice.closed': '后台连接已关闭，请退出后运行：agh --resume {id}',
-    'permission.heading': '审批',
     'permission.candidateTest':
       '在本机运行候选的 Node 作者测试：{name}（{hash}）。测试不会发布、信任或启用任何内容。运行前请到「设置 → 插件 → 候选」审阅源码。',
     'permission.toolRequest': '工具请求',
     'permission.resize': '审批：请调整窗口大小，或按 Esc 拒绝',
-    'permission.footer': 'Esc：关闭 · PgUp/PgDn 查看详情 {start}-{end}/{total}',
   },
 }
 
@@ -117,3 +108,10 @@ export function t(
   const dictionary = DICT[(LOCALES as readonly string[]).includes(locale) ? (locale as Locale) : 'en']
   return dictionary[key].replace(/\{(\w+)\}/g, (_match, name: string) => String(vars[name] ?? `{${name}}`))
 }
+
+/** Daemon/SDK notice kinds that get a status-bar rendering; anything else is left alone rather than guessed at. */
+export const NOTICE_STATUS: ReadonlyMap<string, readonly [LocaleKey, 'success' | 'error']> = new Map([
+  ['resumed', ['notice.resumed', 'success']],
+  ['worker_crashed', ['notice.crashed', 'error']],
+  ['stream-recovery-failed', ['notice.streamLost', 'error']],
+])

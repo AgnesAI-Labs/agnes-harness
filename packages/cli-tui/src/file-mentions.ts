@@ -183,8 +183,8 @@ export function rankMentions(entries: readonly Entry[], query: string): MentionI
       gaps += next - at - 1
       at = next
     }
-    // The folder already typed out is where the user is, not a choice.
-    if (gaps < 0 || entry.path === wanted) continue
+    // The folder already typed out is where the user is, not a choice; an exact file still is.
+    if (gaps < 0 || (entry.directory && entry.path === wanted)) continue
     const tier = entry.name.startsWith(wanted)
       ? 0
       : entry.name.includes(wanted)
@@ -295,7 +295,6 @@ export class ReferenceMentionSource {
   private wanted: string | undefined
   // Bumped by reset: an answer from the previous session is dropped, not cached.
   private generation = 0
-  private last: readonly MentionItem[] = []
   private disposed = false
 
   constructor(
@@ -314,7 +313,7 @@ export class ReferenceMentionSource {
     if (!this.busy) this.fetch(query)
     if (hit) return hit.state
     const local = this.fallback?.get(query)
-    return local?.status === 'ready' ? local : { status: 'loading', items: this.last }
+    return local?.status === 'ready' ? local : { status: 'loading', items: [] }
   }
 
   dispose(): void {
@@ -325,7 +324,6 @@ export class ReferenceMentionSource {
   /** Forget what the previous session answered; the next `get` asks the current one. */
   reset(): void {
     this.cache.clear()
-    this.last = []
     this.latched = false
     this.generation++
   }
@@ -346,7 +344,6 @@ export class ReferenceMentionSource {
               (item) => item.source === 'file' && item.id && noControls(item.id) && relativeInside(item.id),
             )
             .map((item) => ({ id: item.id, directory: false }))
-          this.last = items
           this.store(query, { status: 'ready', items })
         },
         (error: unknown) => {

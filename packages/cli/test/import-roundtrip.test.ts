@@ -69,7 +69,20 @@ describe('agnes export -> import round trip', () => {
         const restored = await host.createSession({ key: 'restored', cwd: dir })
         const shape = (event: EventEnvelope) => [event.seq, event.type, event.sourceEventSeqs ?? null]
         const landed = await restored.scan({ toSeq: rows.length })
-        expect(landed.slice(1).map(shape)).toEqual(rows.slice(1).map(shape))
+        // Imported history is untrusted and keeps its sequence; rows that carry state or authority
+        // (inbox, budget, x/core/*, ...) arrive as inert unmapped rows at the same sequence.
+        const history = new Set(['turn/start', 'turn/end', 'step/start', 'step/end', 'user/message'])
+        for (const [index, event] of landed.slice(1).entries()) {
+          const source = rows[index + 1]
+          expect(event, String(source?.type)).toMatchObject({ origin: 'import:agnes', trust: 'untrusted' })
+          expect(event.seq).toBe(source?.seq)
+          if (source && history.has(source.type)) expect(shape(event)).toEqual(shape(source))
+          else
+            expect(event.type).toMatch(
+              /^(x\/agnes\/import\/unmapped|assistant\/message|tool\/(call|result))$/,
+            )
+        }
+        expect(landed.length).toBe(rows.length)
         expect(landed[0]?.data).toMatchObject({
           imported: { source: 'agnes', sourceId: (rows[0]?.data as { key?: string } | undefined)?.key },
         })

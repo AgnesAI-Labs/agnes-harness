@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { escapeControl } from '@agnes/cli-tui'
 import type { Booted, ParsedArgs } from '../types.js'
 
 /** Creating an explicit fresh inspection session observes the latest published generation. */
@@ -16,15 +17,19 @@ export async function toolsCommand(boot: Booted, args: ParsedArgs, cwd: string):
       })
   const catalog = await session.tools()
   if (args.json) return JSON.stringify(catalog, null, 2)
+  // Names and descriptions come from MCP servers, skills and plugins: one line each, no escapes.
+  const line = (s: string) => escapeControl(s).replace(/\n/g, ' ')
   return [
     `Session: ${session.id}`,
     'Tools:',
     ...catalog.tools.map(
-      (tool) => `  ${tool.name} (${tool.source}${tool.deferred ? ', deferred' : ''}) — ${tool.description}`,
+      (tool) =>
+        `  ${line(tool.name)} (${line(tool.source)}${tool.deferred ? ', deferred' : ''}) — ${line(tool.description)}`,
     ),
     'Resources (MCP / skills):',
     ...catalog.resources.map(
-      (resource) => `  ${resource.kind}: ${resource.name} (${resource.id}) — ${resource.description}`,
+      (resource) =>
+        `  ${line(resource.kind)}: ${line(resource.name)} (${line(resource.id)}) — ${line(resource.description)}`,
     ),
   ].join('\n')
 }

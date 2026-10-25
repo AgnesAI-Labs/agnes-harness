@@ -23,6 +23,9 @@ type Item = {
 /** One entry of the loaded conversation as the pager shows it: its rows, and the text a copy takes. */
 export type PagerBlock = { rows: string[]; text: string }
 
+/** Tool cards, alone or grouped, read as one run: they sit tight, every other kind of block gets a blank row. */
+const isToolRun = (item: Item): boolean => item.nodes?.[0]?.kind === 'tool'
+
 /** A fullscreen viewport over core's projected nodes; it never reduces ledger events itself. */
 export class Timeline implements Component {
   private entries = new Map<string, Entry>()
@@ -255,10 +258,16 @@ export class Timeline implements Component {
       this.focusAt = undefined
     }
     const clickable = new Set(this.ordered.map((entry) => entry.view))
+    let before: Item | undefined
     for (const item of this.items()) {
+      const shown = rows(item.view)
+      // One blank row between blocks, none inside a run of tool cards; a view with no rows takes no space.
+      if (!plain && shown.length > 0) {
+        if (before && !(isToolRun(before) && isToolRun(item))) content.push('')
+        before = item
+      }
       if (!plain && item.view.clickHead && clickable.has(item.view))
         this.heads.push({ row: content.length, view: item.view })
-      const shown = rows(item.view)
       if (!plain && this.focus?.key === item.key) {
         this.focusAt = { start: content.length, length: shown.length }
         content.push(...shown.map(this.focus.mark))
@@ -335,7 +344,13 @@ export class Timeline implements Component {
 
   private splitRows(width: number): string[] {
     const pending = this.items().filter((item) => !this.written.has(item.key))
-    const rows = pending.flatMap((item) => item.view.render(width))
+    const rows = pending.flatMap((item, i) => {
+      const shown = item.view.render(width)
+      const before = pending[i - 1]
+      return i > 0 && shown.length > 0 && !(before && isToolRun(before) && isToolRun(item))
+        ? ['', ...shown]
+        : shown
+    })
     const window = Math.max(1, this.o.rows() - (this.o.reservedRows?.() ?? TIMELINE_RESERVED_ROWS))
     const shown = this.written.size === 0 && pending.length === 0 ? (this.o.top?.render(width) ?? []) : rows
     return shown.slice(-window)

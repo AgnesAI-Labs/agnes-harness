@@ -1,4 +1,5 @@
 import type { UsageView } from '@agnes/protocol'
+import { type KeyHint, keyHints } from '../components/key-hints.js'
 import { fitLine } from '../components/line.js'
 import { clipLabel, contextPressure, formatTokenCountShort, sanitizeLabel } from '../format-usage.js'
 import { EXTENDED_KEYS, type ExtendedKey, tt } from '../locale-extended.js'
@@ -187,10 +188,6 @@ export function topRail(state: RailState, frameWidth: number, ansi: ThemedAnsi):
 /** The composer's bottom edge: thinking level and keys, dropped right to left as space runs out. */
 export function bottomRail(state: RailState, frameWidth: number, ansi: ThemedAnsi): string {
   const say = (key: ExtendedKey, vars: Record<string, string> = {}) => tt(key, state.locale, vars)
-  const hint = (key: string, label: ExtendedKey): Part[] => [
-    { text: key, tone: 'warning' },
-    { text: ` ${say(label)}`, tone: 'muted', italic: true },
-  ]
   const level = state.usage?.model.thinking
   const levelKey = `composer.level.${level}`
   const levelLabel = (EXTENDED_KEYS as readonly string[]).includes(levelKey)
@@ -198,7 +195,7 @@ export function bottomRail(state: RailState, frameWidth: number, ansi: ThemedAns
     : sanitizeLabel(level ?? '')
   // A block for normal mode and a bar for insert, as a vim cursor looks; bold accent against quiet, so mono tells them apart too.
   const mode = state.mode
-  const hints: Part[][] = [
+  const lead: Part[][] = [
     ...(mode
       ? [
           [
@@ -211,22 +208,33 @@ export function bottomRail(state: RailState, frameWidth: number, ansi: ThemedAns
     ...(level
       ? [[{ text: say('composer.thinking', { level: levelLabel }), tone: 'muted', italic: true } as Part]]
       : []),
-    hint('/', 'composer.commands'),
-    hint('@', 'composer.files'),
-    hint('⏎', 'composer.send'),
   ]
-  const row = () => hints.flatMap((h, i) => (i === 0 ? h : [{ text: '  ' }, ...h]))
-  const edges = 5 // `╰─` and ` ─╯`
-  while (hints.length > 0 && width(row()) + edges > frameWidth) hints.pop()
-  const body = row()
+  const keys: KeyHint[] = [
+    { key: '/', label: say('composer.commands') },
+    { key: '@', label: say('composer.files') },
+    { key: '⏎', label: say('composer.send') },
+  ]
+  // `╰─` and ` ─╯` take five columns, and at least one space follows `╰─`.
+  const room = Math.max(0, frameWidth - 6)
+  const leadRow = (): Part[] => lead.flatMap((h, i) => (i === 0 ? h : [{ text: '  ' }, ...h]))
+  // The hints have the last claim on the row, so the lead gives way first, from the right, when not even one fits.
+  while (
+    lead.length > 0 &&
+    room - width(leadRow()) - 2 < displayWidth(`${keys.at(-1)?.key} ${keys.at(-1)?.label}`)
+  )
+    lead.pop()
+  const gap = lead.length > 0 ? 2 : 0
+  const avail = room - width(leadRow()) - gap
+  const hints =
+    avail >= displayWidth(`${keys.at(-1)?.key} ${keys.at(-1)?.label}`) ? keyHints(keys, ansi, avail) : ''
+  const used = width(leadRow()) + (hints ? gap : 0) + displayWidth(hints)
   return paint(
     [
       { text: '╰─', tone: 'border' },
-      { text: ' '.repeat(Math.max(0, frameWidth - edges - width(body))) },
-      ...body,
-      { text: ' ' },
-      { text: '─╯', tone: 'border' },
+      { text: ' '.repeat(Math.max(1, frameWidth - 5 - used)) },
+      ...leadRow(),
+      ...(hints && lead.length > 0 ? [{ text: '  ' }] : []),
     ],
     ansi,
-  )
+  ).concat(hints, paint([{ text: ' ' }, { text: '─╯', tone: 'border' }], ansi))
 }

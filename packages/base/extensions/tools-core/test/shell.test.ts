@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { checkToolDef } from '@agnes/extension-api'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
+import { createJobTools } from '../../jobs/src/index.js'
 import { ShellJobs } from '../../jobs/src/registry.js'
 import { OUTPUT_LIMITS } from '../src/guards/output.js'
 import { createShellTool, SHELL_SENTINEL } from '../src/tools/shell.js'
@@ -42,6 +43,17 @@ describe('shell', () => {
     expect(JSON.stringify(result)).not.toContain('/private/secret-root')
     expect(JSON.stringify(result)).not.toContain('sk-private')
     expect(ctx.calls.exec).toEqual([])
+  })
+
+  it('says a started job ran when its result cannot be read, instead of that it could not start', async () => {
+    const jobs = new ShellJobs()
+    vi.spyOn(jobs, 'start').mockResolvedValue({ id: 'job-7' } as never)
+    vi.spyOn(jobs, 'wait').mockRejectedValue(new Error('backend lost'))
+    const result = await createShellTool(jobs).execute({ command: 'echo ready' }, fakeToolContext())
+    expect(result.isError).toBe(true)
+    expect(result.details).toMatchObject({ code: 'SHELL_JOB_UNREAD' })
+    expect(textOf(result)).toContain('command started as job job-7')
+    expect(textOf(result)).not.toContain('could not be started')
   })
 
   it('has a complete definition with replay never', () => {
@@ -386,6 +398,126 @@ describe('shell timeout', () => {
       expect(textOf(r).includes('[timed out after 1000ms:')).toBe(expected)
     },
   )
+})
+
+// A turn with a time limit (agh -p --timeout) stops a foreground command short of its deadline, so one
+// long command cannot run past it while the model has no chance to wrap up. The result says so.
+describe('shell near the turn deadline', () => {
+  afterEach(() => vi.restoreAllMocks())
+  const NOW = 1_000_000
+  // A 10-minute limit with 100 s left: the margin is max(15 s, 5% of 10 min) = 30 s, so 70 s remain.
+  const limit = { timeLimitMs: 600_000, deadlineAt: NOW + 100_000 }
+
+  it('caps a foreground command at the time left less a margin, and says the deadline stopped it', async () => {
+    let now = NOW
+    vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const ctx = fakeToolContext({
+      timeoutMs: 598_000,
+      defaultTimeoutMs: 120_000,
+      turnTimeLimit: limit,
+      exec: (_argv, opts) => {
+        now += opts.timeoutMs ?? 0
+        return { code: -1, stdout: 'partial', stderr: '', timedOut: true }
+      },
+    })
+    const r = await shellTool.execute({ command: 'make all', timeoutMs: 300_000 }, ctx)
+    expect(ctx.calls.execOpts[0]?.timeoutMs).toBe(70_000)
+    expect(r.isError).toBe(true)
+    expect(r.details).toEqual({ code: 'SHELL_TURN_DEADLINE' })
+    expect(textOf(r)).toBe(
+      "partial\n[stopped after 70000ms because this turn's time limit is nearly up: about 30s of the turn remains (deadline 00:18:20 UTC). The command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Use the time left for short steps: leave the work in its best checked state and end with a short summary.]",
+    )
+  })
+
+  it.each([
+    ['without a time limit', undefined, 120_000],
+    ['with a deadline far enough away', { timeLimitMs: 3_600_000, deadlineAt: NOW + 3_000_000 }, 120_000],
+    [
+      'inside the margin, with a floor of one second',
+      { timeLimitMs: 600_000, deadlineAt: NOW + 10_000 },
+      1_000,
+    ],
+  ] as const)(
+    'keeps its own timeout unless the deadline is nearer: %s',
+    async (_name, turnTimeLimit, expected) => {
+      vi.spyOn(Date, 'now').mockImplementation(() => NOW)
+      const ctx = fakeToolContext({
+        timeoutMs: 598_000,
+        defaultTimeoutMs: 120_000,
+        ...(turnTimeLimit ? { turnTimeLimit } : {}),
+        exec: () => ({ code: -1, stdout: '', stderr: '', timedOut: true }),
+      })
+      const text = textOf(await shellTool.execute({ command: 'x' }, ctx))
+      expect(ctx.calls.execOpts[0]?.timeoutMs).toBe(expected)
+      // Only a cut the deadline made is reported as one.
+      expect(text.includes('time limit is nearly up')).toBe(expected === 1_000)
+      expect(text.includes('[timed out after')).toBe(expected !== 1_000)
+    },
+  )
+
+  const jobsFor = (status: 'running' | 'exited') => {
+    const jobs = new ShellJobs()
+    const waits: number[] = []
+    const view = { id: 'job-1', status, stdout: 'so far', stderr: '', code: status === 'exited' ? 0 : null }
+    vi.spyOn(jobs, 'start').mockResolvedValue(view as never)
+    vi.spyOn(jobs, 'wait').mockImplementation(async (_ctx, _id, ms) => {
+      waits.push(ms)
+      return view as never
+    })
+    const kill = vi.spyOn(jobs, 'kill').mockResolvedValue(view as never)
+    return { tool: createShellTool(jobs), waits, kill }
+  }
+
+  it("ends a session job's foreground wait at the cap and lets the same process continue", async () => {
+    vi.spyOn(Date, 'now').mockImplementation(() => NOW)
+    const { tool, waits, kill } = jobsFor('running')
+    const ctx = fakeToolContext({ timeoutMs: 598_000, defaultTimeoutMs: 120_000, turnTimeLimit: limit })
+    const r = await tool.execute({ command: 'make all' }, ctx)
+    expect(waits).toEqual([70_000])
+    expect(kill).not.toHaveBeenCalled()
+    expect(textOf(r)).toBe(
+      "background job job-1 started (foreground wait stopped after 70000ms because this turn's time limit is nearly up: about 1m40s of the turn remains (deadline 00:18:20 UTC); the same process continues); use job_output, job_list or job_kill. Use the time left for short steps: leave the work in its best checked state and end with a short summary.",
+    )
+  })
+
+  it('kills a session job at the cap when it may not continue in the background', async () => {
+    vi.spyOn(Date, 'now').mockImplementation(() => NOW)
+    const { tool, kill } = jobsFor('running')
+    const ctx = fakeToolContext({ timeoutMs: 598_000, turnTimeLimit: limit })
+    const r = await tool.execute({ command: 'make all', timeoutToBackground: false }, ctx)
+    expect(kill).toHaveBeenCalledOnce()
+    expect(r.details).toEqual({ code: 'SHELL_TURN_DEADLINE' })
+    expect(textOf(r)).toContain(
+      "[stopped after 70000ms because this turn's time limit is nearly up: about 1m40s",
+    )
+    expect(textOf(r)).toContain('job job-1 and its process group were killed')
+  })
+
+  it('does not wait on, or cap, a background job', async () => {
+    vi.spyOn(Date, 'now').mockImplementation(() => NOW)
+    const { tool, waits } = jobsFor('running')
+    const ctx = fakeToolContext({ timeoutMs: 598_000, turnTimeLimit: limit })
+    const r = await tool.execute({ command: 'serve', background: true }, ctx)
+    expect(waits).toEqual([])
+    expect(textOf(r)).toBe('background job job-1 started; use job_output, job_list or job_kill')
+  })
+
+  it("keeps a job_output wait inside the turn's time, and leaves the job running", async () => {
+    vi.spyOn(Date, 'now').mockImplementation(() => NOW)
+    const jobs = new ShellJobs()
+    const seen: number[] = []
+    vi.spyOn(jobs, 'syncChildren').mockResolvedValue(undefined as never)
+    vi.spyOn(jobs, 'wait').mockImplementation(async (_ctx, _id, ms) => {
+      seen.push(ms)
+      return { id: 'job-1', status: 'running', stdout: '', stderr: '', code: null } as never
+    })
+    const output = createJobTools(jobs).find((tool) => tool.name === 'job_output')
+    const near = { timeLimitMs: 600_000, deadlineAt: NOW + 40_000 }
+    await output?.execute({ jobId: 'job-1', waitMs: 60_000 }, fakeToolContext({ turnTimeLimit: near }))
+    await output?.execute({ jobId: 'job-1', waitMs: 60_000 }, fakeToolContext())
+    // 40 s left less the 30 s margin; without a time limit the asked wait stands.
+    expect(seen).toEqual([10_000, 60_000])
+  })
 })
 
 describe('shell without a job registry', () => {

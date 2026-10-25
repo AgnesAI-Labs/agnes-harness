@@ -15,7 +15,7 @@ import { sha256Hex as nodeSha256 } from '../src/hash.js'
 
 const ctx = (): DecodeContext => {
   let n = 0
-  return { toolNames: ['read', 'shell'], nextOrdinal: () => n++ }
+  return { toolNames: ['read', 'shell'], recover: RULES.map((r) => r.id), nextOrdinal: () => n++ }
 }
 
 /** Feeds `text` in chunks of `n` characters and returns every event, `finish` included. */
@@ -146,16 +146,21 @@ describe('decode machine', () => {
     expect(merge(run(raw))).toEqual([{ type: 'text_delta', delta: raw }])
   })
 
-  // In a thinking stream the same syntax is attributed to the reasoning field, not to the rule.
-  it('attributes a call recovered from thinking to reasoning_field', () => {
-    const out = merge(run('<function=read><parameter=path>a</parameter></function>', 'thinking'))
-    expect(out).toEqual([
-      {
-        type: 'toolcall_end',
-        call: { toolUseId: 'dc-0', name: 'read', args: { path: 'a' }, ordinal: 0 },
-        via: 'reasoning_field',
-      },
-    ])
+  // Reasoning is where a model weighs a call it may decline, so the same syntax there stays reasoning.
+  it('never promotes a call out of thinking', () => {
+    const raw = '<function=read><parameter=path>a</parameter></function>'
+    expect(merge(run(raw, 'thinking'))).toEqual([{ type: 'thinking_delta', delta: raw }])
+  })
+
+  // The opt-in is per rule: syntax a model never declared stays its prose, and one with native calls
+  // declares none.
+  it('promotes only the rules the model opted into', () => {
+    const raw = '<invoke name="read"><parameter name="path">a</parameter></invoke>'
+    const qwenOnly: DecodeContext = { ...ctx(), recover: ['qwen3_coder'] }
+    expect(merge(run(raw, 'text', 1, qwenOnly))).toEqual([{ type: 'text_delta', delta: raw }])
+    const native: DecodeContext = { ...ctx(), recover: [] }
+    const qwen = '<function=read><parameter=path>a</parameter></function>'
+    expect(merge(run(qwen, 'text', 1, native))).toEqual([{ type: 'text_delta', delta: qwen }])
   })
 
   // Text that carried a call shape past every rule is the case a deviation exists to count: the
@@ -196,7 +201,7 @@ describe('decode machine', () => {
       'hermes_tool_call',
       'inline_json',
     ])
-    expect(PARSER_VERSION).toBe('2')
+    expect(PARSER_VERSION).toBe('3')
   })
 })
 

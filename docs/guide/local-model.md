@@ -53,6 +53,8 @@ To avoid discovery at startup, omit `discover` and supply full model records in 
 
 Choose a returned model id through the existing session model selector, for example `--model primary=local/qwen2.5:7b`. Select `input: [text, image]` only for a model/server that actually accepts images. Tool support depends on both the model and server's OpenAI-compatible implementation. `compat.wireCompat` can pass pi-ai wire compatibility options without changing the AGH configuration keys.
 
+`toolCallFormats: [native]` means tool calls arrive in the server's native tool-call field; AGH then never turns call-shaped text in the answer or the reasoning into a call. For a model/server without native tool calls, list the text formats it writes instead, for example `toolCallFormats: [hermes_tool_call]` (`<tool_call>{...}</tool_call>`), `qwen3_coder`, `anthropic_invoke` or `inline_json`. Calls are then read from the answer text in those formats only, never from reasoning. A record that lists `native` gets no text recovery even if it also lists a text format.
+
 ## Explicit discovery and recording
 
 ```ts

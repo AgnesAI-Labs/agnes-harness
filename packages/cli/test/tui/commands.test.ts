@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
@@ -119,12 +120,13 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(77)
+    expect(SLASH_COMMANDS).toHaveLength(78)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
       '/exit',
       '/new',
+      '/clear',
       '/resume',
       '/handoff',
       '/worktree',
@@ -256,7 +258,7 @@ describe('runSlash', () => {
     try {
       await first.app.start()
       await first.app.runInput('/theme')
-      expect((await screenOf(first.term, 90, 24)).join('\n')).toContain('当前')
+      expect((await screenOf(first.term, 90, 24)).join('\n')).toMatch(/自动 ✓ {2,}跟随终端背景/)
       // Auto is the default and heads the list, so one step down is light.
       first.term.feed('\x1b[B')
       first.term.feed('\r')
@@ -839,7 +841,7 @@ describe('runSlash', () => {
     }
   })
 
-  it('/new and /resume<id> return a loaded Session switch without touching app.session itself', async () => {
+  it('/new, /clear and /resume<id> return a loaded Session switch without touching app.session itself', async () => {
     const { app, ep, client } = await unstartedApp()
     try {
       const created = await runSlash(app, '/new')
@@ -852,6 +854,11 @@ describe('runSlash', () => {
           },
         },
       })
+      const cleared = await runSlash(app, '/clear')
+      expect(cleared.switchSession?.id).toBeDefined()
+      const clearCall = ep.calls.filter((entry) => entry.method === 'session/new').at(-1)
+      expect(clearCall).not.toBe(newCall)
+      expect(clearCall?.params).toMatchObject({ cwd: process.cwd() })
       const resumed = await runSlash(app, '/resume other-id')
       expect(resumed.switchSession?.id).toBe('other-id')
       expect(ep.calls.find((entry) => entry.method === 'session/load')?.params).toMatchObject({
@@ -917,6 +924,29 @@ describe('runSlash', () => {
         await remote.client.close()
       }
     } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('/cd keeps its multi-line confirmation on screen in the session it switched to', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agh-cd-'))
+    mkdirSync(join(root, 'target'))
+    const path = join(root, 'composer-selection.json')
+    writeFileSync(path, JSON.stringify({ model: { route: 'deepseek', id: 'deepseek-v4-pro' } }))
+    const { app, client, term, ep } = await unstartedApp(undefined, path, undefined, { cwd: root })
+    try {
+      let opened = 0
+      ep.on('session/new', () => ({ sessionId: `agnes:local:default:cli:dm:cd${++opened}` }))
+      await app.start()
+      const before = app.session.id
+      await app.command('/cd target')
+      expect(app.session.id).not.toBe(before)
+      const screen = (await screenOf(term, 90, 24)).join('\n')
+      expect(screen).toContain(before)
+      expect(screen).toContain('deepseek-v4-pro')
+    } finally {
+      await app.stop()
+      await client.close()
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -1176,13 +1206,20 @@ describe('runSlash', () => {
   })
 
   it('/sessions formats the listed page; empty page says so', async () => {
-    const { app, client } = await unstartedApp()
+    const { app, client, ep } = await unstartedApp()
     try {
       const r = await runSlash(app, '/sessions')
       expect(r).toEqual({
         text: 'Recent sessions\n1. claw · seq 9\n   s2\n2. standard · seq 5\n   s1',
         presentation: 'transcript',
       })
+      // A session started without a preset lists as `-`, as on /status, not as "null".
+      ep.on('_agnes/v1/session.list', () => ({
+        items: [
+          { sessionId: 's3', createdAt: '2026-01-03T00:00:00Z', lastSeq: 2, generation: 1, preset: null },
+        ],
+      }))
+      expect((await runSlash(app, '/sessions')).text).toBe('Recent sessions\n1. - · seq 2\n   s3')
     } finally {
       await client.close()
     }
@@ -2469,7 +2506,7 @@ describe('app.ts wiring: key routing through the editor reaches the real command
 })
 
 it('uploads a CLI path with spaces through bounded original intake and preserves a typed refusal', async () => {
-  const { mkdtemp, writeFile, rm } = await import('node:fs/promises')
+  const { mkdir, mkdtemp, writeFile, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
   const { IncrementalSha256 } = await import('@agnes/protocol')
@@ -2513,6 +2550,15 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       ['chunk', 'original', 'main'],
       ['finish', 'original', 'main'],
     ])
+    // `~` is the home directory, as in /cd and /import.
+    const home = join(dir, 'home')
+    await mkdir(home)
+    await writeFile(join(home, 'h.txt'), bytes)
+    vi.stubEnv('HOME', home)
+    calls.length = 0
+    await runSlash(app, '/attach ~/h.txt')
+    vi.unstubAllEnvs()
+    expect(calls.map((call) => call.operation)).toEqual(['start', 'chunk', 'finish'])
     // Newly supported types carry their own MIME; an unlisted extension travels as the generic type.
     for (const [name, mime] of [
       ['pic.webp', 'image/webp'],
@@ -2541,6 +2587,11 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       throw error
     }
     await expect(runSlash(app, '/attach a file.txt')).rejects.toBe(error)
+    // A FIFO named like a file is refused at once instead of hanging the open.
+    if (process.platform !== 'win32') {
+      execFileSync('mkfifo', [join(dir, 'pipe.png')])
+      await expect(runSlash(app, '/attach pipe.png')).rejects.toMatchObject({ code: 'ATTACHMENT_BYTES' })
+    }
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

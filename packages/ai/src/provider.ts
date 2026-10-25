@@ -1,5 +1,12 @@
 import type { ModelRequestTrace, ModelRequestTraceHandle } from '@agnes/extension-api'
-import type { CountResult, InferenceEvent, Provider, RequestBody, RouteTable } from '@agnes/protocol'
+import type {
+  CountResult,
+  DecodeRule,
+  InferenceEvent,
+  Provider,
+  RequestBody,
+  RouteTable,
+} from '@agnes/protocol'
 import type { WireAdapter } from './adapter.js'
 import type { ContractStore } from './contract-store.js'
 import { resolveCredentials } from './credentials.js'
@@ -202,8 +209,14 @@ export async function* runInference(
   // every wire protocol instead of being reimplemented per vendor. Its ordinals and the native
   // calls' come from one counter: they number the calls of a single turn, and a reader must be able
   // to order them without knowing how each one was carried.
+  //
+  // Reading calls out of prose is an opt-in of the model record: the recovery rules it lists, and
+  // none at all when it declares native tool calling. A native model that quotes a call in its
+  // answer is describing one; making it would be acting on words the model may have just declined.
+  const formats = resolved.model.toolCallFormats
+  const recover = formats.includes('native') ? [] : formats.filter((f): f is DecodeRule => f !== 'native')
   let ordinal = 0
-  const dctx: DecodeContext = { toolNames: opts.toolNames, nextOrdinal: () => ordinal++ }
+  const dctx: DecodeContext = { toolNames: opts.toolNames, recover, nextOrdinal: () => ordinal++ }
   let dstate = createState()
   const flush = (): InferenceEvent[] => {
     const r = finish(dstate, dctx)

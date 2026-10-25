@@ -167,6 +167,8 @@ node agnes.mjs mcp remove docs-tools --expected-revision REVISION
 
 The model can search and invoke tools from enabled catalogs, but server content remains external input. On disconnection, credential failure, or tool-list changes, inspect connection state, observed revision, catalog revision, and safe error details in `status`. Reinstalling a package is not a substitute for diagnosis.
 
+A tool call waits up to the tool's own timeout (`tools.timeout_ms` by default), not the MCP SDK's 60-second default. When a call to a tool that is not marked read-only or idempotent times out or loses its connection after the request was sent, the result is recorded as an unknown outcome rather than a failure, so the model is not invited to repeat a side effect such as creating an issue twice. A call refused before sending, an error reply from the server and any failure of a read-only or idempotent tool remain ordinary errors.
+
 <a id="运行方式与版本"></a>
 
 ## Runtime behavior and versions

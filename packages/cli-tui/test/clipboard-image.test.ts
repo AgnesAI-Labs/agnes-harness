@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, symlinkSync, wri
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { rpcError } from '@agnes/protocol'
+import { JsonRpcError } from '@agnes/sdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TuiApp } from '../src/app.js'
 import { BusyInput } from '../src/busy-input.js'
@@ -87,6 +89,51 @@ describe('clipboard image paste', () => {
     expect(busyInput.takeKept('hi')).toEqual([])
     expect(busyInput.takeKept(stashed)).toEqual([{ type: 'attachment', id: 'att-1' }])
     expect(busyInput.takeKept(stashed)).toEqual([])
+  })
+
+  it('does not carry attachments taken back from a queued message into another session', () => {
+    const { app, busyInput } = harness(withImage)
+    const block = { type: 'resource_link', uri: 'agnes://attachment/att-a' } as const
+    busyInput.keep([block])
+    Object.assign(app, { session: { id: 's2' } })
+    expect(busyInput.takeKept('hello')).toEqual([])
+    Object.assign(app, { session: { id: 's1' } })
+    expect(busyInput.takeKept('hello')).toEqual([block])
+  })
+
+  it('keeps attachments taken back from a queued message when the send that carried them is refused', async () => {
+    const { app, editor, busyInput } = harness(withImage)
+    const block = { type: 'resource_link', uri: 'agnes://attachment/att-a' } as const
+    busyInput.keep([block])
+    Object.assign(app.session, {
+      client: { journal: { pending: async () => [] } },
+      followUp: async () => {
+        throw new Error('not sent')
+      },
+    })
+    const blocks = busyInput.takeKept('hi')
+    expect(blocks).toEqual([block])
+    await busyInput.queue(blocks, 'hi', 'followUp')
+    expect(editor.text).toBe('hi')
+    expect(busyInput.takeKept('hi')).toEqual([block])
+    expect(busyInput.takeKept('hi')).toEqual([])
+  })
+
+  it.each([
+    ['refused before any turn', { code: 'CONFIG_CREDENTIAL_REJECTED' }, 'draft'],
+    ['rejected after its turn ran', { code: 'CONFIG_CREDENTIAL_REJECTED', turnEnd: { reason: 'error' } }, ''],
+  ] as const)('a prompt %s puts the draft back only when no turn ran', async (_name, data, restored) => {
+    const { app, editor, busyInput } = harness(withImage)
+    Object.assign(app.session, {
+      client: {},
+      prompt: async () => {
+        throw new JsonRpcError(rpcError('SEMANTIC_REJECTED', data))
+      },
+    })
+    await expect(busyInput.prompt([{ type: 'text', text: 'draft' }], 'draft')).rejects.toBeInstanceOf(
+      JsonRpcError,
+    )
+    expect(editor.text).toBe(restored)
   })
 
   it.each([
@@ -221,12 +268,11 @@ describe('clipboard image paste', () => {
       expect(busyInput.takeKept('[Image #1]')).toEqual([{ type: 'attachment', id: 'att-1' }])
     })
 
-    it('attaches several paths, and follows a symlink to a regular file', async () => {
+    it('attaches several paths', async () => {
       const a = image('a.png')
-      const link = join(dir, 'link.webp')
-      symlinkSync(a, link)
+      const b = image('b.webp')
       const { editor } = harness(withImage)
-      drop(editor, `${a}\n${link}`)
+      drop(editor, `${a}\n${b}`)
       await vi.waitFor(() => expect(editor.text).toBe('[Image #1][Image #2]'))
     })
 
@@ -234,6 +280,14 @@ describe('clipboard image paste', () => {
       ['a non-image file', () => image('a.txt')],
       ['a missing file', () => join(dir, 'missing.png')],
       ['a directory', () => dir],
+      [
+        'a symlink, which could name a secret like an image',
+        () => {
+          const link = join(dir, 'link.png')
+          symlinkSync(image('a.txt'), link)
+          return link
+        },
+      ],
       ['text with a path', () => `look at ${image('b.png')}`],
     ])('leaves %s as pasted text', (_name, text) => {
       const { editor } = harness(withImage)

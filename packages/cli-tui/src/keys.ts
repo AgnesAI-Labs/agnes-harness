@@ -181,11 +181,13 @@ export function parseKey(data: string, kitty: boolean): Key {
     if (code === 9 && mods === 1) return { name: 'shift-tab' }
     if (code === 27 && mods === 0) return { name: 'esc' }
     if (code === 122 && mods === 5) return { name: 'ctrl-shift-z' }
-    if (code === 121 && mods === 2) return { name: 'alt-y' }
-    if (code === 112 && mods === 2) return { name: 'alt-p' }
     if ((code === 112 && mods === 3) || (code === 80 && mods === 2)) return { name: 'alt-shift-p' }
     const ctrl = mods === 4 && code >= 97 && code <= 122 ? SEQ.get(String.fromCharCode(code - 96)) : undefined
     if (ctrl) return { name: ctrl }
+    // Alt with a printable key or Backspace is the same chord as its ESC-prefixed legacy form.
+    const alt =
+      mods === 2 && code >= 32 && code <= 127 ? SEQ.get(`\x1b${String.fromCharCode(code)}`) : undefined
+    if (alt) return { name: alt }
   }
   // An unrecognised escape sequence is a key or a report this build has no meaning for -- a mouse
   // event, a stray paste bracket, a cursor-position reply. Reporting it as text is how a

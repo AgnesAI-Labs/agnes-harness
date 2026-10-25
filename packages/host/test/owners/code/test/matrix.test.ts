@@ -37,6 +37,7 @@ describe('preset matrix through the host resolver', () => {
     ])
     expect(doc.checkpoint).toEqual({ keep: 200, max_file_bytes: 10485760 })
     expect(doc.loop).toEqual({ repeat_threshold: 3, no_progress_steps: 4 })
+    expect(toPresetView(doc).progressCheck).toEqual({ everySteps: 20 })
     const view = toPresetView(doc)
     expect(view.budget.maxSteps).toBeNull()
     expect(view.budget.perRequestCap).toBe(4000)

@@ -8,6 +8,7 @@ import {
 } from '../registry/tool-policy.js'
 import type { SessionImpl } from './session.js'
 import { toolArgumentError } from './tool-args.js'
+import { progressChecked } from './turn-restore.js'
 
 /**
  * What core hands the verifier seam as `input`. The shape is defined by base's loop-hygiene
@@ -28,6 +29,12 @@ export type CoreVerifyInput = {
   surfaceTailHashes: string[]
   newToolResults: number
   lastFinishReason?: 'stop' | 'length' | 'tool_use' | 'error'
+  /**
+   * Step scope only, in a turn that runs under a prompt limit or unattended: the calls and replies of
+   * the turn's last few steps, so the repeat and no-progress checks can run on every step there
+   * rather than only when the model stops. Its verdict feeds the turn's progress checks.
+   */
+  history?: Pick<CoreVerifyInput, 'toolCalls' | 'recentToolKeys' | 'surfaceTailHashes' | 'newToolResults'>
 }
 
 /** assistant/message stopReason, spelled as VerifyInput's finish reason. */
@@ -171,9 +178,32 @@ export async function toolVerifyInput(
   }
 }
 
+/** Steps of history a step-scope check reads: enough for the preset's repeat and no-progress runs. */
+const HISTORY_STEPS = 8
+
+/** The start of the turn's last `HISTORY_STEPS` steps on this lane, never before the turn began. */
+async function historyStart(s: SessionImpl, triggerSeq: Seq): Promise<Seq> {
+  const starts = await s.d.log.scan({
+    type: 'step/start',
+    order: 'desc',
+    limit: HISTORY_STEPS,
+    fromSeq: triggerSeq,
+    lane: s.lane,
+  })
+  const oldest = starts.at(-1)?.seq
+  return oldest !== undefined && oldest > triggerSeq ? oldest : triggerSeq
+}
+
 /** step scope (runToolsPhase, runDeferred): everything the still-open step produced. */
 export async function stepVerifyInput(s: SessionImpl, stepStartSeq: Seq): Promise<CoreVerifyInput> {
-  return assemble(s, await scanWindow(s, stepStartSeq))
+  const input = assemble(s, await scanWindow(s, stepStartSeq))
+  const triggerSeq = s.op()?.meta.triggerSeq
+  if (!s.turn || triggerSeq === undefined || !progressChecked(s.turn)) return input
+  const { toolCalls, recentToolKeys, surfaceTailHashes, newToolResults } = assemble(
+    s,
+    await scanWindow(s, await historyStart(s, triggerSeq)),
+  )
+  return { ...input, history: { toolCalls, recentToolKeys, surfaceTailHashes, newToolResults } }
 }
 
 /** turn scope (stopGate): the whole turn, from the same triggerSeq the repair history scan uses. */

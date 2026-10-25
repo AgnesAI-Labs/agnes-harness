@@ -45,6 +45,7 @@ describe('toPresetView', () => {
       verifier: { timeoutMs: 30000, defaultTier: 0 },
       repair: { timeoutMs: 10000 },
       completionGate: { minItems: 3 },
+      progressCheck: { everySteps: 20 },
       compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, agentCallable: true },
       telemetry: { invariants: false, timing: false },
       recovery: { unknownChild: 'model' },

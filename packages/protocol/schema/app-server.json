@@ -747,7 +747,7 @@
               "x-public-error": {
                 "rpc": "PRESET_SWITCH_REJECTED",
                 "messageKey": "appServer.errors.rejected",
-                "copy": "preset"
+                "copy": "modelUnknown"
               }
             },
             {
@@ -3898,6 +3898,16 @@
       "zh-CN": {
         "reason": "当前配置中没有所请求的模型。",
         "action": "运行 `agh doctor provider` 查看已配置的路由，并从中选择。"
+      }
+    },
+    "modelUnknown": {
+      "en": {
+        "reason": "The requested model or route is not in the configured model catalogue.",
+        "action": "Run `agh doctor provider` to list the configured routes and their models, and choose one of them."
+      },
+      "zh-CN": {
+        "reason": "所请求的模型或路由不在已配置的模型目录中。",
+        "action": "运行 `agh doctor provider` 查看已配置的路由及其模型，并从中选择。"
       }
     },
     "modelRestart": {

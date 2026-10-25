@@ -157,6 +157,8 @@ node agnes.mjs mcp remove docs-tools --expected-revision REVISION
 
 模型可通过已启用目录搜索/调用工具，但服务端内容仍是外部输入。断线、凭据失效或工具列表变化时，先看 `status` 的连接状态、观测 revision、catalog revision 和安全错误，不用重装包代替诊断。
 
+工具调用的等待上限是该工具自身的超时（默认为 `tools.timeout_ms`），而非 MCP SDK 默认的 60 秒。未标为只读或幂等的工具，若请求发出后超时或断连，结果记为“结果未知”而不是失败，模型因此不会被引导去重复副作用（例如重复创建 issue）。发送前就被拒绝的调用、服务端返回的错误回复，以及只读或幂等工具的任何失败，仍作为普通错误返回。
+
 ## 运行方式与版本
 
 session worker 启动及资源变化后的轮次边界调用 `createMcpRowRuntime()` 所创建运行器的 `apply()`，从快照为每个启用且受信的服务器派生 Host `ext:` 行。各行拥有自己的连接，管理命令经共享 worker 处理。验证方法与范围见[验证记录](../maintainers/verification.zh-CN.md)。

@@ -40,6 +40,8 @@ export async function runTui(
     env: NodeJS.ProcessEnv
     cwd: string
     registerCancel(cancel: () => Promise<void>): void
+    /** Told when SIGINT belongs to a foreground external editor and the ladder must not act on it. */
+    registerInterruptGuard?(ignored: () => boolean): void
     signal(): SignalName | undefined
     resourceController?: TuiResourceController
     composerSelectionPath?: string
@@ -71,6 +73,12 @@ export async function runTui(
   // every new invocation starts on an empty alternate screen even when opening is slow.
   const { opening } = io
   const term = opening?.term ?? new NodeTerminal(io.stdin, io.stdout, io.env)
+  // A closed terminal makes these streams error (EIO) while the exit below still runs; with no listener
+  // that is an uncaught exception, which skips the detach and --worktree cleanup. Output has nowhere to go.
+  // The narrow stream types name only the events the terminal reads; the real streams are emitters.
+  const streams = [io.stdout, io.stdin] as unknown as Array<Pick<NodeJS.EventEmitter, 'on' | 'off'>>
+  const ignoreStreamError = (): void => {}
+  for (const stream of streams) stream.on('error', ignoreStreamError)
   // --no-alt-screen keeps the shell page: nothing is claimed up front and nothing needs giving back.
   if (!opening && !p.noAltScreen) term.write('\x1b[?1049h\x1b[H\x1b[2J')
   let app: TuiApp | undefined
@@ -199,6 +207,7 @@ export async function runTui(
       quit = resolve
     })
     tui.onQuit = quit
+    io.registerInterruptGuard?.(() => tui.externalEditorOpen)
     io.registerCancel(async () => {
       try {
         await tui.cancel()
@@ -227,7 +236,8 @@ export async function runTui(
     timingMark('session-ready', io.env)
     if (io.signal()) quit()
     const initialPrompt = p.command === 'resume' ? p.positional.slice(1) : p.positional
-    if (!io.signal() && initialPrompt.length > 0) await tui.runInput(initialPrompt.join(' '))
+    // Not awaited: it settles when the turn ends, and a /quit typed meanwhile must still end the run.
+    if (!io.signal() && initialPrompt.length > 0) void tui.runInput(initialPrompt.join(' '))
     await finished
     const signal = io.signal()
     return signal ? SIGNAL_EXIT_CODES[signal] : ExitCode.OK
@@ -268,5 +278,6 @@ export async function runTui(
       // strand the user's terminal in its alternate screen in that path.
       leaveScreen()
     }
+    for (const stream of streams) stream.off('error', ignoreStreamError)
   }
 }

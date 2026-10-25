@@ -17,6 +17,7 @@ import type { Actor } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
 import type { Kernel } from '../kernel.js'
 import type { SessionImpl } from '../step/session.js'
+import { childInputActor } from '../step/turn-restore.js'
 import { recordChildResultCollected } from './collected-result.js'
 import { deliverChildCompletion } from './completion-notice.js'
 import { childControlMetrics } from './control-metrics.js'
@@ -670,7 +671,7 @@ export class KernelChildren implements ChildrenFactory {
           },
           { type: 'text', text: body },
         ],
-        actor: child.d.actor,
+        actor: childInputActor(parent, child.d.actor),
       })
       checkParent()
     }
@@ -757,7 +758,7 @@ export class KernelChildren implements ChildrenFactory {
           if (!inbox?.items?.length && !child.op()) {
             await child.enqueue('next-turn', {
               content: [{ type: 'text', text: input ?? '' }],
-              actor: child.d.actor,
+              actor: childInputActor(parent, child.d.actor),
             })
           }
           if (opts.recovering && child.op()) await child.resume()

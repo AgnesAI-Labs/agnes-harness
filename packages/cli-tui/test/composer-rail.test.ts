@@ -163,21 +163,26 @@ describe('composer rail top edge', () => {
 })
 
 describe('composer rail bottom edge', () => {
-  it('shows the thinking level and keys, dropping keys right to left before the level', () => {
+  it('shows the thinking level and keys, dropping the middle keys, then the level, and keeping send', () => {
     const zh = state({ locale: 'zh-CN' })
     expect(bottomRail(zh, 80, PLAIN)).toMatch(/^╰─ +思考 高 {2}\/ 命令 {2}@ 文件 {2}⏎ 发送 ─╯$/)
     expect(bottomRail(state(), 80, PLAIN)).toMatch(
       /^╰─ +thinking high {2}\/ commands {2}@ files {2}⏎ send ─╯$/,
     )
-    const kept = [80, 40, 32, 24, 18, 10].map((w) => bottomRail(zh, w, PLAIN).replace(/^╰─ */, ''))
-    expect(kept).toEqual([
-      '思考 高  / 命令  @ 文件  ⏎ 发送 ─╯',
-      '思考 高  / 命令  @ 文件  ⏎ 发送 ─╯',
-      '思考 高  / 命令  @ 文件 ─╯',
-      '思考 高  / 命令 ─╯',
-      '思考 高 ─╯',
-      '─╯',
-    ])
+    const widths = [80, 40, 32, 24, 18, 10]
+    const rows = widths.map((w) => bottomRail(zh, w, PLAIN))
+    for (const [i, row] of rows.entries()) {
+      expect(displayWidth(row)).toBe(widths[i])
+      // Whatever is kept, a space always separates it from the corner.
+      expect(row).toMatch(/^╰─ /)
+    }
+    const kept = rows.map((row) => row.replace(/^╰─ */, ''))
+    // The send hint outlasts the others, and the level goes before the last key does.
+    expect(kept[2]).toContain('⏎ 发送')
+    expect(kept[2]).not.toContain('@ 文件')
+    expect(kept[4]).toContain('⏎ 发送')
+    expect(kept[4]).not.toContain('思考')
+    expect(kept.at(-1)).toBe('─╯')
     expect(bottomRail(state({ usage: undefined }), 80, PLAIN)).not.toContain('thinking')
   })
 

@@ -1,7 +1,9 @@
 import type { UINode } from '@agnes/protocol'
 import { createAnsi } from '../ansi.js'
 import { type Component, escapeControl, padLine, wrapText } from '../component.js'
+import { type KeyHint, keyHints } from '../components/key-hints.js'
 import { columns, fitLine } from '../components/line.js'
+import { boundKeys, keyText } from '../keymap.js'
 import { tt } from '../locale-extended.js'
 import type { Tone } from '../palette.js'
 import { displayWidth } from '../terminal.js'
@@ -56,6 +58,7 @@ const STATUS_TONE: Record<string, Tone> = {
   waiting: 'accent',
   cancelled: 'warning',
   budget_stopped: 'warning',
+  awaiting_approval: 'warning',
 }
 const STATUS_GLYPH: Record<string, string> = {
   completed: '◆',
@@ -78,12 +81,20 @@ const STATUS_KEYS: Record<
   | 'tool.status.failed'
   | 'tool.status.error'
   | 'tool.status.planned'
+  | 'tool.status.cancelled'
+  | 'tool.status.awaitingApproval'
+  | 'tool.status.waiting'
+  | 'tool.status.budgetStopped'
 > = {
   completed: 'tool.status.completed',
   running: 'tool.status.running',
   failed: 'tool.status.failed',
   error: 'tool.status.error',
   planned: 'tool.status.planned',
+  cancelled: 'tool.status.cancelled',
+  awaiting_approval: 'tool.status.awaitingApproval',
+  waiting: 'tool.status.waiting',
+  budget_stopped: 'tool.status.budgetStopped',
 }
 const TOOL_KEYS: Record<string, 'tool.name.read' | 'tool.name.write' | 'tool.name.edit' | 'tool.name.shell'> =
   {
@@ -108,7 +119,27 @@ function spread(left: string, right: string, width: number): string {
   return room >= 4 ? `${fitLine(left, room)}  ${right}` : fitLine(`${left}  ${right}`, width)
 }
 
-type Look = { glyph: string; status: string; paint: (s: string) => string; closing: string }
+/** The Ctrl-O hint with the key as it is bound now; none when the action has no key. */
+function cardHint(label: 'expand' | 'collapse', locale: string): KeyHint | undefined {
+  const key = boundKeys('card-toggle')[0]
+  return key === undefined
+    ? undefined
+    : { key: keyText(key).toLowerCase(), label: tt(`chromeHint.${label}`, locale) }
+}
+
+/** The row that closes a folded run of lines: the count in faint, then the key that opens the card. */
+function foldRow(count: string, hint: KeyHint | undefined, ansi: ThemedAnsi, width: number): string {
+  const lead = `    ${ansi.fg('faint', count)}`
+  const room = width - displayWidth(`    ${count}`) - 2
+  return fitLine(hint && room >= 6 ? `${lead}  ${keyHints([hint], ansi, room)}` : lead, width)
+}
+
+type Look = {
+  glyph: string
+  status: string
+  paint: (s: string) => string
+  closing: (width: number) => string
+}
 
 export class ToolCard implements Component {
   private readonly name: string
@@ -126,6 +157,8 @@ export class ToolCard implements Component {
   private readonly onAction: (actionId: string) => void
   private readonly onExpand: () => void
   private readonly more: string
+  /** The closing row of a folded run of lines. */
+  private readonly fold: (count: string, width: number) => string
   /** `+a -b` after the title of an edit or write whose change is known. */
   private stats: () => string = () => ''
   /** The result preview of a collapsed card, painted and fitted to the width. */
@@ -173,7 +206,10 @@ export class ToolCard implements Component {
         ),
         status: paint(statusKey ? tt(statusKey, locale) : escapeControl(status)),
         paint,
-        closing: ` ${paint('╰─')} ${ansi.fg('faint', 'ctrl+o')}`,
+        closing: (width: number) => {
+          const hint = cardHint('collapse', locale)
+          return ` ${paint('╰─')}${hint ? ` ${keyHints([hint], ansi, Math.max(1, width - 4))}` : ''}`
+        },
       }
       looked = { status, look }
       return look
@@ -204,9 +240,8 @@ export class ToolCard implements Component {
       const [mark, tone] = STEP_MARK[step.status]
       this.stepRows.push(`${ansi.fg(tone, mark)} ${escapeControl(step.text.replace(/\s+/g, ' ').trim())}`)
     }
-    this.more = ansi.dim(
-      tt('card.more', locale, { count: Math.max(0, this.stepRows.length - COLLAPSED_STEPS) }),
-    )
+    this.more = tt('card.more', locale, { count: Math.max(0, this.stepRows.length - COLLAPSED_STEPS) })
+    this.fold = (count, width) => foldRow(count, cardHint('expand', locale), ansi, width)
 
     if (node.summary) this.rail.push((width) => wrapText(escapeControl(node.summary), width))
     this.rail.push(() => this.stepRows)
@@ -235,29 +270,27 @@ export class ToolCard implements Component {
         : ''
       return `${input ? ` ${statsMark(input, ansi)}` : ''}${badge}`
     }
-    let shown: { width: number; rows: string[] } | undefined
+    let shown: { width: number; rows: string[]; hidden: number } | undefined
     this.preview = (width) => {
       const note = lsp()
       if (note && note.errors.length > 0) {
-        const rows = note.errors.slice(0, PREVIEW_ROWS).map((row) => escapeControl(row))
-        if (note.count > PREVIEW_ROWS) rows.push(tt('card.lspMore', locale, { n: note.count - PREVIEW_ROWS }))
-        return rows.map((row) => fitLine(`    ${ansi.fg('danger', row)}`, width))
+        const rows = note.errors
+          .slice(0, PREVIEW_ROWS)
+          .map((row) => fitLine(`    ${ansi.fg('danger', escapeControl(row))}`, width))
+        if (note.count > PREVIEW_ROWS)
+          rows.push(this.fold(tt('card.lspMore', locale, { n: note.count - PREVIEW_ROWS }), width))
+        return rows
       }
       const text = changes ? undefined : node.resultPreview
       if (!text || kind !== undefined) return []
       if (shown?.width !== width) {
         const rows = wrapIndented(escapeControl(text), width - 4).filter((row) => row.trim() !== '')
-        shown = {
-          width,
-          rows: [
-            ...rows.slice(0, PREVIEW_ROWS),
-            ...(rows.length > PREVIEW_ROWS
-              ? [tt('card.moreLines', locale, { n: rows.length - PREVIEW_ROWS })]
-              : []),
-          ],
-        }
+        shown = { width, rows: rows.slice(0, PREVIEW_ROWS), hidden: Math.max(0, rows.length - PREVIEW_ROWS) }
       }
-      return shown.rows.map((row) => fitLine(`    ${ansi.dim(row)}`, width))
+      return [
+        ...shown.rows.map((row) => fitLine(`    ${ansi.dim(row)}`, width)),
+        ...(shown.hidden > 0 ? [this.fold(tt('card.moreLines', locale, { n: shown.hidden }), width)] : []),
+      ]
     }
     let drawn: { input: DiffInput; width: number; rows: string[] } | undefined
     this.rail.push((width) => {
@@ -355,7 +388,7 @@ export class ToolCard implements Component {
         spread(`${head}${this.stats()}${this.summary}`, this.right(false), width),
         ...this.preview(width),
         ...this.stepRows.slice(0, COLLAPSED_STEPS).map((row) => fitLine(`    ${row}`, width)),
-        ...(hidden > 0 ? [fitLine(`    ${this.more}`, width)] : []),
+        ...(hidden > 0 ? [this.fold(this.more, width)] : []),
       ]
     }
     // Raw view: the body without the rail, and no closing line.
@@ -367,7 +400,7 @@ export class ToolCard implements Component {
       ...this.rail
         .flatMap((rows) => rows(inner))
         .map((line) => fitLine(raw ? line : ` ${rail} ${line}`, width)),
-      ...(raw ? [] : [fitLine(look.closing, width)]),
+      ...(raw ? [] : [fitLine(look.closing(width), width)]),
     ]
   }
 }

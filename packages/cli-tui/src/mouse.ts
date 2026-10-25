@@ -79,6 +79,10 @@ export function copyToClipboard(
   platform: NodeJS.Platform = process.platform, // guards-allow-platform: owned terminal clipboard backend selects the native copy command.
   onFail?: () => void,
 ): CopyKind {
+  // Copied replies carry model text. A hidden `ESC [201~` would end bracketed paste early in the
+  // shell the user pastes into and run the rest as typed commands, so only tab and line breaks stay.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: removing them is the point
+  text = text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '')
   write(`\x1b]52;c;${Buffer.from(text).toString('base64')}\x07`)
   if (env.SSH_CONNECTION || env.SSH_TTY) return 'sent'
   // Absolute paths: a bare name would resolve through the workspace directory first on Windows, so a

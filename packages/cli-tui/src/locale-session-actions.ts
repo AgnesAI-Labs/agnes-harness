@@ -1,6 +1,6 @@
 import type { Locale } from './locale.js'
 
-/** Strings of /paste and Ctrl-V: kept beside the other locale files so locale-extended.ts stays small. */
+/** Strings of /paste, Ctrl-V and other session actions: kept beside the other locale files so locale-extended.ts stays small. */
 export type SessionActionKey =
   | 'commands.paste'
   | 'commands.pasteSummary'
@@ -34,6 +34,7 @@ export type SessionActionKey =
   | 'export.usage'
   | 'export.done'
   | 'export.failed'
+  | 'export.exists'
   | 'commands.rate'
   | 'commands.rateSummary'
   | 'rate.usage'
@@ -41,6 +42,8 @@ export type SessionActionKey =
   | 'rate.none'
   | 'rate.unsupported'
   | 'rate.done'
+  | 'commands.clear'
+  | 'commands.clearSummary'
 
 export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string>> = {
   en: {
@@ -82,6 +85,7 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'export.usage': 'usage: /export [agnes|html|sharegpt|claude-code] [path]',
     'export.done': 'Exported ({format}, redacted) to {path}',
     'export.failed': 'Export failed: {reason}',
+    'export.exists': '{path} already exists; choose another path (nothing was exported)',
     'commands.rate': 'Rate the latest finished reply up or down, with an optional reason (the Web thumbs)',
     'commands.rateSummary': 'Rate the latest reply',
     'rate.usage': 'usage: /rate up|down [reason]',
@@ -89,6 +93,9 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'rate.none': 'No finished reply to rate yet',
     'rate.unsupported': 'This daemon does not support ratings',
     'rate.done': 'Rated the reply of turn {turn} {rating}',
+    'commands.clear':
+      'Clear the conversation: start a new session in this workspace with an empty context (the old one stays in /resume)',
+    'commands.clearSummary': 'Clear the conversation',
   },
   'zh-CN': {
     'commands.paste': '把剪贴板里的图片作为下一条消息的附件（等同于 Ctrl-V）',
@@ -127,6 +134,7 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'export.usage': '用法：/export [agnes|html|sharegpt|claude-code] [路径]',
     'export.done': '已导出（{format}，已脱敏）到 {path}',
     'export.failed': '导出失败：{reason}',
+    'export.exists': '{path} 已存在；请换一个路径（未导出任何内容）',
     'commands.rate': '给最近一条已完成的回复点赞或点踩，可附理由（与 Web 的拇指相同）',
     'commands.rateSummary': '给最近回复打分',
     'rate.usage': '用法：/rate up|down [理由]',
@@ -134,5 +142,7 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'rate.none': '还没有可打分的已完成回复',
     'rate.unsupported': '这个 daemon 不支持打分',
     'rate.done': '已给第 {turn} 轮的回复打分：{rating}',
+    'commands.clear': '清空对话：在当前工作区新开一个上下文为空的会话（旧会话仍可用 /resume 找回）',
+    'commands.clearSummary': '清空对话',
   },
 }

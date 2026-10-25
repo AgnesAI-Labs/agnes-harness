@@ -16,6 +16,10 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 // VT sequences are removed first, including their parameters; these are remaining control bytes.
 // biome-ignore lint/suspicious/noControlCharactersInRegex: remove untrusted terminal controls
 const CONTROL = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/g
+// Bidi embeddings, overrides and isolates reorder what follows them, so a code block can show one
+// command and hold another. They are spelled out; the marks (LRM, RLM, ALM) that real right-to-left
+// text uses do not reorder and stay.
+const BIDI = /[\u202a-\u202e\u2066-\u2069]/g
 const span = (text: string, style: Style = PLAIN): Span => ({ text, style })
 const plain = (spans: Span[]) => spans.map((part) => part.text).join('')
 const pad = (text: string, width: number) => text + ' '.repeat(Math.max(0, width - displayWidth(text)))
@@ -39,16 +43,27 @@ export function stripVT(text: string): string {
       }
     }
     if (code === 0x9b) {
+      // Parameters and intermediates, then one final byte. Anything else ends the sequence and stays
+      // text, so a stray CSI cannot swallow the prose after it.
       while (i + 1 < text.length) {
-        const next = text.charCodeAt(++i)
-        if (next >= 0x40 && next <= 0x7e) break
+        const next = text.charCodeAt(i + 1)
+        if (next < 0x20 || next > 0x3f) {
+          if (next >= 0x40 && next <= 0x7e) i++
+          break
+        }
+        i++
       }
     } else if ([0x90, 0x98, 0x9d, 0x9e, 0x9f].includes(code)) {
-      while (i + 1 < text.length) {
-        const next = text.charCodeAt(++i)
-        if (next === 0x9c || (code === 0x9d && next === 7)) break
-        if (next === 0x1b && text[i + 1] === '\\') {
-          i++
+      // An unterminated string drops only its introducer: otherwise one `ESC ]` would hide every word
+      // after it from the user while the model and the ledger still have them.
+      for (let j = i + 1; j < text.length; j++) {
+        const next = text.charCodeAt(j)
+        if (next === 0x9c || (code === 0x9d && next === 7)) {
+          i = j
+          break
+        }
+        if (next === 0x1b && text[j + 1] === '\\') {
+          i = j + 1
           break
         }
       }
@@ -319,7 +334,8 @@ function blocks(tokens: Token[], width: number, ansi: ThemedAnsi, base: Style = 
           const indent = fits ? displayWidth(bullet) + 1 : 0
           const prefix = fits ? `${ansi.fg(list.ordered ? 'muted' : 'accentSoft', bullet)} ` : ''
           const content = blocks(item.tokens, Math.max(1, width - indent), ansi, base)
-          out.push(...content.map((line, i) => (i === 0 ? prefix : ' '.repeat(indent)) + line))
+          if (!content.length) out.push(prefix.trimEnd())
+          else out.push(...content.map((line, i) => (i === 0 ? prefix : ' '.repeat(indent)) + line))
         })
         break
       }
@@ -376,7 +392,10 @@ export function completeBlocks(text: string): number {
 /** Terminal-only Markdown: HTML is literal text; links/images never trigger I/O. */
 export function renderMarkdown(md: string, width: number, ansi: ThemedAnsi): string[] {
   if (!Number.isFinite(width)) throw new Error('invalid markdown width')
-  const clean = stripVT(md).replace(CONTROL, '').replaceAll('\t', '    ')
+  const clean = stripVT(md)
+    .replace(CONTROL, '')
+    .replace(BIDI, (c) => `\\u{${(c.codePointAt(0) as number).toString(16).toUpperCase()}}`)
+    .replaceAll('\t', '    ')
   const w = Math.max(1, Math.trunc(width))
   try {
     return blocks(Lexer.lex(clean, mathLexerOptions()), w, ansi)

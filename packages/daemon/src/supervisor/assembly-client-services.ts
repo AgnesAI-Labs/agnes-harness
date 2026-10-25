@@ -13,7 +13,7 @@ import type { RuntimeState } from './assembly-runtime.js'
 import type { SessionsState } from './assembly-session-services.js'
 import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
-import { webhookSessions } from './webhook-sessions.js'
+import { webhookSessions, webhookTriggerActor } from './webhook-sessions.js'
 
 export function openClientServices(
   state: AssemblyBase & StoresState & WorkersState & DispatchState & RuntimeState & SessionsState,
@@ -69,13 +69,7 @@ export function openClientServices(
     await runQueued(commandQueue, entry.key, entry.ac.signal, () =>
       entry.session.enqueue('next-turn', {
         content: [{ type: 'text', text: input.prompt }],
-        actor: {
-          id: `webhook:${input.trigger.ruleId}`,
-          org: 'webhook',
-          role: 'trigger',
-          deptPath: [],
-          attrs: { ...input.trigger, unattendedApproval: input.unattendedApproval ?? 'notify' },
-        },
+        actor: webhookTriggerActor(input),
         origin: 'system',
         trust: 'untrusted',
         kind: 'follow_up',

@@ -176,6 +176,38 @@ const editorCases: Case[] = [
   { name: 'word-left (alt-b)', keys: ['\x1bb'], text: S, cursor: 5, want: { cursor: 3 } },
   { name: 'word-left (ctrl-left)', keys: ['\x1b[1;5D'], text: S, cursor: 5, want: { cursor: 3 } },
   { name: 'word-left (alt-left)', keys: ['\x1b[1;3D'], text: S, cursor: 5, want: { cursor: 3 } },
+  {
+    name: 'word-left (alt-b, kitty)',
+    keys: ['\x1b[98;3u'],
+    kitty: true,
+    text: S,
+    cursor: 5,
+    want: { cursor: 3 },
+  },
+  {
+    name: 'word-right (alt-f, kitty)',
+    keys: ['\x1b[102;3u'],
+    kitty: true,
+    text: S,
+    cursor: 3,
+    want: { cursor: 5 },
+  },
+  {
+    name: 'word-delete (alt-d, kitty)',
+    keys: ['\x1b[100;3u'],
+    kitty: true,
+    text: S,
+    cursor: 3,
+    want: { text: 'ab  ef' },
+  },
+  {
+    name: 'word-delete-back (alt-backspace, kitty)',
+    keys: ['\x1b[127;3u'],
+    kitty: true,
+    text: S,
+    cursor: 5,
+    want: { text: 'ab  ef', cursor: 3 },
+  },
   { name: 'word-right (alt-f)', keys: ['\x1bf'], text: S, cursor: 3, want: { cursor: 5 } },
   { name: 'word-right (ctrl-right)', keys: ['\x1b[1;5C'], text: S, cursor: 3, want: { cursor: 5 } },
   { name: 'word-right (alt-right)', keys: ['\x1b[1;3C'], text: S, cursor: 3, want: { cursor: 5 } },
@@ -360,7 +392,8 @@ describe('key bindings: report panel', () => {
   })
   it.each([
     ['down', ['\x1b[B'], 'line 1'],
-    ['pgdn', ['\x1b[6~'], 'line 5'],
+    // A page is the panel's body height; the key hints sit in the border, so the body is one row taller than before.
+    ['pgdn', ['\x1b[6~'], 'line 6'],
     ['pgdn then pgup', ['\x1b[6~', '\x1b[5~'], 'line 0'],
     ['down, down, up', ['\x1b[B', '\x1b[B', '\x1b[A'], 'line 1'],
   ])('scrolls: %s', (_n, keys, want) => {
@@ -437,13 +470,15 @@ describe('key bindings: approval modal', () => {
     modal.handleInput('2')
     expect(await answer).toEqual({ optionId: 'al' })
   })
-  it('leaves the letters to the prompt while it holds a draft; numbers still decide', async () => {
+  it('leaves letters and numbers to the prompt while it holds a draft; arrows and Enter still decide', async () => {
     const modal = new PermissionModal(vi.fn(), { maxRows: () => 12, letters: () => false })
     const answer = modal.ask(request, { signal: new AbortController().signal })
     modal.render(80)
-    for (const k of ['y', 'a', 'n']) expect(modal.handleInput(k, true)).toBe(false)
+    for (const k of ['y', 'a', 'n', '1', '2']) expect(modal.handleInput(k, true)).toBe(false)
     expect(modal.count).toBe(1)
-    modal.handleInput('1', true)
+    while (!(modal.render(80).find((l) => l.includes('❯')) ?? '').includes('[1]'))
+      modal.handleInput('\x1b[A', true)
+    modal.handleInput('\r', true)
     expect(await answer).toEqual({ optionId: 'a' })
   })
   it('a new question gets a new head, so the guard restarts', () => {
@@ -464,11 +499,11 @@ describe('key bindings: approval modal', () => {
     modal.handleInput('\x1b[5~')
     expect(footer()).toBe(before)
     const selected = () => modal.render(80).find((l) => l.includes('❯')) ?? ''
-    expect(selected()).toContain('3.')
+    expect(selected()).toContain('[3]')
     modal.handleInput('\x1b[A')
-    expect(selected()).toContain('2.')
+    expect(selected()).toContain('[2]')
     modal.handleInput('\x1b[B')
-    expect(selected()).toContain('3.')
+    expect(selected()).toContain('[3]')
   })
 })
 
