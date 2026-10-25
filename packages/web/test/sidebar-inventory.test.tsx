@@ -10,8 +10,8 @@ import { SessionListLabel, SessionListTools } from '../src/regions/session-tools
 import { sessionInventory } from '../src/session-inventory.js'
 import { resetCollapsedGroups, resetExpandedGroups } from '../src/sidebar-collapse.js'
 import { sidebarGrouping } from '../src/sidebar-grouping.js'
+import { groupInventoryRows, sortSessionsByActivity } from '../src/sidebar-groups.js'
 import { orderSections, sidebarOrder } from '../src/sidebar-order.js'
-import { groupInventoryRows, sortSessionsByActivity } from '../src/sidebar-session-list.js'
 import { zhT } from './helpers/locale.js'
 
 type Row = PageSessionMeta['items'][number]

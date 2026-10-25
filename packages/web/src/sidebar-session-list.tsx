@@ -1,27 +1,38 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
-import { Button, EmptyState, Icon, IconButton, SettingsInput } from '@agnes/web-ui'
+import { Button, EmptyState, Icon, SettingsInput } from '@agnes/web-ui'
 import { type ConversationItemType, Conversations, XProvider } from '@agnes/web-ui/x'
 import {
   SIDEBAR_ORDER_ANNOUNCE_EVENT,
-  type SidebarGroupState,
   type SidebarNavigationOptions,
   sortSessionsByRecency,
-  untitledSessionLabel,
 } from '@agnes/web-units/shell'
 import {
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
-  type ReactNode,
   useEffect,
   useState,
   useSyncExternalStore,
 } from 'react'
 import { navigationHistory } from './navigation-history.js'
 import type { SessionListMode } from './session-inventory.js'
-import { SessionMenu } from './session-menu.js'
 import { isCollapsed, isExpanded, setCollapsed, setExpanded } from './sidebar-collapse.js'
-import { FolderIcon, NavigationLabel, workspaceLabel } from './sidebar-label.js'
+import {
+  chatsPathOf,
+  flatLeadingRows,
+  flatMainRows,
+  groupInventoryRows,
+  groupName,
+  isPinned,
+  RECENT_SESSIONS,
+  type Row,
+  type SessionGroupView,
+  sectionCollapseKey,
+  sessionGroupViews,
+  shownSessions,
+  sortSessionsByActivity,
+} from './sidebar-groups.js'
+import { FolderIcon } from './sidebar-label.js'
 import {
   type DropPosition,
   orderSections,
@@ -30,367 +41,16 @@ import {
   sidebarOrder,
   workspaceKey,
 } from './sidebar-order.js'
+import {
+  type HeadingDrag,
+  SessionRowLabel,
+  SidebarSectionHeading,
+  type SidebarSectionView,
+  sectionViews,
+  untitled,
+  workspaceNames,
+} from './sidebar-rendering.js'
 import { WorkspaceMenu } from './workspace-menu.js'
-
-type Row = SidebarNavigationOptions['sessions'][number]
-
-/** How many sessions a workspace shows before 「Show more」. */
-export const RECENT_SESSIONS = 5
-
-/**
- * The sessions a workspace shows: the most recent few, unless expanded. The open session always
- * shows, in its place, even when it is older than those.
- */
-export function shownSessions<T extends { sessionId: string }>(
-  sorted: readonly T[],
-  expanded: boolean,
-  currentId: string | undefined,
-): { shown: T[]; hidden: number } {
-  if (expanded || sorted.length <= RECENT_SESSIONS) return { shown: [...sorted], hidden: 0 }
-  const shown = sorted.filter((row, index) => index < RECENT_SESSIONS || row.sessionId === currentId)
-  return { shown, hidden: sorted.length - shown.length }
-}
-
-const time = (value: string | undefined): number => {
-  const parsed = value ? Date.parse(value) : Number.NaN
-  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed
-}
-
-/**
- * Newest activity first: the last message when the list reports one, else when the session
- * started. Stable, so rows with no readable time keep the server's order.
- */
-export function sortSessionsByActivity<Row extends { lastMessageAt?: string; createdAt?: string }>(
-  rows: readonly Row[],
-): Row[] {
-  return rows
-    .map((row, index) => ({
-      row,
-      index,
-      time: row.lastMessageAt ? time(row.lastMessageAt) : time(row.createdAt),
-    }))
-    .sort((left, right) => (left.time === right.time ? left.index - right.index : right.time - left.time))
-    .map((entry) => entry.row)
-}
-
-/** A pinned row belongs above the list; archives and pins are mutually exclusive. */
-const isPinned = (row: Row): boolean => !!row.pinnedAt && !row.archived
-
-const byPinnedAt = (left: Row, right: Row): number => time(right.pinnedAt) - time(left.pinnedAt)
-
-/** The daemon-managed chats workspace: its sessions form a group above the heading. */
-const chatsPathOf = (workspaces: readonly WorkspaceEntry[]): string | undefined =>
-  workspaces.find((workspace) => workspace.kind === 'chats')?.path
-
-export type InventoryGroup = Readonly<{
-  id: string
-  kind: 'pinned' | 'chats' | 'workspace' | 'unassigned'
-  workspace?: WorkspaceEntry
-  rows: readonly Row[]
-}>
-
-/** Groups that render in their own sidebar section instead of under 「工作区」. */
-export const isLeadingKind = (kind: InventoryGroup['kind']): boolean => kind === 'pinned' || kind === 'chats'
-
-/**
- * The grouped shape of a full-list view: pinned sessions first, then one group per registered
- * workspace in the sidebar's order, then everything whose folder is no longer registered.
- * The chats workspace is its own kind, so the view can lift it above the heading. Empty groups
- * are dropped, so an archived filter never leaves an empty heading behind.
- */
-export function groupInventoryRows(
-  rows: readonly Row[],
-  workspaces: readonly WorkspaceEntry[],
-): InventoryGroup[] {
-  const groups: InventoryGroup[] = []
-  const pinned = rows.filter(isPinned).sort(byPinnedAt)
-  if (pinned.length) groups.push({ id: 'pinned', kind: 'pinned', rows: pinned })
-  const buckets = new Map(workspaces.map((workspace) => [workspace.path, [] as Row[]]))
-  const unassigned: Row[] = []
-  for (const row of rows) {
-    if (isPinned(row)) continue
-    const bucket = row.cwd ? buckets.get(row.cwd) : undefined
-    ;(bucket ?? unassigned).push(row)
-  }
-  for (const workspace of workspaces) {
-    const bucket = buckets.get(workspace.path) ?? []
-    if (bucket.length)
-      groups.push({
-        id: workspace.path,
-        kind: workspace.kind === 'chats' ? 'chats' : 'workspace',
-        workspace,
-        rows: bucket,
-      })
-  }
-  if (unassigned.length) groups.push({ id: '', kind: 'unassigned', rows: unassigned })
-  return groups
-}
-
-/**
- * Flat rows above the heading: pinned sessions (newest pin first), then the chats workspace's
- * sessions in the order the activity sort gave them.
- */
-export function flatLeadingRows(rows: readonly Row[], workspaces: readonly WorkspaceEntry[]): Row[] {
-  const chats = chatsPathOf(workspaces)
-  return [
-    ...rows.filter(isPinned).sort(byPinnedAt),
-    ...rows.filter((row) => !isPinned(row) && !!chats && row.cwd === chats),
-  ]
-}
-
-/** Flat rows under the heading: everything that is neither pinned nor in the chats workspace. */
-export function flatMainRows(rows: readonly Row[], workspaces: readonly WorkspaceEntry[]): Row[] {
-  const chats = chatsPathOf(workspaces)
-  return rows.filter((row) => !isPinned(row) && !(chats && row.cwd === chats))
-}
-
-/** The workspace a row belongs to, and the name it goes by in a flat list or a search. */
-function workspaceNames(options: SidebarNavigationOptions, t: Translate) {
-  const nameOf = (path: string | undefined): string => {
-    const workspace = path ? options.workspaces.find((entry) => entry.path === path) : undefined
-    if (workspace?.kind === 'chats') return t('nav.chats')
-    if (workspace) return workspaceLabel(workspace)
-    return path?.split(/[\\/]/).filter(Boolean).at(-1) ?? ''
-  }
-  return { nameOf }
-}
-
-/**
- * One session row, shared by the paged list and the full-list views: title, running dot, the
- * workspace name and pin mark the flat list adds, the archived treatment, and the action menu.
- */
-function SessionRowLabel({
-  options,
-  t,
-  row,
-  title,
-  active,
-  running,
-  workspaceName,
-  pinned,
-  pinnedMark,
-  archived,
-  restoring,
-  chats,
-}: {
-  options: SidebarNavigationOptions
-  t: Translate
-  row: Row
-  title: string
-  active: boolean
-  running: boolean
-  workspaceName?: string
-  /** Offers 「Unpin」 in the menu; a grouped list shows that through its heading instead. */
-  pinned: boolean
-  /** The row-end pin mark, used only where no heading carries the pinned group. */
-  pinnedMark: boolean
-  archived: boolean
-  restoring: boolean
-  chats: boolean
-}) {
-  return (
-    <>
-      <Button
-        appearance="ghost"
-        className={active ? 'session active' : 'session'}
-        disabled={options.disabled ?? false}
-        data-session={row.sessionId}
-        aria-current={active ? 'page' : undefined}
-        title={title}
-        onClick={() => options.open(row.sessionId)}
-      >
-        {running && <span className="session-running" role="img" aria-label={t('nav.running')} />}
-        <span className="session-title">
-          <NavigationLabel text={title} />
-        </span>
-        {workspaceName && <span className="session-workspace-label">{workspaceName}</span>}
-        {pinnedMark && <Icon name="pin" className="session-pin-mark" />}
-        {archived && (
-          <>
-            <Icon name="archive" className="session-archive-mark" />
-            <span className="visually-hidden">{t('session.archived.badge')}</span>
-          </>
-        )}
-      </Button>
-      {archived && (
-        <IconButton
-          name="history"
-          className="session-restore"
-          data-testid="archived-restore"
-          label={restoring ? t('session.archived.restoring') : t('session.archived.restoreAria', { title })}
-          loading={restoring}
-          disabled={restoring || (options.disabled ?? false)}
-          aria-busy={restoring}
-          onClick={() => void navigationHistory.restore(row.sessionId)}
-        />
-      )}
-      {options.action && (
-        <SessionMenu
-          key={row.sessionId}
-          id={row.sessionId}
-          title={title}
-          disabled={options.disabled ?? false}
-          t={t}
-          action={options.action}
-          platform={options.runtimePlatform}
-          chats={chats}
-          pinned={pinned}
-          archived={archived}
-        />
-      )}
-    </>
-  )
-}
-
-/** The drag behaviour a heading row offers: a handle, a drop target and a keyboard move. */
-type HeadingDrag = {
-  /** True while this row is the drag source; the row dims itself. */
-  dragging?: boolean | undefined
-  onDragStart(event: ReactDragEvent<HTMLElement>): void
-  onDragEnd(): void
-  onDragOver(event: ReactDragEvent<HTMLElement>): void
-  onDragLeave(event: ReactDragEvent<HTMLElement>): void
-  onDrop(event: ReactDragEvent<HTMLElement>): void
-}
-
-/**
- * One heading row for a section or a project: drag handle, icon, name, fold, and the right-side
- * actions. Sections and projects share the row and title classes so they read as one family;
- * a project adds `is-nested` for its extra indent.
- */
-function SidebarSectionHeading({
-  name,
-  title,
-  icon,
-  collapsed,
-  listId,
-  onToggle,
-  nested = false,
-  actions,
-  drag,
-  dropPosition,
-  onKeyDown,
-}: {
-  name: string
-  title: string
-  icon: ReactNode
-  collapsed: boolean
-  listId: string
-  onToggle(): void
-  nested?: boolean
-  actions?: ReactNode
-  drag?: HeadingDrag | undefined
-  dropPosition?: DropPosition | undefined
-  onKeyDown?: ((event: ReactKeyboardEvent<HTMLElement>) => void) | undefined
-}) {
-  return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: pointer-only drop target; fold and Alt+Arrow live on its buttons.
-    <div
-      className={nested ? 'workspace-heading-row is-nested' : 'workspace-heading-row'}
-      data-drop={dropPosition}
-      onDragOver={drag?.onDragOver}
-      onDragLeave={drag?.onDragLeave}
-      onDrop={drag?.onDrop}
-    >
-      <Button
-        appearance="ghost"
-        className="workspace-heading"
-        aria-expanded={!collapsed}
-        aria-controls={listId}
-        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-        title={title}
-        // The name is the drag source: no separate handle sits in front of the heading.
-        {...(drag ? { draggable: true, onDragStart: drag.onDragStart, onDragEnd: drag.onDragEnd } : {})}
-        onClick={onToggle}
-        onKeyDown={onKeyDown}
-      >
-        {icon}
-        <span className="workspace-name">
-          <NavigationLabel text={name} />
-        </span>
-      </Button>
-      {actions}
-    </div>
-  )
-}
-
-const untitled = (options: SidebarNavigationOptions, t: Translate, row: Row, key: string) =>
-  row.title ||
-  options.labels.get(row.sessionId) ||
-  untitledSessionLabel(t(key), row.createdAt, document.documentElement.lang || 'en')
-
-/** One group in the sidebar: a paged group, a local bucket, or the synthesized pinned group. */
-type SessionGroupView = InventoryGroup & { page?: SidebarGroupState }
-
-/**
- * The paged view's groups in the order the server sent them; `kind` tells the leading sections
- * (pinned, chats) from the list under 「工作区」. Without a paged projection the groups are
- * bucketed locally and pinned sessions are lifted out of their folder.
- */
-function sessionGroupViews(options: SidebarNavigationOptions): SessionGroupView[] {
-  const views: SessionGroupView[] = []
-  if (options.paging) {
-    const workspaceOf = (groupId: string, workspaceId: string | undefined) =>
-      options.workspaces.find((entry) =>
-        workspaceId ? entry.workspaceId === workspaceId : entry.path === groupId,
-      )
-    for (const group of options.paging.groups) {
-      const workspace =
-        group.groupId === 'pinned' || group.groupId === 'unassigned'
-          ? undefined
-          : workspaceOf(group.groupId, group.workspaceId)
-      views.push({
-        id: group.groupId,
-        kind:
-          group.groupId === 'pinned'
-            ? 'pinned'
-            : workspace?.kind === 'chats'
-              ? 'chats'
-              : workspace
-                ? 'workspace'
-                : 'unassigned',
-        ...(workspace ? { workspace } : {}),
-        rows: group.items,
-        page: group,
-      })
-    }
-    return views
-  }
-  // Sessions whose folder is no longer registered collect in a last, unnamed-workspace folder.
-  const buckets = new Map(options.workspaces.map((workspace) => [workspace.path, [] as Row[]]))
-  const pinned: Row[] = []
-  const unassigned: Row[] = []
-  for (const row of options.sessions) {
-    if (row.archived) continue
-    if (isPinned(row)) pinned.push(row)
-    else (buckets.get(row.cwd ?? '') ?? unassigned).push(row)
-  }
-  if (pinned.length) views.push({ id: 'pinned', kind: 'pinned', rows: pinned.sort(byPinnedAt) })
-  for (const workspace of options.workspaces) {
-    const rows = buckets.get(workspace.path) ?? []
-    // An empty chats workspace has nothing to show in its own section.
-    if (workspace.kind === 'chats' && !rows.length) continue
-    views.push({
-      id: workspace.path,
-      kind: workspace.kind === 'chats' ? 'chats' : 'workspace',
-      workspace,
-      rows,
-    })
-  }
-  if (unassigned.length) views.push({ id: '', kind: 'unassigned', rows: unassigned })
-  return views
-}
-
-/** The name a group goes by, shared by the heading and the move announcement. */
-function groupName(view: SessionGroupView, t: Translate): string {
-  if (view.kind === 'pinned') return t('nav.pinned')
-  if (view.kind === 'chats') return t('nav.chats')
-  if (view.kind === 'unassigned') return t('session.uncategorized')
-  return view.workspace ? workspaceLabel(view.workspace) : t('session.uncategorized')
-}
-
-/** A reserved collapse key per section, kept apart from real workspace paths and ids. */
-const sectionCollapseKey = (id: SidebarSectionId): string => `__section__:${id}`
 
 /** The toolbar-level live region lives in the shell; the navigation only announces the result. */
 const announce = (message: string): void => {
@@ -598,69 +258,6 @@ function SessionGroupSection({
       />
     </section>
   )
-}
-
-/** One of the three peer sections: 置顶 / 临时会话 / 工作区. */
-type SidebarSectionView = {
-  id: SidebarSectionId
-  title: string
-  icon: ReactNode
-  /** The pinned or chats group rendered directly under the section heading. */
-  group?: SessionGroupView
-  /** The project groups inside the workspace section. */
-  groups: SessionGroupView[]
-}
-
-const workspaceRank = (view: SessionGroupView, rank: ReadonlyMap<string, number>): number => {
-  if (view.kind === 'unassigned' || !view.workspace) return Number.MAX_SAFE_INTEGER
-  return rank.get(workspaceKey(view.workspace)) ?? Number.MAX_SAFE_INTEGER - 1
-}
-
-/**
- * The three sections in a fixed membership: pinned and chats hold one group each, workspaces holds
- * every project. Empty sections are left out. The order of the sections themselves comes from the
- * order store at render time, not from this list.
- */
-function sectionViews(
-  views: readonly SessionGroupView[],
-  workspaces: readonly WorkspaceEntry[],
-  t: Translate,
-): SidebarSectionView[] {
-  const hasRows = (view: SessionGroupView): boolean =>
-    view.page ? view.page.total > 0 : view.rows.length > 0
-  const pinned = views.find((view) => view.kind === 'pinned')
-  const chats = views.find((view) => view.kind === 'chats')
-  const rank = new Map(workspaces.map((workspace, index) => [workspaceKey(workspace), index]))
-  // Registered folders stay visible while empty; an empty 「未分类」 bucket has nothing to say.
-  const projects = views
-    .filter((view) => !isLeadingKind(view.kind))
-    .filter((view) => view.kind !== 'unassigned' || hasRows(view))
-    .sort((left, right) => workspaceRank(left, rank) - workspaceRank(right, rank))
-  const sections: SidebarSectionView[] = []
-  if (pinned && hasRows(pinned))
-    sections.push({
-      id: 'pinned',
-      title: t('nav.pinned'),
-      icon: <Icon name="pin" className="icon icon-pinned" />,
-      group: pinned,
-      groups: [],
-    })
-  if (chats && hasRows(chats))
-    sections.push({
-      id: 'chats',
-      title: t('nav.chats'),
-      icon: <Icon name="message-square" className="icon icon-chats" />,
-      group: chats,
-      groups: [],
-    })
-  if (projects.length)
-    sections.push({
-      id: 'workspaces',
-      title: t('sidebar.sectionHeading'),
-      icon: <FolderIcon className="icon icon-folder" />,
-      groups: projects,
-    })
-  return sections
 }
 
 type DragState = {
