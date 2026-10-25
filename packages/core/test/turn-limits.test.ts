@@ -1,6 +1,7 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
+import { NOTE_LANGUAGE } from '../src/request/note-language.js'
 import { turnTimeLimit } from '../src/step/time-limit.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
@@ -60,13 +61,33 @@ async function timeNotes(log: Log): Promise<string[]> {
     .map((text) => text.slice(TURN_TIME.length))
 }
 
+/** How many Core notes the ledger holds in all: every `runtime_context` message row. */
+async function noteRows(log: Log): Promise<number> {
+  const rows = await log.scan({ type: 'user/message', limit: 1000 })
+  return rows.filter((row) => (row.data as { kind?: string }).kind === 'runtime_context').length
+}
+
+const at = (used: string, left: string) =>
+  `${used} of this turn's 1m40s time limit used, ${left} left. Measured at this request, it replaces any earlier time figure: do not conclude that the time limit is reached unless this note says so.\n${NOTE_LANGUAGE}`
+/** The figures sent at 0, 30, 55, 60, 80, 95 and 97 s into a 100 s limit. */
+const MEASURED = [
+  at('0s', 'about 1m40s'),
+  at('30s', 'about 1m10s'),
+  at('50s', 'about 40s'),
+  at('1m00s', 'about 40s'),
+  at('1m20s', 'about 20s'),
+  at('1m30s', 'less than 10s'),
+  at('1m30s', 'less than 10s'),
+]
+
 type Request = ReturnType<typeof fakeProvider>['requests'][number]
 /** The last measured-time note a request carries. */
 const lastTime = (request: Request | undefined): string | undefined =>
-  JSON.stringify(request?.messages ?? [])
-    .split(JSON.stringify(TURN_TIME).slice(1, -1))
+  (request?.messages ?? [])
+    .flatMap((message) => (message.role === 'user' ? message.content : []))
+    .flatMap((block) => (block.type === 'text' && block.text.startsWith(TURN_TIME) ? [block.text] : []))
     .at(-1)
-    ?.split('"')[0]
+    ?.slice(TURN_TIME.length)
 
 describe('turn limits the model is told about', () => {
   it('states the limits at turn start, then once each at 50%, 75% and 90% of the nearest, as live notes', async () => {
@@ -83,10 +104,10 @@ describe('turn limits the model is told about', () => {
 
     const limits = 'a time limit of 1m40s (until 2025-09-07 00:01:40 UTC); at most 20 model steps'
     expect(await limitNotes(log)).toEqual([
-      `Turn limits\nThis turn has limits: ${limits}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first.`,
-      `Turn limits\n50% of this turn's time limit is used: about 50s left (until 2025-09-07 00:01:40 UTC). Prioritise the core requirement: if its result is not in place yet, put a working version in place and check it before refining anything.\nLimits for this turn: ${limits}.`,
-      `Turn limits\n75% of this turn's time limit is used: about 25s left (until 2025-09-07 00:01:40 UTC). Finish the core requirement now and verify it; skip optional extras and further exploration.\nLimits for this turn: ${limits}.`,
-      `Turn limits\n90% of this turn's time limit is used: about 10s left (until 2025-09-07 00:01:40 UTC). Wrap up: leave the work in its best checked state and end with a short reply saying what is done, how it was checked and what remains.\nLimits for this turn: ${limits}.`,
+      `Turn limits\nThis turn has limits: ${limits}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first.\n${NOTE_LANGUAGE}`,
+      `Turn limits\n50% of this turn's time limit is used: about 50s left (until 2025-09-07 00:01:40 UTC). Prioritise the core requirement: if its result is not in place yet, put a working version in place and check it before refining anything.\nLimits for this turn: ${limits}.\n${NOTE_LANGUAGE}`,
+      `Turn limits\n75% of this turn's time limit is used: about 25s left (until 2025-09-07 00:01:40 UTC). Finish the core requirement now and verify it; skip optional extras and further exploration.\nLimits for this turn: ${limits}.\n${NOTE_LANGUAGE}`,
+      `Turn limits\n90% of this turn's time limit is used: about 10s left (until 2025-09-07 00:01:40 UTC). Wrap up: leave the work in its best checked state and end with a short reply saying what is done, how it was checked and what remains.\nLimits for this turn: ${limits}.\n${NOTE_LANGUAGE}`,
     ])
     // The notes travel at the tail: every request carries the same system prompt.
     expect(provider.requests).toHaveLength(7)
@@ -102,7 +123,7 @@ describe('turn limits the model is told about', () => {
     expect(provider.requests.at(-1)?.system).toBe(provider.requests[0]?.system)
   })
 
-  it('tells every request of a timed turn its measured time, as a short note the cache keeps', async () => {
+  it('tells every request of a timed turn its measured time, as a request-only note history never keeps', async () => {
     // Seconds into the 100 s limit at each request: 0, 30, 55, 60, 80, 95, 97.
     const { session, log, provider, seen } = await clocked([30_000, 25_000, 5_000, 20_000, 15_000, 2_000])
     await session.enqueue('next-turn', {
@@ -116,32 +137,50 @@ describe('turn limits the model is told about', () => {
     expect(seen).toEqual(seen.map(() => ({ timeLimitMs: 100_000, deadlineAt: T0 + 100_000 })))
     expect(seen).toHaveLength(6)
 
-    const at = (used: string, left: string) =>
-      `${used} of this turn's 1m40s time limit used, ${left} left. This remaining time is measured at this request and is authoritative: do not conclude that the time limit is reached unless this note says so.`
-    const measured = [
-      at('0s', 'about 1m40s'),
-      at('30s', 'about 1m10s'),
-      at('50s', 'about 40s'),
-      at('1m00s', 'about 40s'),
-      at('1m20s', 'about 20s'),
-      at('1m30s', 'less than 10s'),
-      at('1m30s', 'less than 10s'),
-    ]
-    expect(provider.requests.map(lastTime)).toEqual(measured)
-    // The last two requests measure the same figure, so the second adds no note of its own.
-    expect(await timeNotes(log)).toEqual(measured.slice(0, 6))
-    // Kept as history: each request's messages are the start of the next one's, and the system
-    // prompt never changes, so the provider's cached prefix survives every new figure.
+    expect(provider.requests.map(lastTime)).toEqual(MEASURED)
+    for (const request of provider.requests) {
+      // The figure is the request's last message, and the request says it is not history.
+      expect(request.messages.at(-1)).toMatchObject({
+        role: 'user',
+        content: [{ text: expect.stringMatching(/^\[turn time\]\n/) }],
+      })
+      expect(request.requestOnlyMessages).toBe(1)
+    }
+    // Nothing of it is written: the only notes on the ledger are the threshold notes.
+    expect(await timeNotes(log)).toEqual([])
+    expect(await noteRows(log)).toBe((await limitNotes(log)).length)
+    // Each request's history is the start of the next one's, and the system prompt never changes,
+    // so the provider's cached prefix survives every new figure.
     for (const [i, request] of provider.requests.entries()) {
       expect(request.system).toBe(provider.requests[0]?.system)
       const next = provider.requests[i + 1]
-      if (next) expect(next.messages.slice(0, request.messages.length)).toEqual(request.messages)
+      const history = request.messages.slice(0, -1)
+      if (next) expect(next.messages.slice(0, history.length)).toEqual(history)
     }
 
-    // A later turn without a time limit marks the old figure as no longer current, once.
+    // A later turn without a time limit carries no figure at all, and nothing needs clearing.
     await session.enqueue('next-turn', { content: [{ type: 'text', text: 'and now?' }], actor })
     expect((await session.run({ until: 'turn-end', signal })).reason).toBe('completed')
-    expect((await timeNotes(log)).slice(6)).toEqual(['(none)'])
+    expect(JSON.stringify(provider.requests.at(-1))).not.toContain('[turn time]')
+    expect(provider.requests.at(-1)?.requestOnlyMessages).toBeUndefined()
+    expect(await timeNotes(log)).toEqual([])
+  })
+
+  it('a long timed turn adds no more history rows than its threshold notes', async () => {
+    // Forty requests 10 s apart in a 500 s limit: every figure differs, and it reaches 80%.
+    const { session, log, provider } = await clocked(Array.from({ length: 39 }, () => 10_000))
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'do it' }],
+      actor,
+      timeLimitMs: 500_000,
+    })
+    await session.acceptInput()
+    expect((await session.run({ until: 'turn-end', signal })).reason).toBe('completed')
+    expect(provider.requests).toHaveLength(40)
+    expect(new Set(provider.requests.map(lastTime)).size).toBe(40)
+    // The opening note, then 50% and 75%: three rows for forty requests.
+    expect(await noteRows(log)).toBe(3)
+    expect(await timeNotes(log)).toEqual([])
   })
 
   it('says the time limit is reached only once the deadline has passed', async () => {
@@ -154,7 +193,7 @@ describe('turn limits the model is told about', () => {
     await session.acceptInput()
     await session.run({ until: 'turn-end', signal })
     expect(lastTime(provider.requests[1])).toBe(
-      "This turn's 1m40s time limit is reached. End now with a short reply saying what is done, how it was checked and what remains.",
+      `This turn's 1m40s time limit is reached. End now with a short reply saying what is done, how it was checked and what remains.\n${NOTE_LANGUAGE}`,
     )
   })
 
@@ -198,7 +237,7 @@ describe('turn limits the model is told about', () => {
     ])
   })
 
-  it('a turn rebuilt after a kill keeps its time limit and does not repeat a note it already sent', async () => {
+  it('a turn rebuilt after a kill keeps its time limit, measures it correctly and does not repeat a note it already sent', async () => {
     const { session, log, provider } = await clocked([30_000, 25_000, 5_000, 20_000, 15_000, 2_000])
     await session.enqueue('next-turn', {
       content: [{ type: 'text', text: 'do it' }],
@@ -217,11 +256,10 @@ describe('turn limits the model is told about', () => {
       await session.rehydrateTurn(op)
       expect(turnTimeLimit(readTurn())).toEqual({ timeLimitMs: 100_000, deadlineAt: T0 + 100_000 })
     }
-    // A rebuilt turn measures afresh at each request and never writes the same figure twice.
-    const times = await timeNotes(log)
-    expect(times).toHaveLength(6)
-    expect(new Set(times).size).toBe(6)
-    expect(lastTime(provider.requests.at(-1))).toContain('less than 10s left')
+    // A rebuilt turn measures against the deadline read back from its own row: every request
+    // carries the same figures an unbroken turn sends, and none of them is written.
+    expect(provider.requests.map(lastTime)).toEqual(MEASURED)
+    expect(await timeNotes(log)).toEqual([])
     const notes = await limitNotes(log)
     expect(notes.map((note) => /^Turn limits\n(\d+%|This turn)/.exec(note)?.[1])).toEqual([
       'This turn',

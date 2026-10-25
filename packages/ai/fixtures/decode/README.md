@@ -17,12 +17,8 @@ whole answer arrives at once is a case that will fail in production.
 | `provenance` | `hand-written` or `captured` — see below |
 | `model_hint` | optional. **Nothing reads it today.** It is carried for the captured samples that arrive with the rest of the chain, so a case can say which model produced it; it does not route a fixture to a rule |
 | `tool_names` | what the model was offered. A name outside this list is never promoted |
-| `recover` | optional. The recovery rules the model opted into (its `toolCallFormats` minus `native`; empty when it declares `native`). Absent means every rule. A capture whose rule is not listed stays text |
 | `input_chunks` | a string (text), `{kind:"thinking",delta}`, or `{kind:"native_toolcall",call}` for a call the wire protocol carried natively |
 | `expected_events` | the events, with adjacent deltas of one kind already joined |
-
-A call is promoted only out of text, never out of thinking: reasoning keeps call-shaped content as
-reasoning, with an `unparsed` deviation when it names an offered tool.
 
 ## Provenance, and what is still owed
 
@@ -44,6 +40,6 @@ Copy a line and change it — no code change is needed. Two rules:
 
 - **Register the file.** `DECODE_FIXTURE_FILES` in `src/decode/fixtures.ts` is the list a runner
   reads; the test asserts it equals what is on disk, so a new file that nobody registered is red.
-- **A new rule, a change to the order of the rules, or a change to when a capture is promoted, moves `PARSER_VERSION`.** Every
+- **A new rule, or a change to the order of the rules, moves `PARSER_VERSION`.** Every
   `format/deviation` ledger row carries that version, and a row written under one rule set that
   claims another is a row that cannot be read back.

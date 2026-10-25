@@ -218,7 +218,7 @@ The guarantee covers the `tools` of a request. The system prompt lists the defer
 
 ### A tail note
 
-`tailNote` appends one user-side message at the very end of a request, after the visible history and after Core's own per-request notes (runtime context, hook context and skill notes). The system prompt, the tools, `prompt_prefix_hash` and `tool_schema_hash` are the same as without it.
+`tailNote` appends one user-side message at the end of a request, after the visible history and after Core's own per-request notes (runtime context, hook context and skill notes). Only Core's request-only notes, which are never written to history (a timed turn's `[turn time]`), come after a committed note; an uncommitted note is always last. The system prompt, the tools, `prompt_prefix_hash` and `tool_schema_hash` are the same as without it.
 
 ```ts
 const request = await ctx.prepareRequest({

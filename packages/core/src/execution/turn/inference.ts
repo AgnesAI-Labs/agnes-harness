@@ -60,6 +60,7 @@ import {
   TURN_TIME_PREFIX,
 } from '../../request/derive.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
+import { withNoteLanguage } from '../../request/note-language.js'
 import { toProviderRequest } from '../../request/to-provider.js'
 import {
   attemptProviderCount,
@@ -93,8 +94,9 @@ import { turnLimitSection, turnTimeNote } from './turn-limits.js'
  * What the model is told in a turn whose input declared that nobody attends it. The first line is
  * the title an attended turn's tombstone keeps, so clearing the note does not repeat its body.
  */
-export const UNATTENDED_NOTE =
-  'Unattended run\nThis run is unattended: nobody can answer questions, review a plan or look at a UI surface before it ends, and your final reply is all that is returned. Do not ask the user or wait for input. Finish the task end to end on your own best judgment: where it is ambiguous, choose the most reasonable interpretation, carry it out, and state the assumptions you made in the final reply.'
+export const UNATTENDED_NOTE = withNoteLanguage(
+  'Unattended run\nThis run is unattended: nobody can answer questions, review a plan or look at a UI surface before it ends, and your final reply is all that is returned. Do not ask the user or wait for input. Finish the task end to end on your own best judgment: where it is ambiguous, choose the most reasonable interpretation, carry it out, and state the assumptions you made in the final reply.',
+)
 
 /** Truncation reasons already reported per session in this process: one diagnostic row each. */
 const reportedMediaWindows = new WeakMap<object, Set<RequestMediaScanTruncation['reason']>>()
@@ -691,8 +693,6 @@ export async function prepareInferenceRequest(
     envelopeCache: s.envelopeCache,
     notes: [
       { prefix: HOOK_CONTEXT_PREFIX, text: additionalContext, dedup: { kind: 'latest' } },
-      // Empty in a turn without a time limit, which marks an earlier turn's figure as no longer current.
-      { prefix: TURN_TIME_PREFIX, text: turnTime ?? '', dedup: { kind: 'latest' } },
       ...(progressCheck ? [progressCheck] : []),
       ...(preloaded
         ? [
@@ -706,6 +706,7 @@ export async function prepareInferenceRequest(
     ],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
+    ...(turnTime ? { requestNotes: [{ prefix: TURN_TIME_PREFIX, text: turnTime }] } : {}),
     ...(tailNote ? { tailNote } : {}),
   })
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)

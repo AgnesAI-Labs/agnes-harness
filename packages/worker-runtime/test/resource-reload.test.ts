@@ -439,6 +439,8 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
       staleMarks: 0,
       reloadedMarks: 0,
       mcpRows: recordingRows({ events, gate: reloadReleased }).runtime,
+      // Run A finishes well inside the barrier's bound here; the next test covers a turn that does not.
+      reloadBarrierTimeoutMs: 60_000,
     }
     const context = (): Parameters<typeof handleCommand>[2] => ({
       host,
@@ -489,6 +491,103 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
       'run:c',
       'done:c',
     ])
+    cleanup.push(() => resources.generation?.runtime.mcp.close() ?? Promise.resolve())
+  })
+
+  it('defers the reload when an earlier turn outlasts the barrier, and reloads once the worker is idle', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'wrr-'))
+    cleanup.push(() => rm(root, { recursive: true, force: true }))
+    const urlA = await mcpFixture('toolA')
+    const snapshotPath = join(root, 'snapshot.json')
+    await writeFile(
+      snapshotPath,
+      JSON.stringify(snapshotDoc([{ serverId: 'a', url: urlA, toolName: 'toolA' }])),
+    )
+    const input: WorkerResourceBootstrapInput = {
+      env: {
+        AGNES_RESOURCE_SNAPSHOT: snapshotPath,
+        AGNES_RESOURCE_MCP_POLICY: JSON.stringify({
+          allowedExecutables: [],
+          allowLoopbackHttp: true,
+          localDaemon: true,
+        }),
+        HOME: root,
+      },
+      cwd: root,
+      agnesHomeDir: root,
+      profile: { name: 'local', dataDir: root, adapters: { secrets: { kind: 'env' } } },
+      createBarrier: () => ({ quiesce: async (_operation, publish) => publish({} as never) }),
+      createSecrets: () => {
+        throw new Error('fixture has no secret-bound servers')
+      },
+      mcpRows: true,
+    }
+    const initial = await bootstrapWorkerResources(input)
+    if (!initial) throw new Error('expected initial resource generation')
+    cleanup.push(() => initial.runtime.mcp.close())
+
+    // Session A's turn waits on an approval for as long as the test wants.
+    let approveA!: () => void
+    const approvalA = new Promise<void>((resolve) => {
+      approveA = resolve
+    })
+    const events: string[] = []
+    const session = (name: string, wait?: Promise<void>) =>
+      ({
+        lastSeq: 0,
+        run: async () => {
+          events.push(`run:${name}`)
+          await wait
+          events.push(`done:${name}`)
+          return { reason: 'completed' }
+        },
+      }) as unknown as HostSession
+    const host = {
+      reloadEcosystemExtension: async (id: string) => {
+        events.push(`reload:${id}`)
+        return { id, package: '@agnes/base', version: '0.0.0', trust: 'builtin' as const, loaded: true }
+      },
+    } as unknown as Host
+    const resources: NonNullable<Parameters<typeof handleCommand>[2]['resources']> = {
+      generation: initial,
+      staleMarks: 0,
+      reloadedMarks: 0,
+      mcpRows: recordingRows({ events }).runtime,
+      reloadBarrierTimeoutMs: 50,
+    }
+    const context = (): Parameters<typeof handleCommand>[2] => ({
+      host,
+      aborts: new Map(),
+      resources,
+      workerResourcesInput: input,
+    })
+    const run = (name: string, wait?: Promise<void>) =>
+      handleCommand(
+        session(name, wait),
+        { kind: 'command', requestId: name, method: 'run', params: { runId: name } },
+        context(),
+      )
+
+    const runA = run('a', approvalA)
+    await vi.waitFor(() => expect(events).toContain('run:a'))
+    await handleCommand(
+      session('marker'),
+      { kind: 'command', requestId: 'stale', method: 'resource.stale', params: {} },
+      context(),
+    )
+    // B waits for A only as long as the barrier allows, then runs on the current generation. C,
+    // arriving while A is still out, does not queue behind A again.
+    await expect(run('b')).resolves.toEqual({ reason: 'completed' })
+    await expect(run('c')).resolves.toEqual({ reason: 'completed' })
+    expect(events).toEqual(['run:a', 'run:b', 'done:b', 'run:c', 'done:c'])
+    expect(resources).toMatchObject({ staleMarks: 1, reloadedMarks: 0 })
+
+    approveA()
+    await runA
+    // The reload is still owed, and the first run that finds the worker idle performs it.
+    await expect(run('d')).resolves.toEqual({ reason: 'completed' })
+    expect(events.slice(-4)).toEqual(['rows:a', 'reload:agnes/skills', 'run:d', 'done:d'])
+    expect(resources).toMatchObject({ staleMarks: 1, reloadedMarks: 1 })
     cleanup.push(() => resources.generation?.runtime.mcp.close() ?? Promise.resolve())
   })
 
@@ -694,6 +793,30 @@ describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn 
         detail: { reasons: [expect.objectContaining({ kind: 'recovery-required' })] },
       })
       expect(host.migrateSessionGeneration).not.toHaveBeenCalled()
+
+      // The next run retries the reload. A fully successful one brings every row back in line with
+      // the snapshot and clears the flag; one that fails again is handed to the worker's owner.
+      const recoveryFailures: unknown[] = []
+      if (ctx.resources) ctx.resources.onRecoveryFailed = (error) => recoveryFailures.push(error)
+      if (failRollback) {
+        await expect(run()).rejects.toThrow(/recovery required/)
+        expect(ctx.resources?.recoveryRequired).toBe(true)
+        expect(recoveryFailures).toHaveLength(1)
+      } else {
+        await expect(run()).resolves.toEqual({ reason: 'completed' })
+        expect(ctx.resources?.recoveryRequired).toBe(false)
+        expect(ctx.resources).toMatchObject({ staleMarks: 1, reloadedMarks: 1 })
+        expect(recoveryFailures).toEqual([])
+        await expect(run()).resolves.toEqual({ reason: 'completed' })
+      }
+      expect(rows.applied).toEqual([
+        ['a', 'b'],
+        ['a', 'b'],
+      ])
+      cleanup.push(async () => {
+        const current = ctx.resources?.generation
+        if (current && current !== state1) await current.runtime.mcp.close()
+      })
     },
   )
 })

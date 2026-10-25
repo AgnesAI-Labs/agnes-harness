@@ -89,6 +89,7 @@ import {
   sessionScopedKey,
 } from './hosted-sessions.js'
 import { createMcpRowRuntime } from './mcp-row-runtime.js'
+import { frameFailure, installWorkerProcessGuards, sessionFailure } from './process-guards.js'
 import {
   createRuntimeTargetSlot,
   type RuntimeTargetApplyPort,
@@ -135,7 +136,12 @@ function hostRootFrom(): string {
  */
 export async function runWorker(
   env: NodeJS.ProcessEnv,
-  io: { connect(path: string): Promise<Duplex>; gate: NodeJS.ReadableStream | null },
+  io: {
+    connect(path: string): Promise<Duplex>
+    gate: NodeJS.ReadableStream | null
+    /** The worker executable owns its process; embedders and tests keep their own handlers. */
+    guardProcess?: boolean
+  },
   deps: WorkerHostDeps = {},
 ): Promise<void> {
   const token = env.AGNES_WORKER_TOKEN
@@ -557,6 +563,21 @@ export async function runWorker(
     await closeResources()
     process.exit(code)
   }
+  // Rows that a failed rollback left out of line with the snapshot, and that a retry could not fix
+  // either: a fresh worker rebuilds them from the snapshot. Exiting is how the supervisor learns of
+  // it; it restarts the shared worker with backoff and reports the crash.
+  resourceSlot.onRecoveryFailed = (error) => {
+    console.error('agnes worker: resource recovery failed again; restarting the worker:', error)
+    void shutdown(1)
+  }
+  const failSession = sessionFailure(send, (key) => hostedSessions?.close(key))
+  if (io.guardProcess)
+    installWorkerProcessGuards({
+      sessionOf: () => sharedChannel.sessionInContext(),
+      failSession,
+      fatal: () => void shutdown(1),
+    })
+  const frameFailed = frameFailure({ failSession, fatal: () => void shutdown(1) })
 
   // Live MCP health forwarding is per-generation (bootstrapWorkerResources()'s reportMcpStatus closes
   // over the one manager that particular call created), so a stale reload that swaps in a new
@@ -804,9 +825,8 @@ export async function runWorker(
   // order" loop.
   const dispatchFrames = async (frames: SupervisorToWorker[]): Promise<void> => {
     for (const raw of frames) {
-      if ('type' in raw) void dispatch(raw).catch(() => shutdown(1))
-      else if (raw.kind === 'command' && raw.method === 'resource.stale') await dispatch(raw)
-      else void dispatch(raw).catch(() => shutdown(1))
+      if (!('type' in raw) && raw.kind === 'command' && raw.method === 'resource.stale') await dispatch(raw)
+      else void dispatch(raw).catch((error: unknown) => frameFailed(raw, error))
     }
   }
   link.on('data', (chunk: Buffer) => {
@@ -876,6 +896,7 @@ export function runWorkerExecutable(deps: WorkerHostDeps = {}): Promise<void> {
     {
       connect: (path) => connectSupervisor(path, env),
       gate,
+      guardProcess: true,
     },
     deps,
   )

@@ -198,7 +198,7 @@ const request = await ctx.prepareRequest({ tools: toolNames, invocationId })
 
 ### 尾注
 
-`tailNote` 在请求的最末尾追加一条用户侧消息，位于可见历史之后，也位于 Core 自己的每请求附注（运行时上下文、钩子上下文和技能附注）之后。系统提示、工具、`prompt_prefix_hash` 和 `tool_schema_hash` 与没有尾注时相同。
+`tailNote` 在请求末尾追加一条用户侧消息，位于可见历史之后，也位于 Core 自己的每请求附注（运行时上下文、钩子上下文和技能附注）之后。只有 Core 不写入历史、仅属于本次请求的附注（有时间上限的回合里的 `[turn time]`）会排在已提交的尾注之后；未提交的尾注始终是最后一条。系统提示、工具、`prompt_prefix_hash` 和 `tool_schema_hash` 与没有尾注时相同。
 
 ```ts
 const request = await ctx.prepareRequest({

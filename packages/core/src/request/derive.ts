@@ -64,8 +64,15 @@ export type DeriveInput = {
     dedup: { kind: 'latest' } | { kind: 'present'; key: string }
   }>
   /**
+   * Trusted Core notes for this request only, such as a timed turn's measured time: sent after every
+   * message that is written with the request and never written themselves, so a figure that changes
+   * at each request never accumulates in history. The request counts them in `requestOnlyMessages`.
+   */
+  requestNotes?: ReadonlyArray<{ prefix: string; text: string }>
+  /**
    * A loop's note for this request: the last message, after Core's notes, scrubbed and never
-   * enveloped. When `commit` is set it is also returned among `notes`, to be written with the request.
+   * enveloped. When `commit` is set it is also returned among `notes`, to be written with the request,
+   * and comes before the request-only notes.
    */
   tailNote?: { text: string; commit: boolean }
   /** Already preflighted with caller-supplied limits; this layer never selects images or invents caps. */
@@ -733,7 +740,10 @@ export const NESTED_RESULT_PREFIX = '[nested result]\n'
  * after it, on a row whose trust is `untrusted`, so derive envelopes it.
  */
 export const HOOK_DATA_PREFIX = '[hook data]\n'
-/** The first line of the note stating a time-limited turn's measured time (see `turn-limits.ts`). */
+/**
+ * The first line of the request-only note stating a time-limited turn's measured time (see
+ * `turn-limits.ts`). Never written; reserved so no committed note can pass for one.
+ */
 export const TURN_TIME_PREFIX = '[turn time]\n'
 /** The first line of a progress check in a limited or unattended turn (see `progress-check.ts`). */
 export const PROGRESS_CHECK_PREFIX = '[progress check]\n'
@@ -755,8 +765,7 @@ export const RESERVED_NOTE_PREFIXES: readonly string[] = Object.freeze([
 const NOTE_RANK: ReadonlyMap<string, number> = new Map([
   [HOOK_CONTEXT_PREFIX, 0],
   [SKILL_LOADED_PREFIX, 1],
-  [TURN_TIME_PREFIX, 3],
-  [PROGRESS_CHECK_PREFIX, 4],
+  [PROGRESS_CHECK_PREFIX, 3],
 ])
 
 /** The user line placed between a summary and an assistant message that directly follows it. */
@@ -1000,8 +1009,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     messages.push({ role: 'user', seq: 0, content: [{ type: 'text', text: runtimeContextText }] })
   }
   if (input.kind === 'turn') {
-    // The live notes come before the turn's measured time, which qualifies the threshold note, and a
-    // progress check goes last, right before the model's next action.
+    // A progress check goes after the live notes, the last of the notes written with the request.
     const rank = (prefix: string) => NOTE_RANK.get(prefix) ?? 2
     const candidates = [...(input.notes ?? []), ...liveContextNotes(input.merged.sections, input.surface)]
     for (const note of candidates.sort((a, b) => rank(a.prefix) - rank(b.prefix))) {
@@ -1034,14 +1042,33 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // committed note lands on the ledger in the order this request ends with, and the next request
   // renders the same messages as its prefix. Scrubbed like `system` and never enveloped: the note is
   // the loop's instruction to the model, and an envelope would tell the model to read it as data.
+  // Whatever is not written (the request-only notes, an uncommitted loop note) follows everything
+  // that is, so the request's history part is exactly the next request's prefix.
+  const requestOnly: RequestMessage[] = []
+  let tail: RequestMessage | undefined
   if (input.tailNote !== undefined) {
     if (input.kind !== 'turn') throw new CoreError('E_ENVELOPE', 'a tail note belongs only to a turn request')
     const text = sanitize(input.tailNote.text)
     if (RESERVED_NOTE_PREFIXES.some((prefix) => text.startsWith(prefix)))
       throw new CoreError('E_ENVELOPE', 'a tail note cannot begin with a Core note prefix')
-    if (input.tailNote.commit) notes.push(noteEvent(text))
-    messages.push({ role: 'user', seq: 0, content: [{ type: 'text', text }] })
+    tail = { role: 'user', seq: 0, content: [{ type: 'text', text }] }
+    if (input.tailNote.commit) {
+      notes.push(noteEvent(text))
+      messages.push(tail)
+      tail = undefined
+    }
   }
+  if (input.requestNotes?.length && input.kind !== 'turn')
+    throw new CoreError('E_ENVELOPE', 'a request-only note belongs only to a turn request')
+  for (const note of input.requestNotes ?? [])
+    if (note.text)
+      requestOnly.push({
+        role: 'user',
+        seq: 0,
+        content: [{ type: 'text', text: sanitize(`${note.prefix}${note.text}`) }],
+      })
+  if (tail) requestOnly.push(tail)
+  messages.push(...requestOnly)
   // Tool schemas are scrubbed in every field, `parameters` to the leaves. A `ToolDef` arrives
   // through `registerTool`, the same tier as a contributed prompt section — and a tool description
   // is where a remote MCP server's text lands, since a `tools/list` response is authored by whoever
@@ -1170,6 +1197,7 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
     tools: input.mintedPrefix ? [...input.mintedPrefix.tools] : tools,
     model,
     nonce: input.nonce,
+    ...(requestOnly.length ? { requestOnlyMessages: requestOnly.length } : {}),
     ...(input.model.thinking === undefined ? {} : { samplingParams: { thinking: input.model.thinking } }),
   }
   if (input.inlineImages)

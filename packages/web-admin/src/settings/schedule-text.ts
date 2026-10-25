@@ -143,6 +143,7 @@ const REASONS = new Set([
   'session_unavailable',
   'start_failed',
   'turn_error',
+  'interrupted',
   'invalid_target',
   'not_future',
   'frequency_too_high',

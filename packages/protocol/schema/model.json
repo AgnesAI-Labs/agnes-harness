@@ -135,6 +135,11 @@
         "system": { "type": "string", "maxLength": 1048576 },
         "messages": { "type": "array", "items": { "$ref": "#/$defs/RequestMessage" } },
         "tools": { "type": "array", "items": { "$ref": "#/$defs/ToolSchema" } },
+        "requestOnlyMessages": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "How many of the last messages belong to this request only: they are not part of the history later requests repeat. An adapter that marks a prompt-cache breakpoint on the last message puts it on the last message before these instead."
+        },
         "payload": { "$ref": "#/$defs/JsonValue" },
         "sampling": {
           "type": "object",

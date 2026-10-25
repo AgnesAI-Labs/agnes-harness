@@ -93,8 +93,15 @@ export type WorkerResourceSlot = {
   /** Set for the duration of one `reloadWorkerResources` attempt. `observed` is fixed when that
    *  attempt starts; newer marks are never declared consumed by an older snapshot read. */
   reloadInFlight?: { observed: number; promise: Promise<boolean> } | undefined
-  /** A failed rollback left Host rows inconsistent with the retained resource generation. */
+  /** A failed rollback left Host rows inconsistent with the retained resource generation. The next
+   *  fully successful reload clears it. */
   recoveryRequired?: boolean
+  /** Called when a reload made while recovery was already required fails again. The worker cannot
+   *  bring its rows back in line on its own, so its owner restarts it rather than refusing every
+   *  turn without telling anyone. */
+  onRecoveryFailed?: (error: unknown) => void
+  /** How long a reload waits for earlier turns to finish before it is deferred. */
+  reloadBarrierTimeoutMs?: number
   /** Shared admission state for session runs. A pending reload holds the admission queue until all
    *  previously admitted runs have left, so replacing Host-wide extensions cannot cut across a turn
    *  in another session. Kept on the shared slot for the same reason as the generation counters. */
@@ -103,6 +110,9 @@ export type WorkerResourceSlot = {
     waiters: Array<() => void>
     active: number
     idleWaiters: Set<() => void>
+    /** Until this time, a run admitted while other turns are still active skips the owed reload: the
+     *  last barrier timed out waiting for them. */
+    deferredUntil?: number
     reloadBarrier?: {
       promise: Promise<boolean>
       finish(attempted: boolean): void
@@ -111,6 +121,9 @@ export type WorkerResourceSlot = {
 }
 
 type CommandOptions = Parameters<typeof handleCommand>[2]
+
+/** A turn can wait minutes for an approval; other sessions' turns must not queue behind it that long. */
+const RELOAD_BARRIER_TIMEOUT_MS = 30_000
 
 /**
  * Admits one worker command through the process-local reconcile gate. The read covers only the
@@ -146,7 +159,9 @@ async function reloadIfStale(
 /** Admit one session turn through the worker-wide resource boundary. Ordinary turns only hold the
  *  queue while incrementing `active`; a stale turn keeps it held until older turns drain and the
  *  reload completes. Consequently later turns cannot enter with either the revoked or half-published
- *  generation. */
+ *  generation. Older turns that do not drain within `reloadBarrierTimeoutMs` (one waiting on an
+ *  approval, say) defer the reload instead: the waiting turns enter on the current generation, and
+ *  the reload stays owed until a later admission finds the worker idle or the deferral has passed. */
 async function admitResourceRun(
   o: Pick<CommandOptions, 'host' | 'resources' | 'workerResourcesInput'>,
   signal: AbortSignal,
@@ -177,7 +192,11 @@ async function admitResourceRun(
     if (joinedBarrier && (await joinedBarrier.promise)) {
       // The owning run completed the one reload attempt for this batch. Its observed mark, rather
       // than this joiner's later view, decides what remains stale.
-    } else if (slot.staleMarks > slot.reloadedMarks && !signal.aborted) {
+    } else if (
+      slot.staleMarks > slot.reloadedMarks &&
+      !signal.aborted &&
+      !(admissions.active > 0 && (admissions.deferredUntil ?? 0) > Date.now())
+    ) {
       let finishBarrier!: (attempted: boolean) => void
       const promise = new Promise<boolean>((resolve) => {
         finishBarrier = resolve
@@ -185,20 +204,29 @@ async function admitResourceRun(
       ownedBarrier = { promise, finish: finishBarrier }
       admissions.reloadBarrier = ownedBarrier
     }
+    let drained = true
     if (ownedBarrier && admissions.active > 0 && !signal.aborted) {
-      await new Promise<void>((resolve) => {
-        const finish = (): void => {
+      const timeoutMs = slot.reloadBarrierTimeoutMs ?? RELOAD_BARRIER_TIMEOUT_MS
+      drained = await new Promise<boolean>((resolve) => {
+        const settle = (idle: boolean): void => {
           admissions.idleWaiters.delete(finish)
           signal.removeEventListener('abort', finish)
-          resolve()
+          clearTimeout(timer)
+          resolve(idle)
         }
+        const finish = (): void => settle(true)
+        const timer = setTimeout(() => settle(false), timeoutMs)
         admissions.idleWaiters.add(finish)
         signal.addEventListener('abort', finish, { once: true })
         if (admissions.active === 0 || signal.aborted) finish()
       })
+      if (!drained) {
+        admissions.deferredUntil = Date.now() + timeoutMs
+        console.error('agnes worker: resource reload deferred while earlier turns are still running')
+      }
     }
     if (signal.aborted) return undefined
-    if (ownedBarrier) {
+    if (ownedBarrier && drained) {
       await reloadIfStale(o, slot)
       attemptedReload = true
     }
@@ -641,6 +669,7 @@ async function reloadWorkerResources(o: {
   const slot = o.resources
   if (!slot || !o.workerResourcesInput) return false
   const previous = slot.generation
+  const recovering = slot.recoveryRequired === true
   const skillControlRevision = slot.skillControlRevision
   slot.skillControlRevision = undefined
   let next: WorkerResourceState | undefined
@@ -666,8 +695,11 @@ async function reloadWorkerResources(o: {
       slot.recoveryRequired = true
     console.error('agnes worker: resource reload failed, will retry on the next run:', error)
     if (next && next !== previous) closeDisownedGeneration(next)
+    if (recovering && slot.recoveryRequired) slot.onRecoveryFailed?.(error)
     return false
   }
+  // Every row now matches the snapshot again, so nothing is left to recover.
+  slot.recoveryRequired = false
   // An empty reload result (no snapshot found — e.g. it was deleted out from under this worker) is a
   // real outcome, not a no-op: the slot's `generation` is a required key holding `undefined` for
   // exactly this case, so it can be assigned either way without the `exactOptionalPropertyTypes`

@@ -81,7 +81,8 @@ export type LoopRequest = Readonly<RequestBody> & { readonly [preparedLoopReques
 export interface LoopTailNote {
   /**
    * Appended after the visible history and after Core's own per-request notes, as one user-side
-   * message. It is trusted at the level of the loop's own instructions, the same as `system`: Core
+   * message. Only Core's request-only notes, never written to history (a timed turn's measured
+   * time), follow a committed note; an uncommitted note is always last. It is trusted at the level of the loop's own instructions, the same as `system`: Core
    * scrubs it and never wraps it as untrusted data, since the note is meant to steer the model. A
    * loop that quotes untrusted content in it (a tool result, a file name, fetched text) is
    * responsible for that content; Core does not mark the quote as data. 1 to 32768 UTF-8 bytes; it

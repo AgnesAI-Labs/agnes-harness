@@ -106,6 +106,8 @@ export const automationCatalog: LocaleCatalog = {
     'reason.session_unavailable': 'The session could not be opened. It may have been deleted.',
     'reason.start_failed': 'A new session could not be started.',
     'reason.turn_error': 'The run stopped with an error.',
+    'reason.interrupted':
+      'AGH stopped during this run. It was not started again because it may already have run.',
     'reason.invalid_target': 'Choose where the task runs.',
     'reason.not_future': 'That time has already passed.',
     'reason.frequency_too_high': 'The interval must be at least 1 minute.',
@@ -228,6 +230,7 @@ export const automationCatalog: LocaleCatalog = {
     'reason.session_unavailable': '会话打不开了，可能已被删除。',
     'reason.start_failed': '没能开始新会话。',
     'reason.turn_error': '运行出错了。',
+    'reason.interrupted': '运行期间 AGH 停止了。这次可能已经执行过，所以没有再次运行。',
     'reason.invalid_target': '请选择任务在哪里运行。',
     'reason.not_future': '这个时间已经过去了。',
     'reason.frequency_too_high': '间隔至少 1 分钟。',

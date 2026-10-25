@@ -47,7 +47,7 @@ describe('preset view', () => {
     expect(d.verifier).toEqual({ timeoutMs: 30000, defaultTier: 0 })
     expect(d.repair).toEqual({ timeoutMs: 10000 })
     expect(d.completionGate).toEqual({ minItems: 3 })
-    expect(d.progressCheck).toEqual({ everySteps: 20 })
+    expect(d.progressCheck).toEqual({ everySteps: 0 })
     expect(d.telemetry).toEqual({ invariants: false, timing: false })
     expect(d.recovery).toEqual({ unknownChild: 'model' })
     expect(d.deferred).toEqual({ pollMs: 2000 })

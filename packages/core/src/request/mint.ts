@@ -34,6 +34,8 @@ export type RequestBody = {
   tools: ToolSchema[]
   model: { slot: string; route: string; model: string }
   nonce: string
+  /** How many of the last `messages` belong to this request only and are never written to history. */
+  requestOnlyMessages?: number
   samplingParams?: Record<string, unknown>
   maxTokens?: number
   metadata?: Record<string, unknown>

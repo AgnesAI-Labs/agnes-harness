@@ -27,15 +27,17 @@ export function isUnattended(turn: TurnMemory): boolean {
 }
 
 /**
- * A turn that gets progress checks: nobody attends it, or its prompt set a limit of its own (time,
- * steps or credits). An ordinary interactive turn does not.
+ * A turn that gets progress checks: they are on (preset `loop.progress_check_steps`, off unless set),
+ * and nobody attends the turn or its prompt set a limit of its own (time, steps or credits). An
+ * ordinary interactive turn never does.
  */
-export function progressChecked(turn: TurnMemory): boolean {
+export function progressChecked(s: Pick<SessionImpl, 'preset'>, turn: TurnMemory): boolean {
   return (
-    isUnattended(turn) ||
-    turnTimeLimit(turn) !== undefined ||
-    turn.maxStepsCap !== undefined ||
-    turn.budgetCap !== undefined
+    s.preset.progressCheck.everySteps > 0 &&
+    (isUnattended(turn) ||
+      turnTimeLimit(turn) !== undefined ||
+      turn.maxStepsCap !== undefined ||
+      turn.budgetCap !== undefined)
   )
 }
 

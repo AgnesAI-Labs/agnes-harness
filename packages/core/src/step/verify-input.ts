@@ -198,7 +198,7 @@ async function historyStart(s: SessionImpl, triggerSeq: Seq): Promise<Seq> {
 export async function stepVerifyInput(s: SessionImpl, stepStartSeq: Seq): Promise<CoreVerifyInput> {
   const input = assemble(s, await scanWindow(s, stepStartSeq))
   const triggerSeq = s.op()?.meta.triggerSeq
-  if (!s.turn || triggerSeq === undefined || !progressChecked(s.turn)) return input
+  if (!s.turn || triggerSeq === undefined || !progressChecked(s, s.turn)) return input
   const { toolCalls, recentToolKeys, surfaceTailHashes, newToolResults } = assemble(
     s,
     await scanWindow(s, await historyStart(s, triggerSeq)),

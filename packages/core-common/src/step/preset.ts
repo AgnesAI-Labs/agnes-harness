@@ -65,7 +65,10 @@ export type PresetView = {
   verifier: { timeoutMs: number; defaultTier: 0 | 1 | 2 }
   repair: { timeoutMs: number }
   completionGate: { minItems: number }
-  /** Model steps between progress checks in a limited or unattended turn (preset `loop.progress_check_steps`). */
+  /**
+   * Model steps between progress checks in a limited or unattended turn (preset
+   * `loop.progress_check_steps`); 0, the default, turns them off.
+   */
   progressCheck: { everySteps: number }
   compaction: { enabled: boolean; reserveTokens: number; keepRecentTokens: number; agentCallable: boolean }
   telemetry: { invariants: boolean | 'strict'; timing: boolean }
@@ -100,7 +103,7 @@ export function presetDefaults(): PresetView {
     verifier: { timeoutMs: 30000, defaultTier: 0 },
     repair: { timeoutMs: 10000 },
     completionGate: { minItems: 3 },
-    progressCheck: { everySteps: 20 },
+    progressCheck: { everySteps: 0 },
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, agentCallable: true },
     telemetry: { invariants: false, timing: false },
     recovery: { unknownChild: 'model' },

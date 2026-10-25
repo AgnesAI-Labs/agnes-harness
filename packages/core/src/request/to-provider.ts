@@ -103,6 +103,7 @@ export function toProviderRequest(
       description: t.description,
       parameters: t.parameters as WireBody['tools'][number]['parameters'],
     })),
+    ...(req.requestOnlyMessages ? { requestOnlyMessages: req.requestOnlyMessages } : {}),
     ...(Object.keys(sampling).length ? { sampling } : {}),
   }
   if (mediaBySeq.size > 0)

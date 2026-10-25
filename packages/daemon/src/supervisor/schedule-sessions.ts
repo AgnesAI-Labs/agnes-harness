@@ -145,6 +145,7 @@ const CODES = new Set<string>([
   'bundle_unavailable',
   'preset_not_allowed',
   'model_missing',
+  'interrupted',
 ])
 
 /** A failed attempt in the words the run history uses: a stable reason and, when useful, the detail. */
@@ -188,7 +189,7 @@ export function scheduledTasks(o: {
       port.noteSettlement(job.idempotencyKey, info),
     unattendedApproval: (job: JobRow) =>
       port.targetOf(job.idempotencyKey)?.target.unattendedApproval ?? ('notify' as const),
-    prepare: async (job: JobRow, signal?: AbortSignal) => {
+    prepare: async (job: JobRow, signal?: AbortSignal, dispatching?: () => void) => {
       signal?.throwIfAborted()
       if (port.hasWaiting(job.idempotencyKey)) throw new Error('approval_pending_previous_run')
       const task = newSession(job)
@@ -197,6 +198,7 @@ export function scheduledTasks(o: {
       const code = await check(task.target)
       signal?.throwIfAborted()
       if (code) throw new Error(code)
+      dispatching?.()
       return { sessionKey: await runs.create(task.target, runTitle(task.title, o.clock()), signal) }
     },
     retryable: (job: JobRow) => newSession(job) === undefined,
