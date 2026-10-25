@@ -6,6 +6,7 @@ import type { Locale } from './locale.js'
  */
 export type DialogKey =
   | 'dialog.noMatches'
+  | 'dialog.more'
   | 'dialog.select'
   | 'dialog.confirm'
   | 'dialog.close'
@@ -23,6 +24,7 @@ export type DialogKey =
 export const DIALOG_DICT: Record<Locale, Record<DialogKey, string>> = {
   en: {
     'dialog.noMatches': 'No matches',
+    'dialog.more': '{n} more',
     'dialog.select': 'select',
     'dialog.confirm': 'confirm',
     'dialog.close': 'close',
@@ -39,6 +41,7 @@ export const DIALOG_DICT: Record<Locale, Record<DialogKey, string>> = {
   },
   'zh-CN': {
     'dialog.noMatches': '没有匹配项',
+    'dialog.more': '还有 {n} 项',
     'dialog.select': '选择',
     'dialog.confirm': '确认',
     'dialog.close': '关闭',

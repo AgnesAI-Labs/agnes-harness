@@ -706,9 +706,10 @@ export class Editor implements Component, VimTarget {
     if (note) lines.push(`  ${this.paint('faint', note)}`)
     const above = start
     const below = candidates.length - (start + shown.length)
-    const indicators = [above > 0 ? `↑ ${above} more` : '', below > 0 ? `↓ ${below} more` : ''].filter(
-      Boolean,
-    )
+    const indicators = [
+      above > 0 ? `↑ ${tt('dialog.more', this.o.locale ?? 'en', { n: above })}` : '',
+      below > 0 ? `↓ ${tt('dialog.more', this.o.locale ?? 'en', { n: below })}` : '',
+    ].filter(Boolean)
     if (indicators.length) lines.push(`  ${this.paint('faint', indicators.join('  '))}`)
     // A useful box needs two sides and at least one content column. At widths below that, keep the
     // menu readable and honour the component width contract by dropping only the decoration.

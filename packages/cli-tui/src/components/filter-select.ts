@@ -50,8 +50,9 @@ export class FilterSelect implements Component {
   }
 
   private build(): Select {
-    const { onChoose, onCancel, ansi, maxRows } = this.o
+    const { onChoose, onCancel, ansi, maxRows, locale } = this.o
     return new Select({
+      ...(locale ? { locale } : {}),
       options: this.matches().map(({ search: _search, ...option }) => option),
       onChoose,
       ...(onCancel ? { onCancel } : {}),

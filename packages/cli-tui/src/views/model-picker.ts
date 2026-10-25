@@ -81,6 +81,7 @@ export class ModelPicker implements Component {
     const select = new Select({
       options: levels.map((level) => ({ id: level, label: level })),
       ansi: this.o.ansi,
+      locale: this.o.locale ?? 'en',
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
       onChoose: (id) => {
         this.close()

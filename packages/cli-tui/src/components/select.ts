@@ -1,6 +1,7 @@
 import { type Component, escapeControl } from '../component.js'
 import { actionFor } from '../keymap.js'
 import { parseKey } from '../keys.js'
+import { tt } from '../locale-extended.js'
 import { displayWidth } from '../terminal.js'
 import type { ThemedAnsi } from '../theme.js'
 import { fitLine } from './line.js'
@@ -34,6 +35,7 @@ export class Select implements Component {
       ansi?: ThemedAnsi
       /** Optional viewport for long dynamic lists; selection still ranges over every option. */
       maxRows?(): number
+      locale?: string
     },
   ) {
     this.options = o.options.map((option) => ({ ...option }))
@@ -127,7 +129,8 @@ export class Select implements Component {
       // Painted after fitting so the selection background spans the whole row.
       return selected && ansi ? ansi.bg('selection', ansi.bold(ansi.fg('accent', line))) : line
     })
-    const more = (arrow: string, count: number) => fitLine(paint('faint', `  ${arrow} ${count} more`), width)
+    const more = (arrow: string, count: number) =>
+      fitLine(paint('faint', `  ${arrow} ${tt('dialog.more', this.o.locale ?? 'en', { n: count })}`), width)
     const out = [
       ...(start > 0 ? [more('↑', start)] : []),
       ...lines,
