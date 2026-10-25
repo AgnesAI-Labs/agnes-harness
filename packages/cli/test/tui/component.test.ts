@@ -11,6 +11,7 @@ import {
   VStack,
   wrapText,
 } from '../../src/tui/component.js'
+import { tt } from '../../src/tui/locale-extended.js'
 import { displayWidth } from '../../src/tui/terminal.js'
 import { TuiTheme } from '../../src/tui/theme.js'
 import { Composer } from '../../src/tui/views/composer.js'
@@ -83,6 +84,17 @@ describe('components', () => {
     expect(new Rule('ab').render(3)).toEqual(['── ab '])
     // An optional style wraps the whole rule line (the input-area divider uses it for dim).
     expect(new Rule(undefined, createAnsi('256').dim).render(4)).toEqual(['\x1b[2m────\x1b[22m'])
+  })
+
+  it('Composer ends a placeholder cut to the row with an ellipsis, and keeps a space after the corner', () => {
+    const ansi = new TuiTheme('mono').ansi(createAnsi('none'))
+    const placeholder = tt('app.composerPlaceholder', 'en')
+    const cut = new Composer({ render: () => [`❯ ${placeholder.slice(0, 20)}`], invalidate() {} }, ansi)
+    const rows = cut.render(40)
+    expect(rows[1]).toContain('…')
+    expect(rows[2]).toMatch(/^ ╰─ /)
+    const whole = new Composer({ render: () => [`❯ ${placeholder}`], invalidate() {} }, ansi)
+    expect(whole.render(120)[1]).not.toContain('…')
   })
 
   it('Composer is an open rail with model, workspace and usage on its edges, cursor geometry intact', () => {
