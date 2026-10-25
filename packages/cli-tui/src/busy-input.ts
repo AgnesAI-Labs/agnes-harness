@@ -91,16 +91,16 @@ const REFUSALS = new Set([
 export class BusyInput {
   private hinted = false
 
-  private kept: ContentBlock[] = []
+  private kept: { blocks: ContentBlock[]; sessionId: string } = { blocks: [], sessionId: '' }
 
   private readonly chips = new Map<string, { block: ContentBlock; sessionId: string }>()
   private readonly chipOrigins = new WeakMap<ContentBlock, { chip: string; sessionId: string }>()
 
   constructor(private readonly host: BusyHost) {}
 
-  /** Attachments of a queued message taken back into the editor: they travel with the next message. */
+  /** Attachments of a queued message taken back into the editor: they travel with the next message of this session. */
   keep(blocks: ContentBlock[]): void {
-    this.kept = blocks
+    this.kept = { blocks, sessionId: this.host.session().id }
   }
 
   /** A clipboard image uploaded to `sessionId`, shown in the draft as `chip`; it travels only if the chip is still in the text sent. */
@@ -114,7 +114,8 @@ export class BusyInput {
     const chips = [...this.chips].filter(([chip, c]) => c.sessionId === here && text.includes(chip))
     // A chip left out of this message (a draft put aside with Ctrl-S, say) still binds its image.
     for (const [chip] of chips) this.chips.delete(chip)
-    return [...this.kept.splice(0), ...chips.map(([, c]) => c.block)]
+    const kept = this.kept.sessionId === here ? this.kept.blocks.splice(0) : []
+    return [...kept, ...chips.map(([, c]) => c.block)]
   }
 
   /** An idle prompt. A daemon that refuses it as busy did not record it, so it is queued instead. */

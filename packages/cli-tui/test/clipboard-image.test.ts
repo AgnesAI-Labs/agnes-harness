@@ -89,6 +89,16 @@ describe('clipboard image paste', () => {
     expect(busyInput.takeKept(stashed)).toEqual([])
   })
 
+  it('does not carry attachments taken back from a queued message into another session', () => {
+    const { app, busyInput } = harness(withImage)
+    const block = { type: 'resource_link', uri: 'agnes://attachment/att-a' } as const
+    busyInput.keep([block])
+    Object.assign(app, { session: { id: 's2' } })
+    expect(busyInput.takeKept('hello')).toEqual([])
+    Object.assign(app, { session: { id: 's1' } })
+    expect(busyInput.takeKept('hello')).toEqual([block])
+  })
+
   it.each([
     ['nothing on the clipboard', { ok: false, reason: 'empty' }, 'warning', /no image/i],
     ['a tool that is missing', { ok: false, reason: 'unavailable', tool: 'xclip' }, 'error', /xclip/],
