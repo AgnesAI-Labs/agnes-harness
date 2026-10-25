@@ -2,7 +2,8 @@ import type { RequestBody } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { keepCacheBreakpointOnHistory } from '../src/adapters/pi/cache-breakpoint.js'
 
-const NOTE = '[turn time]\n30s of this turn time limit used.'
+const NOTE =
+  '<system-reminder>\nHarness runtime note, not a message from the user.\n[turn time]\n30s of this turn time limit used.\n</system-reminder>'
 const MARK = { type: 'ephemeral' }
 
 function request(requestOnlyMessages?: number): RequestBody {

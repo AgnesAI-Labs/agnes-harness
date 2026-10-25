@@ -108,13 +108,22 @@ function reason(t: Tally, steps: number, every: number): string | undefined {
   return steps >= every ? `${steps} model steps ${since}.` : undefined
 }
 
-export function progressCheckText(check: number, turn: number, step: number, why: string): string {
+export function progressCheckText(
+  check: number,
+  turn: number,
+  step: number,
+  why: string,
+  language?: string,
+): string {
   const since = check === 1 ? 'since this turn began' : 'since the last progress check'
-  return withNoteLanguage(`Progress check ${check} (turn ${turn}, step ${step})
+  return withNoteLanguage(
+    `Progress check ${check} (turn ${turn}, step ${step})
 ${why} Before your next action, answer in three short lines:
 1. Done-check: the check that proves this request is done, and whether it passes now.
 2. Progress: what changed in that check's result ${since}.
-3. Decision: FINISH (it passes: stop and report), CONTINUE (name the next concrete step) or SWITCH (this approach is not moving the result: name the more direct approach you take instead), and why.`)
+3. Decision: FINISH (it passes: stop and report), CONTINUE (name the next concrete step) or SWITCH (this approach is not moving the result: name the more direct approach you take instead), and why.`,
+    language,
+  )
 }
 
 /**
@@ -122,14 +131,14 @@ ${why} Before your next action, answer in three short lines:
  * a prompt limit or unattended, with checks turned on, is read at all. None once the turn's limit note has reached its
  * wrap-up: finishing then matters more than reviewing.
  */
-export async function progressCheckNote(s: SessionImpl, t: TurnMemory, op: OpStateObj) {
+export async function progressCheckNote(s: SessionImpl, t: TurnMemory, op: OpStateObj, language?: string) {
   if (!progressChecked(s, t)) return undefined
   const state = await tally(s, t, op.meta.triggerSeq)
   if (wrapUpDue(t)) return undefined
   const step = op.step + 1
   const why = reason(state, step - 1 - state.lastStep, s.preset.progressCheck.everySteps)
   if (!why) return undefined
-  const text = progressCheckText(state.checks + 1, op.meta.turn, step, why)
+  const text = progressCheckText(state.checks + 1, op.meta.turn, step, why, language)
   const key = text.split('\n', 1)[0] as string
   return { prefix: PROGRESS_CHECK_PREFIX, text, dedup: { kind: 'present' as const, key } }
 }

@@ -67,6 +67,7 @@ export type DeriveInput = {
    * Trusted Core notes for this request only, such as a timed turn's measured time: sent after every
    * message that is written with the request and never written themselves, so a figure that changes
    * at each request never accumulates in history. The request counts them in `requestOnlyMessages`.
+   * Each is framed as harness context (`REQUEST_NOTE_OPEN`), not as something the user said.
    */
   requestNotes?: ReadonlyArray<{ prefix: string; text: string }>
   /**
@@ -745,6 +746,14 @@ export const HOOK_DATA_PREFIX = '[hook data]\n'
  * `turn-limits.ts`). Never written; reserved so no committed note can pass for one.
  */
 export const TURN_TIME_PREFIX = '[turn time]\n'
+/**
+ * How a request-only note is framed. It is the request's newest user-role message, so a bare note
+ * read as the user's latest turn: the model answered it, and named its language from it. Framed the
+ * way mainstream harnesses frame runtime reminders, it reads as harness context the user did not
+ * write. Request-only notes are never written, so the framing never reaches history.
+ */
+export const REQUEST_NOTE_OPEN = '<system-reminder>\nHarness runtime note, not a message from the user.\n'
+export const REQUEST_NOTE_CLOSE = '\n</system-reminder>'
 /** The first line of a progress check in a limited or unattended turn (see `progress-check.ts`). */
 export const PROGRESS_CHECK_PREFIX = '[progress check]\n'
 /**
@@ -759,6 +768,7 @@ export const RESERVED_NOTE_PREFIXES: readonly string[] = Object.freeze([
   HOOK_DATA_PREFIX,
   LIVE_CONTEXT_PREFIX,
   TURN_TIME_PREFIX,
+  REQUEST_NOTE_OPEN,
   PROGRESS_CHECK_PREFIX,
 ])
 /** Where a Core note sits among a request's notes; a live note ranks 2. */
@@ -1065,7 +1075,12 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
       requestOnly.push({
         role: 'user',
         seq: 0,
-        content: [{ type: 'text', text: sanitize(`${note.prefix}${note.text}`) }],
+        content: [
+          {
+            type: 'text',
+            text: sanitize(`${REQUEST_NOTE_OPEN}${note.prefix}${note.text}${REQUEST_NOTE_CLOSE}`),
+          },
+        ],
       })
   if (tail) requestOnly.push(tail)
   messages.push(...requestOnly)
