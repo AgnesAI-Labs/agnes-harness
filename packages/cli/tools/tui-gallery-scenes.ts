@@ -2,6 +2,7 @@ import type { WorkspaceInfo } from '@agnes/cli-tui'
 import type { JsonRpcNotification } from '@agnes/sdk'
 import type { FakeTerminal } from '../src/tui/terminal.js'
 import type { FakeEndpoint } from '../test/fake-endpoint.js'
+import { approvalScenes } from './tui-gallery-approval-scenes.js'
 import { laneCScenes } from './tui-gallery-scenes-timeline.js'
 
 export type Ctx = { term: FakeTerminal; endpoint: FakeEndpoint; sessionId: string }
@@ -449,6 +450,7 @@ export const SCENES: Scene[] = [
   }),
   ...dialogScenes(),
   ...laneCScenes({ text, user, tool, timeline, usage, CONVERSATION, typed, SID }),
+  ...approvalScenes(SID),
 ]
 
 /** Picker, panel and menu scenes (UI review lane A): each in English, zh-CN and, where layout matters, 60 columns. */
