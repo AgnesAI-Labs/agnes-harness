@@ -56,7 +56,7 @@ async function propose(app: TuiApp, selector: Selector, prompt: string, usage: s
   pending.set(s, {
     when,
     params: {
-      title: (prompt.split('\n')[0] as string).trim().slice(0, 120) || prompt.trim().slice(0, 120),
+      title: [...((prompt.split('\n')[0] as string).trim() || prompt.trim())].slice(0, 120).join(''),
       prompt,
       selector,
       target: { kind: 'session', sessionKey },

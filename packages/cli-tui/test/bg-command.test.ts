@@ -71,6 +71,10 @@ describe('/bg', () => {
     expect(made[0]?.params).toMatchObject({ cwd: '/work/proj', sessionKey: expect.any(String) })
     expect(made[0]?.session.state.prompts).toEqual(['run the\n tests'])
     expect(backgroundSessions(app)).toEqual([{ id: 'bg-1', state: 'running' }])
+    // The title is cut by code point: an emoji at the cut never leaves half a surrogate pair.
+    const emoji = await bgSlash(app, `/bg ${'x'.repeat(59)}😀 then deploy`)
+    expect(emoji.text).toContain(`${'x'.repeat(59)}😀`)
+    expect(emoji.text).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
   })
 
   it('never gives the background session more access than this one has', async () => {

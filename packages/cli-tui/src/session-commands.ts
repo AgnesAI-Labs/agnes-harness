@@ -26,7 +26,7 @@ export function turnPrompt(nodes: readonly UINode[], ids: readonly string[]): st
 }
 
 function promptPreview(nodes: readonly UINode[], ids: readonly string[]): string | undefined {
-  return oneLine(turnPrompt(nodes, ids) ?? '').slice(0, 80) || undefined
+  return [...oneLine(turnPrompt(nodes, ids) ?? '')].slice(0, 80).join('') || undefined
 }
 
 /** Completed turns the daemon will fork from: `forkable` marks a turn whose boundary is a turn/end. */

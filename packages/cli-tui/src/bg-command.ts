@@ -99,7 +99,7 @@ export async function bgSlash(app: TuiApp, line: string): Promise<SlashResult> {
   const entry: Entry = {
     n: entries.length + 1, // no await from here to the push below, so two /bg never share a number
     session: created,
-    title: oneLine(prompt).slice(0, TITLE),
+    title: [...oneLine(prompt)].slice(0, TITLE).join(''),
     startedAt: Date.now(),
     state: 'running',
   }

@@ -405,7 +405,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
           createdAt: new Date(item.mtimeMs).toISOString(),
           lastSeq: 0,
           preset: item.source,
-          ...(item.title ? { title: oneLine(item.title).slice(0, 60) } : {}),
+          ...(item.title ? { title: [...oneLine(item.title)].slice(0, 60).join('') } : {}),
         })),
       }
     }
