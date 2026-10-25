@@ -211,6 +211,7 @@ export class ApprovalCard implements Component {
     // ACP-only and therefore never maps `allow_always` to this profile-scoped permanent decision.
     const ref = this.n.decisionRef
     this.reason = null
+    this.note = ''
     this.phase = 'deciding'
     void (reason === undefined ? this.o.onDecide(ref, verdict) : this.o.onDecide(ref, verdict, reason)).then(
       () => {
@@ -220,7 +221,8 @@ export class ApprovalCard implements Component {
         this.o.changed?.()
       },
       (e) => {
-        this.phase = 'failed'
+        // The daemon node is still pending and the command id is idempotent: stay answerable.
+        this.phase = 'pending'
         const data = (e as { data?: { reason?: string; code?: string } } | undefined)?.data
         this.note =
           data?.reason ?? data?.code ?? (e as Error | undefined)?.message ?? 'approval.decide failed'
@@ -360,6 +362,9 @@ export class ApprovalCard implements Component {
         ? wrapText(t('approval.projectCode', locale), inner).map((line) => row(ansi.fg('faint', line)))
         : []),
       ...stores.map((line) => row(ansi.fg('faint', line))),
+      ...(this.reason === null && this.note
+        ? [row(ansi.fg('danger', `✗ ${tt('approval.did.failed', locale)} · ${escapeControl(this.note)}`))]
+        : []),
       ...(this.reason !== null ? reasonRows(this.reason) : this.phase === 'deciding' ? [row('…')] : options),
       ...(this.reason === null && this.phase !== 'deciding' && expires
         ? [row(ansi.fg('faint', tt('approval.expires', locale, { time: expires })))]

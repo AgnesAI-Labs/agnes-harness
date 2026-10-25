@@ -435,3 +435,25 @@ describe('ApprovalSettle', () => {
     }
   })
 })
+
+describe('ApprovalCard failed decision', () => {
+  it('stays answerable after the decide call is rejected', async () => {
+    const decide = vi.fn(async () => undefined)
+    decide.mockRejectedValueOnce(new Error('TransportClosed: timeout'))
+    const changed = vi.fn()
+    const card = new ApprovalCard(node(['allow_once', 'reject_once']), {
+      ansi: PLAIN,
+      onDecide: decide,
+      changed,
+    })
+    expect(card.handleInput('y')).toBe(true)
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(1))
+    expect(card.pending).toBe(true)
+    expect(card.render(120).join('\n')).toContain('TransportClosed: timeout')
+    expect(card.handleInput('1')).toBe(true)
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledTimes(2))
+    expect(decide).toHaveBeenCalledTimes(2)
+    expect(card.pending).toBe(false)
+    expect(card.render(120).join('\n')).not.toContain('TransportClosed')
+  })
+})
