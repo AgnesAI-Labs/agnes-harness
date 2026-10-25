@@ -16,11 +16,11 @@ const request: PermissionRequest = {
   ],
 }
 it('keeps the details pager in a narrow bottom border and names every option kind it knows', () => {
-  const modal = new PermissionModal(vi.fn())
+  const modal = new PermissionModal(vi.fn(), { maxRows: () => 8 })
   void modal.ask(
     {
       ...request,
-      toolCall: { title: 'write', rawInput: { path: 'a.txt' } },
+      toolCall: { title: 'write', rawInput: { path: 'a.txt', b: 1, c: 2, d: 3, e: 4, f: 5 } },
       options: [...request.options, { optionId: 'x', name: 'raw-name', kind: 'reject_always' }],
     },
     { signal: new AbortController().signal },
@@ -40,7 +40,8 @@ it('defaults Enter to rejection and only explicit option selection permits appro
   const framed = modal.render(80)
   expect(framed).toHaveLength(5)
   expect(framed[0]).toMatch(/^╭ ▲ Needs approval · write ─+╮$/)
-  expect(framed.at(-1)).toMatch(/^╰ pgup\/pgdn details 1-1\/1 {2}↑↓ select {2}⏎ confirm {2}esc close ─+╯$/)
+  // Everything fits, so there is nothing to page.
+  expect(framed.at(-1)).toMatch(/^╰ ↑↓ select {2}⏎ confirm {2}esc close ─+╯$/)
   expect(framed.every((line) => displayWidth(line) === 80 && /^[╭│╰].*[╮│╯]$/.test(line))).toBe(true)
   modal.handleInput('\r')
   expect(await first).toEqual({ optionId: 'r' })
@@ -57,7 +58,7 @@ it('defaults Enter to rejection and only explicit option selection permits appro
   const withInput = modal.render(80)
   expect(withInput.join('\n').split('Needs approval · write')).toHaveLength(2)
   expect(withInput[1]).toContain('{')
-  expect(withInput.at(-1)).toContain('details 1-3/3')
+  expect(withInput.at(-1)).not.toContain('pgup')
   modal.handleInput('\r')
   expect(await third).toEqual({ optionId: 'r' })
 })

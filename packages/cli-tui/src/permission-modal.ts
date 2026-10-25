@@ -272,8 +272,9 @@ export class PermissionModal implements Component {
       .map((line, i) => row(question.detailOffset + i < headingRows ? line : ansi.dim(line)))
     const hints = keyHints(
       [
-        // First, so a narrow border keeps it beside esc: what is being approved must stay reachable.
-        ...(page.length > 0
+        // Only while something is off the page. First, so a narrow border keeps it beside esc: what is
+        // being approved must stay reachable.
+        ...(page.length < details.length
           ? [
               {
                 key: 'pgup/pgdn',
