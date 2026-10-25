@@ -1,3 +1,4 @@
+import { escapeControl } from '@agnes/cli-tui'
 import { AGNES_ERRORS, JSONRPC_ERRORS, publicErrorHelp } from '@agnes/protocol'
 import {
   isResourceOperationFailure,
@@ -94,7 +95,7 @@ export function reportCommandFailure(
     e instanceof ResourceUsageError
   ) {
     io.stderr.write(
-      `${e.message.replace(/[\r\n]+/g, ' ')}; run agh${command ? ` ${command}` : ''} --help for usage\n`,
+      `${escapeControl(e.message.replace(/[\r\n]+/g, ' '))}; run agh${command ? ` ${command}` : ''} --help for usage\n`,
     )
     return e instanceof ResourceUsageError ? ExitCode.USAGE : e.code
   }

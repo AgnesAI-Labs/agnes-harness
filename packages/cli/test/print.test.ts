@@ -22,8 +22,8 @@ async function booted(ep: FakeEndpoint = scriptedEndpoint()): Promise<Booted> {
   }
 }
 
-function io(o: { stderrTTY?: boolean; stdin?: string } = {}) {
-  const stdout = new PassThrough()
+function io(o: { stderrTTY?: boolean; stdoutTTY?: boolean; stdin?: string } = {}) {
+  const stdout = Object.assign(new PassThrough(), { isTTY: o.stdoutTTY ?? false })
   const stderr = Object.assign(new PassThrough(), { isTTY: o.stderrTTY ?? false })
   let out = ''
   let err = ''
@@ -51,6 +51,16 @@ describe('runPrint in text mode', () => {
     expect(code).toBe(0)
     expect(o.out()).toBe('answer 42\n')
     expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+  })
+
+  it('keeps escapes in the reply away from a terminal, and passes them through a pipe', async () => {
+    const reply = 'ok\x1b]52;c;cm0gLXJm\x07\x1b[2Jdone'
+    const tty = io({ stdoutTTY: true })
+    await runPrint(await booted(scriptedEndpoint({ reply })), parseArgs(['-p', 'q']), tty)
+    expect(tty.out()).toBe('ok]52;c;cm0gLXJm[2Jdone\n')
+    const pipe = io()
+    await runPrint(await booted(scriptedEndpoint({ reply })), parseArgs(['-p', 'q']), pipe)
+    expect(pipe.out()).toBe(`${reply}\n`)
   })
 
   it('joins a multi-word prompt rather than sending only the first word', async () => {

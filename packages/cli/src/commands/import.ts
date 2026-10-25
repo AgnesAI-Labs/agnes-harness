@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { importSession, OLDER_EXPORT_FORMAT } from '@agnes/bridges/convert'
+import { escapeControl } from '@agnes/cli-tui'
 import { SessionAdmissionDenied } from '@agnes/daemon/local'
 import type { Host, HostSession } from '@agnes/host'
 import type { EventEnvelope, SessionStart } from '@agnes/protocol'
@@ -236,7 +237,7 @@ export async function importFile(parsed: ParsedArgs, deps: ImportDeps): Promise<
       `imported ${written} events into ${key} (source ${converted.report.source}; skipped ${converted.report.skipped.length}, repaired ${converted.report.repaired.length}, branches dropped ${converted.report.branches.dropped})\n`,
     )
     for (const skipped of converted.report.skipped.slice(0, 20))
-      deps.io.stderr.write(`skipped line ${skipped.line}: ${skipped.reason}\n`)
+      deps.io.stderr.write(`skipped line ${skipped.line}: ${escapeControl(skipped.reason)}\n`)
     return ExitCode.OK
   } finally {
     await session.close().catch(() => undefined)
