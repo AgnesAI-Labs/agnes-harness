@@ -83,22 +83,23 @@ export class Select implements Component {
   }
 
   /** The window of options around the selection; the `↑`/`↓` hint rows count against the cap. */
-  private window(cap: number): { start: number; end: number } {
+  private window(cap: number): { start: number; end: number; hints: boolean } {
     const n = this.options.length
-    if (n <= cap) return { start: 0, end: n }
+    if (n <= cap) return { start: 0, end: n, hints: true }
     for (let size = cap; size >= Math.max(1, cap - 2); size--) {
       const start = Math.max(0, Math.min(this.idx - size + 1, n - size))
-      if (size + (start > 0 ? 1 : 0) + (start + size < n ? 1 : 0) <= cap) return { start, end: start + size }
+      if (size + (start > 0 ? 1 : 0) + (start + size < n ? 1 : 0) <= cap)
+        return { start, end: start + size, hints: true }
     }
-    const size = Math.max(1, cap - 2)
-    const start = Math.max(0, Math.min(this.idx - size + 1, n - size))
-    return { start, end: start + size }
+    // Too little room for any hint row (cap 1-2 in the middle of the list): options win over hints.
+    const start = Math.max(0, Math.min(this.idx - cap + 1, n - cap))
+    return { start, end: start + cap, hints: false }
   }
 
   render(width: number): string[] {
     const ansi = this.o.ansi
     const paint = (tone: 'faint' | 'muted' | 'accent', s: string) => (ansi ? ansi.fg(tone, s) : s)
-    const { start, end } = this.window(this.cap())
+    const { start, end, hints } = this.window(this.cap())
     const rows = this.options.slice(start, end).map((option, offset) => {
       const i = start + offset
       const head = `${i === this.idx ? '❯' : ' '} `
@@ -132,9 +133,9 @@ export class Select implements Component {
     const more = (arrow: string, count: number) =>
       fitLine(paint('faint', `  ${arrow} ${tt('dialog.more', this.o.locale ?? 'en', { n: count })}`), width)
     const out = [
-      ...(start > 0 ? [more('↑', start)] : []),
+      ...(hints && start > 0 ? [more('↑', start)] : []),
       ...lines,
-      ...(end < this.options.length ? [more('↓', this.options.length - end)] : []),
+      ...(hints && end < this.options.length ? [more('↓', this.options.length - end)] : []),
     ]
     if (!this.o.title) return out
     const title = fitLine(escapeControl(this.o.title), width)

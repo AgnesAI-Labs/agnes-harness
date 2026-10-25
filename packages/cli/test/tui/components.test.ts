@@ -116,6 +116,21 @@ it('Select windows a long dynamic list around the active option', () => {
   expect(lines[4]).toContain('↓ 6 more')
   expect(lines.join('\n')).not.toContain('model-1')
 })
+it('Select never draws more rows than a 1-2 row cap and keeps the active option visible', () => {
+  for (const cap of [1, 2]) {
+    for (let down = 0; down < 12; down++) {
+      const select = new Select({
+        options: Array.from({ length: 12 }, (_, i) => ({ id: String(i + 1), label: `model-${i + 1}` })),
+        onChoose: vi.fn(),
+        maxRows: () => cap,
+      })
+      for (let i = 0; i < down; i++) select.handleInput('\x1b[B')
+      const lines = select.render(20)
+      expect(lines.length).toBeLessThanOrEqual(cap)
+      expect(lines.join('\n')).toContain(`❯ ${down + 1}. model-${down + 1}`)
+    }
+  }
+})
 it('Select paints the chosen row across its width and leaves the others plain', () => {
   const ansi = new TuiTheme('light').ansi(createAnsi('truecolor'))
   const select = new Select({
