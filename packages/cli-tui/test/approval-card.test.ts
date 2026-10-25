@@ -108,6 +108,22 @@ it('shows the whole raw subject, last line included, and every option on its own
   expect(text).not.toContain('decision ')
 })
 
+it('wraps a long working directory instead of cutting it', () => {
+  const cwd = `/work/${'deep/'.repeat(30)}end`
+  const subjectText = JSON.stringify({ call: { name: 'shell', args: { command: 'ls', cwd } } })
+  const text = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), toolName: 'shell', subjectText },
+    { ansi: PLAIN, onDecide: async () => undefined },
+  )
+    .render(60)
+    .map((l) => l.replace(/^ │ /, '').trimEnd())
+  const shown = text.slice(
+    text.indexOf('$ ls') + 1,
+    text.findIndex((l) => l.includes('── Raw input ──')),
+  )
+  expect(shown.join('')).toBe(cwd)
+})
+
 it('keeps the indentation of the raw subject and shows a shell command on its own rows', () => {
   const subjectText = JSON.stringify(
     { call: { name: 'shell', args: { command: 'rm -rf tmp', cwd: '/work' } } },

@@ -71,7 +71,10 @@ export function approvalBody(
         fitLine(`${ansi.fg('code', i === 0 ? `$ ${line}` : `  ${line}`)}`, width),
       )
     : []
-  const cwd = shell?.cwd ? [fitLine(ansi.fg('muted', escapeControl(shell.cwd)), width)] : []
+  // Wrapped, never cut: where the command runs is part of what is approved.
+  const cwd = shell?.cwd
+    ? wrapKeep(escapeControl(shell.cwd), width).map((line) => fitLine(ansi.fg('muted', line), width))
+    : []
   const input = subject.tool ? diffInput(subject.tool, subject.args) : undefined
   return [...command, ...cwd, ...(input ? renderDiff(input, width, ansi, locale) : [])]
 }
