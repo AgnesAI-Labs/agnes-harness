@@ -14,6 +14,7 @@ import {
 } from 'node:fs'
 import * as asyncFs from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { PackageProvenance } from '@agnes/protocol'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
@@ -212,6 +213,24 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
 export async function hashDirectoryAsync(
   dir: string,
   opts: { exclude?: string[]; signal?: AbortSignal } = {},
+): Promise<string> {
+  // A Host worker hard-links immutable snapshot files into each runtime generation without the
+  // package lock, which moves their ctime but never their bytes. Walk again a few times so one such
+  // link is not a changed tree; every digest still comes from a single unchanged traversal.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await hashDirectoryOnce(dir, opts)
+    } catch (error) {
+      if (attempt >= 4 || !(error instanceof PackageError) || error.detail.reason !== 'tree-changed')
+        throw error
+    }
+    await delay(25 * 2 ** attempt)
+  }
+}
+
+async function hashDirectoryOnce(
+  dir: string,
+  opts: { exclude?: string[]; signal?: AbortSignal },
 ): Promise<string> {
   checkCancelled(opts.signal)
   let root: string

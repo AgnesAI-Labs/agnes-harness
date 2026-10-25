@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   existsSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -292,6 +293,31 @@ describe('hashDirectory', () => {
       }
     },
   )
+  it('hashes a snapshot whose file a runtime generation hard-links mid-walk', async () => {
+    // A Host worker links snapshot files into a new generation while the daemon verifies them.
+    const generation = mkdtempSync(join(tmpdir(), 'agnes-hash-generation-'))
+    const file = join(root, 'a-payload')
+    writeFileSync(file, 'first')
+    writeFileSync(join(root, 'z-tail'), 'tail')
+    const expected = hashDirectory(root)
+    const canonicalFile = realpathSync(file)
+    const open = asyncFs.open
+    let linked = false
+    const spy = vi.spyOn(asyncFs, 'open').mockImplementation(async (...args) => {
+      if (!linked && args[0] === canonicalFile) {
+        linked = true
+        linkSync(file, join(generation, 'a-payload'))
+      }
+      return open(...args)
+    })
+    try {
+      expect(await hashDirectoryAsync(root)).toBe(expected)
+      expect(linked).toBe(true)
+    } finally {
+      spy.mockRestore()
+      rmSync(generation, { recursive: true, force: true })
+    }
+  })
 
   it.each([
     '../../../examples/acme',
