@@ -17,6 +17,9 @@ export type ChromeHintKey =
   | 'chromeHint.cancel'
   | 'chromeHint.close'
   | 'tool.status.cancelled'
+  | 'tool.status.awaitingApproval'
+  | 'tool.status.waiting'
+  | 'tool.status.budgetStopped'
 
 export const CHROME_HINT_DICT: Record<Locale, Record<ChromeHintKey, string>> = {
   en: {
@@ -31,6 +34,9 @@ export const CHROME_HINT_DICT: Record<Locale, Record<ChromeHintKey, string>> = {
     'chromeHint.cancel': 'cancel',
     'chromeHint.close': 'close',
     'tool.status.cancelled': 'cancelled',
+    'tool.status.awaitingApproval': 'awaiting approval',
+    'tool.status.waiting': 'waiting',
+    'tool.status.budgetStopped': 'budget stopped',
   },
   'zh-CN': {
     'chromeHint.expand': '展开',
@@ -44,5 +50,8 @@ export const CHROME_HINT_DICT: Record<Locale, Record<ChromeHintKey, string>> = {
     'chromeHint.cancel': '取消',
     'chromeHint.close': '关闭',
     'tool.status.cancelled': '已取消',
+    'tool.status.awaitingApproval': '待审批',
+    'tool.status.waiting': '等待中',
+    'tool.status.budgetStopped': '预算已停',
   },
 }

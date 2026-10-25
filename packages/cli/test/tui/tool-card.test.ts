@@ -75,6 +75,15 @@ it('colors the compact state glyph and the expanded title status on a colour tie
   expect(done).not.toContain('完成')
   expect(mk('running').render(40)[0]).toContain(ansi.fg('accent', 'running'))
   expect(mk('failed').render(40)[0]).toContain(ansi.fg('danger', 'failed'))
+  // Every status the projection sends has a word in each language, never its wire token.
+  expect(mk('awaiting_approval').render(40)[0]).toContain(ansi.fg('warning', 'awaiting approval'))
+  const zh = (status: 'awaiting_approval' | 'cancelled') =>
+    new ToolCard(
+      { kind: 'tool', id: 'c', seq: 1, toolUseId: 'c', name: 'read', status, summary: '' },
+      { locale: 'zh-CN' },
+    ).render(40)[0]
+  expect(zh('awaiting_approval')).toContain('待审批')
+  expect(zh('cancelled')).toContain('已取消')
   // A planned row gets typography but no semantic foreground colour; the tool name is never
   // coloured by status.
   const planned = mk('planned').render(40)[0] as string

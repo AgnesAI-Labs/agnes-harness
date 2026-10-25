@@ -58,6 +58,7 @@ const STATUS_TONE: Record<string, Tone> = {
   waiting: 'accent',
   cancelled: 'warning',
   budget_stopped: 'warning',
+  awaiting_approval: 'warning',
 }
 const STATUS_GLYPH: Record<string, string> = {
   completed: '◆',
@@ -81,6 +82,9 @@ const STATUS_KEYS: Record<
   | 'tool.status.error'
   | 'tool.status.planned'
   | 'tool.status.cancelled'
+  | 'tool.status.awaitingApproval'
+  | 'tool.status.waiting'
+  | 'tool.status.budgetStopped'
 > = {
   completed: 'tool.status.completed',
   running: 'tool.status.running',
@@ -88,6 +92,9 @@ const STATUS_KEYS: Record<
   error: 'tool.status.error',
   planned: 'tool.status.planned',
   cancelled: 'tool.status.cancelled',
+  awaiting_approval: 'tool.status.awaitingApproval',
+  waiting: 'tool.status.waiting',
+  budget_stopped: 'tool.status.budgetStopped',
 }
 const TOOL_KEYS: Record<string, 'tool.name.read' | 'tool.name.write' | 'tool.name.edit' | 'tool.name.shell'> =
   {
