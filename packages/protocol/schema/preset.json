@@ -408,8 +408,8 @@
             },
             "progress_check_steps": {
               "type": "integer",
-              "minimum": 1,
-              "description": "Model steps between progress checks in a turn that runs under a prompt limit or unattended. Default 20."
+              "minimum": 0,
+              "description": "Turns progress checks on: model steps between progress checks in a turn that runs under a prompt limit or unattended (20 is a typical value). Absent or 0, the default: no progress checks."
             }
           }
         },

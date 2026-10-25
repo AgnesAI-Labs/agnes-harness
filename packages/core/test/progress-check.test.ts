@@ -19,7 +19,10 @@ type Log = Awaited<ReturnType<typeof openSession>>['log']
  * can fail, record new files the way the official write tool does, or move the clock. `stalledAt`
  * makes the step verifier report repeated writes for that step, as loop-hygiene does.
  */
-async function checked(calls: Call[], opts: { everySteps?: number; stalledAt?: number } = {}) {
+async function checked(
+  calls: Call[],
+  opts: { everySteps?: number; stalledAt?: number; presetDefault?: boolean } = {},
+) {
   let now = T0
   const script = [...calls]
   const registry = new ToolRegistry()
@@ -59,7 +62,10 @@ async function checked(calls: Call[], opts: { everySteps?: number; stalledAt?: n
     { source: 'agnes/tools-core', trust: 'builtin' },
   )
   const provider = fakeProvider([...calls.map(() => toolTurn('read', {})), textTurn('done')])
-  const preset = { ...presetDefaults(), progressCheck: { everySteps: opts.everySteps ?? 20 } }
+  // Checks are off by default; every test but the default-off ones turns them on.
+  const preset = opts.presetDefault
+    ? presetDefaults()
+    : { ...presetDefaults(), progressCheck: { everySteps: opts.everySteps ?? 20 } }
   const opened = await openSession({ provider, registry, preset, seams, clock: () => now })
   log = opened.log
   return { ...opened, provider, verifierInputs }
@@ -78,7 +84,38 @@ const limited = { content: [{ type: 'text' as const, text: 'do it' }], actor, ma
 const quiet = (n: number): Call[] => Array.from({ length: n }, () => ({}))
 
 describe('progress checks', () => {
-  it('asks every N model steps in a turn under a prompt limit, as a note before the next action', async () => {
+  it.each([
+    ['under a prompt limit', limited],
+    [
+      'unattended',
+      {
+        content: [{ type: 'text' as const, text: 'go' }],
+        actor: { ...actor, attrs: { interaction: 'unattended' } },
+      },
+    ],
+  ])('are off by default: a turn %s gets none', async (_name, input) => {
+    expect(presetDefaults().progressCheck).toEqual({ everySteps: 0 })
+    // Thirty quiet steps, five failures in a row and nine new files: every trigger would fire.
+    const calls: Call[] = [
+      ...quiet(25),
+      ...Array.from({ length: 5 }, () => ({ fail: true })),
+      { newFiles: 9 },
+    ]
+    const { session, log, provider, verifierInputs } = await checked(calls, {
+      presetDefault: true,
+      stalledAt: 3,
+    })
+    await session.enqueue('next-turn', input)
+    await session.acceptInput()
+    expect((await session.run({ until: 'turn-end', signal })).reason).toBe('completed')
+    expect(provider.requests.length).toBeGreaterThan(30)
+    expect(await checks(log)).toEqual([])
+    expect(JSON.stringify(provider.requests)).not.toContain('[progress check]')
+    // Step verdicts read the step alone, as they do when checks are off.
+    expect(verifierInputs.some((v) => v.history)).toBe(false)
+  })
+
+  it('once turned on, asks every N model steps in a turn under a prompt limit, as a note before the next action', async () => {
     const { session, log, provider, verifierInputs } = await checked(quiet(9), { everySteps: 4 })
     await session.enqueue('next-turn', limited)
     await session.acceptInput()

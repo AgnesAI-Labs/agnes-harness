@@ -7,8 +7,8 @@ import { progressChecked } from '../../step/turn-restore.js'
 import { wrapUpDue } from './turn-limits.js'
 
 /**
- * Progress checks: in a turn that runs under a prompt limit or unattended, the model is asked now and
- * then to state its done-check, its progress against it and whether to finish, continue or switch to
+ * Progress checks, off unless a preset sets `loop.progress_check_steps`: in a turn that runs under a
+ * prompt limit or unattended, the model is asked now and then to state its done-check, its progress against it and whether to finish, continue or switch to
  * a more direct approach. A model that spins in place rarely stops on its own; a periodic self-review
  * against the goal is what moved it in other harnesses. The check is a note and nothing more: it never
  * ends the turn and never blocks a tool call.
@@ -118,11 +118,11 @@ ${why} Before your next action, answer in three short lines:
 
 /**
  * The progress check due with the request being assembled, as a Core note, or none. Only a turn under
- * a prompt limit or unattended is read at all. None once the turn's limit note has reached its
+ * a prompt limit or unattended, with checks turned on, is read at all. None once the turn's limit note has reached its
  * wrap-up: finishing then matters more than reviewing.
  */
 export async function progressCheckNote(s: SessionImpl, t: TurnMemory, op: OpStateObj) {
-  if (!progressChecked(t)) return undefined
+  if (!progressChecked(s, t)) return undefined
   const state = await tally(s, t, op.meta.triggerSeq)
   if (wrapUpDue(t)) return undefined
   const step = op.step + 1
