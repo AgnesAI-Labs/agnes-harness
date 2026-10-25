@@ -107,6 +107,10 @@ it('runs five real TUI sessions with double Ctrl-C in the same terminal, includi
         expect(lines('normal').join('\n')).not.toContain(`reply-${index}`)
         expect(lines('alternate').filter((line) => line === `reply-${index}`)).toHaveLength(1)
       }
+      // A hung-up terminal makes both streams error; nothing is left to show it on, so it must not crash the run.
+      const hangup = Object.assign(new Error('write EIO'), { code: 'EIO' })
+      expect(() => stdout.emit('error', hangup)).not.toThrow()
+      expect(() => stdin.emit('error', hangup)).not.toThrow()
       stdin.write('\x03')
       stdin.write('\x03')
       await expect(running).resolves.toBe(0)
@@ -115,6 +119,7 @@ it('runs five real TUI sessions with double Ctrl-C in the same terminal, includi
       expect(raw).toBe(false)
       expect(stdin.listenerCount('data')).toBe(0)
       expect(stdout.listenerCount('resize')).toBe(0)
+      expect(stdin.listenerCount('error') + stdout.listenerCount('error')).toBe(0)
       expect(xterm.buffer.active.type).toBe('normal')
       const history = lines('normal')
       expect(history).toContain('SHELL HISTORY')
