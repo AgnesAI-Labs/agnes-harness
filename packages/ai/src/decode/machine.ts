@@ -69,9 +69,14 @@ export function looksLikeCall(text: string, toolNames: readonly string[]): boole
 }
 
 /**
- * A closed capture, as events. Three outcomes: thinking leaves as thinking, a call to a tool the
- * model was actually offered leaves as a finished call, and anything else goes back out as the text
- * it was - because a decoder that promoted a name nobody disclosed would be inventing a call.
+ * A closed capture, as events. Thinking leaves as thinking; a call to a tool the model was actually
+ * offered leaves as a finished call when it came out of prose and the model opted into the rule that
+ * read it; anything else goes back out as the text it was - because a decoder that promoted a name
+ * nobody disclosed would be inventing a call.
+ *
+ * Reasoning never yields a call: it is where a model weighs a call it may then decline. A call that
+ * was read but not promoted still leaves an `unparsed` deviation, so a caller that must not accept
+ * call-shaped output - a compaction summary - can still tell it apart from an answer.
  */
 function promote(
   state: DecodeState,
@@ -83,22 +88,24 @@ function promote(
 ): InferenceEvent[] {
   const r = rule.extract(opened, body)
   if (r && 'thinking' in r) return deltaEvent('thinking', r.thinking)
-  if (r && ctx.toolNames.includes(r.name)) {
+  const offered = r !== null && ctx.toolNames.includes(r.name)
+  if (
+    offered &&
+    state.source === 'text' &&
+    (ctx.recover.includes(rule.id) || (r.via !== undefined && ctx.recover.includes(r.via)))
+  ) {
     const ordinal = ctx.nextOrdinal()
-    // The rule says which syntax was read; a stream that was reasoning says so instead, because
-    // there the syntax is incidental and the field it came out of is the fact worth recording.
-    const via = state.source === 'thinking' ? 'reasoning_field' : (r.via ?? rule.id)
     return [
       {
         type: 'toolcall_end',
         call: { toolUseId: `dc-${ordinal}`, name: r.name, args: r.args as never, ordinal },
-        via,
+        via: r.via ?? rule.id,
       },
     ]
   }
   const raw = opened + body + closed
   const events = deltaEvent(state.source, raw)
-  if (looksLikeCall(raw, ctx.toolNames))
+  if (offered || looksLikeCall(raw, ctx.toolNames))
     events.push({ type: 'deviation', rule: 'unparsed', sampleHash: sha256Hex(raw) })
   return events
 }
