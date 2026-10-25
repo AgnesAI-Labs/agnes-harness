@@ -2064,10 +2064,15 @@ it('queues a prompt the daemon refused as busy exactly once, and shows any other
   }
   const overloaded = await busyHarness({ promptError: rpcError('OVERLOADED', {}) })
   try {
-    overloaded.type('x')
+    const image = { type: 'resource_link' as const, uri: 'artifact://clipboard-image', name: 'clipboard.png' }
+    overloaded.app.busyInput.attach('[Image #1]', image, overloaded.app.session.id)
+    overloaded.type('x [Image #1]')
     await vi.waitFor(async () => expect(await overloaded.shown()).toContain('Request failed'))
     expect(overloaded.submits).toEqual([])
-    expect(overloaded.prompts).toEqual(['x'])
+    expect(overloaded.prompts).toEqual(['x [Image #1]'])
+    // A refusal means no turn started: the draft comes back with its image still bound.
+    expect(overloaded.app.editor.expanded()).toBe('x [Image #1]')
+    expect(overloaded.app.busyInput.takeKept(overloaded.app.editor.expanded())).toEqual([image])
   } finally {
     await overloaded.dispose()
   }

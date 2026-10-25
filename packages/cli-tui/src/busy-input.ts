@@ -68,6 +68,22 @@ const unsure = (error: unknown): boolean =>
   codeOf(error) === 'UNCERTAIN' ||
   codeOf(error) === 'OUTCOME_UNKNOWN'
 
+const rpcName = (error: unknown): string =>
+  (error as { kind?: unknown; rpc?: { message?: unknown } } | null)?.kind === 'json-rpc'
+    ? String((error as { rpc: { message?: unknown } }).rpc.message)
+    : ''
+
+/** Replies a daemon gives to a prompt it refused up front, so no turn started. */
+const REFUSALS = new Set([
+  'OVERLOADED',
+  'SEMANTIC_REJECTED',
+  'INVALID_PARAMS',
+  'CAPABILITY_DENIED',
+  'AUTH_INVALID',
+  'SESSION_NOT_FOUND',
+  'CLAIM_DENIED',
+])
+
 /**
  * Where input typed while a turn runs goes: the daemon's own queue, which survives this client, is
  * visible to every client and runs automatically once the turn ends. Nothing is held in this process.
@@ -106,9 +122,26 @@ export class BusyInput {
     try {
       await this.host.session().prompt(blocks)
     } catch (error) {
-      if (codeOf(error) !== 'SESSION_BUSY') throw error
-      await this.queue(blocks, draft, 'followUp')
+      if (codeOf(error) === 'SESSION_BUSY') return this.queue(blocks, draft, 'followUp')
+      // Only a refusal the daemon sent before any turn began returns the draft; a timeout or a
+      // dropped connection may have started one, and sending it again could repeat it.
+      if (REFUSALS.has(rpcName(error))) this.putBack(this.host.session(), blocks, draft)
+      throw error
     }
+  }
+
+  /**
+   * Puts a definitely unsent draft back in the editor and re-binds its images to their chips, only in
+   * the session it was typed in. Keeping all blocks would resend images even after their chips were removed.
+   */
+  private putBack(session: Session, blocks: ContentBlock[], draft: string): boolean {
+    if (this.host.session() !== session) return false
+    for (const block of blocks) {
+      const origin = this.chipOrigins.get(block)
+      if (origin?.sessionId === session.id) this.chips.set(origin.chip, { block, sessionId: session.id })
+    }
+    this.host.restore(draft)
+    return true
   }
 
   /**
@@ -145,15 +178,7 @@ export class BusyInput {
       if (reached === undefined) host.notice(tt('busy.unsure', locale), 'warning')
       else if (reached) host.notice(tt('busy.landed', locale), 'warning')
       else {
-        // Restore the image-to-chip binding only for a definitely unsent draft in its original
-        // session. Keeping all blocks would resend images even after their chips were removed.
-        if (host.session() !== session) return
-        for (const block of blocks) {
-          const origin = this.chipOrigins.get(block)
-          if (origin?.sessionId === session.id) this.chips.set(origin.chip, { block, sessionId: session.id })
-        }
-        host.restore(draft)
-        host.notice(tt('busy.kept', locale), 'error')
+        if (this.putBack(session, blocks, draft)) host.notice(tt('busy.kept', locale), 'error')
       }
       return
     }
