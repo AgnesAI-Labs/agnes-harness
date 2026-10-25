@@ -23,7 +23,7 @@ export function shellGuidance(ctx: ToolContext, command: string, stopped = 0): s
     notes.push('[the session already runs PowerShell; omit the extra powershell/pwsh -Command wrapper]')
   if (stopped > 0)
     notes.push(
-      `[stopped ${stopped} descendant process(es) left by the command; use background: true to keep a job running]`,
+      `[stopped ${stopped} descendant process(es) still running when the command ended (for example started with & or nohup); processes do not outlive a foreground command. Start long-running work such as a server with background: true and check it with job_output]`,
     )
   return notes
 }

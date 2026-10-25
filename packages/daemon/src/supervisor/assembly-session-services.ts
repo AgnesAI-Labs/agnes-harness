@@ -63,6 +63,7 @@ export async function openSessionServices(
         },
       })
     : undefined
+  if (profileApplication) hostFacade.observeRestartPending(profileApplication.restartPending)
   const modelCatalog = readModelSelectionCatalog({
     worker: () => pool.businessWorker()?.link,
     profile: () => host.profile,

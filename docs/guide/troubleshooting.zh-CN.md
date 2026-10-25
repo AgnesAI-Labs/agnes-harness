@@ -36,6 +36,7 @@ Web 诊断 ZIP 勾选日志后，`logs/daemon-runtime.jsonl` 包含当前及上�
 | Origin/Host 不匹配 | 地址与 `AGNES_WEB_ORIGIN` 严格一致，不混用 localhost/127.0.0.1；旧后台不同配置时显式停止对应实例 |
 | 页面问 token/文档要求复制 token | 检查是否混用旧 build/旧说明；当前本地 Web 打印普通 URL |
 | 缺 Provider / 非法 route/model | 运行 config 或 Web 设置，测试保存后从当前目录选模型；新默认不修改旧会话 |
+| `--model` 返回 `E_MODEL_UNSUPPORTED` | 运行中的配置没有该 route/model。若错误说明改动需重启后台才生效，说明账户或模型改动以 `restart-required` 保存：运行 `agh daemon stop` 后重试，下一条命令会以已保存的配置启动后台。否则运行 `agh doctor provider` 并选择列出的路由 |
 | `COMPACTION_UNAVAILABLE` / 压缩后仍提示上下文已满 | 核对 `cost/ledger` 中 `purpose: compaction` 的实际模型与凭据；切换对话模型不会替换已经固定的压缩模型。当前内置预设未单独选择压缩模型时会跟随会话主模型；旧会话保留已有选择，可用 `session.setModel` 将 `compaction` 槽位改为可用的文本模型后重试，或修正默认模型后新建会话。诊断包里的 `TRANSPORT` 本身不能确定 HTTP 错误原因 |
 | `TOOL_ARGS_INVALID` | 按错误中的参数路径补齐符合工具定义的参数再重试。`write` 必须同时传入 `path` 和 `content`；被拒绝的调用不会写文件 |
 | 输出以 `max_tokens` / `OUTPUT_LIMIT` 结束 | 模型回复达到输出额度，保留已生成文字、丢弃未完成的工具调用并停止本轮，不自动重试。可要求分步继续，或在 Provider 支持范围内配置 preset 的 `model.max_tokens`；这与输入上下文超限不同 |

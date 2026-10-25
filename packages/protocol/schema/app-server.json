@@ -736,7 +736,10 @@
               "x-public-error": {
                 "rpc": "PRESET_SWITCH_REJECTED",
                 "messageKey": "appServer.errors.rejected",
-                "copy": "preset"
+                "copy": "model",
+                "reasons": {
+                  "restart-required": "modelRestart"
+                }
               }
             },
             {
@@ -3885,6 +3888,26 @@
       "zh-CN": {
         "reason": "预设或权限选择被拒绝。",
         "action": "请选择受支持的预设及兼容的权限级别。"
+      }
+    },
+    "model": {
+      "en": {
+        "reason": "The requested model is not available in this profile.",
+        "action": "Run `agh doctor provider` to list the configured routes and choose one of them."
+      },
+      "zh-CN": {
+        "reason": "当前配置中没有所请求的模型。",
+        "action": "运行 `agh doctor provider` 查看已配置的路由，并从中选择。"
+      }
+    },
+    "modelRestart": {
+      "en": {
+        "reason": "A saved account or model change is not active until the daemon restarts, so the requested model is not loaded yet.",
+        "action": "Restart the daemon with `agh daemon stop`; the next agh command starts it with the saved configuration. If the model is still refused, run `agh doctor provider` to list the configured routes."
+      },
+      "zh-CN": {
+        "reason": "已保存的账户或模型改动需重启后台才生效，所请求的模型尚未加载。",
+        "action": "运行 `agh daemon stop` 重启后台；下一条 agh 命令会以已保存的配置启动它。若仍被拒绝，运行 `agh doctor provider` 查看已配置的路由。"
       }
     },
     "permissionAxis": {

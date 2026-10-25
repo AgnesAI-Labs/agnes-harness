@@ -60,6 +60,26 @@ const PUBLIC_ERROR_COPY = {
       "action": "请选择受支持的预设及兼容的权限级别。"
     }
   },
+  "model": {
+    "en": {
+      "reason": "The requested model is not available in this profile.",
+      "action": "Run `agh doctor provider` to list the configured routes and choose one of them."
+    },
+    "zh-CN": {
+      "reason": "当前配置中没有所请求的模型。",
+      "action": "运行 `agh doctor provider` 查看已配置的路由，并从中选择。"
+    }
+  },
+  "modelRestart": {
+    "en": {
+      "reason": "A saved account or model change is not active until the daemon restarts, so the requested model is not loaded yet.",
+      "action": "Restart the daemon with `agh daemon stop`; the next agh command starts it with the saved configuration. If the model is still refused, run `agh doctor provider` to list the configured routes."
+    },
+    "zh-CN": {
+      "reason": "已保存的账户或模型改动需重启后台才生效，所请求的模型尚未加载。",
+      "action": "运行 `agh daemon stop` 重启后台；下一条 agh 命令会以已保存的配置启动它。若仍被拒绝，运行 `agh doctor provider` 查看已配置的路由。"
+    }
+  },
   "permissionAxis": {
     "en": {
       "reason": "The preset cannot accept the requested permission overlay.",
@@ -535,7 +555,7 @@ export const PUBLIC_ERROR_CONTRACT = {
   "SEARCH_TIMEOUT": { rpc: "REQUEST_TIMEOUT", messageKey: "appServer.errors.timeout", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["timeout"], reasons: {  } },
   "E_PRESET_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: { "permission-axis": PUBLIC_ERROR_COPY["permissionAxis"], "bundle-unavailable": PUBLIC_ERROR_COPY["unavailable"], "preset-not-allowed": PUBLIC_ERROR_COPY["preset"], "clean-home-required": PUBLIC_ERROR_COPY["cleanHome"] } },
   "E_PRESET_UNRESOLVED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.unavailable", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["unavailable"], reasons: { "no-routes": PUBLIC_ERROR_COPY["unavailable"], "no-models": PUBLIC_ERROR_COPY["unavailable"], "pin-without-route": PUBLIC_ERROR_COPY["unavailable"], "unknown-slot": PUBLIC_ERROR_COPY["unavailable"], "unknown-route": PUBLIC_ERROR_COPY["unavailable"], "model-undeclared": PUBLIC_ERROR_COPY["unavailable"], "no-primary": PUBLIC_ERROR_COPY["unavailable"], "route-unserved": PUBLIC_ERROR_COPY["unavailable"], "model-unserved": PUBLIC_ERROR_COPY["unavailable"], "route-not-assembled": PUBLIC_ERROR_COPY["unavailable"], "route-duplicate": PUBLIC_ERROR_COPY["unavailable"], "reserved-route-name": PUBLIC_ERROR_COPY["unavailable"], "bedrock-region-conflict": PUBLIC_ERROR_COPY["unavailable"] } },
-  "E_MODEL_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: {  } },
+  "E_MODEL_UNSUPPORTED": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["model"], reasons: { "restart-required": PUBLIC_ERROR_COPY["modelRestart"] } },
   "E_MODEL_UNKNOWN": { rpc: "PRESET_SWITCH_REJECTED", messageKey: "appServer.errors.rejected", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["preset"], reasons: {  } },
   "E_SEAM_INIT": { rpc: "INTERNAL_ERROR", messageKey: "appServer.errors.internal", boot: true, skillInstall: false, localized: PUBLIC_ERROR_COPY["internal"], reasons: { "provider-unknown": PUBLIC_ERROR_COPY["provider"], "provider-invalid": PUBLIC_ERROR_COPY["provider"], "provider-incompatible": PUBLIC_ERROR_COPY["provider"], "provider-unavailable": PUBLIC_ERROR_COPY["provider"], "provider-duplicate": PUBLIC_ERROR_COPY["provider"] } },
   "E_PERMISSION_REVOKED": { rpc: "CAPABILITY_DENIED", messageKey: "appServer.errors.forbidden", boot: false, skillInstall: false, localized: PUBLIC_ERROR_COPY["permissionRevoked"], reasons: {  } },
