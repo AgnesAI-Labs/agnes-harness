@@ -72,6 +72,9 @@ export function looksLikeCall(text: string, toolNames: readonly string[]): boole
  * A closed capture, as events. Three outcomes: thinking leaves as thinking, a call to a tool the
  * model was actually offered leaves as a finished call, and anything else goes back out as the text
  * it was - because a decoder that promoted a name nobody disclosed would be inventing a call.
+ *
+ * Only prose from a model that opted into the rule is promoted. Reasoning never is: it is where a
+ * model weighs a call it may then decline, and a quoted call there is not a decision to make it.
  */
 function promote(
   state: DecodeState,
@@ -83,16 +86,18 @@ function promote(
 ): InferenceEvent[] {
   const r = rule.extract(opened, body)
   if (r && 'thinking' in r) return deltaEvent('thinking', r.thinking)
-  if (r && ctx.toolNames.includes(r.name)) {
+  if (
+    r &&
+    state.source === 'text' &&
+    ctx.toolNames.includes(r.name) &&
+    (ctx.recover.includes(rule.id) || (r.via !== undefined && ctx.recover.includes(r.via)))
+  ) {
     const ordinal = ctx.nextOrdinal()
-    // The rule says which syntax was read; a stream that was reasoning says so instead, because
-    // there the syntax is incidental and the field it came out of is the fact worth recording.
-    const via = state.source === 'thinking' ? 'reasoning_field' : (r.via ?? rule.id)
     return [
       {
         type: 'toolcall_end',
         call: { toolUseId: `dc-${ordinal}`, name: r.name, args: r.args as never, ordinal },
-        via,
+        via: r.via ?? rule.id,
       },
     ]
   }

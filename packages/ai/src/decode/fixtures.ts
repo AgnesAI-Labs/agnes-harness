@@ -1,6 +1,9 @@
-import type { InferenceEvent, ToolCall } from '@agnes/protocol'
+import type { DecodeRule, InferenceEvent, ToolCall } from '@agnes/protocol'
 import { createState, finish, mergeDeltas, step } from './machine.js'
+import { RULES } from './rules/index.js'
 import type { DecodeContext } from './types.js'
+
+const RULE_IDS: readonly DecodeRule[] = [...RULES.map((r) => r.id), 'lenient_json']
 
 export type FixtureChunk =
   | string
@@ -14,6 +17,11 @@ export type DecodeFixture = {
   /** Which model produced a captured sample. Carried, not read: nothing routes a case by it. */
   model_hint?: string
   tool_names: string[]
+  /**
+   * The recovery rules the model opted into. Absent means every rule, which is what a case about one
+   * rule's syntax describes; a case about a native model says `[]`.
+   */
+  recover?: DecodeRule[]
   input_chunks: FixtureChunk[]
   expected_events: InferenceEvent[]
 }
@@ -75,7 +83,11 @@ export function runDecodeFixture(
   split: number,
 ): { pass: boolean; got: InferenceEvent[]; want: InferenceEvent[] } {
   let ordinal = 0
-  const ctx: DecodeContext = { toolNames: f.tool_names, nextOrdinal: () => ordinal++ }
+  const ctx: DecodeContext = {
+    toolNames: f.tool_names,
+    recover: f.recover ?? RULE_IDS,
+    nextOrdinal: () => ordinal++,
+  }
   let state = createState()
   const got: InferenceEvent[] = []
   for (const chunk of f.input_chunks) {
