@@ -171,6 +171,10 @@ export class TuiApp {
   // an accepted limitation, not an oversight.
   private nextRequestSeq = 1
   onQuit: () => void = () => {}
+  /** True when a double Ctrl-C quit before the daemon answered the cancel. */
+  get cancelUnconfirmed(): boolean {
+    return this.interrupts.unconfirmed
+  }
   readonly refreshWorkspace: () => void
   /** The worktrees this run made; a session in one of them shows its branch on the rail. */
   readonly worktrees = new WorktreeKeeper()

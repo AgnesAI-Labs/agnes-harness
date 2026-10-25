@@ -16,6 +16,7 @@ it('a second Ctrl-C quits within a second even when the cancel never settles', a
   expect(quit).not.toHaveBeenCalled()
   await vi.advanceTimersByTimeAsync(1)
   expect(quit).toHaveBeenCalledOnce()
+  expect(interrupts.unconfirmed).toBe(true)
 })
 
 it('a second Ctrl-C quits once, as soon as the cancel settles', async () => {
@@ -32,4 +33,5 @@ it('a second Ctrl-C quits once, as soon as the cancel settles', async () => {
   expect(fail).toHaveBeenCalledOnce()
   await vi.advanceTimersByTimeAsync(2_000)
   expect(quit).toHaveBeenCalledOnce()
+  expect(interrupts.unconfirmed).toBe(false)
 })

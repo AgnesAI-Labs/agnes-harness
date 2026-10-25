@@ -13,6 +13,8 @@ export class DoubleEsc {
 /** Ctrl-C cancels the turn in flight; a second press within a second quits. */
 export class DoubleCtrlC {
   private last: number | undefined
+  /** True once a quit went ahead before the daemon answered the cancel: the turn may still be running. */
+  unconfirmed = false
 
   press(cancel: () => Promise<void>, quit: () => void, fail: (error: unknown) => void): void {
     const now = Date.now()
@@ -22,11 +24,12 @@ export class DoubleCtrlC {
     if (!quitting) return
     // The cancel gets a moment to reach the daemon, but a hung link must not hold the terminal.
     let timer: ReturnType<typeof setTimeout> | undefined
-    const bound = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, 1_000)
+    const bound = new Promise<boolean>((resolve) => {
+      timer = setTimeout(resolve, 1_000, true)
     })
-    void Promise.race([cancelled, bound]).then(() => {
+    void Promise.race([cancelled.then(() => false), bound]).then((timedOut) => {
       clearTimeout(timer)
+      this.unconfirmed = timedOut
       quit()
     })
   }

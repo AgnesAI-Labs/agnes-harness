@@ -24,6 +24,7 @@ import { WORKTREE_DICT, type WorktreeKey } from './locale-worktree.js'
 export const TERMINAL_KEYS = [
   'paste.chip',
   'resume.hint',
+  'exit.cancelUnconfirmed',
   'exit.ran',
   'exit.messages',
   'exit.approvals',
@@ -168,6 +169,8 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...DALTONIZED_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
+    'exit.cancelUnconfirmed':
+      'Cancel not confirmed; the task may still be running. Check it: agh --resume {id}',
     'exit.ran': 'This run lasted {duration}',
     'exit.messages': 'messages: {n}',
     'exit.approvals': 'approvals: {n}',
@@ -299,6 +302,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...DALTONIZED_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
+    'exit.cancelUnconfirmed': '取消未确认，任务可能仍在运行，可用 agh --resume {id} 重新连接查看',
     'exit.ran': '本次运行了 {duration}',
     'exit.messages': '消息数：{n}',
     'exit.approvals': '待审批：{n}',
