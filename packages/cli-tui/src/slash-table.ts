@@ -23,6 +23,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     summaryKey: 'commands.quitSummary',
   },
   { name: '/new', args: '[dir]', descriptionKey: 'commands.new', summaryKey: 'commands.newSummary' },
+  { name: '/clear', descriptionKey: 'commands.clear', summaryKey: 'commands.clearSummary' },
   {
     name: '/resume',
     args: '[id|all]',

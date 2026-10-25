@@ -1,6 +1,6 @@
 import type { Locale } from './locale.js'
 
-/** Strings of /paste and Ctrl-V: kept beside the other locale files so locale-extended.ts stays small. */
+/** Strings of /paste, Ctrl-V and other session actions: kept beside the other locale files so locale-extended.ts stays small. */
 export type SessionActionKey =
   | 'commands.paste'
   | 'commands.pasteSummary'
@@ -41,6 +41,8 @@ export type SessionActionKey =
   | 'rate.none'
   | 'rate.unsupported'
   | 'rate.done'
+  | 'commands.clear'
+  | 'commands.clearSummary'
 
 export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string>> = {
   en: {
@@ -89,6 +91,9 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'rate.none': 'No finished reply to rate yet',
     'rate.unsupported': 'This daemon does not support ratings',
     'rate.done': 'Rated the reply of turn {turn} {rating}',
+    'commands.clear':
+      'Clear the conversation: start a new session in this workspace with an empty context (the old one stays in /resume)',
+    'commands.clearSummary': 'Clear the conversation',
   },
   'zh-CN': {
     'commands.paste': '把剪贴板里的图片作为下一条消息的附件（等同于 Ctrl-V）',
@@ -134,5 +139,7 @@ export const SESSION_ACTION_DICT: Record<Locale, Record<SessionActionKey, string
     'rate.none': '还没有可打分的已完成回复',
     'rate.unsupported': '这个 daemon 不支持打分',
     'rate.done': '已给第 {turn} 轮的回复打分：{rating}',
+    'commands.clear': '清空对话：在当前工作区新开一个上下文为空的会话（旧会话仍可用 /resume 找回）',
+    'commands.clearSummary': '清空对话',
   },
 }

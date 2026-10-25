@@ -213,6 +213,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   // /resume only opens the picker, which refuses the choice itself.
   const opens =
     cmd === '/new' ||
+    cmd === '/clear' ||
     cmd === '/worktree' ||
     (cmd === '/cd' && args.length > 0) ||
     (cmd === '/add-dir' && args.length > 0) ||
@@ -319,9 +320,11 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         }
       return computerUseDoctor()
     }
-    case '/new': {
+    case '/new':
+    // Claude Code's /clear: a fresh session in this workspace; the old conversation stays resumable.
+    case '/clear': {
       // A directory the daemon has not authorised is refused by the daemon, and shown as it comes.
-      const dir = line.trim().slice('/new'.length).trim()
+      const dir = cmd === '/new' ? line.trim().slice('/new'.length).trim() : ''
       const created = await c.session.new({
         cwd: dir ? localPath(app, dir) : app.cwd,
         sessionKey: freshTuiSessionKey(app.profile),

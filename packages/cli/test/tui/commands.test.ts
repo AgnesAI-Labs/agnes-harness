@@ -119,12 +119,13 @@ async function unstartedApp(
 
 describe('SLASH_COMMANDS (cli 稿 §9.3 and PM7)', () => {
   it('names the session commands, plan mode and package controls', () => {
-    expect(SLASH_COMMANDS).toHaveLength(77)
+    expect(SLASH_COMMANDS).toHaveLength(78)
     expect(SLASH_COMMANDS.map((c) => c.name)).toEqual([
       '/help',
       '/quit',
       '/exit',
       '/new',
+      '/clear',
       '/resume',
       '/handoff',
       '/worktree',
@@ -839,7 +840,7 @@ describe('runSlash', () => {
     }
   })
 
-  it('/new and /resume<id> return a loaded Session switch without touching app.session itself', async () => {
+  it('/new, /clear and /resume<id> return a loaded Session switch without touching app.session itself', async () => {
     const { app, ep, client } = await unstartedApp()
     try {
       const created = await runSlash(app, '/new')
@@ -852,6 +853,11 @@ describe('runSlash', () => {
           },
         },
       })
+      const cleared = await runSlash(app, '/clear')
+      expect(cleared.switchSession?.id).toBeDefined()
+      const clearCall = ep.calls.filter((entry) => entry.method === 'session/new').at(-1)
+      expect(clearCall).not.toBe(newCall)
+      expect(clearCall?.params).toMatchObject({ cwd: process.cwd() })
       const resumed = await runSlash(app, '/resume other-id')
       expect(resumed.switchSession?.id).toBe('other-id')
       expect(ep.calls.find((entry) => entry.method === 'session/load')?.params).toMatchObject({
