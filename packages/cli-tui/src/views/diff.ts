@@ -1,4 +1,4 @@
-import { escapeControl } from '../component.js'
+import { escapeVisible } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { tt } from '../locale-extended.js'
 import type { ThemedAnsi } from '../theme.js'
@@ -175,7 +175,7 @@ export function statsMark(input: DiffInput, ansi: ThemedAnsi): string {
 export function renderDiff(input: DiffInput, width: number, ansi: ThemedAnsi, locale: string): string[] {
   const hunks = opsOf(input)
   const digits = String(hunks.flat().reduce((max, op) => Math.max(max, op.no), 1)).length
-  const head = `${ansi.bold(escapeControl(input.path))}${input.wholeFile ? ` ${ansi.dim(tt('diff.wholeFile', locale))}` : ''} ${statsMark(input, ansi)}`
+  const head = `${ansi.bold(escapeVisible(input.path))}${input.wholeFile ? ` ${ansi.dim(tt('diff.wholeFile', locale))}` : ''} ${statsMark(input, ansi)}`
   const rows = [fitLine(head, width)]
   hunks.forEach((ops, h) => {
     if (h > 0) rows.push(fitLine(ansi.fg('faint', ' ╌╌╌'), width))

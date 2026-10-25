@@ -1,4 +1,4 @@
-import { escapeControl, wrapText } from '../component.js'
+import { escapeVisible, wrapText } from '../component.js'
 import { fitLine } from '../components/line.js'
 import { tt } from '../locale-extended.js'
 import { paintsColour, type ThemedAnsi } from '../theme.js'
@@ -38,7 +38,7 @@ export function approvalHeading(
     risk === 'destructive' || risk === 'budget'
       ? ` ${ansi.fg(risk === 'destructive' ? 'danger' : 'warning', `[${tt(`approval.risk.${risk}`, locale)}]`)}`
       : ''
-  const who = name ? ` ${ansi.fg('faint', '·')} ${ansi.bold(escapeControl(name))}` : ''
+  const who = name ? ` ${ansi.fg('faint', '·')} ${ansi.bold(escapeVisible(name))}` : ''
   return `${ansi.bold(ansi.fg('warning', `▲ ${tt('approval.needs', locale)}`))}${who}${tag}`
 }
 
@@ -67,13 +67,13 @@ export function approvalBody(
 ): string[] {
   const shell = shellOf(subject.args)
   const command = shell
-    ? wrapKeep(escapeControl(shell.command), width - 2).map((line, i) =>
+    ? wrapKeep(escapeVisible(shell.command), width - 2).map((line, i) =>
         fitLine(`${ansi.fg('code', i === 0 ? `$ ${line}` : `  ${line}`)}`, width),
       )
     : []
   // Wrapped, never cut: where the command runs is part of what is approved.
   const cwd = shell?.cwd
-    ? wrapKeep(escapeControl(shell.cwd), width).map((line) => fitLine(ansi.fg('muted', line), width))
+    ? wrapKeep(escapeVisible(shell.cwd), width).map((line) => fitLine(ansi.fg('muted', line), width))
     : []
   const input = subject.tool ? diffInput(subject.tool, subject.args) : undefined
   return [...command, ...cwd, ...(input ? renderDiff(input, width, ansi, locale) : [])]

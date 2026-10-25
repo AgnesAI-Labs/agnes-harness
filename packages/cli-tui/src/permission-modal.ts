@@ -1,6 +1,6 @@
 import type { PermissionOutcome, PermissionRequest } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
-import { type Component, escapeControl, wrapText } from './component.js'
+import { type Component, escapeVisible, wrapText } from './component.js'
 import { keyHints } from './components/key-hints.js'
 import { columns, fitLine } from './components/line.js'
 import { actionFor } from './keymap.js'
@@ -33,7 +33,7 @@ function optionLabel(option: PermissionRequest['options'][number], locale: Local
   if (option.kind === 'allow_always') return t('approval.allowSession', locale)
   if (option.kind === 'reject_once') return t('approval.reject', locale)
   if (option.kind === 'reject_always') return tt('approval.rejectAlways', locale)
-  return escapeControl(option.name)
+  return escapeVisible(option.name)
 }
 
 /** FIFO prompts own input until answered; Enter initially selects rejection. */
@@ -182,7 +182,7 @@ export class PermissionModal implements Component {
           })
         : call.title
     const headline = typeof title === 'string' ? title : approvalHeadline(undefined, call.rawInput)
-    const name = escapeControl(headline || t('permission.toolRequest', locale))
+    const name = escapeVisible(headline || t('permission.toolRequest', locale))
     const heading = approvalHeading(name, undefined, ansi, locale)
     const headingWidth = displayWidth(`▲ ${tt('approval.needs', locale)} · ${name}`)
     // The title and footer ride in the frame's borders, so framing costs columns but no rows.
@@ -215,7 +215,7 @@ export class PermissionModal implements Component {
     const headingRows = details.length
     if (hasInput)
       details.push(
-        ...wrapKeep(escapeControl(JSON.stringify(question.request.toolCall.rawInput, null, 2)), inner),
+        ...wrapKeep(escapeVisible(JSON.stringify(question.request.toolCall.rawInput, null, 2)), inner),
       )
     const choices = question.request.options
     const requested = this.options.maxRows?.()

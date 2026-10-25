@@ -1,5 +1,5 @@
 import type { UINode } from '@agnes/protocol'
-import { type Component, escapeControl, wrapText } from '../component.js'
+import { type Component, escapeControl, escapeVisible, wrapText } from '../component.js'
 import { keyHints } from '../components/key-hints.js'
 import { fitLine } from '../components/line.js'
 import { actionFor } from '../keymap.js'
@@ -83,7 +83,7 @@ function actionsOf(n: ApprovalNode, locale: Locale): Action[] {
           {
             verdict: 'allow_prefix_session',
             label: t('approval.allowPrefix', locale, {
-              prefix: `\`${escapeControl(prefix.tokens.join(' '))}\``,
+              prefix: `\`${escapeVisible(prefix.tokens.join(' '))}\``,
             }),
           },
         ]
@@ -272,7 +272,7 @@ export class ApprovalCard implements Component {
     const locale = this.o.locale ?? 'en'
     const presentation = n.presentation?.[locale] ?? n.presentation?.en
     const subject = subjectOf(n)
-    const summary = escapeControl(approvalHeadline(presentation?.title ?? n.summary, subject.args))
+    const summary = escapeVisible(approvalHeadline(presentation?.title ?? n.summary, subject.args))
     if (this.phase === 'decided' || this.phase === 'failed') return [this.resolvedLine(summary, width)]
     if (!n.decisionRef) return [fitLine(`${ansi.fg('warning', '▲')} ${summary}`, width)]
     const lit = this.o.settled?.() ?? true
@@ -320,7 +320,7 @@ export class ApprovalCard implements Component {
     const said = summary && summary !== command?.trim() ? [row(ansi.bold(summary))] : []
     // The dialog shows this request in full and owns the keys; a second copy here only pushes it away.
     if (this.o.dialog?.()) return [heading, ...said, row(ansi.fg('faint', tt('approval.inDialog', locale)))]
-    const raw = n.subjectText ? wrapKeep(escapeControl(n.subjectText), inner) : []
+    const raw = n.subjectText ? wrapKeep(escapeVisible(n.subjectText), inner) : []
     const expires = localTime(n.expiresAt)
     const reasonRows = (reason: string): string[] => {
       const label = `${tt('approval.reasonLabel', locale)}: `
@@ -348,7 +348,7 @@ export class ApprovalCard implements Component {
       ...approvalBody(subject, inner, ansi, locale).map(row),
       ...(presentation?.fields.flatMap((field) =>
         wrapText(
-          escapeControl(`${field.label}: ${field.value}${field.href ? ` (${field.href})` : ''}`),
+          escapeVisible(`${field.label}: ${field.value}${field.href ? ` (${field.href})` : ''}`),
           inner,
         ).map(row),
       ) ?? []),

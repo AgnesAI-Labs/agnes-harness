@@ -144,6 +144,20 @@ it('wraps a long working directory instead of cutting it', () => {
   expect(shown.join('')).toBe(cwd)
 })
 
+it('spells out bidi and zero-width characters in the command, the directory and the raw subject', () => {
+  const command = 'ls /tmp/\u202Egpj.txt\u202C && cat /etc/ho\u200Bsts'
+  const subjectText = JSON.stringify({ call: { name: 'shell', args: { command, cwd: '/w\u2066x' } } })
+  const text = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), toolName: 'shell', subjectText },
+    { ansi: PLAIN, onDecide: async () => undefined },
+  )
+    .render(120)
+    .join('\n')
+  expect(text).toContain('$ ls /tmp/\\u{202E}gpj.txt\\u{202C} && cat /etc/ho\\u{200B}sts')
+  expect(text).toContain('/w\\u{2066}x')
+  expect(text).not.toMatch(/[\u202E\u202C\u200B\u2066]/)
+})
+
 it('keeps the indentation of the raw subject and shows a shell command on its own rows', () => {
   const subjectText = JSON.stringify(
     { call: { name: 'shell', args: { command: 'rm -rf tmp', cwd: '/work' } } },

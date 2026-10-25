@@ -255,6 +255,19 @@ it('gives the modal and the parked card the same body for the same request', () 
   modal.close()
 })
 
+it('spells out bidi and zero-width characters in the title and the details', () => {
+  const modal = new PermissionModal(vi.fn())
+  void modal.ask(
+    { ...request, toolCall: { title: 'run\u202E', rawInput: { command: 'cat /etc/ho\u200Bsts' } } },
+    { signal: new AbortController().signal },
+  )
+  const text = modal.render(80).join('\n')
+  expect(text).toContain('run\\u{202E}')
+  expect(text).toContain('/etc/ho\\u{200B}sts')
+  expect(text).not.toMatch(/[\u202E\u200B]/)
+  modal.close()
+})
+
 it('names a request without a title by its plain arguments', () => {
   const modal = new PermissionModal(vi.fn())
   void modal.ask(
