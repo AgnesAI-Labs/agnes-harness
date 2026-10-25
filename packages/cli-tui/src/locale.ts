@@ -22,11 +22,9 @@ export const LOCALE_KEYS = [
   'notice.resumed',
   'notice.crashed',
   'notice.closed',
-  'permission.heading',
   'permission.candidateTest',
   'permission.toolRequest',
   'permission.resize',
-  'permission.footer',
 ] as const
 
 export type Locale = (typeof LOCALES)[number]
@@ -56,12 +54,10 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
     'notice.resumed': 'stopped at step {step} last time, resumed',
     'notice.crashed': 'execution interrupted, auto-recovery within 30 s',
     'notice.closed': 'daemon connection closed; quit and run: agh --resume {id}',
-    'permission.heading': 'Approval',
     'permission.candidateTest':
       'Run the candidate’s Node author tests on this machine: {name} ({hash}). This does not publish, trust or enable anything. Review the source in Settings → Plugins → Candidates before running.',
     'permission.toolRequest': 'tool request',
     'permission.resize': 'Approval: resize or Esc reject',
-    'permission.footer': 'Esc: dismiss · PgUp/PgDn details {start}-{end}/{total}',
   },
   'zh-CN': {
     'approval.allowOnce': '允许一次',
@@ -85,12 +81,10 @@ const DICT: Record<Locale, Record<LocaleKey, string>> = {
     'notice.resumed': '上次停在第 {step} 步，已续跑',
     'notice.crashed': '执行中断，30 秒内自动恢复',
     'notice.closed': '后台连接已关闭，请退出后运行：agh --resume {id}',
-    'permission.heading': '审批',
     'permission.candidateTest':
       '在本机运行候选的 Node 作者测试：{name}（{hash}）。测试不会发布、信任或启用任何内容。运行前请到「设置 → 插件 → 候选」审阅源码。',
     'permission.toolRequest': '工具请求',
     'permission.resize': '审批：请调整窗口大小，或按 Esc 拒绝',
-    'permission.footer': 'Esc：关闭 · PgUp/PgDn 查看详情 {start}-{end}/{total}',
   },
 }
 

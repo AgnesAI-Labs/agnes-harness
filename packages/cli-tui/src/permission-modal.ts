@@ -1,6 +1,7 @@
 import type { PermissionOutcome, PermissionRequest } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
 import { type Component, escapeControl, wrapText } from './component.js'
+import { keyHints } from './components/key-hints.js'
 import { columns, fitLine } from './components/line.js'
 import { actionFor } from './keymap.js'
 import { parseKey } from './keys.js'
@@ -8,7 +9,7 @@ import { type Locale, t } from './locale.js'
 import { tt } from './locale-extended.js'
 import { displayWidth } from './terminal.js'
 import { paintsColour, type ThemedAnsi, TuiTheme } from './theme.js'
-import { approvalBody, approvalHeadline } from './views/approval-body.js'
+import { approvalBody, approvalHeading, approvalHeadline, keycap, wrapKeep } from './views/approval-body.js'
 
 type Question = {
   id: number
@@ -180,7 +181,9 @@ export class PermissionModal implements Component {
           })
         : call.title
     const headline = typeof title === 'string' ? title : approvalHeadline(undefined, call.rawInput)
-    const heading = `${t('permission.heading', locale)}: ${escapeControl(headline || t('permission.toolRequest', locale))}`
+    const name = escapeControl(headline || t('permission.toolRequest', locale))
+    const heading = approvalHeading(name, undefined, ansi, locale)
+    const headingWidth = displayWidth(`▲ ${tt('approval.needs', locale)} · ${name}`)
     // The title and footer ride in the frame's borders, so framing costs columns but no rows.
     const framed = width >= 8
     const inner = framed ? width - 4 : width
@@ -195,7 +198,7 @@ export class PermissionModal implements Component {
     // The top border already shows a heading that fits it; repeating it as the first detail row only
     // costs a row. It stays in the body when the border would clip it or there is nothing else to page.
     const hasInput = question.request.toolCall.rawInput !== undefined
-    const details = framed && hasInput && displayWidth(heading) <= inner ? [] : wrapText(heading, inner)
+    const details = framed && hasInput && headingWidth <= inner ? [] : wrapText(name, inner)
     // What the request would do comes first, painted as it is; the raw input follows as quiet details.
     const tool = meta?.['ai.agnes.harness']?.tool
     details.push(
@@ -211,7 +214,7 @@ export class PermissionModal implements Component {
     const headingRows = details.length
     if (hasInput)
       details.push(
-        ...wrapText(escapeControl(JSON.stringify(question.request.toolCall.rawInput, null, 2)), inner),
+        ...wrapKeep(escapeControl(JSON.stringify(question.request.toolCall.rawInput, null, 2)), inner),
       )
     const choices = question.request.options
     const requested = this.options.maxRows?.()
@@ -227,7 +230,8 @@ export class PermissionModal implements Component {
         : Math.min(choices.length, Math.max(1, Math.floor((rows - 2) / 2)))
     question.count = count
     const start = windowStart(question.selected, count, choices.length)
-    // The single-key shortcut of the option each belongs to, dim until the card has settled.
+    // The single-key shortcut of the option each belongs to; `a` is deliberately absent (see handleInput).
+    const showLetters = this.options.letters?.() ?? true
     const letters = new Map<number, string>(
       [
         ['allow_once', 'y'],
@@ -235,30 +239,57 @@ export class PermissionModal implements Component {
       ].map(([kind, letter]) => [choices.findIndex((option) => option.kind === kind), letter as string]),
     )
     const lit = this.options.settled?.() ?? true
-    const choiceLines = choices.slice(start, start + count).map((option, i) => {
+    const chip = keycap(ansi, lit)
+    const labels = choices.map((option) => optionLabel(option, locale))
+    const column = Math.max(
+      0,
+      ...choices.map((_, i) => (letters.has(i) ? displayWidth(labels[i] as string) : 0)),
+    )
+    const choiceLines = choices.slice(start, start + count).map((_, i) => {
       const index = start + i
-      const letter = letters.get(index)
-      const hint = letter ? ansi.fg(lit ? 'accent' : 'faint', ` [${letter}]`) : ''
-      const label = `${index + 1}. ${optionLabel(option, locale)}`
-      if (index !== question.selected) return row(`  ${label}${hint}`)
-      const chosen = fitLine(`${ansi.fg('accent', '❯')} ${ansi.bold(label)}${hint}`, inner)
-      return row(paintsColour(ansi) ? ansi.bg('selection', chosen) : chosen)
+      const letter = showLetters ? letters.get(index) : undefined
+      const label = labels[index] as string
+      const gap = letter
+        ? `${' '.repeat(Math.max(0, column - displayWidth(label)))}  ${ansi.fg('faint', letter)}`
+        : ''
+      if (index !== question.selected) return row(`  ${chip(String(index + 1))} ${label}${gap}`)
+      const tail = fitLine(
+        ` ${ansi.bold(label)}${gap}`,
+        Math.max(0, inner - 2 - displayWidth(chip(String(index + 1)))),
+      )
+      const mark = `${ansi.fg('accent', '❯')} `
+      return row(
+        paintsColour(ansi)
+          ? `${ansi.bg('selection', mark)}${chip(String(index + 1))}${ansi.bg('selection', tail)}`
+          : `${mark}${chip(String(index + 1))}${tail}`,
+      )
     })
     question.pageRows = Math.max(1, rows - choiceLines.length - 2)
     question.detailOffset = Math.min(question.detailOffset, Math.max(0, details.length - question.pageRows))
     const page = details
       .slice(question.detailOffset, question.detailOffset + question.pageRows)
       .map((line, i) => row(question.detailOffset + i < headingRows ? line : ansi.dim(line)))
-    const footer = t('permission.footer', locale, {
-      start: question.detailOffset + 1,
-      end: question.detailOffset + page.length,
-      total: details.length,
-    })
-    return [
-      bar('╭', ansi.bold(heading), '╮'),
-      ...page,
-      ...choiceLines,
-      bar('╰', ansi.fg('faint', footer), '╯'),
-    ]
+    const hints = keyHints(
+      [
+        { key: '↑↓', label: tt('permission.hint.select', locale) },
+        { key: '⏎', label: tt('permission.hint.confirm', locale) },
+        ...(page.length > 0
+          ? [
+              {
+                key: 'pgup/pgdn',
+                label: tt('permission.hint.details', locale, {
+                  start: question.detailOffset + 1,
+                  end: question.detailOffset + page.length,
+                  total: details.length,
+                }),
+              },
+            ]
+          : []),
+        { key: 'esc', label: tt('permission.hint.close', locale) },
+      ],
+      ansi,
+      width - 4,
+    )
+    return [bar('╭', heading, '╮'), ...page, ...choiceLines, bar('╰', hints, '╯')]
   }
 }

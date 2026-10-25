@@ -68,7 +68,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       await vi.waitFor(
         async () =>
           expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-            'Approval: Write file · receipt.txt',
+            'Needs approval · Write file',
           ),
         { timeout: 10_000 },
       )
@@ -91,12 +91,12 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         term.feed('\x1b[A')
         await Promise.resolve()
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          '❯ 2. Always allow in this session',
+          '❯ [2] Always allow in this session',
         )
         term.feed('\x1b[A')
         await Promise.resolve()
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          '❯ 1. Allow once',
+          '❯ [1] Allow once',
         )
       } else {
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
@@ -155,7 +155,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
       if (mode !== 'stop') {
         await Promise.resolve()
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).not.toContain(
-          'Approval: Write file · receipt.txt',
+          'Needs approval · Write file',
         )
       }
     } finally {

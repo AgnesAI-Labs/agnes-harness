@@ -18,12 +18,12 @@ const request: PermissionRequest = {
 it('defaults Enter to rejection and only explicit option selection permits approval', async () => {
   const modal = new PermissionModal(vi.fn())
   const first = modal.ask(request, { signal: new AbortController().signal })
-  expect(modal.render(80).join('\n')).toContain('❯ 2. Reject')
+  expect(modal.render(80).join('\n')).toContain('❯ [2] Reject')
   // Title and footer sit in the frame's borders, so the frame adds no rows.
   const framed = modal.render(80)
   expect(framed).toHaveLength(5)
-  expect(framed[0]).toMatch(/^╭ Approval: write ─+╮$/)
-  expect(framed.at(-1)).toMatch(/^╰ Esc: dismiss · PgUp\/PgDn details 1-1\/1 ─+╯$/)
+  expect(framed[0]).toMatch(/^╭ ▲ Needs approval · write ─+╮$/)
+  expect(framed.at(-1)).toMatch(/^╰ ↑↓ select {2}⏎ confirm {2}pgup\/pgdn details 1-1\/1 {2}esc close ─+╯$/)
   expect(framed.every((line) => displayWidth(line) === 80 && /^[╭│╰].*[╮│╯]$/.test(line))).toBe(true)
   modal.handleInput('\r')
   expect(await first).toEqual({ optionId: 'r' })
@@ -38,7 +38,7 @@ it('defaults Enter to rejection and only explicit option selection permits appro
     { signal: new AbortController().signal },
   )
   const withInput = modal.render(80)
-  expect(withInput.join('\n').split('Approval: write')).toHaveLength(2)
+  expect(withInput.join('\n').split('Needs approval · write')).toHaveLength(2)
   expect(withInput[1]).toContain('{')
   expect(withInput.at(-1)).toContain('details 1-3/3')
   modal.handleInput('\r')
@@ -51,7 +51,7 @@ it('cancels a queued question without dismissing the active question, and reject
   const second = modal.ask({ ...request, toolCall: { title: 'other' } }, { signal: ac.signal })
   ac.abort()
   expect(await second).toEqual({ unanswered: 'detached' })
-  expect(modal.render(80).join('\n')).toContain('Approval: write')
+  expect(modal.render(80).join('\n')).toContain('Needs approval · write')
   modal.close()
   expect(await first).toEqual({ unanswered: 'detached' })
   expect(await modal.ask(request, { signal: new AbortController().signal })).toEqual({
@@ -115,8 +115,8 @@ it('localizes Chinese approval chrome and bounds the rejection-only row at extre
   )
 
   const normal = modal.render(40).join('\n')
-  expect(normal).toContain('审批: 工具请求')
-  expect(normal).toContain('Esc：关闭 · PgUp/PgDn 查看详情')
+  expect(normal).toContain('需要审批 · 工具请求')
+  expect(normal).toContain('esc 关闭')
 
   rows = 3
   for (const width of [1, 2, 10, 20, 40]) {
@@ -189,8 +189,8 @@ it('shows the change of an edit first, the raw input after it, and scope-stating
   expect(text).toContain('2 - two')
   expect(text.indexOf('2 - two')).toBeLessThan(text.indexOf('"oldText"'))
   expect(text).toContain('原始输入')
-  expect(text).toContain('2. 本会话内总是允许')
-  expect(text).toContain('❯ 3. 拒绝') // the default is still the rejection
+  expect(text).toContain('[2] 本会话内总是允许')
+  expect(text).toContain('❯ [3] 拒绝') // the default is still the rejection
   modal.handleInput('\r')
   expect(await pending).toEqual({ optionId: 'r' })
 })
@@ -243,6 +243,6 @@ it('names a request without a title by its plain arguments', () => {
     { ...request, toolCall: { rawInput: { path: 'a b.txt', content: { nested: true }, n: 3 } } },
     { signal: new AbortController().signal },
   )
-  expect(modal.render(80)[0]).toContain('Approval: path=a b.txt, n=3')
+  expect(modal.render(80)[0]).toContain('Needs approval · path=a b.txt, n=3')
   modal.close()
 })

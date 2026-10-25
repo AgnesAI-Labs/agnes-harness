@@ -120,14 +120,14 @@ async function scenario(openPicker: boolean) {
     release()
     const modal = app as unknown as { modal: { handleInput(data: string): boolean; questions: unknown[] } }
     await vi.waitFor(() => expect(modal.modal.questions.length).toBe(1), { timeout: 5_000 })
-    await vi.waitFor(async () => expect(await screen()).toMatch(/\d\. Reject/))
+    await vi.waitFor(async () => expect(await screen()).toMatch(/\[\d\] Reject/))
     const before = await screen()
     // Approval keys count only after the card has sat untouched for 600 ms (approval-settle.ts).
     await sleep(700)
     term.feed('1')
     await sleep(800)
     return {
-      allowOnceOnScreen: before.includes('1. Allow once'),
+      allowOnceOnScreen: before.includes('[1] Allow once'),
       pickerOnScreen: before.includes('Select Session'),
       usageRowOnScreen: /session {2}in|Session total|会话/i.test(before),
       written: existsSync(join(root, 'receipt.txt')),

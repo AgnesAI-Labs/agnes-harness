@@ -86,7 +86,7 @@ it.each(['overwrite', 'create'])(
       app = new TuiApp({ session, term, header: 'Agnes' })
       await app.start()
       const turn = app.submit('write the report').catch((error: unknown) => error)
-      await vi.waitFor(async () => expect(await screen(term)).toContain('Approval: Write file'), {
+      await vi.waitFor(async () => expect(await screen(term)).toContain('Needs approval · Write file'), {
         timeout: 10_000,
       })
       // Approval keys count only after the card has sat untouched for 600 ms (approval-settle.ts).

@@ -465,11 +465,11 @@ describe('key bindings: approval modal', () => {
     modal.handleInput('\x1b[5~')
     expect(footer()).toBe(before)
     const selected = () => modal.render(80).find((l) => l.includes('❯')) ?? ''
-    expect(selected()).toContain('3.')
+    expect(selected()).toContain('[3]')
     modal.handleInput('\x1b[A')
-    expect(selected()).toContain('2.')
+    expect(selected()).toContain('[2]')
     modal.handleInput('\x1b[B')
-    expect(selected()).toContain('3.')
+    expect(selected()).toContain('[3]')
   })
 })
 

@@ -1643,7 +1643,7 @@ it('draws an open picker in the composer slot, and a pending approval brings the
     const prompt = 'What do you want to do?'
     await vi.waitFor(async () => expect(await screen()).toContain(prompt))
     for (const key of ['/theme', '\r']) term.feed(key)
-    await vi.waitFor(async () => expect(await screen()).toContain('esc close'))
+    await vi.waitFor(async () => expect(await screen()).toContain('Dark colour-blind'))
     // One prompt on screen: the picker has the keys, so the composer is not drawn.
     expect(await screen()).not.toContain(prompt)
     endpoint.push({
@@ -1662,7 +1662,7 @@ it('draws an open picker in the composer slot, and a pending approval brings the
     // The approval stays above a visible composer; the picker waits behind it.
     await vi.waitFor(async () => expect(await screen()).toContain('Allow once'))
     expect(await screen()).toContain(prompt)
-    expect(await screen()).not.toContain('esc close')
+    expect(await screen()).not.toContain('Dark colour-blind')
   } finally {
     await app?.stop()
     await client.close()
