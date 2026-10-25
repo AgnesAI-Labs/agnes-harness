@@ -111,6 +111,7 @@ export class Editor implements Component, VimTarget {
   // The text before the cursor when Esc closed the `@` menu: it stays closed until that changes.
   private dismissed: string | undefined
   private mentionQuery: string | undefined
+  private slashQuery: string | undefined
   // Chip text to the pasted text it stands for; lives only as long as this process.
   private readonly pastes = new Map<string, string>()
   private pasteCount = 0
@@ -599,6 +600,8 @@ export class Editor implements Component, VimTarget {
       const of = this.o.menuInfo?.(name)?.aliasOf
       return !(of && candidates.includes(of))
     })
+    if (this.text !== this.slashQuery) this.menuIndex = 0
+    this.slashQuery = this.text
     this.menuIndex = Math.min(this.menuIndex, rows.length - 1)
     return rows
   }

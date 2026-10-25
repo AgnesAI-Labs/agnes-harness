@@ -378,6 +378,15 @@ describe('Editor slash menu', () => {
     expect(submitted).toEqual(['/quit'])
   })
 
+  it('typing more of the command puts the highlight back on the top match', () => {
+    const e = new Editor({ onSubmit: () => {}, complete: slashComplete })
+    type(e, '/')
+    for (let i = 0; i < 4; i++) e.handleInput('\x1b[B') // down to /refine
+    type(e, 're')
+    e.handleInput('\t')
+    expect(e.text).toBe('/resume ')
+  })
+
   it('tab accepts the highlighted candidate the same way enter does', () => {
     const e = new Editor({ onSubmit: () => {}, complete: slashComplete })
     type(e, '/h')
