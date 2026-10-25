@@ -30,7 +30,7 @@ const windowStart = (selected: number, count: number, total: number): number =>
 /** What an option says: the kind's own words, with the scope an ACP grant has; unknown kinds keep their name. */
 function optionLabel(option: PermissionRequest['options'][number], locale: Locale): string {
   if (option.kind === 'allow_once') return t('approval.allowOnce', locale)
-  if (option.kind === 'allow_always') return tt('approval.allowAlways', locale)
+  if (option.kind === 'allow_always') return t('approval.allowSession', locale)
   if (option.kind === 'reject_once') return t('approval.reject', locale)
   if (option.kind === 'reject_always') return tt('approval.rejectAlways', locale)
   return escapeControl(option.name)

@@ -91,7 +91,7 @@ it.each(['allow', 'reject', 'stop', 'disconnect', 'paged_allow'])(
         term.feed('\x1b[A')
         await Promise.resolve()
         expect((await screenOf(term, dimensions.columns, dimensions.rows)).join('\n')).toContain(
-          '❯ [2] Always allow in this session',
+          '❯ [2] Allow for this session',
         )
         term.feed('\x1b[A')
         await Promise.resolve()

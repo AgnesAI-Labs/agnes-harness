@@ -206,7 +206,7 @@ it('shows the change of an edit first, the raw input after it, and scope-stating
   expect(text).toContain('2 - two')
   expect(text.indexOf('2 - two')).toBeLessThan(text.indexOf('"oldText"'))
   expect(text).toContain('原始输入')
-  expect(text).toContain('[2] 本会话内总是允许')
+  expect(text).toContain('[2] 本会话允许')
   expect(text).toContain('❯ [3] 拒绝') // the default is still the rejection
   modal.handleInput('\r')
   expect(await pending).toEqual({ optionId: 'r' })
