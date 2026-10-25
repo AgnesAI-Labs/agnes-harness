@@ -2,6 +2,7 @@ import type { ActionId } from './keymap.js'
 import type { Locale } from './locale.js'
 import { CHROME_DICT, type ChromeKey } from './locale-chrome.js'
 import { CONFIG_DICT, type ConfigKey } from './locale-config.js'
+import { DIALOG_DICT, type DialogKey } from './locale-dialog.js'
 import { DISPLAY_DICT, type DisplayKey } from './locale-display.js'
 import { PAGER_DICT, type PagerKey } from './locale-pager.js'
 import { PERMISSIONS_DICT, type PermissionsKey } from './locale-permissions.js'
@@ -46,6 +47,7 @@ export type KeysKey =
   | 'commands.keys'
   | 'commands.keysSummary'
   | PagerKey
+  | DialogKey
   | ChromeKey
   | VimKey
   | ConfigKey
@@ -160,6 +162,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'commands.keys': 'List the key bindings in force, marking overrides from keybindings.json',
     'commands.keysSummary': 'List key bindings',
     ...PAGER_DICT.en,
+    ...DIALOG_DICT.en,
     ...CHROME_DICT.en,
     ...VIM_DICT.en,
     ...CONFIG_DICT.en,
@@ -273,6 +276,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     'commands.keys': '列出当前生效的键位，并标出 keybindings.json 的覆盖',
     'commands.keysSummary': '列出键位',
     ...PAGER_DICT['zh-CN'],
+    ...DIALOG_DICT['zh-CN'],
     ...CHROME_DICT['zh-CN'],
     ...VIM_DICT['zh-CN'],
     ...CONFIG_DICT['zh-CN'],

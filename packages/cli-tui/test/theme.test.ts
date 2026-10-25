@@ -55,7 +55,7 @@ describe('TUI themes', () => {
     picker.show('dark')
     for (const ch of 'MO') picker.handleInput(ch)
     const text = picker.render(60).join('\n')
-    expect(text).toContain('Filter: MO (1/6)')
+    expect(text).toContain('⌕ MO  1/6')
     expect(text).not.toContain('Dark')
     picker.handleInput('\r')
     expect(choose).toHaveBeenCalledWith('mono')

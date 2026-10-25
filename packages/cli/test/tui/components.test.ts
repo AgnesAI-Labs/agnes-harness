@@ -5,6 +5,7 @@ import { Box } from '../../src/tui/components/box.js'
 import { fitLine } from '../../src/tui/components/line.js'
 import { List } from '../../src/tui/components/list.js'
 import { Loader } from '../../src/tui/components/loader.js'
+import { FilterSelect } from '@agnes/cli-tui'
 import { Select } from '../../src/tui/components/select.js'
 import { Renderer } from '../../src/tui/renderer.js'
 import { displayWidth, FakeTerminal } from '../../src/tui/terminal.js'
@@ -86,12 +87,15 @@ it('Select windows a long dynamic list around the active option', () => {
   const select = new Select({
     options: Array.from({ length: 12 }, (_, i) => ({ id: String(i + 1), label: `model-${i + 1}` })),
     onChoose: vi.fn(),
-    maxRows: () => 3,
+    maxRows: () => 5,
   })
   for (let i = 0; i < 5; i++) select.handleInput('\x1b[B')
   const lines = select.render(20)
-  expect(lines).toHaveLength(3)
-  expect(lines[2]).toContain('❯ 6. model-6')
+  // The scroll hints take rows from the budget, so the list never outgrows it.
+  expect(lines).toHaveLength(5)
+  expect(lines[0]).toContain('↑ 3 more')
+  expect(lines[3]).toContain('❯ 6. model-6')
+  expect(lines[4]).toContain('↓ 6 more')
   expect(lines.join('\n')).not.toContain('model-1')
 })
 it('Select paints the chosen row across its width and leaves the others plain', () => {
@@ -106,11 +110,42 @@ it('Select paints the chosen row across its width and leaves the others plain', 
     onChoose: vi.fn(),
   })
   select.handleInput('\x1b[B')
-  expect(select.render(12)).toEqual([
-    ansi.bold('pick        '),
-    '  1. one    ',
-    ansi.bg('selection', ansi.bold(ansi.fg('accent', '❯ 2. two    '))),
-  ])
+  const [title, plain, chosen] = select.render(12)
+  expect(title).toBe(ansi.bold('pick        '))
+  expect(plain).toContain('one')
+  expect(plain).not.toContain('\x1b[48')
+  expect(chosen).toBe(ansi.bg('selection', ansi.bold(ansi.fg('accent', '❯ 2. two    '))))
+})
+it('Select aligns a description column, hides it when narrow and marks the current option', () => {
+  const select = new Select({
+    options: [
+      { id: 'a', label: 'auto', description: 'follow the terminal', current: true },
+      { id: 'b', label: 'dark-daltonized', description: 'dark, colour-blind safe' },
+    ],
+    onChoose: vi.fn(),
+  })
+  const wide = select.render(60)
+  expect(wide[0]).toContain('auto ✓')
+  expect(wide[0]?.indexOf('follow')).toBe(wide[1]?.indexOf('dark, colour'))
+  const narrow = select.render(49).join('\n')
+  expect(narrow).toContain('auto ✓')
+  expect(narrow).not.toContain('follow')
+})
+it('FilterSelect shows the query with a count and a faint empty state when nothing matches', () => {
+  const ansi = new TuiTheme('dark').ansi(createAnsi('truecolor'))
+  const pick = new FilterSelect({
+    options: [{ id: 'a', label: 'alpha', search: 'hidden-id' }],
+    ansi,
+    onChoose: vi.fn(),
+  })
+  for (const ch of 'zz') pick.handleInput(ch)
+  const [filter, empty] = pick.render(40)
+  expect(filter).toContain('⌕ zz  0/1')
+  expect(empty).toContain('No matches')
+  expect(empty).toContain('\x1b[3m')
+  pick.handleInput('\x1b')
+  for (const ch of 'hidden') pick.handleInput(ch)
+  expect(pick.render(40).join('\n')).toContain('alpha')
 })
 it('List snapshots its inputs and Loader uses explicit ticks with a terminal stopped frame', () => {
   const items = ['a', 'b']
