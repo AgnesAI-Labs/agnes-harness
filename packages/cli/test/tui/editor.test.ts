@@ -1239,6 +1239,22 @@ describe('Editor external edit', () => {
     expect(e.text).toBe('draft')
     expect(new Editor({ onSubmit() {} }).handleInput('\x07')).toBe(true)
   })
+
+  it('taking a Ctrl-R match replaces the draft as one undoable step and ends the typing run', () => {
+    const e = new Editor({ onSubmit() {} })
+    type(e, 'old one')
+    e.handleInput('\r')
+    type(e, 'draft')
+    e.handleInput('\x12')
+    type(e, 'old')
+    e.handleInput('\r')
+    expect(e.text).toBe('old one')
+    type(e, 'x')
+    e.handleInput('\x1a')
+    expect(e.text).toBe('old one')
+    e.handleInput('\x1a')
+    expect(e.text).toBe('draft')
+  })
 })
 
 describe('Editor vim mode', () => {

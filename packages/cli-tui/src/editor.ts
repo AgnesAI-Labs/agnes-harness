@@ -522,7 +522,7 @@ export class Editor implements Component, VimTarget {
         return true
       default: {
         this.search = undefined
-        if (search.hit !== undefined) this.setText(search.hit)
+        if (search.hit !== undefined) this.replaceDraft(search.hit)
         else {
           this.text = search.draft.text
           this.cursor = search.draft.cursor
