@@ -94,20 +94,36 @@ describe('ApprovalCard prefix offer', () => {
   })
 })
 
-it('keeps the full single-line review subject readable before the choices', () => {
-  const subjectText = 'x'.repeat(100000) + '<EXACT-TAIL>'
-  const card = new ApprovalCard(
+it('shows the whole raw subject, last line included, and every option on its own row', () => {
+  const subjectText = Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n')
+  const lines = new ApprovalCard(
     { ...node(['allow_once', 'reject_once']), subjectText },
-    {
-      ansi: PLAIN,
-      onDecide: async () => undefined,
-    },
+    { ansi: PLAIN, onDecide: async () => undefined },
+  ).render(80)
+  const text = lines.join('\n')
+  expect(text).toContain('line 19')
+  expect(text).not.toContain('more lines')
+  expect(lines.filter((l) => l.includes('[1]'))).toHaveLength(1)
+  expect(lines.filter((l) => l.includes('[2]'))).toHaveLength(1)
+  expect(text).not.toContain('decision ')
+})
+
+it('keeps the indentation of the raw subject and shows a shell command on its own rows', () => {
+  const subjectText = JSON.stringify(
+    { call: { name: 'shell', args: { command: 'rm -rf tmp', cwd: '/work' } } },
+    null,
+    2,
   )
-  const lines = card.render(80)
-  const subject = lines.slice(2, -1)
-  expect(subject.every((line) => line.startsWith(' │ '))).toBe(true)
-  expect(subject.map((line) => line.slice(3).trimEnd()).join('')).toBe(subjectText)
-  expect(lines.at(-1)).toContain('[1]')
+  const lines = new ApprovalCard(
+    { ...node(['allow_once', 'reject_once']), toolName: 'shell', summary: 'rm -rf tmp', subjectText },
+    { ansi: PLAIN, onDecide: async () => undefined },
+  )
+    .render(80)
+    .map((l) => l.trimEnd())
+  expect(lines[0]).toContain('Needs approval · shell')
+  expect(lines).toContain(' │ $ rm -rf tmp')
+  expect(lines).toContain(' │ /work')
+  expect(lines.some((l) => l.startsWith(' │     "name": "shell"'))).toBe(true)
 })
 
 // The diff is a reading aid: a write may replace an existing file, and arguments beyond the diffed
@@ -307,20 +323,36 @@ describe('ApprovalCard single keys and the misclick guard', () => {
     expect(onDecide).not.toHaveBeenCalled()
   })
 
-  it('dims the hints until settled and lists the letters beside the numbers', () => {
+  it('dims the hints until settled and lists the letters beside the numbers, one option per row', () => {
     let lit = false
     const c = new ApprovalCard(node(['allow_once', 'allow_always', 'reject_once']), {
       ansi: new TuiTheme('dark').ansi(createAnsi('truecolor')),
       onDecide: decide(),
       settled: () => lit,
     })
-    const row = () => c.render(100).at(-1) ?? ''
-    const dim = row()
-    expect(dim).toContain('Allow once (y)')
-    expect(dim).toContain('Allow for this session (a)')
-    expect(dim).toContain('Reject (n)')
+    const rows = () => c.render(100).filter((l) => /Allow once|Allow for this session|Reject/.test(l))
+    const dim = rows()
+    expect(dim).toHaveLength(4)
+    expect(dim[0]).toContain('y')
+    expect(dim[1]).toContain('a')
+    expect(dim[2]).toContain('n')
     lit = true
-    expect(row()).not.toBe(dim)
+    expect(rows()).not.toEqual(dim)
+  })
+
+  it('shows a letter only where the key works now', () => {
+    const rows = (letters: boolean) =>
+      new ApprovalCard(node(['allow_once', 'allow_permanent', 'reject_once']), {
+        ansi: PLAIN,
+        onDecide: decide(),
+        letters: () => letters,
+      })
+        .render(100)
+        .filter((l) => /\[[123]\]/.test(l))
+        .map((l) => l.trimEnd())
+        .join('\n')
+    expect(rows(true)).toMatch(/\[1\] Allow once\s+y\n.*profile\n.*\[3\] Reject\s+n$/)
+    expect(rows(false)).not.toMatch(/ [yn]$/m)
   })
 })
 

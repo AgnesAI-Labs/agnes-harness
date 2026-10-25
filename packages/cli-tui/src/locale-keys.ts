@@ -1,5 +1,6 @@
 import type { ActionId } from './keymap.js'
 import type { Locale } from './locale.js'
+import { APPROVAL_DICT, type ApprovalKey } from './locale-approval.js'
 import { CHROME_DICT, type ChromeKey } from './locale-chrome.js'
 import { CHROME_HINT_DICT, type ChromeHintKey } from './locale-chrome-hints.js'
 import { CONFIG_DICT, type ConfigKey } from './locale-config.js'
@@ -54,6 +55,7 @@ export type KeysKey =
   | VimKey
   | ConfigKey
   | PermissionsKey
+  | ApprovalKey
   | TrustKey
   | DisplayKey
 
@@ -170,6 +172,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     ...VIM_DICT.en,
     ...CONFIG_DICT.en,
     ...PERMISSIONS_DICT.en,
+    ...APPROVAL_DICT.en,
     ...TRUST_DICT.en,
     ...DISPLAY_DICT.en,
   },
@@ -285,6 +288,7 @@ export const KEYS_DICT: Record<Locale, Record<KeysKey, string>> = {
     ...VIM_DICT['zh-CN'],
     ...CONFIG_DICT['zh-CN'],
     ...PERMISSIONS_DICT['zh-CN'],
+    ...APPROVAL_DICT['zh-CN'],
     ...TRUST_DICT['zh-CN'],
     ...DISPLAY_DICT['zh-CN'],
   },

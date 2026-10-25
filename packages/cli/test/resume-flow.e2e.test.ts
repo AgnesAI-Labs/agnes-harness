@@ -107,9 +107,7 @@ describe('parked approval across the CLI one-shot boundary', () => {
       const term = new FakeTerminal({ columns: 100, rows: 30 })
       app = new TuiApp({ session, term, header: 'Agnes' })
       await app.start()
-      await vi.waitFor(async () =>
-        expect((await screenOf(term, 100, 30)).join('\n')).toContain('Awaiting approval: Run command'),
-      )
+      await vi.waitFor(async () => expect((await screenOf(term, 100, 30)).join('\n')).toContain('Allow once'))
       // Approval keys count only after the card has sat untouched for 600 ms (approval-settle.ts).
       await new Promise((resolve) => setTimeout(resolve, 700))
       term.feed('1')
@@ -126,7 +124,7 @@ describe('parked approval across the CLI one-shot boundary', () => {
         )
       })
       await vi.waitFor(async () =>
-        expect((await screenOf(term, 100, 30)).join('\n')).toContain('allowed-once'),
+        expect((await screenOf(term, 100, 30)).join('\n')).toContain('Allowed once'),
       )
 
       // A decision row alone is not a resumed tool. Queueing a fresh prompt exercises the real

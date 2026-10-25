@@ -3002,7 +3002,7 @@ it('a terminal close stops a parked approval card from deciding its ticket on th
     ],
   })
   try {
-    await vi.waitFor(async () => expect(await h.screen()).toContain('decision tk-parke'))
+    await vi.waitFor(async () => expect(await h.screen()).toContain('Allow once'))
     await h.stopDaemon()
     h.term.feed('1')
     await new Promise((resolve) => setTimeout(resolve, 300))
