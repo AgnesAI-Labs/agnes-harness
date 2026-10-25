@@ -4,6 +4,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { ARTIFACT_READ_RPC_MAX_BYTES, type ArtifactReadResult, type ArtifactRef } from '@agnes/protocol'
 import type { Client, Session } from '@agnes/sdk'
 import type { TuiApp } from './app.js'
+import { localPath } from './cd-command.js'
 import type { SlashResult } from './commands.js'
 import { escapeControl } from './component.js'
 import { tt } from './locale-extended.js'
@@ -182,7 +183,10 @@ export async function deliverablesSlash(app: TuiApp, line: string): Promise<Slas
     return { text: tt('deliverables.usage', locale) }
   const file = findDeliverable(files, key)
   if (!file) return { text: tt('deliverables.unknown', locale, { key: oneLine(key) }) }
-  const saved = await saveDeliverable(s.client, s.id, file, { cwd: app.cwd, ...(out ? { out } : {}) })
+  const saved = await saveDeliverable(s.client, s.id, file, {
+    cwd: app.cwd,
+    ...(out ? { out: localPath(app, out) } : {}),
+  })
   return {
     text: tt('deliverables.saved', locale, {
       path: oneLine(saved.path),

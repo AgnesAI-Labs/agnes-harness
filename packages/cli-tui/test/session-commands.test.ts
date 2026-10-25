@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join, resolve } from 'node:path'
 import { type ContentBlock, rpcError } from '@agnes/protocol'
@@ -414,7 +414,17 @@ describe('/deliverables', () => {
         tt('deliverables.unknown', 'en', { key: '7' }),
       )
       expect((await runSlash(app, '/deliverables save')).text).toBe(tt('deliverables.usage', 'en'))
+      // `~` names the home directory, as in /cd and /export, not a file literally called "~".
+      const home = join(dir, 'home')
+      mkdirSync(home)
+      vi.stubEnv('HOME', home)
+      await runSlash(app, '/deliverables save 1 ~')
+      expect(readFileSync(join(home, 'r[31m.txt'))).toEqual(body)
+      await runSlash(app, '/deliverables save 1 ~/copy.txt')
+      expect(readFileSync(join(home, 'copy.txt'))).toEqual(body)
+      expect(existsSync(join(dir, '~'))).toBe(false)
     } finally {
+      vi.unstubAllEnvs()
       rmSync(dir, { recursive: true, force: true })
     }
   })

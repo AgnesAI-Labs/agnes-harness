@@ -2475,7 +2475,7 @@ describe('app.ts wiring: key routing through the editor reaches the real command
 })
 
 it('uploads a CLI path with spaces through bounded original intake and preserves a typed refusal', async () => {
-  const { mkdtemp, writeFile, rm } = await import('node:fs/promises')
+  const { mkdir, mkdtemp, writeFile, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
   const { join } = await import('node:path')
   const { IncrementalSha256 } = await import('@agnes/protocol')
@@ -2519,6 +2519,15 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
       ['chunk', 'original', 'main'],
       ['finish', 'original', 'main'],
     ])
+    // `~` is the home directory, as in /cd and /import.
+    const home = join(dir, 'home')
+    await mkdir(home)
+    await writeFile(join(home, 'h.txt'), bytes)
+    vi.stubEnv('HOME', home)
+    calls.length = 0
+    await runSlash(app, '/attach ~/h.txt')
+    vi.unstubAllEnvs()
+    expect(calls.map((call) => call.operation)).toEqual(['start', 'chunk', 'finish'])
     // Newly supported types carry their own MIME; an unlisted extension travels as the generic type.
     for (const [name, mime] of [
       ['pic.webp', 'image/webp'],

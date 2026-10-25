@@ -230,7 +230,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
   if (cmd === '/attach') {
     const path = line.trim().slice('/attach'.length).trim()
     if (!path) throw new Error('Usage: /attach <path>')
-    return { content: [await uploadLocalAttachment(s, app.cwd, path, app.attachmentSignal)] }
+    return { content: [await uploadLocalAttachment(s, app.cwd, localPath(app, path), app.attachmentSignal)] }
   }
   const computerUseStatus = async (): Promise<SlashResult> => {
     const report = await c.call<ComputerUseStatusResult>('_agnes/v1/computerUse.status', {})
