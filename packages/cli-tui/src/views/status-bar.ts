@@ -18,12 +18,15 @@ import { RAIL_MIN_WIDTH } from './composer-rail.js'
 export type LinkState = 'ok' | 'reconnecting' | 'catching-up'
 export type NoticeTone = 'info' | 'success' | 'warning' | 'error'
 const NOTICE_TONE = { info: 'info', success: 'success', warning: 'warning', error: 'danger' } as const
-/** The mark in front of a notice, and the tone it takes; the words keep the notice's own tone. */
+/**
+ * The mark in front of a notice, and the tone it takes; the words keep the notice's own tone. Info has
+ * none: the row already joins its parts with ` · `, so a `·` mark would read as an empty part.
+ */
 const NOTICE_MARK: Record<NoticeTone, [string, Tone]> = {
-  error: ['✗', 'danger'],
-  warning: ['▲', 'warning'],
-  success: ['✓', 'success'],
-  info: ['·', 'muted'],
+  error: ['✗ ', 'danger'],
+  warning: ['▲ ', 'warning'],
+  success: ['✓ ', 'success'],
+  info: ['', 'muted'],
 }
 // Keyed by string: the level arrives in an extension's slot payload.
 const LEVEL_TONE: Record<string, Tone> = { info: 'info', warn: 'warning', error: 'danger' }
@@ -131,7 +134,7 @@ export class StatusBar implements Component {
     const link = t(this.link === 'reconnecting' ? 'status.reconnecting' : 'status.catchingUp', this.locale)
     const [mark, markTone] = NOTICE_MARK[this.noticeTone]
     const notice = this.notice
-      ? `${this.ansi.fg(markTone, mark)} ${this.ansi.fg(NOTICE_TONE[this.noticeTone], escapeControl(this.notice))}`
+      ? `${mark ? this.ansi.fg(markTone, mark) : ''}${this.ansi.fg(NOTICE_TONE[this.noticeTone], escapeControl(this.notice))}`
       : ''
     const parts = [
       this.raw ? this.ansi.bold(this.ansi.fg('warning', 'RAW')) : '',
@@ -164,7 +167,7 @@ export class StatusBar implements Component {
         ...(context ? [fitLine(context, width)] : []),
         ...wrapText(escapeControl(this.notice), Math.max(1, width - 2)).map((line, i) =>
           fitLine(
-            `${i === 0 ? this.ansi.fg(markTone, `${mark} `) : '  '}${this.ansi.fg(NOTICE_TONE.error, line)}`,
+            `${i === 0 ? this.ansi.fg(markTone, mark) : '  '}${this.ansi.fg(NOTICE_TONE.error, line)}`,
             width,
           ),
         ),

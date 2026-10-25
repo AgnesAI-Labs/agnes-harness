@@ -11,14 +11,14 @@ const PLAIN = new TuiTheme('mono').ansi(createAnsi('none'))
 
 describe('status bar and header (cli 稿 §9.2)', () => {
   it.each([
-    ['error', '✗'],
-    ['warning', '▲'],
-    ['success', '✓'],
-    ['info', '·'],
-  ] as const)('marks a %s notice with %s', (tone, mark) => {
+    ['error', '✗ '],
+    ['warning', '▲ '],
+    ['success', '✓ '],
+    ['info', ''],
+  ] as const)('marks a %s notice with "%s"', (tone, mark) => {
     const s = new StatusBar(PLAIN)
     s.setNotice('something happened', tone)
-    expect((s.render(80)[0] as string).startsWith(`${mark} something happened`)).toBe(true)
+    expect((s.render(80)[0] as string).startsWith(`${mark}something happened`)).toBe(true)
   })
 
   it('composes slot lines, budget, parked and link state', () => {
@@ -126,7 +126,7 @@ describe('status bar and header (cli 稿 §9.2)', () => {
     plain.setLink('catching-up')
     const plainLine = plain.render(100)[0] as string
     expect(plainLine).not.toContain('\x1b')
-    expect(plainLine).toContain('credits 92/100 · 92% ⚠ · · n · ⟳ catching up')
+    expect(plainLine).toContain('credits 92/100 · 92% ⚠ · n · ⟳ catching up')
   })
 
   it('localizes fixed parked and link-state copy without changing slot content', () => {
