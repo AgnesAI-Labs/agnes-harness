@@ -30,6 +30,7 @@ const denied = (error: unknown) => code(error) === -32006 || dataCode(error) ===
  */
 export class BangShell {
   private running: { session: Session; jobId: string; presses: number } | undefined
+  private starting = false
   private count = 0
 
   constructor(
@@ -63,9 +64,10 @@ export class BangShell {
     if (!command) return refuse('bang.empty')
     if (command.includes('\0') || Buffer.byteLength(command) > MAX_COMMAND_BYTES)
       return refuse('bang.tooLong', { max: MAX_COMMAND_BYTES })
-    if (this.running) return refuse('bang.busy')
+    if (this.running || this.starting) return refuse('bang.busy')
     const session = app.session
     let job: SessionJob
+    this.starting = true
     try {
       job = await session.jobsRun(command)
     } catch (error) {
@@ -73,6 +75,8 @@ export class BangShell {
       if (denied(error)) return refuse('bang.denied')
       app.editor.setText(text)
       throw error
+    } finally {
+      this.starting = false
     }
     this.running = { session, jobId: job.id, presses: 0 }
     const started = this.clock.now()

@@ -169,6 +169,19 @@ describe('! and !! shell lines', () => {
     await first
   })
 
+  it('refuses a second command submitted while the first is still starting', async () => {
+    let started: (value: SessionJob) => void = () => {}
+    const h = harness([done()], { run: () => new Promise<SessionJob>((resolve) => (started = resolve)) })
+    const first = h.shell.run('!sleep 99')
+    await new Promise((resolve) => setImmediate(resolve))
+    await h.shell.run('!ls')
+    expect(h.commands).toEqual(['sleep 99'])
+    expect(h.notices.at(-1)?.[0]).toMatch(/still running/)
+    expect(h.editor.text).toBe('!ls')
+    started(job())
+    await first
+  })
+
   it.each([
     [
       'an older daemon without the operation',
