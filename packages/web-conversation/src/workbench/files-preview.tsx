@@ -31,6 +31,9 @@ function Rendered({ kind, text, title }: { kind: RenderedKind; text: string; tit
   )
 }
 
+/** How one previewed file is shown; the panel stores this per open tab and per session. */
+export type FileViewMode = 'source' | 'preview'
+
 /** One line of header, an optional change strip, then the file as numbered source or rendered. */
 export function FilePreview({
   context,
@@ -42,6 +45,10 @@ export function FilePreview({
   workspace,
   wrap,
   mention,
+  mode,
+  onModeChange,
+  scrollTop,
+  onScroll,
 }: {
   context: UiExtensionContext
   path: string
@@ -53,11 +60,13 @@ export function FilePreview({
   workspace: string | undefined
   wrap: boolean
   mention(path: string): void
+  mode: FileViewMode
+  onModeChange(mode: FileViewMode): void
+  /** The source scroll offset this file was left at; rendered previews do not restore scroll. */
+  scrollTop: number
+  onScroll(top: number): void
 }) {
   const { t } = context
-  const [mode, setMode] = useState<'source' | 'preview'>('source')
-  // biome-ignore lint/correctness/useExhaustiveDependencies: another file opens on its source.
-  useEffect(() => setMode('source'), [path])
   const segments = path.split('/')
   const name = segments.pop() ?? path
   const kind = renderedKind(path)
@@ -97,7 +106,7 @@ export function FilePreview({
               label={t('workbench.files.view')}
               value={mode}
               testId="file-view-mode"
-              onChange={setMode}
+              onChange={onModeChange}
               options={[
                 { value: 'source', label: t('workbench.files.view.source'), testId: 'file-view-source' },
                 { value: 'preview', label: t('workbench.files.view.preview'), testId: 'file-view-preview' },
@@ -165,9 +174,13 @@ export function FilePreview({
           <pre
             data-testid="file-preview"
             data-wrap={wrap || undefined}
-            ref={(element) =>
-              element?.style.setProperty('--workbench-gutter', `${String(lines).length + 1}ch`)
-            }
+            ref={(element) => {
+              if (!element) return
+              element.style.setProperty('--workbench-gutter', `${String(lines).length + 1}ch`)
+              // The panel remembers each unsaved scroll offset, so a switched tab returns where it was.
+              element.scrollTop = scrollTop
+            }}
+            onScroll={(event) => onScroll(event.currentTarget.scrollTop)}
             // biome-ignore lint/a11y/noNoninteractiveTabindex: the file preview scrolls on its own axis.
             tabIndex={0}
             role="region"

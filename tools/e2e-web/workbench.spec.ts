@@ -73,6 +73,8 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   await page.getByRole('button', { name: 'Collapse', exact: true }).click()
   await files.locator('[data-path="report.md"]').click()
   await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
+  await expect(page.getByTestId('file-tab')).toHaveCount(1)
+  await expect(page.getByTestId('file-tab-select')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('file-mention').click()
   await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toHaveValue('@report.md ')
   await turn(page, 'call read {"path":"report.md"}')
@@ -189,6 +191,77 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   await page.getByTestId('workbench-tab-files').press('Escape')
   await expect(files).toBeHidden()
   await expect(page.getByTestId('workbench-right-toggle')).toBeFocused()
+})
+
+test('file tabs open, switch, survive a reload and close to their neighbour', async ({ page, runtime }) => {
+  test.setTimeout(180_000)
+  // The extra files are written directly: the transcript of the screenshot test above stays unchanged.
+  await writeFile(join(runtime.workspace, 'notes.md'), 'Second tab\n')
+  for (const name of ['alpha.md', 'beta.md', 'gamma.md'])
+    await writeFile(join(runtime.workspace, name), `Content of ${name}\n`)
+  await page.addInitScript(() => {
+    if (location.protocol !== 'http:') return
+    if (!localStorage.getItem('agnes-locale')) localStorage.setItem('agnes-locale', 'en')
+    if (!localStorage.getItem('agnes-theme')) localStorage.setItem('agnes-theme', 'light')
+  })
+  await page.goto(runtime.url)
+  await chooseWorkspace(page, runtime)
+  await fresh(page)
+  const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
+  await composer.fill('Create a session for file tabs')
+  await composer.press('Enter')
+  await expect(page).toHaveURL(/session=/, { timeout: 40_000 })
+  await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-status', 'completed', {
+    timeout: 30_000,
+  })
+  await page.getByTestId('workbench-right-toggle').click()
+  await workbenchTab(page, 'files')
+  const files = page.getByTestId('files-panel')
+  // The tree row and the tab both carry data-path, so the row is named by its own test id.
+  const row = (path: string) => files.locator(`[data-testid="workspace-file"][data-path="${path}"]`)
+  await row('report.md').click()
+  await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
+  await row('notes.md').click()
+  await expect(page.getByTestId('file-tab')).toHaveCount(2)
+  await expect(page.getByTestId('file-preview')).toContainText('Second tab')
+  // The tree highlight follows the active tab, not the last click.
+  await expect(row('notes.md')).toHaveAttribute('aria-pressed', 'true')
+  await expect(row('report.md')).toHaveAttribute('aria-pressed', 'false')
+  await files
+    .locator('[data-testid="file-tab"][data-path="report.md"] [data-testid="file-tab-select"]')
+    .click()
+  await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
+  // The open list is per session and survives a reload; the file content is not stored.
+  await page.reload()
+  await expect(page.getByTestId('file-tab')).toHaveCount(2)
+  await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
+  // Closing the active tab activates its right neighbour.
+  await files
+    .locator('[data-testid="file-tab"][data-path="report.md"] [data-testid="file-tab-close"]')
+    .click()
+  await expect(page.getByTestId('file-tab')).toHaveCount(1)
+  await expect(page.getByTestId('file-preview')).toContainText('Second tab')
+  await files.locator('[data-testid="file-tab"][data-path="notes.md"] [data-testid="file-tab-close"]').click()
+  await expect(page.getByTestId('file-tab')).toHaveCount(0)
+  await expect(page.getByTestId('file-pane')).toHaveCount(0)
+  // At phone width the strip scrolls inside the dock; the page itself never scrolls sideways.
+  await page.setViewportSize({ width: 390, height: 812 })
+  for (const name of ['report.md', 'notes.md', 'alpha.md', 'beta.md', 'gamma.md']) await row(name).click()
+  await expect(page.getByTestId('file-tab')).toHaveCount(5)
+  const strip = page.getByTestId('file-tabs')
+  const layout = await strip.evaluate((node) => {
+    const active = node.querySelector<HTMLElement>('[data-testid="file-tab"][data-active="true"]')
+    const box = node.getBoundingClientRect()
+    const tab = active?.getBoundingClientRect()
+    return {
+      scrollable: node.scrollWidth > node.clientWidth,
+      pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      activeVisible: !!tab && tab.left >= box.left - 1 && tab.right <= box.right + 1,
+    }
+  })
+  expect(layout.scrollable).toBe(true)
+  expect(layout.pageOverflow).toBeLessThanOrEqual(1)
+  expect(layout.activeVisible).toBe(true)
 })
 
 test('session terminal survives UI detachment, follows agent output and honors preset denials', async ({

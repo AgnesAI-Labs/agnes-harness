@@ -11,7 +11,14 @@ import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ReviewFileAction } from '../src/workbench/changes-panel.js'
 import { fileType, formatSize, renderedKind } from '../src/workbench/file-types.js'
-import { FilesPanel, TREE_DEFAULT, TREE_WIDTH_KEY, WRAP_KEY } from '../src/workbench/files-panel.js'
+import {
+  FILE_TABS_KEY,
+  FilesPanel,
+  MAX_FILE_TABS,
+  TREE_DEFAULT,
+  TREE_WIDTH_KEY,
+  WRAP_KEY,
+} from '../src/workbench/files-panel.js'
 import { workbenchLocaleCatalog } from '../src/workbench/locales.js'
 
 type Entry = { name: string; kind: 'file' | 'directory' | 'other'; git?: string }
@@ -125,6 +132,7 @@ function mount(session: Session, extra: Record<string, unknown> = {}, headerId =
   return context
 }
 const q = (selector: string) => host.querySelector(selector) as HTMLElement | null
+const qa = (selector: string) => [...host.querySelectorAll<HTMLElement>(selector)]
 const click = (selector: string) => flushSync(() => (q(selector) as HTMLElement).click())
 async function open(path: string) {
   await vi.waitFor(() => expect(q(`[data-path="${path}"]`)).not.toBeNull())
@@ -501,10 +509,14 @@ describe('opening a file chip and naming a folder', () => {
     await vi.waitFor(() => expect(q('[data-path="src/util.ts"]')?.getAttribute('aria-pressed')).toBe('true'))
     await vi.waitFor(() => expect(session.workspaceRead).toHaveBeenCalledWith('src/util.ts'))
     unmountRegion(host)
+    // The file tab belongs to the session, so a fresh panel would restore it; start from an empty list.
+    localStorage.clear()
     mount(session, { selection: { path: 'src', directory: true } })
     await vi.waitFor(() => expect(q('[data-path="src"]')?.getAttribute('aria-expanded')).toBe('true'))
     expect(q('[data-testid="files-choose"]')).toBeNull()
+    // A folder mention opens the folder only; it neither previews nor creates a file tab.
     expect(q('.workbench-file-preview')).toBeNull()
+    expect(qa('[data-testid="file-tab"]')).toHaveLength(0)
     expect(q('.workbench-files-body')?.children).toHaveLength(1)
   })
 
@@ -715,4 +727,206 @@ it('clears a switched or unreadable file and ignores superseded reads', async ()
     ),
   )
   expect(q('[data-testid="file-preview"]')).toBeNull()
+})
+
+describe('file tabs', () => {
+  it('opens each file in its own tab, reuses an open path and keeps the strip accessible', async () => {
+    mount(fakeSession())
+    await open('main.ts')
+    await open('story.md')
+    expect(qa('[data-testid="file-tab"]')).toHaveLength(2)
+    expect(q('[data-testid="file-tab"][data-path="story.md"]')?.dataset.active).toBe('true')
+    // A toolbar, not a tablist: a tablist may own only tabs, and each tab also needs a close button.
+    expect(q('[data-testid="file-tabs"]')?.getAttribute('role')).toBe('toolbar')
+    expect(
+      q('[data-testid="file-tab"][data-path="story.md"] [data-testid="file-tab-select"]')?.getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('true')
+    expect(
+      q('[data-testid="file-tab"][data-path="main.ts"] [data-testid="file-tab-select"]')?.getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('false')
+    expect(q('#workbench-file-panel')?.getAttribute('aria-label')).toBe('Read-only file preview')
+    // The highlighted tree row follows the active tab, not the last click.
+    expect(q('[data-path="story.md"]')?.getAttribute('aria-pressed')).toBe('true')
+    click('[data-path="main.ts"]')
+    click('[data-path="main.ts"]')
+    await vi.waitFor(() => expect(q('[data-testid="file-preview"]')?.textContent).toBe(TEXT['main.ts']))
+    expect(qa('[data-testid="file-tab"]')).toHaveLength(2)
+    expect(q('[data-path="main.ts"]')?.getAttribute('aria-pressed')).toBe('true')
+    expect(q('[data-path="story.md"]')?.getAttribute('aria-pressed')).toBe('false')
+  })
+
+  it('closes to the right neighbour, then the left, and returns focus to the tree after the last tab', async () => {
+    mount(fakeSession())
+    await open('main.ts')
+    await open('story.md')
+    await open('portal.html')
+    const closeTab = (path: string) =>
+      flushSync(() =>
+        (
+          q(`[data-testid="file-tab"][data-path="${path}"] [data-testid="file-tab-close"]`) as HTMLElement
+        ).click(),
+      )
+    closeTab('story.md')
+    expect(qa('[data-testid="file-tab"]').map((tab) => tab.dataset.path)).toEqual(['main.ts', 'portal.html'])
+    expect(q('[data-testid="file-tab"][data-path="portal.html"]')?.dataset.active).toBe('true')
+    expect(document.activeElement?.id).toBe('workbench-file-tab-1')
+    closeTab('portal.html')
+    expect(q('[data-testid="file-tab"][data-path="main.ts"]')?.dataset.active).toBe('true')
+    expect(document.activeElement?.id).toBe('workbench-file-tab-0')
+    closeTab('main.ts')
+    expect(qa('[data-testid="file-tab"]')).toHaveLength(0)
+    expect(q('.workbench-file-preview')).toBeNull()
+    expect(q('.workbench-files-body')?.children).toHaveLength(1)
+    expect(document.activeElement?.getAttribute('data-testid')).toBe('workspace-file')
+  })
+
+  it('keeps each tab view mode and source scroll position', async () => {
+    mount(fakeSession())
+    await open('portal.html')
+    click('[data-testid="file-view-preview"]')
+    expect(q('[data-testid="file-rendered"]')).not.toBeNull()
+    await open('main.ts')
+    const pre = q('[data-testid="file-preview"]') as HTMLElement
+    flushSync(() => {
+      pre.scrollTop = 120
+      pre.dispatchEvent(new Event('scroll', { bubbles: true }))
+    })
+    click('[data-testid="file-tab"][data-path="portal.html"] [data-testid="file-tab-select"]')
+    await vi.waitFor(() => expect(q('[data-testid="file-rendered"]')).not.toBeNull())
+    click('[data-testid="file-tab"][data-path="main.ts"] [data-testid="file-tab-select"]')
+    await vi.waitFor(() => expect(q('[data-testid="file-preview"]')).not.toBeNull())
+    expect((q('[data-testid="file-preview"]') as HTMLElement).scrollTop).toBe(120)
+    const saved = JSON.parse(localStorage.getItem(FILE_TABS_KEY('s')) ?? '{}')
+    expect(saved.modes['portal.html']).toBe('preview')
+  })
+
+  it('restores the open tabs per session and ignores damaged storage', async () => {
+    mount(fakeSession())
+    await open('main.ts')
+    await open('story.md')
+    unmountRegion(host)
+    mount(fakeSession())
+    await vi.waitFor(() => expect(qa('[data-testid="file-tab"]')).toHaveLength(2))
+    await vi.waitFor(() => expect(q('[data-testid="file-meta"] time')?.title).toBe('rev-story.md'))
+    expect(q('[data-testid="file-preview"]')?.textContent).toBe(TEXT['story.md'])
+    // Another session reads its own list, not this one.
+    unmountRegion(host)
+    const other = fakeSession()
+    Object.defineProperty(other, 'id', { value: 'other' })
+    mount(other)
+    await vi.waitFor(() => expect(q('[data-path="main.ts"]')).not.toBeNull())
+    expect(qa('[data-testid="file-tab"]')).toHaveLength(0)
+    unmountRegion(host)
+    localStorage.setItem(
+      FILE_TABS_KEY('s'),
+      JSON.stringify({
+        tabs: ['portal.html', 'portal.html', 7, null, ''],
+        active: 'gone',
+        modes: { 'portal.html': 'preview' },
+      }),
+    )
+    mount(fakeSession())
+    await vi.waitFor(() => expect(qa('[data-testid="file-tab"]')).toHaveLength(1))
+    await vi.waitFor(() => expect(q('[data-testid="file-rendered"]')).not.toBeNull())
+    unmountRegion(host)
+    localStorage.setItem(FILE_TABS_KEY('s'), '{not json')
+    mount(fakeSession())
+    await vi.waitFor(() => expect(q('[data-path="main.ts"]')).not.toBeNull())
+    expect(qa('[data-testid="file-tab"]')).toHaveLength(0)
+  })
+
+  it('reveals the restored tab in the tree by opening its folders', async () => {
+    localStorage.setItem(
+      FILE_TABS_KEY('s'),
+      JSON.stringify({ tabs: ['src/util.ts', 'story.md'], active: 'src/util.ts' }),
+    )
+    mount(fakeSession())
+    await vi.waitFor(() => expect(q('[data-path="src/util.ts"]')?.getAttribute('aria-pressed')).toBe('true'))
+    expect(q('[data-path="src"]')?.getAttribute('aria-expanded')).toBe('true')
+    // The other restored tab stays available without expanding anything else.
+    expect(qa('[data-testid="file-tab"]')).toHaveLength(2)
+  })
+
+  it('keeps a failed read inside its own tab', async () => {
+    const session = fakeSession()
+    const read = session.workspaceRead as unknown as ReturnType<typeof vi.fn>
+    const original = read.getMockImplementation() as (path: string) => Promise<object>
+    read.mockImplementation(async (path: string) => {
+      if (path === 'story.md') throw new Error('Permission denied for story.md')
+      return original(path)
+    })
+    mount(session)
+    await open('portal.html')
+    click('[data-path="story.md"]')
+    await vi.waitFor(() => expect(q('[data-testid="file-read-error"]')).not.toBeNull())
+    expect(q('[data-testid="file-preview"]')).toBeNull()
+    click('[data-testid="file-tab"][data-path="portal.html"] [data-testid="file-tab-select"]')
+    await vi.waitFor(() => expect(q('[data-testid="file-preview"]')?.textContent).toBe(TEXT['portal.html']))
+    expect(q('[data-testid="file-read-error"]')).toBeNull()
+    click('[data-testid="file-tab"][data-path="story.md"] [data-testid="file-tab-select"]')
+    await vi.waitFor(() => expect(q('[data-testid="file-read-error"]')).not.toBeNull())
+    expect(q('[data-testid="file-preview"]')).toBeNull()
+  })
+
+  it('re-reads only the active tab on ledger changes', async () => {
+    const session = fakeSession()
+    const context = mount(session, { data: { session, timeline: { upto: 1 }, mention: vi.fn() } })
+    await open('main.ts')
+    click('[data-path="story.md"]')
+    await vi.waitFor(() => expect(q('[data-testid="file-meta"] time')?.title).toBe('rev-story.md'))
+    const read = vi.mocked(session.workspaceRead)
+    const before = read.mock.calls.length
+    await act(async () =>
+      renderRegion(
+        host,
+        <FilesPanel context={{ ...context, data: { session, timeline: { upto: 2 }, mention: vi.fn() } }} />,
+      ),
+    )
+    await vi.waitFor(() => expect(read.mock.calls.length).toBe(before + 1))
+    expect(read.mock.calls.at(-1)?.[0]).toBe('story.md')
+  })
+
+  it('caps open tabs and says why a new one was refused', async () => {
+    const entries = Array.from({ length: MAX_FILE_TABS + 1 }, (_, index) => ({
+      name: `f${index}.ts`,
+      kind: 'file' as const,
+    }))
+    mount(fakeSession({ entries: { '': entries } }))
+    await vi.waitFor(() => expect(q('[data-path="f0.ts"]')).not.toBeNull())
+    for (let index = 0; index < MAX_FILE_TABS; index += 1) click(`[data-path="f${index}.ts"]`)
+    await vi.waitFor(() => expect(qa('[data-testid="file-tab"]')).toHaveLength(MAX_FILE_TABS))
+    click(`[data-path="f${MAX_FILE_TABS}.ts"]`)
+    expect(qa('[data-testid="file-tab"]')).toHaveLength(MAX_FILE_TABS)
+    expect(q('[data-testid="files-tabs-limit"]')?.textContent).toBe(
+      'Up to 20 files can be open at once. Close one first.',
+    )
+  })
+
+  it('tells same-named files apart by their folder', async () => {
+    mount(
+      fakeSession({
+        entries: {
+          '': [
+            { name: 'src', kind: 'directory' },
+            { name: 'test', kind: 'directory' },
+          ],
+          src: [{ name: 'util.ts', kind: 'file' }],
+          test: [{ name: 'util.ts', kind: 'file' }],
+        },
+      }),
+    )
+    await vi.waitFor(() => expect(q('[data-path="src"]')).not.toBeNull())
+    click('[data-path="src"]')
+    await open('src/util.ts')
+    click('[data-path="test"]')
+    await open('test/util.ts')
+    expect(qa('.workbench-file-tab-name').map((element) => element.textContent)).toEqual([
+      'src/util.ts',
+      'test/util.ts',
+    ])
+  })
 })

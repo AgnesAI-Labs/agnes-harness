@@ -67,6 +67,13 @@ it('opens Windows resource links through the real Dock and FilesPanel request pa
         )
       }
     }
+    // Referring to the same file again activates its tab instead of opening a duplicate.
+    const reopened = { path: 'c:\\work\\repo\\src\\中文 #%.ts', name: '中文 #%.ts', directory: false }
+    const reopenedMention = fileMentionOf(fileMentionBlock(reopened))
+    if (!reopenedMention) throw new Error('Missing reopened file mention')
+    renderRegion(message, <FileMentionChip mention={reopenedMention} onOpen={fileMentionLinks.open} />)
+    flushSync(() => message.querySelector<HTMLButtonElement>('button')?.click())
+    await vi.waitFor(() => expect(document.querySelectorAll('[data-testid="file-tab"]')).toHaveLength(1))
   } finally {
     unmountRegion(message)
     unmountRegion(host)

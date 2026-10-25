@@ -10,10 +10,11 @@ import {
   SearchBar,
   SettingsState,
 } from '@agnes/web-ui'
-import { useEffect, useLayoutEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { panelContext } from './context.js'
-import { FilePreview } from './files-preview.js'
+import { FilePreview, type FileViewMode } from './files-preview.js'
+import { FileTabs } from './files-tabs.js'
 import { countVisible, FileTree, type SessionChange } from './files-tree.js'
 
 /** At this panel width the tree moves beside the preview instead of above it. */
@@ -23,6 +24,18 @@ const TREE_MIN = 160
 const PREVIEW_MIN = 280
 export const TREE_WIDTH_KEY = 'agnes.workbench.files.treeWidth'
 export const WRAP_KEY = 'agnes.workbench.files.wrap'
+/** Open files are remembered per session; the file contents themselves are never stored. */
+export const FILE_TABS_KEY = (sessionId: string) => `agnes.workbench.files.tabs.${sessionId}`
+export const MAX_FILE_TABS = 20
+
+/** The last read of each tab stays cached so switching back shows it while the reread runs. */
+type FileRecord = { file: SessionWorkspaceReadResult | undefined; error: string }
+
+type StoredTabs = {
+  tabs: string[]
+  active: string
+  modes: Record<string, FileViewMode>
+}
 
 /** Layout preferences are per browser; storage that throws or is absent leaves the defaults. */
 function stored(key: string): string | null {
@@ -42,6 +55,77 @@ function store(key: string, value: string) {
 function storedWidth(): number {
   const value = Number(stored(TREE_WIDTH_KEY))
   return Number.isFinite(value) && value >= TREE_MIN ? value : TREE_DEFAULT
+}
+
+/**
+ * Stored tabs are untrusted: keep strings only, drop duplicates, cap the list and fall the active tab
+ * back into it. A path that lost read access is kept and shows its read error; restoring grants nothing.
+ */
+function readStoredTabs(sessionId: string): StoredTabs | undefined {
+  const raw = stored(FILE_TABS_KEY(sessionId))
+  if (!raw) return undefined
+  try {
+    const value = JSON.parse(raw) as { tabs?: unknown; active?: unknown; modes?: unknown }
+    const tabs = Array.isArray(value.tabs)
+      ? [
+          ...new Set(
+            value.tabs
+              .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+              .slice(0, MAX_FILE_TABS),
+          ),
+        ]
+      : []
+    if (!tabs.length) return undefined
+    const active =
+      typeof value.active === 'string' && tabs.includes(value.active) ? value.active : (tabs[0] ?? '')
+    const modes: Record<string, FileViewMode> = {}
+    if (value.modes && typeof value.modes === 'object' && !Array.isArray(value.modes)) {
+      const entries = value.modes as Record<string, unknown>
+      for (const path of tabs) {
+        const mode = entries[path]
+        if (mode === 'source' || mode === 'preview') modes[path] = mode
+      }
+    }
+    return { tabs, active, modes }
+  } catch {
+    return undefined
+  }
+}
+function storeTabs(sessionId: string, value: StoredTabs) {
+  try {
+    localStorage.setItem(FILE_TABS_KEY(sessionId), JSON.stringify(value))
+  } catch {
+    /* the tabs last for this panel only */
+  }
+}
+
+/** A path outside the workspace is absolute: no folder rows in the tree hold it. */
+function outsideTree(path: string): boolean {
+  return path.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(path)
+}
+
+/** The folder rows that hold a workspace-relative path, outermost first. */
+function treeFolders(path: string): string[] {
+  if (!path || outsideTree(path)) return []
+  const parts = path.split('/').filter(Boolean)
+  return parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join('/'))
+}
+
+/** Two open files with the same name are told apart by their parent folder. */
+function tabNames(tabs: readonly string[]): Map<string, string> {
+  const segments = new Map(tabs.map((path) => [path, path.split(/[\\/]/u).filter(Boolean)]))
+  const counts = new Map<string, number>()
+  for (const parts of segments.values()) {
+    const name = parts.at(-1) ?? ''
+    counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  return new Map(
+    [...segments].map(([path, parts]) => {
+      const name = parts.at(-1) ?? path
+      const parent = parts.at(-2)
+      return [path, (counts.get(name) ?? 0) > 1 && parent ? `${parent}/${name}` : name] as const
+    }),
+  )
 }
 
 /** The panel's own width, not the window's: the dock can be dragged or expanded independently. */
@@ -69,12 +153,16 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
   useSyncExternalStore(fileViewerActions.subscribe, fileViewerActions.getSnapshot)
   const [directories, setDirectories] = useState<Record<string, SessionWorkspaceListResult>>({})
   const [expanded, setExpanded] = useState<string[]>([''])
-  const [selected, setSelected] = useState('')
-  const [file, setFile] = useState<SessionWorkspaceReadResult>()
+  const [tabs, setTabs] = useState<string[]>([])
+  const [active, setActive] = useState('')
+  const [records, setRecords] = useState<Record<string, FileRecord>>({})
+  const [modes, setModes] = useState<Record<string, FileViewMode>>({})
+  // Session id whose saved tabs were loaded: persistence must not write the pre-restore empty list.
+  const [restoredFor, setRestoredFor] = useState('')
+  const [limit, setLimit] = useState(false)
   const [changes, setChanges] = useState<ReadonlyMap<string, SessionChange>>(new Map())
   // Folder listing and file reading fail separately: one succeeding never hides the other's failure.
   const [error, setError] = useState('')
-  const [readError, setReadError] = useState('')
   const [refresh, setRefresh] = useState(0)
   const [reread, setReread] = useState(0)
   const [loading, setLoading] = useState(false)
@@ -83,69 +171,96 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
   const [wrap, setWrap] = useState(() => stored(WRAP_KEY) === 'true')
   const [treeWidth, setTreeWidth] = useState(storedWidth)
   const [panel, ref, width] = usePanelWidth()
-  const split = !!selected && width >= FILES_SPLIT_WIDTH
+  const activeIndex = tabs.indexOf(active)
+  const split = activeIndex >= 0 && width >= FILES_SPLIT_WIDTH
   const maxTree = Math.max(TREE_MIN, width - PREVIEW_MIN)
   const shownWidth = Math.min(Math.max(treeWidth, TREE_MIN), maxTree)
+  // Scroll offsets stay in memory only: a page reload changes the text height they would point into.
+  const scroll = useRef<Record<string, number>>({})
+  // Per-path request ordinals discard a superseded read without letting one tab's response write another.
+  const reads = useRef(new Map<string, number>())
+  const previousSession = useRef<typeof session>()
+  // A tab click or close moves focus once its DOM update has committed; the tree is the fallback.
+  const focusAfter = useRef<string | 'tree' | null>(null)
   useLayoutEffect(() => {
     if (split) panel?.style.setProperty('--workbench-tree-width', `${shownWidth}px`)
     else panel?.style.removeProperty('--workbench-tree-width')
   }, [panel, split, shownWidth])
   const version = timeline?.upto
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new session resets the directory and preview state.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new session resets the tree and restores its saved tabs.
   useEffect(() => {
-    setExpanded([''])
-    setSelected('')
-    setFile(undefined)
+    if (!session) return
+    const saved = readStoredTabs(session.id)
+    // The restored tab is highlighted only when its folders are open, so reveal its row as well.
+    setExpanded(['', ...treeFolders(saved?.active ?? '')])
     setDirectories({})
     setChanges(new Map())
     setQuery('')
+    setTabs(saved?.tabs ?? [])
+    setActive(saved?.active ?? '')
+    setModes(saved?.modes ?? {})
+    setRecords({})
+    setLimit(false)
+    scroll.current = {}
+    setRestoredFor(session.id)
   }, [session?.id])
-  // A file chip asks for a path: open its folders and show the file, or open the folder itself.
+  // A replaced session object is a new read authority: the tabs stay, their cached bytes do not.
+  useLayoutEffect(() => {
+    const previous = previousSession.current
+    previousSession.current = session
+    if (!session || !previous || previous === session || previous.id !== session.id) return
+    setRecords({})
+  }, [session])
+  // Only the tab list, the active tab and the view modes are stored; reads and errors are not.
+  useEffect(() => {
+    if (!session || restoredFor !== session.id) return
+    storeTabs(session.id, { tabs, active, modes })
+  }, [session, restoredFor, tabs, active, modes])
+  // A file chip asks for a path: open its folders and show the file tab, or open the folder itself.
   const requested = context.selection as { path?: unknown; directory?: unknown } | undefined
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new request opens its folders and tab once.
   useEffect(() => {
     if (!session || typeof requested?.path !== 'string') return
     const path = requested.path
-    // A path outside the workspace is absolute: no folders of the tree hold it, so only the read is
-    // tried, and the workspace's visibility rules answer it.
-    const outside = path.startsWith('/') || /^[A-Za-z]:[\\/]/u.test(path)
-    const parts = outside ? [] : path.split('/').filter(Boolean)
+    // Outside the workspace only the read is tried; the workspace's visibility rules answer it.
+    const parts = outsideTree(path) ? [] : path.split('/').filter(Boolean)
     const folders = parts.slice(0, requested.directory === true ? parts.length : -1)
     const ancestors = folders.map((_, index) => folders.slice(0, index + 1).join('/'))
     setQuery('')
     setExpanded((paths) => [...new Set([...paths, ...ancestors])])
-    setSelected(requested.directory === true ? '' : path)
+    if (requested.directory !== true) openPath(path)
   }, [session, requested])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: explicit refresh and ledger watermarks invalidate workspace reads.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: explicit refresh and ledger watermarks invalidate workspace lists.
   useEffect(() => {
-    let active = true
+    let live = true
     if (!session) return
     setLoading(true)
     void Promise.all(expanded.map((path) => session.workspaceList(path)))
       .then((values) => {
-        if (!active) return
+        if (!live) return
         setDirectories(Object.fromEntries(values.map((value) => [value.path, value])))
         setError('')
       })
       .catch((cause) => {
-        if (active)
+        if (live)
           setError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (live) setLoading(false)
       })
     return () => {
-      active = false
+      live = false
     }
   }, [session, expanded, refresh, version, t])
   // The A / M marks reuse the review tab's session-scope change list; without it rows carry no mark.
   // biome-ignore lint/correctness/useExhaustiveDependencies: explicit refresh and ledger watermarks invalidate the change list.
   useEffect(() => {
-    let active = true
+    let live = true
     if (typeof session?.workspaceChanges !== 'function') return
     session
       .workspaceChanges({ scope: 'session' })
       .then((result) => {
-        if (active)
+        if (live)
           setChanges(
             new Map(
               result.files.map(({ path, kind, added, removed }) => [
@@ -160,49 +275,114 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
           )
       })
       .catch(() => {
-        if (active) setChanges(new Map())
+        if (live) setChanges(new Map())
       })
     return () => {
-      active = false
+      live = false
     }
   }, [session, refresh, version])
-  // A new read authority or path must never display the previous file, even for one paint.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only when the read scope changes.
-  useLayoutEffect(() => {
-    setFile(undefined)
-    setReadError('')
-  }, [session, selected])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: explicit refresh and ledger watermarks invalidate workspace reads.
+  // Only the active tab re-reads on refresh, retry and ledger changes; the others re-read when activated.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refresh, retry and ledger watermarks re-read the active tab.
   useEffect(() => {
-    let active = true
-    setReadError('')
-    if (!session || !selected) return
+    let live = true
+    if (!session || !active) return
+    const path = active
+    const request = (reads.current.get(path) ?? 0) + 1
+    reads.current.set(path, request)
+    // The previous text stays on screen during a reread; an error is stale the moment the read starts.
+    setRecords((previous) => ({ ...previous, [path]: { file: previous[path]?.file, error: '' } }))
     void session
-      .workspaceRead(selected)
+      .workspaceRead(path)
       .then((value) => {
-        if (active)
-          setFile((previous) =>
-            previous?.revision === value.revision &&
-            previous.text === value.text &&
-            previous.binary === value.binary &&
-            previous.truncated === value.truncated &&
-            previous.size === value.size
-              ? previous
-              : value,
-          )
+        if (!live || reads.current.get(path) !== request) return
+        setRecords((previous) => {
+          const current = previous[path]?.file
+          const same =
+            current?.revision === value.revision &&
+            current.text === value.text &&
+            current.binary === value.binary &&
+            current.truncated === value.truncated &&
+            current.size === value.size
+          return { ...previous, [path]: { file: same ? current : value, error: '' } }
+        })
       })
       .catch((cause) => {
-        if (active) {
-          // A failed read cannot establish continuing visibility (including deletion/revocation).
-          setFile(undefined)
-          setReadError(appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'))
-        }
+        // A failed read cannot establish continuing visibility (including deletion/revocation).
+        if (!live || reads.current.get(path) !== request) return
+        setRecords((previous) => ({
+          ...previous,
+          [path]: {
+            file: undefined,
+            error: appServerErrorMessage(cause, document.documentElement.lang) ?? t('workbench.error'),
+          },
+        }))
       })
     return () => {
-      active = false
+      live = false
     }
-  }, [session, selected, refresh, reread, version, t])
+  }, [session, active, refresh, reread, version, t])
+  // The closed tab's neighbour takes focus; closing the last tab returns focus to the file tree.
+  useLayoutEffect(() => {
+    const target = focusAfter.current
+    if (target === null) return
+    focusAfter.current = null
+    if (target === 'tree') {
+      panel?.querySelector<HTMLElement>('[data-testid="workspace-file"]')?.focus()
+      return
+    }
+    const element = [...(panel?.querySelectorAll<HTMLElement>('[data-testid="file-tab"]') ?? [])].find(
+      (tab) => tab.dataset.path === target,
+    )
+    element?.querySelector<HTMLElement>('[data-testid="file-tab-select"]')?.focus()
+    // No dependency list: a queued focus request is applied once the DOM of the commit above exists.
+  })
   if (!session) return <SettingsState tone="empty">{t('workbench.session')}</SettingsState>
+  const openPath = (path: string) => {
+    if (!path) return
+    if (tabs.includes(path)) {
+      setActive(path)
+      return
+    }
+    if (tabs.length >= MAX_FILE_TABS) {
+      setLimit(true)
+      return
+    }
+    setLimit(false)
+    setTabs([...tabs, path])
+    setActive(path)
+  }
+  const activatePath = (path: string) => {
+    if (tabs.includes(path)) setActive(path)
+  }
+  const closePath = (path: string) => {
+    const index = tabs.indexOf(path)
+    if (index < 0) return
+    const remaining = tabs.filter((entry) => entry !== path)
+    const neighbour = remaining[index] ?? remaining[index - 1] ?? ''
+    focusAfter.current = neighbour || 'tree'
+    setLimit(false)
+    setTabs(remaining)
+    setRecords((previous) => {
+      const next = { ...previous }
+      delete next[path]
+      return next
+    })
+    setModes((previous) => {
+      const next = { ...previous }
+      delete next[path]
+      return next
+    })
+    delete scroll.current[path]
+    if (active === path) setActive(neighbour)
+  }
+  const showMode = (mode: FileViewMode) => {
+    if (!active) return
+    setModes((previous) => ({ ...previous, [active]: mode }))
+  }
+  const rememberScroll = (top: number) => {
+    if (active) scroll.current[active] = top
+  }
+  const rereadActive = () => setReread((value) => value + 1)
   const resize = (next: number, persist: boolean) => {
     const value = Math.round(Math.min(Math.max(next, TREE_MIN), maxTree))
     setTreeWidth(value)
@@ -215,10 +395,12 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
     })
   const root = directories['']
   const visible = countVisible(directories, expanded, query)
+  const names = tabNames(tabs)
+  const record = records[active]
   return (
     <section
       ref={ref}
-      className={`workbench-files${selected ? ' workbench-files-previewing' : ''}`}
+      className={`workbench-files${activeIndex >= 0 ? ' workbench-files-previewing' : ''}`}
       data-layout={split ? 'split' : 'stacked'}
       data-testid="files-panel"
       aria-label={t('workbench.files.title')}
@@ -281,11 +463,11 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
             <FileTree
               directories={directories}
               expanded={expanded}
-              selected={selected}
+              selected={active}
               query={query}
               changes={changes}
               t={t}
-              select={setSelected}
+              select={openPath}
               mentionFolder={(path) => mention(path, true)}
               toggle={(path) =>
                 setExpanded((paths) =>
@@ -369,20 +551,44 @@ export function FilesPanel({ context, headerId }: { context: UiExtensionContext;
             }}
           />
         )}
-        {selected && (
-          <section className="workbench-file-preview" aria-label={t('workbench.files.preview')}>
-            <FilePreview
-              context={context}
-              path={selected}
-              file={file}
-              error={readError}
-              retry={() => setReread((value) => value + 1)}
-              change={changes.get(selected)}
-              workspace={workspace?.name}
-              wrap={wrap}
-              mention={mention}
+        {activeIndex >= 0 && (
+          <div className="workbench-file-pane" data-testid="file-pane">
+            <FileTabs
+              tabs={tabs}
+              active={active}
+              t={t}
+              label={(path) => names.get(path) ?? path}
+              closeLabel={(path) => t('workbench.files.tabs.close', { name: names.get(path) ?? path })}
+              activate={activatePath}
+              close={closePath}
             />
-          </section>
+            {limit && (
+              <p className="workbench-files-note" role="status" data-testid="files-tabs-limit">
+                {t('workbench.files.tabs.limit', { count: MAX_FILE_TABS })}
+              </p>
+            )}
+            <section
+              className="workbench-file-preview"
+              id="workbench-file-panel"
+              aria-label={t('workbench.files.preview')}
+            >
+              <FilePreview
+                context={context}
+                path={active}
+                file={record?.file}
+                error={record?.error ?? ''}
+                retry={rereadActive}
+                change={changes.get(active)}
+                workspace={workspace?.name}
+                wrap={wrap}
+                mention={mention}
+                mode={modes[active] ?? 'source'}
+                onModeChange={showMode}
+                scrollTop={scroll.current[active] ?? 0}
+                onScroll={rememberScroll}
+              />
+            </section>
+          </div>
         )}
       </div>
     </section>

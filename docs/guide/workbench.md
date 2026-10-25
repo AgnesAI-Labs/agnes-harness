@@ -20,7 +20,7 @@ The built-in file panel lazily lists the admitted session workspace, honoring th
 
 Previews are capped at 1 MiB. Binary/oversized files, symlinks and the installation home are refused or labelled without pretending to show their contents. A revision describes the bytes that were read, not a guarantee that a later edit has not changed them. The panel offers no arbitrary filesystem or restore authority.
 
-A background refresh keeps the current file visible while reading; an unchanged revision preserves the preview. Switching files or losing read access clears the previous content.
+Opening a file adds a tab above the preview, and the tree stays beside it. Selecting a row or a file mention switches to that file's tab instead of replacing the preview; closing the current tab activates the tab to its right, then the one to its left. Each tab keeps its own source/preview choice and source scroll position, and the open list is remembered per session in this browser, so switching workbench panels, closing the workbench or reloading the page still shows the same files. A background refresh keeps the current file visible while reading; an unchanged revision preserves the preview. Only the current tab re-reads on refresh, retry or a ledger update; other tabs re-read when selected and keep showing their last text meanwhile. A failed read clears only that tab's content and shows its error, and the tab stays so the error can be retried or the tab closed. Arrow/Home/End keys move between tabs and Delete closes the active one. At most 20 files can be open at once; close one to open another. Losing read access clears that tab's content on its next read; the remembered list itself grants no access.
 
 ## Read workflow results
 

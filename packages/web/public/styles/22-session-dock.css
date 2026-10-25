@@ -499,6 +499,60 @@
   .workbench-files-divider:focus-visible {
     outline: none;
   }
+  /* Files tab: the tab strip sits at the top of the preview column and the preview fills the rest. */
+  .workbench-file-pane {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .workbench-file-tabs {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    gap: var(--s2);
+    min-height: 32px;
+    padding: 3px var(--s4);
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-bottom: 1px solid var(--agnes-line-primary);
+    background: var(--agnes-bg-app-content);
+  }
+  .workbench-file-tab {
+    display: inline-flex;
+    align-items: center;
+    flex: 0 0 auto;
+    min-width: 4.5rem;
+    max-width: 180px;
+    border-radius: var(--radius-md);
+    color: var(--agnes-text-secondary);
+  }
+  .workbench-file-tab[data-active="true"] {
+    color: var(--agnes-text-primary);
+    background: var(--agnes-bg-fill);
+  }
+  .workbench-file-tab-select.agnes-ui-button {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+    gap: var(--s4);
+    padding-inline: var(--s8) var(--s2);
+    color: inherit;
+  }
+  .workbench-file-tab-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-xs);
+  }
+  .workbench-file-tab > .agh-btn--icon {
+    flex: none;
+    opacity: 0;
+  }
+  .workbench-file-tab:is(:hover, :focus-within, [data-active="true"]) > .agh-btn--icon {
+    opacity: 1;
+  }
   .workbench-file-preview {
     flex: 1;
     min-width: 0;
