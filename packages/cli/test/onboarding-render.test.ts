@@ -13,7 +13,7 @@ describe('AuthMethodView', () => {
     expect(output).toContain('选择认证方式')
     expect(output).toContain('使用 Agnes 账户登录')
     expect(output).toContain('使用 API Key / ChatGPT 订阅登录')
-    expect(output).toContain('↑↓ 导航')
+    expect(output).toContain('↑↓ 选择')
   })
 
   it.each([40, 80, 120])('renders the two product choices and hint within %i columns', (width) => {
@@ -23,9 +23,7 @@ describe('AuthMethodView', () => {
     expect(lines.every((line) => displayWidth(line) === width)).toBe(true)
     expect(lines.join('\n')).toContain('Sign in with an Agnes account')
     expect(lines.join('\n')).toContain('Sign in with an API key')
-    expect(lines.map((line) => line.trimEnd()).join(' ')).toContain(
-      '↑↓ navigate  enter select  escape/ctrl+c cancel',
-    )
+    expect(lines.map((line) => line.trimEnd()).join(' ')).toContain('↑↓ select  ⏎ confirm  esc close')
   })
 
   it('reuses Select navigation, root Escape cancels, and Ctrl-C stays with the outer ladder', () => {

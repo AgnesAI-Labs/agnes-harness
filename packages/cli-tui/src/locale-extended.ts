@@ -184,7 +184,6 @@ export const EXTENDED_KEYS = [
   'authMethod.agnesAccount',
   'authMethod.apiKey',
   'authMethod.demo',
-  'authMethod.hint',
   'onboarding.accountUnavailable',
   'onboarding.testingProvider',
   'onboarding.verifyKeyFailed',
@@ -475,7 +474,6 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'authMethod.agnesAccount': 'Sign in with an Agnes account',
     'authMethod.apiKey': 'Sign in with an API key / ChatGPT subscription',
     'authMethod.demo': 'Try local Demo / skip setup (no API key)',
-    'authMethod.hint': '↑↓ navigate  enter select  escape/ctrl+c cancel',
     'onboarding.accountUnavailable':
       'Agnes account sign-in is not available in this build yet. Choose an API key.',
     'onboarding.testingProvider': 'Testing the provider…',
@@ -720,7 +718,6 @@ const BASE: Record<Locale, Record<BaseKey, string>> = {
     'authMethod.agnesAccount': '使用 Agnes 账户登录',
     'authMethod.apiKey': '使用 API Key / ChatGPT 订阅登录',
     'authMethod.demo': '试用本地 Demo / 跳过设置（无需 API Key）',
-    'authMethod.hint': '↑↓ 导航  Enter 选择  Escape/Ctrl+C 取消',
     'onboarding.accountUnavailable': '此版本暂不支持 Agnes 账户登录，请选择 API Key。',
     'onboarding.testingProvider': '正在测试 Provider…',
     'onboarding.verifyKeyFailed': '无法验证该密钥。按 Escape 返回后重试。',
