@@ -71,8 +71,14 @@ export type EditorOptions = {
   complete?(prefix: string, before?: string): string[]
   /** Styles the prompt glyph, placeholder and slash menu; width math always uses the unstyled text. */
   ansi?: ThemedAnsi
-  /** Args shape and short summary for a slash-menu candidate (the app passes the command table). */
-  menuInfo?(name: string): { args?: string; summary?: string } | undefined
+  /**
+   * Args shape and short summary for a slash-menu candidate (the app passes the command table). `aliasOf`
+   * folds this command into the row of the one it names when both are candidates; `aliases` are the
+   * other spellings the row shows muted.
+   */
+  menuInfo?(
+    name: string,
+  ): { args?: string; summary?: string; aliasOf?: string; aliases?: readonly string[] } | undefined
   /** Workspace paths for the `@` menu; without it `@` is plain text. */
   mentions?: { get(query: string): MentionState }
   /** The `@` menu's status rows, shown when it has nothing to choose. */
@@ -588,8 +594,13 @@ export class Editor implements Component, VimTarget {
     if (this.cursor !== this.text.length || !/^\/\S*$/.test(this.text)) return []
     const candidates = this.o.complete?.(this.text) ?? []
     if (candidates.length === 0 || (candidates.length === 1 && candidates[0] === this.text)) return []
-    this.menuIndex = Math.min(this.menuIndex, candidates.length - 1)
-    return candidates
+    // An alias whose command is also listed is shown on that command's row, not as a row of its own.
+    const rows = candidates.filter((name) => {
+      const of = this.o.menuInfo?.(name)?.aliasOf
+      return !(of && candidates.includes(of))
+    })
+    this.menuIndex = Math.min(this.menuIndex, rows.length - 1)
+    return rows
   }
 
   private acceptCandidate(candidate: string): void {
@@ -671,8 +682,10 @@ export class Editor implements Component, VimTarget {
       shown.map((c) => {
         const entry = info(c)
         const nameWidth = 2 + displayWidth(c)
-        const args = entry?.args ? truncateTo(entry.args, cap - nameWidth - 1) : ''
-        return { c, args, summary: entry?.summary, left: nameWidth + (args ? 1 + displayWidth(args) : 0) }
+        const alias = entry?.aliases?.join(' ') ?? ''
+        const named = nameWidth + (alias ? 1 + displayWidth(alias) : 0)
+        const args = entry?.args ? truncateTo(entry.args, cap - named - 1) : ''
+        return { c, alias, args, summary: entry?.summary, left: named + (args ? 1 + displayWidth(args) : 0) }
       })
     const avail = width - 2 - (width >= 5 ? 2 : 0)
     let rows = layout(MENU_LEFT_MAX)
@@ -684,7 +697,8 @@ export class Editor implements Component, VimTarget {
     if (!withSummary) rows = layout(Number.POSITIVE_INFINITY)
     const leftWidth = Math.max(0, ...rows.map((r) => r.left))
     const lines = rows.map((r, i) => {
-      const body = r.args ? `${this.bold(r.c)} ${this.paint('faint', r.args)}` : this.bold(r.c)
+      const name = r.alias ? `${this.bold(r.c)} ${this.paint('muted', r.alias)}` : this.bold(r.c)
+      const body = r.args ? `${name} ${this.paint('faint', r.args)}` : name
       const left = i === selected ? `${this.bold(this.paint('accent', '❯'))} ${body}` : `  ${body}`
       if (!withSummary || !r.summary) return left
       return `${left}${' '.repeat(leftWidth - r.left + 2)}${this.paint('muted', r.summary)}`

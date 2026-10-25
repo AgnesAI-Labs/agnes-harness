@@ -9,12 +9,19 @@ export type SlashCommand = {
   descriptionKey: ExtendedKey
   /** Locale key of the short summary shown beside the name in the slash menu. */
   summaryKey: ExtendedKey
+  /** Another spelling of this command: the menu folds the row into the named command's row. Display only. */
+  aliasOf?: string
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
   { name: '/help', descriptionKey: 'commands.help', summaryKey: 'commands.helpSummary' },
   { name: '/quit', descriptionKey: 'commands.quit', summaryKey: 'commands.quitSummary' },
-  { name: '/exit', descriptionKey: 'commands.quit', summaryKey: 'commands.quitSummary' },
+  {
+    name: '/exit',
+    aliasOf: '/quit',
+    descriptionKey: 'commands.quit',
+    summaryKey: 'commands.quitSummary',
+  },
   { name: '/new', args: '[dir]', descriptionKey: 'commands.new', summaryKey: 'commands.newSummary' },
   {
     name: '/resume',

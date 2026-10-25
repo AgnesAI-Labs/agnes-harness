@@ -62,7 +62,16 @@ export function slashCommandFor(
   name: string,
   locale: string,
   app?: TuiApp,
-): { name: string; args?: string; description: string; summary: string } | undefined {
+):
+  | {
+      name: string
+      args?: string
+      description: string
+      summary: string
+      aliasOf?: string
+      aliases?: string[]
+    }
+  | undefined {
   const command = slashCommand(name)
   if (!command) {
     // A custom command shows its file's description; a project one also says where it came from.
@@ -77,8 +86,10 @@ export function slashCommandFor(
       summary: `${from}${custom.description}`,
     }
   }
+  const aliases = SLASH_COMMANDS.filter((c) => c.aliasOf === name).map((c) => c.name)
   return {
     ...command,
+    ...(aliases.length ? { aliases } : {}),
     description: tt(command.descriptionKey, locale),
     summary: tt(command.summaryKey, locale),
   }

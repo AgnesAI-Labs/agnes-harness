@@ -506,6 +506,34 @@ describe('Editor slash menu rendering (pi style)', () => {
     expect(unbox(menuRows(e))).toEqual(['❯ /a', '  /b', '  /c', '  /d', '  /e', '  ↓ 2 more'])
   })
 
+  it('folds an alias into its command row, still completes and submits it', () => {
+    const submitted: string[] = []
+    const e = new Editor({
+      onSubmit: (t) => submitted.push(t),
+      complete: (p) => ['/quit', '/exit', '/queue'].filter((c) => c.startsWith(p)),
+      menuInfo: (n) =>
+        n === '/exit' ? { aliasOf: '/quit' } : n === '/quit' ? { aliases: ['/exit'] } : undefined,
+    })
+    type(e, '/')
+    const rows = unbox(menuRows(e))
+    expect(rows).toEqual(['❯ /quit /exit', '  /queue'])
+    // Down moves past /quit to /queue: the alias has no row of its own to stop on.
+    e.handleInput('\x1b[B')
+    e.handleInput('\r')
+    expect(e.text).toBe('/queue ')
+    // Typed out, the alias still works; a prefix that only matches the alias lists it as its own row.
+    const typed = new Editor({
+      onSubmit: (t) => submitted.push(t),
+      complete: (p) => ['/quit', '/exit'].filter((c) => c.startsWith(p)),
+      menuInfo: (n) => (n === '/exit' ? { aliasOf: '/quit' } : undefined),
+    })
+    type(typed, '/exi')
+    expect(unbox(menuRows(typed))).toEqual(['❯ /exit'])
+    type(typed, 't')
+    typed.handleInput('\r')
+    expect(submitted).toEqual(['/exit'])
+  })
+
   it('frames the menu in a rounded border that hugs the widest row', () => {
     const e = menuEditor()
     type(e, '/')
