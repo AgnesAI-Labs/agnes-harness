@@ -691,8 +691,6 @@ export async function prepareInferenceRequest(
     envelopeCache: s.envelopeCache,
     notes: [
       { prefix: HOOK_CONTEXT_PREFIX, text: additionalContext, dedup: { kind: 'latest' } },
-      // Empty in a turn without a time limit, which marks an earlier turn's figure as no longer current.
-      { prefix: TURN_TIME_PREFIX, text: turnTime ?? '', dedup: { kind: 'latest' } },
       ...(progressCheck ? [progressCheck] : []),
       ...(preloaded
         ? [
@@ -706,6 +704,7 @@ export async function prepareInferenceRequest(
     ],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
+    ...(turnTime ? { requestNotes: [{ prefix: TURN_TIME_PREFIX, text: turnTime }] } : {}),
     ...(tailNote ? { tailNote } : {}),
   })
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)

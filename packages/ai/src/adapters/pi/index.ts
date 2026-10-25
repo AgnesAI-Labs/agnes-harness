@@ -22,6 +22,7 @@ import {
   type RetryAttemptLedger,
   retryAttemptFresh,
 } from '../../retry.js'
+import { keepCacheBreakpointOnHistory } from './cache-breakpoint.js'
 import { providerPayloadImageError } from './input-limits.js'
 import { networkEvent, networkFailure, watchResponse } from './network.js'
 import { probeInference } from './probe.js'
@@ -667,6 +668,7 @@ export class PiAdapter extends WireAdapter {
           this.streamImpl(requestModel, context, {
             ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
             onPayload: (payload) => {
+              keepCacheBreakpointOnHistory(decl.api, payload, req)
               payloadError = providerPayloadImageError(payload, record.inputLimits)
               if (payloadError) throw new Error(payloadError)
               // SDK-backed transports expose their provider payload here. Binary fields (Bedrock)

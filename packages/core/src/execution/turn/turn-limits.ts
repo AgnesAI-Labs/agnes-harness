@@ -162,10 +162,12 @@ const CLOCK_STEP_MS = 10_000
  * The turn's measured time for the request being assembled, in a turn with a time limit. The
  * threshold notes above say what remained when a threshold was crossed; between them the model knew
  * the deadline but not the current time, and in one run concluded the limit was reached with minutes
- * left. This text is measured from the clock at each request and written as a short Core note
- * (`[turn time]`) deduplicated against the latest one, so a request inside the same 10 s adds nothing.
- * It is history like any note: the cached prefix stays put, and a recovered turn needs no identical
- * rebuild, since its next request simply measures again.
+ * left. This text is measured from the clock at each request and sent as a request-only Core note
+ * (`[turn time]`): it is never written to the ledger, so a long turn does not pile up one stale
+ * figure per request in its history, and no earlier figure stays behind to contradict it. The
+ * provider adapter keeps its cache breakpoint on the history before it, so the cached prefix holds.
+ * A recovered turn needs nothing rebuilt: the limit comes back from its own ledger row (see
+ * `time-limit.ts`) and the next request measures against that deadline again.
  */
 export function turnTimeText(limit: TurnTimeLimit, now: number): string {
   const left = limit.deadlineAt - now
@@ -175,7 +177,7 @@ export function turnTimeText(limit: TurnTimeLimit, now: number): string {
   const step = (ms: number) => Math.floor(ms / CLOCK_STEP_MS) * CLOCK_STEP_MS
   const used = Math.min(limit.timeLimitMs, Math.max(0, now - (limit.deadlineAt - limit.timeLimitMs)))
   const remaining = left < CLOCK_STEP_MS ? 'less than 10s' : `about ${formatDuration(step(left))}`
-  return `${formatDuration(step(used))} of this turn's ${total} time limit used, ${remaining} left. This remaining time is measured at this request and is authoritative: do not conclude that the time limit is reached unless this note says so.`
+  return `${formatDuration(step(used))} of this turn's ${total} time limit used, ${remaining} left. Measured at this request, it replaces any earlier time figure: do not conclude that the time limit is reached unless this note says so.`
 }
 
 /** The measured time for the request being assembled, or none when the turn has no time limit. */
