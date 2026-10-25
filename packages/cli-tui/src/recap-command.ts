@@ -2,8 +2,10 @@ import type { UINode, UITimeline } from '@agnes/protocol'
 import type { TuiApp } from './app.js'
 import { backgroundSessions } from './bg-command.js'
 import { listSessionChoices, type SlashResult } from './commands.js'
+import { padLine } from './component.js'
 import { tt } from './locale-extended.js'
 import { oneLine } from './session-commands.js'
+import { displayWidth } from './terminal.js'
 import { latestPlan } from './views/special-card.js'
 
 const MAX_REQUEST = 200
@@ -68,9 +70,9 @@ export async function recapSlash(app: TuiApp): Promise<SlashResult> {
       `${context.tokens} / ${context.window} (${((context.tokens / context.window) * 100).toFixed(1)}%)`,
     ])
   const labels = rows.map(([key]) => tt(key, locale))
-  const width = Math.max(...labels.map((label) => [...label].length))
+  const width = Math.max(...labels.map(displayWidth))
   return {
-    text: rows.map(([, value], i) => `${(labels[i] as string).padEnd(width, ' ')}  ${value}`).join('\n'),
+    text: rows.map(([, value], i) => `${padLine(labels[i] as string, width)}  ${value}`).join('\n'),
     presentation: 'transcript',
   }
 }

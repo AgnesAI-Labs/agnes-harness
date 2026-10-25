@@ -306,6 +306,10 @@ describe('session slash commands', () => {
     expect(rows[tt('recap.schedules', 'en')]).toBe('3')
     expect(rows[tt('recap.context', 'en')]).toBe('500 / 1000 (50.0%)')
     expect(rows[tt('recap.background', 'en')]).toBeUndefined()
+    // Wide labels (zh-CN) are padded by display width, so the values line up in one column.
+    const zh = (await runSlash(appWith(client, session, { locale: 'zh-CN' }), '/recap')).text ?? ''
+    const starts = zh.split('\n').map((row) => displayWidth(/^.+? {2,}/.exec(row)?.[0] ?? ''))
+    expect(new Set(starts).size).toBe(1)
     // Every source failing leaves the session id only, never a placeholder.
     const failing = {
       projectUIOpening: vi.fn(async () => Promise.reject(new Error('x'))),
