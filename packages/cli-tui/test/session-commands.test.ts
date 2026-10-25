@@ -713,6 +713,13 @@ describe('small info commands', () => {
     expect(text).toMatch(/AGH_HOME\s+-$/m)
     expect(text).toMatch(/Model\s+-$/m)
     expect(text).toMatch(/Queued inputs\s+-$/m)
+    // Credits sum as floats; they read the same as on /usage and the status bar.
+    const credits = status(
+      {},
+      { timeline: { usage: { ...usage, cost: undefined, credits: { amount: 0.1 + 0.2 } } } },
+      { pending: [] },
+    )
+    expect((await runSlash(credits, '/status')).text).toMatch(/Cost\s+0\.3 credits$/m)
   })
 
   it('/status lists the extra directories and which language servers this PATH offers', async () => {
