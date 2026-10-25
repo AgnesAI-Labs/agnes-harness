@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { createProvider, type WireEvent } from '@agnes/ai'
+import { createProvider, nativeToolCallFormats, type WireEvent } from '@agnes/ai'
 import { FakeAdapter, fakeModel, ScriptedProvider, stampFor } from '@agnes/ai/testkit'
 import { presets as basePresets } from '@agnes/base'
 import { operations as codeOperations, presets as codePresets, PRESET_NAMES } from '@agnes/code'
@@ -92,8 +92,9 @@ const CAPABILITIES = [
   // instead of a fake that answers the same way whatever it is asked.
   'seam/approval-policy',
   // The model layer's decode chain recovering a call the model wrote into its prose instead of into
-  // the protocol's tool-call field. Only a wire-level case can exercise it: a fixture scripted at
-  // the Provider boundary hands the kernel a finished call and the chain never runs.
+  // the protocol's tool-call field, for a model family the shipped catalogue opts in. Only a
+  // wire-level case can exercise it: a fixture scripted at the Provider boundary hands the kernel a
+  // finished call and the chain never runs.
   'decode/tool-call-in-text',
   // A usage event turning into a cost row with a credit figure on it. The estimate is made in the
   // model layer, from the catalogue price and the deployment's credit rate, and the kernel writes
@@ -202,6 +203,11 @@ type Fixture = {
    * boundary, which is everything above the model layer and nothing inside it.
    */
   wire?: boolean
+  /**
+   * For a `wire` case: the catalogue model id whose shipped `toolCallFormats` the wire model takes.
+   * Without it the wire model declares native calls only, and so reads no call out of its prose.
+   */
+  catalogModel?: string
   script: Step[]
   /**
    * Kill the process while the model call for `script[atStep]` is outstanding. The first host serves
@@ -406,7 +412,10 @@ function wireProvider(
 ): Provider {
   if (f.setModelAt) return midTurnSwitchProvider(f.setModelAt, f.script, reasons, built)
   let turn = 0
-  const declared = f.contract ? (profile.provider.routes ?? []) : [{ ...WIRE_ROUTE, models: [WIRE_MODEL] }]
+  const model = f.catalogModel
+    ? { ...WIRE_MODEL, toolCallFormats: nativeToolCallFormats(f.catalogModel) }
+    : WIRE_MODEL
+  const declared = f.contract ? (profile.provider.routes ?? []) : [{ ...WIRE_ROUTE, models: [model] }]
   const primary = declared[0]?.models?.[0]
   if (!primary) throw new Error('wire fixture requires a declared primary model')
   const adapter = new FakeAdapter({

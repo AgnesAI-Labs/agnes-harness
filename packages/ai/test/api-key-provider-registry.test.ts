@@ -394,6 +394,26 @@ describe('API-key provider registry', () => {
     })
   })
 
+  // Calls are read out of prose only for a family shown to write them there despite native tool
+  // calling (replay case 0011, a Qwen answer). Terminal-Bench's deepseek-flash stays native-only.
+  it('opts only the Qwen family into reading calls from prose', async () => {
+    const adapters = await createApiKeyProviderAdapters()
+    const records = adapters.flatMap((adapter) => adapter.models(adapter.id))
+    const qwen = records.filter((model) => /qwen/i.test(model.id))
+    expect(qwen.length).toBeGreaterThan(0)
+    expect(qwen.some((model) => model.route === 'qwen')).toBe(true)
+    for (const model of records)
+      expect(model.toolCallFormats, `${model.route}/${model.id}`).toEqual(
+        /qwen/i.test(model.id) ? ['native', 'qwen3_coder'] : ['native'],
+      )
+    expect(
+      records.find((model) => model.route === 'deepseek' && model.id === 'deepseek-flash'),
+    ).toMatchObject({
+      api: 'openai-completions',
+      toolCallFormats: ['native'],
+    })
+  })
+
   it('preserves verified Agnes modalities and sends each model output allowance on the wire', async () => {
     const adapter = await getApiKeyProvider('agnes-ai')?.createAdapter()
     const inputs = Object.fromEntries(

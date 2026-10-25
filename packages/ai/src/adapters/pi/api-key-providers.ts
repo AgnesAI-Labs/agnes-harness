@@ -6,6 +6,7 @@ import {
   type Provider as PiProvider,
 } from '@earendil-works/pi-ai'
 import { isUsableCredential } from '../../credentials.js'
+import { nativeToolCallFormats } from '../../decode/prose-calls.js'
 import { JEV_WIRE_API } from '../jev/index.js'
 import type { ManualRoute } from './index.js'
 import { PiAdapter, type PiStream } from './index.js'
@@ -347,7 +348,7 @@ export function modelRecord(
           compat: structuredClone(model.compat) as Exclude<ModelRecord['compat'], undefined>,
         }
       : {}),
-    toolCallFormats: ['native'],
+    toolCallFormats: nativeToolCallFormats(model.id),
     thinkingReplay: 'native',
     contract_id: null,
   }

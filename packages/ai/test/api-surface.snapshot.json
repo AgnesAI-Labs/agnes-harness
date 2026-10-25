@@ -55,6 +55,7 @@
   "memoryRetryLedger",
   "mergeDeltas",
   "modelAdaptersPlugin",
+  "nativeToolCallFormats",
   "nextRetryDelay",
   "normalizeError",
   "pollUntilDone",
