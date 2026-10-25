@@ -159,74 +159,77 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
             void open()
           }
         : undefined,
-      actions: h(
-        Fragment,
-        null,
-        !inline &&
-          h(
-            Button,
-            {
-              size: 'small',
-              className: 'deliverable-open',
-              'data-testid': 'deliverable-open',
-              disabled: busy,
-              'aria-expanded': previewable ? !!preview : undefined,
-              onClick: () => {
-                void open()
+      // A card inside an answer opens on click and shows no trailing action, so no lone menu
+      // chevron floats beside it. The workbench card keeps the Open / Open-with split control.
+      actions: inline
+        ? undefined
+        : h(
+            Fragment,
+            null,
+            h(
+              Button,
+              {
+                size: 'small',
+                className: 'deliverable-open',
+                'data-testid': 'deliverable-open',
+                disabled: busy,
+                'aria-expanded': previewable ? !!preview : undefined,
+                onClick: () => {
+                  void open()
+                },
               },
-            },
-            !previewable
-              ? zh
-                ? '下载'
-                : 'Download'
-              : zh
-                ? preview
-                  ? '关闭'
-                  : '打开'
-                : preview
-                  ? 'Close'
-                  : 'Open',
-          ),
-        h(Menu, {
-          label: zh ? '打开方式' : 'Open with',
-          trigger: h(IconButton, {
-            name: 'chevron-down',
-            label: zh ? '打开方式' : 'Open with',
-            className: 'deliverable-open-with',
-            'data-testid': 'deliverable-open-with',
-            disabled: busy,
-          }),
-          items: [
-            ...(previewable
-              ? [
-                  {
-                    id: 'open',
-                    label: zh ? '在工作台中预览' : 'Preview in workbench',
-                    testId: 'deliverable-in-workbench',
-                    onSelect: () => {
-                      void open()
-                    },
+              !previewable
+                ? zh
+                  ? '下载'
+                  : 'Download'
+                : zh
+                  ? preview
+                    ? '关闭'
+                    : '打开'
+                  : preview
+                    ? 'Close'
+                    : 'Open',
+            ),
+            h(Menu, {
+              label: zh ? '打开方式' : 'Open with',
+              trigger: h(IconButton, {
+                name: 'chevron-down',
+                label: zh ? '打开方式' : 'Open with',
+                className: 'deliverable-open-with',
+                'data-testid': 'deliverable-open-with',
+                disabled: busy,
+              }),
+              items: [
+                ...(previewable
+                  ? [
+                      {
+                        id: 'open',
+                        label: zh ? '在工作台中预览' : 'Preview in workbench',
+                        testId: 'deliverable-in-workbench',
+                        onSelect: () => {
+                          void open()
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  id: 'download',
+                  label: zh ? '下载' : 'Download',
+                  testId: 'deliverable-download',
+                  onSelect: () => {
+                    void download()
                   },
-                ]
-              : []),
-            {
-              id: 'download',
-              label: zh ? '下载' : 'Download',
-              testId: 'deliverable-download',
-              onSelect: () => {
-                void download()
-              },
-            },
-            {
-              id: 'copy-name',
-              label: zh ? (copied ? '已复制' : '复制文件名') : copied ? 'Copied' : 'Copy file name',
-              onSelect: () => {
-                void copyName()
-              },
-            },
-          ],
-        }),
-      ),
+                },
+                {
+                  id: 'copy-name',
+                  label: zh ? (copied ? '已复制' : '复制文件名') : copied ? 'Copied' : 'Copy file name',
+                  onSelect: () => {
+                    void copyName()
+                  },
+                },
+              ],
+            }),
+          ),
     }),
     error && h(StatusMessage, { kind: 'error' }, error),
     preview &&

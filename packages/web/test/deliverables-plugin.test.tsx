@@ -81,6 +81,33 @@ it.each([
   }
 })
 
+it('shows the open-with menu only on workbench cards, not on a card inside an answer', async () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const ctx = {
+    locale: { locale: 'en', t: (key: string) => key },
+    resources: { documents: { load: vi.fn(async () => ({ release: vi.fn() })) } },
+  }
+  const file = {
+    id: 'placement',
+    name: 'brief.md',
+    artifact: { ...artifact, mime: 'text/markdown' },
+    laneId: 'main',
+    workbench: true,
+  }
+  try {
+    await act(async () => root.render(createElement(official.FileCard, { file, ctx, inline: true })))
+    expect(host.querySelector('[data-testid=deliverable-open-with]')).toBeNull()
+    await act(async () => root.render(createElement(official.FileCard, { file, ctx, inline: false })))
+    expect(host.querySelector('[data-testid=deliverable-open-with]')).not.toBeNull()
+    expect(host.querySelector('[data-testid=deliverable-open]')).not.toBeNull()
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})
+
 it.each(['en', 'zh-CN'].flatMap((locale) => ['before', 'after'].map((parent) => ({ locale, parent }))))(
   'switches authorized deliverables ($locale, parent $parent)',
   async ({ locale, parent }) => {
