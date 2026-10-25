@@ -44,7 +44,8 @@ const errors = createExternalStore<readonly { id: number; message: NoticeText }[
 let nextError = 0
 const dismissError = (id: number) => errors.set(errors.getSnapshot().filter((item) => item.id !== id))
 type ReadOnlyNoticeView = {
-  preview?: boolean
+  /** Present when the record's integrity check failed: the page states that instead of the refusal banner. */
+  verificationFailed?: boolean
   message: Readonly<{ en: string; 'zh-CN': string }>
   actions: readonly { id: 'reopen' | 'new'; onSelect(): void }[]
   sessionId?: string
@@ -214,9 +215,9 @@ export function ReadOnlyNotice() {
   const view = useStoreSelector(readOnlyStore, (value) => value)
   const language = useDocumentLanguage()
   if (!view) return null
-  if (view.preview)
+  if (view.verificationFailed)
     return (
-      <p role="status" data-testid="session-history-preview">
+      <p role="status" data-testid="session-history-failed">
         {view.message[language === 'zh-CN' ? 'zh-CN' : 'en']}
       </p>
     )

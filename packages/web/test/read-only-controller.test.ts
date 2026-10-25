@@ -188,7 +188,7 @@ it('states which rows a truncated record shows', async () => {
   )
 })
 
-it('labels unverified history compactly and ignores a preview that finishes after the formal projection', async () => {
+it('shows an unverified preview without a notice and ignores one that finishes after the formal projection', async () => {
   const { context, controller, pending } = setup()
   vi.mocked(appReadOnly.show).mockClear()
   const preview = controller.preview('A', context.sessionBinding.capture())
@@ -196,12 +196,7 @@ it('labels unverified history compactly and ignores a preview that finishes afte
   pending.get('A:50')?.(view('A'))
   await preview
   expect(context.readOnly?.id).toBe('A')
-  expect(appReadOnly.show).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      preview: true,
-      message: { en: 'History preview (not yet verified)', 'zh-CN': '历史预览（尚未验证）' },
-    }),
-  )
+  expect(appReadOnly.show).not.toHaveBeenCalled()
   let verified!: (result: { state: string }) => void
   context.client.session.integrity.mockImplementationOnce(
     () =>
@@ -260,7 +255,7 @@ it('labels unverified history compactly and ignores a preview that finishes afte
   expect(context.projection).toEqual({ sessionId: 'live' })
 })
 
-it('keeps the preview through background verification and ignores a late result after switching', async () => {
+it('keeps reading until the integrity fact settles, without labelling the unverified history', async () => {
   const { context, controller } = setup()
   vi.useFakeTimers()
   try {
@@ -269,8 +264,35 @@ it('keeps the preview through background verification and ignores a late result 
     await vi.advanceTimersByTimeAsync(0)
     vi.mocked(appReadOnly.clear).mockClear()
     expect(appReadOnly.clear).not.toHaveBeenCalled()
+    expect(appReadOnly.show).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1000)
     expect(appReadOnly.clear).toHaveBeenCalled()
+  } finally {
+    controller.clear()
+    vi.useRealTimers()
+  }
+})
+
+it('states a failed verification instead of leaving the history unattested', async () => {
+  const { context, controller } = setup()
+  context.client.session.integrity.mockResolvedValueOnce({ state: 'failed' })
+  controller.verify('A', context.sessionBinding.capture())
+  await tick()
+  expect(appReadOnly.show).toHaveBeenLastCalledWith({
+    verificationFailed: true,
+    sessionId: 'A',
+    actions: [],
+    message: {
+      en: 'History verification failed. Session sealed.',
+      'zh-CN': '历史校验失败，会话已封存。',
+    },
+  })
+})
+
+it('ignores a verification result that arrives after switching away', async () => {
+  const { context, controller } = setup()
+  vi.useFakeTimers()
+  try {
     let finish!: (value: { state: string }) => void
     context.client.session.integrity.mockImplementationOnce(
       () =>
@@ -281,17 +303,12 @@ it('keeps the preview through background verification and ignores a late result 
     controller.verify('A', context.sessionBinding.capture())
     context.sessionBinding.begin('B')
     controller.clear()
-    controller.progress(
-      { sessionId: 'B', phase: 'verifying', verifiedSeq: 0, lastSeq: 10 },
-      context.sessionBinding.capture(),
-    )
     vi.mocked(appReadOnly.clear).mockClear()
-    finish({ state: 'verified' })
+    vi.mocked(appReadOnly.show).mockClear()
+    finish({ state: 'failed' })
     await vi.advanceTimersByTimeAsync(1000)
     expect(appReadOnly.clear).not.toHaveBeenCalled()
-    expect(appReadOnly.show).toHaveBeenLastCalledWith(
-      expect.objectContaining({ sessionId: 'B', preview: true }),
-    )
+    expect(appReadOnly.show).not.toHaveBeenCalled()
   } finally {
     controller.clear()
     vi.useRealTimers()

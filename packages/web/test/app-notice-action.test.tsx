@@ -34,13 +34,16 @@ it('states a refused record with a warning, its id and its next step', async () 
     expect(host.textContent).toBe('')
     await act(async () =>
       appReadOnly.show({
-        preview: true,
-        message: { en: 'History preview (not yet verified)', 'zh-CN': '历史预览（尚未验证）' },
+        verificationFailed: true,
+        message: {
+          en: 'History verification failed. Session sealed.',
+          'zh-CN': '历史校验失败，会话已封存。',
+        },
         actions: [],
       }),
     )
-    expect(host.querySelector('[data-testid="session-history-preview"]')?.textContent).toBe(
-      'History preview (not yet verified)',
+    expect(host.querySelector('[data-testid="session-history-failed"]')?.textContent).toBe(
+      'History verification failed. Session sealed.',
     )
     expect(host.querySelector('[data-tone="warning"]')).toBeNull()
     expect(host.querySelector('button')).toBeNull()

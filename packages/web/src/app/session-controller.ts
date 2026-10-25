@@ -168,14 +168,13 @@ export function createSessionController(
             permission,
             {
               signal: bindingOwner.loadingSignal(epoch),
-              onProgress: (value) => context.readOnlyController.progress(value, epoch),
               onPermissionRequestRegistered: (off) => bindingOwner.loadingPermission(epoch, off),
             },
           )
       if (!bindingOwner.attach(epoch, binding)) return
       const loaded = binding.session
-      // Admission establishes execution identity, but the unverified preview remains on screen
-      // until the first authoritative opening commits. A late preview must not downgrade this.
+      // Admission establishes execution identity; the first authoritative opening replaces the preview
+      // on screen. A late preview must not downgrade this.
       context.clientModules.session.setSession(loaded.id, 'connecting')
       // Controls need only the admitted session: read them alongside the opening, apply them after it.
       const controls = context.readSessionControls(loaded)

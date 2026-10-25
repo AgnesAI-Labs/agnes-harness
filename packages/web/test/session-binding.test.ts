@@ -80,7 +80,6 @@ const initialize = () => ({
 
 describe('Web session permission binding', () => {
   it.each(['load', 'open'] as const)('keeps a pending request alive through the %s handoff', async (mode) => {
-    const progress = vi.fn()
     let loadReturned = false
     let resolvePermission: ((outcome: { optionId: string }) => void) | undefined
     const f = endpointFor({
@@ -115,7 +114,6 @@ describe('Web session permission binding', () => {
             context.signal.addEventListener('abort', () => resolve({ optionId: 'reject' }), { once: true })
           })
         },
-        { onProgress: progress },
       )
       const binding = await bindingPromise
       loadReturned = true
@@ -123,9 +121,6 @@ describe('Web session permission binding', () => {
       for (let i = 0; i < 20; i++) await Promise.resolve()
 
       expect(binding.session.id).toBe(request.sessionId)
-      expect(progress).toHaveBeenCalledWith(
-        expect.objectContaining({ phase: 'verifying', verifiedSeq: 1, lastSeq: 2 }),
-      )
       expect(resolvePermission).toBeDefined()
       resolvePermission?.({ optionId: 'allow' })
       for (let i = 0; i < 20; i++) await Promise.resolve()
