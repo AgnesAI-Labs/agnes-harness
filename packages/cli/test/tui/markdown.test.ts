@@ -67,7 +67,11 @@ it('removes untrusted VT sequences and control bytes before styling', () => {
   expect(renderMarkdown('a\x1b[31mb\x07c', 20, none)).toEqual(['abc'])
   expect(renderMarkdown('before\x1b]52;c;YQ==\x07after\x1b[2J\x00', 40, none)).toEqual(['beforeafter'])
   expect(renderMarkdown('a\x9b31mb\x9d52;c;YQ==\x9cc', 40, none)).toEqual(['abc'])
-  expect(renderMarkdown('a\x1bPpayload\x1b\\b\x1b]unfinished', 40, none)).toEqual(['ab'])
+  expect(renderMarkdown('a\x1bPpayload\x1b\\b\x1b]unfinished', 40, none)).toEqual(['abunfinished'])
+  expect(renderMarkdown('before \x1b]0;x then do not run this', 40, none)).toEqual([
+    'before 0;x then do not run this',
+  ])
+  expect(renderMarkdown('a\x1b[中文 stays', 40, none)).toEqual(['a中文 stays'])
 })
 it('shows Markdown nested too deep to parse as plain wrapped text instead of throwing', () => {
   for (const md of [`${'> '.repeat(3000)}x`, `${'>'.repeat(5000)} a`]) {

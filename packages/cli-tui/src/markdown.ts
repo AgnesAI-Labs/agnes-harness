@@ -39,16 +39,27 @@ export function stripVT(text: string): string {
       }
     }
     if (code === 0x9b) {
+      // Parameters and intermediates, then one final byte. Anything else ends the sequence and stays
+      // text, so a stray CSI cannot swallow the prose after it.
       while (i + 1 < text.length) {
-        const next = text.charCodeAt(++i)
-        if (next >= 0x40 && next <= 0x7e) break
+        const next = text.charCodeAt(i + 1)
+        if (next < 0x20 || next > 0x3f) {
+          if (next >= 0x40 && next <= 0x7e) i++
+          break
+        }
+        i++
       }
     } else if ([0x90, 0x98, 0x9d, 0x9e, 0x9f].includes(code)) {
-      while (i + 1 < text.length) {
-        const next = text.charCodeAt(++i)
-        if (next === 0x9c || (code === 0x9d && next === 7)) break
-        if (next === 0x1b && text[i + 1] === '\\') {
-          i++
+      // An unterminated string drops only its introducer: otherwise one `ESC ]` would hide every word
+      // after it from the user while the model and the ledger still have them.
+      for (let j = i + 1; j < text.length; j++) {
+        const next = text.charCodeAt(j)
+        if (next === 0x9c || (code === 0x9d && next === 7)) {
+          i = j
+          break
+        }
+        if (next === 0x1b && text[j + 1] === '\\') {
+          i = j + 1
           break
         }
       }
