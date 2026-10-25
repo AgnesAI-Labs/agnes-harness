@@ -14,7 +14,7 @@ it('shows the last three screen rows of thoughts while streaming, then one folde
   live.set([{ thinking: thoughts, text: '' }])
   expect(trimmed(live.render(40))).toEqual(['  thought 6', '  thought 7', '  thought 8'])
   live.set([{ thinking: thoughts, text: 'The answer' }])
-  expect(trimmed(live.render(40))).toEqual(['✻ Thought (79 characters)', 'The answer'])
+  expect(trimmed(live.render(40))).toEqual(['∴ Reasoned (79 characters)', 'The answer'])
   live.set([{ thinking: '', text: 'plain' }])
   expect(live.render(40)).toEqual(['plain'])
 })
@@ -26,7 +26,7 @@ it('counts wide characters by screen rows and removes control sequences from tho
   expect(rows).toHaveLength(3)
   expect(rows.join('')).not.toContain('\x1b')
   live.set([{ thinking: '想', text: '答' }])
-  expect(trimmed(live.render(22))[0]).toBe('✻ 已思考（1 字）')
+  expect(trimmed(live.render(22))[0]).toBe('∴ 已思考（1 字）')
 })
 
 it('folds the thoughts of a finished reply above its text, and /thinking keeps them open', () => {
@@ -35,7 +35,7 @@ it('folds the thoughts of a finished reply above its text, and /thinking keeps t
     mono,
     'zh-CN',
   )
-  expect(trimmed(view.render(40))).toEqual(['✻ 已思考（79 字）', 'done'])
+  expect(trimmed(view.render(40))).toEqual(['∴ 已思考（79 字）', 'done'])
   expect(trimmed(view.transcript?.(40) ?? [])).toEqual(['done'])
   thinkingMode.toggle()
   expect(trimmed(view.render(40)).slice(0, 2)).toEqual(['  thought 1', '  thought 2'])

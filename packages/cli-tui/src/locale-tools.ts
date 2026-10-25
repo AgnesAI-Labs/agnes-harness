@@ -48,7 +48,7 @@ export const TOOLS_DICT: Record<Locale, Record<ToolsKey, string>> = {
     'group.search.other': 'Searched {n} times',
     'group.list.one': 'Listed 1 directory',
     'group.list.other': 'Listed {n} directories',
-    'thinking.done': 'Thought ({n} characters)',
+    'thinking.done': 'Reasoned ({n} characters)',
     'thinking.open': 'Thinking stays open for this run',
     'thinking.folded': 'Thinking folds once the answer starts',
     'thinking.level': 'thinking {level} from seq {seq}',

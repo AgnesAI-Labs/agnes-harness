@@ -38,7 +38,7 @@ export function thinkingRows(
   if (thinkingMode.expanded) return tail(EXPANDED_ROWS)
   if (!o.answering) return tail(STREAMING_ROWS)
   const chars = [...thinking].length
-  return [fitLine(o.ansi.fg('thinking', `✻ ${tt('thinking.done', o.locale, { n: chars })}`), o.width)]
+  return [fitLine(o.ansi.fg('thinking', `∴ ${tt('thinking.done', o.locale, { n: chars })}`), o.width)]
 }
 
 /** A finished reply: its folded thoughts, then the Markdown. */
