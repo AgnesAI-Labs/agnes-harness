@@ -34,12 +34,19 @@ export class ThemePicker implements Component {
       ...custom.map((name) => tt('theme.custom', locale, { name })),
     ]
     const select = new FilterSelect({
-      options: names.map((id, i) => ({
-        id,
-        label: labels[i] ?? id,
-        ...(id === current ? { current: true } : {}),
-        search: id,
-      })),
+      // A built-in name is `Name · what it looks like`: the second half goes in the description column.
+      // A custom one is `Custom · <file>`, whose file name is the name itself and stays whole.
+      options: names.map((id, i) => {
+        const text = labels[i] ?? id
+        const [label = id, description] = id.startsWith('custom:') ? [text] : text.split(' · ')
+        return {
+          id,
+          label,
+          ...(description ? { description } : {}),
+          ...(id === current ? { current: true } : {}),
+          search: id,
+        }
+      }),
       locale,
       ansi: this.ansi,
       onChoose: (id) => {

@@ -256,7 +256,7 @@ describe('runSlash', () => {
     try {
       await first.app.start()
       await first.app.runInput('/theme')
-      expect((await screenOf(first.term, 90, 24)).join('\n')).toContain('跟随终端背景 ✓')
+      expect((await screenOf(first.term, 90, 24)).join('\n')).toMatch(/自动 ✓ {2,}跟随终端背景/)
       // Auto is the default and heads the list, so one step down is light.
       first.term.feed('\x1b[B')
       first.term.feed('\r')

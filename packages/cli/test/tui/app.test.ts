@@ -1644,6 +1644,8 @@ it('draws an open picker in the composer slot, and a pending approval brings the
     await vi.waitFor(async () => expect(await screen()).toContain(prompt))
     for (const key of ['/theme', '\r']) term.feed(key)
     await vi.waitFor(async () => expect(await screen()).toContain('Dark colour-blind'))
+    // A theme's look sits in the description column, apart from its name and the current mark.
+    expect(await screen()).toMatch(/1\. Auto ✓ {2,}follow the terminal background/)
     // One prompt on screen: the picker has the keys, so the composer is not drawn.
     expect(await screen()).not.toContain(prompt)
     endpoint.push({
