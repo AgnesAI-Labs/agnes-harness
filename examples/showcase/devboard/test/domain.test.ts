@@ -1464,6 +1464,19 @@ describe('approval flows', () => {
     expect(doc(legacy).initiator.role).toBe('系统设计师')
   })
 
+  it('withdraws the release flow of a deliverable whose stage an approved change sends to rework', () => {
+    const { state, p } = setup()
+    const stage = byId(state.stages, `${p.id}/INITIATION`)
+    if (stage.state !== 'IN_PROGRESS') start(state, stage.id)
+    submitGate(state, { stageId: stage.id, by: 'x' }, NOW)
+    const flow = doc(state)
+    const cr = ccb(state, p, { impact: { artifacts: ['DOC-1-SAD'] } })
+    approveFlow(state, ecr(state, cr.id).id)
+    expect(stage.state).toBe('REWORK')
+    expect(flow.state).toBe('WITHDRAWN')
+    expect(byId(state.artifacts, 'DOC-1-SAD')).toMatchObject({ status: 'DRAFT', version: 'V0.1' })
+  })
+
   it('walks SERIAL nodes to APPROVED, baselines the deliverable and refuses the wrong role, node and a finished flow', () => {
     const { state } = setup()
     const flow = doc(state)

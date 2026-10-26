@@ -863,7 +863,16 @@ function applyChange(state, cr, at) {
           superseded: true,
         })
     }
-    for (const a of stageArtifacts(state, stage)) if (a.status === 'IN_REVIEW') a.status = 'DRAFT'
+    for (const a of stageArtifacts(state, stage)) {
+      if (a.status === 'IN_REVIEW') a.status = 'DRAFT'
+      // A release flow still running approves the old content: it is withdrawn with the stage's gates.
+      const flow = runningFlow(state, 'artifact', a.id)
+      if (!flow) continue
+      const node = flow.nodes[flow.current]
+      flow.actions.push({ nodeId: node.id, role: 'CCB', by: 'CCB', action: 'WITHDRAW', comment: note, at })
+      for (const n of flow.nodes) if (n.state !== 'DONE') n.state = 'SKIPPED'
+      Object.assign(flow, { state: 'WITHDRAWN', endedAt: at })
+    }
     reworked.push(stage.id)
   }
   cr.reworked = reworked
