@@ -207,3 +207,31 @@ it('invalidates the attention inbox after completed, parked and cancelled turns'
     window.removeEventListener('agnes:automation-invalidated', changed)
   }
 })
+
+it('keeps showing the model an attachment opened the session with', async () => {
+  const binding = new SessionBindingOwner()
+  const model = { route: 'demo', id: 'demo-model' }
+  const context = {
+    sessionBinding: binding,
+    selectComposerDraft() {},
+    approvalRuntime: { render() {} },
+    readOnlyController: { clear() {} },
+    references: { clear() {} },
+    topbarRuntime: { setStatus() {} },
+    clientModules: { session: new SessionService(new Context()) },
+    renderControls() {},
+    render() {},
+    t: (key: string) => key,
+    knownSessionModel: undefined as typeof model | undefined,
+    initialModelPending: undefined as typeof model | undefined,
+    moduleSessionId: undefined as string | undefined,
+  }
+  const controller = createSessionController(context as never, binding)
+  const work = controller.open('B', { created: { id: 'B' } as Session, initialModel: model })
+  // The composer reads the known field; the pending one only feeds the first send.
+  expect(context.knownSessionModel).toEqual(model)
+  expect(context.initialModelPending).toEqual(model)
+  // A newer selection fences the opening before it touches the client.
+  binding.begin()
+  await work
+})

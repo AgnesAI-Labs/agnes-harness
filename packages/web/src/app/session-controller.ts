@@ -112,7 +112,9 @@ export function createSessionController(
     context.permissionSelectionSeq = 0
     context.permissionChangePending = false
     context.stopping = false
-    context.knownSessionModel = undefined
+    // An upload opens a session before sending, carrying the model the draft already chose. The composer reads the
+    // known field, so keep showing that model instead of falling back to "select a model" until the first send.
+    context.knownSessionModel = options.created ? options.initialModel : undefined
     context.initialModelPending = options.initialModel
     context.modelSelectionSeq = 0
     context.selectedWorkspace = undefined
