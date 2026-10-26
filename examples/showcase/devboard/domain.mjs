@@ -1956,7 +1956,8 @@ export function metrics(state, project, now = Date.now()) {
   const own = (list) => list.filter((x) => x.projectId === project.id)
   const stages = STAGES.map((s) => state.stages.find((x) => x.id === `${project.id}/${s}`)).filter(Boolean)
   const current = stages.find((s) => s.stage === project.stage) ?? stages.at(-1)
-  const end = current?.actualEnd ? Date.parse(current.actualEnd) : now
+  // A reworked stage keeps its old actualEnd; it is late against now until it passes again.
+  const end = current?.actualEnd && current.state === 'PASSED' ? Date.parse(current.actualEnd) : now
   const delayDays = current?.plannedEnd ? Math.round((end - Date.parse(current.plannedEnd)) / DAY) : 0
   const defects = own(state.defects)
   const open = defects.filter((d) => OPEN_DEFECT.includes(d.state))

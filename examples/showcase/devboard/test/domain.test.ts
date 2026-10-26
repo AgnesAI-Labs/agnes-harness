@@ -1897,6 +1897,9 @@ describe('blockers', () => {
     expect(kinds(blockers(state, NOW))).toContain('STAGE_OVERDUE')
     first.plannedEnd = new Date(NOW + HOUR).toISOString()
     expect(metrics(state, live, NOW).overdue).toBe(false)
+    // reworked after it passed: the delay counts to now, not to the old end
+    Object.assign(first, { state: 'REWORK', plannedEnd: at(40), actualEnd: at(45) })
+    expect(metrics(state, live, NOW)).toMatchObject({ delayDays: 40, overdue: true })
   })
 
   it('derives a failed trial without a change, a change in CCB review and a stalled 8D', () => {
