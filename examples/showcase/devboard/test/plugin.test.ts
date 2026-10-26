@@ -963,6 +963,8 @@ describe('DevBoard plugin contract', () => {
     const action = pkg.agnes.application.workbench.actions.find((a: Any) => a.id === 'fast-forward')
     expect(action.agent).toBe('@agnes-showcase/devboard#coordinator')
     expect(action.prompt['zh-CN']).toContain('devboard_fastforward')
+    // One tool call needs no playbook: reading it would cost a model round trip on the quick path.
+    for (const lang of ['en', 'zh-CN']) expect(action.prompt[lang]).not.toContain('skill_read')
     const runApp = pkg.agnes.application.workbench.actions.find((a: Any) => a.id === 'run-app')
     expect(runApp.prompt['zh-CN']).toContain('devboard_app_register')
   })
