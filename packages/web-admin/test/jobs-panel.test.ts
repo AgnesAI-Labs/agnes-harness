@@ -53,6 +53,12 @@ it('selects a valid session by title, reads output and confirms only human-owned
     expect(host.querySelector<HTMLElement>('[data-testid="jobs-session-context"]')?.dataset.open).toBe(
       'false',
     )
+    // The stamp rides in the title's line box, so both share one baseline instead of two aligned cells.
+    expect(
+      host.querySelector(
+        '[data-testid="jobs-session-context"] .agh-disclosure-title .jobs-session-updated time',
+      )?.getAttribute('datetime'),
+    ).toBeTruthy()
     await act(async () =>
       host.querySelector<HTMLButtonElement>('[data-testid="session-job-human-job"] button')?.click(),
     )

@@ -429,4 +429,13 @@
       flex-wrap: wrap;
     }
   }
+  /* 作业页的「已更新」时间读作标题行的一部分（结构见 jobs-panel.tsx）：它与标题同在一个行盒里，
+     基线由行内布局对齐，不再依赖工具栏单元格按盒底对齐。 */
+  .jobs-session-updated {
+    margin-inline-start: var(--s12);
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-regular);
+    white-space: nowrap;
+  }
 }

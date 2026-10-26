@@ -177,6 +177,12 @@ export function JobsPanel({
       />
     </Field>
   )
+  const updatedLabel = updatedAt ? (
+    <time dateTime={updatedAt.toISOString()}>
+      {t('updated')} {new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(updatedAt)}
+    </time>
+  ) : undefined
+  const currentSession = sessions.current() === sessionId
   return (
     <section data-testid="jobs-panel">
       <SettingsPageDescription>{t('jobsHelp')}</SettingsPageDescription>
@@ -204,10 +210,17 @@ export function JobsPanel({
       ) : (
         <SettingsToolbar
           filters={
-            sessions.current() === sessionId ? (
+            currentSession ? (
               <SettingsDetails
                 compact
-                title={`${t('session')}: ${choices.find((row) => row.id === sessionId)?.title ?? ''}`}
+                // The stamp rides in the title's own line box: the toolbar aligns its cells by their
+                // bottom edge, which leaves the title and a smaller stamp off one baseline.
+                title={
+                  <>
+                    {`${t('session')}: ${choices.find((row) => row.id === sessionId)?.title ?? ''}`}
+                    {updatedLabel && <span className="jobs-session-updated">{updatedLabel}</span>}
+                  </>
+                }
                 data-testid="jobs-session-context"
               >
                 {sessionChoice}
@@ -216,13 +229,7 @@ export function JobsPanel({
               sessionChoice
             )
           }
-          controls={
-            updatedAt && (
-              <time dateTime={updatedAt.toISOString()}>
-                {t('updated')} {new Intl.DateTimeFormat(locale, { timeStyle: 'short' }).format(updatedAt)}
-              </time>
-            )
-          }
+          controls={currentSession ? undefined : updatedLabel}
         />
       )}
       {error && (
