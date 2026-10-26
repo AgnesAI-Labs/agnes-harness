@@ -2976,6 +2976,14 @@
       max-width: 50%;
     }
   }
+  /* A path or an ID takes only the room its row's label leaves, cut with an ellipsis. Sharing the
+     shrink with the label would wrap the label, even mid-word («director/y», 「记忆目/录」). */
+  .agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control:has(> .agnes-settings-value-path) {
+    flex: 100 1 0;
+  }
+  .agnes-settings-value-path {
+    display: block;
+  }
   /* A segmented choice spans the column with equal segments. */
   .agnes-settings-item-control > .agh-segmented {
     display: flex;
