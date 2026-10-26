@@ -162,6 +162,15 @@ function board(input, store) {
   }
 }
 
+/** A class-A defect holds TR5 and ADCP: closing it without its retest (a void or duplicate report) is a person's call. */
+function closableByAgent(state, id, to) {
+  const defect = state.defects.find((d) => d.id === id)
+  if (to === 'CLOSED' && defect?.severity === 'A' && defect.state !== 'RETEST')
+    throw new DomainError(
+      `${defect.id} 是 A 类缺陷：修复并回归（RETEST）后才能关闭；无效或重复的报告请让用户在看板上关闭`,
+    )
+}
+
 const impact = Type.Optional(
   Type.Object(
     {
@@ -263,7 +272,11 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx, a) => a.mutate(ctx.store, (s) => transition(s, { ...input, by: a.by })),
+    (input, ctx, a) =>
+      a.mutate(ctx.store, (s) => {
+        if (input.kind === 'defect') closableByAgent(s, input.id, input.to)
+        return transition(s, { ...input, by: a.by })
+      }),
   ),
   tool(
     'devboard_request_human',
@@ -452,7 +465,7 @@ export const tools = [
   ),
   tool(
     'devboard_defect_upsert',
-    'Create a defect (omit id, no to) or move one (id + to, optional note; a move edits no other field): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. testCase must be a registered TC id and req a registered requirement id of the project. An unclosed class-A defect holds the TR5 and ADCP gates (they cannot be approved); closing it closes its system finding on a waiting gate. 登记或流转缺陷。',
+    'Create a defect (omit id, no to) or move one (id + to, optional note; a move edits no other field): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. testCase must be a registered TC id and req a registered requirement id of the project. An unclosed class-A defect holds the TR5 and ADCP gates (they cannot be approved), so you close one only from RETEST (people close a void or duplicate report on the board); closing it closes its system finding on a waiting gate. 登记或流转缺陷。',
     Type.Object(
       {
         id: Type.Optional(id),
@@ -478,11 +491,11 @@ export const tools = [
         )
       if (!input.id && (input.to || input.note))
         throw new DomainError('新建缺陷不能同时流转：先新建，再用 id + to 流转')
-      return a.mutate(ctx.store, (s) =>
-        input.id
-          ? transition(s, { kind: 'defect', id: input.id, to: input.to, note: input.note, by: a.by })
-          : create(s, { ...input, kind: 'defect', by: a.by }),
-      )
+      return a.mutate(ctx.store, (s) => {
+        if (!input.id) return create(s, { ...input, kind: 'defect', by: a.by })
+        closableByAgent(s, input.id, input.to)
+        return transition(s, { kind: 'defect', id: input.id, to: input.to, note: input.note, by: a.by })
+      })
     },
   ),
   tool(

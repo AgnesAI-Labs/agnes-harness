@@ -296,6 +296,14 @@ describe('DevBoard plugin contract', () => {
       severity: 'C',
     })
     expect(read(store).activity.length).toBe(before + 1)
+    // a class-A defect holds TR5 and ADCP: the agent closes it only after its retest, through either tool
+    const fatal = (await defect.execute({ projectId: p.id, title: 'f', severity: 'A' }, ctx)).structured.data
+    expect((await defect.execute({ id: fatal.id, to: 'CLOSED' }, ctx)).isError).toBe(true)
+    const move = tool('devboard_transition')
+    expect((await move.execute({ kind: 'defect', id: fatal.id, to: 'CLOSED' }, ctx)).isError).toBe(true)
+    for (const to of ['CONFIRMED', 'FIXING', 'RETEST', 'CLOSED'])
+      expect((await defect.execute({ id: fatal.id, to }, ctx)).isError).toBeFalsy()
+    expect(read(store).defects.find((d: Any) => d.id === fatal.id).state).toBe('CLOSED')
   })
 
   it('handles approvals through devboard.approval and lets the agent only start flows of its own drafts', async () => {
