@@ -91,8 +91,7 @@ export type TransportOption =
       kind: 'ws'
       url: string
       tls?: { ca?: string; rejectUnauthorized?: boolean }
-      /** A function is called once per connection attempt, e.g. to fetch a single-use ticket. */
-      protocols?: string[] | (() => Promise<string[]>)
+      protocols?: string[]
     }
 
 // `reconnected` fires once the connection and every attached session are recovered after

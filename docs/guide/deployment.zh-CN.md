@@ -4,7 +4,7 @@
 
 [文档导航](../README.zh-CN.md) · [安装与 Linux](install.zh-CN.md#linux-build) · [安全](security.zh-CN.md)
 
-每个规范化 `AGH_HOME` 运行一个 App Server，客户端使用相同 home 与配置档。本地 Web 绑定回环地址，要求每次启动生成的密钥（经 `agh web` 打印的一次性链接交给浏览器），并校验精确 Origin/Host。源码快速开始不是公网反向代理登录方案；加代理不会建立互联网用户认证。管理面保持私有。远程 SDK 传输需要其声明的 TLS/认证配置，并单独验收部署。
+每个规范化 `AGH_HOME` 运行一个 App Server，客户端使用相同 home 与配置档。本地 Web 绑定回环地址，校验精确 Origin/Host。源码快速开始不是公网反向代理登录方案；加代理不会建立互联网用户认证。管理面保持私有。远程 SDK 传输需要其声明的 TLS/认证配置，并单独验收部署。
 
 ## 出站代理
 

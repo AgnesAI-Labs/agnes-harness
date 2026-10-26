@@ -181,9 +181,8 @@ function replyRpc(response: ServerResponse, rpc: RpcError, failure: unknown): vo
 
 /**
  * No arbitrary method forwarding; ordinary chat credentials never grant raw PackageAdmin access.
- * The launcher mounts this behind its Web server's per-launch session gate
- * (`web-server/src/local-session.ts`), which authenticates the caller; the origin, Host and Fetch
- * Metadata checks here are defence in depth against a browser being steered.
+ * The exact origin, Host and Fetch Metadata checks keep a browser on any other site (or a
+ * DNS-rebinding name) out; the local Web server applies the same floor to every write.
  */
 export function createAdminSurface(options: AdminSurfaceOptions) {
   const origin = new URL(options.origin)

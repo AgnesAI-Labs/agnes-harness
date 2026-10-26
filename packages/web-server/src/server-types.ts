@@ -29,14 +29,8 @@ export type WebServerOptions = {
   wsUrl: string
   /** Re-reads the daemon's current endpoint for each page load; a launcher whose daemon restarts sets it. */
   refreshWsUrl?: () => Promise<string>
-  /** @deprecated Ignored legacy input; use `localSession`. */
+  /** @deprecated Ignored legacy input; local Web access no longer uses a browser token. */
   token?: string
-  /**
-   * Per-launch browser session (the launcher sets it). The page is admitted by a one-time code in
-   * the launch URL, traded for an HttpOnly SameSite=Strict cookie; BFF routes and non-read requests
-   * then need that cookie, and the page gets each daemon WebSocket ticket through it.
-   */
-  localSession?: { wsTicket(): Promise<string> }
   /** Fixed local HTTP port. The default is kept stable for the daemon origin contract. */
   port?: number
   /** Exact page origin selected by the daemon. Defaults to http://127.0.0.1:<port>. */
@@ -130,8 +124,6 @@ export type WorkspacePicker = {
 
 export type WebServer = {
   url: string
-  /** With `localSession`: the URL to open, carrying a fresh one-time code. Otherwise `url`. */
-  launchUrl?(): string
   reloadDevelopmentClients?(): void
   close(): Promise<void>
 }

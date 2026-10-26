@@ -163,7 +163,7 @@ permissions:
 
 本轮工具输出含不可信内容时，后续修改可能需要确认。审批卡保留工具声明的动作标题/说明、目标标识及审批原因；作者应使用用户语言填写 `meta.presentation`。工具参数和输出不能为后续动作授予权限。
 
-本地 Web 只监听回环地址，并要求每次启动随机生成的密钥。`agh web` 打印带一次性 code 的链接；打开后 code 换成 `HttpOnly; SameSite=Strict` cookie，并从地址栏去掉。管理接口和所有写请求都需要该 cookie；页面每次连接 daemon WebSocket 都先取一张短时、一次性的票据。密钥本身不会出现在任何下发的页面里。精确 Origin/Host 校验保留为纵深防御。这是本机单用户保护，不是互联网用户认证；不要直接把它暴露到公网。手动 `--connect` 必须明确指定目标；Windows 命名管道还核对所属进程与发现记录。
+本地 Web 只监听回环地址，无需登录。它防的是浏览器里打开的其他网页，不防你自己运行的其他程序：Web 服务和 daemon WebSocket 只接受带自身端口的回环 `Host`（防 DNS 重绑定）；daemon WebSocket 拒绝来自 Web 页面以外的浏览器 `Origin`；Web 服务及其管理接口的所有写请求都拒绝跨站的 `Origin` 或 `Sec-Fetch-Site`。这不是互联网用户认证。不要直接把它暴露到公网。手动 `--connect` 必须明确指定目标；Windows 命名管道还核对所属进程与发现记录。
 
 Computer Use 是另一个高权限面：本地 profile 有启用配置，但仍需要运行组件、可用模型和操作系统授权。`computer-use permissions grant` 会触发授权流程，`install/restart` 会改变运行组件；只读排查先用 `computer-use status` 和 `doctor computer-use`，不要为文档自动授予系统权限。
 

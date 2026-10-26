@@ -2,10 +2,9 @@ import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, join } from 'node:path'
-import { FILE_UPLOAD_PATH, LOCAL_WEB_TICKET_PATH } from '@agnes/protocol'
+import { FILE_UPLOAD_PATH } from '@agnes/protocol'
 import { DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame } from './deliverable-preview-frame.js'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
-import { createLocalWebSession } from './local-session.js'
 import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
 import { UI_COMPONENT_MODULE_BYTES, uiComponentFrame } from './ui-component-frame.js'
 import { fileUploadRoute } from './upload-route.js'
@@ -35,7 +34,14 @@ import {
   WORKSPACE_PICKER_PATH,
 } from './server-assets.js'
 import { json, listen } from './server-http.js'
-import { acceptsWebRequest, loopbackOrigin, loopbackWs, port } from './server-security.js'
+import {
+  acceptsWebRequest,
+  crossSiteWrite,
+  loopbackHost,
+  loopbackOrigin,
+  loopbackWs,
+  port,
+} from './server-security.js'
 
 type WatchedPluginBuild = {
   packageId: string
@@ -78,9 +84,6 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     `default-src 'self'; media-src 'self' blob:; connect-src 'self' ${expectedOrigin.origin.replace(/^http/, 'ws')} ${ws.origin.replace(/^http/, 'ws')}; style-src 'self'; script-src 'self'${importMapHash ? ` 'sha256-${importMapHash}'` : ''}`
   let contentSecurityPolicy = policyFor(wsUrl)
 
-  const session = options.localSession
-    ? createLocalWebSession({ origin: expectedOrigin, wsTicket: options.localSession.wsTicket })
-    : undefined
   const handleWorkspacePicker = createWorkspacePickerRoute(expectedOrigin.origin, options)
   const changeEpoch = randomBytes(16).toString('hex')
   let changeCursor = 0
@@ -184,23 +187,19 @@ export async function createWebServer(options: WebServerOptions): Promise<WebSer
     try {
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('Web listener is not bound')
-      const expectedHost = `${HOST}:${address.port}`
-      if (request.headers.host !== expectedHost) {
-        response.writeHead(403).end()
+      const host = loopbackHost(request.headers.host, `${HOST}:${address.port}`, address.port)
+      // Another loopback name (a `localhost` bookmark) is sent to the one page origin every
+      // route checks against; any other Host is a rebinding domain and gets nothing.
+      if (host === 'alias' && (request.method === 'GET' || request.method === 'HEAD')) {
+        const target = new URL(request.url ?? '/', expectedOrigin)
+        response
+          .writeHead(307, { Location: `${expectedOrigin.origin}${target.pathname}${target.search}` })
+          .end()
         return
       }
-      if (session) {
-        const url = new URL(request.url ?? '/', expectedOrigin)
-        if (session.exchange(request, response, url)) return
-        if (url.pathname === LOCAL_WEB_TICKET_PATH) {
-          await session.ticket(request, response)
-          return
-        }
-        if (session.required(request, url.pathname) && !session.authenticated(request)) {
-          request.resume()
-          json(response, 401, { error: { code: 'E_WEB_SESSION' } })
-          return
-        }
+      if (host !== 'canonical') {
+        response.writeHead(403).end()
+        return
       }
       if (await options.pluginStreams?.handleHttp(request, response)) return
       if (await handleWebhook?.(request, response)) return
@@ -348,6 +347,13 @@ void poll();\n`,
         }
         request.once('aborted', close)
         response.once('close', close)
+        return
+      }
+      // Every route above checks its own origin. From here on (admin BFF, client-module services,
+      // mounted Surface APIs) no write is accepted from a page on another site.
+      if (crossSiteWrite(expectedOrigin.origin, request)) {
+        request.resume()
+        json(response, 403, { error: { code: 'ORIGIN_REJECTED' } })
         return
       }
       if (options.handleAdmin && (await options.handleAdmin(request, response))) return
@@ -589,7 +595,6 @@ void poll();\n`,
   let closing: Promise<void> | undefined
   return {
     url: actualOrigin,
-    launchUrl: () => session?.launchUrl() ?? `${actualOrigin}/`,
     reloadDevelopmentClients: () => {
       developmentRevision++
       for (const response of developmentReloadClients) writeSseEvent(response, 'reload', {})

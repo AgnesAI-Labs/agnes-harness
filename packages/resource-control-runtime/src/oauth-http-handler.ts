@@ -191,16 +191,16 @@ function safeReturnTo(returnTo: string | undefined, baseUrl: URL): URL {
 }
 
 /**
- * CSRF/drive-by guard for `/start` only (found by independent security review): the launcher's Web
- * server (`web-server/src/local-session.ts`) requires its per-launch session cookie for
- * `/oauth/<id>/start`, but that cookie rides along on any same-site request the browser makes, and
- * `createAdminSurface`/`createResourceAdminSurface` add their own origin checks on top. Without
- * this, any page the user happens to have open could trigger `/oauth/<serverId>/start` via
- * `<img>`/`fetch()`/a hidden `<iframe>` with zero user interaction, for any already-registered OAuth-bound MCP server - a zero-click drive-by
+ * CSRF/drive-by guard for `/start` only (found by independent security review): `server.ts` calls
+ * `handleAdmin` with no credential gate before this handler chain is ever reached, and the Web
+ * server's own cross-site floor only covers writes - `/start` is a GET, unlike the
+ * `createAdminSurface`/`createResourceAdminSurface` routes, which check origin themselves. Without this, any page the user happens to
+ * have open could trigger `/oauth/<serverId>/start` via `<img>`/`fetch()`/a hidden `<iframe>` with
+ * zero user interaction, for any already-registered OAuth-bound MCP server - a zero-click drive-by
  * that would also arm the SSRF surface above without the user ever clicking "Authorize".
  *
- * `/callback` deliberately gets none of this (and is exempt from the session cookie): it is reached
- * via a real top-level cross-origin navigation *from the authorization server back to us* (a 302 the user's browser follows after
+ * `/callback` deliberately gets none of this: it is reached via a real top-level cross-origin
+ * navigation *from the authorization server back to us* (a 302 the user's browser follows after
  * consenting), which this exact same check would incorrectly reject as cross-site. Its own
  * protection - the signed, replay-protected `state` parameter - is what actually
  * authenticates that request; adding a same-origin check there would break the real flow, not
@@ -212,8 +212,8 @@ function safeReturnTo(returnTo: string | undefined, baseUrl: URL): URL {
  * both are optional-when-absent because this route is reached by a real top-level navigation (the
  * user clicking "Authorize" in the Web UI, or typing/bookmarking the URL directly), not a
  * fetch/XHR: browsers do not attach a custom `Authorization` header to a plain top-level
- * navigation from a link click, so the credential here is the SameSite=Strict session cookie, which
- * a same-site navigation carries. `sec-fetch-site: cross-site` (what a
+ * navigation from a link click, so - unlike the workspace-picker route - this deliberately does
+ * NOT also require `options.token`/a bearer credential. `sec-fetch-site: cross-site` (what a
  * malicious page's `<img>`/`fetch()`/`<iframe>` actually sends) is exactly what gets rejected here;
  * a real top-level click-through navigation from the Web UI itself sends `same-origin`.
  */

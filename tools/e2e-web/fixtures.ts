@@ -24,10 +24,6 @@ export const test = base.extend<{
           (info.title.startsWith('agent launch sweep') && process.env.AGH_REAL_AGENT_SWEEP === '1'),
       },
     )
-    // Each launch (including restarts) signs this browser context in with its one-time link.
-    runtime.onSignIn(async (launchUrl) => {
-      await page.context().request.get(launchUrl, { maxRedirects: 0 })
-    })
     try {
       await runtime.start()
       // UI specs own their navigation and screen assertions; SDK flows do not boot a second client.

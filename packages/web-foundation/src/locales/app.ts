@@ -134,8 +134,6 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.gap.partial':
       'Some history events are no longer replayable; reading the backend’s current projection.',
     'app.ws.unavailable': 'The WebSocket address is unavailable.',
-    'app.ws.signInRequired':
-      'This page is not signed in. Open the link that `agh web` printed in your terminal, or restart `agh web` for a new one.',
     'app.model.noneUsable': 'An account is connected, but no model is usable yet.',
     'app.model.openSettings': 'Open settings',
     'app.workspaceList.unreadable':
@@ -311,8 +309,6 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.connection.lost': '与后台的连接已断开；任务是否结束请以后台状态为准。',
     'app.gap.partial': '部分历史事件已不可回放，正在读取后台现有投影。',
     'app.ws.unavailable': 'WebSocket 连接地址不可用。',
-    'app.ws.signInRequired':
-      '此页面尚未登录。请打开终端里 `agh web` 打印的链接；链接已用过时，重启 `agh web` 获取新链接。',
     'app.model.noneUsable': '已连接账户，但还没有可用的模型。',
     'app.model.openSettings': '去设置',
     'app.workspaceList.unreadable': '无法读取工作区列表，请稍后重试或直接添加工作目录。',

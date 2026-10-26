@@ -37,7 +37,7 @@ The gallery promotes showcase applications. Missing flagship packages produce no
 node agnes.mjs serve
 ```
 
-Web listens on loopback. Open the link that `serve` prints: its one-time code signs this browser in with an HttpOnly cookie for as long as that `serve` runs, and the page never stores a connection token. The page asks for a single-use ticket for each daemon connection; the server also checks the Origin and Host fixed at startup. Do not interchange `localhost` and `127.0.0.1`. When changing the port, set a matching origin:
+Web listens on loopback and needs no login: open the plain URL that `serve` prints. The server checks Host and Origin against the address fixed at startup, so web pages on other sites cannot drive it; a `localhost` address on the same port is redirected to `127.0.0.1`. When changing the port, set a matching origin:
 
 ```sh
 export AGNES_WEB_ORIGIN=http://127.0.0.1:4180
@@ -146,7 +146,7 @@ Computer Use shows driver status, system permissions, diagnostics, and maintenan
 
 To add MCP, describe the integration in chat and supply a service address or connection details, then inspect it in settings. New services must be trusted and enabled in sequence; see [MCP integration](mcp.md). Use the SecretRef configuration flow for credentials.
 
-The URL's `session` parameter selects the session. Once a session opens, one-time example launch parameters are removed so refresh restores the current conversation. After a refresh or brief disconnection, the SDK reloads the projection from the backend without automatically resending business requests. If reconnection fails, inspect `daemon status`. A daemon restart keeps the browser signed in; after restarting `serve` itself, open the new link it prints. A running `serve` re-attaches by itself to a restarted daemon of the same home, profile and Web origin: while it waits, admin requests report the backend as unavailable (HTTP 503) rather than failing as internal, and the page reloads once the daemon is back. It never starts a daemon and refuses one with a different identity or Web origin; restart `serve` in that case. Local mode does not need to restore a startup token from sessionStorage. A page that is not signed in says so and points to the printed link.
+The URL's `session` parameter selects the session. Once a session opens, one-time example launch parameters are removed so refresh restores the current conversation. After a refresh or brief disconnection, the SDK reloads the projection from the backend without automatically resending business requests. If reconnection fails, inspect `daemon status`. After a daemon restart, open the normal URL printed by the current `serve` process. A running `serve` re-attaches by itself to a restarted daemon of the same home, profile and Web origin: while it waits, admin requests report the backend as unavailable (HTTP 503) rather than failing as internal, and the page reloads once the daemon is back. It never starts a daemon and refuses one with a different identity or Web origin; restart `serve` in that case. Local mode does not need to restore a startup token from sessionStorage.
 
 Closing the browser, disconnecting the page, or stopping `serve` affects the client/Web service. Session facts determine whether backend tasks have ended. Run `daemon stop` separately to fully stop a trial instance.
 

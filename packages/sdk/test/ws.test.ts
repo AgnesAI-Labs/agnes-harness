@@ -169,25 +169,3 @@ it('sends actual ping frames and treats a pong as liveness before a later half-o
   expect((await ended).error?.message).toBe('WebSocket ping timeout')
   expect(pings).toBe(3)
 })
-it('asks a protocols function once per connection attempt and fails closed when it throws', async () => {
-  const s = await server()
-  const offered: string[] = []
-  s.wss.on('connection', (_socket, request) => offered.push(request.headers['sec-websocket-protocol'] ?? ''))
-  let calls = 0
-  const factory = wsTransport({
-    url: s.url,
-    protocols: async () => {
-      calls++
-      if (calls === 3) throw new Error('ticket unavailable')
-      return ['agnes-v1', `agnes-ticket.t${calls}`]
-    },
-  })
-  const handlers = { onMessage() {}, onClose() {} }
-  const first = await factory(handlers)
-  const second = await factory(handlers)
-  await expect(factory(handlers)).rejects.toBeInstanceOf(TransportClosed)
-  await first.close()
-  await second.close()
-  expect(calls).toBe(3)
-  expect(offered).toEqual(['agnes-v1,agnes-ticket.t1', 'agnes-v1,agnes-ticket.t2'])
-})

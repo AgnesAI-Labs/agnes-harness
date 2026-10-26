@@ -16,16 +16,13 @@ import {
 
 const root = process.env.AGH_UI_REPORT
 const test = base.extend<{ uiServer: Runtime | undefined }>({
-  uiServer: async ({ browserName, context }, use, info) => {
+  uiServer: async ({ browserName }, use, info) => {
     if (browserName !== 'chromium') throw new Error('UI acceptance requires Chromium')
     if (process.env.AGH_UI_ISOLATED !== '1') {
       await use(undefined)
       return
     }
     const server = await isolatedRuntime()
-    server.onSignIn(async (launchUrl) => {
-      await context.request.get(launchUrl, { maxRedirects: 0 })
-    })
     try {
       await server.start()
       await use(server)

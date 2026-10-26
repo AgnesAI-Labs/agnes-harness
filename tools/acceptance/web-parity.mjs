@@ -505,7 +505,7 @@ async function createRuntime(entry) {
       web.stderr.on('data', (chunk) => (output += String(chunk)))
       const started = Date.now()
       while (!launchUrl) {
-        const match = output.match(/http:\/\/127\.0\.0\.1:\d+\/\?code=[A-Za-z0-9_-]+/)
+        const match = output.match(/http:\/\/127\.0\.0\.1:\d+\//)
         if (match) launchUrl = match[0]
         else if (Date.now() - started > 30000)
           throw new Error(`D31 Web launch timeout\n${output.slice(-4000)}`)

@@ -6,7 +6,6 @@ import type { RpcEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import type { JsonRpcMessage } from '@agnes/daemon-foundation/rpc'
 import { MAX_FRAME_BYTES } from '@agnes/protocol'
 import { type WebSocket, WebSocketServer } from 'ws'
-import { WEB_TICKET_PROTOCOL_PREFIX, webTicketVerifier } from './web-ticket.js'
 
 export const WS_MAX_MESSAGE_BYTES = MAX_FRAME_BYTES
 const MAX_PENDING = 1_000
@@ -21,12 +20,26 @@ function authorized(header: string | undefined, token: string): boolean {
   )
 }
 
-function protocolValue(header: string | undefined, prefix: string): string | undefined {
+function protocolBearer(header: string | undefined): string | undefined {
   return header
     ?.split(',')
     .map((value) => value.trim())
-    .find((value) => value.startsWith(prefix))
-    ?.slice(prefix.length)
+    .find((value) => value.startsWith('agnes-bearer.'))
+    ?.slice('agnes-bearer.'.length)
+}
+
+const LOOPBACK_NAMES = ['127.0.0.1', 'localhost', '[::1]']
+
+/** `name:port` where name is a loopback name; anything else (a rebinding domain) is refused. */
+function loopbackAuthority(value: string | undefined, port: string): boolean {
+  if (!value) return false
+  let url: URL
+  try {
+    url = new URL(`http://${value}`)
+  } catch {
+    return false
+  }
+  return LOOPBACK_NAMES.includes(url.hostname) && url.port === port && url.host === value.toLowerCase()
 }
 
 function target(addr: string): { host: string; port: number } {
@@ -115,8 +128,10 @@ export async function listenWebSocket(options: {
   cert?: string
   key?: string
   /**
-   * Explicit local mode: an upgrade from this exact page origin that also presents the per-launch
-   * secret (or a single-use ticket signed with it) grants local single-user authority.
+   * Explicit local mode: an upgrade grants local single-user authority when its Host is a loopback
+   * name with this listener's port (no DNS rebinding) and its Origin, if any, is the Web page's own
+   * origin under a loopback name (no cross-site page). Other local processes are the user's own and
+   * send no Origin; they are not refused.
    */
   localOrigin?: string
   token: string
@@ -153,26 +168,30 @@ export async function listenWebSocket(options: {
     perMessageDeflate: false,
     handleProtocols: (protocols) => (protocols.has('agnes-v1') ? 'agnes-v1' : false),
   })
-  let expectedHost = ''
-  const ticketValid = local ? webTicketVerifier(options.token) : () => false
+  let listenPort = ''
+  const pagePort = local ? new URL(options.localOrigin as string).port : ''
+  const pageOrigin = (origin: string | undefined): boolean => {
+    if (origin === undefined) return true
+    const url = /^http:\/\/[^/]+$/.test(origin) ? origin.slice('http://'.length) : undefined
+    return loopbackAuthority(url, pagePort)
+  }
   server.on('upgrade', (request, socket, head) => {
     if (stopping) {
       socket.destroy()
       return
     }
-    if (local && (request.headers.origin !== options.localOrigin || request.headers.host !== expectedHost)) {
+    if (
+      local &&
+      (!loopbackAuthority(request.headers.host, listenPort) || !pageOrigin(request.headers.origin))
+    ) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
       return
     }
-    // Origin and Host only bind a browser; any local process can forge them. The secret is what
-    // admits the caller: a launcher-signed ticket from the page, or the bearer itself from a
-    // same-user process that can read the 0600 credential file.
-    const protocols = request.headers['sec-websocket-protocol']
-    const bearer = protocolValue(protocols, 'agnes-bearer.')
+    const bearer = protocolBearer(request.headers['sec-websocket-protocol'])
     if (
+      !local &&
       !authorized(request.headers.authorization, options.token) &&
-      !authorized(`Bearer ${bearer ?? ''}`, options.token) &&
-      !ticketValid(protocolValue(protocols, WEB_TICKET_PROTOCOL_PREFIX))
+      !authorized(`Bearer ${bearer ?? ''}`, options.token)
     ) {
       socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
       return
@@ -194,7 +213,7 @@ export async function listenWebSocket(options: {
   })
   const actual = server.address() as AddressInfo
   const printableHost = actual.family === 'IPv6' ? `[${actual.address}]` : actual.address
-  expectedHost = `${printableHost}:${actual.port}`
+  listenPort = String(actual.port)
   let closing: Promise<void> | undefined
   let serverClosed: Promise<void> | undefined
   const stopAccepting = (): Promise<void> => {
