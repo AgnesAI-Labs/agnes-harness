@@ -526,6 +526,7 @@ describe('Scheduler', () => {
     const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
     repo.insert(row('once', { maxAttempts: 3 }))
     repo.insert(row('repeat', { maxAttempts: 3, schedule: { kind: 'every', everyMs: 60_000 }, createdAt: 1 }))
+    repo.insert(row('opened', { maxAttempts: 3, createdAt: 2 }))
     const failures: unknown[] = []
     const settled: unknown[] = []
     const failed = fakeRegistry({ fail: true })
@@ -540,17 +541,26 @@ describe('Scheduler', () => {
       ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
       activationBarrier: createExtensionActivationBarrier(),
       random: () => 0.5,
-      prepare: async (job: JobRow) => (job.idempotencyKey === 'repeat' ? { sessionKey: 'fresh' } : undefined),
+      prepare: async (job: JobRow) => {
+        // A new session that opened and then failed while it was being set up names itself.
+        if (job.idempotencyKey === 'opened')
+          throw Object.assign(new Error('model unavailable'), { sessionKey: 'half-set-up' })
+        return job.idempotencyKey === 'repeat' ? { sessionKey: 'fresh' } : undefined
+      },
       retryable: () => false,
       onFailed: (job: JobRow, info: unknown) => failures.push([job.idempotencyKey, info]),
       recurAfterFailure: (job: JobRow) => job.idempotencyKey === 'repeat',
       onSettled: (job: JobRow, info: unknown) => settled.push([job.idempotencyKey, info]),
     } as never)
     await instance.tick()
-    expect(failures).toEqual([
-      ['once', { at: now, error: 'boom' }],
-      ['repeat', { at: now, error: 'boom', sessionKey: 'fresh' }],
-    ])
+    expect(failures).toHaveLength(3)
+    expect(failures).toEqual(
+      expect.arrayContaining([
+        ['once', { at: now, error: 'boom' }],
+        ['repeat', { at: now, error: 'boom', sessionKey: 'fresh' }],
+        ['opened', { at: now, error: 'model unavailable', sessionKey: 'half-set-up' }],
+      ]),
+    )
     expect(repo.get('once')).toMatchObject({ status: 'failed', attempts: 1 })
     expect(repo.get('repeat')).toMatchObject({
       status: 'waiting',
@@ -558,10 +568,14 @@ describe('Scheduler', () => {
       delayUntil: 70_000,
       error: 'boom',
     })
-    expect(settled).toEqual([
-      ['once', { at: now, nextRunAt: null, status: 'completed' }],
-      ['repeat', { at: now, nextRunAt: 70_000, status: 'waiting' }],
-    ])
+    expect(settled).toHaveLength(3)
+    expect(settled).toEqual(
+      expect.arrayContaining([
+        ['once', { at: now, nextRunAt: null, status: 'completed' }],
+        ['repeat', { at: now, nextRunAt: 70_000, status: 'waiting' }],
+        ['opened', { at: now, nextRunAt: null, status: 'completed' }],
+      ]),
+    )
   })
 
   it('reschedules recurring jobs after success and executes resume commands', async () => {
