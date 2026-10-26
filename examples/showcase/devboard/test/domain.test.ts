@@ -1564,6 +1564,10 @@ describe('approval flows', () => {
     expect(() => act(state, flow.id, '机械设计师', 'ADD_SIGN', { role: '没有这个角色' })).toThrow(
       '加签角色无效',
     )
+    // the author's own role is kept off the flow, so nobody signs their own work through an added node
+    expect(() => act(state, flow.id, '机械设计师', 'ADD_SIGN', { role: flow.initiator.role })).toThrow(
+      '发起人',
+    )
     act(state, flow.id, '机械设计师', 'ADD_SIGN', { role: 'RAMS 工程师' })
     act(state, flow.id, '机械设计师', 'ADD_SIGN', { role: '质量工程师' })
     expect(flow.nodes.map((n: Item) => n.id)).toEqual([

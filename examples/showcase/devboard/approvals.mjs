@@ -205,6 +205,7 @@ export function act(flow, input, now) {
 
   // ADD_SIGN: a SERIAL node for the chosen role right after the current one.
   const added = ROLES.includes(input.role) ? input.role : fail(`加签角色无效：${input.role ?? '（空）'}`)
+  if (added === flow.initiator.role) fail(`加签不能加给发起人的角色「${added}」：不能审批自己发起的内容`)
   let n = flow.nodes.filter((x) => x.addedBy).length + 1
   while (flow.nodes.some((x) => x.id === `add${n}`)) n += 1
   flow.nodes.splice(flow.current + 1, 0, {
