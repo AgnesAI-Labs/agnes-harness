@@ -414,7 +414,11 @@ function moveStage(state, stage, { to, by, note, author }, now) {
         `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，不能开始「${stageLabel(state, stage)}」`,
       )
   }
-  if (author) stage.author = text(author, 'author', 32)
+  // The stage keeps the canonical role, so the self-approval check holds for "技术负责人 张三" too.
+  if (author) {
+    const role = roleOf(text(author, 'author', 32))
+    stage.author = ROLES.includes(role) ? role : fail(`编写角色无效：${author}（可选 ${ROLES.join('、')}）`)
+  }
   record(stage, new Date(now).toISOString(), by || '未署名', stage.state, 'IN_PROGRESS', note)
   // Restarting a reworked earlier stage leaves the project at its furthest stage.
   const project = projectOf(state, stage.projectId)

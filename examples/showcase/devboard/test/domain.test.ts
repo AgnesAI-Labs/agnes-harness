@@ -410,6 +410,19 @@ describe('approver roles and co-signing', () => {
     expect(roleOf('客户代表 方卫东')).toBe('客户代表')
   })
 
+  it('stores a named stage author as its role, so that role still cannot approve, and refuses an unknown one', () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    pass(state, p.id, 'INITIATION')
+    const id = `${p.id}/REQUIREMENTS`
+    const go = (author: string) =>
+      transition(state, { kind: 'stage', id, to: 'IN_PROGRESS', by: '研发协调员', author }, NOW)
+    expect(() => go('张三')).toThrow('编写角色无效')
+    expect(go('项目经理 李四').author).toBe('项目经理')
+    const { gate } = submitGate(state, { stageId: id, by: '研发协调员' }, NOW)
+    expect(() => sign(state, gate.id, '项目经理 李四')).toThrow('是该阶段的编写角色')
+  })
+
   it('needs every role to sign once and every finding closed before the last signature approves', () => {
     const { state, stage, gate } = dl1()
     const afterFirst = sign(state, gate.id, '客户代表').gate
