@@ -1389,10 +1389,15 @@ describe('approval flows', () => {
     // returning from the first node goes to the initiator too, and clears an ALL node's signatures
     const cr = ccb(state, p)
     const co = ecr(state, cr.id)
-    act(state, co.id, '机械设计师', 'APPROVE')
+    actApproval(state, { id: co.id, by: '机械设计师 沈岳', action: 'APPROVE' }, NOW)
     act(state, co.id, '质量工程师', 'RETURN', { comment: '资料不全' })
     expect(co.nodes[0]).toMatchObject({ state: 'ACTIVE', signed: [] })
     expect(co.actions.at(-1)).toMatchObject({ to: 'INITIATOR' })
+    // the CCB record lists only the agreements that stood
+    approveFlow(state, co.id)
+    const members = byId(state.changes, cr.id).ccb.members
+    expect(members).toContain('机械设计师 测试员')
+    expect(members).not.toContain('机械设计师 沈岳')
   })
 
   it('transfers within the role, adds a signer node and keeps comment as trace only', () => {

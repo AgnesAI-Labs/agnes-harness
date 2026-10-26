@@ -1801,6 +1801,20 @@ export function actApproval(state, input, now = Date.now()) {
   return Object.assign(flow, draft)
 }
 
+/** Who agreed and still stands: a send-back voids the agreements of the node it returns to and of every later one. */
+function standingSigners(flow) {
+  const order = flow.nodes.map((n) => n.id)
+  let standing = []
+  for (const a of flow.actions) {
+    if (a.action === 'APPROVE') standing.push(a)
+    if (a.action === 'RETURN') {
+      const back = a.to === 'INITIATOR' ? 0 : order.indexOf(a.to)
+      standing = standing.filter((s) => order.indexOf(s.nodeId) < back)
+    }
+  }
+  return [...new Set(standing.map((a) => a.by))]
+}
+
 function settle(state, flow, outcome, now) {
   const { type, id } = flow.subject
   const subject = state[SUBJECTS[type]].find((x) => x.id === id)
@@ -1835,8 +1849,7 @@ function settle(state, flow, outcome, now) {
       if (/^V0\./.test(subject.version)) subject.version = 'V1.0'
       subject.updatedAt = at
     } else if (flow.template === 'ECR') {
-      const signers = [...new Set(flow.actions.filter((a) => a.action === 'APPROVE').map((a) => a.by))]
-      move('APPROVED', { members: signers })
+      move('APPROVED', { members: standingSigners(flow) })
     } else if (flow.template === 'ECN_RELEASE') {
       const baseline = releaseEcn(state, subject, at)
       record(
