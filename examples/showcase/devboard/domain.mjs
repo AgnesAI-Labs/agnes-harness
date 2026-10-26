@@ -1264,7 +1264,7 @@ export function updateImpact(state, { id, impact, traceFrom }) {
 
 /**
  * Edit the field-loop parts of a change: impact, source and root cause before CCB review, the retrofit
- * total any time before closing, and the verification record once approved.
+ * total before closing while no flow runs, and the verification record once approved.
  */
 export function updateChange(state, input, now = Date.now()) {
   const cr = find(state, 'change', input.id, input.projectId)
@@ -1277,6 +1277,8 @@ export function updateChange(state, input, now = Date.now()) {
     cr.rootCause = text(input.rootCause, 'rootCause', 2000)
   if (input.retrofit?.total !== undefined) {
     if (cr.state === 'CLOSED') fail(`${cr.id} 已关闭`)
+    const running = runningFlow(state, 'change', cr.id)
+    if (running) fail(`${cr.id} 有进行中的审批 ${running.id}，整改总数待流程结束后再改`)
     const done = cr.retrofit?.done ?? 0
     // Completion (and its as-maintained baseline) happens once, on the last door's progress update.
     if (done && done === cr.retrofit.total) fail(`${cr.id} 整改已完成（${done}/${done}），总数不可再改`)

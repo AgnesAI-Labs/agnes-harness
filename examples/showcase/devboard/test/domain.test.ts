@@ -1720,6 +1720,8 @@ describe('approval flows', () => {
     expect(own.raisedBy).toBe('研发协调员')
     const flow = submitApproval(state, { template: 'ECR', subjectId: own.id, ...agent }, NOW)
     expect(flow.initiator).toEqual({ role: '系统设计师', by: '研发协调员' })
+    // the retrofit scope is part of what the running flow decides
+    expect(() => updateChange(state, { id: own.id, retrofit: { total: 5 } })).toThrow('有进行中的审批')
     const other = ccb(state, p, { by: '客户代表 方卫东' })
     expect(() => submitApproval(state, { template: 'ECR', subjectId: other.id, ...agent }, NOW)).toThrow(
       '不是智能体起草',
