@@ -38,7 +38,13 @@ const subjectLabel = (data, flow) => `${data.labels.approvalSubject[flow.subject
 
 /** Who handled a node (latest approval per role), or who is awaited and to whom it was transferred. */
 function handlers(flow, node) {
-  const mine = flow.actions.filter((a) => a.nodeId === node.id)
+  // A send-back to this node or an earlier one voids what was handled here before it.
+  const at = flow.nodes.indexOf(node)
+  const reset = flow.actions.findLastIndex(
+    (a) =>
+      a.action === 'RETURN' && (a.to === 'INITIATOR' ? 0 : flow.nodes.findIndex((n) => n.id === a.to)) <= at,
+  )
+  const mine = flow.actions.slice(reset + 1).filter((a) => a.nodeId === node.id)
   const latest = {}
   for (const a of mine) if (a.action === 'APPROVE') latest[a.role] = a.by
   const transfer = mine.findLast((a) => a.action === 'TRANSFER')
