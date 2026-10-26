@@ -173,7 +173,10 @@ function projectHandoff(state, project) {
   const stage = project.stage
   const step = currentStep(state, project)
   const tasks = own(state.tasks).filter((t) => OPEN_TASK.has(t.state))
-  const defects = own(state.defects).filter((d) => OPEN_DEFECT.has(d.state))
+  // A deferred A defect is not being worked on, but it still holds TR5 and ADCP.
+  const defects = own(state.defects).filter(
+    (d) => OPEN_DEFECT.has(d.state) || (d.state === 'DEFERRED' && d.severity === 'A'),
+  )
   const changes = own(state.changes).filter((c) => OPEN_CHANGE.has(c.state))
   const pending = state.gates.filter(
     (g) => g.decision === 'PENDING' && g.stageId.startsWith(`${project.id}/`),

@@ -2532,6 +2532,9 @@ describe('fast-forward from the shipped sample', () => {
       )
       transition(state, { kind: 'defect', id: later.id, to: 'DEFERRED', by: 'x' }, NOW)
       expect(() => approve(state, gate)).toThrow(later.id)
+      // and the hand-off lists the deferred A defect that holds the gate
+      const out = handoff(state, { type: 'project', id: projectId })
+      expect(out.openDefects.map((d: Item) => d.id)).toContain(later.id)
     })
 
     it('closing the defect closes its finding as the system, and then the gate can be approved', async () => {
