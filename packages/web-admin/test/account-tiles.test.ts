@@ -50,6 +50,7 @@ it('offers Agnes AI first, then the popular providers, the relays, and folds a l
     [...(host.querySelector(selector)?.querySelectorAll('button') ?? [])].map((tile) => tile.dataset.provider)
   expect(tiles('.account-provider-groups > .account-provider-choices')).toEqual([
     'agnes-ai',
+    'agnes-ai:international',
     'deepseek',
     'openai',
     'zai',
@@ -72,10 +73,12 @@ it('offers Agnes AI first, then the popular providers, the relays, and folds a l
   more?.querySelector<HTMLButtonElement>('[data-provider="xai"]')?.click()
   top?.querySelector<HTMLButtonElement>('[data-provider="openai-compatible"]')?.click()
   host.querySelector<HTMLButtonElement>('[data-provider="preset:siliconflow"]')?.click()
+  top?.querySelector<HTMLButtonElement>('[data-provider="agnes-ai:international"]')?.click()
   expect(select.mock.calls).toEqual([
     ['xai'],
     ['openai-compatible'],
     ['openai-compatible', { label: 'accounts.preset.siliconflow', baseUrl: 'https://api.siliconflow.cn/v1' }],
+    ['agnes-ai', { label: 'accounts.agnesInternational', baseUrl: 'https://apihub.agnes-ai.com/v1' }],
   ])
 })
 

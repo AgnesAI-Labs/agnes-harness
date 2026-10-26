@@ -1,8 +1,9 @@
 import type { Api, Model, Provider as PiProvider } from '@earendil-works/pi-ai'
 
 /**
- * Agnes AI runs separate regional gateways. Only the China gateway is supported for now; the
- * international hub (apihub.agnes-ai.com) rejects China keys and is not registered yet.
+ * Agnes AI runs separate regional gateways and issues keys per gateway. This China address is the
+ * provider's default; the international one (https://apihub.agnes-ai.com/v1) is chosen by setting
+ * the account's Base URL, which the account form offers as "Agnes AI International".
  */
 export const AGNES_AI_BASE_URL = 'https://api.agnes-ai.cn/v1'
 
