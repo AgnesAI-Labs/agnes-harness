@@ -959,7 +959,11 @@ describe('change requests and the field-to-design loop', () => {
     expect(state.stages.every((s: Item) => s.state === 'PASSED')).toBe(true)
     expect(metrics(state, p, NOW)).toMatchObject({ baselineGap: 1, retrofit: { done: 0, total: 1920 } })
     // a retrofit total on a change nobody approved is not fleet work yet
-    create(state, { kind: 'change', projectId: p.id, title: '草案', reason: 'r', retrofit: { total: 500 } }, NOW)
+    create(
+      state,
+      { kind: 'change', projectId: p.id, title: '草案', reason: 'r', retrofit: { total: 500 } },
+      NOW,
+    )
     expect(metrics(state, p, NOW).retrofit).toEqual({ done: 0, total: 1920 })
     // a change written against the old revision does not roll the item back
     const stale = approvedChange(state, p.id, bufferChange)
@@ -2952,6 +2956,29 @@ describe('hand-off to the coordinator', () => {
     expect(out.openTasks).toHaveLength(10)
     expect(out.counts.openTasks).toBe(25)
     expect(JSON.stringify(out).length).toBeLessThan(8000)
+  })
+
+  it('takes back the verification of an SWR an approved change marks CHANGED until a case passes again', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    const items = [
+      { id: 'CUS-001', title: 'c', text: 'c' },
+      { id: 'SYS-001', title: 's', text: 's', parent: ['CUS-001'] },
+      { id: 'SWR-001', title: 'w', text: 'w', parent: ['SYS-001'] },
+      { id: 'TC-001', title: 't1', text: 't1', parent: ['SWR-001'] },
+    ]
+    upsertReqs(state, { projectId: p.id, by: 'x', items }, NOW)
+    const status = (id: string) => byId(state.reqs, id, p.id).status
+    const run = (s: string, at: number) =>
+      recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-001', status: s }] }, at)
+    run('pass', NOW)
+    expect(status('SWR-001')).toBe('VERIFIED')
+    approvedChange(state, p.id, { impact: { reqs: ['SWR-001'] } })
+    expect([status('SWR-001'), status('TC-001')]).toEqual(['CHANGED', 'APPROVED'])
+    run('skip', NOW + 1)
+    expect(status('SWR-001')).toBe('CHANGED')
+    run('pass', NOW + 2)
+    expect(status('SWR-001')).toBe('VERIFIED')
   })
 
   it('tells the coordinator which failed test cases still need a defect', () => {

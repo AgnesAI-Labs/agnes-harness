@@ -519,14 +519,7 @@ function closeReleaseFindings(state, flow, at) {
     }
     const stage = find(state, 'stage', gate.stageId)
     if (gate.auto && gate.findings.every((f) => f.closed) && !unpassedBefore(state, stage))
-      approve(
-        state,
-        stage,
-        gate,
-        '系统（评审意见已全部关闭）',
-        '评审意见全部关闭，自动通过',
-        at,
-      )
+      approve(state, stage, gate, '系统（评审意见已全部关闭）', '评审意见全部关闭，自动通过', at)
   }
 }
 function closeFindings(gate, closes, by) {
@@ -833,6 +826,15 @@ function applyChange(state, cr, at) {
     const req = state.reqs.find((r) => r.id === id && r.projectId === cr.projectId)
     if (!req) continue
     req.status = 'CHANGED'
+    // Its cases verified the old text: they pass again before the requirement counts as verified.
+    for (const tc of state.reqs)
+      if (
+        tc.projectId === cr.projectId &&
+        tc.level === 'TC' &&
+        tc.parent?.includes(id) &&
+        tc.status === 'VERIFIED'
+      )
+        tc.status = 'APPROVED'
     if (LEVEL_STAGE[req.level]) stages.add(LEVEL_STAGE[req.level])
   }
   for (const id of cr.impact?.artifacts ?? []) {
