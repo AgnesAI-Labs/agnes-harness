@@ -1582,6 +1582,12 @@ describe('approval flows', () => {
     )
     upsertTrial(state, { id: tt.id, to: 'IN_PROGRESS' }, NOW)
     upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-9', result: 'PASS' }, NOW)
+    // a report whose result was edited back to PENDING is not approvable
+    upsertTrial(state, { id: tt.id, result: 'PENDING' }, NOW)
+    expect(() => submitApproval(state, { template: 'TRIAL_REPORT', subjectId: tt.id }, NOW)).toThrow(
+      '缺少试验结论',
+    )
+    upsertTrial(state, { id: tt.id, result: 'PASS' }, NOW)
     const report = submitApproval(
       state,
       { template: 'TRIAL_REPORT', subjectId: tt.id, by: '验证工程师 马骁' },

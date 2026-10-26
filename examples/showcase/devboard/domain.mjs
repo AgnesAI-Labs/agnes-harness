@@ -1331,8 +1331,10 @@ function moveTrial(state, trial, to, input, at) {
   }
 }
 
-/** A failed trial is approved only with an approved change (conditional release). */
+/** A trial is approved on a report with a result; a failed one only with an approved change (conditional release). */
 function trialApprovable(state, trial) {
+  if (!trial.reportNo) fail(`${trial.id} 缺少报告号（reportNo）`)
+  if (!trial.result || trial.result === 'PENDING') fail(`${trial.id} 缺少试验结论：需判定合格或不合格`)
   if (trial.result !== 'FAIL') return
   const change = state.changes.find((c) => c.id === trial.changeId)
   // A change rejected by the CCB and then closed was never approved.
