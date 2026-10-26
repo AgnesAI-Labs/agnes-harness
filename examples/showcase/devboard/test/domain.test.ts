@@ -1634,6 +1634,29 @@ describe('approval flows', () => {
     expect(byId(state.artifacts, 'DOC-1-SAD')).toMatchObject({ status: 'BASELINED', version: 'V1.0' })
   })
 
+  it('closes the release finding when its flow is approved, and the auto TR4 then passes', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    for (const stage of ['INITIATION', 'REQUIREMENTS', 'DESIGN']) pass(state, p.id, stage)
+    const id = `${p.id}/IMPLEMENTATION`
+    start(state, id)
+    const code = recordArtifact(
+      state,
+      { projectId: p.id, kind: 'CODE', suffix: 'APP', stage: 'IMPLEMENTATION', path: 'src/app.js' },
+      NOW,
+    )
+    const flow = submitApproval(state, { template: 'DOC_RELEASE', subjectId: code.id, by: '研发协调员' }, NOW)
+    const { gate } = submitGate(state, { stageId: id, by: '研发协调员' }, NOW)
+    expect(gate).toMatchObject({ code: 'TR4', auto: true, decision: 'PENDING' })
+    expect(gate.findings).toEqual([
+      expect.objectContaining({ by: '系统检查', flowId: flow.id, closed: false }),
+    ])
+    approveFlow(state, flow.id)
+    expect(gate.findings[0].closed).toBe(true)
+    expect(gate.decision).toBe('APPROVED')
+    expect(byId(state.stages, id).state).toBe('PASSED')
+  })
+
   it('refuses new content for a deliverable while its release flow runs', () => {
     const state = blank()
     const p = create(state, { kind: 'project', name: '实时项目' }, NOW)

@@ -439,7 +439,8 @@ function nextGate(state, project, stage) {
   return gatesOf(project, stage.stage).find((g) => !passed.has(g.code))
 }
 
-function addFindings(gate, texts, by, defectId) {
+/** `link` ({ defectId } or { flowId }) names what closes a system finding by itself. */
+function addFindings(gate, texts, by, link = {}) {
   for (const raw of texts ?? []) {
     const n = gate.findings.length + 1
     gate.findings.push({
@@ -447,7 +448,7 @@ function addFindings(gate, texts, by, defectId) {
       text: text(raw, 'finding', 500),
       by,
       closed: false,
-      ...(defectId ? { defectId } : {}),
+      ...link,
     })
   }
 }
@@ -467,6 +468,27 @@ function closeDefectFindings(state, defect) {
         f.closed = true
         f.closedNote = `缺陷 ${defect.id} 已关闭（${by}）`
       }
+  }
+}
+/** An approved release flow closes the system findings that name it; an auto gate (TR4) left with none open passes. */
+function closeReleaseFindings(state, flow, at) {
+  for (const gate of state.gates) {
+    const open =
+      gate.decision === 'PENDING' ? gate.findings.filter((f) => f.flowId === flow.id && !f.closed) : []
+    if (!open.length) continue
+    for (const f of open) {
+      f.closed = true
+      f.closedNote = `发布审批 ${flow.id} 已批准（系统）`
+    }
+    if (gate.auto && gate.findings.every((f) => f.closed))
+      approve(
+        state,
+        find(state, 'stage', gate.stageId),
+        gate,
+        '系统（评审意见已全部关闭）',
+        '评审意见全部关闭，自动通过',
+        at,
+      )
   }
 }
 function closeFindings(gate, closes, by) {
@@ -530,14 +552,17 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
           gate,
           [`交付物 ${a.id} 的发布审批 ${flow.id} ${FLOW_LABELS[flow.state]}，尚未批准`],
           '系统检查',
+          { flowId: flow.id },
         )
     }
     if (DEFECT_GATES.includes(def.code)) {
       // The rule itself is checked again at the decision, from the defects; these findings only show it.
       for (const d of unclosedDefects(state, project.id, 'A'))
-        addFindings(gate, [`A 类缺陷 ${d.id} 未关闭：${d.title}`], '系统检查', d.id)
+        addFindings(gate, [`A 类缺陷 ${d.id} 未关闭：${d.title}`], '系统检查', { defectId: d.id })
       for (const d of unclosedDefects(state, project.id, 'B'))
-        addFindings(gate, [`B 类缺陷 ${d.id} 未关闭（提示，可人工关闭）：${d.title}`], '系统检查', d.id)
+        addFindings(gate, [`B 类缺陷 ${d.id} 未关闭（提示，可人工关闭）：${d.title}`], '系统检查', {
+          defectId: d.id,
+        })
     }
     const [type, label] = TRIAL_GATES[def.code] ?? []
     if (type) {
@@ -1887,6 +1912,7 @@ function settle(state, flow, outcome, now) {
       subject.status = 'BASELINED'
       if (/^V0\./.test(subject.version)) subject.version = 'V1.0'
       subject.updatedAt = at
+      closeReleaseFindings(state, flow, at)
     } else if (flow.template === 'ECR') {
       move('APPROVED', { members: standingSigners(flow) })
     } else if (flow.template === 'ECN_RELEASE') {
