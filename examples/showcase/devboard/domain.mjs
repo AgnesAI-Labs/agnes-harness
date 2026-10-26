@@ -1001,6 +1001,8 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
   if (!Array.isArray(items) || !items.length || items.length > 100) fail('items 需为 1–100 条')
   const at = new Date(now).toISOString()
   const touched = { created: [], updated: [] }
+  // The SWRs whose test cases changed; only a test run verifies one, but a case it has not passed un-verifies it.
+  const affected = new Set()
   for (const input of items) {
     const id = text(input?.id, 'id', 16)
     const match =
@@ -1018,6 +1020,7 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
       for (const p of (item.parent ?? []).filter((x) => !parent.includes(x))) {
         const old = state.reqs.find((r) => r.id === p && r.projectId === projectId)
         if (old?.verifiedBy) old.verifiedBy = old.verifiedBy.filter((x) => x !== id)
+        if (level === 'TC') affected.add(p)
       }
       item.parent = parent
     }
@@ -1043,7 +1046,14 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
       if (parent.level !== PARENT_LEVEL[r.level])
         fail(`${r.id} 的上游必须是 ${PARENT_LEVEL[r.level] ?? '（客户条款没有上游）'}，收到 ${p}`)
       if (r.level === 'TC' && !parent.verifiedBy.includes(r.id)) parent.verifiedBy.push(r.id)
+      if (r.level === 'TC') affected.add(p)
     }
+  }
+  for (const id of affected) {
+    const swr = mine.find((x) => x.id === id && x.level === 'SWR')
+    if (swr?.status !== 'VERIFIED') continue
+    const tcs = mine.filter((x) => x.level === 'TC' && x.parent?.includes(id))
+    if (!tcs.length || tcs.some((x) => x.status !== 'VERIFIED')) swr.status = 'APPROVED'
   }
   return touched
 }

@@ -3056,6 +3056,13 @@ describe('per-test-case results', () => {
     run([{ tc: 'TC-002', status: 'pass' }])
     expect(status('SWR-001')).toBe('VERIFIED')
     expect(state.testRuns.filter((r: Item) => r.projectId === p.id)).toHaveLength(2)
+    // a new case under it has not passed yet, so the SWR is no longer verified
+    upsertReqs(
+      state,
+      { projectId: p.id, items: [{ id: 'TC-009', title: 't', text: 't', parent: ['SWR-001'] }] },
+      NOW,
+    )
+    expect(status('SWR-001')).toBe('APPROVED')
   })
 
   it('takes a VERIFIED case back when it fails, without making a defect', () => {
