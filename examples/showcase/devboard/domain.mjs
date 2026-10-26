@@ -439,7 +439,7 @@ function nextGate(state, project, stage) {
   return gatesOf(project, stage.stage).find((g) => !passed.has(g.code))
 }
 
-/** `link` ({ defectId } or { flowId }) names what closes a system finding by itself. */
+/** `link` ({ defectId } or { flowId, artifactId }) names what closes a system finding by itself. */
 function addFindings(gate, texts, by, link = {}) {
   for (const raw of texts ?? []) {
     const n = gate.findings.length + 1
@@ -474,7 +474,11 @@ function closeDefectFindings(state, defect) {
 function closeReleaseFindings(state, flow, at) {
   for (const gate of state.gates) {
     const open =
-      gate.decision === 'PENDING' ? gate.findings.filter((f) => f.flowId === flow.id && !f.closed) : []
+      gate.decision === 'PENDING'
+        ? gate.findings.filter(
+            (f) => !f.closed && (f.artifactId ? f.artifactId === flow.subject.id : f.flowId === flow.id),
+          )
+        : []
     if (!open.length) continue
     for (const f of open) {
       f.closed = true
@@ -552,7 +556,8 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
           gate,
           [`交付物 ${a.id} 的发布审批 ${flow.id} ${FLOW_LABELS[flow.state]}，尚未批准`],
           '系统检查',
-          { flowId: flow.id },
+          // Any later approved release of the deliverable closes it, not only this flow.
+          { flowId: flow.id, artifactId: a.id },
         )
     }
     if (DEFECT_GATES.includes(def.code)) {

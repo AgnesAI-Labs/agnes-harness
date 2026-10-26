@@ -1655,12 +1655,20 @@ describe('approval flows', () => {
       { projectId: p.id, kind: 'CODE', suffix: 'APP', stage: 'IMPLEMENTATION', path: 'src/app.js' },
       NOW,
     )
-    const flow = submitApproval(state, { template: 'DOC_RELEASE', subjectId: code.id, by: '研发协调员' }, NOW)
+    const first = submitApproval(state, { template: 'DOC_RELEASE', subjectId: code.id, by: '研发协调员' }, NOW)
     const { gate } = submitGate(state, { stageId: id, by: '研发协调员' }, NOW)
     expect(gate).toMatchObject({ code: 'TR4', auto: true, decision: 'PENDING' })
     expect(gate.findings).toEqual([
-      expect.objectContaining({ by: '系统检查', flowId: flow.id, closed: false }),
+      expect.objectContaining({ by: '系统检查', flowId: first.id, closed: false }),
     ])
+    // rejected and started again: the approved second flow still closes the finding
+    actApproval(
+      state,
+      { id: first.id, by: `${first.nodes[0].roles[0]} 测试员`, action: 'REJECT', comment: '重做' },
+      NOW,
+    )
+    expect(gate.findings[0].closed).toBe(false)
+    const flow = submitApproval(state, { template: 'DOC_RELEASE', subjectId: code.id, by: '研发协调员' }, NOW)
     approveFlow(state, flow.id)
     expect(gate.findings[0].closed).toBe(true)
     expect(gate.decision).toBe('APPROVED')
