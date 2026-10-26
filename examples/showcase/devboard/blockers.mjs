@@ -47,7 +47,7 @@ export function blockers(state, now = Date.now(), projectId) {
   const add = (kind, projectId, role, ref, title, reason, since, extra = {}) => {
     const t = ms(since)
     out.push({
-      id: `${kind}:${ref.id}:${role}`,
+      id: `${kind}:${ref.id}${ref.sub ? `:${ref.sub}` : ''}:${role}`,
       kind,
       label: BLOCKER_KINDS[kind].label,
       projectId,

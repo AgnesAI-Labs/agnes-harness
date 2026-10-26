@@ -1635,6 +1635,12 @@ describe('snapshot', () => {
 })
 
 describe('blockers', () => {
+  it('gives every blocker of the seed a unique id, findings of one gate included', () => {
+    const ids = snapshot(seed(NOW), NOW).blockers.map((b: Item) => b.id)
+    expect(ids.length).toBeGreaterThan(0)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   const at = (days: number) => new Date(NOW - days * DAY).toISOString()
   const kinds = (list: Item[]) => list.map((b) => b.kind)
   const clean = () => {
