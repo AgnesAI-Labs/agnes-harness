@@ -2272,6 +2272,11 @@ describe('fast-forward from the shipped sample', () => {
     const stage = (name: string) => byId(state.stages, `${data.projectId}/${name}`)
     expect([stage('REQUIREMENTS').state, stage('DESIGN').state]).toEqual(['REWORK', 'REWORK'])
     expect(applied.reworked).toEqual([`${data.projectId}/REQUIREMENTS`, `${data.projectId}/DESIGN`])
+    // the hand-off starts with the earliest reopened stage, not the project's furthest one
+    expect(handoff(state, { type: 'project', id: data.projectId }).nextStep).toMatchObject({
+      stage: 'REQUIREMENTS',
+      state: 'REWORK',
+    })
     const gates = state.gates.filter((g: Item) => g.stageId.startsWith(`${data.projectId}/`))
     expect(gates.filter((g: Item) => g.decision === 'PENDING')).toEqual([])
     expect(gates.filter((g: Item) => ['TR1', 'TR3'].includes(g.code)).every((g: Item) => g.superseded)).toBe(

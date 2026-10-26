@@ -79,6 +79,14 @@ function stageStep(state, project, stage) {
   }
 }
 
+/** The project's real current work: the first stage, in flow order, that has not passed (an approved change can reopen early ones). */
+function currentStep(state, project) {
+  const stage = STAGES.find(
+    (s) => stageOf(state, project.id, s)?.state !== 'PASSED' && stageOf(state, project.id, s),
+  )
+  return stage && stageStep(state, project, stage)
+}
+
 const openFindings = (gate) =>
   top((gate.findings ?? []).filter((f) => !f.closed)).map((f) => ({ id: f.id, text: clip(f.text) }))
 
@@ -149,7 +157,7 @@ const OPEN_CHANGE = new Set(['SUBMITTED', 'ANALYZED', 'CCB_REVIEW', 'APPROVED', 
 function projectHandoff(state, project) {
   const own = (list) => list.filter((x) => x.projectId === project.id)
   const stage = project.stage
-  const step = stageStep(state, project, stage)
+  const step = currentStep(state, project)
   const tasks = own(state.tasks).filter((t) => OPEN_TASK.has(t.state))
   const defects = own(state.defects).filter((d) => OPEN_DEFECT.has(d.state))
   const changes = own(state.changes).filter((c) => OPEN_CHANGE.has(c.state))
