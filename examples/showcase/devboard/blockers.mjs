@@ -134,14 +134,17 @@ export function blockers(state, now = Date.now(), projectId) {
   }
 
   for (const t of state.trials ?? []) {
-    if (t.result !== 'FAIL' || t.state === 'APPROVED' || t.changeId) continue
+    const change = t.changeId && (state.changes ?? []).find((c) => c.id === t.changeId)
+    // A change the CCB rejected never releases the trial, so it stands as no change.
+    const rejected = change && (change.state === 'REJECTED' || change.ccb?.decision === 'REJECTED')
+    if (t.result !== 'FAIL' || t.state === 'APPROVED' || (change && !rejected)) continue
     add(
       'TRIAL_FAILED',
       t.projectId,
       '质量工程师',
       { type: 'trial', id: t.id },
       t.title ?? t.id,
-      '型式试验不合格，尚未关联变更',
+      rejected ? `型式试验不合格，关联变更 ${change.id} 已驳回` : '型式试验不合格，尚未关联变更',
       enteredAt(t, 'REPORTED') ?? t.at,
     )
   }

@@ -1965,6 +1965,10 @@ describe('blockers', () => {
     expect(kinds(blockers(state, NOW))).toEqual(['TRIAL_FAILED', 'CHANGE_CCB', 'PROBLEM_STALLED'])
     state.trials[state.trials.length - 1] = { ...trial, changeId: crs.id }
     expect(kinds(blockers(state, NOW))).toEqual(['CHANGE_CCB', 'PROBLEM_STALLED'])
+    // a change the CCB rejected never releases the trial
+    state.changes[state.changes.length - 1] = { ...crs, state: 'REJECTED' }
+    expect(kinds(blockers(state, NOW))).toEqual(['TRIAL_FAILED', 'PROBLEM_STALLED'])
+    state.changes[state.changes.length - 1] = crs
     // exactly 7 days in ANALYZING is still on time
     state.problems[state.problems.length - 1] = {
       ...qp,
