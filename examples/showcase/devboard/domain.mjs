@@ -975,8 +975,12 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
     if (input.safety !== undefined) item.safety = Boolean(input.safety)
     if (!existing && level === 'SWR') item.discipline = SWR_PREFIX_DISCIPLINE[match[1]]
     reqFields(item, input)
-    if (input.status !== undefined)
-      item.status = oneOf(input.status, ['DRAFT', 'APPROVED', 'CHANGED', 'VERIFIED'], 'status')
+    if (input.status !== undefined) {
+      const status = oneOf(input.status, ['DRAFT', 'APPROVED', 'CHANGED', 'VERIFIED'], 'status')
+      if (status === 'VERIFIED' && item.status !== 'VERIFIED' && ['SWR', 'TC'].includes(item.level))
+        fail(`${item.id} 的 VERIFIED 由测试运行判定：用 devboard_test_record 登记按用例的结果`)
+      item.status = status
+    }
     item.updatedAt = at
     item.updatedBy = by || '未署名'
     if (!existing) state.reqs.push(item)

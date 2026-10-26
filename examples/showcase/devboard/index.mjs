@@ -355,7 +355,7 @@ export const tools = [
   ),
   tool(
     'devboard_req_upsert',
-    'Register or update CUS/SYS/SWR/DES/TC items of a project (ids like CUS-001, SWR-012, TC-020, unique within the project; MER-/EER- are the mechanical and electrical sub-system requirement prefixes, level SWR). parent names the items one level up: SYS→CUS, SWR→SYS, DES→SWR, TC→SWR. discipline MECH/ELEC/SW on SWR and DES; partNo/drawingNo/module on DES; clause/compliance/responseNote on CUS. 登记需求、设计与用例并挂接追溯。',
+    'Register or update CUS/SYS/SWR/DES/TC items of a project (ids like CUS-001, SWR-012, TC-020, unique within the project; MER-/EER- are the mechanical and electrical sub-system requirement prefixes, level SWR). parent names the items one level up: SYS→CUS, SWR→SYS, DES→SWR, TC→SWR. discipline MECH/ELEC/SW on SWR and DES; partNo/drawingNo/module on DES; clause/compliance/responseNote on CUS. SWR and TC become VERIFIED only through devboard_test_record results. 登记需求、设计与用例并挂接追溯。',
     Type.Object(
       {
         projectId: id,

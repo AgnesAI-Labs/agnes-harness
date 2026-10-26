@@ -1046,6 +1046,11 @@ describe('traceability and deliverables', () => {
     expect(coverage(state, p.id).swrTc.missing).toEqual(['SWR-001'])
     upsertReqs(state, { projectId: p.id, items: [{ id: 'TC-001', parent: [] }] }, NOW)
     expect(coverage(state, p.id).swrTc).toMatchObject({ covered: 0, missing: ['SWR-001', 'SWR-002'] })
+    // a test run verifies SWRs and TCs, not an edit
+    for (const id of ['SWR-001', 'TC-001'])
+      expect(() => upsertReqs(state, { projectId: p.id, items: [{ id, status: 'VERIFIED' }] }, NOW)).toThrow(
+        '由测试运行判定',
+      )
   })
 
   it('registers MER/EER as sub-system requirements with a discipline and discipline-specific fields', () => {
@@ -1667,7 +1672,11 @@ describe('approval flows', () => {
       { projectId: p.id, kind: 'CODE', suffix: 'APP', stage: 'IMPLEMENTATION', path: 'src/app.js' },
       NOW,
     )
-    const first = submitApproval(state, { template: 'DOC_RELEASE', subjectId: code.id, by: '研发协调员' }, NOW)
+    const first = submitApproval(
+      state,
+      { template: 'DOC_RELEASE', subjectId: code.id, by: '研发协调员' },
+      NOW,
+    )
     const { gate } = submitGate(state, { stageId: id, by: '研发协调员' }, NOW)
     expect(gate).toMatchObject({ code: 'TR4', auto: true, decision: 'PENDING' })
     expect(gate.findings).toEqual([
