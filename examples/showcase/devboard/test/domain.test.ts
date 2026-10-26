@@ -2880,12 +2880,16 @@ describe('hand-off to the coordinator', () => {
     expect(step()).toContain('已关闭')
   })
 
-  it('has nothing to do for a closed fault without a problem', () => {
+  it('has nothing to do for a closed fault without a problem or with a closed one', () => {
     const state = read(memoryStore(), NOW)
     const fault = state.faults.find((f: Item) => f.state === 'CLOSED' && !f.problemId)
     const out = handoff(state, { type: 'fault', id: fault.id })
     expect(out.next[0]).toContain('无需处理')
     expect(out.next[0]).not.toContain('8D')
+    const closed = state.faults.find(
+      (f: Item) => f.problemId && byId(state.problems, f.problemId).state === 'CLOSED',
+    )
+    expect(handoff(state, { type: 'fault', id: closed.id }).next[0]).toContain('无需处理')
   })
 
   it('reads an open request past its due time as expired', () => {

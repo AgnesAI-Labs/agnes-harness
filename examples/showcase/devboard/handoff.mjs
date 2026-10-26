@@ -324,7 +324,9 @@ function faultHandoff(state, fault) {
   )
   const next = [
     problem
-      ? `已关联质量问题 ${problem.id}：读完整 8D 后继续起草，不关闭`
+      ? problem.state === 'CLOSED'
+        ? `已关联质量问题 ${problem.id}，问题已关闭，无需处理`
+        : `已关联质量问题 ${problem.id}：读完整 8D 后继续起草，不关闭`
       : fault.state === 'CLOSED'
         ? '预警已关闭，无需处理'
         : `先用 devboard_fault_list 看 ${label(LABELS.faultSignal, fault.signal)} 信号的聚类，再起草 8D（devboard_problem_upsert，faultIds 挂上本预警）`,
