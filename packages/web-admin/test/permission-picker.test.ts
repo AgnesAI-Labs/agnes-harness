@@ -6,6 +6,7 @@ import { createRegionRenderer, type RegionRenderer } from '@agnes/web-ui'
 import { createElement } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
+  PERMISSION_PANEL_ALIGN,
   type PermissionMode,
   PermissionPickerControl,
   type PermissionPickerState,
@@ -279,4 +280,9 @@ it('marks the level new sessions start under, and nothing when the Host does not
   expect(labels()).toEqual(['只读', '可修改工作区 （默认）', '完全访问'])
   render({ disabled: false, pending: false, selected: 'view' })
   expect(labels()).toEqual(['只读', '可修改工作区', '完全访问'])
+})
+
+it('shifts the panel back inside a narrow window instead of letting it overflow', () => {
+  // At 375px the chip sits near the left edge; a flipped panel would run past the right edge.
+  expect(PERMISSION_PANEL_ALIGN.overflow).toMatchObject({ shiftX: true, adjustX: true })
 })
