@@ -8,14 +8,15 @@ export const AGNES_AI_BASE_URL = 'https://api.agnes-ai.cn/v1'
 
 /**
  * The Agnes gateway sends a tool call only once it is complete, so a stream can stay silent for as
- * long as the model takes to write one. Matched by provider id or by gateway host, so an account with
- * its own Base URL path still counts.
+ * long as the model takes to write one. Matched by provider id or by gateway host, China
+ * (agnes-ai.cn) or international (agnes-ai.com, e.g. apihub.agnes-ai.com), so an account pointed at
+ * either gateway or its own Base URL path still counts.
  */
 export function buffersToolCalls(baseUrl: string, providerId: string | undefined): boolean {
   if (providerId === 'agnes-ai') return true
   try {
     const host = new URL(baseUrl).hostname
-    return host === 'agnes-ai.cn' || host.endsWith('.agnes-ai.cn')
+    return ['agnes-ai.cn', 'agnes-ai.com'].some((domain) => host === domain || host.endsWith(`.${domain}`))
   } catch {
     return false
   }

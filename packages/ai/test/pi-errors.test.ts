@@ -284,6 +284,8 @@ describe('timeouts and cancellation', () => {
   it('recognises the Agnes gateway by provider id or host, not only the exact catalogue URL', () => {
     expect(buffersToolCalls('https://proxy.example/v1', 'agnes-ai')).toBe(true)
     expect(buffersToolCalls('https://api.agnes-ai.cn/v1/', undefined)).toBe(true)
+    expect(buffersToolCalls('https://apihub.agnes-ai.com/v1', undefined)).toBe(true)
+    expect(buffersToolCalls('https://agnes-ai.com.evil.example/v1', undefined)).toBe(false)
     expect(buffersToolCalls('https://gw.invalid', undefined)).toBe(false)
   })
 
