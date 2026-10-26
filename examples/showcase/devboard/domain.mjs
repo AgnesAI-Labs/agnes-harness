@@ -332,6 +332,13 @@ function guardFlow(state, kind, item, to, input) {
   if (running) fail(`${item.id} 有进行中的审批 ${running.id}，请先在流程中处理`)
 }
 
+/** Edits are refused on a record in its final state or under a running approval flow (what was signed must not change). */
+function guardEditable(state, kind, item) {
+  if (!MACHINES[kind][item.state]?.length) fail(`${item.id} 已进入 ${item.state}，不可再改`)
+  const running = runningFlow(state, kind, item.id)
+  if (running) fail(`${item.id} 有进行中的审批 ${running.id}，请先在流程中处理`)
+}
+
 /** The only write path for states. Refuses any move absent from the kind's table. */
 export function transition(state, input, now = Date.now()) {
   const { kind, id, to, by, note } = input
@@ -1268,7 +1275,8 @@ export function upsertTrial(state, input, now = Date.now()) {
   const at = new Date(now).toISOString()
   const by = input.by || '未署名'
   let trial = input.id ? find(state, 'trial', input.id) : undefined
-  if (!trial) {
+  if (trial) guardEditable(state, 'trial', trial)
+  else {
     const project = projectOf(state, text(input.projectId, 'projectId', 64))
     const type = oneOf(input.type, TRIAL_TYPES, 'type')
     const year = new Date(now).getUTCFullYear()
@@ -1318,7 +1326,8 @@ export function upsertProblem(state, input, now = Date.now()) {
   const at = new Date(now).toISOString()
   const by = input.by || '未署名'
   let problem = input.id ? find(state, 'problem', input.id) : undefined
-  if (!problem) {
+  if (problem) guardEditable(state, 'problem', problem)
+  else {
     const project = projectOf(state, text(input.projectId, 'projectId', 64))
     const year = new Date(now).getUTCFullYear()
     problem = {

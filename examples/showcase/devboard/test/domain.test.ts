@@ -496,6 +496,12 @@ describe('trials and first-article inspection', () => {
     expect(() => upsertTrial(state, { id: tt.id, to: 'APPROVED' }, NOW)).toThrow('需走 TRIAL_REPORT 审批')
     release(state, 'TRIAL_REPORT', tt.id)
     expect(tt.state).toBe('APPROVED')
+    // an approved report is final: edits are refused and the record stays as signed
+    const signed = structuredClone(tt)
+    expect(() => upsertTrial(state, { id: tt.id, result: 'FAIL', reportNo: 'X-1' }, NOW)).toThrow(
+      '已进入 APPROVED',
+    )
+    expect(tt).toEqual(signed)
     expect(() => upsertTrial(state, plan(p, { verifies: ['CUS-404'] }), NOW)).toThrow('未找到')
     expect(() => upsertTrial(state, plan(p, { type: 'X' }), NOW)).toThrow('type 取值无效')
   })
@@ -658,15 +664,18 @@ describe('faults and quality problems', () => {
     const close = () => submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW)
     // closing is the flow's move: a direct move is refused, and the flow starts only when the 8D is complete
     expect(() => upsertProblem(state, { id: qp.id, to: 'CLOSED' }, NOW)).toThrow('需走 PROBLEM_CLOSE 审批')
+    expect(() => upsertProblem(state, { id: qp.id, steps: { D9: { done: true } } }, NOW)).toThrow(
+      '未知 8D 步骤',
+    )
     expect(close).toThrow('D8')
     upsertProblem(state, { id: qp.id, steps: { D8: { done: true } } }, NOW)
     expect(close).toThrow('没有关联变更')
     upsertProblem(state, { id: qp.id, noChangeReason: '仅更换耗材，无设计变更' }, NOW)
     expect(release(state, 'PROBLEM_CLOSE', qp.id).state).toBe('APPROVED')
     expect(qp.state).toBe('CLOSED')
-    expect(() => upsertProblem(state, { id: qp.id, steps: { D9: { done: true } } }, NOW)).toThrow(
-      '未知 8D 步骤',
-    )
+    const closed = structuredClone(qp)
+    expect(() => upsertProblem(state, { id: qp.id, rootCause: 'changed' }, NOW)).toThrow('已进入 CLOSED')
+    expect(qp).toEqual(closed)
   })
 
   it('closes a problem only after its linked change is CLOSED', () => {
@@ -1443,6 +1452,9 @@ describe('approval flows', () => {
     )
     expect(report.initiator.role).toBe('验证工程师')
     expect(() => upsertTrial(state, { id: tt.id, to: 'IN_PROGRESS' }, NOW)).toThrow('有进行中的审批')
+    // the signed report cannot change while the flow runs
+    expect(() => upsertTrial(state, { id: tt.id, result: 'FAIL' }, NOW)).toThrow('有进行中的审批')
+    expect(tt.result).toBe('PASS')
     // rejected: the trial goes back to be edited and re-reported
     act(state, report.id, '质量工程师', 'REJECT', { comment: '数据不全' })
     expect(tt.state).toBe('IN_PROGRESS')
@@ -1467,6 +1479,8 @@ describe('approval flows', () => {
       { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: '质量工程师 韩雪' },
       NOW,
     )
+    expect(() => upsertProblem(state, { id: qp.id, rootCause: 'changed' }, NOW)).toThrow('有进行中的审批')
+    expect(qp.rootCause).toBe('r')
     act(state, flow.id, '质量工程师', 'APPROVE')
     act(state, flow.id, '分技术中心主任', 'REJECT', { comment: '验证数据不足' })
     expect(qp.state).toBe('ACTION')
