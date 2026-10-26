@@ -187,11 +187,11 @@ describe('session pin shape gate', () => {
     expect(existsSync(join(store.root, snapshot.id))).toBe(true)
   })
 
-  it('round-trips a valid pin including its loop and resources digest', () => {
+  it('round-trips a valid pin including its loop and resources digest', async () => {
     const { store, generation } = fixture()
     const snapshot = generation()
     store.pin('s', snapshot.id, PINS)
-    store.recordLoop('s', { id: 'loop', version: '1.0.0' })
+    await store.recordLoop('s', { id: 'loop', version: '1.0.0' })
     expect(store.session('s')).toMatchObject({ generationId: snapshot.id, seams: PINS, loop: { id: 'loop' } })
   })
 })
@@ -286,21 +286,21 @@ describe('generation record shape gate', () => {
 })
 
 describe('pin read-modify-write', () => {
-  it('keeps the loop and resources digest across successive writers', () => {
+  it('keeps the loop and resources digest across successive writers', async () => {
     const { store, generation, pinFile } = fixture()
     const snapshot = generation()
     store.pin('s', snapshot.id, PINS)
     const other = new RuntimeGenerationSnapshotStore(join(store.root, '..'))
-    store.recordLoop('s', { id: 'loop', version: '1.0.0' })
+    await store.recordLoop('s', { id: 'loop', version: '1.0.0' })
     const pinned = other.pinSessionResources('s', { data: { a: 1 }, directories: [] })
     const before = statSync(pinFile('s'))
-    store.recordLoop('s', { id: 'loop', version: '1.0.0' })
+    await store.recordLoop('s', { id: 'loop', version: '1.0.0' })
     expect(statSync(pinFile('s'))).toMatchObject({
       dev: before.dev,
       ino: before.ino,
       mtimeMs: before.mtimeMs,
     })
-    expect(() => store.recordLoop('s', { id: 'loop', version: '2.0.0' })).toThrow(
+    await expect(store.recordLoop('s', { id: 'loop', version: '2.0.0' })).rejects.toThrow(
       'E_GENERATION_LOOP_INCOMPATIBLE',
     )
     expect(store.session('s')).toMatchObject({ loop: { id: 'loop' }, resourcesDigest: expect.any(String) })
@@ -311,17 +311,17 @@ describe('pin read-modify-write', () => {
   const lockOwner = (pid: number, token = 'foreign') => JSON.stringify({ pid, token })
   const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid as number
 
-  it('takes over the lock of a writer whose process is gone', () => {
+  it('takes over the lock of a writer whose process is gone', async () => {
     const { store, generation, pinFile } = fixture()
     store.pin('s', generation().id, PINS)
     const lock = `${pinFile('s')}.lock`
     writeFileSync(lock, lockOwner(deadPid()))
-    store.recordLoop('s', { id: 'loop', version: '1.0.0' })
+    await store.recordLoop('s', { id: 'loop', version: '1.0.0' })
     expect(existsSync(lock)).toBe(false)
     expect(store.session('s')?.loop?.id).toBe('loop')
   })
 
-  it('never takes over a live holder by age and leaves its lock untouched', () => {
+  it('never takes over a live holder by age and leaves its lock untouched', async () => {
     const fresh = fixture()
     const { store, generation, pinFile } = fresh
     const stalled = new RuntimeGenerationSnapshotStore(fresh.home, { lockWaitMs: 50 })
@@ -333,7 +333,7 @@ describe('pin read-modify-write', () => {
     utimesSync(lock, old, old)
     let caught: unknown
     try {
-      stalled.recordLoop('s', { id: 'loop', version: '1.0.0' })
+      await stalled.recordLoop('s', { id: 'loop', version: '1.0.0' })
     } catch (error) {
       caught = error
     }
@@ -342,7 +342,7 @@ describe('pin read-modify-write', () => {
     expect(store.session('s')?.loop).toBeUndefined()
   })
 
-  it('does not report a filesystem error as a busy lock', () => {
+  it('does not report a filesystem error as a busy lock', async () => {
     const { store, generation } = fixture()
     store.pin('s', generation().id, PINS)
     // The lock path is unreachable (not a directory), which is neither contention nor a stale lock.
@@ -350,7 +350,7 @@ describe('pin read-modify-write', () => {
     writeFileSync(join(store.root, 'sessions'), 'not a directory')
     let caught: unknown
     try {
-      store.recordLoop('s', { id: 'loop', version: '1.0.0' })
+      await store.recordLoop('s', { id: 'loop', version: '1.0.0' })
     } catch (error) {
       caught = error
     }
@@ -358,7 +358,7 @@ describe('pin read-modify-write', () => {
     expect(caught).toBeInstanceOf(Error)
   })
 
-  it('releases only the lock it holds', () => {
+  it('releases only the lock it holds', async () => {
     const { store, generation, pinFile } = fixture()
     store.pin('s', generation().id, PINS)
     const lock = `${pinFile('s')}.lock`
@@ -369,17 +369,19 @@ describe('pin read-modify-write', () => {
       writeFileSync(lock, lockOwner(process.pid, 'someone-else'))
       return original(key)
     })
-    store.recordLoop('s', { id: 'loop', version: '1.0.0' })
+    await store.recordLoop('s', { id: 'loop', version: '1.0.0' })
     spy.mockRestore()
     expect(readFileSync(lock, 'utf8')).toBe(lockOwner(process.pid, 'someone-else'))
   })
 
-  it('does not resurrect a released pin', () => {
+  it('does not resurrect a released pin', async () => {
     const { store, generation } = fixture()
     const snapshot = generation()
     store.pin('s', snapshot.id, PINS)
     store.releaseSession('s')
-    expect(() => store.recordLoop('s', { id: 'loop', version: '1.0.0' })).toThrow('E_GENERATION_PIN_MISSING')
+    await expect(store.recordLoop('s', { id: 'loop', version: '1.0.0' })).rejects.toThrow(
+      'E_GENERATION_PIN_MISSING',
+    )
     expect(store.session('s')).toBeUndefined()
   })
 

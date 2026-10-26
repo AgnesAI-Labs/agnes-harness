@@ -9,6 +9,7 @@ import {
   toRpcError,
   validateMethod,
 } from '@agnes/protocol'
+import { failureFacts } from '@agnes/worker-runtime'
 import {
   fail,
   isRequest,
@@ -19,7 +20,6 @@ import {
   type JsonRpcRequest,
   ok,
 } from '../rpc.js'
-import { failureFacts } from './failure-facts.js'
 
 /** UTF-8 size of the JSON frame that actually sits in the subscription queue. */
 export function utf8JsonBytes(v: unknown): number {

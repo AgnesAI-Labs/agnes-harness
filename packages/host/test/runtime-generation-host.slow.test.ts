@@ -480,7 +480,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     const store = new RuntimeGenerationSnapshotStore(join(root, 'profiles/local-dev'))
     expect(store.session('session-a')?.loop).toEqual(resumed.loop)
     expect(store.read(required(firstId)).packages).toContainEqual({ id: 'acme/generation', version: '1.0.0' })
-    expect(() => store.recordLoop('session-a', { id: 'missing-loop', version: '9.0.0' })).toThrow(
+    await expect(store.recordLoop('session-a', { id: 'missing-loop', version: '9.0.0' })).rejects.toThrow(
       'E_GENERATION_LOOP_INCOMPATIBLE',
     )
     await expect(required(host.migrateSessionGeneration)('session-a')).rejects.toThrow(
@@ -497,7 +497,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     expect(store.session('session-a')).toEqual(savedPin)
     writeFileSync(oldFile, oldBytes)
     store.pin('idle-incompatible-loop', required(firstId), pinnedBindings(host.seamBindings()))
-    store.recordLoop('idle-incompatible-loop', { id: 'missing-loop', version: '9.0.0' })
+    await store.recordLoop('idle-incompatible-loop', { id: 'missing-loop', version: '9.0.0' })
     await expect(required(host.migrateSessionGeneration)('idle-incompatible-loop')).rejects.toThrow(
       'E_GENERATION_LOOP_INCOMPATIBLE',
     )
