@@ -355,6 +355,24 @@ describe('multi-gate stages and tailoring', () => {
     expect(codes).toEqual(['TR2', 'TR3', 'PDCP'])
   })
 
+  it('sends a stage between two of its gates to rework when an approved change hits it', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '完整 IPD' }, NOW)
+    p.tailoring = undefined
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'DES-001', title: 'd', text: 'd' }], by: 'x' }, NOW)
+    pass(state, p.id, 'INITIATION')
+    pass(state, p.id, 'REQUIREMENTS')
+    const design = byId(state.stages, `${p.id}/DESIGN`)
+    start(state, design.id)
+    const tr2 = submitGate(state, { stageId: design.id, by: 'x' }, NOW).gate
+    for (const role of tr2.approverRoles) sign(state, tr2.id, role)
+    expect(design.state).toBe('IN_PROGRESS')
+    const cr = approvedChange(state, p.id, { impact: { reqs: ['DES-001'] } })
+    expect(cr.reworked).toEqual([design.id])
+    expect(design.state).toBe('REWORK')
+    expect(tr2.superseded).toBe(true)
+  })
+
   it('passes the auto gate TR4 once every finding is closed, replacing the v2 special case', () => {
     const state = blank()
     const p = create(state, { kind: 'project', name: '自动门' }, NOW)

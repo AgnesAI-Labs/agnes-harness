@@ -821,7 +821,7 @@ function ecnId(state, cr) {
 
 /**
  * An approved change (its ECR flow) gets its ECN. It marks impacted requirements CHANGED and sends
- * impacted PASSED or IN_REVIEW stages to rework (the pending gate of the latter is withdrawn), except in a project already in service. The as-designed baseline
+ * impacted PASSED or IN_REVIEW stages, and a stage between two of its gates, to rework (the pending gate of the latter is withdrawn), except in a project already in service. The as-designed baseline
  * comes later, when the ECN_RELEASE flow is approved.
  */
 function applyChange(state, cr, at) {
@@ -842,7 +842,11 @@ function applyChange(state, cr, at) {
   const reworked = []
   for (const name of project.service ? [] : stages) {
     const stage = state.stages.find((s) => s.id === `${cr.projectId}/${name}`)
-    if (!['PASSED', 'IN_REVIEW'].includes(stage?.state)) continue
+    // A stage between two of its gates has already passed one of them on the old content.
+    const between =
+      stage?.state === 'IN_PROGRESS' &&
+      state.gates.some((g) => g.stageId === stage.id && g.decision === 'APPROVED' && !g.superseded)
+    if (!['PASSED', 'IN_REVIEW'].includes(stage?.state) && !between) continue
     const note = `${cr.id} 已批准，受影响阶段返工`
     record(stage, at, 'CCB', stage.state, 'REWORK', note)
     for (const g of state.gates) {
