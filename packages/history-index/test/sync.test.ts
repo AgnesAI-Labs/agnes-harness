@@ -286,4 +286,37 @@ describe('incremental history sync', () => {
     expect(dump(path)).toEqual(before)
     book.close()
   })
+
+  it('stales a search cursor once an append can reorder bm25 pages', () => {
+    const dir = tempDir()
+    const book = ledger(dir)
+    const tables = side(dir)
+    for (const key of ['a', 'b', 'c']) {
+      book.session(key)
+      book.reply(key, `${key} notes about the harbor and other things`)
+      tables.owner(key, 'owner-a')
+    }
+    const index = open(join(dir, 'history-index.db'))
+    index.sync(dir)
+    const query = {
+      access: { kind: 'local' as const, principal: 'owner-a' },
+      kind: 'search' as const,
+      query: 'harbor',
+      title: '',
+      workspace: '',
+      sessionId: '',
+      omitSelf: false,
+      limit: 1,
+    }
+    const cursor = index.query(query).next
+    if (!cursor) throw new Error('expected a next cursor')
+    book.session('d')
+    book.reply('d', 'harbor')
+    tables.owner('d', 'owner-a')
+    index.sync(dir)
+    expect(() => index.query({ ...query, cursor })).toThrow(/out of date/)
+    expect(index.query(query).items.map((item) => item.sessionId)).toEqual(['d'])
+    book.close()
+    tables.close()
+  })
 })
