@@ -1253,6 +1253,7 @@ function sourceOf(raw) {
 
 function createChange(state, input, at, now) {
   const project = projectOf(state, text(input.projectId, 'projectId', 64))
+  if (input.verification !== undefined) fail('变更批准后才能登记验证（verification）')
   const year = new Date(now).getUTCFullYear()
   const by = input.by || '未署名'
   const item = {
@@ -1297,9 +1298,13 @@ export function updateImpact(state, { id, impact, traceFrom }) {
 export function updateChange(state, input, now = Date.now()) {
   const cr = find(state, 'change', input.id, input.projectId)
   // traceFrom without an impact traces from the requirements the change already names.
-  if (input.impact || input.traceFrom) updateImpact(state, { ...input, impact: input.impact ?? cr.impact })
+  // The fields an impact edit names replace those fields; the ones it leaves out are kept.
+  if (input.impact || input.traceFrom)
+    updateImpact(state, { ...input, impact: { ...cr.impact, ...input.impact } })
   const early = (name) =>
     EDITABLE_CHANGE.includes(cr.state) ? true : fail(`${cr.id} 已进入 ${cr.state}，${name}不可再改`)
+  if (input.title !== undefined && early('标题')) cr.title = text(input.title, 'title', 200)
+  if (input.reason !== undefined && early('理由')) cr.reason = text(input.reason, 'reason', 2000)
   if (input.source !== undefined && early('来源')) cr.source = sourceOf(input.source)
   if (input.rootCause !== undefined && early('失效原因'))
     cr.rootCause = text(input.rootCause, 'rootCause', 2000)

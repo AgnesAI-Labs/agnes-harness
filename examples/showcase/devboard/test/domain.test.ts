@@ -1027,8 +1027,24 @@ describe('change requests and the field-to-design loop', () => {
       '缺少影响分析',
     )
     updateChange(state, { id: cr.id, impact: { items: [{ itemId: 'NC-MOT-02', fromRev: 'A', toRev: 'B' }] } })
+    // an impact edit replaces only the fields it names; title and reason edit like the analysis
+    updateChange(state, { id: cr.id, impact: { safety: true }, title: '换电机', reason: '温升' })
+    expect(cr).toMatchObject({
+      title: '换电机',
+      reason: '温升',
+      impact: { safety: true, items: [{ itemId: 'NC-MOT-02' }] },
+    })
     transition(state, { kind: 'change', id: cr.id, to: 'CCB_REVIEW', by: 'x' }, NOW)
     expect(() => updateChange(state, { id: cr.id, rootCause: '晚了' }, NOW)).toThrow('已进入 CCB_REVIEW')
+    expect(() => updateChange(state, { id: cr.id, title: '晚了' }, NOW)).toThrow('已进入 CCB_REVIEW')
+    // a verification comes after the approval, never with the creation
+    expect(() =>
+      create(
+        state,
+        { kind: 'change', projectId: p.id, title: 'v', reason: 'v', verification: { result: 'PASS' } },
+        NOW,
+      ),
+    ).toThrow('批准后才能登记验证')
   })
 })
 
