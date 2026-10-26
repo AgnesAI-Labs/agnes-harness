@@ -201,6 +201,20 @@ it('derives demo tool arguments, refuses invalid examples and summarizes actual 
   expect(JSON.stringify(await collect(adapter, { ...memoryRequest, sections: [] }))).not.toContain(
     'Synthetic learned convention',
   )
+  // Core delivers memory as a live context note ahead of the user's message.
+  const liveNote = `[live context ${'a'.repeat(64)}]\nmemory:index\nSynthetic live convention`
+  expect(
+    JSON.stringify(
+      await collect(adapter, {
+        ...memoryRequest,
+        sections: [],
+        messages: [
+          { role: 'user', content: [{ type: 'text', text: liveNote }] },
+          ...memoryRequest.messages,
+        ],
+      }),
+    ),
+  ).toContain('Synthetic live convention')
   const events = await collect(adapter, body)
   expect(events).toContainEqual(
     expect.objectContaining({
