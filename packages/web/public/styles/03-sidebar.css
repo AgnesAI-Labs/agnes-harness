@@ -148,6 +148,29 @@
       animation: none;
     }
   }
+  /* A row's run mark at its end: waiting for the owner, or a turn that ended while unseen. */
+  .session-mark {
+    flex: 0 0 auto;
+    margin-left: auto;
+    padding: 0 var(--s4);
+    border-radius: var(--radius-full);
+    color: var(--agnes-brand-primary);
+    background: var(--agnes-bg-subtle);
+    font-size: var(--font-size-xs);
+    line-height: 1.125rem;
+    white-space: nowrap;
+  }
+  /* A workspace label already takes the free space; the mark sits right after it. */
+  .session-workspace-label + .session-mark {
+    margin-left: var(--s4);
+  }
+  .session-mark[data-mark="ended"] {
+    color: var(--agnes-text-tertiary);
+  }
+  .session-mark:is([data-mark="approval"], [data-mark="question"]) {
+    color: var(--agnes-status-warning-text);
+    background: var(--agnes-status-warning-bg);
+  }
   .section-label {
     margin: 0;
   }

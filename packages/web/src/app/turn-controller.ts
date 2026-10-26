@@ -33,6 +33,7 @@ export function createTurnController(
   context: Pick<
     AppSessionContext,
     | 'submissions'
+    | 'sessionActivity'
     | 'TRACE_THROTTLE_MS'
     | 'approvalBusy'
     | 'approvalRuntime'
@@ -107,7 +108,7 @@ export function createTurnController(
   function render(): void {
     if (!context.projection) {
       context.topbarRuntime.setStatus(context.t('app.status.newTask'), 'idle')
-      context.clientModules.sidebar?.setRunning([])
+      context.sessionActivity.showing(undefined, false)
       context.tracePanel.render([], [])
       renderApproval()
       context.renderControls()
@@ -214,9 +215,7 @@ export function createTurnController(
           accessibleLabel: !context.stopping && !awaitingApproval && view.busy ? view.statusLabel : undefined,
         },
       )
-    context.clientModules.sidebar?.setRunning(
-      context.current && view.busy && !context.readOnly ? [context.current.id] : [],
-    )
+    context.sessionActivity.showing(viewId, !!context.current && view.busy && !context.readOnly)
     const meta = transcriptMeta()
     context.renderer.render(view.nodes, context.projection.turns, meta)
     renderTrace(view, context.projection.turns, meta)

@@ -666,6 +666,9 @@ const AGNES_DEFS: Record<string, TSchema> = {
   DiagnosticsEventsResult: AgnesGen.DiagnosticsEventsResult,
   SessionMeta: AgnesGen.SessionMeta,
   SessionListParams: AgnesGen.SessionListParams,
+  SessionActivityParams: AgnesGen.SessionActivityParams,
+  SessionActivity: AgnesGen.SessionActivity,
+  SessionActivityResult: AgnesGen.SessionActivityResult,
   SessionGroupsParams: AgnesGen.SessionGroupsParams,
   SessionGroupsResult: AgnesGen.SessionGroupsResult,
   SessionGroup: AgnesGen.SessionGroup,
@@ -6012,6 +6015,25 @@ AGNES_SAMPLES.SessionSidebarListParams = {
   ],
   note: 'sidebars use scoped cursors and cannot mix legacy filters',
 }
+AGNES_SAMPLES.SessionActivityParams = {
+  valid: {},
+  invalid: [{ principalId: 'another' }],
+  note: 'principal comes only from authenticated context',
+}
+AGNES_SAMPLES.SessionActivity = {
+  valid: { sessionId: 'session-1', state: 'waiting', waiting: 'approval', reason: 'parked' },
+  invalid: [
+    { sessionId: 'session-1', state: 'done' },
+    { sessionId: '', state: 'idle' },
+    { sessionId: 'session-1', state: 'idle', reason: 'finished' },
+  ],
+  note: 'waiting names what the owner must do; reason is how the last turn ended',
+}
+AGNES_SAMPLES.SessionActivityResult = {
+  valid: { items: [AGNES_SAMPLES.SessionActivity.valid, { sessionId: 'session-2', state: 'running' }] },
+  invalid: [{}, { items: [{ state: 'running' }] }],
+  note: 'idle sessions are not listed',
+}
 AGNES_SAMPLES.SessionGroupsParams = {
   valid: {},
   invalid: [{ principalId: 'another' }],
@@ -9026,6 +9048,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'DiagnosticsEventsResult',
   },
   '_agnes/v1/session.list': { fileId: AGNES_ID, params: 'SessionListParams', result: 'PageSessionMeta' },
+  '_agnes/v1/session.activity': {
+    fileId: AGNES_ID,
+    params: 'SessionActivityParams',
+    result: 'SessionActivityResult',
+  },
   '_agnes/v1/session.groups': {
     fileId: AGNES_ID,
     params: 'SessionGroupsParams',
@@ -9879,6 +9906,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/diagnostics.collect': AGNES_SAMPLES.DiagnosticsCollectParams as Sample,
   '_agnes/v1/diagnostics.events': AGNES_SAMPLES.DiagnosticsEventsParams as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.SessionListParams as Sample,
+  '_agnes/v1/session.activity': AGNES_SAMPLES.SessionActivityParams as Sample,
   '_agnes/v1/session.groups': AGNES_SAMPLES.SessionGroupsParams as Sample,
   '_agnes/v1/workspace.list': AGNES_SAMPLES.WorkspaceListParams as Sample,
   '_agnes/v1/workspace.add': AGNES_SAMPLES.WorkspaceAddParams as Sample,
@@ -9980,6 +10008,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/extension.readOperation': ServiceSamples.ProfileServiceReceipt as Sample,
   '_agnes/v1/profile.decisions.list': ServiceSamples.ProfileDecisionsListResult as Sample,
   '_agnes/v1/profile.decisions.answer': SESSION_SAMPLES.DecisionCommandReceipt as Sample,
+  '_agnes/v1/session.activity': AGNES_SAMPLES.SessionActivityResult!,
   '_agnes/v1/session.groups': AGNES_SAMPLES.SessionGroupsResult!,
   '_agnes/v1/admin.credentials.delete': {
     note: 'Metadata-only response',

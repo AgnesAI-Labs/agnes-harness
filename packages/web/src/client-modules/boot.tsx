@@ -55,6 +55,7 @@ import {
 import { diagnosticsCatalog } from '@agnes/web-units/diagnostics-locale'
 import {
   BuiltinWebUnitRegistry,
+  type SessionListMark,
   WEB_UNITS_LOCALE_NAMESPACE,
   webUnitsLocaleCatalog,
 } from '@agnes/web-units/shell'
@@ -106,6 +107,7 @@ export interface ClientModulesRuntime {
   sidebar?: {
     update(state: SidebarState): void
     setRunning(ids: readonly string[]): void
+    setMarks(marks: Readonly<Record<string, SessionListMark>>): void
     close(): void
     dismiss(): void
     focusNew(): void
@@ -472,6 +474,7 @@ export async function startClientModules(options: {
   let sidebarView: import('../regions/sidebar.js').SidebarRegionMount | undefined
   let sidebarState = options.sidebar?.state
   let running: readonly string[] = []
+  let marks: Readonly<Record<string, SessionListMark>> = {}
   if (options.sidebarContainer)
     presentation.navigation = {
       container: options.sidebarContainer,
@@ -485,6 +488,7 @@ export async function startClientModules(options: {
         sidebarView = attached
         if (sidebarState) handle.update(sidebarState)
         handle.setRunning(running)
+        handle.setMarks?.(marks)
         return () => {
           if (sidebarView === attached) sidebarView = undefined
         }
@@ -499,6 +503,10 @@ export async function startClientModules(options: {
         setRunning(value: readonly string[]) {
           running = value
           sidebarView?.setRunning(value)
+        },
+        setMarks(value: Readonly<Record<string, SessionListMark>>) {
+          marks = value
+          sidebarView?.setMarks?.(value)
         },
         close: () => sidebarView?.close(),
         dismiss: () => sidebarView?.dismiss(),

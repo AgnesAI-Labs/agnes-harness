@@ -110,6 +110,7 @@ function SessionGroupBody({
           title={title}
           active={active}
           running={running}
+          mark={options.marks?.[row.sessionId]}
           pinned={!!row.pinnedAt}
           pinnedMark={false}
           archived={false}
@@ -616,6 +617,7 @@ export function InventorySessions({
           title={title}
           active={active}
           running={!archived && (options.runningIds?.includes(row.sessionId) ?? false)}
+          mark={archived ? undefined : options.marks?.[row.sessionId]}
           {...(showWorkspace ? { workspaceName: nameOf(row.cwd) || t('session.uncategorized') } : {})}
           pinned={isPinned(row)}
           pinnedMark={!grouped && isPinned(row)}

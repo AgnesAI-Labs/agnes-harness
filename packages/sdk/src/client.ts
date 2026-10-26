@@ -526,6 +526,9 @@ export class Client {
       this.call<PageSessionMeta>('_agnes/v1/session.list', o),
     groups: (): Promise<import('@agnes/protocol').SessionGroupsResult> =>
       this.call('_agnes/v1/session.groups', {}),
+    /** Running and waiting sessions this client owns; `session_activity` notices report changes. */
+    activity: (): Promise<import('@agnes/protocol').SessionActivityResult> =>
+      this.call('_agnes/v1/session.activity', {}),
     /** The recorded conversation, read without opening the session; works when it cannot be resumed. */
     view: (
       sessionId: string,

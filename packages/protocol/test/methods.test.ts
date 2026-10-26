@@ -314,6 +314,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.pin',
         '_agnes/v1/session.fileUpload',
         '_agnes/v1/session.fork',
+        '_agnes/v1/session.activity',
         '_agnes/v1/session.groups',
         '_agnes/v1/session.list',
         '_agnes/v1/session.preview',
@@ -373,7 +374,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(219)
+    expect(Object.keys(METHODS)).toHaveLength(220)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({

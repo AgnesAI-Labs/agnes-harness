@@ -37,6 +37,9 @@ export type SidebarGroupAction = 'toggle' | 'more' | 'collapse' | 'reload' | 're
 /** The navigation reports a completed reorder here; the shell owns the live region. */
 export const SIDEBAR_ORDER_ANNOUNCE_EVENT = 'agnes:sidebar-order-announce'
 
+/** A session row's run mark: waiting for an approval or an answer, or a turn that ended while unseen. */
+export type SessionListMark = 'approval' | 'question' | 'completed' | 'ended'
+
 export interface SidebarNavigationOptions {
   runtimePlatform?: string
 
@@ -51,6 +54,8 @@ export interface SidebarNavigationOptions {
   labels: ReadonlyMap<string, string>
   /** Sessions with a turn in flight; they show a breathing dot. */
   runningIds?: readonly string[]
+  /** What a session's row says about its run: waiting for its owner, or a turn that ended unseen. */
+  marks?: Readonly<Record<string, SessionListMark>>
   disabled?: boolean
   newDisabled?: boolean
   next?: string
@@ -110,6 +115,8 @@ export interface SidebarHandle {
   update(state: SidebarState): void
   /** Mark the sessions that currently have a turn in flight. */
   setRunning(ids: readonly string[]): void
+  /** Mark sessions waiting for their owner or with a turn that ended unseen; optional for hosts that do not track it. */
+  setMarks?(marks: Readonly<Record<string, SessionListMark>>): void
   close(): void
   dismiss(): void
   focusNew(): void
@@ -177,10 +184,14 @@ const SidebarBuiltin = forwardRef<
     state: SidebarState
     actions: SidebarActions
     running?: readonly string[]
+    marks?: Readonly<Record<string, SessionListMark>>
     dependencies?: SidebarDependencies
     slots?: SidebarSlots
   }
->(function SidebarBuiltin({ state, actions, running: initialRunning, dependencies, slots }, ref) {
+>(function SidebarBuiltin(
+  { state, actions, running: initialRunning, marks: initialMarks, dependencies, slots },
+  ref,
+) {
   const store = useRef({
     state,
     signature: navigationSignature(state),
@@ -209,6 +220,7 @@ const SidebarBuiltin = forwardRef<
   )
   useLayoutEffect(() => update(state), [state, update])
   const [running, setRunning] = useState<readonly string[]>(initialRunning ?? [])
+  const [marks, setMarks] = useState<Readonly<Record<string, SessionListMark>>>(initialMarks ?? {})
   const newButton = useRef<HTMLButtonElement>(null)
   const newSession = useRef(actions.newSession)
   newSession.current = actions.newSession
@@ -244,6 +256,13 @@ const SidebarBuiltin = forwardRef<
         setRunning((previous) =>
           previous.length === ids.length && previous.every((id, index) => id === ids[index]) ? previous : ids,
         ),
+      setMarks: (next) =>
+        setMarks((previous) =>
+          Object.keys(previous).length === Object.keys(next).length &&
+          Object.entries(next).every(([id, mark]) => previous[id] === mark)
+            ? previous
+            : next,
+        ),
       close: () => shell.current?.close(),
       dismiss: () => shell.current?.dismiss(),
       focusNew: () => newButton.current?.focus(),
@@ -278,6 +297,7 @@ const SidebarBuiltin = forwardRef<
     workspaces: current.workspaces,
     labels: current.labels,
     runningIds: running,
+    marks,
     ...(current.runtimePlatform ? { runtimePlatform: current.runtimePlatform } : {}),
     ...(current.currentId ? { currentId: current.currentId } : {}),
     disabled: false,
@@ -371,6 +391,7 @@ export const Sidebar = forwardRef<
     state: SidebarState
     actions?: Partial<SidebarActions> | undefined
     running?: readonly string[]
+    marks?: Readonly<Record<string, SessionListMark>>
     dependencies?: SidebarDependencies
     slots?: SidebarSlots
   }
@@ -381,6 +402,7 @@ export const Sidebar = forwardRef<
       state={props.state}
       actions={{ ...EMPTY_ACTIONS, ...props.actions }}
       {...(props.running ? { running: props.running } : {})}
+      {...(props.marks ? { marks: props.marks } : {})}
       {...(props.dependencies ? { dependencies: props.dependencies } : {})}
       {...(props.slots ? { slots: props.slots } : {})}
     />
