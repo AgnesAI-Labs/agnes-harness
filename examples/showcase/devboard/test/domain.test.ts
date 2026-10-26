@@ -1146,6 +1146,19 @@ describe('traceability and deliverables', () => {
     expect(() => recordArtifact(state, { ...base, kind: 'ECN', suffix: 'a b' }, NOW)).toThrow(
       'suffix 格式无效',
     )
+    // a source file's id names one file: the same file updates it, another one needs its own suffix
+    const src = { ...base, stage: 'IMPLEMENTATION', kind: 'CODE' }
+    const code = recordArtifact(state, { ...src, path: 'src/a.js' }, NOW)
+    expect(recordArtifact(state, { ...src, path: 'src/a.js' }, NOW)).toBe(code)
+    expect(() => recordArtifact(state, { ...src, path: 'src/b.js' }, NOW)).toThrow('请传另一个 suffix')
+    expect(code).toMatchObject({ title: '源代码 a.js', source: { path: `${p.workspaceDir}/src/a.js` } })
+    // a named author is kept as its role, and one the approval flows cannot recognise is refused
+    expect(
+      recordArtifact(state, { ...base, kind: 'PLAN', authorRole: '项目经理 王海涛' }, NOW).authorRole,
+    ).toBe('项目经理')
+    expect(() => recordArtifact(state, { ...base, kind: 'PLAN', authorRole: 'tester' }, NOW)).toThrow(
+      '编写角色无效',
+    )
   })
 
   it.each([

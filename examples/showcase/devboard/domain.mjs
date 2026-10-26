@@ -430,15 +430,18 @@ function moveStage(state, stage, { to, by, note, author }, now) {
       )
   }
   // The stage keeps the canonical role, so the self-approval check holds for "技术负责人 张三" too.
-  if (author) {
-    const role = roleOf(text(author, 'author', 32))
-    stage.author = ROLES.includes(role) ? role : fail(`编写角色无效：${author}（可选 ${ROLES.join('、')}）`)
-  }
+  if (author) stage.author = knownRole(author)
   record(stage, new Date(now).toISOString(), by || '未署名', stage.state, 'IN_PROGRESS', note)
   // Restarting a reworked earlier stage leaves the project at its furthest stage.
   const project = projectOf(state, stage.projectId)
   if (index > STAGES.indexOf(project.stage)) project.stage = stage.stage
   return stage
+}
+
+/** A named author is kept as its canonical role, so the self-approval check and approval flows can find it. */
+function knownRole(value) {
+  const role = roleOf(text(value, 'author', 32))
+  return ROLES.includes(role) ? role : fail(`编写角色无效：${value}（可选 ${ROLES.join('、')}）`)
 }
 
 const pendingGate = (state, stageId) =>
@@ -1103,6 +1106,9 @@ export function recordArtifact(state, input, now = Date.now()) {
     !running.actions.slice(running.since).some((a) => a.action === 'APPROVE')
   if (running && !revising)
     fail(`${existing.id} 有进行中的发布审批 ${running.id}：审批结束或退回发起人后再登记新内容`)
+  // A file kind's id names one file: another file under the same id would replace the first one's record.
+  if (SOURCE_KINDS.includes(kind) && existing?.source?.path && existing.source.path !== path)
+    fail(`${existing.id} 已登记为 ${existing.source.path}：${path} 请传另一个 suffix 登记`)
   const artifact = existing ?? { id, projectId: project.id, kind, status: 'DRAFT' }
   Object.assign(artifact, {
     stage,
@@ -1117,7 +1123,10 @@ export function recordArtifact(state, input, now = Date.now()) {
       200,
     ),
     version: text(input.version ?? existing?.version ?? 'V0.1', 'version', 16),
-    authorRole: optional(input.authorRole ?? existing?.authorRole ?? profileOf(project)[stage]?.author, 32),
+    authorRole:
+      input.authorRole === undefined
+        ? optional(existing?.authorRole ?? profileOf(project)[stage]?.author, 32)
+        : knownRole(input.authorRole),
     source: { type: 'workspace', path },
     updatedAt: new Date(now).toISOString(),
   })
