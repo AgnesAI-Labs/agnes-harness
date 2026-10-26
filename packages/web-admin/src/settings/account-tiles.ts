@@ -24,6 +24,12 @@ export const COMPATIBLE_PROVIDER = 'openai-compatible'
 /** Backend providers that are relays, offered beside the relay presets. */
 const RELAY_PROVIDERS = ['openrouter'] as const
 
+/**
+ * Agnes AI runs a China gateway (the provider's default address) and an international one. Keys are
+ * issued per gateway, so the international choice is the same provider with its own address filled in.
+ */
+const AGNES_INTERNATIONAL_BASE_URL = 'https://apihub.agnes-ai.com/v1'
+
 /** A relay is not a provider of its own: it fills the compatible form's address and account name. */
 export type RelayPreset = Readonly<{ label: string; baseUrl: string }>
 const RELAY_PRESETS = [
@@ -80,6 +86,12 @@ export function providerTiles(
       ),
       () => select(provider.id),
     )
+  const agnesInternational = () => {
+    const preset = { label: tr('accounts.agnesInternational'), baseUrl: AGNES_INTERNATIONAL_BASE_URL }
+    return tile('agnes-ai:international', preset.label, tr('accounts.agnesInternationalHint'), () =>
+      select('agnes-ai', preset),
+    )
+  }
   const { popular, relay, more } = groupProviders(providers)
   const compatible = !quick && providers.some((provider) => provider.id === COMPATIBLE_PROVIDER)
   const presets = compatible
@@ -96,7 +108,11 @@ export function providerTiles(
     createElement(
       'div',
       { className: 'account-provider-choices' },
-      ...(quick ? popular.slice(0, 4) : popular).map(providerTile),
+      ...(quick ? popular.slice(0, 4) : popular).flatMap((provider) =>
+        provider.id === 'agnes-ai' && !quick
+          ? [providerTile(provider), agnesInternational()]
+          : [providerTile(provider)],
+      ),
       ...(quick ? [tile('more', tr('accounts.moreProviders'), '…', () => select(''))] : []),
       ...(compatible
         ? [

@@ -185,6 +185,24 @@ it('puts Agnes AI first in the Provider picker for a new account', async () => {
   expect(h.input('config-provider').value).toBe('openai')
 })
 
+it('offers Agnes AI International as the Agnes provider at the international address', async () => {
+  const agnes = {
+    id: 'agnes-ai',
+    label: 'Agnes AI',
+    api: 'openai-completions',
+    baseUrl: 'https://api.agnes-ai.cn/v1',
+  }
+  const h = await setup(undefined, [agnes, OPENAI])
+  await h.click('#config-add-account')
+  await h.click('[data-provider="agnes-ai:international"]')
+  // Same provider and adapter; only the address and the suggested name follow the gateway.
+  expect(h.input('config-provider').value).toBe('agnes-ai')
+  expect(h.input('config-base-url').value).toBe('https://apihub.agnes-ai.com/v1')
+  expect(h.input('config-account-name').value).toBe(zhT('accounts.agnesInternational'))
+  expect(h.doc.getElementById('config-provider-host')?.textContent).toBe('apihub.agnes-ai.com/v1')
+  h.controller.close()
+})
+
 it('uses the visible Provider picker to update connection fields and locks existing accounts', async () => {
   const h = await setup()
   h.controller.close()
