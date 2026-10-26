@@ -296,8 +296,9 @@ export function GatePanel({ data, gate, board, role, setRole }) {
     gate.approverRoles.includes(role) &&
     !(gate.signatures ?? []).some((x) => x.role === role)
   const decide = async (decision) => {
+    const openIds = new Set(open.map((f) => f.id))
     const closeFindings = Object.entries(closing)
-      .filter(([, note]) => note.trim())
+      .filter(([id, note]) => openIds.has(id) && note.trim())
       .map(([id, note]) => ({ id, note: note.trim() }))
     const ok = await board.run(
       'devboard.gate',
@@ -310,7 +311,12 @@ export function GatePanel({ data, gate, board, role, setRole }) {
       },
       `${gateName(gate)} 已${decision === 'APPROVED' ? '签署' : '驳回'}`,
     )
-    if (ok) setDecided(true)
+    if (ok) {
+      setDecided(true)
+      // A co-signature leaves the gate PENDING and this panel mounted: the next signer starts clean.
+      setComment('')
+      setClosing({})
+    }
   }
   return h(
     'div',
