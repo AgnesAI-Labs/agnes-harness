@@ -35,7 +35,12 @@ export async function toolFailure(ctx: ToolContext, code: string, message: strin
   return { ...(await guardedResult(ctx, safe)), isError: true, details: { code } }
 }
 
-export function fsFailure(ctx: ToolContext, operation: string, path: string, error: unknown) {
+export async function fsFailure(
+  ctx: ToolContext,
+  operation: string,
+  path: string,
+  error: unknown,
+): Promise<ToolResult> {
   const code = failureCode(error, 'FS_OPERATION_FAILED')
   const reasons: Record<string, string> = {
     ENOENT: 'path does not exist; use ls/find to locate it or create a new file with write',
@@ -48,5 +53,13 @@ export function fsFailure(ctx: ToolContext, operation: string, path: string, err
   }
   const why =
     reasons[code] ?? 'filesystem operation failed; inspect the path and current state before retrying'
-  return toolFailure(ctx, code, `${operation} failed for ${displayPath(ctx, path)} (${code}): ${why}.`)
+  const shown = displayPath(ctx, path)
+  const message = (target: string) => `${operation} failed for ${target} (${code}): ${why}.`
+  // A whole path segment of hex is a content address (a run's digest directory), not key material.
+  // Judged with it masked, so it no longer hides the path and the recovery hint from the model.
+  const masked = message(shown.replace(DIGEST_SEGMENT, 'digest'))
+  if (scrubFeedback(masked) !== masked) return toolFailure(ctx, code, masked)
+  return { ...(await guardedResult(ctx, message(shown))), isError: true, details: { code } }
 }
+
+const DIGEST_SEGMENT = /(?<=["/])[A-Fa-f0-9]{32,128}(?=["/])/g
