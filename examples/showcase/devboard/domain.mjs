@@ -1077,7 +1077,10 @@ export function recordArtifact(state, input, now = Date.now()) {
   const id = existing?.id ?? ids[0]
   // The release flow approves the content it was started on; sent back to the initiator, it waits for the revision.
   const running = existing && runningFlow(state, 'artifact', existing.id)
-  const revising = running?.current === 0 && running.actions.at(-1)?.to === 'INITIATOR'
+  const revising =
+    running?.current === 0 &&
+    running.actions[running.since - 1]?.to === 'INITIATOR' &&
+    !running.actions.slice(running.since).some((a) => a.action === 'APPROVE')
   if (running && !revising)
     fail(`${existing.id} 有进行中的发布审批 ${running.id}：审批结束或退回发起人后再登记新内容`)
   const artifact = existing ?? { id, projectId: project.id, kind, status: 'DRAFT' }

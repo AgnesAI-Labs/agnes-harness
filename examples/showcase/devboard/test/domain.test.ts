@@ -1688,6 +1688,8 @@ describe('approval flows', () => {
       { id: flow.id, by: `${flow.nodes[0].roles[0]} 测试员`, action: 'RETURN', comment: '补图号' },
       NOW,
     )
+    // a comment after the return does not end the revision
+    actApproval(state, { id: flow.id, by: '项目经理 测试员', action: 'COMMENT', comment: '同意退回' }, NOW)
     expect(recordArtifact(state, { ...srs, version: 'V0.9' }, NOW).version).toBe('V0.9')
     approveFlow(state, flow.id)
     expect(recordArtifact(state, { ...srs, version: 'V1.1' }, NOW)).toMatchObject({
