@@ -1381,7 +1381,7 @@ describe('approval flows', () => {
     for (const action of ['APPROVE', 'REJECT', 'RETURN', 'TRANSFER', 'ADD_SIGN', 'COMMENT', 'WITHDRAW'])
       expect(() =>
         act(state, flow.id, '技术负责人', action, { comment: 'x', to: 'x', role: '质量工程师' }),
-      ).toThrow('已批准，不能再')
+      ).toThrow(`${flow.id} 已批准，不能再`)
     expect(() => doc(state)).toThrow('已基线')
   })
 
