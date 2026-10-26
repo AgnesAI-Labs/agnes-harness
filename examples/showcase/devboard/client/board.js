@@ -235,7 +235,7 @@ const VERBS = {
   CLAIMED: () => '认领',
   OPEN: () => '放弃认领',
   RESOLVED: () => '处理完成',
-  ANALYZED: () => '完成影响分析',
+  ANALYZED: (from) => (from === 'CCB_REVIEW' ? '退回修改分析' : '完成影响分析'),
   CCB_REVIEW: () => '提交 CCB',
   SUBMITTED: () => '退回补充',
   APPROVED: () => 'CCB 批准',

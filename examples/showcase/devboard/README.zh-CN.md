@@ -66,7 +66,7 @@
   - 对象状态只能由流程推进：变更 CCB_REVIEW → APPROVED 只能由 ECR 批准触发（直接流转提示「需走 ECR 审批」），ECR 驳回则变更驳回；ECN 发布批准后才生成设计态基线；质量问题 CLOSED 只能由关闭流程批准；试验 REPORTED → APPROVED 只能由试验报告流程批准；已批准的试验、已关闭的质量问题，以及流程进行中的这两类对象都拒绝修改；技术文件发布批准后交付物才基线，发布流程进行中不接受新内容，提交评审门时本阶段还有未批准发布流程的交付物，门自动加一条评审意见，且该交付物不随阶段通过而基线。评审门的会签规则不变。
   - 智能体只能用 `devboard_approval_submit` 发起自己起草（含以某个角色身份起草）的对象的流程，以及由它提交 CCB 的变更（例如演示者交给它的客户变更）的 ECR，不提供处理动作；处理由人在「我的待办」完成。
 - **追溯**：SWR 层允许 `SWR-`、`MER-`、`EER-`（软件、机械、电气）并带专业；CUS→SYS、SYS→SWR、SWR→TC 三段覆盖率；需求门提交时 CUS→SWR 不到 100% 会自动加一条评审意见。
-- **变更**：SUBMITTED → ANALYZED（需有影响分析）→ CCB_REVIEW → APPROVED / REJECTED → IMPLEMENTED → CLOSED。**缺陷**：NEW → CONFIRMED → FIXING → RETEST → CLOSED，可延期处理。
+- **变更**：SUBMITTED → ANALYZED（需有影响分析）→ CCB_REVIEW（没有进行中的 ECR 时可退回 ANALYZED，用于被退回后修改分析）→ APPROVED / REJECTED → IMPLEMENTED → CLOSED。**缺陷**：NEW → CONFIRMED → FIXING → RETEST → CLOSED，可延期处理。
 - 第一版的需求、任务、人工介入状态机不变。store 的 schema 为 4；schema 3 的数据照常读取（审批集合为空），更早 schema 的数据读作种子数据，首次写入时替换，更新版本 schema 写入的数据在重置前拒绝写入（读取从不写入）。
 
 ## 智能体与现场项目

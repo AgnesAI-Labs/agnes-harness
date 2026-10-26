@@ -63,7 +63,8 @@ export const MACHINES = Object.freeze({
   change: {
     SUBMITTED: ['ANALYZED', 'REJECTED'],
     ANALYZED: ['CCB_REVIEW', 'SUBMITTED'],
-    CCB_REVIEW: ['APPROVED', 'REJECTED'],
+    // Back to ANALYZED when no ECR runs: a send-back to the initiator is answered by revising the analysis.
+    CCB_REVIEW: ['APPROVED', 'REJECTED', 'ANALYZED'],
     APPROVED: ['IMPLEMENTED'],
     REJECTED: ['CLOSED'],
     IMPLEMENTED: ['CLOSED'],

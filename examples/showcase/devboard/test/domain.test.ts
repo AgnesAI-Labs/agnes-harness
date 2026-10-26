@@ -1644,6 +1644,19 @@ describe('approval flows', () => {
     expect(() => act(state, flow.id, '技术负责人', 'APPROVE')).toThrow('当前节点「加签：质量工程师」')
   })
 
+  it('lets a change sent back to its initiator return to analysis once its ECR is withdrawn', () => {
+    const { state, p } = setup()
+    const cr = ccb(state, p)
+    const flow = ecr(state, cr.id)
+    act(state, flow.id, flow.nodes[0].roles[0], 'RETURN', { to: 'INITIATOR', comment: '影响分析漏了物料' })
+    const back = () => transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW)
+    expect(back).toThrow('有进行中的审批')
+    actApproval(state, { id: flow.id, by: flow.initiator.by, action: 'WITHDRAW' }, NOW)
+    back()
+    updateChange(state, { id: cr.id, title: '补充物料后的变更' })
+    expect(cr).toMatchObject({ state: 'ANALYZED', title: '补充物料后的变更' })
+  })
+
   it('lets only the initiator withdraw, and only before the first node is handled', () => {
     const { state } = setup()
     const flow = doc(state)
