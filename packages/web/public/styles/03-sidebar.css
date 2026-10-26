@@ -227,9 +227,11 @@
     scale: none;
     filter: none;
   }
-  /* 三个分区标题是列表里的分组标签：颜色压到三级灰，和下面的会话标题区分开。 */
+  /* 三个分区标题是列表里的分组标签：颜色压到三级灰，和下面的会话标题区分开；
+     字号比项目标题和行标题大一档，让「先读分组、再读行」的层次成立。 */
   .sidebar-section > .workspace-heading-row .workspace-heading {
     color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-body);
   }
   /* 底色由整行承担：通用 button:hover 会给标题按钮补一圈描边和一块比行短的底色。 */
   .workspace-heading:hover:not(:disabled) {
@@ -240,6 +242,19 @@
      文字落到 43px。层级靠缩进，不靠图标。 */
   .sidebar-section-body .session {
     padding-left: 2.5rem;
+  }
+  /* 置顶与临时会话没有文件夹图标可对位，行标题直接落在分区标题的文字列上（同为 19px）；
+     工作区里的项目标题带图标，行仍按上面那档缩进。文字列一致后，两类的行不再多缩进一档。 */
+  .sidebar-section[data-section="pinned"] .sidebar-section-body .session,
+  .sidebar-section[data-section="chats"] .sidebar-section-body .session {
+    padding-left: var(--s8);
+  }
+  /* 这两类的行没有缩进列可放运行圆点：基准规则的 -12px 负边距会把圆点推到行左边缘外，
+     被 .session 的 overflow:hidden 裁掉。这里让圆点跟在文字列前面作项目符号，
+     运行中的行标题因此右移 12px；不运行时标题仍与分区标题对齐。 */
+  .sidebar-section[data-section="pinned"] .sidebar-section-body .session-running,
+  .sidebar-section[data-section="chats"] .sidebar-section-body .session-running {
+    margin-left: 0;
   }
   /* The folder's new-session action appears with the pointer or keyboard focus; touch has no
      hover, so the narrow drawer keeps it visible. */

@@ -420,3 +420,29 @@ it('keeps sidebar action menus neutral on hover/focus and reveals project action
     /\.workspace-heading-row:hover \.workspace-row-actions,[^}]+\.workspace-heading-row:focus-within \.workspace-row-actions[^}]+opacity: 1/,
   )
 })
+
+it('aligns 置顶 and 临时会话 rows with their section heading and keeps 工作区 rows under the folder icon', () => {
+  const declarationsFor = (selector: string) => {
+    const rule = rules.find((candidate) =>
+      candidate.selector.split(',').some((part) => part.trim() === selector),
+    )
+    if (!rule) throw new Error(`missing rule for ${selector}`)
+    return declarationsOf(rule).map(({ property, value }) => `${property}: ${value}`)
+  }
+  // 工作区里的项目标题有文件夹图标，行标题按图标宽度缩进一档。
+  expect(declarationsFor('.sidebar-section-body .session')).toContain('padding-left: 2.5rem')
+  for (const section of ['pinned', 'chats']) {
+    // 置顶与临时会话没有图标可对位，行标题直接落在分区标题的文字列上。
+    expect(
+      declarationsFor(`.sidebar-section[data-section="${section}"] .sidebar-section-body .session`),
+    ).toContain('padding-left: var(--s8)')
+    // 这一列没有缩进列可放运行圆点：基准的 -12px 负边距会把圆点推出行外，被 .session 裁掉。
+    expect(
+      declarationsFor(`.sidebar-section[data-section="${section}"] .sidebar-section-body .session-running`),
+    ).toContain('margin-left: 0')
+  }
+  // 三个分区标题比项目标题和行标题大一档（13px → 14px）。
+  expect(declarationsFor('.sidebar-section > .workspace-heading-row .workspace-heading')).toContain(
+    'font-size: var(--font-size-body)',
+  )
+})
