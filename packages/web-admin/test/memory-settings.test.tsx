@@ -252,3 +252,73 @@ it('keeps the selected workspace when save permission arrives after the first re
     await act(async () => root.unmount())
   }
 })
+
+it('re-reads memory written while settings were closed and keeps an unsaved draft', async () => {
+  let stored = ''
+  const reads: Record<string, unknown>[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      if (url === '/api/context') return Response.json(context([{ path: '/work/WorkLLM', available: true }]))
+      reads.push(body)
+      const file =
+        typeof body.file === 'string'
+          ? {
+              path: body.file,
+              hash: hash(stored ? 'b' : 'a'),
+              bytes: stored.length,
+              lines: 1,
+              content: stored,
+            }
+          : undefined
+      return Response.json({
+        workspaces: [{ path: '/work/WorkLLM', available: true }],
+        inspection: {
+          ...inspection('auto'),
+          lastWriter: stored ? { sessionKey: 'agent', turn: 1 } : undefined,
+        },
+        ...(file ? { file } : {}),
+      })
+    }),
+  )
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const show = (visit: number) =>
+    act(async () =>
+      root.render(
+        createElement(
+          SettingsSubpageFrame,
+          { header: null },
+          createElement(MemoryPanel, { canSave: true, visit }),
+        ),
+      ),
+    )
+  const editor = () => host.querySelector<HTMLTextAreaElement>('[data-testid="memory-content"]')
+  try {
+    await show(1)
+    await act(async () => {})
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="memory-open"]')?.click())
+    expect(editor()?.value).toBe('')
+    // An agent writes the file while the dialog is closed; the next visit shows it.
+    stored = 'Prefer concise synthetic summaries.'
+    await show(2)
+    await act(async () => {})
+    expect(reads.at(-1)).toEqual({ cwd: '/work/WorkLLM', file: 'MEMORY.md' })
+    expect(editor()?.value).toBe('Prefer concise synthetic summaries.')
+    expect(host.querySelector('[data-testid="memory-writer"]')?.textContent).toBe('agent · 1')
+    // An unsaved edit is the reader's own: a later visit refreshes the summary, not the editor.
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(editor(), 'Draft')
+      editor()?.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    stored = 'Changed elsewhere.'
+    await show(3)
+    await act(async () => {})
+    expect(reads.at(-1)).toEqual({ cwd: '/work/WorkLLM' })
+    expect(editor()?.value).toBe('Draft')
+  } finally {
+    await act(async () => root.unmount())
+  }
+})

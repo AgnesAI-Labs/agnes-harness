@@ -28,6 +28,7 @@ import {
   useCanSave,
   usePromptSnapshot,
   useShown,
+  useVisits,
   withInstructions,
 } from './prompt-config.js'
 import { PromptConflictNotice } from './prompt-conflict.js'
@@ -217,7 +218,8 @@ export function Personalization({
   permission?: () => Promise<boolean>
   onRunConfiguration?: () => void
 }) {
-  const [ref, shown] = useShown(false)
+  const [ref, visits] = useVisits()
+  const shown = visits > 0
   const canSave = useCanSave(shown, permission)
   return (
     <div
@@ -232,7 +234,7 @@ export function Personalization({
         {...(onRunConfiguration ? { onRunConfiguration } : {})}
       />
       <div ref={ref} id="settings-subsection-memory" tabIndex={-1} data-testid="personalization-memory">
-        {shown && <MemoryPanel canSave={canSave} />}
+        {shown && <MemoryPanel canSave={canSave} visit={visits} />}
       </div>
     </div>
   )

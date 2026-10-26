@@ -99,6 +99,31 @@ export function useShown<T extends HTMLElement = HTMLDivElement>(eager: boolean)
   return [ref, shown] as const
 }
 
+/**
+ * Counts how often the element has come into view. Settings keep their pages mounted while the
+ * dialog is closed, so a page that shows files others may change re-reads on each new visit.
+ */
+export function useVisits<T extends HTMLElement = HTMLDivElement>() {
+  const ref = useRef<T>(null)
+  const [visits, setVisits] = useState(0)
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+    let visible = false
+    const check = () => {
+      const now = !node.closest('[hidden]') && (node.closest('dialog')?.open ?? true)
+      if (now && !visible) setVisits((count) => count + 1)
+      visible = now
+    }
+    check()
+    const observer = new MutationObserver(check)
+    for (let parent: HTMLElement | null = node; parent; parent = parent.parentElement)
+      observer.observe(parent, { attributes: true, attributeFilter: ['hidden', 'open'] })
+    return () => observer.disconnect()
+  }, [])
+  return [ref, visits] as const
+}
+
 export const canEditPrompt = async () => {
   const context = await PluginAdminApi.context()
   return !context.readOnly && hasPermission(context.permissions, 'packages.activate')
