@@ -360,10 +360,14 @@ test('UI ask, plan approval, deliverable, child and goal cards perform their act
   )
   const session = await current(page, runtime)
   const spawned = await toolResult(session, 'subagent_spawn')
-  const receipt = spawned?.content.find((block) => block.type === 'text')
-  const childKey = receipt?.type === 'text' ? /^started (\S+);/.exec(receipt.text)?.[1] : undefined
-  if (!childKey) throw new Error('Child spawn must return a durable child key')
+  // The receipt hides internal handles; the follow-up handle comes from subagent_list.
+  expect(JSON.stringify(spawned?.content)).toContain('Task delegated in the background')
   await expect(page.getByTestId('child-agent-card')).toBeVisible()
+  for (const input of ['call tool_describe {"name":"subagent_list"}', 'call subagent_list {}'])
+    await turn(page, input)
+  const listed = (await toolResult(session, 'subagent_list'))?.content.find((block) => block.type === 'text')
+  const childKey = listed?.type === 'text' ? /^(?!no child)(\S+) \w+/m.exec(listed.text)?.[1] : undefined
+  if (!childKey) throw new Error('Child listing must return a durable child key')
   await turn(page, 'call tool_describe {"name":"subagent_collect"}')
   await turn(page, `call subagent_collect ${JSON.stringify({ childKey, wait: true })}`)
   expect(JSON.stringify(await toolResult(session, 'subagent_collect'))).toContain('Synthetic delivery')
@@ -786,7 +790,7 @@ test('Checking a source with no plugin manifest explains that it is not a plugin
   await source.getByRole('combobox', { name: 'Source type', exact: true }).selectOption('file')
   await source.getByRole('textbox', { name: 'Source reference', exact: true }).fill(`file:${folder}`)
   await source.getByRole('button', { name: 'Check source', exact: true }).click()
-  await expect(page.locator('#source-error')).toContainText('A Skill (SKILL.md) is not a plugin')
+  await expect(page.locator('#source-error')).toContainText('a SKILL.md alone is a Skill, not a plugin')
   await expect(page.getByText('The plugin operation could not complete.')).toHaveCount(0)
 })
 

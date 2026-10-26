@@ -77,7 +77,10 @@ for (const locale of ['en', 'zh-CN'])
       const artifactTurn = page.getByTestId('conversation-turn').last()
       await expand(artifactTurn.getByTestId('turn-process-toggle').locator('..'))
       await expandActivityGroups(artifactTurn)
-      const tool = artifactTurn.getByRole('article', { name: /\bpresent\b/ })
+      // The card reads "Present deliverables" in each locale; its recorded tool name is the stable hook.
+      const tool = artifactTurn
+        .locator('article.timeline-node.tool')
+        .filter({ has: page.locator('[data-tool-name="present"]') })
       await tool.getByTestId('tool-detail-toggle').click()
       await tool.getByTestId('tool-fact-chain').click()
       await expect(facts).toHaveAttribute('data-kind', 'tool')

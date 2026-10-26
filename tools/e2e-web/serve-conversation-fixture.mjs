@@ -40,13 +40,15 @@ const server = createServer(async (request, response) => {
     response.writeHead(404).end()
     return
   }
+  // Read before answering: a missing build must become one 500, not a second header write.
+  let body
   try {
-    response
-      .writeHead(200, { 'Content-Type': asset[1], 'Cache-Control': 'no-store' })
-      .end(path === '/tokens.css' ? readWebUiStyleSource(asset[0]) : await readFile(asset[0]))
+    body = path === '/tokens.css' ? readWebUiStyleSource(asset[0]) : await readFile(asset[0])
   } catch {
     response.writeHead(500).end('Build the web assets before starting the fixture.')
+    return
   }
+  response.writeHead(200, { 'Content-Type': asset[1], 'Cache-Control': 'no-store' }).end(body)
 })
 server.listen(Number(process.env.AGH_CONVERSATION_FIXTURE_PORT ?? 0), '127.0.0.1', () =>
   console.log(`http://127.0.0.1:${server.address().port}`),

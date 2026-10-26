@@ -1,8 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { Session } from '@agnes/sdk'
+import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
-import { install, prompt, toolResult } from './sdk.js'
+import { describingFirst, install, prompt, toolResult } from './sdk.js'
 import {
   chooseWorkspace,
   closeSettings,
@@ -15,6 +17,13 @@ import {
   settings,
   traceSequence,
 } from './ui.js'
+
+/** The page opened the session: its latest durable turn is the last one shown, inside the opening window. */
+async function latestTurnShown(page: Page, session: Session) {
+  const latest = (await session.projectUI(undefined, { surface: 'web' })).turns.at(-1)
+  if (!latest) throw new Error('The session must have a turn to show')
+  await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-turn-id', latest.id)
+}
 
 test('agent candidate review binds exact tests and hashes, refuses edited approval, publishes only for new sessions', async ({
   page,
@@ -48,7 +57,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     const view = await old.projectUI(undefined, { surface: 'web' })
     return { op: view.opState, pending: view.pendingInputs ?? [] }
   }
-  const promptOld = async (input: string) => {
+  const followUp = async (input: string) => {
     const before = (await old.projectUI(undefined, { surface: 'web' })).upto
     // Authoring receipts may continue in a backend turn. Queue the next input once through the
     // supported SDK, then require this exact input's durable completed turn, without resubmitting.
@@ -70,6 +79,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
       )
       .toEqual({ status: 'completed', reason: 'completed' })
   }
+  const promptOld = describingFirst(followUp)
   expect((await old.tools()).tools.some((tool) => tool.name === 'skill_read')).toBe(true)
   await client.session.rename(old.id, 'Text statistics workshop')
   old.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
@@ -82,7 +92,8 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await promptOld('call plugin_helper_create ' + JSON.stringify({ files: guide.files }))
   const createdResult = (await toolResult(old, 'plugin_helper_create'))!.content[0] as { text: string }
   const draft = JSON.parse(createdResult.text) as import('@agnes/protocol').AuthoringCandidate
-  expect(draft).toMatchObject({ state: 'draft', installer: 'agent', origin: { turn: 2 } })
+  // Turns 1 and 3 describe the on-demand guide and create tools.
+  expect(draft).toMatchObject({ state: 'draft', installer: 'agent', origin: { turn: 4 } })
   expect(
     (await client.packages.list({ profile: 'local-dev' })).packages.some((p) => p.id === draft.packageId),
   ).toBe(false)
@@ -117,7 +128,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   await expect(pluginPage.getByTestId('candidate-state')).toHaveText('Awaiting review')
   await expect(pluginPage.getByTestId('candidate-tests')).toContainText('Tests passed 1/1')
   await expect(pluginPage.getByTestId('candidate-provenance')).toContainText(
-    'Drafted by Agent · From “Text statistics workshop” (turn 2)',
+    'Drafted by Agent · From “Text statistics workshop” (turn 4)',
   )
   await expect(pluginPage.getByTestId('candidate-capability-delta')).toContainText('New permissions: none')
   await expect(pluginPage.getByTestId('candidate-summary')).toContainText('No new permissions')
@@ -149,7 +160,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
       { locale, theme },
     )
     await page.goto(runtime.url)
-    await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
+    await latestTurnShown(page, old)
     await expect(
       page.getByRole('button', { name: locale === 'en' ? 'Settings' : '设置', exact: true }),
     ).toBeVisible()
@@ -185,7 +196,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     localStorage.setItem('e2e-authoring-theme', 'light')
   })
   await page.goto(runtime.url)
-  await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
+  await latestTurnShown(page, old)
   await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await reviewType('plugin')
@@ -195,7 +206,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     .click()
   await client.session.rename(old.id, 'A very long workshop title '.repeat(3).slice(0, 80))
   await page.goto(runtime.url)
-  await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
+  await latestTurnShown(page, old)
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await reviewType('plugin')
   await pluginPage
@@ -416,7 +427,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
       { locale, theme },
     )
     await page.goto(runtime.url)
-    await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
+    await latestTurnShown(page, old)
     if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page, locale)
     await reviewType('plugin')
     await expect(pluginPage.getByTestId('candidate-list').getByTestId('candidate-open')).toHaveCount(1)
@@ -522,7 +533,7 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     localStorage.setItem('e2e-authoring-theme', 'light')
   })
   await page.goto(runtime.url)
-  await expect(page.getByTestId('conversation-turn')).toHaveCount(11)
+  await latestTurnShown(page, old)
   if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
   await reviewType('plugin')
   await promptOld(
@@ -635,17 +646,17 @@ test('full access candidate submission publishes without a human offer and retai
   })
   await session.attach()
   // No approval handler: any attempted human delivery makes the real tool flow fail.
-  await prompt(session, 'call plugin_helper_guide {"kind":"tool"}')
+  const send = describingFirst((input) => prompt(session, input))
+  await send('call plugin_helper_guide {"kind":"tool"}')
   const guideResult = (await toolResult(session, 'plugin_helper_guide'))!.content[0]!
   if (guideResult.type !== 'text') throw new Error('Expected authoring guide')
   const guide = JSON.parse(guideResult.text) as { files: { path: string; content: string }[] }
-  await prompt(session, `call plugin_helper_create ${JSON.stringify({ files: guide.files })}`)
+  await send(`call plugin_helper_create ${JSON.stringify({ files: guide.files })}`)
   const created = (await toolResult(session, 'plugin_helper_create'))!.content[0]!
   if (created.type !== 'text') throw new Error('Expected candidate receipt')
   const draft = JSON.parse(created.text) as import('@agnes/protocol').AuthoringCandidate
   for (const name of ['plugin_test', 'plugin_install_local']) {
-    await prompt(
-      session,
+    await send(
       `call ${name} ${JSON.stringify({ candidateId: draft.candidateId, expectedHash: draft.candidateHash })}`,
     )
     await toolResult(session, name)
@@ -676,8 +687,10 @@ test('full access candidate submission publishes without a human offer and retai
   )
   await preferences(page)
   await page.goto(`${runtime.url}/?session=${encodeURIComponent(session.id)}`)
-  await expect(page.getByTestId('conversation-turn')).toHaveCount(4)
+  await latestTurnShown(page, session)
   for (const toggle of await page.getByTestId('turn-process-toggle').all()) {
+    // A turn whose process has nothing to show keeps its toggle hidden.
+    if (!(await toggle.isVisible())) continue
     if (!(await toggle.evaluate((node) => node.parentElement?.getAttribute('data-open') === 'true')))
       await toggle.click()
   }

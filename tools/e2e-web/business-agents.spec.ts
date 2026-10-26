@@ -10,7 +10,8 @@ test('showcase full access business signature records the human principal withou
 }, info) => {
   test.setTimeout(120_000)
   const client = await runtime.connect()
-  await install(client, 'examples/showcase/pharma-gmp')
+  // The showcase ships compiled: install the payload build:local packages, not the TypeScript source.
+  await install(client, 'packages/cli/dist/local/bundled-examples/showcase/pharma-gmp')
   const session = await client.session.new({
     cwd: runtime.workspace,
     sessionKey: crypto.randomUUID(),

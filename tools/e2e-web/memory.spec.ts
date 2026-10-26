@@ -54,7 +54,8 @@ for (const locale of ['en', 'zh-CN'])
       await accessible(page, info, 'memory-settings')
       await screen(page, info, `memory-${locale}-${theme}`, [
         page.getByTestId('memory-root'),
-        page.getByTestId('memory-workspace'),
+        // The workspace picker shows the disposable path on its custom trigger, not the hidden native select.
+        page.locator('[id="memory-workspace-trigger"]'),
       ])
       await page.getByTestId('memory-open').click()
       await expect(page.getByTestId('memory-content')).toBeVisible()

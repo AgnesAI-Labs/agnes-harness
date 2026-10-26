@@ -67,3 +67,25 @@ export async function prompt(session: Session, input: string) {
   expect(result.reason).toBe('completed')
   return result
 }
+// Specialist authoring tools load on demand: the model describes one before its first call.
+const onDemandTools = new Set([
+  'plugin_helper_guide',
+  'plugin_helper_create',
+  'plugin_helper_install',
+  'plugin_test',
+  'plugin_install_local',
+  'skill_helper_create',
+  'skill_helper_install',
+])
+/** Wraps a session's prompt so each on-demand tool is described once before a `call` uses it. */
+export function describingFirst(send: (input: string) => Promise<unknown>) {
+  const described = new Set<string>()
+  return async (input: string) => {
+    const name = /^call (\w+)/.exec(input)?.[1]
+    if (name && onDemandTools.has(name) && !described.has(name)) {
+      await send(`call tool_describe ${JSON.stringify({ name })}`)
+      described.add(name)
+    }
+    await send(input)
+  }
+}

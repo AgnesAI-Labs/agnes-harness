@@ -409,7 +409,8 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
   const second = await client.session.new({
     cwd: runtime.workspace,
-    preset: 'full-access',
+    preset: 'standard',
+    permission: 'full-access',
     sessionKey: 'wb1-terminal-other',
   })
   await expect(second.jobsControl({ operation: 'kill', jobId: human.id })).rejects.toMatchObject({
@@ -644,7 +645,11 @@ test('changed files review follows confirmed agent effects and preserves current
   expect(latest.selected?.diff).toContain('-export const answer = 1\n')
   await page.getByTestId('workbench-right-toggle').click()
   await workbenchTab(page, 'files')
-  await page.getByTestId('files-panel').locator('[data-path="review.ts"]').click()
+  await page
+    .getByTestId('files-panel')
+    .getByTestId('workspace-file')
+    .and(page.locator('[data-path="review.ts"]'))
+    .click()
   await expect(page.getByTestId('file-preview')).toContainText('answer = 2')
   const preview = await session.workspaceRead('review.ts')
   await page.getByTestId('file-review').click()
@@ -691,7 +696,11 @@ test('changed files review follows confirmed agent effects and preserves current
   })
   await page.reload()
   await workbenchTab(page, 'files')
-  await page.getByTestId('files-panel').locator('[data-path="review.ts"]').click()
+  await page
+    .getByTestId('files-panel')
+    .getByTestId('workspace-file')
+    .and(page.locator('[data-path="review.ts"]'))
+    .click()
   await page.getByTestId('file-review').click()
   await expect(panel.getByTestId('changes-diff')).toContainText('+export const answer = 2')
   // An external human change is never rolled into the agent's historical diff.
@@ -769,9 +778,12 @@ test.describe('server sidebar pagination', () => {
     await expect(page.locator('.session-row')).toHaveCount(11)
     await more.click()
     await expect(page.locator('.session-row')).toHaveCount(5)
-    await page.locator('.workspace-heading[aria-expanded="true"]').click()
+    // The project heading folds its sessions; the Workspaces section heading above it is not the target.
+    const project = page.locator('.workspace-group .workspace-heading')
+    await expect(project).toHaveAttribute('aria-expanded', 'true')
+    await project.click()
     await expect(page.locator('.session-row')).toHaveCount(0)
-    await page.locator('.workspace-heading').first().click()
+    await project.click()
     await expect(page.locator('.session-row')).toHaveCount(5)
     expect(new URL(page.url()).searchParams.get('session')).toBe(selected)
   })
