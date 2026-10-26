@@ -518,10 +518,18 @@ function closeReleaseFindings(state, flow, at) {
       f.closed = true
       f.closedNote = `发布审批 ${flow.id} 已批准（系统）`
     }
-    const stage = find(state, 'stage', gate.stageId)
-    if (gate.auto && gate.findings.every((f) => f.closed) && !unpassedBefore(state, stage))
-      approve(state, stage, gate, '系统（评审意见已全部关闭）', '评审意见全部关闭，自动通过', at)
+    passAuto(state, find(state, 'stage', gate.stageId), gate, at)
   }
+}
+/** An auto gate (TR4) passes once every finding is closed and no earlier stage is left unpassed (an approved change can reopen one). */
+function passAuto(state, stage, gate, at, what = '评审意见') {
+  if (
+    gate.auto &&
+    gate.decision === 'PENDING' &&
+    gate.findings.every((f) => f.closed) &&
+    !unpassedBefore(state, stage)
+  )
+    approve(state, stage, gate, `系统（${what}已全部关闭）`, `${what}全部关闭，自动通过`, at)
 }
 function closeFindings(gate, closes, by) {
   for (const close of closes ?? []) {
@@ -626,8 +634,7 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
       `评审意见 ${system.map((c) => c.id).join('、')} 是系统检查意见：由审批人在决议时关闭，提交方不能关闭`,
     )
   closeFindings(gate, closes, actor)
-  if (gate.auto && gate.findings.every((f) => f.closed))
-    approve(state, stage, gate, '系统（代码评审意见已全部关闭）', '代码评审意见全部关闭，自动通过', at)
+  passAuto(state, stage, gate, at, '代码评审意见')
   return { stage, gate }
 }
 
@@ -671,6 +678,12 @@ function approve(state, stage, gate, by, comment, at) {
   const nextStage = STAGES[STAGES.indexOf(stage.stage) + 1]
   if (nextStage && project.stage === stage.stage) project.stage = nextStage
   if (!nextStage) project.actualEnd = at
+  // A later auto gate held back by this stage's rework passes now that it has passed.
+  for (const later of STAGES.slice(STAGES.indexOf(stage.stage) + 1)) {
+    const item = stageOf(state, stage.projectId, later)
+    const held = item?.state === 'IN_REVIEW' && pendingGate(state, item.id)
+    if (held) passAuto(state, item, held, at)
+  }
 }
 
 /**

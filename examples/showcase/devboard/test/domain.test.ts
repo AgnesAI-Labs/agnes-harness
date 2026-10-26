@@ -397,6 +397,26 @@ describe('multi-gate stages and tailoring', () => {
     )
     expect(impl.state).toBe('PASSED')
     expect(review.gate).toMatchObject({ decision: 'APPROVED', approver: '系统（代码评审意见已全部关闭）' })
+    // While an earlier stage is back in rework, TR4 waits for it and passes once it passes again.
+    const held = create(state, { kind: 'project', name: '返工中' }, NOW)
+    earlier(held.id)
+    const design = byId(state.stages, `${held.id}/DESIGN`)
+    const code = byId(state.stages, `${held.id}/IMPLEMENTATION`)
+    code.state = 'IN_PROGRESS'
+    const tr4 = submitGate(state, { stageId: code.id, by: '研发协调员', findings: ['x'] }, NOW).gate
+    design.state = 'IN_PROGRESS'
+    submitGate(
+      state,
+      { stageId: code.id, by: '研发协调员', closeFindings: [{ id: 'F-01', note: '已改' }] },
+      NOW,
+    )
+    expect(tr4.decision).toBe('PENDING')
+    expect(code.state).toBe('IN_REVIEW')
+    const tr3 = submitGate(state, { stageId: design.id, by: '研发协调员' }, NOW).gate
+    decideGate(state, { gateId: tr3.id, decision: 'APPROVED', by: '技术负责人' }, NOW)
+    expect(design.state).toBe('PASSED')
+    expect(tr4).toMatchObject({ decision: 'APPROVED', approver: '系统（评审意见已全部关闭）' })
+    expect(code.state).toBe('PASSED')
     // Other gates are never automatic.
     const order = newProject(state, 'NEW_BUILD')
     earlier(order.id)
