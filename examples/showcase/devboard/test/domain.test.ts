@@ -3040,6 +3040,9 @@ describe('hand-off to the coordinator', () => {
     expect(status('SWR-001')).toBe('CHANGED')
     run('pass', NOW + 2)
     expect(status('SWR-001')).toBe('VERIFIED')
+    // a change that names the case itself takes the verification of its requirement back too
+    approvedChange(state, p.id, { impact: { reqs: ['TC-001'] } })
+    expect([status('SWR-001'), status('TC-001')]).toEqual(['APPROVED', 'CHANGED'])
   })
 
   it('tells the coordinator which failed test cases still need a defect', () => {

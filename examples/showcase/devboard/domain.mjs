@@ -844,6 +844,11 @@ function applyChange(state, cr, at) {
         tc.status === 'VERIFIED'
       )
         tc.status = 'APPROVED'
+    // A changed case no longer verifies its requirements: they wait for it to pass again.
+    if (req.level === 'TC')
+      for (const swr of state.reqs)
+        if (swr.projectId === cr.projectId && req.parent?.includes(swr.id) && swr.status === 'VERIFIED')
+          swr.status = 'APPROVED'
     if (LEVEL_STAGE[req.level]) stages.add(LEVEL_STAGE[req.level])
   }
   for (const id of cr.impact?.artifacts ?? []) {
