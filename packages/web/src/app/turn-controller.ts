@@ -502,7 +502,7 @@ export function createTurnController(
 
   function transcriptMeta(): {
     hasEarlier: boolean
-    loadEarlier?: () => void
+    loadEarlier?: () => Promise<unknown>
     sessionId?: string
     loop?: { id: string; version: string }
     controlFacts?: NonNullable<SessionControlStateResult['facts']>
@@ -514,7 +514,7 @@ export function createTurnController(
       return readOnly.hasEarlier
         ? {
             hasEarlier: true,
-            loadEarlier: () => void context.readOnlyController.loadEarlier().catch(context.showError),
+            loadEarlier: () => context.readOnlyController.loadEarlier().catch(context.showError),
           }
         : { hasEarlier: false }
     const session = context.live
@@ -537,7 +537,7 @@ export function createTurnController(
     return {
       hasEarlier: true,
       ...identity,
-      loadEarlier: () => void session.loadEarlier().catch(context.showError),
+      loadEarlier: () => session.loadEarlier().catch(context.showError),
     }
   }
 

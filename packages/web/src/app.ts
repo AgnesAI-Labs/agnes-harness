@@ -1644,7 +1644,7 @@ function render(): void {
 }
 function transcriptMeta(): {
   hasEarlier: boolean
-  loadEarlier?: () => void
+  loadEarlier?: () => Promise<unknown>
   sessionId?: string
   loop?: { id: string; version: string }
   controlFacts?: NonNullable<SessionControlStateResult['facts']>
