@@ -282,6 +282,20 @@ describe('DevBoard plugin contract', () => {
     const close = await tool('devboard_problem_upsert').execute({ id: problem.id, to: 'CLOSED' }, ctx)
     expect(close.isError).toBe(true)
     expect(read(store).problems.find((q: Any) => q.id === problem.id).state).toBe('OPEN')
+    // a defect is created (no id) or moved (id + to); a mixed call is refused, not half applied
+    const defect = tool('devboard_defect_upsert')
+    const before = read(store).activity?.length ?? 0
+    expect(
+      (await defect.execute({ projectId: p.id, title: 'd', severity: 'C', to: 'CLOSED' }, ctx)).isError,
+    ).toBe(true)
+    const made = (await defect.execute({ projectId: p.id, title: 'd', severity: 'C' }, ctx)).structured.data
+    expect((await defect.execute({ id: made.id, severity: 'A', to: 'CONFIRMED' }, ctx)).isError).toBe(true)
+    expect((await defect.execute({ id: made.id }, ctx)).isError).toBe(true)
+    expect(read(store).defects.find((d: Any) => d.id === made.id)).toMatchObject({
+      state: 'NEW',
+      severity: 'C',
+    })
+    expect(read(store).activity.length).toBe(before + 1)
   })
 
   it('handles approvals through devboard.approval and lets the agent only start flows of its own drafts', async () => {

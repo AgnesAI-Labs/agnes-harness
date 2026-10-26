@@ -452,7 +452,7 @@ export const tools = [
   ),
   tool(
     'devboard_defect_upsert',
-    'Create a defect (omit id) or move one (id + to): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. testCase must be a registered TC id and req a registered requirement id of the project. An unclosed class-A defect holds the TR5 and ADCP gates (they cannot be approved); closing it closes its system finding on a waiting gate. 登记或流转缺陷。',
+    'Create a defect (omit id, no to) or move one (id + to, optional note; a move edits no other field): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. testCase must be a registered TC id and req a registered requirement id of the project. An unclosed class-A defect holds the TR5 and ADCP gates (they cannot be approved); closing it closes its system finding on a waiting gate. 登记或流转缺陷。',
     Type.Object(
       {
         id: Type.Optional(id),
@@ -469,12 +469,21 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx, a) =>
-      a.mutate(ctx.store, (s) =>
+    (input, ctx, a) => {
+      // A move carries only to and note; a creation carries no move. Refuse a mix instead of dropping fields.
+      const extra = Object.keys(input).filter((k) => !['id', 'projectId', 'to', 'note'].includes(k))
+      if (input.id && (!input.to || extra.length))
+        throw new DomainError(
+          `流转缺陷只接受 id、to 和 note${extra.length ? `，收到 ${extra.join('、')}` : '，缺少 to'}`,
+        )
+      if (!input.id && (input.to || input.note))
+        throw new DomainError('新建缺陷不能同时流转：先新建，再用 id + to 流转')
+      return a.mutate(ctx.store, (s) =>
         input.id
           ? transition(s, { kind: 'defect', id: input.id, to: input.to, note: input.note, by: a.by })
           : create(s, { ...input, kind: 'defect', by: a.by }),
-      ),
+      )
+    },
   ),
   tool(
     'devboard_change_upsert',
