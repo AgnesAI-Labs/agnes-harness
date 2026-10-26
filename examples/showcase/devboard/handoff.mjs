@@ -113,7 +113,7 @@ function gateHandoff(state, gate) {
     step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
     next.push(step ? step.action : doneText(project))
   } else {
-    const newer = state.gates.findLast((g) => g.stageId === gate.stageId)
+    const newer = state.gates.findLast((g) => g.stageId === gate.stageId && g.code === gate.code)
     step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
     next.push(
       gate.superseded

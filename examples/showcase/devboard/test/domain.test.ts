@@ -1967,6 +1967,14 @@ describe('blockers', () => {
     state.gates[0].decision = 'REJECTED'
     state.gates.push({ ...state.gates[0], id: 'GATE-AGAIN', decision: 'APPROVED', findings: [] })
     expect(blockers(state, NOW)).toEqual([])
+    // the gate that replaced it has its code, not the stage's next gate
+    state.gates.push({
+      ...state.gates[0],
+      id: 'GATE-NEXT-CODE',
+      code: 'NEXT',
+      decision: 'APPROVED',
+      findings: [],
+    })
     expect(handoff(state, { type: 'gate', id: state.gates[0].id }).next[0]).toContain('GATE-AGAIN')
     const live = create(state, { kind: 'project', name: '逾期项目' }, NOW)
     const first = byId(state.stages, `${live.id}/${live.stage}`)
