@@ -176,7 +176,20 @@ export function Overview({ data, board, role }) {
       ['待 CCB 决议变更', ccb.length],
       ['在研项目', data.projects.filter((p) => p.metrics.passedStages < p.metrics.stageCount).length],
     ]),
-    h('div', { className: 'devboard-buttons' }, h(Button, { onClick: () => push.open('new') }, '新建项目')),
+    h(
+      'div',
+      { className: 'devboard-buttons' },
+      h(
+        Button,
+        {
+          onClick: () => {
+            setCreated(null)
+            push.open('new')
+          },
+        },
+        '新建项目',
+      ),
+    ),
     h(
       'div',
       { className: 'devboard-projects', 'data-guide': 'overview-portfolio' },
