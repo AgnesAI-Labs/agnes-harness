@@ -67,7 +67,7 @@ Document release excludes the author's canonical role from proofreading, includi
   - The agent can only start flows with `devboard_approval_submit`, and only for objects it drafted (under any acting role) and for a change it sent to CCB review itself, such as a customer change the presenter handed over; it has no handling actions. People handle them on My to-dos.
 - **Traceability**: SWR-level items may be `SWR-`, `MER-` or `EER-` (software, mechanical, electrical) with a discipline; CUS→SYS, SYS→SWR and SWR→TC coverage; a requirements gate with CUS→SWR below 100% gets a finding automatically.
 - **Changes**: SUBMITTED → ANALYZED (needs an impact analysis) → CCB_REVIEW → APPROVED / REJECTED → IMPLEMENTED → CLOSED. **Defects**: NEW → CONFIRMED → FIXING → RETEST → CLOSED, or DEFERRED.
-- The v1 requirement, task and human-intervention machines are unchanged. Store schema is 4; a schema 3 store loads unchanged (no approvals yet), a store of another schema reads as the seed and is replaced on the first write (reads never write).
+- The v1 requirement, task and human-intervention machines are unchanged. Store schema is 4; a schema 3 store loads unchanged (no approvals yet), a store of an older schema reads as the seed and is replaced on the first write, and a store written by a newer schema refuses writes until it is reset (reads never write).
 
 ## Agent and live project
 

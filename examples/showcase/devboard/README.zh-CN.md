@@ -67,7 +67,7 @@
   - 智能体只能用 `devboard_approval_submit` 发起自己起草（含以某个角色身份起草）的对象的流程，以及由它提交 CCB 的变更（例如演示者交给它的客户变更）的 ECR，不提供处理动作；处理由人在「我的待办」完成。
 - **追溯**：SWR 层允许 `SWR-`、`MER-`、`EER-`（软件、机械、电气）并带专业；CUS→SYS、SYS→SWR、SWR→TC 三段覆盖率；需求门提交时 CUS→SWR 不到 100% 会自动加一条评审意见。
 - **变更**：SUBMITTED → ANALYZED（需有影响分析）→ CCB_REVIEW → APPROVED / REJECTED → IMPLEMENTED → CLOSED。**缺陷**：NEW → CONFIRMED → FIXING → RETEST → CLOSED，可延期处理。
-- 第一版的需求、任务、人工介入状态机不变。store 的 schema 为 4；schema 3 的数据照常读取（审批集合为空），其他 schema 的数据读作种子数据，首次写入时替换（读取从不写入）。
+- 第一版的需求、任务、人工介入状态机不变。store 的 schema 为 4；schema 3 的数据照常读取（审批集合为空），更早 schema 的数据读作种子数据，首次写入时替换，更新版本 schema 写入的数据在重置前拒绝写入（读取从不写入）。
 
 ## 智能体与现场项目
 
