@@ -721,7 +721,7 @@ export function Panorama({ data, role: demoRole }) {
     toolbar,
     h(
       'div',
-      { className: `pano-body${sel ? ' has-drawer' : ''}` },
+      { className: `pano-body${shownSel ? ' has-drawer' : ''}` },
       h(
         'div',
         { className: 'pano-plot', ref: wrap, 'data-guide': 'panorama-lanes' },
