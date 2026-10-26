@@ -134,6 +134,9 @@ function Timeline({ data, flow }) {
   })
 }
 
+/** Actions that count as someone having handled the first node (a withdraw is refused after one). */
+const HANDLING = ['APPROVE', 'TRANSFER', 'ADD_SIGN', 'RETURN']
+
 /** Agree, reject, send back, transfer, add a signer or comment; the server decides, the page only offers. */
 function Actions({ data, flow, board, role, setRole }) {
   const [comment, setComment] = React.useState('')
@@ -142,6 +145,12 @@ function Actions({ data, flow, board, role, setRole }) {
   const [signer, setSigner] = React.useState('')
   const node = currentNode(flow)
   const mine = flow.waitingRoles.includes(role)
+  // approvals.mjs lets every role of the node reject, return, transfer and add a signer, signed or not.
+  const inNode = node.roles.includes(role)
+  const canWithdraw =
+    role === flow.initiator.role &&
+    flow.current === 0 &&
+    !flow.actions.slice(flow.since ?? 0).some((a) => HANDLING.includes(a.action))
   const act = async (action, extra = {}) => {
     const ok = await board.run(
       'devboard.approval',
@@ -201,17 +210,15 @@ function Actions({ data, flow, board, role, setRole }) {
       'div',
       { className: 'devboard-buttons' },
       mine
-        ? [
-            h(
-              Button,
-              { key: 'ok', appearance: 'primary', disabled: board.busy, onClick: () => act('APPROVE') },
-              `以「${role}」同意`,
-            ),
-            h(Button, { key: 'no', disabled: board.busy, onClick: () => act('REJECT') }, '驳回'),
-          ]
+        ? h(
+            Button,
+            { key: 'ok', appearance: 'primary', disabled: board.busy, onClick: () => act('APPROVE') },
+            `以「${role}」同意`,
+          )
         : null,
+      inNode && h(Button, { key: 'no', disabled: board.busy, onClick: () => act('REJECT') }, '驳回'),
       h(Button, { disabled: board.busy, onClick: () => act('COMMENT') }, '评论'),
-      role === flow.initiator.role &&
+      canWithdraw &&
         h(Button, { disabled: board.busy, onClick: () => act('WITHDRAW') }, '撤回'),
     ),
     !mine &&
@@ -225,7 +232,7 @@ function Actions({ data, flow, board, role, setRole }) {
           h(Button, { disabled: board.busy, onClick: () => act('APPROVE') }, `以「${role}」同意`),
         ),
       ),
-    mine &&
+    inNode &&
       h(
         'div',
         { className: 'devboard-buttons' },
