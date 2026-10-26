@@ -410,14 +410,6 @@
   .markdown tbody tr:hover td {
     background: var(--agnes-bg-hover);
   }
-  .markdown th:first-child,
-  .markdown td:first-child {
-    padding-left: 0;
-  }
-  .markdown th:last-child,
-  .markdown td:last-child {
-    padding-right: 0;
-  }
   .markdown tr:last-child td {
     border-bottom: 0;
   }

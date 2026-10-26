@@ -814,3 +814,86 @@ test('Settings jobs session picker lists the same sessions as the sidebar', asyn
   expect(options).toHaveLength(rows.length)
   for (const row of rows) expect(options.some((option) => option.startsWith(row.trim()))).toBe(true)
 })
+
+test('Answer tables keep first and last column text off the frame edge', async ({ page, runtime }) => {
+  test.setTimeout(120_000)
+  const columns = [
+    '任务ID',
+    '任务名称',
+    '负责人',
+    '优先级',
+    '开始时间',
+    '结束时间',
+    '状态',
+    '预算(元)',
+    '实际支出(元)',
+    '备注',
+  ]
+  const rows = columns.map((name, index) => `| ${String.fromCharCode(65 + index)} | ${name} | 说明 ${name} |`)
+  const reply = [
+    '## 测试数据表.xlsx 分析',
+    '',
+    '这是一份项目任务管理表，共 15 条任务记录，字段共 10 列。',
+    '',
+    '### 表格结构',
+    '',
+    '| 列 | 字段名 | 说明 |',
+    '|---|---|---|',
+    ...rows,
+    '',
+    '### 数据预览',
+    '',
+    `| ${columns.join(' | ')} |`,
+    `|${columns.map(() => '---').join('|')}|`,
+    ...Array.from(
+      { length: 5 },
+      (_, i) =>
+        `| T00${i + 1} | 需求调研与方案评审第${i + 1}阶段 | 张三 | P${i % 3} | 2026-07-0${i + 1} | 2026-07-1${i} | 进行中 | 50000 | 32000 | 无 |`,
+    ),
+    '',
+    '### 总结',
+    '',
+    '收尾段落。',
+  ].join('\n')
+  const client = await runtime.connect()
+  const model = (await client.config.test({ providerId: 'deepseek' })).models[0]?.id
+  if (!model) throw new Error('The local provider catalog must contain a model')
+  const provider = await startProviderFixture(reply, undefined, model)
+  try {
+    const config = await client.config.get()
+    await client.config.save({
+      providerId: 'deepseek',
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      model,
+      accountId: 'table-fixture',
+      label: 'Synthetic table fixture',
+      expectedRevision: config.revision,
+      makeDefault: true,
+    })
+    await open(page, runtime)
+    await turn(page, '分析这个数据表')
+    const table = page.locator('.markdown table').last()
+    await table.scrollIntoViewIfNeeded()
+    await expect(table).toBeVisible()
+    // The bordered .table-scroll frame owns the edge, so first and last columns keep their own padding.
+    const edge = await table.evaluate((el) => {
+      const wrap = el.closest('.table-scroll') as HTMLElement
+      const frame = wrap.getBoundingClientRect()
+      const first = el.querySelector('tbody tr td:first-child') as HTMLElement
+      const last = el.querySelector('tbody tr td:last-child') as HTMLElement
+      const gap = (cell: HTMLElement, side: 'left' | 'right') => {
+        const range = document.createRange()
+        range.selectNodeContents(cell)
+        const text = range.getBoundingClientRect()
+        return side === 'left' ? text.left - frame.left : frame.right - text.right
+      }
+      return { left: gap(first, 'left'), right: gap(last, 'right') }
+    })
+    expect(edge.left).toBeGreaterThanOrEqual(8)
+    expect(edge.right).toBeGreaterThanOrEqual(8)
+    await expect(table.locator('tbody tr')).toHaveCount(5)
+  } finally {
+    await provider.close()
+  }
+})
