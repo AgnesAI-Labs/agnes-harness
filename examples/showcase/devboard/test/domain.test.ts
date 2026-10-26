@@ -459,6 +459,12 @@ describe('approver roles and co-signing', () => {
     expect(gate.findings[0].text).toContain('CUS→SWR 覆盖率')
     expect(gate.findings[1]).toMatchObject({ text: '补充偏离说明', closed: false })
     expect(() => sign(state, `GATE-${p.id}-CONTRACT-1`, '分技术中心主任')).toThrow('不在评审中')
+    // the submitter closes its own findings, never a system check
+    const close = (id: string) =>
+      submitGate(state, { stageId: gate.stageId, by: '研发协调员', closeFindings: [{ id, note: 'ok' }] }, NOW)
+    expect(() => close('F-01')).toThrow('系统检查意见')
+    expect(gate.findings[0].closed).toBe(false)
+    expect(close('F-02').gate.findings[1].closed).toBe(true)
   })
 
   it('refuses to start a stage before the previous one passed and PASSED by transition', () => {

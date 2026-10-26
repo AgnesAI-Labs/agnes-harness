@@ -554,6 +554,14 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
     fail(`阶段「${stageLabel(state, stage)}」当前为${LABELS.state[stage.state]}，需先开始该阶段再提交评审`)
   }
   addFindings(gate, findings, actor)
+  // A system check is closed by the approver at the decision (or by its defect closing), never by the submitter.
+  const system = (closes ?? []).filter((c) =>
+    gate.findings.some((f) => f.id === c?.id && f.by === '系统检查'),
+  )
+  if (system.length)
+    fail(
+      `评审意见 ${system.map((c) => c.id).join('、')} 是系统检查意见：由审批人在决议时关闭，提交方不能关闭`,
+    )
   closeFindings(gate, closes, actor)
   if (gate.auto && gate.findings.every((f) => f.closed))
     approve(state, stage, gate, '系统（代码评审意见已全部关闭）', '代码评审意见全部关闭，自动通过', at)
