@@ -1215,7 +1215,12 @@ export function recordArtifact(state, input, now = Date.now()) {
     source: { type: 'workspace', path },
     updatedAt: new Date(now).toISOString(),
   })
-  if (artifact.status === 'BASELINED') artifact.status = 'DRAFT'
+  if (artifact.status === 'BASELINED') {
+    artifact.status = 'DRAFT'
+    // New content for a released deliverable is its next revision, so the next baseline names it apart.
+    const v = /^V(\d+)\.(\d+)$/.exec(artifact.version)
+    if (input.version === undefined && v) artifact.version = `V${v[1]}.${Number(v[2]) + 1}`
+  }
   if (!existing) state.artifacts.push(artifact)
   if (typeof input.markdown === 'string') {
     state.docs ??= {}

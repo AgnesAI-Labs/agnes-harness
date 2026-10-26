@@ -1229,6 +1229,22 @@ describe('traceability and deliverables', () => {
     ).toThrow('TC-002 的上游必须是 SWR')
   })
 
+  it('gives a released deliverable revised after a change its next version and the stage a new baseline', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    const plan = { projectId: p.id, stage: 'INITIATION', kind: 'PLAN', path: 'docs/PLAN.md' }
+    const art = recordArtifact(state, { ...plan, markdown: 'a' }, NOW)
+    const stage = pass(state, p.id, 'INITIATION')
+    const first = stage.baseline.id
+    expect(art).toMatchObject({ status: 'BASELINED', version: 'V1.0' })
+    approvedChange(state, p.id, { impact: { artifacts: [art.id] } })
+    recordArtifact(state, { ...plan, markdown: 'b' }, NOW)
+    expect(art).toMatchObject({ status: 'DRAFT', version: 'V1.1' })
+    pass(state, p.id, 'INITIATION')
+    expect(stage.baseline.id).not.toBe(first)
+    expect(art).toMatchObject({ status: 'BASELINED', version: 'V1.1' })
+  })
+
   it('allows several deliverables of one kind through a suffix, with the new kinds', () => {
     const state = blank()
     const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
