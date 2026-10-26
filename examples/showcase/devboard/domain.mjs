@@ -878,6 +878,8 @@ function applyChange(state, cr, at) {
     reworked.push(stage.id)
   }
   cr.reworked = reworked
+  // A project with a stage back in rework is not finished any more.
+  if (reworked.length) delete project.actualEnd
 }
 
 /** Releasing an ECN, when it names items, creates the new as-designed baseline. */

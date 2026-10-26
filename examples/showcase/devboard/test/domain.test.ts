@@ -997,6 +997,18 @@ describe('change requests and the field-to-design loop', () => {
     expect(byId(state.projects, p.id).stage).toBe('DESIGN')
   })
 
+  it('takes back the end date of a finished project an approved change reopens', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '已完成' }, NOW)
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'CUS-001', title: 'c', text: 'c' }] }, NOW)
+    for (const stage of ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE'])
+      pass(state, p.id, stage)
+    expect(p.actualEnd).toBeTruthy()
+    approvedChange(state, p.id)
+    expect(byId(state.stages, `${p.id}/REQUIREMENTS`).state).toBe('REWORK')
+    expect(p.actualEnd).toBeUndefined()
+  })
+
   it('needs a verification before CLOSED; a rejected change may close without one', () => {
     const { state, p } = inService()
     const cr = approvedChange(state, p.id, { ...bufferChange, rootCause: '根因' })
