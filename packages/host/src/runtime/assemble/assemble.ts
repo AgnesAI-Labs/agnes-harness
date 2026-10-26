@@ -328,32 +328,34 @@ function publish(
   }
 }
 
-export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Promise<Assembled> {
-  const ctx = createAssemblyContext(profile, deps)
-  const cause = deps.assemblyCause ?? { reason: 'unspecified' }
-  ctx.say('host.assembling', { ...cause, hash: profile.hash })
+/** Times the phases for the host.ready audit row: `lap()` is the ms since the previous lap. */
+function phaseClock() {
   const started = performance.now()
   let mark = started
-  const stage = () => {
+  const lap = () => {
     const now = performance.now(),
       ms = Math.round(now - mark)
     mark = now
     return ms
   }
+  return { lap, total: () => Math.round(performance.now() - started) }
+}
+
+export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Promise<Assembled> {
+  const ctx = createAssemblyContext(profile, deps)
+  const { reason, ...cause } = deps.assemblyCause ?? { reason: 'unspecified' }
+  ctx.say('host.assembling', { reason, ...cause, hash: profile.hash })
+  const clock = phaseClock()
   try {
     const foundation = await openFoundation(ctx)
-    const foundationMs = stage()
+    const foundationMs = clock.lap()
     const tree = await mountTree(ctx, foundation)
-    const treeMs = stage()
+    const treeMs = clock.lap()
     const core = await startCore(ctx, foundation, tree)
-    const coreMs = stage()
+    const coreMs = clock.lap()
     const extensions = await mountExtensions(ctx, foundation, tree, core)
-    const extensionsMs = stage()
-    return publish(ctx, foundation, tree, core, extensions, {
-      reason: cause.reason,
-      durationMs: Math.round(performance.now() - started),
-      stages: { foundationMs, treeMs, coreMs, extensionsMs },
-    })
+    const stages = { foundationMs, treeMs, coreMs, extensionsMs: clock.lap() }
+    return publish(ctx, foundation, tree, core, extensions, { reason, durationMs: clock.total(), stages })
   } catch (e) {
     return failAssembly(ctx, e)
   }
