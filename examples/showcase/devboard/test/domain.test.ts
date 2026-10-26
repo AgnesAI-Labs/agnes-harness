@@ -523,6 +523,10 @@ describe('trials and first-article inspection', () => {
     expect(tt).toEqual(signed)
     expect(() => upsertTrial(state, plan(p, { verifies: ['CUS-404'] }), NOW)).toThrow('未找到')
     expect(() => upsertTrial(state, plan(p, { type: 'X' }), NOW)).toThrow('type 取值无效')
+    // an id with another project's projectId is not that other project's record
+    expect(() => upsertTrial(state, { id: tt.id, projectId: 'PRJ-2023-011', title: '改' }, NOW)).toThrow(
+      `未找到 PRJ-2023-011 的 ${tt.id}`,
+    )
   })
 
   it('refuses to approve a FAIL trial unless its change is approved, and a retest clears the report', () => {

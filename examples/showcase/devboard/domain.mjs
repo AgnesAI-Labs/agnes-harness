@@ -1223,7 +1223,7 @@ export function updateImpact(state, { id, impact, traceFrom }) {
  * total any time before closing, and the verification record once approved.
  */
 export function updateChange(state, input, now = Date.now()) {
-  const cr = find(state, 'change', input.id)
+  const cr = find(state, 'change', input.id, input.projectId)
   // traceFrom without an impact traces from the requirements the change already names.
   if (input.impact || input.traceFrom) updateImpact(state, { ...input, impact: input.impact ?? cr.impact })
   const early = (name) =>
@@ -1325,7 +1325,7 @@ function trialChange(state, trial, changeId) {
 export function upsertTrial(state, input, now = Date.now()) {
   const at = new Date(now).toISOString()
   const by = input.by || '未署名'
-  let trial = input.id ? find(state, 'trial', input.id) : undefined
+  let trial = input.id ? find(state, 'trial', input.id, input.projectId) : undefined
   if (trial) guardEditable(state, 'trial', trial)
   else {
     const project = projectOf(state, text(input.projectId, 'projectId', 64))
@@ -1376,7 +1376,7 @@ export function upsertTrial(state, input, now = Date.now()) {
 export function upsertProblem(state, input, now = Date.now()) {
   const at = new Date(now).toISOString()
   const by = input.by || '未署名'
-  let problem = input.id ? find(state, 'problem', input.id) : undefined
+  let problem = input.id ? find(state, 'problem', input.id, input.projectId) : undefined
   if (problem) guardEditable(state, 'problem', problem)
   else {
     const project = projectOf(state, text(input.projectId, 'projectId', 64))
