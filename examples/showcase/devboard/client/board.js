@@ -325,6 +325,8 @@ export const gateName = (g) => `${g.code} · ${g.name}`
 export const stageName = (data, projectId, stage) =>
   data.profiles?.[byId(data.projects, projectId)?.kind]?.[stage]?.label ?? data.labels.stage[stage] ?? stage
 export const signedRoles = (gate) => (gate.signatures ?? []).map((s) => s.role)
+/** The approver roles of a gate still to sign. */
+export const unsignedRoles = (gate) => gate.approverRoles.filter((r) => !signedRoles(gate).includes(r))
 /** "1/2 已签：项目经理" — the co-sign progress of a gate. */
 export const signProgress = (gate) =>
   `${signedRoles(gate).length}/${gate.approverRoles.length}${signedRoles(gate).length ? ` 已签：${signedRoles(gate).join('、')}` : ''}`

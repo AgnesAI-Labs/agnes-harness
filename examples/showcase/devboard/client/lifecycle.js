@@ -23,6 +23,7 @@ import {
   stateBadge,
   TransitionBar,
   time,
+  unsignedRoles,
   useProject,
 } from './board.js'
 import { CustomerChange } from './customer-change.js'
@@ -247,7 +248,7 @@ export function Overview({ data, board, role }) {
                 ? gates
                     .map(
                       (g) =>
-                        `${gateName(g)} 待 ${g.approverRoles.join('、')} 决议（会签 ${signProgress(g)}）`,
+                        `${gateName(g)} 待 ${unsignedRoles(g).join('、')} 决议（会签 ${signProgress(g)}）`,
                     )
                     .join('；')
                 : '无待决议',

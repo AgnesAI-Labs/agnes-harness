@@ -195,7 +195,7 @@ function urgentOf(role, data) {
       'gate',
       g,
       `${g.code} · ${g.name} · ${stage?.projectId ?? ''}`,
-      `待 ${g.approverRoles.join('、')}`,
+      `待 ${g.approverRoles.filter((r) => !(g.signatures ?? []).some((s) => s.role === r)).join('、')}`,
       due < now,
       due,
       '阶段计划完成',
