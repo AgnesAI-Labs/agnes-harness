@@ -1230,11 +1230,13 @@ export function updateChange(state, input, now = Date.now()) {
     cr.rootCause = text(input.rootCause, 'rootCause', 2000)
   if (input.retrofit?.total !== undefined) {
     if (cr.state === 'CLOSED') fail(`${cr.id} 已关闭`)
-    cr.retrofit = {
-      done: cr.retrofit?.done ?? 0,
-      total: intIn(input.retrofit.total, 'retrofit.total', 1_000_000),
-    }
-    if (cr.retrofit.total < cr.retrofit.done) fail('整改总数不能小于已完成数')
+    const done = cr.retrofit?.done ?? 0
+    // Completion (and its as-maintained baseline) happens once, on the last door's progress update.
+    if (done && done === cr.retrofit.total) fail(`${cr.id} 整改已完成（${done}/${done}），总数不可再改`)
+    const total = intIn(input.retrofit.total, 'retrofit.total', 1_000_000)
+    if (done && total <= done) fail(`整改总数需大于已完成数 ${done}`)
+    if (total < done) fail('整改总数不能小于已完成数')
+    cr.retrofit = { done, total }
   }
   if (input.verification !== undefined) {
     if (!['APPROVED', 'IMPLEMENTED'].includes(cr.state)) fail(`${cr.id} 批准后才能登记验证`)

@@ -974,6 +974,8 @@ describe('change requests and the field-to-design loop', () => {
     expect(() => progress(480)).toThrow('整改进度只能递增')
     expect(() => progress(100)).toThrow('整改进度只能递增')
     expect(() => progress(1921)).toThrow('done 需为 0–1920')
+    // a total equal to the progress would complete it without the as-maintained baseline
+    expect(() => updateChange(state, { id: cr.id, retrofit: { total: 480 } })).toThrow('需大于已完成数')
     expect(state.configBaselines.filter((b: Item) => b.type === 'AS_MAINTAINED')).toHaveLength(1)
     expect(metrics(state, p, NOW).baselineGap).toBe(1)
     progress(1920)
@@ -984,6 +986,7 @@ describe('change requests and the field-to-design loop', () => {
     ])
     expect(maintained[1].revs).toEqual({ 'NC-BUF-01': 'C', 'NC-MOT-02': 'A' })
     expect(metrics(state, p, NOW)).toMatchObject({ baselineGap: 0, retrofit: { done: 1920, total: 1920 } })
+    expect(() => updateChange(state, { id: cr.id, retrofit: { total: 2000 } })).toThrow('整改已完成')
     const early = create(
       state,
       { kind: 'change', projectId: p.id, title: 'e', reason: 'r', ...bufferChange },
