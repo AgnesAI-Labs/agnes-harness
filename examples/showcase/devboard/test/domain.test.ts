@@ -537,6 +537,18 @@ describe('trials and first-article inspection', () => {
     expect(() => submitApproval(state, { template: 'TRIAL_REPORT', subjectId: tt.id, by: 'x' }, NOW)).toThrow(
       '需关联已批准的变更',
     )
+    // a change the CCB rejected and then closed was never approved
+    const rejected = create(
+      state,
+      { kind: 'change', projectId: p.id, title: '驳回', reason: tt.id, impact: { reqs: ['CUS-001'] } },
+      NOW,
+    )
+    for (const to of ['REJECTED', 'CLOSED'])
+      transition(state, { kind: 'change', id: rejected.id, to, by: 'CCB' }, NOW)
+    upsertTrial(state, { id: tt.id, changeId: rejected.id }, NOW)
+    expect(() => submitApproval(state, { template: 'TRIAL_REPORT', subjectId: tt.id, by: 'x' }, NOW)).toThrow(
+      '需关联已批准的变更',
+    )
     const cr = create(
       state,
       { kind: 'change', projectId: p.id, title: '改弹簧', reason: tt.id, impact: { reqs: ['CUS-001'] } },
@@ -714,6 +726,11 @@ describe('faults and quality problems', () => {
     expect(() =>
       submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW),
     ).toThrow(`${cr.id} 尚未关闭`)
+    for (const to of ['REJECTED', 'CLOSED'])
+      transition(state, { kind: 'change', id: cr.id, to, by: 'CCB' }, NOW)
+    expect(() =>
+      submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW),
+    ).toThrow('已被 CCB 驳回')
     expect(() => upsertProblem(state, { id: qp.id, changeId: 'CR-404' }, NOW)).toThrow('未找到')
   })
 })

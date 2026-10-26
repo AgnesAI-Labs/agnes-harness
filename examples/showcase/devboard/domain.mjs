@@ -1283,7 +1283,12 @@ function moveTrial(state, trial, to, input, at) {
 function trialApprovable(state, trial) {
   if (trial.result !== 'FAIL') return
   const change = state.changes.find((c) => c.id === trial.changeId)
-  if (!change || !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(change.state))
+  // A change rejected by the CCB and then closed was never approved.
+  if (
+    !change ||
+    !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(change.state) ||
+    change.ccb?.decision === 'REJECTED'
+  )
     fail(`${trial.id} 结论为不合格，需关联已批准的变更后才能批准（条件放行）`)
 }
 
@@ -1435,6 +1440,10 @@ function problemClosable(state, problem) {
   if (problem.changeId) {
     const change = state.changes.find((c) => c.id === problem.changeId)
     if (change?.state !== 'CLOSED') fail(`${problem.id} 关联的变更 ${problem.changeId} 尚未关闭`)
+    if (change.ccb?.decision === 'REJECTED')
+      fail(
+        `${problem.id} 关联的变更 ${problem.changeId} 已被 CCB 驳回：请关联新的变更，或写明不需要设计变更的理由`,
+      )
   } else if (!problem.noChangeReason)
     fail(`${problem.id} 没有关联变更：请写明不需要设计变更的理由（noChangeReason）`)
 }
