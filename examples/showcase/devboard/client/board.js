@@ -26,15 +26,19 @@ export function useBoard(ctx) {
   const services = ctx.profile.services
   const [data, setData] = React.useState(null)
   const [error, setError] = React.useState('')
+  // A failed poll clears itself on the next good one; an action error stays until the next action.
+  const [loadError, setLoadError] = React.useState('')
   const [notice, setNotice] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const alive = React.useRef(true)
   const load = React.useCallback(async () => {
     try {
       const next = await services.query('devboard.snapshot', {})
-      if (alive.current) setData(next)
+      if (!alive.current) return
+      setData(next)
+      setLoadError('')
     } catch (e) {
-      if (alive.current) setError(`读取看板失败：${message(e)}`)
+      if (alive.current) setLoadError(`读取看板失败：${message(e)}`)
     }
   }, [services])
   React.useEffect(() => {
@@ -75,7 +79,7 @@ export function useBoard(ctx) {
     setError('')
     await load()
   }, [load])
-  return { data, error, notice, busy, refresh, run, query, setError, setNotice }
+  return { data, error: error || loadError, notice, busy, refresh, run, query, setError, setNotice }
 }
 
 function useStored(key, fallback, valid) {
