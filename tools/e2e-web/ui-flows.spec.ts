@@ -910,3 +910,48 @@ test('Answer tables keep first and last column text off the frame edge', async (
     await provider.close()
   }
 })
+
+test('Answer tables honor GFM column alignment', async ({ page, runtime }) => {
+  test.setTimeout(120_000)
+  const reply = [
+    '| 项目 | 预算(元) | 状态 |',
+    '|:---|---:|:---:|',
+    '| 调研 | 5 | 完成 |',
+    '| 评审 | 12000 | 进行中 |',
+  ].join('\n')
+  const client = await runtime.connect()
+  const model = (await client.config.test({ providerId: 'deepseek' })).models[0]?.id
+  if (!model) throw new Error('The local provider catalog must contain a model')
+  const provider = await startProviderFixture(reply, undefined, model)
+  try {
+    const config = await client.config.get()
+    await client.config.save({
+      providerId: 'deepseek',
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      model,
+      accountId: 'table-align-fixture',
+      label: 'Synthetic table alignment fixture',
+      expectedRevision: config.revision,
+      makeDefault: true,
+    })
+    await open(page, runtime)
+    await turn(page, '给出预算表')
+    await settled(page)
+    const table = page.locator('.markdown table').last()
+    await expect(table).toBeVisible()
+    // Header and body cells follow the column's `:---`, `---:` and `:---:` markers; the app layer
+    // must not flatten them to one alignment.
+    const aligns = await table.evaluate((el) =>
+      ['thead th', 'tbody tr:first-child td'].map((row) =>
+        [...el.querySelectorAll(row)].map((cell) => getComputedStyle(cell).textAlign),
+      ),
+    )
+    expect(aligns).toEqual([
+      ['left', 'right', 'center'],
+      ['left', 'right', 'center'],
+    ])
+  } finally {
+    await provider.close()
+  }
+})
