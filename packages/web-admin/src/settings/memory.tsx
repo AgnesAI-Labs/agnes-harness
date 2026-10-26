@@ -266,7 +266,11 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
               </span>
             </SettingsItem>
             <SettingsItem label={t('location')}>
-              <span className="agnes-settings-value agnes-settings-value-path" translate="no" data-testid="memory-root">
+              <span
+                className="agnes-settings-value agnes-settings-value-path"
+                translate="no"
+                data-testid="memory-root"
+              >
                 {inspection.root}
               </span>
             </SettingsItem>

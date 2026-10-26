@@ -91,6 +91,7 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
     }
   }, [open])
   // The panel is destroyed on close, so re-apply the measured room whenever it is mounted again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: opening mounts a new panel element to style.
   useLayoutEffect(() => {
     const element = panel.current
     if (!element) return
@@ -129,9 +130,7 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
         // Outside clicks leave focus where the pointer went; Escape restores it in the shared popover.
         else if (!busy) close(false)
       }}
-      content={
-        <ModelPanel {...props} t={t} close={close} onBusy={setBusy} panelRef={panel} />
-      }
+      content={<ModelPanel {...props} t={t} close={close} onBusy={setBusy} panelRef={panel} />}
     >
       <Button
         ref={trigger}

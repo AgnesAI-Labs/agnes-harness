@@ -2,8 +2,8 @@ import type { WorkspaceInvocationView } from '@agnes/core'
 import type { ExtensionManifest, ServiceContext, ServiceDef } from '@agnes/extension-api'
 import { serviceFixture } from '@agnes/extension-api/testkit'
 import type { Actor, ExtensionCallParams, JsonValue } from '@agnes/protocol'
-import { describe, expect, it, vi } from 'vitest'
 import { Ajv2020 } from 'ajv/dist/2020.js'
+import { describe, expect, it, vi } from 'vitest'
 import { compileExtensionSchema } from '../../src/ext-host/json-schema.js'
 import { leaseFor } from '../../src/ext-host/lease.js'
 import {
@@ -307,12 +307,13 @@ describe('S3 Service registration and invocation', () => {
   it('checks every schema against the meta-schema on one shared instance', () => {
     const original = Ajv2020.prototype.validateSchema
     const checkedOn = new Set<unknown>()
-    const spy = vi
-      .spyOn(Ajv2020.prototype, 'validateSchema')
-      .mockImplementation(function (this: Ajv2020, ...args: Parameters<typeof original>) {
-        checkedOn.add(this)
-        return original.apply(this, args)
-      })
+    const spy = vi.spyOn(Ajv2020.prototype, 'validateSchema').mockImplementation(function (
+      this: Ajv2020,
+      ...args: Parameters<typeof original>
+    ) {
+      checkedOn.add(this)
+      return original.apply(this, args)
+    })
     try {
       for (const n of [1, 2, 3])
         compileExtensionSchema(
