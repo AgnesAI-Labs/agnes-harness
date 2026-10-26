@@ -416,7 +416,9 @@ function moveStage(state, stage, { to, by, note, author }, now) {
   }
   if (author) stage.author = text(author, 'author', 32)
   record(stage, new Date(now).toISOString(), by || '未署名', stage.state, 'IN_PROGRESS', note)
-  projectOf(state, stage.projectId).stage = stage.stage
+  // Restarting a reworked earlier stage leaves the project at its furthest stage.
+  const project = projectOf(state, stage.projectId)
+  if (index > STAGES.indexOf(project.stage)) project.stage = stage.stage
   return stage
 }
 

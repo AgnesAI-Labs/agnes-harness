@@ -848,13 +848,21 @@ describe('change requests and the field-to-design loop', () => {
     upsertReqs(state, { projectId: p.id, items: [{ id: 'CUS-001', title: 'c', text: 'c' }] }, NOW)
     pass(state, p.id, 'INITIATION')
     pass(state, p.id, 'REQUIREMENTS')
+    start(state, `${p.id}/DESIGN`)
     const cr = approvedChange(state, p.id)
     expect(cr.reworked).toEqual([`${p.id}/REQUIREMENTS`])
     expect(byId(state.reqs, 'CUS-001', p.id).status).toBe('CHANGED')
     const stage = byId(state.stages, `${p.id}/REQUIREMENTS`)
     expect(stage.state).toBe('REWORK')
     start(state, stage.id)
-    expect(submitGate(state, { stageId: stage.id, by: 'x' }, NOW).gate.id).toBe(`GATE-${p.id}-DL1-2`)
+    const { gate } = submitGate(state, { stageId: stage.id, by: 'x' }, NOW)
+    expect(gate.id).toBe(`GATE-${p.id}-DL1-2`)
+    // The project stays at its furthest stage while an earlier one is reworked and passed again.
+    expect(byId(state.projects, p.id).stage).toBe('DESIGN')
+    const closeFindings = gate.findings.map((f: Item) => ({ id: f.id, note: '已处理' }))
+    for (const role of gate.approverRoles) sign(state, gate.id, role, { closeFindings })
+    expect(stage.state).toBe('PASSED')
+    expect(byId(state.projects, p.id).stage).toBe('DESIGN')
   })
 
   it('needs a verification before CLOSED; a rejected change may close without one', () => {
