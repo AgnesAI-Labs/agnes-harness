@@ -346,12 +346,20 @@ export function transition(state, input, now = Date.now()) {
   if (kind === 'stage') return moveStage(state, find(state, 'stage', id), input, now)
   if (kind === 'retrofit') return setRetrofit(state, input, now)
   // Without a move a problem saves its analysis fields: in VERIFYING the close goes through PROBLEM_CLOSE.
-  if (kind === 'problem' && to === undefined)
+  if (kind === 'problem' && to === undefined) {
+    const fields = Object.keys(input).filter(
+      (k) => !['kind', 'id', 'by'].includes(k) && input[k] !== undefined,
+    )
+    if (!fields.length || fields.some((k) => !['rootCause', 'noChangeReason'].includes(k)))
+      fail(
+        `不流转时只能保存 rootCause 或 noChangeReason${fields.length ? `，收到 ${fields.join('、')}` : ''}`,
+      )
     return upsertProblem(
       state,
       { id, by, rootCause: input.rootCause, noChangeReason: input.noChangeReason },
       now,
     )
+  }
   const item = find(state, kind, id)
   const from = effectiveState(item, kind, now)
   if (!MACHINES[kind][from]?.includes(to)) fail(`非法状态流转：${from} 不可流转至 ${to}`)

@@ -1632,6 +1632,10 @@ describe('approval flows', () => {
     // the page saves the reason without a move, in VERIFYING where the only move is back to ACTION
     transition(state, { kind: 'problem', id: qp.id, by: '质量工程师', noChangeReason: '耗材' }, NOW)
     expect(qp).toMatchObject({ state: 'VERIFYING', noChangeReason: '耗材' })
+    for (const extra of [{}, { changeId: 'CR-1', noChangeReason: 'x' }])
+      expect(() => transition(state, { kind: 'problem', id: qp.id, by: 'x', ...extra }, NOW)).toThrow(
+        '只能保存 rootCause 或 noChangeReason',
+      )
     const flow = submitApproval(
       state,
       { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: '质量工程师 韩雪' },
