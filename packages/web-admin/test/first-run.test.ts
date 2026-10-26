@@ -101,10 +101,14 @@ it('keeps setup inline, advances through the work folder and remembers completio
   expect(h.host.querySelector('[data-testid="first-run-guide"]')?.getAttribute('data-step')).toBe('account')
   h.click('first-run-next')
   expect(h.connect).toHaveBeenCalledTimes(1)
-  h.click('first-run-workspace-pick')
+  const pick = h.host.querySelector<HTMLButtonElement>('[data-testid="first-run-workspace-pick"]')
+  pick?.focus()
+  pick?.click()
   await vi.waitFor(() =>
     expect(h.host.querySelector('[data-testid="first-run-workspace"]')?.textContent).toBe('project'),
   )
+  // The pick button is disabled while it works; focus lands on 「Next」 instead of the page.
+  await vi.waitFor(() => expect(document.activeElement?.getAttribute('data-testid')).toBe('first-run-next'))
   h.click('first-run-next')
   await vi.waitFor(() => expect(wrap()?.style.display).not.toBe('none'))
   expect(guide()?.getAttribute('data-step')).toBe('ready')

@@ -1,5 +1,5 @@
 import type { DoctorResult } from '@agnes/protocol/gen/app-server'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { Translate } from './locales/index.js'
 import { SettingsInput, SettingsList, SettingsRow, SettingsState } from './settings-layout.js'
 import { Badge } from './ui/badge.js'
@@ -69,6 +69,15 @@ export function FirstRunGuide({
 }) {
   const key = steps[step] ?? 'account'
   const [path, setPath] = useState('')
+  const guide = useRef<HTMLElement>(null)
+  const applied = useRef(workspace)
+  // Applying a folder disables the control that asked for it, and focus would fall out of the modal.
+  // A newly applied folder hands focus to 「Next」, the step's next action.
+  useEffect(() => {
+    if (step !== 1 || busy || workspace === applied.current) return
+    applied.current = workspace
+    if (workspace) guide.current?.querySelector<HTMLElement>('[data-testid="first-run-next"]')?.focus()
+  }, [step, workspace, busy])
   return (
     <Dialog
       open={open}
@@ -82,7 +91,7 @@ export function FirstRunGuide({
       rootClassName="agnes-first-run-layer"
       mask={{ closable: false }}
     >
-      <section data-testid="first-run-guide" data-step={key} aria-label={t(`firstRun.${key}`)}>
+      <section ref={guide} data-testid="first-run-guide" data-step={key} aria-label={t(`firstRun.${key}`)}>
         <p className="field-hint">{t('firstRun.step', { step: step + 1, total: steps.length })}</p>
         <ol className="agnes-setup-progress" aria-label={t('firstRun.progress')}>
           {steps.map((name, index) => (
