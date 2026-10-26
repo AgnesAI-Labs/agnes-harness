@@ -598,6 +598,9 @@ describe('trials and first-article inspection', () => {
     upsertTrial(state, { id: retest.id, to: 'IN_PROGRESS' }, NOW)
     expect(retest).toMatchObject({ state: 'IN_PROGRESS', result: 'PENDING' })
     expect(retest.reportNo).toBeUndefined()
+    expect(retest.at).toBeUndefined()
+    upsertTrial(state, { id: retest.id, to: 'REPORTED', reportNo: 'R-5', result: 'PASS' }, NOW + DAY)
+    expect(retest.at).toBe(new Date(NOW + DAY).toISOString())
     expect(JSON.stringify(retest.history)).toContain('R-3')
   })
 

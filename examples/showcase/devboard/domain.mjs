@@ -1277,6 +1277,8 @@ function moveTrial(state, trial, to, input, at) {
       note: `上次报告 ${trial.reportNo}（${trial.result}）`,
     })
     delete trial.reportNo
+    // The test date of the next report is the retest's.
+    delete trial.at
     trial.result = 'PENDING'
   }
 }
