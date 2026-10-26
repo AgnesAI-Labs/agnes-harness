@@ -258,7 +258,10 @@ function TechResponse({ data, projectId, lens }) {
 function BoardRequirements({ data, board, role, projectId }) {
   const [selected, open] = useDetail()
   const [state, setState] = React.useState('')
-  const rows = data.requirements.filter((r) => inProject(projectId)(r) && (!state || r.state === state))
+  // A requirement created without a project would otherwise never show, nor move, under any project.
+  const rows = data.requirements.filter(
+    (r) => (!r.projectId || inProject(projectId)(r)) && (!state || r.state === state),
+  )
   const item = byId(data.requirements, selected)
   return h(
     React.Fragment,
