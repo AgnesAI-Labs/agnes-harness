@@ -2061,6 +2061,9 @@ describe('blockers', () => {
     const list = blockers(state, NOW) as Item[]
     expect(kinds(list)).toEqual(['GATE_FINDING', 'STAGE_OVERDUE'])
     expect(list[0].role).toBe(stage.author)
+    // a finding is as old as the submission that raised it
+    state.gates[0].submittedAt = at(4)
+    expect((blockers(state, NOW) as Item[])[0].days).toBe(4)
     expect(list[1]).toMatchObject({ days: 5, ref: { type: 'stage', id: stage.id } })
     stage.state = 'PASSED'
     expect(kinds(blockers(state, NOW))).toEqual(['GATE_FINDING'])

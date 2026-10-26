@@ -94,7 +94,8 @@ export function blockers(state, now = Date.now(), projectId) {
         { type: 'gate', id: g.id, sub: f.id },
         name,
         `评审意见 ${f.id} 未关闭：${f.text}`,
-        f.at,
+        // Findings carry no time of their own; they are raised when the gate is submitted.
+        f.at ?? g.submittedAt,
         { stage: stage?.stage },
       )
   }
