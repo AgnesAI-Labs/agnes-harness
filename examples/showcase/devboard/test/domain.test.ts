@@ -960,6 +960,12 @@ describe('change requests and the field-to-design loop', () => {
     )
     expect(cr.verification).toMatchObject({ result: 'PASS', by: '验证工程师', trialId: rt.id })
     expect(transition(state, { kind: 'change', id: cr.id, to: 'CLOSED', by: 'x' }, NOW).state).toBe('CLOSED')
+    // a change closed before its ECN was released can still release it and get the as-designed baseline
+    const designed = () =>
+      state.configBaselines.filter((b: Item) => b.projectId === p.id && b.type === 'AS_DESIGNED')
+    const before = designed().length
+    expect(release(state, 'ECN_RELEASE', cr.id).state).toBe('APPROVED')
+    expect(designed()).toHaveLength(before + 1)
     const rejected = create(
       state,
       { kind: 'change', projectId: p.id, title: 'r', reason: 'r', impact: { reqs: ['CUS-001'] } },

@@ -1795,7 +1795,8 @@ function startable(state, template, subject) {
   if (template === 'ECR' && subject.state !== 'CCB_REVIEW')
     fail(`${same(subject.state)}，需先提交 CCB 才能发起 ECR 审批`)
   if (template === 'ECN_RELEASE') {
-    if (!subject.ecn || !['APPROVED', 'IMPLEMENTED'].includes(subject.state))
+    // A closed change can still release its ECN: closing does not wait for the release flow.
+    if (!subject.ecn || !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(subject.state))
       fail(`${same(subject.state)}，ECR 批准并生成 ECN 后才能发起 ECN 发布`)
     if (
       state.approvals.some(
