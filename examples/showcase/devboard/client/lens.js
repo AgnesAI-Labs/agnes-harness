@@ -117,7 +117,7 @@ export const METRICS = {
   reqs: ['相关需求', 'req', () => true],
   req: ['待确认需求', 'req', (r) => r.status === 'DRAFT' || r.status === 'CHANGED'],
   task: ['未完成任务', 'task', (t) => !['COMPLETED', 'CANCELLED'].includes(t.state)],
-  change: ['未关闭变更', 'change', (c) => !['CLOSED', 'IMPLEMENTED', 'REJECTED'].includes(c.state)],
+  change: ['未关闭变更', 'change', (c) => !['CLOSED', 'REJECTED'].includes(c.state)],
   defect: ['未关闭缺陷', 'defect', (d) => d.state !== 'CLOSED'],
   trial: ['未批准试验', 'trial', (t) => t.state !== 'APPROVED'],
   review: ['待审试验报告', 'trial', (t) => t.state === 'REPORTED'],

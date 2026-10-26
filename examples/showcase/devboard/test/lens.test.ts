@@ -99,6 +99,10 @@ describe('role lens', () => {
     expect(waiting.length).toBeGreaterThan(0)
     expect(quality.pending).toBe(waiting.length)
     expect(quality.counts.defect).toBe(data.defects.filter((d: Any) => d.state !== 'CLOSED').length)
+    // an open change is open on the role card as on the project card (IMPLEMENTED still needs closing)
+    expect(data.changes.filter(METRICS.change[2]).length).toBe(
+      data.projects.reduce((n: number, p: Any) => n + p.metrics.openChanges, 0),
+    )
     expect(quality.urgent.length).toBeLessThanOrEqual(5)
     expect(quality.urgent[0].overdue).toBe(true)
     const flags = quality.urgent.map((u: Any) => u.overdue)
