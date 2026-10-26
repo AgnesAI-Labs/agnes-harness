@@ -11,9 +11,13 @@ export const INTEGRITY = /^(?:sha256-[a-f0-9]{64}|sha512-[A-Za-z0-9+/]{86}==)$/
 const TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 export const PURPOSES = new Set<RuntimePinPurpose>(['active', 'candidate', 'recovery', 'rollback', 'turn'])
 
-export function integrityFailure(reason: string): never {
+/**
+ * With `path`, the detail names the file or directory that failed the check. It stays out of the
+ * message: hashed path names would make the message read as a secret and be omitted.
+ */
+export function integrityFailure(reason: string, path?: string): never {
   throw new PackageError('E_LOCK_MISMATCH', 'runtime snapshot store requires recovery', {
-    detail: { reason },
+    detail: { reason, ...(path ? { path } : {}) },
   })
 }
 

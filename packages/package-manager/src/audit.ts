@@ -1,8 +1,9 @@
-import { appendFileSync, closeSync, existsSync, readFileSync } from 'node:fs'
+import { appendFileSync, closeSync, existsSync, readFileSync, truncateSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { windowsAppendPrivateFileSync, windowsOpenPrivateFileSync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
 import { canonical } from './integrity.js'
+import { recordPackageRecovery } from './recovery-log.js'
 
 export type PackageAuditEvent = Readonly<{
   eventId: string
@@ -37,6 +38,15 @@ function appendAudit(file: string, text: string): void {
   if (windows) windowsAppendPrivateFileSync(resolve(file), Buffer.from(text), true)
   else appendFileSync(file, text, { mode: 0o600, flush: true })
 }
+const corrupt = (file: string) =>
+  new PackageError('E_EXT_LOAD', 'package audit is corrupt', {
+    detail: {
+      reason: 'audit-corrupt',
+      path: file,
+      repair:
+        'A complete line in this log is not a valid record. Restore the file or move it aside to start a new log.',
+    },
+  })
 function validateEvent(value: unknown): asserts value is PackageAuditEvent {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new PackageError('E_EXT_LOAD', 'package audit is corrupt')
@@ -83,6 +93,30 @@ function validateEvent(value: unknown): asserts value is PackageAuditEvent {
   )
     throw new PackageError('E_EXT_LOAD', 'package audit is corrupt')
 }
+/**
+ * An append interrupted part-way leaves a last line without its newline. Records are independent (no
+ * chain), and a committed transaction keeps its journal until its record is durable, so recovery
+ * appends that record again. A tail that is a whole valid record only lost its newline and is kept;
+ * anything else is cut back to the last complete line. Complete lines are never changed.
+ */
+function healTail(profileDir: string, file: string, text: string): string {
+  const cut = text.lastIndexOf('\n') + 1
+  let complete = false
+  try {
+    validateEvent(JSON.parse(text.slice(cut)))
+    complete = true
+  } catch {
+    /* an incomplete record */
+  }
+  if (complete) appendAudit(file, '\n')
+  else truncateSync(file, Buffer.byteLength(text.slice(0, cut)))
+  recordPackageRecovery(profileDir, {
+    action: 'repaired',
+    path: file,
+    reason: complete ? 'audit-newline-restored' : 'audit-incomplete-record-cut',
+  })
+  return complete ? `${text}\n` : text.slice(0, cut)
+}
 /** The local durable log is authoritative; the optional external sink is only a mirror. */
 export function appendPackageAudit(
   profileDir: string,
@@ -93,18 +127,21 @@ export function appendPackageAudit(
   const file = join(profileDir, '.agnes-package-audit.jsonl')
   if (windows) windowsAppendPrivateFileSync(resolve(file), Buffer.alloc(0))
   if (existsSync(file)) {
-    const text = readAudit(file)
-    if (text !== '' && !text.endsWith('\n'))
-      throw new PackageError('E_EXT_LOAD', 'package audit has an incomplete record')
+    let text = readAudit(file)
+    if (text !== '' && !text.endsWith('\n')) text = healTail(profileDir, file, text)
     let present = false
     for (const line of text.split('\n').filter(Boolean)) {
       let row: unknown
       try {
         row = JSON.parse(line)
       } catch {
-        throw new PackageError('E_EXT_LOAD', 'package audit is corrupt')
+        throw corrupt(file)
       }
-      validateEvent(row)
+      try {
+        validateEvent(row)
+      } catch {
+        throw corrupt(file)
+      }
       if (row.eventId === event.eventId) {
         if (canonical(row) !== canonical(event))
           throw new PackageError('E_EXT_LOAD', 'package audit has a conflicting event')

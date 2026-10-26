@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { lstatSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { PackageBlocker } from '@agnes/protocol'
-import { renameWriteThroughSync } from '@agnes/system-node'
+import { renameWriteThroughSync, syncTreeBatchedSync } from '@agnes/system-node'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { copyPackageTreeSync } from './copy-tree.js'
@@ -167,13 +167,13 @@ function* verifyRecordSteps(
     root = nativeRealpathSync(runtimeRoot(s))
     actual = nativeRealpathSync(directory)
     if (lstatSync(runtimeRoot(s)).isSymbolicLink() || lstatSync(directory).isSymbolicLink())
-      integrityFailure('runtime-path-symlink')
+      integrityFailure('runtime-path-symlink', directory)
   } catch (error) {
     if (error instanceof PackageError) throw error
-    integrityFailure('runtime-path-missing')
+    integrityFailure('runtime-path-missing', directory)
   }
   if (!contained(root, actual) || actual === root || basename(actual) !== checkedRecord.snapshotId)
-    integrityFailure('runtime-path-escape')
+    integrityFailure('runtime-path-escape', directory)
   // Snapshots are immutable AGH-stored trees: hashed in full once per process, then reused while the
   // directory is not replaced. Path, link and record checks above still run on every read.
   const treeIntegrity = yield* directoryDigestSteps(
@@ -182,7 +182,7 @@ function* verifyRecordSteps(
     false,
     true,
   )
-  if (treeIntegrity !== checkedRecord.treeIntegrity) integrityFailure('runtime-tree-mismatch')
+  if (treeIntegrity !== checkedRecord.treeIntegrity) integrityFailure('runtime-tree-mismatch', actual)
   const source = parseSource(checkedRecord.source.ref)
   if (canonical(source) !== canonical(checkedRecord.source)) integrityFailure('runtime-source-mismatch')
   // Reuse only static interpretation after this read has verified every byte. The cache key
@@ -563,6 +563,9 @@ export function pinRuntimeSnapshotsStore(
       stage,
       contributionCeiling(selected.record),
     )
+    // The copy reaches the disk before the rename publishes it, so a power cut cannot leave a snapshot
+    // whose bytes differ from its recorded tree digest.
+    syncTreeBatchedSync(stage)
     renameSync(stage, destination)
     syncDirectory(root)
     s.runtimeCheckpoint?.('runtime-snapshot-moved')
