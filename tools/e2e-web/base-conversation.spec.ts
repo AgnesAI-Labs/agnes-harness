@@ -187,7 +187,9 @@ sys.stderr.write("xcrun: error: couldn't create cache file '/tmp/xcrun_db-test' 
       await turn.getByTestId('tool-fact-chain').first().click()
       await expect(page.locator('.trace-inspector [data-link="receipt"]')).toBeVisible()
       await expect(page.getByTestId('trace-gaps')).toBeHidden()
-      await expect(page.getByTestId('trace-readonly')).not.toContainText(/exactly once|恰好执行/)
+      // The fact chain opens the record's source pane in plain words, without the exactly-once disclaimer.
+      await expect(page.getByTestId('trace-inspector-pane')).toHaveAttribute('data-pane', 'source')
+      await expect(page.locator('.trace-inspector')).not.toContainText(/exactly once|恰好执行/)
       await expect(page.locator('.trace-inspector .agh-disclosure-marker')).toHaveCount(0)
       await capture(page, `${locale}-${theme}-trace`)
       await page.locator('#view-chat').click()

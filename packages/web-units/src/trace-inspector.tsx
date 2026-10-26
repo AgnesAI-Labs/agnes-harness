@@ -442,7 +442,7 @@ function InspectorView({
         )}
       </div>
       <div className="trace-inspector-body" role="tabpanel">
-        <div className="trace-inspector-pane" data-pane={pane}>
+        <div className="trace-inspector-pane" data-pane={pane} data-testid="trace-inspector-pane">
           {body()}
         </div>
       </div>
