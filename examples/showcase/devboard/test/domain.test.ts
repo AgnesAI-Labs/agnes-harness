@@ -3173,6 +3173,39 @@ describe('hand-off to the coordinator', () => {
     expect(project.nextStep.reworkFrom).toMatchObject({ gate: gate.id, comment: '接口清单缺失' })
     expect(project.nextStep.reworkFrom.openFindings.map((f: Item) => f.id)).toEqual(open)
   })
+
+  it('reads a gate a change voided as void whatever its old decision, and defers to a newer gate of its code', () => {
+    const state = seed(NOW)
+    for (const p of state.projects) p.live = true
+    const P = 'PRJ-2026-008'
+    const cr = create(
+      state,
+      {
+        kind: 'change',
+        projectId: P,
+        title: '改接口',
+        reason: '客户要求',
+        source: { type: 'CUSTOMER' },
+        impact: { reqs: ['DES-301'] },
+      },
+      NOW,
+    )
+    ccbApprove(state, cr.id)
+    // a change voids the gates a stage had passed, keeping their decision
+    const approved = state.gates.find((g: Item) => g.decision === 'APPROVED' && g.stageId.startsWith(P))
+    approved.superseded = true
+    const out = handoff(state, { type: 'gate', id: approved.id })
+    expect(out.next[0]).toContain('作废')
+    expect(out.summary).toContain('作废')
+    expect(out.summary).not.toMatch(/已通过；/)
+    // the stage submits the gate again: the voided one points at the new one, not at "redo"
+    const voided = state.gates.find((g: Item) => g.superseded && g.decision === 'REJECTED')
+    state.gates.push({ ...voided, id: 'GATE-NEW', decision: 'PENDING', superseded: undefined, findings: [] })
+    const again = handoff(state, { type: 'gate', id: voided.id })
+    expect(again.next[0]).toContain('GATE-NEW')
+    expect(again.next[0]).toContain('以新门为准')
+    expect(again.next[0]).not.toContain('按返工重做')
+  })
 })
 
 describe('per-test-case results', () => {

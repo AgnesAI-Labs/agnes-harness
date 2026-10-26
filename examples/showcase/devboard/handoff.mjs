@@ -168,23 +168,32 @@ function gateHandoff(state, gate) {
   const decision = gate.decision
   const next = []
   let step
-  if (decision === 'PENDING') {
+  const newer = state.gates.findLast((g) => g.stageId === gate.stageId && g.code === gate.code)
+  const current = () =>
+    stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
+  if (gate.superseded) {
+    // A voided gate is void whatever it decided; a newer gate of its code is the one that counts.
+    step = current()
+    next.push(
+      newer !== gate
+        ? `该门已被批准的变更作废，已重新提交为 ${newer.id}：以新门为准，不再处理本门意见`
+        : `该门已被批准的变更作废（${decision === 'APPROVED' ? '原为已通过，现不再有效' : '非人工驳回'}）：${label(LABELS.stage, stage.stage)}阶段按返工重做，修复后重新提交（${gate.code}）`,
+    )
+    if (step) next.push(step.action)
+  } else if (decision === 'PENDING') {
     const signed = (gate.signatures ?? []).map((s) => s.role)
     const waiting = gate.approverRoles.filter((r) => !signed.includes(r))
     next.push(`该门尚未决议，等待 ${waiting.join('、')}；不要替人批准`)
   } else if (decision === 'APPROVED') {
     // A passed stage has nothing left to do: point at the project's real current work.
-    step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
+    step = current()
     next.push(step ? step.action : doneText(project))
   } else {
-    const newer = state.gates.findLast((g) => g.stageId === gate.stageId && g.code === gate.code)
-    step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
+    step = current()
     next.push(
-      gate.superseded
-        ? `该门已被批准的变更作废（非人工驳回）：${label(LABELS.stage, stage.stage)}阶段按返工重做，修复后重新提交（${gate.code}）`
-        : newer !== gate
-          ? `该门被驳回后已重新提交为 ${newer.id}：以它为准，不再处理本门意见`
-          : `该门被驳回：逐条处理未关闭意见，修复后重新提交（${gate.code}）`,
+      newer !== gate
+        ? `该门被驳回后已重新提交为 ${newer.id}：以它为准，不再处理本门意见`
+        : `该门被驳回：逐条处理未关闭意见，修复后重新提交（${gate.code}）`,
     )
     if (step) next.push(step.action)
   }
@@ -218,7 +227,7 @@ function gateHandoff(state, gate) {
     skippedGates: project.tailoring?.skipped,
     next,
     summary: [
-      `${gate.code}（${gate.name}）${decision === 'PENDING' ? '待决议' : label(LABELS.state, decision)}${gate.approver ? `，${gate.approver}` : ''}`,
+      `${gate.code}（${gate.name}）${gate.superseded ? '已作废' : decision === 'PENDING' ? '待决议' : label(LABELS.state, decision)}${gate.approver ? `，${gate.approver}` : ''}`,
       gate.comment ? `意见：${clip(gate.comment, 80)}` : '',
       open.length ? `未关闭意见 ${open.map((f) => f.id).join('、')}` : '无未关闭意见',
       `下一步：${next[0]}`,
