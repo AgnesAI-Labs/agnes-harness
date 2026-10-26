@@ -110,9 +110,13 @@ export const useRole = () => useStored(ROLE_KEY, '项目经理', (r) => r.length
 export const JumpContext = React.createContext(undefined)
 
 /** Open a record on another page (for example from the role home): the page opens its detail. */
-export function jumpTo(entry, id, detail) {
+export function jumpTo(entry, id, detail, project) {
+  // The pages read the shared project when they mount; one already open takes `project` from the jump.
   try {
-    homeNavigation.open(entry, { devboard: { id, detail } })
+    if (project) window.sessionStorage.setItem(PROJECT_KEY, project)
+  } catch {}
+  try {
+    homeNavigation.open(entry, { devboard: { id, detail, ...(project ? { project } : {}) } })
   } catch {}
 }
 

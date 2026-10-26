@@ -92,7 +92,7 @@ export function ActivityPanel({ data }) {
                 entry
                   ? h(
                       Button,
-                      { appearance: 'link', onClick: () => jumpTo(entry, a.entity.id, page) },
+                      { appearance: 'link', onClick: () => jumpTo(entry, a.entity.id, page, a.projectId) },
                       a.summary,
                     )
                   : a.summary,
