@@ -940,6 +940,9 @@ describe('change requests and the field-to-design loop', () => {
     expect(designed[1].revs).toEqual({ 'NC-BUF-01': 'C', 'NC-MOT-02': 'A' })
     expect(state.stages.every((s: Item) => s.state === 'PASSED')).toBe(true)
     expect(metrics(state, p, NOW)).toMatchObject({ baselineGap: 1, retrofit: { done: 0, total: 1920 } })
+    // a retrofit total on a change nobody approved is not fleet work yet
+    create(state, { kind: 'change', projectId: p.id, title: '草案', reason: 'r', retrofit: { total: 500 } }, NOW)
+    expect(metrics(state, p, NOW).retrofit).toEqual({ done: 0, total: 1920 })
     // a change written against the old revision does not roll the item back
     const stale = approvedChange(state, p.id, bufferChange)
     expect(() => release(state, 'ECN_RELEASE', stale.id)).toThrow('NC-BUF-01 当前为 C 版')

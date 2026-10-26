@@ -2120,7 +2120,10 @@ function fieldMetrics(state, project, now) {
       Date.parse(f.detectedAt) > now - 30 * DAY &&
       Date.parse(f.detectedAt) <= now,
   )
-  const retrofits = own(state.changes).filter((c) => c.retrofit)
+  // Doors are counted once a change is approved; a draft or rejected total is not fleet work.
+  const retrofits = own(state.changes).filter(
+    (c) => c.retrofit && ['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(c.state),
+  )
   const designed = latestBaseline(state, project.id, 'AS_DESIGNED')?.revs ?? {}
   const maintained = latestBaseline(state, project.id, 'AS_MAINTAINED')?.revs
   const trials = own(state.trials)
