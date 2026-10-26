@@ -522,7 +522,8 @@ export function TransitionBar({
               f.lines
                 ? extra[f.key]
                     .split('\n')
-                    .map((l) => l.trim())
+                    // A line is one entry of at most 300 characters, as the server clips it (the schema refuses longer ones).
+                    .map((l) => l.trim().slice(0, 300))
                     .filter(Boolean)
                 : extra[f.key].trim(),
             ]),
