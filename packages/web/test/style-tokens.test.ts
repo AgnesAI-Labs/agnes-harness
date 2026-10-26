@@ -247,6 +247,7 @@ const DYNAMIC_CUSTOM_PROPERTIES = new Set([
   '--workbench-height', // packages/web/src/workbench/dock.tsx 写入，var() 自带 220px 回退
   '--workbench-tree-width', // packages/web-conversation/src/workbench/files-panel.tsx 写入拖动后的宽度，var() 自带 250px 回退
   '--workbench-gutter', // packages/web-conversation/src/workbench/files-preview.tsx 按行数位数写入，var() 自带 3ch 回退
+  '--model-picker-room', // packages/web/src/model-picker.tsx 写入触发器上方的可用高度，var() 自带 100dvh 回退
 ])
 
 beforeAll(async () => {
@@ -445,4 +446,12 @@ it('aligns 置顶 and 临时会话 rows with their section heading and keeps 工
   expect(declarationsFor('.sidebar-section > .workspace-heading-row .workspace-heading')).toContain(
     'font-size: var(--font-size-body)',
   )
+})
+
+it('keeps the three sidebar sections apart in both list containers', () => {
+  const css = readWebStyleSource(stylePath)
+  // 分区间距要明显大于「标题到首行」的空隙（16px），否则置顶 / 临时会话 / 工作区读成一片。
+  expect(css).toMatch(/#sessions \{[^}]*gap: var\(--s32\);/)
+  // 归档等视图把分区放进 .sidebar-inventory 再渲染，间距必须与 #sessions 一致。
+  expect(css).toMatch(/\.sidebar-inventory:has\(> \.sidebar-section\) \{\s*gap: var\(--s32\);/)
 })
