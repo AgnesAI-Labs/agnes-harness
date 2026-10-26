@@ -248,7 +248,7 @@ export function Overview({ data, board, role }) {
             ),
             fact(
               '未关闭缺陷',
-              `${open}（A ${m.openDefects.A} / B ${m.openDefects.B} / C ${m.openDefects.C} / D ${m.openDefects.D}）`,
+              `${open}（A ${m.openDefects.A} / B ${m.openDefects.B} / C ${m.openDefects.C} / D ${m.openDefects.D}）${m.deferredDefects ? `，另延期 ${m.deferredDefects}` : ''}`,
             ),
             fact(
               '最近测试通过率',
