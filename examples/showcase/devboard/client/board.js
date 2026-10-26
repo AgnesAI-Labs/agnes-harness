@@ -31,14 +31,17 @@ export function useBoard(ctx) {
   const [notice, setNotice] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const alive = React.useRef(true)
+  // Polls and post-action reloads can finish out of order: only the latest-started request is applied.
+  const latest = React.useRef(0)
   const load = React.useCallback(async () => {
+    const mine = ++latest.current
     try {
       const next = await services.query('devboard.snapshot', {})
-      if (!alive.current) return
+      if (!alive.current || mine !== latest.current) return
       setData(next)
       setLoadError('')
     } catch (e) {
-      if (alive.current) setLoadError(`读取看板失败：${message(e)}`)
+      if (alive.current && mine === latest.current) setLoadError(`读取看板失败：${message(e)}`)
     }
   }, [services])
   React.useEffect(() => {
