@@ -146,6 +146,8 @@ describe('main-line progress from the board snapshot', () => {
     expect(done(board())).toEqual(['m2'])
     expect(done(board(gate(LIVE, 'CDCP')))).toEqual(['m2', 'm3'])
     expect(done(board(gate(LIVE, 'CDCP', 'REJECTED')))).toEqual(['m2', 'm3'])
+    // A gate voided by a rework no longer counts as submitted or approved.
+    expect(done(board({ ...gate(LIVE, 'CDCP', 'APPROVED'), superseded: true }))).toEqual(['m2'])
     expect(done(board(gate(LIVE, 'CDCP', 'APPROVED'), gate(LIVE, 'TR1')))).toEqual(['m2', 'm3', 'm4', 'm5'])
     const all = ['CDCP', 'TR1', 'TR3', 'TR4', 'TR5', 'ADCP'].map((c) => gate(LIVE, c, 'APPROVED'))
     expect(done(board(...all))).toEqual(MAIN_STEPS.filter((s) => s.id !== 'm1').map((s) => s.id))

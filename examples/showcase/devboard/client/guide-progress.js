@@ -19,7 +19,9 @@ export function ruleDone(data, rule) {
   if (!project) return false
   if (rule === 'project') return true
   const [code, state] = String(rule).split(':')
-  const gates = (data.gates ?? []).filter((g) => g.code === code && g.stageId?.startsWith(`${project.id}/`))
+  const gates = (data.gates ?? []).filter(
+    (g) => !g.superseded && g.code === code && g.stageId?.startsWith(`${project.id}/`),
+  )
   return state === 'approved' ? gates.some((g) => g.decision === 'APPROVED') : gates.length > 0
 }
 
