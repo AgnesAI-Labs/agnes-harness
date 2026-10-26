@@ -3079,6 +3079,53 @@ describe('hand-off to the coordinator', () => {
     expect(out.change.reason.length).toBe(600)
     expect(out.next[0]).toContain('traceFrom')
   })
+
+  it('tells the coordinator the outcome and comment of a finished approval flow, and where its subject now stands', () => {
+    const state = seed(NOW)
+    for (const p of state.projects) p.live = true
+    actApproval(
+      state,
+      { id: 'AP-2026-0027', by: '质量工程师 q', action: 'REJECT', comment: '报告数据不全' },
+      NOW,
+    )
+    const project = handoff(state, { type: 'project', id: 'PRJ-2025-042' })
+    expect(project.decidedApprovals).toEqual([
+      expect.objectContaining({
+        id: 'AP-2026-0027',
+        template: 'TRIAL_REPORT',
+        outcome: 'REJECTED',
+        comment: '报告数据不全',
+        subject: expect.objectContaining({ type: 'trial', id: 'TT-2026-019', state: 'IN_PROGRESS' }),
+      }),
+    ])
+    expect(project.next.join('')).toContain('报告数据不全')
+    const trial = handoff(state, { type: 'trial', id: 'TT-2026-019' })
+    expect(trial.lastApproval).toMatchObject({
+      id: 'AP-2026-0027',
+      outcome: 'REJECTED',
+      comment: '报告数据不全',
+    })
+    // a rejected 8D close leaves every step drafted: the hand-off must not call that "steps still to draft"
+    const qp = byId(state.problems, 'QP-2026-007')
+    for (const step of Object.values(qp.steps) as Item[]) step.done = true
+    upsertProblem(state, { id: qp.id, rootCause: '根因', containment: '围堵', to: 'ACTION' }, NOW)
+    upsertProblem(state, { id: qp.id, to: 'VERIFYING', noChangeReason: '仅更换耗材' }, NOW)
+    const close = submitApproval(
+      state,
+      { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: '质量工程师 x' },
+      NOW,
+    )
+    actApproval(state, { id: close.id, by: '质量工程师 q', action: 'APPROVE' }, NOW)
+    actApproval(
+      state,
+      { id: close.id, by: '分技术中心主任 d', action: 'REJECT', comment: '验证数据不足' },
+      NOW,
+    )
+    const problem = handoff(state, { type: 'problem', id: qp.id })
+    expect(problem.next[0]).not.toContain('均已起草')
+    expect(problem.next.join('')).toContain('验证数据不足')
+    expect(problem.lastApproval).toMatchObject({ id: close.id, outcome: 'REJECTED' })
+  })
 })
 
 describe('per-test-case results', () => {

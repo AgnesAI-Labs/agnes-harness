@@ -96,6 +96,37 @@ const doneText = (project) =>
 const openFindings = (gate) =>
   top((gate.findings ?? []).filter((f) => !f.closed)).map((f) => ({ id: f.id, text: clip(f.text) }))
 
+const FLOW_SUBJECTS = { artifact: 'artifacts', change: 'changes', problem: 'problems', trial: 'trials' }
+
+/** A finished approval flow as the coordinator needs it: outcome, the human's last comment, where its subject now stands. */
+function decidedFlow(state, flow) {
+  const { type, id } = flow.subject ?? {}
+  const item = state[FLOW_SUBJECTS[type]]?.find((x) => x.id === id)
+  const last = flow.actions?.at(-1)
+  return {
+    id: flow.id,
+    template: flow.template,
+    outcome: flow.state,
+    by: last?.by,
+    comment: clip(last?.comment, 200),
+    decidedAt: flow.endedAt,
+    subject: { type, id, state: item?.state ?? item?.status },
+  }
+}
+
+/** The latest flow on one object, when it has finished (a flow still running or withdrawn says nothing yet). */
+function lastApproval(state, type, id) {
+  const flow = state.approvals?.findLast((a) => a.subject?.type === type && a.subject.id === id)
+  return flow && (flow.state === 'APPROVED' || flow.state === 'REJECTED')
+    ? decidedFlow(state, flow)
+    : undefined
+}
+
+const decidedText = (d) =>
+  d.outcome === 'REJECTED'
+    ? `审批 ${d.id}（${d.template} ${d.subject.id}）已被驳回${d.comment ? `，意见：${d.comment}` : ''}；${d.subject.id} 现为 ${d.subject.state}：按意见修改后重新发起审批`
+    : `审批 ${d.id}（${d.template} ${d.subject.id}）已通过${d.comment ? `，意见：${d.comment}` : ''}；${d.subject.id} 现为 ${d.subject.state}`
+
 function gateHandoff(state, gate) {
   const stage = state.stages.find((s) => s.id === gate.stageId)
   const project = state.projects.find((p) => p.id === stage?.projectId)
@@ -196,6 +227,20 @@ function projectHandoff(state, project) {
     .filter((r) => r.status === 'fail' && !handled(r.tc, r.at))
     .map((r) => r.tc)
   const next = [step?.action ?? doneText(project)].filter(Boolean)
+  // Flows people finished whose hand-back card still waits: the card points at the project, this says what they decided.
+  const decided = state.approvals
+    .filter(
+      (a) =>
+        a.projectId === project.id &&
+        state.handbacks?.some(
+          (c) => c.state === 'OPEN' && c.subject?.type === 'approval' && c.subject.id === a.id,
+        ) &&
+        lastApproval(state, a.subject?.type, a.subject?.id)?.id === a.id,
+    )
+    .toReversed()
+    .slice(0, 3)
+    .map((a) => decidedFlow(state, a))
+  for (const d of decided) next.push(decidedText(d))
   if (untracked.length)
     next.push(`为 ${top(untracked).join('、')} 建缺陷（devboard_defect_upsert，testCase 填 TC 编号）`)
   if (defects.length) next.push(`先处理 ${defects.length} 条未关闭缺陷（A 类会挡住 TR5 与 ADCP）`)
@@ -212,6 +257,7 @@ function projectHandoff(state, project) {
     },
     stages: STAGES.map((s) => ({ stage: s, state: stageOf(state, project.id, s)?.state })),
     pendingGates: pending.map((g) => ({ id: g.id, code: g.code, approverRoles: g.approverRoles })),
+    decidedApprovals: decided,
     nextStep: step,
     openTasks: top(tasks).map((t) => ({ id: t.id, title: clip(t.title, 120), state: t.state, type: t.type })),
     openDefects: top(defects).map((d) => ({
@@ -228,6 +274,9 @@ function projectHandoff(state, project) {
     summary: [
       `${project.id} ${clip(project.name, 40)}，${label(LABELS.stage, stage)}阶段`,
       pending.length ? `待决议 ${pending.map((g) => g.code).join('、')}` : '',
+      decided.length
+        ? `审批 ${decided[0].id}${label(LABELS.approvalState, decided[0].outcome)}${decided[0].comment ? `：${clip(decided[0].comment, 60)}` : ''}`
+        : '',
       `未完成任务 ${tasks.length}、未关闭缺陷 ${defects.length}、未关闭变更 ${changes.length}`,
       `下一步：${next[0]}`,
     ]
@@ -299,6 +348,8 @@ function trialHandoff(state, trial) {
       }`,
     )
   else next.push('试验未出现需要起草变更的不合格结论；批准试验是人的决定')
+  const approval = lastApproval(state, 'trial', trial.id)
+  if (approval) next.push(decidedText(approval))
   return {
     trial: {
       id: trial.id,
@@ -315,6 +366,7 @@ function trialHandoff(state, trial) {
       verifies: top(trial.verifies ?? [], 20),
       changeId: trial.changeId,
     },
+    lastApproval: approval,
     next,
     summary: `${trial.id}「${clip(trial.title, 60)}」${label(LABELS.state, trial.state)}，结论 ${label(LABELS.trialResult, trial.result)}${trial.reportNo ? `，报告 ${trial.reportNo}` : ''}；下一步：${next[0]}`,
   }
@@ -354,7 +406,7 @@ function faultHandoff(state, fault) {
   }
 }
 
-function problemHandoff(_state, problem) {
+function problemHandoff(state, problem) {
   const steps = Object.fromEntries(
     Object.entries(problem.steps ?? {}).map(([k, v]) => [
       k,
@@ -364,11 +416,15 @@ function problemHandoff(_state, problem) {
   const todo = Object.entries(steps)
     .filter(([, v]) => !v.done)
     .map(([k]) => k)
+  const approval = lastApproval(state, 'problem', problem.id)
   const next = [
     problem.state === 'CLOSED'
       ? '问题已关闭'
-      : `起草尚未完成的步骤 ${todo.join('、') || '（均已起草）'}；只起草，不关闭问题，关闭由人在看板完成`,
+      : todo.length
+        ? `起草尚未完成的步骤 ${todo.join('、')}；只起草，不关闭问题，关闭由人在看板完成`
+        : '8D 各步骤都已有内容；只起草，不关闭问题，关闭由人在看板完成',
   ]
+  if (approval && problem.state !== 'CLOSED') next.push(decidedText(approval))
   return {
     problem: {
       id: problem.id,
@@ -383,6 +439,7 @@ function problemHandoff(_state, problem) {
       noChangeReason: clip(problem.noChangeReason),
     },
     steps,
+    lastApproval: approval,
     next,
     summary: `${problem.id}「${clip(problem.title, 60)}」${label(LABELS.state, problem.state)}，D 步骤未完成 ${todo.length} 个；下一步：${next[0]}`,
   }
