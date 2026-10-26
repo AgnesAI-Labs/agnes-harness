@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { searchHistoryDirectory } from '../src/directory.js'
 import { HistoryIndexError } from '../src/errors.js'
 import * as ledger from '../src/ledger.js'
-import { readLedgerDirectory, sourceStamp } from '../src/ledger.js'
-import { type HistoryAccess, HistoryIndex, openHistoryIndex } from '../src/store.js'
+import { sourceStamp } from '../src/ledger.js'
+import { type HistoryAccess, type HistoryIndex, openHistoryIndex } from '../src/store.js'
 
 const dirs: string[] = []
 const indexes: HistoryIndex[] = []
@@ -128,23 +128,28 @@ function seed(dir: string): void {
   side.close()
 }
 
-function openSeed(): { dir: string; index: HistoryIndex; access: HistoryAccess } {
+function openSeed(before?: (dir: string) => void): {
+  dir: string
+  index: HistoryIndex
+  access: HistoryAccess
+} {
   const dir = tempDir()
   seed(dir)
+  before?.(dir)
   const index = openHistoryIndex(join(dir, 'history-index.db'))
   indexes.push(index)
-  index.rebuild(readLedgerDirectory(dir))
+  index.sync(dir)
   const access: HistoryAccess = { kind: 'caller', self: 'self', workspace: '/work/a', principal: 'owner-a' }
   return { dir, index, access }
 }
 
 describe('history index', () => {
-  it('creates the v3 schema: principal column, parent index and external-content FTS', () => {
+  it('creates the v4 schema: indexed tails, parent index and external-content FTS', () => {
     const { dir, index } = openSeed()
     index.close()
     const db = new DatabaseSync(join(dir, 'history-index.db'), { readOnly: true })
     try {
-      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 3 })
+      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 4 })
       expect(
         db
           .prepare(`SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name`)
@@ -163,7 +168,25 @@ describe('history index', () => {
       ])
       expect(
         (db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>).map((c) => c.name),
-      ).toEqual(['session_id', 'workspace', 'title', 'created_at', 'parent_id', 'principal'])
+      ).toEqual([
+        'session_id',
+        'workspace',
+        'title',
+        'created_at',
+        'parent_id',
+        'principal',
+        'indexed_seq',
+        'indexed_id',
+        'first_ts',
+        'generated_title',
+        'prompt',
+      ])
+      expect(
+        db.prepare(`SELECT indexed_seq, indexed_id FROM sessions WHERE session_id = 'self'`).get(),
+      ).toEqual({
+        indexed_seq: 3,
+        indexed_id: 'self:3',
+      })
       const fts = db.prepare(`SELECT sql FROM sqlite_master WHERE name = 'docs_fts'`).get() as { sql: string }
       expect(fts.sql).toMatch(/content\s*=\s*'docs'/)
       expect(fts.sql).toMatch(/content_rowid\s*=\s*'rowid'/)
@@ -182,7 +205,7 @@ describe('history index', () => {
     }
   })
 
-  it('drops a v2 index with a readers table and recreates it at v3', () => {
+  it('drops a v2 index with a readers table and recreates it at v4', () => {
     const dir = tempDir()
     const path = join(dir, 'history-index.db')
     const old = new DatabaseSync(path)
@@ -197,7 +220,7 @@ describe('history index', () => {
     index.close()
     const db = new DatabaseSync(path, { readOnly: true })
     try {
-      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 3 })
+      expect(db.prepare('PRAGMA user_version').get()).toEqual({ user_version: 4 })
       expect(db.prepare(`SELECT name FROM sqlite_master WHERE name = 'readers'`).get()).toBeUndefined()
     } finally {
       db.close()
@@ -257,20 +280,22 @@ describe('history index', () => {
   })
 
   it('finds visible renamed and provisional CJK titles while retaining caller and workspace filters', () => {
-    const { dir, index, access } = openSeed()
-    const ledger = new DatabaseSync(join(dir, 'sessions.db'))
-    ledger
-      .prepare(
-        "UPDATE events SET data = ? WHERE type = 'user/message' AND seq = 1 AND session_key IN ('peer', 'away', 'other-owner')",
-      )
-      .run(JSON.stringify({ content: [{ type: 'text', text: '读取示例销售 CSV，计算收入。' }] }))
-    ledger.close()
+    // The ledger never rewrites an event, so the provisional prompts are in place before the first sync.
+    const { dir, index, access } = openSeed((seeded) => {
+      const ledger = new DatabaseSync(join(seeded, 'sessions.db'))
+      ledger
+        .prepare(
+          "UPDATE events SET data = ? WHERE type = 'user/message' AND seq = 1 AND session_key IN ('peer', 'away', 'other-owner')",
+        )
+        .run(JSON.stringify({ content: [{ type: 'text', text: '读取示例销售 CSV，计算收入。' }] }))
+      ledger.close()
+    })
     const side = new DatabaseSync(join(dir, 'tables', 'daemon.db'))
     side.exec('CREATE TABLE session_preferences (session_key TEXT PRIMARY KEY, title TEXT)')
     side.prepare('INSERT INTO session_preferences VALUES (?, ?)').run('self', '销售报告（人工标题）')
     side.close()
     const before = sha(join(dir, 'sessions.db'))
-    index.rebuild(readLedgerDirectory(dir))
+    index.sync(dir)
     const query = {
       access,
       kind: 'search' as const,
@@ -290,7 +315,7 @@ describe('history index', () => {
     expect(sha(join(dir, 'sessions.db'))).toBe(before)
   })
 
-  it('lists titles in the caller workspace and rejects a stale cursor', () => {
+  it('lists titles in the caller workspace, keeps a cursor across appends and rejects it after a removal', () => {
     const { dir, index, access } = openSeed()
     const titled = index.query({
       access,
@@ -316,20 +341,33 @@ describe('history index', () => {
     expect(page.items).toHaveLength(1)
     if (!page.next) throw new Error('expected a next cursor')
     const cursor = page.next
-    index.rebuild({ ...readLedgerDirectory(dir), stamp: 'changed' })
-    expect(() =>
-      index.query({
-        access,
-        kind: 'list',
-        query: '',
-        title: '',
-        workspace: '',
-        sessionId: '',
-        omitSelf: false,
-        limit: 1,
-        cursor,
-      }),
-    ).toThrow(HistoryIndexError)
+    const next = {
+      access,
+      kind: 'list' as const,
+      query: '',
+      title: '',
+      workspace: '',
+      sessionId: '',
+      omitSelf: false,
+      limit: 1,
+      cursor,
+    }
+    const ledger = new DatabaseSync(join(dir, 'sessions.db'))
+    ledger
+      .prepare(
+        `INSERT INTO events (session_key, seq, ts, id, type, origin, trust, source_event_seqs, data)
+         VALUES ('peer', 2, '2026-01-01T00:00:09Z', 'peer:2', 'user/message', 'user', 'untrusted', NULL, ?)`,
+      )
+      .run(JSON.stringify({ text: 'appended later' }))
+    ledger.close()
+    expect(index.sync(dir)).toMatchObject({ synced: true, generation: page.generation })
+    expect(index.query(next).items).toHaveLength(1)
+    const discard = new DatabaseSync(join(dir, 'sessions.db'))
+    discard.exec(`DELETE FROM events WHERE session_key = 'readerless'`)
+    discard.exec(`DELETE FROM sessions WHERE session_key = 'readerless'`)
+    discard.close()
+    expect(index.sync(dir).generation).toBe(page.generation + 1)
+    expect(() => index.query(next)).toThrow(HistoryIndexError)
   })
 
   it('reads an authorized event and marks an unauthorized parent without its id', () => {
@@ -443,15 +481,19 @@ describe('history index', () => {
       expect(after.mtimeMs).toBe(main.mtimeMs)
       expect(existsSync(`${path}-wal`)).toBe(true)
       expect(sourceStamp(dir)).toContain(`${path}-wal:`)
-      expect(sourceStamp(dir)).toContain(`${path}-shm:`)
+      // A reader writes its read mark to -shm; counting it would make every sync see a change.
+      expect(sourceStamp(dir)).not.toContain('-shm')
       const page = searchHistoryDirectory(dir, { query: 'wal only marker', title: '', workspace: '' })
       expect(page.items.map((item) => item.sessionId)).toEqual(['after'])
+      const stamp = sourceStamp(dir)
+      searchHistoryDirectory(dir, { query: 'wal only marker', title: '', workspace: '' })
+      expect(sourceStamp(dir)).toBe(stamp)
     } finally {
       next.close()
     }
   })
 
-  it('skips ledger parsing when the source stamp is unchanged and shares one parse', () => {
+  it('opens no ledger while the source stamp is unchanged, then reads only the appended event', () => {
     const dir = tempDir()
     const path = join(dir, 'sessions.db')
     const db = new DatabaseSync(path)
@@ -465,10 +507,10 @@ describe('history index', () => {
     ).run(JSON.stringify({ text: 'alpha bridge once' }))
     db.close()
     searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })
-    const read = vi.spyOn(ledger, 'readLedgerDirectory')
+    const open = vi.spyOn(ledger, 'openLedger')
     searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })
-    expect(read).not.toHaveBeenCalled()
-    read.mockRestore()
+    expect(open).not.toHaveBeenCalled()
+    open.mockRestore()
 
     const again = new DatabaseSync(path)
     again
@@ -478,32 +520,26 @@ describe('history index', () => {
       )
       .run(JSON.stringify({ text: 'alpha bridge twice' }))
     again.close()
-    let parses = 0
-    const realRead = ledger.readLedgerDirectory
-    const shared = vi.spyOn(ledger, 'readLedgerDirectory').mockImplementation((dataDir: string) => {
-      parses += 1
-      return realRead(dataDir)
-    })
-    const realRebuild = HistoryIndex.prototype.rebuild
-    let nested = false
-    const rebuild = vi.spyOn(HistoryIndex.prototype, 'rebuild').mockImplementation(function (
-      this: HistoryIndex,
-      corpus,
-    ) {
-      if (!nested) {
-        nested = true
-        // The corpus is already in the flight map, so the overlapping search must not parse again.
-        searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })
+    const read: string[] = []
+    const realOpen = ledger.openLedger
+    const counted = vi.spyOn(ledger, 'openLedger').mockImplementation((dataDir: string) => {
+      const reader = realOpen(dataDir)
+      if (!reader) return reader
+      return {
+        ...reader,
+        events: (sessionId, after, limit) => {
+          const events = reader.events(sessionId, after, limit)
+          read.push(...events.map((event) => `${event.sessionId}:${event.seq}`))
+          return events
+        },
       }
-      return realRebuild.call(this, corpus)
     })
     try {
       const page = searchHistoryDirectory(dir, { query: '', title: '', workspace: '' })
       expect(page.items.map((item) => item.sessionId).sort()).toEqual(['one', 'two'])
-      expect(parses).toBe(1)
+      expect(read).toEqual(['two:1'])
     } finally {
-      shared.mockRestore()
-      rebuild.mockRestore()
+      counted.mockRestore()
     }
   })
 
@@ -513,9 +549,14 @@ describe('history index', () => {
     ledger.exec('CREATE TABLE unrelated (id INTEGER)')
     ledger.close()
     expect(() => openHistoryIndex(join(dir, 'sessions.db'))).toThrow(HistoryIndexError)
-    expect(() => readLedgerDirectory(dir)).toThrow(/ledger/i)
+    const index = openHistoryIndex(join(dir, 'history-index.db'))
+    indexes.push(index)
+    expect(() => index.sync(dir)).toThrow(/ledger/i)
     const empty = tempDir()
-    expect(readLedgerDirectory(empty)).toMatchObject({ sessions: [], events: [] })
+    const fresh = openHistoryIndex(join(empty, 'history-index.db'))
+    indexes.push(fresh)
+    expect(fresh.sync(empty)).toEqual({ generation: 1, synced: true })
+    expect(fresh.principals()).toEqual([])
   })
 })
 

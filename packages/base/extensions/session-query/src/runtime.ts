@@ -15,7 +15,6 @@ import {
   type HistoryPage,
   type LineageNode,
   openHistoryIndex,
-  readLedgerDirectory,
   type StoredEvent,
 } from '@agnes/history-index'
 
@@ -67,7 +66,7 @@ function ready(): HistoryIndex {
     }
   }
   try {
-    boundIndex.rebuild(readLedgerDirectory(dataDir))
+    boundIndex.sync(dataDir)
     return boundIndex
   } catch (error) {
     if (error instanceof HistoryIndexError && error.code === 'INVALID_QUERY') throw error
