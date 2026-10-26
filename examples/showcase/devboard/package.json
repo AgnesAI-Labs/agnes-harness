@@ -1,6 +1,6 @@
 {
   "name": "@agnes-showcase/devboard",
-  "version": "3.7.7",
+  "version": "3.7.8",
   "type": "module",
   "license": "Apache-2.0",
   "engines": {
