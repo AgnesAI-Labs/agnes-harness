@@ -113,7 +113,7 @@ Use public author APIs, the tool-with-panel template and this version-matched re
 Application workbench / 应用业务工作台:
 Optional agnes.application.workbench declares tabs (max 8, unique id/title/icon/order, slot="workbench.panel", view="page" with page="package#declared-profile-page", or view="signatures"|"evidence", optional when="session"|"object"); actions (max 12, id/title/prompt, optional agent/defaultAgent, focusTab, object:{type,id}); scenarios (max 3 localized texts), includes (unique pages/tools/signatures/reports gallery features). Text requires en, optionally zh-CN, <=2048 chars each. Unknown slots and missing pages/agents are refused. Import openApplicationWork from '@agnes/web-client'; openApplicationWork(actionId,{type,id}) opens existing launch review and an editable human-readable request with a separate removable object-context chip. Submission keeps the structured context in durable content; the transcript restores the chip after reload. Page components receive context.selection.object/applicationPanel. Subscribe to ctx.session.projection and readiness, discard stale reads, unsubscribe; no polling. Signatures reuse Host decisions; browser object/role memory grants no authority. Main-session full access auto-confirms eligible business.confirm contracts for its human principal and records the automatic mode; other permission levels ask the human. Application delegableAgents (max 64, subset of launchable agents) permits subagent_spawn({role,task}) from an adopted application. Role children use fresh role composition and a captured parent authority intersection. Effects admitted without asking can run; tool effects needing human approval wait on the owning session surface, and only an authenticated human can answer once or reject. Role-child business signatures remain refused, even when the parent uses full access; hand them back to the main assistant. The parent human card and Web Approvals tab show tool approval requests with role, child, effect and policy reason; no human surface means refusal. Parent or ancestor stop/close withdraws pending role approvals. The rendered role catalogue is bounded; every declared role remains available by exact ref. role with fork/model or an unlisted role fails without fallback. / 声明标签、业务操作和场景；对象通过独立可移除的上下文 chip 进入会话，提示文字可编辑，提交后可持久恢复；授权与签署仍归宿主。角色子代理的工具审批在父会话人类卡和 Web 审批标签展示，只能由人单次允许或拒绝；无人类界面则拒绝。角色不能业务签署，父会话完全访问也不例外；主会话完全访问可由 Host 自动确认符合合同的业务签署并记录自动模式。
 
-Skin tokens / 完整皮肤 token 白名单 (120):
+Skin tokens / 完整皮肤 token 白名单 (123):
 ```ts
 --agnes-brand-primary
 --agnes-brand-mark
@@ -201,6 +201,9 @@ Skin tokens / 完整皮肤 token 白名单 (120):
 --agnes-trace-track
 --agnes-trace-row-current
 --agnes-trace-row-hover
+--agnes-trace-mark-bg
+--agnes-trace-mark-text
+--agnes-trace-row-hit
 --agnes-trace-lane-input
 --agnes-trace-lane-user
 --agnes-trace-lane-context
