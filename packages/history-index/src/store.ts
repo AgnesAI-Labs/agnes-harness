@@ -2,7 +2,8 @@ import { chmodSync, existsSync, mkdirSync, realpathSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { HistoryIndexError } from './errors.js'
-import type { HistoryCorpus, LedgerEvent, LedgerSession } from './ledger.js'
+import { sourceStamp } from './ledger.js'
+import { syncLedger, TITLE_SEQ } from './sync.js'
 import {
   decodeCursor,
   encodeCursor,
@@ -14,9 +15,9 @@ import {
 } from './text.js'
 
 const APPLICATION_ID = 0x41474858
-// v3 adds external-content FTS and sessions.principal; the next search rebuilds from unchanged source facts.
-const SCHEMA_VERSION = 3
-const TITLE_SEQ = -1
+// v4 keeps each session's indexed tail, so a search adds only what the ledger appended. Older versions
+// are dropped and indexed again on first use.
+const SCHEMA_VERSION = 4
 
 export type HistoryAccess =
   | { kind: 'caller'; self: string; workspace: string; principal: string }
@@ -144,6 +145,7 @@ export function openHistoryIndex(indexPath: string): HistoryIndex {
     db.exec('PRAGMA journal_mode = WAL')
     db.exec('PRAGMA synchronous = NORMAL')
     db.exec('PRAGMA busy_timeout = 2000')
+    db.exec('PRAGMA journal_size_limit = 4194304')
     const applicationId = pragmaNumber(db, 'application_id')
     const version = pragmaNumber(db, 'user_version')
     const tables = db.prepare(`SELECT count(*) AS n FROM sqlite_master WHERE type = 'table'`).get() as {
@@ -167,7 +169,12 @@ export function openHistoryIndex(indexPath: string): HistoryIndex {
       title TEXT NOT NULL,
       created_at TEXT NOT NULL,
       parent_id TEXT,
-      principal TEXT
+      principal TEXT,
+      indexed_seq INTEGER NOT NULL DEFAULT 0,
+      indexed_id TEXT,
+      first_ts TEXT,
+      generated_title TEXT,
+      prompt TEXT
     )`)
     db.exec('CREATE INDEX IF NOT EXISTS sessions_workspace ON sessions(workspace)')
     db.exec('CREATE INDEX IF NOT EXISTS sessions_parent ON sessions(parent_id, session_id)')
@@ -237,35 +244,18 @@ export class HistoryIndex {
     return row?.principal ?? ''
   }
 
-  rebuild(corpus: HistoryCorpus): { generation: number; rebuilt: boolean } {
+  /**
+   * Bring the index up to the ledger and side tables in `dataDir`, reading only what was appended
+   * since the last sync. Nothing is read while no source file has changed.
+   */
+  sync(dataDir: string): { generation: number; synced: boolean } {
     this.live()
-    if (this.stamp() === corpus.stamp && this.generation() > 0)
-      return { generation: this.generation(), rebuilt: false }
-    const generation = this.generation() + 1
-    this.db.exec('BEGIN IMMEDIATE')
-    try {
-      this.db.exec(`INSERT INTO docs_fts(docs_fts) VALUES('delete-all')`)
-      this.db.exec('DELETE FROM docs')
-      this.db.exec('DELETE FROM sessions')
-      const insertSession = this.db.prepare(
-        `INSERT INTO sessions (session_id, workspace, title, created_at, parent_id, principal) VALUES (?, ?, ?, ?, ?, ?)`,
-      )
-      const insertEvent = this.db.prepare(
-        `INSERT INTO docs (session_id, seq, ts, type, text, body, sources, truncated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      for (const session of corpus.sessions) this.insertSession(insertSession, insertEvent, session)
-      for (const event of corpus.events) this.insertEvent(insertEvent, event)
-      this.db.exec(`INSERT INTO docs_fts(docs_fts) VALUES('rebuild')`)
-      this.putMeta('source_stamp', corpus.stamp)
-      this.putMeta('generation', String(generation))
-      this.db.exec('COMMIT')
-    } catch (error) {
-      this.db.exec('ROLLBACK')
-      if (error instanceof HistoryIndexError) throw error
-      throw new HistoryIndexError('INDEX')
-    }
+    const stamp = sourceStamp(dataDir)
+    if (this.stamp() === stamp && this.generation() > 0)
+      return { generation: this.generation(), synced: false }
+    syncLedger(this.db, dataDir, stamp)
     tighten(this.path)
-    return { generation, rebuilt: true }
+    return { generation: this.generation(), synced: true }
   }
 
   canRead(sessionId: string, access: HistoryAccess): boolean {
@@ -616,58 +606,11 @@ export class HistoryIndex {
     return side === 'before' ? events.reverse() : events
   }
 
-  private insertSession(
-    insertSession: ReturnType<DatabaseSync['prepare']>,
-    insertEvent: ReturnType<DatabaseSync['prepare']>,
-    session: LedgerSession,
-  ): void {
-    insertSession.run(
-      session.sessionId,
-      session.workspace,
-      session.title,
-      session.createdAt,
-      session.parentId,
-      session.principal,
-    )
-    if (!session.title.trim()) return
-    this.insertEvent(insertEvent, {
-      sessionId: session.sessionId,
-      seq: TITLE_SEQ,
-      ts: session.createdAt,
-      type: 'x/history/title',
-      text: session.title,
-      body: session.title,
-      truncated: false,
-      sources: [],
-    })
-  }
-
-  private insertEvent(insertEvent: ReturnType<DatabaseSync['prepare']>, event: LedgerEvent): void {
-    insertEvent.run(
-      event.sessionId,
-      event.seq,
-      event.ts,
-      event.type,
-      event.text,
-      event.body,
-      JSON.stringify(event.sources),
-      event.truncated ? 1 : 0,
-    )
-  }
-
   private meta(key: string): string | undefined {
     const row = this.db.prepare(`SELECT value FROM meta WHERE key = ?`).get(key) as
       | { value: string }
       | undefined
     return row?.value
-  }
-
-  private putMeta(key: string, value: string): void {
-    this.db
-      .prepare(
-        `INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      )
-      .run(key, value)
   }
 
   private live(): void {

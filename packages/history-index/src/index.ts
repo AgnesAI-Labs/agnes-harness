@@ -9,7 +9,6 @@ export {
   HISTORY_UNMOUNTED,
   HistoryIndexError,
 } from './errors.js'
-export { type HistoryCorpus, readLedgerDirectory, sourceStamp } from './ledger.js'
 export {
   type EventTrace,
   type HistoryAccess,

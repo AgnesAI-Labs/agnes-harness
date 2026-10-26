@@ -5,8 +5,6 @@ import {
   type HistoryIndex,
   historyIndexPath,
   openHistoryIndex,
-  readLedgerDirectory,
-  sourceStamp,
 } from '@agnes/history-index'
 import { boundReferenceText } from './reference-text.js'
 
@@ -19,8 +17,7 @@ export function referenceHistory(
   const withIndex = <T>(read: (index: HistoryIndex, access: HistoryAccess) => T): T => {
     const index = openHistoryIndex(historyIndexPath(dataDir))
     try {
-      if (index.stamp() !== sourceStamp(dataDir) || index.generation() === 0)
-        index.rebuild(readLedgerDirectory(dataDir))
+      index.sync(dataDir)
       const principal = index.principalOf(self)
       if (!principal) throw new Error('Reference history permission unavailable.')
       return read(index, { kind: 'caller', self, workspace, principal })

@@ -149,7 +149,12 @@ async function createBoundFsCheckpoint(
         const id = deps.nextId()
         const createdAt = deps.now()
         await shadow.create({ id, stepId, createdAt, ...(options?.owner === undefined ? {} : { owner: options.owner }), files: [...dedup.values()] })
-        await shadow.gc({ keep, now: createdAt, maxAgeMs: 7 * DAY, protectedTurns: PROTECTED_TURNS, maxBytes: MAX_WORKSPACE_BYTES })
+        try {
+          await shadow.gc({ keep, now: createdAt, maxAgeMs: 7 * DAY, protectedTurns: PROTECTED_TURNS, maxBytes: MAX_WORKSPACE_BYTES })
+        } catch (cause) {
+          // The snapshot is written; failing to collect old ones must not refuse the write it guards.
+          ctx.log.warn('checkpoint gc failed', { code: String(codeOf(cause) ?? ''), message: cause instanceof Error ? cause.message : String(cause) })
+        }
         return { id }
       }),
     rewind: (id) =>
@@ -184,7 +189,7 @@ async function createBoundFsCheckpoint(
           throw cause
         }
       }),
-    list: () => serial(async () => (await shadow.list()).map(({ id, stepId, owner, entries }) => ({ id, stepId, ...(owner === undefined ? {} : { owner }), paths: entries.map((entry) => entry.rel) }))),
+    list: () => serial(async () => (await shadow.list()).map(({ id, stepId, owner, paths }) => ({ id, stepId, ...(owner === undefined ? {} : { owner }), paths }))),
   }
 }
 
