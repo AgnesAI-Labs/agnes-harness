@@ -370,7 +370,7 @@ export function transition(state, input, now = Date.now()) {
       now,
     )
   }
-  const item = find(state, kind, id)
+  const item = find(state, kind, id, input.projectId)
   const from = effectiveState(item, kind, now)
   if (!MACHINES[kind][from]?.includes(to)) fail(`非法状态流转：${from} 不可流转至 ${to}`)
   guardFlow(state, kind, item, to, input)

@@ -494,7 +494,14 @@ export const tools = [
       return a.mutate(ctx.store, (s) => {
         if (!input.id) return create(s, { ...input, kind: 'defect', by: a.by })
         closableByAgent(s, input.id, input.to)
-        return transition(s, { kind: 'defect', id: input.id, to: input.to, note: input.note, by: a.by })
+        return transition(s, {
+          kind: 'defect',
+          id: input.id,
+          projectId: input.projectId,
+          to: input.to,
+          note: input.note,
+          by: a.by,
+        })
       })
     },
   ),
