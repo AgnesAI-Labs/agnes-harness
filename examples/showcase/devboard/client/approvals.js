@@ -157,6 +157,8 @@ function Actions({ data, flow, board, role, setRole }) {
     if (ok) {
       setComment('')
       setTo('')
+      setBack('')
+      setSigner('')
     }
   }
   if (flow.state !== 'RUNNING')
