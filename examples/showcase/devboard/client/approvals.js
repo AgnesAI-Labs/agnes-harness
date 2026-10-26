@@ -164,9 +164,14 @@ function Actions({ data, flow, board, role, setRole }) {
       { className: 'devboard-actions', 'aria-label': '审批处理' },
       h('p', null, `该流程${data.labels.approvalState[flow.state]}，不能再处理。`),
       h(
-        'div',
-        { className: 'devboard-buttons' },
-        h(Button, { disabled: board.busy, onClick: () => act('APPROVE') }, '再次同意（演示：应被拒绝）'),
+        'details',
+        { className: 'devboard-evidence' },
+        h('summary', null, '越权与重复操作校验'),
+        h(
+          'div',
+          { className: 'devboard-buttons' },
+          h(Button, { disabled: board.busy, onClick: () => act('APPROVE') }, '再次同意'),
+        ),
       ),
     )
   const backTargets = flow.nodes.slice(0, flow.current).map((n) => ({ value: n.id, label: n.name }))
@@ -201,15 +206,22 @@ function Actions({ data, flow, board, role, setRole }) {
             ),
             h(Button, { key: 'no', disabled: board.busy, onClick: () => act('REJECT') }, '驳回'),
           ]
-        : h(
-            Button,
-            { disabled: board.busy, onClick: () => act('APPROVE') },
-            `以「${role}」尝试同意（演示：应被拒绝）`,
-          ),
+        : null,
       h(Button, { disabled: board.busy, onClick: () => act('COMMENT') }, '评论'),
       role === flow.initiator.role &&
         h(Button, { disabled: board.busy, onClick: () => act('WITHDRAW') }, '撤回'),
     ),
+    !mine &&
+      h(
+        'details',
+        { className: 'devboard-evidence' },
+        h('summary', null, '越权与重复操作校验'),
+        h(
+          'div',
+          { className: 'devboard-buttons' },
+          h(Button, { disabled: board.busy, onClick: () => act('APPROVE') }, `以「${role}」同意`),
+        ),
+      ),
     mine &&
       h(
         'div',

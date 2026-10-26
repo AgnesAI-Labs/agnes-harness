@@ -580,7 +580,7 @@ export function TransitionBar({
         onChange: setTarget,
         options: [
           { value: '', label: '指定目标状态…' },
-          ...others.map((s) => ({ value: s, label: `${data.labels.state[s]}（${s}）` })),
+          ...others.map((s) => ({ value: s, label: data.labels.state[s] ?? s })),
         ],
         style: { minWidth: 200 },
       }),

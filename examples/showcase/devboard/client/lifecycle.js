@@ -427,12 +427,13 @@ export function GatePanel({ data, gate, board, role, setRole }) {
             '继续推进',
           ),
           h(
-            'div',
-            { className: 'devboard-buttons' },
+            'details',
+            { className: 'devboard-evidence' },
+            h('summary', null, '越权与重复操作校验'),
             h(
-              Button,
-              { disabled: board.busy, onClick: () => decide('APPROVED') },
-              '再次批准（演示：应被拒绝）',
+              'div',
+              { className: 'devboard-buttons' },
+              h(Button, { disabled: board.busy, onClick: () => decide('APPROVED') }, '再次批准'),
             ),
           ),
         ),
