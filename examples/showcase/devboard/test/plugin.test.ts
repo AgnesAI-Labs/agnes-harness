@@ -568,6 +568,22 @@ describe('DevBoard plugin contract', () => {
     expect(pkg.scripts.build).toContain('handoff.mjs')
   })
 
+  it('ships and checks every module the server code imports', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    const modules = pkg.files.filter((f: string) => f.endsWith('.mjs'))
+    const imported = new Set(
+      modules.flatMap((f: string) =>
+        [
+          ...readFileSync(new URL(`../${f}`, import.meta.url), 'utf8').matchAll(/from '\.\/([\w-]+\.mjs)'/g),
+        ].map((m) => m[1]),
+      ),
+    )
+    for (const file of imported) {
+      expect(pkg.files, file).toContain(file)
+      expect(pkg.scripts.build, file).toContain(`node --check ${file}`)
+    }
+  })
+
   it.each(Object.entries(ENTRIES))(
     'opens the %s button with a declared action and a hand-off type',
     (_name, entry) => {

@@ -16,6 +16,7 @@
     "seed-data.mjs",
     "fastforward.mjs",
     "handoff.mjs",
+    "blockers.mjs",
     "seed-docs",
     "skills",
     "client",
@@ -25,7 +26,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "node --check index.mjs && node --check domain.mjs && node --check approvals.mjs && node --check approval-templates.mjs && node --check profiles.mjs && node --check seed-data.mjs && node --check fastforward.mjs && node --check handoff.mjs"
+    "build": "node --check index.mjs && node --check domain.mjs && node --check approvals.mjs && node --check approval-templates.mjs && node --check profiles.mjs && node --check seed-data.mjs && node --check fastforward.mjs && node --check handoff.mjs && node --check blockers.mjs"
   },
   "agnes": {
     "provides": [
