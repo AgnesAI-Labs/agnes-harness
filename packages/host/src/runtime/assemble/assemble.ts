@@ -213,7 +213,14 @@ async function mountExtensions(ctx: AssemblyContext, f: Foundation, t: Tree, c: 
 }
 type Extensions = Awaited<ReturnType<typeof mountExtensions>>
 
-function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Extensions): Assembled {
+function publish(
+  ctx: AssemblyContext,
+  f: Foundation,
+  t: Tree,
+  c: Core,
+  e: Extensions,
+  timing: Readonly<{ reason: string; durationMs: number; stages: Readonly<Record<string, number>> }>,
+): Assembled {
   const { deps } = ctx
   const { adapters } = f.proc
   const { pluginTree, publisher } = t.runtimeTarget
@@ -225,7 +232,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
       [managed.statusEntries(), rowExtensions.statusEntries(), builtinRows.statusEntries()],
       rowExtensions.replacedBy,
     )
-  ctx.say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length })
+  ctx.say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length, ...timing })
   const { servicesInvocation, sessionConfiguration, profileServices } = createHostServices(ctx, {
     proc: f.proc,
     kernel: c.kernelStage.kernel,
@@ -323,12 +330,30 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
 
 export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Promise<Assembled> {
   const ctx = createAssemblyContext(profile, deps)
+  const cause = deps.assemblyCause ?? { reason: 'unspecified' }
+  ctx.say('host.assembling', { ...cause, hash: profile.hash })
+  const started = performance.now()
+  let mark = started
+  const stage = () => {
+    const now = performance.now(),
+      ms = Math.round(now - mark)
+    mark = now
+    return ms
+  }
   try {
     const foundation = await openFoundation(ctx)
+    const foundationMs = stage()
     const tree = await mountTree(ctx, foundation)
+    const treeMs = stage()
     const core = await startCore(ctx, foundation, tree)
+    const coreMs = stage()
     const extensions = await mountExtensions(ctx, foundation, tree, core)
-    return publish(ctx, foundation, tree, core, extensions)
+    const extensionsMs = stage()
+    return publish(ctx, foundation, tree, core, extensions, {
+      reason: cause.reason,
+      durationMs: Math.round(performance.now() - started),
+      stages: { foundationMs, treeMs, coreMs, extensionsMs },
+    })
   } catch (e) {
     return failAssembly(ctx, e)
   }

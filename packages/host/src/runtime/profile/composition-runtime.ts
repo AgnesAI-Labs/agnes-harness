@@ -181,7 +181,11 @@ export async function createCompositionHost(
       resources: target.resource.resources,
     })
   const containerKey = (binding: CompositionBinding) => `${binding.tree.hash}:${binding.profile.hash}`
-  const open = async (binding: CompositionBinding): Promise<Container> => {
+  const open = async (
+    binding: CompositionBinding,
+    // Agent resolution and child sessions pass `open` along and always open for a session.
+    reason: 'boot' | 'session' | 'migration' = 'session',
+  ): Promise<Container> => {
     const identity = containerKey(binding)
     const found = containers.get(identity)
     if (found) {
@@ -249,6 +253,11 @@ export async function createCompositionHost(
         binding.legacy ? deployment : profileForComposition(deployment, binding.tree),
         {
           ...options,
+          assemblyCause: {
+            reason,
+            composition: binding.tree.hash,
+            ...(binding.sessionKey ? { session: binding.sessionKey } : {}),
+          },
           compositionPin: binding.tree,
           ...(pinned && binding.sessionKey ? { retainedModelBootstrap: true } : {}),
           ...(binding.sessionKey ? { profileAuthorityPublication: 'retained' as const } : {}),
@@ -369,11 +378,14 @@ export async function createCompositionHost(
       packageCatalog: bootProfile.packages,
     },
   )
-  const initial = await open({
-    sessionKey: '',
-    tree: initialTree,
-    profile: profileForComposition(bootProfile, initialTree),
-  }).catch((error) => {
+  const initial = await open(
+    {
+      sessionKey: '',
+      tree: initialTree,
+      profile: profileForComposition(bootProfile, initialTree),
+    },
+    'boot',
+  ).catch((error) => {
     writer.close()
     throw error
   })
@@ -582,7 +594,7 @@ export async function createCompositionHost(
             )
               throw new HostError('E_PRESET_UNSUPPORTED', 'session bundle selection is immutable')
             try {
-              const container = await open(binding)
+              const container = await open(binding, 'session')
               if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
               const loop = generations.session(key)?.loop ?? binding.tree.selection.loop
               if (input.loop && loop && (input.loop.id !== loop.id || input.loop.version !== loop.version))
@@ -637,7 +649,7 @@ export async function createCompositionHost(
           if (!initial.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
           return initial.host.migrateSessionGeneration(key, context)
         }
-        const container = await open(binding)
+        const container = await open(binding, 'migration')
         if (container.draining) throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: session bundle is disabled')
         if (!container.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
         const result = await container.host.migrateSessionGeneration(key, context)
