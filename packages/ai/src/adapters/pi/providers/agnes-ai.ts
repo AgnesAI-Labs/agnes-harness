@@ -7,6 +7,21 @@ import type { Api, Model, Provider as PiProvider } from '@earendil-works/pi-ai'
 export const AGNES_AI_BASE_URL = 'https://api.agnes-ai.cn/v1'
 
 /**
+ * The Agnes gateway sends a tool call only once it is complete, so a stream can stay silent for as
+ * long as the model takes to write one. Matched by provider id or by gateway host, so an account with
+ * its own Base URL path still counts.
+ */
+export function buffersToolCalls(baseUrl: string, providerId: string | undefined): boolean {
+  if (providerId === 'agnes-ai') return true
+  try {
+    const host = new URL(baseUrl).hostname
+    return host === 'agnes-ai.cn' || host.endsWith('.agnes-ai.cn')
+  } catch {
+    return false
+  }
+}
+
+/**
  * Chat models only: the image and video generation ids the gateway also lists stay out of the
  * catalogue. Ids are what `GET /v1/models` returns; it publishes no modalities, so `true` marks a
  * model that correctly described a test image on the live gateway (2026-09-22). The rest stay

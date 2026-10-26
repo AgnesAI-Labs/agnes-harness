@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { classifyPiError } from '../src/adapters/pi/errors.js'
 import { PiAdapter } from '../src/adapters/pi/index.js'
 import { networkEvent, networkFailure, watchResponse } from '../src/adapters/pi/network.js'
-import { AGNES_AI_BASE_URL } from '../src/adapters/pi/providers/agnes-ai.js'
+import { AGNES_AI_BASE_URL, buffersToolCalls } from '../src/adapters/pi/providers/agnes-ai.js'
 import { AMBIENT_CREDENTIAL_APIS } from '../src/adapters/pi/wire.js'
 import type { WireEvent } from '../src/index.js'
 import { memoryRetryLedger } from '../src/retry.js'
@@ -222,40 +222,69 @@ describe('timeouts and cancellation', () => {
   // Silence before the first content belongs to the first-token deadline. The idle timer measures
   // gaps inside an answer, so a short one must not cut a route off before it has said anything.
   it('does not apply the idle timer before the first content arrives', async () => {
-    const lateAnswer: StreamImpl = () =>
-      (async function* () {
-        await new Promise((resolve) => setTimeout(resolve, 120))
-        yield { type: 'text_delta', contentIndex: 0, delta: 'a', partial: msg('') } as never
-        yield { type: 'done', reason: 'stop', message: msg('', 'stop') } as never
-      })()
-    const a = adapter({
-      manualRoutes: [{ ...route, networkTimeouts: { streamIdleMs: 30 } }],
-      streamImpl: lateAnswer,
-    })
-    a.bindCredential('gw', 'k')
-    const out = await drain(a, { timeoutMs: { firstToken: 1000, total: 4000 } })
-    expect(out.map((e) => e.type)).toEqual(['text_delta', 'usage', 'done'])
+    vi.useFakeTimers()
+    try {
+      const lateAnswer: StreamImpl = () =>
+        (async function* () {
+          await new Promise((resolve) => setTimeout(resolve, 120))
+          yield { type: 'text_delta', contentIndex: 0, delta: 'a', partial: msg('') } as never
+          yield { type: 'done', reason: 'stop', message: msg('', 'stop') } as never
+        })()
+      const a = adapter({
+        manualRoutes: [{ ...route, networkTimeouts: { streamIdleMs: 30 } }],
+        streamImpl: lateAnswer,
+      })
+      a.bindCredential('gw', 'k')
+      const pending = drain(a, { timeoutMs: { firstToken: 1000, total: 4000 } })
+      await vi.advanceTimersByTimeAsync(121)
+      expect((await pending).map((e) => e.type)).toEqual(['text_delta', 'usage', 'done'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
-  // The Agnes gateway sends a tool call only when it is complete, so its first content can come
-  // long after the usual first-token deadline. The total deadline bounds it instead.
-  it('waits for the Agnes gateway up to the total deadline, not the first-token deadline', async () => {
-    const buffered: StreamImpl = () =>
-      (async function* () {
-        await new Promise((resolve) => setTimeout(resolve, 120))
-        yield { type: 'text_delta', contentIndex: 0, delta: 'a', partial: msg('') } as never
-        yield { type: 'done', reason: 'stop', message: msg('', 'stop') } as never
-      })()
-    const agnes = { ...route, baseUrl: AGNES_AI_BASE_URL }
-    const a = adapter({ manualRoutes: [agnes], streamImpl: buffered })
-    a.bindCredential('gw', 'k')
-    const out = await drain(a, { timeoutMs: { firstToken: 20, total: 4000 } })
-    expect(out.map((e) => e.type)).toEqual(['text_delta', 'usage', 'done'])
-    const other = adapter({ streamImpl: buffered })
-    expect((await drain(other, { timeoutMs: { firstToken: 20, total: 4000 } })).at(-1)).toMatchObject({
-      code: 'TIMEOUT',
-      message: 'first token timeout',
-    })
+  // The Agnes gateway sends a tool call only when it is complete: silence while the model writes one
+  // can come before the first content or after some text. The total deadline bounds both there.
+  it.each([
+    ['before the first content', false],
+    ['after text, while a tool call is written', true],
+  ] as const)('waits for the Agnes gateway up to the total deadline %s', async (_label, textFirst) => {
+    vi.useFakeTimers()
+    try {
+      const buffered: StreamImpl = () =>
+        (async function* () {
+          if (textFirst) yield { type: 'text_delta', contentIndex: 0, delta: 'a', partial: msg('') } as never
+          await new Promise((resolve) => setTimeout(resolve, 200))
+          yield { type: 'text_delta', contentIndex: 0, delta: 'b', partial: msg('') } as never
+          yield { type: 'done', reason: 'stop', message: msg('', 'stop') } as never
+        })()
+      const timeouts = { firstToken: 20, total: 4000 }
+      const agnes = { ...route, baseUrl: AGNES_AI_BASE_URL, networkTimeouts: { streamIdleMs: 30 } }
+      const a = adapter({ manualRoutes: [agnes], streamImpl: buffered })
+      a.bindCredential('gw', 'k')
+      const pending = drain(a, { timeoutMs: timeouts })
+      await vi.advanceTimersByTimeAsync(201)
+      expect((await pending).at(-1)?.type).toBe('done')
+      const other = adapter({
+        manualRoutes: [{ ...agnes, baseUrl: 'https://gw.invalid' }],
+        streamImpl: buffered,
+      })
+      other.bindCredential('gw', 'k')
+      const cut = drain(other, { timeoutMs: timeouts })
+      await vi.advanceTimersByTimeAsync(201)
+      expect((await cut).at(-1)).toMatchObject({
+        code: 'TIMEOUT',
+        message: textFirst ? 'stream idle timeout' : 'first token timeout',
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('recognises the Agnes gateway by provider id or host, not only the exact catalogue URL', () => {
+    expect(buffersToolCalls('https://proxy.example/v1', 'agnes-ai')).toBe(true)
+    expect(buffersToolCalls('https://api.agnes-ai.cn/v1/', undefined)).toBe(true)
+    expect(buffersToolCalls('https://gw.invalid', undefined)).toBe(false)
   })
 
   // Once a stream has spoken the first-token deadline is spent, and only the total one is left. A

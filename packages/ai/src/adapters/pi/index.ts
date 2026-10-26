@@ -27,7 +27,7 @@ import { providerPayloadImageError } from './input-limits.js'
 import { networkEvent, networkFailure, watchResponse } from './network.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
-import { AGNES_AI_BASE_URL } from './providers/agnes-ai.js'
+import { buffersToolCalls } from './providers/agnes-ai.js'
 import { deepSeekDefaultOutput } from './request-output.js'
 import { toContext } from './to-context.js'
 import { responseMeta, translateEvent, withResponse } from './translate.js'
@@ -520,19 +520,28 @@ export class PiAdapter extends WireAdapter {
     // content on, catches a stream that stalls midway. Silence before the first content belongs to
     // the first-token deadline alone. A route that hangs with neither is a turn that never finishes,
     // and a session that can never be closed.
-    const network = createDeploymentFetch(networkTimeouts)
+    //
+    // A gateway that buffers tool calls is silent while the model writes one, before the first
+    // content or between two parts of an answer. There only the total deadline can tell a long tool
+    // call from a hung route, so it bounds both waits.
+    const buffered = buffersToolCalls(decl.baseUrl, this.providerId)
+    const totalMs = Math.min(opts.timeoutMs.total, networkTimeouts?.requestMs ?? 300_000)
+    const firstTokenMs = buffered ? undefined : opts.timeoutMs.firstToken
+    const idleMs = buffered ? totalMs : (networkTimeouts?.streamIdleMs ?? 60_000)
+    const network = createDeploymentFetch({
+      ...networkTimeouts,
+      streamIdleMs: idleMs,
+      firstByteMs: Math.min(firstTokenMs ?? totalMs, totalMs),
+    })
     const inner = new AbortController()
     const onAbort = () => inner.abort()
     if (opts.signal.aborted) inner.abort()
     else opts.signal.addEventListener('abort', onAbort, { once: true })
-    const totalMs = Math.min(opts.timeoutMs.total, networkTimeouts?.requestMs ?? 300_000)
     const deadline = Date.now() + totalMs
     const total = setTimeout(() => inner.abort(), totalMs)
-    // The Agnes gateway sends a tool call only once it is complete, so writing a large file shows
-    // nothing until the model is done. Its first content is bounded by the total deadline instead.
-    const firstTokenMs =
-      decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL ? totalMs : opts.timeoutMs.firstToken
-    let first: ReturnType<typeof setTimeout> | undefined = setTimeout(() => inner.abort(), firstTokenMs)
+    const armFirst = () =>
+      firstTokenMs === undefined ? undefined : setTimeout(() => inner.abort(), firstTokenMs)
+    let first: ReturnType<typeof setTimeout> | undefined = armFirst()
     let idleExpired = false
     let idle: ReturnType<typeof setTimeout> | undefined
     const resetIdle = () => {
@@ -540,7 +549,7 @@ export class PiAdapter extends WireAdapter {
       idle = setTimeout(() => {
         idleExpired = true
         inner.abort()
-      }, networkTimeouts?.streamIdleMs ?? 60_000)
+      }, idleMs)
     }
     let firstSeen = false
     // One listener for the whole run. Racing a freshly built promise per event would register a
@@ -574,7 +583,7 @@ export class PiAdapter extends WireAdapter {
           return
         }
         preservePending = false
-        first = setTimeout(() => inner.abort(), firstTokenMs)
+        first = armFirst()
       }
       let authRecoveryAttempted = false
       for (;;) {
@@ -663,10 +672,9 @@ export class PiAdapter extends WireAdapter {
           ),
         )
         if (this.providerId) requestModel.provider = this.providerId
-        const defaultOutput =
-          decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL
-            ? record.maxTokens
-            : deepSeekDefaultOutput(decl.baseUrl, record.maxTokens)
+        const defaultOutput = buffered
+          ? record.maxTokens
+          : deepSeekDefaultOutput(decl.baseUrl, record.maxTokens)
         const it = network.run(() =>
           this.streamImpl(requestModel, context, {
             ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
@@ -695,7 +703,7 @@ export class PiAdapter extends WireAdapter {
             ...(observable.has(decl.api) ? { fetch: fetchBody(wire, observed) } : {}),
             timeoutMs: networkTimeouts?.requestMs ?? 300_000,
             connectTimeoutMs: networkTimeouts?.connectMs ?? 10_000,
-            streamIdleTimeoutMs: networkTimeouts?.streamIdleMs ?? 60_000,
+            streamIdleTimeoutMs: idleMs,
           })[Symbol.asyncIterator](),
         )
         try {
@@ -845,7 +853,7 @@ export class PiAdapter extends WireAdapter {
               ? 'aborted'
               : idleExpired
                 ? 'stream idle timeout'
-                : firstSeen
+                : firstSeen || firstTokenMs === undefined
                   ? 'total timeout'
                   : 'first token timeout',
             retryable: !aborted,
@@ -894,9 +902,8 @@ export class PiAdapter extends WireAdapter {
           // caller's perspective. Give the replacement request its own first-token deadline while
           // the original total deadline continues to bound the complete operation.
           firstSeen = false
-          clearTimeout(idle)
           if (first) clearTimeout(first)
-          first = setTimeout(() => inner.abort(), firstTokenMs)
+          first = armFirst()
         }
       }
     } finally {
