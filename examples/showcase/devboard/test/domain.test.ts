@@ -410,6 +410,19 @@ describe('approver roles and co-signing', () => {
     expect(roleOf('客户代表 方卫东')).toBe('客户代表')
   })
 
+  it('stores a named stage author as its role, so that role still cannot approve, and refuses an unknown one', () => {
+    const state = blank()
+    const p = newProject(state, 'NEW_BUILD')
+    pass(state, p.id, 'INITIATION')
+    const id = `${p.id}/REQUIREMENTS`
+    const go = (author: string) =>
+      transition(state, { kind: 'stage', id, to: 'IN_PROGRESS', by: '研发协调员', author }, NOW)
+    expect(() => go('张三')).toThrow('编写角色无效')
+    expect(go('项目经理 李四').author).toBe('项目经理')
+    const { gate } = submitGate(state, { stageId: id, by: '研发协调员' }, NOW)
+    expect(() => sign(state, gate.id, '项目经理 李四')).toThrow('是该阶段的编写角色')
+  })
+
   it('needs every role to sign once and every finding closed before the last signature approves', () => {
     const { state, stage, gate } = dl1()
     const afterFirst = sign(state, gate.id, '客户代表').gate
@@ -446,6 +459,12 @@ describe('approver roles and co-signing', () => {
     expect(gate.findings[0].text).toContain('CUS→SWR 覆盖率')
     expect(gate.findings[1]).toMatchObject({ text: '补充偏离说明', closed: false })
     expect(() => sign(state, `GATE-${p.id}-CONTRACT-1`, '分技术中心主任')).toThrow('不在评审中')
+    // the submitter closes its own findings, never a system check
+    const close = (id: string) =>
+      submitGate(state, { stageId: gate.stageId, by: '研发协调员', closeFindings: [{ id, note: 'ok' }] }, NOW)
+    expect(() => close('F-01')).toThrow('系统检查意见')
+    expect(gate.findings[0].closed).toBe(false)
+    expect(close('F-02').gate.findings[1].closed).toBe(true)
   })
 
   it('refuses to start a stage before the previous one passed and PASSED by transition', () => {
@@ -490,14 +509,28 @@ describe('trials and first-article inspection', () => {
     expect(() => upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-1' }, NOW)).toThrow(
       '缺少试验结论',
     )
+    // the type made the id, so it stays; a note without a move is kept
+    expect(() => upsertTrial(state, { id: tt.id, type: 'FAT' }, NOW)).toThrow('不可更改')
+    upsertTrial(state, { id: tt.id, type: 'TYPE_TEST', note: '样机到位' }, NOW)
+    expect(tt.history.at(-1)).toMatchObject({ from: 'IN_PROGRESS', to: 'IN_PROGRESS', note: '样机到位' })
     upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-1', result: 'PASS' }, NOW)
     expect(tt).toMatchObject({ state: 'REPORTED', reportNo: 'R-1', result: 'PASS' })
     expect(tt.at).toBeTruthy()
     expect(() => upsertTrial(state, { id: tt.id, to: 'APPROVED' }, NOW)).toThrow('需走 TRIAL_REPORT 审批')
     release(state, 'TRIAL_REPORT', tt.id)
     expect(tt.state).toBe('APPROVED')
+    // an approved report is final: edits are refused and the record stays as signed
+    const signed = structuredClone(tt)
+    expect(() => upsertTrial(state, { id: tt.id, result: 'FAIL', reportNo: 'X-1' }, NOW)).toThrow(
+      '已进入 APPROVED',
+    )
+    expect(tt).toEqual(signed)
     expect(() => upsertTrial(state, plan(p, { verifies: ['CUS-404'] }), NOW)).toThrow('未找到')
     expect(() => upsertTrial(state, plan(p, { type: 'X' }), NOW)).toThrow('type 取值无效')
+    // an id with another project's projectId is not that other project's record
+    expect(() => upsertTrial(state, { id: tt.id, projectId: 'PRJ-2023-011', title: '改' }, NOW)).toThrow(
+      `未找到 PRJ-2023-011 的 ${tt.id}`,
+    )
   })
 
   it('refuses to approve a FAIL trial unless its change is approved, and a retest clears the report', () => {
@@ -512,6 +545,31 @@ describe('trials and first-article inspection', () => {
     expect(() => submitApproval(state, { template: 'TRIAL_REPORT', subjectId: tt.id, by: 'x' }, NOW)).toThrow(
       '需关联已批准的变更',
     )
+    // a change the CCB rejected and then closed was never approved
+    const rejected = create(
+      state,
+      { kind: 'change', projectId: p.id, title: '驳回', reason: tt.id, impact: { reqs: ['CUS-001'] } },
+      NOW,
+    )
+    for (const to of ['REJECTED', 'CLOSED'])
+      transition(state, { kind: 'change', id: rejected.id, to, by: 'CCB' }, NOW)
+    upsertTrial(state, { id: tt.id, changeId: rejected.id }, NOW)
+    expect(() => submitApproval(state, { template: 'TRIAL_REPORT', subjectId: tt.id, by: 'x' }, NOW)).toThrow(
+      '需关联已批准的变更',
+    )
+    // a change drafted from the trial then replaces the rejected one
+    const redraft = create(
+      state,
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: '重拟',
+        reason: 'r',
+        source: { type: 'TYPE_TEST', ref: tt.id },
+      },
+      NOW,
+    )
+    expect(tt.changeId).toBe(redraft.id)
     const cr = create(
       state,
       { kind: 'change', projectId: p.id, title: '改弹簧', reason: tt.id, impact: { reqs: ['CUS-001'] } },
@@ -539,6 +597,21 @@ describe('trials and first-article inspection', () => {
       NOW,
     )
     expect(drafted.changeId).toBe(draft.id)
+    // an approved trial keeps its record: a change drafted from it later does not link itself
+    const passed = upsertTrial(state, plan(p, { title: '密封' }), NOW)
+    upsertTrial(state, { id: passed.id, to: 'IN_PROGRESS' }, NOW)
+    upsertTrial(state, { id: passed.id, to: 'REPORTED', reportNo: 'R-4', result: 'PASS' }, NOW)
+    release(state, 'TRIAL_REPORT', passed.id)
+    const late = {
+      kind: 'change',
+      projectId: p.id,
+      title: 'l',
+      reason: 'r',
+      source: { type: 'TYPE_TEST', ref: passed.id },
+    }
+    create(state, late, NOW)
+    expect(passed.state).toBe('APPROVED')
+    expect(passed.changeId).toBeUndefined()
 
     const retest = upsertTrial(state, plan(p), NOW)
     upsertTrial(state, { id: retest.id, to: 'IN_PROGRESS' }, NOW)
@@ -546,6 +619,13 @@ describe('trials and first-article inspection', () => {
     upsertTrial(state, { id: retest.id, to: 'IN_PROGRESS' }, NOW)
     expect(retest).toMatchObject({ state: 'IN_PROGRESS', result: 'PENDING' })
     expect(retest.reportNo).toBeUndefined()
+    expect(retest.at).toBeUndefined()
+    upsertTrial(state, { id: retest.id, to: 'REPORTED', reportNo: 'R-5', result: 'PASS' }, NOW + DAY)
+    expect(retest.at).toBe(new Date(NOW + DAY).toISOString())
+    // a date and a report number given with the retest itself are kept, the history names the old report
+    upsertTrial(state, { id: retest.id, to: 'IN_PROGRESS', at: '2026-11-05', reportNo: 'R-6' }, NOW)
+    expect(retest).toMatchObject({ at: '2026-11-05', reportNo: 'R-6', result: 'PENDING' })
+    expect(retest.history.at(-2).note).toBe('上次报告 R-5（PASS）')
     expect(JSON.stringify(retest.history)).toContain('R-3')
   })
 
@@ -652,21 +732,30 @@ describe('faults and quality problems', () => {
     expect(() =>
       upsertProblem(state, { id: qp.id, rootCause: '缓冲头材料 B 版耐磨不足', to: 'ACTION' }, NOW),
     ).toThrow('D4')
-    upsertProblem(state, { id: qp.id, steps: { D4: { done: true } } }, NOW)
+    // a note without a move stays in the history, as one with a move does
+    upsertProblem(state, { id: qp.id, steps: { D4: { done: true } }, note: '围堵已完成' }, NOW)
+    expect(qp.history.at(-1)).toMatchObject({ from: 'ANALYZING', to: 'ANALYZING', note: '围堵已完成' })
+    // the history is capped, but the creation line stays
+    for (let i = 0; i < 40; i++) upsertProblem(state, { id: qp.id, note: `记录 ${i}` }, NOW)
+    expect(qp.history).toHaveLength(30)
+    expect(qp.history[0]).toMatchObject({ to: 'OPEN', note: '登记' })
     upsertProblem(state, { id: qp.id, to: 'ACTION' }, NOW)
     upsertProblem(state, { id: qp.id, to: 'VERIFYING' }, NOW)
     const close = () => submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW)
     // closing is the flow's move: a direct move is refused, and the flow starts only when the 8D is complete
     expect(() => upsertProblem(state, { id: qp.id, to: 'CLOSED' }, NOW)).toThrow('需走 PROBLEM_CLOSE 审批')
+    expect(() => upsertProblem(state, { id: qp.id, steps: { D9: { done: true } } }, NOW)).toThrow(
+      '未知 8D 步骤',
+    )
     expect(close).toThrow('D8')
     upsertProblem(state, { id: qp.id, steps: { D8: { done: true } } }, NOW)
     expect(close).toThrow('没有关联变更')
     upsertProblem(state, { id: qp.id, noChangeReason: '仅更换耗材，无设计变更' }, NOW)
     expect(release(state, 'PROBLEM_CLOSE', qp.id).state).toBe('APPROVED')
     expect(qp.state).toBe('CLOSED')
-    expect(() => upsertProblem(state, { id: qp.id, steps: { D9: { done: true } } }, NOW)).toThrow(
-      '未知 8D 步骤',
-    )
+    const closed = structuredClone(qp)
+    expect(() => upsertProblem(state, { id: qp.id, rootCause: 'changed' }, NOW)).toThrow('已进入 CLOSED')
+    expect(qp).toEqual(closed)
   })
 
   it('closes a problem only after its linked change is CLOSED', () => {
@@ -686,6 +775,11 @@ describe('faults and quality problems', () => {
     expect(() =>
       submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW),
     ).toThrow(`${cr.id} 尚未关闭`)
+    for (const to of ['REJECTED', 'CLOSED'])
+      transition(state, { kind: 'change', id: cr.id, to, by: 'CCB' }, NOW)
+    expect(() =>
+      submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW),
+    ).toThrow('已被 CCB 驳回')
     expect(() => upsertProblem(state, { id: qp.id, changeId: 'CR-404' }, NOW)).toThrow('未找到')
   })
 })
@@ -839,13 +933,21 @@ describe('change requests and the field-to-design loop', () => {
     upsertReqs(state, { projectId: p.id, items: [{ id: 'CUS-001', title: 'c', text: 'c' }] }, NOW)
     pass(state, p.id, 'INITIATION')
     pass(state, p.id, 'REQUIREMENTS')
+    start(state, `${p.id}/DESIGN`)
     const cr = approvedChange(state, p.id)
     expect(cr.reworked).toEqual([`${p.id}/REQUIREMENTS`])
     expect(byId(state.reqs, 'CUS-001', p.id).status).toBe('CHANGED')
     const stage = byId(state.stages, `${p.id}/REQUIREMENTS`)
     expect(stage.state).toBe('REWORK')
     start(state, stage.id)
-    expect(submitGate(state, { stageId: stage.id, by: 'x' }, NOW).gate.id).toBe(`GATE-${p.id}-DL1-2`)
+    const { gate } = submitGate(state, { stageId: stage.id, by: 'x' }, NOW)
+    expect(gate.id).toBe(`GATE-${p.id}-DL1-2`)
+    // The project stays at its furthest stage while an earlier one is reworked and passed again.
+    expect(byId(state.projects, p.id).stage).toBe('DESIGN')
+    const closeFindings = gate.findings.map((f: Item) => ({ id: f.id, note: '已处理' }))
+    for (const role of gate.approverRoles) sign(state, gate.id, role, { closeFindings })
+    expect(stage.state).toBe('PASSED')
+    expect(byId(state.projects, p.id).stage).toBe('DESIGN')
   })
 
   it('needs a verification before CLOSED; a rejected change may close without one', () => {
@@ -854,6 +956,10 @@ describe('change requests and the field-to-design loop', () => {
     transition(state, { kind: 'change', id: cr.id, to: 'IMPLEMENTED', by: 'x' }, NOW)
     expect(() => transition(state, { kind: 'change', id: cr.id, to: 'CLOSED', by: 'x' }, NOW)).toThrow(
       '缺少验证记录',
+    )
+    updateChange(state, { id: cr.id, verification: { result: 'FAIL' } })
+    expect(() => transition(state, { kind: 'change', id: cr.id, to: 'CLOSED', by: 'x' }, NOW)).toThrow(
+      '验证未通过',
     )
     expect(() =>
       updateChange(state, { id: cr.id, verification: { result: 'PASS', trialId: 'RT-404' } }),
@@ -878,6 +984,12 @@ describe('change requests and the field-to-design loop', () => {
     )
     expect(cr.verification).toMatchObject({ result: 'PASS', by: '验证工程师', trialId: rt.id })
     expect(transition(state, { kind: 'change', id: cr.id, to: 'CLOSED', by: 'x' }, NOW).state).toBe('CLOSED')
+    // a change closed before its ECN was released can still release it and get the as-designed baseline
+    const designed = () =>
+      state.configBaselines.filter((b: Item) => b.projectId === p.id && b.type === 'AS_DESIGNED')
+    const before = designed().length
+    expect(release(state, 'ECN_RELEASE', cr.id).state).toBe('APPROVED')
+    expect(designed()).toHaveLength(before + 1)
     const rejected = create(
       state,
       { kind: 'change', projectId: p.id, title: 'r', reason: 'r', impact: { reqs: ['CUS-001'] } },
@@ -899,6 +1011,8 @@ describe('change requests and the field-to-design loop', () => {
     expect(() => progress(480)).toThrow('整改进度只能递增')
     expect(() => progress(100)).toThrow('整改进度只能递增')
     expect(() => progress(1921)).toThrow('done 需为 0–1920')
+    // a total equal to the progress would complete it without the as-maintained baseline
+    expect(() => updateChange(state, { id: cr.id, retrofit: { total: 480 } })).toThrow('需大于已完成数')
     expect(state.configBaselines.filter((b: Item) => b.type === 'AS_MAINTAINED')).toHaveLength(1)
     expect(metrics(state, p, NOW).baselineGap).toBe(1)
     progress(1920)
@@ -909,6 +1023,7 @@ describe('change requests and the field-to-design loop', () => {
     ])
     expect(maintained[1].revs).toEqual({ 'NC-BUF-01': 'C', 'NC-MOT-02': 'A' })
     expect(metrics(state, p, NOW)).toMatchObject({ baselineGap: 0, retrofit: { done: 1920, total: 1920 } })
+    expect(() => updateChange(state, { id: cr.id, retrofit: { total: 2000 } })).toThrow('整改已完成')
     const early = create(
       state,
       { kind: 'change', projectId: p.id, title: 'e', reason: 'r', ...bufferChange },
@@ -929,12 +1044,57 @@ describe('change requests and the field-to-design loop', () => {
     expect(transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW).state).toBe(
       'ANALYZED',
     )
+    // the analysis can still be emptied while ANALYZED; CCB review checks it again
+    updateChange(state, { id: cr.id, impact: { items: [] } })
+    expect(() => transition(state, { kind: 'change', id: cr.id, to: 'CCB_REVIEW', by: 'x' }, NOW)).toThrow(
+      '缺少影响分析',
+    )
+    updateChange(state, { id: cr.id, impact: { items: [{ itemId: 'NC-MOT-02', fromRev: 'A', toRev: 'B' }] } })
+    // an impact edit replaces only the fields it names; title and reason edit like the analysis
+    updateChange(state, { id: cr.id, impact: { safety: true }, title: '换电机', reason: '温升' })
+    expect(cr).toMatchObject({
+      title: '换电机',
+      reason: '温升',
+      impact: { safety: true, items: [{ itemId: 'NC-MOT-02' }] },
+    })
     transition(state, { kind: 'change', id: cr.id, to: 'CCB_REVIEW', by: 'x' }, NOW)
     expect(() => updateChange(state, { id: cr.id, rootCause: '晚了' }, NOW)).toThrow('已进入 CCB_REVIEW')
+    expect(() => updateChange(state, { id: cr.id, title: '晚了' }, NOW)).toThrow('已进入 CCB_REVIEW')
+    // sending back the current title and reason is no edit
+    expect(updateChange(state, { id: cr.id, title: '换电机', reason: '温升' }, NOW).title).toBe('换电机')
+    // a verification comes after the approval, never with the creation
+    expect(() =>
+      create(
+        state,
+        { kind: 'change', projectId: p.id, title: 'v', reason: 'v', verification: { result: 'PASS' } },
+        NOW,
+      ),
+    ).toThrow('批准后才能登记验证')
   })
 })
 
 describe('traceability and deliverables', () => {
+  it('stops counting a test case for the SWR it was moved off', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    const items = [
+      { id: 'SWR-001', title: 's1', text: 's1' },
+      { id: 'SWR-002', title: 's2', text: 's2' },
+      { id: 'TC-001', title: 't', text: 't', parent: ['SWR-001'] },
+    ]
+    upsertReqs(state, { projectId: p.id, items }, NOW)
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'TC-001', parent: ['SWR-002'] }] }, NOW)
+    expect(byId(state.reqs, 'SWR-001', p.id).verifiedBy).toEqual([])
+    expect(coverage(state, p.id).swrTc.missing).toEqual(['SWR-001'])
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'TC-001', parent: [] }] }, NOW)
+    expect(coverage(state, p.id).swrTc).toMatchObject({ covered: 0, missing: ['SWR-001', 'SWR-002'] })
+    // a test run verifies SWRs and TCs, not an edit
+    for (const id of ['SWR-001', 'TC-001'])
+      expect(() => upsertReqs(state, { projectId: p.id, items: [{ id, status: 'VERIFIED' }] }, NOW)).toThrow(
+        '由测试运行判定',
+      )
+  })
+
   it('registers MER/EER as sub-system requirements with a discipline and discipline-specific fields', () => {
     const state = blank()
     const p = newProject(state, 'NEW_BUILD')
@@ -1028,6 +1188,19 @@ describe('traceability and deliverables', () => {
     expect(() => recordArtifact(state, { ...base, kind: 'ECN', suffix: 'a b' }, NOW)).toThrow(
       'suffix 格式无效',
     )
+    // a source file's id names one file: the same file updates it, another one needs its own suffix
+    const src = { ...base, stage: 'IMPLEMENTATION', kind: 'CODE' }
+    const code = recordArtifact(state, { ...src, path: 'src/a.js' }, NOW)
+    expect(recordArtifact(state, { ...src, path: 'src/a.js' }, NOW)).toBe(code)
+    expect(() => recordArtifact(state, { ...src, path: 'src/b.js' }, NOW)).toThrow('请传另一个 suffix')
+    expect(code).toMatchObject({ title: '源代码 a.js', source: { path: `${p.workspaceDir}/src/a.js` } })
+    // a named author is kept as its role, and one the approval flows cannot recognise is refused
+    expect(
+      recordArtifact(state, { ...base, kind: 'PLAN', authorRole: '项目经理 王海涛' }, NOW).authorRole,
+    ).toBe('项目经理')
+    expect(() => recordArtifact(state, { ...base, kind: 'PLAN', authorRole: 'tester' }, NOW)).toThrow(
+      '编写角色无效',
+    )
   })
 
   it.each([
@@ -1041,6 +1214,39 @@ describe('traceability and deliverables', () => {
   ])('refuses the out-of-project path %j', (path) => {
     const project = { id: 'PRJ-2026-009', live: true, workspaceDir: 'devboard-projects/PRJ-2026-009' }
     expect(() => projectPath(project, path)).toThrow('交付物路径越界')
+  })
+
+  it('keeps artifact and test-run ids unique when a new project repeats a seeded project number', () => {
+    const state = seed(NOW)
+    const p = create(state, { kind: 'project', name: '同号项目', minSeq: 19 }, NOW)
+    expect(p.id).toBe('PRJ-2026-019')
+    const srs = recordArtifact(
+      state,
+      { projectId: p.id, kind: 'SRS', stage: 'REQUIREMENTS', path: 'docs/SRS.md' },
+      NOW,
+    )
+    expect(srs.id).toBe('DOC-2026-019-SRS')
+    expect(byId(state.artifacts, 'DOC-019-SRS').projectId).toBe('PRJ-2025-019')
+    expect(state.artifacts.filter((a: Item) => a.id === srs.id)).toHaveLength(1)
+    // A deliverable recorded under the old DOC-<seq>- id is updated in place, not duplicated.
+    const sad = recordArtifact(
+      state,
+      { projectId: p.id, kind: 'SAD', stage: 'DESIGN', path: 'docs/SAD.md' },
+      NOW,
+    )
+    Object.assign(sad, { id: 'DOC-019-SAD' })
+    const again = recordArtifact(
+      state,
+      { projectId: p.id, kind: 'SAD', stage: 'DESIGN', path: 'docs/SAD.md' },
+      NOW,
+    )
+    expect(again).toBe(sad)
+    expect(state.artifacts.filter((a: Item) => a.projectId === p.id && a.kind === 'SAD')).toHaveLength(1)
+    const run = recordTestRun(state, { projectId: p.id, total: 1, passed: 1 }, NOW)
+    expect(run.id).toBe('TR-2026-019-01')
+    expect(recordTestRun(state, { projectId: 'PRJ-2025-019', total: 1, passed: 1 }, NOW).id).toMatch(
+      /^TR-019-/,
+    )
   })
 
   it('accepts project-relative paths and refuses order projects', () => {
@@ -1195,6 +1401,7 @@ describe('approval flows', () => {
       '软件设计师（架构）',
       '软件设计师（开发） 张衡',
       '软件设计师(架构)',
+      '研发协调员 · 软件设计师（架构）',
     ]) {
       const other = setup().state
       other.artifacts[0].authorRole = author
@@ -1229,7 +1436,7 @@ describe('approval flows', () => {
     for (const action of ['APPROVE', 'REJECT', 'RETURN', 'TRANSFER', 'ADD_SIGN', 'COMMENT', 'WITHDRAW'])
       expect(() =>
         act(state, flow.id, '技术负责人', action, { comment: 'x', to: 'x', role: '质量工程师' }),
-      ).toThrow('已批准，不能再')
+      ).toThrow(`${flow.id} 已批准，不能再`)
     expect(() => doc(state)).toThrow('已基线')
   })
 
@@ -1306,10 +1513,15 @@ describe('approval flows', () => {
     // returning from the first node goes to the initiator too, and clears an ALL node's signatures
     const cr = ccb(state, p)
     const co = ecr(state, cr.id)
-    act(state, co.id, '机械设计师', 'APPROVE')
+    actApproval(state, { id: co.id, by: '机械设计师 沈岳', action: 'APPROVE' }, NOW)
     act(state, co.id, '质量工程师', 'RETURN', { comment: '资料不全' })
     expect(co.nodes[0]).toMatchObject({ state: 'ACTIVE', signed: [] })
     expect(co.actions.at(-1)).toMatchObject({ to: 'INITIATOR' })
+    // the CCB record lists only the agreements that stood
+    approveFlow(state, co.id)
+    const members = byId(state.changes, cr.id).ccb.members
+    expect(members).toContain('机械设计师 测试员')
+    expect(members).not.toContain('机械设计师 沈岳')
   })
 
   it('transfers within the role, adds a signer node and keeps comment as trace only', () => {
@@ -1436,6 +1648,12 @@ describe('approval flows', () => {
     )
     upsertTrial(state, { id: tt.id, to: 'IN_PROGRESS' }, NOW)
     upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-9', result: 'PASS' }, NOW)
+    // a report whose result was edited back to PENDING is not approvable
+    upsertTrial(state, { id: tt.id, result: 'PENDING' }, NOW)
+    expect(() => submitApproval(state, { template: 'TRIAL_REPORT', subjectId: tt.id }, NOW)).toThrow(
+      '缺少试验结论',
+    )
+    upsertTrial(state, { id: tt.id, result: 'PASS' }, NOW)
     const report = submitApproval(
       state,
       { template: 'TRIAL_REPORT', subjectId: tt.id, by: '验证工程师 马骁' },
@@ -1443,6 +1661,9 @@ describe('approval flows', () => {
     )
     expect(report.initiator.role).toBe('验证工程师')
     expect(() => upsertTrial(state, { id: tt.id, to: 'IN_PROGRESS' }, NOW)).toThrow('有进行中的审批')
+    // the signed report cannot change while the flow runs
+    expect(() => upsertTrial(state, { id: tt.id, result: 'FAIL' }, NOW)).toThrow('有进行中的审批')
+    expect(tt.result).toBe('PASS')
     // rejected: the trial goes back to be edited and re-reported
     act(state, report.id, '质量工程师', 'REJECT', { comment: '数据不全' })
     expect(tt.state).toBe('IN_PROGRESS')
@@ -1456,17 +1677,27 @@ describe('approval flows', () => {
         projectId: p.id,
         title: 'x',
         rootCause: 'r',
-        noChangeReason: '耗材',
         steps: { D4: { done: true }, D8: { done: true } },
       },
       NOW,
     )
     for (const to of ['ANALYZING', 'ACTION', 'VERIFYING']) upsertProblem(state, { id: qp.id, to }, NOW)
+    const close = { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: '质量工程师 韩雪' }
+    expect(() => submitApproval(state, close, NOW)).toThrow('noChangeReason')
+    // the page saves the reason without a move, in VERIFYING where the only move is back to ACTION
+    transition(state, { kind: 'problem', id: qp.id, by: '质量工程师', noChangeReason: '耗材' }, NOW)
+    expect(qp).toMatchObject({ state: 'VERIFYING', noChangeReason: '耗材' })
+    for (const extra of [{}, { changeId: 'CR-1', noChangeReason: 'x' }])
+      expect(() => transition(state, { kind: 'problem', id: qp.id, by: 'x', ...extra }, NOW)).toThrow(
+        '只能保存 rootCause 或 noChangeReason',
+      )
     const flow = submitApproval(
       state,
       { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: '质量工程师 韩雪' },
       NOW,
     )
+    expect(() => upsertProblem(state, { id: qp.id, rootCause: 'changed' }, NOW)).toThrow('有进行中的审批')
+    expect(qp.rootCause).toBe('r')
     act(state, flow.id, '质量工程师', 'APPROVE')
     act(state, flow.id, '分技术中心主任', 'REJECT', { comment: '验证数据不足' })
     expect(qp.state).toBe('ACTION')
@@ -1493,6 +1724,64 @@ describe('approval flows', () => {
     expect(byId(state.artifacts, 'DOC-1-SAD')).toMatchObject({ status: 'BASELINED', version: 'V1.0' })
   })
 
+  it('closes the release finding when its flow is approved, and the auto TR4 then passes', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    for (const stage of ['INITIATION', 'REQUIREMENTS', 'DESIGN']) pass(state, p.id, stage)
+    const id = `${p.id}/IMPLEMENTATION`
+    start(state, id)
+    const code = recordArtifact(
+      state,
+      { projectId: p.id, kind: 'CODE', suffix: 'APP', stage: 'IMPLEMENTATION', path: 'src/app.js' },
+      NOW,
+    )
+    const first = submitApproval(
+      state,
+      { template: 'DOC_RELEASE', subjectId: code.id, by: '研发协调员' },
+      NOW,
+    )
+    const { gate } = submitGate(state, { stageId: id, by: '研发协调员' }, NOW)
+    expect(gate).toMatchObject({ code: 'TR4', auto: true, decision: 'PENDING' })
+    expect(gate.findings).toEqual([
+      expect.objectContaining({ by: '系统检查', flowId: first.id, closed: false }),
+    ])
+    // rejected and started again: the approved second flow still closes the finding
+    actApproval(
+      state,
+      { id: first.id, by: `${first.nodes[0].roles[0]} 测试员`, action: 'REJECT', comment: '重做' },
+      NOW,
+    )
+    expect(gate.findings[0].closed).toBe(false)
+    const flow = submitApproval(state, { template: 'DOC_RELEASE', subjectId: code.id, by: '研发协调员' }, NOW)
+    approveFlow(state, flow.id)
+    expect(gate.findings[0].closed).toBe(true)
+    expect(gate.decision).toBe('APPROVED')
+    expect(byId(state.stages, id).state).toBe('PASSED')
+  })
+
+  it('refuses new content for a deliverable while its release flow runs', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    const srs = { projectId: p.id, kind: 'SRS', stage: 'REQUIREMENTS', path: 'docs/SRS.md' }
+    const a = recordArtifact(state, srs, NOW)
+    const flow = submitApproval(state, { template: 'DOC_RELEASE', subjectId: a.id, by: '研发协调员' }, NOW)
+    expect(() => recordArtifact(state, { ...srs, version: 'V0.9' }, NOW)).toThrow('进行中的发布审批')
+    // sent back to the initiator, the deliverable takes its revision
+    actApproval(
+      state,
+      { id: flow.id, by: `${flow.nodes[0].roles[0]} 测试员`, action: 'RETURN', comment: '补图号' },
+      NOW,
+    )
+    // a comment after the return does not end the revision
+    actApproval(state, { id: flow.id, by: '项目经理 测试员', action: 'COMMENT', comment: '同意退回' }, NOW)
+    expect(recordArtifact(state, { ...srs, version: 'V0.9' }, NOW).version).toBe('V0.9')
+    approveFlow(state, flow.id)
+    expect(recordArtifact(state, { ...srs, version: 'V1.1' }, NOW)).toMatchObject({
+      version: 'V1.1',
+      status: 'DRAFT',
+    })
+  })
+
   it('lets an agent start flows only for the objects it drafted', () => {
     const { state, p } = setup()
     const agent = { by: '研发协调员', agent: true }
@@ -1503,10 +1792,55 @@ describe('approval flows', () => {
     expect(own.raisedBy).toBe('研发协调员')
     const flow = submitApproval(state, { template: 'ECR', subjectId: own.id, ...agent }, NOW)
     expect(flow.initiator).toEqual({ role: '系统设计师', by: '研发协调员' })
+    // the retrofit scope is part of what the running flow decides
+    expect(() => updateChange(state, { id: own.id, retrofit: { total: 5 } })).toThrow('有进行中的审批')
     const other = ccb(state, p, { by: '客户代表 方卫东' })
     expect(() => submitApproval(state, { template: 'ECR', subjectId: other.id, ...agent }, NOW)).toThrow(
       '不是智能体起草',
     )
+    // drafted under an acting role
+    const role = ccb(state, p, { by: actorOf('mechanical') })
+    expect(submitApproval(state, { template: 'ECR', subjectId: role.id, ...agent }, NOW).state).toBe(
+      'RUNNING',
+    )
+    // a change the presenter registered and the agent analysed and sent to CCB
+    const handed = create(
+      state,
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: '客户变更',
+        reason: '原因',
+        impact: { reqs: ['CUS-001'] },
+        by: '项目经理',
+      },
+      NOW,
+    )
+    for (const to of ['ANALYZED', 'CCB_REVIEW'])
+      transition(state, { kind: 'change', id: handed.id, to, by: actorOf() }, NOW)
+    expect(submitApproval(state, { template: 'ECR', subjectId: handed.id, ...agent }, NOW).state).toBe(
+      'RUNNING',
+    )
+    // moving a person's trial along does not make it the agent's to send for approval
+    const trial = upsertTrial(
+      state,
+      {
+        projectId: p.id,
+        type: 'ROUTINE',
+        title: '例行',
+        standard: 's',
+        sample: 'x',
+        lab: 'l',
+        plannedAt: '2026-11-01',
+        by: '验证工程师 宋雨',
+      },
+      NOW,
+    )
+    upsertTrial(state, { id: trial.id, to: 'IN_PROGRESS', by: actorOf() }, NOW)
+    upsertTrial(state, { id: trial.id, to: 'REPORTED', reportNo: 'R-1', result: 'PASS', by: actorOf() }, NOW)
+    expect(() =>
+      submitApproval(state, { template: 'TRIAL_REPORT', subjectId: trial.id, ...agent }, NOW),
+    ).toThrow('不是智能体起草')
   })
 })
 
@@ -1564,6 +1898,12 @@ describe('snapshot', () => {
 })
 
 describe('blockers', () => {
+  it('gives every blocker of the seed a unique id, findings of one gate included', () => {
+    const ids = snapshot(seed(NOW), NOW).blockers.map((b: Item) => b.id)
+    expect(ids.length).toBeGreaterThan(0)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+
   const at = (days: number) => new Date(NOW - days * DAY).toISOString()
   const kinds = (list: Item[]) => list.map((b) => b.kind)
   const clean = () => {
@@ -1619,6 +1959,9 @@ describe('blockers', () => {
     const list = blockers(state, NOW) as Item[]
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({ kind: 'GATE_PENDING', role: '客户代表', days: 3 })
+    expect(handoff(state, { type: 'gate', id: gate.id }).next[0]).toBe(
+      '该门尚未决议，等待 客户代表；不要替人批准',
+    )
     gate.superseded = true
     expect(blockers(state, NOW)).toEqual([])
   })
@@ -1635,6 +1978,30 @@ describe('blockers', () => {
     expect(list[1]).toMatchObject({ days: 5, ref: { type: 'stage', id: stage.id } })
     stage.state = 'PASSED'
     expect(kinds(blockers(state, NOW))).toEqual(['GATE_FINDING'])
+    // rejected, then submitted again as a new gate: the old gate's findings are history
+    state.gates[0].decision = 'REJECTED'
+    state.gates.push({ ...state.gates[0], id: 'GATE-AGAIN', decision: 'APPROVED', findings: [] })
+    expect(blockers(state, NOW)).toEqual([])
+    // the gate that replaced it has its code, not the stage's next gate
+    state.gates.push({
+      ...state.gates[0],
+      id: 'GATE-NEXT-CODE',
+      code: 'NEXT',
+      decision: 'APPROVED',
+      findings: [],
+    })
+    expect(handoff(state, { type: 'gate', id: state.gates[0].id }).next[0]).toContain('GATE-AGAIN')
+    const live = create(state, { kind: 'project', name: '逾期项目' }, NOW)
+    const first = byId(state.stages, `${live.id}/${live.stage}`)
+    first.plannedEnd = new Date(NOW - 6 * HOUR).toISOString()
+    // hours late is overdue on the card, as in the blocker list, though the delay still rounds to 0 days
+    expect(metrics(state, live, NOW)).toMatchObject({ delayDays: 0, overdue: true })
+    expect(kinds(blockers(state, NOW))).toContain('STAGE_OVERDUE')
+    first.plannedEnd = new Date(NOW + HOUR).toISOString()
+    expect(metrics(state, live, NOW).overdue).toBe(false)
+    // reworked after it passed: the delay counts to now, not to the old end
+    Object.assign(first, { state: 'REWORK', plannedEnd: at(40), actualEnd: at(45) })
+    expect(metrics(state, live, NOW)).toMatchObject({ delayDays: 40, overdue: true })
   })
 
   it('derives a failed trial without a change, a change in CCB review and a stalled 8D', () => {
@@ -1648,12 +2015,25 @@ describe('blockers', () => {
     expect(kinds(blockers(state, NOW))).toEqual(['TRIAL_FAILED', 'CHANGE_CCB', 'PROBLEM_STALLED'])
     state.trials[state.trials.length - 1] = { ...trial, changeId: crs.id }
     expect(kinds(blockers(state, NOW))).toEqual(['CHANGE_CCB', 'PROBLEM_STALLED'])
+    // a change the CCB rejected never releases the trial
+    state.changes[state.changes.length - 1] = { ...crs, state: 'REJECTED' }
+    expect(kinds(blockers(state, NOW))).toEqual(['TRIAL_FAILED', 'PROBLEM_STALLED'])
+    state.changes[state.changes.length - 1] = crs
     // exactly 7 days in ANALYZING is still on time
     state.problems[state.problems.length - 1] = {
       ...qp,
       history: [{ at: at(7), from: 'OPEN', to: 'ANALYZING' }],
     }
     expect(kinds(blockers(state, NOW))).toEqual(['CHANGE_CCB'])
+    // a note kept without a move does not restart the clock
+    state.problems[state.problems.length - 1] = {
+      ...qp,
+      history: [
+        { at: at(12), from: 'OPEN', to: 'ANALYZING' },
+        { at: at(1), from: 'ANALYZING', to: 'ANALYZING', note: '补充现场照片' },
+      ],
+    }
+    expect(kinds(blockers(state, NOW))).toEqual(['CHANGE_CCB', 'PROBLEM_STALLED'])
   })
 
   it('derives the maintained baseline lagging the designed one', () => {
@@ -1668,6 +2048,10 @@ describe('blockers', () => {
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({ kind: 'BASELINE_GAP', projectId: project, role: '配置管理员' })
     expect(list[0].reason).toContain('NC-DR-1218')
+    // with no as-maintained baseline nothing lags, on the card as in the blockers
+    state.configBaselines = state.configBaselines.filter((b: Item) => !maintained.includes(b))
+    expect(blockers(state, NOW)).toEqual([])
+    expect(metrics(state, byId(state.projects, project), NOW).baselineGap).toBe(0)
   })
 
   it('works without approvals and derives active, ALL-mode and overdue approval nodes when present', () => {
@@ -1748,6 +2132,12 @@ describe('store persistence', () => {
       expect(store.get('devboard/meta')).toMatchObject({ schema: 4, revision: 2 })
       expect(read(store, NOW).projects.map((p: Item) => p.id)).not.toContain('PRJ-OLD')
     }
+    // a newer DevBoard's data is never overwritten by a write, only by an explicit reset
+    const newer = memoryStore()
+    newer.set('devboard/meta', { schema: 5, revision: 40, chunks: {} })
+    expect(() => update(newer, (s: State) => s.projects.length, NOW)).toThrow('更新版本')
+    expect(newer.get('devboard/meta')).toMatchObject({ schema: 5, revision: 40 })
+    expect(reset(newer, NOW).revision).toBe(41)
   })
 
   it('persists every collection in chunks under the value cap, writes through one path and resets', () => {
@@ -1809,6 +2199,23 @@ describe('store persistence', () => {
     expect(body).toMatchObject({ source: 'workspace', truncated: true })
     expect(new TextEncoder().encode(body.markdown).length).toBeLessThanOrEqual(DOC_LIMIT_BYTES)
     expect(body.markdown.startsWith('# 需求规格')).toBe(true)
+    // newlines and control characters grow when stored as JSON; the body still fits the value cap
+    for (const filler of ['\n', '\u0001']) {
+      const { result: dense } = update(store, (s: State) =>
+        recordArtifact(
+          s,
+          {
+            projectId: result.projectId,
+            stage: 'DESIGN',
+            kind: 'SAD',
+            path: 'docs/SAD.md',
+            markdown: filler.repeat(50_000),
+          },
+          NOW,
+        ),
+      )
+      expect(artifactBody(store, dense.id, NOW).truncated).toBe(true)
+    }
     expect(() => artifactBody(store, 'DOC-404', NOW)).toThrow('未找到 DOC-404')
     reset(store, NOW)
     expect([...store.rows.keys()].some((k) => k.startsWith('devboard/doc/'))).toBe(false)
@@ -1869,6 +2276,11 @@ describe('fast-forward from the shipped sample', () => {
         expect(pending).toHaveLength(0)
         expect(gates.at(-1)).toMatchObject({ code: 'ADCP', decision: 'APPROVED' })
         expect(project.actualEnd).toBeDefined()
+        // nothing is left to do but register the app: no "stage passed" as a next step
+        const done = handoff(state, { type: 'project', id: project.id })
+        expect(done.next[0]).toContain('所有阶段已通过')
+        expect(done.summary).not.toContain('已通过 ')
+        expect(handoff(state, { type: 'gate', id: gates.at(-1).id }).next[0]).toBe(done.next[0])
       } else {
         expect(pending.map((g: Item) => g.code)).toEqual([code])
         expect(snapshot(state).counts.pendingGates).toBeGreaterThanOrEqual(1)
@@ -2019,6 +2431,14 @@ describe('fast-forward from the shipped sample', () => {
     const stage = (name: string) => byId(state.stages, `${data.projectId}/${name}`)
     expect([stage('REQUIREMENTS').state, stage('DESIGN').state]).toEqual(['REWORK', 'REWORK'])
     expect(applied.reworked).toEqual([`${data.projectId}/REQUIREMENTS`, `${data.projectId}/DESIGN`])
+    // a gate the change voided is not described as a human rejection
+    const voided = state.gates.find((g: Item) => g.superseded && g.decision === 'REJECTED')
+    expect(handoff(state, { type: 'gate', id: voided.id }).next[0]).toContain('作废')
+    // the hand-off starts with the earliest reopened stage, not the project's furthest one
+    expect(handoff(state, { type: 'project', id: data.projectId }).nextStep).toMatchObject({
+      stage: 'REQUIREMENTS',
+      state: 'REWORK',
+    })
     const gates = state.gates.filter((g: Item) => g.stageId.startsWith(`${data.projectId}/`))
     expect(gates.filter((g: Item) => g.decision === 'PENDING')).toEqual([])
     expect(gates.filter((g: Item) => ['TR1', 'TR3'].includes(g.code)).every((g: Item) => g.superseded)).toBe(
@@ -2496,9 +2916,53 @@ describe('hand-off to the coordinator', () => {
     const out = handoff(state, { type: 'project', id: p.id })
     expect(out.untrackedFailures).toEqual(['TC-002'])
     expect(out.next.join('')).toContain('为 TC-002 建缺陷')
+    // a defect people closed after the run is dealt with; a fresh failure after the close needs a new one
+    const closed = state.defects.find((d: Item) => d.testCase === 'TC-001')
+    Object.assign(closed, { state: 'CLOSED', closedAt: new Date(NOW + 1000).toISOString() })
+    expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual(['TC-002'])
+    recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-001', status: 'fail' }] }, NOW + 2000)
+    expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual(['TC-001', 'TC-002'])
+    recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-001', status: 'pass' }] }, NOW + 3000)
     // a later passing run clears it
     recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-002', status: 'pass' }] }, NOW + 1)
     expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual([])
+  })
+
+  it('follows the state of the change a trial is linked to', () => {
+    const state = read(memoryStore(), NOW)
+    const trial = state.trials.find((t: Item) => t.changeId)
+    const cr = byId(state.changes, trial.changeId)
+    const step = () => handoff(state, { type: 'trial', id: trial.id }).next[0]
+    cr.state = 'IMPLEMENTED'
+    expect(step()).toContain('verification')
+    expect(step()).not.toContain('影响分析')
+    cr.state = 'REJECTED'
+    trial.result = 'FAIL'
+    expect(step()).toContain('新变更')
+    cr.state = 'CLOSED'
+    expect(step()).toContain('已关闭')
+  })
+
+  it('has nothing to do for a closed fault without a problem or with a closed one', () => {
+    const state = read(memoryStore(), NOW)
+    const fault = state.faults.find((f: Item) => f.state === 'CLOSED' && !f.problemId)
+    const out = handoff(state, { type: 'fault', id: fault.id })
+    expect(out.next[0]).toContain('无需处理')
+    expect(out.next[0]).not.toContain('8D')
+    const closed = state.faults.find(
+      (f: Item) => f.problemId && byId(state.problems, f.problemId).state === 'CLOSED',
+    )
+    expect(handoff(state, { type: 'fault', id: closed.id }).next[0]).toContain('无需处理')
+  })
+
+  it('reads an open request past its due time as expired', () => {
+    const state = read(memoryStore(), NOW)
+    const item = state.interventions.find((i: Item) => i.state === 'OPEN')
+    const late = Date.parse(item.dueAt) + 1
+    const out = handoff(state, { type: 'intervention', id: item.id }, late)
+    expect(out.intervention.state).toBe('EXPIRED')
+    expect(out.next[0]).toContain('超时')
+    expect(handoff(state, { type: 'intervention', id: item.id }, late - 2).intervention.state).toBe('OPEN')
   })
 
   it('quotes long board text clipped and marks it as data', () => {
@@ -3072,6 +3536,46 @@ describe('hand-backs of human decisions', () => {
     expect(() => dismissHandback(state, { id: 'HB-404', by: 'x' })).toThrow('未找到')
     expect(() => dismissHandback(state, { id: left.id, by: '' })).toThrow('缺少字段')
     expect(pendingHandbacks(state)).toEqual([])
+  })
+
+  it('keeps a followed-up card cleared after its follow-up line leaves the capped feed', () => {
+    const store = memoryStore()
+    const ids = update(
+      store,
+      (s: State) => {
+        const p = newProject(s, 'SOFTWARE')
+        const q = newProject(s, 'SOFTWARE')
+        pass(s, p.id, 'INITIATION')
+        return { p: p.id, q: q.id }
+      },
+      NOW,
+    ).result
+    expect(pendingHandbacks(read(store, NOW))).toHaveLength(1)
+    const wrote = (projectId: string) =>
+      update(store, () => ({ id: `${projectId}/DESIGN`, projectId }), NOW, {
+        tool: 'devboard_stage_update',
+        actor: '研发协调员',
+        input: { projectId },
+      })
+    wrote(ids.p)
+    expect(pendingHandbacks(read(store, NOW))).toEqual([])
+    for (let i = 0; i <= ACTIVITY_LIMIT; i++) wrote(ids.q)
+    expect(pendingHandbacks(read(store, NOW))).toEqual([])
+  })
+
+  it('drops handled cards before a card still waiting when over the limit', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    pass(state, p.id, 'INITIATION')
+    const waiting = state.handbacks[0]
+    for (let i = 0; i < HANDBACK_LIMIT; i++) {
+      state.revision++
+      const extra = newProject(state, 'SOFTWARE')
+      pass(state, extra.id, 'INITIATION')
+      dismissHandback(state, { id: state.handbacks.at(-1).id, by: 'x' })
+    }
+    expect(state.handbacks).toHaveLength(HANDBACK_LIMIT)
+    expect(state.handbacks).toContain(waiting)
   })
 
   it(`keeps the newest ${HANDBACK_LIMIT} cards`, () => {

@@ -3,8 +3,9 @@ import React from 'react'
 import {
   byId,
   fact,
-  gateBadge,
   gateName,
+  gateOutcome,
+  gateOutcomeBadge,
   guided,
   HistoryTable,
   h,
@@ -20,6 +21,7 @@ import {
 } from './board.js'
 import { workOf } from './entries.js'
 import { HandbackCards } from './handback.js'
+import { waitingInterventions } from './lens.js'
 import { GatePanel } from './lifecycle.js'
 import { WorkButton } from './work.js'
 
@@ -36,7 +38,13 @@ const subjectLabel = (data, flow) => `${data.labels.approvalSubject[flow.subject
 
 /** Who handled a node (latest approval per role), or who is awaited and to whom it was transferred. */
 function handlers(flow, node) {
-  const mine = flow.actions.filter((a) => a.nodeId === node.id)
+  // A send-back to this node or an earlier one voids what was handled here before it.
+  const at = flow.nodes.indexOf(node)
+  const reset = flow.actions.findLastIndex(
+    (a) =>
+      a.action === 'RETURN' && (a.to === 'INITIATOR' ? 0 : flow.nodes.findIndex((n) => n.id === a.to)) <= at,
+  )
+  const mine = flow.actions.slice(reset + 1).filter((a) => a.nodeId === node.id)
   const latest = {}
   for (const a of mine) if (a.action === 'APPROVE') latest[a.role] = a.by
   const transfer = mine.findLast((a) => a.action === 'TRANSFER')
@@ -133,6 +141,9 @@ function Timeline({ data, flow }) {
   })
 }
 
+/** Actions that count as someone having handled the first node (a withdraw is refused after one). */
+const HANDLING = ['APPROVE', 'TRANSFER', 'ADD_SIGN', 'RETURN']
+
 /** Agree, reject, send back, transfer, add a signer or comment; the server decides, the page only offers. */
 function Actions({ data, flow, board, role, setRole }) {
   const [comment, setComment] = React.useState('')
@@ -141,6 +152,12 @@ function Actions({ data, flow, board, role, setRole }) {
   const [signer, setSigner] = React.useState('')
   const node = currentNode(flow)
   const mine = flow.waitingRoles.includes(role)
+  // approvals.mjs lets every role of the node reject, return, transfer and add a signer, signed or not.
+  const inNode = node.roles.includes(role)
+  const canWithdraw =
+    role === flow.initiator.role &&
+    flow.current === 0 &&
+    !flow.actions.slice(flow.since ?? 0).some((a) => HANDLING.includes(a.action))
   const act = async (action, extra = {}) => {
     const ok = await board.run(
       'devboard.approval',
@@ -156,6 +173,8 @@ function Actions({ data, flow, board, role, setRole }) {
     if (ok) {
       setComment('')
       setTo('')
+      setBack('')
+      setSigner('')
     }
   }
   if (flow.state !== 'RUNNING')
@@ -164,9 +183,14 @@ function Actions({ data, flow, board, role, setRole }) {
       { className: 'devboard-actions', 'aria-label': '审批处理' },
       h('p', null, `该流程${data.labels.approvalState[flow.state]}，不能再处理。`),
       h(
-        'div',
-        { className: 'devboard-buttons' },
-        h(Button, { disabled: board.busy, onClick: () => act('APPROVE') }, '再次同意（演示：应被拒绝）'),
+        'details',
+        { className: 'devboard-evidence' },
+        h('summary', null, '越权与重复操作校验'),
+        h(
+          'div',
+          { className: 'devboard-buttons' },
+          h(Button, { disabled: board.busy, onClick: () => act('APPROVE') }, '再次同意'),
+        ),
       ),
     )
   const backTargets = flow.nodes.slice(0, flow.current).map((n) => ({ value: n.id, label: n.name }))
@@ -193,24 +217,28 @@ function Actions({ data, flow, board, role, setRole }) {
       'div',
       { className: 'devboard-buttons' },
       mine
-        ? [
-            h(
-              Button,
-              { key: 'ok', appearance: 'primary', disabled: board.busy, onClick: () => act('APPROVE') },
-              `以「${role}」同意`,
-            ),
-            h(Button, { key: 'no', disabled: board.busy, onClick: () => act('REJECT') }, '驳回'),
-          ]
-        : h(
+        ? h(
             Button,
-            { disabled: board.busy, onClick: () => act('APPROVE') },
-            `以「${role}」尝试同意（演示：应被拒绝）`,
-          ),
+            { key: 'ok', appearance: 'primary', disabled: board.busy, onClick: () => act('APPROVE') },
+            `以「${role}」同意`,
+          )
+        : null,
+      inNode && h(Button, { key: 'no', disabled: board.busy, onClick: () => act('REJECT') }, '驳回'),
       h(Button, { disabled: board.busy, onClick: () => act('COMMENT') }, '评论'),
-      role === flow.initiator.role &&
-        h(Button, { disabled: board.busy, onClick: () => act('WITHDRAW') }, '撤回'),
+      canWithdraw && h(Button, { disabled: board.busy, onClick: () => act('WITHDRAW') }, '撤回'),
     ),
-    mine &&
+    !mine &&
+      h(
+        'details',
+        { className: 'devboard-evidence' },
+        h('summary', null, '越权与重复操作校验'),
+        h(
+          'div',
+          { className: 'devboard-buttons' },
+          h(Button, { disabled: board.busy, onClick: () => act('APPROVE') }, `以「${role}」同意`),
+        ),
+      ),
+    inNode &&
       h(
         'div',
         { className: 'devboard-buttons' },
@@ -388,7 +416,7 @@ export function TodoColumn({ title, items, empty, open }) {
   return h(
     'section',
     { className: 'devboard-card', 'aria-label': title },
-    h('h2', null, `${title}（${items.length}）`),
+    h('h2', null, title, h('span', { className: 'devboard-count' }, items.length)),
     items.length
       ? h(
           'ul',
@@ -430,9 +458,7 @@ export function MyTodo({ data, board, role, setRole }) {
   const waitingFlows = data.approvals
     .filter((f) => f.state === 'RUNNING' && f.waitingRoles.includes(role))
     .sort((a, b) => Number(b.overdue) - Number(a.overdue))
-  const interventions = isEngineer(role)
-    ? []
-    : data.interventions.filter((i) => i.state === 'OPEN' || i.state === 'EXPIRED')
+  const interventions = waitingInterventions(role, data)
   const pending = [
     ...waitingFlows.map((f) =>
       flowItem(f, `${currentNode(f).name}${f.overdue ? ' · 已超时' : ''} · ${f.projectId}`),
@@ -468,8 +494,14 @@ export function MyTodo({ data, board, role, setRole }) {
       .filter((f) => f.actions.some((a) => a.role === role && a.action !== 'COMMENT'))
       .map((f) => flowItem(f, `${data.labels.approvalState[f.state]} · ${time(f.endedAt ?? f.startedAt)}`)),
     ...data.gates
-      .filter((g) => g.decision !== 'PENDING' && (g.signatures ?? []).some((s) => s.role === role))
-      .map((g) => gateItem(g, `${gateLabelOf(data, g)} · ${time(g.decidedAt)}`)),
+      .filter(
+        (g) =>
+          g.decision !== 'PENDING' &&
+          // A rejection leaves no signature: the rejecting role is the gate's approver.
+          ((g.signatures ?? []).some((s) => s.role === role) ||
+            (g.decision === 'REJECTED' && (g.approver === role || g.approver?.startsWith(`${role} `)))),
+      )
+      .map((g) => gateItem(g, `${gateOutcome(data, g)} · ${time(g.decidedAt)}`)),
   ].sort(newest)
   const gate = byId(data.gates, selected)
   const flow = byId(data.approvals, selected)
@@ -583,7 +615,7 @@ export function MyTodo({ data, board, role, setRole }) {
           { title: '审批角色', render: (_v, g) => g.approverRoles.join('、'), width: 130 },
           { title: '会签', render: (_v, g) => signProgress(g), width: 160 },
           { title: '未关闭意见', render: (_v, g) => g.findings.filter((f) => !f.closed).length, width: 70 },
-          { title: '决议', dataIndex: 'decision', render: (d) => gateBadge(data, d), width: 90 },
+          { title: '决议', dataIndex: 'decision', render: (_d, g) => gateOutcomeBadge(data, g), width: 90 },
           ...(view === 'decided'
             ? [{ title: '时间', render: (_v, g) => time(g.decidedAt ?? g.submittedAt), width: 140 }]
             : []),
@@ -696,5 +728,3 @@ export function MyTodo({ data, board, role, setRole }) {
       ),
   )
 }
-
-const gateLabelOf = (data, g) => data.labels.state[g.decision] ?? g.decision

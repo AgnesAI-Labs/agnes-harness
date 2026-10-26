@@ -26,15 +26,22 @@ export function useBoard(ctx) {
   const services = ctx.profile.services
   const [data, setData] = React.useState(null)
   const [error, setError] = React.useState('')
+  // A failed poll clears itself on the next good one; an action error stays until the next action.
+  const [loadError, setLoadError] = React.useState('')
   const [notice, setNotice] = React.useState('')
   const [busy, setBusy] = React.useState(false)
   const alive = React.useRef(true)
+  // Polls and post-action reloads can finish out of order: only the latest-started request is applied.
+  const latest = React.useRef(0)
   const load = React.useCallback(async () => {
+    const mine = ++latest.current
     try {
       const next = await services.query('devboard.snapshot', {})
-      if (alive.current) setData(next)
+      if (!alive.current || mine !== latest.current) return
+      setData(next)
+      setLoadError('')
     } catch (e) {
-      if (alive.current) setError(`读取看板失败：${message(e)}`)
+      if (alive.current && mine === latest.current) setLoadError(`读取看板失败：${message(e)}`)
     }
   }, [services])
   React.useEffect(() => {
@@ -75,7 +82,7 @@ export function useBoard(ctx) {
     setError('')
     await load()
   }, [load])
-  return { data, error, notice, busy, refresh, run, query, setError, setNotice }
+  return { data, error: error || loadError, notice, busy, refresh, run, query, setError, setNotice }
 }
 
 function useStored(key, fallback, valid) {
@@ -103,9 +110,13 @@ export const useRole = () => useStored(ROLE_KEY, '项目经理', (r) => r.length
 export const JumpContext = React.createContext(undefined)
 
 /** Open a record on another page (for example from the role home): the page opens its detail. */
-export function jumpTo(entry, id, detail) {
+export function jumpTo(entry, id, detail, project) {
+  // The pages read the shared project when they mount; one already open takes `project` from the jump.
   try {
-    homeNavigation.open(entry, { devboard: { id, detail } })
+    if (project) window.sessionStorage.setItem(PROJECT_KEY, project)
+  } catch {}
+  try {
+    homeNavigation.open(entry, { devboard: { id, detail, ...(project ? { project } : {}) } })
   } catch {}
 }
 
@@ -137,6 +148,8 @@ export function useDetail() {
  */
 export function useLens(role, data, scope) {
   const [state, setState] = React.useState({ role, all: false })
+  // Adjusting state while rendering: a role change drops the old choice, so coming back to a role starts at "mine".
+  if (state.role !== role) setState({ role, all: false })
   const all = state.role === role && state.all
   const setAll = (next) => setState({ role, all: next })
   const concerns = (kind) => (item) => relevant(role, kind, item, data)
@@ -176,6 +189,14 @@ export function useProject(data, allowAll = false) {
     (v) => (allowAll && !v) || ids.includes(v),
   )
   const current = ids.includes(value) || (allowAll && !value) ? value : (ids[0] ?? '')
+  // A guide jump to the page already open does not remount it, so take the project a new jump names.
+  // The jump present at mount is skipped: the guide already stored its project, and replaying it later
+  // would undo a project the person picked since.
+  const jump = React.useContext(JumpContext)
+  const mounted = React.useRef(jump)
+  React.useEffect(() => {
+    if (jump !== mounted.current && typeof jump?.project === 'string') setValue(jump.project)
+  }, [jump])
   return [current, setValue]
 }
 export function ProjectSelect({ data, value, onChange, allowAll = false }) {
@@ -285,6 +306,10 @@ export const gateLabel = (data, decision) =>
   decision === 'PENDING' ? '待决议' : (data.labels.state[decision] ?? decision)
 export const gateBadge = (data, decision) =>
   h(Badge, { tone: TONES[decision] ?? 'off' }, gateLabel(data, decision))
+/** A gate voided by a change rework reads as such, whatever its old decision was. */
+export const gateOutcome = (data, g) => (g.superseded ? '已作废（返工）' : gateLabel(data, g.decision))
+export const gateOutcomeBadge = (data, g) =>
+  g.superseded ? h(Badge, { tone: 'off' }, gateOutcome(data, g)) : gateBadge(data, g.decision)
 export const time = (iso) =>
   iso ? new Date(iso).toLocaleString('zh-CN', { hour12: false, dateStyle: 'short', timeStyle: 'short' }) : '—'
 export const day = (iso) => (iso ? new Date(iso).toLocaleDateString('zh-CN') : '—')
@@ -300,6 +325,8 @@ export const gateName = (g) => `${g.code} · ${g.name}`
 export const stageName = (data, projectId, stage) =>
   data.profiles?.[byId(data.projects, projectId)?.kind]?.[stage]?.label ?? data.labels.stage[stage] ?? stage
 export const signedRoles = (gate) => (gate.signatures ?? []).map((s) => s.role)
+/** The approver roles of a gate still to sign. */
+export const unsignedRoles = (gate) => gate.approverRoles.filter((r) => !signedRoles(gate).includes(r))
 /** "1/2 已签：项目经理" — the co-sign progress of a gate. */
 export const signProgress = (gate) =>
   `${signedRoles(gate).length}/${gate.approverRoles.length}${signedRoles(gate).length ? ` 已签：${signedRoles(gate).join('、')}` : ''}`
@@ -354,9 +381,14 @@ export function Shell({ id, title, description, board, role, setRole, actions, c
     'main',
     { className: 'devboard-app', 'data-devboard-page': id },
     h(
-      Banner,
-      { tone: 'info' },
-      `虚构企业「宁川交通装备股份有限公司」与模拟数据，仅供演示${board.data ? ` · 修订 ${board.data.revision}` : ''} · 每 10 秒自动刷新`,
+      'p',
+      { className: 'devboard-eyebrow' },
+      h('span', null, '宁川交通装备股份有限公司 · 研发与质量工作台'),
+      h(
+        'span',
+        { className: 'devboard-demo' },
+        `虚构企业与模拟数据，仅供演示${board.data ? ` · 修订 ${board.data.revision}` : ''} · 每 10 秒自动刷新`,
+      ),
     ),
     board.error && h(Banner, { tone: 'error' }, board.error),
     board.notice && h(Banner, { tone: 'info' }, board.notice),
@@ -535,7 +567,7 @@ export function TransitionBar({
                 id: `devboard-${f.key}-${item.id}`,
                 className: 'devboard-note',
                 value: extra[f.key] ?? '',
-                maxLength: 500,
+                maxLength: f.max ?? 500,
                 onChange: (e) => setExtra({ ...extra, [f.key]: e.target.value }),
               }),
             ),
@@ -568,7 +600,7 @@ export function TransitionBar({
         onChange: setTarget,
         options: [
           { value: '', label: '指定目标状态…' },
-          ...others.map((s) => ({ value: s, label: `${data.labels.state[s]}（${s}）` })),
+          ...others.map((s) => ({ value: s, label: data.labels.state[s] ?? s })),
         ],
         style: { minWidth: 200 },
       }),

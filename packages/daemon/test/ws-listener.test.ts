@@ -4,7 +4,6 @@ import { connect as connectTcp } from 'node:net'
 import { describe, expect, it } from 'vitest'
 import { WebSocket } from 'ws'
 import type { RpcEndpoint } from '../src/local/endpoint.js'
-import { mintWebTicket } from '../src/supervisor/web-ticket.js'
 import { listenWebSocket, WS_MAX_MESSAGE_BYTES } from '../src/supervisor/ws.js'
 
 function tls(): { cert: string; key: string } {
@@ -173,22 +172,22 @@ it.each(['pending requests', 'oversized reply'])('bounds total bytes for %s', as
   }
 })
 
-it('local Web admits only the per-launch secret or a single-use ticket, and still checks Origin and Host', async () => {
+it('local Web needs no secret: it admits the page origin and non-browser clients, and refuses cross-site pages and rebinding hosts', async () => {
   let opened = 0
   const origin = 'http://127.0.0.1:4177'
-  const token = 'test-local-token'
   const listener = await listenWebSocket({
     addr: '127.0.0.1:0',
     localOrigin: origin,
-    token,
+    token: 'test-local-token',
     endpoint: () => {
       opened++
       return { endpoint: endpoint(), onClose() {} }
     },
   })
-  const upgrade = (protocols: string[], headers: Record<string, string> = { Origin: origin }) =>
+  const port = new URL(listener.url).port
+  const upgrade = (headers: Record<string, string>) =>
     new Promise<number>((resolve, reject) => {
-      const socket = new WebSocket(listener.url, protocols, { headers })
+      const socket = new WebSocket(listener.url, ['agnes-v1'], { headers })
       socket.once('unexpected-response', (_req, response) => {
         response.resume()
         resolve(response.statusCode ?? 0)
@@ -200,27 +199,23 @@ it('local Web admits only the per-launch secret or a single-use ticket, and stil
       socket.once('error', reject)
     })
   try {
-    // No secret: the exact browser Origin and Host alone no longer grant anything.
-    expect(await upgrade(['agnes-v1'])).toBe(401)
-    // A wrong secret, a forged ticket and a ticket signed with another secret are all refused.
-    expect(await upgrade(['agnes-v1', 'agnes-bearer.wrong-token'])).toBe(401)
-    expect(await upgrade(['agnes-v1', 'agnes-ticket.zzzzzzzz.bm9uY2U.c2lnbmF0dXJl'])).toBe(401)
-    expect(await upgrade(['agnes-v1', `agnes-ticket.${mintWebTicket('another-launch')}`])).toBe(401)
-    expect(await upgrade(['agnes-v1', `agnes-ticket.${mintWebTicket(token, Date.now() - 60_000)}`])).toBe(401)
-    expect(opened).toBe(0)
-    // A ticket the launcher signed for a signed-in page is accepted exactly once.
-    const ticket = `agnes-ticket.${mintWebTicket(token)}`
-    expect(await upgrade(['agnes-v1', ticket])).toBe(101)
-    expect(await upgrade(['agnes-v1', ticket])).toBe(401)
-    expect(await upgrade(['agnes-v1', `agnes-ticket.${mintWebTicket(token)}`])).toBe(101)
-    // A same-user process holding the 0600 credential presents the secret itself.
-    expect(await upgrade(['agnes-v1', `agnes-bearer.${token}`])).toBe(101)
-    expect(await upgrade(['agnes-v1'], { Origin: origin, Authorization: `Bearer ${token}` })).toBe(101)
+    // The Web page itself, under any loopback name for its port, with no token or ticket.
+    expect(await upgrade({ Origin: origin })).toBe(101)
+    expect(await upgrade({ Origin: 'http://localhost:4177' })).toBe(101)
+    expect(await upgrade({ Origin: origin, Host: `localhost:${port}` })).toBe(101)
+    // No Origin: a CLI or other local process, which is the user's own.
+    expect(await upgrade({})).toBe(101)
     expect(opened).toBe(4)
-    // Origin and Host stay as defence in depth, even with a valid secret.
-    expect(await upgrade(['agnes-v1', `agnes-bearer.${token}`], {})).toBe(403)
-    expect(await upgrade(['agnes-v1', `agnes-bearer.${token}`], { Origin: 'http://evil.example' })).toBe(403)
-    expect(await upgrade([`agnes-bearer.${token}`], { Origin: origin, Host: 'evil.example' })).toBe(403)
+    // A page on another site, another local port, an opaque origin, or https.
+    expect(await upgrade({ Origin: 'http://evil.example' })).toBe(403)
+    expect(await upgrade({ Origin: 'http://127.0.0.1:9999' })).toBe(403)
+    expect(await upgrade({ Origin: 'null' })).toBe(403)
+    expect(await upgrade({ Origin: 'https://127.0.0.1:4177' })).toBe(403)
+    // DNS rebinding: a foreign name resolving to loopback, even with a matching port or Origin.
+    expect(await upgrade({ Origin: origin, Host: `evil.example:${port}` })).toBe(403)
+    expect(await upgrade({ Host: `evil.example:${port}` })).toBe(403)
+    expect(await upgrade({ Origin: origin, Host: 'evil.example' })).toBe(403)
+    expect(await upgrade({ Origin: origin, Host: '127.0.0.1:1' })).toBe(403)
     expect(opened).toBe(4)
   } finally {
     await listener.close()

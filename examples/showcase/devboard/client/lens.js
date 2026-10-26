@@ -10,7 +10,12 @@ const HOUR = 3_600_000
  * "软件设计师 林涛" is held by 软件设计师. The whole role is compared (not the text before the first
  * space) because "RAMS 工程师" contains a space itself.
  */
-const holds = (role, who) => typeof who === 'string' && (who === role || who.startsWith(`${role} `))
+const holds = (role, who) => {
+  if (typeof who !== 'string') return false
+  // The coordinator signs as "研发协调员 · 系统设计师（需求）": the role it acted as holds the record.
+  const name = who.replace(/^研发协调员 · /, '')
+  return name === role || [' ', '（', '('].some((suffix) => name.startsWith(role + suffix))
+}
 const among = (role, ...roles) => roles.includes(role)
 const stageOf = (data, gate) => data.stages.find((s) => s.id === gate.stageId)
 /** A running approval of this record that is waiting for the role. */
@@ -117,7 +122,7 @@ export const METRICS = {
   reqs: ['相关需求', 'req', () => true],
   req: ['待确认需求', 'req', (r) => r.status === 'DRAFT' || r.status === 'CHANGED'],
   task: ['未完成任务', 'task', (t) => !['COMPLETED', 'CANCELLED'].includes(t.state)],
-  change: ['未关闭变更', 'change', (c) => !['CLOSED', 'IMPLEMENTED', 'REJECTED'].includes(c.state)],
+  change: ['未关闭变更', 'change', (c) => !['CLOSED', 'REJECTED'].includes(c.state)],
   defect: ['未关闭缺陷', 'defect', (d) => d.state !== 'CLOSED'],
   trial: ['未批准试验', 'trial', (t) => t.state !== 'APPROVED'],
   review: ['待审试验报告', 'trial', (t) => t.state === 'REPORTED'],
@@ -190,7 +195,7 @@ function urgentOf(role, data) {
       'gate',
       g,
       `${g.code} · ${g.name} · ${stage?.projectId ?? ''}`,
-      `待 ${g.approverRoles.join('、')}`,
+      `待 ${g.approverRoles.filter((r) => !(g.signatures ?? []).some((s) => s.role === r)).join('、')}`,
       due < now,
       due,
       '阶段计划完成',
@@ -220,6 +225,10 @@ function urgentOf(role, data) {
   return out
 }
 
+/** Human-intervention requests waiting for the role: every open or expired one, except for engineers. */
+export const waitingInterventions = (role, data) =>
+  /工程师$/.test(role) ? [] : data.interventions.filter((i) => i.state === 'OPEN' || i.state === 'EXPIRED')
+
 /**
  * What the role's home shows: how many records wait for the role, how many open records of each metric
  * concern it, and the (at most five) most urgent ones - late first, then by due date.
@@ -234,9 +243,7 @@ export function lensSummary(role, data) {
         !(g.signatures ?? []).some((s) => s.role === role) &&
         stageOf(data, g)?.author !== role,
     ).length +
-    data.interventions.filter(
-      (i) => (i.state === 'OPEN' || i.state === 'EXPIRED') && relevant(role, 'intervention', i, data),
-    ).length
+    waitingInterventions(role, data).length
   const counts = Object.fromEntries(
     Object.entries(METRICS).map(([key, [, kind, open]]) => [
       key,

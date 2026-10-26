@@ -114,17 +114,25 @@ export function scheduleSessions(
           ...(target.bundles?.length ? { bundles: target.bundles } : {}),
           ...(target.loop ? { loop: target.loop } : {}),
         })
-        signal?.throwIfAborted()
-        await client.call('_agnes/v1/session.rename', { sessionId: session.id, title })
-        signal?.throwIfAborted()
-        if (target.model)
-          await client.call('_agnes/v1/session.setModel', {
-            sessionId: session.id,
-            slot: 'primary',
-            route: target.model.route,
-            model: target.model.model,
+        try {
+          signal?.throwIfAborted()
+          await client.call('_agnes/v1/session.rename', { sessionId: session.id, title })
+          signal?.throwIfAborted()
+          if (target.model)
+            await client.call('_agnes/v1/session.setModel', {
+              sessionId: session.id,
+              slot: 'primary',
+              route: target.model.route,
+              model: target.model.model,
+            })
+          signal?.throwIfAborted()
+        } catch (error) {
+          // The session exists from here on: this is the run failing in it, not a failed start, and
+          // the run history links the session instead of reporting that none could be opened.
+          throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
+            sessionKey: session.id,
           })
-        signal?.throwIfAborted()
+        }
         return session.id
       } finally {
         signal?.removeEventListener('abort', cancel)

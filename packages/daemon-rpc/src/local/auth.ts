@@ -97,9 +97,8 @@ export function verifySourceAuth(o: {
 export type AuthConfig = {
   transport: 'unix' | 'ws'
   /**
-   * Server-only grant, never from RPC input: the local Web listener sets it only on connections
-   * whose upgrade passed the exact Origin/Host check and presented the per-launch Web secret or a
-   * single-use ticket signed with it (`daemon/src/supervisor/ws.ts`).
+   * Server-only grant, never from RPC input: the local Web listener sets it on connections whose
+   * upgrade passed its loopback Host and page-Origin checks (`daemon/src/supervisor/ws.ts`).
    */
   localWeb?: boolean
   jwt?: {

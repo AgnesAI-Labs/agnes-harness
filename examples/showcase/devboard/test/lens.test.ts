@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { COLLECTION, cardsOf, lensSummary, METRICS, relevant } from '../client/lens.js'
+import { COLLECTION, cardsOf, lensSummary, METRICS, relevant, waitingInterventions } from '../client/lens.js'
 import { seed, snapshot } from '../domain.mjs'
 import { ROLES } from '../profiles.mjs'
 
@@ -35,6 +35,15 @@ describe('role lens', () => {
     expect(service.every((f) => f.source === '客服')).toBe(true)
     expect(mine('项目经理', 'task')).toHaveLength(data.tasks.length)
     expect(mine('工艺工程师', 'trial').every((t) => t.type === 'FAI')).toBe(true)
+    // a record the coordinator wrote as a role concerns that role, a bracketed speciality included
+    const change = { ...data.changes[0], raisedBy: '研发协调员 · 质量工程师' }
+    expect(relevant('质量工程师', 'change', change, data)).toBe(true)
+    expect(
+      relevant('系统设计师', 'change', { ...change, raisedBy: '研发协调员 · 系统设计师（需求）' }, data),
+    ).toBe(true)
+    expect(
+      relevant('质量工程师', 'change', { ...change, ecn: undefined, raisedBy: '研发协调员' }, data),
+    ).toBe(false)
   })
 
   it('gives the default role, the project manager, something on every list page', () => {
@@ -47,6 +56,16 @@ describe('role lens', () => {
     expect(
       mine('项目经理', 'defect').every((d) => ['A', 'B'].includes(d.severity) && d.state !== 'CLOSED'),
     ).toBe(true)
+  })
+
+  it('counts the open intervention requests that My to-dos lists, for every non-engineer role', () => {
+    const open = data.interventions.filter((i: Any) => i.state === 'OPEN' || i.state === 'EXPIRED')
+    expect(open.length).toBeGreaterThan(0)
+    expect(waitingInterventions('技术负责人', data)).toEqual(open)
+    expect(waitingInterventions('RAMS 工程师', data)).toEqual([])
+    const lead = { ...data, gates: [], approvals: [] }
+    expect(lensSummary('技术负责人', lead).pending).toBe(open.length)
+    expect(lensSummary('RAMS 工程师', lead).pending).toBe(0)
   })
 
   it('matches whole roles, including the one that contains a space', () => {
@@ -89,6 +108,10 @@ describe('role lens', () => {
     expect(waiting.length).toBeGreaterThan(0)
     expect(quality.pending).toBe(waiting.length)
     expect(quality.counts.defect).toBe(data.defects.filter((d: Any) => d.state !== 'CLOSED').length)
+    // an open change is open on the role card as on the project card (IMPLEMENTED still needs closing)
+    expect(data.changes.filter(METRICS.change[2]).length).toBe(
+      data.projects.reduce((n: number, p: Any) => n + p.metrics.openChanges, 0),
+    )
     expect(quality.urgent.length).toBeLessThanOrEqual(5)
     expect(quality.urgent[0].overdue).toBe(true)
     const flags = quality.urgent.map((u: Any) => u.overdue)

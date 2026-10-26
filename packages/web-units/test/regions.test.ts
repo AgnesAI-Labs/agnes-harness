@@ -333,11 +333,18 @@ describe('independent core web-unit implementations', () => {
       false,
     )
     // The hub's echo of its canonical page keeps the subsection that was asked for.
-    const revealed: string[] = []
+    const revealed: FrameRequestCallback[] = []
     const frame = vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((run) => {
-      revealed.push(String(run))
+      revealed.push(run)
       return 0
     })
+    form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
+    expect(revealed).toHaveLength(1)
+    // Once the subsection is on screen the link is spent: a back step to the page stays on the page.
+    const subsection = document.createElement('div')
+    subsection.id = 'settings-subsection-context'
+    document.body.append(subsection)
+    revealed[0]?.(0)
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
     expect(revealed).toHaveLength(1)
     frame.mockRestore()

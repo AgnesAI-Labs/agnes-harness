@@ -206,7 +206,8 @@ function NewChange({ data, board, role, projectId }) {
 function RetrofitBar({ change, board, role }) {
   const rf = change.retrofit
   const [done, setDone] = React.useState('')
-  const locked = !['APPROVED', 'IMPLEMENTED'].includes(change.state)
+  // A finished retrofit takes no more progress.
+  const locked = !['APPROVED', 'IMPLEMENTED'].includes(change.state) || rf.done >= rf.total
   const submit = async () => {
     const ok = await board.run(
       'devboard.transition',
@@ -238,7 +239,18 @@ function RetrofitBar({ change, board, role }) {
       }),
       h(Button, { disabled: board.busy || locked || done === '', onClick: submit }, '更新整改进度'),
       h(Button, { disabled: board.busy || locked, onClick: () => setDone(String(rf.total)) }, '填入全部'),
-      locked && h('span', { className: 'devboard-muted' }, '批准后才能更新整改进度。'),
+      locked &&
+        h(
+          'span',
+          { className: 'devboard-muted' },
+          rf.done >= rf.total
+            ? '整改已完成。'
+            : change.state === 'CLOSED'
+              ? '变更已关闭，整改进度不再更新。'
+              : change.state === 'REJECTED'
+                ? '变更已驳回，无需整改。'
+                : '批准后才能更新整改进度。',
+        ),
     ),
   )
 }
@@ -326,12 +338,15 @@ export function Changes({ data, board, role, setRole }) {
                 : '—',
             ),
             item.impact?.fleet &&
-              fact('在役影响', `${item.impact.fleet.doors} 扇门：${item.impact.fleet.plan}`),
+              fact(
+                '在役影响',
+                `${item.impact.fleet.doors} 扇门${item.impact.fleet.plan ? `：${item.impact.fleet.plan}` : ''}`,
+              ),
             fact('ECN', item.ecn),
             item.verification &&
               fact(
                 '验证',
-                `${item.verification.result}（${item.verification.by}，${time(item.verification.at)}${item.verification.trialId ? `，${item.verification.trialId}` : ''}）`,
+                `${item.verification.result === 'PASS' ? '通过' : '未通过'}（${item.verification.by}，${time(item.verification.at)}${item.verification.trialId ? `，${item.verification.trialId}` : ''}）`,
               ),
             fact('受影响需求', item.impact?.reqs?.join('、') || '—'),
             fact('受影响交付物', item.impact?.artifacts?.join('、') || '—'),
@@ -353,7 +368,7 @@ export function Changes({ data, board, role, setRole }) {
             '进入 CCB 评审前必须完成影响分析（现场或型式试验来源还需失效原因分析）；CCB 批准只能经 ECR 审批流程（专业会签 → CCB 决议），批准后生成 ECN，ECN 发布流程批准后生成设计态基线；研发中项目的受影响阶段自动返工，在役项目不返工；关闭前需验证记录。',
           ),
           h(ImpactTree, { data, change: item }),
-          item.retrofit && h(RetrofitBar, { change: item, board, role }),
+          item.retrofit && h(RetrofitBar, { key: item.id, change: item, board, role }),
           h(AnalysisFiles, { data, board, projectId: item.projectId, ids: [item.id, item.ecn] }),
           workOf('changeImpact', item) &&
             h(

@@ -165,6 +165,25 @@ it('still stops a quiet non-SSE body at the app idle timer', async () => {
   })
 })
 
+it.each([
+  [{ streamIdleMs: 30, firstByteMs: 5_000 }, 'late'],
+  [{ streamIdleMs: 30 }, 'Stream idle timeout'],
+] as const)('bounds the wait for the first body chunk by firstByteMs %j', async (timeouts, outcome) => {
+  const endpoint = await listen(
+    createServer((_request, response) => {
+      // Headers go out at once; the body follows only when the whole reply is ready.
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      response.flushHeaders()
+      setTimeout(() => response.end('late'), 150)
+    }),
+  )
+  const client = createDeploymentFetch({ ...timeouts, requestMs: 5_000 }, {})
+  clients.push(client)
+  const body = client.fetch(endpoint, { method: 'POST' }).then((response) => response.text())
+  if (outcome === 'late') expect(await body).toBe('late')
+  else await expect(body).rejects.toMatchObject({ name: 'TimeoutError', message: outcome })
+})
+
 it('enforces the connection deadline during proxied TLS negotiation', async () => {
   const proxy = createServer()
   proxy.on('connect', (_request, socket) => {

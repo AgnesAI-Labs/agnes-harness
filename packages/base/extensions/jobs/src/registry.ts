@@ -27,6 +27,8 @@ export type ProcessJobContext = Pick<ToolContext, 'session' | 'cwd' | 'signal' |
 export type JobOwner = Pick<ToolContext, 'session'>
 interface Job {
   view: ShellJobView
+  /** Last output, input or read; an idle persistent shell or terminal is closed from it. */
+  activeAt: number
   capturedBytes: number
   cleanupPending?: boolean
   done: Promise<ShellJobView>
@@ -35,6 +37,14 @@ interface Job {
 }
 const MAX_JOBS = 128,
   MAX_OUTPUT = 4 * 1024 * 1024
+/**
+ * A persistent shell with no command running, or a terminal nobody has written to, read or heard
+ * from, is closed after these. Both otherwise keep a process alive for the whole daemon lifetime and
+ * stop their session from hibernating. Background commands are never closed this way.
+ */
+export const SHELL_IDLE_MS = 30 * 60_000
+export const TERMINAL_IDLE_MS = 2 * 60 * 60_000
+const IDLE_SWEEP_MS = 60_000
 const owner = (ctx: JobOwner) => `${ctx.session.key}\0${ctx.session.lane}`
 const copy = (job: Job) => ({ ...job.view })
 
@@ -49,6 +59,7 @@ export class ShellJobs {
   private readonly starting = new Map<string, Set<Promise<SandboxProcess>>>()
   private disposed = false
   private disposal: Promise<void> | undefined
+  private sweeper: ReturnType<typeof setInterval> | undefined
 
   private table(ctx: JobOwner): Map<string, Job> {
     const key = owner(ctx)
@@ -73,6 +84,7 @@ export class ShellJobs {
     const job: Job = {
       view,
       stop,
+      activeAt: Date.now(),
       capturedBytes: 0,
       done: new Promise((r) => {
         resolve = r
@@ -109,6 +121,7 @@ export class ShellJobs {
     }
   }
   private append(job: Job, chunk: ProcessOutput) {
+    job.activeAt = Date.now()
     const available = Math.max(0, MAX_OUTPUT - job.capturedBytes)
     const bytes = Buffer.from(chunk.text)
     let end = Math.min(available, bytes.length)
@@ -117,6 +130,41 @@ export class ShellJobs {
     job.capturedBytes += end
     job.view[chunk.stream] += bytes.subarray(0, end).toString('utf8')
     if (end < bytes.length) job.view.truncated = true
+  }
+  private watchIdle(): void {
+    if (this.sweeper) return
+    this.sweeper = setInterval(() => void this.closeIdle().catch(() => undefined), IDLE_SWEEP_MS)
+    this.sweeper.unref?.()
+  }
+  /** Close persistent shells and terminals idle past their limit; stop watching when none remain. */
+  async closeIdle(now = Date.now()): Promise<void> {
+    let watched = false
+    const idle: Job[] = []
+    for (const jobs of this.sessions.values())
+      for (const job of jobs.values()) {
+        if (job.view.status !== 'running' || (job.view.kind !== 'shell-session' && job.view.kind !== 'pty'))
+          continue
+        watched = true
+        const limit = job.view.kind === 'pty' ? TERMINAL_IDLE_MS : SHELL_IDLE_MS
+        if (this.shells.get(job.view.id)?.busy || now - job.activeAt < limit) continue
+        idle.push(job)
+      }
+    if (!watched) {
+      clearInterval(this.sweeper)
+      this.sweeper = undefined
+    }
+    await Promise.all(
+      idle.map(async (job) => {
+        job.view.status = 'killed'
+        try {
+          await job.stop()
+          job.cleanupPending = false
+          job.finish(-1)
+        } catch {
+          job.view.status = 'running'
+        }
+      }),
+    )
   }
   private get(ctx: JobOwner, id: string): Job {
     const job = this.sessions.get(owner(ctx))?.get(id)
@@ -175,7 +223,12 @@ export class ShellJobs {
     const call = `${owner(ctx)}\0${ctx.session.toolUseId}`
     const prior = this.calls.get(call)
     if (prior) return copy(this.get(ctx, prior))
-    const argv = ctx.platform.shell === 'powershell' ? [SHELL_SENTINEL, command] : ['sh', '-c', command]
+    // Nothing ever writes to a command's input, so a prompt for input would wait forever. Reading
+    // from /dev/null makes it fail at once instead of leaving a process nobody can answer.
+    const argv =
+      ctx.platform.shell === 'powershell'
+        ? [SHELL_SENTINEL, command]
+        : ['sh', '-c', `exec </dev/null; ${command}`]
     const handle = await this.open(ctx, argv, cwd)
     let job: Job
     try {
@@ -278,6 +331,7 @@ export class ShellJobs {
       this.shells.delete(job.view.id)
     })
     if (!pty) this.shells.set(job.view.id, new PersistentShell(handle, shell))
+    this.watchIdle()
     return copy(job)
   }
   async startPersistent(
@@ -316,17 +370,21 @@ export class ShellJobs {
       },
     )
     this.calls.set(call, job.view.id)
+    const shellJob = session
+    shellJob.activeAt = Date.now()
     void transport
       .run(command, cwd, (chunk) => this.append(job, chunk))
       .then(
         ({ code, cwd: next }) => {
+          shellJob.activeAt = Date.now()
           if (next) {
-            session!.view.cwd = next
+            shellJob.view.cwd = next
             job.view.cwd = next
           }
           job.finish(code)
         },
         (error: unknown) => {
+          shellJob.activeAt = Date.now()
           this.append(job, { stream: 'stderr', text: String(error) })
           job.finish(null)
         },
@@ -385,6 +443,7 @@ export class ShellJobs {
   ): Promise<ShellJobView> {
     ctx.signal.throwIfAborted()
     const job = this.get(ctx, id)
+    job.activeAt = Date.now()
     if (job.view.status !== 'running' || ms <= 0) return copy(job)
     if (job.view.kind === 'child' && ctx.cwd && ctx.subagent) {
       const deadline = Date.now() + ms
@@ -437,6 +496,7 @@ export class ShellJobs {
     const job = this.get(ctx, id)
     if (job.view.kind !== 'pty' || job.view.status !== 'running') throw new Error('job is not a running PTY')
     if (Buffer.byteLength(text) > 65536) throw new Error('terminal input exceeds 64KiB')
+    job.activeAt = Date.now()
     await this.processes.get(id)!.write(text)
   }
   async resize(ctx: JobOwner, id: string, columns: number, rows: number): Promise<void> {
@@ -505,6 +565,8 @@ export class ShellJobs {
   dispose(): Promise<void> {
     this.disposal ??= (async () => {
       this.disposed = true
+      clearInterval(this.sweeper)
+      this.sweeper = undefined
       await Promise.resolve()
       try {
         for (const key of this.sessions.keys()) await this.closeSession(key.split('\0')[0]!)

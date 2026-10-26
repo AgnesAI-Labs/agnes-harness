@@ -11,6 +11,7 @@ import {
   mkdirDurablySync,
   publishFileDurablySync,
   removeFileDurablySync,
+  renameWriteThrough,
   syncDirectorySync,
   syncTreeBatchedSync,
 } from '@agnes/system-node'
@@ -482,6 +483,24 @@ export class RuntimeGenerationSnapshotStore {
    * `E_GENERATION_PIN_BUSY`. Release removes the lock only while it still carries this holder's token.
    */
   #lockedPin<T>(sessionKey: string, body: () => T): T {
+    const release = this.#pinLock(sessionKey)
+    try {
+      return body()
+    } finally {
+      release()
+    }
+  }
+
+  async #lockedPinAsync<T>(sessionKey: string, body: () => Promise<T>): Promise<T> {
+    const release = this.#pinLock(sessionKey)
+    try {
+      return await body()
+    } finally {
+      release()
+    }
+  }
+
+  #pinLock(sessionKey: string): () => void {
     const lock = `${this.pinPath(sessionKey)}.lock`,
       deadline = Date.now() + this.#lockWaitMs,
       owner = { ...this.#holder(), token: randomUUID() }
@@ -500,11 +519,7 @@ export class RuntimeGenerationSnapshotStore {
         )
       else pause(5)
     }
-    try {
-      return body()
-    } finally {
-      releaseOwnerFileLock(lock, owner.token)
-    }
+    return () => releaseOwnerFileLock(lock, owner.token)
   }
 
   #replacePin(pin: SessionGenerationPin): SessionGenerationPin {
@@ -512,14 +527,27 @@ export class RuntimeGenerationSnapshotStore {
     return Object.freeze(pin)
   }
 
-  recordLoop(sessionKey: string, loop: Readonly<{ id: string; version: string }>): void {
-    this.#lockedPin(sessionKey, () => {
+  /**
+   * Every new session replaces the pin it published moments earlier, which is when Windows readers
+   * (Defender, the search indexer, another process reading pins) tend to hold it: a rename over an open
+   * file fails there. The async rename waits for them (up to 1 s) without blocking this worker's other
+   * sessions, where the sync replace could only spin for 100 ms.
+   */
+  async recordLoop(sessionKey: string, loop: Readonly<{ id: string; version: string }>): Promise<void> {
+    await this.#lockedPinAsync(sessionKey, async () => {
       const pin = this.session(sessionKey)
       if (!pin) throw new Error('E_GENERATION_PIN_MISSING: session is not bound')
       if (pin.loop && (pin.loop.id !== loop.id || pin.loop.version !== loop.version))
         throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: session loop differs from its generation pin')
       if (pin.loop) return
-      this.#replacePin({ ...pin, loop })
+      const path = this.pinPath(sessionKey),
+        temporary = `${path}.${randomUUID()}.tmp`
+      try {
+        writeFileSync(temporary, JSON.stringify({ ...pin, loop }), { mode: 0o600, flag: 'wx', flush: true })
+        await renameWriteThrough(temporary, path)
+      } finally {
+        rmSync(temporary, { force: true })
+      }
     })
   }
 

@@ -162,6 +162,15 @@ function board(input, store) {
   }
 }
 
+/** A class-A defect holds TR5 and ADCP: closing it without its retest (a void or duplicate report) is a person's call. */
+function closableByAgent(state, id, to) {
+  const defect = state.defects.find((d) => d.id === id)
+  if (to === 'CLOSED' && defect?.severity === 'A' && defect.state !== 'RETEST')
+    throw new DomainError(
+      `${defect.id} 是 A 类缺陷：修复并回归（RETEST）后才能关闭；无效或重复的报告请让用户在看板上关闭`,
+    )
+}
+
 const impact = Type.Optional(
   Type.Object(
     {
@@ -263,7 +272,11 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx, a) => a.mutate(ctx.store, (s) => transition(s, { ...input, by: a.by })),
+    (input, ctx, a) =>
+      a.mutate(ctx.store, (s) => {
+        if (input.kind === 'defect') closableByAgent(s, input.id, input.to)
+        return transition(s, { ...input, by: a.by })
+      }),
   ),
   tool(
     'devboard_request_human',
@@ -325,7 +338,7 @@ export const tools = [
   ),
   tool(
     'devboard_artifact_record',
-    "Register or update a deliverable of a live project after writing its file (id DOC-<n>-<KIND>[-<suffix>]; a suffix allows several of one kind). path is relative to the project directory (e.g. docs/SRS.md) and must stay inside it; the file is read so the board can preview it. Kinds CODE and TEST register source and test files of the project (one suffix per file, e.g. kind CODE suffix APP for src/app.js) and ANALYSIS registers a role's analysis note, only below analysis/<id of an existing change, ECN, problem, trial or fault>/ (a missing suffix is taken from the file name); these preview as plain text, are never run or rendered, and a file with binary content is refused. Files under analysis/ cannot be registered as any other kind. 登记交付物，含代码、测试与分析文件。",
+    "Register or update a deliverable of a live project after writing its file (id DOC-<n>-<KIND>[-<suffix>]; a suffix allows several of one kind). path is relative to the project directory (e.g. docs/SRS.md) and must stay inside it; the file is read so the board can preview it. Kinds CODE and TEST register source and test files of the project (one suffix per file, e.g. kind CODE suffix APP for src/app.js; another file under an id already registered is refused) and ANALYSIS registers a role's analysis note, only below analysis/<id of an existing change, ECN, problem, trial or fault>/ (a missing suffix is taken from the file name); these preview as plain text, are never run or rendered, and a file with binary content is refused. Files under analysis/ cannot be registered as any other kind. authorRole, when given, must name a known role (e.g. 验证工程师), not a playbook role id. 登记交付物，含代码、测试与分析文件。",
     Type.Object(
       {
         projectId: id,
@@ -355,7 +368,7 @@ export const tools = [
   ),
   tool(
     'devboard_req_upsert',
-    'Register or update CUS/SYS/SWR/DES/TC items of a project (ids like CUS-001, SWR-012, TC-020, unique within the project; MER-/EER- are the mechanical and electrical sub-system requirement prefixes, level SWR). parent names the items one level up: SYS→CUS, SWR→SYS, DES→SWR, TC→SWR. discipline MECH/ELEC/SW on SWR and DES; partNo/drawingNo/module on DES; clause/compliance/responseNote on CUS. 登记需求、设计与用例并挂接追溯。',
+    'Register or update CUS/SYS/SWR/DES/TC items of a project (ids like CUS-001, SWR-012, TC-020, unique within the project; MER-/EER- are the mechanical and electrical sub-system requirement prefixes, level SWR). parent names the items one level up: SYS→CUS, SWR→SYS, DES→SWR, TC→SWR. discipline MECH/ELEC/SW on SWR and DES; partNo/drawingNo/module on DES; clause/compliance/responseNote on CUS. SWR and TC become VERIFIED only through devboard_test_record results. 登记需求、设计与用例并挂接追溯。',
     Type.Object(
       {
         projectId: id,
@@ -452,7 +465,7 @@ export const tools = [
   ),
   tool(
     'devboard_defect_upsert',
-    'Create a defect (omit id) or move one (id + to): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. testCase must be a registered TC id and req a registered requirement id of the project. An unclosed class-A defect holds the TR5 and ADCP gates (they cannot be approved); closing it closes its system finding on a waiting gate. 登记或流转缺陷。',
+    'Create a defect (omit id, no to) or move one (id + to, optional note; a move edits no other field): NEW → CONFIRMED → FIXING → RETEST → CLOSED, DEFERRED. testCase must be a registered TC id and req a registered requirement id of the project. An unclosed class-A defect holds the TR5 and ADCP gates (they cannot be approved), so you close one only from RETEST (people close a void or duplicate report on the board); closing it closes its system finding on a waiting gate. 登记或流转缺陷。',
     Type.Object(
       {
         id: Type.Optional(id),
@@ -469,16 +482,25 @@ export const tools = [
       },
       strict,
     ),
-    (input, ctx, a) =>
-      a.mutate(ctx.store, (s) =>
-        input.id
-          ? transition(s, { kind: 'defect', id: input.id, to: input.to, note: input.note, by: a.by })
-          : create(s, { ...input, kind: 'defect', by: a.by }),
-      ),
+    (input, ctx, a) => {
+      // A move carries only to and note; a creation carries no move. Refuse a mix instead of dropping fields.
+      const extra = Object.keys(input).filter((k) => !['id', 'projectId', 'to', 'note'].includes(k))
+      if (input.id && (!input.to || extra.length))
+        throw new DomainError(
+          `流转缺陷只接受 id、to 和 note${extra.length ? `，收到 ${extra.join('、')}` : '，缺少 to'}`,
+        )
+      if (!input.id && (input.to || input.note))
+        throw new DomainError('新建缺陷不能同时流转：先新建，再用 id + to 流转')
+      return a.mutate(ctx.store, (s) => {
+        if (!input.id) return create(s, { ...input, kind: 'defect', by: a.by })
+        closableByAgent(s, input.id, input.to)
+        return transition(s, { kind: 'defect', id: input.id, to: input.to, note: input.note, by: a.by })
+      })
+    },
   ),
   tool(
     'devboard_change_upsert',
-    'Create a change request (omit id), edit its impact analysis (reqs, artifacts, tests, items with revisions, fleet), source, root cause, retrofit total or verification, and/or move it. Set traceFrom: true to complete the impact from the requirement chain: impact.reqs are the starting points, and every downstream requirement, design item, test case and deliverable is added to what you gave (nothing you gave is removed). SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED only by an approved ECR flow (start it with devboard_approval_submit; it generates the ECN, and releasing the ECN adds the as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Record rationale in note; it remains in change history even without a state move. Leave CCB decisions to people unless told otherwise. 登记或推进变更，note 依据保留在变更留痕。',
+    'Create a change request (omit id), edit its title, reason, impact analysis (reqs, artifacts, tests, items with revisions, fleet; the impact fields you give replace those fields, the others are kept), source and root cause before CCB review, its retrofit total (refused while an approval flow runs on it) or verification, and/or move it. Set traceFrom: true to complete the impact from the requirement chain: impact.reqs are the starting points, and every downstream requirement, design item, test case and deliverable is added to what you gave (nothing you gave is removed). SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED only by an approved ECR flow (start it with devboard_approval_submit; it generates the ECN, and releasing the ECN adds the as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Record rationale in note; it remains in change history even without a state move. Leave CCB decisions to people unless told otherwise. 登记或推进变更，note 依据保留在变更留痕。',
     Type.Object(
       {
         id: Type.Optional(id),
@@ -510,7 +532,7 @@ export const tools = [
   ),
   tool(
     'devboard_trial_upsert',
-    'Register a trial (omit id; type TYPE_TEST/ROUTINE/FAT/FAI with title, standard, sample, lab, plannedAt) or update one (id): report fields, result, deviations, verified requirements and the change it triggered (changeId); and/or move it: PLANNED → IN_PROGRESS → REPORTED (needs reportNo and a result) → APPROVED. A FAIL trial can be approved only with an approved change. Approving a trial is a human decision on the board. 登记或更新试验与首件。',
+    'Register a trial (omit id; type TYPE_TEST/ROUTINE/FAT/FAI with title, standard, sample, lab, plannedAt) or update one (id): report fields, result, deviations, verified requirements and the change it triggered (changeId); and/or move it: PLANNED → IN_PROGRESS → REPORTED (needs reportNo and a result) → APPROVED. The type is fixed once registered; a note is kept in the history even without a move. A FAIL trial can be approved only with an approved change. Approving a trial is a human decision on the board. 登记或更新试验与首件。',
     Type.Object(
       {
         id: Type.Optional(id),
@@ -541,7 +563,7 @@ export const tools = [
   ),
   tool(
     'devboard_problem_upsert',
-    'Create a quality problem (omit id; title, projectId, severity A/B/C) or update one (id): 8D steps (D1…D8 with done/text), rootCause, containment, linked faultIds, the change it needs (changeId) or why none (noChangeReason); and/or move it: OPEN → ANALYZING → ACTION (needs rootCause and D4) → VERIFYING → CLOSED. Draft only: cite alarm and trial ids in the text, and never close a problem — people close it on the board. 登记或推进质量问题（8D）。',
+    'Create a quality problem (omit id; title, projectId, severity A/B/C) or update one (id): 8D steps (D1…D8 with done/text), rootCause, containment, linked faultIds, the change it needs (changeId) or why none (noChangeReason); and/or move it: OPEN → ANALYZING → ACTION (needs rootCause and D4) → VERIFYING → CLOSED. A note is kept in the history even without a move. Draft only: cite alarm and trial ids in the text, and never close a problem — people close it on the board. 登记或推进质量问题（8D）。',
     Type.Object(
       {
         id: Type.Optional(id),

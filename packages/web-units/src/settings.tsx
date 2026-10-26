@@ -262,7 +262,15 @@ function SettingsBuiltinImpl(
             root.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: id, bubbles: true }))
         }
         if (changeAddress) window.dispatchEvent(new Event(SETTINGS_ROUTE_EVENT))
-        if (route.anchor) requestAnimationFrame(() => revealSettingsAnchor(route.anchor ?? ''))
+        if (route.anchor)
+          requestAnimationFrame(() => {
+            const anchor = route.anchor ?? ''
+            // Once its subsection is on screen the link is spent: a later route to this page (a
+            // back step, the hub's echo) is the page itself and must not open the subsection again.
+            if (document.getElementById(anchor) && requestedPage.current === requested)
+              requestedPage.current = id
+            revealSettingsAnchor(anchor)
+          })
         if (notify && !tabFocused && window.matchMedia('(max-width: 767px)').matches)
           root.querySelector<HTMLButtonElement>('#settings-back')?.focus({ preventScroll: true })
         if (tabFocused)

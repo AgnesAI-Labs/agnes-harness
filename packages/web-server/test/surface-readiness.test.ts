@@ -54,7 +54,7 @@ it('serves the main Web while Surface paths are retryable, then distinguishes a 
         })
       ).status,
     ).toBe(503)
-    // The same origin/fetch-site gate still refuses untrusted write traffic before proxy/readiness.
+    // The cross-site write floor refuses untrusted write traffic before proxy/readiness.
     expect(
       (
         await fetch(new URL('/demo/action', web.url), {
@@ -62,7 +62,7 @@ it('serves the main Web while Surface paths are retryable, then distinguishes a 
           headers: { origin: 'https://untrusted.example' },
         })
       ).status,
-    ).toBe(405)
+    ).toBe(403)
     expect(
       (
         await fetch(new URL('/app.js', web.url), {
@@ -198,6 +198,8 @@ it('characterizes every guarded route across origin, fetch-site, method and raw 
                   status = route === 'admin' ? 200 : 202
                   invoked = true
                 }
+              } else if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && (!optionalOrigin || !optionalSite)) {
+                status = 403
               } else if (method === 'GET' || method === 'HEAD' || strictOrigin) {
                 status = 200
                 invoked = true

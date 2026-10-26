@@ -52,6 +52,36 @@ it('keeps settings DSH and pane mounts inside the content grid column', async ()
   expect(css).toContain('#settings-dsh-shell-slots > [id^="settings-dsh-slot-"]')
 })
 
+/** The selectors of one rule, split at top-level commas only. */
+function selectorList(rule: string): string[] {
+  const selectors = ['']
+  let depth = 0
+  for (const character of rule) {
+    if (character === '(') depth++
+    if (character === ')') depth--
+    if (character === ',' && depth === 0) selectors.push('')
+    else selectors[selectors.length - 1] += character
+  }
+  return selectors.map((selector) => selector.trim())
+}
+
+it('a subpage of a tabbed settings page keeps its breadcrumb line', async () => {
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
+  // The tab strip names a tabbed page, so its own heading folds away; a subpage's header is its only
+  // way back (「Models & accounts › Add account」) and must never be folded with it.
+  const folded = [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{[^}]*\}/g)]
+    .map((match) => match[1]?.trim() ?? '')
+    .filter(
+      (selector) =>
+        selector.includes('settings-section-tabs') && selector.includes('.agnes-settings-page-heading'),
+    )
+  expect(folded.length).toBeGreaterThanOrEqual(3)
+  for (const selector of folded.flatMap(selectorList))
+    expect(selector.replace(/\s+/g, ' ')).toContain(
+      '.agnes-settings-page-heading:not(.agnes-settings-subpage-header > *',
+    )
+})
+
 it('list rows use fixed tracks so the Switch column aligns across rows', async () => {
   const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   // Each row is its own grid, so an `auto` track is sized per row and the Switch column drifts.

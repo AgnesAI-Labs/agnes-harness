@@ -1,4 +1,4 @@
-import { Badge, Button, PushPage, Select, Table } from '@agnes/web-ui'
+import { Badge, Button, Field, PushPage, Select, Table } from '@agnes/web-ui'
 import React from 'react'
 import { AnalysisFiles } from './analysis.js'
 import { ApprovalEntry } from './approvals.js'
@@ -36,7 +36,13 @@ const resultBadge = (data, result) =>
 // ── Trials and first-article inspection ────────────────────────────────────────────────────────
 
 /** A failed trial without a change gets a one-click draft: a SUBMITTED change whose source is the trial. */
-function DraftChange({ trial, board, role }) {
+/** The trial's linked change, when the CCB rejected it: it never releases the trial. */
+const rejectedChange = (data, trial) => {
+  const change = data.changes.find((c) => c.id === trial.changeId)
+  return change && (change.state === 'REJECTED' || change.ccb?.decision === 'REJECTED') ? change : undefined
+}
+
+function DraftChange({ trial, board, role, rejected }) {
   const draft = () =>
     board.run(
       'devboard.create',
@@ -45,7 +51,12 @@ function DraftChange({ trial, board, role }) {
         by: role,
         projectId: trial.projectId,
         title: `${trial.id} 不合格：设计变更`,
-        reason: `${trial.title}（${trial.standard}）试验不合格，报告 ${trial.reportNo ?? '—'}。${(trial.deviations ?? []).join('；')}`,
+        // The server accepts at most 2000 characters; long deviation lists are cut.
+        reason:
+          `${trial.title}（${trial.standard}）试验不合格，报告 ${trial.reportNo ?? '—'}。${(trial.deviations ?? []).join('；')}`.slice(
+            0,
+            2000,
+          ),
         source: { type: 'TYPE_TEST', ref: trial.id },
       },
       `${trial.id} 已起草变更，请在「变更」页补齐失效原因分析与影响分析`,
@@ -53,7 +64,13 @@ function DraftChange({ trial, board, role }) {
   return h(
     'section',
     { className: 'devboard-actions', 'aria-label': '起草变更' },
-    h('p', null, '该试验不合格且尚未关联变更：可让智能体起草，或手工起草一份来源为型式试验的变更申请。'),
+    h(
+      'p',
+      null,
+      rejected
+        ? `该试验不合格，关联变更 ${rejected.id} 已被驳回：可让智能体起草新变更，或手工起草一份来源为型式试验的变更申请，它会替换原关联。`
+        : '该试验不合格且尚未关联变更：可让智能体起草，或手工起草一份来源为型式试验的变更申请。',
+    ),
     h(
       WorkButton,
       {
@@ -196,9 +213,9 @@ export function Trials({ data, board, role, setRole }) {
             ),
           h(AnalysisFiles, { data, board, projectId: item.projectId, ids: [item.id] }),
           item.result === 'FAIL' &&
-            !item.changeId &&
+            (!item.changeId || rejectedChange(data, item)) &&
             item.state !== 'APPROVED' &&
-            h(DraftChange, { trial: item, board, role }),
+            h(DraftChange, { trial: item, board, role, rejected: rejectedChange(data, item) }),
           h(ApprovalEntry, { data, board, role, setRole, type: 'trial', id: item.id }),
           h(TransitionBar, {
             key: item.id,
@@ -209,7 +226,7 @@ export function Trials({ data, board, role, setRole }) {
             role,
             hidden: ['APPROVED'],
             fields: [
-              { key: 'reportNo', label: '报告号（出具报告时必填）' },
+              { key: 'reportNo', label: '报告号（出具报告时必填）', max: 48 },
               {
                 key: 'result',
                 label: '结论（出具报告时必填）',
@@ -474,6 +491,7 @@ export function Service({ data, board, role, setRole }) {
               { board, ...workOf('problemEightD', problem), guide: 'problem-agent-8d' },
               workOf('problemEightD', problem).label,
             ),
+          h(NoChangeReason, { key: problem.id, data, problem, board, role }),
           h(ApprovalEntry, { data, board, role, setRole, type: 'problem', id: problem.id }),
           h(TransitionBar, {
             key: problem.id,
@@ -483,13 +501,47 @@ export function Service({ data, board, role, setRole }) {
             board,
             role,
             hidden: ['CLOSED'],
-            fields: [
-              { key: 'rootCause', label: '根本原因（进入措施前必填）' },
-              { key: 'noChangeReason', label: '无需变更的理由（无关联变更时关闭必填）' },
-            ],
+            fields: [{ key: 'rootCause', label: '根本原因（进入措施前必填）' }],
           }),
           h(HistoryTable, { data, history: problem.history }),
         ),
       ),
+  )
+}
+
+/** Why a problem needs no design change, saved without a move: in VERIFYING the only move is back to ACTION. */
+function NoChangeReason({ data, problem, board, role }) {
+  const [reason, setReason] = React.useState('')
+  // Frozen while the close flow runs, as on the server.
+  const running = data.approvals.some((a) => a.state === 'RUNNING' && a.subject.id === problem.id)
+  if (problem.changeId || problem.state === 'CLOSED' || running) return null
+  const save = async () => {
+    const ok = await board.run(
+      'devboard.transition',
+      { kind: 'problem', id: problem.id, by: role, noChangeReason: reason.trim() },
+      `${problem.id} 已保存无需变更的理由`,
+    )
+    if (ok) setReason('')
+  }
+  return h(
+    'section',
+    { className: 'devboard-actions', 'aria-label': '无需变更的理由' },
+    h(
+      Field,
+      { label: '无需变更的理由（无关联变更时关闭必填）', htmlFor: `devboard-no-change-${problem.id}` },
+      h('input', {
+        id: `devboard-no-change-${problem.id}`,
+        className: 'devboard-note',
+        maxLength: 500,
+        placeholder: problem.noChangeReason ?? '',
+        value: reason,
+        onChange: (e) => setReason(e.target.value),
+      }),
+    ),
+    h(
+      'div',
+      { className: 'devboard-buttons' },
+      h(Button, { disabled: board.busy || !reason.trim(), onClick: save }, '保存理由'),
+    ),
   )
 }

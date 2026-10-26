@@ -129,7 +129,7 @@ export function act(flow, input, now) {
   const at = new Date(now).toISOString()
   if (flow.state !== 'RUNNING')
     fail(
-      `审批不满足：${flow.id} 已${FLOW_LABELS[flow.state]}，不能再${action === 'WITHDRAW' ? '撤回' : '处理'}`,
+      `审批不满足：${flow.id} ${FLOW_LABELS[flow.state]}，不能再${action === 'WITHDRAW' ? '撤回' : '处理'}`,
     )
   const node = flow.nodes[flow.current]
   const comment = optional(input.comment)

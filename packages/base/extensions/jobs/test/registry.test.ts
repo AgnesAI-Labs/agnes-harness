@@ -4,7 +4,7 @@ import { validateMethod } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createJobTools } from '../src/index.js'
-import { ShellJobs } from '../src/registry.js'
+import { SHELL_IDLE_MS, ShellJobs, TERMINAL_IDLE_MS } from '../src/registry.js'
 import { createJobsServices } from '../src/services.js'
 
 it('unifies child output/cancellation with owner isolation and completion notifications', async () => {
@@ -330,6 +330,73 @@ it('runs a human one-shot command with output, exit codes, a timeout kill and no
     ).rejects.toThrow('SANDBOX_UNAVAILABLE')
   } finally {
     vi.useRealTimers()
+    await jobs.dispose()
+  }
+})
+
+function fakeProcesses(tool: ReturnType<typeof fakeToolContext>) {
+  const opened: { argv: readonly string[]; closed: boolean }[] = []
+  tool.sandbox.openProcess = async (request) => {
+    let end!: () => void
+    const exited = new Promise<{ code: number }>((resolve) => {
+      end = () => resolve({ code: 0 })
+    })
+    const record = { argv: request.argv, closed: false }
+    opened.push(record)
+    return {
+      enforcement: { level: 'none', scope: [] },
+      exited,
+      onOutput: () => () => {},
+      write: async () => {},
+      resize: async () => {},
+      signal: async () => {},
+      close: async () => {
+        record.closed = true
+        end()
+      },
+    }
+  }
+  return opened
+}
+
+it('closes an idle persistent shell and an idle terminal, but not a busy shell or a read terminal', async () => {
+  const jobs = new ShellJobs(),
+    tool = fakeToolContext({ cwd: resolve('/work/proj'), sessionKey: 'idle-session' })
+  fakeProcesses(tool)
+  try {
+    const shell = await jobs.openTerminal(tool, 'bash', tool.cwd, undefined, false)
+    const busy = await jobs.openTerminal(tool, 'bash', tool.cwd, undefined, false)
+    const terminal = await jobs.openTerminal(tool, 'bash')
+    // A command that never finishes keeps its shell busy.
+    await jobs.startPersistent('sleep 1000', undefined, tool, 'bash', busy.id)
+    const status = (id: string) => jobs.list(tool).find((job) => job.id === id)?.status
+    await jobs.closeIdle(Date.now() + SHELL_IDLE_MS - 1000)
+    expect([status(shell.id), status(busy.id), status(terminal.id)]).toEqual([
+      'running',
+      'running',
+      'running',
+    ])
+    await jobs.closeIdle(Date.now() + SHELL_IDLE_MS + 1000)
+    expect([status(shell.id), status(busy.id), status(terminal.id)]).toEqual(['killed', 'running', 'running'])
+    // Reading a terminal (the Web dock polls its output) counts as use.
+    await jobs.wait({ ...tool, signal: tool.signal }, terminal.id, 0)
+    await jobs.closeIdle(Date.now() + TERMINAL_IDLE_MS - 1000)
+    expect(status(terminal.id)).toBe('running')
+    await jobs.closeIdle(Date.now() + TERMINAL_IDLE_MS + 1000)
+    expect(status(terminal.id)).toBe('killed')
+  } finally {
+    await jobs.dispose()
+  }
+})
+
+it('runs a model command with its input at /dev/null, so a prompt fails instead of hanging', async () => {
+  const jobs = new ShellJobs(),
+    tool = fakeToolContext({ cwd: resolve('/work/proj') })
+  const opened = fakeProcesses(tool)
+  try {
+    await jobs.start('npm init', tool.cwd, tool)
+    expect(opened.at(-1)?.argv).toEqual(['sh', '-c', 'exec </dev/null; npm init'])
+  } finally {
     await jobs.dispose()
   }
 })

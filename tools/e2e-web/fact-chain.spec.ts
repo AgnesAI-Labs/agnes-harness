@@ -43,9 +43,7 @@ for (const locale of ['en', 'zh-CN'])
       await expect(facts.locator('[data-link="receipt"]')).toContainText(
         locale === 'en' ? 'Completed' : '已完成',
       )
-      await expect(facts.getByTestId('trace-readonly')).toContainText(
-        locale === 'en' ? 'Saved execution record' : '已保存的执行记录',
-      )
+      await expect(facts.getByTestId('trace-inspector-pane')).toHaveAttribute('data-pane', 'source')
       await expect(facts.getByTestId('trace-provenance')).not.toContainText(/[a-f0-9]{64}/)
       await translated(page)
       await accessible(page, info, `fact-tool-${locale}-${theme}`)

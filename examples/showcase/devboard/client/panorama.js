@@ -20,8 +20,10 @@ const PAGE_OF = {
   trial: 'trials',
   change: 'devboard-changes',
   problem: 'service',
-  baseline: 'service',
+  baseline: 'devboard-projects',
 }
+/** Snapshot collection holding each selectable record type (anything else is a blocker). */
+const LIST_OF = { stage: 'stages', gate: 'gates', change: 'changes', problem: 'problems', trial: 'trials' }
 const DISCIPLINES = ['机械', '电气', '软件', '试验', '质量', '综合']
 const DISCIPLINE_OF = {
   机械设计师: '机械',
@@ -281,6 +283,8 @@ export function Panorama({ data, role: demoRole }) {
   // The blocker role filter starts at the demo role (none when it has no blockers) and again when the demo role changes.
   const fallback = blockers.some((b) => b.role === demoRole) ? demoRole : ''
   const [picked, setPicked] = React.useState({ demo: demoRole, role: fallback })
+  // Adjusting state while rendering: leaving a demo role drops its pick, so coming back to it starts at the demo role.
+  if (picked.demo !== demoRole) setPicked({ demo: demoRole, role: fallback })
   const role = picked.demo === demoRole ? picked.role : fallback
   const setRole = (next) => setPicked({ demo: demoRole, role: next })
   const [open, setOpen] = React.useState({})
@@ -298,6 +302,8 @@ export function Panorama({ data, role: demoRole }) {
   const projects = scoped.filter((p) => !(onlyBlocked || role) || withBlockers.has(p.id))
   const view2 = { ...data, blockers }
   const pick = (type, id) => () => setSel({ type, id })
+  // A record can vanish from the snapshot (gate signed, board reset): then nothing is selected.
+  const shownSel = sel && byId(view2[LIST_OF[sel.type] ?? 'blockers'] ?? [], sel.id) ? sel : null
 
   // Plot geometry.
   const W = Math.max(width, 620)
@@ -333,6 +339,7 @@ export function Panorama({ data, role: demoRole }) {
     const d = new Date(w0)
     d.setHours(0, 0, 0, 0)
     d.setDate(d.getDate() + ((8 - d.getDay()) % 7))
+    if (d.getTime() < w0) d.setDate(d.getDate() + 7)
     for (let t = d.getTime(); t <= w1; t += 7 * DAY) ticks.push([t, md(t)])
   } else {
     const months = Math.ceil((w1 - w0) / (30 * DAY))
@@ -759,7 +766,7 @@ export function Panorama({ data, role: demoRole }) {
             )
           : h('p', { className: 'devboard-muted', role: 'status' }, '没有符合筛选条件的项目或卡点。'),
       ),
-      sel && h(Drawer, { data: view2, sel, onClose: () => setSel(null) }),
+      shownSel && h(Drawer, { data: view2, sel: shownSel, onClose: () => setSel(null) }),
     ),
     legend,
   )

@@ -273,6 +273,12 @@ export function effectiveState(item, kind, now) {
     : item.state
 }
 
+/** An edit without a move keeps its note as a same-state history line, as a move would. */
+function keepNote(item, input, at, by) {
+  const note = optional(input.note, 2000)
+  if (note) record(item, at, by, item.state, item.state, note)
+}
+
 /** Requirement-level items (CUS…TC) are unique per project, so they are found with their project. */
 function find(state, kind, id, projectId) {
   const list = state[COLLECTIONS[kind]]
@@ -293,9 +299,9 @@ const stageLabel = (state, stage) => {
   return (project && profileOf(project)[stage.stage]?.label) || LABELS.stage[stage.stage] || stage.stage
 }
 function record(item, at, by, from, to, note) {
-  item.history = [...(item.history ?? []), { at, by, from, to, ...(note ? { note } : {}) }].slice(
-    -HISTORY_LIMIT,
-  )
+  const all = [...(item.history ?? []), { at, by, from, to, ...(note ? { note } : {}) }]
+  // The first line (who created it, and when) stays: approval rights and timelines read it.
+  item.history = all.length > HISTORY_LIMIT ? [all[0], ...all.slice(1 - HISTORY_LIMIT)] : all
   item.state = to
 }
 
@@ -332,12 +338,34 @@ function guardFlow(state, kind, item, to, input) {
   if (running) fail(`${item.id} 有进行中的审批 ${running.id}，请先在流程中处理`)
 }
 
+/** Edits are refused on a record in its final state or under a running approval flow (what was signed must not change). */
+function guardEditable(state, kind, item) {
+  if (!MACHINES[kind][item.state]?.length) fail(`${item.id} 已进入 ${item.state}，不可再改`)
+  const running = runningFlow(state, kind, item.id)
+  if (running) fail(`${item.id} 有进行中的审批 ${running.id}，请先在流程中处理`)
+}
+
 /** The only write path for states. Refuses any move absent from the kind's table. */
 export function transition(state, input, now = Date.now()) {
   const { kind, id, to, by, note } = input
   if (!MACHINES[kind] && kind !== 'retrofit') fail(`未知实体类型：${kind}`)
   if (kind === 'stage') return moveStage(state, find(state, 'stage', id), input, now)
   if (kind === 'retrofit') return setRetrofit(state, input, now)
+  // Without a move a problem saves its analysis fields: in VERIFYING the close goes through PROBLEM_CLOSE.
+  if (kind === 'problem' && to === undefined) {
+    const fields = Object.keys(input).filter(
+      (k) => !['kind', 'id', 'by'].includes(k) && input[k] !== undefined,
+    )
+    if (!fields.length || fields.some((k) => !['rootCause', 'noChangeReason'].includes(k)))
+      fail(
+        `不流转时只能保存 rootCause 或 noChangeReason${fields.length ? `，收到 ${fields.join('、')}` : ''}`,
+      )
+    return upsertProblem(
+      state,
+      { id, by, rootCause: input.rootCause, noChangeReason: input.noChangeReason },
+      now,
+    )
+  }
   const item = find(state, kind, id)
   const from = effectiveState(item, kind, now)
   if (!MACHINES[kind][from]?.includes(to)) fail(`非法状态流转：${from} 不可流转至 ${to}`)
@@ -407,10 +435,19 @@ function moveStage(state, stage, { to, by, note, author }, now) {
         `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，不能开始「${stageLabel(state, stage)}」`,
       )
   }
-  if (author) stage.author = text(author, 'author', 32)
+  // The stage keeps the canonical role, so the self-approval check holds for "技术负责人 张三" too.
+  if (author) stage.author = knownRole(author)
   record(stage, new Date(now).toISOString(), by || '未署名', stage.state, 'IN_PROGRESS', note)
-  projectOf(state, stage.projectId).stage = stage.stage
+  // Restarting a reworked earlier stage leaves the project at its furthest stage.
+  const project = projectOf(state, stage.projectId)
+  if (index > STAGES.indexOf(project.stage)) project.stage = stage.stage
   return stage
+}
+
+/** A named author is kept as its canonical role, so the self-approval check and approval flows can find it. */
+function knownRole(value) {
+  const role = roleOf(text(value, 'author', 32))
+  return ROLES.includes(role) ? role : fail(`编写角色无效：${value}（可选 ${ROLES.join('、')}）`)
 }
 
 const pendingGate = (state, stageId) =>
@@ -426,7 +463,8 @@ function nextGate(state, project, stage) {
   return gatesOf(project, stage.stage).find((g) => !passed.has(g.code))
 }
 
-function addFindings(gate, texts, by, defectId) {
+/** `link` ({ defectId } or { flowId, artifactId }) names what closes a system finding by itself. */
+function addFindings(gate, texts, by, link = {}) {
   for (const raw of texts ?? []) {
     const n = gate.findings.length + 1
     gate.findings.push({
@@ -434,7 +472,7 @@ function addFindings(gate, texts, by, defectId) {
       text: text(raw, 'finding', 500),
       by,
       closed: false,
-      ...(defectId ? { defectId } : {}),
+      ...link,
     })
   }
 }
@@ -454,6 +492,31 @@ function closeDefectFindings(state, defect) {
         f.closed = true
         f.closedNote = `缺陷 ${defect.id} 已关闭（${by}）`
       }
+  }
+}
+/** An approved release flow closes the system findings that name it; an auto gate (TR4) left with none open passes. */
+function closeReleaseFindings(state, flow, at) {
+  for (const gate of state.gates) {
+    const open =
+      gate.decision === 'PENDING'
+        ? gate.findings.filter(
+            (f) => !f.closed && (f.artifactId ? f.artifactId === flow.subject.id : f.flowId === flow.id),
+          )
+        : []
+    if (!open.length) continue
+    for (const f of open) {
+      f.closed = true
+      f.closedNote = `发布审批 ${flow.id} 已批准（系统）`
+    }
+    if (gate.auto && gate.findings.every((f) => f.closed))
+      approve(
+        state,
+        find(state, 'stage', gate.stageId),
+        gate,
+        '系统（评审意见已全部关闭）',
+        '评审意见全部关闭，自动通过',
+        at,
+      )
   }
 }
 function closeFindings(gate, closes, by) {
@@ -517,14 +580,18 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
           gate,
           [`交付物 ${a.id} 的发布审批 ${flow.id} ${FLOW_LABELS[flow.state]}，尚未批准`],
           '系统检查',
+          // Any later approved release of the deliverable closes it, not only this flow.
+          { flowId: flow.id, artifactId: a.id },
         )
     }
     if (DEFECT_GATES.includes(def.code)) {
       // The rule itself is checked again at the decision, from the defects; these findings only show it.
       for (const d of unclosedDefects(state, project.id, 'A'))
-        addFindings(gate, [`A 类缺陷 ${d.id} 未关闭：${d.title}`], '系统检查', d.id)
+        addFindings(gate, [`A 类缺陷 ${d.id} 未关闭：${d.title}`], '系统检查', { defectId: d.id })
       for (const d of unclosedDefects(state, project.id, 'B'))
-        addFindings(gate, [`B 类缺陷 ${d.id} 未关闭（提示，可人工关闭）：${d.title}`], '系统检查', d.id)
+        addFindings(gate, [`B 类缺陷 ${d.id} 未关闭（提示，可人工关闭）：${d.title}`], '系统检查', {
+          defectId: d.id,
+        })
     }
     const [type, label] = TRIAL_GATES[def.code] ?? []
     if (type) {
@@ -541,6 +608,14 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
     fail(`阶段「${stageLabel(state, stage)}」当前为${LABELS.state[stage.state]}，需先开始该阶段再提交评审`)
   }
   addFindings(gate, findings, actor)
+  // A system check is closed by the approver at the decision (or by its defect closing), never by the submitter.
+  const system = (closes ?? []).filter((c) =>
+    gate.findings.some((f) => f.id === c?.id && f.by === '系统检查'),
+  )
+  if (system.length)
+    fail(
+      `评审意见 ${system.map((c) => c.id).join('、')} 是系统检查意见：由审批人在决议时关闭，提交方不能关闭`,
+    )
   closeFindings(gate, closes, actor)
   if (gate.auto && gate.findings.every((f) => f.closed))
     approve(state, stage, gate, '系统（代码评审意见已全部关闭）', '代码评审意见全部关闭，自动通过', at)
@@ -575,7 +650,7 @@ function approve(state, stage, gate, by, comment, at) {
     if (/^V0\./.test(a.version)) a.version = 'V1.0'
   }
   const main = items[0]
-  const short = stage.projectId.split('-').at(-1)
+  const short = numberOf(state, stage.projectId)
   const n = state.gates.filter((g) => g.stageId === stage.id && g.decision === 'APPROVED').length
   stage.baseline = {
     id: main
@@ -658,7 +733,8 @@ const intIn = (value, name, max) => {
 }
 
 function moveChange(cr, to, by, at, note, members) {
-  if (to === 'ANALYZED') {
+  // The analysis stays editable while ANALYZED, so CCB review checks it again.
+  if (to === 'ANALYZED' || to === 'CCB_REVIEW') {
     const impact = cr.impact
     const any = impact && [impact.reqs, impact.artifacts, impact.tests, impact.items].some((l) => l?.length)
     if (!any) fail(`${cr.id} 缺少影响分析：先登记受影响的需求、交付物、用例或物料`)
@@ -667,6 +743,8 @@ function moveChange(cr, to, by, at, note, members) {
   }
   if (to === 'CLOSED' && cr.state === 'IMPLEMENTED' && !cr.verification)
     fail(`${cr.id} 缺少验证记录（verification）：验证后才能关闭`)
+  if (to === 'CLOSED' && cr.state === 'IMPLEMENTED' && cr.verification.result !== 'PASS')
+    fail(`${cr.id} 验证未通过：重新验证通过后才能关闭`)
   if (to === 'APPROVED' || to === 'REJECTED')
     cr.ccb = {
       members: Array.isArray(members) && members.length ? members.slice(0, 12) : [by],
@@ -909,12 +987,24 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
     const item = existing ?? { id, projectId, level, parent: [], verifiedBy: [], status: 'DRAFT' }
     item.title = input.title === undefined && existing ? existing.title : text(input.title, 'title', 200)
     item.text = input.text === undefined && existing ? existing.text : text(input.text, 'text', 2000)
-    if (input.parent !== undefined) item.parent = ids(input.parent, 'parent')
+    if (input.parent !== undefined) {
+      const parent = ids(input.parent, 'parent')
+      // A test case moved off an SWR no longer verifies it.
+      for (const p of (item.parent ?? []).filter((x) => !parent.includes(x))) {
+        const old = state.reqs.find((r) => r.id === p && r.projectId === projectId)
+        if (old?.verifiedBy) old.verifiedBy = old.verifiedBy.filter((x) => x !== id)
+      }
+      item.parent = parent
+    }
     if (input.safety !== undefined) item.safety = Boolean(input.safety)
     if (!existing && level === 'SWR') item.discipline = SWR_PREFIX_DISCIPLINE[match[1]]
     reqFields(item, input)
-    if (input.status !== undefined)
-      item.status = oneOf(input.status, ['DRAFT', 'APPROVED', 'CHANGED', 'VERIFIED'], 'status')
+    if (input.status !== undefined) {
+      const status = oneOf(input.status, ['DRAFT', 'APPROVED', 'CHANGED', 'VERIFIED'], 'status')
+      if (status === 'VERIFIED' && item.status !== 'VERIFIED' && ['SWR', 'TC'].includes(item.level))
+        fail(`${item.id} 的 VERIFIED 由测试运行判定：用 devboard_test_record 登记按用例的结果`)
+      item.status = status
+    }
     item.updatedAt = at
     item.updatedBy = by || '未署名'
     if (!existing) state.reqs.push(item)
@@ -955,14 +1045,22 @@ export function projectPath(project, path) {
   return full
 }
 
-/** Cut to at most DOC_LIMIT_BYTES of UTF-8 without splitting a character. */
+/**
+ * Cut to at most DOC_LIMIT_BYTES as stored (JSON-encoded UTF-8) without splitting a character: newlines,
+ * quotes and control characters take 2–6 bytes there, so a raw-byte cut could still overflow the store's value cap.
+ */
 export function clip(markdown) {
-  const bytes = new TextEncoder().encode(markdown)
-  if (bytes.length <= DOC_LIMIT_BYTES) return { markdown, truncated: false }
-  return {
-    markdown: new TextDecoder().decode(bytes.slice(0, DOC_LIMIT_BYTES)).replace(/�+$/, ''),
-    truncated: true,
+  const size = (s) => new TextEncoder().encode(JSON.stringify(s)).length
+  if (size(markdown) <= DOC_LIMIT_BYTES) return { markdown, truncated: false }
+  let lo = 0
+  let hi = markdown.length
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (size(markdown.slice(0, mid)) <= DOC_LIMIT_BYTES) lo = mid
+    else hi = mid - 1
   }
+  const cut = /[\uD800-\uDBFF]$/.test(markdown.slice(0, lo)) ? lo - 1 : lo
+  return { markdown: markdown.slice(0, cut), truncated: true }
 }
 
 /** The analysis file's object (a change, its ECN, a problem, a trial or a fault of the project) must exist on the board. */
@@ -1001,8 +1099,22 @@ export function recordArtifact(state, input, now = Date.now()) {
   const suffix = optional(input.suffix, 24).toUpperCase() || (kind === 'ANALYSIS' ? named : '')
   if (suffix && !/^[A-Z0-9]+(-[A-Z0-9]+)*$/.test(suffix))
     fail(`suffix 格式无效：${suffix}（大写字母、数字与连字符）`)
-  const id = `DOC-${project.id.split('-').at(-1)}-${kind.replaceAll('_', '-')}${suffix ? `-${suffix}` : ''}`
-  const existing = state.artifacts.find((a) => a.id === id && a.projectId === project.id)
+  const name = `${kind.replaceAll('_', '-')}${suffix ? `-${suffix}` : ''}`
+  // A deliverable registered before the year joined the number keeps its DOC-<seq>- id.
+  const ids = [`DOC-${numberOf(state, project.id)}-${name}`, `DOC-${project.id.split('-').at(-1)}-${name}`]
+  const existing = state.artifacts.find((a) => ids.includes(a.id) && a.projectId === project.id)
+  const id = existing?.id ?? ids[0]
+  // The release flow approves the content it was started on; sent back to the initiator, it waits for the revision.
+  const running = existing && runningFlow(state, 'artifact', existing.id)
+  const revising =
+    running?.current === 0 &&
+    running.actions[running.since - 1]?.to === 'INITIATOR' &&
+    !running.actions.slice(running.since).some((a) => a.action === 'APPROVE')
+  if (running && !revising)
+    fail(`${existing.id} 有进行中的发布审批 ${running.id}：审批结束或退回发起人后再登记新内容`)
+  // A file kind's id names one file: another file under the same id would replace the first one's record.
+  if (SOURCE_KINDS.includes(kind) && existing?.source?.path && existing.source.path !== path)
+    fail(`${existing.id} 已登记为 ${existing.source.path}：${path} 请传另一个 suffix 登记`)
   const artifact = existing ?? { id, projectId: project.id, kind, status: 'DRAFT' }
   Object.assign(artifact, {
     stage,
@@ -1017,7 +1129,10 @@ export function recordArtifact(state, input, now = Date.now()) {
       200,
     ),
     version: text(input.version ?? existing?.version ?? 'V0.1', 'version', 16),
-    authorRole: optional(input.authorRole ?? existing?.authorRole ?? profileOf(project)[stage]?.author, 32),
+    authorRole:
+      input.authorRole === undefined
+        ? optional(existing?.authorRole ?? profileOf(project)[stage]?.author, 32)
+        : knownRole(input.authorRole),
     source: { type: 'workspace', path },
     updatedAt: new Date(now).toISOString(),
   })
@@ -1028,6 +1143,16 @@ export function recordArtifact(state, input, now = Date.now()) {
     state.docs[id] = { ...clip(input.markdown), path, at: artifact.updatedAt }
   }
   return artifact
+}
+
+/**
+ * The project number inside artifact, test-run and baseline ids (DOC-019-SRS). Sequence numbers restart
+ * every year, so a later project that repeats an earlier one's number takes its year too (DOC-2026-019-SRS).
+ */
+function numberOf(state, projectId) {
+  const seq = projectId.split('-').at(-1)
+  const repeats = state.projects.some((p) => p.id < projectId && p.id.split('-').at(-1) === seq)
+  return repeats ? projectId.replace(/^PRJ-/, '') : seq
 }
 
 const yearSeq = (list, prefix, year) =>
@@ -1134,6 +1259,7 @@ function sourceOf(raw) {
 
 function createChange(state, input, at, now) {
   const project = projectOf(state, text(input.projectId, 'projectId', 64))
+  if (input.verification !== undefined) fail('变更批准后才能登记验证（verification）')
   const year = new Date(now).getUTCFullYear()
   const by = input.by || '未署名'
   const item = {
@@ -1155,7 +1281,12 @@ function createChange(state, input, at, now) {
   state.changes.push(item)
   // A change drafted from a trial (source TYPE_TEST, ref = trial id) becomes that trial's linked change.
   const trial = item.source.type === 'TYPE_TEST' && state.trials.find((t) => t.id === item.source.ref)
-  if (trial && trial.projectId === project.id && !trial.changeId) trial.changeId = item.id
+  // An approved trial and one under a running flow refuse edits, so they keep their record as it is.
+  const editable = trial && MACHINES.trial[trial.state]?.length && !runningFlow(state, 'trial', trial.id)
+  // A change the CCB rejected never releases the trial, so the new draft replaces it.
+  const linked = editable && state.changes.find((c) => c.id === trial.changeId)
+  const free = !linked || linked.state === 'REJECTED' || linked.ccb?.decision === 'REJECTED'
+  if (editable && trial.projectId === project.id && free) trial.changeId = item.id
   return item
 }
 
@@ -1171,24 +1302,35 @@ export function updateImpact(state, { id, impact, traceFrom }) {
 
 /**
  * Edit the field-loop parts of a change: impact, source and root cause before CCB review, the retrofit
- * total any time before closing, and the verification record once approved.
+ * total before closing while no flow runs, and the verification record once approved.
  */
 export function updateChange(state, input, now = Date.now()) {
-  const cr = find(state, 'change', input.id)
+  const cr = find(state, 'change', input.id, input.projectId)
   // traceFrom without an impact traces from the requirements the change already names.
-  if (input.impact || input.traceFrom) updateImpact(state, { ...input, impact: input.impact ?? cr.impact })
+  // The fields an impact edit names replace those fields; the ones it leaves out are kept.
+  if (input.impact || input.traceFrom)
+    updateImpact(state, { ...input, impact: { ...cr.impact, ...input.impact } })
   const early = (name) =>
     EDITABLE_CHANGE.includes(cr.state) ? true : fail(`${cr.id} 已进入 ${cr.state}，${name}不可再改`)
+  // Sending back the current title or reason is no edit, so it is not refused after CCB review.
+  const title = input.title === undefined ? cr.title : text(input.title, 'title', 200)
+  const reason = input.reason === undefined ? cr.reason : text(input.reason, 'reason', 2000)
+  if (title !== cr.title && early('标题')) cr.title = title
+  if (reason !== cr.reason && early('理由')) cr.reason = reason
   if (input.source !== undefined && early('来源')) cr.source = sourceOf(input.source)
   if (input.rootCause !== undefined && early('失效原因'))
     cr.rootCause = text(input.rootCause, 'rootCause', 2000)
   if (input.retrofit?.total !== undefined) {
     if (cr.state === 'CLOSED') fail(`${cr.id} 已关闭`)
-    cr.retrofit = {
-      done: cr.retrofit?.done ?? 0,
-      total: intIn(input.retrofit.total, 'retrofit.total', 1_000_000),
-    }
-    if (cr.retrofit.total < cr.retrofit.done) fail('整改总数不能小于已完成数')
+    const running = runningFlow(state, 'change', cr.id)
+    if (running) fail(`${cr.id} 有进行中的审批 ${running.id}，整改总数待流程结束后再改`)
+    const done = cr.retrofit?.done ?? 0
+    // Completion (and its as-maintained baseline) happens once, on the last door's progress update.
+    if (done && done === cr.retrofit.total) fail(`${cr.id} 整改已完成（${done}/${done}），总数不可再改`)
+    const total = intIn(input.retrofit.total, 'retrofit.total', 1_000_000)
+    if (done && total <= done) fail(`整改总数需大于已完成数 ${done}`)
+    if (total < done) fail('整改总数不能小于已完成数')
+    cr.retrofit = { done, total }
   }
   if (input.verification !== undefined) {
     if (!['APPROVED', 'IMPLEMENTED'].includes(cr.state)) fail(`${cr.id} 批准后才能登记验证`)
@@ -1213,14 +1355,6 @@ export function updateChange(state, input, now = Date.now()) {
 
 /** Trial moves: REPORTED needs a report number and a result; a failed trial is approved only with an approved change. */
 function moveTrial(state, trial, to, input, at) {
-  trialFields(state, trial, input)
-  if (to === 'REPORTED') {
-    if (!trial.reportNo) fail(`${trial.id} 缺少报告号（reportNo）：出具报告前需填写`)
-    if (!trial.result || trial.result === 'PENDING')
-      fail(`${trial.id} 缺少试验结论：出具报告前需判定合格或不合格`)
-    trial.at ??= at
-  }
-  if (to === 'APPROVED') trialApprovable(state, trial)
   if (trial.state === 'REPORTED' && to === 'IN_PROGRESS') {
     // A retest: the previous report and result stay in the history, the new report starts empty.
     trial.history.push({
@@ -1231,15 +1365,32 @@ function moveTrial(state, trial, to, input, at) {
       note: `上次报告 ${trial.reportNo}（${trial.result}）`,
     })
     delete trial.reportNo
+    // The test date of the next report is the retest's, unless this call gives one.
+    if (input.at === undefined) delete trial.at
     trial.result = 'PENDING'
   }
+  trialFields(state, trial, input)
+  if (to === 'REPORTED') {
+    if (!trial.reportNo) fail(`${trial.id} 缺少报告号（reportNo）：出具报告前需填写`)
+    if (!trial.result || trial.result === 'PENDING')
+      fail(`${trial.id} 缺少试验结论：出具报告前需判定合格或不合格`)
+    trial.at ??= at
+  }
+  if (to === 'APPROVED') trialApprovable(state, trial)
 }
 
-/** A failed trial is approved only with an approved change (conditional release). */
+/** A trial is approved on a report with a result; a failed one only with an approved change (conditional release). */
 function trialApprovable(state, trial) {
+  if (!trial.reportNo) fail(`${trial.id} 缺少报告号（reportNo）`)
+  if (!trial.result || trial.result === 'PENDING') fail(`${trial.id} 缺少试验结论：需判定合格或不合格`)
   if (trial.result !== 'FAIL') return
   const change = state.changes.find((c) => c.id === trial.changeId)
-  if (!change || !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(change.state))
+  // A change rejected by the CCB and then closed was never approved.
+  if (
+    !change ||
+    !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(change.state) ||
+    change.ccb?.decision === 'REJECTED'
+  )
     fail(`${trial.id} 结论为不合格，需关联已批准的变更后才能批准（条件放行）`)
 }
 
@@ -1267,8 +1418,13 @@ function trialChange(state, trial, changeId) {
 export function upsertTrial(state, input, now = Date.now()) {
   const at = new Date(now).toISOString()
   const by = input.by || '未署名'
-  let trial = input.id ? find(state, 'trial', input.id) : undefined
-  if (!trial) {
+  let trial = input.id ? find(state, 'trial', input.id, input.projectId) : undefined
+  if (trial) {
+    guardEditable(state, 'trial', trial)
+    // The type made the id's prefix, so it stays.
+    if (input.type !== undefined && input.type !== trial.type)
+      fail(`${trial.id} 的类型 ${trial.type} 不可更改`)
+  } else {
     const project = projectOf(state, text(input.projectId, 'projectId', 64))
     const type = oneOf(input.type, TRIAL_TYPES, 'type')
     const year = new Date(now).getUTCFullYear()
@@ -1308,8 +1464,12 @@ export function upsertTrial(state, input, now = Date.now()) {
         fail(`未找到 ${trial.projectId} 的需求 ${r}`)
     trial.verifies = list
   }
-  trialFields(state, trial, input)
+  // A move applies the report fields itself, after a retest has put the previous report in the history.
   if (input.to) transition(state, { ...input, kind: 'trial', id: trial.id, to: input.to, by }, now)
+  else {
+    trialFields(state, trial, input)
+    keepNote(trial, input, at, by)
+  }
   return trial
 }
 
@@ -1317,8 +1477,9 @@ export function upsertTrial(state, input, now = Date.now()) {
 export function upsertProblem(state, input, now = Date.now()) {
   const at = new Date(now).toISOString()
   const by = input.by || '未署名'
-  let problem = input.id ? find(state, 'problem', input.id) : undefined
-  if (!problem) {
+  let problem = input.id ? find(state, 'problem', input.id, input.projectId) : undefined
+  if (problem) guardEditable(state, 'problem', problem)
+  else {
     const project = projectOf(state, text(input.projectId, 'projectId', 64))
     const year = new Date(now).getUTCFullYear()
     problem = {
@@ -1369,6 +1530,7 @@ export function upsertProblem(state, input, now = Date.now()) {
     problem.faultIds = [...new Set([...problem.faultIds, ...list])]
   }
   if (input.to) transition(state, { ...input, kind: 'problem', id: problem.id, to: input.to, by }, now)
+  else keepNote(problem, input, at, by)
   return problem
 }
 
@@ -1389,6 +1551,10 @@ function problemClosable(state, problem) {
   if (problem.changeId) {
     const change = state.changes.find((c) => c.id === problem.changeId)
     if (change?.state !== 'CLOSED') fail(`${problem.id} 关联的变更 ${problem.changeId} 尚未关闭`)
+    if (change.ccb?.decision === 'REJECTED')
+      fail(
+        `${problem.id} 关联的变更 ${problem.changeId} 已被 CCB 驳回：请关联新的变更，或写明不需要设计变更的理由`,
+      )
   } else if (!problem.noChangeReason)
     fail(`${problem.id} 没有关联变更：请写明不需要设计变更的理由（noChangeReason）`)
 }
@@ -1564,7 +1730,7 @@ export function recordTestRun(state, input, now = Date.now()) {
       })
   if (passed + failed + skipped !== total)
     fail(`用例数不一致：通过 ${passed} + 失败 ${failed} + 跳过 ${skipped} ≠ 总数 ${total}`)
-  const short = project.id.split('-').at(-1)
+  const short = numberOf(state, project.id)
   const n = state.testRuns.filter((t) => t.projectId === project.id).length + 1
   const at = new Date(now).toISOString()
   const run = {
@@ -1675,16 +1841,16 @@ const AUTHOR_FALLBACK = {
   trial: '验证工程师',
 }
 function authorRole(type, subject) {
-  const role =
+  const by =
     type === 'artifact'
-      ? roleOf(subject.authorRole)
-      : roleOf(
-          type === 'change'
-            ? subject.raisedBy
-            : type === 'problem'
-              ? subject.owner
-              : subject.history?.[0]?.by,
-        )
+      ? subject.authorRole
+      : type === 'change'
+        ? subject.raisedBy
+        : type === 'problem'
+          ? subject.owner
+          : subject.history?.[0]?.by
+  // The coordinator signs as 「研发协调员 · <role>」: the role it acted as is the author.
+  const role = roleOf(String(by ?? '').replace(`${AGENT_NAME} · `, ''))
   if (ROLES.includes(role)) return role
   if (type === 'artifact' && subject.authorRole != null) fail('无法识别编制角色，请填写已知岗位后再发起审批')
   return AUTHOR_FALLBACK[type]
@@ -1698,7 +1864,8 @@ function startable(state, template, subject) {
   if (template === 'ECR' && subject.state !== 'CCB_REVIEW')
     fail(`${same(subject.state)}，需先提交 CCB 才能发起 ECR 审批`)
   if (template === 'ECN_RELEASE') {
-    if (!subject.ecn || !['APPROVED', 'IMPLEMENTED'].includes(subject.state))
+    // A closed change can still release its ECN: closing does not wait for the release flow.
+    if (!subject.ecn || !['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(subject.state))
       fail(`${same(subject.state)}，ECR 批准并生成 ECN 后才能发起 ECN 发布`)
     if (
       state.approvals.some(
@@ -1733,10 +1900,16 @@ export function submitApproval(state, { template, subjectId, by, agent }, now = 
   if (running) fail(`${subject.id} 已有进行中的审批 ${running.id}：一个对象同一时间只能有一个进行中的流程`)
   startable(state, template, subject)
   if (agent) {
+    // The coordinator drafted it (under any acting role). A change it sent to CCB itself also counts: the
+    // customer change the presenter registered and handed over is analysed and sent to CCB by the agent.
+    const byAgent = (who) => who === AGENT_NAME || String(who ?? '').startsWith(`${AGENT_NAME} · `)
+    const sentToCcb =
+      type === 'change' &&
+      byAgent(subject.history?.findLast((h) => h.to === 'CCB_REVIEW' && h.from !== 'CCB_REVIEW')?.by)
     const mine =
       type === 'artifact'
         ? subject.source?.type === 'workspace'
-        : (type === 'change' ? subject.raisedBy : subject.history?.[0]?.by) === actor
+        : byAgent(type === 'change' ? subject.raisedBy : subject.history?.[0]?.by) || sentToCcb
     if (!mine) fail(`${subject.id} 不是智能体起草的对象：请让用户在看板上发起审批`)
   }
   const year = new Date(now).getUTCFullYear()
@@ -1761,6 +1934,20 @@ export function actApproval(state, input, now = Date.now()) {
   if (outcome) settle(state, draft, outcome, now)
   for (const key of Object.keys(flow)) delete flow[key]
   return Object.assign(flow, draft)
+}
+
+/** Who agreed and still stands: a send-back voids the agreements of the node it returns to and of every later one. */
+function standingSigners(flow) {
+  const order = flow.nodes.map((n) => n.id)
+  let standing = []
+  for (const a of flow.actions) {
+    if (a.action === 'APPROVE') standing.push(a)
+    if (a.action === 'RETURN') {
+      const back = a.to === 'INITIATOR' ? 0 : order.indexOf(a.to)
+      standing = standing.filter((s) => order.indexOf(s.nodeId) < back)
+    }
+  }
+  return [...new Set(standing.map((a) => a.by))]
 }
 
 function settle(state, flow, outcome, now) {
@@ -1796,9 +1983,9 @@ function settle(state, flow, outcome, now) {
       subject.status = 'BASELINED'
       if (/^V0\./.test(subject.version)) subject.version = 'V1.0'
       subject.updatedAt = at
+      closeReleaseFindings(state, flow, at)
     } else if (flow.template === 'ECR') {
-      const signers = [...new Set(flow.actions.filter((a) => a.action === 'APPROVE').map((a) => a.by))]
-      move('APPROVED', { members: signers })
+      move('APPROVED', { members: standingSigners(flow) })
     } else if (flow.template === 'ECN_RELEASE') {
       const baseline = releaseEcn(state, subject, at)
       record(
@@ -1829,7 +2016,8 @@ export function metrics(state, project, now = Date.now()) {
   const own = (list) => list.filter((x) => x.projectId === project.id)
   const stages = STAGES.map((s) => state.stages.find((x) => x.id === `${project.id}/${s}`)).filter(Boolean)
   const current = stages.find((s) => s.stage === project.stage) ?? stages.at(-1)
-  const end = current?.actualEnd ? Date.parse(current.actualEnd) : now
+  // A reworked stage keeps its old actualEnd; it is late against now until it passes again.
+  const end = current?.actualEnd && current.state === 'PASSED' ? Date.parse(current.actualEnd) : now
   const delayDays = current?.plannedEnd ? Math.round((end - Date.parse(current.plannedEnd)) / DAY) : 0
   const defects = own(state.defects)
   const open = defects.filter((d) => OPEN_DEFECT.includes(d.state))
@@ -1859,7 +2047,7 @@ export function metrics(state, project, now = Date.now()) {
     currentStage: current?.stage,
     currentState: current?.state,
     delayDays,
-    overdue: Boolean(current && current.state !== 'PASSED' && delayDays > 0),
+    overdue: Boolean(current && current.state !== 'PASSED' && Date.parse(current.plannedEnd) < now),
     coverage: coverage(state, project.id),
     openDefects: Object.fromEntries(
       Object.keys(LABELS.severity).map((s) => [s, open.filter((d) => d.severity === s).length]),
@@ -1892,7 +2080,7 @@ function fieldMetrics(state, project, now) {
   )
   const retrofits = own(state.changes).filter((c) => c.retrofit)
   const designed = latestBaseline(state, project.id, 'AS_DESIGNED')?.revs ?? {}
-  const maintained = latestBaseline(state, project.id, 'AS_MAINTAINED')?.revs ?? {}
+  const maintained = latestBaseline(state, project.id, 'AS_MAINTAINED')?.revs
   const trials = own(state.trials)
   return {
     faults30d: Object.fromEntries(
@@ -1904,7 +2092,10 @@ function fieldMetrics(state, project, now) {
       done: retrofits.reduce((n, c) => n + c.retrofit.done, 0),
       total: retrofits.reduce((n, c) => n + c.retrofit.total, 0),
     },
-    baselineGap: Object.keys(designed).filter((itemId) => maintained[itemId] !== designed[itemId]).length,
+    // Without an as-maintained baseline nothing in service lags the design yet.
+    baselineGap: maintained
+      ? Object.keys(designed).filter((itemId) => maintained[itemId] !== designed[itemId]).length
+      : 0,
     trials: {
       total: trials.length,
       approved: trials.filter((t) => t.state === 'APPROVED').length,
@@ -2153,6 +2344,10 @@ function logActivity(state, { tool, actor, input = {} }, result, now) {
     summary: `${verb} ${id}${to ? ` → ${to}` : ''}`.slice(0, SUMMARY_LIMIT),
   })
   if (state.activity.length > ACTIVITY_LIMIT) state.activity.splice(0, state.activity.length - ACTIVITY_LIMIT)
+  // The feed is capped, so a card is marked when its follow-up is written instead of being re-derived from the feed later.
+  const line = state.activity.at(-1)
+  for (const card of state.handbacks ?? [])
+    if (card.state === 'OPEN' && followedBy(card, line)) card.state = 'FOLLOWED'
 }
 
 // ── Hand-backs ────────────────────────────────────────────────────────────────────────────────
@@ -2173,17 +2368,18 @@ function addHandback(state, card, now) {
     state: 'OPEN',
     ...card,
   })
-  if (state.handbacks.length > HANDBACK_LIMIT)
-    state.handbacks.splice(0, state.handbacks.length - HANDBACK_LIMIT)
+  // Handled cards go first, so a card still waiting is not dropped while older handled ones remain.
+  while (state.handbacks.length > HANDBACK_LIMIT) {
+    const handled = state.handbacks.findIndex((c) => c.state !== 'OPEN')
+    state.handbacks.splice(Math.max(handled, 0), 1)
+  }
 }
 
+const followedBy = (card, a) =>
+  a.rev > card.rev &&
+  ((card.projectId && a.projectId === card.projectId) || card.watch?.includes(a.entity?.id))
 /** Whether the coordinator has written for this card's project or objects since the card was made. */
-const followedUp = (state, card) =>
-  (state.activity ?? []).some(
-    (a) =>
-      a.rev > card.rev &&
-      ((card.projectId && a.projectId === card.projectId) || card.watch?.includes(a.entity?.id)),
-  )
+const followedUp = (state, card) => (state.activity ?? []).some((a) => followedBy(card, a))
 
 /** The cards still waiting for the coordinator, newest first. */
 export const pendingHandbacks = (state) =>
@@ -2200,6 +2396,10 @@ export function dismissHandback(state, { id, by }) {
 export function update(store, work, now = Date.now(), activity) {
   return need(store).transaction(() => {
     const previous = store.get(META)
+    if (previous?.schema > SCHEMA)
+      fail(
+        `档案由更新版本的 DevBoard 写入（schema ${previous.schema}），本版本不会覆盖：请安装更新版本，或在总览页重置演示数据`,
+      )
     const state = load(store) ?? seed(now)
     const result = work(state)
     if (activity) logActivity(state, activity, result, now)
@@ -2215,7 +2415,7 @@ export function reset(store, now = Date.now()) {
     const old = load(store)
     // Cached live bodies belong to live projects, which a reset removes.
     for (const a of old?.artifacts ?? []) if (a.source?.type === 'workspace') store.delete(docKey(a.id))
-    const fresh = { ...seed(now), revision: (old?.revision ?? 0) + 1 }
+    const fresh = { ...seed(now), revision: (old?.revision ?? previous?.revision ?? 0) + 1 }
     save(store, fresh, previous)
     return { revision: fresh.revision }
   })

@@ -90,7 +90,7 @@ it('refuses a cross-site POST to the mount without reaching the Surface', async 
     { origin: 'http://evil.example' },
     decision,
   )
-  expect(res.status).toBe(405)
+  expect(res.status).toBe(403)
   expect(seen).toEqual([])
 })
 
@@ -110,7 +110,7 @@ it('refuses a POST whose Fetch Metadata says it is not same-origin', async () =>
     { origin, 'sec-fetch-site': 'same-site' },
     decision,
   )
-  expect(res.status).toBe(405)
+  expect(res.status).toBe(403)
   expect(seen).toEqual([])
 })
 

@@ -2,7 +2,7 @@
 
 [English](demos.md) | 简体中文
 
-智能体画廊展示三个已随源码提供的旗舰应用：[DevBoard 3.6.0](../../examples/showcase/devboard/README.zh-CN.md)、[制药 GMP](../../examples/showcase/pharma-gmp/README.zh-CN.md)和[航空质量](../../examples/showcase/aerospace-quality/README.zh-CN.md)。DevBoard 是轨道门系统研发与质量工作台，包含项目评审门、追溯、试验、服务质量闭环和研发协调员。三个应用均使用虚构数据。画廊只推广这些旗舰，缺包时不显示占位或教学示例替补；[五个教学示例](../../examples/fde/README.zh-CN.md)仍可主动安装。下面三个脚本演示平台机制。
+智能体画廊展示三个已随源码提供的旗舰应用：[DevBoard 3.7.6](../../examples/showcase/devboard/README.zh-CN.md)、[制药 GMP](../../examples/showcase/pharma-gmp/README.zh-CN.md)和[航空质量](../../examples/showcase/aerospace-quality/README.zh-CN.md)。DevBoard 是轨道门系统研发与质量工作台，包含项目评审门、追溯、试验、服务质量闭环和研发协调员。三个应用均使用虚构数据。画廊只推广这些旗舰，缺包时不显示占位或教学示例替补；[五个教学示例](../../examples/fde/README.zh-CN.md)仍可主动安装。下面三个脚本演示平台机制。
 
 亲手验证业务 Agent 即插件、热升级保留进行中的工作，以及 Agent 构建可复用能力。每个脚本都在新的临时 `AGH_HOME` 中运行真实 daemon 和 worker，只使用合成数据，无需模型账号或浏览器。
 

@@ -158,6 +158,58 @@ function contained(root: string, candidate: string): boolean {
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
 }
 
+/**
+ * Digests of trees this process already hashed, reused while nothing a writer changes looks
+ * different: the root's dev/ino and every file's relative path, size, mtime and inode. ctime is left
+ * out on purpose, because linking a file into a runtime generation moves its ctime and not its bytes.
+ * Several readers in one start (package load, presets, preflight, session admission, generation
+ * reuse) verify the same snapshot trees, up to 14 times each; reading every file each time is what
+ * makes a worker start slow, most of all where reads are scanned. The cost: a same-size rewrite that
+ * restores mtime is not seen until the tree is replaced, the process restarts or a verification
+ * refusal clears this store (`forgetDirectoryDigests`). The walk still refuses links and special
+ * entries on every call.
+ */
+type KnownTree = Readonly<{ dev: number; ino: number; signature: string; digest: string }>
+const knownTrees = new Map<string, KnownTree>()
+const KNOWN_TREE_LIMIT = 512
+
+export function forgetDirectoryDigests(): void {
+  knownTrees.clear()
+}
+
+function treeKey(root: string, rules: readonly string[]): string {
+  return `${root}\0${JSON.stringify(rules)}`
+}
+
+function treeSignature(
+  files: ReadonlyArray<
+    Readonly<{ rel: string; stat: Readonly<{ size: number; mtimeMs: number; ino: number }> }>
+  >,
+): string {
+  const hash = createHash('sha256')
+  for (const { rel, stat } of files) hash.update(`${rel}\0${stat.size}\0${stat.mtimeMs}\0${stat.ino}\n`)
+  return hash.digest('hex')
+}
+
+function knownDigest(key: string, root: Readonly<{ dev: number; ino: number }>, signature: string) {
+  const known = knownTrees.get(key)
+  return known && known.dev === root.dev && known.ino === root.ino && known.signature === signature
+    ? known.digest
+    : undefined
+}
+
+function rememberDigest(
+  key: string,
+  root: Readonly<{ dev: number; ino: number }>,
+  signature: string,
+  digest: string,
+): void {
+  knownTrees.delete(key)
+  const oldest = knownTrees.keys().next().value
+  if (knownTrees.size >= KNOWN_TREE_LIMIT && oldest !== undefined) knownTrees.delete(oldest)
+  knownTrees.set(key, { dev: root.dev, ino: root.ino, signature, digest })
+}
+
 export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: AbortSignal } = {}): string {
   checkCancelled(opts.signal)
   let root: string
@@ -168,14 +220,16 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
     if (error instanceof PackageError) throw error
     throw sourceError('package directory is unavailable', 'directory-unavailable')
   }
+  let rootStat: Stats
   try {
-    if (!statSync(root).isDirectory()) throw sourceError('package source is not a directory', 'not-directory')
+    rootStat = statSync(root)
+    if (!rootStat.isDirectory()) throw sourceError('package source is not a directory', 'not-directory')
   } catch (error) {
     if (error instanceof PackageError) throw error
     throw sourceError('package directory changed while hashing', 'tree-changed')
   }
   const rules = normalizedExcludes(opts.exclude ?? [...DEFAULT_EXCLUDES])
-  const files: Array<{ rel: string; file: string }> = []
+  const files: Array<{ rel: string; file: string; stat: Stats }> = []
   const walk = (current: string): void => {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       checkCancelled(opts.signal)
@@ -189,24 +243,31 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
         continue
       }
       if (!stat.isFile()) throw sourceError('package tree contains a special entry', 'special-entry')
-      let actual: string
-      try {
-        actual = nativeRealpathSync(file)
-      } catch {
-        throw sourceError('package file changed while hashing', 'tree-changed')
-      }
-      if (!contained(root, actual)) throw sourceError('package file escapes its source tree', 'path-escape')
-      files.push({ rel, file })
+      files.push({ rel, file, stat })
     }
   }
   walk(root)
+  files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
+  const key = treeKey(root, rules),
+    signature = treeSignature(files)
+  const known = knownDigest(key, rootStat, signature)
+  if (known !== undefined) return known
   const outer = createHash('sha256')
-  for (const { rel, file } of files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))) {
+  for (const { rel, file } of files) {
     checkCancelled(opts.signal)
+    let actual: string
+    try {
+      actual = nativeRealpathSync(file)
+    } catch {
+      throw sourceError('package file changed while hashing', 'tree-changed')
+    }
+    if (!contained(root, actual)) throw sourceError('package file escapes its source tree', 'path-escape')
     const inner = createHash('sha256').update(rel).update('\0').update(readFileSync(file)).digest()
     outer.update(inner)
   }
-  return `sha256-${outer.digest('hex')}`
+  const digest = `sha256-${outer.digest('hex')}`
+  rememberDigest(key, rootStat, signature, digest)
+  return digest
 }
 
 /** Same wire digest and exclusions as hashDirectory; yields for filesystem IO and streams file bytes. */
@@ -270,6 +331,10 @@ async function hashDirectoryOnce(
     return next
   })
   files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
+  const key = treeKey(root, rules),
+    signature = treeSignature(files.map(({ rel, observed }) => ({ rel, stat: observed })))
+  const known = knownDigest(key, rootStat, signature)
+  if (known !== undefined) return known
   const hashFile = async ({ rel, file, observed }: (typeof files)[number], chunk: Uint8Array) => {
     checkCancelled(opts.signal)
     if (!contained(root, await asyncFs.realpath(file)))
@@ -329,7 +394,9 @@ async function hashDirectoryOnce(
   checkCancelled(opts.signal)
   const outer = createHash('sha256')
   for (const digest of digests) outer.update(digest)
-  return `sha256-${outer.digest('hex')}`
+  const digest = `sha256-${outer.digest('hex')}`
+  rememberDigest(key, rootStat, signature, digest)
+  return digest
 }
 
 function sameFileObservation(a: Stats, b: Stats): boolean {

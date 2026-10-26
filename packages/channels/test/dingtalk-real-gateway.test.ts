@@ -249,3 +249,25 @@ function streamStub() {
     async disconnect() {},
   }
 }
+
+const sdk = vi.hoisted(() => ({ options: [] as unknown[] }))
+vi.mock('dingtalk-stream', () => ({
+  DWClient: class {
+    constructor(options: unknown) {
+      sdk.options.push(options)
+    }
+    registerCallbackListener() {}
+    async connect() {}
+    async disconnect() {}
+  },
+}))
+
+describe('RealDingtalkGateway SDK client', () => {
+  it('builds the SDK client with heartbeats on, so a half-open socket is dropped and reconnected', async () => {
+    const gateway = createRealGateway({ fetchImpl: jsonFetch({}).fetchImpl })
+    gateway.setCredentials({ clientId: 'key', clientSecret: 'secret' })
+    await gateway.start({ onMessage() {}, onCard() {}, onDisconnect() {} }, new AbortController().signal)
+    expect(sdk.options).toEqual([{ clientId: 'key', clientSecret: 'secret', keepAlive: true }])
+    await gateway.stop()
+  })
+})

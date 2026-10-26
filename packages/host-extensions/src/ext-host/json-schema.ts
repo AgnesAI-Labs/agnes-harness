@@ -6,6 +6,12 @@ import { Ajv2020 } from 'ajv/dist/2020.js'
 // Keep separate Ajv instances ($id/ref namespaces) while bounding retained schemas and generated code.
 const validators = new Map<string, (value: unknown) => boolean>()
 let schemaBytes = 0
+const OPTIONS = { strict: true, allErrors: false, validateFormats: true } as const
+// Checking a schema against the draft 2020-12 meta-schema compiles that meta-schema first, once per
+// Ajv instance. Every distinct schema gets its own instance, so doing the check there repeated the
+// meta-schema compile for each one, about 100 ms of every worker start. One shared instance does
+// the check; it only reads the schema, so no $id or $ref of it enters a shared namespace.
+let metaSchemas: Ajv2020 | undefined
 const MAX_SCHEMAS = 64
 const MAX_SCHEMA_BYTES = 4 * 1024 * 1024
 
@@ -21,7 +27,9 @@ export function compileExtensionSchema(
     const key = JSON.stringify(json.value)
     const cached = validators.get(key)
     if (cached) return cached
-    const ajv = new Ajv2020({ strict: true, allErrors: false, validateFormats: true })
+    metaSchemas ??= new Ajv2020(OPTIONS)
+    if (metaSchemas.validateSchema(json.value) !== true) throw new Error('schema')
+    const ajv = new Ajv2020({ ...OPTIONS, validateSchema: false })
     const validate = ajv.compile(json.value)
     if ('$async' in validate && validate.$async) throw new Error('async schema')
     const check = (value: unknown) => validate(value) === true

@@ -182,7 +182,9 @@ describe('trace panel', () => {
   it('shows empty state and does not throw when there are no nodes', () => {
     const { root, panel } = mount()
     expect(() => panel.render([], [turn()])).not.toThrow()
-    expect(root.textContent).toContain('Send a task to see timing for each step.')
+    const empty = root.querySelector<HTMLElement>('.trace-empty')
+    expect(empty?.hidden).toBe(false)
+    expect(empty?.textContent).toContain("Send a task to see each step's execution record here.")
   })
 
   it('switches to the trace view and persists without calling projectUI', () => {
@@ -215,6 +217,8 @@ describe('trace panel', () => {
     expect(root.querySelector('.trace-inspector-title')?.textContent).toBe('Run command')
     root.querySelector<HTMLButtonElement>('[data-pane="args"]')?.click()
     expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('"command":"ls"')
+    // The truncation note sits with the arguments it qualifies.
+    expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('may be truncated')
     root.querySelector<HTMLButtonElement>('[data-pane="source"]')?.click()
     expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('Tool · bash')
     flushSync(() => root.querySelector<HTMLButtonElement>('[data-testid="trace-inspector-more"]')?.click())
@@ -222,7 +226,8 @@ describe('trace panel', () => {
       (item) => item.textContent === 'Projected content',
     )
     flushSync(() => projected?.click())
-    expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('may be truncated')
+    expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('Projected content')
+    expect(root.querySelector('.trace-inspector-pane')?.textContent).toContain('"command":"ls"')
     expect(projectUI).not.toHaveBeenCalled()
   })
 
@@ -591,9 +596,8 @@ describe('trace panel', () => {
     expect(root.querySelector('.trace-gantt-bar.tone-user')).not.toBeNull()
     expect(root.querySelector('.trace-gantt-bar.tone-context')).not.toBeNull()
     expect((root.querySelector('.trace-gantt-bar.tone-user') as HTMLElement).style.width).toBe('0%')
-    expect(root.querySelector('.trace-gantt-bar.tone-user')?.getAttribute('title')).toContain(
-      'anchored at the turn start',
-    )
+    expect(root.querySelector('.trace-gantt-bar.tone-user')?.getAttribute('title')).toBe('User')
+    expect(root.querySelector('.trace-gantt-bar.tone-context')?.getAttribute('title')).toBe('Context')
   })
 
   it('shows step, error and turn usage from recorded trace data', () => {
@@ -842,11 +846,12 @@ describe('trace panel', () => {
     const { root, panel } = mount()
     const loadEarlier = vi.fn()
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])], { hasEarlier: true, loadEarlier })
-    expect(root.textContent).toContain('Partially loaded')
+    expect(root.querySelector('.trace-partial')?.textContent).toBe('Earlier records not loaded')
     ;(root.querySelector('.trace-load-earlier') as HTMLButtonElement).click()
     expect(loadEarlier).toHaveBeenCalledTimes(1)
     panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])])
-    expect(root.textContent).not.toContain('Partially loaded')
+    expect(root.querySelector('.trace-partial')).toBeNull()
+    expect(root.textContent).not.toContain('Earlier records not loaded')
     expect(root.querySelector('.trace-load-earlier')).toBeNull()
   })
 

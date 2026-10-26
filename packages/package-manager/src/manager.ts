@@ -88,7 +88,7 @@ import {
   packageDir,
   parseSource,
 } from './sources.js'
-import { claimStage, clearStage, readyStage, recoverStaging, type StageKind } from './staging.js'
+import { claimStage, clearStage, readyStage, recoverProfileStaging, type StageKind } from './staging.js'
 import {
   type PackageCommitPoint,
   previousPackageDir,
@@ -386,7 +386,10 @@ export function createPackageManager(options: ManagerOptions): PackageManager {
             ].some((file) => lstatSync(join(profileDir, file), { throwIfNoEntry: false }) !== undefined)
             if (ordinaryRead && !recoveryNeeded) await readPins(profileDir)
             else if (!op.pin || recoveryNeeded) await recoverRuntimeSnapshotStoreAsync(storeFor(profileDir))
-            recoverStaging(dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')))
+            recoverProfileStaging(
+              dirname(packageDir(options.dataDir, profileName(profileDir), 'stage')),
+              profileDir,
+            )
             await op.admission?.verify()
             op.admission?.assertActive()
             return fn()

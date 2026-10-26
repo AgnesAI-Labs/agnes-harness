@@ -6,9 +6,9 @@ import {
   byId,
   day,
   fact,
-  gateBadge,
-  gateLabel,
   gateName,
+  gateOutcome,
+  gateOutcomeBadge,
   guided,
   HistoryTable,
   h,
@@ -23,6 +23,7 @@ import {
   stateBadge,
   TransitionBar,
   time,
+  unsignedRoles,
   useProject,
 } from './board.js'
 import { CustomerChange } from './customer-change.js'
@@ -104,16 +105,17 @@ function ServiceFacts({ data, project }) {
   )
 }
 
+/** A tile reads `zero` when empty, otherwise its tone: `mine` for what waits on the role, `warn` for open decisions. */
 const kpis = (rows) =>
   h(
     'div',
     { className: 'devboard-kpis' },
-    rows.map(([label, n]) =>
+    rows.map(([label, n, tone]) =>
       h(
         'div',
-        { className: 'devboard-kpi', key: label },
-        h('strong', null, n),
+        { className: `devboard-kpi devboard-kpi-${n ? (tone ?? 'plain') : 'zero'}`, key: label },
         h('span', { className: 'devboard-kpi-label' }, label),
+        h('strong', null, n),
       ),
     ),
   )
@@ -127,9 +129,9 @@ function Workbench({ data, role }) {
   }
   return h(
     'section',
-    { 'aria-label': `${role}的工作台`, 'data-guide': 'overview-workbench' },
+    { className: 'devboard-stack', 'aria-label': `${role}的工作台`, 'data-guide': 'overview-workbench' },
     h('h2', { className: 'devboard-heading' }, `${role}的工作台`),
-    kpis([['待我处理', pending], ...cardsOf(role).map((key) => [METRICS[key][0], counts[key]])]),
+    kpis([['待我处理', pending, 'mine'], ...cardsOf(role).map((key) => [METRICS[key][0], counts[key]])]),
     h(TodoColumn, {
       title: '与我相关的紧急事项',
       items: urgent.map((u) => ({
@@ -151,12 +153,31 @@ export function Overview({ data, board, role }) {
   const overdue = data.projects.filter((p) => p.metrics.overdue)
   const lateFlows = data.approvals.filter((a) => a.overdue)
   return h(
-    React.Fragment,
-    null,
+    'div',
+    { className: 'devboard-stack' },
     h(HandbackCards, { data, board, role }),
     h(Workbench, { data, role }),
     h(ActivityPanel, { data }),
-    h('h2', { className: 'devboard-heading' }, '项目组合'),
+    h(
+      'div',
+      { className: 'devboard-section' },
+      h(
+        'h2',
+        { className: 'devboard-heading' },
+        '项目组合',
+        h('span', { className: 'devboard-count' }, data.projects.length),
+      ),
+      h(
+        Button,
+        {
+          onClick: () => {
+            setCreated(null)
+            push.open('new')
+          },
+        },
+        '新建项目',
+      ),
+    ),
     lateFlows.length > 0 &&
       h(
         'p',
@@ -170,13 +191,12 @@ export function Overview({ data, board, role }) {
         `${overdue.map((p) => `${p.id} ${stageName(data, p.id, p.metrics.currentStage)}`).join('、')} 已超出计划完成日期。`,
       ),
     kpis([
-      ['待决议评审门', pending.length],
+      ['待决议评审门', pending.length, 'warn'],
       ['审批中的流程', data.approvals.filter((a) => a.state === 'RUNNING').length],
-      ['待处理人工介入', interventions.length],
-      ['待 CCB 决议变更', ccb.length],
+      ['待处理人工介入', interventions.length, 'warn'],
+      ['待 CCB 决议变更', ccb.length, 'warn'],
       ['在研项目', data.projects.filter((p) => p.metrics.passedStages < p.metrics.stageCount).length],
     ]),
-    h('div', { className: 'devboard-buttons' }, h(Button, { onClick: () => push.open('new') }, '新建项目')),
     h(
       'div',
       { className: 'devboard-projects', 'data-guide': 'overview-portfolio' },
@@ -216,7 +236,11 @@ export function Overview({ data, board, role }) {
               '里程碑偏差',
               m.delayDays > 0
                 ? `${m.overdue ? '超期' : '延后'} ${m.delayDays} 天`
-                : `提前 ${-m.delayDays} 天`,
+                : m.overdue
+                  ? '超期不足 1 天'
+                  : m.delayDays < 0
+                    ? `提前 ${-m.delayDays} 天`
+                    : '按计划',
             ),
             fact(
               '评审门',
@@ -224,14 +248,14 @@ export function Overview({ data, board, role }) {
                 ? gates
                     .map(
                       (g) =>
-                        `${gateName(g)} 待 ${g.approverRoles.join('、')} 决议（会签 ${signProgress(g)}）`,
+                        `${gateName(g)} 待 ${unsignedRoles(g).join('、')} 决议（会签 ${signProgress(g)}）`,
                     )
                     .join('；')
                 : '无待决议',
             ),
             fact(
               '未关闭缺陷',
-              `${open}（A ${m.openDefects.A} / B ${m.openDefects.B} / C ${m.openDefects.C} / D ${m.openDefects.D}）`,
+              `${open}（A ${m.openDefects.A} / B ${m.openDefects.B} / C ${m.openDefects.C} / D ${m.openDefects.D}）${m.deferredDefects ? `，另延期 ${m.deferredDefects}` : ''}`,
             ),
             fact(
               '最近测试通过率',
@@ -296,8 +320,9 @@ export function GatePanel({ data, gate, board, role, setRole }) {
     gate.approverRoles.includes(role) &&
     !(gate.signatures ?? []).some((x) => x.role === role)
   const decide = async (decision) => {
+    const openIds = new Set(open.map((f) => f.id))
     const closeFindings = Object.entries(closing)
-      .filter(([, note]) => note.trim())
+      .filter(([id, note]) => openIds.has(id) && note.trim())
       .map(([id, note]) => ({ id, note: note.trim() }))
     const ok = await board.run(
       'devboard.gate',
@@ -310,7 +335,12 @@ export function GatePanel({ data, gate, board, role, setRole }) {
       },
       `${gateName(gate)} 已${decision === 'APPROVED' ? '签署' : '驳回'}`,
     )
-    if (ok) setDecided(true)
+    if (ok) {
+      setDecided(true)
+      // A co-signature leaves the gate PENDING and this panel mounted: the next signer starts clean.
+      setComment('')
+      setClosing({})
+    }
   }
   return h(
     'div',
@@ -326,7 +356,7 @@ export function GatePanel({ data, gate, board, role, setRole }) {
       fact('编写角色', stage?.author),
       fact('审批角色', gate.approverRoles.join('、')),
       fact('会签进度', signProgress(gate)),
-      fact('决议', gateBadge(data, gate.decision)),
+      fact('决议', gateOutcomeBadge(data, gate)),
       fact('审批人', gate.approver),
       fact('决议时间', time(gate.decidedAt)),
       fact('评审结论', gate.comment),
@@ -372,70 +402,74 @@ export function GatePanel({ data, gate, board, role, setRole }) {
                     'aria-label': `${f.id} 关闭说明`,
                     placeholder: '填写关闭说明即随决议关闭',
                     value: closing[f.id] ?? '',
+                    maxLength: 500,
                     onChange: (e) => setClosing({ ...closing, [f.id]: e.target.value }),
                   })
                 : '未关闭',
         },
       ],
     }),
-    gate.decision === 'PENDING'
-      ? h(
-          'section',
-          { className: 'devboard-actions', 'aria-label': '评审决议', 'data-guide': 'gate-decision' },
-          stage?.author === role &&
-            h(Badge, { tone: 'warn' }, `当前演示角色「${role}」是该阶段的编写角色，不能审批。`),
-          stage?.author !== role && h(RoleHint, { gate, role, setRole }),
-          can &&
-            open.length > 0 &&
-            h(
-              'span',
-              { className: 'devboard-muted' },
-              `还有 ${open.length} 条意见未关闭：批准前需全部关闭（可在上表填写关闭说明）。`,
-            ),
-          can &&
-            h(NoteField, {
-              id: `devboard-gate-${gate.id}`,
-              label: '评审结论（驳回必填）',
-              value: comment,
-              onChange: setComment,
-            }),
-          can &&
-            h(
-              'div',
-              { className: 'devboard-buttons' },
+    gate.superseded
+      ? h('p', { className: 'devboard-muted' }, '该评审门已因返工作废，不能再处理。')
+      : gate.decision === 'PENDING'
+        ? h(
+            'section',
+            { className: 'devboard-actions', 'aria-label': '评审决议', 'data-guide': 'gate-decision' },
+            stage?.author === role &&
+              h(Badge, { tone: 'warn' }, `当前演示角色「${role}」是该阶段的编写角色，不能审批。`),
+            stage?.author !== role && h(RoleHint, { gate, role, setRole }),
+            can &&
+              open.length > 0 &&
               h(
-                Button,
-                { appearance: 'primary', disabled: board.busy, onClick: () => decide('APPROVED') },
-                `以「${role}」批准`,
+                'span',
+                { className: 'devboard-muted' },
+                `还有 ${open.length} 条意见未关闭：批准前需全部关闭（可在上表填写关闭说明）。`,
               ),
-              h(Button, { disabled: board.busy, onClick: () => decide('REJECTED') }, '驳回'),
-            ),
-        )
-      : h(
-          'section',
-          { className: 'devboard-actions' },
-          h('p', null, decided ? '已决议。现场项目请让研发协调员继续推进。' : '该评审门已决议。'),
-          h(
-            WorkButton,
-            {
-              board,
-              ...workOf('continueGate', { ...gate, decision: 'APPROVED' }),
-              appearance: decided ? 'primary' : 'secondary',
-              guide: 'gate-continue',
-              title: '打开研发协调员会话，草稿由你点发送',
-            },
-            '继续推进',
-          ),
-          h(
-            'div',
-            { className: 'devboard-buttons' },
+            can &&
+              h(NoteField, {
+                id: `devboard-gate-${gate.id}`,
+                label: '评审结论（驳回必填）',
+                value: comment,
+                onChange: setComment,
+              }),
+            can &&
+              h(
+                'div',
+                { className: 'devboard-buttons' },
+                h(
+                  Button,
+                  { appearance: 'primary', disabled: board.busy, onClick: () => decide('APPROVED') },
+                  `以「${role}」批准`,
+                ),
+                h(Button, { disabled: board.busy, onClick: () => decide('REJECTED') }, '驳回'),
+              ),
+          )
+        : h(
+            'section',
+            { className: 'devboard-actions' },
+            h('p', null, decided ? '已决议。现场项目请让研发协调员继续推进。' : '该评审门已决议。'),
             h(
-              Button,
-              { disabled: board.busy, onClick: () => decide('APPROVED') },
-              '再次批准（演示：应被拒绝）',
+              WorkButton,
+              {
+                board,
+                ...workOf('continueGate', { ...gate, decision: 'APPROVED' }),
+                appearance: decided ? 'primary' : 'secondary',
+                guide: 'gate-continue',
+                title: '打开研发协调员会话，草稿由你点发送',
+              },
+              '继续推进',
+            ),
+            h(
+              'details',
+              { className: 'devboard-evidence' },
+              h('summary', null, '越权与重复操作校验'),
+              h(
+                'div',
+                { className: 'devboard-buttons' },
+                h(Button, { disabled: board.busy, onClick: () => decide('APPROVED') }, '再次批准'),
+              ),
             ),
           ),
-        ),
   )
 }
 
@@ -520,56 +554,60 @@ export function Projects({ data, board, role, setRole }) {
   const gate = selected.kind === 'gate' && byId(data.gates, selected.id)
   const stage = selected.kind === 'stage' && byId(data.stages, selected.id)
   return h(
-    React.Fragment,
-    null,
+    'div',
+    { className: 'devboard-stack' },
     h(
-      'div',
-      { className: 'devboard-filters' },
-      h(ProjectSelect, { data, value: project.id, onChange: setProjectId }),
-    ),
-    h(
-      'dl',
-      { className: 'devboard-facts', 'data-guide': 'projects-info' },
-      fact('客户', project.customer),
-      fact('线路', project.line),
-      fact('项目经理', project.manager),
-      fact('归属技术中心', project.org),
-      fact(
-        '类型 / 产品线',
-        `${data.labels.projectKind[project.kind] ?? project.kind} / ${data.labels.productLine[project.productLine] ?? project.productLine}`,
+      'section',
+      { className: 'devboard-card devboard-summary', 'aria-label': project.name },
+      h(
+        'div',
+        { className: 'devboard-filters' },
+        h(ProjectSelect, { data, value: project.id, onChange: setProjectId }),
       ),
-      fact(
-        '安全完整性',
-        project.safetyIntegrity ? `${project.safetyIntegrity}（按 EN 50126 / EN 50716 假设）` : '—',
-      ),
-      fact('计划', `${day(project.plannedStart)} – ${day(project.plannedEnd)}`),
-      project.live && fact('工作区目录', project.workspaceDir),
-      project.live &&
+      h(
+        'dl',
+        { className: 'devboard-facts', 'data-guide': 'projects-info' },
+        fact('客户', project.customer),
+        fact('线路', project.line),
+        fact('项目经理', project.manager),
+        fact('归属技术中心', project.org),
         fact(
-          '应用',
-          project.appUrl
-            ? h(
-                'a',
-                { href: project.appUrl, target: '_blank', rel: 'noreferrer' },
-                `打开应用 ${project.appUrl}`,
-              )
-            : '发布阶段登记运行地址后可打开',
+          '类型 / 产品线',
+          `${data.labels.projectKind[project.kind] ?? project.kind} / ${data.labels.productLine[project.productLine] ?? project.productLine}`,
         ),
-    ),
-    project.service && h(ServiceInfo, { project }),
-    h(StageBar, { data, projectId: project.id }),
-    h(
-      WorkButton,
-      {
-        board,
-        ...workOf('projectProgress', project),
+        fact(
+          '安全完整性',
+          project.safetyIntegrity ? `${project.safetyIntegrity}（按 EN 50126 / EN 50716 假设）` : '—',
+        ),
+        fact('计划', `${day(project.plannedStart)} – ${day(project.plannedEnd)}`),
+        project.live && fact('工作区目录', project.workspaceDir),
+        project.live &&
+          fact(
+            '应用',
+            project.appUrl
+              ? h(
+                  'a',
+                  { href: project.appUrl, target: '_blank', rel: 'noreferrer' },
+                  `打开应用 ${project.appUrl}`,
+                )
+              : '发布阶段登记运行地址后可打开',
+          ),
+      ),
+      project.service && h(ServiceInfo, { project }),
+      h(StageBar, { data, projectId: project.id }),
+      h(
+        WorkButton,
+        {
+          board,
+          ...workOf('projectProgress', project),
 
-        guide: 'projects-agent-progress',
-        title: '打开研发协调员并预填请求：读取这个项目的交接内容并汇报进度，只汇报不修改',
-      },
-      workOf('projectProgress', project).label,
+          guide: 'projects-agent-progress',
+          title: '打开研发协调员并预填请求：读取这个项目的交接内容并汇报进度，只汇报不修改',
+        },
+        workOf('projectProgress', project).label,
+      ),
     ),
-    h(CustomerChange, { board, project, role }),
+    h(CustomerChange, { key: project.id, board, project, role }),
     project.tailoring?.skipped?.length > 0 &&
       h(
         'p',
@@ -625,7 +663,7 @@ export function Projects({ data, board, role, setRole }) {
                   h(
                     Button,
                     { appearance: 'link', onClick: () => openPage('gate', g.id) },
-                    `${gateName(g)} ${gateLabel(data, g.decision)}${g.decision === 'PENDING' && g.approverRoles.length > 1 ? `（会签 ${signProgress(g)}）` : ''}`,
+                    `${gateName(g)} ${gateOutcome(data, g)}${g.decision === 'PENDING' && g.approverRoles.length > 1 ? `（会签 ${signProgress(g)}）` : ''}`,
                   ),
                 ),
               ),

@@ -16,16 +16,13 @@ import {
 
 const root = process.env.AGH_UI_REPORT
 const test = base.extend<{ uiServer: Runtime | undefined }>({
-  uiServer: async ({ browserName, context }, use, info) => {
+  uiServer: async ({ browserName }, use, info) => {
     if (browserName !== 'chromium') throw new Error('UI acceptance requires Chromium')
     if (process.env.AGH_UI_ISOLATED !== '1') {
       await use(undefined)
       return
     }
     const server = await isolatedRuntime()
-    server.onSignIn(async (launchUrl) => {
-      await context.request.get(launchUrl, { maxRedirects: 0 })
-    })
     try {
       await server.start()
       await use(server)
@@ -43,7 +40,9 @@ for (const locale of ['zh-CN', 'en'])
       [1440, 900],
       [1280, 800],
     ] as const) {
-      test(`UI quality ${locale}/${theme}/${width}x${height}`, async ({ page, uiServer }) => {
+      // The daemon is set up before the page and torn down after it, so a failure's page snapshot
+      // shows the page as it failed rather than one that lost its backend during teardown.
+      test(`UI quality ${locale}/${theme}/${width}x${height}`, async ({ uiServer, page }) => {
         test.setTimeout(process.env.AGH_UI_AXE === '1' ? 240_000 : 120_000)
         const workspace = uiServer?.workspace ?? process.env.AGH_UI_WORKSPACE
         const deliverable = uiServer ? join(uiServer.workspace, 'report.md') : process.env.AGH_UI_DELIVERABLE
@@ -132,10 +131,24 @@ for (const locale of ['zh-CN', 'en'])
         await page.keyboard.press('Escape')
         await page.locator('#settings').click()
         await section(page, 'model')
+        // A fresh home has no accounts: the welcome's provider shortcuts replace the Add account row.
+        const welcome = page.locator('.config-accounts-welcome')
+        await expect(welcome).toBeVisible()
         await screen('settings-model')
-        await page.locator('#config-add-account').click()
+        await welcome.locator('[data-provider="more"]').click()
+        await expect(page.locator('.account-dialog-body[data-page="add"]')).toHaveAttribute(
+          'data-account-step',
+          'provider',
+        )
         await screen('add-account')
-        await page.locator('#account-dialog-close').click()
+        // Adding an account is a settings subpage; its header returns to Models & accounts.
+        const back = page.getByTestId('settings-subpage-back')
+        await expect(back).toHaveAccessibleName(
+          locale === 'en' ? 'Back to Models & accounts' : '返回到 模型与账户',
+        )
+        await back.click()
+        await expect(back).toBeHidden()
+        await expect(welcome).toBeVisible()
         for (const [id, name] of [
           ['skills-tab', 'skills'],
           ['mcp-tab', 'mcp'],
@@ -193,13 +206,15 @@ for (const locale of ['zh-CN', 'en'])
             await screen('session-tool-info')
           }
           if (id === 'examples') {
-            const cards = page.locator('[data-testid^="business-agent-"][data-package]')
+            // One feed: the catalog's applications and standalone agents beside the general assistant.
+            const cards = page.getByTestId('agents-gallery').locator('[data-application], [data-agent-ref]')
             await expect(cards.first()).toBeVisible()
             expect(await cards.count()).toBeGreaterThan(0)
             await section(page, 'discover')
-            for (const id of ['dag-loop', 'react-loop'])
+            // Before installation the marketplace advertises only the showcase applications.
+            for (const id of ['aerospace-quality', 'devboard', 'pharma-gmp'])
               await expect(
-                page.locator(`[data-testid="market-card"][data-plugin-id="@agnes-example/${id}"]`),
+                page.locator(`[data-testid="market-card"][data-plugin-id="@agnes-showcase/${id}"]`),
               ).toBeVisible()
           }
         }
@@ -236,6 +251,8 @@ for (const locale of ['zh-CN', 'en'])
         await submitTurn('call ls {"path":"."}')
         await screen('active-session')
         const calls = [
+          // job_list is a deferred tool: the model describes it before it may call it.
+          'call tool_describe {"name":"job_list"}',
           'call job_list {}',
           ...(deliverable ? ['call present ' + JSON.stringify({ files: [{ path: deliverable }] })] : []),
           'call ask_user_question ' +
@@ -260,17 +277,10 @@ for (const locale of ['zh-CN', 'en'])
             process.locator('xpath=ancestor::*[@data-testid="conversation-turn"][1]'),
           )
         }
-        await expect(
-          page
-            .getByTestId('intelligent-ui-inline')
-            .locator('[data-testid^="ui-surface-"]')
-            .filter({ hasText: 'Questions / 问题' }),
-        ).toBeVisible()
-        await page
-          .getByTestId('intelligent-ui-inline')
-          .locator('[data-testid^="ui-surface-"]')
-          .filter({ hasText: 'Questions / 问题' })
-          .scrollIntoViewIfNeeded()
+        // A pending question docks above the composer instead of rendering inside the turn.
+        const question = page.getByTestId('question-card')
+        await expect(question).toBeVisible()
+        await expect(question).toContainText(locale === 'en' ? 'Which delivery channel?' : '选择交付渠道')
         await screen('active-session-cards')
         if (deliverable) {
           const files = page.getByTestId('turn-deliverables').filter({ hasText: 'report.md' }).last()
@@ -289,7 +299,10 @@ for (const locale of ['zh-CN', 'en'])
         await page.locator('#view-chat').click()
         await visit('/?settings=bundles')
         await expect(page.getByTestId('settings-page-models')).toBeVisible()
-        await expect(page.getByTestId('settings-subsection-bundles')).toHaveAttribute('data-open', 'true')
+        // The deep link opens the combinations subpage, with its way back in view.
+        await expect(page.getByTestId('settings-subpage-bundles')).toBeVisible()
+        await expect(page.getByTestId('bundles-panel')).toBeVisible()
+        await expect(page.getByTestId('settings-subpage-back')).toBeVisible()
         await expect(page.locator('#new-session')).toBeHidden()
         await screen('deep-link-bundles')
         await section(page, 'schedules')

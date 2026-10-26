@@ -6,6 +6,12 @@ export type DeploymentTimeouts = {
   connectMs?: number
   streamIdleMs?: number
   /**
+   * How long a body may stay silent before its first chunk, 1 to 3600000 ms. Omitted, it is
+   * `streamIdleMs`. A model stream passes its first-token deadline here: a gateway that answers once
+   * the whole reply is ready sends headers at once and then nothing for minutes.
+   */
+  firstByteMs?: number
+  /**
    * How long an idle pooled connection is kept, 1 to 600000 ms. Omitted leaves undici's default
    * (a few seconds). A `Keep-Alive: timeout=N` hint from the server still takes precedence.
    */
@@ -61,7 +67,8 @@ export function createDeploymentFetch(
 ) {
   const requestMs = timeouts.requestMs ?? 300_000
   const idleMs = timeouts.streamIdleMs ?? 60_000
-  for (const value of [requestMs, idleMs, timeouts.connectMs ?? 10_000])
+  const firstByteMs = timeouts.firstByteMs ?? idleMs
+  for (const value of [requestMs, idleMs, firstByteMs, timeouts.connectMs ?? 10_000])
     if (!Number.isSafeInteger(value) || value < 1 || value > 3_600_000)
       throw new TypeError('Network timeouts must be integers from 1 to 3600000 milliseconds')
   const keepAliveMs = timeouts.keepAliveTimeoutMs
@@ -121,16 +128,13 @@ export function createDeploymentFetch(
         return response
       }
       const reader = response.body.getReader()
-      const resetIdle = () => {
+      const resetIdle = (ms: number) => {
         if (sseGet) return
         clearTimeout(idle)
-        idle = setTimeout(
-          () => controller.abort(new DOMException('Stream idle timeout', 'TimeoutError')),
-          idleMs,
-        )
+        idle = setTimeout(() => controller.abort(new DOMException('Stream idle timeout', 'TimeoutError')), ms)
         idle.unref()
       }
-      resetIdle()
+      resetIdle(firstByteMs)
       const stream = new ReadableStream<Uint8Array>({
         async pull(sink) {
           try {
@@ -139,7 +143,7 @@ export function createDeploymentFetch(
               clear()
               sink.close()
             } else {
-              resetIdle()
+              resetIdle(idleMs)
               sink.enqueue(next.value)
             }
           } catch (error) {

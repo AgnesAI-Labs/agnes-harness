@@ -9,6 +9,7 @@ import {
   toRpcError,
   validateMethod,
 } from '@agnes/protocol'
+import { failureFacts } from '@agnes/worker-runtime'
 import {
   fail,
   isRequest,
@@ -516,19 +517,12 @@ export class LocalEndpoint implements RpcEndpoint {
       const rejection = publicRejectionRpc(e)
       if (rejection) return fail(id, rejection)
       const diagnosticId = randomUUID()
-      // Never persist params, exception messages, stacks or arbitrary exception properties.
-      let errorCode = 'UNKNOWN'
+      // Never persist params, exception messages, paths, stacks or arbitrary exception properties.
       let persisted = false
       try {
-        const code =
-          e && typeof e === 'object' ? Object.getOwnPropertyDescriptor(e, 'code')?.value : undefined
-        errorCode =
-          ['EPERM', 'EACCES', 'ENOENT', 'EBUSY', 'ENOSPC', 'ETIMEDOUT', 'EIO'].find(
-            (known) => known === code,
-          ) ?? 'UNKNOWN'
         this.o.audit?.({
           kind: 'daemon.request_failed',
-          detail: { diagnosticId, method: call.method, errorCode },
+          detail: { diagnosticId, method: call.method, ...failureFacts(e) },
         })
         persisted = this.o.audit !== undefined
       } catch {

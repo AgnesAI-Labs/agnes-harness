@@ -80,6 +80,19 @@ class AttemptFailed extends Error {
   }
 }
 
+/**
+ * The session an attempt used, when it got that far. `prepare` may open a session and then fail
+ * before returning it (naming or setting the model of a new session); it says so with `sessionKey`.
+ */
+function attemptSession(error: unknown): string | undefined {
+  if (error instanceof AttemptFailed) return error.sessionKey
+  const key =
+    error && typeof error === 'object'
+      ? Object.getOwnPropertyDescriptor(error, 'sessionKey')?.value
+      : undefined
+  return typeof key === 'string' && key ? key : undefined
+}
+
 export class Scheduler {
   private timer: ReturnType<typeof setInterval> | undefined
   private readonly aborts = new Map<string, AbortController>()
@@ -221,11 +234,7 @@ export class Scheduler {
       // next daemon owner. Settling from a late dispatch continuation could otherwise cross the
       // owner-lock release boundary and overwrite state owned by the replacement daemon.
       if (!controller.signal.aborted || this.accepting)
-        this.settleFailure(
-          job,
-          error instanceof Error ? error.message : String(error),
-          error instanceof AttemptFailed ? error.sessionKey : undefined,
-        )
+        this.settleFailure(job, error instanceof Error ? error.message : String(error), attemptSession(error))
     } finally {
       clearInterval(heartbeat)
       this.aborts.delete(job.idempotencyKey)

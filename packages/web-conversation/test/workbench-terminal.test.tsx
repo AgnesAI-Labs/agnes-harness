@@ -96,11 +96,15 @@ async function menu(tab: Element, keyboard = false) {
   return within(popup as unknown as HTMLElement)
 }
 
-it('auto-opens once, lists Agent jobs read-only, retains completed output until removal and supports shell menus', async () => {
+it('opens no terminal until asked, lists Agent jobs read-only, retains completed output until removal and supports shell menus', async () => {
   localStorage.setItem('agnes.workbench.terminal.shell', 'zsh')
   const agent = job()
   const listed = [agent]
   const { host, jobsControl } = mount(listed)
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(1))
+  // Opening the dock to watch the agent starts no shell for the person.
+  expect(jobsControl.mock.calls.filter(([input]) => input.operation === 'open')).toHaveLength(0)
+  click(host.querySelector('[data-testid=terminal-new]'))
   await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(2))
   expect(host.querySelector('.workbench-terminal-tabs')?.getAttribute('role')).toBe('toolbar')
   expect(jobsControl).toHaveBeenCalledWith({ operation: 'open', shell: 'zsh', columns: 100, rows: 30 })
@@ -135,8 +139,11 @@ it('auto-opens once, lists Agent jobs read-only, retains completed output until 
   await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(3))
 })
 
-it('does not reopen after closing the last terminal, including after remount, and offers a minimal new button', async () => {
+it('opens no terminal on mount or remount, and starts one from the minimal new button', async () => {
   const { host, jobsControl, session } = mount([])
+  await vi.waitFor(() => expect(host.querySelector('[data-testid=terminal-empty]')).not.toBeNull())
+  expect(jobsControl.mock.calls.filter(([input]) => input.operation === 'open')).toHaveLength(0)
+  click(within(host).getByRole('button', { name: '+ 新建终端' }))
   await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(1))
   click(host.querySelector('[data-testid=terminal-tab-close]'))
   await vi.waitFor(() => expect(within(document.body).getByRole('button', { name: '终止进程' })).toBeTruthy())

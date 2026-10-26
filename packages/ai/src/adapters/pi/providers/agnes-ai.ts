@@ -1,10 +1,27 @@
 import type { Api, Model, Provider as PiProvider } from '@earendil-works/pi-ai'
 
 /**
- * Agnes AI runs separate regional gateways. Only the China gateway is supported for now; the
- * international hub (apihub.agnes-ai.com) rejects China keys and is not registered yet.
+ * Agnes AI runs separate regional gateways and issues keys per gateway. This China address is the
+ * provider's default; the international one (https://apihub.agnes-ai.com/v1) is chosen by setting
+ * the account's Base URL, which the account form offers as "Agnes AI International".
  */
 export const AGNES_AI_BASE_URL = 'https://api.agnes-ai.cn/v1'
+
+/**
+ * The Agnes gateway sends a tool call only once it is complete, so a stream can stay silent for as
+ * long as the model takes to write one. Matched by provider id or by gateway host, China
+ * (agnes-ai.cn) or international (agnes-ai.com, e.g. apihub.agnes-ai.com), so an account pointed at
+ * either gateway or its own Base URL path still counts.
+ */
+export function buffersToolCalls(baseUrl: string, providerId: string | undefined): boolean {
+  if (providerId === 'agnes-ai') return true
+  try {
+    const host = new URL(baseUrl).hostname
+    return ['agnes-ai.cn', 'agnes-ai.com'].some((domain) => host === domain || host.endsWith(`.${domain}`))
+  } catch {
+    return false
+  }
+}
 
 /**
  * Chat models only: the image and video generation ids the gateway also lists stay out of the

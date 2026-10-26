@@ -171,3 +171,27 @@ it('keeps unknown worker failures generic even when exception accessors throw', 
     expect(JSON.stringify(failure)).not.toContain('private')
   }
 })
+
+describe('file errors at the worker seam', () => {
+  it('keeps the failing call and file kinds for the daemon audit, never the path', () => {
+    const failure = workerDomainFailure(
+      Object.assign(
+        new Error("EPERM: operation not permitted, rename 'C:\\Users\\me\\proj\\pin.json.1.tmp'"),
+        {
+          code: 'EPERM',
+          syscall: 'rename',
+          path: 'C:\\Users\\me\\proj\\pin.json.1.tmp',
+          dest: 'C:\\Users\\me\\proj\\pin.json',
+        },
+      ),
+    )
+    expect(failure).toEqual({
+      code: 'EPERM',
+      message: 'Worker operation failed.',
+      syscall: 'rename',
+      fileKind: 'temp',
+      destKind: 'json',
+    })
+    expect(JSON.stringify(failure)).not.toMatch(/Users|proj/)
+  })
+})

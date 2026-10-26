@@ -29,8 +29,9 @@ const ms = (iso) => {
   const t = Date.parse(iso)
   return Number.isNaN(t) ? undefined : t
 }
-/** When the item last moved into `to`, or undefined. */
-const enteredAt = (item, to) => [...(item.history ?? [])].reverse().find((e) => e.to === to)?.at
+/** When the item last moved into `to`, or undefined; a note kept without a move is not an entry. */
+const enteredAt = (item, to) =>
+  [...(item.history ?? [])].reverse().find((e) => e.to === to && e.from !== to)?.at
 const latest = (list, projectId, type) =>
   list
     .filter((b) => b.projectId === projectId && b.type === type)
@@ -47,7 +48,7 @@ export function blockers(state, now = Date.now(), projectId) {
   const add = (kind, projectId, role, ref, title, reason, since, extra = {}) => {
     const t = ms(since)
     out.push({
-      id: `${kind}:${ref.id}:${role}`,
+      id: `${kind}:${ref.id}${ref.sub ? `:${ref.sub}` : ''}:${role}`,
       kind,
       label: BLOCKER_KINDS[kind].label,
       projectId,
@@ -63,8 +64,10 @@ export function blockers(state, now = Date.now(), projectId) {
   const stageById = (id) => (state.stages ?? []).find((s) => s.id === id)
   const ownerRole = (stage, project) => stage?.author || roleOf(project?.manager)
 
+  // Submitting a stage again opens a new gate: the rejected one's open findings are history then.
+  const newest = new Map((state.gates ?? []).map((g) => [g.stageId, g]))
   for (const g of state.gates ?? []) {
-    if (g.superseded) continue
+    if (g.superseded || (g.decision === 'REJECTED' && newest.get(g.stageId) !== g)) continue
     const stage = stageById(g.stageId)
     const project = projectOf(stage?.projectId ?? g.stageId.split('/')[0])
     if (!project) continue
@@ -132,14 +135,17 @@ export function blockers(state, now = Date.now(), projectId) {
   }
 
   for (const t of state.trials ?? []) {
-    if (t.result !== 'FAIL' || t.state === 'APPROVED' || t.changeId) continue
+    const change = t.changeId && (state.changes ?? []).find((c) => c.id === t.changeId)
+    // A change the CCB rejected never releases the trial, so it stands as no change.
+    const rejected = change && (change.state === 'REJECTED' || change.ccb?.decision === 'REJECTED')
+    if (t.result !== 'FAIL' || t.state === 'APPROVED' || (change && !rejected)) continue
     add(
       'TRIAL_FAILED',
       t.projectId,
       '质量工程师',
       { type: 'trial', id: t.id },
       t.title ?? t.id,
-      '型式试验不合格，尚未关联变更',
+      rejected ? `型式试验不合格，关联变更 ${change.id} 已驳回` : '型式试验不合格，尚未关联变更',
       enteredAt(t, 'REPORTED') ?? t.at,
     )
   }

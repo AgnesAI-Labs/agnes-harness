@@ -91,8 +91,7 @@ export type TransportOption =
       kind: 'ws'
       url: string
       tls?: { ca?: string; rejectUnauthorized?: boolean }
-      /** A function is called once per connection attempt, e.g. to fetch a single-use ticket. */
-      protocols?: string[] | (() => Promise<string[]>)
+      protocols?: string[]
     }
 
 // `reconnected` fires once the connection and every attached session are recovered after
@@ -539,12 +538,19 @@ export class Client {
       if (o.systemPromptAppend !== undefined)
         meta.systemPromptAppend = parseSystemPromptAppend(o.systemPromptAppend)
       if (o.sessionKey) meta.sessionKey = o.sessionKey
-      const r = await this.call<{ sessionId: string }>('session/new', {
-        cwd: o.cwd,
-        ...(extra.length ? { additionalDirectories: [...extra] } : {}),
-        mcpServers: [],
-        _meta: { [META_KEY]: meta },
-      })
+      // Creating a session assembles its host and loads every extension, which on a slow or busy
+      // machine takes longer than an ordinary request. The daemon keeps working after a timeout, so
+      // a short budget only turns a late success into a failure the caller has to retry.
+      const r = await this.call<{ sessionId: string }>(
+        'session/new',
+        {
+          cwd: o.cwd,
+          ...(extra.length ? { additionalDirectories: [...extra] } : {}),
+          mcpServers: [],
+          _meta: { [META_KEY]: meta },
+        },
+        { timeoutMs: Math.max(this.timeouts.request, 90_000) },
+      )
       return this.sessionHandle(r.sessionId, o.cwd)
     },
     // The vendored request shape makes cwd and mcpServers mandatory. An omitted cwd means the

@@ -282,6 +282,28 @@ describe('DevBoard plugin contract', () => {
     const close = await tool('devboard_problem_upsert').execute({ id: problem.id, to: 'CLOSED' }, ctx)
     expect(close.isError).toBe(true)
     expect(read(store).problems.find((q: Any) => q.id === problem.id).state).toBe('OPEN')
+    // a defect is created (no id) or moved (id + to); a mixed call is refused, not half applied
+    const defect = tool('devboard_defect_upsert')
+    const before = read(store).activity?.length ?? 0
+    expect(
+      (await defect.execute({ projectId: p.id, title: 'd', severity: 'C', to: 'CLOSED' }, ctx)).isError,
+    ).toBe(true)
+    const made = (await defect.execute({ projectId: p.id, title: 'd', severity: 'C' }, ctx)).structured.data
+    expect((await defect.execute({ id: made.id, severity: 'A', to: 'CONFIRMED' }, ctx)).isError).toBe(true)
+    expect((await defect.execute({ id: made.id }, ctx)).isError).toBe(true)
+    expect(read(store).defects.find((d: Any) => d.id === made.id)).toMatchObject({
+      state: 'NEW',
+      severity: 'C',
+    })
+    expect(read(store).activity.length).toBe(before + 1)
+    // a class-A defect holds TR5 and ADCP: the agent closes it only after its retest, through either tool
+    const fatal = (await defect.execute({ projectId: p.id, title: 'f', severity: 'A' }, ctx)).structured.data
+    expect((await defect.execute({ id: fatal.id, to: 'CLOSED' }, ctx)).isError).toBe(true)
+    const move = tool('devboard_transition')
+    expect((await move.execute({ kind: 'defect', id: fatal.id, to: 'CLOSED' }, ctx)).isError).toBe(true)
+    for (const to of ['CONFIRMED', 'FIXING', 'RETEST', 'CLOSED'])
+      expect((await defect.execute({ id: fatal.id, to }, ctx)).isError).toBeFalsy()
+    expect(read(store).defects.find((d: Any) => d.id === fatal.id).state).toBe('CLOSED')
   })
 
   it('handles approvals through devboard.approval and lets the agent only start flows of its own drafts', async () => {
@@ -566,6 +588,22 @@ describe('DevBoard plugin contract', () => {
       expect(actions.find((a: Any) => a.id === id).prompt['zh-CN']).not.toContain('devboard_handoff')
     expect(pkg.files).toContain('handoff.mjs')
     expect(pkg.scripts.build).toContain('handoff.mjs')
+  })
+
+  it('ships and checks every module the server code imports', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    const modules = pkg.files.filter((f: string) => f.endsWith('.mjs'))
+    const imported = new Set(
+      modules.flatMap((f: string) =>
+        [
+          ...readFileSync(new URL(`../${f}`, import.meta.url), 'utf8').matchAll(/from '\.\/([\w-]+\.mjs)'/g),
+        ].map((m) => m[1]),
+      ),
+    )
+    for (const file of imported) {
+      expect(pkg.files, file).toContain(file)
+      expect(pkg.scripts.build, file).toContain(`node --check ${file}`)
+    }
   })
 
   it.each(Object.entries(ENTRIES))(
@@ -947,6 +985,8 @@ describe('DevBoard plugin contract', () => {
     const action = pkg.agnes.application.workbench.actions.find((a: Any) => a.id === 'fast-forward')
     expect(action.agent).toBe('@agnes-showcase/devboard#coordinator')
     expect(action.prompt['zh-CN']).toContain('devboard_fastforward')
+    // One tool call needs no playbook: reading it would cost a model round trip on the quick path.
+    for (const lang of ['en', 'zh-CN']) expect(action.prompt[lang]).not.toContain('skill_read')
     const runApp = pkg.agnes.application.workbench.actions.find((a: Any) => a.id === 'run-app')
     expect(runApp.prompt['zh-CN']).toContain('devboard_app_register')
   })

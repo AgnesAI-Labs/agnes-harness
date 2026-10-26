@@ -93,6 +93,71 @@ describe('LocalEndpoint', () => {
         await ep.close()
       }
   })
+  it.each([
+    [
+      'a rename the daemon ran',
+      {
+        code: 'EPERM',
+        syscall: 'rename',
+        path: 'C:\\Users\\me\\secret-project\\state.json.0f3c.tmp',
+        dest: 'C:\\Users\\me\\secret-project\\state.json',
+      },
+      { errorCode: 'EPERM', syscall: 'rename', fileKind: 'temp', destKind: 'json' },
+    ],
+    [
+      'a worker reply already reduced to kinds',
+      {
+        code: 'EPERM',
+        message: 'Worker operation failed.',
+        syscall: 'rename',
+        fileKind: 'temp',
+        destKind: 'json',
+      },
+      { errorCode: 'EPERM', syscall: 'rename', fileKind: 'temp', destKind: 'json' },
+    ],
+    [
+      'a spawn, whose call names the file',
+      {
+        code: 'EACCES',
+        syscall: 'spawn C:\\Users\\me\\secret-tool.exe',
+        path: 'C:\\Users\\me\\secret-tool.exe',
+      },
+      { errorCode: 'EACCES', syscall: 'spawn', fileKind: 'other' },
+    ],
+    [
+      'a domain error wrapping a file error',
+      {
+        code: 'E_GENERATION_CONFIG_INTEGRITY',
+        cause: { code: 'EMFILE', syscall: 'open', path: 'C:\\secret\\a.json' },
+      },
+      { errorCode: 'E_GENERATION_CONFIG_INTEGRITY', causeCode: 'EMFILE', syscall: 'open', fileKind: 'json' },
+    ],
+    [
+      'a worker reply naming an AGH error',
+      { code: 'E_WORKER', message: 'Worker operation failed.' },
+      { errorCode: 'E_WORKER' },
+    ],
+    ['a code that is not one of the known shapes', { code: 'secret-token-value' }, { errorCode: 'UNKNOWN' }],
+  ] as const)('audits %s by call and file kinds, never by path', async (_label, raised, facts) => {
+    const records: unknown[] = []
+    const ep = new LocalEndpoint({
+      clock: () => 0,
+      principalId: 'local',
+      audit: (record) => records.push(record),
+    })
+    ep.register('initialize', async () => {
+      throw Object.assign(new Error('private message naming C:\\Users\\me\\secret-project'), raised)
+    })
+    await ep.handle({ jsonrpc: '2.0', id: 'x', method: 'initialize', params: INIT_PARAMS })
+    expect(records).toEqual([
+      {
+        kind: 'daemon.request_failed',
+        detail: { diagnosticId: expect.any(String), method: 'initialize', ...facts },
+      },
+    ])
+    expect(JSON.stringify(records)).not.toMatch(/secret|Users/)
+    await ep.close()
+  })
   it('refuses new calls after intake stops while preserving outbound shutdown notices', async () => {
     const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
     ep.register('initialize', async (_params, cx) => {

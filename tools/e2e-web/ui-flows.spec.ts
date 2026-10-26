@@ -814,3 +814,189 @@ test('Settings jobs session picker lists the same sessions as the sidebar', asyn
   expect(options).toHaveLength(rows.length)
   for (const row of rows) expect(options.some((option) => option.startsWith(row.trim()))).toBe(true)
 })
+
+test('Answer tables keep first and last column text off the frame edge', async ({ page, runtime }) => {
+  test.setTimeout(120_000)
+  const columns = [
+    '任务ID',
+    '任务名称',
+    '负责人',
+    '优先级',
+    '开始时间',
+    '结束时间',
+    '状态',
+    '预算(元)',
+    '实际支出(元)',
+    '备注',
+  ]
+  const rows = columns.map((name, index) => `| ${String.fromCharCode(65 + index)} | ${name} | 说明 ${name} |`)
+  const reply = [
+    '## 测试数据表.xlsx 分析',
+    '',
+    '这是一份项目任务管理表，共 15 条任务记录，字段共 10 列。',
+    '',
+    '### 表格结构',
+    '',
+    '| 列 | 字段名 | 说明 |',
+    '|---|---|---|',
+    ...rows,
+    '',
+    '### 数据预览',
+    '',
+    `| ${columns.join(' | ')} |`,
+    `|${columns.map(() => '---').join('|')}|`,
+    ...Array.from(
+      { length: 5 },
+      (_, i) =>
+        `| T00${i + 1} | 需求调研与方案评审第${i + 1}阶段 | 张三 | P${i % 3} | 2026-07-0${i + 1} | 2026-07-1${i} | 进行中 | 50000 | 32000 | 无 |`,
+    ),
+    '',
+    '### 总结',
+    '',
+    '收尾段落。',
+  ].join('\n')
+  const client = await runtime.connect()
+  const model = (await client.config.test({ providerId: 'deepseek' })).models[0]?.id
+  if (!model) throw new Error('The local provider catalog must contain a model')
+  const provider = await startProviderFixture(reply, undefined, model)
+  try {
+    const config = await client.config.get()
+    await client.config.save({
+      providerId: 'deepseek',
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      model,
+      accountId: 'table-fixture',
+      label: 'Synthetic table fixture',
+      expectedRevision: config.revision,
+      makeDefault: true,
+    })
+    await open(page, runtime)
+    await turn(page, '分析这个数据表')
+    await settled(page)
+    const tables = page.locator('.markdown table')
+    await expect(tables).toHaveCount(2)
+    // The bordered .table-scroll frame owns the edge, so the outer header and body cells of every
+    // table keep their own padding. Computed padding does not depend on how the columns stretch.
+    const edges = await tables.evaluateAll((all) =>
+      all.flatMap((table) => {
+        const frame = (table.closest('.table-scroll') as HTMLElement).getBoundingClientRect()
+        return ['thead th', 'tbody td'].flatMap((group) =>
+          ['first', 'last'].map((end) => {
+            const cell = table.querySelector(`${group}:${end}-child`) as HTMLElement
+            const style = getComputedStyle(cell)
+            const range = document.createRange()
+            range.selectNodeContents(cell)
+            return {
+              cell: `${group}:${end}-child`,
+              padding:
+                end === 'first'
+                  ? Number.parseFloat(style.paddingLeft)
+                  : Number.parseFloat(style.paddingRight),
+              // Left-aligned text, so the left gap is also the visible distance to the frame.
+              gap:
+                end === 'first' ? range.getBoundingClientRect().left - frame.left : Number.POSITIVE_INFINITY,
+            }
+          }),
+        )
+      }),
+    )
+    expect(edges).toHaveLength(8)
+    for (const edge of edges) {
+      expect(edge.padding, edge.cell).toBeGreaterThanOrEqual(8)
+      expect(edge.gap, edge.cell).toBeGreaterThanOrEqual(8)
+    }
+  } finally {
+    await provider.close()
+  }
+})
+
+test('Answer tables honor GFM column alignment', async ({ page, runtime }) => {
+  test.setTimeout(120_000)
+  const reply = [
+    '| 项目 | 预算(元) | 状态 |',
+    '|:---|---:|:---:|',
+    '| 调研 | 5 | 完成 |',
+    '| 评审 | 12000 | 进行中 |',
+  ].join('\n')
+  const client = await runtime.connect()
+  const model = (await client.config.test({ providerId: 'deepseek' })).models[0]?.id
+  if (!model) throw new Error('The local provider catalog must contain a model')
+  const provider = await startProviderFixture(reply, undefined, model)
+  try {
+    const config = await client.config.get()
+    await client.config.save({
+      providerId: 'deepseek',
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      model,
+      accountId: 'table-align-fixture',
+      label: 'Synthetic table alignment fixture',
+      expectedRevision: config.revision,
+      makeDefault: true,
+    })
+    await open(page, runtime)
+    await turn(page, '给出预算表')
+    await settled(page)
+    const table = page.locator('.markdown table').last()
+    await expect(table).toBeVisible()
+    // Header and body cells follow the column's `:---`, `---:` and `:---:` markers; the app layer
+    // must not flatten them to one alignment.
+    const aligns = await table.evaluate((el) =>
+      ['thead th', 'tbody tr:first-child td'].map((row) =>
+        [...el.querySelectorAll(row)].map((cell) => getComputedStyle(cell).textAlign),
+      ),
+    )
+    expect(aligns).toEqual([
+      ['left', 'right', 'center'],
+      ['left', 'right', 'center'],
+    ])
+  } finally {
+    await provider.close()
+  }
+})
+
+test('A session that takes longer than 30 s to create still opens and sends', async ({ page, runtime }) => {
+  test.setTimeout(180_000)
+  let slowed = false
+  await page.routeWebSocket(/.*/, (ws) => {
+    const server = ws.connectToServer()
+    const held = new Set<number | string>()
+    ws.onMessage((message) => {
+      try {
+        const frame = JSON.parse(String(message)) as { id?: number | string; method?: string }
+        // The first creation answers late, the way a loaded daemon assembling its host would.
+        if (!slowed && frame.method === 'session/new' && frame.id !== undefined) {
+          slowed = true
+          held.add(frame.id)
+        }
+      } catch {
+        /* Not JSON-RPC. */
+      }
+      server.send(message)
+    })
+    server.onMessage((message) => {
+      try {
+        const frame = JSON.parse(String(message)) as { id?: number | string }
+        if (frame.id !== undefined && held.has(frame.id)) {
+          held.delete(frame.id)
+          setTimeout(() => ws.send(message), 40_000)
+          return
+        }
+      } catch {
+        /* Not JSON-RPC. */
+      }
+      ws.send(message)
+    })
+  })
+  await open(page, runtime)
+  const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
+  await composer.fill('请生成一个扫雷游戏的 HTML')
+  await composer.press('Enter')
+  await expect(page.locator('#composer')).toContainText('Preparing session')
+  // Past the old 30 s budget the request is still pending, not failed.
+  await page.waitForTimeout(32_000)
+  await expect(page.getByText('timed out')).toHaveCount(0)
+  await expect(page.getByTestId('conversation-turn').first()).toContainText('扫雷', { timeout: 30_000 })
+  await expect(page.locator('.session-row')).toHaveCount(1)
+})

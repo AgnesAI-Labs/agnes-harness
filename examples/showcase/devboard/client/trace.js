@@ -33,6 +33,8 @@ function TraceMatrix({ data, projectId, role, lens }) {
   const reqs = data.reqs.filter((r) => r.projectId === projectId)
   const shown = lens.pick('req', reqs)
   // Until a level is picked the matrix opens on the first level that has records for the role.
+  // Adjusting state while rendering: a role change drops the picked level, so coming back starts afresh.
+  if (picked.role !== role) setPicked({ role, level: '' })
   const level =
     (picked.role === role && picked.level) ||
     ['SWR', 'CUS', 'SYS', 'DES', 'TC'].find((l) => shown.some((r) => r.level === l)) ||
@@ -45,7 +47,11 @@ function TraceMatrix({ data, projectId, role, lens }) {
     ...cov.cusSys.missing,
     ...cov.sysSwr.missing,
   ])
-  const rows = shown.filter((r) => r.level === level && (!discipline || r.discipline === discipline))
+  // Only SWR and DES items carry a discipline, so the filter is offered and applied on those levels only.
+  const disciplined = level === 'SWR' || level === 'DES'
+  const rows = shown.filter(
+    (r) => r.level === level && (!disciplined || !discipline || r.discipline === discipline),
+  )
   const item = reqs.find((r) => r.id === selected)
   const disc = (d) => data.labels.discipline[d] ?? '—'
   const children = (id) => reqs.filter((r) => r.parent?.includes(id))
@@ -85,13 +91,14 @@ function TraceMatrix({ data, projectId, role, lens }) {
             label: `${l} ${data.labels.level[l]}（${shown.filter((r) => r.level === l).length}）`,
           })),
         }),
-        h(Select, {
-          'aria-label': '按专业过滤',
-          value: discipline,
-          onChange: setDiscipline,
-          options: options(data.labels.discipline, '全部专业'),
-          style: { minWidth: 130 },
-        }),
+        disciplined &&
+          h(Select, {
+            'aria-label': '按专业过滤',
+            value: discipline,
+            onChange: setDiscipline,
+            options: options(data.labels.discipline, '全部专业'),
+            style: { minWidth: 130 },
+          }),
       ),
     !lens.empty &&
       h(Table, {
@@ -256,7 +263,10 @@ function TechResponse({ data, projectId, lens }) {
 function BoardRequirements({ data, board, role, projectId }) {
   const [selected, open] = useDetail()
   const [state, setState] = React.useState('')
-  const rows = data.requirements.filter((r) => inProject(projectId)(r) && (!state || r.state === state))
+  // A requirement created without a project would otherwise never show, nor move, under any project.
+  const rows = data.requirements.filter(
+    (r) => (!r.projectId || inProject(projectId)(r)) && (!state || r.state === state),
+  )
   const item = byId(data.requirements, selected)
   return h(
     React.Fragment,

@@ -8,6 +8,7 @@ import { HANDOFF_DICT, type HandoffKey } from './locale-handoff.js'
 import { HEADS_UP_DICT, type HeadsUpKey } from './locale-heads-up.js'
 import { MEMORY_DICT, type MemoryKey } from './locale-memory.js'
 import { PROMPT_CLICK_DICT, type PromptClickKey } from './locale-prompt-click.js'
+import { PROVIDER_DICT, type ProviderKey } from './locale-provider.js'
 import { SESSION_ACTION_DICT, type SessionActionKey } from './locale-session-actions.js'
 import { SESSION_VIEW_DICT, type SessionViewKey } from './locale-session-view.js'
 import { SHELL_UX_DICT, type ShellUxKey } from './locale-shell-ux.js'
@@ -148,6 +149,7 @@ export type TerminalKey =
   | ToolFilterKey
   | CdKey
   | DaltonizedKey
+  | ProviderKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
@@ -167,6 +169,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...TOOL_FILTER_DICT.en,
     ...CD_DICT.en,
     ...DALTONIZED_DICT.en,
+    ...PROVIDER_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
     'exit.cancelUnconfirmed':
@@ -300,6 +303,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...TOOL_FILTER_DICT['zh-CN'],
     ...CD_DICT['zh-CN'],
     ...DALTONIZED_DICT['zh-CN'],
+    ...PROVIDER_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
     'exit.cancelUnconfirmed': '取消未确认，任务可能仍在运行，可用 agh --resume {id} 重新连接查看',

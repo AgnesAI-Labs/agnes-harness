@@ -58,7 +58,7 @@
 | A7 永久审批授权 | `@agnes/host/approval-grants` 元数据命名空间 `grants` 中的 `grant:<id>` 条目（`packages/host/src/runtime/approval/grants.ts:168`） | 仅 Host 授权控制面（`grants.ts`），审批 provider 不得写 | Core 工具闸门经授权端口读取 | 无 | 元数据条目说了算；撤销是条目上的一个字段（`revokedAt`） | 持久，无需重放 |
 | A8 会话目录 | `sessions` 表（`ddl.ts:28`）及其索引的事件 | 创建或分叉会话时由存储适配器写入 | daemon `StorageLister`（`packages/daemon-foundation/src/storage/lister.ts:39`） | 列表分页（投影） | 存储说了算 | 每次调用重新计算 |
 | A9 展示偏好（标题覆盖、归档、书签过的提问） | daemon 作业存储中的 `session_preferences` 表，书签为其中一列（`packages/daemon-foundation/src/storage/session-preferences.ts:8`） | 经 daemon RPC 的 `SessionPreferencesStore` | `withSessionPreferences` 叠加到列表上 | 无 | *仅对展示*是权威；该类的文档说明它独立于生成标题和对话历史，因此从不改写账本事实 | 持久 |
-| A10 历史搜索索引 | `history-index.db`（`packages/history-index/src/directory.ts`） | 仅索引器 | 搜索 RPC | 带戳记的账本目录**投影** | 戳记不符即重建（`directory.ts:48`；`packages/history-index/src/store.ts:246`） | 下次搜索时重建 |
+| A10 历史搜索索引 | `history-index.db`（`packages/history-index/src/directory.ts`） | 仅索引器 | 搜索 RPC | 账本目录的增量**投影**：每个会话记录最后索引事件的 seq 和 id | 戳记变化后，下次搜索只索引新追加的事件；已索引的尾部消失或被替换的会话重新索引（`packages/history-index/src/sync.ts` 的 `syncLedger`） | 下次搜索时从账本重新索引；表结构变化时整库丢弃重建 |
 
 相关控制表（子任务、预算范围与预留）与事件同库（自 `ddl.ts:32` 起）。本页不审计它们。
 
