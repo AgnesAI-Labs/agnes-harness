@@ -24,6 +24,7 @@ import {
 } from '@agnes/system-node/owner-lock'
 import { collectRead, collectReadAsync, directoryDigestSteps, type ReadSteps } from './cooperative-read.js'
 import { clonePackageTreeSync } from './copy-tree.js'
+import { withFreshDigests } from './directory-digest.js'
 import { type GenerationReuseInputs, matchesGenerationBuildInputs } from './generation-equivalence.js'
 import type { RuntimePluginSnapshot } from './package-plugin-loader.js'
 import {
@@ -192,7 +193,9 @@ export class RuntimeGenerationSnapshotStore {
     seams?: GenerationSeams,
   ): PluginGenerationSnapshot {
     return withoutPackageVerification(() =>
-      collectRead(this.createSteps(target, sources, compatibility, packages, resources, seams)),
+      withFreshDigests(() =>
+        collectRead(this.createSteps(target, sources, compatibility, packages, resources, seams)),
+      ),
     )
   }
 
@@ -202,7 +205,9 @@ export class RuntimeGenerationSnapshotStore {
   ): Promise<PluginGenerationSnapshot> {
     // A caller may retain mutable arrays/records; a yield must not change the admitted build inputs.
     const captured = structuredClone(args)
-    return withoutPackageVerification(() => collectReadAsync(this.createSteps(...captured)))
+    return withoutPackageVerification(() =>
+      withFreshDigests(() => collectReadAsync(this.createSteps(...captured))),
+    )
   }
 
   private *createSteps(
