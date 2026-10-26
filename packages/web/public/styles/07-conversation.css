@@ -398,8 +398,12 @@
   .markdown td {
     padding: 0.625rem var(--s16);
     border-bottom: 0.5px solid var(--agnes-line-primary);
-    text-align: start;
     vertical-align: top;
+  }
+  /* This layer outranks `ui`, so a plain text-align here would flatten the `[data-align]` column
+     markers from the table's `:---`, `---:` and `:---:`; only unmarked cells are set. */
+  .markdown :is(th, td):not([data-align]) {
+    text-align: start;
   }
   .markdown th {
     color: var(--agnes-text-primary);

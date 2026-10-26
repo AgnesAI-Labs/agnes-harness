@@ -19,7 +19,7 @@
     --cite-hover-bg: var(--agnes-bg-hover);
     --border-radius-middle: var(--radius-md);
     --border-radius-small: var(--radius-xs);
-    --td-th-padding: 0.625rem 0.75rem;
+    --td-th-padding: 0.625rem var(--s16);
     --margin-block: 0 0 1rem 0;
     --padding-ul-ol: 0 0 0 1.125rem;
     --margin-ul-ol: 0 0 1rem 0;
@@ -45,11 +45,11 @@
     box-shadow: var(--focus-line);
   }
 
-  /* The focusable .table-scroll owns overflow and the border; tables retain native column layout. */
+  /* The focusable .table-scroll owns overflow and the border; tables retain native column layout.
+     The app stylesheet (07-conversation.css) owns the table's width floor and the cell skin. */
   .conversation-markdown:where(:not(.x-md-disable-all, .x-md-disable-table)) table {
     display: table;
     width: 100%;
-    min-width: 0;
     max-width: none;
     overflow: visible;
     margin: 0;
