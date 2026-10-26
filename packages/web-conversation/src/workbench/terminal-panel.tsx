@@ -19,7 +19,6 @@ import { TerminalView } from './terminal-view.js'
 import { visiblePoll } from './visible-poll.js'
 
 const closedSessions = new Set<string>()
-const openingSessions = new Set<string>()
 function wasClosed(id: string) {
   try {
     return localStorage.getItem(`${storageKey(id)}.closed`) === 'true'
@@ -168,16 +167,8 @@ export function TerminalPanel({ context }: { context: UiExtensionContext }) {
               initial[0] ??
               '',
           )
-          if (
-            !value.jobs.some((job) => job.owner === 'human') &&
-            !wasClosed(session.id) &&
-            !openingSessions.has(session.id)
-          ) {
-            openingSessions.add(session.id) // Share an in-flight open across remounts.
-            void control({ operation: 'open', shell: readTerminalShell(), columns: 100, rows: 30 }).finally(
-              () => openingSessions.delete(session.id),
-            )
-          }
+          // No terminal is started for the person until they ask for one: opening the dock to watch
+          // the agent's jobs must not leave a shell running that nobody uses.
         } else {
           setIds((known) => [
             ...known,
