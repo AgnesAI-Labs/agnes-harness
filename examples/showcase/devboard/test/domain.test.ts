@@ -1052,6 +1052,39 @@ describe('traceability and deliverables', () => {
     expect(() => projectPath(project, path)).toThrow('交付物路径越界')
   })
 
+  it('keeps artifact and test-run ids unique when a new project repeats a seeded project number', () => {
+    const state = seed(NOW)
+    const p = create(state, { kind: 'project', name: '同号项目', minSeq: 19 }, NOW)
+    expect(p.id).toBe('PRJ-2026-019')
+    const srs = recordArtifact(
+      state,
+      { projectId: p.id, kind: 'SRS', stage: 'REQUIREMENTS', path: 'docs/SRS.md' },
+      NOW,
+    )
+    expect(srs.id).toBe('DOC-2026-019-SRS')
+    expect(byId(state.artifacts, 'DOC-019-SRS').projectId).toBe('PRJ-2025-019')
+    expect(state.artifacts.filter((a: Item) => a.id === srs.id)).toHaveLength(1)
+    // A deliverable recorded under the old DOC-<seq>- id is updated in place, not duplicated.
+    const sad = recordArtifact(
+      state,
+      { projectId: p.id, kind: 'SAD', stage: 'DESIGN', path: 'docs/SAD.md' },
+      NOW,
+    )
+    Object.assign(sad, { id: 'DOC-019-SAD' })
+    const again = recordArtifact(
+      state,
+      { projectId: p.id, kind: 'SAD', stage: 'DESIGN', path: 'docs/SAD.md' },
+      NOW,
+    )
+    expect(again).toBe(sad)
+    expect(state.artifacts.filter((a: Item) => a.projectId === p.id && a.kind === 'SAD')).toHaveLength(1)
+    const run = recordTestRun(state, { projectId: p.id, total: 1, passed: 1 }, NOW)
+    expect(run.id).toBe('TR-2026-019-01')
+    expect(recordTestRun(state, { projectId: 'PRJ-2025-019', total: 1, passed: 1 }, NOW).id).toMatch(
+      /^TR-019-/,
+    )
+  })
+
   it('accepts project-relative paths and refuses order projects', () => {
     const project = { id: 'PRJ-2026-009', live: true, workspaceDir: 'devboard-projects/PRJ-2026-009' }
     expect(projectPath(project, 'src/a.js')).toBe('devboard-projects/PRJ-2026-009/src/a.js')

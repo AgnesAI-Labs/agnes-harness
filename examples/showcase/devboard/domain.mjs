@@ -582,7 +582,7 @@ function approve(state, stage, gate, by, comment, at) {
     if (/^V0\./.test(a.version)) a.version = 'V1.0'
   }
   const main = items[0]
-  const short = stage.projectId.split('-').at(-1)
+  const short = numberOf(state, stage.projectId)
   const n = state.gates.filter((g) => g.stageId === stage.id && g.decision === 'APPROVED').length
   stage.baseline = {
     id: main
@@ -1008,8 +1008,11 @@ export function recordArtifact(state, input, now = Date.now()) {
   const suffix = optional(input.suffix, 24).toUpperCase() || (kind === 'ANALYSIS' ? named : '')
   if (suffix && !/^[A-Z0-9]+(-[A-Z0-9]+)*$/.test(suffix))
     fail(`suffix 格式无效：${suffix}（大写字母、数字与连字符）`)
-  const id = `DOC-${project.id.split('-').at(-1)}-${kind.replaceAll('_', '-')}${suffix ? `-${suffix}` : ''}`
-  const existing = state.artifacts.find((a) => a.id === id && a.projectId === project.id)
+  const name = `${kind.replaceAll('_', '-')}${suffix ? `-${suffix}` : ''}`
+  // A deliverable registered before the year joined the number keeps its DOC-<seq>- id.
+  const ids = [`DOC-${numberOf(state, project.id)}-${name}`, `DOC-${project.id.split('-').at(-1)}-${name}`]
+  const existing = state.artifacts.find((a) => ids.includes(a.id) && a.projectId === project.id)
+  const id = existing?.id ?? ids[0]
   const artifact = existing ?? { id, projectId: project.id, kind, status: 'DRAFT' }
   Object.assign(artifact, {
     stage,
@@ -1035,6 +1038,16 @@ export function recordArtifact(state, input, now = Date.now()) {
     state.docs[id] = { ...clip(input.markdown), path, at: artifact.updatedAt }
   }
   return artifact
+}
+
+/**
+ * The project number inside artifact, test-run and baseline ids (DOC-019-SRS). Sequence numbers restart
+ * every year, so a later project that repeats an earlier one's number takes its year too (DOC-2026-019-SRS).
+ */
+function numberOf(state, projectId) {
+  const seq = projectId.split('-').at(-1)
+  const repeats = state.projects.some((p) => p.id < projectId && p.id.split('-').at(-1) === seq)
+  return repeats ? projectId.replace(/^PRJ-/, '') : seq
 }
 
 const yearSeq = (list, prefix, year) =>
@@ -1573,7 +1586,7 @@ export function recordTestRun(state, input, now = Date.now()) {
       })
   if (passed + failed + skipped !== total)
     fail(`用例数不一致：通过 ${passed} + 失败 ${failed} + 跳过 ${skipped} ≠ 总数 ${total}`)
-  const short = project.id.split('-').at(-1)
+  const short = numberOf(state, project.id)
   const n = state.testRuns.filter((t) => t.projectId === project.id).length + 1
   const at = new Date(now).toISOString()
   const run = {
