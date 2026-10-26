@@ -1260,8 +1260,9 @@ const yearSeq = (list, prefix, year) =>
 const pad = (n, width) => String(n).padStart(width, '0')
 
 function createProject(state, input, at, now) {
-  const year = new Date(now).getUTCFullYear()
-  // minSeq is for internal callers only (fast-forward skips project numbers whose directory exists on disk).
+  // minSeq and year are for internal callers only: fast-forward skips project numbers whose directory exists on
+  // disk, and numbers its back-dated project in the year it is made.
+  const year = Number(input.year) || new Date(now).getUTCFullYear()
   const id = `PRJ-${year}-${pad(Math.max(yearSeq(state.projects, 'PRJ', year), Number(input.minSeq) || 0), 3)}`
   const by = input.by || '研发协调员'
   const kind = oneOf(input.projectKind ?? 'SOFTWARE', Object.keys(GATE_PROFILES), 'projectKind')

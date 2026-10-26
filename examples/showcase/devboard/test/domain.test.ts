@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act, newFlow, view } from '../approvals.mjs'
 import { BLOCKER_KINDS, blockers } from '../blockers.mjs'
 import { entryFile, evidenceDocs, latestRuns, showCustomerChange, showDelivery } from '../client/delivery.js'
@@ -2488,6 +2488,16 @@ describe('fast-forward from the shipped sample', () => {
         (a: Item) => a.projectId === data.projectId && a.source.path === `${dir}/docs/PROJECT-PLAN.md`,
       )
       expect(artifactBody(store, doc.id).markdown).toBe(fs.writes.get(`${dir}/docs/PROJECT-PLAN.md`))
+    }
+  })
+
+  it('numbers a fast-forwarded project in the current year, though its history starts in the last one', async () => {
+    vi.useFakeTimers({ now: new Date('2027-01-03T08:00:00Z'), toFake: ['Date'] })
+    try {
+      const out = (await run(memoryStore(), 'DONE')) as Item
+      expect(out.data.projectId).toMatch(/^PRJ-2027-/)
+    } finally {
+      vi.useRealTimers()
     }
   })
 

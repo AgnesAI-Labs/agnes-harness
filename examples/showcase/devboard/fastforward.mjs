@@ -148,7 +148,8 @@ const LAST_EVENT = [24, 72, 120, 250, 270]
 function build(state, level, now, minSeq, scenario) {
   const t0 = now - (LAST_EVENT[level] + 8) * HOUR
   const at = (h) => t0 + h * HOUR
-  const project = create(state, { kind: 'project', name: PROJECT_NAME, minSeq, by: AGENT }, t0)
+  const year = new Date(now).getUTCFullYear()
+  const project = create(state, { kind: 'project', name: PROJECT_NAME, minSeq, year, by: AGENT }, t0)
   project.description =
     '宁川装备车门健康监测看板演示项目：由快进工具从包内样例推进到评审门，文件在工作区目录内。'
   const projectId = project.id
