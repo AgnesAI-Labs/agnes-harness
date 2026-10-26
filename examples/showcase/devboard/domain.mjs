@@ -1762,7 +1762,8 @@ function applyResults(state, project, run, by, at) {
   for (const { tc, status } of run.results) {
     if (status !== 'fail') continue
     const defect = state.defects.find(
-      (d) => d.projectId === project.id && d.testCase === tc && OPEN_DEFECT.includes(d.state),
+      // A deferred defect still tracks its case: the failure is expected and noted on it.
+      (d) => d.projectId === project.id && d.testCase === tc && d.state !== 'CLOSED',
     )
     if (defect) {
       record(defect, at, by, defect.state, defect.state, `测试运行 ${run.id} 中 ${tc} 失败`)

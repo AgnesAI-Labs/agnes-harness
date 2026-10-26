@@ -3040,6 +3040,20 @@ describe('hand-off to the coordinator', () => {
     // a later passing run clears it
     recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-002', status: 'pass' }] }, NOW + 1)
     expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual([])
+    // a deferred defect still tracks its case: a new failure is noted on it, not reported as needing another
+    const deferred = create(
+      state,
+      { kind: 'defect', projectId: p.id, title: 'd2', testCase: 'TC-002', by: 'x' },
+      NOW,
+    )
+    transition(state, { kind: 'defect', id: deferred.id, to: 'DEFERRED', by: 'x' }, NOW)
+    const run = recordTestRun(
+      state,
+      { projectId: p.id, results: [{ tc: 'TC-002', status: 'fail' }] },
+      NOW + 4000,
+    )
+    expect(run.effects).toMatchObject({ needsDefect: [], defectsNoted: [deferred.id] })
+    expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual([])
   })
 
   it('follows the state of the change a trial is linked to', () => {

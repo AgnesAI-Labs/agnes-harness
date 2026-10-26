@@ -262,8 +262,7 @@ function projectHandoff(state, project) {
   const handled = (tc, at) =>
     own(state.defects).some(
       (d) =>
-        d.testCase === tc &&
-        (OPEN_DEFECT.has(d.state) || (d.createdAt ?? '') >= at || (d.closedAt ?? '') >= at),
+        d.testCase === tc && (d.state !== 'CLOSED' || (d.createdAt ?? '') >= at || (d.closedAt ?? '') >= at),
     )
   const untracked = [...latest.values()]
     .filter((r) => r.status === 'fail' && !handled(r.tc, r.at))
