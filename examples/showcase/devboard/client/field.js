@@ -450,7 +450,7 @@ export function Service({ data, board, role, setRole }) {
             fact(
               '关联变更',
               problem.changeId
-                ? `${problem.changeId}（${data.labels.state[byId(data.changes, problem.changeId)?.state] ?? '—'}）`
+                ? `${problem.changeId}（${data.labels.state[byId(data.changes, problem.changeId)?.state] ?? '—'}）${problem.noChangeReason ? `；无需变更：${problem.noChangeReason}` : ''}`
                 : problem.noChangeReason
                   ? `无（${problem.noChangeReason}）`
                   : '—',
@@ -477,7 +477,7 @@ export function Service({ data, board, role, setRole }) {
           h(
             'p',
             { className: 'devboard-muted' },
-            '进入措施前必须有根本原因且 D4 完成；关闭前 D8 完成，且关联变更已关闭，或写明无需变更的理由。',
+            '进入措施前必须有根本原因且 D4 完成；关闭前 D8 完成，且关联变更已关闭，或（无关联变更、变更被 CCB 驳回时）写明无需变更的理由。',
           ),
           h(AnalysisFiles, {
             data,
@@ -514,7 +514,9 @@ function NoChangeReason({ data, problem, board, role }) {
   const [reason, setReason] = React.useState('')
   // Frozen while the close flow runs, as on the server.
   const running = data.approvals.some((a) => a.state === 'RUNNING' && a.subject.id === problem.id)
-  if (problem.changeId || problem.state === 'CLOSED' || running) return null
+  // A change the CCB rejected leaves the problem to a new change or to this reason, as on the server.
+  const rejected = byId(data.changes, problem.changeId)?.ccb?.decision === 'REJECTED'
+  if ((problem.changeId && !rejected) || problem.state === 'CLOSED' || running) return null
   const save = async () => {
     const ok = await board.run(
       'devboard.transition',
@@ -528,7 +530,10 @@ function NoChangeReason({ data, problem, board, role }) {
     { className: 'devboard-actions', 'aria-label': '无需变更的理由' },
     h(
       Field,
-      { label: '无需变更的理由（无关联变更时关闭必填）', htmlFor: `devboard-no-change-${problem.id}` },
+      {
+        label: '无需变更的理由（无关联变更或变更被驳回时关闭必填）',
+        htmlFor: `devboard-no-change-${problem.id}`,
+      },
       h('input', {
         id: `devboard-no-change-${problem.id}`,
         className: 'devboard-note',

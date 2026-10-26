@@ -1648,8 +1648,11 @@ function problemClosable(state, problem) {
   if (!problem.steps?.D8?.done) fail(`${problem.id} 的 D8（总结与关闭）尚未完成`)
   if (problem.changeId) {
     const change = state.changes.find((c) => c.id === problem.changeId)
+    // A change the CCB rejected leaves the problem to a new change or to a stated reason, as the refusal says.
+    const rejected = change?.ccb?.decision === 'REJECTED'
+    if (rejected && problem.noChangeReason) return
     if (change?.state !== 'CLOSED') fail(`${problem.id} 关联的变更 ${problem.changeId} 尚未关闭`)
-    if (change.ccb?.decision === 'REJECTED')
+    if (rejected)
       fail(
         `${problem.id} 关联的变更 ${problem.changeId} 已被 CCB 驳回：请关联新的变更，或写明不需要设计变更的理由`,
       )

@@ -814,6 +814,11 @@ describe('faults and quality problems', () => {
       submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW),
     ).toThrow('已被 CCB 驳回')
     expect(() => upsertProblem(state, { id: qp.id, changeId: 'CR-404' }, NOW)).toThrow('未找到')
+    // the refusal's other way out: a stated reason closes it without a new change
+    upsertProblem(state, { id: qp.id, noChangeReason: '驳回后复核：现场调整即可，无需设计变更' }, NOW)
+    expect(submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW).state).toBe(
+      'RUNNING',
+    )
   })
 })
 
