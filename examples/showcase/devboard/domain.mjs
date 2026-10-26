@@ -1309,8 +1309,11 @@ export function updateChange(state, input, now = Date.now()) {
     updateImpact(state, { ...input, impact: { ...cr.impact, ...input.impact } })
   const early = (name) =>
     EDITABLE_CHANGE.includes(cr.state) ? true : fail(`${cr.id} 已进入 ${cr.state}，${name}不可再改`)
-  if (input.title !== undefined && early('标题')) cr.title = text(input.title, 'title', 200)
-  if (input.reason !== undefined && early('理由')) cr.reason = text(input.reason, 'reason', 2000)
+  // Sending back the current title or reason is no edit, so it is not refused after CCB review.
+  const title = input.title === undefined ? cr.title : text(input.title, 'title', 200)
+  const reason = input.reason === undefined ? cr.reason : text(input.reason, 'reason', 2000)
+  if (title !== cr.title && early('标题')) cr.title = title
+  if (reason !== cr.reason && early('理由')) cr.reason = reason
   if (input.source !== undefined && early('来源')) cr.source = sourceOf(input.source)
   if (input.rootCause !== undefined && early('失效原因'))
     cr.rootCause = text(input.rootCause, 'rootCause', 2000)

@@ -1047,6 +1047,8 @@ describe('change requests and the field-to-design loop', () => {
     transition(state, { kind: 'change', id: cr.id, to: 'CCB_REVIEW', by: 'x' }, NOW)
     expect(() => updateChange(state, { id: cr.id, rootCause: '晚了' }, NOW)).toThrow('已进入 CCB_REVIEW')
     expect(() => updateChange(state, { id: cr.id, title: '晚了' }, NOW)).toThrow('已进入 CCB_REVIEW')
+    // sending back the current title and reason is no edit
+    expect(updateChange(state, { id: cr.id, title: '换电机', reason: '温升' }, NOW).title).toBe('换电机')
     // a verification comes after the approval, never with the creation
     expect(() =>
       create(
