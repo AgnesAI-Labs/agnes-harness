@@ -6,7 +6,7 @@ import { Kbd } from '../ui/kbd.js'
 import { useUiText } from '../ui-locale.js'
 import { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 import {
-  completeAnswers,
+  answeredAnswers,
   isAnswered,
   otherText,
   type QuestionAnswers,
@@ -71,7 +71,10 @@ export function QuestionCard(props: QuestionCardProps) {
   const titleId = useId()
   const current = form.questions[Math.min(step, count - 1)]!
   const last = step >= count - 1
-  const complete = completeAnswers(form, answers)
+  // Submitting is allowed once at least one question is answered: the rest can be asked again later.
+  const submitAnswers = answeredAnswers(form, answers)
+  const submitCount = submitAnswers ? Object.keys(submitAnswers).length : 0
+  const remaining = count - submitCount
   // biome-ignore lint/correctness/useExhaustiveDependencies: focus follows the step the person moved to.
   useEffect(() => {
     if (!moved.current) return
@@ -89,7 +92,7 @@ export function QuestionCard(props: QuestionCardProps) {
   const set = (question: QuestionItem, value: string | string[]) =>
     props.onAnswers({ ...answers, [question.id]: value })
   const submit = () => {
-    if (complete && !props.locked) props.onSubmit(complete)
+    if (submitAnswers && !props.locked) props.onSubmit(submitAnswers)
   }
   const forward = () => (last ? submit() : go(step + 1))
   const onKeyDown = (event: KeyboardEvent) => {
@@ -225,6 +228,11 @@ export function QuestionCard(props: QuestionCardProps) {
                 </>
               )}
             </span>
+            {remaining > 0 && (
+              <span className="agnes-question-remaining" data-testid="question-remaining">
+                {t('ui.question.remaining', { count: remaining })}
+              </span>
+            )}
             {props.recovery && ['review', 'resend', 'retry'].includes(props.recovery.kind) && (
               <Button htmlType="button" size="small" data-testid="question-recover" onClick={props.onRecover}>
                 {t(`ui.question.recover.${props.recovery.kind}Action`)}
@@ -248,11 +256,13 @@ export function QuestionCard(props: QuestionCardProps) {
                 size="small"
                 data-testid="question-submit"
                 loading={props.submitting}
-                disabled={!complete || props.locked}
-                {...(complete ? {} : { disabledReason: t('ui.question.incomplete') })}
+                disabled={!submitAnswers || props.locked}
+                {...(submitAnswers ? {} : { disabledReason: t('ui.question.incomplete') })}
                 onClick={submit}
               >
-                {t(count === 1 ? 'ui.question.submitOne' : 'ui.question.submit', { count })}
+                {t(submitCount <= 1 ? 'ui.question.submitOne' : 'ui.question.submit', {
+                  count: submitCount,
+                })}
               </Button>
             ) : (
               <Button

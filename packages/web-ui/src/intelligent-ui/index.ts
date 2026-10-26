@@ -4,6 +4,7 @@ export { IntelligentSurfaceChip, type IntelligentSurfaceChipProps } from './chip
 export { CustomUiFallback, type CustomUiRenderer, type CustomUiRenderProps } from './custom.js'
 export { INTELLIGENT_UI_NAMESPACE, intelligentUiCatalog } from './locales.js'
 export {
+  answeredAnswers,
   completeAnswers,
   draftAnswers,
   type QuestionAnswers,

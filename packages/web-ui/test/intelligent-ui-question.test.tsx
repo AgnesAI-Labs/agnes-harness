@@ -182,12 +182,28 @@ describe('question card', () => {
     expect(q('[data-testid^="question-option-notes"]')).toBeNull()
   })
 
-  it('submits only when every question is answered, through the given action', async () => {
+  it('submits the answered subset, through the given action', async () => {
     const { onSubmit } = await mount()
     await click(q('[data-testid="question-step-3"]'))
     const submit = q('[data-testid="question-submit"]') as HTMLButtonElement
-    expect(submit.textContent).toBe('提交 4 个回答')
+    // Nothing answered yet: the button stays disabled and says how many questions are left.
+    expect(submit.textContent).toBe('提交回答')
     expect(submit.disabled).toBe(true)
+    expect(q('[data-testid="question-remaining"]')?.textContent).toBe('还有 4 个问题未答')
+    // One answer is enough to submit: the rest can be asked again later.
+    await click(q('[data-testid="question-step-0"]'))
+    await click(q('[data-testid="question-option-days-0"]'))
+    await click(q('[data-testid="question-step-3"]'))
+    const partial = q('[data-testid="question-submit"]') as HTMLButtonElement
+    expect(partial.disabled).toBe(false)
+    expect(q('[data-testid="question-remaining"]')?.textContent).toBe('还有 3 个问题未答')
+    await press(q('[data-testid="question-other-who"]')!, 'Enter')
+    expect(onSubmit).toHaveBeenCalledWith({ days: '2 天 1 晚' })
+  })
+
+  it('submits every answered question once all of them are filled in', async () => {
+    const { onSubmit } = await mount()
+    await click(q('[data-testid="question-step-3"]'))
     // Free text beside the options («其他») replaces a single choice.
     await type(q('[data-testid="question-other-who"]'), 'Friends')
     await click(q('[data-testid="question-step-0"]'))

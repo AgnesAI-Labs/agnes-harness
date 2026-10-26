@@ -1126,6 +1126,8 @@
   .agnes-question-step-mark {
     display: inline-grid;
     place-items: center;
+    /* The inherited line box is taller than the glyph, which leaves a digit looking high in the circle. */
+    line-height: 1;
     width: 1.125rem;
     height: 1.125rem;
     border: 1px solid var(--agnes-line-primary);
@@ -1289,6 +1291,12 @@
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agnes-question-remaining {
+    flex: none;
+    color: var(--agnes-text-tertiary);
+    font-size: var(--font-size-xs);
     white-space: nowrap;
   }
   .agnes-question-error {

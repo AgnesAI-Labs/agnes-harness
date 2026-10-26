@@ -144,3 +144,17 @@ export function completeAnswers(form: QuestionForm, answers: QuestionAnswers): Q
   }
   return out
 }
+
+/**
+ * The questions already answered, trimmed of empty free text. Undefined until at least one has an
+ * answer: a partial submission sends this subset and the model decides whether to ask the rest again.
+ */
+export function answeredAnswers(form: QuestionForm, answers: QuestionAnswers): QuestionAnswers | undefined {
+  const out: QuestionAnswers = {}
+  for (const question of form.questions) {
+    const value = answers[question.id]
+    if (!isAnswered(value)) continue
+    out[question.id] = Array.isArray(value) ? value.filter((item) => item.trim()) : value!
+  }
+  return Object.keys(out).length ? out : undefined
+}
