@@ -315,7 +315,7 @@ describe('history index', () => {
     expect(sha(join(dir, 'sessions.db'))).toBe(before)
   })
 
-  it('lists titles in the caller workspace, keeps a cursor across appends and rejects it after a removal', () => {
+  it('lists titles in the caller workspace, keeps a cursor while nothing indexed changes and rejects it after an append', () => {
     const { dir, index, access } = openSeed()
     const titled = index.query({
       access,
@@ -352,6 +352,11 @@ describe('history index', () => {
       limit: 1,
       cursor,
     }
+    const side = new DatabaseSync(join(dir, 'tables', 'daemon.db'))
+    side.exec('CREATE TABLE unrelated (id INTEGER)')
+    side.close()
+    expect(index.sync(dir)).toEqual({ synced: true, generation: page.generation })
+    expect(index.query(next).items).toHaveLength(1)
     const ledger = new DatabaseSync(join(dir, 'sessions.db'))
     ledger
       .prepare(
@@ -360,12 +365,6 @@ describe('history index', () => {
       )
       .run(JSON.stringify({ text: 'appended later' }))
     ledger.close()
-    expect(index.sync(dir)).toMatchObject({ synced: true, generation: page.generation })
-    expect(index.query(next).items).toHaveLength(1)
-    const discard = new DatabaseSync(join(dir, 'sessions.db'))
-    discard.exec(`DELETE FROM events WHERE session_key = 'readerless'`)
-    discard.exec(`DELETE FROM sessions WHERE session_key = 'readerless'`)
-    discard.close()
     expect(index.sync(dir).generation).toBe(page.generation + 1)
     expect(() => index.query(next)).toThrow(HistoryIndexError)
   })

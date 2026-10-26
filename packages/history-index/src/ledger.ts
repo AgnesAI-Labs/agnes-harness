@@ -9,6 +9,8 @@ const TITLE_EVENT = 'x/host/session-title'
 export type LedgerSession = {
   parentId: string | null
   createdAt: string
+  /** The ledger's append watermark: the seq of the session's last event, when the ledger records one. */
+  head?: number
 }
 
 export type LedgerEvent = {
@@ -43,6 +45,11 @@ export type LedgerReader = {
   tail(sessionId: string): number | undefined
   idAt(sessionId: string, seq: number): string | null | undefined
   events(sessionId: string, after: number, limit: number): LedgerEvent[]
+  /**
+   * Whether the newest commit, read outside this snapshot, still holds the session up to `seq` with event
+   * `id` there. Asked before the index drops what another process indexed from a later snapshot.
+   */
+  holds(sessionId: string, seq: number, id: string | null): boolean
   close(): void
 }
 
@@ -215,16 +222,44 @@ function toEvent(sessionId: string, row: EventRow): LedgerEvent {
 function readSessions(db: DatabaseSync, tables: Set<string>): Map<string, LedgerSession> {
   const sessions = new Map<string, LedgerSession>()
   if (!tables.has('sessions')) return sessions
-  const rows = db.prepare(`SELECT session_key, parent_key, created_at FROM sessions`).all() as Array<{
+  const columns = columnNames(db, 'sessions')
+  const head =
+    columns.has('head_version') && columns.has('head_seq')
+      ? 'head_version, head_seq'
+      : 'NULL AS head_version, NULL AS head_seq'
+  const rows = db
+    .prepare(`SELECT session_key, parent_key, created_at, ${head} FROM sessions`)
+    .all() as Array<{
     session_key: string
     parent_key: string | null
     created_at: string
+    head_version: number | null
+    head_seq: number | null
   }>
   for (const row of rows) {
     const parent = row.parent_key && row.parent_key !== row.session_key ? row.parent_key : null
-    sessions.set(row.session_key, { parentId: parent, createdAt: String(row.created_at ?? '') })
+    const watermark =
+      row.head_version === 1 && Number.isSafeInteger(row.head_seq) ? { head: row.head_seq as number } : {}
+    sessions.set(row.session_key, { parentId: parent, createdAt: String(row.created_at ?? ''), ...watermark })
   }
   return sessions
+}
+
+/** Autocommit reads on a second connection, so each sees the newest commit. */
+function newestReader(path: string, id: string) {
+  let db: DatabaseSync | undefined
+  return {
+    holds(sessionId: string, seq: number, expected: string | null): boolean {
+      db ??= new DatabaseSync(path, { readOnly: true })
+      if (seq <= 0)
+        return db.prepare('SELECT 1 FROM events WHERE session_key = ? LIMIT 1').get(sessionId) !== undefined
+      const row = db
+        .prepare(`SELECT ${id} FROM events WHERE session_key = ? AND seq = ?`)
+        .get(sessionId, seq) as { id: string | null } | undefined
+      return row !== undefined && (row.id ?? null) === expected
+    },
+    close: () => db?.close(),
+  }
 }
 
 function appendedSince(db: DatabaseSync, rowid: number): { keys: string[]; rowid: number } {
@@ -271,6 +306,7 @@ export function openLedger(dataDir: string): LedgerReader | undefined {
         `SELECT seq, ${id}, ts, type, origin, trust, source_event_seqs, data FROM events
          WHERE session_key = ? AND seq > ? ORDER BY seq LIMIT ?`,
       )
+      const newest = newestReader(path, id)
       return {
         sessions: readSessions(db, tables),
         appended: (rowid) => guard(() => appendedSince(db, rowid)),
@@ -290,7 +326,11 @@ export function openLedger(dataDir: string): LedgerReader | undefined {
               .filter((row) => Number.isSafeInteger(row.seq))
               .map((row) => toEvent(sessionId, row)),
           ),
-        close: () => db.close(),
+        holds: (sessionId, seq, expected) => guard(() => newest.holds(sessionId, seq, expected)),
+        close: () => {
+          newest.close()
+          db.close()
+        },
       }
     })
   } catch (error) {

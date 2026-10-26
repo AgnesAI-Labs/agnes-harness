@@ -184,7 +184,7 @@ describe('fresh data directory schema', () => {
       expect(db['tables/metadata_3a_40agnes_2fbase.db'].tables).toEqual(['persistence_kv'])
 
       const history = db['history-index.db']
-      expect(history.version).toBe(3)
+      expect(history.version).toBe(4)
       expect(history.columns.sessions).toContain('principal')
       expect(history.tables).not.toContain('readers')
       expect(history.tables).not.toContain('docs_fts_content')

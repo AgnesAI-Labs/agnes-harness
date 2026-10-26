@@ -2,7 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as ledgerSource from '../src/ledger.js'
 import { type HistoryIndex, openHistoryIndex } from '../src/store.js'
 
 const dirs: string[] = []
@@ -190,23 +191,23 @@ describe('incremental history sync', () => {
     book.say('a', 'later question', [1])
     book.session('c')
     book.reply('c', 'no prompt yet')
-    expect(index.sync(dir)).toEqual({ generation: 1, synced: true })
+    expect(index.sync(dir)).toEqual({ generation: 2, synced: true })
     expectFresh(dir, path)
 
     book.say('c', 'first prompt arrives later')
     tables.rename('b', 'Renamed kestrel work')
-    expect(index.sync(dir).generation).toBe(1)
+    expect(index.sync(dir).generation).toBe(3)
     expectFresh(dir, path)
 
     book.discard('b')
     tables.forget('b')
-    expect(index.sync(dir).generation).toBe(2)
+    expect(index.sync(dir).generation).toBe(4)
     expectFresh(dir, path)
 
     book.discard('c')
     book.session('c')
     book.say('c', 'rewritten kestrel', undefined, 'c:new')
-    expect(index.sync(dir).generation).toBe(3)
+    expect(index.sync(dir).generation).toBe(5)
     expectFresh(dir, path)
     book.close()
     tables.close()
@@ -252,5 +253,37 @@ describe('incremental history sync', () => {
     expectFresh(dir, path)
     book.close()
     tables.close()
+  })
+
+  it('leaves a session alone when another process indexed it from a newer commit than this snapshot', () => {
+    const dir = tempDir()
+    const book = ledger(dir)
+    book.session('x')
+    book.say('x', 'kestrel one')
+    book.say('x', 'kestrel two')
+    const path = join(dir, 'history-index.db')
+    const index = open(path)
+    index.sync(dir)
+    const before = dump(path)
+    book.say('x', 'kestrel three')
+    const realOpen = ledgerSource.openLedger
+    // A snapshot taken before x existed, or before its second event, while the index is already past it.
+    const stale = vi.spyOn(ledgerSource, 'openLedger').mockImplementation((dataDir: string) => {
+      const reader = realOpen(dataDir)
+      if (!reader) return reader
+      return {
+        ...reader,
+        sessions: new Map(),
+        appended: () => ({ keys: [], rowid: 0 }),
+        tail: (key) => (key === 'x' ? 1 : reader.tail(key)),
+      }
+    })
+    try {
+      expect(index.sync(dir)).toEqual({ synced: true, generation: 1 })
+    } finally {
+      stale.mockRestore()
+    }
+    expect(dump(path)).toEqual(before)
+    book.close()
   })
 })

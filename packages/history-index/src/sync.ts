@@ -53,7 +53,10 @@ function statements(db: DatabaseSync) {
       `SELECT indexed_seq AS seq, indexed_id AS id, first_ts AS firstTs, generated_title AS generated, prompt,
        workspace, title, created_at AS createdAt, parent_id AS parentId, principal FROM sessions WHERE session_id = ?`,
     ),
-    keys: db.prepare('SELECT session_id FROM sessions'),
+    all: db.prepare(
+      `SELECT session_id AS key, indexed_seq AS seq, indexed_id AS id, first_ts AS firstTs, generated_title AS generated,
+       prompt, workspace, title, created_at AS createdAt, parent_id AS parentId, principal FROM sessions`,
+    ),
     upsert: db.prepare(
       `INSERT INTO sessions (session_id, workspace, title, created_at, parent_id, principal,
        indexed_seq, indexed_id, first_ts, generated_title, prompt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -82,17 +85,32 @@ function statements(db: DatabaseSync) {
 }
 type Statements = ReturnType<typeof statements>
 
-/** Index writes in IMMEDIATE transactions of at most BATCH documents. */
+/**
+ * Index writes in IMMEDIATE transactions of at most BATCH documents. The first write of a sync also moves
+ * the generation in the same transaction, so a page issued before any committed change goes stale even
+ * if the sync stops halfway.
+ */
 class Batch {
   private open = false
   private pending = 0
+  private moved = false
 
-  constructor(private readonly db: DatabaseSync) {}
+  constructor(
+    private readonly db: DatabaseSync,
+    private readonly sql: Statements,
+  ) {}
 
   begin(): void {
     if (this.open) return
     this.db.exec('BEGIN IMMEDIATE')
     this.open = true
+  }
+
+  /** Call before the first write of each change. */
+  write(): void {
+    if (this.moved) return
+    this.moved = true
+    this.sql.putMeta.run('generation', String(Number(metaValue(this.sql, 'generation') ?? '0') + 1))
   }
 
   done(count: number): void {
@@ -110,7 +128,8 @@ class Batch {
   rollback(): void {
     if (!this.open) return
     this.open = false
-    this.db.exec('ROLLBACK')
+    // SQLite has already rolled back after some errors (a full disk, an I/O error).
+    if (this.db.isTransaction) this.db.exec('ROLLBACK')
   }
 }
 
@@ -119,37 +138,40 @@ type Context = { sql: Statements; batch: Batch; ledger: LedgerReader | undefined
 /**
  * Bring the index up to the ledger without reading again what it already holds. Each session keeps the
  * seq and id of the last event indexed; later events are read after it, and a session whose indexed tail
- * is gone or replaced is indexed again from its first event. The generation that pages carry moves only
- * when a session leaves or is indexed again, so an append leaves an open page valid.
+ * is gone or replaced is indexed again from its first event. A sync that changes anything moves the
+ * generation, so an open page never silently shifts.
  */
 export function syncLedger(db: DatabaseSync, dataDir: string, stamp: string): void {
-  const ledger = openLedger(dataDir)
-  const sql = statements(db)
-  const batch = new Batch(db)
+  let ledger: LedgerReader | undefined
+  let batch: Batch | undefined
   try {
+    ledger = openLedger(dataDir)
+    const sql = statements(db)
+    batch = new Batch(db, sql)
     // Without a ledger there is no history; side tables alone do not make a session.
     const side = ledger ? readSideTables(dataDir) : NO_SIDE
     const appended = ledger?.appended(Number(metaValue(sql, 'ledger_rowid') ?? '0'))
     batch.begin()
+    const stored = new Map((sql.all.all() as Array<Row & { key: string }>).map((row) => [row.key, row]))
+    const fresh = new Set(appended?.keys ?? [])
     const keys = new Set<string>([
       ...(ledger?.sessions.keys() ?? []),
       ...side.workspaces.keys(),
-      ...(appended?.keys ?? []),
-      ...(sql.keys.all() as Array<{ session_id: string }>).map((row) => row.session_id),
+      ...fresh,
+      ...stored.keys(),
     ])
-    let reshaped = false
     for (const key of keys) {
       if (!key || key.includes('\u0000')) continue
-      if (syncSession({ sql, batch, ledger, side }, key)) reshaped = true
+      if (!fresh.has(key) && unchanged(key, stored.get(key), ledger, side)) continue
+      syncSession({ sql, batch, ledger, side }, key)
     }
     batch.begin()
-    const generation = Number(metaValue(sql, 'generation') ?? '0')
-    if (generation === 0 || reshaped) sql.putMeta.run('generation', String(generation + 1))
+    if (Number(metaValue(sql, 'generation') ?? '0') === 0) batch.write()
     sql.putMeta.run('source_stamp', stamp)
     if (appended) sql.putMeta.run('ledger_rowid', String(appended.rowid))
     batch.commit()
   } catch (error) {
-    batch.rollback()
+    batch?.rollback()
     if (error instanceof HistoryIndexError) throw error
     throw new HistoryIndexError('INDEX')
   } finally {
@@ -157,41 +179,63 @@ export function syncLedger(db: DatabaseSync, dataDir: string, stamp: string): vo
   }
 }
 
-/** Returns whether the session left the index or was indexed again from its start. */
-function syncSession({ sql, batch, ledger, side }: Context, key: string): boolean {
+/** A stored session the ledger's append watermark and the side tables say nothing new about. */
+function unchanged(
+  key: string,
+  stored: Row | undefined,
+  ledger: LedgerReader | undefined,
+  side: SideTables,
+): boolean {
   const session = ledger?.sessions.get(key)
-  const tail = ledger?.tail(key)
+  if (!stored || session?.head === undefined || session.head !== stored.seq) return false
+  const next: Row = { ...pick(stored), ...shown(key, stored, session, side) }
+  return FIELDS.every((field) => stored[field] === next[field])
+}
+
+function syncSession({ sql, batch, ledger, side }: Context, key: string): void {
+  const session = ledger?.sessions.get(key)
+  const tail = session?.head ?? ledger?.tail(key)
   const present = tail !== undefined || session !== undefined || side.workspaces.has(key)
-  let reshaped = false
   for (;;) {
     // Read again in every transaction: another process may have indexed part of this session meanwhile.
     batch.begin()
     const stored = sql.load.get(key) as Row | undefined
+    let derived: Derived = stored ? pick(stored) : BLANK
+    const lost =
+      !present ||
+      (derived.seq > 0 &&
+        (tail === undefined || derived.seq > tail || ledger?.idAt(key, derived.seq) !== derived.id))
+    // Another process may have indexed from a newer commit than this snapshot; leave its work alone.
+    if (lost && stored && ledger?.holds(key, derived.seq, derived.id)) return
     if (!present) {
-      if (!stored) return false
+      if (!stored) return
+      batch.write()
       removeDocs(sql, key, TITLE_SEQ, LAST_SEQ)
       sql.dropSession.run(key)
       batch.done(1)
-      return true
+      return
     }
-    let derived: Derived = stored ? pick(stored) : BLANK
-    if (
-      derived.seq > 0 &&
-      (tail === undefined || derived.seq > tail || ledger?.idAt(key, derived.seq) !== derived.id)
-    ) {
+    if (lost) {
+      batch.write()
       removeDocs(sql, key, 1, LAST_SEQ)
       derived = BLANK
-      reshaped = true
     }
     const events =
       ledger && tail !== undefined && tail > derived.seq ? ledger.events(key, derived.seq, BATCH) : []
+    if (events.length) batch.write()
     for (const event of events) {
       insertDoc(sql, event)
       derived = advance(derived, event)
     }
-    const wrote = write(sql, key, stored, { ...derived, ...shown(key, derived, session, side) })
-    batch.done(events.length + (wrote ? 1 : 0))
-    if (events.length < BATCH) return reshaped
+    const next = { ...derived, ...shown(key, derived, session, side) }
+    if (stored && FIELDS.every((field) => stored[field] === next[field])) {
+      batch.done(events.length)
+    } else {
+      batch.write()
+      write(sql, key, stored, next)
+      batch.done(events.length + 1)
+    }
+    if (events.length < BATCH) return
   }
 }
 
@@ -223,8 +267,7 @@ function shown(key: string, derived: Derived, session: LedgerSession | undefined
 }
 
 /** Writes the session row, and its title document when the title or its time changed. */
-function write(sql: Statements, key: string, stored: Row | undefined, next: Row): boolean {
-  if (stored && FIELDS.every((field) => stored[field] === next[field])) return false
+function write(sql: Statements, key: string, stored: Row | undefined, next: Row): void {
   sql.upsert.run(
     key,
     next.workspace,
@@ -238,7 +281,7 @@ function write(sql: Statements, key: string, stored: Row | undefined, next: Row)
     next.generated,
     next.prompt,
   )
-  if (stored && stored.title === next.title && stored.createdAt === next.createdAt) return true
+  if (stored && stored.title === next.title && stored.createdAt === next.createdAt) return
   removeDocs(sql, key, TITLE_SEQ, TITLE_SEQ)
   if (next.title.trim())
     insertDoc(sql, {
@@ -252,7 +295,6 @@ function write(sql: Statements, key: string, stored: Row | undefined, next: Row)
       truncated: false,
       sources: [],
     })
-  return true
 }
 
 function insertDoc(sql: Statements, event: LedgerEvent): void {

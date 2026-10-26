@@ -501,7 +501,13 @@ describe('filesystem checkpoint seam', () => {
     }
   })
 
-  // Counts object reads (commit, tree or blob) through the data handle.
+  // The git object id a file's content is stored under as a payload blob.
+  const blobId = (content: string) =>
+    createHash('sha1')
+      .update(`blob ${Buffer.byteLength(content)}\0${content}`)
+      .digest('hex')
+
+  // Records object reads (commit, tree or blob) through the data handle, by object id.
   function counted(
     h: Awaited<ReturnType<typeof setup>>,
     preset: Record<string, unknown> = {},
@@ -510,11 +516,15 @@ describe('filesystem checkpoint seam', () => {
     const ctx = context(h.workspace, h.data, preset)
     ctx.log.warn = warn
     const data = ctx.adapters.dataFs
-    const reads = { objects: 0 }
+    const reads = { objects: 0, ids: new Set<string>() }
     ctx.adapters.dataFs = {
       ...data,
       read: async (path, opts) => {
-        if (/[/\\]objects[/\\][0-9a-f]{2}[/\\]/.test(path)) reads.objects++
+        const object = /[/\\]objects[/\\]([0-9a-f]{2})[/\\]([0-9a-f]{38})$/.exec(path)
+        if (object) {
+          reads.objects++
+          reads.ids.add(`${object[1]}${object[2]}`)
+        }
         return data.read(path, opts)
       },
     }
@@ -532,23 +542,28 @@ describe('filesystem checkpoint seam', () => {
     const h = await setup()
     const seam = await h.make()
     const made: string[] = []
+    const payloads: string[] = []
     for (let n = 0; n < 12; n++) {
       await fs.writeFile(join(h.workspace, 'a.txt'), `v${n}`.repeat(1000))
+      payloads.push(blobId(`v${n}`.repeat(1000)))
       made.push((await seam.snapshot(['a.txt'], `${n}/1`, { owner: 's' })).id)
     }
+    const readPayload = (ids: Set<string>) => payloads.some((id) => ids.has(id))
     const warm = counted(h)
     const reopened = await createFsCheckpoint(warm.ctx, h.deps)
     expect((await reopened.list()).map((item) => item.id).sort()).toEqual([...made].sort())
-    expect(warm.reads.objects).toBe(0)
+    // The cache lags by fewer than 64 snapshots; those few are read from their manifests only.
+    expect(readPayload(warm.reads.ids)).toBe(false)
     await fs.writeFile(join(h.workspace, 'a.txt'), 'next')
     await reopened.snapshot(['a.txt'], '12/1', { owner: 's' })
-    // Only the new snapshot's own read-back (commit; commit, tree, manifest; commit, tree, payload tree, payload).
-    expect(warm.reads.objects).toBe(8)
-    // Cold, each manifest costs commit; commit, root tree, manifest. A payload read would add four more.
+    // The new snapshot reads back its own objects; gc reads no earlier snapshot's payload.
+    expect(readPayload(warm.reads.ids)).toBe(false)
+    // Cold, the list reads each manifest and still no payload.
     await fs.rm(await catalogPath(h))
     const cold = counted(h)
     expect(await (await createFsCheckpoint(cold.ctx, h.deps)).list()).toHaveLength(13)
-    expect(cold.reads.objects).toBe(13 * 4)
+    expect(cold.reads.objects).toBeGreaterThan(0)
+    expect(readPayload(cold.reads.ids)).toBe(false)
   })
 
   it('ignores a torn or foreign catalog, rebuilds it, and follows refs other instances add or delete', async () => {
@@ -568,7 +583,7 @@ describe('filesystem checkpoint seam', () => {
       const fresh = counted(h)
       const other = await createFsCheckpoint(fresh.ctx, h.deps)
       expect((await other.list()).map((item) => item.id)).toEqual([first])
-      expect(fresh.reads.objects).toBe(4)
+      expect(fresh.reads.ids.has(blobId('one'))).toBe(false)
     }
     const hash = h.deps.workspaceHash(await fs.realpath(h.workspace))
     const a = new ShadowGit(realFs(h.data), `checkpoints/${hash.slice(0, 16)}`)

@@ -74,7 +74,7 @@ function validate(value: unknown, id: string, workspaceHash: string): Checkpoint
 // biome-ignore format: one manifest projection.
 const entryOf = (m: CheckpointManifest): CatalogEntry => ({ id: m.id, stepId: m.stepId, createdAt: m.createdAt, ...(m.owner === undefined ? {} : { owner: m.owner }), size: m.entries.reduce((n, e) => n + (e.state === 'file' ? e.size : 0), 0), paths: m.entries.map((e) => e.rel) })
 // biome-ignore format: one cached-entry shape check; anything else rebuilds the cache.
-const cached = (e: Partial<CatalogEntry> | null): boolean => !!e && typeof e === 'object' && ID.test(e.id ?? '') && typeof e.stepId === 'string' && Number.isSafeInteger(e.createdAt) && (e.owner === undefined || typeof e.owner === 'string') && Number.isSafeInteger(e.size) && Array.isArray(e.paths) && e.paths.every((p) => typeof p === 'string')
+const cached = (e: Partial<CatalogEntry> | null): boolean => !!e && typeof e === 'object' && ID.test(e.id ?? '') && typeof e.stepId === 'string' && Number.isSafeInteger(e.createdAt) && (e.owner === undefined || typeof e.owner === 'string') && Number.isSafeInteger(e.size) && (e.size as number) >= 0 && Array.isArray(e.paths) && e.paths.every((p) => typeof p === 'string')
 
 export class ShadowGit {
   readonly fs
@@ -82,6 +82,8 @@ export class ShadowGit {
   /** Live snapshots by id. Refs stay authoritative: every read reconciles against them. */
   private catalog: Map<string, CatalogEntry> | undefined
   private dirty = false
+  /** Snapshots added since the cache was written; a reopened instance reads at most this many manifests. */
+  private added = 0
   // biome-ignore format: the adapter and its relative gitdir are one construction pair.
   constructor(dataFs: HostFs, readonly gitdir: string) { this.fs = toGitFs(dataFs) }
 
@@ -153,7 +155,7 @@ export class ShadowGit {
     await writeRef({ fs: this.fs, gitdir: this.gitdir, ref: `refs/agnes/checkpoints/${input.id}`, value: oid, force: false })
     if (this.catalog) {
       this.catalog.set(input.id, entryOf(written.manifest))
-      this.dirty = true
+      this.added++
     }
   }
 
@@ -250,11 +252,13 @@ export class ShadowGit {
     return [...catalog.values()].sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id))
   }
 
+  /** Written when gc or a reconcile changed it, or every 64 new snapshots, not on every write. */
   private async saveCatalog(): Promise<void> {
-    if (!this.dirty || !this.catalog) return
+    if (!this.catalog || (!this.dirty && this.added < 64)) return
     // biome-ignore format: one cache write; a torn one is ignored on load.
     await this.fs.promises.writeFile(`${this.gitdir}/catalog.json`, encoder.encode(JSON.stringify({ schema: 1, workspaceHash: this.workspaceHash, entries: [...this.catalog.values()] })))
     this.dirty = false
+    this.added = 0
   }
 
   async deleteRef(id: string): Promise<void> {
