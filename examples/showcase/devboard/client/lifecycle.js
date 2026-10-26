@@ -426,7 +426,7 @@ export function GatePanel({ data, gate, board, role, setRole }) {
               h(
                 'span',
                 { className: 'devboard-muted' },
-                `还有 ${open.length} 条意见未关闭：批准前需全部关闭（可在上表填写关闭说明）。`,
+                `还有 ${open.length} 条意见未关闭：最后一个签署角色批准前需全部关闭（可在上表填写关闭说明）。`,
               ),
             can &&
               h(NoteField, {
