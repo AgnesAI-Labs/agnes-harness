@@ -35,6 +35,15 @@ describe('role lens', () => {
     expect(service.every((f) => f.source === '客服')).toBe(true)
     expect(mine('项目经理', 'task')).toHaveLength(data.tasks.length)
     expect(mine('工艺工程师', 'trial').every((t) => t.type === 'FAI')).toBe(true)
+    // a record the coordinator wrote as a role concerns that role, a bracketed speciality included
+    const change = { ...data.changes[0], raisedBy: '研发协调员 · 质量工程师' }
+    expect(relevant('质量工程师', 'change', change, data)).toBe(true)
+    expect(
+      relevant('系统设计师', 'change', { ...change, raisedBy: '研发协调员 · 系统设计师（需求）' }, data),
+    ).toBe(true)
+    expect(
+      relevant('质量工程师', 'change', { ...change, ecn: undefined, raisedBy: '研发协调员' }, data),
+    ).toBe(false)
   })
 
   it('gives the default role, the project manager, something on every list page', () => {

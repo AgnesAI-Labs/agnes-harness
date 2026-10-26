@@ -10,7 +10,12 @@ const HOUR = 3_600_000
  * "软件设计师 林涛" is held by 软件设计师. The whole role is compared (not the text before the first
  * space) because "RAMS 工程师" contains a space itself.
  */
-const holds = (role, who) => typeof who === 'string' && (who === role || who.startsWith(`${role} `))
+const holds = (role, who) => {
+  if (typeof who !== 'string') return false
+  // The coordinator signs as "研发协调员 · 系统设计师（需求）": the role it acted as holds the record.
+  const name = who.replace(/^研发协调员 · /, '')
+  return name === role || [' ', '（', '('].some((suffix) => name.startsWith(role + suffix))
+}
 const among = (role, ...roles) => roles.includes(role)
 const stageOf = (data, gate) => data.stages.find((s) => s.id === gate.stageId)
 /** A running approval of this record that is waiting for the role. */
