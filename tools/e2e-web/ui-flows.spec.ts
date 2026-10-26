@@ -873,26 +873,39 @@ test('Answer tables keep first and last column text off the frame edge', async (
     })
     await open(page, runtime)
     await turn(page, '分析这个数据表')
-    const table = page.locator('.markdown table').last()
-    await table.scrollIntoViewIfNeeded()
-    await expect(table).toBeVisible()
-    // The bordered .table-scroll frame owns the edge, so first and last columns keep their own padding.
-    const edge = await table.evaluate((el) => {
-      const wrap = el.closest('.table-scroll') as HTMLElement
-      const frame = wrap.getBoundingClientRect()
-      const first = el.querySelector('tbody tr td:first-child') as HTMLElement
-      const last = el.querySelector('tbody tr td:last-child') as HTMLElement
-      const gap = (cell: HTMLElement, side: 'left' | 'right') => {
-        const range = document.createRange()
-        range.selectNodeContents(cell)
-        const text = range.getBoundingClientRect()
-        return side === 'left' ? text.left - frame.left : frame.right - text.right
-      }
-      return { left: gap(first, 'left'), right: gap(last, 'right') }
-    })
-    expect(edge.left).toBeGreaterThanOrEqual(8)
-    expect(edge.right).toBeGreaterThanOrEqual(8)
-    await expect(table.locator('tbody tr')).toHaveCount(5)
+    await settled(page)
+    const tables = page.locator('.markdown table')
+    await expect(tables).toHaveCount(2)
+    // The bordered .table-scroll frame owns the edge, so the outer header and body cells of every
+    // table keep their own padding. Computed padding does not depend on how the columns stretch.
+    const edges = await tables.evaluateAll((all) =>
+      all.flatMap((table) => {
+        const frame = (table.closest('.table-scroll') as HTMLElement).getBoundingClientRect()
+        return ['thead th', 'tbody td'].flatMap((group) =>
+          ['first', 'last'].map((end) => {
+            const cell = table.querySelector(`${group}:${end}-child`) as HTMLElement
+            const style = getComputedStyle(cell)
+            const range = document.createRange()
+            range.selectNodeContents(cell)
+            return {
+              cell: `${group}:${end}-child`,
+              padding:
+                end === 'first'
+                  ? Number.parseFloat(style.paddingLeft)
+                  : Number.parseFloat(style.paddingRight),
+              // Left-aligned text, so the left gap is also the visible distance to the frame.
+              gap:
+                end === 'first' ? range.getBoundingClientRect().left - frame.left : Number.POSITIVE_INFINITY,
+            }
+          }),
+        )
+      }),
+    )
+    expect(edges).toHaveLength(8)
+    for (const edge of edges) {
+      expect(edge.padding, edge.cell).toBeGreaterThanOrEqual(8)
+      expect(edge.gap, edge.cell).toBeGreaterThanOrEqual(8)
+    }
   } finally {
     await provider.close()
   }
