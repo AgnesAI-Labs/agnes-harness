@@ -87,6 +87,12 @@ function currentStep(state, project) {
   return stage && stageStep(state, project, stage)
 }
 
+/** What is left once every stage has passed: a live project still owes its app address. */
+const doneText = (project) =>
+  project.live && !project.appUrl
+    ? '所有阶段已通过：项目完成，请启动应用并用 devboard_app_register 登记真实地址'
+    : '所有阶段已通过：项目已完成'
+
 const openFindings = (gate) =>
   top((gate.findings ?? []).filter((f) => !f.closed)).map((f) => ({ id: f.id, text: clip(f.text) }))
 
@@ -100,11 +106,9 @@ function gateHandoff(state, gate) {
   let step
   if (decision === 'PENDING') next.push(`该门尚未决议，等待 ${gate.approverRoles.join('、')}；不要替人批准`)
   else if (decision === 'APPROVED') {
-    step =
-      stage.state === 'PASSED'
-        ? stageStep(state, project, STAGES[STAGES.indexOf(stage.stage) + 1])
-        : stageStep(state, project, stage.stage)
-    next.push(step ? step.action : '所有阶段已通过：项目完成，可启动并登记应用地址')
+    // A passed stage has nothing left to do: point at the project's real current work.
+    step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
+    next.push(step ? step.action : doneText(project))
   } else {
     step = stageStep(state, project, stage.stage)
     next.push(`该门被驳回：逐条处理未关闭意见，修复后重新提交（${gate.code}）`)
@@ -170,7 +174,7 @@ function projectHandoff(state, project) {
   const untracked = [...latest]
     .filter(([tc, status]) => status === 'fail' && !defects.some((d) => d.testCase === tc))
     .map(([tc]) => tc)
-  const next = [step?.action ?? '项目的阶段已全部通过'].filter(Boolean)
+  const next = [step?.action ?? doneText(project)].filter(Boolean)
   if (untracked.length)
     next.push(`为 ${top(untracked).join('、')} 建缺陷（devboard_defect_upsert，testCase 填 TC 编号）`)
   if (defects.length) next.push(`先处理 ${defects.length} 条未关闭缺陷（A 类会挡住 TR5 与 ADCP）`)

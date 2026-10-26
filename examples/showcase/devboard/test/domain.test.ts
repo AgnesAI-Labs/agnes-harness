@@ -2122,6 +2122,11 @@ describe('fast-forward from the shipped sample', () => {
         expect(pending).toHaveLength(0)
         expect(gates.at(-1)).toMatchObject({ code: 'ADCP', decision: 'APPROVED' })
         expect(project.actualEnd).toBeDefined()
+        // nothing is left to do but register the app: no "stage passed" as a next step
+        const done = handoff(state, { type: 'project', id: project.id })
+        expect(done.next[0]).toContain('所有阶段已通过')
+        expect(done.summary).not.toContain('已通过 ')
+        expect(handoff(state, { type: 'gate', id: gates.at(-1).id }).next[0]).toBe(done.next[0])
       } else {
         expect(pending.map((g: Item) => g.code)).toEqual([code])
         expect(snapshot(state).counts.pendingGates).toBeGreaterThanOrEqual(1)
