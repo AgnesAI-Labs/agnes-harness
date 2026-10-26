@@ -721,6 +721,28 @@ it('gives auth.build an isolated snapshot of the completed handshake fields', as
   }
 })
 
+it('gives session creation a longer budget than an ordinary request', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = fakeEndpoint({
+      initialize: () => ({ protocolVersion: 1, agentCapabilities: {} }),
+      // A loaded machine assembling the session host: past the 30 s ordinary request budget.
+      'session/new': () =>
+        new Promise((resolve) => setTimeout(() => resolve({ sessionId: 'slow-session' }), 45_000)),
+    })
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: f.endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+    const created = c.session.new({ cwd: '/w' })
+    await vi.advanceTimersByTimeAsync(45_000)
+    expect((await created).id).toBe('slow-session')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
 it('carries validated loop, preset, permission and ordered bundles on new-session metadata', async () => {
   const f = fakeEndpoint({
     initialize: () => ({ protocolVersion: 1, agentCapabilities: {} }),

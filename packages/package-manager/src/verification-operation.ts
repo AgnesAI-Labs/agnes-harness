@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { lstatSync } from 'node:fs'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { canonical } from './integrity.js'
-import { hashDirectory, hashDirectoryAsync } from './sources.js'
+import { forgetDirectoryDigests, hashDirectory, hashDirectoryAsync } from './sources.js'
 
 /** Only file verification is shared. Trust, policy, binding and consent are always read again. */
 type VerificationOperation = {
@@ -145,6 +145,7 @@ export function outsidePackageVerification<T>(action: () => T): T {
 export function invalidatePackageVerification(): void {
   invalidate(operations.getStore())
   settledTrees.clear()
+  forgetDirectoryDigests()
   evidenceEpoch++
 }
 
