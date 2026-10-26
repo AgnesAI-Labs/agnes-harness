@@ -335,7 +335,7 @@ it('runs a human one-shot command with output, exit codes, a timeout kill and no
 })
 
 function fakeProcesses(tool: ReturnType<typeof fakeToolContext>) {
-  const opened: { argv: string[]; closed: boolean }[] = []
+  const opened: { argv: readonly string[]; closed: boolean }[] = []
   tool.sandbox.openProcess = async (request) => {
     let end!: () => void
     const exited = new Promise<{ code: number }>((resolve) => {
