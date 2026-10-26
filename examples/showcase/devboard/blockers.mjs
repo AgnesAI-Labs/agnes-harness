@@ -63,8 +63,10 @@ export function blockers(state, now = Date.now(), projectId) {
   const stageById = (id) => (state.stages ?? []).find((s) => s.id === id)
   const ownerRole = (stage, project) => stage?.author || roleOf(project?.manager)
 
+  // Submitting a stage again opens a new gate: the rejected one's open findings are history then.
+  const newest = new Map((state.gates ?? []).map((g) => [g.stageId, g]))
   for (const g of state.gates ?? []) {
-    if (g.superseded) continue
+    if (g.superseded || (g.decision === 'REJECTED' && newest.get(g.stageId) !== g)) continue
     const stage = stageById(g.stageId)
     const project = projectOf(stage?.projectId ?? g.stageId.split('/')[0])
     if (!project) continue

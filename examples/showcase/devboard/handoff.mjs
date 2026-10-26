@@ -110,11 +110,14 @@ function gateHandoff(state, gate) {
     step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
     next.push(step ? step.action : doneText(project))
   } else {
-    step = stageStep(state, project, stage.stage)
+    const newer = state.gates.findLast((g) => g.stageId === gate.stageId)
+    step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
     next.push(
       gate.superseded
         ? `该门已被批准的变更作废（非人工驳回）：${label(LABELS.stage, stage.stage)}阶段按返工重做，修复后重新提交（${gate.code}）`
-        : `该门被驳回：逐条处理未关闭意见，修复后重新提交（${gate.code}）`,
+        : newer !== gate
+          ? `该门被驳回后已重新提交为 ${newer.id}：以它为准，不再处理本门意见`
+          : `该门被驳回：逐条处理未关闭意见，修复后重新提交（${gate.code}）`,
     )
     if (step) next.push(step.action)
   }

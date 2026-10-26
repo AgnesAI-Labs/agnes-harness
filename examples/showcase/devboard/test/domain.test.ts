@@ -1933,6 +1933,11 @@ describe('blockers', () => {
     expect(list[1]).toMatchObject({ days: 5, ref: { type: 'stage', id: stage.id } })
     stage.state = 'PASSED'
     expect(kinds(blockers(state, NOW))).toEqual(['GATE_FINDING'])
+    // rejected, then submitted again as a new gate: the old gate's findings are history
+    state.gates[0].decision = 'REJECTED'
+    state.gates.push({ ...state.gates[0], id: 'GATE-AGAIN', decision: 'APPROVED', findings: [] })
+    expect(blockers(state, NOW)).toEqual([])
+    expect(handoff(state, { type: 'gate', id: state.gates[0].id }).next[0]).toContain('GATE-AGAIN')
     const live = create(state, { kind: 'project', name: '逾期项目' }, NOW)
     const first = byId(state.stages, `${live.id}/${live.stage}`)
     first.plannedEnd = new Date(NOW - 6 * HOUR).toISOString()
