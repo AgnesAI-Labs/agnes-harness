@@ -867,25 +867,27 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           ) : null}
           {listItems.slice(listWindow.start, listWindow.end).map((item) => {
             if (item.kind === 'header' && 'loadEarlier' in item)
+              // A list holds only items: the action that loads earlier records is one of them.
               return (
-                <Button
-                  appearance="ghost"
-                  size="small"
-                  key={item.key}
-                  className="trace-load-earlier"
-                  htmlType="button"
-                  onClick={() => {
-                    const list = listRef.current
-                    earlierPosition.current = {
-                      sessionId: snapshot.meta?.sessionId,
-                      firstNodeId: snapshot.nodes[0]?.id,
-                      anchor: list ? captureTraceVirtualAnchor(listLayout, list.scrollTop) : undefined,
-                    }
-                    item.loadEarlier()
-                  }}
-                >
-                  {traceText('trace.loadEarlier')}
-                </Button>
+                <div key={item.key} role="listitem">
+                  <Button
+                    appearance="ghost"
+                    size="small"
+                    className="trace-load-earlier"
+                    htmlType="button"
+                    onClick={() => {
+                      const list = listRef.current
+                      earlierPosition.current = {
+                        sessionId: snapshot.meta?.sessionId,
+                        firstNodeId: snapshot.nodes[0]?.id,
+                        anchor: list ? captureTraceVirtualAnchor(listLayout, list.scrollTop) : undefined,
+                      }
+                      item.loadEarlier()
+                    }}
+                  >
+                    {traceText('trace.loadEarlier')}
+                  </Button>
+                </div>
               )
             if (item.kind === 'header')
               return (
