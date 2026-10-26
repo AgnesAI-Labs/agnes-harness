@@ -2342,6 +2342,10 @@ export function dismissHandback(state, { id, by }) {
 export function update(store, work, now = Date.now(), activity) {
   return need(store).transaction(() => {
     const previous = store.get(META)
+    if (previous?.schema > SCHEMA)
+      fail(
+        `档案由更新版本的 DevBoard 写入（schema ${previous.schema}），本版本不会覆盖：请安装更新版本，或在总览页重置演示数据`,
+      )
     const state = load(store) ?? seed(now)
     const result = work(state)
     if (activity) logActivity(state, activity, result, now)
@@ -2357,7 +2361,7 @@ export function reset(store, now = Date.now()) {
     const old = load(store)
     // Cached live bodies belong to live projects, which a reset removes.
     for (const a of old?.artifacts ?? []) if (a.source?.type === 'workspace') store.delete(docKey(a.id))
-    const fresh = { ...seed(now), revision: (old?.revision ?? 0) + 1 }
+    const fresh = { ...seed(now), revision: (old?.revision ?? previous?.revision ?? 0) + 1 }
     save(store, fresh, previous)
     return { revision: fresh.revision }
   })

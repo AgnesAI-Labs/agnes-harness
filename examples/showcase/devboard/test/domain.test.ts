@@ -2036,6 +2036,12 @@ describe('store persistence', () => {
       expect(store.get('devboard/meta')).toMatchObject({ schema: 4, revision: 2 })
       expect(read(store, NOW).projects.map((p: Item) => p.id)).not.toContain('PRJ-OLD')
     }
+    // a newer DevBoard's data is never overwritten by a write, only by an explicit reset
+    const newer = memoryStore()
+    newer.set('devboard/meta', { schema: 5, revision: 40, chunks: {} })
+    expect(() => update(newer, (s: State) => s.projects.length, NOW)).toThrow('更新版本')
+    expect(newer.get('devboard/meta')).toMatchObject({ schema: 5, revision: 40 })
+    expect(reset(newer, NOW).revision).toBe(41)
   })
 
   it('persists every collection in chunks under the value cap, writes through one path and resets', () => {

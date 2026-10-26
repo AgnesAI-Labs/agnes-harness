@@ -157,4 +157,4 @@
 pnpm exec vitest run examples/showcase/devboard/test --maxWorkers=1
 ```
 
-升级：schema 1、2 的旧数据读作种子数据，首次写入时替换，schema 3、4 的数据保留（schema 3 的数据审批流程为空）；先更新 Agnes，再停用并卸载旧版 DevBoard，将 2.x、3.1.0、3.2.x、3.3.0、3.4.0、3.5.0、3.5.1、3.6.0、3.7.0、3.7.1 或 3.7.2 替换为 3.7.3 并重新信任（见演示脚本第 0 步）。从源码试用请按[安装](../../../docs/guide/install.zh-CN.md)准备环境，打开智能体页安装 DevBoard 后采纳。
+升级：schema 1、2 的旧数据读作种子数据，首次写入时替换，schema 3、4 的数据保留（schema 3 的数据审批流程为空），更新版本 schema 写入的数据不会被覆盖，写入会被拒绝，除非重置；先更新 Agnes，再停用并卸载旧版 DevBoard，将 2.x、3.1.0、3.2.x、3.3.0、3.4.0、3.5.0、3.5.1、3.6.0、3.7.0、3.7.1 或 3.7.2 替换为 3.7.3 并重新信任（见演示脚本第 0 步）。从源码试用请按[安装](../../../docs/guide/install.zh-CN.md)准备环境，打开智能体页安装 DevBoard 后采纳。
