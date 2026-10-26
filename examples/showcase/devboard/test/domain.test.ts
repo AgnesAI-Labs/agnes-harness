@@ -1630,6 +1630,20 @@ describe('approval flows', () => {
     expect(byId(state.artifacts, 'DOC-1-SAD')).toMatchObject({ status: 'BASELINED', version: 'V1.0' })
   })
 
+  it('refuses new content for a deliverable while its release flow runs', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    const srs = { projectId: p.id, kind: 'SRS', stage: 'REQUIREMENTS', path: 'docs/SRS.md' }
+    const a = recordArtifact(state, srs, NOW)
+    const flow = submitApproval(state, { template: 'DOC_RELEASE', subjectId: a.id, by: '研发协调员' }, NOW)
+    expect(() => recordArtifact(state, { ...srs, version: 'V0.9' }, NOW)).toThrow('进行中的发布审批')
+    approveFlow(state, flow.id)
+    expect(recordArtifact(state, { ...srs, version: 'V1.1' }, NOW)).toMatchObject({
+      version: 'V1.1',
+      status: 'DRAFT',
+    })
+  })
+
   it('lets an agent start flows only for the objects it drafted', () => {
     const { state, p } = setup()
     const agent = { by: '研发协调员', agent: true }

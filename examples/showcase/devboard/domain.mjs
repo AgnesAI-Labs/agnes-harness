@@ -1037,6 +1037,9 @@ export function recordArtifact(state, input, now = Date.now()) {
   const ids = [`DOC-${numberOf(state, project.id)}-${name}`, `DOC-${project.id.split('-').at(-1)}-${name}`]
   const existing = state.artifacts.find((a) => ids.includes(a.id) && a.projectId === project.id)
   const id = existing?.id ?? ids[0]
+  // The release flow approves the content it was started on.
+  const running = existing && runningFlow(state, 'artifact', existing.id)
+  if (running) fail(`${existing.id} 有进行中的发布审批 ${running.id}：审批结束后再登记新内容`)
   const artifact = existing ?? { id, projectId: project.id, kind, status: 'DRAFT' }
   Object.assign(artifact, {
     stage,
