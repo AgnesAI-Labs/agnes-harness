@@ -1600,6 +1600,29 @@ describe('approval flows', () => {
     expect(() => submitApproval(state, { template: 'ECR', subjectId: other.id, ...agent }, NOW)).toThrow(
       '不是智能体起草',
     )
+    // drafted under an acting role
+    const role = ccb(state, p, { by: actorOf('mechanical') })
+    expect(submitApproval(state, { template: 'ECR', subjectId: role.id, ...agent }, NOW).state).toBe(
+      'RUNNING',
+    )
+    // a change the presenter registered and the agent analysed and sent to CCB
+    const handed = create(
+      state,
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: '客户变更',
+        reason: '原因',
+        impact: { reqs: ['CUS-001'] },
+        by: '项目经理',
+      },
+      NOW,
+    )
+    for (const to of ['ANALYZED', 'CCB_REVIEW'])
+      transition(state, { kind: 'change', id: handed.id, to, by: actorOf() }, NOW)
+    expect(submitApproval(state, { template: 'ECR', subjectId: handed.id, ...agent }, NOW).state).toBe(
+      'RUNNING',
+    )
   })
 })
 
