@@ -885,6 +885,10 @@ describe('change requests and the field-to-design loop', () => {
     expect(() => transition(state, { kind: 'change', id: cr.id, to: 'CLOSED', by: 'x' }, NOW)).toThrow(
       '缺少验证记录',
     )
+    updateChange(state, { id: cr.id, verification: { result: 'FAIL' } })
+    expect(() => transition(state, { kind: 'change', id: cr.id, to: 'CLOSED', by: 'x' }, NOW)).toThrow(
+      '验证未通过',
+    )
     expect(() =>
       updateChange(state, { id: cr.id, verification: { result: 'PASS', trialId: 'RT-404' } }),
     ).toThrow('未找到')

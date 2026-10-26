@@ -680,6 +680,8 @@ function moveChange(cr, to, by, at, note, members) {
   }
   if (to === 'CLOSED' && cr.state === 'IMPLEMENTED' && !cr.verification)
     fail(`${cr.id} 缺少验证记录（verification）：验证后才能关闭`)
+  if (to === 'CLOSED' && cr.state === 'IMPLEMENTED' && cr.verification.result !== 'PASS')
+    fail(`${cr.id} 验证未通过：重新验证通过后才能关闭`)
   if (to === 'APPROVED' || to === 'REJECTED')
     cr.ccb = {
       members: Array.isArray(members) && members.length ? members.slice(0, 12) : [by],
