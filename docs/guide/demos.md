@@ -2,7 +2,7 @@
 
 English | [简体中文](demos.zh-CN.md)
 
-The gallery features three shipped showcase applications: [DevBoard 3.7.9](../../examples/showcase/devboard/README.md), [Pharma GMP](../../examples/showcase/pharma-gmp/README.md) and [Aerospace quality](../../examples/showcase/aerospace-quality/README.md). DevBoard is a rail door-system R&D and quality workbench with project gates, traceability, trials, service-quality feedback and an R&D Coordinator. All three use fictional data. Only these flagships are promoted; missing packages produce no placeholders or teaching-example fallback. The [five teaching examples](../../examples/fde/README.md) remain available for deliberate installation. The three scripts below demonstrate platform mechanisms.
+The gallery features three shipped showcase applications: [DevBoard 3.7.10](../../examples/showcase/devboard/README.md), [Pharma GMP](../../examples/showcase/pharma-gmp/README.md) and [Aerospace quality](../../examples/showcase/aerospace-quality/README.md). DevBoard is a rail door-system R&D and quality workbench with project gates, traceability, trials, service-quality feedback and an R&D Coordinator. All three use fictional data. Only these flagships are promoted; missing packages produce no placeholders or teaching-example fallback. The [five teaching examples](../../examples/fde/README.md) remain available for deliberate installation. The three scripts below demonstrate platform mechanisms.
 
 See business agents as plugins, upgrades that preserve work, and an agent that builds a reusable capability. Each script runs a real daemon and workers against synthetic data in a fresh temporary `AGH_HOME`. No model account or browser is required.
 
