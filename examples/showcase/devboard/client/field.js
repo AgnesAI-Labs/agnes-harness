@@ -36,7 +36,13 @@ const resultBadge = (data, result) =>
 // ── Trials and first-article inspection ────────────────────────────────────────────────────────
 
 /** A failed trial without a change gets a one-click draft: a SUBMITTED change whose source is the trial. */
-function DraftChange({ trial, board, role }) {
+/** The trial's linked change, when the CCB rejected it: it never releases the trial. */
+const rejectedChange = (data, trial) => {
+  const change = data.changes.find((c) => c.id === trial.changeId)
+  return change && (change.state === 'REJECTED' || change.ccb?.decision === 'REJECTED') ? change : undefined
+}
+
+function DraftChange({ trial, board, role, rejected }) {
   const draft = () =>
     board.run(
       'devboard.create',
@@ -58,7 +64,13 @@ function DraftChange({ trial, board, role }) {
   return h(
     'section',
     { className: 'devboard-actions', 'aria-label': '起草变更' },
-    h('p', null, '该试验不合格且尚未关联变更：可让智能体起草，或手工起草一份来源为型式试验的变更申请。'),
+    h(
+      'p',
+      null,
+      rejected
+        ? `该试验不合格，关联变更 ${rejected.id} 已被驳回：可让智能体起草新变更，或手工起草一份来源为型式试验的变更申请，它会替换原关联。`
+        : '该试验不合格且尚未关联变更：可让智能体起草，或手工起草一份来源为型式试验的变更申请。',
+    ),
     h(
       WorkButton,
       {
@@ -201,9 +213,9 @@ export function Trials({ data, board, role, setRole }) {
             ),
           h(AnalysisFiles, { data, board, projectId: item.projectId, ids: [item.id] }),
           item.result === 'FAIL' &&
-            !item.changeId &&
+            (!item.changeId || rejectedChange(data, item)) &&
             item.state !== 'APPROVED' &&
-            h(DraftChange, { trial: item, board, role }),
+            h(DraftChange, { trial: item, board, role, rejected: rejectedChange(data, item) }),
           h(ApprovalEntry, { data, board, role, setRole, type: 'trial', id: item.id }),
           h(TransitionBar, {
             key: item.id,

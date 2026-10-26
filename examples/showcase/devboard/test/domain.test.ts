@@ -557,6 +557,19 @@ describe('trials and first-article inspection', () => {
     expect(() => submitApproval(state, { template: 'TRIAL_REPORT', subjectId: tt.id, by: 'x' }, NOW)).toThrow(
       '需关联已批准的变更',
     )
+    // a change drafted from the trial then replaces the rejected one
+    const redraft = create(
+      state,
+      {
+        kind: 'change',
+        projectId: p.id,
+        title: '重拟',
+        reason: 'r',
+        source: { type: 'TYPE_TEST', ref: tt.id },
+      },
+      NOW,
+    )
+    expect(tt.changeId).toBe(redraft.id)
     const cr = create(
       state,
       { kind: 'change', projectId: p.id, title: '改弹簧', reason: tt.id, impact: { reqs: ['CUS-001'] } },

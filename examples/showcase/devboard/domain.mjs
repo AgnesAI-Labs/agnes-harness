@@ -1283,7 +1283,10 @@ function createChange(state, input, at, now) {
   const trial = item.source.type === 'TYPE_TEST' && state.trials.find((t) => t.id === item.source.ref)
   // An approved trial and one under a running flow refuse edits, so they keep their record as it is.
   const editable = trial && MACHINES.trial[trial.state]?.length && !runningFlow(state, 'trial', trial.id)
-  if (editable && trial.projectId === project.id && !trial.changeId) trial.changeId = item.id
+  // A change the CCB rejected never releases the trial, so the new draft replaces it.
+  const linked = editable && state.changes.find((c) => c.id === trial.changeId)
+  const free = !linked || linked.state === 'REJECTED' || linked.ccb?.decision === 'REJECTED'
+  if (editable && trial.projectId === project.id && free) trial.changeId = item.id
   return item
 }
 
