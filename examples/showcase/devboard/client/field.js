@@ -479,7 +479,7 @@ export function Service({ data, board, role, setRole }) {
               { board, ...workOf('problemEightD', problem), guide: 'problem-agent-8d' },
               workOf('problemEightD', problem).label,
             ),
-          h(NoChangeReason, { key: problem.id, problem, board, role }),
+          h(NoChangeReason, { key: problem.id, data, problem, board, role }),
           h(ApprovalEntry, { data, board, role, setRole, type: 'problem', id: problem.id }),
           h(TransitionBar, {
             key: problem.id,
@@ -498,9 +498,11 @@ export function Service({ data, board, role, setRole }) {
 }
 
 /** Why a problem needs no design change, saved without a move: in VERIFYING the only move is back to ACTION. */
-function NoChangeReason({ problem, board, role }) {
+function NoChangeReason({ data, problem, board, role }) {
   const [reason, setReason] = React.useState('')
-  if (problem.changeId || problem.state === 'CLOSED') return null
+  // Frozen while the close flow runs, as on the server.
+  const running = data.approvals.some((a) => a.state === 'RUNNING' && a.subject.id === problem.id)
+  if (problem.changeId || problem.state === 'CLOSED' || running) return null
   const save = async () => {
     const ok = await board.run(
       'devboard.transition',
