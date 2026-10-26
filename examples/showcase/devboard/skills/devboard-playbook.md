@@ -21,7 +21,7 @@
 
 阶段键：立项 INITIATION → 需求 REQUIREMENTS → 设计 DESIGN → 实现 IMPLEMENTATION → 验证 VERIFICATION → 发布交付 RELEASE。每个项目按 `kind` 查评审点档案（阶段显示名、编写角色、门），订单项目（NEW_BUILD / RETROFIT / MAINTENANCE）和软件项目（SOFTWARE，IPD）的门不同。
 
-- 阶段状态：NOT_STARTED → IN_PROGRESS → IN_REVIEW → PASSED；IN_REVIEW → REWORK → IN_PROGRESS。前一阶段 PASSED 后，后一阶段才能开始（`devboard_stage_update`）。
+- 阶段状态：NOT_STARTED → IN_PROGRESS → IN_REVIEW → PASSED；IN_REVIEW → REWORK → IN_PROGRESS。前面各阶段都 PASSED 后，后一阶段才能开始（`devboard_stage_update`）或提交评审；返工的阶段也按阶段顺序重新开始。
 - 提交评审：`devboard_gate_submit`。提交后阶段进入 IN_REVIEW，生成待决议的门，取该阶段下一道尚未批准的门。一个阶段可以有多道门，按顺序进行：批准的不是最后一道时，阶段回到 IN_PROGRESS，你再提交下一道；最后一道批准后阶段才 PASSED。
 - `findings` 中每段都会新建开放意见；已修复、已撤回或非必改的说明写在 `note`，不能靠正文写「已关闭」代替状态。读取真实门和 F 编号，用 `closeFindings` 逐项记录有依据的关闭（「系统检查」意见只能由审批人在决议时关闭，提交时关闭会被拒绝）；未解决的真实缺口保持开放。核对后台 decision、findings 和阶段状态后才能说通过，自动 TR4 不由人签。
 - 门编号 `GATE-<项目>-<代码>-<序号>`，门代码是 ASCII，显示时用「代码 · 名称」。订单档案：`CONTRACT`（合同评审，分技术中心主任）、`DL1`（设计联络一，项目经理 + 客户代表会签）、`DL2`（设计联络二，项目经理 + 客户代表）→ `FREEZE`（设计冻结，技术负责人）、`PROTO`（样机评审，技术负责人）、`TYPE`（型式试验评审，质量工程师）→ `FAI`（首件鉴定，质量工程师 + 客户代表）、`ACCEPT`（交付验收，客户代表 + 分技术中心主任）。软件档案：`CDCP`（IPMT）、`TR1`（技术负责人）、`TR2` → `TR3` → `PDCP`（IPMT）、`TR4`（自动）、`TR5`（质量工程师）、`TR6` → `ADCP`（IPMT）。
@@ -105,7 +105,7 @@ server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
 
 1. `devboard_change_upsert`（带上这条变更的 `id`）补全：`source`、标题和客户的理由已经在交接内容里；`impact.reqs` 只写起点（条款与来源条款一致的 CUS 条目，没有匹配就用 CUS-002）并设 `traceFrom: true`，系统沿追溯链补全下游需求、设计条目、用例和交付物，不要自己逐条猜；再补 `safety` 和 `effortDays`；
 2. 推进到 ANALYZED、CCB_REVIEW，用 `devboard_approval_submit`（ECR）发起审批后停下，告诉用户到「我的待办」批准；CCB 决议留给人；
-3. 批准后受影响需求变为 CHANGED，需求、设计阶段返工（已通过的和正在评审的都返工，原门作废）。用户点「继续推进」后，只改受影响的条目：按 CHANGED 的需求改 SRS、SAD、代码和测试，回归测试覆盖受影响的用例；重新提交各门时在说明里写 CR 编号。
+3. 批准后受影响需求变为 CHANGED，需求、设计阶段返工（已通过的和正在评审的都返工，原门作废）。用户点「继续推进」后，只改受影响的条目：按 CHANGED 的需求改 SRS、SAD、代码和测试，回归测试覆盖受影响的用例；按阶段顺序重新提交各门（需求阶段通过后设计阶段才能重开），说明里写 CR 编号。
 
 ## 缺陷与评审门
 

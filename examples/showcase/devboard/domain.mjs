@@ -431,13 +431,12 @@ function moveStage(state, stage, { to, by, note, author }, now) {
   if (to !== 'IN_PROGRESS' || !MACHINES.stage[stage.state]?.includes(to))
     fail(`非法状态流转：${stage.state} 不可流转至 ${to}`)
   const index = STAGES.indexOf(stage.stage)
-  if (stage.state === 'NOT_STARTED' && index > 0) {
-    const previous = stageOf(state, stage.projectId, STAGES[index - 1])
-    if (previous.state !== 'PASSED')
-      fail(
-        `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，不能开始「${stageLabel(state, stage)}」`,
-      )
-  }
+  // A stage a change reopened restarts in order too, after the earlier ones it reopened.
+  const previous = unpassedBefore(state, stage)
+  if (previous)
+    fail(
+      `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，不能开始「${stageLabel(state, stage)}」`,
+    )
   // The stage keeps the canonical role, so the self-approval check holds for "技术负责人 张三" too.
   if (author) stage.author = knownRole(author)
   record(stage, new Date(now).toISOString(), by || '未署名', stage.state, 'IN_PROGRESS', note)
@@ -445,6 +444,13 @@ function moveStage(state, stage, { to, by, note, author }, now) {
   const project = projectOf(state, stage.projectId)
   if (index > STAGES.indexOf(project.stage)) project.stage = stage.stage
   return stage
+}
+
+/** The nearest earlier stage that has not passed: a stage starts, and goes to review, only after all of them. */
+function unpassedBefore(state, stage) {
+  return STAGES.slice(0, STAGES.indexOf(stage.stage))
+    .map((name) => stageOf(state, stage.projectId, name))
+    .findLast((s) => s && s.state !== 'PASSED')
 }
 
 /** A named author is kept as its canonical role, so the self-approval check and approval flows can find it. */
@@ -547,6 +553,11 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
   const actor = by || '未署名'
   let gate = pendingGate(state, stage.id)
   if (stage.state === 'IN_PROGRESS') {
+    const previous = unpassedBefore(state, stage)
+    if (previous)
+      fail(
+        `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，「${stageLabel(state, stage)}」不能提交评审`,
+      )
     const def =
       nextGate(state, project, stage) ?? fail(`阶段「${stageLabel(state, stage)}」没有待提交的评审门`)
     const n = state.gates.filter((g) => g.stageId === stage.id && g.code === def.code).length + 1

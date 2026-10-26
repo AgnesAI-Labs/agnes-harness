@@ -358,6 +358,11 @@ describe('multi-gate stages and tailoring', () => {
   it('passes the auto gate TR4 once every finding is closed, replacing the v2 special case', () => {
     const state = blank()
     const p = create(state, { kind: 'project', name: '自动门' }, NOW)
+    const earlier = (id: string) =>
+      ['INITIATION', 'REQUIREMENTS', 'DESIGN'].forEach((name) => {
+        byId(state.stages, `${id}/${name}`).state = 'PASSED'
+      })
+    earlier(p.id)
     const impl = byId(state.stages, `${p.id}/IMPLEMENTATION`)
     impl.state = 'IN_PROGRESS'
     const review = submitGate(
@@ -376,6 +381,7 @@ describe('multi-gate stages and tailoring', () => {
     expect(review.gate).toMatchObject({ decision: 'APPROVED', approver: '系统（代码评审意见已全部关闭）' })
     // Other gates are never automatic.
     const order = newProject(state, 'NEW_BUILD')
+    earlier(order.id)
     const proto = byId(state.stages, `${order.id}/IMPLEMENTATION`)
     proto.state = 'IN_PROGRESS'
     const gate = submitGate(state, { stageId: proto.id, by: 'x' }, NOW).gate
@@ -476,6 +482,13 @@ describe('approver roles and co-signing', () => {
     expect(() =>
       transition(state, { kind: 'stage', id: `${p.id}/INITIATION`, to: 'PASSED', by: 'x' }, NOW),
     ).toThrow('只能通过评审门决议')
+    // a later stage does not go to review while an earlier one is reopened
+    for (const name of ['INITIATION', 'REQUIREMENTS']) pass(state, p.id, name)
+    start(state, `${p.id}/DESIGN`)
+    byId(state.stages, `${p.id}/REQUIREMENTS`).state = 'REWORK'
+    expect(() => submitGate(state, { stageId: `${p.id}/DESIGN`, by: 'x' }, NOW)).toThrow(
+      '阶段顺序不满足：前一阶段「技术协议与需求」尚未通过评审',
+    )
   })
 })
 
@@ -2453,6 +2466,8 @@ describe('fast-forward from the shipped sample', () => {
     )
     const changed = state.reqs.filter((r: Item) => r.projectId === data.projectId && r.status === 'CHANGED')
     expect(changed.map((r: Item) => r.id).sort()).toEqual(applied.impact.reqs)
+    // the reopened stages run again in order: design waits for requirements
+    expect(() => start(state, `${data.projectId}/DESIGN`)).toThrow('阶段顺序不满足')
     // the stages run their gates again, and the old gate is not reused
     for (const name of ['REQUIREMENTS', 'DESIGN']) pass(state, data.projectId, name)
     expect([stage('REQUIREMENTS').state, stage('DESIGN').state]).toEqual(['PASSED', 'PASSED'])

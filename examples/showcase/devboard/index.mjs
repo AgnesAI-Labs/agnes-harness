@@ -322,7 +322,7 @@ export const tools = [
   ),
   tool(
     'devboard_stage_update',
-    'Start a stage (NOT_STARTED or REWORK → IN_PROGRESS); the previous stage must have PASSED. Optionally set its writing role. 开始阶段。',
+    'Start a stage (NOT_STARTED or REWORK → IN_PROGRESS); every earlier stage must have PASSED. Optionally set its writing role. 开始阶段。',
     Type.Object({ projectId: id, stage: literals(STAGES), author: Type.Optional(short(32)), note }, strict),
     (input, ctx, a) =>
       a.mutate(ctx.store, (s) =>
@@ -400,7 +400,7 @@ export const tools = [
   ),
   tool(
     'devboard_gate_submit',
-    'Submit a stage for review (IN_PROGRESS → IN_REVIEW, new PENDING gate for the next gate of the project profile, e.g. TR1 or DL2), or add/close findings on its pending gate. After submitting a human gate, end the turn and ask the user to approve it on the board (the gate names the roles that must sign). The gate marked auto (TR4) passes once all findings are closed. 提交评审。',
+    'Submit a stage for review (IN_PROGRESS → IN_REVIEW, new PENDING gate for the next gate of the project profile, e.g. TR1 or DL2; every earlier stage must have PASSED), or add/close findings on its pending gate. After submitting a human gate, end the turn and ask the user to approve it on the board (the gate names the roles that must sign). The gate marked auto (TR4) passes once all findings are closed. 提交评审。',
     Type.Object(
       {
         projectId: id,
