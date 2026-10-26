@@ -986,14 +986,22 @@ export function projectPath(project, path) {
   return full
 }
 
-/** Cut to at most DOC_LIMIT_BYTES of UTF-8 without splitting a character. */
+/**
+ * Cut to at most DOC_LIMIT_BYTES as stored (JSON-encoded UTF-8) without splitting a character: newlines,
+ * quotes and control characters take 2–6 bytes there, so a raw-byte cut could still overflow the store's value cap.
+ */
 export function clip(markdown) {
-  const bytes = new TextEncoder().encode(markdown)
-  if (bytes.length <= DOC_LIMIT_BYTES) return { markdown, truncated: false }
-  return {
-    markdown: new TextDecoder().decode(bytes.slice(0, DOC_LIMIT_BYTES)).replace(/�+$/, ''),
-    truncated: true,
+  const size = (s) => new TextEncoder().encode(JSON.stringify(s)).length
+  if (size(markdown) <= DOC_LIMIT_BYTES) return { markdown, truncated: false }
+  let lo = 0
+  let hi = markdown.length
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1
+    if (size(markdown.slice(0, mid)) <= DOC_LIMIT_BYTES) lo = mid
+    else hi = mid - 1
   }
+  const cut = /[\uD800-\uDBFF]$/.test(markdown.slice(0, lo)) ? lo - 1 : lo
+  return { markdown: markdown.slice(0, cut), truncated: true }
 }
 
 /** The analysis file's object (a change, its ECN, a problem, a trial or a fault of the project) must exist on the board. */

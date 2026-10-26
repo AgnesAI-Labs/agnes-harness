@@ -1993,6 +1993,23 @@ describe('store persistence', () => {
     expect(body).toMatchObject({ source: 'workspace', truncated: true })
     expect(new TextEncoder().encode(body.markdown).length).toBeLessThanOrEqual(DOC_LIMIT_BYTES)
     expect(body.markdown.startsWith('# 需求规格')).toBe(true)
+    // newlines and control characters grow when stored as JSON; the body still fits the value cap
+    for (const filler of ['\n', '\u0001']) {
+      const { result: dense } = update(store, (s: State) =>
+        recordArtifact(
+          s,
+          {
+            projectId: result.projectId,
+            stage: 'DESIGN',
+            kind: 'SAD',
+            path: 'docs/SAD.md',
+            markdown: filler.repeat(50_000),
+          },
+          NOW,
+        ),
+      )
+      expect(artifactBody(store, dense.id, NOW).truncated).toBe(true)
+    }
     expect(() => artifactBody(store, 'DOC-404', NOW)).toThrow('未找到 DOC-404')
     reset(store, NOW)
     expect([...store.rows.keys()].some((k) => k.startsWith('devboard/doc/'))).toBe(false)
