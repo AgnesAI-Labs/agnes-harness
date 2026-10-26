@@ -2277,6 +2277,9 @@ describe('fast-forward from the shipped sample', () => {
     const stage = (name: string) => byId(state.stages, `${data.projectId}/${name}`)
     expect([stage('REQUIREMENTS').state, stage('DESIGN').state]).toEqual(['REWORK', 'REWORK'])
     expect(applied.reworked).toEqual([`${data.projectId}/REQUIREMENTS`, `${data.projectId}/DESIGN`])
+    // a gate the change voided is not described as a human rejection
+    const voided = state.gates.find((g: Item) => g.superseded && g.decision === 'REJECTED')
+    expect(handoff(state, { type: 'gate', id: voided.id }).next[0]).toContain('作废')
     // the hand-off starts with the earliest reopened stage, not the project's furthest one
     expect(handoff(state, { type: 'project', id: data.projectId }).nextStep).toMatchObject({
       stage: 'REQUIREMENTS',

@@ -111,7 +111,11 @@ function gateHandoff(state, gate) {
     next.push(step ? step.action : doneText(project))
   } else {
     step = stageStep(state, project, stage.stage)
-    next.push(`该门被驳回：逐条处理未关闭意见，修复后重新提交（${gate.code}）`)
+    next.push(
+      gate.superseded
+        ? `该门已被批准的变更作废（非人工驳回）：${label(LABELS.stage, stage.stage)}阶段按返工重做，修复后重新提交（${gate.code}）`
+        : `该门被驳回：逐条处理未关闭意见，修复后重新提交（${gate.code}）`,
+    )
     if (step) next.push(step.action)
   }
   return {
