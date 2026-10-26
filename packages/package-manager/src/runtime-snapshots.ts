@@ -45,7 +45,7 @@ import {
 } from './runtime-snapshot-validation.js'
 import { hashDirectory, packageDir, parseSource } from './sources.js'
 import { previousPackageDir } from './store.js'
-import { invalidatePackageVerification } from './verification-operation.js'
+import { dropPackageObservations, invalidatePackageVerification } from './verification-operation.js'
 
 export type {
   RuntimePin,
@@ -400,7 +400,7 @@ function clearJournal(s: RuntimeSnapshotStore): void {
   rmSync(journalPath(s))
   rmSync(`${journalPath(s)}.tmp`, { force: true })
   syncDirectory(s.profileDir)
-  invalidatePackageVerification()
+  dropPackageObservations()
   s.runtimeCheckpoint?.('runtime-finished')
 }
 

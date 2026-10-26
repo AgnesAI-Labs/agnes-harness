@@ -48,14 +48,19 @@ export function contained(root: string, candidate: string): boolean {
  * out on purpose, because linking a file into a runtime generation moves its ctime and not its bytes.
  * Several readers in one start (package load, presets, preflight, session admission, generation
  * reuse) verify the same snapshot trees, up to 14 times each; reading every file each time is what
- * makes a worker start slow, most of all where reads are scanned. The cost: a same-size rewrite that
- * restores mtime is not seen until the tree is replaced, the process restarts or a verification
- * refusal clears this store (`forgetDirectoryDigests`). The walk still refuses links and special
- * entries on every call.
+ * makes a worker start slow, most of all where reads are scanned. A tree with a file modified less
+ * than RECENT_WRITE_MS before the hash began is not stored: file times advance in clock ticks of a few
+ * milliseconds, so a same-size rewrite inside one tick would otherwise keep the old signature (git's
+ * racily-clean rule). Gates and editable sources use this store too; performance was ranked above a
+ * strict re-read. The cost: a same-size rewrite that restores mtime, whether by copy -p, a reproducible
+ * build or deliberately, is not seen until the tree is replaced, the process restarts or a
+ * verification refusal clears this store (`forgetDirectoryDigests`). A cache hit still walks the
+ * tree and refuses links and special entries, but skips the per-file real-path containment check.
  */
 type KnownTree = Readonly<{ dev: number; ino: number; signature: string; digest: string }>
 const knownTrees = new Map<string, KnownTree>()
 const KNOWN_TREE_LIMIT = 512
+const RECENT_WRITE_MS = 2_000
 
 export function forgetDirectoryDigests(): void {
   knownTrees.clear()
@@ -87,7 +92,10 @@ function rememberDigest(
   root: Readonly<{ dev: number; ino: number }>,
   signature: string,
   digest: string,
+  started: number,
+  mtimes: Iterable<number>,
 ): void {
+  for (const mtime of mtimes) if (mtime > started - RECENT_WRITE_MS) return
   knownTrees.delete(key)
   const oldest = knownTrees.keys().next().value
   if (knownTrees.size >= KNOWN_TREE_LIMIT && oldest !== undefined) knownTrees.delete(oldest)
@@ -95,6 +103,7 @@ function rememberDigest(
 }
 
 export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: AbortSignal } = {}): string {
+  const started = Date.now()
   checkCancelled(opts.signal)
   let root: string
   try {
@@ -137,7 +146,10 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
   const known = knownDigest(key, rootStat, signature)
   if (known !== undefined) return known
   const outer = createHash('sha256')
-  for (const { rel, file } of files) {
+  // Unlike the async walk this read does not refuse a file that changes under it; it only declines
+  // to store a digest that may mix two versions of a file.
+  let unchanged = true
+  for (const { rel, file, stat } of files) {
     checkCancelled(opts.signal)
     let actual: string
     try {
@@ -148,9 +160,19 @@ export function hashDirectory(dir: string, opts: { exclude?: string[]; signal?: 
     if (!contained(root, actual)) throw sourceError('package file escapes its source tree', 'path-escape')
     const inner = createHash('sha256').update(rel).update('\0').update(readFileSync(file)).digest()
     outer.update(inner)
+    const after = lstatSync(file)
+    if (!sameFileObservation(after, stat)) unchanged = false
   }
   const digest = `sha256-${outer.digest('hex')}`
-  rememberDigest(key, rootStat, signature, digest)
+  if (unchanged)
+    rememberDigest(
+      key,
+      rootStat,
+      signature,
+      digest,
+      started,
+      files.map(({ stat }) => stat.mtimeMs),
+    )
   return digest
 }
 
@@ -177,6 +199,7 @@ async function hashDirectoryOnce(
   dir: string,
   opts: { exclude?: string[]; signal?: AbortSignal },
 ): Promise<string> {
+  const started = Date.now()
   checkCancelled(opts.signal)
   let root: string
   try {
@@ -279,7 +302,14 @@ async function hashDirectoryOnce(
   const outer = createHash('sha256')
   for (const digest of digests) outer.update(digest)
   const digest = `sha256-${outer.digest('hex')}`
-  rememberDigest(key, rootStat, signature, digest)
+  rememberDigest(
+    key,
+    rootStat,
+    signature,
+    digest,
+    started,
+    files.map(({ observed }) => observed.mtimeMs),
+  )
   return digest
 }
 
