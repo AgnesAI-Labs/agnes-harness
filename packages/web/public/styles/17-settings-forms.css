@@ -242,10 +242,10 @@
     scrollbar-color: var(--agnes-line-emphasis) transparent;
     border: 0;
     border-radius: var(--radius-popover);
-    /* The one translucent surface: 94% opaque over a blurred backdrop. */
-    background: var(--agnes-bg-popover-material);
-    -webkit-backdrop-filter: saturate(1.5) blur(18px);
-    backdrop-filter: saturate(1.5) blur(18px);
+    /* This panel spans areas of the page it covers, so it needs its own opaque surface: the shared
+       94% material only hides them while the backdrop blur composites, and runtimes that skip the
+       filter leave the text underneath readable (menus keep that material). */
+    background: var(--agnes-bg-popover);
     color: var(--agnes-text-primary);
     box-shadow: var(--shadow-popover);
     font-size: var(--font-size-sm);
