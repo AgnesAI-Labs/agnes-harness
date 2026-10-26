@@ -2053,7 +2053,7 @@ function fieldMetrics(state, project, now) {
   )
   const retrofits = own(state.changes).filter((c) => c.retrofit)
   const designed = latestBaseline(state, project.id, 'AS_DESIGNED')?.revs ?? {}
-  const maintained = latestBaseline(state, project.id, 'AS_MAINTAINED')?.revs ?? {}
+  const maintained = latestBaseline(state, project.id, 'AS_MAINTAINED')?.revs
   const trials = own(state.trials)
   return {
     faults30d: Object.fromEntries(
@@ -2065,7 +2065,10 @@ function fieldMetrics(state, project, now) {
       done: retrofits.reduce((n, c) => n + c.retrofit.done, 0),
       total: retrofits.reduce((n, c) => n + c.retrofit.total, 0),
     },
-    baselineGap: Object.keys(designed).filter((itemId) => maintained[itemId] !== designed[itemId]).length,
+    // Without an as-maintained baseline nothing in service lags the design yet.
+    baselineGap: maintained
+      ? Object.keys(designed).filter((itemId) => maintained[itemId] !== designed[itemId]).length
+      : 0,
     trials: {
       total: trials.length,
       approved: trials.filter((t) => t.state === 'APPROVED').length,

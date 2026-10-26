@@ -1989,6 +1989,10 @@ describe('blockers', () => {
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({ kind: 'BASELINE_GAP', projectId: project, role: '配置管理员' })
     expect(list[0].reason).toContain('NC-DR-1218')
+    // with no as-maintained baseline nothing lags, on the card as in the blockers
+    state.configBaselines = state.configBaselines.filter((b: Item) => !maintained.includes(b))
+    expect(blockers(state, NOW)).toEqual([])
+    expect(metrics(state, byId(state.projects, project), NOW).baselineGap).toBe(0)
   })
 
   it('works without approvals and derives active, ALL-mode and overdue approval nodes when present', () => {
