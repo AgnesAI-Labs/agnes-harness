@@ -940,6 +940,10 @@ describe('change requests and the field-to-design loop', () => {
     expect(designed[1].revs).toEqual({ 'NC-BUF-01': 'C', 'NC-MOT-02': 'A' })
     expect(state.stages.every((s: Item) => s.state === 'PASSED')).toBe(true)
     expect(metrics(state, p, NOW)).toMatchObject({ baselineGap: 1, retrofit: { done: 0, total: 1920 } })
+    // a change written against the old revision does not roll the item back
+    const stale = approvedChange(state, p.id, bufferChange)
+    expect(() => release(state, 'ECN_RELEASE', stale.id)).toThrow('NC-BUF-01 当前为 C 版')
+    expect(state.configBaselines.filter((b: Item) => b.type === 'AS_DESIGNED')).toHaveLength(2)
   })
 
   it('still sends passed stages of a project in development to rework, and they pass their gates again', () => {

@@ -777,6 +777,12 @@ function addBaseline(state, projectId, type, fallbacks, bumps, at, note) {
   const latest = (t) => mine(t).reduce((top, b) => (!top || seqOf(b) > seqOf(top) ? b : top), undefined)
   const base = [type, ...fallbacks].map(latest).find(Boolean)
   const revs = { ...(base?.revs ?? {}) }
+  // A change written against an older revision would roll the item back over a newer one.
+  for (const { itemId, fromRev } of bumps)
+    if (fromRev && revs[itemId] !== undefined && revs[itemId] !== fromRev)
+      fail(
+        `${itemId} 当前为 ${revs[itemId]} 版，${note} 从 ${fromRev} 版改起：先按当前版本更新变更的影响物料`,
+      )
   for (const { itemId, toRev } of bumps) revs[itemId] = toRev
   const seq = Math.max(0, ...mine(type).map(seqOf)) + 1
   const baseline = {
