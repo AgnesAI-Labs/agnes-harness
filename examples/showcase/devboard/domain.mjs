@@ -2159,10 +2159,9 @@ export function metrics(state, project, now = Date.now()) {
   }
 }
 
+// The series number orders baselines, as when one is built on the last: back-dated times can tie.
 const latestBaseline = (state, projectId, type) =>
-  state.configBaselines
-    .filter((b) => b.projectId === projectId && b.type === type)
-    .reduce((top, b) => (!top || Date.parse(b.at) >= Date.parse(top.at) ? b : top), undefined)
+  baselinesOf(state, projectId, type).reduce((top, b) => (!top || seqOf(b) > seqOf(top) ? b : top), undefined)
 
 /** Field, trial and baseline figures; zero for a project with none of them. */
 function fieldMetrics(state, project, now) {

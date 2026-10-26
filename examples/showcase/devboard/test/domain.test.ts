@@ -2164,11 +2164,22 @@ describe('blockers', () => {
       (b: Item) => b.projectId === project && b.type === 'AS_MAINTAINED',
     )
     expect(blockers(state, NOW)).toEqual([])
-    maintained[maintained.length - 1].revs['NC-DR-1218'] = 'A'
+    const last = maintained[maintained.length - 1]
+    const levelled = { ...last.revs }
+    last.revs['NC-DR-1218'] = 'A'
     const list = blockers(state, NOW) as Item[]
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({ kind: 'BASELINE_GAP', projectId: project, role: '配置管理员' })
     expect(list[0].reason).toContain('NC-DR-1218')
+    // the next baseline in the series counts even when written at the same moment, on the card as in the blockers
+    const next = {
+      ...last,
+      id: last.id.replace(/\d+$/, (n: string) => String(Number(n) + 1).padStart(2, '0')),
+    }
+    state.configBaselines.push({ ...next, revs: levelled })
+    expect(blockers(state, NOW)).toEqual([])
+    expect(metrics(state, byId(state.projects, project), NOW).baselineGap).toBe(0)
+    state.configBaselines.pop()
     // with no as-maintained baseline nothing lags, on the card as in the blockers
     state.configBaselines = state.configBaselines.filter((b: Item) => !maintained.includes(b))
     expect(blockers(state, NOW)).toEqual([])
