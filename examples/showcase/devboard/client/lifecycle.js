@@ -18,6 +18,7 @@ import {
   ProjectSelect,
   pct,
   RoleHint,
+  resubmitted,
   signProgress,
   stageName,
   stateBadge,
@@ -62,7 +63,9 @@ function StageBar({ data, projectId }) {
 
 /** One chip per gate of the project's profile (minus tailored-out gates), coloured by decision. */
 function GateChips({ data, projectId }) {
-  const gates = stagesOf(data, projectId).flatMap((s) => gatesOf(data, s.id).filter((g) => !g.superseded))
+  const gates = stagesOf(data, projectId).flatMap((s) =>
+    gatesOf(data, s.id).filter((g) => !g.superseded && !resubmitted(data, g)),
+  )
   return h(
     'div',
     { className: 'devboard-chips', 'aria-label': '评审点' },
