@@ -1673,6 +1673,13 @@ describe('approval flows', () => {
     const a = recordArtifact(state, srs, NOW)
     const flow = submitApproval(state, { template: 'DOC_RELEASE', subjectId: a.id, by: '研发协调员' }, NOW)
     expect(() => recordArtifact(state, { ...srs, version: 'V0.9' }, NOW)).toThrow('进行中的发布审批')
+    // sent back to the initiator, the deliverable takes its revision
+    actApproval(
+      state,
+      { id: flow.id, by: `${flow.nodes[0].roles[0]} 测试员`, action: 'RETURN', comment: '补图号' },
+      NOW,
+    )
+    expect(recordArtifact(state, { ...srs, version: 'V0.9' }, NOW).version).toBe('V0.9')
     approveFlow(state, flow.id)
     expect(recordArtifact(state, { ...srs, version: 'V1.1' }, NOW)).toMatchObject({
       version: 'V1.1',
