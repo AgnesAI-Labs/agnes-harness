@@ -1931,7 +1931,14 @@ export function actApproval(state, input, now = Date.now()) {
   const flow = state.approvals.find((a) => a.id === input.id) ?? fail(`未找到审批 ${input.id}`)
   const draft = structuredClone(flow)
   const outcome = act(draft, input, now)
-  if (outcome) settle(state, draft, outcome, now)
+  // Settlement reads the flows in state (a deliverable whose flow still runs stays out of a baseline), so it sees this one acted.
+  const at = state.approvals.indexOf(flow)
+  state.approvals[at] = draft
+  try {
+    if (outcome) settle(state, draft, outcome, now)
+  } finally {
+    state.approvals[at] = flow
+  }
   for (const key of Object.keys(flow)) delete flow[key]
   return Object.assign(flow, draft)
 }

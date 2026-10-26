@@ -1757,6 +1757,11 @@ describe('approval flows', () => {
     expect(gate.findings[0].closed).toBe(true)
     expect(gate.decision).toBe('APPROVED')
     expect(byId(state.stages, id).state).toBe('PASSED')
+    // the deliverable its flow just approved is in the stage baseline
+    expect(byId(state.stages, id).baseline).toMatchObject({
+      id: expect.stringMatching(/-CODE-V1\.0$/),
+      items: [code.id],
+    })
   })
 
   it('refuses new content for a deliverable while its release flow runs', () => {
