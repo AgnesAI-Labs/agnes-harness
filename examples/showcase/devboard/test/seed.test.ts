@@ -323,6 +323,8 @@ describe('DevBoard v3 seed data', () => {
         approverRoles: def.approverRoles,
       })
       expect(g.approverRoles, `${g.id} approver is the author`).not.toContain(stage.author)
+      // submitted before it was decided, so 「我的待办」 can order the gates by time
+      expect(t(g.submittedAt), `${g.id} submittedAt`).toBeLessThanOrEqual(g.decidedAt ? t(g.decidedAt) : NOW)
       expect(ids(g.findings).size).toBe(g.findings.length)
       const signed = g.signatures.map((s: Any) => s.role)
       expect(new Set(signed).size, `${g.id} one signature per role`).toBe(signed.length)
@@ -463,7 +465,10 @@ describe('DevBoard v3 seed data', () => {
     for (const swr of seed.reqs.filter((r: Any) => r.level === 'SWR')) {
       const tcs = seed.reqs.filter((r: Any) => r.level === 'TC' && r.parent.includes(swr.id))
       if (swr.status === 'VERIFIED')
-        expect(tcs.filter((tc: Any) => tc.status !== 'VERIFIED').map((tc: Any) => tc.id), swr.id).toEqual([])
+        expect(
+          tcs.filter((tc: Any) => tc.status !== 'VERIFIED').map((tc: Any) => tc.id),
+          swr.id,
+        ).toEqual([])
     }
   })
 

@@ -3496,6 +3496,11 @@ export function buildSeed(now = Date.now()) {
     const profile = GATE_PROFILES[KIND[projectId]]
     const stage = Object.keys(profile).find((s) => profile[s].gates.some((g) => g.code === code))
     const gate = profile[stage].gates.find((g) => g.code === code)
+    // Submitted by the stage's last move into review up to the decision.
+    const submitted = stages
+      .find((s) => s.id === `${projectId}/${stage}`)
+      ?.history.filter((h) => h.to === 'IN_REVIEW' && (day === undefined || h.at <= d(day)))
+      .at(-1)
     return {
       id: `GATE-${projectId}-${code}-${n}`,
       stageId: `${projectId}/${stage}`,
@@ -3517,6 +3522,7 @@ export function buildSeed(now = Date.now()) {
         closed: closedNote !== undefined,
         ...(closedNote ? { closedNote } : {}),
       })),
+      ...(submitted ? { submittedAt: submitted.at, submittedBy: submitted.by } : {}),
       ...(day === undefined ? {} : { decidedAt: d(day) }),
       ...(comment ? { comment } : {}),
     }
