@@ -12,6 +12,8 @@ export function useHandoff(board, object) {
   const { query } = board
   const revision = board.data?.revision
   // the summary is read again when the object or the board revision changes
+  // A different object starts empty instead of showing the previous one's summary until its own arrives.
+  React.useEffect(() => setText(''), [object.type, object.id])
   React.useEffect(() => {
     let live = true
     Promise.resolve(query('devboard.handoff', { type: object.type, id: object.id }))
