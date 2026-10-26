@@ -1335,6 +1335,7 @@ describe('approval flows', () => {
       '软件设计师（架构）',
       '软件设计师（开发） 张衡',
       '软件设计师(架构)',
+      '研发协调员 · 软件设计师（架构）',
     ]) {
       const other = setup().state
       other.artifacts[0].authorRole = author

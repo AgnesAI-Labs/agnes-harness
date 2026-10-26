@@ -1774,16 +1774,16 @@ const AUTHOR_FALLBACK = {
   trial: '验证工程师',
 }
 function authorRole(type, subject) {
-  const role =
+  const by =
     type === 'artifact'
-      ? roleOf(subject.authorRole)
-      : roleOf(
-          type === 'change'
-            ? subject.raisedBy
-            : type === 'problem'
-              ? subject.owner
-              : subject.history?.[0]?.by,
-        )
+      ? subject.authorRole
+      : type === 'change'
+        ? subject.raisedBy
+        : type === 'problem'
+          ? subject.owner
+          : subject.history?.[0]?.by
+  // The coordinator signs as 「研发协调员 · <role>」: the role it acted as is the author.
+  const role = roleOf(String(by ?? '').replace(`${AGENT_NAME} · `, ''))
   if (ROLES.includes(role)) return role
   if (type === 'artifact' && subject.authorRole != null) fail('无法识别编制角色，请填写已知岗位后再发起审批')
   return AUTHOR_FALLBACK[type]
