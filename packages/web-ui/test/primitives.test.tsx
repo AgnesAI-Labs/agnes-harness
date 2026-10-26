@@ -168,9 +168,18 @@ it('dismisses the menu when content scrolls away or the mouse pointer leaves', a
   }
 
   // The menu is portalled outside the pane that scrolls it away, so an outside scroll dismisses it.
+  const anchor = host.querySelector<HTMLElement>('.agh-menu-anchor')!
+  let top = 100
+  const box = vi.spyOn(anchor, 'getBoundingClientRect').mockImplementation(() => new DOMRect(10, top, 40, 20))
   await openBy('mouse')
+  // A scroll that leaves the anchor in place (a pane settling as the popup mounts) keeps it open.
+  document.body.dispatchEvent(new Event('scroll'))
+  await settle()
+  expect(expanded()).toBe('true')
+  top = 60
   document.body.dispatchEvent(new Event('scroll'))
   await closed()
+  box.mockRestore()
 
   // Scrolling inside the menu moves its own content, not its anchor.
   await openBy('mouse')
