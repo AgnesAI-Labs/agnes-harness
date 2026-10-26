@@ -2797,6 +2797,16 @@ describe('hand-off to the coordinator', () => {
     expect(out.next[0]).not.toContain('8D')
   })
 
+  it('reads an open request past its due time as expired', () => {
+    const state = read(memoryStore(), NOW)
+    const item = state.interventions.find((i: Item) => i.state === 'OPEN')
+    const late = Date.parse(item.dueAt) + 1
+    const out = handoff(state, { type: 'intervention', id: item.id }, late)
+    expect(out.intervention.state).toBe('EXPIRED')
+    expect(out.next[0]).toContain('超时')
+    expect(handoff(state, { type: 'intervention', id: item.id }, late - 2).intervention.state).toBe('OPEN')
+  })
+
   it('quotes long board text clipped and marks it as data', () => {
     const state = blank()
     const p = newProject(state, 'SOFTWARE')
