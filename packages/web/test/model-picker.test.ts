@@ -786,14 +786,20 @@ it('lets the popover hug its content and aligns model and session rows in fixed 
   expect(rule('  .model-picker')).not.toContain('min-height')
   // Clip keeps the search row on screen: a scroll container here would scroll the panel itself.
   expect(rule('  .model-picker')).toMatch(/overflow: clip;/)
+  // The component writes the measured room to --model-picker-room; the viewport cap is only a guard.
+  expect(rule('  .model-picker')).toContain(
+    'max-height: min(calc(100dvh - 24px), var(--model-picker-room, 100dvh))',
+  )
+  expect(rule('  .model-picker')).not.toContain('100dvh - 120px')
   // The body shrinks; the list is the only scrolling child, and the text rows keep their height.
   expect(rule('  .model-picker-body')).toMatch(
     /display: flex;[\s\S]*flex-direction: column;[\s\S]*min-height: 0;/,
   )
-  expect(css).toMatch(/\.model-picker-search,\s*\.model-picker-help \{\s*flex: none;/)
-  expect(rule('  .model-picker-list')).toMatch(
-    /flex: 1 1 auto;[\s\S]*min-height: 0;[\s\S]*max-height: min\(17rem, calc\(100dvh - 21rem\)\)/,
+  expect(css).toMatch(
+    /\.model-picker-search,\s*\.model-picker-help,\s*\.model-picker-session \{\s*flex: none;/,
   )
+  expect(rule('  .model-picker-list')).toMatch(/flex: 1 1 auto;[\s\S]*min-height: 0;[\s\S]*overflow-y: auto;/)
+  expect(rule('  .model-picker-list')).not.toContain('max-height')
   expect(rule('  .model-picker-option')).toMatch(
     /display: grid;[\s\S]*grid-template-columns: minmax\(0, 1fr\) 2.75rem 1.25rem/,
   )

@@ -9,7 +9,15 @@ import {
   SettingsInput,
   type Translate,
 } from '@agnes/web-ui'
-import { type KeyboardEvent, type ReactElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type KeyboardEvent,
+  type ReactElement,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { SessionModelSettings } from './model-picker/session-settings.js'
 import {
   changedSlots,
@@ -34,6 +42,10 @@ const searchThreshold = 7
 const NO_MOTION = { motionName: '' }
 // Keep right-aligned panels inside narrow viewports.
 const PANEL_ALIGN = { overflow: { shiftX: true, adjustX: true, adjustY: true } }
+/** Gap kept between the panel and its trigger, and from the viewport edges. */
+const PANEL_GAP = 12
+/** Below this much room above the trigger, the panel opens downward when that side is roomier. */
+const PANEL_FLIP_BELOW = 320
 
 /**
  * Session model selector. The app keeps the confirmed model; this component owns only the
@@ -50,6 +62,41 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
   const refocus = useRef(false)
   const disabled = state.disabled || state.pending || state.options.length === 0
   const badge = thinkingBadge(state.settings, t)
+
+  // The panel hangs off a composer that sits mid-page on the new-session screen. Its height has to come
+  // from the room above the trigger rather than a viewport-wide budget, or a short window pushes the top
+  // of the panel (the search row) off-screen. The cap is measured on open and again on resize or scroll.
+  // It travels to the panel as a CSS custom property, so the layout itself stays in the stylesheet.
+  const [placement, setPlacement] = useState<'topRight' | 'bottomRight'>('topRight')
+  const [panelMaxHeight, setPanelMaxHeight] = useState<number>()
+  const panel = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const measure = (): void => {
+      const rect = trigger.current?.getBoundingClientRect()
+      if (!rect) return
+      const above = rect.top - PANEL_GAP
+      const below = window.innerHeight - rect.bottom - PANEL_GAP
+      const next = above < PANEL_FLIP_BELOW && below > above ? 'bottomRight' : 'topRight'
+      const room = next === 'topRight' ? above : below
+      setPlacement(next)
+      setPanelMaxHeight(Math.max(0, Math.min(room, window.innerHeight - PANEL_GAP * 2)))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    document.addEventListener('scroll', measure, true)
+    return () => {
+      window.removeEventListener('resize', measure)
+      document.removeEventListener('scroll', measure, true)
+    }
+  }, [open])
+  // The panel is destroyed on close, so re-apply the measured room whenever it is mounted again.
+  useLayoutEffect(() => {
+    const element = panel.current
+    if (!element) return
+    if (panelMaxHeight === undefined) element.style.removeProperty('--model-picker-room')
+    else element.style.setProperty('--model-picker-room', `${panelMaxHeight}px`)
+  }, [open, panelMaxHeight])
 
   // The host disables the button during requests; wait until it is enabled before restoring focus or focus falls to body.
   useEffect(() => {
@@ -69,7 +116,7 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
     <Popover
       open={open}
       trigger="click"
-      placement="topRight"
+      placement={placement}
       align={PANEL_ALIGN}
       arrow={false}
       destroyOnHidden={true}
@@ -82,7 +129,9 @@ export function ModelPickerControl(props: ModelPickerProps): ReactElement {
         // Outside clicks leave focus where the pointer went; Escape restores it in the shared popover.
         else if (!busy) close(false)
       }}
-      content={<ModelPanel {...props} t={t} close={close} onBusy={setBusy} />}
+      content={
+        <ModelPanel {...props} t={t} close={close} onBusy={setBusy} panelRef={panel} />
+      }
     >
       <Button
         ref={trigger}
@@ -116,6 +165,8 @@ type PanelProps = ModelPickerProps & {
   t: Translate
   close(returnFocus: boolean): void
   onBusy(busy: boolean): void
+  /** The panel writes its measured cap onto this element; CSS keeps the layout. */
+  panelRef: RefObject<HTMLElement>
 }
 
 function ModelPanel({
@@ -128,6 +179,7 @@ function ModelPanel({
   onError,
   close,
   onBusy,
+  panelRef,
 }: PanelProps): ReactElement {
   const [panel, setPanel] = useState<'thinking' | 'context' | 'auxiliary'>()
   const [auxiliary, setAuxiliary] = useState<SessionAuxiliarySnapshot>()
@@ -293,6 +345,7 @@ function ModelPanel({
       id="model-picker-popover"
       className="model-picker"
       role="dialog"
+      ref={panelRef}
       aria-label={panel ? titles[panel] : t('settings.modelPicker.aria')}
       onKeyDown={(event) => {
         if (event.defaultPrevented || event.nativeEvent.isComposing || !panel) return

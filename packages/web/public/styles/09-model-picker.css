@@ -61,7 +61,9 @@
     display: flex;
     flex-direction: column;
     width: min(23.25rem, calc(100vw - 48px));
-    max-height: calc(100dvh - 120px);
+    /* The component writes the room above the trigger to --model-picker-room; the viewport cap only
+       guards the first paint and a no-script document. A viewport-wide budget alone left the top off-screen. */
+    max-height: min(calc(100dvh - 24px), var(--model-picker-room, 100dvh));
     /* Clip, not hidden: `hidden` makes this a scroll container, and focusing an option then scrolls
        the panel itself, moving the search row back out of view. */
     overflow: clip;
@@ -78,7 +80,8 @@
   }
   /* Rows that keep their height while the list takes what is left. */
   .model-picker-search,
-  .model-picker-help {
+  .model-picker-help,
+  .model-picker-session {
     flex: none;
   }
   .model-picker-search {
@@ -94,7 +97,6 @@
   .model-picker-list {
     flex: 1 1 auto;
     min-height: 0;
-    max-height: min(17rem, calc(100dvh - 21rem));
     overflow-y: auto;
     outline: 0;
   }
