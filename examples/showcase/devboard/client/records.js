@@ -338,12 +338,15 @@ export function Changes({ data, board, role, setRole }) {
                 : '—',
             ),
             item.impact?.fleet &&
-              fact('在役影响', `${item.impact.fleet.doors} 扇门：${item.impact.fleet.plan}`),
+              fact(
+                '在役影响',
+                `${item.impact.fleet.doors} 扇门${item.impact.fleet.plan ? `：${item.impact.fleet.plan}` : ''}`,
+              ),
             fact('ECN', item.ecn),
             item.verification &&
               fact(
                 '验证',
-                `${item.verification.result}（${item.verification.by}，${time(item.verification.at)}${item.verification.trialId ? `，${item.verification.trialId}` : ''}）`,
+                `${item.verification.result === 'PASS' ? '通过' : '未通过'}（${item.verification.by}，${time(item.verification.at)}${item.verification.trialId ? `，${item.verification.trialId}` : ''}）`,
               ),
             fact('受影响需求', item.impact?.reqs?.join('、') || '—'),
             fact('受影响交付物', item.impact?.artifacts?.join('、') || '—'),
