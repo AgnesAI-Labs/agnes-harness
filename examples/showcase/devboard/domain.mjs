@@ -345,6 +345,13 @@ export function transition(state, input, now = Date.now()) {
   if (!MACHINES[kind] && kind !== 'retrofit') fail(`未知实体类型：${kind}`)
   if (kind === 'stage') return moveStage(state, find(state, 'stage', id), input, now)
   if (kind === 'retrofit') return setRetrofit(state, input, now)
+  // Without a move a problem saves its analysis fields: in VERIFYING the close goes through PROBLEM_CLOSE.
+  if (kind === 'problem' && to === undefined)
+    return upsertProblem(
+      state,
+      { id, by, rootCause: input.rootCause, noChangeReason: input.noChangeReason },
+      now,
+    )
   const item = find(state, kind, id)
   const from = effectiveState(item, kind, now)
   if (!MACHINES[kind][from]?.includes(to)) fail(`非法状态流转：${from} 不可流转至 ${to}`)

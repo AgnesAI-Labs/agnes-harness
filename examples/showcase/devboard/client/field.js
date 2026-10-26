@@ -1,4 +1,4 @@
-import { Badge, Button, PushPage, Select, Table } from '@agnes/web-ui'
+import { Badge, Button, Field, PushPage, Select, Table } from '@agnes/web-ui'
 import React from 'react'
 import { AnalysisFiles } from './analysis.js'
 import { ApprovalEntry } from './approvals.js'
@@ -479,6 +479,7 @@ export function Service({ data, board, role, setRole }) {
               { board, ...workOf('problemEightD', problem), guide: 'problem-agent-8d' },
               workOf('problemEightD', problem).label,
             ),
+          h(NoChangeReason, { key: problem.id, problem, board, role }),
           h(ApprovalEntry, { data, board, role, setRole, type: 'problem', id: problem.id }),
           h(TransitionBar, {
             key: problem.id,
@@ -488,13 +489,45 @@ export function Service({ data, board, role, setRole }) {
             board,
             role,
             hidden: ['CLOSED'],
-            fields: [
-              { key: 'rootCause', label: '根本原因（进入措施前必填）' },
-              { key: 'noChangeReason', label: '无需变更的理由（无关联变更时关闭必填）' },
-            ],
+            fields: [{ key: 'rootCause', label: '根本原因（进入措施前必填）' }],
           }),
           h(HistoryTable, { data, history: problem.history }),
         ),
       ),
+  )
+}
+
+/** Why a problem needs no design change, saved without a move: in VERIFYING the only move is back to ACTION. */
+function NoChangeReason({ problem, board, role }) {
+  const [reason, setReason] = React.useState('')
+  if (problem.changeId || problem.state === 'CLOSED') return null
+  const save = async () => {
+    const ok = await board.run(
+      'devboard.transition',
+      { kind: 'problem', id: problem.id, by: role, noChangeReason: reason.trim() },
+      `${problem.id} 已保存无需变更的理由`,
+    )
+    if (ok) setReason('')
+  }
+  return h(
+    'section',
+    { className: 'devboard-actions', 'aria-label': '无需变更的理由' },
+    h(
+      Field,
+      { label: '无需变更的理由（无关联变更时关闭必填）', htmlFor: `devboard-no-change-${problem.id}` },
+      h('input', {
+        id: `devboard-no-change-${problem.id}`,
+        className: 'devboard-note',
+        maxLength: 500,
+        placeholder: problem.noChangeReason ?? '',
+        value: reason,
+        onChange: (e) => setReason(e.target.value),
+      }),
+    ),
+    h(
+      'div',
+      { className: 'devboard-buttons' },
+      h(Button, { disabled: board.busy || !reason.trim(), onClick: save }, '保存理由'),
+    ),
   )
 }

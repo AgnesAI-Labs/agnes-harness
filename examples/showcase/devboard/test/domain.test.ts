@@ -1622,12 +1622,16 @@ describe('approval flows', () => {
         projectId: p.id,
         title: 'x',
         rootCause: 'r',
-        noChangeReason: '耗材',
         steps: { D4: { done: true }, D8: { done: true } },
       },
       NOW,
     )
     for (const to of ['ANALYZING', 'ACTION', 'VERIFYING']) upsertProblem(state, { id: qp.id, to }, NOW)
+    const close = { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: '质量工程师 韩雪' }
+    expect(() => submitApproval(state, close, NOW)).toThrow('noChangeReason')
+    // the page saves the reason without a move, in VERIFYING where the only move is back to ACTION
+    transition(state, { kind: 'problem', id: qp.id, by: '质量工程师', noChangeReason: '耗材' }, NOW)
+    expect(qp).toMatchObject({ state: 'VERIFYING', noChangeReason: '耗材' })
     const flow = submitApproval(
       state,
       { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: '质量工程师 韩雪' },
