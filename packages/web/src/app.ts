@@ -1395,7 +1395,12 @@ const sessionActions = createSessionActions({
   client,
   loopLabel: (id) => newSessionCatalog?.loops.find((loop) => loop.id === id)?.label,
   permissionOf: (id) => sessionRows.find((row) => row.sessionId === id)?.permission,
-  changed: () => list(),
+  // Pin/unpin move a row between groups; the full-list views read their own cache, so mark it
+  // stale as well, otherwise a pin only shows up after a page reload.
+  changed: () => {
+    sessionInventory.invalidate()
+    return list()
+  },
   renamed: (id, title) => {
     const row = sessionRows.find((item) => item.sessionId === id)
     if (row) {

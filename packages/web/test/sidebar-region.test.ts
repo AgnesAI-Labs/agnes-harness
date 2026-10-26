@@ -5,9 +5,8 @@ import { homeEntries, homeNavigation } from '@agnes/web-client'
 import { fireEvent, getByRole } from '@testing-library/dom'
 import { createElement } from 'react'
 import { flushSync } from 'react-dom'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { NavigationLabel, resetCollapsedGroups } from '../src/navigation.js'
+import { resetCollapsedGroups } from '../src/navigation.js'
 import { BUILTIN_HOME_ENTRIES } from '../src/pages/entries.js'
 import { SIDEBAR_SLOT } from '../src/region-slots.js'
 import { sessionInventory } from '../src/session-inventory.js'
@@ -320,6 +319,10 @@ describe('rendered sidebar region', () => {
       3,
     )
     expect(nav.querySelectorAll('.workspace-group.is-nested .workspace-heading')).toHaveLength(1)
+    // 每个折叠标题都靠标题后的箭头表达展开/收起。
+    expect(nav.querySelectorAll('.sidebar-section > .workspace-heading-row .workspace-chevron')).toHaveLength(
+      3,
+    )
     // 「工作区」标题不再是外壳那一行，工具条只剩搜索、视图与添加。
     expect(heading.querySelector('.section-label')).toBeNull()
     expect(heading.classList.contains('is-toolbar')).toBe(true)
@@ -953,16 +956,47 @@ describe('rendered sidebar region', () => {
   })
 })
 
-it.each([
-  '调查异常 AN-027 的全部追溯材料并完成质量审阅与证据整理 AN-027',
-  '/workspace/very-long-shared-parent/industry/production/quality-017',
-  '调查偏差 DEV-2410-017 的根因和全部历史追溯材料并整理结果',
-])('keeps both ends of a long navigation label: %s', (text) => {
-  const host = document.createElement('div')
-  host.innerHTML = renderToStaticMarkup(createElement(NavigationLabel, { text }))
-  expect(host.querySelector('[title]')?.getAttribute('title')).toBe(text)
-  expect(host.textContent).toBe(text)
-  expect(host.querySelector('.navigation-label-object, .navigation-label-end')?.textContent).toContain(
-    text.includes('DEV-2410-017') ? 'DEV-2410-017' : text.endsWith('017') ? '017' : 'AN-027',
-  )
+describe('long session titles', () => {
+  let runtime: Awaited<ReturnType<typeof mountRenderedIndex>> | undefined
+
+  afterEach(async () => {
+    await runtime?.dispose()
+    runtime = undefined
+    resetWebDom()
+    resetCollapsedGroups()
+    sidebarOrder.reset()
+    sessionInventory.reset()
+    sidebarGrouping.reset()
+    vi.unstubAllGlobals()
+  })
+
+  it('renders a long session title as one text node, truncated at the tail by CSS', async () => {
+    const longTitle = '调查异常 AN-027 的全部追溯材料并完成质量审阅与证据整理 AN-027'
+    runtime = await mountRenderedIndex({
+      sidebar: {
+        state: {
+          sessions: [{ ...session('long', '/workspace'), title: longTitle }],
+          workspaces: [workspace('/workspace', '主工作区')],
+          labels: new Map(),
+          currentId: 'long',
+          runtimePlatform: 'win32',
+          sessionPending: false,
+          newDisabled: false,
+        },
+        actions: {
+          openSession: vi.fn(),
+          sessionAction: vi.fn(),
+          newSession: vi.fn(),
+          addWorkspace: vi.fn(),
+          openSettings: vi.fn(),
+        },
+      },
+    })
+    const button = document.querySelector<HTMLButtonElement>('[data-session="long"]')
+    expect(button?.getAttribute('title')).toBe(longTitle)
+    const title = button?.querySelector('.session-title')
+    expect(title?.textContent).toBe(longTitle)
+    // 尾部省略交给行级 text-overflow；不再拆「前段 + 末 10 字」两段。
+    expect(title?.querySelector('.navigation-label, .navigation-label-start')).toBeNull()
+  })
 })

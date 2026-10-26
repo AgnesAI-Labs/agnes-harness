@@ -33,25 +33,3 @@ export function workspaceLabel(workspace: WorkspaceEntry): string {
     workspace.name.trim() || workspace.path.split(/[\\/]/).filter(Boolean).at(-1)?.trim() || workspace.path
   )
 }
-
-/** Keep both the action and the distinguishing suffix visible in a narrow navigation row. */
-export function NavigationLabel({ text }: { text: string }) {
-  const points = Array.from(text)
-  if (points.length <= 12) return <>{text}</>
-  const object = /\b[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d+[A-Z0-9-]*\b/u.exec(text)
-  return (
-    <span className="navigation-label" title={text} data-identifier={object ? 'true' : undefined}>
-      <span className="navigation-label-start">
-        {object ? text.slice(0, object.index) : points.slice(0, -10).join('')}
-      </span>
-      {object ? (
-        <>
-          <span className="navigation-label-object">{object[0]}</span>
-          <span className="navigation-label-after">{text.slice(object.index + object[0].length)}</span>
-        </>
-      ) : (
-        <span className="navigation-label-end">{points.slice(-10).join('')}</span>
-      )}
-    </span>
-  )
-}

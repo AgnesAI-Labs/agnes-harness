@@ -156,7 +156,7 @@
     flex: 1;
     display: grid;
     align-content: start;
-    gap: var(--s4);
+    gap: var(--s16);
     /* flex:1 + min-height:0 会把列表压进剩余空间；不裁 overflow 时多出来的行
      直接画到下面的「设置」行上。列表自己滚动，footer 才能钉在底部。 */
     overflow-y: auto;
@@ -198,6 +198,8 @@
     min-height: 2rem;
     gap: 0.375rem;
     justify-content: flex-start;
+    /* 所有标题都从行内内边距起排：分区标题放文字，项目标题把文件夹图标放进这一列，
+       文字因此自然缩进一档。 */
     padding: 0 var(--s8);
     border-color: transparent;
     border-radius: var(--radius-control);
@@ -208,10 +210,36 @@
     line-height: 1.25rem;
     transition: none;
   }
+  /* 三个分区标题没有前置图标，折叠状态由标题后的深灰箭头表达：收起指右，展开转 90° 指下。
+     项目标题仍用文件夹的开/合字形表意。 */
+  .workspace-chevron {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 auto;
+    color: var(--agnes-text-secondary);
+    stroke-width: 2;
+  }
+  .workspace-heading[aria-expanded="true"] .workspace-chevron {
+    rotate: 90deg;
+  }
+  /* 侧栏行是导航项，不做整行按压缩放：0.97 的 scale 会让标题文字在按下时左右抖一下。 */
+  :is(.workspace-heading, .session):active:not(:disabled) {
+    scale: none;
+    filter: none;
+  }
+  /* 三个分区标题是列表里的分组标签：颜色压到三级灰，和下面的会话标题区分开。 */
+  .sidebar-section > .workspace-heading-row .workspace-heading {
+    color: var(--agnes-text-tertiary);
+  }
   /* 底色由整行承担：通用 button:hover 会给标题按钮补一圈描边和一块比行短的底色。 */
   .workspace-heading:hover:not(:disabled) {
     border-color: transparent;
     background: transparent;
+  }
+  /* 分组列表里会话行单独一档（文字 51px）：分区标题文字 19px，项目标题的图标也起在 19px、
+     文字落到 43px。层级靠缩进，不靠图标。 */
+  .sidebar-section-body .session {
+    padding-left: 2.5rem;
   }
   /* The folder's new-session action appears with the pointer or keyboard focus; touch has no
      hover, so the narrow drawer keeps it visible. */
@@ -266,13 +294,35 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .workspace-sessions[hidden] {
-    display: none;
+  /* 折叠用高度过渡而不是直接消失：内容常驻，收起的 body 高度归零后由 allow-discrete
+     再把 display 切到 none，展开时从 @starting-style 的 0 高度长出来。 */
+  @media (prefers-reduced-motion: no-preference) {
+    .workspace-sessions,
+    .sidebar-section-body {
+      interpolate-size: allow-keywords;
+      overflow: clip;
+      transition:
+        height var(--transition),
+        opacity var(--transition),
+        display var(--transition) allow-discrete;
+    }
+    .workspace-sessions[hidden],
+    .sidebar-section-body[hidden] {
+      height: 0;
+      opacity: 0;
+    }
+    @starting-style {
+      .workspace-sessions:not([hidden]),
+      .sidebar-section-body:not([hidden]) {
+        height: 0;
+        opacity: 0;
+      }
+    }
   }
   /* A folder can hold no session yet: say so on the same indent as a row title, small and muted,
      so it reads as a note about the folder instead of a session written in body text. */
   .session-group-empty {
-    margin: var(--s2) 0 var(--s4) 1.375rem;
+    margin: var(--s2) 0 var(--s4) 2rem;
     padding: 0 var(--s8);
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
@@ -326,30 +376,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .navigation-label {
-    display: flex;
-    min-width: 0;
-    max-width: 100%;
-  }
-  .navigation-label-start,
-  .navigation-label-after {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .navigation-label[data-identifier] .navigation-label-start {
-    min-width: 3em;
-  }
-  .navigation-label-start:empty {
-    display: none;
-  }
-  .navigation-label-object,
-  .navigation-label-end {
-    flex: none;
-    overflow: hidden;
-    white-space: nowrap;
-  }
   /* An empty list teaches the next step in the space the list will fill. */
   .session-list-empty {
     padding: var(--s24) var(--s8);
@@ -361,7 +387,7 @@
     align-items: center;
     justify-content: center;
     width: 1.5rem;
-    margin-right: var(--s4);
+    margin-right: var(--s8);
     opacity: 0;
     pointer-events: none;
   }
@@ -468,7 +494,7 @@
   .session-list-toggle.agh-btn {
     height: 1.625rem;
     min-height: 1.625rem;
-    margin: var(--s2) 0 var(--s4) 1.375rem;
+    margin: var(--s2) 0 var(--s4) 2rem;
     padding: 0 var(--s8);
     border-radius: var(--radius-control);
     color: var(--agnes-text-tertiary);
@@ -503,16 +529,11 @@
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s4);
   }
-  .sidebar-section-body[hidden] {
-    display: none;
-  }
-  /* Inside 工作区 a project heading is indented one level; the hover surface still fills the row. */
-  .workspace-heading-row.is-nested .workspace-heading {
-    padding-left: calc(var(--s8) + 1rem);
-  }
-  /* The heading name itself is the drag source; the cursor is the only affordance it needs. */
+
+  /* The heading name is the drag source, but a plain hover still reads as a button:
+     the drag cursor only appears once the pointer is held down. */
   .workspace-heading[draggable="true"] {
-    cursor: grab;
+    cursor: pointer;
   }
   .workspace-heading[draggable="true"]:active {
     cursor: grabbing;

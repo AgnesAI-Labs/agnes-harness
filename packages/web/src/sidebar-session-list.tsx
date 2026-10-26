@@ -122,20 +122,18 @@ function SessionGroupBody({
   const renderRow = rowItem ?? pagedItem
   return (
     <div id={listId} className="workspace-sessions" hidden={collapsed} aria-busy={page?.loading}>
-      {!collapsed && rows.length > 0 && (
+      {rows.length > 0 && (
         <Conversations
           className="session-conversations"
           {...(options.currentId ? { activeKey: options.currentId } : {})}
           items={shown.map(renderRow)}
         />
       )}
-      {!collapsed && page && (
+      {page && (
         <>
-          {page.loading && !page.loaded && <p role="status">{t('nav.loading')}</p>}
-          {!page.ready && <p role="status">{t('nav.initializing')}</p>}
-          {!page.loading && (page.error || page.stale) && (
-            <p role={page.error ? 'alert' : 'status'}>
-              {page.error ?? t('nav.updated')}{' '}
+          {!page.loading && page.error && (
+            <p role="alert">
+              {page.error}{' '}
               <Button
                 size="small"
                 disabled={page.loading}
@@ -150,7 +148,7 @@ function SessionGroupBody({
           )}
         </>
       )}
-      {!collapsed && toggleable && (
+      {toggleable && (
         <Button
           appearance="ghost"
           className="session-list-toggle"
@@ -434,7 +432,6 @@ function GroupedSections({
             <SidebarSectionHeading
               name={section.title}
               title={section.title}
-              icon={section.icon}
               collapsed={collapsed}
               listId={listId}
               actions={
@@ -471,7 +468,7 @@ function GroupedSections({
               onToggle={() => toggleSection(section)}
             />
             <div id={listId} className="sidebar-section-body" hidden={collapsed}>
-              {!collapsed && section.group && (
+              {section.group && (
                 <SessionGroupBody
                   options={options}
                   t={t}
@@ -483,7 +480,7 @@ function GroupedSections({
                   preSorted={preSorted}
                 />
               )}
-              {!collapsed && section.groups.map(renderProject)}
+              {section.groups.map(renderProject)}
             </div>
           </section>
         )

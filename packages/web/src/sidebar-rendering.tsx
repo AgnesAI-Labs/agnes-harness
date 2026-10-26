@@ -6,7 +6,7 @@ import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, 
 import { navigationHistory } from './navigation-history.js'
 import { SessionMenu } from './session-menu.js'
 import { isLeadingKind, type Row, type SessionGroupView } from './sidebar-groups.js'
-import { FolderIcon, NavigationLabel, workspaceLabel } from './sidebar-label.js'
+import { workspaceLabel } from './sidebar-label.js'
 import { type DropPosition, type SidebarSectionId, workspaceKey } from './sidebar-order.js'
 
 /** The workspace a row belongs to, and the name it goes by in a flat list or a search. */
@@ -65,9 +65,7 @@ export function SessionRowLabel({
         onClick={() => options.open(row.sessionId)}
       >
         {running && <span className="session-running" role="img" aria-label={t('nav.running')} />}
-        <span className="session-title">
-          <NavigationLabel text={title} />
-        </span>
+        <span className="session-title">{title}</span>
         {workspaceName && <span className="session-workspace-label">{workspaceName}</span>}
         {pinnedMark && <Icon name="pin" className="session-pin-mark" />}
         {archived && (
@@ -119,9 +117,11 @@ export type HeadingDrag = {
 }
 
 /**
- * One heading row for a section or a project: drag handle, icon, name, fold, and the right-side
- * actions. Sections and projects share the row and title classes so they read as one family;
- * a project adds `is-nested` for its extra indent.
+ * One heading row for a section or a project: name, fold control, and the right-side actions.
+ * Sections and projects share the row and title classes so they read as one family; a project
+ * adds `is-nested` for its extra indent and keeps its folder icon, whose open/closed shape is
+ * the fold state. The three section headings show no icon, so a chevron after the name carries
+ * their fold state instead.
  */
 export function SidebarSectionHeading({
   name,
@@ -138,7 +138,8 @@ export function SidebarSectionHeading({
 }: {
   name: string
   title: string
-  icon: ReactNode
+  /** A project's folder glyph; section headings have none and use the chevron instead. */
+  icon?: ReactNode
   collapsed: boolean
   listId: string
   onToggle(): void
@@ -170,9 +171,8 @@ export function SidebarSectionHeading({
         onKeyDown={onKeyDown}
       >
         {icon}
-        <span className="workspace-name">
-          <NavigationLabel text={name} />
-        </span>
+        <span className="workspace-name">{name}</span>
+        {!icon && <Icon name="chevron-right" className="workspace-chevron" />}
       </Button>
       {actions}
     </div>
@@ -188,7 +188,6 @@ export const untitled = (options: SidebarNavigationOptions, t: Translate, row: R
 export type SidebarSectionView = {
   id: SidebarSectionId
   title: string
-  icon: ReactNode
   /** The pinned or chats group rendered directly under the section heading. */
   group?: SessionGroupView
   /** The project groups inside the workspace section. */
@@ -225,7 +224,6 @@ export function sectionViews(
     sections.push({
       id: 'pinned',
       title: t('nav.pinned'),
-      icon: <Icon name="pin" className="icon icon-pinned" />,
       group: pinned,
       groups: [],
     })
@@ -233,7 +231,6 @@ export function sectionViews(
     sections.push({
       id: 'chats',
       title: t('nav.chats'),
-      icon: <Icon name="message-square" className="icon icon-chats" />,
       group: chats,
       groups: [],
     })
@@ -241,7 +238,6 @@ export function sectionViews(
     sections.push({
       id: 'workspaces',
       title: t('sidebar.sectionHeading'),
-      icon: <FolderIcon className="icon icon-folder" />,
       groups: projects,
     })
   return sections

@@ -71,8 +71,7 @@
     justify-content: flex-start;
     gap: 0.375rem;
     overflow: hidden;
-    /* 左侧 30px = 工作区标题的文字 x（行内 8 + 文件夹图标 16 + 间距 6）：
-     会话标题与工作区名落在同一条竖线上，"会话嵌在工作区下"的层级靠这条缩进表达。 */
+    /* 单列表视图没有分区标题可对齐，行按行内 30px 起排；分组列表在侧栏样式里再进一档。 */
     padding: 0 var(--s8) 0 1.875rem;
     border-color: transparent;
     border-radius: var(--radius-control);

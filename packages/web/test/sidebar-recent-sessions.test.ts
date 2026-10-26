@@ -180,13 +180,14 @@ describe('recent sessions per workspace', () => {
         expect(ui.snapshot().groups[0]?.next).toBe('fresh-cursor')
       } else {
         expect(nav.textContent).toContain('Failed')
-        expect(nav.textContent).toContain(zhT('nav.reload'))
+        // 摘要读取失败时由列表工具条给「重试」；页面读取失败才落到分组的「重新加载」。
+        expect(nav.textContent).toContain(zhT(outcome === 'summary failure' ? 'nav.retry' : 'nav.reload'))
         expect(nav.querySelector('[data-testid="workspace-sessions-toggle"]')).toBeNull()
       }
     },
   )
   it.each(['win32', 'darwin'] as const)(
-    'renders quiet server pages on %s and unmounts a closed group',
+    'renders quiet server pages on %s and hides a closed group',
     (runtimePlatform) => {
       const nav = document.createElement('nav')
       document.body.append(nav)
@@ -249,13 +250,15 @@ describe('recent sessions per workspace', () => {
       expect(titles(nav)).toHaveLength(5)
       group.loading = false
       flushSync(draw)
-      expect(nav.querySelector('[role="status"]')?.textContent).toContain(zhT('nav.updated'))
+      // stale 不再提示「列表已更新」：分页层会自己重读首页。
+      expect(nav.querySelector('[role="status"]')).toBeNull()
       group.stale = false
       group.loaded = false
       group.items = []
       group.loading = true
       flushSync(draw)
-      expect(nav.querySelector('[role="status"]')?.textContent).toBe(zhT('nav.loading'))
+      // 展开收起时不再闪一条「正在加载会话…」，加载态只体现在 aria-busy 上。
+      expect(nav.querySelector('[role="status"]')).toBeNull()
       group.loading = false
       group.error = 'Failed'
       flushSync(draw)
@@ -424,7 +427,9 @@ describe('recent sessions per workspace', () => {
       if (!pinnedSection) throw new Error('the pinned section did not render')
       expect(pinnedSection.querySelector('.workspace-name')?.textContent).toBe('置顶')
       expect(pinnedSection.querySelector('.workspace-heading')?.getAttribute('title')).toBe('置顶')
-      expect(pinnedSection.querySelector('.icon-pinned')).not.toBeNull()
+      // 分区标题不再带前置图标，折叠状态由标题后的箭头表达。
+      expect(pinnedSection.querySelector('.icon-pinned')).toBeNull()
+      expect(pinnedSection.querySelector('.workspace-chevron')).not.toBeNull()
       expect(pinnedSection.querySelector('.workspace-menu-trigger')).toBeNull()
       expect(titles(pinnedSection)).toEqual(['会话 3'])
       // 置顶已移出工作区分区。

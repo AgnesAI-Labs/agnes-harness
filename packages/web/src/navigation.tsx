@@ -13,7 +13,7 @@ import { InventorySessions, WorkspaceSessions } from './sidebar-session-list.js'
 // `sidebar-label.tsx`; these names stay here so existing importers keep working.
 export { resetCollapsedGroups, resetExpandedGroups } from './sidebar-collapse.js'
 export { RECENT_SESSIONS, shownSessions } from './sidebar-groups.js'
-export { NavigationLabel, workspaceLabel } from './sidebar-label.js'
+export { workspaceLabel } from './sidebar-label.js'
 
 const DAY_MS = 86_400_000
 

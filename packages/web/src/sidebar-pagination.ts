@@ -151,7 +151,8 @@ export function createSidebarPagination(
           if (group.stale || group.revision !== item.revision) {
             invalidate(group)
             group.stale = true
-            if (group.opened && group.items.length <= 5 && item.ready) reload.push(group)
+            // 列表变了就替用户重读首页：展开的多页列表收回到首页，不再让人点「重新加载」。
+            if (group.opened && item.ready) reload.push(group)
           }
           // Counts alongside retained multi-page rows belong to that page's snapshot.
           const total = group.stale && group.items.length > 5 ? group.total : item.total
@@ -263,7 +264,11 @@ export function createSidebarPagination(
       } else if (action === 'reload') {
         invalidate(group)
         await load(group)
-      } else await load(group, action === 'more' || (!group.stale && group.retryAppend === true))
+      } else {
+        await load(group, action === 'more' || (!group.stale && group.retryAppend === true))
+        // 追加页遇到过期游标时同样自动重读首页，不把「请重新加载」抛给用户。
+        if (group.stale && group.opened) await load(group)
+      }
     },
     /** A locally persisted message must fence a page already in flight before the summary arrives. */
     invalidateSession(

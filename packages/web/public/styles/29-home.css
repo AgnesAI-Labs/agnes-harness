@@ -376,6 +376,11 @@
     opacity: 0;
     pointer-events: none;
   }
+  /* 「取消归档」与行尾的「…」同一字号：IconButton 默认 18px 图标，靠这一条压到 16px。 */
+  .session-restore .icon {
+    width: var(--s16);
+    height: var(--s16);
+  }
   .session-row:hover .session-restore,
   .session-row:focus-within .session-restore,
   .session-restore[aria-busy="true"] {

@@ -333,29 +333,28 @@ it('opens the created session group without rereading a freshly loaded first pag
   expect(s.ui.snapshot().groups[1]).toMatchObject({ opened: true, loaded: true, loading: false })
 })
 
-it('refreshes a first page but keeps multiple pages until an explicit reload after changes', async () => {
+it('rereads the first page when a revision change lands on a group showing more than one page', async () => {
   const s = setup()
   await s.ui.refresh()
   await s.ui.action('a', 'more')
-  s.revision('v2')
-  await s.ui.refresh()
-  expect(s.ui.snapshot().groups[0]).toMatchObject({ stale: true, next: '10' })
   expect(s.ui.rows()).toHaveLength(10)
-  expect(s.list).toHaveBeenCalledTimes(2)
-  s.ui.patch({ ...row(7), title: 'Renamed', titleSource: 'user' })
-  expect(s.ui.snapshot().groups[0]?.stale).toBe(true)
-  expect(s.ui.rows()[7]?.title).toBe('Renamed')
-  await s.ui.action('a', 'more')
-  expect(s.list).toHaveBeenCalledTimes(2)
-  await s.ui.action('a', 'reload')
-  expect(s.ui.rows()).toHaveLength(5)
-  expect(s.ui.snapshot().groups[0]).toMatchObject({ stale: false, revision: 'v2' })
-  s.revision('v3')
+  s.revision('v2')
+  // 不弹「重新加载」：分组自己重读首页，多页列表收回到「首页 + 展开显示」。
   await s.ui.refresh()
-  expect(s.ui.snapshot().groups[0]).toMatchObject({ stale: false, revision: 'v3' })
+  expect(s.ui.rows()).toHaveLength(5)
+  expect(s.ui.snapshot().groups[0]).toMatchObject({ stale: false, revision: 'v2', next: '5' })
+  expect(s.list).toHaveBeenCalledTimes(3)
+})
+
+it('recovers from a stale cursor by rereading the first page instead of asking for a reload', async () => {
+  const s = setup()
+  await s.ui.refresh()
+  await s.ui.action('a', 'more')
   s.list.mockRejectedValueOnce({ data: { code: 'SESSION_SIDEBAR_CURSOR_STALE' } })
   await s.ui.action('a', 'more')
-  expect(s.ui.snapshot().groups[0]?.stale).toBe(true)
+  expect(s.ui.rows()).toHaveLength(5)
+  expect(s.ui.snapshot().groups[0]).toMatchObject({ stale: false, loading: false })
+  expect(s.list).toHaveBeenLastCalledWith({ sidebar: { groupId: 'a' }, limit: 5 })
 })
 
 it('fences in-flight pages on reconnect and local messages without replacing manual selection', async () => {
