@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { constants, lstatSync, readdirSync, readFileSync, type Stats, statSync } from 'node:fs'
 import * as asyncFs from 'node:fs/promises'
@@ -80,7 +81,19 @@ function treeSignature(
   return hash.digest('hex')
 }
 
+const freshDigests = new AsyncLocalStorage<true>()
+
+/**
+ * Hash every tree in full for the duration of `action`, without consulting digests reused by file
+ * metadata. Write gates (a new runtime generation archive) run here so their verdict never rests on
+ * an earlier observation of the same metadata; what they hash may still be remembered for reads.
+ */
+export function withFreshDigests<T>(action: () => T): T {
+  return freshDigests.run(true, action)
+}
+
 function knownDigest(key: string, root: Readonly<{ dev: number; ino: number }>, signature: string) {
+  if (freshDigests.getStore()) return undefined
   const known = knownTrees.get(key)
   return known && known.dev === root.dev && known.ino === root.ino && known.signature === signature
     ? known.digest

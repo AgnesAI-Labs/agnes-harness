@@ -35,7 +35,12 @@ import { checkCancelled } from './ports.js'
 import { fetchNpmProvenance } from './provenance.js'
 import { claimFetch, readyStage } from './staging.js'
 
-export { forgetDirectoryDigests, hashDirectory, hashDirectoryAsync } from './directory-digest.js'
+export {
+  forgetDirectoryDigests,
+  hashDirectory,
+  hashDirectoryAsync,
+  withFreshDigests,
+} from './directory-digest.js'
 
 export type PackageSource = {
   type: 'npm' | 'git' | 'file' | 'workspace' | 'market' | 'local' | 'path' | 'url'

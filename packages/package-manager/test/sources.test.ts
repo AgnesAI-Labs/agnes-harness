@@ -29,6 +29,7 @@ import {
   hashDirectoryAsync,
   packageDir,
   parseSource,
+  withFreshDigests,
 } from '../src/sources.js'
 import { invalidatePackageVerification, withoutPackageVerification } from '../src/verification-operation.js'
 
@@ -212,6 +213,20 @@ describe('hashDirectory', () => {
     expect(hashDirectory(root)).toBe(touched)
     invalidatePackageVerification()
     expect(hashDirectory(root)).toBe(grown)
+  })
+
+  it('hashes in full inside a write gate, even where a reused digest would hide an edit', async () => {
+    const file = join(root, 'payload'),
+      old = 1_700_000_000
+    writeFileSync(file, 'first')
+    utimesSync(file, old, old)
+    const first = hashDirectory(root)
+    writeFileSync(file, 'xxxxx')
+    utimesSync(file, old, old)
+    expect(hashDirectory(root)).toBe(first)
+    const fresh = withFreshDigests(() => hashDirectory(root))
+    expect(fresh).not.toBe(first)
+    expect(await withFreshDigests(() => hashDirectoryAsync(root))).toBe(fresh)
   })
 
   it('keeps digests across a routine write boundary', () => {
