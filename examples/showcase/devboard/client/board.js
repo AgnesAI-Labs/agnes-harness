@@ -141,6 +141,8 @@ export function useDetail() {
  */
 export function useLens(role, data, scope) {
   const [state, setState] = React.useState({ role, all: false })
+  // Adjusting state while rendering: a role change drops the old choice, so coming back to a role starts at "mine".
+  if (state.role !== role) setState({ role, all: false })
   const all = state.role === role && state.all
   const setAll = (next) => setState({ role, all: next })
   const concerns = (kind) => (item) => relevant(role, kind, item, data)

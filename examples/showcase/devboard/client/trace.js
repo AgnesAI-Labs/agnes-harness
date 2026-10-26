@@ -33,6 +33,8 @@ function TraceMatrix({ data, projectId, role, lens }) {
   const reqs = data.reqs.filter((r) => r.projectId === projectId)
   const shown = lens.pick('req', reqs)
   // Until a level is picked the matrix opens on the first level that has records for the role.
+  // Adjusting state while rendering: a role change drops the picked level, so coming back starts afresh.
+  if (picked.role !== role) setPicked({ role, level: '' })
   const level =
     (picked.role === role && picked.level) ||
     ['SWR', 'CUS', 'SYS', 'DES', 'TC'].find((l) => shown.some((r) => r.level === l)) ||

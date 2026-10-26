@@ -281,6 +281,8 @@ export function Panorama({ data, role: demoRole }) {
   // The blocker role filter starts at the demo role (none when it has no blockers) and again when the demo role changes.
   const fallback = blockers.some((b) => b.role === demoRole) ? demoRole : ''
   const [picked, setPicked] = React.useState({ demo: demoRole, role: fallback })
+  // Adjusting state while rendering: leaving a demo role drops its pick, so coming back to it starts at the demo role.
+  if (picked.demo !== demoRole) setPicked({ demo: demoRole, role: fallback })
   const role = picked.demo === demoRole ? picked.role : fallback
   const setRole = (next) => setPicked({ demo: demoRole, role: next })
   const [open, setOpen] = React.useState({})
