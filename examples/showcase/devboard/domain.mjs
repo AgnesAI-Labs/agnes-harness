@@ -299,9 +299,9 @@ const stageLabel = (state, stage) => {
   return (project && profileOf(project)[stage.stage]?.label) || LABELS.stage[stage.stage] || stage.stage
 }
 function record(item, at, by, from, to, note) {
-  item.history = [...(item.history ?? []), { at, by, from, to, ...(note ? { note } : {}) }].slice(
-    -HISTORY_LIMIT,
-  )
+  const all = [...(item.history ?? []), { at, by, from, to, ...(note ? { note } : {}) }]
+  // The first line (who created it, and when) stays: approval rights and timelines read it.
+  item.history = all.length > HISTORY_LIMIT ? [all[0], ...all.slice(1 - HISTORY_LIMIT)] : all
   item.state = to
 }
 

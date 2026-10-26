@@ -722,6 +722,10 @@ describe('faults and quality problems', () => {
     // a note without a move stays in the history, as one with a move does
     upsertProblem(state, { id: qp.id, steps: { D4: { done: true } }, note: '围堵已完成' }, NOW)
     expect(qp.history.at(-1)).toMatchObject({ from: 'ANALYZING', to: 'ANALYZING', note: '围堵已完成' })
+    // the history is capped, but the creation line stays
+    for (let i = 0; i < 40; i++) upsertProblem(state, { id: qp.id, note: `记录 ${i}` }, NOW)
+    expect(qp.history).toHaveLength(30)
+    expect(qp.history[0]).toMatchObject({ to: 'OPEN', note: '登记' })
     upsertProblem(state, { id: qp.id, to: 'ACTION' }, NOW)
     upsertProblem(state, { id: qp.id, to: 'VERIFYING' }, NOW)
     const close = () => submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW)
