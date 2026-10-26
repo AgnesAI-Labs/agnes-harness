@@ -326,6 +326,9 @@ test('session terminal survives UI detachment, follows agent output and honors p
   ).toContainText('AGENT_END')
   await expect(panel.getByTestId('terminal-kill')).toHaveCount(0)
   await panel.getByRole('button', { name: 'Stop following', exact: true }).click()
+  // The dock starts no shell for the person until they ask for one.
+  await expect(panel.getByTestId('terminal-tab')).toHaveCount(0)
+  await panel.getByTestId('terminal-new').click()
   await expect(panel.getByTestId('terminal-tab')).toHaveCount(1)
   await panel.getByTestId('terminal-tab').first().click()
   const output = panel.getByTestId('workbench-terminal-output')
