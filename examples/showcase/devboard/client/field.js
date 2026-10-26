@@ -45,7 +45,12 @@ function DraftChange({ trial, board, role }) {
         by: role,
         projectId: trial.projectId,
         title: `${trial.id} 不合格：设计变更`,
-        reason: `${trial.title}（${trial.standard}）试验不合格，报告 ${trial.reportNo ?? '—'}。${(trial.deviations ?? []).join('；')}`,
+        // The server accepts at most 2000 characters; long deviation lists are cut.
+        reason:
+          `${trial.title}（${trial.standard}）试验不合格，报告 ${trial.reportNo ?? '—'}。${(trial.deviations ?? []).join('；')}`.slice(
+            0,
+            2000,
+          ),
         source: { type: 'TYPE_TEST', ref: trial.id },
       },
       `${trial.id} 已起草变更，请在「变更」页补齐失效原因分析与影响分析`,
