@@ -26,6 +26,7 @@ import {
   pageVisible,
 } from './app/global-events.js'
 import { createReadOnlyController } from './app/read-only-controller.js'
+import { SessionActivityView } from './app/session-activity.js'
 import { createSessionController } from './app/session-controller.js'
 import { SessionBindingOwner } from './app/session-owner.js'
 import { createSubmissionController } from './app/submission-controller.js'
@@ -39,6 +40,7 @@ import type {
   ConfigSnapshot,
   ModelSettings,
   PageSessionMeta,
+  SessionActivity,
   UITimeline,
   UITurn,
   WorkspaceEntry,
@@ -147,6 +149,7 @@ export interface AppSessionContext {
   controlsHistory: typeof controlsHistory
   conversationRuntime: typeof conversationRuntime
   readonly submissions: SubmissionOwner
+  readonly sessionActivity: SessionActivityView
   readonly sessionBinding: Pick<SessionBindingOwner, 'capture' | 'isCurrent' | 'targetId'>
   readonly current: Session | undefined
   dockControlsHost: typeof dockControlsHost
@@ -228,7 +231,9 @@ export interface AppSessionContext {
 }
 const sessionBinding = new SessionBindingOwner()
 const submissions = new SubmissionOwner(sessionBinding)
+const sessionActivity = new SessionActivityView()
 const appSessionContext: AppSessionContext = {
+  sessionActivity,
   invalidateSessionRuntime: (id) => sessionActions.invalidateRuntime(id),
   sessionBinding,
   submissions,
@@ -971,6 +976,18 @@ const clientModules = await startClientModules({
   },
   rosterSource,
 })
+// The session list shows every session the daemon reports running or waiting for its owner, and
+// marks a turn that ended while another session was on screen.
+sessionActivity.subscribe(() => {
+  clientModules.sidebar?.setRunning(sessionActivity.running())
+  clientModules.sidebar?.setMarks(sessionActivity.marks())
+})
+const readSessionActivity = () =>
+  client.session
+    .activity()
+    .then((result) => sessionActivity.reset(result.items))
+    .catch(() => undefined)
+void readSessionActivity()
 const tracePanel = clientModules.trace as NonNullable<typeof clientModules.trace>
 if (!tracePanel) throw new Error('missing trace region')
 // Every «View in trace» link (requests, tools, changes, deliverables, feedback) opens the trace.
@@ -2162,6 +2179,8 @@ const stopConnectionEvents = bindConnectionEvents(appSessionContext, {
   reconnect,
   setConnection,
   async refresh() {
+    // Notices sent while the connection was down are lost; the daemon's current state replaces them.
+    void readSessionActivity()
     await modelRefresh.request()
     await list(undefined, true)
     scheduleClientRosterRead()
@@ -2196,6 +2215,11 @@ const packageNotices = coalesceBurst(() => {
 // Roster invalidation push: packages_changed is only a hint; reread the roster on receipt.
 client.on('notice', (payload) => {
   const incoming = payload as { kind?: unknown; detail?: unknown }
+  if (incoming.kind === 'session_activity') {
+    const detail = incoming.detail as SessionActivity | undefined
+    if (detail?.sessionId && detail.state) sessionActivity.apply(detail)
+    return
+  }
   if (incoming.kind === 'automation_attention') {
     notice.setKind('warning')
     notice.setText(() => t('app.automation.needsAttention'))

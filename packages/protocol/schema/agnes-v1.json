@@ -3185,6 +3185,7 @@
                 "job_dispatched",
                 "job_dead",
                 "automation_attention",
+                "session_activity",
                 "shutting_down"
               ]
             },
@@ -5845,6 +5846,28 @@
         "cursor": { "type": "string", "maxLength": 4096 },
         "limit": { "type": "integer", "minimum": 1, "maximum": 5 }
       }
+    },
+    "SessionActivityParams": { "type": "object", "additionalProperties": false, "properties": {} },
+    "SessionActivity": {
+      "description": "A session's run state as the daemon last saw it. waiting: an approval or a question waits for the owner. reason: how the last turn ended, while not running.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "state"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "state": { "enum": ["running", "waiting", "idle"] },
+        "waiting": { "enum": ["approval", "question"] },
+        "reason": {
+          "enum": ["completed", "aborted", "error", "parked", "blocked", "budget", "max_steps", "interrupted"]
+        }
+      }
+    },
+    "SessionActivityResult": {
+      "description": "Running and waiting sessions the caller owns; every other session is idle.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/SessionActivity" } } }
     },
     "SessionGroupsParams": { "type": "object", "additionalProperties": false, "properties": {} },
     "SessionGroupsResult": {

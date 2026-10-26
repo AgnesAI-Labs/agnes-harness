@@ -120,6 +120,7 @@ function sidebarListingFixture(read: (input: SessionListParams) => Promise<PageS
   const revision = (rows: PageSessionMeta['items']) =>
     createHash('sha256').update(JSON.stringify(rows)).digest('hex')
   return {
+    activity: vi.fn(async () => ({ items: [] })),
     groups: vi.fn(async (): Promise<SessionGroupsResult> => {
       const rows = active(await read({ limit: 100 }))
       return {
@@ -468,6 +469,7 @@ describe.each(['win32', 'darwin'])('sidebar startup failure recovery (%s)', (pla
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: {
         list,
+        activity: vi.fn(async () => ({ items: [] })),
         groups: vi.fn(
           async (): Promise<SessionGroupsResult> => ({
             ready: state !== 'initializing',
@@ -1525,6 +1527,7 @@ describe('web session selection', () => {
       approval: { list: vi.fn(async () => ({ decisions: [] })), decide: vi.fn(async () => undefined) },
       workspace: { list: vi.fn(async () => ({ items: [alpha, beta] })) },
       session: {
+        activity: vi.fn(async () => ({ items: [] })),
         groups: vi.fn(
           async (): Promise<SessionGroupsResult> => ({
             ready: true,

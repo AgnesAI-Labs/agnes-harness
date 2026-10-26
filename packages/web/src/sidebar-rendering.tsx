@@ -1,7 +1,11 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, Icon, IconButton } from '@agnes/web-ui'
-import { type SidebarNavigationOptions, untitledSessionLabel } from '@agnes/web-units/shell'
+import {
+  type SessionListMark,
+  type SidebarNavigationOptions,
+  untitledSessionLabel,
+} from '@agnes/web-units/shell'
 import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react'
 import { navigationHistory } from './navigation-history.js'
 import { SessionMenu } from './session-menu.js'
@@ -24,6 +28,13 @@ export function workspaceNames(options: SidebarNavigationOptions, t: Translate) 
  * One session row, shared by the paged list and the full-list views: title, running dot, the
  * workspace name and pin mark the flat list adds, the archived treatment, and the action menu.
  */
+const MARK_LABELS: Record<SessionListMark, string> = {
+  approval: 'nav.waitingApproval',
+  question: 'nav.waitingAnswer',
+  completed: 'nav.completed',
+  ended: 'nav.ended',
+}
+
 export function SessionRowLabel({
   options,
   t,
@@ -31,6 +42,7 @@ export function SessionRowLabel({
   title,
   active,
   running,
+  mark,
   workspaceName,
   pinned,
   pinnedMark,
@@ -44,6 +56,8 @@ export function SessionRowLabel({
   title: string
   active: boolean
   running: boolean
+  /** Waiting for an approval or an answer, or a turn that ended while another session was on screen. */
+  mark?: SessionListMark | undefined
   workspaceName?: string
   /** Offers 「Unpin」 in the menu; a grouped list shows that through its heading instead. */
   pinned: boolean
@@ -67,6 +81,11 @@ export function SessionRowLabel({
         {running && <span className="session-running" role="img" aria-label={t('nav.running')} />}
         <span className="session-title">{title}</span>
         {workspaceName && <span className="session-workspace-label">{workspaceName}</span>}
+        {mark && !active && (mark === 'approval' || mark === 'question' || !running) && (
+          <span className="session-mark" data-mark={mark} data-testid="session-mark">
+            {t(MARK_LABELS[mark])}
+          </span>
+        )}
         {pinnedMark && <Icon name="pin" className="session-pin-mark" />}
         {archived && (
           <>

@@ -109,6 +109,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     supervisorRegistry,
     preferences,
     sidebarSessions,
+    sessionActivity,
     lister,
     host,
     services,
@@ -161,6 +162,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     resolveNewSessionActor,
     sessionOwnership,
     ...(sidebarSessions ? { sidebarSessions } : {}),
+    sessionActivity,
     hasSessionFact: (sessionId: string) =>
       supervisorRegistry.get(sessionId) !== undefined ||
       workspaceCatalog.sessionPath(sessionId) !== undefined,

@@ -8,6 +8,7 @@ import { enT, zhT } from '@agnes/web-foundation/testkit/locale'
 import { unmountApplication } from '@agnes/web-ui'
 import { afterEach, expect, it, vi } from 'vitest'
 import { approvalExpiry } from '../src/app/pending-approval.js'
+import { SessionActivityView } from '../src/app/session-activity.js'
 import { SessionBindingOwner } from '../src/app/session-owner.js'
 import { SubmissionOwner } from '../src/app/submission-owner.js'
 import { createTurnController } from '../src/app/turn-controller.js'
@@ -80,6 +81,7 @@ async function harness() {
   const context = {
     sessionBinding: binding,
     submissions: new SubmissionOwner(binding),
+    sessionActivity: new SessionActivityView(),
     projection: timeline(),
     current: { id: 's' },
     live: { hasEarlier: () => false, loadEarlier: async () => false, refresh: vi.fn() },
