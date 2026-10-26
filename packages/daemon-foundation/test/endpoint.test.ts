@@ -93,6 +93,41 @@ describe('LocalEndpoint', () => {
         await ep.close()
       }
   })
+  it('records the failing system call and file kinds of a filesystem error, never its paths', async () => {
+    const records: unknown[] = []
+    const ep = new LocalEndpoint({
+      clock: () => 0,
+      principalId: 'local',
+      audit: (record) => records.push(record),
+    })
+    ep.register('initialize', async () => {
+      throw Object.assign(
+        new Error("EPERM: operation not permitted, rename 'C:\\Users\\me\\secret.json.1.tmp'"),
+        {
+          code: 'EPERM',
+          syscall: 'rename',
+          path: 'C:\\Users\\me\\secret-project\\state.json.0f3c.tmp',
+          dest: 'C:\\Users\\me\\secret-project\\state.json',
+        },
+      )
+    })
+    await ep.handle({ jsonrpc: '2.0', id: 'x', method: 'initialize', params: INIT_PARAMS })
+    expect(records).toEqual([
+      {
+        kind: 'daemon.request_failed',
+        detail: {
+          diagnosticId: expect.any(String),
+          method: 'initialize',
+          errorCode: 'EPERM',
+          syscall: 'rename',
+          fileKind: 'temp',
+          destKind: 'json',
+        },
+      },
+    ])
+    expect(JSON.stringify(records)).not.toMatch(/secret|Users|state/)
+    await ep.close()
+  })
   it('refuses new calls after intake stops while preserving outbound shutdown notices', async () => {
     const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
     ep.register('initialize', async (_params, cx) => {
