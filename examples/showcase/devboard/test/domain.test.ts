@@ -2948,6 +2948,9 @@ describe('hand-off to the coordinator', () => {
     expect(step()).toContain('新变更')
     cr.state = 'CLOSED'
     expect(step()).toContain('已关闭')
+    // a change closed after the CCB rejected it still leaves the failed trial without a change
+    cr.ccb = { ...cr.ccb, decision: 'REJECTED' }
+    expect(step()).toContain('新变更')
   })
 
   it('has nothing to do for a closed fault without a problem or with a closed one', () => {

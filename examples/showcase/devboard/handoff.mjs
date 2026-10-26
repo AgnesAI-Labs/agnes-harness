@@ -290,7 +290,7 @@ function trialHandoff(state, trial) {
   else if (change)
     next.push(
       `已关联变更 ${change.id}（${label(LABELS.state, change.state)}）：${
-        change.state === 'REJECTED' && trial.result === 'FAIL'
+        (change.state === 'REJECTED' || change.ccb?.decision === 'REJECTED') && trial.result === 'FAIL'
           ? '变更被驳回而试验仍不合格：读完整驳回意见，另起草新变更并用 devboard_trial_upsert(changeId) 改关联'
           : (CHANGE_NEXT[change.state] ?? '')
       }`,
