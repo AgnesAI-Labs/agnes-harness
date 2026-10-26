@@ -517,10 +517,11 @@ function closeReleaseFindings(state, flow, at) {
       f.closed = true
       f.closedNote = `发布审批 ${flow.id} 已批准（系统）`
     }
-    if (gate.auto && gate.findings.every((f) => f.closed))
+    const stage = find(state, 'stage', gate.stageId)
+    if (gate.auto && gate.findings.every((f) => f.closed) && !unpassedBefore(state, stage))
       approve(
         state,
-        find(state, 'stage', gate.stageId),
+        stage,
         gate,
         '系统（评审意见已全部关闭）',
         '评审意见全部关闭，自动通过',
@@ -702,6 +703,12 @@ export function decideGate(state, input, now = Date.now()) {
   const at = new Date(now).toISOString()
   const comment = optional(input.comment)
   if (decision === 'APPROVED') {
+    // A change can reopen an earlier stage while this one is in review: stages still pass in order.
+    const previous = unpassedBefore(state, stage)
+    if (previous)
+      fail(
+        `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，「${stageLabel(state, stage)}」的评审门暂不能批准`,
+      )
     if (gate.signatures.some((s) => s.role === role)) fail(`评审门不满足：角色「${role}」已签署本门`)
     const waiting = roles.filter((r) => r !== role && !gate.signatures.some((s) => s.role === r))
     const held =

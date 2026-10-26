@@ -956,8 +956,11 @@ describe('change requests and the field-to-design loop', () => {
     pass(state, p.id, 'INITIATION')
     pass(state, p.id, 'REQUIREMENTS')
     start(state, `${p.id}/DESIGN`)
+    const design = submitGate(state, { stageId: `${p.id}/DESIGN`, by: 'x' }, NOW).gate
     const cr = approvedChange(state, p.id)
     expect(cr.reworked).toEqual([`${p.id}/REQUIREMENTS`])
+    // a later stage waits for the reworked earlier one before its gate is approved
+    expect(() => sign(state, design.id, design.approverRoles[0])).toThrow('阶段顺序不满足')
     expect(byId(state.reqs, 'CUS-001', p.id).status).toBe('CHANGED')
     const stage = byId(state.stages, `${p.id}/REQUIREMENTS`)
     expect(stage.state).toBe('REWORK')
