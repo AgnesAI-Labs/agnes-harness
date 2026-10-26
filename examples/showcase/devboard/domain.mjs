@@ -1978,7 +1978,7 @@ export function metrics(state, project, now = Date.now()) {
     currentStage: current?.stage,
     currentState: current?.state,
     delayDays,
-    overdue: Boolean(current && current.state !== 'PASSED' && delayDays > 0),
+    overdue: Boolean(current && current.state !== 'PASSED' && Date.parse(current.plannedEnd) < now),
     coverage: coverage(state, project.id),
     openDefects: Object.fromEntries(
       Object.keys(LABELS.severity).map((s) => [s, open.filter((d) => d.severity === s).length]),

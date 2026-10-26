@@ -1879,6 +1879,14 @@ describe('blockers', () => {
     expect(list[1]).toMatchObject({ days: 5, ref: { type: 'stage', id: stage.id } })
     stage.state = 'PASSED'
     expect(kinds(blockers(state, NOW))).toEqual(['GATE_FINDING'])
+    const live = create(state, { kind: 'project', name: '逾期项目' }, NOW)
+    const first = byId(state.stages, `${live.id}/${live.stage}`)
+    first.plannedEnd = new Date(NOW - 6 * HOUR).toISOString()
+    // hours late is overdue on the card, as in the blocker list, though the delay still rounds to 0 days
+    expect(metrics(state, live, NOW)).toMatchObject({ delayDays: 0, overdue: true })
+    expect(kinds(blockers(state, NOW))).toContain('STAGE_OVERDUE')
+    first.plannedEnd = new Date(NOW + HOUR).toISOString()
+    expect(metrics(state, live, NOW).overdue).toBe(false)
   })
 
   it('derives a failed trial without a change, a change in CCB review and a stalled 8D', () => {
