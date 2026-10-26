@@ -2594,6 +2594,15 @@ describe('fast-forward from the shipped sample', () => {
     // seed and order projects never show it
     const seeded = snapshot(seed(NOW))
     expect(seeded.projects.some((p: Item) => showDelivery(seeded, p))).toBe(false)
+    // two runs of one level at the same time: the later-registered one is the newest, as the metrics read it
+    const at = new Date(NOW).toISOString()
+    const tie = {
+      testRuns: [
+        { id: 'R1', projectId: 'P', level: 'UNIT', at, passed: 1 },
+        { id: 'R2', projectId: 'P', level: 'UNIT', at, passed: 9 },
+      ],
+    }
+    expect(latestRuns(tie, 'P').map((r: Item) => r.id)).toEqual(['R2'])
   })
 
   it('TR3_CHANGE: a customer change waits in CCB review with its ECR flow, and approving it sends the stages back', async () => {

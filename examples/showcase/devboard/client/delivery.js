@@ -14,9 +14,11 @@ export function showDelivery(data, project) {
 export function latestRuns(data, projectId) {
   const runs = (data.testRuns ?? []).filter((r) => r.projectId === projectId)
   return LEVELS.flatMap((level) => {
+    // On equal times the later-registered run is the newer one, as metrics.latestTests reads it.
     const newest = runs
       .filter((r) => r.level === level)
-      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0]
+      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
+      .at(-1)
     return newest ? [newest] : []
   })
 }
