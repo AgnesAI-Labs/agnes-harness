@@ -1338,14 +1338,6 @@ export function updateChange(state, input, now = Date.now()) {
 
 /** Trial moves: REPORTED needs a report number and a result; a failed trial is approved only with an approved change. */
 function moveTrial(state, trial, to, input, at) {
-  trialFields(state, trial, input)
-  if (to === 'REPORTED') {
-    if (!trial.reportNo) fail(`${trial.id} 缺少报告号（reportNo）：出具报告前需填写`)
-    if (!trial.result || trial.result === 'PENDING')
-      fail(`${trial.id} 缺少试验结论：出具报告前需判定合格或不合格`)
-    trial.at ??= at
-  }
-  if (to === 'APPROVED') trialApprovable(state, trial)
   if (trial.state === 'REPORTED' && to === 'IN_PROGRESS') {
     // A retest: the previous report and result stay in the history, the new report starts empty.
     trial.history.push({
@@ -1360,6 +1352,14 @@ function moveTrial(state, trial, to, input, at) {
     if (input.at === undefined) delete trial.at
     trial.result = 'PENDING'
   }
+  trialFields(state, trial, input)
+  if (to === 'REPORTED') {
+    if (!trial.reportNo) fail(`${trial.id} 缺少报告号（reportNo）：出具报告前需填写`)
+    if (!trial.result || trial.result === 'PENDING')
+      fail(`${trial.id} 缺少试验结论：出具报告前需判定合格或不合格`)
+    trial.at ??= at
+  }
+  if (to === 'APPROVED') trialApprovable(state, trial)
 }
 
 /** A trial is approved on a report with a result; a failed one only with an approved change (conditional release). */
@@ -1443,8 +1443,9 @@ export function upsertTrial(state, input, now = Date.now()) {
         fail(`未找到 ${trial.projectId} 的需求 ${r}`)
     trial.verifies = list
   }
-  trialFields(state, trial, input)
+  // A move applies the report fields itself, after a retest has put the previous report in the history.
   if (input.to) transition(state, { ...input, kind: 'trial', id: trial.id, to: input.to, by }, now)
+  else trialFields(state, trial, input)
   return trial
 }
 
