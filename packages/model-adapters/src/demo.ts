@@ -206,8 +206,9 @@ export function demoReply(request: RequestBody): ModelAdapterEvent[] {
     ''
   const results = request.messages.slice(userIndex + 1).filter((message) => message.role === 'tool_result')
   if (/^(show remembered preferences|显示记住的偏好)$/i.test(prompt.trim()) && !results.length) {
-    // Memory arrives as a live context note (`[live context <hash>]\nmemory:index\n<text>`);
-    // a request that still carries it as a section is read the same way.
+    // Memory arrives as a live context note (`[live context <hash>]\nmemory:index\n<text>`). The
+    // latest note is current; a cleared one (memory turned off) means no memory. A request that
+    // still carries it as a section is read the same way.
     const notes = request.messages.flatMap((message) =>
       message.role === 'user'
         ? message.content.flatMap((part) => {
@@ -217,9 +218,12 @@ export function demoReply(request: RequestBody): ModelAdapterEvent[] {
           })
         : [],
     )
+    const latest = notes.at(-1)
     const memory = [
-      ...(request.sections ?? []).filter((section) => section.id === 'memory:index').map((section) => section.text),
-      ...notes,
+      ...(request.sections ?? [])
+        .filter((section) => section.id === 'memory:index')
+        .map((section) => section.text),
+      ...(latest && !latest.endsWith('This context item no longer applies.') ? [latest] : []),
     ].join('\n')
     return finish(
       text(

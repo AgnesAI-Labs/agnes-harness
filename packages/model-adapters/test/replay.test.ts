@@ -208,13 +208,25 @@ it('derives demo tool arguments, refuses invalid examples and summarizes actual 
       await collect(adapter, {
         ...memoryRequest,
         sections: [],
-        messages: [
-          { role: 'user', content: [{ type: 'text', text: liveNote }] },
-          ...memoryRequest.messages,
-        ],
+        messages: [{ role: 'user', content: [{ type: 'text', text: liveNote }] }, ...memoryRequest.messages],
       }),
     ),
   ).toContain('Synthetic live convention')
+  // Turning memory off appends a cleared note: only the latest note counts.
+  const cleared = `[live context ${'a'.repeat(64)}]\nmemory:index\nAgent memory\nThis context item no longer applies.`
+  const off = JSON.stringify(
+    await collect(adapter, {
+      ...memoryRequest,
+      sections: [],
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: liveNote }] },
+        { role: 'user', content: [{ type: 'text', text: cleared }] },
+        ...memoryRequest.messages,
+      ],
+    }),
+  )
+  expect(off).not.toContain('Synthetic live convention')
+  expect(off).toContain('Memory is off or no memory provider contributed preferences.')
   const events = await collect(adapter, body)
   expect(events).toContainEqual(
     expect.objectContaining({
