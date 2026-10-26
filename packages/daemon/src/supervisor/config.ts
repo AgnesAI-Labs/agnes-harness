@@ -18,7 +18,9 @@ export type DaemonLimits = {
 export const DEFAULT_LIMITS: DaemonLimits = {
   maxWorkers: 10,
   workerIdleEvictMs: 600_000,
-  workerStartupMs: 30_000,
+  // A loaded Windows machine with file scanning took longer than 30 s to start the shared worker, and
+  // session/new then failed here even with the client waiting longer. Matches the client's 90 s budget.
+  workerStartupMs: 90_000,
   subscribeBufferEvents: 1000,
   subscribeBufferBytes: MAX_FRAME_BYTES,
   jobsTickMs: 1000,

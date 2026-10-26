@@ -115,6 +115,16 @@ type Schema = Parameters<typeof validateAgainst>[0]
 // Reserved for generated-but-unlisted methods; empty means no call bypasses METHODS validation.
 const UNLISTED: Record<string, { params?: Schema; result?: Schema }> = {}
 
+/**
+ * Calls that wait on slow work the daemon keeps doing after a client gives up: OAuth commits, provider
+ * tests and saves that reach the network, and session creation, which waits for the shared worker to
+ * start and assemble its Host.
+ */
+const SLOW_CALL_MS = 90_000
+function slowCall(requestMs: number): { timeoutMs: number } {
+  return { timeoutMs: Math.max(requestMs, SLOW_CALL_MS) }
+}
+
 export class Client {
   private readonly sessionHistory = new Map<string, 'full' | 'none'>()
   private readonly restoreHistory: 'full' | 'none'
@@ -324,7 +334,7 @@ export class Client {
       this.call(
         '_agnes/v1/config.oauth',
         input,
-        input.action === 'commit' ? { timeoutMs: Math.max(this.timeouts.request, 90_000) } : {},
+        input.action === 'commit' ? slowCall(this.timeouts.request) : {},
       ),
     account: (input: ConfigAccountInput): Promise<ConfigSnapshot> =>
       this.call('_agnes/v1/config.account', input),
@@ -335,7 +345,7 @@ export class Client {
         '_agnes/v1/config.test',
         input,
         ['anthropic', 'github-copilot', 'kimi-coding', 'openai-codex', 'xai'].includes(input.providerId)
-          ? { timeoutMs: Math.max(this.timeouts.request, 90_000) }
+          ? slowCall(this.timeouts.request)
           : {},
       ),
     save: (input: ConfigSaveInput): Promise<ConfigSnapshot> =>
@@ -343,7 +353,7 @@ export class Client {
         '_agnes/v1/config.save',
         input,
         ['anthropic', 'github-copilot', 'kimi-coding', 'openai-codex', 'xai'].includes(input.providerId)
-          ? { timeoutMs: Math.max(this.timeouts.request, 90_000) }
+          ? slowCall(this.timeouts.request)
           : {},
       ),
     modelSlots: {
@@ -458,9 +468,8 @@ export class Client {
       if (o.systemPromptAppend !== undefined)
         meta.systemPromptAppend = parseSystemPromptAppend(o.systemPromptAppend)
       if (o.sessionKey) meta.sessionKey = o.sessionKey
-      // Creating a session assembles its host and loads every extension, which on a slow or busy
-      // machine takes longer than an ordinary request. The daemon keeps working after a timeout, so
-      // a short budget only turns a late success into a failure the caller has to retry.
+      // Creating a session can wait for the shared worker to start (see slowCall); a short budget only
+      // turns a late success into a failure the caller has to retry.
       const r = await this.call<{ sessionId: string }>(
         'session/new',
         {
@@ -469,7 +478,7 @@ export class Client {
           mcpServers: [],
           _meta: { [META_KEY]: meta },
         },
-        { timeoutMs: Math.max(this.timeouts.request, 90_000) },
+        slowCall(this.timeouts.request),
       )
       return this.sessionHandle(r.sessionId, o.cwd)
     },

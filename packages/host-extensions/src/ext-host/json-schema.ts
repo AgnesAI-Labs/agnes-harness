@@ -10,7 +10,10 @@ const OPTIONS = { strict: true, allErrors: false, validateFormats: true } as con
 // Checking a schema against the draft 2020-12 meta-schema compiles that meta-schema first, once per
 // Ajv instance. Every distinct schema gets its own instance, so doing the check there repeated the
 // meta-schema compile for each one, about 100 ms of every worker start. One shared instance does
-// the check; it only reads the schema, so no $id or $ref of it enters a shared namespace.
+// the check against that fixed meta-schema; it only reads the schema, so no $id or $ref of it enters
+// a shared namespace. A schema may name no other `$schema`: following an author-chosen one let a
+// pointer to a `true` subschema skip the check, and grew the shared instance with every new spelling.
+const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema'
 let metaSchemas: Ajv2020 | undefined
 const MAX_SCHEMAS = 64
 const MAX_SCHEMA_BYTES = 4 * 1024 * 1024
@@ -27,8 +30,11 @@ export function compileExtensionSchema(
     const key = JSON.stringify(json.value)
     const cached = validators.get(key)
     if (cached) return cached
+    const declared = (json.value as { $schema?: unknown }).$schema
+    if (declared !== undefined && declared !== DRAFT_2020_12 && declared !== `${DRAFT_2020_12}#`)
+      throw new Error('schema')
     metaSchemas ??= new Ajv2020(OPTIONS)
-    if (metaSchemas.validateSchema(json.value) !== true) throw new Error('schema')
+    if (metaSchemas.validate(DRAFT_2020_12, json.value) !== true) throw new Error('schema')
     const ajv = new Ajv2020({ ...OPTIONS, validateSchema: false })
     const validate = ajv.compile(json.value)
     if ('$async' in validate && validate.$async) throw new Error('async schema')
