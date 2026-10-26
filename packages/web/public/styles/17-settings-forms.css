@@ -1014,6 +1014,13 @@
     padding: var(--s16) 0;
     overflow: visible;
   }
+  /* Inline means the first-run dialog owns the height and the scrolling. Keeping the dialog's height
+     cap here would clip the form, and its inner grid is not scrollable (overflow: visible above), so the
+     last section could never be reached. */
+  .account-dialog-body[data-inline="true"] {
+    max-height: none;
+    overflow: visible;
+  }
   /* Popular providers, then the rest in a fold. */
   .config-account-add.agnes-ui-button {
     width: 100%;
