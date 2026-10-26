@@ -395,6 +395,7 @@ export function GatePanel({ data, gate, board, role, setRole }) {
                     'aria-label': `${f.id} 关闭说明`,
                     placeholder: '填写关闭说明即随决议关闭',
                     value: closing[f.id] ?? '',
+                    maxLength: 500,
                     onChange: (e) => setClosing({ ...closing, [f.id]: e.target.value }),
                   })
                 : '未关闭',

@@ -214,7 +214,7 @@ export function Trials({ data, board, role, setRole }) {
             role,
             hidden: ['APPROVED'],
             fields: [
-              { key: 'reportNo', label: '报告号（出具报告时必填）' },
+              { key: 'reportNo', label: '报告号（出具报告时必填）', max: 48 },
               {
                 key: 'result',
                 label: '结论（出具报告时必填）',

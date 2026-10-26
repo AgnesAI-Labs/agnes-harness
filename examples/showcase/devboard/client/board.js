@@ -556,7 +556,7 @@ export function TransitionBar({
                 id: `devboard-${f.key}-${item.id}`,
                 className: 'devboard-note',
                 value: extra[f.key] ?? '',
-                maxLength: 500,
+                maxLength: f.max ?? 500,
                 onChange: (e) => setExtra({ ...extra, [f.key]: e.target.value }),
               }),
             ),
