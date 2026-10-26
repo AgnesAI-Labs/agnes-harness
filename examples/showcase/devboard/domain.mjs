@@ -1578,8 +1578,26 @@ export function upsertTrial(state, input, now = Date.now()) {
   // A move applies the report fields itself, after a retest has put the previous report in the history.
   if (input.to) transition(state, { ...input, kind: 'trial', id: trial.id, to: input.to, by }, now)
   else {
+    const before = { result: trial.result, reportNo: trial.reportNo }
     trialFields(state, trial, input)
-    keepNote(trial, input, at, by)
+    // An issued report edited before it is signed keeps what it said, so the approver sees a changed conclusion.
+    const edits = [
+      ['结论', 'result'],
+      ['报告号', 'reportNo'],
+    ]
+      .filter(([, key]) => trial.state === 'REPORTED' && before[key] !== trial[key])
+      .map(([name, key]) => `${name} ${before[key] ?? '—'} → ${trial[key]}`)
+    const note = optional(input.note, 2000)
+    if (edits.length)
+      record(
+        trial,
+        at,
+        by,
+        trial.state,
+        trial.state,
+        `修改报告：${edits.join('；')}${note ? `；${note}` : ''}`,
+      )
+    else keepNote(trial, input, at, by)
   }
   return trial
 }

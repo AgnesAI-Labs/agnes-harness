@@ -1800,6 +1800,11 @@ describe('approval flows', () => {
     upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-9', result: 'PASS' }, NOW)
     // a report whose result was edited back to PENDING is not approvable
     upsertTrial(state, { id: tt.id, result: 'PENDING' }, NOW)
+    expect(tt.history.at(-1)).toMatchObject({
+      from: 'REPORTED',
+      to: 'REPORTED',
+      note: '修改报告：结论 PASS → PENDING',
+    })
     expect(() => submitApproval(state, { template: 'TRIAL_REPORT', subjectId: tt.id }, NOW)).toThrow(
       '缺少试验结论',
     )
