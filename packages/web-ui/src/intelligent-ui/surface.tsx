@@ -209,11 +209,12 @@ function SurfaceCard(props: IntelligentSurfaceProps) {
       </header>
       {sourceVisible && (
         <Disclosure defaultOpen summary={t('ui.source')}>
-          <dl>
+          <dl className="agnes-intelligent-source-list" data-testid="ui-source">
             <dt>{t('ui.owner')}</dt>
             <dd>{record.owner}</dd>
-            <dt>{t('ui.revision', { revision: surface.revision })}</dt>
-            <dd>{surface.id}</dd>
+            <dt>{t('ui.cardId')}</dt>
+            {/* The full id stays in the DOM for screen readers and in the title; CSS truncates the row. */}
+            <dd title={surface.id}>{surface.id}</dd>
           </dl>
         </Disclosure>
       )}

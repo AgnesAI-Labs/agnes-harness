@@ -168,3 +168,33 @@ describe('default skin contrast table (pure CSS calculation)', () => {
     })
   }
 })
+
+// The generated UI renders on both themes from the same stylesheet, so it may only paint with
+// semantic tokens. A literal colour or a palette primitive would keep its light value after the
+// reader switches to dark.
+describe('generated UI paints through the semantic theme only', () => {
+  const ui = readFileSync(new URL('../src/intelligent-ui/styles.css', import.meta.url), 'utf8')
+  const local = declarations(ui)
+  const painted = [...ui.matchAll(/([a-z-]+)\s*:\s*([^;{}]+);/g)]
+    .filter(([, property]) => !/mask|filter/.test(property!))
+    .map(([, , value]) => value!.replace(/url\([^)]*\)/g, ''))
+
+  it('writes no literal colour', () => {
+    const literals = painted.flatMap((value) =>
+      [...value.matchAll(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/gi)].map((match) => match[0]),
+    )
+    expect(literals).toEqual([])
+  })
+
+  it('never reaches for a palette primitive', () => {
+    expect([...ui.matchAll(/var\((--agnes-color-[\w-]+)/g)].map((match) => match[1])).toEqual([])
+  })
+
+  it('references only tokens the theme declares', () => {
+    const used = [...ui.matchAll(/var\((--[\w-]+)/g)].flatMap((match) => (match[1] ? [match[1]] : []))
+    const missing = [...new Set(used)]
+      .filter((token) => !(token in light) && !(token in dark) && !(token in local))
+      .sort()
+    expect(missing).toEqual([])
+  })
+})

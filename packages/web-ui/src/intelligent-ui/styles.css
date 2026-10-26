@@ -1538,6 +1538,28 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* The technical source block is a two-column list of label and value. Without the margin reset
+     the browser indents every <dd> by 40px, which drops each value onto its own line below the
+     label. The id can be 40 characters, so the value column truncates instead of widening the card. */
+  .agnes-intelligent-source-list {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: var(--s4) var(--s12);
+    margin: 0;
+    font-size: var(--font-size-xs);
+  }
+  .agnes-intelligent-source-list dt {
+    color: var(--agnes-text-tertiary);
+  }
+  .agnes-intelligent-source-list dd {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--agnes-text-secondary);
+    font-family: var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .agnes-intelligent-surface [data-testid="ui-receipts"][hidden] {
     display: none;
   }

@@ -173,6 +173,21 @@ describe('surface panel frame', () => {
     expect(host.querySelector('[data-testid="ui-meta"]')?.textContent).toBe('Revision 2')
   })
 
+  it('pairs the source with the card id in the technical source block', async () => {
+    const { host } = await mount()
+    await openMenu(host)
+    const entry = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === '技术来源',
+    )
+    await act(async () => entry!.click())
+    const list = host.querySelector<HTMLElement>('[data-testid="ui-source"]')!
+    expect([...list.querySelectorAll('dt')].map((node) => node.textContent)).toEqual(['来源', '卡片编号'])
+    const values = [...list.querySelectorAll('dd')]
+    expect(values.map((node) => node.textContent)).toEqual(['acme/crm-followup', surface().id])
+    // The row is truncated by CSS, so the whole id has to stay readable from the title.
+    expect(values[1]?.getAttribute('title')).toBe(surface().id)
+  })
+
   it('offers locate, hide from conversation and close in the ⋯ menu', async () => {
     const onLocate = vi.fn(),
       onDismiss = vi.fn(),
