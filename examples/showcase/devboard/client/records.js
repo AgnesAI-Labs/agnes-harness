@@ -206,7 +206,8 @@ function NewChange({ data, board, role, projectId }) {
 function RetrofitBar({ change, board, role }) {
   const rf = change.retrofit
   const [done, setDone] = React.useState('')
-  const locked = !['APPROVED', 'IMPLEMENTED'].includes(change.state)
+  // A finished retrofit takes no more progress.
+  const locked = !['APPROVED', 'IMPLEMENTED'].includes(change.state) || rf.done >= rf.total
   const submit = async () => {
     const ok = await board.run(
       'devboard.transition',
