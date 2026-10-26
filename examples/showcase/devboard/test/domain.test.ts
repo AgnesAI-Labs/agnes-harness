@@ -966,7 +966,12 @@ describe('change requests and the field-to-design loop', () => {
     )
     expect(metrics(state, p, NOW).retrofit).toEqual({ done: 0, total: 1920 })
     // a change written against the old revision does not roll the item back
-    const stale = approvedChange(state, p.id, bufferChange)
+    const same = approvedChange(state, p.id, bufferChange)
+    expect(() => release(state, 'ECN_RELEASE', same.id)).toThrow('已体现在设计态基线')
+    const stale = approvedChange(state, p.id, {
+      ...bufferChange,
+      impact: { ...bufferChange.impact, items: [{ itemId: 'NC-BUF-01', fromRev: 'B', toRev: 'D' }] },
+    })
     expect(() => release(state, 'ECN_RELEASE', stale.id)).toThrow('NC-BUF-01 当前为 C 版')
     // refused before anyone signs, and it says the way out: an approved change keeps its items
     expect(() => release(state, 'ECN_RELEASE', stale.id)).toThrow('另起变更')
@@ -1674,6 +1679,13 @@ describe('approval flows', () => {
     back()
     updateChange(state, { id: cr.id, title: '补充物料后的变更' })
     expect(cr).toMatchObject({ state: 'ANALYZED', title: '补充物料后的变更' })
+  })
+
+  it('refuses releasing an ECN the as-designed baseline already carries', () => {
+    const state = read(memoryStore(), NOW)
+    expect(() =>
+      submitApproval(state, { template: 'ECN_RELEASE', subjectId: 'CR-2026-012', by: '配置管理员' }, NOW),
+    ).toThrow('已体现在设计态基线')
   })
 
   it('lets only the initiator withdraw, and only before the first node is handled', () => {

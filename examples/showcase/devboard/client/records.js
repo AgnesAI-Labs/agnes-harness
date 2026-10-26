@@ -209,11 +209,17 @@ function RetrofitBar({ data, change, board, role }) {
   const approved =
     ['APPROVED', 'IMPLEMENTED'].includes(change.state) || (change.state === 'CLOSED' && Boolean(change.ecn))
   // Doors follow a released design, so a change that names items waits for its ECN release.
+  const seq = (b) => Number(/-(\d+)$/.exec(b.id)?.[1] ?? 0)
+  const designed = data.configBaselines
+    .filter((b) => b.projectId === change.projectId && b.type === 'AS_DESIGNED')
+    .reduce((top, b) => (!top || seq(b) > seq(top) ? b : top), undefined)?.revs
+  const items = change.impact?.items ?? []
   const unreleased =
-    change.impact?.items?.length > 0 &&
+    items.length > 0 &&
     !data.approvals.some(
       (a) => a.template === 'ECN_RELEASE' && a.subject.id === change.id && a.state === 'APPROVED',
-    )
+    ) &&
+    !items.every(({ itemId, toRev }) => designed?.[itemId] === toRev)
   // A finished retrofit takes no more progress.
   const locked = !approved || unreleased || rf.done >= rf.total
   const submit = async () => {

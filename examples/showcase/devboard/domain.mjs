@@ -896,6 +896,13 @@ function applyChange(state, cr, at) {
   if (reworked.length) delete project.actualEnd
 }
 
+/** Every item of the change is already at its new revision in the latest as-designed baseline. */
+function carried(state, cr) {
+  const designed = latestBaseline(state, cr.projectId, 'AS_DESIGNED')?.revs ?? {}
+  const items = cr.impact?.items ?? []
+  return items.length > 0 && items.every(({ itemId, toRev }) => designed[itemId] === toRev)
+}
+
 /** Releasing an ECN, when it names items, creates the new as-designed baseline. */
 function releaseEcn(state, cr, at) {
   if (!cr.impact?.items?.length) return undefined
@@ -922,7 +929,8 @@ function setRetrofit(state, { id, done, by, note }, now) {
   const released = state.approvals.some(
     (a) => a.template === 'ECN_RELEASE' && a.subject.id === cr.id && a.state === 'APPROVED',
   )
-  if (cr.impact?.items?.length && !released) fail(`${cr.ecn} 尚未发布：ECN 发布审批通过后才能更新整改进度`)
+  if (cr.impact?.items?.length && !released && !carried(state, cr))
+    fail(`${cr.ecn} 尚未发布：ECN 发布审批通过后才能更新整改进度`)
   const next = intIn(done, 'done', cr.retrofit.total)
   if (next <= cr.retrofit.done) fail(`整改进度只能递增：当前 ${cr.retrofit.done}，收到 ${next}`)
   const at = new Date(now).toISOString()
@@ -1964,8 +1972,14 @@ function startable(state, template, subject) {
     )
       fail(`${subject.ecn} 已发布`)
     // Checked before anyone signs: a release written against an older revision could never be approved.
-    if (subject.impact?.items?.length)
-      revsFor(state, subject.projectId, 'AS_DESIGNED', [], subject.impact.items, subject.ecn, STALE_DESIGN)
+    const items = subject.impact?.items ?? []
+    if (items.length) {
+      if (carried(state, subject))
+        fail(
+          `${subject.ecn} 的物料版本已体现在设计态基线 ${latestBaseline(state, subject.projectId, 'AS_DESIGNED').id} 中，无需再发布`,
+        )
+      revsFor(state, subject.projectId, 'AS_DESIGNED', [], items, subject.ecn, STALE_DESIGN)
+    }
   }
   if (template === 'PROBLEM_CLOSE') {
     if (subject.state !== 'VERIFYING') fail(`${same(subject.state)}，处于验证中才能发起关闭审批`)
