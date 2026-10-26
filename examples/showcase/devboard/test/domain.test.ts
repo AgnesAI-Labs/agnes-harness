@@ -2762,6 +2762,13 @@ describe('hand-off to the coordinator', () => {
     const out = handoff(state, { type: 'project', id: p.id })
     expect(out.untrackedFailures).toEqual(['TC-002'])
     expect(out.next.join('')).toContain('为 TC-002 建缺陷')
+    // a defect people closed after the run is dealt with; a fresh failure after the close needs a new one
+    const closed = state.defects.find((d: Item) => d.testCase === 'TC-001')
+    Object.assign(closed, { state: 'CLOSED', closedAt: new Date(NOW + 1000).toISOString() })
+    expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual(['TC-002'])
+    recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-001', status: 'fail' }] }, NOW + 2000)
+    expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual(['TC-001', 'TC-002'])
+    recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-001', status: 'pass' }] }, NOW + 3000)
     // a later passing run clears it
     recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-002', status: 'pass' }] }, NOW + 1)
     expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual([])

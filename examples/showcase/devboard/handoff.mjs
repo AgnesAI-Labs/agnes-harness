@@ -172,12 +172,20 @@ function projectHandoff(state, project) {
   const pending = state.gates.filter(
     (g) => g.decision === 'PENDING' && g.stageId.startsWith(`${project.id}/`),
   )
-  // The newest per-case result of each TC; a failed one with no open defect on it still needs a defect.
+  // The newest per-case result of each TC. A failed one needs a defect unless one is open on it or people
+  // already dealt with it since the run (a defect raised or closed at or after the run's time, in any state).
   const latest = new Map()
-  for (const run of own(state.testRuns)) for (const r of run.results ?? []) latest.set(r.tc, r.status)
-  const untracked = [...latest]
-    .filter(([tc, status]) => status === 'fail' && !defects.some((d) => d.testCase === tc))
-    .map(([tc]) => tc)
+  for (const run of own(state.testRuns))
+    for (const r of run.results ?? []) latest.set(r.tc, { ...r, at: run.at })
+  const handled = (tc, at) =>
+    own(state.defects).some(
+      (d) =>
+        d.testCase === tc &&
+        (OPEN_DEFECT.has(d.state) || (d.createdAt ?? '') >= at || (d.closedAt ?? '') >= at),
+    )
+  const untracked = [...latest.values()]
+    .filter((r) => r.status === 'fail' && !handled(r.tc, r.at))
+    .map((r) => r.tc)
   const next = [step?.action ?? doneText(project)].filter(Boolean)
   if (untracked.length)
     next.push(`为 ${top(untracked).join('、')} 建缺陷（devboard_defect_upsert，testCase 填 TC 编号）`)
