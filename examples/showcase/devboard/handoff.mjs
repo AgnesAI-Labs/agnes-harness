@@ -274,7 +274,13 @@ function trialHandoff(state, trial) {
       '不合格且尚无变更：先读完整试验、需求/DES、物料版本与基线，再起草来源为 TYPE_TEST 的变更并用 devboard_trial_upsert(changeId) 关联',
     )
   else if (change)
-    next.push(`已关联变更 ${change.id}（${label(LABELS.state, change.state)}）：补齐影响分析，CCB 决议留给人`)
+    next.push(
+      `已关联变更 ${change.id}（${label(LABELS.state, change.state)}）：${
+        change.state === 'REJECTED' && trial.result === 'FAIL'
+          ? '变更被驳回而试验仍不合格：读完整驳回意见，另起草新变更并用 devboard_trial_upsert(changeId) 改关联'
+          : (CHANGE_NEXT[change.state] ?? '')
+      }`,
+    )
   else next.push('试验未出现需要起草变更的不合格结论；批准试验是人的决定')
   return {
     trial: {

@@ -2767,6 +2767,21 @@ describe('hand-off to the coordinator', () => {
     expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual([])
   })
 
+  it('follows the state of the change a trial is linked to', () => {
+    const state = read(memoryStore(), NOW)
+    const trial = state.trials.find((t: Item) => t.changeId)
+    const cr = byId(state.changes, trial.changeId)
+    const step = () => handoff(state, { type: 'trial', id: trial.id }).next[0]
+    cr.state = 'IMPLEMENTED'
+    expect(step()).toContain('verification')
+    expect(step()).not.toContain('影响分析')
+    cr.state = 'REJECTED'
+    trial.result = 'FAIL'
+    expect(step()).toContain('新变更')
+    cr.state = 'CLOSED'
+    expect(step()).toContain('已关闭')
+  })
+
   it('quotes long board text clipped and marks it as data', () => {
     const state = blank()
     const p = newProject(state, 'SOFTWARE')
