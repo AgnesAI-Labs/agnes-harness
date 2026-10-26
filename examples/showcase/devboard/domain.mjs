@@ -1805,14 +1805,15 @@ export function submitApproval(state, { template, subjectId, by, agent }, now = 
   if (running) fail(`${subject.id} 已有进行中的审批 ${running.id}：一个对象同一时间只能有一个进行中的流程`)
   startable(state, template, subject)
   if (agent) {
-    // The coordinator drafted it (under any acting role), or itself moved it into the state it is submitted
-    // from: a customer change the presenter registered and handed over is analysed and sent to CCB by the agent.
+    // The coordinator drafted it (under any acting role). A change it sent to CCB itself also counts: the
+    // customer change the presenter registered and handed over is analysed and sent to CCB by the agent.
     const byAgent = (who) => who === AGENT_NAME || String(who ?? '').startsWith(`${AGENT_NAME} · `)
-    const moved = subject.history?.findLast((h) => h.to === subject.state && h.from !== h.to)
+    const sentToCcb =
+      type === 'change' && byAgent(subject.history?.findLast((h) => h.to === 'CCB_REVIEW')?.by)
     const mine =
       type === 'artifact'
         ? subject.source?.type === 'workspace'
-        : byAgent(type === 'change' ? subject.raisedBy : subject.history?.[0]?.by) || byAgent(moved?.by)
+        : byAgent(type === 'change' ? subject.raisedBy : subject.history?.[0]?.by) || sentToCcb
     if (!mine) fail(`${subject.id} 不是智能体起草的对象：请让用户在看板上发起审批`)
   }
   const year = new Date(now).getUTCFullYear()

@@ -1685,6 +1685,26 @@ describe('approval flows', () => {
     expect(submitApproval(state, { template: 'ECR', subjectId: handed.id, ...agent }, NOW).state).toBe(
       'RUNNING',
     )
+    // moving a person's trial along does not make it the agent's to send for approval
+    const trial = upsertTrial(
+      state,
+      {
+        projectId: p.id,
+        type: 'ROUTINE',
+        title: '例行',
+        standard: 's',
+        sample: 'x',
+        lab: 'l',
+        plannedAt: '2026-11-01',
+        by: '验证工程师 宋雨',
+      },
+      NOW,
+    )
+    upsertTrial(state, { id: trial.id, to: 'IN_PROGRESS', by: actorOf() }, NOW)
+    upsertTrial(state, { id: trial.id, to: 'REPORTED', reportNo: 'R-1', result: 'PASS', by: actorOf() }, NOW)
+    expect(() =>
+      submitApproval(state, { template: 'TRIAL_REPORT', subjectId: trial.id, ...agent }, NOW),
+    ).toThrow('不是智能体起草')
   })
 })
 
