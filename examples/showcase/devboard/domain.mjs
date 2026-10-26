@@ -870,6 +870,11 @@ function setRetrofit(state, { id, done, by, note }, now) {
   if (!cr.retrofit) fail(`${cr.id} 未设置整改总数`)
   if (!['APPROVED', 'IMPLEMENTED'].includes(cr.state))
     fail(`${cr.id} 处于 ${cr.state}，批准后才能更新整改进度`)
+  // Doors are brought to a released design: the as-maintained baseline must not run ahead of the as-designed one.
+  const released = state.approvals.some(
+    (a) => a.template === 'ECN_RELEASE' && a.subject.id === cr.id && a.state === 'APPROVED',
+  )
+  if (cr.impact?.items?.length && !released) fail(`${cr.ecn} 尚未发布：ECN 发布审批通过后才能更新整改进度`)
   const next = intIn(done, 'done', cr.retrofit.total)
   if (next <= cr.retrofit.done) fail(`整改进度只能递增：当前 ${cr.retrofit.done}，收到 ${next}`)
   const at = new Date(now).toISOString()

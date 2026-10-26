@@ -1022,9 +1022,11 @@ describe('change requests and the field-to-design loop', () => {
   it('updates retrofit progress only upwards and creates the as-maintained baseline on completion', () => {
     const { state, p } = inService()
     const cr = approvedChange(state, p.id, { ...bufferChange, rootCause: '根因' })
-    release(state, 'ECN_RELEASE', cr.id)
     const progress = (done: number, id = cr.id) =>
       transition(state, { kind: 'retrofit', id, done, by: '客服工程师' }, NOW)
+    // doors are brought to a released design only
+    expect(() => progress(480)).toThrow('尚未发布')
+    release(state, 'ECN_RELEASE', cr.id)
     progress(480)
     expect(cr.retrofit).toEqual({ done: 480, total: 1920 })
     expect(() => progress(480)).toThrow('整改进度只能递增')
