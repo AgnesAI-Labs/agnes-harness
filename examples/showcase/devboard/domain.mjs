@@ -918,7 +918,15 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
     const item = existing ?? { id, projectId, level, parent: [], verifiedBy: [], status: 'DRAFT' }
     item.title = input.title === undefined && existing ? existing.title : text(input.title, 'title', 200)
     item.text = input.text === undefined && existing ? existing.text : text(input.text, 'text', 2000)
-    if (input.parent !== undefined) item.parent = ids(input.parent, 'parent')
+    if (input.parent !== undefined) {
+      const parent = ids(input.parent, 'parent')
+      // A test case moved off an SWR no longer verifies it.
+      for (const p of (item.parent ?? []).filter((x) => !parent.includes(x))) {
+        const old = state.reqs.find((r) => r.id === p && r.projectId === projectId)
+        if (old?.verifiedBy) old.verifiedBy = old.verifiedBy.filter((x) => x !== id)
+      }
+      item.parent = parent
+    }
     if (input.safety !== undefined) item.safety = Boolean(input.safety)
     if (!existing && level === 'SWR') item.discipline = SWR_PREFIX_DISCIPLINE[match[1]]
     reqFields(item, input)

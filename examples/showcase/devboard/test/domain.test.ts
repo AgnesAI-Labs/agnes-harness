@@ -952,6 +952,22 @@ describe('change requests and the field-to-design loop', () => {
 })
 
 describe('traceability and deliverables', () => {
+  it('stops counting a test case for the SWR it was moved off', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    const items = [
+      { id: 'SWR-001', title: 's1', text: 's1' },
+      { id: 'SWR-002', title: 's2', text: 's2' },
+      { id: 'TC-001', title: 't', text: 't', parent: ['SWR-001'] },
+    ]
+    upsertReqs(state, { projectId: p.id, items }, NOW)
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'TC-001', parent: ['SWR-002'] }] }, NOW)
+    expect(byId(state.reqs, 'SWR-001', p.id).verifiedBy).toEqual([])
+    expect(coverage(state, p.id).swrTc.missing).toEqual(['SWR-001'])
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'TC-001', parent: [] }] }, NOW)
+    expect(coverage(state, p.id).swrTc).toMatchObject({ covered: 0, missing: ['SWR-001', 'SWR-002'] })
+  })
+
   it('registers MER/EER as sub-system requirements with a discipline and discipline-specific fields', () => {
     const state = blank()
     const p = newProject(state, 'NEW_BUILD')
