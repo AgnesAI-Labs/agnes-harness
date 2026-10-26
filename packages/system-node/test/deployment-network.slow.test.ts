@@ -165,6 +165,19 @@ it('still stops a quiet non-SSE body at the app idle timer', async () => {
   })
 })
 
+it('waits past the idle time for the first body chunk of a buffering gateway', async () => {
+  const endpoint = await listen(
+    createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      setTimeout(() => response.end('late'), 150)
+    }),
+  )
+  const client = createDeploymentFetch({ streamIdleMs: 30, requestMs: 5_000 }, {})
+  clients.push(client)
+  const response = await client.fetch(endpoint, { method: 'POST' })
+  expect(await response.text()).toBe('late')
+})
+
 it('enforces the connection deadline during proxied TLS negotiation', async () => {
   const proxy = createServer()
   proxy.on('connect', (_request, socket) => {

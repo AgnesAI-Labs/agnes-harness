@@ -130,7 +130,9 @@ export function createDeploymentFetch(
         )
         idle.unref()
       }
-      resetIdle()
+      // Armed by the first body chunk, not by the headers: a gateway that answers once the whole
+      // reply is ready sends nothing for minutes. Until then the request deadline, and the caller's
+      // first-token deadline, bound the wait; the idle timer bounds gaps inside a flowing body.
       const stream = new ReadableStream<Uint8Array>({
         async pull(sink) {
           try {

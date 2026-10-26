@@ -516,8 +516,10 @@ export class PiAdapter extends WireAdapter {
     //
     // The first-token deadline is spent once anything arrives: after that a stream is answering,
     // and the question stops being "did this route respond" and becomes "will this answer end".
-    // The total deadline is what answers the second one. A route that hangs with neither is a turn
-    // that never finishes, and a session that can never be closed.
+    // The total deadline is what answers the second one, and the idle timer, armed from the first
+    // content on, catches a stream that stalls midway. Silence before the first content belongs to
+    // the first-token deadline alone. A route that hangs with neither is a turn that never finishes,
+    // and a session that can never be closed.
     const network = createDeploymentFetch(networkTimeouts)
     const inner = new AbortController()
     const onAbort = () => inner.abort()
@@ -526,10 +528,11 @@ export class PiAdapter extends WireAdapter {
     const totalMs = Math.min(opts.timeoutMs.total, networkTimeouts?.requestMs ?? 300_000)
     const deadline = Date.now() + totalMs
     const total = setTimeout(() => inner.abort(), totalMs)
-    let first: ReturnType<typeof setTimeout> | undefined = setTimeout(
-      () => inner.abort(),
-      opts.timeoutMs.firstToken,
-    )
+    // The Agnes gateway sends a tool call only once it is complete, so writing a large file shows
+    // nothing until the model is done. Its first content is bounded by the total deadline instead.
+    const firstTokenMs =
+      decl.baseUrl.replace(/\/$/, '') === AGNES_AI_BASE_URL ? totalMs : opts.timeoutMs.firstToken
+    let first: ReturnType<typeof setTimeout> | undefined = setTimeout(() => inner.abort(), firstTokenMs)
     let idleExpired = false
     let idle: ReturnType<typeof setTimeout> | undefined
     const resetIdle = () => {
@@ -571,7 +574,7 @@ export class PiAdapter extends WireAdapter {
           return
         }
         preservePending = false
-        first = setTimeout(() => inner.abort(), opts.timeoutMs.firstToken)
+        first = setTimeout(() => inner.abort(), firstTokenMs)
       }
       let authRecoveryAttempted = false
       for (;;) {
@@ -699,7 +702,7 @@ export class PiAdapter extends WireAdapter {
           for (;;) {
             // Racing rather than `for await`, because a hung stream never produces the next value
             // and a loop waiting on it could not notice its own deadline passing.
-            resetIdle()
+            if (firstSeen) resetIdle()
             const next = await Promise.race([network.run(() => it.next()), stopped])
             if (payloadError) {
               yield {
@@ -730,6 +733,7 @@ export class PiAdapter extends WireAdapter {
                 firstSeen = true
                 clearTimeout(first)
                 first = undefined
+                resetIdle()
               }
               if (
                 w.type === 'error' &&
@@ -890,8 +894,9 @@ export class PiAdapter extends WireAdapter {
           // caller's perspective. Give the replacement request its own first-token deadline while
           // the original total deadline continues to bound the complete operation.
           firstSeen = false
+          clearTimeout(idle)
           if (first) clearTimeout(first)
-          first = setTimeout(() => inner.abort(), opts.timeoutMs.firstToken)
+          first = setTimeout(() => inner.abort(), firstTokenMs)
         }
       }
     } finally {

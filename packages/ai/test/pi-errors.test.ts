@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { classifyPiError } from '../src/adapters/pi/errors.js'
 import { PiAdapter } from '../src/adapters/pi/index.js'
 import { networkEvent, networkFailure, watchResponse } from '../src/adapters/pi/network.js'
+import { AGNES_AI_BASE_URL } from '../src/adapters/pi/providers/agnes-ai.js'
 import { AMBIENT_CREDENTIAL_APIS } from '../src/adapters/pi/wire.js'
 import type { WireEvent } from '../src/index.js'
 import { memoryRetryLedger } from '../src/retry.js'
@@ -216,6 +217,45 @@ describe('timeouts and cancellation', () => {
       timeoutMs: { firstToken: 20, total: 4000 },
     })
     expect(out.map((e) => e.type)).toEqual(['text_delta', 'usage', 'done'])
+  })
+
+  // Silence before the first content belongs to the first-token deadline. The idle timer measures
+  // gaps inside an answer, so a short one must not cut a route off before it has said anything.
+  it('does not apply the idle timer before the first content arrives', async () => {
+    const lateAnswer: StreamImpl = () =>
+      (async function* () {
+        await new Promise((resolve) => setTimeout(resolve, 120))
+        yield { type: 'text_delta', contentIndex: 0, delta: 'a', partial: msg('') } as never
+        yield { type: 'done', reason: 'stop', message: msg('', 'stop') } as never
+      })()
+    const a = adapter({
+      manualRoutes: [{ ...route, networkTimeouts: { streamIdleMs: 30 } }],
+      streamImpl: lateAnswer,
+    })
+    a.bindCredential('gw', 'k')
+    const out = await drain(a, { timeoutMs: { firstToken: 1000, total: 4000 } })
+    expect(out.map((e) => e.type)).toEqual(['text_delta', 'usage', 'done'])
+  })
+
+  // The Agnes gateway sends a tool call only when it is complete, so its first content can come
+  // long after the usual first-token deadline. The total deadline bounds it instead.
+  it('waits for the Agnes gateway up to the total deadline, not the first-token deadline', async () => {
+    const buffered: StreamImpl = () =>
+      (async function* () {
+        await new Promise((resolve) => setTimeout(resolve, 120))
+        yield { type: 'text_delta', contentIndex: 0, delta: 'a', partial: msg('') } as never
+        yield { type: 'done', reason: 'stop', message: msg('', 'stop') } as never
+      })()
+    const agnes = { ...route, baseUrl: AGNES_AI_BASE_URL }
+    const a = adapter({ manualRoutes: [agnes], streamImpl: buffered })
+    a.bindCredential('gw', 'k')
+    const out = await drain(a, { timeoutMs: { firstToken: 20, total: 4000 } })
+    expect(out.map((e) => e.type)).toEqual(['text_delta', 'usage', 'done'])
+    const other = adapter({ streamImpl: buffered })
+    expect((await drain(other, { timeoutMs: { firstToken: 20, total: 4000 } })).at(-1)).toMatchObject({
+      code: 'TIMEOUT',
+      message: 'first token timeout',
+    })
   })
 
   // Once a stream has spoken the first-token deadline is spent, and only the total one is left. A
