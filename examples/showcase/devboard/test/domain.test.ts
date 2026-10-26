@@ -2789,6 +2789,14 @@ describe('hand-off to the coordinator', () => {
     expect(step()).toContain('已关闭')
   })
 
+  it('has nothing to do for a closed fault without a problem', () => {
+    const state = read(memoryStore(), NOW)
+    const fault = state.faults.find((f: Item) => f.state === 'CLOSED' && !f.problemId)
+    const out = handoff(state, { type: 'fault', id: fault.id })
+    expect(out.next[0]).toContain('无需处理')
+    expect(out.next[0]).not.toContain('8D')
+  })
+
   it('quotes long board text clipped and marks it as data', () => {
     const state = blank()
     const p = newProject(state, 'SOFTWARE')
