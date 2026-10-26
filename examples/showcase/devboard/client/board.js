@@ -375,9 +375,14 @@ export function Shell({ id, title, description, board, role, setRole, actions, c
     'main',
     { className: 'devboard-app', 'data-devboard-page': id },
     h(
-      Banner,
-      { tone: 'info' },
-      `虚构企业「宁川交通装备股份有限公司」与模拟数据，仅供演示${board.data ? ` · 修订 ${board.data.revision}` : ''} · 每 10 秒自动刷新`,
+      'p',
+      { className: 'devboard-eyebrow' },
+      h('span', null, '宁川交通装备股份有限公司 · 研发与质量工作台'),
+      h(
+        'span',
+        { className: 'devboard-demo' },
+        `虚构企业与模拟数据，仅供演示${board.data ? ` · 修订 ${board.data.revision}` : ''} · 每 10 秒自动刷新`,
+      ),
     ),
     board.error && h(Banner, { tone: 'error' }, board.error),
     board.notice && h(Banner, { tone: 'info' }, board.notice),

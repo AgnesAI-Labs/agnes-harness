@@ -410,7 +410,7 @@ export function TodoColumn({ title, items, empty, open }) {
   return h(
     'section',
     { className: 'devboard-card', 'aria-label': title },
-    h('h2', null, `${title}（${items.length}）`),
+    h('h2', null, title, h('span', { className: 'devboard-count' }, items.length)),
     items.length
       ? h(
           'ul',

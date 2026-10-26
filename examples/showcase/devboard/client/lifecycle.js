@@ -104,16 +104,17 @@ function ServiceFacts({ data, project }) {
   )
 }
 
+/** A tile reads `zero` when empty, otherwise its tone: `mine` for what waits on the role, `warn` for open decisions. */
 const kpis = (rows) =>
   h(
     'div',
     { className: 'devboard-kpis' },
-    rows.map(([label, n]) =>
+    rows.map(([label, n, tone]) =>
       h(
         'div',
-        { className: 'devboard-kpi', key: label },
-        h('strong', null, n),
+        { className: `devboard-kpi devboard-kpi-${n ? (tone ?? 'plain') : 'zero'}`, key: label },
         h('span', { className: 'devboard-kpi-label' }, label),
+        h('strong', null, n),
       ),
     ),
   )
@@ -127,9 +128,9 @@ function Workbench({ data, role }) {
   }
   return h(
     'section',
-    { 'aria-label': `${role}的工作台`, 'data-guide': 'overview-workbench' },
+    { className: 'devboard-stack', 'aria-label': `${role}的工作台`, 'data-guide': 'overview-workbench' },
     h('h2', { className: 'devboard-heading' }, `${role}的工作台`),
-    kpis([['待我处理', pending], ...cardsOf(role).map((key) => [METRICS[key][0], counts[key]])]),
+    kpis([['待我处理', pending, 'mine'], ...cardsOf(role).map((key) => [METRICS[key][0], counts[key]])]),
     h(TodoColumn, {
       title: '与我相关的紧急事项',
       items: urgent.map((u) => ({
@@ -151,12 +152,31 @@ export function Overview({ data, board, role }) {
   const overdue = data.projects.filter((p) => p.metrics.overdue)
   const lateFlows = data.approvals.filter((a) => a.overdue)
   return h(
-    React.Fragment,
-    null,
+    'div',
+    { className: 'devboard-stack' },
     h(HandbackCards, { data, board, role }),
     h(Workbench, { data, role }),
     h(ActivityPanel, { data }),
-    h('h2', { className: 'devboard-heading' }, '项目组合'),
+    h(
+      'div',
+      { className: 'devboard-section' },
+      h(
+        'h2',
+        { className: 'devboard-heading' },
+        '项目组合',
+        h('span', { className: 'devboard-count' }, data.projects.length),
+      ),
+      h(
+        Button,
+        {
+          onClick: () => {
+            setCreated(null)
+            push.open('new')
+          },
+        },
+        '新建项目',
+      ),
+    ),
     lateFlows.length > 0 &&
       h(
         'p',
@@ -170,26 +190,12 @@ export function Overview({ data, board, role }) {
         `${overdue.map((p) => `${p.id} ${stageName(data, p.id, p.metrics.currentStage)}`).join('、')} 已超出计划完成日期。`,
       ),
     kpis([
-      ['待决议评审门', pending.length],
+      ['待决议评审门', pending.length, 'warn'],
       ['审批中的流程', data.approvals.filter((a) => a.state === 'RUNNING').length],
-      ['待处理人工介入', interventions.length],
-      ['待 CCB 决议变更', ccb.length],
+      ['待处理人工介入', interventions.length, 'warn'],
+      ['待 CCB 决议变更', ccb.length, 'warn'],
       ['在研项目', data.projects.filter((p) => p.metrics.passedStages < p.metrics.stageCount).length],
     ]),
-    h(
-      'div',
-      { className: 'devboard-buttons' },
-      h(
-        Button,
-        {
-          onClick: () => {
-            setCreated(null)
-            push.open('new')
-          },
-        },
-        '新建项目',
-      ),
-    ),
     h(
       'div',
       { className: 'devboard-projects', 'data-guide': 'overview-portfolio' },
@@ -547,54 +553,58 @@ export function Projects({ data, board, role, setRole }) {
   const gate = selected.kind === 'gate' && byId(data.gates, selected.id)
   const stage = selected.kind === 'stage' && byId(data.stages, selected.id)
   return h(
-    React.Fragment,
-    null,
+    'div',
+    { className: 'devboard-stack' },
     h(
-      'div',
-      { className: 'devboard-filters' },
-      h(ProjectSelect, { data, value: project.id, onChange: setProjectId }),
-    ),
-    h(
-      'dl',
-      { className: 'devboard-facts', 'data-guide': 'projects-info' },
-      fact('客户', project.customer),
-      fact('线路', project.line),
-      fact('项目经理', project.manager),
-      fact('归属技术中心', project.org),
-      fact(
-        '类型 / 产品线',
-        `${data.labels.projectKind[project.kind] ?? project.kind} / ${data.labels.productLine[project.productLine] ?? project.productLine}`,
+      'section',
+      { className: 'devboard-card devboard-summary', 'aria-label': project.name },
+      h(
+        'div',
+        { className: 'devboard-filters' },
+        h(ProjectSelect, { data, value: project.id, onChange: setProjectId }),
       ),
-      fact(
-        '安全完整性',
-        project.safetyIntegrity ? `${project.safetyIntegrity}（按 EN 50126 / EN 50716 假设）` : '—',
-      ),
-      fact('计划', `${day(project.plannedStart)} – ${day(project.plannedEnd)}`),
-      project.live && fact('工作区目录', project.workspaceDir),
-      project.live &&
+      h(
+        'dl',
+        { className: 'devboard-facts', 'data-guide': 'projects-info' },
+        fact('客户', project.customer),
+        fact('线路', project.line),
+        fact('项目经理', project.manager),
+        fact('归属技术中心', project.org),
         fact(
-          '应用',
-          project.appUrl
-            ? h(
-                'a',
-                { href: project.appUrl, target: '_blank', rel: 'noreferrer' },
-                `打开应用 ${project.appUrl}`,
-              )
-            : '发布阶段登记运行地址后可打开',
+          '类型 / 产品线',
+          `${data.labels.projectKind[project.kind] ?? project.kind} / ${data.labels.productLine[project.productLine] ?? project.productLine}`,
         ),
-    ),
-    project.service && h(ServiceInfo, { project }),
-    h(StageBar, { data, projectId: project.id }),
-    h(
-      WorkButton,
-      {
-        board,
-        ...workOf('projectProgress', project),
+        fact(
+          '安全完整性',
+          project.safetyIntegrity ? `${project.safetyIntegrity}（按 EN 50126 / EN 50716 假设）` : '—',
+        ),
+        fact('计划', `${day(project.plannedStart)} – ${day(project.plannedEnd)}`),
+        project.live && fact('工作区目录', project.workspaceDir),
+        project.live &&
+          fact(
+            '应用',
+            project.appUrl
+              ? h(
+                  'a',
+                  { href: project.appUrl, target: '_blank', rel: 'noreferrer' },
+                  `打开应用 ${project.appUrl}`,
+                )
+              : '发布阶段登记运行地址后可打开',
+          ),
+      ),
+      project.service && h(ServiceInfo, { project }),
+      h(StageBar, { data, projectId: project.id }),
+      h(
+        WorkButton,
+        {
+          board,
+          ...workOf('projectProgress', project),
 
-        guide: 'projects-agent-progress',
-        title: '打开研发协调员并预填请求：读取这个项目的交接内容并汇报进度，只汇报不修改',
-      },
-      workOf('projectProgress', project).label,
+          guide: 'projects-agent-progress',
+          title: '打开研发协调员并预填请求：读取这个项目的交接内容并汇报进度，只汇报不修改',
+        },
+        workOf('projectProgress', project).label,
+      ),
     ),
     h(CustomerChange, { key: project.id, board, project, role }),
     project.tailoring?.skipped?.length > 0 &&

@@ -1,14 +1,49 @@
 @layer app {
+  /* Cards sit on a tinted band; every color is a shared theme token, so dark mode follows the host. */
+  .devboard-frame {
+    min-height: 100dvh;
+    background: var(--agnes-bg-subtle);
+  }
   .devboard-app {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 16px;
     width: 100%;
     max-width: 1280px;
     min-width: 0;
     margin: 0 auto;
-    padding: 24px 32px 32px;
+    padding: 24px 32px 40px;
     color: var(--agnes-text-primary);
+    /* The host paints every <main>; the tinted band comes from .devboard-frame behind it. */
+    /* biome-ignore lint/complexity/noImportantStyles: an important rule in this layer beats the host's main rule */
+    background: transparent !important;
+    font-variant-numeric: tabular-nums;
+  }
+  .devboard-eyebrow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin: 0 0 -8px;
+    color: var(--agnes-text-tertiary);
+    font-size: 12px;
+    letter-spacing: 0.02em;
+  }
+  .devboard-demo {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    color: var(--agnes-status-info-text);
+    background: var(--agnes-status-info-bg);
+  }
+  .devboard-demo::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--agnes-status-info-solid);
   }
   .devboard-toolbar,
   .devboard-filters,
@@ -26,16 +61,61 @@
     font-size: 12px;
   }
   .devboard-alert {
-    margin: 0 0 12px;
-    padding: 8px 12px;
-    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 10px 14px;
+    border-radius: 10px;
     color: var(--agnes-status-danger-text);
     border: 1px solid var(--agnes-status-danger-border);
     background: var(--agnes-status-danger-bg);
+    font-size: 13px;
+  }
+  .devboard-alert::before {
+    content: "!" / "";
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    color: var(--agnes-text-inverse);
+    background: var(--agnes-status-danger-solid);
+    font-size: 12px;
+    font-weight: 700;
   }
   .devboard-heading {
-    margin: 20px 0 8px;
-    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 0 0;
+    font-size: 17px;
+    font-weight: 650;
+  }
+  .devboard-section {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .devboard-section .devboard-heading {
+    margin: 0;
+  }
+  .devboard-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 999px;
+    color: var(--agnes-text-secondary);
+    background: var(--agnes-bg-fill);
+    font-size: 12px;
+    font-weight: 600;
   }
   .devboard-cards {
     display: grid;
@@ -44,14 +124,25 @@
   }
   .devboard-card,
   .devboard-column {
-    padding: 12px 16px;
+    padding: 16px 18px;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 10px;
+    border-radius: 14px;
     background: var(--agnes-bg-surface);
   }
+  /* Pages that are not a .devboard-stack still keep a gap below a card. */
+  :not(.devboard-stack) > .devboard-card + * {
+    margin-top: 12px;
+  }
+  .devboard-app .agh-table-scroll + .agh-table-scroll {
+    margin-top: 16px;
+  }
   .devboard-card h2 {
-    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
     font-size: 15px;
+    font-weight: 600;
   }
   .devboard-card ul {
     margin: 0;
@@ -65,9 +156,9 @@
   }
   /* The impact tree of a change: nested lists, one indent per level of the requirement chain. */
   .devboard-impact {
-    padding: 12px 16px;
+    padding: 16px 18px;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 10px;
+    border-radius: 14px;
     background: var(--agnes-bg-surface);
   }
   .devboard-impact h2 {
@@ -90,7 +181,7 @@
   .devboard-columns {
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: minmax(160px, 1fr);
+    grid-auto-columns: minmax(180px, 1fr);
     gap: 12px;
     overflow-x: auto;
     padding-bottom: 4px;
@@ -99,24 +190,32 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    padding: 12px;
+    background: color-mix(in srgb, var(--agnes-bg-surface) 60%, transparent);
   }
   .devboard-column h3 {
-    margin: 0;
-    font-size: 14px;
+    margin: 0 0 2px;
+    padding: 0 2px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--agnes-text-secondary);
   }
   .devboard-columns .devboard-tile {
     display: flex;
     flex-direction: column;
     align-items: stretch;
     gap: 2px;
-    padding: 8px 10px;
+    padding: 10px 12px;
     text-align: start;
     font: inherit;
     color: inherit;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 8px;
-    background: var(--agnes-bg-page);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
     cursor: pointer;
+  }
+  .devboard-columns .devboard-tile:hover {
+    border-color: var(--agnes-line-emphasis);
   }
   .devboard-columns .devboard-tile > span {
     text-align: start;
@@ -139,9 +238,10 @@
     flex-direction: column;
     gap: 12px;
     margin: 16px 0;
-    padding: 12px 16px;
+    padding: 16px 18px;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 10px;
+    border-radius: 14px;
+    background: var(--agnes-bg-surface);
   }
   .devboard-delivery h3 {
     margin: 0;
@@ -153,23 +253,27 @@
   .devboard-facts {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 8px 16px;
+    gap: 10px 24px;
     margin: 0;
   }
+  .devboard-fact {
+    min-width: 0;
+  }
   .devboard-fact dt {
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-tertiary);
     font-size: 12px;
   }
   .devboard-fact dd {
-    margin: 2px 0 0;
+    margin: 1px 0 0;
   }
   .devboard-actions {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 12px 16px;
+    padding: 16px 18px;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 10px;
+    border-radius: 14px;
+    background: var(--agnes-bg-surface);
   }
   .devboard-note {
     width: 100%;
@@ -178,43 +282,59 @@
     color: inherit;
     background: var(--agnes-bg-page);
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 6px;
+    border-radius: 8px;
     resize: vertical;
   }
   .devboard-overdue td {
     color: var(--agnes-status-danger-text);
   }
+  /* KPI tiles: label over a large number; the tone says whether the number asks for action. */
   .devboard-kpis {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: 12px;
-    margin-bottom: 12px;
   }
   .devboard-kpi {
     display: flex;
     flex-direction: column;
-    padding: 12px 16px;
+    gap: 2px;
+    padding: 14px 16px;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 10px;
+    border-radius: 12px;
     background: var(--agnes-bg-surface);
   }
   .devboard-kpi strong {
-    font-size: 24px;
+    font-size: 28px;
+    font-weight: 650;
+    line-height: 1.15;
   }
   .devboard-kpi-label {
     color: var(--agnes-text-secondary);
     font-size: 12px;
   }
+  .devboard-kpi-mine {
+    border-color: color-mix(in srgb, var(--agnes-brand-primary) 25%, transparent);
+    background: var(--agnes-brand-emphasis-soft);
+  }
+  .devboard-kpi-mine strong {
+    color: var(--agnes-brand-primary);
+  }
+  .devboard-kpi-warn strong {
+    color: var(--agnes-status-warning-text);
+  }
+  .devboard-kpi-zero strong {
+    color: var(--agnes-text-disabled);
+  }
   .devboard-projects {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-    gap: 12px;
-    margin-top: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 16px;
   }
   .devboard-project {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 14px;
+    padding: 18px;
   }
   .devboard-project header {
     display: flex;
@@ -222,23 +342,38 @@
     gap: 2px;
   }
   .devboard-project h2 {
-    margin: 0;
+    margin: 2px 0 0;
+    font-size: 16px;
   }
+  .devboard-project .devboard-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--agnes-line-primary);
+    font-size: 13px;
+  }
+  /* Stage bar: a rounded segment per stage, the label under it; the running stage is the bold one. */
   .devboard-stagebar {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 4px;
-    margin: 4px 0 8px;
+    margin: 0;
     padding: 0;
     list-style: none;
   }
   .devboard-stage {
     display: flex;
     flex-direction: column;
+    gap: 2px;
     min-width: 0;
-    padding: 4px 6px;
-    border-top: 4px solid var(--agnes-line-primary);
     font-size: 12px;
+  }
+  .devboard-stage::before {
+    content: "";
+    height: 6px;
+    margin-bottom: 4px;
+    border-radius: 3px;
+    background: var(--agnes-line-primary);
   }
   .devboard-stage-name,
   .devboard-stage-state {
@@ -247,39 +382,56 @@
     white-space: nowrap;
   }
   .devboard-stage-state {
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-tertiary);
   }
-  .devboard-stage-PASSED {
-    border-top-color: var(--agnes-status-success-solid);
+  .devboard-stage-PASSED::before {
+    background: var(--agnes-status-success-solid);
   }
-  .devboard-stage-IN_PROGRESS,
-  .devboard-stage-IN_REVIEW {
-    border-top-color: var(--agnes-status-warning-solid);
+  .devboard-stage-IN_PROGRESS::before,
+  .devboard-stage-IN_REVIEW::before {
+    background: var(--agnes-status-warning-solid);
   }
-  .devboard-stage-REWORK {
-    border-top-color: var(--agnes-status-danger-solid);
+  .devboard-stage-IN_PROGRESS .devboard-stage-name,
+  .devboard-stage-IN_REVIEW .devboard-stage-name {
+    font-weight: 600;
+  }
+  .devboard-stage-IN_PROGRESS .devboard-stage-state,
+  .devboard-stage-IN_REVIEW .devboard-stage-state {
+    color: var(--agnes-status-warning-text);
+  }
+  .devboard-stage-REWORK::before {
+    background: var(--agnes-status-danger-solid);
+  }
+  .devboard-stage-REWORK .devboard-stage-state {
+    color: var(--agnes-status-danger-text);
   }
   .devboard-meter {
     display: grid;
-    grid-template-columns: minmax(64px, auto) 1fr 52px;
+    grid-template-columns: minmax(72px, auto) 1fr 52px;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     font-size: 12px;
   }
   .devboard-meter-label {
-    color: var(--agnes-text-secondary);
+    color: var(--agnes-text-tertiary);
+    font-family: var(--agnes-font-mono, ui-monospace, monospace);
+    font-size: 11px;
+  }
+  .devboard-meter > strong {
+    text-align: end;
+    font-weight: 600;
   }
   .devboard-meter-track {
     position: relative;
-    height: 8px;
-    border-radius: 4px;
-    background: var(--agnes-bg-page);
-    border: 1px solid var(--agnes-line-primary);
+    height: 6px;
+    border-radius: 3px;
+    background: var(--agnes-bg-fill);
     overflow: hidden;
   }
   .devboard-meter-fill {
     position: absolute;
     inset: 0 auto 0 0;
+    border-radius: 3px;
   }
   .devboard-tone-ok {
     background: var(--agnes-status-success-solid);
@@ -361,7 +513,7 @@
   }
   /* Role lens: the stages of the demo role on the project timeline. */
   .devboard-mine td {
-    background: var(--agnes-bg-page);
+    background: var(--agnes-brand-emphasis-soft);
   }
   .devboard-mine td:first-child {
     box-shadow: inset 3px 0 0 var(--agnes-brand-focus-ring);
@@ -408,7 +560,32 @@
     border-radius: 2px;
   }
   .devboard-spark-bar:not(.devboard-tone-bad) {
-    background: var(--agnes-line-primary);
+    background: var(--agnes-line-emphasis);
+  }
+
+  /* Page layout: these compose the blocks above, so they come after them. */
+  .devboard-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .devboard-stack > .devboard-heading,
+  .devboard-stack > .devboard-section {
+    margin-top: 8px;
+  }
+  .devboard-summary {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .devboard-summary > .devboard-facts,
+  .devboard-summary > .devboard-stagebar {
+    align-self: stretch;
+  }
+  .devboard-summary > .devboard-filters {
+    margin: 0;
   }
 
   /* 研发全景: SVG lanes, chips, drawer. Colors come from the shared theme tokens only. */
@@ -425,7 +602,7 @@
     gap: 8px;
     padding: 10px 12px;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 10px;
+    border-radius: 14px;
     background: var(--agnes-bg-surface);
   }
   .pano-chip,
@@ -487,7 +664,7 @@
     min-width: 0;
     overflow-x: auto;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 10px;
+    border-radius: 14px;
     background: var(--agnes-bg-surface);
   }
   .pano-svg {
@@ -661,7 +838,7 @@
     min-width: 0;
     padding: 12px 14px;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 10px;
+    border-radius: 14px;
     background: var(--agnes-bg-surface);
   }
   .pano-drawer-head {
@@ -726,7 +903,7 @@
     max-width: 260px;
     padding: 10px 12px;
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 10px;
+    border-radius: 12px;
     background: var(--agnes-bg-surface);
   }
   .devboard-node + .devboard-node::before {
@@ -761,22 +938,37 @@
     gap: 12px;
     align-items: start;
   }
+  /* To-do rows bleed to the card edge with hairlines between them; a wide card puts each on one line. */
   .devboard-todo-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    margin: 0 -18px -16px;
+    container-type: inline-size;
   }
-  .devboard-todo-item {
+  .devboard-todo-list .devboard-todo-item {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 8px 10px;
-    border: 1px solid var(--agnes-line-primary);
-    border-radius: 8px;
+    justify-content: flex-start;
+    gap: 3px;
+    padding: 11px 18px;
+    border-top: 1px solid var(--agnes-line-primary);
   }
-  .devboard-todo-overdue {
-    border-color: var(--agnes-status-danger-border);
-    background: var(--agnes-status-danger-bg);
+  .devboard-todo-list .devboard-todo-item:last-child {
+    border-radius: 0 0 14px 14px;
+  }
+  .devboard-todo-list .devboard-todo-overdue {
+    background: color-mix(in srgb, var(--agnes-status-danger-bg) 60%, transparent);
+  }
+  @container (min-width: 760px) {
+    .devboard-todo-list .devboard-todo-item {
+      display: grid;
+      grid-template-columns: minmax(170px, auto) minmax(0, 1fr) auto;
+      align-items: center;
+      column-gap: 16px;
+    }
+    .devboard-todo-list .devboard-todo-item > :last-child {
+      text-align: end;
+    }
   }
   .devboard-source {
     margin: 0;
@@ -829,7 +1021,7 @@
     overflow-y: auto;
     padding: 16px;
     border-left: 1px solid var(--agnes-line-primary);
-    background: var(--agnes-bg-surface);
+    background: var(--agnes-bg-subtle);
     color: var(--agnes-text-primary);
   }
   .devboard-guide-top,
@@ -860,11 +1052,12 @@
   }
   .devboard-guide-step {
     border: 1px solid var(--agnes-line-primary);
-    border-radius: 8px;
-    background: var(--agnes-bg-page);
+    border-radius: 10px;
+    background: var(--agnes-bg-surface);
   }
   .devboard-guide-step.is-open {
     border-color: var(--agnes-brand-focus-ring);
+    box-shadow: 0 0 0 3px var(--agnes-brand-emphasis-soft);
   }
   .devboard-guide-head {
     display: flex;
@@ -911,6 +1104,17 @@
     border-radius: 11px;
     border: 1px solid var(--agnes-line-emphasis);
     font-size: 12px;
+    font-weight: 600;
+  }
+  .devboard-guide-step.is-open .devboard-guide-no {
+    color: var(--agnes-text-inverse);
+    border-color: var(--agnes-brand-primary);
+    background: var(--agnes-brand-primary);
+  }
+  .devboard-guide-step.is-done .devboard-guide-no {
+    color: var(--agnes-status-success-text);
+    border-color: transparent;
+    background: var(--agnes-status-success-bg);
   }
   .devboard-guide-step.is-done .devboard-guide-head span:not(.devboard-guide-no) {
     color: var(--agnes-text-secondary);
