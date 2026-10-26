@@ -481,6 +481,11 @@
     background: var(--agnes-brand-primary);
     animation: home-example-blink 1s steps(1) infinite;
   }
+  /* The drawn caret stands in for the native one while the composer is not focused. Once focus is
+     inside the form the native caret blinks too, so the drawn copy would show two cursors at once. */
+  #composer:focus-within .composer-example-caret {
+    display: none;
+  }
   .composer-example-adopt {
     flex: none;
     display: inline-flex;
