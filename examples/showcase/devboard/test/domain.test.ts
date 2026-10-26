@@ -968,6 +968,9 @@ describe('change requests and the field-to-design loop', () => {
     // a change written against the old revision does not roll the item back
     const stale = approvedChange(state, p.id, bufferChange)
     expect(() => release(state, 'ECN_RELEASE', stale.id)).toThrow('NC-BUF-01 当前为 C 版')
+    // refused before anyone signs, and it says the way out: an approved change keeps its items
+    expect(() => release(state, 'ECN_RELEASE', stale.id)).toThrow('另起变更')
+    expect(state.approvals.some((a: Item) => a.subject.id === stale.id && a.state === 'RUNNING')).toBe(false)
     expect(state.configBaselines.filter((b: Item) => b.type === 'AS_DESIGNED')).toHaveLength(2)
   })
 

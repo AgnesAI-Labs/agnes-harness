@@ -772,20 +772,28 @@ function moveChange(cr, to, by, at, note, members) {
 const LEVEL_STAGE = { CUS: 'REQUIREMENTS', SYS: 'REQUIREMENTS', SWR: 'REQUIREMENTS', DES: 'DESIGN' }
 
 /** The next number in a baseline series of one project and type, and the latest revs to build on. */
-function addBaseline(state, projectId, type, fallbacks, bumps, at, note) {
-  const seqOf = (b) => Number(/-(\d+)$/.exec(b.id)?.[1] ?? 0)
-  const mine = (t) => state.configBaselines.filter((b) => b.projectId === projectId && b.type === t)
-  const latest = (t) => mine(t).reduce((top, b) => (!top || seqOf(b) > seqOf(top) ? b : top), undefined)
-  const base = [type, ...fallbacks].map(latest).find(Boolean)
-  const revs = { ...(base?.revs ?? {}) }
-  // A change written against an older revision would roll the item back over a newer one.
+const seqOf = (b) => Number(/-(\d+)$/.exec(b.id)?.[1] ?? 0)
+const baselinesOf = (state, projectId, type) =>
+  state.configBaselines.filter((b) => b.projectId === projectId && b.type === type)
+
+/** The revisions a new baseline of `type` builds on; refuses a change written against an older revision. */
+function revsFor(state, projectId, type, fallbacks, bumps, note, hint) {
+  const latest = (t) =>
+    baselinesOf(state, projectId, t).reduce((top, b) => (!top || seqOf(b) > seqOf(top) ? b : top), undefined)
+  const revs = { ...([type, ...fallbacks].map(latest).find(Boolean)?.revs ?? {}) }
+  // Applying it would roll the item back over a newer one.
   for (const { itemId, fromRev } of bumps)
     if (fromRev && revs[itemId] !== undefined && revs[itemId] !== fromRev)
-      fail(
-        `${itemId} 当前为 ${revs[itemId]} 版，${note} 从 ${fromRev} 版改起：先按当前版本更新变更的影响物料`,
-      )
+      fail(`${itemId} 当前为 ${revs[itemId]} 版，${note} 从 ${fromRev} 版改起：${hint}`)
+  return revs
+}
+const STALE_DESIGN =
+  '该物料已被其他变更改版，批准后的变更不能再改影响物料：驳回本次 ECN 发布，按现行版本另起变更'
+
+function addBaseline(state, projectId, type, fallbacks, bumps, at, note, hint) {
+  const revs = revsFor(state, projectId, type, fallbacks, bumps, note, hint)
   for (const { itemId, toRev } of bumps) revs[itemId] = toRev
-  const seq = Math.max(0, ...mine(type).map(seqOf)) + 1
+  const seq = Math.max(0, ...baselinesOf(state, projectId, type).map(seqOf)) + 1
   const baseline = {
     id: `CB-${projectId}-${type}-${pad(seq, 2)}`,
     projectId,
@@ -886,7 +894,16 @@ function applyChange(state, cr, at) {
 /** Releasing an ECN, when it names items, creates the new as-designed baseline. */
 function releaseEcn(state, cr, at) {
   if (!cr.impact?.items?.length) return undefined
-  return addBaseline(state, cr.projectId, 'AS_DESIGNED', [], cr.impact.items, at, `${cr.ecn}：${cr.title}`)
+  return addBaseline(
+    state,
+    cr.projectId,
+    'AS_DESIGNED',
+    [],
+    cr.impact.items,
+    at,
+    `${cr.ecn}：${cr.title}`,
+    STALE_DESIGN,
+  )
 }
 
 /** Retrofit progress only increases; the last door brings the as-maintained baseline up to the ECN. */
@@ -915,6 +932,7 @@ function setRetrofit(state, { id, done, by, note }, now) {
       cr.impact?.items ?? [],
       at,
       `${cr.ecn ?? cr.id} 整改完成`,
+      '先完成该物料之前变更的整改，再完成本变更的整改',
     )
   return cr
 }
@@ -1935,6 +1953,9 @@ function startable(state, template, subject) {
       )
     )
       fail(`${subject.ecn} 已发布`)
+    // Checked before anyone signs: a release written against an older revision could never be approved.
+    if (subject.impact?.items?.length)
+      revsFor(state, subject.projectId, 'AS_DESIGNED', [], subject.impact.items, subject.ecn, STALE_DESIGN)
   }
   if (template === 'PROBLEM_CLOSE') {
     if (subject.state !== 'VERIFYING') fail(`${same(subject.state)}，处于验证中才能发起关闭审批`)
