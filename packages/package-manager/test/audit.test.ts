@@ -54,10 +54,33 @@ it('keeps the local event when the optional mirror fails', () => {
   })
   expect(JSON.parse(readFileSync(file(), 'utf8'))).toEqual(event)
 })
-it.each(['{"partial":', '[]\n'])('preserves corrupt or incomplete existing data: %s', (contents) => {
-  seed(contents)
-  expect(() => appendPackageAudit(root, event)).toThrow(/audit/)
-  expect(readFileSync(file(), 'utf8')).toBe(contents)
+it('preserves a corrupt complete line and names the log in the refusal', () => {
+  seed('[]\n')
+  expect(() => appendPackageAudit(root, event)).toThrow(
+    expect.objectContaining({ detail: expect.objectContaining({ reason: 'audit-corrupt', path: file() }) }),
+  )
+  expect(readFileSync(file(), 'utf8')).toBe('[]\n')
+  // A torn tail behind a corrupt complete line is not repaired either: a refusal changes nothing.
+  rmSync(file())
+  seed('[]\n{"partial":')
+  expect(() => appendPackageAudit(root, event)).toThrow(/corrupt/)
+  expect(readFileSync(file(), 'utf8')).toBe('[]\n{"partial":')
+})
+// An interrupted append leaves a last line without its newline; the transaction's journal re-appends it.
+it('cuts an incomplete last record, keeps complete lines, appends, and records the repair', () => {
+  const kept = `${JSON.stringify({ ...event, eventId: 'earlier' })}\n`
+  seed(`${kept}{"partial":`)
+  appendPackageAudit(root, event)
+  expect(readFileSync(file(), 'utf8')).toBe(`${kept}${JSON.stringify(event)}\n`)
+  const log = readFileSync(join(root, '.agnes-package-recovery.jsonl'), 'utf8').trim().split('\n')
+  expect(log.map((line) => JSON.parse(line))).toEqual([
+    expect.objectContaining({ action: 'repaired', path: file(), reason: 'audit-incomplete-record-cut' }),
+  ])
+})
+it('restores only the newline when the last record is whole', () => {
+  seed(JSON.stringify(event))
+  appendPackageAudit(root, event)
+  expect(readFileSync(file(), 'utf8')).toBe(`${JSON.stringify(event)}\n`)
 })
 it('rejects a conflicting same-ID record without changing the log', () => {
   const contents = `${JSON.stringify({ ...event, operation: 'other' })}\n`

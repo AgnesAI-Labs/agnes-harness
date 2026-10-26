@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import * as system from '@agnes/system-node'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { appendPackageAudit } from '../src/audit.js'
 import {
@@ -250,16 +251,13 @@ it('rejects oversized journal before any side effect and validates write shape j
     'requires recovery',
   )
 })
-it.each(['{"eventId":"truncated-record"}\n', '{"broken":', '[]\n'])(
-  'refuses malformed existing audit %#',
-  (text) => {
-    const file = join(profile, '.agnes-package-audit.jsonl'),
-      event = audit()[0]
-    writeFileSync(file, text)
-    expect(() => appendPackageAudit(profile, event)).toThrow(/audit/)
-    expect(readFileSync(file, 'utf8')).toBe(text)
-  },
-)
+it.each(['{"eventId":"truncated-record"}\n', '[]\n'])('refuses malformed existing audit %#', (text) => {
+  const file = join(profile, '.agnes-package-audit.jsonl'),
+    event = audit()[0]
+  writeFileSync(file, text)
+  expect(() => appendPackageAudit(profile, event)).toThrow(/audit/)
+  expect(readFileSync(file, 'utf8')).toBe(text)
+})
 it('refuses conflicting same-ID audit and preserves unowned directory collision', () => {
   const file = join(profile, '.agnes-package-audit.jsonl'),
     event = audit()[0]
@@ -290,6 +288,9 @@ it('does not overwrite an unknown current tree during recovery', () => {
   ).toThrow('crash')
   writeFileSync(join(dest, 'unexpected'), 'keep')
   expect(() => recoverPackageStore(store)).toThrow('requires recovery')
+  expect(() => recoverPackageStore(store)).toThrow(
+    expect.objectContaining({ detail: { reason: 'tree-mismatch', path: dest } }),
+  )
   expect(readFileSync(join(dest, 'unexpected'), 'utf8')).toBe('keep')
   expect(existsSync(join(profile, '.agnes-package-transaction.json'))).toBe(true)
 })
@@ -299,4 +300,33 @@ it('validates the whole audit even when an earlier line already has this event I
     file = join(profile, '.agnes-package-audit.jsonl')
   writeFileSync(file, `${JSON.stringify(event)}\n{"eventId":"broken-later"}\n`)
   expect(() => appendPackageAudit(profile, event)).toThrow(/audit/)
+})
+
+it('flushes a staged tree to disk before the journal names it', () => {
+  const { stage, next } = candidate(),
+    order: string[] = []
+  const sync = vi.spyOn(system, 'syncTreeBatchedSync').mockImplementation((...roots: string[]) => {
+    order.push(`sync:${roots.join(',')}`)
+  })
+  try {
+    expect(() =>
+      commitPackage(
+        {
+          ...store,
+          checkpoint: (p) => {
+            order.push(p)
+            if (p === 'prepared') throw Error('crash')
+          },
+        },
+        load(),
+        'acme/pkg-a',
+        next,
+        'update',
+        stage,
+      ),
+    ).toThrow('crash')
+    expect(order).toEqual([`sync:${stage}`, 'prepared'])
+  } finally {
+    sync.mockRestore()
+  }
 })

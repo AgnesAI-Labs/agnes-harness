@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, lstatSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { type PermissionEffectAdmission, validateLockfile } from '@agnes/protocol'
-import { renameWriteThroughSync } from '@agnes/system-node'
+import { renameWriteThroughSync, syncTreeBatchedSync } from '@agnes/system-node'
 import { appendPackageAudit, type PackageAuditSink } from './audit.js'
 import { PackageError } from './errors.js'
 import { canonical, own, readStaticJson, snapshotHash, syncDirectory } from './integrity.js'
@@ -56,8 +56,11 @@ const TREE = /^sha256-[a-f0-9]{64}$/
 const journalPath = (s: PackageStore) => join(s.profileDir, '.agnes-package-transaction.json')
 export const previousPackageDir = (s: Pick<PackageStore, 'dataDir' | 'profile'>, id: string) =>
   join(dirname(packageDir(s.dataDir, s.profile, id)), `.previous-${snapshotHash(id)}`)
-function fail(reason: string): never {
-  throw new PackageError('E_LOCK_MISMATCH', 'package store requires recovery', { detail: { reason } })
+function fail(reason: string, path?: string): never {
+  // The path stays in the detail: hashed directory names would make the message read as a secret.
+  throw new PackageError('E_LOCK_MISMATCH', 'package store requires recovery', {
+    detail: { reason, ...(path ? { path } : {}) },
+  })
 }
 function present(path: string): boolean {
   try {
@@ -72,7 +75,7 @@ function tree(path: string): string | null {
   return present(path) ? hashDirectory(path, { exclude: [] }) : null
 }
 function exact(path: string, expected: string | null): void {
-  if (tree(path) !== expected) fail('tree-mismatch')
+  if (tree(path) !== expected) fail('tree-mismatch', path)
 }
 function state(entry: LockEntry | null): string {
   return entry === null
@@ -194,7 +197,7 @@ function finish(s: PackageStore, j: Journal): void {
       // This directory is exclusively owned by PackageManager. Its identity is pinned by the old lock.
       if (present(p.previous)) {
         const previousExpected = j.old.previous?.treeIntegrity
-        if (!previousExpected || tree(p.previous) !== previousExpected) fail('previous-mismatch')
+        if (!previousExpected || tree(p.previous) !== previousExpected) fail('previous-mismatch', p.previous)
         discard(p, p.previous)
       }
       renameSync(p.backup, p.previous)
@@ -202,7 +205,7 @@ function finish(s: PackageStore, j: Journal): void {
   }
   if (j.next === null && present(p.previous)) {
     const expected = j.old?.previous?.treeIntegrity
-    if (!expected || tree(p.previous) !== expected) fail('previous-mismatch')
+    if (!expected || tree(p.previous) !== expected) fail('previous-mismatch', p.previous)
     discard(p, p.previous)
   }
   if (moves && j.next !== null && j.old !== null) exact(p.previous, j.oldTree)
@@ -320,7 +323,7 @@ function* packageTransaction(
 ): Generator<void, void> {
   if (!changes.length || changes.length > 33 || new Set(changes.map((c) => c.id)).size !== changes.length)
     fail('transaction-group')
-  if (existsSync(journalPath(s))) fail('pending-transaction')
+  if (existsSync(journalPath(s))) fail('pending-transaction', journalPath(s))
   const draft = { ...lock, packages: { ...lock.packages } }
   const entries = changes.map((change) => {
     const j = prepare(s, lock, change)
@@ -339,6 +342,10 @@ function* packageTransaction(
   let published = false
   try {
     mkdirSync(dirname(paths(s, entries[0]!).dest), { recursive: true })
+    // Staged trees reach the disk before the journal names them: after power loss a published tree
+    // must still hash to the digest the lockfile records.
+    const staged = entries.flatMap((j) => paths(s, j).stage ?? [])
+    if (staged.length) syncTreeBatchedSync(...staged)
     writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
     yield
     s.admission?.assertActive()
@@ -355,6 +362,12 @@ function* packageTransaction(
       if (p.stage) renameSync(p.stage, p.dest)
       s.checkpoint?.('new-moved')
     }
+    // The renames reach the disk before the lock names their result, so recovery after power loss never
+    // finds a lock that says "next" over a directory still holding the old tree.
+    for (const dir of new Set(
+      entries.flatMap((j) => [dirname(paths(s, j).dest), dirname(paths(s, j).backup)]),
+    ))
+      syncDirectory(dir)
     const pending = prepareLockPublication(s.profileDir, draft)
     try {
       yield
@@ -398,7 +411,7 @@ function prepare(s: PackageStore, lock: Lockfile, change: PackageChange): Journa
         trustDecision: next.state.trusted ? 'confirmed' : operation === 'untrust' ? 'revoked' : 'pending',
       },
     }
-  if (existsSync(journalPath(s))) fail('pending-transaction')
+  if (existsSync(journalPath(s))) fail('pending-transaction', journalPath(s))
   const dest = packageDir(s.dataDir, s.profile, id),
     old = own(lock.packages, id) ?? null
   for (const other of Object.keys(lock.packages))
