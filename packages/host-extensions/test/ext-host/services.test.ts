@@ -3,6 +3,7 @@ import type { ExtensionManifest, ServiceContext, ServiceDef } from '@agnes/exten
 import { serviceFixture } from '@agnes/extension-api/testkit'
 import type { Actor, ExtensionCallParams, JsonValue } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { Ajv2020 } from 'ajv/dist/2020.js'
 import { compileExtensionSchema } from '../../src/ext-host/json-schema.js'
 import { leaseFor } from '../../src/ext-host/lease.js'
 import {
@@ -303,9 +304,32 @@ describe('S3 Service registration and invocation', () => {
     expect(h.registry.registrations(h.manifest.id)).toEqual([])
   })
 
+  it('checks every schema against the meta-schema on one shared instance', () => {
+    const original = Ajv2020.prototype.validateSchema
+    const checkedOn = new Set<unknown>()
+    const spy = vi
+      .spyOn(Ajv2020.prototype, 'validateSchema')
+      .mockImplementation(function (this: Ajv2020, ...args: Parameters<typeof original>) {
+        checkedOn.add(this)
+        return original.apply(this, args)
+      })
+    try {
+      for (const n of [1, 2, 3])
+        compileExtensionSchema(
+          { type: 'object', properties: { [`shared-meta-${n}`]: { type: 'string' } } },
+          'E_SERVICE_DEF',
+        )
+    } finally {
+      spy.mockRestore()
+    }
+    expect(checkedOn.size).toBe(1)
+  })
+
   it('rejects invalid, remote and async schemas without publishing', () => {
     for (const outputSchema of [
       { type: 'invalid' },
+      // Only the meta-schema rejects this: it compiles to a check that every string passes.
+      { type: 'string', minLength: -1 },
       { $ref: 'https://example.com/remote' },
       { $async: true, type: 'number' },
     ]) {
