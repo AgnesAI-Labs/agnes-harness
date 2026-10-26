@@ -82,6 +82,14 @@ it('a subpage of a tabbed settings page keeps its breadcrumb line', async () => 
     )
 })
 
+it('the recent-errors lookup stays on one line in its subpage header', () => {
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
+  // The header actions are sized to their content; a wrapping lookup put the refresh button on a
+  // second row, so the header grew and its search field sat on the dialog's top edge.
+  expect(ruleBody(css, '.agnes-diagnostics-lookup')).toContain('flex-wrap: wrap')
+  expect(ruleBody(css, '.agh-push-actions .agnes-diagnostics-lookup')).toContain('flex-wrap: nowrap')
+})
+
 it('list rows use fixed tracks so the Switch column aligns across rows', async () => {
   const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   // Each row is its own grid, so an `auto` track is sized per row and the Switch column drifts.
