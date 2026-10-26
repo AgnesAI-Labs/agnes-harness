@@ -3,8 +3,9 @@ import React from 'react'
 import {
   byId,
   fact,
-  gateBadge,
   gateName,
+  gateOutcome,
+  gateOutcomeBadge,
   guided,
   HistoryTable,
   h,
@@ -218,8 +219,7 @@ function Actions({ data, flow, board, role, setRole }) {
         : null,
       inNode && h(Button, { key: 'no', disabled: board.busy, onClick: () => act('REJECT') }, '驳回'),
       h(Button, { disabled: board.busy, onClick: () => act('COMMENT') }, '评论'),
-      canWithdraw &&
-        h(Button, { disabled: board.busy, onClick: () => act('WITHDRAW') }, '撤回'),
+      canWithdraw && h(Button, { disabled: board.busy, onClick: () => act('WITHDRAW') }, '撤回'),
     ),
     !mine &&
       h(
@@ -489,7 +489,7 @@ export function MyTodo({ data, board, role, setRole }) {
       .map((f) => flowItem(f, `${data.labels.approvalState[f.state]} · ${time(f.endedAt ?? f.startedAt)}`)),
     ...data.gates
       .filter((g) => g.decision !== 'PENDING' && (g.signatures ?? []).some((s) => s.role === role))
-      .map((g) => gateItem(g, `${gateLabelOf(data, g)} · ${time(g.decidedAt)}`)),
+      .map((g) => gateItem(g, `${gateOutcome(data, g)} · ${time(g.decidedAt)}`)),
   ].sort(newest)
   const gate = byId(data.gates, selected)
   const flow = byId(data.approvals, selected)
@@ -603,7 +603,7 @@ export function MyTodo({ data, board, role, setRole }) {
           { title: '审批角色', render: (_v, g) => g.approverRoles.join('、'), width: 130 },
           { title: '会签', render: (_v, g) => signProgress(g), width: 160 },
           { title: '未关闭意见', render: (_v, g) => g.findings.filter((f) => !f.closed).length, width: 70 },
-          { title: '决议', dataIndex: 'decision', render: (d) => gateBadge(data, d), width: 90 },
+          { title: '决议', dataIndex: 'decision', render: (_d, g) => gateOutcomeBadge(data, g), width: 90 },
           ...(view === 'decided'
             ? [{ title: '时间', render: (_v, g) => time(g.decidedAt ?? g.submittedAt), width: 140 }]
             : []),
@@ -716,5 +716,3 @@ export function MyTodo({ data, board, role, setRole }) {
       ),
   )
 }
-
-const gateLabelOf = (data, g) => data.labels.state[g.decision] ?? g.decision

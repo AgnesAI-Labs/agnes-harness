@@ -6,9 +6,9 @@ import {
   byId,
   day,
   fact,
-  gateBadge,
-  gateLabel,
   gateName,
+  gateOutcome,
+  gateOutcomeBadge,
   guided,
   HistoryTable,
   h,
@@ -332,7 +332,7 @@ export function GatePanel({ data, gate, board, role, setRole }) {
       fact('编写角色', stage?.author),
       fact('审批角色', gate.approverRoles.join('、')),
       fact('会签进度', signProgress(gate)),
-      fact('决议', gateBadge(data, gate.decision)),
+      fact('决议', gateOutcomeBadge(data, gate)),
       fact('审批人', gate.approver),
       fact('决议时间', time(gate.decidedAt)),
       fact('评审结论', gate.comment),
@@ -384,65 +384,67 @@ export function GatePanel({ data, gate, board, role, setRole }) {
         },
       ],
     }),
-    gate.decision === 'PENDING'
-      ? h(
-          'section',
-          { className: 'devboard-actions', 'aria-label': '评审决议', 'data-guide': 'gate-decision' },
-          stage?.author === role &&
-            h(Badge, { tone: 'warn' }, `当前演示角色「${role}」是该阶段的编写角色，不能审批。`),
-          stage?.author !== role && h(RoleHint, { gate, role, setRole }),
-          can &&
-            open.length > 0 &&
-            h(
-              'span',
-              { className: 'devboard-muted' },
-              `还有 ${open.length} 条意见未关闭：批准前需全部关闭（可在上表填写关闭说明）。`,
-            ),
-          can &&
-            h(NoteField, {
-              id: `devboard-gate-${gate.id}`,
-              label: '评审结论（驳回必填）',
-              value: comment,
-              onChange: setComment,
-            }),
-          can &&
-            h(
-              'div',
-              { className: 'devboard-buttons' },
+    gate.superseded
+      ? h('p', { className: 'devboard-muted' }, '该评审门已因返工作废，不能再处理。')
+      : gate.decision === 'PENDING'
+        ? h(
+            'section',
+            { className: 'devboard-actions', 'aria-label': '评审决议', 'data-guide': 'gate-decision' },
+            stage?.author === role &&
+              h(Badge, { tone: 'warn' }, `当前演示角色「${role}」是该阶段的编写角色，不能审批。`),
+            stage?.author !== role && h(RoleHint, { gate, role, setRole }),
+            can &&
+              open.length > 0 &&
               h(
-                Button,
-                { appearance: 'primary', disabled: board.busy, onClick: () => decide('APPROVED') },
-                `以「${role}」批准`,
+                'span',
+                { className: 'devboard-muted' },
+                `还有 ${open.length} 条意见未关闭：批准前需全部关闭（可在上表填写关闭说明）。`,
               ),
-              h(Button, { disabled: board.busy, onClick: () => decide('REJECTED') }, '驳回'),
-            ),
-        )
-      : h(
-          'section',
-          { className: 'devboard-actions' },
-          h('p', null, decided ? '已决议。现场项目请让研发协调员继续推进。' : '该评审门已决议。'),
-          h(
-            WorkButton,
-            {
-              board,
-              ...workOf('continueGate', { ...gate, decision: 'APPROVED' }),
-              appearance: decided ? 'primary' : 'secondary',
-              guide: 'gate-continue',
-              title: '打开研发协调员会话，草稿由你点发送',
-            },
-            '继续推进',
-          ),
-          h(
-            'details',
-            { className: 'devboard-evidence' },
-            h('summary', null, '越权与重复操作校验'),
+            can &&
+              h(NoteField, {
+                id: `devboard-gate-${gate.id}`,
+                label: '评审结论（驳回必填）',
+                value: comment,
+                onChange: setComment,
+              }),
+            can &&
+              h(
+                'div',
+                { className: 'devboard-buttons' },
+                h(
+                  Button,
+                  { appearance: 'primary', disabled: board.busy, onClick: () => decide('APPROVED') },
+                  `以「${role}」批准`,
+                ),
+                h(Button, { disabled: board.busy, onClick: () => decide('REJECTED') }, '驳回'),
+              ),
+          )
+        : h(
+            'section',
+            { className: 'devboard-actions' },
+            h('p', null, decided ? '已决议。现场项目请让研发协调员继续推进。' : '该评审门已决议。'),
             h(
-              'div',
-              { className: 'devboard-buttons' },
-              h(Button, { disabled: board.busy, onClick: () => decide('APPROVED') }, '再次批准'),
+              WorkButton,
+              {
+                board,
+                ...workOf('continueGate', { ...gate, decision: 'APPROVED' }),
+                appearance: decided ? 'primary' : 'secondary',
+                guide: 'gate-continue',
+                title: '打开研发协调员会话，草稿由你点发送',
+              },
+              '继续推进',
+            ),
+            h(
+              'details',
+              { className: 'devboard-evidence' },
+              h('summary', null, '越权与重复操作校验'),
+              h(
+                'div',
+                { className: 'devboard-buttons' },
+                h(Button, { disabled: board.busy, onClick: () => decide('APPROVED') }, '再次批准'),
+              ),
             ),
           ),
-        ),
   )
 }
 
@@ -632,7 +634,7 @@ export function Projects({ data, board, role, setRole }) {
                   h(
                     Button,
                     { appearance: 'link', onClick: () => openPage('gate', g.id) },
-                    `${gateName(g)} ${gateLabel(data, g.decision)}${g.decision === 'PENDING' && g.approverRoles.length > 1 ? `（会签 ${signProgress(g)}）` : ''}`,
+                    `${gateName(g)} ${gateOutcome(data, g)}${g.decision === 'PENDING' && g.approverRoles.length > 1 ? `（会签 ${signProgress(g)}）` : ''}`,
                   ),
                 ),
               ),

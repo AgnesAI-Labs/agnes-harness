@@ -302,6 +302,10 @@ export const gateLabel = (data, decision) =>
   decision === 'PENDING' ? '待决议' : (data.labels.state[decision] ?? decision)
 export const gateBadge = (data, decision) =>
   h(Badge, { tone: TONES[decision] ?? 'off' }, gateLabel(data, decision))
+/** A gate voided by a change rework reads as such, whatever its old decision was. */
+export const gateOutcome = (data, g) => (g.superseded ? '已作废（返工）' : gateLabel(data, g.decision))
+export const gateOutcomeBadge = (data, g) =>
+  g.superseded ? h(Badge, { tone: 'off' }, gateOutcome(data, g)) : gateBadge(data, g.decision)
 export const time = (iso) =>
   iso ? new Date(iso).toLocaleString('zh-CN', { hour12: false, dateStyle: 'short', timeStyle: 'short' }) : '—'
 export const day = (iso) => (iso ? new Date(iso).toLocaleDateString('zh-CN') : '—')
