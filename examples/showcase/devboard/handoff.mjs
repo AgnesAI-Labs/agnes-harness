@@ -1,7 +1,7 @@
 // What the coordinator needs to know about one board object before it continues the work (devboard_handoff,
 // devboard.handoff). Read-only and bounded: every text is clipped and every list capped, so a hand-off
 // never grows with the board. Texts quoted from the board are data, not instructions.
-import { DomainError, effectiveState, LABELS, STAGES } from './domain.mjs'
+import { agentDrafted, DomainError, effectiveState, LABELS, STAGES } from './domain.mjs'
 import { GATE_PROFILES } from './profiles.mjs'
 
 export const HANDOFF_TYPES = ['gate', 'project', 'change', 'trial', 'fault', 'problem', 'intervention']
@@ -96,7 +96,7 @@ function stageStep(state, project, stage) {
     NOT_STARTED: `用 devboard_stage_update 开始 ${name}`,
     REWORK: reworkText(state, item, name),
     IN_PROGRESS: `完成 ${name} 的交付物${gate ? `，再用 devboard_gate_submit 提交 ${gate.code}` : ''}`,
-    IN_REVIEW: `${name} 的评审门正在等人决议，本轮不要替人批准`,
+    IN_REVIEW: autoText(state, item) ?? `${name} 的评审门正在等人决议，本轮不要替人批准`,
     PASSED: `${name} 已通过`,
   }[item.state]
   return {
@@ -110,6 +110,24 @@ function stageStep(state, project, stage) {
         : undefined,
     action: by,
   }
+}
+
+/** A pending auto gate (TR4) is the coordinator's to work: it closes its own findings and the gate passes by itself. */
+function autoText(state, item) {
+  const gate = state.gates.find((g) => g.stageId === item.id && g.decision === 'PENDING')
+  if (!gate?.auto) return undefined
+  const open = (gate.findings ?? []).filter((f) => !f.closed)
+  const own = open.filter((f) => f.by !== '系统检查').map((f) => f.id)
+  const system = open.filter((f) => f.by === '系统检查').map((f) => f.id)
+  return [
+    `${gate.code} 是自动门：意见全部关闭且前面阶段都已通过后自动通过，不用等人决议`,
+    own.length
+      ? `逐条修复评审意见 ${top(own).join('、')}，再用 devboard_gate_submit 的 closeFindings 关闭`
+      : '',
+    system.length ? `系统检查意见 ${top(system).join('、')} 随缺陷关闭或发布审批批准而关闭` : '',
+  ]
+    .filter(Boolean)
+    .join('；')
 }
 
 /** The project's real current work: the first stage, in flow order, that has not passed (an approved change can reopen early ones). */
@@ -169,8 +187,8 @@ function gateHandoff(state, gate) {
   const next = []
   let step
   const newer = state.gates.findLast((g) => g.stageId === gate.stageId && g.code === gate.code)
-  const current = () =>
-    stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
+  // The first unpassed stage: an earlier stage in rework comes before this one (the domain refuses it otherwise).
+  const current = () => currentStep(state, project)
   if (gate.superseded) {
     // A voided gate is void whatever it decided; a newer gate of its code is the one that counts.
     step = current()
@@ -183,7 +201,14 @@ function gateHandoff(state, gate) {
   } else if (decision === 'PENDING') {
     const signed = (gate.signatures ?? []).map((s) => s.role)
     const waiting = gate.approverRoles.filter((r) => !signed.includes(r))
-    next.push(`该门尚未决议，等待 ${waiting.join('、')}；不要替人批准`)
+    next.push(autoText(state, stage) ?? `该门尚未决议，等待 ${waiting.join('、')}；不要替人批准`)
+    const first = current()
+    if (first && first.stage !== stage.stage) {
+      step = first
+      next.push(
+        `前一阶段「${stageLabel(project, first.stage)}」尚未通过，本门要等它重新通过才能${gate.auto ? '自动通过' : '批准'}：${first.action}`,
+      )
+    }
   } else if (decision === 'APPROVED') {
     // A passed stage has nothing left to do: point at the project's real current work.
     step = current()
@@ -330,8 +355,7 @@ const CHANGE_NEXT = {
   SUBMITTED:
     '补齐影响分析（devboard_change_upsert，impact.reqs 写起点并设 traceFrom: true；来源为现场或型式试验还需 rootCause），推进到已分析，再提交 CCB',
   ANALYZED: '推进到 CCB_REVIEW，并用 devboard_approval_submit（ECR）发起审批后停下',
-  CCB_REVIEW:
-    '等人在「我的待办」完成 ECR 审批与 CCB 决议；还没有流程时用 devboard_approval_submit（ECR）发起',
+  CCB_REVIEW: '等人在「我的待办」完成 ECR 审批与 CCB 决议',
   APPROVED: '变更已批准：按 ECN 改受影响的条目并回归，实施后登记',
   IMPLEMENTED: '登记验证结果（verification）后才能关闭',
   REJECTED: '变更被驳回，不再继续；如需调整请新建变更',
@@ -344,6 +368,11 @@ function changeHandoff(state, cr) {
   )
   const impact = cr.impact ?? {}
   const next = [CHANGE_NEXT[cr.state] ?? `变更处于 ${cr.state}`]
+  // Only a change the coordinator drafted or sent to CCB is its to put through ECR; others wait for people.
+  if (cr.state === 'CCB_REVIEW' && !flow)
+    next[0] = agentDrafted('change', cr)
+      ? '还没有 ECR 流程：用 devboard_approval_submit（ECR）发起审批后停下'
+      : '还没有 ECR 流程：这不是你起草或送审的变更，请用户在看板上发起 ECR，不要自行发起'
   const reworkedStages = (cr.reworked ?? [])
     .map((id) => state.stages.find((s) => s.id === id))
     .filter(Boolean)

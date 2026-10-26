@@ -7,6 +7,7 @@ import { mainProgress } from '../client/guide-progress.js'
 import {
   ACTING_ROLES,
   ACTIVITY_LIMIT,
+  AGENT_NAME,
   actApproval,
   actorOf,
   artifactBody,
@@ -404,7 +405,15 @@ describe('multi-gate stages and tailoring', () => {
     const code = byId(state.stages, `${held.id}/IMPLEMENTATION`)
     code.state = 'IN_PROGRESS'
     const tr4 = submitGate(state, { stageId: code.id, by: '研发协调员', findings: ['x'] }, NOW).gate
+    // the hand-off has the coordinator work the auto gate's findings instead of waiting for a person
+    expect(handoff(state, { type: 'gate', id: tr4.id }).next).toEqual([
+      'TR4 是自动门：意见全部关闭且前面阶段都已通过后自动通过，不用等人决议；逐条修复评审意见 F-01，再用 devboard_gate_submit 的 closeFindings 关闭',
+    ])
     design.state = 'IN_PROGRESS'
+    // ...and, while an earlier stage is open again, points at that stage
+    const waiting = handoff(state, { type: 'gate', id: tr4.id })
+    expect(waiting.nextStep.stage).toBe('DESIGN')
+    expect(waiting.next[1]).toContain('本门要等它重新通过才能自动通过')
     submitGate(
       state,
       { stageId: code.id, by: '研发协调员', closeFindings: [{ id: 'F-01', note: '已改' }] },
@@ -3282,6 +3291,22 @@ describe('hand-off to the coordinator', () => {
     const change = handoff(state, { type: 'change', id: cr.id })
     expect(change.reworkedStages).toEqual([{ stage: 'DESIGN', state: 'REWORK' }])
     expect(change.next[0]).toContain('DESIGN')
+  })
+
+  it('has the coordinator start the ECR only for a change it drafted or sent to CCB itself', () => {
+    const state = seed(NOW)
+    const toCcb = (by: string) => {
+      const cr = create(
+        state,
+        { kind: 'change', projectId: 'PRJ-2026-008', title: 'c', reason: 'r', impact: { reqs: ['DES-301'] } },
+        NOW,
+      )
+      for (const to of ['ANALYZED', 'CCB_REVIEW'])
+        transition(state, { kind: 'change', id: cr.id, to, by }, NOW)
+      return handoff(state, { type: 'change', id: cr.id }).next[0]
+    }
+    expect(toCcb('变更经理 x')).toContain('请用户在看板上发起 ECR')
+    expect(toCcb(AGENT_NAME)).toContain('用 devboard_approval_submit（ECR）发起审批')
   })
 
   it('keeps the rejected gate, its comment and its open findings on the project hand-off', () => {
