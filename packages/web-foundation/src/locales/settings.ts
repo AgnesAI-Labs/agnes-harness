@@ -14,7 +14,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'accounts.keepEditing': 'Keep editing',
     'accounts.discardAction': 'Discard changes',
     'accounts.emptyHelp':
-      'Connect a model to start working. Choose Add account above, or try Demo from a new conversation.',
+      'Connect a model to start working: choose a provider below, or try the local demo model.',
     'accounts.readFailed': 'Accounts could not be loaded. Your saved accounts have been kept.',
     'accounts.advanced': 'Advanced options',
     'accounts.back': 'Back',
@@ -237,7 +237,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
 
     'accounts.keepEditing': '继续编辑',
     'accounts.discardAction': '放弃更改',
-    'accounts.emptyHelp': '连接模型后即可开始工作。点击上方“添加账户”，或在新会话里试用 Demo。',
+    'accounts.emptyHelp': '连接模型后即可开始工作：在下方选一个服务商，或试用本地演示模型。',
     'accounts.readFailed': '无法读取账户，已保存的账户仍然保留。',
     'accounts.advanced': '高级选项',
     'accounts.back': '上一步',
