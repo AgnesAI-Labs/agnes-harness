@@ -2242,6 +2242,10 @@ function logActivity(state, { tool, actor, input = {} }, result, now) {
     summary: `${verb} ${id}${to ? ` → ${to}` : ''}`.slice(0, SUMMARY_LIMIT),
   })
   if (state.activity.length > ACTIVITY_LIMIT) state.activity.splice(0, state.activity.length - ACTIVITY_LIMIT)
+  // The feed is capped, so a card is marked when its follow-up is written instead of being re-derived from the feed later.
+  const line = state.activity.at(-1)
+  for (const card of state.handbacks ?? [])
+    if (card.state === 'OPEN' && followedBy(card, line)) card.state = 'FOLLOWED'
 }
 
 // ── Hand-backs ────────────────────────────────────────────────────────────────────────────────
@@ -2262,17 +2266,18 @@ function addHandback(state, card, now) {
     state: 'OPEN',
     ...card,
   })
-  if (state.handbacks.length > HANDBACK_LIMIT)
-    state.handbacks.splice(0, state.handbacks.length - HANDBACK_LIMIT)
+  // Handled cards go first, so a card still waiting is not dropped while older handled ones remain.
+  while (state.handbacks.length > HANDBACK_LIMIT) {
+    const handled = state.handbacks.findIndex((c) => c.state !== 'OPEN')
+    state.handbacks.splice(Math.max(handled, 0), 1)
+  }
 }
 
+const followedBy = (card, a) =>
+  a.rev > card.rev &&
+  ((card.projectId && a.projectId === card.projectId) || card.watch?.includes(a.entity?.id))
 /** Whether the coordinator has written for this card's project or objects since the card was made. */
-const followedUp = (state, card) =>
-  (state.activity ?? []).some(
-    (a) =>
-      a.rev > card.rev &&
-      ((card.projectId && a.projectId === card.projectId) || card.watch?.includes(a.entity?.id)),
-  )
+const followedUp = (state, card) => (state.activity ?? []).some((a) => followedBy(card, a))
 
 /** The cards still waiting for the coordinator, newest first. */
 export const pendingHandbacks = (state) =>

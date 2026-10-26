@@ -3275,6 +3275,46 @@ describe('hand-backs of human decisions', () => {
     expect(pendingHandbacks(state)).toEqual([])
   })
 
+  it('keeps a followed-up card cleared after its follow-up line leaves the capped feed', () => {
+    const store = memoryStore()
+    const ids = update(
+      store,
+      (s: State) => {
+        const p = newProject(s, 'SOFTWARE')
+        const q = newProject(s, 'SOFTWARE')
+        pass(s, p.id, 'INITIATION')
+        return { p: p.id, q: q.id }
+      },
+      NOW,
+    ).result
+    expect(pendingHandbacks(read(store, NOW))).toHaveLength(1)
+    const wrote = (projectId: string) =>
+      update(store, () => ({ id: `${projectId}/DESIGN`, projectId }), NOW, {
+        tool: 'devboard_stage_update',
+        actor: '研发协调员',
+        input: { projectId },
+      })
+    wrote(ids.p)
+    expect(pendingHandbacks(read(store, NOW))).toEqual([])
+    for (let i = 0; i <= ACTIVITY_LIMIT; i++) wrote(ids.q)
+    expect(pendingHandbacks(read(store, NOW))).toEqual([])
+  })
+
+  it('drops handled cards before a card still waiting when over the limit', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    pass(state, p.id, 'INITIATION')
+    const waiting = state.handbacks[0]
+    for (let i = 0; i < HANDBACK_LIMIT; i++) {
+      state.revision++
+      const extra = newProject(state, 'SOFTWARE')
+      pass(state, extra.id, 'INITIATION')
+      dismissHandback(state, { id: state.handbacks.at(-1).id, by: 'x' })
+    }
+    expect(state.handbacks).toHaveLength(HANDBACK_LIMIT)
+    expect(state.handbacks).toContain(waiting)
+  })
+
   it(`keeps the newest ${HANDBACK_LIMIT} cards`, () => {
     const state = blank()
     const req = create(state, { kind: 'requirement', title: '需求', by: 'x' }, NOW)
