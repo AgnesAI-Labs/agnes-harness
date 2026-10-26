@@ -739,6 +739,8 @@ describe('faults and quality problems', () => {
     for (let i = 0; i < 40; i++) upsertProblem(state, { id: qp.id, note: `记录 ${i}` }, NOW)
     expect(qp.history).toHaveLength(30)
     expect(qp.history[0]).toMatchObject({ to: 'OPEN', note: '登记' })
+    // and so does the move into its state, which the stall clock reads
+    expect(qp.history).toContainEqual(expect.objectContaining({ from: 'OPEN', to: 'ANALYZING' }))
     upsertProblem(state, { id: qp.id, to: 'ACTION' }, NOW)
     upsertProblem(state, { id: qp.id, to: 'VERIFYING' }, NOW)
     const close = () => submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW)

@@ -300,8 +300,11 @@ const stageLabel = (state, stage) => {
 }
 function record(item, at, by, from, to, note) {
   const all = [...(item.history ?? []), { at, by, from, to, ...(note ? { note } : {}) }]
-  // The first line (who created it, and when) stays: approval rights and timelines read it.
-  item.history = all.length > HISTORY_LIMIT ? [all[0], ...all.slice(1 - HISTORY_LIMIT)] : all
+  // The first line (who created it, and when) and the move into the current state stay: approval
+  // rights, timelines and the blocker clocks read them, and kept notes would otherwise push them out.
+  const entry = all.findLastIndex((e, i) => i > 0 && e.from !== e.to)
+  let drop = all.length - HISTORY_LIMIT
+  item.history = all.filter((_, i) => i === 0 || i === entry || drop-- <= 0)
   item.state = to
 }
 
