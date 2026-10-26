@@ -214,14 +214,23 @@ export function createSidebarPagination(
     },
     async created(workspaceId: string) {
       touched = true
+      // Rows are the expansion: a refresh caused by the new session re-reads only the first page, so
+      // remember how many pages the user had open before it runs and load the rest back afterwards.
+      const depth = Math.max(
+        1,
+        Math.ceil((groups.find((group) => group.groupId === workspaceId)?.items.length ?? 0) / 5),
+      )
       await refresh()
       const group = groups.find((item) => item.groupId === workspaceId)
-      if (group) {
-        if (group.opened && group.loaded && !group.stale && !group.error && group.items.length <= 5) return
-        group.opened = true
+      if (!group) return
+      group.opened = true
+      if (!group.loaded || group.stale || group.error) {
         invalidate(group)
         await load(group)
       }
+      const pagesShown = Math.max(1, Math.ceil(group.items.length / 5))
+      for (let page = pagesShown; page < depth && group.next && !group.stale && !group.error; page++)
+        await load(group, true)
     },
     reset() {
       epoch++

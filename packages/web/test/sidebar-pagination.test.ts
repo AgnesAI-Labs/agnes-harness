@@ -333,6 +333,23 @@ it('opens the created session group without rereading a freshly loaded first pag
   expect(s.ui.snapshot().groups[1]).toMatchObject({ opened: true, loaded: true, loading: false })
 })
 
+it('keeps the pages a user had open when a created session rereads the first page', async () => {
+  const s = setup()
+  await s.ui.refresh()
+  await s.ui.action('a', 'more')
+  expect(s.ui.rows()).toHaveLength(10)
+  s.revision('v2')
+  await s.ui.created('a')
+  // The new session refreshes the group's rows; the pages that were already open come back.
+  expect(s.ui.rows()).toHaveLength(10)
+  expect(s.ui.snapshot().groups[0]).toMatchObject({
+    opened: true,
+    stale: false,
+    next: '10',
+    revision: 'v2',
+  })
+})
+
 it('rereads the first page when a revision change lands on a group showing more than one page', async () => {
   const s = setup()
   await s.ui.refresh()
