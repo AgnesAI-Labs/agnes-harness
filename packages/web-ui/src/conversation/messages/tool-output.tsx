@@ -6,6 +6,18 @@ import { Tag } from '../../ui/tag.js'
 import type { ToolNode } from './context.js'
 import { shellTranscript } from './shell-output.js'
 
+/**
+ * Arguments arrive as the clipped one-line JSON the tool received. Re-indenting it keeps a nested
+ * payload readable in the technical fold; a preview clipped mid-value is not JSON, so it stays as is.
+ */
+function rawArgsText(preview: string): string {
+  try {
+    return JSON.stringify(JSON.parse(preview), null, 2)
+  } catch {
+    return preview
+  }
+}
+
 /** A readable receipt first; exact call arguments remain in a separate technical fold. */
 export function ToolOutput({
   node,
@@ -73,7 +85,7 @@ export function ToolOutput({
       {node.argsPreview && (
         <Disclosure variant="plain" summary={t('tool.detail.rawArgs')}>
           <p>{node.name}</p>
-          <pre data-testid="tool-raw-args">{node.argsPreview}</pre>
+          <pre data-testid="tool-raw-args">{rawArgsText(node.argsPreview)}</pre>
         </Disclosure>
       )}
       {appendix && (

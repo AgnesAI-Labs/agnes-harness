@@ -396,6 +396,10 @@ describe('W3b projected message DOM', () => {
     expect(
       item('tool')?.querySelector('.tool-detail-inner [data-testid="tool-detail-text"]')?.textContent,
     ).toContain('原始参数')
+    // The one-line clipped JSON is re-indented for reading; the values themselves are untouched.
+    expect(item('tool')?.querySelector('[data-testid="tool-raw-args"]')?.textContent).toBe(
+      '{\n  "path": "README.md"\n}',
+    )
     expect(item('approval')?.textContent).toContain('需要你确认')
     expect(item('cost')?.textContent).toContain('费用未提供')
     expect(item('artifact')?.textContent).toContain('report.md')
