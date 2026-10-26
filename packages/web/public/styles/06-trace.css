@@ -997,8 +997,8 @@
   }
   .trace-row-preview mark {
     border-radius: 2px;
-    background: var(--agnes-status-warning-bg);
-    color: inherit;
+    background: var(--agnes-trace-mark-bg);
+    color: var(--agnes-trace-mark-text);
   }
   /* A match can sit in text the row does not show, so the row itself carries the current mark. */
   .trace-row[data-match="current"] {
@@ -1006,6 +1006,10 @@
       inset 2px 0 0 var(--agnes-status-warning-text),
       var(--focus-line-inset);
     background: color-mix(in srgb, var(--agnes-status-warning-bg) 45%, transparent);
+  }
+  /* Every other hit gets a weaker row tint: the count and what the list shows then agree. */
+  .trace-row[data-match="hit"] {
+    background: var(--agnes-trace-row-hit);
   }
   .trace-row[data-match="current"] mark {
     box-shadow: 0 0 0 1px var(--agnes-status-warning-text);

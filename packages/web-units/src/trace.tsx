@@ -524,6 +524,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
   )
   const matchIndex = Math.max(0, matchId === undefined ? 0 : matches.indexOf(matchId))
   const currentMatch = matches[matchIndex]
+  const matchSet = useMemo(() => new Set(matches), [matches])
   // One group per turn, in the order the turns first appear; rows are already placed contiguously.
   const groups = useMemo(() => {
     const result: Array<{ turn: number | undefined; rows: TraceRow[] }> = []
@@ -931,6 +932,7 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
                 showStep={item.showStep}
                 selected={row.id === selected}
                 current={row.id === currentMatch}
+                match={matchSet.has(row.id)}
                 query={query}
                 depth={nested ? toolDepth : 0}
                 listItem={!nested}

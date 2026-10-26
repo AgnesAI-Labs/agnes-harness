@@ -4,9 +4,11 @@ import type { SessionControlFact } from '@agnes/protocol/gen/agnes-v1'
 import { webUiLocaleCatalog } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
+import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, describe, expect, it } from 'vitest'
 import { defaultPane, inspectorPanes } from '../src/trace-inspector.js'
-import { buildControlRows, buildTraceRows, contextLine } from '../src/trace-model.js'
+import { highlight, TraceListRow } from '../src/trace-list-row.js'
+import { buildControlRows, buildTraceRows, contextLine, type TraceRow } from '../src/trace-model.js'
 import { provenanceLinks, TraceSourceRecord } from '../src/trace-provenance.js'
 import {
   clampInspectorWidth,
@@ -339,5 +341,44 @@ describe('splitter', () => {
     expect(width).toBe(TRACE_INSPECTOR_DEFAULT_WIDTH)
     expect(localStorage.getItem(TRACE_INSPECTOR_WIDTH_KEY)).toBeNull()
     await act(async () => again.unmount())
+  })
+})
+
+describe('trace search marks', () => {
+  const row: TraceRow = {
+    id: 'row-1',
+    seq: 1,
+    title: '读取 pom.xml',
+    text: '读取 pom.xml',
+    kind: 'tool',
+    badge: '工具',
+    statusCode: 'completed',
+    preview: '',
+    raw: '',
+    source: 'read',
+    status: '已完成',
+  }
+
+  it('wraps every occurrence of the query in the row text', () => {
+    const html = renderToStaticMarkup(createElement('span', null, highlight('读取 a，再读取 b', '读取')))
+    expect(html.match(/<mark>/g)).toHaveLength(2)
+  })
+
+  it('flags a non-current hit on the row, so a match outside the visible text still shows', () => {
+    const html = renderToStaticMarkup(
+      createElement(TraceListRow, {
+        row,
+        showStep: false,
+        selected: false,
+        current: false,
+        match: true,
+        query: '读取',
+        depth: 0,
+        listItem: true,
+        onSelect: () => undefined,
+      }),
+    )
+    expect(html).toContain('data-match="hit"')
+    expect(html).toContain('<mark>读取</mark>')
   })
 })

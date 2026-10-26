@@ -37,6 +37,7 @@ export function TraceListRow({
   showStep,
   selected,
   current,
+  match,
   query,
   depth,
   listItem,
@@ -46,6 +47,8 @@ export function TraceListRow({
   showStep: boolean
   selected: boolean
   current: boolean
+  /** A search hit that is not the current one: the row carries a weak flag so hits in hidden text still show. */
+  match?: boolean
   query: string
   depth: number
   listItem: boolean
@@ -67,7 +70,7 @@ export function TraceListRow({
       htmlType="button"
       role={listItem ? 'listitem' : undefined}
       data-trace-row-id={row.id}
-      data-match={current ? 'current' : undefined}
+      data-match={current ? 'current' : match ? 'hit' : undefined}
       aria-current={selected ? 'true' : undefined}
       onClick={onSelect}
       {...(depth > 0 ? { style: { paddingLeft: `${24 + depth * 16}px` } } : {})}

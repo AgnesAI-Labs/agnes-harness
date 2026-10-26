@@ -218,6 +218,10 @@
     --agnes-trace-track: rgb(127 127 127 / 8%);
     --agnes-trace-row-current: rgb(127 127 127 / 10%);
     --agnes-trace-row-hover: rgb(127 127 127 / 7%);
+    /* 搜索命中的标记：浅色下用琥珀底配深琥珀字，非当前命中再给整行一层弱底。 */
+    --agnes-trace-mark-bg: var(--agnes-status-warning-bg);
+    --agnes-trace-mark-text: var(--agnes-status-warning-text);
+    --agnes-trace-row-hit: color-mix(in srgb, var(--agnes-status-warning-bg) 70%, transparent);
     --agnes-trace-lane-input: #b4b7bd;
     --agnes-trace-lane-user: #6a6f7a;
     --agnes-trace-lane-context: #2f8f5b;
@@ -378,6 +382,10 @@
     --agnes-trace-track: rgb(127 127 127 / 8%);
     --agnes-trace-row-current: rgb(127 127 127 / 10%);
     --agnes-trace-row-hover: rgb(127 127 127 / 7%);
+    /* 深色下行底本来就是深色，命中标记改用亮琥珀字加低透明琥珀底才看得见。 */
+    --agnes-trace-mark-bg: color-mix(in srgb, var(--agnes-status-warning-text) 24%, transparent);
+    --agnes-trace-mark-text: var(--agnes-status-warning-text);
+    --agnes-trace-row-hit: color-mix(in srgb, var(--agnes-status-warning-text) 12%, transparent);
     --agnes-trace-lane-input: #5a5e68;
     --agnes-trace-lane-user: #9a9ea8;
     --agnes-trace-lane-context: #5cc28a;
