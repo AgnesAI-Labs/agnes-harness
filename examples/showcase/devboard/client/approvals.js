@@ -488,7 +488,13 @@ export function MyTodo({ data, board, role, setRole }) {
       .filter((f) => f.actions.some((a) => a.role === role && a.action !== 'COMMENT'))
       .map((f) => flowItem(f, `${data.labels.approvalState[f.state]} · ${time(f.endedAt ?? f.startedAt)}`)),
     ...data.gates
-      .filter((g) => g.decision !== 'PENDING' && (g.signatures ?? []).some((s) => s.role === role))
+      .filter(
+        (g) =>
+          g.decision !== 'PENDING' &&
+          // A rejection leaves no signature: the rejecting role is the gate's approver.
+          ((g.signatures ?? []).some((s) => s.role === role) ||
+            (g.decision === 'REJECTED' && (g.approver === role || g.approver?.startsWith(`${role} `)))),
+      )
       .map((g) => gateItem(g, `${gateOutcome(data, g)} · ${time(g.decidedAt)}`)),
   ].sort(newest)
   const gate = byId(data.gates, selected)
