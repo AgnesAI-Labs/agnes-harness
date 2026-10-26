@@ -20,6 +20,16 @@ import type { PlatformBackend, Prompter } from '../adapters/index.js'
 
 export type HostPaths = { dataDir: string; profileDir: string; workspaceRoot: string; hostRoot: string }
 
+/** boot: the worker's base Host; session/migration: a session's own composition; generation: a new
+ * plugin generation replacing a running one. */
+export type AssemblyCause = Readonly<{
+  reason: 'boot' | 'session' | 'migration' | 'generation'
+  /** The session whose composition this Host serves, when one asked for it. */
+  session?: string
+  /** The composition hash this Host serves. */
+  composition?: string
+}>
+
 export type AssembleDeps = HostPaths &
   TrajectoryAssemblyOptions & {
     childRoles?: KernelOptions['childRoles']
@@ -49,6 +59,11 @@ export type AssembleDeps = HostPaths &
     /** Trusted Node runtime for Windows process brokers when the host runs inside SEA. */
     windowsNodeExecutable?: string
     crashAt?: string
+    /**
+     * Why this Host is being assembled. Written only to the host.assembling and host.ready audit
+     * rows, so a diagnostics bundle shows what keeps rebuilding Hosts; it changes no behaviour.
+     */
+    assemblyCause?: AssemblyCause
     providerFactory?: (p: ResolvedProfile, opts: ProviderBuildOptions) => Provider
     /**
      * Session workers may assemble without provider.routes so plugin apply can boot. CLI print/TUI

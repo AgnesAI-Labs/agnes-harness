@@ -142,6 +142,8 @@ function fakePlatform(caps: Record<string, CapabilityLevel['level']>): PlatformB
 }
 
 export type TestHostOptions = {
+  /** Recorded on the host.assembling/host.ready audit rows only. */
+  assemblyCause?: import('../src/runtime/assemble/assembly-deps.js').AssemblyCause
   /** Opt out of the production publisher view in tests that deliberately exercise raw Kernel ports. */
   currentRuntime?: import('@agnes/core').KernelOptions['currentRuntime']
   serviceAuthority?: import('@agnes/host-extensions/ext-host/service-invocation').ServiceAuthority
@@ -412,6 +414,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
   // Match daemon bootstrap independently of whether the checkpoint creates a SQLite directory.
   await mkdir(profileDir, { recursive: true, mode: 0o700 })
   const host = await createHost(profile, {
+    ...(o.assemblyCause ? { assemblyCause: o.assemblyCause } : {}),
     dataDir: o.dataDir,
     packageDirs: new Map([
       ...ids.map((id) => [id, o.packageDirs?.[id] ?? o.dataDir] as const),

@@ -287,6 +287,7 @@ export async function createRuntimeGenerationHost(
       { ...profile, packages, seams },
       {
         ...generationOptions,
+        assemblyCause: { ...generationOptions.assemblyCause, reason: 'generation' },
         ...(authoring.pluginManage ? { pluginManage: authoring.pluginManage } : {}),
         profileAuthorityPublication: 'retained',
         generationBuiltinRows: targetRows(target).filter((row) => row.plugin.startsWith('builtin:')),
