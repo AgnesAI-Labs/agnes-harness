@@ -356,7 +356,8 @@ const CHANGE_NEXT = {
     '补齐影响分析（devboard_change_upsert，impact.reqs 写起点并设 traceFrom: true；来源为现场或型式试验还需 rootCause），推进到已分析，再提交 CCB',
   ANALYZED: '推进到 CCB_REVIEW，并用 devboard_approval_submit（ECR）发起审批后停下',
   CCB_REVIEW: '等人在「我的待办」完成 ECR 审批与 CCB 决议',
-  APPROVED: '变更已批准：按 ECN 改受影响的条目并回归，实施后登记',
+  APPROVED:
+    '变更已批准：按 ECN 改受影响的条目并回归，实施后登记；影响物料的变更还要发布 ECN（ECN_RELEASE 审批批准后生成新的设计态基线）',
   IMPLEMENTED: '登记验证结果（verification）后才能关闭',
   REJECTED: '变更被驳回，不再继续；如需调整请新建变更',
   CLOSED: '变更已关闭',

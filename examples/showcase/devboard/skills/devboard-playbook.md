@@ -54,6 +54,8 @@ src/…  test/…  server.js  README.md
 
 ### 流程
 
+每一步先用 `devboard_stage_update` 开始该阶段（上一门通过后下一阶段仍是 NOT_STARTED，返工的阶段是 REWORK），阶段在进行中才能提交评审。
+
 1. 立项（CDCP）：`devboard_project_create` 建项目（默认 SOFTWARE 档案与裁剪）→ 写 `docs/PROJECT-PLAN.md`（目标、范围、里程碑、角色、风险）→ `devboard_artifact_record(kind=PLAN, stage=INITIATION)` → `devboard_gate_submit` → 结束本轮。
 2. 需求（TR1）：派 `requirements`（系统设计师）写 `docs/SRS.md`（CUS/SYS/SWR 编号条款）与 `docs/RTM.md`；你用 `devboard_req_upsert` 登记 CUS、SYS（parent=CUS）、SWR（parent=SYS）；登记 SRS、RTM 交付物 → 提交评审 → 结束本轮。
 3. 设计（TR3，TR2 与 PDCP 已裁剪）：TR1 批准后先按下面的「任务与缺陷入板」建需求和任务；派 `architect` 写 `docs/SAD.md`（模块、接口、数据流、非功能约束）；登记 DES（parent=SWR）与 SAD → 提交评审 → 结束本轮。
@@ -160,7 +162,7 @@ TR5 和 ADCP 只要项目还有未关闭的 A 类缺陷就不能批准：提交�
 4. 需要设计变更时，用 `devboard_change_upsert` 起草变更：`source` 填 `{type: 'FIELD', ref: <质量问题编号>}`，写 `rootCause`（来源为现场或型式试验的变更，分析前必须有根因），影响分析写受影响的物料及版本（`impact.items`）、需求、用例和在役车队规模（`impact.fleet`），再推进到 ANALYZED；
 5. 型式试验不合格时，`source` 填 `{type: 'TYPE_TEST', ref: <试验编号>}`。先读取完整试验、需求/DES、物料版本及三类基线，带上来源编号，派 `mechanical` 或 `electrical` 写影响说明到 `devboard-projects/<项目编号>/analysis/<试验编号>/`。把事实和说明交给只读 `config` 在答复返回编号核对意见，不要求创建文件；读回说明和意见后再用 `devboard_change_upsert` 起草变更，用 `devboard_trial_upsert(changeId)` 关联。未知物料或版本标待确认，不虚构影响项。
 
-边界：**只起草，不决议。** 不关闭质量问题（工具也会拒绝）、不批准试验、不替 CCB 批准变更、不更新整改进度；起草完毕后告诉用户到看板「运维与质量」「变更」「试验与首件」确认。所有文字都要引用预警编号（如 FA-2026-0412）和试验编号（如 TT-2026-014）；没有依据的结论不写，只写能从预警、试验和需求里查到的内容。批准变更会生成 ECN 和新的设计态基线；整改进度和维护态基线由人在看板更新。
+边界：**只起草，不决议。** 不关闭质量问题（工具也会拒绝）、不批准试验、不替 CCB 批准变更、不更新整改进度；起草完毕后告诉用户到看板「运维与质量」「变更」「试验与首件」确认。所有文字都要引用预警编号（如 FA-2026-0412）和试验编号（如 TT-2026-014）；没有依据的结论不写，只写能从预警、试验和需求里查到的内容。批准变更会生成 ECN，ECN 发布审批（ECN_RELEASE）批准后才生成新的设计态基线；整改进度和维护态基线由人在看板更新。
 
 ## 第一版能力（保留）
 
