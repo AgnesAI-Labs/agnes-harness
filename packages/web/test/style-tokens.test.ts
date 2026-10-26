@@ -450,8 +450,8 @@ it('aligns 置顶 and 临时会话 rows with their section heading and keeps 工
 
 it('keeps the three sidebar sections apart in both list containers', () => {
   const css = readWebStyleSource(stylePath)
-  // 分区间距要明显大于「标题到首行」的空隙（16px），否则置顶 / 临时会话 / 工作区读成一片。
-  expect(css).toMatch(/#sessions \{[^}]*gap: var\(--s32\);/)
+  // 分区间距（28px）要明显大于「标题到首行」的空隙（16px），否则置顶 / 临时会话 / 工作区读成一片。
+  expect(css).toMatch(/#sessions \{[^}]*gap: 1\.75rem;/)
   // 归档等视图把分区放进 .sidebar-inventory 再渲染，间距必须与 #sessions 一致。
-  expect(css).toMatch(/\.sidebar-inventory:has\(> \.sidebar-section\) \{\s*gap: var\(--s32\);/)
+  expect(css).toMatch(/\.sidebar-inventory:has\(> \.sidebar-section\) \{\s*gap: 1\.75rem;/)
 })

@@ -157,8 +157,8 @@
     display: grid;
     align-content: start;
     /* 三个分区（置顶 / 临时会话 / 工作区）是列表的实际子项，这一段就是分组间距：
-       16px 和「标题到首行」的空隙太接近，分区读起来还是一整片。 */
-    gap: var(--s32);
+       16px 和「标题到首行」的空隙太接近，分区读起来还是一整片；28px 比尺度上的 24px 再松一档。 */
+    gap: 1.75rem;
     /* flex:1 + min-height:0 会把列表压进剩余空间；不裁 overflow 时多出来的行
      直接画到下面的「设置」行上。列表自己滚动，footer 才能钉在底部。 */
     overflow-y: auto;
@@ -544,7 +544,7 @@
      容器不同，分区间距要与 #sessions 保持一致；只在真的装了分区时才拉大，
      免得分组之外（搜索框、加载提示）也一起变松。 */
   .sidebar-inventory:has(> .sidebar-section) {
-    gap: var(--s32);
+    gap: 1.75rem;
   }
   .sidebar-section-body {
     min-width: 0;
