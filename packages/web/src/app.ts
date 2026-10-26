@@ -2435,6 +2435,8 @@ run(async () => {
       await beginNewDraft(
         configured && !startupSection && !startupTerminal && !startupMoved && !homeNavigation.getSnapshot(),
       )
+    // The guide opens over the shell: its sidebar and composer still come from the profile roster.
+    else scheduleClientRosterRead(true)
   } else {
     scheduleClientRosterRead(true)
     sessionPending = false

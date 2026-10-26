@@ -457,9 +457,14 @@ describe.each(['win32', 'darwin'])('sidebar startup failure recovery (%s)', (pla
       close: vi.fn(async () => undefined),
       apis: vi.fn(async () => ({ profile: { models: [{ route: 'local', id: 'model-a' }] } })),
       config: {
-        get: vi.fn(async () => ({ configured: accountsReady, ...(accountsReady ? {} : { accounts: [] }) })),
+        get: vi.fn(async () => ({
+          configured: accountsReady,
+          profile: 'local-dev',
+          ...(accountsReady ? {} : { accounts: [] }),
+        })),
         providers: vi.fn(async () => ({ providers: [] })),
       },
+      clientModules: { list: vi.fn(async () => ({ revision: 'r1', modules: [], statuses: [], rows: [] })) },
       workspace: { list: vi.fn(async () => ({ items: [] })) },
       session: {
         list,
@@ -493,7 +498,7 @@ describe.each(['win32', 'darwin'])('sidebar startup failure recovery (%s)', (pla
       if (!button) throw new Error('missing sidebar retry button')
       button.click()
     }
-    return { list, page, retry, groups: client.session.groups }
+    return { list, page, retry, groups: client.session.groups, roster: client.clientModules.list }
   }
 
   it.each([true, false])(
@@ -581,8 +586,10 @@ describe.each(['win32', 'darwin'])('sidebar startup failure recovery (%s)', (pla
   )
 
   it.each([true, false])('preserves empty-account startup (configured=%s)', async (configured) => {
-    await boot(configured, 'empty')
+    const { roster } = await boot(configured, 'empty')
     expect(Boolean(document.querySelector('[data-testid="first-run-guide"]'))).toBe(!configured)
+    // The guide opens over the shell; the sidebar and composer still come from the profile roster.
+    await vi.waitFor(() => expect(roster).toHaveBeenCalledWith('local-dev', undefined))
     expect((document.getElementById('new-session') as HTMLDialogElement).open).toBe(configured)
     expect(binding.loadWebSession).not.toHaveBeenCalled()
     if (!configured) {
