@@ -130,8 +130,14 @@ describe('LocalEndpoint', () => {
         code: 'E_GENERATION_CONFIG_INTEGRITY',
         cause: { code: 'EMFILE', syscall: 'open', path: 'C:\\secret\\a.json' },
       },
-      { errorCode: 'EMFILE', syscall: 'open', fileKind: 'json' },
+      { errorCode: 'E_GENERATION_CONFIG_INTEGRITY', causeCode: 'EMFILE', syscall: 'open', fileKind: 'json' },
     ],
+    [
+      'a worker reply naming an AGH error',
+      { code: 'E_WORKER', message: 'Worker operation failed.' },
+      { errorCode: 'E_WORKER' },
+    ],
+    ['a code that is not one of the known shapes', { code: 'secret-token-value' }, { errorCode: 'UNKNOWN' }],
   ] as const)('audits %s by call and file kinds, never by path', async (_label, raised, facts) => {
     const records: unknown[] = []
     const ep = new LocalEndpoint({

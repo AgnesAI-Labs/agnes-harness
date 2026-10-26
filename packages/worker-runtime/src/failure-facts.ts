@@ -61,8 +61,18 @@ const KINDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/\.(?:owner|pid)$/i, 'marker'],
 ]
 const NAMED_KINDS = new Set([...KINDS.map(([, kind]) => kind), 'other'])
+// AGH's own error codes are constants in the source (E_HOST_CLOSED, E_GENERATION_PIN_BUSY, ...): they
+// name what failed without carrying user content, so the audit keeps them instead of UNKNOWN.
+const DOMAIN = /^E_[A-Z][A-Z0-9_]{1,62}$/
 
-export type FailureFacts = { errorCode: string; syscall?: string; fileKind?: string; destKind?: string }
+export type FailureFacts = {
+  errorCode: string
+  /** The file error a domain error wraps, when both are known. */
+  causeCode?: string
+  syscall?: string
+  fileKind?: string
+  destKind?: string
+}
 
 const own = (value: unknown, key: string): unknown =>
   value && typeof value === 'object' ? Object.getOwnPropertyDescriptor(value, key)?.value : undefined
@@ -82,8 +92,10 @@ function factsOf(error: unknown): FailureFacts {
   const syscall = typeof call === 'string' ? call.split(' ')[0] : undefined
   const fileKind = kind(error, 'path', 'fileKind')
   const destKind = kind(error, 'dest', 'destKind')
+  const causeCode = own(error, 'causeCode')
   return {
-    errorCode: typeof code === 'string' && CODES.has(code) ? code : 'UNKNOWN',
+    errorCode: typeof code === 'string' && (CODES.has(code) || DOMAIN.test(code)) ? code : 'UNKNOWN',
+    ...(typeof causeCode === 'string' && CODES.has(causeCode) ? { causeCode } : {}),
     ...(syscall && SYSCALLS.has(syscall) ? { syscall } : {}),
     ...(fileKind ? { fileKind } : {}),
     ...(destKind ? { destKind } : {}),
@@ -93,15 +105,17 @@ function factsOf(error: unknown): FailureFacts {
 /**
  * What an operator may learn from an unexpected failure: the error code, the failing system call and
  * the kind of file (and, for a rename, of its destination) from closed vocabularies. Never a path, a
- * file name, a message or a stack, which can carry workspace or account details. A domain error that
- * wraps a file error is read through its `cause`.
+ * file name, a message or a stack, which can carry workspace or account details. AGH's own `E_` codes
+ * are kept as they are; a domain error that wraps a file error keeps both codes, read through `cause`.
  */
 export function failureFacts(error: unknown): FailureFacts {
   try {
     const facts = factsOf(error)
-    if (facts.errorCode !== 'UNKNOWN' || facts.syscall) return facts
-    const cause = own(error, 'cause')
-    return cause === undefined ? facts : factsOf(cause)
+    const cause = facts.syscall ? undefined : own(error, 'cause')
+    if (cause === undefined) return facts
+    const { errorCode: inner, ...file } = factsOf(cause)
+    if (facts.errorCode === 'UNKNOWN') return { errorCode: inner, ...file }
+    return { ...facts, ...file, ...(inner === 'UNKNOWN' ? {} : { causeCode: inner }) }
   } catch {
     // A hostile exception (a throwing proxy trap) stays a plain unknown failure.
     return { errorCode: 'UNKNOWN' }
