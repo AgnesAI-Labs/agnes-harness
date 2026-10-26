@@ -3568,6 +3568,13 @@ export function buildSeed(now = Date.now()) {
   }
   const byId = new Map(reqs.map((r) => [r.id, r]))
   for (const tc of reqs) if (tc.level === 'TC') for (const p of tc.parent) byId.get(p).verifiedBy.push(tc.id)
+  // An SWR is VERIFIED exactly when all its TCs are, so the cases under a verified SWR passed too.
+  for (const tc of reqs)
+    if (
+      tc.level === 'TC' &&
+      tc.parent.some((p) => byId.get(p).level === 'SWR' && byId.get(p).status === 'VERIFIED')
+    )
+      tc.status = 'VERIFIED'
 
   const changes = CHANGES.map(({ steps, ccb, verification, ...c }) => ({
     ...c,

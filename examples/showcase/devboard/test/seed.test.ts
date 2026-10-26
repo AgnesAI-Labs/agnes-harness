@@ -459,6 +459,12 @@ describe('DevBoard v3 seed data', () => {
     // part numbers are unique per physical part within a project
     const parts = of042.filter((r: Any) => r.partNo).map((r: Any) => r.partNo)
     expect(new Set(parts).size).toBe(parts.length)
+    // an SWR is VERIFIED exactly when all its TCs are, so the first real run does not demote it
+    for (const swr of seed.reqs.filter((r: Any) => r.level === 'SWR')) {
+      const tcs = seed.reqs.filter((r: Any) => r.level === 'TC' && r.parent.includes(swr.id))
+      if (swr.status === 'VERIFIED')
+        expect(tcs.filter((tc: Any) => tc.status !== 'VERIFIED').map((tc: Any) => tc.id), swr.id).toEqual([])
+    }
   })
 
   it('keeps trials consistent with the trial state machine and the change they depend on', () => {
