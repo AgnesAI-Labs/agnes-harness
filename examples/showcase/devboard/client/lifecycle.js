@@ -451,17 +451,19 @@ export function GatePanel({ data, gate, board, role, setRole }) {
             'section',
             { className: 'devboard-actions' },
             h('p', null, decided ? '已决议。现场项目请让研发协调员继续推进。' : '该评审门已决议。'),
-            h(
-              WorkButton,
-              {
-                board,
-                ...workOf('continueGate', { ...gate, decision: 'APPROVED' }),
-                appearance: decided ? 'primary' : 'secondary',
-                guide: 'gate-continue',
-                title: '打开研发协调员会话，草稿由你点发送',
-              },
-              '继续推进',
-            ),
+            // Only a live project has a coordinator session to continue, as in 我的待办.
+            byId(data.projects, stage?.projectId)?.live &&
+              h(
+                WorkButton,
+                {
+                  board,
+                  ...workOf('continueGate', { ...gate, decision: 'APPROVED' }),
+                  appearance: decided ? 'primary' : 'secondary',
+                  guide: 'gate-continue',
+                  title: '打开研发协调员会话，草稿由你点发送',
+                },
+                '继续推进',
+              ),
             h(
               'details',
               { className: 'devboard-evidence' },
