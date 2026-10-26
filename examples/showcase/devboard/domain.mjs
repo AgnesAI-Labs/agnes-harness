@@ -709,7 +709,8 @@ const intIn = (value, name, max) => {
 }
 
 function moveChange(cr, to, by, at, note, members) {
-  if (to === 'ANALYZED') {
+  // The analysis stays editable while ANALYZED, so CCB review checks it again.
+  if (to === 'ANALYZED' || to === 'CCB_REVIEW') {
     const impact = cr.impact
     const any = impact && [impact.reqs, impact.artifacts, impact.tests, impact.items].some((l) => l?.length)
     if (!any) fail(`${cr.id} 缺少影响分析：先登记受影响的需求、交付物、用例或物料`)

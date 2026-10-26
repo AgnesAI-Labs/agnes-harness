@@ -1020,6 +1020,12 @@ describe('change requests and the field-to-design loop', () => {
     expect(transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW).state).toBe(
       'ANALYZED',
     )
+    // the analysis can still be emptied while ANALYZED; CCB review checks it again
+    updateChange(state, { id: cr.id, impact: { items: [] } })
+    expect(() => transition(state, { kind: 'change', id: cr.id, to: 'CCB_REVIEW', by: 'x' }, NOW)).toThrow(
+      '缺少影响分析',
+    )
+    updateChange(state, { id: cr.id, impact: { items: [{ itemId: 'NC-MOT-02', fromRev: 'A', toRev: 'B' }] } })
     transition(state, { kind: 'change', id: cr.id, to: 'CCB_REVIEW', by: 'x' }, NOW)
     expect(() => updateChange(state, { id: cr.id, rootCause: '晚了' }, NOW)).toThrow('已进入 CCB_REVIEW')
   })
