@@ -180,6 +180,14 @@ export function useProject(data, allowAll = false) {
     (v) => (allowAll && !v) || ids.includes(v),
   )
   const current = ids.includes(value) || (allowAll && !value) ? value : (ids[0] ?? '')
+  // A guide jump to the page already open does not remount it, so take the project a new jump names.
+  // The jump present at mount is skipped: the guide already stored its project, and replaying it later
+  // would undo a project the person picked since.
+  const jump = React.useContext(JumpContext)
+  const mounted = React.useRef(jump)
+  React.useEffect(() => {
+    if (jump !== mounted.current && typeof jump?.project === 'string') setValue(jump.project)
+  }, [jump])
   return [current, setValue]
 }
 export function ProjectSelect({ data, value, onChange, allowAll = false }) {

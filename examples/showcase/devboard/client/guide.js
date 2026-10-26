@@ -4,7 +4,7 @@ import React from 'react'
 import { MAIN_STEPS, ROLE_STEPS } from './guide-data.js'
 import { guideMemory } from './guide-memory.js'
 import { OPTIONAL_STEPS } from './guide-optional.js'
-import { liveProject, mainProgress } from './guide-progress.js'
+import { mainProgress, stepProject } from './guide-progress.js'
 
 // Demo guide: a side panel next to the page (not a modal, so the audience still sees the page), step cards
 // with a "带我去" jump and a spotlight (outline plus a text bubble), and local-only progress. Nothing here
@@ -17,6 +17,8 @@ const TITLE_ID = 'devboard-guide-title'
 const FIND_MS = 3000
 const SPOT_MS = 9000
 const MISSING = '（页面上暂时没有这一块：先选对项目，或把「只看与我相关」切到「全部」。）'
+const NO_LIVE =
+  '还没有现场项目：先做主线第 2 步让研发协调员新建一个，或在「项目组合」点「快进演示到…」得到一个。'
 const STEPS = new Map(
   [...MAIN_STEPS, ...OPTIONAL_STEPS, ...Object.values(ROLE_STEPS).flat()].map((s) => [s.id, s]),
 )
@@ -47,7 +49,7 @@ function update(patch) {
 const touch = () => update({ v: state.v + 1 })
 const useGuide = () => React.useSyncExternalStore(subscribe, getState)
 const showSpot = (step) =>
-  update({ spot: { ids: [].concat(step.target ?? []), text: step.spot, key: Date.now() } })
+  update({ spot: { ids: [].concat(step.target ?? []), text: step.spot, plain: step.plain, key: Date.now() } })
 const returnFocus = () =>
   setTimeout(() => document.querySelector('[data-guide="guide-button"] button')?.focus(), 0)
 function closePanel(focusButton) {
@@ -65,16 +67,20 @@ function go(step, board, page) {
     }
     return
   }
-  if (step.page === page) return showSpot(step)
   // The project list of the pages is shared (board.js PROJECT_KEY); '' means all projects, or the first one
-  // on the pages that always show one project.
+  // on the pages that always show one project. A page reads it only when it mounts.
+  if (step.page === page && !step.project) return showSpot(step)
+  const project = stepProject(step, board.data)
+  if (project === null) return showSpot({ spot: NO_LIVE, plain: true })
+  let stored = null
   try {
-    const project = step.project === 'live' ? liveProject(board.data)?.id : step.project
-    window.sessionStorage.setItem(PROJECT_KEY, project ?? '')
+    stored = window.sessionStorage.getItem(PROJECT_KEY)
+    window.sessionStorage.setItem(PROJECT_KEY, project)
   } catch {}
+  if (step.page === page && stored === project) return showSpot(step)
   try {
     homeNavigation.open(step.page, {
-      devboard: { guide: [].concat(step.target ?? []), step: step.id, at: Date.now() },
+      devboard: { guide: [].concat(step.target ?? []), step: step.id, project, at: Date.now() },
     })
   } catch (e) {
     board.setError(`无法打开页面：${message(e)}`)
@@ -127,7 +133,7 @@ function Spotlight() {
         // A tall target (a whole table) is only brought into view; a small one is centred.
         const tall = target.getBoundingClientRect().height > window.innerHeight * 0.6
         target.scrollIntoView({ block: tall ? 'nearest' : 'center', behavior: reduced ? 'auto' : 'smooth' })
-      } else text = `${spot.text}${MISSING}`
+      } else if (!spot.plain) text = `${spot.text}${MISSING}`
       place()
       timers.push(
         setTimeout(() => setBubble((b) => b && { ...b, leaving: true }), SPOT_MS - 700),

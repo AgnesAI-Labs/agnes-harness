@@ -7,6 +7,12 @@ export function liveProject(data) {
   return live.length ? live[live.length - 1] : undefined
 }
 
+/** The project a step wants selected: its id, '' (all / first), or null when it wants the live project and none exists. */
+export function stepProject(step, data) {
+  if (step.project !== 'live') return step.project ?? ''
+  return liveProject(data)?.id ?? null
+}
+
 /** Is the rule satisfied for the live project? A gate exists once submitted; a rejected gate does not count as approved. */
 export function ruleDone(data, rule) {
   const project = liveProject(data)

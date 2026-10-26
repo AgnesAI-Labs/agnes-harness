@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { MAIN_STEPS, ROLE_STEPS } from '../client/guide-data.js'
 import { createGuideMemory } from '../client/guide-memory.js'
 import { OPTIONAL_STEPS } from '../client/guide-optional.js'
-import { liveProject, mainProgress } from '../client/guide-progress.js'
+import { liveProject, mainProgress, stepProject } from '../client/guide-progress.js'
 import { GATE_PROFILES, ROLES } from '../profiles.mjs'
 import { buildSeed } from '../seed-data.mjs'
 
@@ -197,5 +197,15 @@ describe('what the guide remembers in the browser', () => {
     memory.setTick(false, '质量工程师', 'qe-1', true)
     expect(memory.seen('质量工程师')).toBe(true)
     expect([...memory.ticks(false, '质量工程师')]).toEqual(['qe-1'])
+  })
+})
+
+describe('guide jump project', () => {
+  const data = { projects: [{ id: 'PRJ-1' }, { id: 'PRJ-2', workspaceDir: '/w' }] }
+  it('picks the live project, a fixed one, or none, and reports a missing live project as null', () => {
+    expect(stepProject({ project: 'live' }, data)).toBe('PRJ-2')
+    expect(stepProject({ project: 'PRJ-1' }, data)).toBe('PRJ-1')
+    expect(stepProject({}, data)).toBe('')
+    expect(stepProject({ project: 'live' }, { projects: [{ id: 'PRJ-1' }] })).toBeNull()
   })
 })
