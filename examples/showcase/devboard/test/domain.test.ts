@@ -576,6 +576,21 @@ describe('trials and first-article inspection', () => {
       NOW,
     )
     expect(drafted.changeId).toBe(draft.id)
+    // an approved trial keeps its record: a change drafted from it later does not link itself
+    const passed = upsertTrial(state, plan(p, { title: '密封' }), NOW)
+    upsertTrial(state, { id: passed.id, to: 'IN_PROGRESS' }, NOW)
+    upsertTrial(state, { id: passed.id, to: 'REPORTED', reportNo: 'R-4', result: 'PASS' }, NOW)
+    release(state, 'TRIAL_REPORT', passed.id)
+    const late = {
+      kind: 'change',
+      projectId: p.id,
+      title: 'l',
+      reason: 'r',
+      source: { type: 'TYPE_TEST', ref: passed.id },
+    }
+    create(state, late, NOW)
+    expect(passed.state).toBe('APPROVED')
+    expect(passed.changeId).toBeUndefined()
 
     const retest = upsertTrial(state, plan(p), NOW)
     upsertTrial(state, { id: retest.id, to: 'IN_PROGRESS' }, NOW)

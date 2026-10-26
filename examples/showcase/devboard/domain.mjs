@@ -1199,7 +1199,9 @@ function createChange(state, input, at, now) {
   state.changes.push(item)
   // A change drafted from a trial (source TYPE_TEST, ref = trial id) becomes that trial's linked change.
   const trial = item.source.type === 'TYPE_TEST' && state.trials.find((t) => t.id === item.source.ref)
-  if (trial && trial.projectId === project.id && !trial.changeId) trial.changeId = item.id
+  // An approved trial and one under a running flow refuse edits, so they keep their record as it is.
+  const editable = trial && MACHINES.trial[trial.state]?.length && !runningFlow(state, 'trial', trial.id)
+  if (editable && trial.projectId === project.id && !trial.changeId) trial.changeId = item.id
   return item
 }
 
