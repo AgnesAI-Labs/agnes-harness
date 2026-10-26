@@ -251,6 +251,9 @@ The following variable names can appear in `tokens`. The allowlist is generated 
 --agnes-trace-track
 --agnes-trace-row-current
 --agnes-trace-row-hover
+--agnes-trace-mark-bg
+--agnes-trace-mark-text
+--agnes-trace-row-hit
 --agnes-trace-lane-input
 --agnes-trace-lane-user
 --agnes-trace-lane-context
