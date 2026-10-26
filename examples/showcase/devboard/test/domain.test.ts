@@ -3126,6 +3126,33 @@ describe('hand-off to the coordinator', () => {
     expect(problem.next.join('')).toContain('验证数据不足')
     expect(problem.lastApproval).toMatchObject({ id: close.id, outcome: 'REJECTED' })
   })
+
+  it('says a stage is in rework because of an approved change, with the change to cite and what it touched', () => {
+    const state = seed(NOW)
+    for (const p of state.projects) p.live = true
+    const P = 'PRJ-2026-008'
+    const cr = create(
+      state,
+      {
+        kind: 'change',
+        projectId: P,
+        title: '改接口',
+        reason: '客户要求',
+        source: { type: 'CUSTOMER' },
+        impact: { reqs: ['DES-301'] },
+      },
+      NOW,
+    )
+    ccbApprove(state, cr.id)
+    expect(byId(state.changes, cr.id).reworked).toEqual([`${P}/DESIGN`])
+    const project = handoff(state, { type: 'project', id: P })
+    expect(project.next[0]).toContain(cr.id)
+    expect(project.next[0]).toContain('DES-301')
+    expect(project.next[0]).not.toContain('未关闭意见')
+    const change = handoff(state, { type: 'change', id: cr.id })
+    expect(change.reworkedStages).toEqual([{ stage: 'DESIGN', state: 'REWORK' }])
+    expect(change.next[0]).toContain('DESIGN')
+  })
 })
 
 describe('per-test-case results', () => {

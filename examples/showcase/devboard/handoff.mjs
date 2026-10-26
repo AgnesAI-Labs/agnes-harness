@@ -53,6 +53,19 @@ const gatesToPass = (state, project, stage) => {
   )
 }
 
+/** The approved change whose approval sent this stage back to rework, when that is why it is in rework now. */
+const reworkChange = (state, item) => {
+  const note = item.history?.findLast((h) => h.to === 'REWORK')?.note ?? ''
+  return state.changes.findLast((c) => c.reworked?.includes(item.id) && note.startsWith(c.id))
+}
+
+function reworkText(state, item, name) {
+  const cr = reworkChange(state, item)
+  if (cr)
+    return `${name} 返工：变更 ${cr.id}${cr.ecn ? `（${cr.ecn}）` : ''} 已批准，受影响条目 ${top(cr.impact?.reqs ?? [], 5).join('、') || '见变更'}；按变更修改后用 devboard_stage_update 重新开始，重新提交评审时引用 ${cr.id}`
+  return `${name} 返工：按未关闭意见修改后用 devboard_stage_update 重新开始，再提交评审`
+}
+
 /** The step the project is at in one stage: what to start, finish or wait for. */
 function stageStep(state, project, stage) {
   const item = stageOf(state, project.id, stage)
@@ -62,7 +75,7 @@ function stageStep(state, project, stage) {
   const work = project.live && project.kind === 'SOFTWARE' ? SOFTWARE_WORK[stage] : undefined
   const by = {
     NOT_STARTED: `用 devboard_stage_update 开始 ${name}`,
-    REWORK: `${name} 返工：按未关闭意见修改后用 devboard_stage_update 重新开始，再提交评审`,
+    REWORK: reworkText(state, item, name),
     IN_PROGRESS: `完成 ${name} 的交付物${gate ? `，再用 devboard_gate_submit 提交 ${gate.code}` : ''}`,
     IN_REVIEW: `${name} 的评审门正在等人决议，本轮不要替人批准`,
     PASSED: `${name} 已通过`,
@@ -303,6 +316,12 @@ function changeHandoff(state, cr) {
   )
   const impact = cr.impact ?? {}
   const next = [CHANGE_NEXT[cr.state] ?? `变更处于 ${cr.state}`]
+  const reworkedStages = (cr.reworked ?? [])
+    .map((id) => state.stages.find((s) => s.id === id))
+    .filter(Boolean)
+    .map((s) => ({ stage: s.stage, state: s.state }))
+  if (reworkedStages.length)
+    next[0] = `${next[0]}；受影响阶段 ${reworkedStages.map((s) => `${s.stage}（${label(LABELS.state, s.state)}）`).join('、')} 已因本变更进入返工，它们重新提交评审时引用 ${cr.id}`
   return {
     change: {
       id: cr.id,
@@ -316,6 +335,7 @@ function changeHandoff(state, cr) {
       ecn: cr.ecn,
       runningApproval: flow?.id,
     },
+    reworkedStages,
     impact: {
       reqs: top(impact.reqs ?? [], 20),
       artifacts: top(impact.artifacts ?? [], 20),
