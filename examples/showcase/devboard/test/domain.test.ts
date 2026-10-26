@@ -1998,6 +1998,15 @@ describe('blockers', () => {
       history: [{ at: at(7), from: 'OPEN', to: 'ANALYZING' }],
     }
     expect(kinds(blockers(state, NOW))).toEqual(['CHANGE_CCB'])
+    // a note kept without a move does not restart the clock
+    state.problems[state.problems.length - 1] = {
+      ...qp,
+      history: [
+        { at: at(12), from: 'OPEN', to: 'ANALYZING' },
+        { at: at(1), from: 'ANALYZING', to: 'ANALYZING', note: '补充现场照片' },
+      ],
+    }
+    expect(kinds(blockers(state, NOW))).toEqual(['CHANGE_CCB', 'PROBLEM_STALLED'])
   })
 
   it('derives the maintained baseline lagging the designed one', () => {

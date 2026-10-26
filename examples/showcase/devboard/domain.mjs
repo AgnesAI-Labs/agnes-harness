@@ -1898,7 +1898,8 @@ export function submitApproval(state, { template, subjectId, by, agent }, now = 
     // customer change the presenter registered and handed over is analysed and sent to CCB by the agent.
     const byAgent = (who) => who === AGENT_NAME || String(who ?? '').startsWith(`${AGENT_NAME} · `)
     const sentToCcb =
-      type === 'change' && byAgent(subject.history?.findLast((h) => h.to === 'CCB_REVIEW')?.by)
+      type === 'change' &&
+      byAgent(subject.history?.findLast((h) => h.to === 'CCB_REVIEW' && h.from !== 'CCB_REVIEW')?.by)
     const mine =
       type === 'artifact'
         ? subject.source?.type === 'workspace'

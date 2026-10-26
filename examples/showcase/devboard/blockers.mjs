@@ -29,8 +29,9 @@ const ms = (iso) => {
   const t = Date.parse(iso)
   return Number.isNaN(t) ? undefined : t
 }
-/** When the item last moved into `to`, or undefined. */
-const enteredAt = (item, to) => [...(item.history ?? [])].reverse().find((e) => e.to === to)?.at
+/** When the item last moved into `to`, or undefined; a note kept without a move is not an entry. */
+const enteredAt = (item, to) =>
+  [...(item.history ?? [])].reverse().find((e) => e.to === to && e.from !== to)?.at
 const latest = (list, projectId, type) =>
   list
     .filter((b) => b.projectId === projectId && b.type === type)
