@@ -1043,7 +1043,7 @@ export async function createRuntimeGenerationHost(
           })
           try {
             if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
-            store.recordLoop(key, session.loop)
+            await store.recordLoop(key, session.loop)
           } catch (error) {
             await session.close()
             throw error
