@@ -59,8 +59,27 @@ const reworkChange = (state, item) => {
   return state.changes.findLast((c) => c.reworked?.includes(item.id) && note.startsWith(c.id))
 }
 
+/** The gate a human rejected that sent this stage back: the stage's newest gate, when it is a live rejection. */
+const reworkGate = (state, item) => {
+  const gate = state.gates.findLast((g) => g.stageId === item.id)
+  return gate?.decision === 'REJECTED' && !gate.superseded ? gate : undefined
+}
+
+function reworkFrom(state, item) {
+  if (item.state !== 'REWORK' || reworkChange(state, item)) return undefined
+  const gate = reworkGate(state, item)
+  return (
+    gate && { gate: gate.id, code: gate.code, comment: clip(gate.comment), openFindings: openFindings(gate) }
+  )
+}
+
 function reworkText(state, item, name) {
   const cr = reworkChange(state, item)
+  const gate = !cr && reworkGate(state, item)
+  if (gate) {
+    const ids = openFindings(gate).map((f) => f.id)
+    return `${name} 返工：${gate.code} 被驳回${gate.comment ? `，意见：${clip(gate.comment, 120)}` : ''}；${ids.length ? `逐条处理未关闭意见 ${ids.join('、')}` : '按驳回意见修改'}后用 devboard_stage_update 重新开始，再提交评审`
+  }
   if (cr)
     return `${name} 返工：变更 ${cr.id}${cr.ecn ? `（${cr.ecn}）` : ''} 已批准，受影响条目 ${top(cr.impact?.reqs ?? [], 5).join('、') || '见变更'}；按变更修改后用 devboard_stage_update 重新开始，重新提交评审时引用 ${cr.id}`
   return `${name} 返工：按未关闭意见修改后用 devboard_stage_update 重新开始，再提交评审`
@@ -84,6 +103,7 @@ function stageStep(state, project, stage) {
     stage,
     state: item.state,
     nextGate: gate && { code: gate.code, name: gate.name, approverRoles: gate.approverRoles },
+    reworkFrom: reworkFrom(state, item),
     deliverables:
       item.state === 'NOT_STARTED' || item.state === 'IN_PROGRESS' || item.state === 'REWORK'
         ? work

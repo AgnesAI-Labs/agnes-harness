@@ -3153,6 +3153,26 @@ describe('hand-off to the coordinator', () => {
     expect(change.reworkedStages).toEqual([{ stage: 'DESIGN', state: 'REWORK' }])
     expect(change.next[0]).toContain('DESIGN')
   })
+
+  it('keeps the rejected gate, its comment and its open findings on the project hand-off', () => {
+    const state = seed(NOW)
+    for (const p of state.projects) p.live = true
+    const gate = byId(state.gates, 'GATE-PRJ-2026-008-DL2-1')
+    const open = gate.findings.filter((f: Item) => !f.closed).map((f: Item) => f.id)
+    expect(open.length).toBeGreaterThan(0)
+    decideGate(
+      state,
+      { gateId: gate.id, decision: 'REJECTED', by: '项目经理 x', comment: '接口清单缺失' },
+      NOW,
+    )
+    const project = handoff(state, { type: 'project', id: 'PRJ-2026-008' })
+    expect(project.nextStep.state).toBe('REWORK')
+    expect(project.next[0]).toContain('DL2')
+    expect(project.next[0]).toContain('接口清单缺失')
+    for (const id of open) expect(project.next[0]).toContain(id)
+    expect(project.nextStep.reworkFrom).toMatchObject({ gate: gate.id, comment: '接口清单缺失' })
+    expect(project.nextStep.reworkFrom.openFindings.map((f: Item) => f.id)).toEqual(open)
+  })
 })
 
 describe('per-test-case results', () => {
