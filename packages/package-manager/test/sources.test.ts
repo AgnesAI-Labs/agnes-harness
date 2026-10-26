@@ -24,11 +24,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type ExecFn,
   fetchSource,
+  forgetDirectoryDigests,
   hashDirectory,
   hashDirectoryAsync,
   packageDir,
   parseSource,
 } from '../src/sources.js'
+import { invalidatePackageVerification } from '../src/verification-operation.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -160,6 +162,63 @@ describe('hashDirectory', () => {
     writeFileSync(join(root, 'z', 'b'), 'changed')
     expect(hashDirectory(root)).not.toBe(first)
     expect(await hashDirectoryAsync(root)).toBe(hashDirectory(root))
+  })
+
+  it('reuses a digest without reading file contents while sizes, mtimes and inodes hold', async () => {
+    const file = join(root, 'payload')
+    writeFileSync(file, 'first')
+    writeFileSync(join(root, 'other'), 'other')
+    // Whole seconds, so restoring the time below is exact on every filesystem.
+    utimesSync(file, 1_700_000_000, 1_700_000_000)
+    const first = hashDirectory(root)
+    // The documented blind spot: a same-size rewrite that restores mtime is not read again.
+    writeFileSync(file, 'xxxxx')
+    utimesSync(file, 1_700_000_000, 1_700_000_000)
+    expect(hashDirectory(root)).toBe(first)
+    const open = vi.spyOn(asyncFs, 'open')
+    try {
+      expect(await hashDirectoryAsync(root)).toBe(first)
+      expect(open).not.toHaveBeenCalled()
+    } finally {
+      open.mockRestore()
+    }
+    forgetDirectoryDigests()
+    expect(hashDirectory(root)).not.toBe(first)
+  })
+
+  it('hashes again when a size or mtime changes, or a verification refusal clears what it knows', async () => {
+    const file = join(root, 'payload')
+    writeFileSync(file, 'first')
+    const first = hashDirectory(root)
+    writeFileSync(file, 'longer than before')
+    const grown = hashDirectory(root)
+    expect(grown).not.toBe(first)
+    expect(await hashDirectoryAsync(root)).toBe(grown)
+    const before = statSync(file)
+    writeFileSync(file, 'longer than BEFORE')
+    utimesSync(file, before.atime, new Date(before.mtimeMs + 5_000))
+    const touched = hashDirectory(root)
+    expect(touched).not.toBe(grown)
+    const now = statSync(file)
+    writeFileSync(file, 'longer than before')
+    utimesSync(file, now.atime, now.mtime)
+    expect(hashDirectory(root)).toBe(touched)
+    invalidatePackageVerification()
+    expect(hashDirectory(root)).toBe(grown)
+  })
+
+  it('still refuses a symbolic link that appears after a digest was reused', async () => {
+    writeFileSync(join(root, 'payload'), 'first')
+    hashDirectory(root)
+    await hashDirectoryAsync(root)
+    const outside = mkdtempSync(join(tmpdir(), 'agnes-hash-outside-'))
+    try {
+      symlinkSync(outside, join(root, 'escape'), process.platform === 'win32' ? 'junction' : 'dir')
+      expect(() => hashDirectory(root)).toThrow(/symbolic link/)
+      await expect(hashDirectoryAsync(root)).rejects.toThrow(/symbolic link/)
+    } finally {
+      rmSync(outside, { recursive: true, force: true })
+    }
   })
 
   it.each(['failure', 'cancellation'] as const)(
@@ -300,6 +359,8 @@ describe('hashDirectory', () => {
     writeFileSync(file, 'first')
     writeFileSync(join(root, 'z-tail'), 'tail')
     const expected = hashDirectory(root)
+    // Walk the tree for real: a reused digest would never open the file this test links.
+    forgetDirectoryDigests()
     const canonicalFile = realpathSync(file)
     const open = asyncFs.open
     let linked = false
