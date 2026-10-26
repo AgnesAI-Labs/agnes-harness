@@ -595,7 +595,7 @@ export function Projects({ data, board, role, setRole }) {
       },
       workOf('projectProgress', project).label,
     ),
-    h(CustomerChange, { board, project, role }),
+    h(CustomerChange, { key: project.id, board, project, role }),
     project.tailoring?.skipped?.length > 0 &&
       h(
         'p',
