@@ -519,7 +519,7 @@ export const tools = [
   ),
   tool(
     'devboard_trial_upsert',
-    'Register a trial (omit id; type TYPE_TEST/ROUTINE/FAT/FAI with title, standard, sample, lab, plannedAt) or update one (id): report fields, result, deviations, verified requirements and the change it triggered (changeId); and/or move it: PLANNED → IN_PROGRESS → REPORTED (needs reportNo and a result) → APPROVED. A FAIL trial can be approved only with an approved change. Approving a trial is a human decision on the board. 登记或更新试验与首件。',
+    'Register a trial (omit id; type TYPE_TEST/ROUTINE/FAT/FAI with title, standard, sample, lab, plannedAt) or update one (id): report fields, result, deviations, verified requirements and the change it triggered (changeId); and/or move it: PLANNED → IN_PROGRESS → REPORTED (needs reportNo and a result) → APPROVED. The type is fixed once registered; a note is kept in the history even without a move. A FAIL trial can be approved only with an approved change. Approving a trial is a human decision on the board. 登记或更新试验与首件。',
     Type.Object(
       {
         id: Type.Optional(id),
@@ -550,7 +550,7 @@ export const tools = [
   ),
   tool(
     'devboard_problem_upsert',
-    'Create a quality problem (omit id; title, projectId, severity A/B/C) or update one (id): 8D steps (D1…D8 with done/text), rootCause, containment, linked faultIds, the change it needs (changeId) or why none (noChangeReason); and/or move it: OPEN → ANALYZING → ACTION (needs rootCause and D4) → VERIFYING → CLOSED. Draft only: cite alarm and trial ids in the text, and never close a problem — people close it on the board. 登记或推进质量问题（8D）。',
+    'Create a quality problem (omit id; title, projectId, severity A/B/C) or update one (id): 8D steps (D1…D8 with done/text), rootCause, containment, linked faultIds, the change it needs (changeId) or why none (noChangeReason); and/or move it: OPEN → ANALYZING → ACTION (needs rootCause and D4) → VERIFYING → CLOSED. A note is kept in the history even without a move. Draft only: cite alarm and trial ids in the text, and never close a problem — people close it on the board. 登记或推进质量问题（8D）。',
     Type.Object(
       {
         id: Type.Optional(id),

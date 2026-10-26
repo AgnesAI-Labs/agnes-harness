@@ -509,6 +509,10 @@ describe('trials and first-article inspection', () => {
     expect(() => upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-1' }, NOW)).toThrow(
       '缺少试验结论',
     )
+    // the type made the id, so it stays; a note without a move is kept
+    expect(() => upsertTrial(state, { id: tt.id, type: 'FAT' }, NOW)).toThrow('不可更改')
+    upsertTrial(state, { id: tt.id, type: 'TYPE_TEST', note: '样机到位' }, NOW)
+    expect(tt.history.at(-1)).toMatchObject({ from: 'IN_PROGRESS', to: 'IN_PROGRESS', note: '样机到位' })
     upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-1', result: 'PASS' }, NOW)
     expect(tt).toMatchObject({ state: 'REPORTED', reportNo: 'R-1', result: 'PASS' })
     expect(tt.at).toBeTruthy()
@@ -715,7 +719,9 @@ describe('faults and quality problems', () => {
     expect(() =>
       upsertProblem(state, { id: qp.id, rootCause: '缓冲头材料 B 版耐磨不足', to: 'ACTION' }, NOW),
     ).toThrow('D4')
-    upsertProblem(state, { id: qp.id, steps: { D4: { done: true } } }, NOW)
+    // a note without a move stays in the history, as one with a move does
+    upsertProblem(state, { id: qp.id, steps: { D4: { done: true } }, note: '围堵已完成' }, NOW)
+    expect(qp.history.at(-1)).toMatchObject({ from: 'ANALYZING', to: 'ANALYZING', note: '围堵已完成' })
     upsertProblem(state, { id: qp.id, to: 'ACTION' }, NOW)
     upsertProblem(state, { id: qp.id, to: 'VERIFYING' }, NOW)
     const close = () => submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW)

@@ -273,6 +273,12 @@ export function effectiveState(item, kind, now) {
     : item.state
 }
 
+/** An edit without a move keeps its note as a same-state history line, as a move would. */
+function keepNote(item, input, at, by) {
+  const note = optional(input.note, 2000)
+  if (note) record(item, at, by, item.state, item.state, note)
+}
+
 /** Requirement-level items (CUS…TC) are unique per project, so they are found with their project. */
 function find(state, kind, id, projectId) {
   const list = state[COLLECTIONS[kind]]
@@ -1407,8 +1413,12 @@ export function upsertTrial(state, input, now = Date.now()) {
   const at = new Date(now).toISOString()
   const by = input.by || '未署名'
   let trial = input.id ? find(state, 'trial', input.id, input.projectId) : undefined
-  if (trial) guardEditable(state, 'trial', trial)
-  else {
+  if (trial) {
+    guardEditable(state, 'trial', trial)
+    // The type made the id's prefix, so it stays.
+    if (input.type !== undefined && input.type !== trial.type)
+      fail(`${trial.id} 的类型 ${trial.type} 不可更改`)
+  } else {
     const project = projectOf(state, text(input.projectId, 'projectId', 64))
     const type = oneOf(input.type, TRIAL_TYPES, 'type')
     const year = new Date(now).getUTCFullYear()
@@ -1450,7 +1460,10 @@ export function upsertTrial(state, input, now = Date.now()) {
   }
   // A move applies the report fields itself, after a retest has put the previous report in the history.
   if (input.to) transition(state, { ...input, kind: 'trial', id: trial.id, to: input.to, by }, now)
-  else trialFields(state, trial, input)
+  else {
+    trialFields(state, trial, input)
+    keepNote(trial, input, at, by)
+  }
   return trial
 }
 
@@ -1511,6 +1524,7 @@ export function upsertProblem(state, input, now = Date.now()) {
     problem.faultIds = [...new Set([...problem.faultIds, ...list])]
   }
   if (input.to) transition(state, { ...input, kind: 'problem', id: problem.id, to: input.to, by }, now)
+  else keepNote(problem, input, at, by)
   return problem
 }
 
