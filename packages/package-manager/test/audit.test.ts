@@ -60,6 +60,11 @@ it('preserves a corrupt complete line and names the log in the refusal', () => {
     expect.objectContaining({ detail: expect.objectContaining({ reason: 'audit-corrupt', path: file() }) }),
   )
   expect(readFileSync(file(), 'utf8')).toBe('[]\n')
+  // A torn tail behind a corrupt complete line is not repaired either: a refusal changes nothing.
+  rmSync(file())
+  seed('[]\n{"partial":')
+  expect(() => appendPackageAudit(root, event)).toThrow(/corrupt/)
+  expect(readFileSync(file(), 'utf8')).toBe('[]\n{"partial":')
 })
 // An interrupted append leaves a last line without its newline; the transaction's journal re-appends it.
 it('cuts an incomplete last record, keeps complete lines, appends, and records the repair', () => {

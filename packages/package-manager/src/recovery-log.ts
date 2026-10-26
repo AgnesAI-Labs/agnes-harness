@@ -15,16 +15,22 @@ const windows = process.platform === 'win32' // guards-allow-platform: private l
 export const recoveryLogPath = (profileDir: string): string =>
   join(profileDir, '.agnes-package-recovery.jsonl')
 
+/** Appends to a private log file and flushes it; shared by the package audit and the recovery log. */
+export function appendPrivateLog(file: string, text: string): void {
+  if (windows) windowsAppendPrivateFileSync(resolve(file), Buffer.from(text), true)
+  else appendFileSync(file, text, { mode: 0o600, flush: true })
+}
+
 /**
  * Best effort: a record that cannot be written must not turn a successful repair into a refusal. The
  * repair itself is the durable fact; this line only explains it.
  */
 export function recordPackageRecovery(profileDir: string, event: PackageRecoveryEvent): void {
-  const line = `${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`
-  const file = recoveryLogPath(profileDir)
   try {
-    if (windows) windowsAppendPrivateFileSync(resolve(file), Buffer.from(line), true)
-    else appendFileSync(file, line, { mode: 0o600, flush: true })
+    appendPrivateLog(
+      recoveryLogPath(profileDir),
+      `${JSON.stringify({ at: new Date().toISOString(), ...event })}\n`,
+    )
   } catch {
     /* the repair already happened */
   }

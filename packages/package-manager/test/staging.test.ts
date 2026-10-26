@@ -97,16 +97,49 @@ it('removes a quiet stage without an owner and records it in the profile recover
   }
 })
 
-it('names the owner file and the repair when a staging owner is invalid', () => {
+// A marker torn by power loss, or one this version cannot read, says nothing about its owner: the stage
+// is treated like a dead fetch's, kept while recent and removed when quiet, never a refusal.
+it.each([
+  ['torn by power loss', ''],
+  ['invalid', JSON.stringify({ pid: 'nope', ready: false })],
+])('treats an owner marker %s as an unknown outcome instead of refusing', (_label, bytes) => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-stage-invalid-'))
   try {
-    const owner = join(root, `.stage-${randomUUID()}.owner`)
-    writeFileSync(owner, JSON.stringify({ pid: 'nope', ready: false }))
-    expect(() => recoverStaging(root)).toThrow(
-      expect.objectContaining({
-        detail: expect.objectContaining({ reason: 'staging-owner-invalid', path: owner }),
-      }),
-    )
+    const stage = join(root, `.stage-${randomUUID()}`)
+    mkdirSync(stage)
+    writeFileSync(`${stage}.owner`, bytes)
+    const events: PackageRecoveryEvent[] = []
+    recoverStaging(root, (event) => events.push(event))
+    expect(existsSync(stage)).toBe(true)
+    recoverStaging(root, (event) => events.push(event), later())
+    expect([existsSync(stage), existsSync(`${stage}.owner`)]).toEqual([false, false])
+    expect(events).toEqual([
+      { action: 'removed', path: stage, reason: 'staging-owner-unreadable' },
+      { action: 'removed', path: `${stage}.owner`, reason: 'staging-owner-unreadable' },
+    ])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+// A timestamp from the future must not keep a leftover forever; one already removed in this pass is
+// not recorded again when its own directory entry comes up.
+it('ignores future timestamps and records each removal once', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-stage-future-'))
+  try {
+    const stage = join(root, `.stage-${randomUUID()}`)
+    mkdirSync(stage)
+    const ahead = new Date(Date.now() + 365 * 24 * 60 * 60_000)
+    writeFileSync(join(stage, 'from-the-future'), 'x')
+    utimesSync(join(stage, 'from-the-future'), ahead, ahead)
+    const old = new Date(Date.now() - ABANDONED_AFTER_MS - 60_000)
+    utimesSync(stage, old, old)
+    writeFileSync(`${stage}.owner`, JSON.stringify({ pid: deadPid(), ready: false }))
+    utimesSync(`${stage}.owner`, old, old)
+    const events: PackageRecoveryEvent[] = []
+    recoverStaging(root, (event) => events.push(event))
+    expect(existsSync(stage)).toBe(false)
+    expect(events.map((event) => event.path)).toEqual([stage, `${stage}.owner`])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

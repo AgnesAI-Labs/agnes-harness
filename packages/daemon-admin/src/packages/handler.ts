@@ -74,7 +74,7 @@ import {
   reviewedUpdateOptions,
 } from './dependent-updates.js'
 import { metadataView } from './metadata-view.js'
-import { operationError } from './operation-error.js'
+import { failureHelp, operationError } from './operation-error.js'
 import {
   type PackageOperationKind,
   type PackageOperationRecovery,
@@ -282,11 +282,7 @@ function packageError(error: unknown): PackageAdminError {
     safeMessage: safeMessage[code],
     blockers,
     diagnostics: safeAuthoringDiagnostics(detail?.diagnostics),
-    ...pluginFailureHelp(
-      blockers.some((b) => b.references.includes('capability-blocked'))
-        ? 'capability blocked'
-        : String(detail?.reason ?? raw.message ?? code),
-    ),
+    ...failureHelp(blockers, detail, raw.message ?? code),
   }
 }
 

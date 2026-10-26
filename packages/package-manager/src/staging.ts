@@ -1,5 +1,6 @@
-import { existsSync, lstatSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readdirSync, rmSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { publishFileDurablySync } from '@agnes/system-node'
 import { PackageError } from './errors.js'
 import { readStaticJson } from './integrity.js'
 import { type RecordRecovery, recordPackageRecovery } from './recovery-log.js'
@@ -7,11 +8,11 @@ import { type RecordRecovery, recordPackageRecovery } from './recovery-log.js'
 const STAGE = /^\.stage-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 /** `copy`: only this process writes the stage. `fetch`: an adapter or external command may. */
 export type StageKind = 'copy' | 'fetch'
+// Flushed before it replaces the old marker, so power loss cannot leave an empty or torn owner file.
 function marker(file: string, ready: boolean, kind?: StageKind): void {
-  writeFileSync(`${file}.tmp`, JSON.stringify({ pid: process.pid, ready, ...(kind ? { kind } : {}) }), {
-    mode: 0o600,
+  publishFileDurablySync(file, JSON.stringify({ pid: process.pid, ready, ...(kind ? { kind } : {}) }), {
+    replace: true,
   })
-  renameSync(`${file}.tmp`, file)
 }
 export function claimStage(stage: string, kind: StageKind = 'fetch'): void {
   marker(`${stage}.owner`, false, kind)
@@ -37,8 +38,15 @@ export function clearStage(stage: string): void {
 export function claimFetch(work: string): void {
   marker(join(work, '.owner'), false)
 }
-function dead(file: string): { dead: boolean; ready: boolean; copy: boolean } {
-  const data = readStaticJson(file)
+type Owner = { dead: boolean; ready: boolean; copy: boolean }
+/** An owner marker this version cannot read (torn by power loss, or foreign) says nothing about liveness. */
+function ownerOf(file: string): Owner | undefined {
+  let data: Record<string, unknown>
+  try {
+    data = readStaticJson(file)
+  } catch {
+    return undefined
+  }
   if (
     !ownerKeys(data) ||
     typeof data.pid !== 'number' ||
@@ -46,14 +54,7 @@ function dead(file: string): { dead: boolean; ready: boolean; copy: boolean } {
     data.pid <= 0 ||
     typeof data.ready !== 'boolean'
   )
-    throw new PackageError('E_EXT_LOAD', 'staging owner is invalid', {
-      detail: {
-        reason: 'staging-owner-invalid',
-        path: file,
-        repair:
-          'If no package operation is running, delete this owner file and the staging directory beside it.',
-      },
-    })
+    return undefined
   const copy = data.kind === 'copy'
   try {
     process.kill(data.pid, 0)
@@ -64,31 +65,55 @@ function dead(file: string): { dead: boolean; ready: boolean; copy: boolean } {
 }
 /** Nothing in a dead operation's leftover has changed for this long, so no orphaned child still writes it. */
 export const ABANDONED_AFTER_MS = 10 * 60_000
-function newest(path: string): number {
-  const stat = lstatSync(path, { throwIfNoEntry: false })
-  if (!stat) return 0
-  let latest = stat.mtimeMs
-  if (stat.isDirectory())
-    for (const name of readdirSync(path)) latest = Math.max(latest, newest(join(path, name)))
-  return latest
+/** A timestamp this far ahead of the clock is skew, not a recent write (file times can lead Date.now()). */
+const FUTURE_SLACK_MS = 60_000
+/** Entries looked at per leftover; a larger tree is judged by the part already seen. */
+const NEWEST_BUDGET = 2000
+/**
+ * The latest change in a leftover. A timestamp from the future (clock skew, an archive built ahead)
+ * says nothing about recent writes; an entry that cannot be read counts as just changed, so the
+ * leftover is left for a later pass instead of failing this one.
+ */
+function newest(path: string, now: number, budget = { left: NEWEST_BUDGET }): number {
+  try {
+    const stat = lstatSync(path, { throwIfNoEntry: false })
+    if (!stat) return 0
+    let latest = stat.mtimeMs > now + FUTURE_SLACK_MS ? 0 : stat.mtimeMs
+    if (stat.isDirectory())
+      for (const name of readdirSync(path)) {
+        if (--budget.left < 0) break
+        latest = Math.max(latest, newest(join(path, name), now, budget))
+      }
+    return latest
+  } catch {
+    return now
+  }
 }
+const present = (path: string) => lstatSync(path, { throwIfNoEntry: false }) !== undefined
+/** Paths whose failed removal was already recorded, so a held file is not logged on every operation. */
+const keptPaths = new Set<string>()
 /**
  * Never delete a live inspector. A dead owner's in-process copy had no other writer, so its partial
- * stage is deleted at once. An unfinished external fetch, or a leftover with no owner, may still have
- * an orphaned child writing into it: it is removed once nothing in it has changed for
- * ABANDONED_AFTER_MS, and skipped until then. Neither is ever published, so skipping it never blocks
- * the operation holding the lock.
+ * stage is deleted at once. An unfinished external fetch, a leftover with no owner, or one whose owner
+ * marker cannot be read, may still have an orphaned child writing into it: it is removed once nothing in
+ * it has changed for ABANDONED_AFTER_MS, and skipped until then. Neither is ever published, so nothing
+ * here refuses the operation holding the lock; a removal that fails is retried by a later one.
  */
 export function recoverStaging(root: string, record: RecordRecovery = () => {}, now = Date.now()): void {
   if (!existsSync(root)) return
-  const remove = (paths: string[], reason: string): void => {
-    if (paths.some((path) => now - newest(path) < ABANDONED_AFTER_MS)) return
-    for (const path of paths) {
+  const drop = (paths: string[], reason: string, quiet: boolean): void => {
+    const found = paths.filter(present)
+    if (!found.length) return
+    if (quiet && found.some((path) => now - newest(path, now) < ABANDONED_AFTER_MS)) return
+    for (const path of found) {
       try {
         rmSync(path, { recursive: true, force: true })
+        keptPaths.delete(path)
         record({ action: 'removed', path, reason })
       } catch {
-        // A file an orphan still holds open (Windows) is retried by a later operation.
+        // A file an orphan or a scanner still holds open (Windows) is retried by a later operation.
+        if (keptPaths.has(path)) continue
+        keptPaths.add(path)
         record({ action: 'kept', path, reason: `${reason}:remove-failed` })
       }
     }
@@ -96,24 +121,24 @@ export function recoverStaging(root: string, record: RecordRecovery = () => {}, 
   for (const name of readdirSync(root)) {
     const path = join(root, name)
     if (name.endsWith('.owner') && STAGE.test(name.slice(0, -6))) {
-      const owner = dead(path),
+      const owner = ownerOf(path),
         stage = path.slice(0, -6)
-      if (!owner.dead) continue
-      if (!owner.ready && !owner.copy && existsSync(stage)) remove([stage, path], 'staging-outcome-unknown')
-      else {
-        clearStage(stage)
-        const reason = owner.copy
-          ? 'staging-copy-dead'
-          : owner.ready
-            ? 'staging-ready-dead'
-            : 'staging-owner-only'
-        record({ action: 'removed', path: stage, reason })
-      }
+      if (!owner) drop([stage, path], 'staging-owner-unreadable', true)
+      else if (!owner.dead) continue
+      else if (!owner.ready && !owner.copy && existsSync(stage))
+        drop([stage, path], 'staging-outcome-unknown', true)
+      else
+        drop(
+          [stage, path],
+          owner.copy ? 'staging-copy-dead' : owner.ready ? 'staging-ready-dead' : 'staging-owner-only',
+          false,
+        )
     } else if (name.startsWith('.agnes-fetch-')) {
       const owner = join(path, '.owner')
-      if (!existsSync(owner) || dead(owner).dead) remove([path], 'fetch-outcome-unknown')
+      const state = existsSync(owner) ? ownerOf(owner) : undefined
+      if (!state || state.dead) drop([path], 'fetch-outcome-unknown', true)
     } else if (STAGE.test(name) && !existsSync(`${path}.owner`)) {
-      remove([path], 'staging-owner-unknown')
+      drop([path], 'staging-owner-unknown', true)
     }
   }
 }

@@ -362,6 +362,12 @@ function* packageTransaction(
       if (p.stage) renameSync(p.stage, p.dest)
       s.checkpoint?.('new-moved')
     }
+    // The renames reach the disk before the lock names their result, so recovery after power loss never
+    // finds a lock that says "next" over a directory still holding the old tree.
+    for (const dir of new Set(
+      entries.flatMap((j) => [dirname(paths(s, j).dest), dirname(paths(s, j).backup)]),
+    ))
+      syncDirectory(dir)
     const pending = prepareLockPublication(s.profileDir, draft)
     try {
       yield
