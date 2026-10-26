@@ -22,6 +22,8 @@ const PAGE_OF = {
   problem: 'service',
   baseline: 'service',
 }
+/** Snapshot collection holding each selectable record type (anything else is a blocker). */
+const LIST_OF = { stage: 'stages', gate: 'gates', change: 'changes', problem: 'problems', trial: 'trials' }
 const DISCIPLINES = ['机械', '电气', '软件', '试验', '质量', '综合']
 const DISCIPLINE_OF = {
   机械设计师: '机械',
@@ -300,6 +302,8 @@ export function Panorama({ data, role: demoRole }) {
   const projects = scoped.filter((p) => !(onlyBlocked || role) || withBlockers.has(p.id))
   const view2 = { ...data, blockers }
   const pick = (type, id) => () => setSel({ type, id })
+  // A record can vanish from the snapshot (gate signed, board reset): then nothing is selected.
+  const shownSel = sel && byId(view2[LIST_OF[sel.type] ?? 'blockers'] ?? [], sel.id) ? sel : null
 
   // Plot geometry.
   const W = Math.max(width, 620)
@@ -761,7 +765,7 @@ export function Panorama({ data, role: demoRole }) {
             )
           : h('p', { className: 'devboard-muted', role: 'status' }, '没有符合筛选条件的项目或卡点。'),
       ),
-      sel && h(Drawer, { data: view2, sel, onClose: () => setSel(null) }),
+      shownSel && h(Drawer, { data: view2, sel: shownSel, onClose: () => setSel(null) }),
     ),
     legend,
   )
