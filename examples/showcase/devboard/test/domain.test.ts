@@ -1037,6 +1037,9 @@ describe('change requests and the field-to-design loop', () => {
     const before = designed().length
     expect(release(state, 'ECN_RELEASE', cr.id).state).toBe('APPROVED')
     expect(designed()).toHaveLength(before + 1)
+    // doors brought to the released design after the close still count and complete the as-maintained baseline
+    transition(state, { kind: 'retrofit', id: cr.id, done: cr.retrofit.total, by: '客服工程师' }, NOW)
+    expect(cr.retrofit.done).toBe(cr.retrofit.total)
     const rejected = create(
       state,
       { kind: 'change', projectId: p.id, title: 'r', reason: 'r', impact: { reqs: ['CUS-001'] } },

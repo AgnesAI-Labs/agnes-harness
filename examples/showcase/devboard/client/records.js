@@ -206,7 +206,8 @@ function NewChange({ data, board, role, projectId }) {
 function RetrofitBar({ data, change, board, role }) {
   const rf = change.retrofit
   const [done, setDone] = React.useState('')
-  const approved = ['APPROVED', 'IMPLEMENTED'].includes(change.state)
+  const approved =
+    ['APPROVED', 'IMPLEMENTED'].includes(change.state) || (change.state === 'CLOSED' && Boolean(change.ecn))
   // Doors follow a released design, so a change that names items waits for its ECN release.
   const unreleased =
     change.impact?.items?.length > 0 &&

@@ -890,8 +890,9 @@ function releaseEcn(state, cr, at) {
 function setRetrofit(state, { id, done, by, note }, now) {
   const cr = find(state, 'change', id)
   if (!cr.retrofit) fail(`${cr.id} 未设置整改总数`)
-  if (!['APPROVED', 'IMPLEMENTED'].includes(cr.state))
-    fail(`${cr.id} 处于 ${cr.state}，批准后才能更新整改进度`)
+  // A change closed after verification still has doors in service to bring to its ECN.
+  const approved = ['APPROVED', 'IMPLEMENTED'].includes(cr.state) || (cr.state === 'CLOSED' && cr.ecn)
+  if (!approved) fail(`${cr.id} 处于 ${cr.state}，批准后才能更新整改进度`)
   // Doors are brought to a released design: the as-maintained baseline must not run ahead of the as-designed one.
   const released = state.approvals.some(
     (a) => a.template === 'ECN_RELEASE' && a.subject.id === cr.id && a.state === 'APPROVED',
