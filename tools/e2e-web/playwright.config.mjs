@@ -29,6 +29,8 @@ export default defineConfig({
     'plugin-purpose.spec.ts',
     'ui-gate.spec.ts',
     'ui-flows.spec.ts',
+    'answer-tables.spec.ts',
+    'session-create.spec.ts',
     'mcp-management.spec.ts',
     'candidate-review.spec.ts',
     'first-run.spec.ts',
