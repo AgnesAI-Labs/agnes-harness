@@ -216,7 +216,9 @@ export function Overview({ data, board, role }) {
               '里程碑偏差',
               m.delayDays > 0
                 ? `${m.overdue ? '超期' : '延后'} ${m.delayDays} 天`
-                : `提前 ${-m.delayDays} 天`,
+                : m.delayDays < 0
+                  ? `提前 ${-m.delayDays} 天`
+                  : '按计划',
             ),
             fact(
               '评审门',

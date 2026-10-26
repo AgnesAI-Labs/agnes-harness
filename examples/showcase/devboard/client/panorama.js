@@ -20,7 +20,7 @@ const PAGE_OF = {
   trial: 'trials',
   change: 'devboard-changes',
   problem: 'service',
-  baseline: 'service',
+  baseline: 'devboard-projects',
 }
 /** Snapshot collection holding each selectable record type (anything else is a blocker). */
 const LIST_OF = { stage: 'stages', gate: 'gates', change: 'changes', problem: 'problems', trial: 'trials' }
@@ -339,6 +339,7 @@ export function Panorama({ data, role: demoRole }) {
     const d = new Date(w0)
     d.setHours(0, 0, 0, 0)
     d.setDate(d.getDate() + ((8 - d.getDay()) % 7))
+    if (d.getTime() < w0) d.setDate(d.getDate() + 7)
     for (let t = d.getTime(); t <= w1; t += 7 * DAY) ticks.push([t, md(t)])
   } else {
     const months = Math.ceil((w1 - w0) / (30 * DAY))
