@@ -145,6 +145,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.model',
     summaryKey: 'commands.modelSummary',
   },
+  { name: '/provider', descriptionKey: 'commands.provider', summaryKey: 'commands.providerSummary' },
   { name: '/yolo', args: '[on|off]', descriptionKey: 'commands.yolo', summaryKey: 'commands.yoloSummary' },
   {
     name: '/grants',

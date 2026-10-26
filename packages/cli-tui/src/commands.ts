@@ -31,6 +31,7 @@ import { type ExtendedKey, tt } from './locale-extended.js'
 import { memorySlash } from './memory-command.js'
 import { parseNotifyMode } from './notify.js'
 import { permissionsSlash } from './permissions-command.js'
+import { providerSlash } from './provider-command.js'
 import { queueSlash } from './queue-commands.js'
 import { rateSlash } from './rate-command.js'
 import { recapSlash } from './recap-command.js'
@@ -47,7 +48,11 @@ import { toolNameCandidates, toolsSlash } from './tool-filter-command.js'
 import { trustSlash } from './trust-command.js'
 import { undoSlash } from './undo-commands.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
+import type { ProviderSetupInit } from './views/provider-setup.js'
 import { worktreeSlash } from './worktree-command.js'
+
+// app.ts is at its line budget, so it takes the dialog factory through the module it already imports.
+export { createProviderSetup } from './provider-command.js'
 
 export { SLASH_COMMANDS, type SlashCommand }
 
@@ -142,6 +147,8 @@ export type SlashResult = {
   title?: string
   switchSession?: Session
   modelChoices?: ModelChoice[]
+  /** Opens the /provider dialog. Carries no secret: the key is typed into the dialog itself. */
+  providerSetup?: ProviderSetupInit
   sessionChoices?: SessionChoice[]
   sessionPickerTitle?: ExtendedKey
   /** The /resume picker's scope: Tab switches between this workspace and every workspace, listed by `reload`. */
@@ -486,6 +493,8 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
       return cdSlash(app, line)
     case '/add-dir':
       return addDirSlash(app, line)
+    case '/provider':
+      return providerSlash(app)
     case '/btw': {
       const question = line.trim().replace(/^\S+\s*/, '')
       if (!question) return { text: tt('btw.usage', locale) }

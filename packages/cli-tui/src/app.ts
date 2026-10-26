@@ -9,7 +9,7 @@ import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { CardFocus } from './card-focus.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { applyCommandResult } from './command-result.js'
-import { completeToken, opensSwitch, runSlash, slashCommandFor } from './commands.js'
+import { completeToken, createProviderSetup, opensSwitch, runSlash, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { DraftStash } from './draft-stash.js'
@@ -139,6 +139,7 @@ export class TuiApp {
   readonly cardFocus: CardFocus
   readonly modelPicker: ModelPicker
   readonly sessionPicker: SessionPicker
+  readonly providerSetup: ReturnType<typeof createProviderSetup>
   readonly packages: PackageController
   readonly localCommandView: (command: string, output: string, quiet?: boolean) => Component
   // Streamed text is never in the projected timeline: a streaming node stays empty there, and the
@@ -375,6 +376,7 @@ export class TuiApp {
       onChoose: (choice) => void chooseSession(this, choice),
       changed: () => this.stopped || this.renderer.requestRender(),
     })
+    this.providerSetup = createProviderSetup(this, ansi, locale)
     this.usagePanel = new UsagePanel({
       ansi,
       locale,
@@ -418,6 +420,17 @@ export class TuiApp {
     // immediately visible by design (see loader.ts's doc comment), so the app -- not the
     // component -- is what decides a fresh session shows nothing yet.
     this.loader.hide()
+    // A pending approval takes every keystroke, so the dialogs give up their rows until it is answered
+    // and then reappear unchanged. Transient command dialogs belong immediately above the footer, not in
+    // the conversation; closed ones render zero rows, preserving the normal rule/editor/status adjacency.
+    const dialogs: readonly (Component & InputDialog)[] = [
+      this.modelPicker,
+      this.themePicker,
+      this.sessionPicker,
+      this.providerSetup,
+      this.usagePanel,
+      this.statusLine,
+    ]
     const root = new VStack([
       this.timeline,
       this.live,
@@ -426,25 +439,10 @@ export class TuiApp {
       this.planPanel,
       this.cardFocus,
       this.composer,
-      // Transient command dialogs belong immediately above the footer, not in the conversation.
-      // Closed pickers render zero rows, preserving the normal rule/editor/status adjacency.
-      this.modelPicker,
-      this.themePicker,
-      this.sessionPicker,
-      this.usagePanel,
-      this.statusLine,
+      ...dialogs,
       this.statusBar,
       this.hints,
     ])
-    // A pending approval takes every keystroke, so the dialogs give up their rows until it is answered
-    // and then reappear unchanged.
-    const dialogs: readonly (Component & InputDialog)[] = [
-      this.modelPicker,
-      this.themePicker,
-      this.sessionPicker,
-      this.usagePanel,
-      this.statusLine,
-    ]
     root.render = rootRender({
       sync: () => this.signals.sync(),
       pager: this.pager,
@@ -866,6 +864,7 @@ export class TuiApp {
         usagePanel: this.usagePanel,
         modelPicker: this.modelPicker,
         sessionPicker: this.sessionPicker,
+        providerSetup: this.providerSetup,
         editor: this.editor,
         busyInput: this.busyInput,
         appendLocal: (view) => this.timeline.appendLocal(this.session.id, view),

@@ -3,6 +3,7 @@ import type { SlashResult } from './commands.js'
 import type { Component } from './component.js'
 import type { Editor } from './editor.js'
 import type { ModelPicker } from './views/model-picker.js'
+import type { ProviderSetup } from './views/provider-setup.js'
 import type { SessionPicker } from './views/session-picker.js'
 import type { StatusBar } from './views/status-bar.js'
 import type { UsagePanel } from './views/usage-panel.js'
@@ -12,6 +13,7 @@ export interface CommandResultHost {
   usagePanel: UsagePanel
   modelPicker: ModelPicker
   sessionPicker: SessionPicker
+  providerSetup: ProviderSetup
   editor: Editor
   busyInput: BusyInput
   /** Anchors a connection-local view beside the projected nodes of the current session. */
@@ -42,5 +44,9 @@ export function applyCommandResult(host: CommandResultHost, text: string, r: Sla
   if (r.sessionChoices) {
     statusBar.setNotice(undefined)
     host.sessionPicker.show(r.sessionChoices, r.sessionPickerTitle, r.sessionScope)
+  }
+  if (r.providerSetup) {
+    statusBar.setNotice(undefined)
+    host.providerSetup.show(r.providerSetup)
   }
 }
