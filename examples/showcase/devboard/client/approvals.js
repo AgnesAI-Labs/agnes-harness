@@ -20,6 +20,7 @@ import {
 } from './board.js'
 import { workOf } from './entries.js'
 import { HandbackCards } from './handback.js'
+import { waitingInterventions } from './lens.js'
 import { GatePanel } from './lifecycle.js'
 import { WorkButton } from './work.js'
 
@@ -442,9 +443,7 @@ export function MyTodo({ data, board, role, setRole }) {
   const waitingFlows = data.approvals
     .filter((f) => f.state === 'RUNNING' && f.waitingRoles.includes(role))
     .sort((a, b) => Number(b.overdue) - Number(a.overdue))
-  const interventions = isEngineer(role)
-    ? []
-    : data.interventions.filter((i) => i.state === 'OPEN' || i.state === 'EXPIRED')
+  const interventions = waitingInterventions(role, data)
   const pending = [
     ...waitingFlows.map((f) =>
       flowItem(f, `${currentNode(f).name}${f.overdue ? ' · 已超时' : ''} · ${f.projectId}`),

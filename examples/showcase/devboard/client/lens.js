@@ -220,6 +220,10 @@ function urgentOf(role, data) {
   return out
 }
 
+/** Human-intervention requests waiting for the role: every open or expired one, except for engineers. */
+export const waitingInterventions = (role, data) =>
+  /工程师$/.test(role) ? [] : data.interventions.filter((i) => i.state === 'OPEN' || i.state === 'EXPIRED')
+
 /**
  * What the role's home shows: how many records wait for the role, how many open records of each metric
  * concern it, and the (at most five) most urgent ones - late first, then by due date.
@@ -234,9 +238,7 @@ export function lensSummary(role, data) {
         !(g.signatures ?? []).some((s) => s.role === role) &&
         stageOf(data, g)?.author !== role,
     ).length +
-    data.interventions.filter(
-      (i) => (i.state === 'OPEN' || i.state === 'EXPIRED') && relevant(role, 'intervention', i, data),
-    ).length
+    waitingInterventions(role, data).length
   const counts = Object.fromEntries(
     Object.entries(METRICS).map(([key, [, kind, open]]) => [
       key,

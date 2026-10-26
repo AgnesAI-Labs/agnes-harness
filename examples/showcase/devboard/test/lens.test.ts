@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { COLLECTION, cardsOf, lensSummary, METRICS, relevant } from '../client/lens.js'
+import { COLLECTION, cardsOf, lensSummary, METRICS, relevant, waitingInterventions } from '../client/lens.js'
 import { seed, snapshot } from '../domain.mjs'
 import { ROLES } from '../profiles.mjs'
 
@@ -47,6 +47,16 @@ describe('role lens', () => {
     expect(
       mine('项目经理', 'defect').every((d) => ['A', 'B'].includes(d.severity) && d.state !== 'CLOSED'),
     ).toBe(true)
+  })
+
+  it('counts the open intervention requests that My to-dos lists, for every non-engineer role', () => {
+    const open = data.interventions.filter((i: Any) => i.state === 'OPEN' || i.state === 'EXPIRED')
+    expect(open.length).toBeGreaterThan(0)
+    expect(waitingInterventions('技术负责人', data)).toEqual(open)
+    expect(waitingInterventions('RAMS 工程师', data)).toEqual([])
+    const lead = { ...data, gates: [], approvals: [] }
+    expect(lensSummary('技术负责人', lead).pending).toBe(open.length)
+    expect(lensSummary('RAMS 工程师', lead).pending).toBe(0)
   })
 
   it('matches whole roles, including the one that contains a space', () => {
