@@ -104,8 +104,11 @@ function gateHandoff(state, gate) {
   const decision = gate.decision
   const next = []
   let step
-  if (decision === 'PENDING') next.push(`该门尚未决议，等待 ${gate.approverRoles.join('、')}；不要替人批准`)
-  else if (decision === 'APPROVED') {
+  if (decision === 'PENDING') {
+    const signed = (gate.signatures ?? []).map((s) => s.role)
+    const waiting = gate.approverRoles.filter((r) => !signed.includes(r))
+    next.push(`该门尚未决议，等待 ${waiting.join('、')}；不要替人批准`)
+  } else if (decision === 'APPROVED') {
     // A passed stage has nothing left to do: point at the project's real current work.
     step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
     next.push(step ? step.action : doneText(project))

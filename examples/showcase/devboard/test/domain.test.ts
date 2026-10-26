@@ -1917,6 +1917,9 @@ describe('blockers', () => {
     const list = blockers(state, NOW) as Item[]
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({ kind: 'GATE_PENDING', role: '客户代表', days: 3 })
+    expect(handoff(state, { type: 'gate', id: gate.id }).next[0]).toBe(
+      '该门尚未决议，等待 客户代表；不要替人批准',
+    )
     gate.superseded = true
     expect(blockers(state, NOW)).toEqual([])
   })
