@@ -1,4 +1,4 @@
-import { Button } from '@agnes/web-ui'
+import { Button, ConfirmDialog } from '@agnes/web-ui'
 import React from 'react'
 import { MyTodo } from './approvals.js'
 import { h, JumpContext, Shell, useBoard, useRole } from './board.js'
@@ -8,6 +8,32 @@ import { Overview, Projects } from './lifecycle.js'
 import { Panorama } from './panorama.js'
 import { Changes, Quality, Tasks } from './records.js'
 import { Trace } from './trace.js'
+
+/** Reset sits next to fast-forward, so one stray click must not wipe a live project in front of an audience. */
+function ResetButton({ board }) {
+  const [open, setOpen] = React.useState(false)
+  return h(
+    React.Fragment,
+    null,
+    h(Button, { disabled: board.busy, onClick: () => setOpen(true) }, '重置演示数据'),
+    h(
+      ConfirmDialog,
+      {
+        open,
+        title: '重置演示数据？',
+        confirmLabel: '重置',
+        destructive: true,
+        busy: board.busy,
+        onCancel: () => setOpen(false),
+        onConfirm: () => {
+          setOpen(false)
+          void board.run('devboard.reset', {}, '已恢复演示数据')
+        },
+      },
+      '看板会回到预置的四个项目，现场项目、审批进度和智能体动态都会清空。devboard-projects/ 下已写出的文件保留在磁盘上。',
+    ),
+  )
+}
 
 /** id → [zh title, en title, icon, view, description]; order is the navigation order. */
 const PAGES = {
@@ -87,16 +113,7 @@ export function apply(ctx) {
       }, [roles, role, setRole])
       const reset =
         id === 'devboard-overview' &&
-        h(
-          React.Fragment,
-          null,
-          h(FastForward, { board }),
-          h(
-            Button,
-            { disabled: board.busy, onClick: () => board.run('devboard.reset', {}, '已恢复演示数据') },
-            '重置演示数据',
-          ),
-        )
+        h(React.Fragment, null, h(FastForward, { board }), h(ResetButton, { board }))
       return h(
         JumpContext.Provider,
         { value: context?.selection?.devboard },
