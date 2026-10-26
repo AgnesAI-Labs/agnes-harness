@@ -239,7 +239,18 @@ function RetrofitBar({ change, board, role }) {
       }),
       h(Button, { disabled: board.busy || locked || done === '', onClick: submit }, '更新整改进度'),
       h(Button, { disabled: board.busy || locked, onClick: () => setDone(String(rf.total)) }, '填入全部'),
-      locked && h('span', { className: 'devboard-muted' }, '批准后才能更新整改进度。'),
+      locked &&
+        h(
+          'span',
+          { className: 'devboard-muted' },
+          rf.done >= rf.total
+            ? '整改已完成。'
+            : change.state === 'CLOSED'
+              ? '变更已关闭，整改进度不再更新。'
+              : change.state === 'REJECTED'
+                ? '变更已驳回，无需整改。'
+                : '批准后才能更新整改进度。',
+        ),
     ),
   )
 }
