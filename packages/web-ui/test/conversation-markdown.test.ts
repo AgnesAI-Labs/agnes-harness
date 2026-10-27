@@ -68,6 +68,13 @@ it('keeps images textual and rejects unsafe, relative and entity-encoded URLs', 
   expect(host.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer')
 })
 
+it('keeps an external link query and shows the full target as the fallback title', async () => {
+  await render('[文档](https://example.test/?a=1&b=2)')
+  const anchor = host.querySelector('a')
+  expect(anchor?.getAttribute('href')).toBe('https://example.test/?a=1&b=2')
+  expect(anchor?.getAttribute('title')).toBe('https://example.test/?a=1&b=2')
+})
+
 it('resolves a reference and copies exact displayed code with success and failure feedback', async () => {
   const onCopy = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('denied'))
   await render(
