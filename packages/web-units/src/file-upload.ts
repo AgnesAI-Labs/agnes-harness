@@ -62,10 +62,13 @@ export async function fileUploadLimits(
     throw new FileUploadFailure('UPLOAD_UNAVAILABLE')
   return value.limits
 }
+/** Cleanup is best effort: callers bound it so a stalled request cannot keep the chip busy. */
+export const CANCEL_TIMEOUT_MS = 10_000
 export async function cancelFileUpload(
   sessionId: string,
   uploadId: string,
   destination: 'workspace' | 'original' = 'workspace',
+  signal?: AbortSignal,
 ): Promise<void> {
   await result(
     await fetch(FILE_UPLOAD_PATH, {
@@ -73,6 +76,7 @@ export async function cancelFileUpload(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ operation: 'cancel', sessionId, uploadId, destination, laneId: 'main' }),
       keepalive: true,
+      ...(signal ? { signal } : {}),
     }),
   )
 }

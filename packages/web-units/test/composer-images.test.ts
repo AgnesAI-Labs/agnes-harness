@@ -948,3 +948,133 @@ it('clears attachments without notifying the host when there is nothing to clear
   expect(handle.current?.getImageBlocks()).toEqual([])
   expect(changed).toHaveBeenCalled()
 })
+
+describe('composer upload cancellation and retry', () => {
+  const limits = { maxBytes: 1024, chunkBytes: 4, allowedMimeTypes: [] as string[] }
+  const renderComposer = async () => {
+    const handle = createRef<ComposerHandle>()
+    const onError = vi.fn()
+    await act(async () => {
+      root.render(
+        createElement(Composer, {
+          ref: handle,
+          dependencies,
+          initialView: view,
+          prepareUploadSession: async () => 'owned-session',
+          onCancel() {},
+          onDraftChange() {},
+          onError,
+          onModelSelect: async () => false,
+          onPermissionSelect: async () => false,
+          onSubmit() {},
+          onWorkspace() {},
+        }),
+      )
+    })
+    return { handle, onError }
+  }
+  const chip = () => host.querySelector('[data-testid="attachment-upload"]')
+  const chipState = () => chip()?.getAttribute('data-state')
+  const status = () => host.querySelector('[data-testid="attachment-upload-status"]')?.textContent ?? ''
+  const startUpload = async (): Promise<void> => {
+    const prompt = host.querySelector<HTMLTextAreaElement>('#prompt')
+    if (!prompt) throw new Error('composer input is missing')
+    await act(async () => {
+      prompt.dispatchEvent(imagePasteEvent([new File(['one'], 'contract.txt', { type: 'text/plain' })]))
+    })
+    // The upload stalls at 100% in the verifying phase, which is where users press cancel.
+    await vi.waitFor(() => expect(chipState()).toBe('verifying'))
+  }
+  const stallAtFullProgress = () =>
+    vi.spyOn(uploads, 'uploadFile').mockImplementation((file, _session, _id, _limits, signal, progress) => {
+      progress({ loaded: file.size, total: file.size, phase: 'verifying' })
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), {
+          once: true,
+        })
+      })
+    })
+  beforeEach(() => {
+    vi.spyOn(uploads, 'fileUploadLimits').mockResolvedValue(limits)
+  })
+
+  it('treats a published upload as cancelled and lets the chip be dismissed', async () => {
+    stallAtFullProgress()
+    const cancelled = vi
+      .spyOn(uploads, 'cancelFileUpload')
+      .mockRejectedValue(new uploads.FileUploadFailure('ATTACHMENT_DATA'))
+    const { handle } = await renderComposer()
+    await startUpload()
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-cancel"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chipState()).toBe('cancelled'))
+    expect(status()).not.toContain('尚未确认清理完成')
+    // One abort is one cleanup request; a second cancel from the abort handler is not sent.
+    expect(cancelled).toHaveBeenCalledTimes(1)
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-dismiss"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chip()).toBeNull())
+    expect(handle.current?.getAttachmentBlocks()).toEqual([])
+  })
+
+  it('keeps an unconfirmed cleanup dismissible and stops claiming 100% after the failure', async () => {
+    stallAtFullProgress()
+    const cancelled = vi
+      .spyOn(uploads, 'cancelFileUpload')
+      .mockRejectedValue(new TypeError('failed to fetch'))
+    await renderComposer()
+    await startUpload()
+    expect(status()).toContain('100%')
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-cancel"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chipState()).toBe('failed'))
+    expect(status()).toContain('尚未确认清理完成')
+    expect(status()).not.toContain('100%')
+    expect(cancelled).toHaveBeenCalledTimes(1)
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-dismiss"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chip()).toBeNull())
+  })
+
+  it('retries an aborted upload with a fresh controller instead of cancelling again', async () => {
+    const upload = vi.spyOn(uploads, 'uploadFile')
+    let firstSignal: AbortSignal | undefined
+    upload.mockImplementationOnce((file, _session, _id, _limits, signal, progress) => {
+      firstSignal = signal
+      progress({ loaded: file.size, total: file.size, phase: 'verifying' })
+      return new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError')), {
+          once: true,
+        })
+      })
+    })
+    upload.mockImplementationOnce(async (file, _session, id) =>
+      attachmentLink({ sha256: 'a'.repeat(64), size: file.size, mime: file.type }, file.name, {
+        receiptId: id,
+      }),
+    )
+    const cancelled = vi
+      .spyOn(uploads, 'cancelFileUpload')
+      .mockRejectedValue(new TypeError('failed to fetch'))
+    const { handle } = await renderComposer()
+    await startUpload()
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-cancel"]')?.click(),
+    )
+    await vi.waitFor(() => expect(chipState()).toBe('failed'))
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="attachment-upload-retry"]')?.click(),
+    )
+    await vi.waitFor(() => expect(handle.current?.getAttachmentBlocks()).toHaveLength(1))
+    expect(chip()).toBeNull()
+    expect(upload).toHaveBeenCalledTimes(2)
+    expect(cancelled).toHaveBeenCalledTimes(1)
+    const retriedSignal = upload.mock.calls[1]?.[4]
+    expect(retriedSignal).not.toBe(firstSignal)
+    expect(retriedSignal?.aborted).toBe(false)
+  })
+})
