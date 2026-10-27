@@ -383,22 +383,34 @@ it.each([
     'OUTCOME_UNKNOWN',
     'INVALID_PARAMS',
   ],
+  [
+    'a sandbox readiness refusal (loopback_serve off macOS) with the daemon diagnostic id',
+    { data: { code: 'E_SANDBOX_WORKSPACE', diagnosticId: '0a1b2c3d-0000-4000-8000-0123456789ab' } },
+    'unknown',
+    'OUTCOME_UNKNOWN',
+    'E_SANDBOX_WORKSPACE',
+    '0a1b2c3d-0000-4000-8000-0123456789ab',
+  ],
   ['a coded timeout', { data: { code: 'REQUEST_TIMEOUT' } }, 'unknown', 'OUTCOME_UNKNOWN', 'REQUEST_TIMEOUT'],
   ['a lost answer', {}, 'unknown', 'OUTCOME_UNKNOWN', undefined],
   ['a reviewed refusal code', { data: { code: 'E_PACKAGE_STATE' } }, 'failed', 'E_PACKAGE_STATE', undefined],
-])('launch-review: %s from session.new is reported as %s', async (_name, thrown, state, code, cause) => {
-  const f = fixture()
-  const { launchTicket } = await f.prepare()
-  f.onOpen(() => {
-    throw Object.assign(new Error('session.new failed'), thrown)
-  })
-  await expect(f.call({ action: 'start', launchTicket, operationId: 'refused' })).rejects.toThrow(code)
-  await expect(f.call({ action: 'read', operationId: 'refused' })).resolves.toEqual({
-    state,
-    code,
-    ...(cause ? { cause } : {}),
-  })
-})
+])(
+  'launch-review: %s from session.new is reported as %s',
+  async (_name, thrown, state, code, cause, diagnosticId?) => {
+    const f = fixture()
+    const { launchTicket } = await f.prepare()
+    f.onOpen(() => {
+      throw Object.assign(new Error('session.new failed'), thrown)
+    })
+    await expect(f.call({ action: 'start', launchTicket, operationId: 'refused' })).rejects.toThrow(code)
+    await expect(f.call({ action: 'read', operationId: 'refused' })).resolves.toEqual({
+      state,
+      code,
+      ...(cause ? { cause } : {}),
+      ...(diagnosticId ? { diagnosticId } : {}),
+    })
+  },
+)
 it('launch-review: a refusal before session.new is dispatched is failed, not unknown', async () => {
   const f = fixture()
   const { launchTicket } = await f.prepare()

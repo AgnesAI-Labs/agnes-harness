@@ -9,7 +9,11 @@ import { installSandboxProviders } from '@agnes/host-providers/adapters/sandbox-
 import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
 import { describe, expect, it } from 'vitest'
 import { remoteSandboxModule } from '../../src/runtime/adapters/index.js'
-import { localSandboxProbe, sandboxBackendPackages } from '../../src/runtime/assemble/workspace-runtime.js'
+import {
+  localSandboxProbe,
+  loopbackServeSupported,
+  sandboxBackendPackages,
+} from '../../src/runtime/assemble/workspace-runtime.js'
 
 const env: ResolveEnv = {
   platform: { os: 'linux', arch: 'x64', capabilities: {} },
@@ -155,4 +159,15 @@ describe('platform is host-only', () => {
     expect(attempt).toThrow(/host-owned/)
     expect(() => root.providers.select('platform', 'host')).toThrow(/host-owned/)
   })
+})
+
+// DevBoard's coordinator preset requests loopback_serve, so a Windows or Linux host refuses every launch of it
+// at session open (E_SANDBOX_WORKSPACE), which the agent launch receipt reports as OUTCOME_UNKNOWN.
+it.each([
+  ['darwin', false, true],
+  ['win32', false, false],
+  ['linux', false, false],
+  ['darwin', true, false],
+])('loopback_serve on %s (remote=%s) is supported: %s', (os, remote, supported) => {
+  expect(loopbackServeSupported(os, remote)).toBe(supported)
 })

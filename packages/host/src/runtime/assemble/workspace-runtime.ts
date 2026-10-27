@@ -45,6 +45,9 @@ import { trustedHookCommands } from './trusted-hooks.js'
 
 type WorkspacePlans = Map<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>
 
+/** Reviewed `sandbox.loopback_serve` needs the local macOS Seatbelt backend; every other host refuses the session. */
+export const loopbackServeSupported = (os: string, remote: boolean): boolean => os === 'darwin' && !remote
+
 /**
  * Decides, per workspace, which sandbox posture a session gets: remote, an external provider's
  * enforcement, or the sandbox package's own probe of the local backend. The probe is revoked with the assembly.
@@ -67,7 +70,10 @@ function createReadinessManager(
       throw new HostError('E_SANDBOX_WORKSPACE', 'workspace readiness has no compiled policy', {
         detail: { reason: 'workspace-policy-missing' },
       })
-    if (plan.staticConfig.loopbackServe && (adapters.transport || adapters.platform.os !== 'darwin'))
+    if (
+      plan.staticConfig.loopbackServe &&
+      !loopbackServeSupported(adapters.platform.os, !!adapters.transport)
+    )
       throw new HostError(
         'E_SANDBOX_WORKSPACE',
         'loopback serving is available only with the local macOS L1 Seatbelt provider',
