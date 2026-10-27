@@ -7,7 +7,9 @@ import {
   type VoiceSettings,
   type VoiceStatusResult,
 } from '@agnes/protocol'
-import type { VoiceComposer, VoiceUnavailable } from '@agnes/web-client'
+import { settingsSections, type VoiceComposer, type VoiceUnavailable } from '@agnes/web-client'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createVoiceController, type VoiceMedia } from '../src/voice/controller.js'
 import { installVoice } from '../src/voice/install.js'
@@ -15,6 +17,7 @@ import { speechSegments, speechText } from '../src/voice/speech-text.js'
 import { voiceLocaleCatalog } from '../src/voice/voice-locale.js'
 
 const D = DEFAULT_VOICE_SETTINGS
+;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 const A = { route: 'account-a', label: '硅基流动' }
 const settings = (patch: {
   input?: Partial<VoiceSettings['input']>
@@ -388,6 +391,41 @@ describe('voice button state', () => {
     peer.postMessage({ type: 'status-changed', tab: 'tab-b' })
     await flush()
     expect(statusCalls(call)).toBe(5)
+  })
+
+  it('registers the voice settings section while installed and routes its link inside the settings page', async () => {
+    const [mine] = pair()
+    const call = vi.fn(async () => ready())
+    const voice = installVoice({ call: call as never, config: { get: async () => ({}) as never } } as never, {
+      channel: mine,
+      tabId: 'tab-a',
+    })
+    controllers.push(voice)
+    expect(settingsSections.get('voice')).toMatchObject({
+      group: 'general',
+      titleKey: 'settings-shell.voice',
+    })
+    const form = document.body.appendChild(document.createElement('form'))
+    form.id = 'config-form'
+    const routed: unknown[] = []
+    form.addEventListener('agnes:settings-route', (event) => routed.push((event as CustomEvent).detail))
+    // The panel the section renders reaches the link through the registered api.
+    const Section = settingsSections.get('voice')?.component
+    if (!Section) throw new Error('missing section')
+    call.mockImplementation((async (method: string) =>
+      method === '_agnes/v1/voice.settings.get'
+        ? { revision: '0'.repeat(64), settings: D }
+        : ready()) as never)
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    await act(async () => root.render(createElement(Section, { context: { t: (key: string) => key } })))
+    await act(async () => {})
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="voice-configure"]')?.click())
+    expect(routed).toEqual(['side-models'])
+    await act(async () => root.unmount())
+    form.remove()
+    voice.dispose()
+    expect(settingsSections.get('voice')).toBeUndefined()
   })
 
   it('tells the other tabs after a settings save', async () => {

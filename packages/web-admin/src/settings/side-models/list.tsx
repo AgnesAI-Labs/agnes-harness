@@ -66,6 +66,8 @@ export function SideModelList(props: SideModelListProps) {
   return (
     <SettingsBlock
       bare
+      id="side-models"
+      tabIndex={-1}
       className="side-models"
       data-testid="side-models"
       label={
