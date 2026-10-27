@@ -38,7 +38,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'deliverables-ui',
     id: '@agnes/deliverables-ui',
-    version: '0.1.4',
+    version: '0.1.5',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/deliverables-ui',
     optionalUnderCeiling: true,

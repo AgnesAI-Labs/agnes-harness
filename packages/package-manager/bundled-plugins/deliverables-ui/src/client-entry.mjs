@@ -13,6 +13,7 @@ import { Fragment, createElement as h, useEffect, useState, useSyncExternalStore
 export function FileCard({ file, ctx, inline = false, subtitle }) {
   const [preview, setPreview] = useState()
   const [error, setError] = useState()
+  const [notice, setNotice] = useState()
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
   const [owner] = useState(() => ({ live: true, releases: new Set() }))
@@ -39,11 +40,24 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
               ? 'text'
               : undefined
   const previewable = Boolean(kind) && file.artifact.size <= 1024 * 1024
+  // Inline cards carry no action of their own, so the row text must say what clicking does.
+  const unsupported = previewable
+    ? undefined
+    : zh
+      ? '不支持站内预览，点击下载'
+      : 'No in-app preview — click to download'
   async function open(ensure = false) {
     if (busy) return
     if (!previewable) {
       // Only a user's click may download; replayed panel selection is not a download request.
+      // Selection that cannot open a preview still needs an answer, or the panel looks broken.
       if (!ensure) await download()
+      else
+        setNotice(
+          zh
+            ? '该格式不支持站内预览，请在交付物卡片上点击下载。'
+            : 'This format has no in-app preview. Use Download on the card.',
+        )
       return
     }
     if (inline && file.workbench) {
@@ -151,7 +165,9 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
       title: file.name,
       titleClassName: 'deliverable-target',
       titleLabel: `${previewable ? (zh ? '打开' : 'Open') : zh ? '下载' : 'Download'}: ${file.name}`,
-      description: subtitle ?? [file.description, formatted].filter(Boolean).join(' · '),
+      description: [subtitle ?? [file.description, formatted].filter(Boolean).join(' · '), unsupported]
+        .filter(Boolean)
+        .join(' · '),
       icon: h('span', { className: 'deliverable-tile', 'data-type': type }, h(Icon, { name: icon })),
       // Workbench titles are labels; the explicit Open action owns preview activation.
       onOpen: inline
@@ -232,6 +248,7 @@ export function FileCard({ file, ctx, inline = false, subtitle }) {
           ),
     }),
     error && h(StatusMessage, { kind: 'error' }, error),
+    notice && h(StatusMessage, { kind: 'notice', 'data-testid': 'deliverable-preview-unsupported' }, notice),
     preview &&
       h(
         'div',

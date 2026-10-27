@@ -27,53 +27,106 @@ import { expectLocalizedDom } from './helpers/localized-dom.js'
 const artifact = { sha256: 'a'.repeat(64), size: 6, mime: 'text/plain' }
 
 it.each([
-  ['text/html', 6, true],
-  ['text/markdown', 6, true],
-  ['application/pdf', 6, true],
-  ['image/png', 6, true],
-  ['application/json', 6, true],
-  ['application/javascript', 6, true],
-  ['application/vnd.openxmlformats-officedocument.presentationml.presentation', 6, false],
-  ['text/html', 1024 * 1024 + 1, false],
-])('opens only a clicked previewable artifact (%s, %i bytes)', async (mime, size, previewable) => {
+  ['text/html', 6, true, ''],
+  ['text/markdown', 6, true, ''],
+  ['application/pdf', 6, true, ''],
+  ['image/png', 6, true, ''],
+  ['application/json', 6, true, ''],
+  ['application/javascript', 6, true, ''],
+  [
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    6,
+    false,
+    'No in-app preview — click to download',
+  ],
+  ['text/html', 1024 * 1024 + 1, false, 'No in-app preview — click to download'],
+])(
+  'opens only a clicked previewable artifact (%s, %i bytes)',
+  async (mime, size, previewable, unsupported) => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    const requestPreview = vi.fn()
+    const documents = vi.fn()
+    const files = vi.fn(async () => ({ url: 'blob:download', release: vi.fn() }))
+    const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const ctx = {
+      locale: { locale: 'en', t: (key: string) => key },
+      resources: { documents: { load: documents }, files: { load: files } },
+      requestPreview,
+    }
+    const file = {
+      id: 'clicked-file',
+      name: 'result',
+      artifact: { ...artifact, mime, size },
+      laneId: 'main',
+      workbench: true,
+    }
+    try {
+      await act(async () => root.render(createElement(official.FileCard, { file, ctx, inline: true })))
+      // An unpreviewable card says so before the user clicks; a previewable one never claims it.
+      if (unsupported) expect(host.textContent).toContain(unsupported)
+      else expect(host.textContent).not.toContain('No in-app preview')
+      expect(requestPreview).not.toHaveBeenCalled()
+      expect(documents).not.toHaveBeenCalled()
+      expect(files).not.toHaveBeenCalled()
+      await act(async () => host.querySelector<HTMLButtonElement>('.agh-list-row-title')!.click())
+      if (previewable) {
+        expect(requestPreview).toHaveBeenCalledWith(file.id)
+        expect(files).not.toHaveBeenCalled()
+      } else {
+        expect(requestPreview).not.toHaveBeenCalled()
+        expect(documents).not.toHaveBeenCalled()
+        expect(files).toHaveBeenCalledWith({ laneId: 'main', artifact: file.artifact })
+        expect(anchor).toHaveBeenCalled()
+        files.mockClear()
+        await act(async () =>
+          root.render(
+            createElement(official.FileCard, { file, ctx: { ...ctx, selection: { id: file.id } } }),
+          ),
+        )
+        expect(files).not.toHaveBeenCalled()
+      }
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+      anchor.mockRestore()
+    }
+  },
+)
+
+it('answers a workbench selection of an unpreviewable file with a notice instead of downloading', async () => {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
-  const requestPreview = vi.fn()
-  const documents = vi.fn()
   const files = vi.fn(async () => ({ url: 'blob:download', release: vi.fn() }))
+  const documents = vi.fn()
   const anchor = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
   const ctx = {
     locale: { locale: 'en', t: (key: string) => key },
     resources: { documents: { load: documents }, files: { load: files } },
-    requestPreview,
+    selection: { id: 'slides' },
   }
   const file = {
-    id: 'clicked-file',
-    name: 'result',
-    artifact: { ...artifact, mime, size },
+    id: 'slides',
+    name: 'deck.pptx',
+    artifact: {
+      ...artifact,
+      mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    },
     laneId: 'main',
     workbench: true,
   }
   try {
-    await act(async () => root.render(createElement(official.FileCard, { file, ctx, inline: true })))
-    expect(requestPreview).not.toHaveBeenCalled()
-    expect(documents).not.toHaveBeenCalled()
+    await act(async () => root.render(createElement(official.FileCard, { file, ctx })))
+    await vi.waitFor(() =>
+      expect(host.querySelector('[data-testid=deliverable-preview-unsupported]')).not.toBeNull(),
+    )
+    expect(host.textContent).toContain('This format has no in-app preview')
+    // Replayed workbench selection is not a download request.
     expect(files).not.toHaveBeenCalled()
-    await act(async () => host.querySelector<HTMLButtonElement>('.agh-list-row-title')!.click())
-    if (previewable) {
-      expect(requestPreview).toHaveBeenCalledWith(file.id)
-      expect(files).not.toHaveBeenCalled()
-    } else {
-      expect(requestPreview).not.toHaveBeenCalled()
-      expect(files).toHaveBeenCalledWith({ laneId: 'main', artifact: file.artifact })
-      expect(anchor).toHaveBeenCalled()
-      files.mockClear()
-      await act(async () =>
-        root.render(createElement(official.FileCard, { file, ctx: { ...ctx, selection: { id: file.id } } })),
-      )
-      expect(files).not.toHaveBeenCalled()
-    }
+    expect(documents).not.toHaveBeenCalled()
+    expect(anchor).not.toHaveBeenCalled()
   } finally {
     await act(async () => root.unmount())
     host.remove()
