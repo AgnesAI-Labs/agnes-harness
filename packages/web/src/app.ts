@@ -2280,12 +2280,13 @@ const stopOpenSession = onBroadcast('agnes:open-session', (event) => {
   const target =
     event instanceof CustomEvent ? (event.detail as { sessionId?: unknown; prompt?: unknown }) : {}
   if (typeof target.sessionId !== 'string') return
-  const { sessionId, prompt } = target as { sessionId: string; prompt?: string }
+  const { sessionId, prompt, send } = target as { sessionId: string; prompt?: string; send?: boolean }
   run(async () => {
     // The page behind stays up until the conversation is ready, so no empty frame shows between.
     try {
       await open(sessionId)
       if (prompt) composerRuntime.setDraft(prompt)
+      if (prompt && send) submitComposer()
     } finally {
       homeNavigation.close()
     }

@@ -27,7 +27,12 @@ const subscribe = (listener: () => void) => {
 homeNavigation.subscribe(() => {
   const nav = homeNavigation.getSnapshot()
   const selection = nav?.selection
-  if (typeof selection === 'object' && selection !== null && 'workAction' in selection) set('quiet')
+  if (
+    typeof selection === 'object' &&
+    selection !== null &&
+    ('workAction' in selection || 'composerLaunch' in selection)
+  )
+    set('quiet')
   else if (nav?.id !== 'agents') set('idle')
 })
 

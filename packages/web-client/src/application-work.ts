@@ -37,6 +37,18 @@ export function applicationWorkRequest(
 export function openApplicationWork(actionId: string, object?: ApplicationWorkObject): void {
   homeNavigation.open('agents', { workAction: applicationWorkRequest(actionId, object) })
 }
+/** A composer message typed before the workbench's default agent has a session; the launch owns the consent review. */
+export type ComposerLaunch = Readonly<{ agent: string; prompt: string; send: boolean }>
+export function openComposerLaunch(launch: ComposerLaunch): void {
+  homeNavigation.open('agents', { composerLaunch: launch })
+}
+/** The launch is still the application's default agent; the application may have changed since the click. */
+export function composerLaunchAgent(launch: ComposerLaunch): string | undefined {
+  const app = effectiveApplication()
+  return app?.defaultAgent === launch.agent && (!app.agents || app.agents.includes(launch.agent))
+    ? launch.agent
+    : undefined
+}
 export function resolveApplicationWork(request: ApplicationWorkRequest, locale: 'en' | 'zh-CN') {
   const app = effectiveApplication()
   if (

@@ -17,6 +17,8 @@ import {
   type ApplicationWorkRequest,
   applicationAgents,
   applicationIdentity,
+  type ComposerLaunch,
+  composerLaunchAgent,
   homeNavigation,
   resolveApplicationWork,
   type UiExtensionContext,
@@ -109,7 +111,16 @@ function AgentList({
   const work = workRequest && resolveApplicationWork(workRequest, locale)
   const workHandled = useRef<unknown>()
   const workCard = work && cards.find((item) => item.ref === work.agent && !item.catalogAgent)
-  const workStuck = (!!workRequest && (!workCard || !data.api)) || starter.attention
+  const composeRequest = (selection as { composerLaunch?: ComposerLaunch } | undefined)?.composerLaunch
+  const composeAgent = composeRequest && composerLaunchAgent(composeRequest)
+  const composeCard = composeAgent
+    ? cards.find((item) => item.ref === composeAgent && !item.catalogAgent)
+    : undefined
+  const composeHandled = useRef<unknown>()
+  const workStuck =
+    (!!workRequest && (!workCard || !data.api)) ||
+    (!!composeRequest && (!composeCard || !data.api)) ||
+    starter.attention
   useEffect(() => {
     if (workStuck) workLaunch.surface()
   }, [workStuck])
@@ -120,6 +131,11 @@ function AgentList({
     workHandled.current = selection
     starter.start(card, workRequest)
   }, [workRequest, work, selection, cards, starter])
+  useEffect(() => {
+    if (!composeRequest || !composeCard || composeHandled.current === selection) return
+    composeHandled.current = selection
+    starter.start(composeCard, undefined, composeRequest)
+  }, [composeRequest, composeCard, selection, starter])
   const navigation = usePushStack()
   const linkedPage = navigation.stack.at(-1)
   const linked = cards.find(

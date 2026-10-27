@@ -13,7 +13,12 @@ import {
 } from '@agnes/protocol'
 import { type Session, unresolvedSubmission } from '@agnes/sdk/browser'
 import { yoloEnabled } from '@agnes/web-admin/permission-picker'
-import { applicationWorkDraft, composerCommands, encodeApplicationWork } from '@agnes/web-client'
+import {
+  applicationWorkDraft,
+  composerCommands,
+  encodeApplicationWork,
+  openComposerLaunch,
+} from '@agnes/web-client'
 import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation/plan-mode'
 import { canSubmitComposer } from '@agnes/web-conversation/presentation'
 import type { AppSessionContext } from '../app.js'
@@ -114,10 +119,21 @@ export function createSubmissionController(
     return request
   }
 
-  /** An agent request stands alone; `session.new` refuses it beside a loop, bundles, a recipe or a level. */
+  /**
+   * The application's default agent never starts straight from `session.new`: its launch passes the
+   * consent review the work action chips use. A session needed before the first send (an upload, a
+   * reference, a plan) hands the draft to that launch and stops; the user retries once it is open.
+   */
   function newSessionOptions() {
     const request = draftRequest()
-    if ('agent' in request) return request
+    if ('agent' in request) {
+      openComposerLaunch({
+        agent: request.agent,
+        prompt: context.composerRuntime.getDraft().trim(),
+        send: false,
+      })
+      throw new Error(context.t('app.session.agentLaunch'))
+    }
     return {
       ...(context.draftLoop ? { loop: context.draftLoop } : {}),
       ...request,
@@ -257,6 +273,12 @@ export function createSubmissionController(
     const imageError = modelImageInputError(selectedRecord, [{ content: images }])
     if (imageError) {
       context.showError(new Error(imageError))
+      return
+    }
+    const request =
+      session || attachments.length || selectedReferences.length ? undefined : context.draftSessionRequest()
+    if (request && 'agent' in request) {
+      openComposerLaunch({ agent: request.agent, prompt: input, send: true })
       return
     }
     const text = input || referenceSelections.map(({ source, id }) => `@${source} ${id}`).join('\n')
