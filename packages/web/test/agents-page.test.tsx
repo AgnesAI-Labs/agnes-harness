@@ -244,6 +244,22 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
           host.querySelector<HTMLButtonElement>('[data-agent-ref="acme/kit#triage"] button')?.click(),
         )
         expect(prepareAgent).toHaveBeenCalledTimes(1)
+        // A recheck keeps the failure panel: busy action, other actions off, no starting skeleton.
+        let answer: (value: unknown) => void = () => {}
+        readAgent.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+        await act(async () =>
+          host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-retry"]')?.click(),
+        )
+        const retry = host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-retry"]')
+        expect(host.textContent).toContain('may not have started')
+        expect(retry?.getAttribute('aria-busy')).toBe('true')
+        for (const id of ['agent-launch-new-intent', 'agent-launch-close'])
+          expect(host.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)?.disabled).toBe(true)
+        await act(async () => answer({ state: 'unknown', code: 'OUTCOME_UNKNOWN', cause: 'STILL_UNKNOWN' }))
+        expect(host.textContent).toContain('(STILL_UNKNOWN)')
+        expect(host.querySelector('[data-testid="agent-launch-retry"]')?.getAttribute('aria-busy')).not.toBe(
+          'true',
+        )
         readAgent.mockResolvedValue({ state: 'completed', ...result })
         await act(async () =>
           host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-retry"]')?.click(),
