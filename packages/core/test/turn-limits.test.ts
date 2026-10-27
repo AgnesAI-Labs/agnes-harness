@@ -30,9 +30,12 @@ async function clocked(deltasMs: number[], preset = presetDefaults()) {
   const registry = new ToolRegistry()
   // The turn's time limit each tool call was handed, as a waiting tool would read it.
   const seen: unknown[] = []
+  // The timeout each call was told, which a tool that only honours its own timeout waits up to.
+  const timeouts: number[] = []
   registry.add(
     readTool(async (_args, ctx) => {
       seen.push(ctx.turnTimeLimit)
+      timeouts.push(ctx.timeoutMs)
       now += deltas.shift() ?? 0
       return { content: [{ type: 'text' as const, text: 'ok' }] }
     }),
@@ -44,7 +47,7 @@ async function clocked(deltasMs: number[], preset = presetDefaults()) {
     textTurn('next'),
   ])
   const opened = await openSession({ provider, registry, preset, clock: () => now })
-  return { ...opened, provider, seen }
+  return { ...opened, provider, seen, timeouts }
 }
 
 const signal = new AbortController().signal
@@ -176,6 +179,26 @@ describe('turn limits the model is told about', () => {
     expect(JSON.stringify(provider.requests.at(-1))).not.toContain('[turn time]')
     expect(provider.requests.at(-1)?.requestOnlyMessages).toBeUndefined()
     expect(await timeNotes(log)).toEqual([])
+  })
+
+  it('tells each tool call no more time than the turn has left, less a small margin', async () => {
+    // Calls at 0, 30, 90 and 98 s into a 100 s limit; the preset's own call timeout is 120 s.
+    const { session, timeouts } = await clocked([30_000, 60_000, 8_000, 0])
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'do it' }],
+      actor,
+      timeLimitMs: 100_000,
+    })
+    await session.acceptInput()
+    await session.run({ until: 'turn-end', signal })
+    expect(timeouts).toEqual([95_000, 65_000, 5_000, 1_000])
+    await session.close()
+    const plain = await clocked([0])
+    await plain.session.enqueue('next-turn', { content: [{ type: 'text', text: 'do it' }], actor })
+    await plain.session.run({ until: 'turn-end', signal })
+    // An untimed turn keeps the preset timeout, less the kernel's grace.
+    expect(plain.timeouts).toEqual([118_000])
+    await plain.session.close()
   })
 
   it('a long timed turn adds no more history rows than its threshold notes', async () => {
