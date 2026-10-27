@@ -125,6 +125,15 @@ function slowCall(requestMs: number): { timeoutMs: number } {
   return { timeoutMs: Math.max(requestMs, SLOW_CALL_MS) }
 }
 
+/**
+ * Reviewing an application resolves every agent it declares, one serial Host build each, so the wait
+ * grows with the agent count and the machine (12 agents took 55 s on an older Intel Mac). The daemon
+ * keeps working after a client gives up, so a short budget only turns a late success into an
+ * unconfirmed operation.
+ */
+const APPLICATION_REVIEW_MS = 300_000
+const APPLICATION_REVIEW_METHODS = new Set(['_agnes/v1/applications.preview', '_agnes/v1/applications.adopt'])
+
 export class Client {
   private readonly sessionHistory = new Map<string, 'full' | 'none'>()
   private readonly restoreHistory: 'full' | 'none'
@@ -785,6 +794,8 @@ export class Client {
     if (this.isClosed) throw new TransportClosed({ reason: 'closed' })
     if (!o.skipInit) await this.initialize()
     this.checkParams(method, params)
+    if (o.timeoutMs === undefined && APPLICATION_REVIEW_METHODS.has(method))
+      o = { ...o, timeoutMs: Math.max(this.timeouts.request, APPLICATION_REVIEW_MS) }
     const result = await this.conn.request<T>(method, params, {
       // Omitted, not undefined: leaving the key off is what lets the connection apply
       // its own default deadline, while an explicit null means "no deadline".

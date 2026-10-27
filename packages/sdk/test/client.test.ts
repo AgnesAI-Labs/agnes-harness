@@ -511,6 +511,49 @@ describe('createClient', () => {
     await assertion
   })
 
+  // Reviewing an application resolves every declared agent, one Host build each, so the time grows with
+  // the agent count (DevBoard: 12). A 30 s budget reported a late success as an unconfirmed operation.
+  it.each(['preview', 'adopt'] as const)(
+    'gives application %s a review-sized request deadline',
+    async (verb) => {
+      vi.useFakeTimers()
+      const method = `_agnes/v1/applications.${verb}` as const
+      const f = fakeEndpoint({
+        initialize: fakeEndpoint({}).initialize,
+        [method]: () => new Promise(() => {}),
+      })
+      const c = createClient({
+        transport: { kind: 'inproc', endpoint: f.endpoint },
+        journal: memoryJournal(),
+        authProviders: providers,
+      })
+      const params =
+        verb === 'preview'
+          ? { profile: 'p', packageId: 'a' }
+          : {
+              profile: 'p',
+              packageId: 'a',
+              expectedRevision: 0,
+              consentDigest: 'sha256-x',
+              clientId: 'c',
+              commandId: 'k',
+            }
+      let settled = false
+      const pending = c.request(method, params as never).finally(() => {
+        settled = true
+      })
+      const assertion = expect(pending).rejects.toMatchObject({
+        kind: 'request-timeout',
+        method,
+        timeoutMs: 300_000,
+      })
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(180_000)
+      await assertion
+    },
+  )
+
   it('stops calling a handler once its disposer runs', async () => {
     const f = fakeEndpoint({ initialize: fakeEndpoint({}).initialize })
     const c = createClient({
