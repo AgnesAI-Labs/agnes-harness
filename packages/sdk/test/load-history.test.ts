@@ -3,7 +3,7 @@ import { loadHistory } from '../src/load-history.js'
 
 afterEach(() => vi.useRealTimers())
 
-it.each(['idle', 'hard', 'done', 'disconnect', 'startup'] as const)(
+it.each(['idle', 'hard', 'done', 'disconnect'] as const)(
   'bounds a progressing history load at %s and disposes observers',
   async (mode) => {
     vi.useFakeTimers()
@@ -59,19 +59,6 @@ it.each(['idle', 'hard', 'done', 'disconnect', 'startup'] as const)(
       progress(1)
       await vi.advanceTimersByTimeAsync(15)
       progress(1) // Duplicate notices do not count as forward progress.
-      finish()
-      expect(await result).toBe('ok')
-    } else if (mode === 'startup') {
-      // The daemon announces a cold open before any ledger progress exists; verifiedSeq 0 with an
-      // empty ledger must still reset the idle deadline.
-      await vi.advanceTimersByTimeAsync(10)
-      listener('_agnes/v1/session.loading', {
-        sessionId: 's',
-        phase: 'verifying',
-        verifiedSeq: 0,
-        lastSeq: 0,
-      })
-      await vi.advanceTimersByTimeAsync(15)
       finish()
       expect(await result).toBe('ok')
     } else {

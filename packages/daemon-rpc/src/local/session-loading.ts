@@ -43,17 +43,6 @@ export function registerSessionLoading(
       loading.set(p.sessionId, pending)
       try {
         signal.throwIfAborted()
-        // A cold open can spend its whole idle budget starting a worker before any ledger progress
-        // exists; announce the request now so the client resets its idle clock instead of timing out.
-        if (!signal.aborted)
-          ep.push(
-            notify('_agnes/v1/session.loading', {
-              sessionId: p.sessionId,
-              phase: 'verifying',
-              verifiedSeq: 0,
-              lastSeq: 0,
-            }),
-          )
         let entry = cx.registry.get(p.sessionId)
         const wasOpen = entry !== undefined
         try {
@@ -93,17 +82,6 @@ export function registerSessionLoading(
           throwSessionOpenRpcError(error, p.sessionId)
         }
         if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
-        // restoreBinding, the worker handshake and the ledger open are silent until they return;
-        // announce the opened ledger so that startup window cannot exhaust the client's budget.
-        if (!signal.aborted)
-          ep.push(
-            notify('_agnes/v1/session.loading', {
-              sessionId: p.sessionId,
-              phase: 'verifying',
-              verifiedSeq: entry.session.lastSeq,
-              lastSeq: entry.session.lastSeq,
-            }),
-          )
         try {
           if (wasOpen)
             await entry.session.verifyHistory({
