@@ -58,6 +58,27 @@ export type Classified = {
   zeroUsage: boolean
 }
 
+/** A refused request was not run and not billed. */
+export const rejected = (code: AiErrorCode, word?: string): Classified => ({
+  code,
+  retryable: false,
+  zeroUsage: true,
+  ...(word === undefined ? {} : { word }),
+})
+
+/**
+ * What a non-2xx status means to every payload-only vendor: a bad key, no credit, a rate limit
+ * (429 was refused before it ran; 529 may have been billed), any other refused request, a server fault.
+ */
+export function classifyHttpStatus(status: number): Classified {
+  if (status === 401 || status === 403) return rejected('AUTH')
+  if (status === 402) return rejected('QUOTA')
+  if (status === 429) return { code: 'RATE_LIMIT', retryable: true, zeroUsage: true }
+  if (status === 529) return { code: 'RATE_LIMIT', retryable: true, zeroUsage: false }
+  if (status >= 400 && status < 500) return rejected('CONTRACT_MISMATCH')
+  return { code: 'TRANSPORT', retryable: true, zeroUsage: false }
+}
+
 /** `retry-after` as milliseconds: whole or fractional seconds, or an HTTP date. Anything else is none. */
 export function parseRetryAfter(value: string | null, now: number): number | undefined {
   const text = value?.trim() ?? ''

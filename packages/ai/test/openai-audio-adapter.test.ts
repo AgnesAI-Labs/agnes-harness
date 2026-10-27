@@ -503,6 +503,62 @@ describe('speech', () => {
   })
 })
 
+describe('a reply that cannot be used is still billed', () => {
+  const speech = request({ model: COSY, payload: { op: 'speech', text: 'hi' } })
+  const stepfun = request({ model: 'stepaudio-3-asr-max', payload: transcribe(wav16k(2.4)) })
+  const longText = `data: ${JSON.stringify({ type: 'transcript.text.done', text: 'x'.repeat(300_000) })}\n\n`
+  const cases: Array<[string, RequestBody, () => Response, number, string, boolean]> = [
+    ['a transcript of another type', request(), () => json({ text: 5 }), 3, 'FORMAT', false],
+    ['a transcript body that is not JSON', request(), () => new Response('nope'), 3, 'FORMAT', false],
+    [
+      'a transcript over the cap',
+      request(),
+      () => json({ text: 'x'.repeat(256 * 1024) }),
+      3,
+      'FORMAT',
+      false,
+    ],
+    ['a StepFun error event', stepfun, () => sse([{ type: 'error', message: 'bad' }]), 3, 'FORMAT', false],
+    [
+      'a StepFun stream with no done event',
+      stepfun,
+      () => sse([{ type: 'transcript.text.delta', delta: 'a' }]),
+      3,
+      'TRANSPORT',
+      true,
+    ],
+    ['a StepFun stream over the cap', stepfun, () => new Response(longText), 3, 'FORMAT', false],
+    [
+      'speech with a JSON content type',
+      speech,
+      () => audio(new Uint8Array([1]), 'application/json'),
+      2,
+      'FORMAT',
+      false,
+    ],
+    ['speech over the cap', speech, () => audio(new Uint8Array(MAX_SPEECH_BYTES + 1)), 2, 'FORMAT', false],
+    ['empty speech', speech, () => audio(new Uint8Array()), 2, 'FORMAT', false],
+  ]
+  it.each(cases)(
+    'charges the units before the error for %s',
+    async (_name, req, response, units, code, retryable) => {
+      const { adapter } = harness([response()])
+      const events = await run(adapter, req)
+      expect(types(events)).toEqual(['usage', 'error'])
+      expect(usageOf(events).tokens).toEqual({ input: units, output: 0, cacheRead: 0, cacheWrite: 0 })
+      // Not the zero-usage event of a refused request: nothing marks the spend as known to be nil.
+      expect(usageOf(events)).not.toHaveProperty('billing')
+      expect(errorOf(events)).toMatchObject({ code, retryable })
+    },
+  )
+
+  it('charges nothing extra when the call ends by abort or timeout', async () => {
+    const { adapter } = harness([hanging])
+    const events = await run(adapter, request(), { timeoutMs: { firstToken: 20, total: 20 } })
+    expect(types(events)).toEqual(['error'])
+  })
+})
+
 describe('HTTP statuses', () => {
   it.each([
     [400, 'CONTRACT_MISMATCH', false],
@@ -1014,9 +1070,17 @@ describe('through the provider facade', () => {
     expect(types(failedEvents)).not.toContain('text_delta')
   })
 
-  it('keeps tag-shaped transcript text as plain text', async () => {
+  it('passes a transcript that holds angle brackets but no tag through intact', async () => {
     const { provider } = facade([json({ text: 'a < b and c > d' })], SENSE)
     expect(textOf(await infer(provider, request()))).toBe('a < b and c > d')
+  })
+
+  it('loses a <think> block in a transcript to the facade decoder', async () => {
+    // Pins today's behaviour: the decoder after the adapter strips a think block, spoken or not.
+    const { provider } = facade([json({ text: 'before <think>hidden</think> after' })], SENSE)
+    const text = textOf(await infer(provider, request()))
+    expect(text).not.toContain('hidden')
+    expect(text).not.toContain('<think>')
   })
 
   it('reports a rejected key as AUTH', async () => {

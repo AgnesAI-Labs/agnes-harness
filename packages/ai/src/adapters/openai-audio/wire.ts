@@ -2,7 +2,7 @@
 // the WAV header reader that sizes a recording and the status classification. Nothing here opens a
 // connection; index.ts does.
 import type { RequestBody } from '@agnes/protocol'
-import { type Classified, plain } from '../payload-wire.js'
+import { type Classified, classifyHttpStatus, plain, rejected } from '../payload-wire.js'
 import { isStepfunModel, STEPFUN_DEFAULT_VOICE } from './stepfun.js'
 
 export const OPENAI_AUDIO_WIRE_API = 'openai-audio'
@@ -129,20 +129,33 @@ export function speechVoice(model: string, voice: string | undefined): string {
   return namespaced(model) && !voice.includes(':') ? `${model}:${voice}` : voice
 }
 
+export type SpeechParams = { voice: string; speed?: number }
+
 /**
- * The JSON body of `POST <base>/audio/speech`. The format is always mp3. `speed` is left out when it
- * is 1 so the plain request is safe on every vendor; StepFun accepts 0.5 to 2 and is clamped to it.
- * Only a namespaced model is sent `stream:false` and `sample_rate`.
+ * The voice and speed a speech call sends. `speed` is left out when it is 1 so the plain request is
+ * safe on every vendor; StepFun accepts 0.5 to 2 and is clamped to it.
  */
-export function speechBody(model: string, p: Extract<OpenAiAudioPayload, { op: 'speech' }>): string {
+export function speechParams(model: string, p: Extract<OpenAiAudioPayload, { op: 'speech' }>): SpeechParams {
   const speed =
     p.speed === undefined || !isStepfunModel(model) ? p.speed : Math.min(2, Math.max(0.5, p.speed))
+  return { voice: speechVoice(model, p.voice), ...(speed === undefined || speed === 1 ? {} : { speed }) }
+}
+
+/**
+ * The JSON body of `POST <base>/audio/speech`. The format is always mp3. Only a namespaced model is
+ * sent `stream:false` and `sample_rate`.
+ */
+export function speechBody(
+  model: string,
+  p: Extract<OpenAiAudioPayload, { op: 'speech' }>,
+  params: SpeechParams = speechParams(model, p),
+): string {
   return JSON.stringify({
     model,
     input: p.text,
-    voice: speechVoice(model, p.voice),
+    voice: params.voice,
     response_format: 'mp3',
-    ...(speed === undefined || speed === 1 ? {} : { speed }),
+    ...(params.speed === undefined ? {} : { speed: params.speed }),
     ...(namespaced(model) ? { stream: false, sample_rate: 32000 } : {}),
   })
 }
@@ -174,19 +187,12 @@ export function multipartBody(
   return body
 }
 
-const rejected = (code: Classified['code']): Classified => ({ code, retryable: false, zeroUsage: true })
-
 /**
  * What a non-2xx status means. The body is never consulted: a vendor's error text can quote the
  * request or the key, and the status says enough to act on.
  */
 export function classifyAudioStatus(status: number): Classified {
-  if (status === 401 || status === 403) return rejected('AUTH')
-  if (status === 402) return rejected('QUOTA')
   if (status === 404) return rejected('NO_MODEL')
   if (status === 413) return rejected('OVERFLOW')
-  if (status === 429) return { code: 'RATE_LIMIT', retryable: true, zeroUsage: true }
-  if (status === 529) return { code: 'RATE_LIMIT', retryable: true, zeroUsage: false }
-  if (status >= 400 && status < 500) return rejected('CONTRACT_MISMATCH')
-  return { code: 'TRANSPORT', retryable: true, zeroUsage: false }
+  return classifyHttpStatus(status)
 }

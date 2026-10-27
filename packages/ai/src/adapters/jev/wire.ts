@@ -1,29 +1,19 @@
 // The TypeSafe System One wire format as pure functions: the request body, the reply envelope, the
 // status classification and the bounded body reads. Nothing here opens a connection; index.ts does.
-import type { AiErrorCode, JsonValue, RequestBody } from '@agnes/protocol'
-import type { WireEvent } from '../../adapter.js'
+import type { JsonValue, RequestBody } from '@agnes/protocol'
 import {
   appendPath,
   type Classified,
   checkedPayloadBase,
-  type FailureDetail,
-  failureEvent as payloadFailureEvent,
+  classifyHttpStatus,
   plain,
+  rejected,
   WireFailure,
 } from '../payload-wire.js'
 
 // The shared half of the payload-only wire code lives in payload-wire.ts; the names the Jev adapter and
 // its tests import stay available from here.
-export {
-  type Classified,
-  type FailureDetail,
-  MAX_ERROR_BYTES,
-  parseRetryAfter,
-  readCapped,
-  readHead,
-  WireFailure,
-  zeroUsageEvent,
-} from '../payload-wire.js'
+export { MAX_ERROR_BYTES, readCapped, readHead, WireFailure } from '../payload-wire.js'
 
 export const JEV_WIRE_API = 'typesafe-systemone'
 /** The largest reply accepted: far above any answer set, and small enough to hold in memory. */
@@ -118,28 +108,10 @@ export function generationId(headers: Headers): string | undefined {
   return value !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(value) ? value : undefined
 }
 
-const rejected = (code: AiErrorCode, word?: string): Classified => ({
-  code,
-  retryable: false,
-  zeroUsage: true,
-  ...(word === undefined ? {} : { word }),
-})
-
 /** What a non-2xx status means. The body is consulted only for two keywords on a 400. */
 export function classifyStatus(status: number, body: string): Classified {
-  if (status === 400) {
-    if (body.includes('max_tokens_exceeded')) return rejected('OVERFLOW', 'max_tokens_exceeded')
-    if (body.includes('does not exist')) return rejected('NO_MODEL', 'model_not_found')
-    return rejected('CONTRACT_MISMATCH')
-  }
-  if (status === 401 || status === 403) return rejected('AUTH')
-  if (status === 402) return rejected('QUOTA')
-  if (status === 429) return { code: 'RATE_LIMIT', retryable: true, zeroUsage: true }
-  if (status === 529) return { code: 'RATE_LIMIT', retryable: true, zeroUsage: false }
-  if (status >= 400 && status < 500) return rejected('CONTRACT_MISMATCH')
-  return { code: 'TRANSPORT', retryable: true, zeroUsage: false }
+  if (status === 400 && body.includes('max_tokens_exceeded'))
+    return rejected('OVERFLOW', 'max_tokens_exceeded')
+  if (status === 400 && body.includes('does not exist')) return rejected('NO_MODEL', 'model_not_found')
+  return classifyHttpStatus(status)
 }
-
-/** One error event. The message is built from constants only: the code, the status, a fixed word. */
-export const failureEvent = (code: AiErrorCode, retryable: boolean, detail: FailureDetail = {}): WireEvent =>
-  payloadFailureEvent(JEV_WIRE_API, code, retryable, detail)
