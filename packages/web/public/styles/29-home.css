@@ -607,8 +607,9 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
-  /* On a home page the bar already says the connection dropped; the session's own notice about
-   its unfinished task belongs to the conversation behind the page. */
+  /* Session recovery belongs to the conversation behind the page. If the connection dropped,
+   the connection bar already states that fact for every page. */
+  main[data-home-page] > #notice[data-kind="session-recovery"],
   main[data-home-page]:has(> .connection-bar:not([hidden])) > #notice {
     display: none;
   }

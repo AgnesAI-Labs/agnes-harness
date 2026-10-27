@@ -92,6 +92,7 @@ export function createSessionController(
     context.approvalRuntime.render(undefined)
     // The old projection may stay visible, but its preview/refusal no longer describes this selection.
     context.readOnlyController.clear()
+    context.clearSessionRecovery(id)
     preserved?.adopt(epoch)
     if (!options.created) context.references.clear()
     let selectionReady = false
@@ -362,8 +363,10 @@ export function createSessionController(
           !options.created &&
           !options.preserveSending &&
           (await context.readOnlyController.show(id, error, epoch))
-        )
+        ) {
+          if (context.sessionBinding.isCurrent(epoch)) context.clearSessionRecovery()
           return
+        }
         if (!context.sessionBinding.isCurrent(epoch)) return
         context.render()
         if (!options.created && !options.preserveSending) {
