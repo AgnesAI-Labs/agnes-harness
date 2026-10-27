@@ -417,7 +417,9 @@ it('sorts Table records without changing caller data and retains its labelled so
     ).toEqual(['a', 'b']),
   )
   expect(rows.map((row) => row.id)).toEqual(['b', 'a'])
-  expect(host.querySelector('tr[data-row-key="a"] td span')?.getAttribute('title')).toBe('2')
+  // The AntTooltip is the one tooltip; a native title on top of it shows a second, duplicate one.
+  expect(host.querySelector('tr[data-row-key="a"] td .agh-table-cell')?.textContent).toBe('2')
+  expect(host.querySelectorAll('table [title]')).toHaveLength(0)
   renderRegion(
     host,
     <Table caption="Amounts" captionRepeatsHeading testId="amounts" dataSource={[]} columns={columns} />,
