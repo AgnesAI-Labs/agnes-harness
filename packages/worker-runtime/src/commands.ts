@@ -39,7 +39,7 @@ import { deliverBoundSystemInput, isProfileCommand, profileServiceCommand } from
 import { sessionReferences } from './references.js'
 import { sessionServiceCommand } from './service-commands.js'
 import { auditSessionHistory } from './session-integrity.js'
-import { workerSideQuestion } from './side-question.js'
+import { SIDE_CALL_COMMANDS, workerSideCall } from './side-question.js'
 import { refreshSkills } from './skills-refresh.js'
 import { readToolDetailPage } from './tool-detail.js'
 import { sessionWorkspaceChanges } from './workspace-changes.js'
@@ -331,6 +331,7 @@ export async function handleCommand(
 ): Promise<unknown> {
   const p = cmd.params
   if (cmd.method in GRANT_COMMANDS) return grantCommand(o.host, session, cmd)
+  if (cmd.method in SIDE_CALL_COMMANDS) return workerSideCall(session, cmd, o.aborts)
   switch (cmd.method) {
     case 'ui.action': {
       if (!session.intelligentUi || !p.credential || Object.hasOwn(p, 'actor'))
@@ -369,8 +370,6 @@ export async function handleCommand(
         if (o.aborts.get(runId) === abort) o.aborts.delete(runId)
       }
     }
-    case 'btw':
-      return workerSideQuestion(session, p, o.aborts)
     case 'fileUpload':
       return sessionFileUpload(session, p as import('@agnes/protocol').FileUploadRequest)
     case 'references':

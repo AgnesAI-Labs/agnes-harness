@@ -82,6 +82,18 @@ describe('apisFamilies visibility', () => {
     expect(methods).toContain('_agnes/v1/computerUse.status')
   })
 
+  it.each([
+    ['local owner', { authKind: 'local', credentialKind: 'local' }, true],
+    ['remote jwt', { authKind: 'jwt', credentialKind: 'jwt' }, false],
+    ['mismatched local label', { authKind: 'local', credentialKind: 'sso' }, false],
+  ] as const)('voice settings are listed for %s: %s', (_n, over, listed) => {
+    const methods = methodsOf(apisFamilies(ctx(over)))
+    expect(methods.includes('_agnes/v1/voice.settings.get')).toBe(listed)
+    expect(methods.includes('_agnes/v1/voice.settings.save')).toBe(listed)
+    for (const method of ['session.voice.transcribe', 'session.voice.speak', 'voice.status'])
+      expect(methods).toContain(`_agnes/v1/${method}`)
+  })
+
   it('lists artifact.read only when the authenticated read composition is fitted', () => {
     expect(methodsOf(apisFamilies(ctx({ artifactRead: true })))).toContain('_agnes/v1/artifact.read')
     expect(methodsOf(apisFamilies(ctx({ artifactRead: false })))).not.toContain('_agnes/v1/artifact.read')

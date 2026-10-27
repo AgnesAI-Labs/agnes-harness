@@ -30,9 +30,10 @@ import { registerProfileServices } from '@agnes/daemon-rpc/local/methods/profile
 import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
 import * as sessionPrefs from '@agnes/daemon-rpc/local/methods/session-preferences'
 import { registerSessionSelection } from '@agnes/daemon-rpc/local/methods/session-selection'
+import { registerVoice } from '@agnes/daemon-rpc/local/methods/session-voice'
 import { registerSurfaces } from '@agnes/daemon-rpc/local/methods/surfaces'
 import { registerWorkspaces } from '@agnes/daemon-rpc/local/methods/workspaces'
-import { RequestTraceStore, readFactChainBinding, type ScanRead } from '@agnes/host'
+import { RequestTraceStore, readFactChainBinding, type ScanRead, VoiceSettingsStore } from '@agnes/host'
 import { telemetrySnapshot } from '@agnes/observability'
 import { rpcError } from '@agnes/protocol'
 import type { DispatchState } from './assembly-client-dispatch.js'
@@ -293,6 +294,12 @@ function registerSessionEndpoints(
   })
   registerAcp(ep, cx, feeds, attached)
   registerAgnes(ep, cx, feeds, attached)
+  registerVoice(ep, {
+    registry: cx.registry,
+    requireOwner: requireSessionOwner(cx),
+    ...(o.configuration ? { configuration: o.configuration } : {}),
+    settings: new VoiceSettingsStore(o.config.dataDir, o.profile.name),
+  })
   registerDoctor(ep, {
     home: o.config.home ?? dirname(dirname(o.profileDir)),
     profile: o.profile.name,

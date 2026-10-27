@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
 import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
+import { DEFAULT_VOICE_SETTINGS } from '@agnes/protocol'
 import { createClient, type LedgerEvent, memoryJournal, wsTransport } from '@agnes/sdk'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WebSocket } from 'ws'
@@ -1059,6 +1060,28 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
       const answer = await c.call(4, '_agnes/v1/session.btw', { sessionId, question: 'what happened?' })
       expect(answer.error).toBeUndefined()
       expect(answer.result).toMatchObject({ text: 'hello world', model: 'faux-1' })
+    } finally {
+      c.socket.destroy()
+      await sup.close()
+      await tables.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('answers voice.status without a session and greys voice out with no voice account', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-voice-status-'))
+    const { sup, tables } = await supervisorFor(dir)
+    const c = await client(sup.socketPath)
+    try {
+      expect((await c.call(1, 'initialize', initialize)).error).toBeUndefined()
+      const status = await c.call(2, '_agnes/v1/voice.status', {})
+      expect(status.error).toBeUndefined()
+      expect(status.result).toEqual({
+        transcribe: 'unconfigured',
+        speech: 'unconfigured',
+        reason: 'no-account',
+        settings: DEFAULT_VOICE_SETTINGS,
+      })
     } finally {
       c.socket.destroy()
       await sup.close()
