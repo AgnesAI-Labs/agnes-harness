@@ -72,3 +72,9 @@ it('keeps 重新测试 beside any connection result and hides it while a test ru
   expect(shown).toContain('display: inline-flex')
   expect(forms).toContain('.account-status:has(> #config-state:not(:empty), > #config-error:not(:empty))')
 })
+
+it('shows the settings info icon as a plain help affordance, never the system help cursor', () => {
+  // cursor: help draws an arrow with a question mark on macOS and Windows; the icon only explains.
+  expect(rule(ui, '.agnes-settings-info')).toContain('cursor: default')
+  expect(ui).not.toContain('cursor: help')
+})
