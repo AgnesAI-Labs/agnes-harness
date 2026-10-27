@@ -47,7 +47,7 @@ Settings → Voice (in the General group) holds these settings. A change saves i
 | | Send when done speaking | Off | Off puts the recognized text in the message box first, so you can check it before it goes to the agent |
 | | Longest recording (seconds) | 120 | A whole number from 5 to 120 |
 | Read aloud | Turn on read aloud | On | Off hides the read buttons and the wave button |
-| | Voice | Empty | Empty uses the provider's default voice (see the table above) |
+| | Voice | Empty | Empty uses the default voice for the speech model: an ID containing `/` uses `<model>:anna`, a StepFun model uses `cixingnansheng`, any other uses `alloy` |
 | | Speed | 1 | From 0.25 to 4; 1 is normal speed |
 | | Read replies aloud automatically | Off | Replies are often long, so reading every one is noisy and costs money |
 | Voice conversation | Pause that counts as finished (seconds) | 1.2 | From 0.5 to 5 |
@@ -98,7 +98,7 @@ Recordings and reply text are sent to the provider of the account you chose, thr
 ## Cost and limits
 
 - **Microphone.** Browsers allow the microphone only on `localhost` or on an https page. The Web service listens only on the local machine, so opening it locally or through an SSH port forward works. If you put your own plain-`http` reverse proxy in front of it on another address, the browser blocks the microphone; reading aloud is not affected.
-- **Recordings.** At most 120 seconds by default (adjustable from 5 to 120). The Web page sends them in pieces of at most 20 seconds and joins the texts.
+- **Recordings.** At most 120 seconds by default (adjustable from 5 to 120). The Web page sends them in pieces of at most 20 seconds (the backend accepts half a second more) and joins the texts.
 - **Speech segments.** At most 120 characters each, counted in UTF-16 code units, so an emoji counts as 2.
 - **Rate.** Per session, one transcription and two speech calls run at a time, and at most 30 calls are admitted per minute. A call over the limit is refused and not queued; the Web page retries briefly when a call was still finishing.
 - **Time.** One call has a deadline of 30 seconds.
