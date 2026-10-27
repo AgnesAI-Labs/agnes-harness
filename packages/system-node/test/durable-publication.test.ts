@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { replacePublishedFileSync } from '../src/durable-replace.js'
 import {
   mkdirDurablySync,
   publishFileDurablySync,
@@ -87,5 +88,38 @@ describe('durable directory chains', () => {
     writeFileSync(join(root, 'tree', 'nested', 'file'), 'x')
     syncTreeSync(join(root, 'tree'))
     expect(() => syncTreeSync(join(root, 'missing'))).toThrow(/ENOENT/)
+  })
+})
+
+describe('Windows replacement while a reader holds the destination', () => {
+  const held = (code: string, forMs: number) => {
+    const until = performance.now() + forMs
+    let calls = 0
+    return {
+      rename: () => {
+        calls++
+        if (performance.now() < until)
+          throw Object.assign(new Error(`${code}: MoveFileExW failed`), { code, win32Code: 5 })
+      },
+      calls: () => calls,
+    }
+  }
+
+  it('retries the native EACCES (no syscall) until the reader lets go', () => {
+    const reader = held('EACCES', 30)
+    replacePublishedFileSync('a.tmp', 'a.json', true, reader.rename)
+    expect(reader.calls()).toBeGreaterThan(1)
+  })
+
+  it('still refuses after the bound, off Windows, and for other errors', () => {
+    for (const [windows, code, forMs] of [
+      [true, 'EACCES', 60_000],
+      [false, 'EACCES', 60_000],
+      [true, 'ENOENT', 60_000],
+    ] as const) {
+      const reader = held(code, forMs)
+      expect(() => replacePublishedFileSync('a.tmp', 'a.json', windows, reader.rename)).toThrow(code)
+      if (!windows || code === 'ENOENT') expect(reader.calls()).toBe(1)
+    }
   })
 })
