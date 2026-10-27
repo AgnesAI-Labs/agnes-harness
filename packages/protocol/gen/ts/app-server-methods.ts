@@ -199,6 +199,8 @@ export interface AppServerMethods {
   "_agnes/v1/jobs.enqueue": { params: Static<typeof import("./agnes-v1.js").JobSpec>; result: Static<typeof import("./agnes-v1.js").JobIdResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/jobs.poll": { params: Static<typeof import("./agnes-v1.js").JobIdParams>; result: Static<typeof import("./agnes-v1.js").JobStatus>; direction: "c2s"; kind: "request" }
   "_agnes/v1/jobs.cancel": { params: Static<typeof import("./agnes-v1.js").JobIdParams>; result: Static<typeof import("./agnes-v1.js").Empty>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/schedules.history": { params: Static<typeof import("../../src/schedules.js").SchedulesHistoryParams>; result: Static<typeof import("../../src/schedules.js").SchedulesHistoryResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/schedules.receipt": { params: Static<typeof import("../../src/schedules.js").SchedulesReceiptParams>; result: Static<typeof import("../../src/schedules.js").SchedulesReceiptResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/schedules.list": { params: Static<typeof import("../../src/schedules.js").SchedulesListParams>; result: Static<typeof import("../../src/schedules.js").SchedulesListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/schedules.upsert": { params: Static<typeof import("../../src/schedules.js").SchedulesUpsertParams>; result: Static<typeof import("../../src/schedules.js").SchedulesUpsertResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/schedules.archive": { params: Static<typeof import("../../src/schedules.js").SchedulesArchiveParams>; result: Static<typeof import("../../src/schedules.js").SchedulesArchiveResult>; direction: "c2s"; kind: "request" }

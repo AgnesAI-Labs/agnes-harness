@@ -2,13 +2,19 @@ import { renameSync } from 'node:fs'
 
 const waiting = new Int32Array(new SharedArrayBuffer(4))
 
-/** Sync publication cannot yield; bound the wait for external Windows readers to 100 ms.
+/** Sync publication cannot yield; bound the wait for external Windows readers to 100 ms. The native
+ * write-through rename reports a held destination as EACCES (win32 5), so it rides the same bound.
  * Never unlink the destination, retry a successful move, or hide a permanent refusal. */
-export function replacePublishedFileSync(source: string, target: string, windows: boolean): void {
+export function replacePublishedFileSync(
+  source: string,
+  target: string,
+  windows: boolean,
+  rename: (source: string, target: string) => void = renameSync,
+): void {
   const deadline = performance.now() + 100
   for (;;) {
     try {
-      renameSync(source, target)
+      rename(source, target)
       return
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code

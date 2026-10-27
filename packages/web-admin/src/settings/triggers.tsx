@@ -1,9 +1,4 @@
-import type {
-  WebhookRequest,
-  WebhookResult,
-  WebhookRule,
-  WebhookSnapshot,
-} from '@agnes/protocol/gen/app-server'
+import type { WebhookRequest, WebhookRule, WebhookSnapshot } from '@agnes/protocol/gen/app-server'
 import { useCredentialOptions } from '@agnes/resource-control-web/credentials'
 import {
   Button,
@@ -67,6 +62,8 @@ export { triggersRequest } from './triggers-api.js'
 const TRIGGERS_KEY = 'triggers:list'
 const TRIGGER_PAGE = 'trigger-'
 const NEW_TRIGGER = 'trigger-new'
+// A colon cannot occur in a rule id, so edit routes cannot collide with create or legacy routes.
+const rulePage = (id: string) => `trigger-rule:${id}`
 type TriggersRead = { snapshot: WebhookSnapshot | undefined; workspaces: string[] }
 
 export function TriggersPanel({
@@ -110,7 +107,7 @@ export function TriggersPanel({
   const prepared = useRef<string>()
   const [filters, setFilters] = useState('{"$.action":"opened"}')
   const [bundles, setBundles] = useState('')
-  const [payload, setPayload] = useState(() =>
+  const samplePayload = () =>
     JSON.stringify(
       {
         action: 'opened',
@@ -118,8 +115,9 @@ export function TriggersPanel({
       },
       null,
       2,
-    ),
-  )
+    )
+  const [payload, setPayload] = useState(samplePayload)
+  const [payloadEdited, setPayloadEdited] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(false)
   const [notice, setNotice] = useState('')
@@ -135,8 +133,8 @@ export function TriggersPanel({
     setNotice('')
     return () => abort.abort()
   }, [top])
-  const openRule = (item: WebhookRule) => {
-    prepared.current = `${TRIGGER_PAGE}${item.id}`
+  const openRule = (item: WebhookRule, page = rulePage(item.id)) => {
+    prepared.current = page
     setRule(item)
     setFilters(JSON.stringify(item.filters, null, 2))
     setBundles(item.bundles.join(', '))
@@ -159,8 +157,10 @@ export function TriggersPanel({
       if (list.data) openBlank()
       return
     }
-    const item = snapshot?.rules.find((candidate) => `${TRIGGER_PAGE}${candidate.id}` === top)
-    if (item) openRule(item)
+    const item = snapshot?.rules.find(
+      (candidate) => rulePage(candidate.id) === top || `${TRIGGER_PAGE}${candidate.id}` === top,
+    )
+    if (item) openRule(item, top)
   }, [formOpen, top, snapshot, list.data])
   async function request(input: WebhookRequest) {
     if (busy) return
@@ -233,6 +233,19 @@ export function TriggersPanel({
     </Button>
   )
   const folder = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+  const testNotice = notice && (
+    <StatusMessage
+      kind={
+        ['accepted', 'pending', 'disabled', 'duplicate', 'no-rule', 'unknown'].includes(notice)
+          ? 'pending'
+          : 'error'
+      }
+      data-testid="triggers-notice"
+      action={{ label: t('refresh'), onSelect: list.reload }}
+    >
+      {t(notice)}
+    </StatusMessage>
+  )
   return (
     <section data-testid="triggers-panel" className="automation-panel" aria-busy={busy}>
       {actionsHost === undefined ? (
@@ -252,19 +265,7 @@ export function TriggersPanel({
           {t('failed')}
         </StatusMessage>
       )}
-      {notice && (
-        <StatusMessage
-          kind={
-            ['accepted', 'pending', 'disabled', 'duplicate', 'no-rule', 'unknown'].includes(notice)
-              ? 'pending'
-              : 'error'
-          }
-          data-testid="triggers-notice"
-          action={{ label: t('refresh'), onSelect: list.reload }}
-        >
-          {t(notice)}
-        </StatusMessage>
-      )}
+      {!formOpen && testNotice}
       <Loadable
         loading={list.loading}
         error={list.error}
@@ -386,7 +387,7 @@ export function TriggersPanel({
                         disabled={busy}
                         onClick={() => {
                           openRule(item)
-                          nav.open(`${TRIGGER_PAGE}${item.id}`)
+                          nav.open(rulePage(item.id))
                         }}
                       >
                         {t('edit')}
@@ -708,6 +709,7 @@ export function TriggersPanel({
               disabled={busy}
               onChange={(event) => {
                 setPayload(event.target.value)
+                setPayloadEdited(true)
                 setPayloadError(false)
               }}
             />
@@ -719,7 +721,9 @@ export function TriggersPanel({
             disabledReason={t('testNeedsSave')}
             onClick={() => {
               try {
-                void request({ action: 'test', ruleId: rule.id, payload: JSON.parse(payload) })
+                const sample = payloadEdited ? payload : samplePayload()
+                if (!payloadEdited) setPayload(sample)
+                void request({ action: 'test', ruleId: rule.id, payload: JSON.parse(sample) })
               } catch {
                 setPayloadError(true)
                 document.getElementById('trigger-sample')?.focus()
@@ -728,6 +732,7 @@ export function TriggersPanel({
           >
             {t('test')}
           </Button>
+          {testNotice}
         </SettingsDetails>
         <div className="home-push-actions">
           <Button disabled={busy} onClick={nav.back}>

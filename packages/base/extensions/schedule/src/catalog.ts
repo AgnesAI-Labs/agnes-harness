@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import type { EventEnvelope } from '@agnes/protocol'
+import type {
+  EventEnvelope,
+  SchedulesHistoryParams,
+  SchedulesHistoryResult,
+  SchedulesListParams,
+  SchedulesReceiptParams,
+} from '@agnes/protocol'
 import type { JobSchedule } from '../../../src/schedule-cron.js'
 import {
   compile,
@@ -19,7 +25,7 @@ import {
   type ScheduleWrite,
   textField,
 } from './rules.js'
-import { previousApprovalExpired, saveRunProgress } from './run-history.js'
+import { previousApprovalExpired, recentRuns, saveRunProgress } from './run-history.js'
 import {
   expireProgress,
   observeProgress,
@@ -27,6 +33,8 @@ import {
   type RunProgress,
   startProgress,
 } from './run-progress.js'
+import { openRunReceipts } from './run-receipts.js'
+import { ensureScheduleSchema, scheduleSearchText } from './schema.js'
 
 export {
   compileTarget,
@@ -129,39 +137,6 @@ export function openDaemonScheduleDb(table: DaemonTable): ScheduleDb {
   }
 }
 
-function ensureScheduleSchema(db: ScheduleDb): void {
-  db.exec(`CREATE TABLE IF NOT EXISTS schedules (
-    id TEXT PRIMARY KEY,
-    session_key TEXT NOT NULL,
-    title TEXT NOT NULL,
-    prompt TEXT NOT NULL,
-    selector TEXT NOT NULL,
-    status TEXT NOT NULL,
-    job_key TEXT,
-    revision INTEGER NOT NULL,
-    next_run_at INTEGER,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    target TEXT,
-    origin TEXT
-  )`)
-  db.exec('CREATE INDEX IF NOT EXISTS schedules_session ON schedules (session_key, status)')
-  db.exec(`CREATE TABLE IF NOT EXISTS schedule_runs (
-    schedule_id TEXT NOT NULL,
-    job_key TEXT NOT NULL,
-    at INTEGER NOT NULL,
-    outcome TEXT NOT NULL,
-    session_key TEXT,
-    ended_at INTEGER,
-    seq INTEGER,
-    reason TEXT,
-    detail TEXT,
-    progress TEXT
-  )`)
-  db.exec('CREATE INDEX IF NOT EXISTS schedule_runs_schedule ON schedule_runs (schedule_id, at)')
-  db.exec('CREATE INDEX IF NOT EXISTS schedule_runs_session ON schedule_runs (session_key, at)')
-}
-
 type ScheduleRow = {
   id: string
   session_key: string
@@ -228,7 +203,20 @@ export type ScheduleCatalog = {
     id: string,
     action: 'run' | 'pause' | 'resume',
   ): ScheduleView | { updated: false; code: ScheduleCode }
-  list(query: { sessionKey?: string; includeArchived?: boolean; limit?: number }): ScheduleView[]
+  activity(): { nextRunAt: number | null; hasOpenRuns: boolean }
+  boundSessionKeys(): string[]
+  history(query: SchedulesHistoryParams): SchedulesHistoryResult
+  receipt(query: SchedulesReceiptParams): { updated: boolean }
+  list(query: {
+    sessionKey?: string
+    includeArchived?: boolean
+    limit?: number
+    targetKind?: 'session' | 'new-session'
+    search?: string
+    workspace?: string
+    workspaceSessionKeys?: readonly string[]
+    status?: SchedulesListParams['status']
+  }): ScheduleView[]
   read(id: string): ScheduleView | undefined
   /** The task behind a job key, for the daemon to resolve a new-session target before running. */
   targetOf(jobKey: string): { id: string; title: string; target: ScheduleTarget } | undefined
@@ -248,22 +236,13 @@ export type ScheduleCatalog = {
   recentDelivery(sessionKey: string, since: number): { title: string; prompt: string } | undefined
 }
 
-type RunRow = {
-  at: number
-  outcome: ScheduleRunOutcome
-  session_key: string | null
-  ended_at: number | null
-  seq: number | null
-  reason: string | null
-  detail: string | null
-}
-
 export function openScheduleCatalog(
   db: ScheduleDb,
   jobs: ScheduleJobs,
   clock: () => number = () => Date.now(),
 ): ScheduleCatalog {
   ensureScheduleSchema(db)
+  const receipts = openRunReceipts(db)
   const load = (id: string): ScheduleRow | undefined =>
     db.get<ScheduleRow>('SELECT * FROM schedules WHERE id = ?', [id])
   const targetFor = (row: ScheduleRow): { target: ScheduleTarget; origin?: string } => {
@@ -291,28 +270,6 @@ export function openScheduleCatalog(
       if (next !== state) saveProgress(row.rid, next)
     }
   }
-  const runs = (id: string): ScheduleRun[] =>
-    db
-      .all<RunRow>(
-        `SELECT at, outcome, session_key, ended_at, seq, reason, detail FROM (
-           SELECT *, rowid AS rid FROM schedule_runs
-           WHERE schedule_id = ? ORDER BY CASE WHEN outcome IN ('running', 'waiting_approval', 'needs_attention') THEN 0 ELSE 1 END, at DESC, rowid DESC LIMIT 20
-         ) ORDER BY at ASC, rid ASC`,
-        [id],
-      )
-      .map((row) => ({
-        at: row.at,
-        outcome: row.outcome,
-        ...(['failed', 'waiting_approval', 'needs_attention'].includes(row.outcome) ||
-        row.reason === 'previous_approval_expired'
-          ? { needsAttention: true }
-          : {}),
-        ...(row.session_key === null ? {} : { sessionKey: row.session_key }),
-        ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
-        ...(row.seq === null ? {} : { seq: row.seq }),
-        ...(row.reason === null ? {} : { reason: row.reason }),
-        ...(row.detail === null ? {} : { detail: row.detail }),
-      }))
   const viewOf = (row: ScheduleRow): ScheduleView => {
     const { target, origin } = targetFor(row)
     return {
@@ -325,7 +282,7 @@ export function openScheduleCatalog(
       status: row.status,
       nextRunAt: row.next_run_at,
       revision: row.revision,
-      runs: runs(row.id),
+      runs: recentRuns(db, row.id),
     }
   }
   const read = (id: string): ScheduleView | undefined => {
@@ -337,7 +294,7 @@ export function openScheduleCatalog(
   /** The run a job started and has not closed: the one its settlement or failure finishes. */
   const openRun = (id: string, key: string) =>
     db.get<{ rid: number }>(
-      `SELECT rowid AS rid FROM schedule_runs WHERE schedule_id = ? AND job_key = ? AND outcome IN ('running', 'waiting_approval', 'needs_attention')
+      `SELECT rowid AS rid FROM schedule_runs INDEXED BY schedule_runs_open_job WHERE schedule_id = ? AND job_key = ? AND outcome IN ('running', 'waiting_approval', 'needs_attention')
        ORDER BY at DESC, rowid DESC LIMIT 1`,
       [id, key],
     )
@@ -358,12 +315,15 @@ export function openScheduleCatalog(
           run.detail ?? null,
         ],
       )
-      db.exec(
-        `DELETE FROM schedule_runs WHERE schedule_id = ? AND outcome NOT IN ('running', 'waiting_approval', 'needs_attention') AND rowid NOT IN (
-           SELECT rowid FROM schedule_runs WHERE schedule_id = ? ORDER BY at DESC, rowid DESC LIMIT 50
-         )`,
-        [id, id],
-      )
+      const rid = db.get<{ rid: number }>('SELECT last_insert_rowid() AS rid')?.rid
+      const task = load(id)
+      if (rid !== undefined && task)
+        receipts.add(rid, id, {
+          title: task.title,
+          prompt: task.prompt,
+          selector: JSON.parse(task.selector) as ScheduleSelector,
+          target: targetFor(task).target,
+        })
     })
   /** A new job for the stored rule, counted from now; used by resume. */
   const restart = (row: ScheduleRow, now: number) => {
@@ -402,8 +362,8 @@ export function openScheduleCatalog(
         db.exec(
           `INSERT INTO schedules (
              id, session_key, title, prompt, selector, status, job_key, revision, next_run_at, created_at, updated_at,
-             target, origin
-           ) VALUES (?, ?, ?, ?, ?, 'active', ?, 1, ?, ?, ?, ?, ?)`,
+             target, origin, search_text
+           ) VALUES (?, ?, ?, ?, ?, 'active', ?, 1, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             compiled.owner,
@@ -416,6 +376,7 @@ export function openScheduleCatalog(
             now,
             JSON.stringify(compiled.target),
             compiled.origin ?? null,
+            scheduleSearchText(compiled.title, compiled.prompt),
           ],
         )
       })
@@ -449,8 +410,9 @@ export function openScheduleCatalog(
         let revision = row.revision
         let next = row.next_run_at
         if (status === 'active') {
-          db.exec('UPDATE schedules SET title = ?, updated_at = ? WHERE id = ?', [
+          db.exec('UPDATE schedules SET title = ?, search_text = ?, updated_at = ? WHERE id = ?', [
             compiled.title,
+            scheduleSearchText(compiled.title, compiled.prompt),
             now,
             row.id,
           ])
@@ -481,7 +443,7 @@ export function openScheduleCatalog(
         db.exec(
           `UPDATE schedules
            SET session_key = ?, title = ?, prompt = ?, selector = ?, job_key = ?, revision = ?, next_run_at = ?, updated_at = ?,
-               target = ?, origin = ?
+               target = ?, origin = ?, search_text = ?
            WHERE id = ? AND status IN ('active', 'paused')`,
           [
             compiled.owner,
@@ -494,6 +456,7 @@ export function openScheduleCatalog(
             now,
             JSON.stringify(compiled.target),
             compiled.origin ?? null,
+            scheduleSearchText(compiled.title, compiled.prompt),
             row.id,
           ],
         )
@@ -569,14 +532,71 @@ export function openScheduleCatalog(
     list(query) {
       expireRuns()
       const limit = Math.min(query.limit ?? 500, 500)
+      const search = query.search?.trim().toLowerCase() ?? ''
+      const status = query.status
+      const stateFilter =
+        status === 'failed'
+          ? " AND (SELECT outcome FROM schedule_runs r WHERE r.schedule_id = schedules.id ORDER BY r.rowid DESC LIMIT 1) = 'failed'"
+          : status === 'needs_attention'
+            ? " AND EXISTS (SELECT 1 FROM schedule_runs r INDEXED BY schedule_runs_open_job WHERE r.schedule_id = schedules.id AND r.outcome IN ('running', 'waiting_approval', 'needs_attention') AND r.outcome != 'running')"
+            : status
+              ? ' AND status = ?'
+              : ''
       return db
         .all<ScheduleRow>(
           `SELECT * FROM schedules
-           WHERE (? IS NULL OR session_key = ?) AND (? = 1 OR status IN ('active', 'paused'))
+           WHERE (? IS NULL OR session_key = ?) AND (? = 1 OR status IN ('active', 'paused')
+             OR (status = 'ended' AND EXISTS (
+               SELECT 1 FROM schedule_runs r INDEXED BY schedule_runs_open_job WHERE r.schedule_id = schedules.id
+               AND r.outcome IN ('running', 'waiting_approval', 'needs_attention')
+             )))
+           AND (? = '' OR instr(search_text, ?) > 0)
+           AND (? IS NULL OR COALESCE(CASE WHEN json_valid(target) THEN json_extract(target, '$.kind') END, 'session') = ?)
+           AND (? IS NULL OR CASE WHEN (CASE WHEN json_valid(target) THEN json_extract(target, '$.kind') END) = 'new-session'
+             THEN json_extract(target, '$.cwd') = ? ELSE session_key IN (SELECT value FROM json_each(?)) END)
+           ${stateFilter}
            ORDER BY COALESCE(next_run_at, 9223372036854775807), id LIMIT ?`,
-          [query.sessionKey ?? null, query.sessionKey ?? null, query.includeArchived ? 1 : 0, limit],
+          [
+            query.sessionKey ?? null,
+            query.sessionKey ?? null,
+            query.includeArchived || status ? 1 : 0,
+            search,
+            search,
+            query.targetKind ?? null,
+            query.targetKind ?? null,
+            query.workspace ?? null,
+            query.workspace ?? null,
+            JSON.stringify(query.workspaceSessionKeys ?? []),
+            ...(status && !['failed', 'needs_attention'].includes(status) ? [status] : []),
+            limit,
+          ],
         )
         .map(viewOf)
+    },
+    activity() {
+      return {
+        nextRunAt:
+          db.get<{ at: number | null }>(
+            "SELECT min(next_run_at) AS at FROM schedules WHERE status = 'active' AND next_run_at IS NOT NULL",
+          )?.at ?? null,
+        hasOpenRuns: !!db.get(
+          "SELECT 1 FROM schedule_runs INDEXED BY schedule_runs_open_job WHERE outcome IN ('running', 'waiting_approval', 'needs_attention') LIMIT 1",
+        ),
+      }
+    },
+    boundSessionKeys() {
+      return db
+        .all<{ session_key: string }>(`SELECT DISTINCT session_key FROM schedules
+        WHERE session_key != '' AND COALESCE(CASE WHEN json_valid(target) THEN json_extract(target, '$.kind') END, 'session') != 'new-session'`)
+        .map((row) => row.session_key)
+    },
+    history(query) {
+      expireRuns()
+      return receipts.page(query)
+    },
+    receipt(query) {
+      expireRuns()
+      return receipts.mark(query.id, query.runId, query.read)
     },
     read,
     targetOf(key) {
@@ -602,10 +622,14 @@ export function openScheduleCatalog(
       if (open && outcome === 'running') saveProgress(open.rid, startProgress())
     },
     observeSession(sessionKey, event) {
-      if (!RUN_PROGRESS_EVENT_TYPES.includes(event.type)) return false
+      if (event.type !== 'assistant/message' && !RUN_PROGRESS_EVENT_TYPES.includes(event.type)) return false
       let attention = false
       for (const row of progressRows()) {
         if (row.session_key !== sessionKey || (row.seq !== null && event.seq <= row.seq)) continue
+        if (event.type === 'assistant/message') {
+          receipts.summary(row.rid, event)
+          continue
+        }
         const before = JSON.parse(row.state) as RunProgress
         const next = observeProgress(before, event, clock())
         saveProgress(row.rid, next)
@@ -624,7 +648,7 @@ export function openScheduleCatalog(
       expireRuns()
       const id = idOf(key)
       return !!db.get(
-        `SELECT rowid FROM schedule_runs WHERE schedule_id = ? AND outcome IN ('waiting_approval', 'needs_attention') LIMIT 1`,
+        `SELECT rowid FROM schedule_runs INDEXED BY schedule_runs_open_job WHERE schedule_id = ? AND outcome IN ('running', 'waiting_approval', 'needs_attention') AND outcome != 'running' LIMIT 1`,
         [id],
       )
     },
@@ -718,12 +742,19 @@ export function createSchedulesPort(
   }
   return {
     catalog,
-    list(params: { scope: 'session' | 'all'; sessionKey?: string; includeArchived?: boolean }) {
+    list(params: SchedulesListParams & { workspaceSessionKeys?: readonly string[] }) {
       return Promise.resolve({
         schedules: catalog.list({
           ...(params.scope === 'session' ? { sessionKey: params.sessionKey } : {}),
           includeArchived: params.includeArchived === true,
+          ...(params.search ? { search: params.search } : {}),
+          ...(params.targetKind ? { targetKind: params.targetKind } : {}),
+          ...(params.workspace
+            ? { workspace: params.workspace, workspaceSessionKeys: params.workspaceSessionKeys ?? [] }
+            : {}),
+          ...(params.status ? { status: params.status } : {}),
         }),
+        ...(params.scope === 'all' ? { activity: catalog.activity() } : {}),
       })
     },
     async upsert(params: unknown, signal?: AbortSignal) {
@@ -749,6 +780,15 @@ export function createSchedulesPort(
       if (!row) return Promise.resolve(undefined)
       const sessionKey = row.target.kind === 'session' ? row.target.sessionKey : row.origin
       return Promise.resolve({ ...(sessionKey ? { sessionKey } : {}), target: row.target })
+    },
+    boundSessionKeys() {
+      return Promise.resolve(catalog.boundSessionKeys())
+    },
+    history(params: SchedulesHistoryParams) {
+      return Promise.resolve(catalog.history(params))
+    },
+    receipt(params: SchedulesReceiptParams) {
+      return Promise.resolve(catalog.receipt(params))
     },
     targetOf: catalog.targetOf,
     recordDispatch: catalog.recordDispatch,

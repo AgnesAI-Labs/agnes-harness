@@ -231,3 +231,14 @@ export function scheduleChoices(input: {
     models: models.map(({ agnes: _agnes, ...model }) => model),
   }
 }
+
+/** Schedule-wide timing hints do not disappear when the visible task list is filtered. */
+export type ScheduleActivity = { nextRunAt: number | null; hasOpenRuns: boolean }
+export function activityOf(value: unknown): ScheduleActivity | undefined {
+  const activity = (value as { activity?: ScheduleActivity } | undefined)?.activity
+  return activity &&
+    (activity.nextRunAt === null || Number.isFinite(activity.nextRunAt)) &&
+    typeof activity.hasOpenRuns === 'boolean'
+    ? activity
+    : undefined
+}

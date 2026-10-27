@@ -23,6 +23,8 @@ type Operation = RetainedOperation & {
   code?: string
   /** The daemon's answered code for an unknown outcome; diagnosis only, never a state. */
   cause?: string
+  /** The daemon's own diagnostic id for that answer; it finds the row in `diagnostics/errors.jsonl`. */
+  diagnosticId?: string
 }
 type State = { reviews: Record<string, Review>; operations: Record<string, Operation> }
 export interface AgentLaunchBackend {
@@ -135,6 +137,7 @@ export function createAgentLaunches(options: {
           state: op.state,
           ...(op.code ? { code: op.code } : {}),
           ...(op.cause ? { cause: op.cause } : {}),
+          ...(op.diagnosticId ? { diagnosticId: op.diagnosticId } : {}),
           ...(op.sessionId ? result(op) : {}),
         }
       }
@@ -210,7 +213,10 @@ export function createAgentLaunches(options: {
           await save(state)
           return result(op)
         } catch (error) {
-          const value = error as { message?: unknown; data?: { code?: unknown } } | null
+          const value = error as {
+            message?: unknown
+            data?: { code?: unknown; diagnosticId?: unknown }
+          } | null
           const known = [
             'E_PACKAGE_PREVIEW_STALE',
             'E_PACKAGE_STATE',
@@ -237,6 +243,13 @@ export function createAgentLaunches(options: {
             answered !== 'OUTCOME_UNKNOWN'
           )
             op.cause = answered
+          const id = value?.data?.diagnosticId
+          if (
+            code === 'OUTCOME_UNKNOWN' &&
+            typeof id === 'string' &&
+            /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)
+          )
+            op.diagnosticId = id
           op.state = code === 'OUTCOME_UNKNOWN' ? 'unknown' : 'failed'
           op.code = code
           op.terminalAt = now()

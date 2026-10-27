@@ -37,8 +37,12 @@ import {
   SchedulesArchiveResult,
   SchedulesControlParams,
   SchedulesControlResult,
+  SchedulesHistoryParams,
+  SchedulesHistoryResult,
   SchedulesListParams,
   SchedulesListResult,
+  SchedulesReceiptParams,
+  SchedulesReceiptResult,
   SchedulesUpsertParams,
   SchedulesUpsertResult,
 } from './schedules.js'
@@ -192,6 +196,8 @@ export type MethodName =
   | '_agnes/v1/schedules.upsert'
   | '_agnes/v1/schedules.archive'
   | '_agnes/v1/schedules.control'
+  | '_agnes/v1/schedules.history'
+  | '_agnes/v1/schedules.receipt'
   | '_agnes/v1/artifact.job.status'
   | '_agnes/v1/ext.ui.response'
   | '_agnes/v1/directory.upsert'
@@ -469,6 +475,8 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/jobs.enqueue': clientRequest(A.JobSpec, A.JobIdResult),
   '_agnes/v1/jobs.poll': clientRequest(A.JobIdParams, A.JobStatus),
   '_agnes/v1/jobs.cancel': clientRequest(A.JobIdParams, A.Empty),
+  '_agnes/v1/schedules.history': clientRequest(SchedulesHistoryParams, SchedulesHistoryResult),
+  '_agnes/v1/schedules.receipt': clientRequest(SchedulesReceiptParams, SchedulesReceiptResult),
   '_agnes/v1/schedules.list': clientRequest(SchedulesListParams, SchedulesListResult),
   '_agnes/v1/schedules.upsert': clientRequest(SchedulesUpsertParams, SchedulesUpsertResult),
   '_agnes/v1/schedules.archive': clientRequest(SchedulesArchiveParams, SchedulesArchiveResult),

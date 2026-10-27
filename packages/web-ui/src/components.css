@@ -2487,7 +2487,8 @@
     display: inline-flex;
     margin-inline-start: var(--s4);
     color: var(--agnes-text-tertiary);
-    cursor: help;
+    /* The icon only explains on hover and focus; the system help cursor would add a question mark. */
+    cursor: default;
   }
   /* The tooltip anchor is the inline box around the icon, so the optical nudge lives there;
      vertical-align on the icon itself would be inert inside the anchor's flex layout. */

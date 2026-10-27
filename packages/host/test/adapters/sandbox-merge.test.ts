@@ -9,7 +9,12 @@ import { installSandboxProviders } from '@agnes/host-providers/adapters/sandbox-
 import { defineRemoteSandboxProvider } from '@agnes/sandbox-remote'
 import { describe, expect, it } from 'vitest'
 import { remoteSandboxModule } from '../../src/runtime/adapters/index.js'
-import { localSandboxProbe, sandboxBackendPackages } from '../../src/runtime/assemble/workspace-runtime.js'
+import {
+  degradeLoopbackServe,
+  localSandboxProbe,
+  loopbackServeSupported,
+  sandboxBackendPackages,
+} from '../../src/runtime/assemble/workspace-runtime.js'
 
 const env: ResolveEnv = {
   platform: { os: 'linux', arch: 'x64', capabilities: {} },
@@ -154,5 +159,40 @@ describe('platform is host-only', () => {
     expect(attempt).toThrow(ProviderError)
     expect(attempt).toThrow(/host-owned/)
     expect(() => root.providers.select('platform', 'host')).toThrow(/host-owned/)
+  })
+})
+
+// DevBoard's coordinator preset requests loopback_serve. Where the listener cannot be provided the session
+// still opens and only that capability is dropped; it is never replaced by anything broader.
+it.each([
+  ['darwin', false, true],
+  ['win32', false, false],
+  ['linux', false, false],
+  ['darwin', true, false],
+])('loopback_serve on %s (remote=%s) is supported: %s', (os, remote, supported) => {
+  expect(loopbackServeSupported(os, remote)).toBe(supported)
+})
+
+describe('loopback_serve degrade', () => {
+  const requested = {
+    level: 'L1',
+    access: 'restricted',
+    loopbackServe: true,
+    required: false,
+    onUnavailable: 'deny',
+    extraPaths: [],
+    denyPaths: [],
+    networkAllow: [],
+  } as const
+
+  it('drops only the loopback grant where it is unsupported and keeps every other limit', () => {
+    const { loopbackServe: _grant, ...rest } = requested
+    expect(degradeLoopbackServe(requested, false)).toEqual(rest)
+  })
+
+  it('leaves a supported host and a request without the grant untouched', () => {
+    expect(degradeLoopbackServe(requested, true)).toBe(requested)
+    const plain: { loopbackServe?: boolean; level: string } = { level: 'L1' }
+    expect(degradeLoopbackServe(plain, false)).toBe(plain)
   })
 })

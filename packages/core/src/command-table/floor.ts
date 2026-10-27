@@ -32,6 +32,13 @@ export function hardBlockedCall(
 /** The argument a tool declared as its command text (`ToolMeta.commandArg`), if it declared one. */
 export type CommandArgOf = (tool: string) => string | undefined
 
+/**
+ * The URI schemes a tool declared as naming something other than a workspace path
+ * (`ToolMeta.paths[].nonWorkspaceSchemes`). Identity resolution belongs to `normalizeArgv`; the
+ * floor only forwards what the tool itself declared.
+ */
+export type NonWorkspaceSchemesOf = (tool: string) => readonly string[] | undefined
+
 /** Host-owned scope, checked live; it admits identity only, never a filesystem mutation. */
 export type CommandPathScope = (
   input: ToolPolicyInput,
@@ -52,6 +59,7 @@ export function withCommandFloor(
   rules: readonly PolicyRule[],
   commandArgOf: CommandArgOf = () => undefined,
   pathScope?: CommandPathScope,
+  nonWorkspaceSchemesOf: NonWorkspaceSchemesOf = () => undefined,
 ): ToolPolicy {
   return {
     ...policy,
@@ -70,6 +78,7 @@ export function withCommandFloor(
           input.workspaceRoot,
           commandArgOf(input.call.name),
           scope?.root,
+          nonWorkspaceSchemesOf(input.call.name),
         )
       } catch {
         signal.throwIfAborted()
@@ -103,7 +112,11 @@ export function withCommandFloor(
  * identity to notice a mid-decision policy change, and a preset view rebuilt with the same rules is
  * not such a change while a different table is.
  */
-export function sessionCommandFloor(commandArgOf: CommandArgOf, pathScope?: CommandPathScope) {
+export function sessionCommandFloor(
+  commandArgOf: CommandArgOf,
+  pathScope?: CommandPathScope,
+  nonWorkspaceSchemesOf: NonWorkspaceSchemesOf = () => undefined,
+) {
   const floored = new WeakMap<ToolPolicy, Map<string, ToolPolicy>>()
   return (policy: ToolPolicy, rules: readonly PolicyRule[] | undefined): ToolPolicy => {
     // An empty table still gets the floor: the hard block does not come from the table.
@@ -115,7 +128,7 @@ export function sessionCommandFloor(commandArgOf: CommandArgOf, pathScope?: Comm
     }
     let wrapped = tables.get(key)
     if (!wrapped) {
-      wrapped = withCommandFloor(policy, rules ?? [], commandArgOf, pathScope)
+      wrapped = withCommandFloor(policy, rules ?? [], commandArgOf, pathScope, nonWorkspaceSchemesOf)
       tables.set(key, wrapped)
     }
     return wrapped

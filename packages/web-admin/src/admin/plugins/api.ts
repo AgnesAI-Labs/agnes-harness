@@ -169,6 +169,7 @@ export class PluginAdminApi {
     state: 'running' | 'completed' | 'failed' | 'unknown'
     code?: string
     cause?: string
+    diagnosticId?: string
     sessionId?: string
     draft?: import('@agnes/protocol').BundleLaunch['prompt']
   }> {

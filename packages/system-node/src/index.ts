@@ -627,7 +627,7 @@ export function renameWriteThroughSync(from: string, to: string): void {
   const source = filePath(from),
     target = filePath(to)
   if (windows) {
-    native().renameWriteThrough(source, target)
+    replacePublishedFileSync(source, target, true, (a, b) => native().renameWriteThrough(a, b))
     for (const dir of new Set([dirname(resolve(from)), dirname(resolve(to))])) syncDirectorySync(dir)
     return
   }

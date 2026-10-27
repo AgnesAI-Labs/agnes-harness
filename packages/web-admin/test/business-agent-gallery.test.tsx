@@ -358,6 +358,7 @@ it.each(['lost', 'unknown'] as const)(
     const sessions: string[] = []
     const operationIds: string[] = []
     let firstRead = true
+    let hold: Promise<void> | undefined
     const facade = createAgentLaunches({
       directory,
       backend: {
@@ -389,6 +390,7 @@ it.each(['lost', 'unknown'] as const)(
         firstRead = false
         throw new Error('receipt temporarily unavailable')
       }
+      await hold
       return (await facade.call({ action: 'read', operationId })) as Awaited<
         ReturnType<PluginAdminApi['readAgent']>
       >
@@ -419,7 +421,23 @@ it.each(['lost', 'unknown'] as const)(
         expect(document.querySelector('[data-testid="agent-start-new-intent"]')?.textContent).toBe(
           en('launch.another'),
         )
+        // A recheck keeps the failure panel with a busy action instead of the running steps.
+        let release = () => {}
+        hold = new Promise<void>((resolve) => (release = resolve))
         await click('[data-testid="agent-start-retry"]')
+        expect(document.querySelector('[data-testid="agent-start-error"]')).not.toBeNull()
+        expect(document.querySelector('[data-testid="agent-start-retry"]')?.getAttribute('aria-busy')).toBe(
+          'true',
+        )
+        expect(
+          document.querySelector('[data-testid="agent-start-new-intent"]')?.hasAttribute('disabled'),
+        ).toBe(true)
+        release()
+        await vi.waitFor(() =>
+          expect(
+            document.querySelector('[data-testid="agent-start-retry"]')?.getAttribute('aria-busy'),
+          ).not.toBe('true'),
+        )
         expect(opened).toEqual([])
       }
       expect(sessions).toEqual(['synthetic-session-1'])

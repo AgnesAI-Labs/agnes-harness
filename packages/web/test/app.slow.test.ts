@@ -3804,6 +3804,24 @@ describe('incremental opening', () => {
     expect(lookups()).toBe(first)
   })
 
+  it('drops the previous task recovery as soon as another task starts opening', async () => {
+    await bootWith(async () => {
+      throw new Error('previous task opening failed')
+    })
+    const notice = document.getElementById('notice') as HTMLElement
+    await vi.waitFor(() => expect(notice.dataset.kind).toBe('session-recovery'))
+    const pending = deferred<{ session: SessionDouble; offPermission: ReturnType<typeof vi.fn> }>()
+    binding.loadWebSession.mockReturnValueOnce(pending.promise)
+    const next = session('next', async () => idleTimeline('next'))
+    const work = selectionController.open?.('next')
+    await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalledTimes(2))
+    expect(notice.textContent).not.toContain('previous task opening failed')
+    expect(notice.dataset.kind).not.toBe('session-recovery')
+    pending.resolve({ session: next, offPermission: vi.fn() })
+    await work
+    expect(notice.textContent).toBe('')
+  })
+
   it('shows session recovery when the first opening is refused', async () => {
     await bootWith(async () => {
       throw Object.assign(new Error('too large'), { data: { code: 'UI_PROJECTION_NODE_TOO_LARGE' } })
@@ -4359,9 +4377,9 @@ describe('session that cannot continue on this build', () => {
     },
   ] as const
 
-  it.each(refusals)(
-    'keeps a %s session readable with a banner and a disabled composer',
-    async ({ code, actions, text, buttons, issue }) => {
+  it.each(refusals.flatMap((entry) => [false, true].map((priorFailure) => ({ ...entry, priorFailure }))))(
+    'keeps a $issue session readable after prior failure=$priorFailure',
+    async ({ code, actions, text, buttons, issue, priorFailure }) => {
       installPublicFixture()
       const error = Object.assign(new Error('SEMANTIC_REJECTED (-32011)'), {
         data: { code, issue, actions, localized: { en: 'English text.', 'zh-CN': text } },
@@ -4397,8 +4415,21 @@ describe('session that cannot continue on this build', () => {
         session: { list: vi.fn(async () => ({ items: [{ sessionId: 'old', title: 'Old' }] })), view },
       })
       const opening = deferred<never>()
+      if (priorFailure)
+        binding.loadWebSession.mockRejectedValueOnce(
+          Object.assign(new Error('worker open failed'), {
+            data: { diagnosticId: '00000000-0000-4000-8000-000000000001' },
+          }),
+        )
       binding.loadWebSession.mockReturnValue(opening.promise)
       await bootApp()
+      if (priorFailure) {
+        await vi.waitFor(() =>
+          expect(document.getElementById('notice')?.dataset.kind).toBe('session-recovery'),
+        )
+        document.querySelector<HTMLButtonElement>('[data-recovery-action="retry"]')?.click()
+        await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalledTimes(2))
+      }
       await vi.waitFor(() => expect(document.getElementById('transcript')?.textContent).toContain('历史问题'))
       expect(document.body.classList.contains('session-switching')).toBe(false)
       expect(document.querySelector('[data-testid="session-read-only"]')).toBeNull()

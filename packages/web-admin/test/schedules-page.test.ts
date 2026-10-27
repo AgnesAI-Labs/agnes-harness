@@ -1,8 +1,10 @@
 import { installFeedbackSink, type OperationFeedback } from '@agnes/web-ui'
 import { afterEach as feedbackAfterEach, beforeEach as feedbackBeforeEach } from 'vitest'
+
 /** @vitest-environment happy-dom */
 
-import { clearResources, PushStack, searchParamRoute } from '@agnes/web-ui'
+import type { ScheduleHistoryEntry } from '@agnes/protocol'
+import { clearResources, invalidateResource, PushStack, searchParamRoute } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -16,7 +18,13 @@ import {
   selectorOf,
   targetOf,
 } from '../src/settings/schedule-form.js'
-import { rowsOf, type ScheduleRow, scheduleChoices } from '../src/settings/schedule-model.js'
+import {
+  rowsOf,
+  type ScheduleActivity,
+  type ScheduleRow,
+  scheduleChoices,
+} from '../src/settings/schedule-model.js'
+import { ScheduleRecords } from '../src/settings/schedule-records.js'
 import {
   SCHEDULE_ACTIVE_REFRESH_MS,
   schedulesActive,
@@ -137,6 +145,230 @@ function api(rows: unknown[] = [], extra: Partial<SchedulesApi> = {}): Schedules
   }
 }
 
+it('searches and combines task status and workspace filters without mistaking no matches for no tasks', async () => {
+  const paused = { ...standup, id: 'sched_1111111111111111', title: 'Paused billing', status: 'paused' }
+  const daemon = api([standup, report, paused])
+  const host = await mount(createElement(SchedulesPage, { api: daemon, t }))
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedules-row"]')).toHaveLength(3))
+  await act(async () => fill('schedules-search', 'BILLING'))
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedules-row"]')).toHaveLength(1))
+  expect(host.textContent).toContain('Paused billing')
+  expect(daemon.list).toHaveBeenCalledWith(expect.objectContaining({ search: 'BILLING' }))
+  await act(async () => fill('schedules-status-filter', 'active'))
+  await vi.waitFor(() => expect(host.textContent).toContain(ux('noMatchingTasks')))
+  await act(async () => {
+    fill('schedules-search', '')
+    fill('schedules-status-filter', 'all')
+    fill('schedules-workspace-filter', '/work/app')
+  })
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedules-row"]')).toHaveLength(3))
+})
+
+const receiptFixture = (n: number): ScheduleHistoryEntry => ({
+  id: 'run_' + n.toString(16).padStart(32, '0'),
+  scheduleId: standup.id,
+  title: `Run ${n}`,
+  at: n,
+  endedAt: n + 4000,
+  outcome: 'ran',
+  read: false,
+  sessionKey: 's1',
+  summary: `Result ${n}`,
+  snapshot: {
+    title: 'Original title',
+    prompt: 'Original instructions',
+    selector: { every_seconds: 60 },
+    target: { kind: 'session', sessionKey: 's1' },
+  },
+})
+
+it('keeps older pages stable during background refresh and acknowledges a row without losing the page', async () => {
+  const head = receiptFixture(2)
+  const older = receiptFixture(1)
+  let newest = head
+  const daemon = api([], {
+    history: vi.fn(async (query) =>
+      query.before ? { runs: [older] } : { runs: [newest], nextCursor: newest.id },
+    ),
+    receipt: vi.fn(async (query) => {
+      older.read = query.read
+      return { updated: true }
+    }),
+  })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  roots.push(root)
+  await act(async () => root.render(createElement(ScheduleRecords, { api: daemon, refreshKey: 0 })))
+  await vi.waitFor(() => expect(host.textContent).toContain('Result 2'))
+  await click('schedule-records-more', host)
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedule-record"]')).toHaveLength(2))
+  newest = receiptFixture(3)
+  await act(async () => root.render(createElement(ScheduleRecords, { api: daemon, refreshKey: 1 })))
+  expect(host.textContent).toContain('Result 1')
+  const second = host.querySelectorAll('[data-testid="schedule-record"]')[1]
+  if (!second) throw new Error('missing older result')
+  await click('schedule-record-mark', second)
+  await vi.waitFor(() => expect(second.getAttribute('data-unread')).toBe('false'))
+  expect(host.textContent).toContain('Result 2')
+  await click('schedule-records-refresh', host)
+  await vi.waitFor(() => expect(host.textContent).toContain('Result 3'))
+  expect(host.textContent).not.toContain('Result 1')
+})
+
+it.each([true, false])(
+  'catches up with a refresh received while marking a result (updated: %s)',
+  async (updated) => {
+    let finish: ((value: { updated: boolean }) => void) | undefined
+    const handled = receiptFixture(2)
+    let runs = [handled]
+    const daemon = api([], {
+      history: vi.fn(async () => ({ runs: runs.map((run) => ({ ...run })) })),
+      receipt: vi.fn(
+        () =>
+          new Promise<{ updated: boolean }>((resolve) => {
+            finish = resolve
+          }),
+      ),
+    })
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    roots.push(root)
+    await act(async () => root.render(createElement(ScheduleRecords, { api: daemon, refreshKey: 0 })))
+    await vi.waitFor(() => expect(host.textContent).toContain('Result 2'))
+    await click('schedule-record-mark', host)
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    runs = [receiptFixture(3), handled]
+    await act(async () => root.render(createElement(ScheduleRecords, { api: daemon, refreshKey: 1 })))
+    await act(async () => {
+      handled.read = updated
+      finish?.({ updated })
+    })
+    await vi.waitFor(() => expect(host.textContent).toContain('Result 3'))
+    const saved = host.querySelectorAll('[data-testid="schedule-record"]')[1]
+    expect(saved?.getAttribute('data-unread')).toBe(String(!updated))
+    expect(!!host.querySelector('[data-testid="schedule-records-error"]')).toBe(!updated)
+  },
+)
+
+it('updates an expanded history with its parent list while preserving loaded older pages', async () => {
+  let finished = false
+  const daemon = api([], {
+    list: vi.fn(async () => ({
+      schedules: [{ ...standup, runs: [{ at: 1, outcome: finished ? 'ran' : 'running' }] }],
+    })),
+    history: vi.fn<NonNullable<SchedulesApi['history']>>(async (query) =>
+      query.before
+        ? { runs: [receiptFixture(1)] }
+        : {
+            runs: [
+              {
+                ...receiptFixture(2),
+                outcome: finished ? 'ran' : 'running',
+                summary: finished ? 'Finished output' : 'Running output',
+              },
+            ],
+            nextCursor: receiptFixture(2).id,
+          },
+    ),
+  })
+  const host = await mount(createElement(SchedulesPage, { api: daemon, t }))
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="schedule-history-open"]')).not.toBeNull())
+  await click('schedule-history-open', host)
+  await vi.waitFor(() => expect(host.textContent).toContain('Running output'))
+  finished = true
+  await act(async () => invalidateResource('schedules'))
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="schedules-outcome"]')?.getAttribute('data-outcome')).toBe('ran'),
+  )
+  await vi.waitFor(() => expect(host.textContent).toContain('Finished output'))
+  await click('schedule-records-more', host)
+  await vi.waitFor(() => expect(host.textContent).toContain('Result 1'))
+  finished = false
+  await act(async () => invalidateResource('schedules'))
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="schedules-outcome"]')?.getAttribute('data-outcome')).toBe(
+      'running',
+    ),
+  )
+  expect(host.querySelectorAll('[data-testid="schedule-record"]')).toHaveLength(2)
+  expect(host.textContent).toContain('Finished output')
+  expect(host.textContent).toContain('Result 1')
+})
+
+it('collects results, pages history, preserves saved instructions and persists handled status through the API', async () => {
+  const newest = receiptFixture(2)
+  const { snapshot: _snapshot, ...older } = receiptFixture(1)
+  const daemon = api([standup], {
+    history: vi.fn(async (query) => ({
+      runs: query.before ? [older] : query.unreadOnly && newest.read ? [] : [newest],
+      ...(!query.before ? { nextCursor: newest.id } : {}),
+    })),
+    receipt: vi.fn(async (query) => {
+      if (query.runId === newest.id) newest.read = query.read
+      else older.read = query.read
+      return { updated: true }
+    }),
+  })
+  const host = await mount(createElement(SchedulesPage, { api: daemon, t }))
+  await act(async () => fill('schedules-status-filter', 'paused'))
+  await click('schedules-view-results', host)
+  await vi.waitFor(() =>
+    expect(daemon.list).toHaveBeenLastCalledWith({ scope: 'all', includeArchived: true }),
+  )
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="schedule-record-summary"]')?.textContent).toBe('Result 2'),
+  )
+  expect(host.querySelector('[data-testid="schedule-record-session"]')?.getAttribute('href')).toBe(
+    '/?session=s1',
+  )
+  expect(host.textContent).toContain('Original instructions')
+  expect(host.textContent).toContain('4 s')
+  await click('schedule-records-more', host)
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedule-record"]')).toHaveLength(2))
+  expect(host.textContent).toContain(ux('snapshotUnavailable'))
+  await click('schedule-results-unread', host)
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedule-record"]')).toHaveLength(1))
+  await click('schedule-record-mark', host)
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedule-record"]')).toHaveLength(0))
+  // A handled page must not hide older unread results behind its remaining cursor.
+  await click('schedule-records-more', host)
+  await vi.waitFor(() => expect(host.textContent).toContain('Result 1'))
+  await click('schedule-record-mark', host)
+  await vi.waitFor(() => expect(host.textContent).toContain(ux('recordsEmpty')))
+  expect(daemon.receipt).toHaveBeenCalledWith({ id: standup.id, runId: newest.id, read: true })
+})
+
+it('keeps loaded records on a failed older-page read and ignores responses after switching tasks', async () => {
+  let release: ((value: { runs: ScheduleHistoryEntry[] }) => void) | undefined
+  const recordsApi = api([], {
+    history: vi.fn((query) => {
+      if (query.before) return Promise.reject(new Error('offline'))
+      if (query.id === 'sched_1111111111111111')
+        return Promise.resolve({ runs: [receiptFixture(9)], nextCursor: receiptFixture(9).id })
+      return new Promise<{ runs: ScheduleHistoryEntry[] }>((resolve) => {
+        release = resolve
+      })
+    }),
+  })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  roots.push(root)
+  await act(async () => root.render(createElement(ScheduleRecords, { api: recordsApi, id: standup.id })))
+  await vi.waitFor(() => expect(release).toBeDefined())
+  await act(async () =>
+    root.render(createElement(ScheduleRecords, { api: recordsApi, id: 'sched_1111111111111111' })),
+  )
+  await vi.waitFor(() => expect(host.textContent).toContain('Result 9'))
+  await click('schedule-records-more', host)
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="schedule-records-error"]')).not.toBeNull())
+  expect(host.textContent).toContain('Result 9')
+  await act(async () => release?.({ runs: [receiptFixture(3)] }))
+  expect(host.textContent).not.toContain('Result 3')
+})
+
 it('shows the unavailable state without calling the daemon', async () => {
   const host = await mount(createElement(SchedulesPage, { t }))
   expect(host.querySelector('[data-testid="schedules-page"]')).not.toBeNull()
@@ -239,7 +471,8 @@ it('words a refused save by its code', async () => {
 })
 
 it('lists where each task runs, filters by target, and links a session target', async () => {
-  const host = await mount(createElement(SchedulesPage, { api: api([standup, report]), t }))
+  const daemon = api([standup, report])
+  const host = await mount(createElement(SchedulesPage, { api: daemon, t }))
   await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedules-row"]')).toHaveLength(2))
   await vi.waitFor(() =>
     expect(host.querySelector('[data-testid="schedules-target-link"]')?.textContent).toBe(
@@ -256,6 +489,9 @@ it('lists where each task runs, filters by target, and links a session target', 
   expect(host.querySelectorAll('[data-testid="schedules-edit"]')).toHaveLength(2)
   expect(host.querySelector('[data-testid="schedules-row"]')?.textContent).toContain('Weekly Tue, Thu 14:30')
   await click('schedules-scope-new-session', host)
+  await vi.waitFor(() =>
+    expect(daemon.list).toHaveBeenLastCalledWith(expect.objectContaining({ targetKind: 'new-session' })),
+  )
   expect(
     [...host.querySelectorAll('[data-testid="schedules-row"]')].map((row) => row.getAttribute('data-target')),
   ).toEqual(['new-session'])
@@ -265,51 +501,57 @@ it('lists where each task runs, filters by target, and links a session target', 
   ).toEqual(['session'])
 })
 
-it('shows each run outcome in plain words, never a started turn as a failure', async () => {
-  const at = Date.parse('2026-09-06T09:00:00Z')
-  const runs = [
-    {
-      at,
-      outcome: 'ran',
-      sessionKey: 'r1',
-      endedAt: at + 42_000,
-      needsAttention: true,
-      reason: 'previous_approval_expired',
-    },
-    { at: at + 1, outcome: 'delivered', sessionKey: 's1' },
-    { at: at + 2, outcome: 'failed', reason: 'bundle_unavailable' },
-    { at: at + 3, outcome: 'waiting_approval', sessionKey: 'r4' },
-  ]
-  const host = await mount(createElement(SchedulesPage, { api: api([{ ...report, runs }]), t }))
-  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid="schedules-delivery"]')).toHaveLength(4))
-  // The newest run is the row's status.
-  expect(
-    host.querySelector('[data-testid="schedules-row"] [data-testid="schedules-outcome"]')?.textContent,
-  ).toBe(ux('outcome.waiting_approval'))
-  const items = [...host.querySelectorAll('[data-testid="schedules-delivery"]')]
-  expect(items.map((item) => item.getAttribute('data-outcome'))).toEqual([
-    'waiting_approval',
-    'failed',
-    'delivered',
-    'ran',
-  ])
-  expect(items[0]?.querySelector('a')?.textContent).toBe(ux('approve'))
-  expect(items[0]?.querySelector('a')?.getAttribute('href')).toBe('/?session=r4')
-  expect(items[1]?.getAttribute('data-failed')).toBe('true')
-  expect(items[1]?.textContent).toContain(ux('reason.bundle_unavailable'))
-  expect(items[2]?.getAttribute('data-failed')).toBeNull()
-  expect(items[3]?.textContent).toContain('42 s')
-  expect(items[3]?.textContent).toContain(ux('reason.previous_approval_expired'))
-  expect(items[3]?.textContent).toContain(ux('needsAttention'))
-  expect(items[3]?.querySelector('a')?.getAttribute('href')).toBe('/?session=r1')
-  // DOM behind the top alignment: the actions column is the row's direct child and the run history
-  // sits inside the copy column, so expanding it grows only that column. Layout itself is CSS.
-  const row = must(host.querySelector('[data-testid="schedules-row"]'), 'schedules-row')
-  expect(row.classList.contains('automation-row')).toBe(true)
-  expect(must(row.querySelector('.agh-list-row-actions'), 'row actions').parentElement).toBe(row)
-  const copy = must(row.querySelector('.agh-list-row-copy'), 'row copy')
-  expect(copy.contains(must(row.querySelector('.automation-history'), 'run history'))).toBe(true)
-})
+it.each(['active', 'ended'] as const)(
+  'shows each run outcome in plain words for an %s task',
+  async (status) => {
+    const at = Date.parse('2026-09-06T09:00:00Z')
+    const runs = [
+      {
+        at,
+        outcome: 'ran',
+        sessionKey: 'r1',
+        endedAt: at + 42_000,
+        needsAttention: true,
+        reason: 'previous_approval_expired',
+      },
+      { at: at + 1, outcome: 'delivered', sessionKey: 's1' },
+      { at: at + 2, outcome: 'failed', reason: 'bundle_unavailable' },
+      { at: at + 3, outcome: 'waiting_approval', sessionKey: 'r4' },
+    ]
+    const host = await mount(createElement(SchedulesPage, { api: api([{ ...report, status, runs }]), t }))
+    await vi.waitFor(() =>
+      expect(host.querySelectorAll('[data-testid="schedules-delivery"]')).toHaveLength(4),
+    )
+    // The newest run is the row's status.
+    expect(
+      host.querySelector('[data-testid="schedules-row"] [data-testid="schedules-outcome"]')?.textContent,
+    ).toBe(ux('outcome.waiting_approval'))
+    const items = [...host.querySelectorAll('[data-testid="schedules-delivery"]')]
+    expect(items.map((item) => item.getAttribute('data-outcome'))).toEqual([
+      'waiting_approval',
+      'failed',
+      'delivered',
+      'ran',
+    ])
+    expect(items[0]?.querySelector('a')?.textContent).toBe(ux('approve'))
+    expect(items[0]?.querySelector('a')?.getAttribute('href')).toBe('/?session=r4')
+    expect(items[1]?.getAttribute('data-failed')).toBe('true')
+    expect(items[1]?.textContent).toContain(ux('reason.bundle_unavailable'))
+    expect(items[2]?.getAttribute('data-failed')).toBeNull()
+    expect(items[3]?.textContent).toContain('42 s')
+    expect(items[3]?.textContent).toContain(ux('reason.previous_approval_expired'))
+    expect(items[3]?.textContent).toContain(ux('needsAttention'))
+    expect(items[3]?.querySelector('a')?.getAttribute('href')).toBe('/?session=r1')
+    // DOM behind the top alignment: the actions column is the row's direct child and the run history
+    // sits inside the copy column, so expanding it grows only that column. Layout itself is CSS.
+    const row = must(host.querySelector('[data-testid="schedules-row"]'), 'schedules-row')
+    expect(row.classList.contains('automation-row')).toBe(true)
+    if (status === 'active')
+      expect(must(row.querySelector('.agh-list-row-actions'), 'row actions').parentElement).toBe(row)
+    const copy = must(row.querySelector('.agh-list-row-copy'), 'row copy')
+    expect(copy.contains(must(row.querySelector('.automation-history'), 'run history'))).toBe(true)
+  },
+)
 
 it('pauses, resumes and runs a task now through the daemon', async () => {
   const daemon = api([standup, { ...report, status: 'paused', nextRunAt: null }])
@@ -469,6 +711,44 @@ it('round-trips a task through the form and orders Agnes AI models first', () =>
     }),
   ).toEqual([])
   expect(emptyDraft({ now: 0 }).target).toBe('new-session')
+})
+
+it('shows and locks an agent’s actual permission profile and model before saving', async () => {
+  const choices = scheduleChoices({
+    presets: ['read-only'],
+    agents: [
+      {
+        ref: 'acme/report#bundle',
+        launch: { title: { en: 'Report' }, preset: 'workspace-write' },
+        loop: { id: 'report', version: '1' },
+        bundles: ['acme/report#bundle'],
+        preset: 'workspace-write',
+        model: { route: 'r', model: 'm' },
+      } as import('@agnes/protocol').AgentPlan,
+    ],
+  })
+  const upsert = vi.fn(async () => report)
+  await mount(createElement(SchedulesPage, { api: api([], { choices: async () => choices, upsert }), t }))
+  await click('schedules-new')
+  await act(async () => {
+    fill('schedules-title', 'Report')
+    fill('schedules-prompt', 'Prepare report')
+  })
+  await act(async () => fill('schedules-preset', 'read-only'))
+  await act(async () => fill('schedules-mode', 'acme/report#bundle'))
+  const preset = must(document.querySelector<HTMLSelectElement>('[data-testid="schedules-preset"]'), 'preset')
+  const model = document.querySelector<HTMLSelectElement>('[data-testid="schedules-model"]')
+  expect(preset.value).toBe('workspace-write')
+  expect(preset.disabled).toBe(true)
+  expect(model?.value).toBe('r\u0000m')
+  expect(model?.disabled).toBe(true)
+  await submit()
+  expect(upsert).toHaveBeenCalledWith(
+    expect.objectContaining({
+      agent: 'acme/report#bundle',
+      target: expect.objectContaining({ preset: preset.value, model: { route: 'r', model: 'm' } }),
+    }),
+  )
 })
 
 it('keeps the saved loop, ordered bundles and model when only the title changes (B03)', async () => {
@@ -640,8 +920,8 @@ describe('polling lifetime (N02)', () => {
     )
     return { refresh, pending }
   }
-  function Probe(props: { refresh: () => Promise<void>; rows: ScheduleRow[] }) {
-    useScheduleRefresh(props.refresh, props.rows, true)
+  function Probe(props: { refresh: () => Promise<void>; rows: ScheduleRow[]; activity?: ScheduleActivity }) {
+    useScheduleRefresh(props.refresh, props.rows, true, props.activity)
     return null
   }
   const withClock = async (body: () => Promise<void>) => {
@@ -653,6 +933,47 @@ describe('polling lifetime (N02)', () => {
       vi.useRealTimers()
     }
   }
+
+  it('wakes an empty filtered list for hidden due work and stops after it settles', () =>
+    withClock(async () => {
+      const refresh = vi.fn(async () => undefined)
+      const root = createRoot(document.createElement('div'))
+      roots.push(root)
+      await act(async () =>
+        root.render(
+          createElement(Probe, {
+            refresh,
+            rows: [],
+            activity: { nextRunAt: now + 10_000, hasOpenRuns: false },
+          }),
+        ),
+      )
+      await act(async () => vi.advanceTimersByTimeAsync(9_999))
+      expect(refresh).not.toHaveBeenCalled()
+      await act(async () => vi.advanceTimersByTimeAsync(1))
+      expect(refresh).toHaveBeenCalledTimes(1)
+      await act(async () =>
+        root.render(
+          createElement(Probe, {
+            refresh,
+            rows: [],
+            activity: { nextRunAt: null, hasOpenRuns: true },
+          }),
+        ),
+      )
+      await act(async () => vi.advanceTimersByTimeAsync(10_000))
+      expect(refresh).toHaveBeenCalledTimes(2)
+      await act(async () =>
+        root.render(
+          createElement(Probe, {
+            refresh,
+            rows: [],
+            activity: { nextRunAt: null, hasOpenRuns: false },
+          }),
+        ),
+      )
+      expect(vi.getTimerCount()).toBe(0)
+    }))
 
   for (const outcome of ['succeeds', 'fails'] as const)
     it(`starts no new poll when a read still open at unmount ${outcome} later`, () =>

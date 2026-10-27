@@ -153,6 +153,9 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
     const host = document.body.appendChild(document.createElement('div'))
     const root = createRoot(host)
     const assign = vi.spyOn(location, 'assign').mockImplementation(() => {})
+    const opened: unknown[] = []
+    const onOpen = (event: Event) => opened.push((event as CustomEvent).detail)
+    window.addEventListener('agnes:open-session', onOpen)
     try {
       await act(async () => root.render(createElement(AgentsPage, { context: { t: (key) => key } })))
       await vi.waitFor(() => expect(host.querySelectorAll('[data-agent-ref]')).toHaveLength(2))
@@ -244,22 +247,89 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
           host.querySelector<HTMLButtonElement>('[data-agent-ref="acme/kit#triage"] button')?.click(),
         )
         expect(prepareAgent).toHaveBeenCalledTimes(1)
+        // A recheck keeps the failure panel: busy action, other actions off, no starting skeleton.
+        let answer: (value: unknown) => void = () => {}
+        readAgent.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+        await act(async () =>
+          host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-retry"]')?.click(),
+        )
+        const retry = host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-retry"]')
+        expect(host.textContent).toContain('may not have started')
+        expect(retry?.getAttribute('aria-busy')).toBe('true')
+        for (const id of ['agent-launch-new-intent', 'agent-launch-close'])
+          expect(host.querySelector<HTMLButtonElement>(`[data-testid="${id}"]`)?.disabled).toBe(true)
+        await act(async () => answer({ state: 'unknown', code: 'OUTCOME_UNKNOWN', cause: 'STILL_UNKNOWN' }))
+        expect(host.textContent).toContain('(STILL_UNKNOWN)')
+        expect(host.querySelector('[data-testid="agent-launch-retry"]')?.getAttribute('aria-busy')).not.toBe(
+          'true',
+        )
         readAgent.mockResolvedValue({ state: 'completed', ...result })
         await act(async () =>
           host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-retry"]')?.click(),
         )
       }
-      await vi.waitFor(() =>
-        expect(assign).toHaveBeenLastCalledWith('/?session=session-reviewed&prompt=Backend+editable+draft'),
-      )
+      await vi.waitFor(() => expect(opened).toHaveLength(1))
+      expect(opened[0]).toEqual({ sessionId: 'session-reviewed', prompt: 'Backend editable draft' })
+      // Opening the started session is an in-app hand-over, not a document navigation.
+      expect(assign).toHaveBeenCalledTimes(1)
       expect(startAgent).toHaveBeenCalledTimes(1)
       if (outcome === 'enable') expect(enabled).toBe(true)
       if (outcome === 'recover' || outcome === 'unknown') expect(readAgent).toHaveBeenCalledWith(operationId)
     } finally {
+      window.removeEventListener('agnes:open-session', onOpen)
       await act(async () => root.unmount())
     }
   },
 )
+
+it.each([
+  ['single-encoded', 'agent-acme%2Fkit%23reply'],
+  ['double-encoded', `agent-${encodeURIComponent(encodeURIComponent('acme/kit#reply'))}`],
+  ['unknown', 'agent-acme%2Fkit%23gone'],
+])('a %s agent link opens the agent start or the list, never an endless wait', async (name, view) => {
+  const prepareAgent = vi.fn(() => new Promise<never>(() => {}))
+  const startAgent = vi.fn()
+  mock.connect.mockResolvedValue({
+    context: { permissions: [], readOnly: false },
+    api: {
+      prepareAgent,
+      startAgent,
+      catalog: async () => ({ items: [] }),
+      list: async () => ({
+        packages: [
+          {
+            id: 'acme/kit',
+            version: '1.0.0',
+            trusted: true,
+            desired: 'enabled',
+            actual: 'running',
+            agents: [
+              {
+                ref: 'acme/kit#reply',
+                launch: { title: { en: 'reply' }, description: { en: 'reply description' }, preset: 'safe' },
+              },
+            ],
+          },
+        ],
+      }),
+      loops: async () => ({ loops: [], revision: 1, defaults: {} }),
+    },
+  })
+  history.replaceState(null, '', `/?page=agents&view=${view}`)
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(createElement(AgentsPage, { context: { t: (key) => key } })))
+    if (name === 'unknown') {
+      await vi.waitFor(() => expect(location.search).not.toContain('view='))
+      expect(host.querySelector('[data-agent-ref="acme/kit#reply"]')).not.toBeNull()
+      expect(prepareAgent).not.toHaveBeenCalled()
+    } else await vi.waitFor(() => expect(prepareAgent).toHaveBeenCalledWith('acme/kit#reply'))
+    expect(startAgent).not.toHaveBeenCalled()
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
 
 it('reacts to the effective application for catalog and installed agents, including hidden start links and host fallback', async () => {
   const declaration = (id: string, packageId = 'acme/kit') => ({
@@ -604,6 +674,9 @@ it.each(['en', 'zh-CN'] as const)(
       const root = createRoot(host)
       const localized = createDocumentLocaleSource({})
       const assign = vi.spyOn(location, 'assign').mockImplementation(() => {})
+      const opened: unknown[] = []
+      const onOpen = (event: Event) => opened.push((event as CustomEvent).detail)
+      window.addEventListener('agnes:open-session', onOpen)
       let unregister: (() => void) | undefined
       try {
         const shown: (string | undefined)[] = []
@@ -664,14 +737,16 @@ it.each(['en', 'zh-CN'] as const)(
             host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-confirm"]')?.click(),
           )
         }
-        await vi.waitFor(() => expect(assign).toHaveBeenCalled())
+        await vi.waitFor(() => expect(opened).toHaveLength(1))
+        expect(assign).not.toHaveBeenCalled()
         expect(startAgent).toHaveBeenCalledWith('ticket', expect.any(String))
         expect(host.querySelector('[data-testid="agent-launch-review"]')).toBeNull()
         const { applicationWorkDraft } = await import('@agnes/web-client')
         expect(applicationWorkDraft.read(`work-${locale}-${consent}`)?.object?.id).toBe('B-017')
-        expect(new URL(assign.mock.calls[0]![0], 'http://localhost').searchParams.get('prompt')).toBe(
-          locale === 'en' ? 'Review this batch.' : '请复核此批次。',
-        )
+        expect(opened[0]).toEqual({
+          sessionId: `work-${locale}-${consent}`,
+          prompt: locale === 'en' ? 'Review this batch.' : '请复核此批次。',
+        })
       } finally {
         await act(async () => root.unmount())
         unregister?.()
@@ -679,6 +754,7 @@ it.each(['en', 'zh-CN'] as const)(
         host.remove()
         localized.dispose()
         assign.mockRestore()
+        window.removeEventListener('agnes:open-session', onOpen)
       }
     }
   },

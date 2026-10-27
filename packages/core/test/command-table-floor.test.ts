@@ -1,7 +1,7 @@
 import { defaultToolPolicy, type ToolPolicy, type ToolPolicyInput } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { sessionCommandFloor, withCommandFloor } from '../src/command-table/floor.js'
-import type { PolicyRule } from '../src/command-table/normalize.js'
+import { normalizeArgv, type PolicyRule } from '../src/command-table/normalize.js'
 
 const input = (over: Partial<ToolPolicyInput> = {}): ToolPolicyInput => ({
   sessionKey: 's',
@@ -26,8 +26,20 @@ const EDIT_ALLOW: PolicyRule = { tool: 'edit|write', argv: '/work/proj/(?:[^/]+/
 const signal = new AbortController().signal
 /** What the official tools that run a command declare as `ToolMeta.commandArg`. */
 const commandArgOf = (tool: string) => ({ shell: 'command', pty_send: 'text', run_code: 'code' })[tool]
-const decide = (rules: PolicyRule[], over: Partial<ToolPolicyInput> = {}, base = defaultToolPolicy) =>
-  withCommandFloor(base, rules, commandArgOf).decide(input(over), signal)
+/** What the official tools that name a path declare as `ToolMeta.paths[].nonWorkspaceSchemes`. */
+const NON_WORKSPACE_SCHEMES: Record<string, readonly string[]> = {
+  read: ['artifact', 'session-file', 'session-image'],
+  ls: ['artifact'],
+  grep: ['artifact'],
+  find: ['artifact'],
+}
+const nonWorkspaceSchemesOf = (tool: string) => NON_WORKSPACE_SCHEMES[tool]
+const decide = (
+  rules: PolicyRule[],
+  over: Partial<ToolPolicyInput> = {},
+  base = defaultToolPolicy,
+  schemes = nonWorkspaceSchemesOf,
+) => withCommandFloor(base, rules, commandArgOf, undefined, schemes).decide(input(over), signal)
 
 describe('command floor', () => {
   it('lets an allow rule answer a call the selected policy would ask about', async () => {
@@ -183,6 +195,95 @@ describe('command floor', () => {
     // A preset view rebuilt with the same rules is not a policy change; a different table is.
     expect(floor(defaultToolPolicy, [{ ...EDIT_ALLOW }])).toBe(floored)
     expect(floor(defaultToolPolicy, [{ ...EDIT_ALLOW, action: 'deny' }])).not.toBe(floored)
+  })
+})
+
+describe('non-workspace URI identity', () => {
+  // The bug this covers: a Windows workspace made every `session-file://` read fail its identity, so
+  // the floor refused an ordinary attachment read with "blocked by the command policy".
+  const root = 'C:\\work\\repo'
+  const READ_POLICY: ToolPolicyInput['policy'] = {
+    isReadOnly: true,
+    isDestructive: false,
+    replay: 'safe',
+    requiresApproval: 'never',
+    approvalScopes: [],
+  }
+  const read = (path: string): Partial<ToolPolicyInput> => ({
+    workspaceRoot: root,
+    cwd: root,
+    call: { id: 't', name: 'read', args: { path } },
+    policy: READ_POLICY,
+  })
+  const ask: ToolPolicy = { id: 'ask', version: '1', decide: () => ({ effect: 'ask', reason: 'review' }) }
+  // Let no decision come from the policy under test: only the table and the identity may answer.
+  const ALLOW_READ: PolicyRule = { tool: 'read', argv: '.*', action: 'allow' }
+
+  it('admits a declared non-workspace scheme instead of refusing its identity', async () => {
+    for (const path of [
+      'session-file://6/1',
+      'session-image://list',
+      `artifact://${'a'.repeat(64)}`,
+      // The locator the output guard writes for text it cut out of a result.
+      `artifact://${'a'.repeat(64)}?size=123`,
+    ])
+      expect((await decide([ALLOW_READ], read(path))).effect, path).toBe('allow')
+  })
+
+  it('matches a rule against one canonical spelling rather than the spelling the model used', async () => {
+    expect((await decide([], read('SESSION-FILE://06/01'), ask)).effect).toBe('ask')
+    const exact: PolicyRule[] = [{ tool: 'read', argv: 'session-file://6/1', action: 'allow' }]
+    expect((await decide(exact, read('SESSION-FILE://06/01'), ask)).effect).toBe('allow')
+  })
+
+  it.each([
+    'session-file://../../x',
+    'session-file://6/1/2',
+    'session-file://LIST',
+    'artifact://short',
+    `artifact://${'a'.repeat(64)}?size=abc`,
+    `artifact://${'a'.repeat(64)}?size=`,
+    `artifact://${'a'.repeat(64)}?size=1&mode=2`,
+    'private://x',
+    'D:/other/file',
+    'file:stream',
+    '\\\\other\\share\\file',
+    '../outside',
+  ])('still refuses %s on a Windows workspace', async (path) => {
+    expect((await decide([ALLOW_READ], read(path))).effect).toBe('deny')
+  })
+
+  it('only admits a scheme the tool itself declared', async () => {
+    const undeclared = await decide(
+      [ALLOW_READ],
+      read('session-file://6/1'),
+      defaultToolPolicy,
+      () => undefined,
+    )
+    expect(undeclared.effect).toBe('deny')
+  })
+
+  it('gives one URI one identity across scheme case, digit padding and digest case', () => {
+    const schemes = ['artifact', 'session-file', 'session-image']
+    const id = (path: string, declared = schemes) =>
+      normalizeArgv('read', { path }, root, undefined, undefined, declared)
+    expect(id('SESSION-FILE://06/01')).toBe('session-file://6/1')
+    expect(id('session-file://6/1')).toBe(id('session-file://06/01'))
+    expect(id('session-image://list')).toBe('session-image://list')
+    expect(id(`artifact://${'B'.repeat(64)}`)).toBe(`artifact://${'b'.repeat(64)}`)
+    expect(id(`artifact://${'B'.repeat(64)}?size=0012`)).toBe(`artifact://${'b'.repeat(64)}?size=12`)
+    // Size is part of the reference: the digest alone is not the locator the guard wrote.
+    expect(id(`artifact://${'b'.repeat(64)}`)).not.toBe(id(`artifact://${'b'.repeat(64)}?size=12`))
+    // Nothing else may be folded into an identity: the declaration widens which spellings are
+    // identifiable, never which spellings are admitted.
+    for (const path of [
+      'session-file://6/1/2',
+      'session-file://LIST',
+      'artifact://short',
+      `artifact://${'b'.repeat(64)}?size=abc`,
+    ])
+      expect(() => id(path), path).toThrow('NotCanonical')
+    expect(() => normalizeArgv('read', { path: 'session-file://6/1' }, root)).toThrow('NotCanonical')
   })
 })
 

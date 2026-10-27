@@ -3,6 +3,7 @@ import { Button } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { attachmentErrorMessage } from './composer-errors.js'
 import {
+  CANCEL_TIMEOUT_MS,
   cancelFileUpload,
   FileUploadFailure,
   fileUploadLimits,
@@ -19,6 +20,7 @@ type Entry = UploadProgress & {
   state: 'waiting' | 'uploading' | 'verifying' | 'failed' | 'cancelled' | 'ready'
   error?: string
   preparing?: boolean
+  cancelling: boolean
 }
 export function useComposerUploads(
   prepare: (() => Promise<string>) | undefined,
@@ -31,22 +33,52 @@ export function useComposerUploads(
   const current = useRef<Entry[]>([])
   const tail = useRef<Promise<void>>(Promise.resolve())
   const alive = useRef(true)
+  const cancelling = useRef(new WeakMap<Entry, Promise<void>>())
   const publish = () => {
     if (!alive.current) return
     setEntries([...current.current])
     changed?.()
   }
-  const cancel = async (entry: Entry) => {
+  const cancel = (entry: Entry): Promise<void> => {
+    // The abort handler in `run` and the button may both ask to cancel one transfer; share the
+    // request so a single abort never sends two cleanup calls.
+    const running = cancelling.current.get(entry)
+    if (running) return running
     entry.controller.abort()
-    try {
-      if (entry.sessionId) await cancelFileUpload(entry.sessionId, entry.id, 'original')
-      entry.state = 'cancelled'
-      delete entry.error
-    } catch {
-      entry.state = 'failed'
-      entry.error = t('composer.upload.cleanupFailed')
-    }
+    entry.cancelling = true
     publish()
+    const task = (async () => {
+      try {
+        if (entry.sessionId)
+          await cancelFileUpload(
+            entry.sessionId,
+            entry.id,
+            'original',
+            AbortSignal.timeout(CANCEL_TIMEOUT_MS),
+          )
+        entry.state = 'cancelled'
+        delete entry.error
+      } catch (error) {
+        // A published upload cannot be removed again. The server has nothing left to clean up, so
+        // this is a normal ending, not an unconfirmed cleanup the user has to retry.
+        if (
+          error instanceof FileUploadFailure &&
+          (error.code === 'ATTACHMENT_DATA' || error.code === 'UPLOAD_ALREADY_PUBLISHED')
+        ) {
+          entry.state = 'cancelled'
+          delete entry.error
+        } else {
+          entry.state = 'failed'
+          entry.error = t('composer.upload.cleanupFailed')
+        }
+      } finally {
+        entry.cancelling = false
+        cancelling.current.delete(entry)
+        publish()
+      }
+    })()
+    cancelling.current.set(entry, task)
+    return task
   }
   const run = (entry: Entry, preparation?: Promise<string>) => {
     tail.current = tail.current
@@ -154,6 +186,7 @@ export function useComposerUploads(
           state: 'waiting',
           controller: new AbortController(),
           preparing: true,
+          cancelling: false,
         }
         current.current.push(entry)
         batch.push(entry)
@@ -172,13 +205,11 @@ export function useComposerUploads(
     remove(id: string) {
       const entry = current.current.find((entry) => entry.id === id)
       if (!entry) return
-      // A ready upload is already published. Dropping it removes the draft reference only.
-      if (entry.state === 'ready') {
-        current.current = current.current.filter((item) => item !== entry)
-        publish()
-        return
-      }
-      void cancel(entry)
+      // Dropping a chip is a local UI decision and never waits for the server. A ready upload is
+      // already published, so removing it only drops the draft reference.
+      current.current = current.current.filter((item) => item !== entry)
+      publish()
+      if (entry.state !== 'ready') void cancel(entry).catch(() => undefined)
     },
     chips: entries
       .filter((entry) => entry.state !== 'ready')
@@ -194,8 +225,10 @@ export function useComposerUploads(
           >
             <span title={entry.file.name}>{entry.file.name}</span>
             <small role="status" aria-live="polite" data-testid="attachment-upload-status">
-              {entry.error ?? t(`composer.upload.${entry.state}`)} · {entry.loaded.toLocaleString()} /{' '}
-              {entry.total.toLocaleString()} B · {percent}%
+              {entry.error ?? t(`composer.upload.${entry.state}`)}
+              {active
+                ? ` · ${entry.loaded.toLocaleString()} / ${entry.total.toLocaleString()} B · ${percent}%`
+                : ''}
             </small>
             {active && (
               <progress
@@ -210,6 +243,7 @@ export function useComposerUploads(
                 htmlType="button"
                 data-testid="attachment-upload-cancel"
                 aria-label={t('composer.upload.cancelName', { name: entry.file.name })}
+                disabled={entry.cancelling}
                 onClick={() => {
                   void cancel(entry)
                 }}
@@ -222,10 +256,9 @@ export function useComposerUploads(
                 htmlType="button"
                 data-testid="attachment-upload-retry"
                 onClick={() => {
-                  if (entry.controller.signal.aborted) {
-                    void cancel(entry)
-                    return
-                  }
+                  // A cancelled transfer leaves its controller aborted, and `run` refuses to start on
+                  // an aborted signal: the retry needs a live controller to actually upload again.
+                  if (entry.controller.signal.aborted) entry.controller = new AbortController()
                   entry.state = 'waiting'
                   delete entry.error
                   publish()
@@ -241,12 +274,11 @@ export function useComposerUploads(
                 data-testid="attachment-upload-dismiss"
                 aria-label={t('composer.upload.dismiss')}
                 onClick={() => {
-                  void cancel(entry).then(() => {
-                    if (entry.state === 'cancelled') {
-                      current.current = current.current.filter((item) => item !== entry)
-                      publish()
-                    }
-                  })
+                  // Remove the chip first. The server-side row self-expires when unpublished, so an
+                  // unconfirmed cleanup must never trap the user; the cancel request is best effort.
+                  current.current = current.current.filter((item) => item !== entry)
+                  publish()
+                  void cancel(entry).catch(() => undefined)
                 }}
               >
                 ×

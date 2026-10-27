@@ -2325,6 +2325,26 @@
         "$ref": "#/$defs/_agnes_v1_jobs_cancelResult"
       }
     },
+    "_agnes/v1/schedules.history": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_schedules_historyParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_schedules_historyResult"
+      }
+    },
+    "_agnes/v1/schedules.receipt": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_schedules_receiptParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_schedules_receiptResult"
+      }
+    },
     "_agnes/v1/schedules.list": {
       "kind": "request",
       "direction": "c2s",
@@ -47737,6 +47757,457 @@
     "_agnes_v1_jobs_cancelResult": {
       "$ref": "#/$defs/Dc9eabd5aa86e_Empty"
     },
+    "_agnes_v1_schedules_historyParams": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "id": {
+          "pattern": "^sched_[0-9a-f]{16}$",
+          "type": "string"
+        },
+        "before": {
+          "pattern": "^run_[0-9a-f]{32}$",
+          "type": "string"
+        },
+        "limit": {
+          "minimum": 1,
+          "maximum": 100,
+          "type": "integer"
+        },
+        "resultsOnly": {
+          "type": "boolean"
+        },
+        "unreadOnly": {
+          "type": "boolean"
+        }
+      }
+    },
+    "_agnes_v1_schedules_historyResult": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "runs": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "additionalProperties": false,
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "integer"
+              },
+              "outcome": {
+                "anyOf": [
+                  {
+                    "const": "running",
+                    "type": "string"
+                  },
+                  {
+                    "const": "waiting_approval",
+                    "type": "string"
+                  },
+                  {
+                    "const": "needs_attention",
+                    "type": "string"
+                  },
+                  {
+                    "const": "ran",
+                    "type": "string"
+                  },
+                  {
+                    "const": "delivered",
+                    "type": "string"
+                  },
+                  {
+                    "const": "failed",
+                    "type": "string"
+                  }
+                ]
+              },
+              "needsAttention": {
+                "type": "boolean"
+              },
+              "sessionKey": {
+                "minLength": 1,
+                "maxLength": 256,
+                "type": "string"
+              },
+              "endedAt": {
+                "type": "integer"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "reason": {
+                "maxLength": 64,
+                "type": "string"
+              },
+              "detail": {
+                "maxLength": 500,
+                "type": "string"
+              },
+              "id": {
+                "pattern": "^run_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              "scheduleId": {
+                "pattern": "^sched_[0-9a-f]{16}$",
+                "type": "string"
+              },
+              "title": {
+                "minLength": 1,
+                "maxLength": 120,
+                "type": "string"
+              },
+              "read": {
+                "type": "boolean"
+              },
+              "summary": {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              "snapshot": {
+                "additionalProperties": false,
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "minLength": 1,
+                    "maxLength": 16000,
+                    "type": "string"
+                  },
+                  "selector": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "after_seconds": {
+                            "minimum": 1,
+                            "maximum": 31622400,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "after_seconds"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "at": {
+                            "minLength": 1,
+                            "maxLength": 64,
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "at"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "every_seconds": {
+                            "minimum": 60,
+                            "maximum": 31622400,
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "every_seconds"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "daily": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "time": {
+                                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                                "type": "string"
+                              },
+                              "timeZone": {
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "time",
+                              "timeZone"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "daily"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "weekly": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "time": {
+                                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                                "type": "string"
+                              },
+                              "timeZone": {
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "type": "string"
+                              },
+                              "weekdays": {
+                                "minItems": 1,
+                                "maxItems": 7,
+                                "type": "array",
+                                "items": {
+                                  "minimum": 0,
+                                  "maximum": 7,
+                                  "type": "integer"
+                                }
+                              }
+                            },
+                            "required": [
+                              "time",
+                              "timeZone",
+                              "weekdays"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "weekly"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "cron": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "expr": {
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "type": "string"
+                              },
+                              "timeZone": {
+                                "minLength": 1,
+                                "maxLength": 128,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "expr"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "cron"
+                        ]
+                      }
+                    ]
+                  },
+                  "target": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "const": "session",
+                            "type": "string"
+                          },
+                          "sessionKey": {
+                            "minLength": 1,
+                            "maxLength": 256,
+                            "type": "string"
+                          },
+                          "unattendedApproval": {
+                            "anyOf": [
+                              {
+                                "const": "notify",
+                                "type": "string"
+                              },
+                              {
+                                "const": "refuse",
+                                "type": "string"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "sessionKey"
+                        ]
+                      },
+                      {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "const": "new-session",
+                            "type": "string"
+                          },
+                          "unattendedApproval": {
+                            "anyOf": [
+                              {
+                                "const": "notify",
+                                "type": "string"
+                              },
+                              {
+                                "const": "refuse",
+                                "type": "string"
+                              }
+                            ]
+                          },
+                          "cwd": {
+                            "minLength": 1,
+                            "maxLength": 4096,
+                            "type": "string"
+                          },
+                          "loop": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                                "type": "string"
+                              },
+                              "version": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "version"
+                            ]
+                          },
+                          "bundles": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "type": "string"
+                            }
+                          },
+                          "preset": {
+                            "minLength": 1,
+                            "maxLength": 128,
+                            "type": "string"
+                          },
+                          "model": {
+                            "additionalProperties": false,
+                            "type": "object",
+                            "properties": {
+                              "route": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "type": "string"
+                              },
+                              "model": {
+                                "minLength": 1,
+                                "maxLength": 256,
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "route",
+                              "model"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "cwd"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title",
+                  "prompt",
+                  "selector",
+                  "target"
+                ]
+              }
+            },
+            "required": [
+              "at",
+              "outcome",
+              "id",
+              "scheduleId",
+              "title",
+              "read"
+            ]
+          }
+        },
+        "nextCursor": {
+          "pattern": "^run_[0-9a-f]{32}$",
+          "type": "string"
+        },
+        "cursorInvalid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "runs"
+      ]
+    },
+    "_agnes_v1_schedules_receiptParams": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "id": {
+          "pattern": "^sched_[0-9a-f]{16}$",
+          "type": "string"
+        },
+        "runId": {
+          "pattern": "^run_[0-9a-f]{32}$",
+          "type": "string"
+        },
+        "read": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "runId",
+        "read"
+      ]
+    },
+    "_agnes_v1_schedules_receiptResult": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "updated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "updated"
+      ]
+    },
     "_agnes_v1_schedules_listParams": {
       "additionalProperties": false,
       "type": "object",
@@ -47760,6 +48231,55 @@
         },
         "includeArchived": {
           "type": "boolean"
+        },
+        "search": {
+          "maxLength": 256,
+          "type": "string"
+        },
+        "workspace": {
+          "minLength": 1,
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "targetKind": {
+          "anyOf": [
+            {
+              "const": "session",
+              "type": "string"
+            },
+            {
+              "const": "new-session",
+              "type": "string"
+            }
+          ]
+        },
+        "status": {
+          "anyOf": [
+            {
+              "const": "active",
+              "type": "string"
+            },
+            {
+              "const": "paused",
+              "type": "string"
+            },
+            {
+              "const": "ended",
+              "type": "string"
+            },
+            {
+              "const": "archived",
+              "type": "string"
+            },
+            {
+              "const": "failed",
+              "type": "string"
+            },
+            {
+              "const": "needs_attention",
+              "type": "string"
+            }
+          ]
         }
       },
       "required": [
@@ -48173,6 +48693,29 @@
               "runs"
             ]
           }
+        },
+        "activity": {
+          "additionalProperties": false,
+          "type": "object",
+          "properties": {
+            "nextRunAt": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hasOpenRuns": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "nextRunAt",
+            "hasOpenRuns"
+          ]
         }
       },
       "required": [

@@ -24,6 +24,8 @@ type Launch = {
   name: string
   pageId: string
   phase: 'preparing' | 'review' | 'starting' | 'failed'
+  /** Re-reading the original receipt: the failure panel stays up with a busy action. */
+  checking?: boolean
   attempt?: Attempt
   error?: string
   /** The daemon refused the start: no session exists, so retrying cannot create a duplicate. */
@@ -95,18 +97,26 @@ export function useAgentLaunch(data: BusinessAgentsData) {
   }
   const start = async (pending: Launch, recover = false) => {
     const api = data.api
-    if (!api || !pending.attempt || current.current !== pending || pending.phase === 'starting') return
+    if (
+      !api ||
+      !pending.attempt ||
+      current.current !== pending ||
+      pending.phase === 'starting' ||
+      pending.checking
+    )
+      return
     if (pending.work && resolveApplicationWork(pending.work, locale)?.agent !== pending.ref) {
       set({ ...pending, phase: 'failed', error: t('reason.changed') })
       return
     }
     const attempt = pending.attempt
-    const running: Launch = { ...pending, phase: 'starting' }
+    const running: Launch = recover ? { ...pending, checking: true } : { ...pending, phase: 'starting' }
     set(running)
     const complete = (result: { sessionId: string; draft?: BundleLaunch['prompt'] }) => {
       if (current.current !== running) return
       set(undefined)
-      nav.back()
+      // `finish` closes the review page at once; `back` is a late popstate that would reopen the page behind the session.
+      nav.finish()
       rememberSessionAgent(result.sessionId, pending.ref, attempt.plan.launch.title)
       const work = pending.work && resolveApplicationWork(pending.work, locale)
       if (work && work.agent === pending.ref)
@@ -215,10 +225,14 @@ export function useAgentLaunch(data: BusinessAgentsData) {
             {launch.phase === 'failed' && (
               <>
                 <Banner tone="error">{launch.error}</Banner>
-                <Button onClick={() => homeNavigation.open('plugins')}>{t('plugins')}</Button>
+                <Button disabled={!!launch.checking} onClick={() => homeNavigation.open('plugins')}>
+                  {t('plugins')}
+                </Button>
                 {uncertain && <p>{t('launch.uncertain')}</p>}
                 <Button
                   data-testid="agent-launch-retry"
+                  loading={!!launch.checking}
+                  disabled={!!launch.checking}
                   onClick={() => {
                     if (uncertain) void start(launch, true)
                     else
@@ -237,6 +251,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
                 {uncertain && (
                   <Button
                     data-testid="agent-launch-new-intent"
+                    disabled={!!launch.checking}
                     onClick={() => {
                       void prepare(
                         {
@@ -254,7 +269,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
               </>
             )}
             {launch.phase !== 'review' && (
-              <Button data-testid="agent-launch-close" onClick={close}>
+              <Button data-testid="agent-launch-close" disabled={!!launch.checking} onClick={close}>
                 {t(launch.phase === 'preparing' ? 'dialog.cancel' : 'dialog.close')}
               </Button>
             )}

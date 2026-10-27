@@ -977,6 +977,9 @@ export class SessionImpl {
   private readonly commandFloor = sessionCommandFloor(
     (tool) => this.turn?.snapshot.byName.get(tool)?.meta.commandArg,
     (input, signal) => this.d.commandPathScope?.(input, signal) ?? Promise.resolve(undefined),
+    // The floor normalizes the `path` argument, so only that declaration can name a reference
+    // outside the workspace (`ToolMeta.paths[].nonWorkspaceSchemes`).
+    (t) => this.turn?.snapshot.byName.get(t)?.meta.paths?.find((p) => p.arg === 'path')?.nonWorkspaceSchemes,
   )
   /** The selected policy inside this session's effective command and captured role floors. */
   toolPolicy(selection?: string) {

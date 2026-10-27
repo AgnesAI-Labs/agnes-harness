@@ -50,7 +50,11 @@ const NATIVE_INPUT_STYLES = {
     overflowY: 'auto',
   },
 } as const
-const SENDER_CLASSES = { content: 'composer-content', footer: 'composer-footer' }
+const SENDER_CLASSES = {
+  content: 'composer-content',
+  footer: 'composer-footer',
+  prefix: 'composer-hint-slot',
+}
 
 /**
  * The writing card and the quiet row under it. The card holds the draft, its attachments and the
@@ -385,19 +389,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           disabled={imageDisabled}
         />
         {slots?.overlay}
-        {example.visible && (
-          <div className="composer-example-hint" aria-hidden="true">
-            <span className="composer-example-text">
-              {example.text}
-              <span className="composer-example-caret" />
-            </span>
-            {example.adoptText && (
-              <span className="composer-example-adopt">
-                <kbd>{t('composer.example.tab')}</kbd> {t('composer.example.adopt')}
-              </span>
-            )}
-          </div>
-        )}
         <label className="visually-hidden" htmlFor="prompt">
           {t('composer.input.label')}
         </label>
@@ -405,6 +396,22 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           <Sender
             ref={sender}
             suffix={false}
+            // The ghost shares the input's content box, so it follows whatever sits in the header above.
+            prefix={
+              example.visible ? (
+                <div className="composer-example-hint" aria-hidden="true">
+                  <span className="composer-example-text">
+                    {example.text}
+                    <span className="composer-example-caret" />
+                  </span>
+                  {example.adoptText && (
+                    <span className="composer-example-adopt">
+                      <kbd>{t('composer.example.tab')}</kbd> {t('composer.example.adopt')}
+                    </span>
+                  )}
+                </div>
+              ) : undefined
+            }
             classNames={SENDER_CLASSES}
             inputAttributes={INPUT_ATTRIBUTES}
             value={draft}

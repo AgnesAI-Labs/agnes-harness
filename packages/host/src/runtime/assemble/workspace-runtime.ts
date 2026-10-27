@@ -45,6 +45,23 @@ import { trustedHookCommands } from './trusted-hooks.js'
 
 type WorkspacePlans = Map<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>
 
+/** Reviewed `sandbox.loopback_serve` needs the local macOS Seatbelt backend. */
+export const loopbackServeSupported = (os: string, remote: boolean): boolean => os === 'darwin' && !remote
+
+/**
+ * Where the loopback listener cannot be provided, the session still opens and only that capability is
+ * dropped: the policy falls back to the same closed L1 network it would have without the grant. Nothing
+ * is added, `on_unavailable` is untouched, and a command that tries to serve gets no listener fd.
+ */
+export function degradeLoopbackServe<T extends { loopbackServe?: boolean }>(
+  sandbox: T,
+  supported: boolean,
+): T {
+  if (!sandbox.loopbackServe || supported) return sandbox
+  const { loopbackServe: _dropped, ...rest } = sandbox
+  return rest as T
+}
+
 /**
  * Decides, per workspace, which sandbox posture a session gets: remote, an external provider's
  * enforcement, or the sandbox package's own probe of the local backend. The probe is revoked with the assembly.
@@ -67,7 +84,10 @@ function createReadinessManager(
       throw new HostError('E_SANDBOX_WORKSPACE', 'workspace readiness has no compiled policy', {
         detail: { reason: 'workspace-policy-missing' },
       })
-    if (plan.staticConfig.loopbackServe && (adapters.transport || adapters.platform.os !== 'darwin'))
+    if (
+      plan.staticConfig.loopbackServe &&
+      !loopbackServeSupported(adapters.platform.os, !!adapters.transport)
+    )
       throw new HostError(
         'E_SANDBOX_WORKSPACE',
         'loopback serving is available only with the local macOS L1 Seatbelt provider',
@@ -228,9 +248,13 @@ function workspaceSandboxPolicy(
   preset: PresetDoc,
 ) {
   const { adapters } = proc
-  const requestedSandbox = normalizeSandboxStaticConfig(preset)
+  const localProvider = sandboxProviderIdFrom(ctx.profile) === RELEASE_DEFAULTS.sandboxProvider
+  const requestedSandbox = degradeLoopbackServe(
+    normalizeSandboxStaticConfig(preset),
+    localProvider && loopbackServeSupported(adapters.platform.os, !!adapters.transport),
+  )
   const implementation =
-    !adapters.transport && sandboxProviderIdFrom(ctx.profile) === RELEASE_DEFAULTS.sandboxProvider
+    !adapters.transport && localProvider
       ? localSandboxImplementation(ctx.profile, pkgs.modules, adapters.platform.os)
       : 'unknown'
   const unconfined =

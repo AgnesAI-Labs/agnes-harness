@@ -315,6 +315,8 @@
 - `_agnes/v1/jobs.poll`
 - `_agnes/v1/jobs.cancel`
 - `_agnes/v1/schedules.list`
+- `_agnes/v1/schedules.receipt`
 - `_agnes/v1/schedules.upsert`
 - `_agnes/v1/schedules.archive`
 - `_agnes/v1/schedules.control`
+- `_agnes/v1/schedules.history`

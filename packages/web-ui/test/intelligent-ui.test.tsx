@@ -118,9 +118,7 @@ describe('preset Intelligent UI catalog', () => {
         expect(host.querySelector('[data-testid="ui-table-rows"] tbody td[data-numeric]')?.textContent).toBe(
           '250',
         )
-        expect(host.querySelector('[data-testid="ui-table-rows"] tbody th span')?.getAttribute('title')).toBe(
-          'txn-1',
-        )
+        expect(host.querySelector('[data-testid="ui-table-rows"] tbody th span')?.textContent).toBe('txn-1')
         // The source table is immediate; the plotting engine arrives through its own chunk.
         expect(host.querySelector('[data-testid="ui-chart-chart"] table')).not.toBeNull()
         await vi.waitFor(async () => {

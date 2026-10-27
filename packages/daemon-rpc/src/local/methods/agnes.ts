@@ -572,6 +572,8 @@ const FAMILIES: Array<Family & { when?: (cx: AgnesContext) => boolean }> = [
       '_agnes/v1/schedules.upsert',
       '_agnes/v1/schedules.archive',
       '_agnes/v1/schedules.control',
+      '_agnes/v1/schedules.history',
+      '_agnes/v1/schedules.receipt',
     ],
     guidance: 'session reminders; a global list is local-only',
     when: (x) => !!x.schedules,
