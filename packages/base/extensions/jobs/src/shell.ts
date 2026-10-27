@@ -6,7 +6,10 @@ import {
   deadlineStop,
   deadlineWait,
   deadlineYield,
+  FOREGROUND_WAIT_MAX_MS,
+  jobToolsHint,
   shellGuidance,
+  signalNote,
   timeoutGuidance,
 } from '../../tools-core/src/shell-guidance.js'
 import type { ShellJobs } from './registry.js'
@@ -42,12 +45,16 @@ export async function runShellJob(
         : (ctx.defaultTimeoutMs ?? 120000),
       Math.max(1, ctx.timeoutMs - 25),
     )
+    // A wait whose process continues also ends at a fixed bound, whatever the turn has left; one that
+    // kills its process at the timeout keeps the time it asked for.
     const continues = args.timeoutToBackground !== false
+    const boundedMs = continues ? Math.min(ownWaitMs, FOREGROUND_WAIT_MAX_MS) : ownWaitMs
     const { waitMs, capped } = args.background
       ? { waitMs: ownWaitMs, capped: false }
-      : deadlineWait(ctx, ownWaitMs, { continues })
-    const job = args.background ? started : await jobs.wait(ctx, id, waitMs)
-    if (job.status === 'running') {
+      : deadlineWait(ctx, boundedMs, { continues })
+    const job = args.background ? started : await jobs.wait(ctx, id, waitMs, { foreground: true })
+    const hint = jobToolsHint(ctx, id)
+    if (job.status === 'running' && job.foregroundCode === undefined) {
       if (!args.background && args.timeoutToBackground === false) {
         await jobs.kill(ctx, id)
         return {
@@ -68,7 +75,7 @@ export async function runShellJob(
         content: [
           {
             type: 'text',
-            text: `${notes.length ? notes.join('\n') + '\n' : ''}background job ${id} started${args.background ? '' : capped ? ` (foreground wait ${deadlineYield(ctx, waitMs, ownWaitMs)}; the same process continues)` : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; use job_output, job_list or job_kill${capped ? `. ${DEADLINE_ADVICE}` : ''}`,
+            text: `${notes.length ? notes.join('\n') + '\n' : ''}background job ${id} started${args.background ? '' : capped ? ` (foreground wait ${deadlineYield(ctx, waitMs, ownWaitMs)}; the same process continues)` : boundedMs < ownWaitMs ? ` (foreground wait stopped at ${waitMs}ms, the most one call waits (requested ${ownWaitMs}ms); the same process continues)` : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; ${hint}${capped ? `. ${DEADLINE_ADVICE}` : ''}`,
           },
         ],
         details: {
@@ -78,6 +85,13 @@ export async function runShellJob(
         },
       }
     }
+    // The command has ended. Its code is the job's, or its own while what it backgrounded still runs.
+    const code = job.status === 'running' ? (job.foregroundCode as number) : job.code
+    const ended = job.status === 'failed' && job.signal ? `\n${signalNote(args.command, job.signal)}` : ''
+    const kept =
+      job.status === 'running'
+        ? `\n[processes this command started in the background (with & or nohup) keep running as background job ${id}; ${hint}]`
+        : ''
     return {
       structured: { jobId: id, status: job.status },
       ...(await guardedResult(
@@ -86,13 +100,13 @@ export async function runShellJob(
           .map((note) => `${note}\n`)
           .join(
             '',
-          )}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}${job.code === 0 ? '' : '\nCommand failed; inspect job_output and current state, correct the command/arguments before retrying.'}\n[exit ${job.code}]${job.truncated ? ' [capture limit reached]' : ''}`,
+          )}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}${ended}${kept}${code === 0 ? '' : '\nCommand failed; inspect job_output and current state, correct the command/arguments before retrying.'}\n[exit ${code}]${job.truncated ? ' [capture limit reached]' : ''}`,
       )),
-      ...(job.code === 0 ? {} : { isError: true }),
+      ...(code === 0 ? {} : { isError: true }),
       details: {
         jobId: id,
         status: job.status,
-        code: job.code,
+        code,
         ...(job.sessionId ? { sessionId: job.sessionId } : {}),
       },
     }

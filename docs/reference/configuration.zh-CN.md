@@ -80,7 +80,7 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 预设的 `tools.output_max_bytes`（整数，4096 到 1048576，默认 32768）决定模型最多能看到一条工具结果的多少，超过就由输出守卫截断：保留预算的前一半和最后八分之一，完整内容另存，被截断的结果会给出 `read` 与 `grep` 都认的 `artifact://…` 路径，用来读回其余部分；`read` 的分页也按同一上限。值越大，模型每条结果看到的越多，上下文和会话账本里留到压缩前的内容也越多，调大要慎重；调小最低到 4096。已经打开的会话沿用开始时解析的值。
 
-预设的 `tools.timeout_ms`（整数，至少 1000，默认 120000）约束普通工具调用，`tools.timeouts` 按工具名覆盖；随包 base 预设允许 `shell` 最长 600000 毫秒。Shell 的 `timeoutMs` 在已准入期限内选择前台等待时长，默认超时后转为后台作业；`background: true` 立即后台运行，`timeoutToBackground: false` 则请求终止。通过 `job_output` 核对返回的作业身份与实际状态；工具返回不证明后台进程已结束。取消与会话关闭会终止所属进程。已有会话保留解析后的预设，见[默认工具](default-tools.zh-CN.md)。
+预设的 `tools.timeout_ms`（整数，至少 1000，默认 120000）约束普通工具调用，`tools.timeouts` 按工具名覆盖；随包 base 预设允许 `shell` 最长 600000 毫秒。Shell 的 `timeoutMs` 在已准入期限内选择前台等待时长，前台等待最长 2 分钟，默认超时后转为后台作业；`background: true` 立即后台运行，`timeoutToBackground: false` 则请求终止。通过 `job_output` 核对返回的作业身份与实际状态；工具返回不证明后台进程已结束。取消与会话关闭会终止所属进程。已有会话保留解析后的预设，见[默认工具](default-tools.zh-CN.md)。
 
 使用 Agnes 中国官方网关时，若请求未覆盖额度，adapter 会明确将内置模型的目录额度 65536 作为 `max_tokens` 发送。[3.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash)、[2.5 Pro](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro)和 [Pro Alpha](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro-alpha) 的官方规格为 65536；[Pro Beta](https://agnes-ai.com/en/docs/agnes-25-pro-beta) 按 Pro 同系额度配置为 65536，尚未单独验证网关容量；[2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash) 和 [2.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash) 的官方说明使用约数 65.5K，此处按 65536 配置。已废弃模型保留注册以兼容现有配置，其可用性取决于网关。请求中明确设置的额度仍优先。仅修改目录元数据不会设置底层 OpenAI 兼容流请求的额度。大文件仍应通过多次小型 write/edit 调用分段构建；默认额度不能保证任意大的单次调用都能完成。
 
