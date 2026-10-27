@@ -31,6 +31,7 @@ import {
   type SideProviderId,
   type VoiceError,
   voiceModels,
+  voiceRows,
 } from './side-models/model.js'
 import { SIDE_MODELS_NAMESPACE, sideModelsCatalog } from './side-models-locale.js'
 
@@ -326,9 +327,8 @@ function SideModels({
 
   const probe = async () => {
     if (!draft || busy) return
-    const voice = draft.providerId === 'openai-audio' ? voiceModels(draft) : undefined
-    const model =
-      voice && 'model' in voice ? voice.model : draft.models.find((row) => MODEL_ID.test(row.id))?.id
+    const rows = draft.providerId === 'openai-audio' ? voiceRows(draft.models) : draft.models
+    const model = rows.find((row) => MODEL_ID.test(row.id))?.id
     if (!model) {
       setTestState('side.invalid')
       return
@@ -452,6 +452,7 @@ function SideModels({
       onPreset={(preset) => patch(presetFields(preset))}
       onModels={(update) => {
         setStatus('')
+        setFieldError((current) => (current?.startsWith('side.voice.') ? undefined : current))
         setDraft((current) => (current ? { ...current, models: update(current.models) } : current))
       }}
       onCreateCredential={createCredential}

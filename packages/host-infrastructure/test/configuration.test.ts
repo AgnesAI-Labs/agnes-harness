@@ -7,9 +7,10 @@ import { getApiKeyProvider } from '@agnes/ai'
 import { mergeRoutes } from '@agnes/host-common/profile/resolve'
 import * as systemNode from '@agnes/system-node'
 import { createPrivateDirectorySync } from '@agnes/system-node'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCredentialStore } from '../src/adapters/credential-store.js'
 import { createConfigurationService } from '../src/configuration.js'
+import { probePayloadRoute } from '../src/configuration-payload-only.js'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const fs = await importOriginal<typeof import('node:fs/promises')>()
@@ -303,6 +304,14 @@ it('connects an OpenAI-compatible endpoint with its own model ids, with or witho
       service.save({ ...compatible, model, models: [{ id: model, name: model }] }),
     ).rejects.toMatchObject({ code: 'CONFIG_CHAT_MODEL_REQUIRED' })
   }
+  // The voice role belongs to voice accounts only.
+  await expect(
+    service.save({
+      ...compatible,
+      model: 'my-model',
+      models: [{ id: 'my-model', name: 'my-model', audioRole: 'speech' }],
+    }),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
   // The OpenAI provider on the same address keeps its reviewed-catalogue rule.
   expect(
     await service.test({ providerId: 'openai', baseUrl: server.baseUrl, apiKey: 'sk-test-value' }),
@@ -753,6 +762,77 @@ it('tests an openai-audio endpoint with GET /models and refuses a rejected key',
       verified: false,
     },
   )
+})
+
+it('refuses an audioRole outside the voice adapter and two models with the same role', async () => {
+  const root = await home()
+  const ref = await genericCredential(root)
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await expect(
+    service.save({
+      ...jevAccount(ref),
+      models: [{ ...JEV_MODEL, audioRole: 'speech' }],
+      expectedRevision: 0,
+    } as never),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  await expect(
+    service.save({ ...voiceAccount(ref, 'transcribe'), expectedRevision: 0 } as never),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  expect((await service.get()).revision).toBe(0)
+})
+
+describe('the openai-audio probe deadline', () => {
+  afterEach(() => vi.useRealTimers())
+  const args = (request: typeof fetch, signal = new AbortController().signal) => ({
+    baseUrl: 'https://api.example.com/v1',
+    model: 'm',
+    credential: 'key',
+    request,
+    signal,
+  })
+  /** A fetch that never answers and only ends when its signal aborts, as a stalled socket does. */
+  const stalled = () => {
+    const seen: AbortSignal[] = []
+    const request = vi.fn<typeof fetch>(
+      (_input, init) =>
+        new Promise((_, reject) => {
+          const signal = init?.signal as AbortSignal
+          seen.push(signal)
+          signal.addEventListener('abort', () => reject(new Error('aborted')))
+        }),
+    )
+    return { request, seen }
+  }
+
+  it('gives up after 30 seconds and aborts the request, whatever the caller signal does', async () => {
+    vi.useFakeTimers()
+    const { request, seen } = stalled()
+    const outcome = probePayloadRoute('openai-audio', args(request))
+    await vi.advanceTimersByTimeAsync(29_999)
+    expect(seen[0]?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(outcome).resolves.toBe('failed')
+    expect(seen[0]?.aborted).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('stops with the caller signal and clears its timer after an answer', async () => {
+    vi.useFakeTimers()
+    const caller = new AbortController()
+    const { request, seen } = stalled()
+    const outcome = probePayloadRoute('openai-audio', args(request, caller.signal))
+    caller.abort()
+    await expect(outcome).resolves.toBe('failed')
+    expect(seen[0]?.aborted).toBe(true)
+    const ok = vi.fn<typeof fetch>(async () => new Response('{}', { status: 200 }))
+    await expect(probePayloadRoute('openai-audio', args(ok))).resolves.toBe('ok')
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('rejects an unknown api instead of throwing synchronously', async () => {
+    const pending = probePayloadRoute('nope', args(vi.fn<typeof fetch>()))
+    await expect(pending).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  })
 })
 
 it('refuses a payload-only account without a usable generic credential', async () => {

@@ -29,7 +29,7 @@ export const providersCatalog: LocaleCatalog = {
     'providerName.google-vertex': 'Google Vertex AI',
     'providerName.mistral-conversations': 'Mistral',
     'providerName.openai': 'OpenAI',
-    'providerName.openai-audio': 'Voice (speech to text and speech)',
+    'providerName.openai-audio': 'Voice (transcription and speech)',
     'providerName.openai-codex-responses': 'OpenAI Codex',
     'providerName.openai-completions': 'OpenAI Chat Completions',
     'providerName.openai-responses': 'OpenAI Responses',

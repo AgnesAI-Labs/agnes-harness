@@ -767,6 +767,7 @@ it('keeps the credential and clears messages when the adapter or preset changes'
   const { host } = await openVoiceEditor(client([chatAccount]))
   await choose(host, 'side-credential', GENERIC)
   await click(host, 'side-test')
+  expect(query(host, 'side-test-status')?.textContent).toBe('Endpoint reachable')
   await choose(host, 'side-preset', 'openai')
   expect(query(host, 'side-test-status')).toBeNull()
   expect(host.querySelector<HTMLSelectElement>('[data-testid="side-credential"]')?.value).toBe(GENERIC)
@@ -851,6 +852,9 @@ it('refuses a voice entry with no model or the same model twice', async () => {
   await click(host, 'side-save')
   expect(api.save).not.toHaveBeenCalled()
   expect(query(host, 'side-voice-error')?.textContent).toContain('different')
+  // The message goes away as soon as a model field is edited.
+  await type(host, 'side-voice-model-speech', 'other-model')
+  expect(query(host, 'side-voice-error')).toBeNull()
 })
 
 it('opens a saved voice entry with each model in its field', async () => {
@@ -897,4 +901,19 @@ it('tests a voice entry through its own adapter', async () => {
     baseUrl: 'https://api.siliconflow.cn/v1',
     model: SENSE,
   })
+})
+
+it('tests a voice entry from its own rows even when the models would not save', async () => {
+  const api = client([chatAccount])
+  const { host } = await openVoiceEditor(api)
+  await type(host, 'side-voice-model-transcribe', 'same-model')
+  await type(host, 'side-voice-model-speech', 'same-model')
+  await click(host, 'side-test')
+  expect(api.test).toHaveBeenCalledWith(
+    expect.objectContaining({ providerId: 'openai-audio', model: 'same-model' }),
+  )
+  await type(host, 'side-voice-model-transcribe', '')
+  await type(host, 'side-voice-price-speech', 'abc')
+  await click(host, 'side-test')
+  expect(api.test).toHaveBeenLastCalledWith(expect.objectContaining({ model: 'same-model' }))
 })
