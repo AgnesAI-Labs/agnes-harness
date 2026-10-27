@@ -37,6 +37,9 @@ homeNavigation.subscribe(() => {
 })
 
 export const workLaunch = {
+  /** The launch is still out of sight: nothing else may present the agents page as selected. */
+  quiet: (): boolean => state === 'quiet',
+  subscribe,
   /** The launch needs the page: a decision, a failure, or nothing to launch. */
   surface(): void {
     if (state === 'quiet') set('surfaced')

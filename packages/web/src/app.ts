@@ -87,7 +87,7 @@ import {
 import type { ModelPickerOption } from './model-picker.js'
 import { businessAgentSuggestions } from './pages/business-agents.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
-import { activeHomeEntry, bindHomeRouting, mountHomePages } from './pages/host.js'
+import { activeHomeEntry, bindHomeRouting, mountHomePages, watchActiveHomeEntry } from './pages/host.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { coalesceBurst, createRefreshCoordinator } from './refresh-coordinator.js'
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
@@ -1313,7 +1313,7 @@ function updateSidebar(): void {
 }
 
 // Opening or leaving a home page, or losing its entry, moves the sidebar's selection.
-const stopHomeSelection = [homeNavigation.subscribe(updateSidebar), homeEntries.subscribe(updateSidebar)]
+const stopHomeSelection = [watchActiveHomeEntry(updateSidebar), homeEntries.subscribe(updateSidebar)]
 
 const SESSION_WATCH_STOP_TIMEOUT_MS: number = 3000
 function stopWithTimeout(stop: (() => Promise<void>) | undefined): Promise<boolean> {

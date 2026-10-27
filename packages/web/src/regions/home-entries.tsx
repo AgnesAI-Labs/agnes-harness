@@ -11,6 +11,7 @@ import {
 import type { Translate } from '@agnes/web-conversation/presentation'
 import { Button, Icon, type IconName, icons, Menu, Tooltip } from '@agnes/web-ui'
 import { type ReactNode, useSyncExternalStore } from 'react'
+import { useWorkLaunchQuiet } from '../pages/work-launch.js'
 
 function EntryBadge({ badge, label }: { badge: HomeEntryBadge; label(count: number): string }) {
   const count = useSyncExternalStore(badge.subscribe, badge.getSnapshot)
@@ -41,6 +42,7 @@ export function HomeEntriesNav({
 }) {
   useSyncExternalStore(homeEntries.subscribe, homeEntries.getSnapshot)
   const requested = useSyncExternalStore(homeNavigation.subscribe, homeNavigation.getSnapshot)
+  const quiet = useWorkLaunchQuiet()
   useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
   const application = applicationIdentity.getSnapshot()
   const nav = effectiveApplication()?.presentation?.navigation
@@ -68,6 +70,7 @@ export function HomeEntriesNav({
     .map((entry, order) => ({ ...entry, order }))
   const { inline, more } = homeEntryGroups(entries)
   const isCurrent = (entry: HomeEntry) =>
+    !quiet &&
     requested?.id === entry.id &&
     (!requested.pageRef || resolveHomeEntry(requested.pageRef) === homeEntries.get(entry.id))
   const open = (entry: HomeEntry) => {
