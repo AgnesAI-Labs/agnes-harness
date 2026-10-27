@@ -4150,6 +4150,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, maxSeconds: 5.5 } }, // integer only
       { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, language: 'en_US' } }, // pattern: BCP 47 tag
       { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, language: 'a'.repeat(17) } }, // boundary: maxLength:16
+      { ...VOICE_SETTINGS, input: { ...VOICE_SETTINGS.input, language: 'de-ab-cd-ef-gh' } }, // boundary: four subtags, one above {0,3}
       { ...VOICE_SETTINGS, reading: { ...VOICE_SETTINGS.reading, speed: 0.2 } }, // boundary: below minimum:0.25
       { ...VOICE_SETTINGS, reading: { ...VOICE_SETTINGS.reading, speed: 4.1 } }, // boundary: above maximum:4
       { ...VOICE_SETTINGS, reading: { ...VOICE_SETTINGS.reading, voice: rep(129) } }, // boundary: maxLength:128
@@ -4215,13 +4216,14 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'voice status: per-feature state, the chosen account when there is one, and the settings',
   },
   SessionVoiceTranscribeParams: {
-    valid: { sessionId: 's', audio: 'A'.repeat(64), language: 'zh-CN' },
+    valid: { sessionId: 's', audio: 'A'.repeat(64), language: 'de-ab-cd-ef' }, // boundary: three subtags, the {0,3} cap
     invalid: [
       { sessionId: 's' }, // missing required audio
       { sessionId: 's', audio: 'A'.repeat(63) }, // boundary: one below minLength:64
       { sessionId: 's', audio: 'A'.repeat(900001) }, // boundary: one above maxLength:900000
       { sessionId: 's', audio: `${'A'.repeat(64)}!` }, // pattern: base64 alphabet only
       { sessionId: 's', audio: 'A'.repeat(64), language: 'zh_CN' }, // pattern: BCP 47 tag
+      { sessionId: 's', audio: 'A'.repeat(64), language: 'de-ab-cd-ef-gh' }, // boundary: four subtags, one above {0,3}
     ],
     note: 'dictation params: session and a base64 WAV of at most 20 s, with an optional language',
   },

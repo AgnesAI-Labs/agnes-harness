@@ -8,6 +8,11 @@ vi.mock('@agnes/host', async (importOriginal) => ({
   voiceSpeak: host.speak,
   askSideQuestion: host.ask,
 }))
+// An empty-prototype grant table, so the side-call lookup is the only one a prototype name can reach.
+vi.mock('../src/grant-commands.js', () => ({
+  GRANT_COMMANDS: Object.create(null),
+  grantCommand: vi.fn(),
+}))
 const { handleCommand } = await import('../src/commands.js')
 const { VoiceError } = await import('@agnes/host')
 
@@ -113,5 +118,17 @@ it('still answers btw through the same hook', async () => {
   await expect(run('btw', { runId: 'voice:9', question: 'q' }, aborts)).rejects.toThrow(
     'Invalid side question id',
   )
+  expect(aborts.size).toBe(0)
+})
+
+it('does not dispatch an inherited object property name as a side call', async () => {
+  const aborts = new Map<string, AbortController>()
+  for (const method of ['constructor', 'toString', 'hasOwnProperty'])
+    await expect(run(method, { runId: 'btw:1', question: 'q' }, aborts)).rejects.toThrow(
+      `unknown worker method ${method}`,
+    )
+  expect(host.ask).not.toHaveBeenCalled()
+  expect(host.transcribe).not.toHaveBeenCalled()
+  expect(host.speak).not.toHaveBeenCalled()
   expect(aborts.size).toBe(0)
 })

@@ -79,8 +79,11 @@ export class VoiceLimiter {
   }
 }
 
-/** A settings or account read failed; the cause (an fs path, say) stays out of the reply. */
-const settingsUnavailable = () => rpcError('INTERNAL_ERROR', { reason: 'VOICE_SETTINGS_UNAVAILABLE' })
+/** The error code alone (`EACCES`), the only part of a failure that is safe to log: no path, no message. */
+function errorCode(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === 'string' && /^[A-Z0-9_]{1,40}$/.test(code) ? code : 'unknown'
+}
 
 /**
  * The voice methods: speech to text and text to speech for a session the caller owns, on the account
@@ -94,8 +97,14 @@ export function registerVoice(
     configuration?: Pick<ConfigurationService, 'get'>
     settings: Pick<VoiceSettingsStore, 'read' | 'save'>
     clock?: () => number
+    log?: Pick<Console, 'warn'>
   },
 ): void {
+  /** A settings or account read failed; the cause (an fs path, say) stays out of the reply and the log. */
+  const settingsUnavailable = (error: unknown) => {
+    deps.log?.warn(`voice settings unavailable: ${errorCode(error)}`)
+    return rpcError('INTERNAL_ERROR', { reason: 'VOICE_SETTINGS_UNAVAILABLE' })
+  }
   const limiter = new VoiceLimiter(deps.clock ?? Date.now)
   const context = async (): Promise<{ accounts: readonly ConfigAccount[]; settings: VoiceSettings }> => {
     try {
@@ -104,8 +113,8 @@ export function registerVoice(
         deps.configuration?.get(),
       ])
       return { accounts: configuration?.accounts ?? [], settings }
-    } catch {
-      throw settingsUnavailable()
+    } catch (error) {
+      throw settingsUnavailable(error)
     }
   }
 
@@ -178,10 +187,10 @@ export function registerVoice(
     try {
       return await action()
     } catch (error) {
-      const code = (error as { code?: unknown } | null)?.code
+      const code = errorCode(error)
       if (code === 'CONFIG_REVISION_CONFLICT' || code === 'CONFIG_INVALID_INPUT')
         throw rpcError('SEMANTIC_REJECTED', { reason: code })
-      throw settingsUnavailable()
+      throw settingsUnavailable(error)
     }
   }
   ep.register('_agnes/v1/voice.settings.get', async (_params, c) => {

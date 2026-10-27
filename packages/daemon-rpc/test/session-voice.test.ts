@@ -55,6 +55,7 @@ function setup(
     clock?: () => number
     configured?: boolean
     configuration?: { get(): Promise<never> }
+    log?: { warn(message: string): void }
   } = {},
 ) {
   const handlers = new Map<string, Handler>()
@@ -76,6 +77,7 @@ function setup(
       : { configuration: o.configuration ?? { get: async () => ({ accounts }) as never } }),
     settings,
     ...(o.clock ? { clock: o.clock } : {}),
+    ...(o.log ? { log: o.log } : {}),
   })
   const connection = new AbortController()
   const context = (authKind = 'local'): CallContext =>
@@ -398,5 +400,47 @@ describe('_agnes/v1/session.voice.*', () => {
         rpcError('INTERNAL_ERROR', { reason: 'VOICE_SETTINGS_UNAVAILABLE' }),
       )
     expect(speak).not.toHaveBeenCalled()
+  })
+
+  it('logs only the error code of an unreadable settings or account read', async () => {
+    const failing = (code: string | undefined) => () =>
+      Promise.reject(
+        Object.assign(new Error(`${code}: failed, open '/secret/voice/abc.json'`), {
+          ...(code ? { code } : {}),
+          path: '/secret/voice/abc.json',
+        }),
+      ) as Promise<never>
+    const warn = vi.fn()
+    const denied = failing('EACCES')
+    const { call } = setup({ store: { read: denied, save: denied }, log: { warn } })
+    const wire = rpcError('INTERNAL_ERROR', { reason: 'VOICE_SETTINGS_UNAVAILABLE' })
+    await expect(call('_agnes/v1/voice.status', {})).rejects.toEqual(wire)
+    await expect(call('_agnes/v1/voice.settings.get', {})).rejects.toEqual(wire)
+    expect(warn.mock.calls).toEqual([
+      ['voice settings unavailable: EACCES'],
+      ['voice settings unavailable: EACCES'],
+    ])
+    // An account list failure and an error without a code are logged the same way.
+    warn.mockClear()
+    const accounts = setup({ configuration: { get: failing('EIO') }, log: { warn } })
+    await expect(accounts.call('_agnes/v1/voice.status', {})).rejects.toEqual(wire)
+    const nameless = setup({ store: { read: failing(undefined), save: failing(undefined) }, log: { warn } })
+    await expect(nameless.call('_agnes/v1/voice.settings.get', {})).rejects.toEqual(wire)
+    expect(warn.mock.calls).toEqual([
+      ['voice settings unavailable: EIO'],
+      ['voice settings unavailable: unknown'],
+    ])
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('secret')
+    // A conflict the caller can fix is a rejection, not an outage: nothing is logged.
+    warn.mockClear()
+    const conflict = () =>
+      Promise.reject(
+        Object.assign(new Error('stale'), { code: 'CONFIG_REVISION_CONFLICT' }),
+      ) as Promise<never>
+    const stale = setup({ store: { read: conflict, save: conflict }, log: { warn } })
+    await expect(stale.call('_agnes/v1/voice.settings.get', {})).rejects.toMatchObject({
+      data: { code: 'SEMANTIC_REJECTED', reason: 'CONFIG_REVISION_CONFLICT' },
+    })
+    expect(warn).not.toHaveBeenCalled()
   })
 })

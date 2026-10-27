@@ -299,6 +299,7 @@ function registerSessionEndpoints(
     requireOwner: requireSessionOwner(cx),
     ...(o.configuration ? { configuration: o.configuration } : {}),
     settings: new VoiceSettingsStore(o.config.dataDir, o.profile.name),
+    log: console,
   })
   registerDoctor(ep, {
     home: o.config.home ?? dirname(dirname(o.profileDir)),

@@ -331,7 +331,7 @@ export async function handleCommand(
 ): Promise<unknown> {
   const p = cmd.params
   if (cmd.method in GRANT_COMMANDS) return grantCommand(o.host, session, cmd)
-  if (cmd.method in SIDE_CALL_COMMANDS) return workerSideCall(session, cmd, o.aborts)
+  if (Object.hasOwn(SIDE_CALL_COMMANDS, cmd.method)) return workerSideCall(session, cmd, o.aborts)
   switch (cmd.method) {
     case 'ui.action': {
       if (!session.intelligentUi || !p.credential || Object.hasOwn(p, 'actor'))

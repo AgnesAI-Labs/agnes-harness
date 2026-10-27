@@ -5396,7 +5396,7 @@
             "language": {
               "type": "string",
               "maxLength": 16,
-              "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+              "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$"
             },
             "autoSend": { "type": "boolean" },
             "maxSeconds": { "type": "integer", "minimum": 5, "maximum": 120 }
@@ -5480,7 +5480,7 @@
         "language": {
           "type": "string",
           "maxLength": 16,
-          "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$"
+          "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$"
         }
       }
     },

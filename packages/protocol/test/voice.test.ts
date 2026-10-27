@@ -30,6 +30,22 @@ describe('voice protocol contract', () => {
     expect(ok(t, 'params', { sessionId: 's', audio: 'A'.repeat(63) })).toBe(false)
   })
 
+  it('accepts at most three language subtags, the most the audio adapter takes', () => {
+    const t = '_agnes/v1/session.voice.transcribe'
+    const withLanguage = (language: string) => ({ sessionId: 's', audio: 'A'.repeat(64), language })
+    for (const language of ['zh', 'zh-CN', 'de-ab-cd-ef'])
+      expect(ok(t, 'params', withLanguage(language))).toBe(true)
+    for (const language of ['de-ab-cd-ef-gh', 'zh_CN', 'z'])
+      expect(ok(t, 'params', withLanguage(language))).toBe(false)
+    const settings = (language: string) => ({
+      ...DEFAULT_VOICE_SETTINGS,
+      input: { ...DEFAULT_VOICE_SETTINGS.input, language },
+    })
+    const save = (language: string) => ({ settings: settings(language), expectedRevision: '0'.repeat(64) })
+    expect(ok('_agnes/v1/voice.settings.save', 'params', save('de-ab-cd-ef'))).toBe(true)
+    expect(ok('_agnes/v1/voice.settings.save', 'params', save('de-ab-cd-ef-gh'))).toBe(false)
+  })
+
   it('bounds speech text to 120 UTF-16 units and speed to 0.25-4', () => {
     const s = '_agnes/v1/session.voice.speak'
     expect(ok(s, 'params', { sessionId: 's', text: '字'.repeat(120) })).toBe(true)
