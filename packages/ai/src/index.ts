@@ -5,6 +5,14 @@ export type { ImagesImpl } from './adapters/media/index.js'
 export { IMAGE_ROUTE, MediaAdapter, VIDEO_ROUTE } from './adapters/media/index.js'
 export type { VideoClient, VideoStatus } from './adapters/media/video-job.js'
 export { pollUntilDone } from './adapters/media/video-job.js'
+export {
+  MAX_SPEECH_BYTES,
+  OPENAI_AUDIO_WIRE_API,
+  OpenAiAudioAdapter,
+  openAiAudioUnits,
+  probeOpenAiAudioEndpoint,
+  wavHeader,
+} from './adapters/openai-audio/index.js'
 export type {
   ApiKeyAdapterOptions,
   ApiKeyAdaptersOptions,

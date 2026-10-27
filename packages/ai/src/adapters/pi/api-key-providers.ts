@@ -8,6 +8,7 @@ import {
 import { isUsableCredential } from '../../credentials.js'
 import { nativeToolCallFormats } from '../../decode/prose-calls.js'
 import { JEV_WIRE_API } from '../jev/index.js'
+import { OPENAI_AUDIO_WIRE_API } from '../openai-audio/wire.js'
 import type { ManualRoute } from './index.js'
 import { PiAdapter, type PiStream } from './index.js'
 import { KNOWN_THINKING_CORRECTIONS } from './known-thinking-corrections.js'
@@ -33,6 +34,7 @@ export type ApiKeyProviderId =
   | 'moonshotai-cn'
   | 'zai-coding-cn'
   | 'typesafe-systemone'
+  | 'openai-audio'
   | 'openai-compatible'
 
 export type ApiKeyProviderErrorCode =
@@ -420,6 +422,23 @@ const JEV_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
 })
 
 /**
+ * Speech to text and text to speech answer a payload, so this entry has no pi catalogue either. The
+ * default address is SiliconFlow's; an account may point it at any OpenAI-style audio API.
+ */
+const OPENAI_AUDIO_PROVIDER: ApiKeyProviderRegistryEntry = Object.freeze({
+  id: 'openai-audio',
+  displayName: 'Voice',
+  availability: 'available',
+  route: 'openai-audio',
+  api: OPENAI_AUDIO_WIRE_API,
+  baseUrl: 'https://api.siliconflow.cn/v1',
+  credentialRef: 'secret://openai-audio/default',
+  sourceProviderId: 'openai-audio',
+  capabilities: { payloadOnly: true },
+  createAdapter: () => Promise.reject(new ApiKeyProviderError('PROVIDER_CONTRACT')),
+})
+
+/**
  * Any server that speaks OpenAI chat completions at an address the person gives: relays,
  * aggregators, self-hosted gateways. Nothing is pinned, so there is no default address (the
  * reserved `.invalid` name stands in for one) and no adapter to build here; each account declares
@@ -459,6 +478,7 @@ export const API_KEY_PROVIDER_REGISTRY: readonly ApiKeyProviderRegistryEntry[] =
     }),
   ),
   JEV_PROVIDER,
+  OPENAI_AUDIO_PROVIDER,
   OPENAI_COMPATIBLE_PROVIDER,
 ])
 
