@@ -177,9 +177,10 @@ it('lists only payload-only accounts as account-style cards with a counted headi
   expect(host.querySelector('[data-testid="side-model-work"]')).toBeNull()
   // The adapter is the payload-only registration, never a chat provider.
   await click(host, 'side-model-add')
-  const adapter = host.querySelector('[data-testid="side-adapter"]')
-  expect(adapter?.getAttribute('data-value')).toBe('typesafe-systemone')
+  const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
+  expect(adapter?.value).toBe('typesafe-systemone')
   expect(adapter?.textContent).toContain('TypeSafe System One')
+  expect(adapter?.textContent).toContain('Voice')
 })
 
 it('tags a missing credential and a disabled entry, and summarizes several models by count', async () => {
@@ -264,7 +265,7 @@ it('prefills the Jev template for a new entry and keeps every prefilled field a 
   })
 })
 
-it('shows the saved route name with a copy button and the loop-plugin hint', async () => {
+it('shows the saved route name with a copy button and the route hint', async () => {
   const written: string[] = []
   Object.defineProperty(navigator, 'clipboard', {
     configurable: true,
@@ -278,7 +279,7 @@ it('shows the saved route name with a copy button and the loop-plugin hint', asy
   const row = host.querySelector('[data-testid="side-model-jev"]')
   expect(row?.textContent).toContain('account-jev')
   expect(host.querySelector('[data-testid="side-model-route-hint"]')?.textContent).toBe(
-    'Put the route name above into the loop plugin setting jev.route.',
+    'Features find a side model by its route name.',
   )
   await click(host, 'side-model-copy-jev')
   expect(written).toEqual(['account-jev'])
@@ -317,7 +318,7 @@ it('shows the group copy in zh-CN when the document is zh-CN', async () => {
     '旁路模型处理独立于聊天的专门请求。载荷请求是插件提交的结构化数据；循环插件控制智能体每一步的执行，例如 Jev 循环。',
   )
   expect(host.querySelector('[data-testid="side-model-route-hint"]')?.textContent).toBe(
-    '在循环插件设置的 jev.route 里填入上面的路由名。',
+    '功能通过路由名找到旁路模型。',
   )
   await menuItem(host, 'jev', 'side-model-remove-jev')
   expect(host.querySelector('[data-testid="side-model-remove-strip-jev"]')?.textContent).toContain(
@@ -332,7 +333,54 @@ it('shows the group copy in zh-CN when the document is zh-CN', async () => {
   expect(host.textContent).toContain('请输入绝对 HTTPS URL')
 })
 
-it('adds an account through the editor: adapter fixed, credential picked or created, five model fields', async () => {
+const SENSE = 'FunAudioLLM/SenseVoiceSmall'
+const COSY = 'FunAudioLLM/CosyVoice2-0.5B'
+const GENERIC = 'secret://generic/11111111-1111-4111-8111-111111111111'
+const query = (host: HTMLElement, testid: string) => host.querySelector(`[data-testid="${testid}"]`)
+const fixed = { contextWindow: 65536, maxTokens: 4096 }
+
+const voiceAccount: ConfigAccount = {
+  accountId: 'siliconflow',
+  label: 'SiliconFlow',
+  providerId: 'openai-audio',
+  route: 'account-siliconflow',
+  baseUrl: 'https://api.siliconflow.cn/v1',
+  model: SENSE,
+  models: [
+    { id: SENSE, name: SENSE, ...fixed, audioRole: 'transcribe' },
+    {
+      id: COSY,
+      name: COSY,
+      ...fixed,
+      audioRole: 'speech',
+      cost: { input: 7.1, output: 0, cacheRead: 0, cacheWrite: 0 },
+    },
+  ],
+  enabled: true,
+  credentialConfigured: true,
+  authType: 'api-key',
+}
+
+async function openVoiceEditor(api: FakeClient) {
+  const mounted = await mount(api, { accounts: [chatAccount] })
+  await click(mounted.host, 'side-model-add')
+  await choose(mounted.host, 'side-adapter', 'openai-audio')
+  return mounted
+}
+
+it('names the voice presets in zh-CN', async () => {
+  await act(async () => {
+    document.documentElement.lang = 'zh-CN'
+  })
+  const { host } = await openVoiceEditor(client([chatAccount]))
+  expect(input(host, 'side-label')?.value).toBe('硅基流动')
+  await choose(host, 'side-preset', 'stepfun')
+  expect(input(host, 'side-label')?.value).toBe('阶跃星辰')
+  expect(host.textContent).toContain('识别模型')
+  expect(host.textContent).toContain('朗读模型')
+})
+
+it('adds an account through the editor: Jev by default, credential picked or created, five model fields', async () => {
   const api = client([chatAccount])
   const onSaved = vi.fn<(snapshot: ConfigSnapshot) => Promise<void>>(async () => undefined)
   const store = credentials()
@@ -341,6 +389,7 @@ it('adds an account through the editor: adapter fixed, credential picked or crea
   expect(store.list).not.toHaveBeenCalled()
   await click(host, 'side-model-add')
   expect(store.list).toHaveBeenCalledTimes(1)
+  expect(input(host, 'side-adapter')?.value).toBe('typesafe-systemone')
   expect(input(host, 'side-base-url')?.value).toBe('https://openrouter.ai/api/v1')
   await type(host, 'side-label', 'Jev')
   await type(host, 'side-model-id-0', JEV_MODEL.id)
@@ -521,7 +570,7 @@ it('derives the route from the label live and disambiguates collisions with exis
   // A label with no ASCII letters or digits falls back to a generated id.
   await type(host, 'side-label', '纯中文')
   expect(host.querySelector('[data-testid="side-route-preview"]')?.textContent).toMatch(
-    /account-jev-[0-9a-f]{8}/,
+    /account-side-[0-9a-f]{8}/,
   )
   // The derived id is what gets saved.
   await type(host, 'side-label', 'My Side Model')
@@ -684,3 +733,168 @@ it.each(['saved', 'failed'] as const)(
     }
   },
 )
+
+it('offers both adapters and fills the SiliconFlow preset as two voice model fields', async () => {
+  const { host } = await openVoiceEditor(client([chatAccount]))
+  const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
+  expect([...(adapter?.options ?? [])].map((option) => option.value)).toEqual([
+    'typesafe-systemone',
+    'openai-audio',
+  ])
+  expect(adapter?.disabled).toBe(false)
+  expect(input(host, 'side-label')?.value).toBe('SiliconFlow')
+  expect(input(host, 'side-base-url')?.value).toBe('https://api.siliconflow.cn/v1')
+  expect(input(host, 'side-voice-model-transcribe')?.value).toBe(SENSE)
+  expect(input(host, 'side-voice-model-speech')?.value).toBe(COSY)
+  expect(query(host, 'side-model-id-0')).toBeNull()
+  expect(query(host, 'side-model-context-0')).toBeNull()
+  expect(query(host, 'side-model-tokens-0')).toBeNull()
+  expect(query(host, 'side-model-row-add')).toBeNull()
+  // Three presets for the voice adapter; none for Jev.
+  expect(
+    [...(host.querySelector<HTMLSelectElement>('[data-testid="side-preset"]')?.options ?? [])].map(
+      (o) => o.value,
+    ),
+  ).toEqual(['siliconflow', 'openai', 'stepfun'])
+  await choose(host, 'side-adapter', 'typesafe-systemone')
+  expect(query(host, 'side-preset')).toBeNull()
+  expect(input(host, 'side-label')?.value).toBe('Jev')
+  expect(input(host, 'side-model-id-0')?.value).toBe('typesafe/jev-1.13-20260917')
+  expect(query(host, 'side-voice-model-transcribe')).toBeNull()
+})
+
+it('keeps the credential and clears messages when the adapter or preset changes', async () => {
+  const { host } = await openVoiceEditor(client([chatAccount]))
+  await choose(host, 'side-credential', GENERIC)
+  await click(host, 'side-test')
+  await choose(host, 'side-preset', 'openai')
+  expect(query(host, 'side-test-status')).toBeNull()
+  expect(host.querySelector<HTMLSelectElement>('[data-testid="side-credential"]')?.value).toBe(GENERIC)
+  await choose(host, 'side-adapter', 'typesafe-systemone')
+  expect(host.querySelector<HTMLSelectElement>('[data-testid="side-credential"]')?.value).toBe(GENERIC)
+})
+
+it('refills endpoint, label and both models for the OpenAI preset', async () => {
+  const { host } = await openVoiceEditor(client([chatAccount]))
+  await choose(host, 'side-preset', 'openai')
+  expect(input(host, 'side-label')?.value).toBe('OpenAI')
+  expect(input(host, 'side-base-url')?.value).toBe('https://api.openai.com/v1')
+  expect(input(host, 'side-voice-model-transcribe')?.value).toBe('gpt-4o-mini-transcribe')
+  expect(input(host, 'side-voice-model-speech')?.value).toBe('gpt-4o-mini-tts')
+})
+
+it('refills endpoint, label and both models for the StepFun preset', async () => {
+  const { host } = await openVoiceEditor(client([chatAccount]))
+  await choose(host, 'side-preset', 'stepfun')
+  expect(input(host, 'side-label')?.value).toBe('StepFun')
+  expect(input(host, 'side-base-url')?.value).toBe('https://api.stepfun.com/v1')
+  expect(input(host, 'side-voice-model-transcribe')?.value).toBe('stepaudio-3-asr-max')
+  expect(input(host, 'side-voice-model-speech')?.value).toBe('stepaudio-3-tts')
+})
+
+it('saves a voice entry as two models with audioRole and the fixed limits', async () => {
+  const api = client([chatAccount])
+  const { host } = await openVoiceEditor(api)
+  await choose(host, 'side-credential', GENERIC)
+  await click(host, 'side-save')
+  expect(api.save).toHaveBeenCalledTimes(1)
+  const sent = api.save.mock.calls[0]?.[0] as Record<string, unknown>
+  expect(sent).toMatchObject({ providerId: 'openai-audio', accountId: 'siliconflow', model: SENSE })
+  expect(sent.models).toEqual([
+    { id: SENSE, name: SENSE, ...fixed, audioRole: 'transcribe' },
+    { id: COSY, name: COSY, ...fixed, audioRole: 'speech' },
+  ])
+})
+
+it('saves a voice price as input-only cost', async () => {
+  const api = client([chatAccount])
+  const { host } = await openVoiceEditor(api)
+  await choose(host, 'side-credential', GENERIC)
+  await type(host, 'side-voice-price-speech', '7.1')
+  await click(host, 'side-save')
+  const sent = api.save.mock.calls[0]?.[0] as { models: unknown[] }
+  const { models } = sent
+  expect(models).toEqual([
+    { id: SENSE, name: SENSE, ...fixed, audioRole: 'transcribe' },
+    {
+      id: COSY,
+      name: COSY,
+      ...fixed,
+      audioRole: 'speech',
+      cost: { input: 7.1, output: 0, cacheRead: 0, cacheWrite: 0 },
+    },
+  ])
+})
+
+it('saves a voice entry with only a speech model', async () => {
+  const api = client([chatAccount])
+  const { host } = await openVoiceEditor(api)
+  await choose(host, 'side-credential', GENERIC)
+  await type(host, 'side-voice-model-transcribe', '')
+  await click(host, 'side-save')
+  const sent = api.save.mock.calls[0]?.[0] as Record<string, unknown>
+  expect(sent).toMatchObject({ model: COSY })
+  expect(sent.models).toEqual([{ id: COSY, name: COSY, ...fixed, audioRole: 'speech' }])
+})
+
+it('refuses a voice entry with no model or the same model twice', async () => {
+  const api = client([chatAccount])
+  const { host } = await openVoiceEditor(api)
+  await choose(host, 'side-credential', GENERIC)
+  await type(host, 'side-voice-model-transcribe', '')
+  await type(host, 'side-voice-model-speech', '')
+  await click(host, 'side-save')
+  expect(api.save).not.toHaveBeenCalled()
+  expect(query(host, 'side-voice-error')?.textContent).toContain('Enter a transcription model')
+  await type(host, 'side-voice-model-transcribe', 'same-model')
+  await type(host, 'side-voice-model-speech', 'same-model')
+  await click(host, 'side-save')
+  expect(api.save).not.toHaveBeenCalled()
+  expect(query(host, 'side-voice-error')?.textContent).toContain('different')
+})
+
+it('opens a saved voice entry with each model in its field', async () => {
+  const { host } = await mount(client([chatAccount, voiceAccount]), { accounts: [chatAccount, voiceAccount] })
+  expect(query(host, 'side-model-siliconflow')?.textContent).toContain('Voice')
+  await click(host, 'side-model-edit-siliconflow')
+  expect(input(host, 'side-voice-model-transcribe')?.value).toBe(SENSE)
+  expect(input(host, 'side-voice-model-speech')?.value).toBe(COSY)
+  expect(input(host, 'side-voice-price-speech')?.value).toBe('7.1')
+  expect(input(host, 'side-voice-price-transcribe')?.value).toBe('')
+  expect(query(host, 'side-preset')).toBeNull()
+})
+
+it('keeps a saved entry on its adapter with the select disabled', async () => {
+  const api = client([chatAccount, voiceAccount])
+  const { host } = await mount(api, { accounts: [chatAccount, voiceAccount] })
+  await click(host, 'side-model-edit-siliconflow')
+  const adapter = host.querySelector<HTMLSelectElement>('[data-testid="side-adapter"]')
+  expect(adapter?.value).toBe('openai-audio')
+  expect(adapter?.disabled).toBe(true)
+  await click(host, 'side-save')
+  expect(api.save.mock.calls[0]?.[0]).toMatchObject({
+    providerId: 'openai-audio',
+    accountId: 'siliconflow',
+    model: SENSE,
+  })
+})
+
+it('tests a voice entry through its own adapter', async () => {
+  const api = client([chatAccount, voiceAccount])
+  const { host } = await mount(api, { accounts: [chatAccount, voiceAccount] })
+  await menuItem(host, 'siliconflow', 'side-model-menu-test-siliconflow')
+  expect(api.test).toHaveBeenCalledWith({
+    providerId: 'openai-audio',
+    accountId: 'siliconflow',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    model: SENSE,
+  })
+  await click(host, 'side-model-edit-siliconflow')
+  await click(host, 'side-test')
+  expect(api.test).toHaveBeenLastCalledWith({
+    providerId: 'openai-audio',
+    accountId: 'siliconflow',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    model: SENSE,
+  })
+})

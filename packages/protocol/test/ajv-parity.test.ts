@@ -2648,9 +2648,10 @@ const AGNES_SAMPLES: Record<string, Sample> = {
   },
   ConfigModel: {
     note: 'Configuration RPC rejects malformed revisions and credential disclosure; hand-written boundary cases.',
-    valid: { id: 'm', name: 'Model' },
+    valid: { id: 'm', name: 'm', audioRole: 'speech' },
     invalid: [
       { id: '', name: 'Model' },
+      { id: 'm', name: 'm', audioRole: 'music' },
       { id: 'm', name: 'Model', secret: true },
       { id: 'm', name: 'Model', maxTokens: 0 },
       { id: 'm', name: 'Model', cost: { input: 0, output: 0, cacheRead: 0 } },
@@ -4809,8 +4810,9 @@ const MODEL_SAMPLES: Record<string, Sample> = {
     note: 'hand-written; the four price components are all required so a partial price table cannot be half-filled',
   },
   ModelRecord: {
-    valid: modelRecordOk,
+    valid: { ...modelRecordOk, audioRole: 'speech' },
     invalid: [
+      { ...modelRecordOk, audioRole: 'music' }, // enum
       { ...modelRecordOk, contract_id: undefined }, // missing required contract_id
       { ...modelRecordOk, id: rep(257) }, // boundary: maxLength:256
       { ...modelRecordOk, name: rep(257) }, // boundary: maxLength:256

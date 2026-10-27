@@ -6425,6 +6425,10 @@
         "maxTokens": { "type": "integer", "minimum": 1 },
         "cost": { "$ref": "model.json#/$defs/ModelCost" },
         "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
+        "audioRole": {
+          "enum": ["transcribe", "speech"],
+          "description": "Voice side models only: the voice operation this model serves."
+        },
         "id": {
           "type": "string",
           "minLength": 1,

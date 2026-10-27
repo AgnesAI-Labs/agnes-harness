@@ -1,4 +1,11 @@
-import { API_KEY_PROVIDER_REGISTRY, JEV_WIRE_API, JevAdapter, type WireEvent } from '@agnes/ai'
+import {
+  API_KEY_PROVIDER_REGISTRY,
+  JEV_WIRE_API,
+  JevAdapter,
+  OPENAI_AUDIO_WIRE_API,
+  probeOpenAiAudioEndpoint,
+  type WireEvent,
+} from '@agnes/ai'
 import type {
   ConfigModel,
   ConfigSaveInput,
@@ -151,6 +158,7 @@ export function payloadOnlyModelRecord(
     toolCallFormats: [],
     thinkingReplay: 'drop',
     contract_id: null,
+    ...(model.audioRole ? { audioRole: model.audioRole } : {}),
   }
 }
 
@@ -196,7 +204,7 @@ export function payloadOnlyApiCapabilities(): readonly {
 
 const PROBE_TIMEOUT_MS = 30_000
 
-type ProbeOutcome = 'ok' | 'throttled' | 'auth' | 'failed'
+export type PayloadProbeOutcome = 'ok' | 'throttled' | 'auth' | 'failed'
 
 /**
  * One real call through the payload adapter with a fixed `{state: {}, questions: {ping}}` body: an
@@ -210,7 +218,7 @@ async function probePayloadOnlyRoute(args: {
   credential: string
   request: typeof globalThis.fetch
   signal: AbortSignal
-}): Promise<ProbeOutcome> {
+}): Promise<PayloadProbeOutcome> {
   let adapter: JevAdapter
   try {
     adapter = new JevAdapter({
@@ -251,6 +259,24 @@ async function probePayloadOnlyRoute(args: {
   }
 }
 
+type PayloadProbeArgs = Parameters<typeof probePayloadOnlyRoute>[0]
+
+/**
+ * The connection probe of a payload-only account, chosen by its wire api. Jev answers a fixed
+ * payload; the voice adapter lists the endpoint's models, which costs nothing and needs no model.
+ */
+export function probePayloadRoute(api: string, args: PayloadProbeArgs): Promise<PayloadProbeOutcome> {
+  if (api === JEV_WIRE_API) return probePayloadOnlyRoute(args)
+  if (api === OPENAI_AUDIO_WIRE_API)
+    return probeOpenAiAudioEndpoint({
+      baseUrl: args.baseUrl,
+      credential: args.credential,
+      request: args.request,
+      signal: args.signal,
+    })
+  throw new ConfigurationError('CONFIG_INVALID_INPUT')
+}
+
 /**
  * The payload-only branch of a configuration test: the account's declared models come back as they
  * are stored, and the probe runs only when a model and a resolvable generic credential are known.
@@ -259,6 +285,7 @@ async function probePayloadOnlyRoute(args: {
  */
 export async function testPayloadOnlyAccount(
   args: {
+    api: string
     baseUrl: string
     model: string | undefined
     credentialRef: string | undefined
@@ -282,7 +309,7 @@ export async function testPayloadOnlyAccount(
       : undefined
   const model = args.model ?? args.row?.model
   if (key === undefined || model === undefined) return { models, verified: false }
-  const outcome = await probePayloadOnlyRoute({
+  const outcome = await probePayloadRoute(args.api, {
     baseUrl: args.baseUrl,
     model,
     credential: key,

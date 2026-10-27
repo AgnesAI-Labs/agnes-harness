@@ -111,6 +111,7 @@ it('names the built-in payload-only adapter and its payload capabilities in both
   for (const locale of ['en', 'zh-CN'] as const)
     for (const key of [
       'providerName.typesafe-systemone',
+      'providerName.openai-audio',
       'providerCapability.payload',
       'providerCapability.payloadOnly',
     ])

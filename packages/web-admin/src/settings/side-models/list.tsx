@@ -15,9 +15,6 @@ import {
 import type { ReactNode } from 'react'
 import { SIDE_MODELS_NAMESPACE, sideModelsCatalog } from '../side-models-locale.js'
 
-/** The loop plugin setting that names a side model's route (a config key, not copy). */
-const ROUTE_SETTING = 'jev.route'
-
 /** The endpoint as the row shows it: its host (with a port), or the address when it does not parse. */
 function endpointHost(baseUrl: string): string {
   try {
@@ -109,9 +106,7 @@ export function SideModelList(props: SideModelListProps) {
       {props.children}
       {accounts.length > 0 && (
         <p className="side-models-note" data-testid="side-model-route-hint">
-          {t('side.hintBefore')}
-          <code translate="no">{ROUTE_SETTING}</code>
-          {t('side.hintAfter')}
+          {t('side.hint')}
         </p>
       )}
       {!editing && props.status}

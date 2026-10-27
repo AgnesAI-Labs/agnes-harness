@@ -678,6 +678,83 @@ it('probes a payload-only endpoint with a fixed payload, treating success and th
   })
 })
 
+const SENSE = 'FunAudioLLM/SenseVoiceSmall'
+const COSY = 'FunAudioLLM/CosyVoice2-0.5B'
+const voiceAccount = (credentialRef: string | undefined, audioRole: string = 'speech') => ({
+  providerId: 'openai-audio',
+  accountId: 'siliconflow',
+  label: 'SiliconFlow',
+  baseUrl: 'https://api.siliconflow.cn/v1',
+  ...(credentialRef === undefined ? {} : { credentialRef }),
+  model: SENSE,
+  models: [
+    { id: SENSE, name: SENSE, contextWindow: 65536, maxTokens: 4096, audioRole: 'transcribe' },
+    { id: COSY, name: COSY, contextWindow: 65536, maxTokens: 4096, audioRole },
+  ],
+})
+
+it('stores an openai-audio side model with an audioRole per model and renders a payload-only route', async () => {
+  const root = await home()
+  const ref = await genericCredential(root)
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const snap = await service.save({ ...voiceAccount(ref), expectedRevision: 0 } as never)
+  const account = snap.accounts?.find((a) => a.accountId === 'siliconflow')
+  expect(account).toMatchObject({ route: 'account-siliconflow', providerId: 'openai-audio' })
+  expect(account?.models.map((m) => m.audioRole)).toEqual(['transcribe', 'speech'])
+  const route = ((await service.profileInput()).provider?.routes ?? []).find(
+    (r) => r.route === 'account-siliconflow',
+  )
+  expect(route).toMatchObject({ api: 'openai-audio' })
+  expect(route?.models?.map((m) => [m.id, m.audioRole])).toEqual([
+    [SENSE, 'transcribe'],
+    [COSY, 'speech'],
+  ])
+})
+
+it('refuses an unknown audioRole', async () => {
+  const root = await home()
+  const ref = await genericCredential(root)
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  await expect(
+    service.save({ ...voiceAccount(ref, 'music'), expectedRevision: 0 } as never),
+  ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  expect((await service.get()).revision).toBe(0)
+})
+
+it('tests an openai-audio endpoint with GET /models and refuses a rejected key', async () => {
+  const requests: Request[] = []
+  let status = 200
+  const request: typeof fetch = async (input, init) => {
+    requests.push(new Request(input, init))
+    return new Response(status === 200 ? '{"data":[]}' : '', { status })
+  }
+  const root = await home()
+  const ref = await genericCredential(root, 'voice-test-key')
+  const service = createConfigurationService({ home: root, profile: 'local-dev', request })
+  await service.save({ ...voiceAccount(ref), expectedRevision: 0 } as never)
+  await expect(service.test({ providerId: 'openai-audio', accountId: 'siliconflow' })).resolves.toMatchObject(
+    {
+      verified: true,
+    },
+  )
+  const sent = requests[0]
+  if (!sent) throw new Error('probe sent no request')
+  expect(sent.method).toBe('GET')
+  expect(sent.url).toBe('https://api.siliconflow.cn/v1/models')
+  expect(sent.headers.get('authorization')).toBe('Bearer voice-test-key')
+  expect(sent.body).toBeNull()
+  status = 401
+  await expect(service.test({ providerId: 'openai-audio', accountId: 'siliconflow' })).rejects.toMatchObject({
+    code: 'CONFIG_CREDENTIAL_REJECTED',
+  })
+  status = 500
+  await expect(service.test({ providerId: 'openai-audio', accountId: 'siliconflow' })).resolves.toMatchObject(
+    {
+      verified: false,
+    },
+  )
+})
+
 it('refuses a payload-only account without a usable generic credential', async () => {
   const root = await home()
   const service = createConfigurationService({ home: root, profile: 'local-dev' })
