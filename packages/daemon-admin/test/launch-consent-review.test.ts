@@ -384,7 +384,7 @@ it.each([
     'INVALID_PARAMS',
   ],
   [
-    'a sandbox readiness refusal (loopback_serve off macOS) with the daemon diagnostic id',
+    'a sandbox readiness refusal with the daemon diagnostic id',
     { data: { code: 'E_SANDBOX_WORKSPACE', diagnosticId: '0a1b2c3d-0000-4000-8000-0123456789ab' } },
     'unknown',
     'OUTCOME_UNKNOWN',

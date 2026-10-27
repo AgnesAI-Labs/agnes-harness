@@ -80,6 +80,18 @@ describe('sandboxWorkspaceProbe', () => {
     ).rejects.toThrow('cannot fall back')
   })
 
+  it.each(['win32', 'linux'])(
+    'opens a closed-network L1 deny workspace on %s without loopback and refuses each command, never running it unconfined',
+    async (platform) => {
+      const shell = platform === 'win32' ? ('powershell' as const) : ('posix' as const)
+      const backend = await sandboxWorkspaceProbe(input({ level: 'L1', platform, shell }))
+      expect(backend).toMatchObject({ execBackend: 'none', degraded: false })
+      expect(() => backend.confine({ argv: ['node', 'server.js'], cwd: '/work/proj' })).toThrow(
+        'no sandbox backend is available',
+      )
+    },
+  )
+
   it('runs the trusted Windows unimplemented policy without an OS probe', async () => {
     const request = input({
       level: 'L1',
