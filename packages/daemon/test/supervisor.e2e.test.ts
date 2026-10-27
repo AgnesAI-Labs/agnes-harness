@@ -1045,6 +1045,28 @@ describe('agnesd supervisor: ACP subscriptions follow the connection', () => {
     }
   }, 60_000)
 
+  it('answers a side question from the conversation through the worker that owns the session', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-btw-'))
+    const { sup, tables } = await supervisorFor(dir)
+    const c = await client(sup.socketPath)
+    try {
+      expect((await c.call(1, 'initialize', initialize)).error).toBeUndefined()
+      const made = await c.call(2, 'session/new', { cwd: dir, mcpServers: [] })
+      const sessionId = (made.result as { sessionId: string }).sessionId
+      expect(
+        (await c.call(3, 'session/prompt', { sessionId, prompt: [{ type: 'text', text: 'go' }] })).error,
+      ).toBeUndefined()
+      const answer = await c.call(4, '_agnes/v1/session.btw', { sessionId, question: 'what happened?' })
+      expect(answer.error).toBeUndefined()
+      expect(answer.result).toMatchObject({ text: 'hello world', model: 'faux-1' })
+    } finally {
+      c.socket.destroy()
+      await sup.close()
+      await tables.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   it('pushes each event once to a connection that loads and prompts the same session repeatedly', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-feed-once-'))
     process.env.AGNES_FAKE_WORKER_TURNS = '5'

@@ -37,6 +37,7 @@ export type SessionMethod =
   | 'readToolDetail'
   | 'readDeliverables'
   | 'feedback.draft'
+  | 'btw'
   | 'ui.action'
   | 'ui.read'
   | 'ui.refresh'

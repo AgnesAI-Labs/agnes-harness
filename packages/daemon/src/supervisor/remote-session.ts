@@ -148,6 +148,30 @@ export class RemoteSession {
     }
   }
 
+  /** `session.btw` on the worker that holds the real session; the daemon's abort reaches it by run id. */
+  async sideQuestion(
+    question: string,
+    signal: AbortSignal,
+  ): Promise<import('@agnes/protocol').SessionBtwResult> {
+    signal.throwIfAborted()
+    const runId = `btw:${randomUUID()}`
+    const release = this.beginActivity()
+    const abort = () => {
+      void this.link.command('abort', { runId }).catch(() => undefined)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    try {
+      return (await this.link.command(
+        'btw',
+        { question, runId },
+        { timeoutMs: 65_000 },
+      )) as import('@agnes/protocol').SessionBtwResult
+    } finally {
+      signal.removeEventListener('abort', abort)
+      release()
+    }
+  }
+
   workspaceChanges(input: {
     scope?: 'session' | 'turn'
     path?: string
