@@ -95,6 +95,7 @@ function fixture() {
   let application = structuredClone(state)
   const opened: { plan: AgentPlan; key: string }[] = []
   let onResolve = () => {}
+  let onOpen = () => {}
   const facade = createAgentLaunches({
     directory,
     now: () => time,
@@ -106,6 +107,7 @@ function fixture() {
       },
       application: async () => structuredClone(application),
       open: async (value, key) => {
+        onOpen()
         opened.push({ plan: value, key })
         return 'session-review'
       },
@@ -133,6 +135,9 @@ function fixture() {
     },
     onResolve: (value: () => void) => {
       onResolve = value
+    },
+    onOpen: (value: () => void) => {
+      onOpen = value
     },
   }
 }
@@ -362,6 +367,53 @@ async function realHost(name = 'local-dev') {
   } satisfies TestHostOptions
   return { ...(await createTestHost(options)), directory }
 }
+
+it.each([
+  [
+    'a coded rejection that may follow registry.open',
+    { data: { code: 'LOOP_MISSING' } },
+    'unknown',
+    'OUTCOME_UNKNOWN',
+    'LOOP_MISSING',
+  ],
+  [
+    'a tool filter refusal after open',
+    { data: { code: 'INVALID_PARAMS' } },
+    'unknown',
+    'OUTCOME_UNKNOWN',
+    'INVALID_PARAMS',
+  ],
+  ['a coded timeout', { data: { code: 'REQUEST_TIMEOUT' } }, 'unknown', 'OUTCOME_UNKNOWN', 'REQUEST_TIMEOUT'],
+  ['a lost answer', {}, 'unknown', 'OUTCOME_UNKNOWN', undefined],
+  ['a reviewed refusal code', { data: { code: 'E_PACKAGE_STATE' } }, 'failed', 'E_PACKAGE_STATE', undefined],
+])('launch-review: %s from session.new is reported as %s', async (_name, thrown, state, code, cause) => {
+  const f = fixture()
+  const { launchTicket } = await f.prepare()
+  f.onOpen(() => {
+    throw Object.assign(new Error('session.new failed'), thrown)
+  })
+  await expect(f.call({ action: 'start', launchTicket, operationId: 'refused' })).rejects.toThrow(code)
+  await expect(f.call({ action: 'read', operationId: 'refused' })).resolves.toEqual({
+    state,
+    code,
+    ...(cause ? { cause } : {}),
+  })
+})
+it('launch-review: a refusal before session.new is dispatched is failed, not unknown', async () => {
+  const f = fixture()
+  const { launchTicket } = await f.prepare()
+  // The first resolve is the start's admission check; the second is the re-check before dispatch.
+  let resolves = 0
+  f.onResolve(() => {
+    if (++resolves === 2) throw new Error('resolve unavailable')
+  })
+  await expect(f.call({ action: 'start', launchTicket, operationId: 'early' })).rejects.toThrow()
+  await expect(f.call({ action: 'read', operationId: 'early' })).resolves.toEqual({
+    state: 'failed',
+    code: 'E_LAUNCH_FAILED',
+  })
+  expect(f.opened).toHaveLength(0)
+})
 
 it('launch-review: a snapshot replayed from another real profile never becomes covered', async () => {
   const a = await realHost(),

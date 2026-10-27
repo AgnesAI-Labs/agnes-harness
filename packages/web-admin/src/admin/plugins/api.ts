@@ -168,6 +168,7 @@ export class PluginAdminApi {
   async readAgent(operationId: string): Promise<{
     state: 'running' | 'completed' | 'failed' | 'unknown'
     code?: string
+    cause?: string
     sessionId?: string
     draft?: import('@agnes/protocol').BundleLaunch['prompt']
   }> {

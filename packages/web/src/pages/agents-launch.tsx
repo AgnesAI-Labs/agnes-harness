@@ -26,6 +26,8 @@ type Launch = {
   phase: 'preparing' | 'review' | 'starting' | 'failed'
   attempt?: Attempt
   error?: string
+  /** The daemon refused the start: no session exists, so retrying cannot create a duplicate. */
+  definite?: boolean
   consent?: 'covered' | 'changed' | 'unavailable'
   changes?: string[]
   work?: ApplicationWorkRequest
@@ -116,8 +118,18 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     }
     const read = async () => {
       const result = await api.readAgent(attempt.operationId)
-      if (result.state !== 'completed' || !result.sessionId)
-        throw new Error(result.code ?? (result.state === 'running' ? 'START_PENDING' : 'OUTCOME_UNKNOWN'))
+      if (result.state !== 'completed' || !result.sessionId) {
+        const code = result.code ?? (result.state === 'running' ? 'START_PENDING' : 'OUTCOME_UNKNOWN')
+        const text =
+          code === 'OUTCOME_UNKNOWN'
+            ? `${t('launch.unknown')}${result.cause ? ` (${result.cause})` : ''}`
+            : code === 'START_PENDING'
+              ? t('launch.pending')
+              : code === 'E_PACKAGE_PREVIEW_STALE'
+                ? t('reason.changed')
+                : `${t('launch.refused')} (${code})`
+        throw Object.assign(new Error(text), { definite: result.state === 'failed' })
+      }
       complete({ ...result, sessionId: result.sessionId })
     }
     try {
@@ -135,6 +147,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
           ...pending,
           phase: 'failed',
           error: error instanceof Error ? error.message : t('reason.request'),
+          definite: (error as { definite?: boolean } | null)?.definite === true,
         })
     }
   }
@@ -152,6 +165,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     if (launch?.phase === 'preparing' || launch?.phase === 'review' || !launch?.attempt) set(undefined)
     nav.back()
   }
+  const uncertain = !!launch?.attempt && !launch.definite
   return {
     start(card: AgentCard, work?: ApplicationWorkRequest) {
       const pending = current.current
@@ -200,11 +214,11 @@ export function useAgentLaunch(data: BusinessAgentsData) {
               <>
                 <Banner tone="error">{launch.error}</Banner>
                 <Button onClick={() => homeNavigation.open('plugins')}>{t('plugins')}</Button>
-                {launch.attempt && <p>{t('launch.uncertain')}</p>}
+                {uncertain && <p>{t('launch.uncertain')}</p>}
                 <Button
                   data-testid="agent-launch-retry"
                   onClick={() => {
-                    if (launch.attempt) void start(launch, true)
+                    if (uncertain) void start(launch, true)
                     else
                       void prepare(
                         {
@@ -216,9 +230,9 @@ export function useAgentLaunch(data: BusinessAgentsData) {
                       )
                   }}
                 >
-                  {t(launch.attempt ? 'launch.check' : 'dialog.retry')}
+                  {t(uncertain ? 'launch.check' : 'dialog.retry')}
                 </Button>
-                {launch.attempt && (
+                {uncertain && (
                   <Button
                     data-testid="agent-launch-new-intent"
                     onClick={() => {

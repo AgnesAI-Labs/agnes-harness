@@ -70,7 +70,7 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
       .fn()
       .mockResolvedValue(
         outcome === 'unknown'
-          ? { state: 'unknown', code: 'OUTCOME_UNKNOWN' }
+          ? { state: 'unknown', code: 'OUTCOME_UNKNOWN', cause: 'LOOP_MISSING' }
           : { state: 'completed', ...result },
       )
     let enabled = outcome !== 'enable'
@@ -234,7 +234,9 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
       expect(startAgent).toHaveBeenCalledWith('reviewed-ticket', expect.any(String))
       const operationId = startAgent.mock.calls[0]?.[1]
       if (outcome === 'unknown') {
-        await vi.waitFor(() => expect(host.textContent).toContain('OUTCOME_UNKNOWN'))
+        await vi.waitFor(() => expect(host.textContent).toContain('may not have started'))
+        expect(host.textContent).toContain('(LOOP_MISSING)')
+        expect(host.textContent).not.toContain('OUTCOME_UNKNOWN')
         expect(assign).toHaveBeenCalledTimes(1)
         // An unresolved receipt and another click keep the same launch intent.
         await act(async () =>
