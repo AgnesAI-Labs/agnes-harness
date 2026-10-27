@@ -277,6 +277,55 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
   },
 )
 
+it.each([
+  ['single-encoded', 'agent-acme%2Fkit%23reply'],
+  ['double-encoded', `agent-${encodeURIComponent(encodeURIComponent('acme/kit#reply'))}`],
+  ['unknown', 'agent-acme%2Fkit%23gone'],
+])('a %s agent link opens the agent start or the list, never an endless wait', async (name, view) => {
+  const prepareAgent = vi.fn(() => new Promise<never>(() => {}))
+  const startAgent = vi.fn()
+  mock.connect.mockResolvedValue({
+    context: { permissions: [], readOnly: false },
+    api: {
+      prepareAgent,
+      startAgent,
+      catalog: async () => ({ items: [] }),
+      list: async () => ({
+        packages: [
+          {
+            id: 'acme/kit',
+            version: '1.0.0',
+            trusted: true,
+            desired: 'enabled',
+            actual: 'running',
+            agents: [
+              {
+                ref: 'acme/kit#reply',
+                launch: { title: { en: 'reply' }, description: { en: 'reply description' }, preset: 'safe' },
+              },
+            ],
+          },
+        ],
+      }),
+      loops: async () => ({ loops: [], revision: 1, defaults: {} }),
+    },
+  })
+  history.replaceState(null, '', `/?page=agents&view=${view}`)
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(createElement(AgentsPage, { context: { t: (key) => key } })))
+    if (name === 'unknown') {
+      await vi.waitFor(() => expect(location.search).not.toContain('view='))
+      expect(host.querySelector('[data-agent-ref="acme/kit#reply"]')).not.toBeNull()
+      expect(prepareAgent).not.toHaveBeenCalled()
+    } else await vi.waitFor(() => expect(prepareAgent).toHaveBeenCalledWith('acme/kit#reply'))
+    expect(startAgent).not.toHaveBeenCalled()
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
+
 it('reacts to the effective application for catalog and installed agents, including hidden start links and host fallback', async () => {
   const declaration = (id: string, packageId = 'acme/kit') => ({
     ref: `${packageId}#${id}`,

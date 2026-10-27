@@ -124,7 +124,10 @@ function AgentList({
   const linkedPage = navigation.stack.at(-1)
   const linked = cards.find(
     (card) =>
-      linkedPage === `agent-${card.slug}` || linkedPage === `agent-${card.entry.id.split('/').at(-1)}`,
+      linkedPage === `agent-${card.slug}` ||
+      // A hand-typed or shared link holds the plain ref (`agent-@pkg/id#agent`), the route having decoded it once.
+      linkedPage === `agent-${card.ref}` ||
+      linkedPage === `agent-${card.entry.id.split('/').at(-1)}`,
   )
   const linkHandled = useRef<string>()
   useEffect(() => {
@@ -132,7 +135,12 @@ function AgentList({
       linkHandled.current = undefined
       return
     }
-    if (!linked || starter.pageId === linkedPage || linkHandled.current === linkedPage) return
+    if (starter.pageId === linkedPage || linkHandled.current === linkedPage) return
+    // The agents are loaded and none matches: a link to an agent that is not here would wait forever.
+    if (!linked) {
+      navigation.backTo(0)
+      return
+    }
     const canonical = `agent-${linked.slug}`
     if (linkedPage !== canonical) {
       navigation.replace(canonical)
