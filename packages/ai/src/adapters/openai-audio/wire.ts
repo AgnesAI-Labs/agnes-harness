@@ -6,7 +6,7 @@ import { type Classified, classifyHttpStatus, plain, rejected } from '../payload
 import { isStepfunModel, STEPFUN_DEFAULT_VOICE } from './stepfun.js'
 
 export const OPENAI_AUDIO_WIRE_API = 'openai-audio'
-/** The longest speech accepted: 768,000 bytes are 1,024,000 base64 characters (Task 3's schema cap). */
+/** The longest speech accepted: 768,000 bytes are 1,024,000 base64 characters (the protocol's VOICE_SPEECH_MAX_BASE64). */
 export const MAX_SPEECH_BYTES = 768_000
 /** The most a transcription reply may carry, as JSON or as an event stream. */
 export const MAX_TRANSCRIPT_BYTES = 256 * 1024
