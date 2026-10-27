@@ -216,6 +216,7 @@ it('keeps showing the model an attachment opened the session with', async () => 
     selectComposerDraft() {},
     approvalRuntime: { render() {} },
     readOnlyController: { clear() {} },
+    clearSessionRecovery() {},
     references: { clear() {} },
     topbarRuntime: { setStatus() {} },
     clientModules: { session: new SessionService(new Context()) },

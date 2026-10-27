@@ -1602,9 +1602,8 @@ function renderSessionRecovery(message: string | (() => string) = ''): void {
     },
   })
 }
-function clearSessionRecovery(): void {
-  readOnlyController.clear()
-  if (!sessionRecovery) return
+function clearSessionRecovery(nextSessionId?: string): void {
+  if (!sessionRecovery || sessionRecovery.id === nextSessionId) return
   sessionRecovery = undefined
   notice.setText('')
   notice.setKind('')
@@ -1751,6 +1750,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   selectComposerDraft()
   sessionPending = true
   workspaceController.resolveDraft(workspace)
+  readOnlyController.clear()
   clearSessionRecovery()
   const { binding: epoch, previous } = sessionBinding.begin()
   references.clear()
