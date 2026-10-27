@@ -10,6 +10,7 @@ import type {
   TranscriptHandle,
 } from '@agnes/web-units/shell'
 import type { ComponentType, ReactNode } from 'react'
+import type { VoicePort } from './voice-port.js'
 
 /** Host-owned projections/actions and mount seats. Detaching a view never cancels a session. */
 export interface NavigationPresentationPort {
@@ -26,6 +27,8 @@ export interface ConversationPresentationPort {
   transcript: {
     onFork?: (turn: UITurn) => Promise<void>
     claim?: (entry: import('@agnes/web-client').SlotEntry, extId: string) => boolean
+    /** Present when the host offers voice: the final reply shows a read-aloud button. */
+    voice?: VoicePort
     attach(handle: TranscriptHandle): () => void
   }
 }
@@ -64,4 +67,6 @@ export interface ComposerPresentationControls {
     getSnapshot(): Readonly<{ featured: readonly PackageCatalogDescriptor[]; total: number }>
     subscribe(listener: () => void): () => void
   }
+  /** Present when the host offers voice: the composer shows the mic and conversation buttons. */
+  voice?: VoicePort
 }

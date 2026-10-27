@@ -3,7 +3,15 @@ import { conversationCards as testCards, workbenchPanels as testPanels } from '@
 
 import { Context } from '@agnes/cordis'
 import type { UINode, UITurn } from '@agnes/protocol'
-import { LocaleService, SessionService, type SlotEntry, SlotRegistry, ThemeService } from '@agnes/web-client'
+import {
+  LocaleService,
+  SessionService,
+  type SlotEntry,
+  SlotRegistry,
+  ThemeService,
+  type VoicePort,
+  type VoiceViewState,
+} from '@agnes/web-client'
 import { costDetails, costSummary } from '@agnes/web-conversation/usage'
 import { setDisclosureOpen, webUiLocaleCatalog } from '@agnes/web-ui'
 import { createConversationProjectionStore, useConversationProjection } from '@agnes/web-ui/conversation'
@@ -1065,4 +1073,98 @@ it('updates memoized history for streaming, decisions, locale catalogs and theme
   expect(document.activeElement).toBe(themeButton)
   expect(item('answer')).toBe(answer)
   off()
+})
+
+it('shows the read button only on a settled final reply when reading is visible', async () => {
+  const completed: UITurn = {
+    id: 'turn:1',
+    turn: 1,
+    startSeq: 1,
+    startedAt: '2026-10-27T00:00:00.000Z',
+    endedAt: '2026-10-27T00:00:01.000Z',
+    status: 'completed',
+    nodeIds: ['user', 'answer'],
+    finalAssistantId: 'answer',
+    inherited: false,
+    forkable: true,
+    usage: {
+      totals: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      reasoningComplete: true,
+      billingComplete: true,
+      calls: [],
+    },
+  }
+  const answer = (streaming: boolean): UINode =>
+    ({
+      kind: 'assistant',
+      id: 'answer',
+      seq: 2,
+      text: '最终回答。',
+      ...(streaming ? { streaming } : {}),
+    }) as UINode
+  const snapshot = (reading: VoiceViewState['reading']): VoiceViewState => ({
+    dictation: { visible: true, phase: 'idle', seconds: 0, level: 0 },
+    conversation: { visible: true, phase: 'idle', level: 0 },
+    reading,
+  })
+  let state = snapshot({ visible: true, phase: 'idle' })
+  const listeners = new Set<() => void>()
+  const voice = {
+    state: {
+      getSnapshot: () => state,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    },
+    bindComposer: () => () => {},
+    toggleDictation: vi.fn(),
+    toggleConversation: vi.fn(),
+    toggleReading: vi.fn(),
+    resumePlayback: vi.fn(),
+    openSettings: vi.fn(),
+  } satisfies VoicePort
+  const setReading = async (next: VoiceViewState['reading']) => {
+    state = snapshot(next)
+    await act(async () => {
+      for (const listener of [...listeners]) listener()
+    })
+  }
+  const render = (nodes: UINode[], turns: UITurn[], port: VoicePort | undefined) =>
+    act(async () =>
+      root.render(
+        createElement(WebConversationMessages, {
+          nodes,
+          turns,
+          registry,
+          locale: zhLocaleService(),
+          ...(port ? { voice: port } : {}),
+        }),
+      ),
+    )
+  const read = () => host.querySelector<HTMLButtonElement>('[data-testid="voice-read"]')
+  await render([user, answer(false)], [completed], voice)
+  expect(read()).not.toBeNull()
+  expect(read()?.getAttribute('aria-label')).toBe('Read')
+  await act(async () => read()?.click())
+  expect(voice.toggleReading).toHaveBeenCalledWith('answer', '最终回答。')
+  await setReading({ visible: true, nodeId: 'answer', phase: 'playing' })
+  expect(read()?.getAttribute('aria-label')).toBe('Stop')
+  await setReading({ visible: true, nodeId: 'answer', phase: 'blocked' })
+  expect(read()?.getAttribute('aria-label')).toBe('Click to play')
+  await act(async () => read()?.click())
+  expect(voice.resumePlayback).toHaveBeenCalledTimes(1)
+  expect(voice.toggleReading).toHaveBeenCalledTimes(1)
+  // Another node playing leaves this one's button as a plain read.
+  await setReading({ visible: true, nodeId: 'other', phase: 'playing' })
+  expect(read()?.getAttribute('aria-label')).toBe('Read')
+  await setReading({ visible: false, phase: 'idle' })
+  expect(read()).toBeNull()
+  await setReading({ visible: true, phase: 'idle' })
+  await render([user, answer(true)], [completed], voice)
+  expect(read()).toBeNull()
+  await render([user, answer(false)], [{ ...completed, status: 'running' }], voice)
+  expect(read()).toBeNull()
+  await render([user, answer(false)], [completed], undefined)
+  expect(read()).toBeNull()
 })

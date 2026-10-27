@@ -95,6 +95,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const nativeSizing =
     typeof CSS !== 'undefined' && CSS.supports('field-sizing', 'content') && CSS.supports('min-height', '1lh')
   const [view, setView] = useState<ComposerView>(initialView)
+  // The handle is built once; it reads the rendered view through this ref.
+  const viewRef = useRef(view)
+  viewRef.current = view
   const [draft, setDraft] = useState(initialDraft)
   // The host reads the draft synchronously (set, then submit) before React commits the state.
   const draftRef = useRef(initialDraft)
@@ -140,6 +143,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   // What React last rendered into the textarea; a host edit is pending while it differs from draftRef.
   const renderedDraft = useRef(initialDraft)
   const pendingCaret = useRef<number>()
+  // A `submit()` that arrived before its draft rendered; the layout effect sends it once it has.
+  const pendingSubmit = useRef(false)
   const changeDraft = (value: string): void => {
     if (value === draftRef.current) return
     draftRef.current = value
@@ -204,12 +209,17 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     prompt.current = input
     renderedDraft.current = draft
     const caret = pendingCaret.current
-    if (caret === undefined || !input || input.value !== draftRef.current) return
-    pendingCaret.current = undefined
-    input.focus()
-    input.setSelectionRange(caret, caret)
-    // React already holds this value; the event only tells the reference picker the caret moved.
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    if (caret !== undefined && input && input.value === draftRef.current) {
+      pendingCaret.current = undefined
+      input.focus()
+      input.setSelectionRange(caret, caret)
+      // React already holds this value; the event only tells the reference picker the caret moved.
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    if (pendingSubmit.current && draft === draftRef.current) {
+      pendingSubmit.current = false
+      form.current?.requestSubmit()
+    }
   })
 
   // A scripted write (`textarea.value = …` followed by an input event, as text expanders and
@@ -277,6 +287,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       restoreImageBlocks(restored) {
         restoreAttachmentBlocks(mentions.restore(restored))
+      },
+      insertText(text) {
+        const input = prompt.current
+        const end = draftRef.current.length
+        editDraft(input?.selectionStart ?? end, input?.selectionEnd ?? end, text)
+      },
+      submit() {
+        const current = viewRef.current
+        const attached = attachmentsRef.current.length + pendingCountRef.current + uploads.count() > 0
+        if (current.readOnly || current.loading || current.send.disabled) return false
+        if (!currentDraft().trim() && !attached) return false
+        if (draftRef.current === renderedDraft.current) form.current?.requestSubmit()
+        else pendingSubmit.current = true
+        return true
       },
       setDraft(value) {
         if (draftRef.current !== value) {
@@ -574,6 +598,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 >
                   <span className="visually-hidden">{view.cancel.label}</span>
                 </Button>
+                {!view.readOnly && slots?.beforeSend}
                 <Button
                   id="send"
                   hidden={view.readOnly}

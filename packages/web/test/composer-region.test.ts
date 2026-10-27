@@ -6,6 +6,7 @@ import type { ComposerView } from '@agnes/web-units'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSER_SLOT } from '../src/region-slots.js'
+import { fakeVoice } from './helpers/fake-voice.js'
 import { mountRenderedIndex, resetWebDom } from './web-dom-fixture.js'
 
 const imagePngData =
@@ -392,6 +393,112 @@ describe('rendered composer region', () => {
       expect(document.querySelector('#send')).toBeTruthy()
     }, slotRender)
     remove()
+  })
+
+  it('renders the voice buttons before send only when the controls carry a voice port', async () => {
+    runtime = await mountRenderedIndex()
+    runtime.composer?.render(readyView)
+    expect(document.querySelector('#send')).toBeTruthy()
+    expect(document.querySelector('[data-testid="voice-mic"]')).toBeNull()
+    await runtime.dispose()
+    resetWebDom()
+    const { voice } = fakeVoice()
+    runtime = await mountRenderedIndex({ voice })
+    runtime.composer?.render(readyView)
+    const group = document.querySelector('#send')?.previousElementSibling
+    expect(group?.querySelector('[data-testid="voice-mic"]')).toBeTruthy()
+    expect(group?.querySelector('[data-testid="voice-wave"]')).toBeTruthy()
+    document.querySelector<HTMLButtonElement>('[data-testid="voice-mic"]')?.click()
+    expect(voice.toggleDictation).toHaveBeenCalledTimes(1)
+    document.querySelector<HTMLButtonElement>('[data-testid="voice-wave"]')?.click()
+    expect(voice.toggleConversation).toHaveBeenCalledTimes(1)
+  })
+
+  it('binds the composer so voice text lands in the draft and a session opens on demand', async () => {
+    const prepareUploadSession = vi.fn(async () => 'session-new')
+    const { voice, bound } = fakeVoice()
+    runtime = await mountRenderedIndex({ voice, composer: { prepareUploadSession } })
+    runtime.composer?.render(readyView)
+    await vi.waitFor(() => expect(voice.bindComposer).toHaveBeenCalled())
+    const composer = required(bound())
+    composer.insertText('x')
+    await vi.waitFor(() => expect(runtime?.composer?.getDraft()).toContain('x'))
+    expect(await composer.ensureSession()).toBe('session-new')
+    expect(prepareUploadSession).toHaveBeenCalledTimes(1)
+    // With a session, the composer names it at once.
+    runtime.session.setSession('session-1')
+    await vi.waitFor(() => expect(runtime?.registry.sessionId).toBe('session-1'))
+    expect(await required(bound()).ensureSession()).toBe('session-1')
+    expect(prepareUploadSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps voice text that arrives while the composer is replaced', async () => {
+    const { voice, bound } = fakeVoice()
+    runtime = await mountRenderedIndex({ voice })
+    runtime.composer?.render(readyView)
+    await vi.waitFor(() => expect(voice.bindComposer).toHaveBeenCalled())
+    const composer = required(bound())
+    runtime.composer?.setDraft('前文')
+    const remove = runtime.registry.register(
+      { name: COMPOSER_SLOT as string, id: 'fixture-composer-shadow', owner: 'fixture', priority: -1 },
+      () => createElement('div', { id: 'shadow-composer' }, '替换输入区'),
+    )
+    await vi.waitFor(() => expect(document.querySelector('#prompt')).toBeNull(), slotRender)
+    composer.insertText('语音')
+    expect(composer.submit()).toBe(false)
+    remove()
+    await vi.waitFor(
+      () => expect(document.querySelector<HTMLTextAreaElement>('#prompt')?.value).toBe('前文语音'),
+      slotRender,
+    )
+  })
+
+  it('shows the voice buttons on the new-chat page before any session', async () => {
+    const { voice } = fakeVoice()
+    runtime = await mountRenderedIndex({ voice })
+    expect(runtime.registry.sessionId).toBeUndefined()
+    runtime.composer?.render({ ...readyView, hasSession: false })
+    expect(document.querySelector('[data-testid="voice-mic"]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="voice-wave"]')).toBeTruthy()
+  })
+
+  it('explains a disabled voice button and links to its settings', async () => {
+    const { voice } = fakeVoice({
+      dictation: { visible: true, disabled: 'no-account', phase: 'idle', seconds: 0, level: 0 },
+      conversation: { visible: false, phase: 'idle', level: 0 },
+    })
+    localStorage.setItem('agnes-locale', 'zh-CN')
+    runtime = await mountRenderedIndex({ voice })
+    runtime.composer?.render(readyView)
+    const mic = required(document.querySelector<HTMLButtonElement>('[data-testid="voice-mic"]'))
+    expect(mic.getAttribute('aria-disabled')).toBe('true')
+    expect(document.querySelector('[data-testid="voice-wave"]')).toBeNull()
+    mic.click()
+    expect(voice.toggleDictation).not.toHaveBeenCalled()
+    const configure = await vi.waitFor(() =>
+      required(document.querySelector<HTMLButtonElement>('[data-testid="voice-configure"]')),
+    )
+    expect(configure.closest('.voice-reason')?.textContent).toContain('还没有语音账户')
+    configure.click()
+    expect(voice.openSettings).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the recording time, the conversation phase and a notice in the voice group', async () => {
+    const { voice } = fakeVoice({
+      dictation: { visible: true, phase: 'recording', seconds: 7, level: 3 },
+      conversation: { visible: true, phase: 'idle', level: 0 },
+      notice: { key: 'empty', at: 1 },
+    })
+    localStorage.setItem('agnes-locale', 'zh-CN')
+    runtime = await mountRenderedIndex({ voice })
+    runtime.composer?.render(readyView)
+    const mic = required(document.querySelector<HTMLElement>('[data-testid="voice-mic"]'))
+    expect(mic.getAttribute('data-level')).toBe('3')
+    expect(document.querySelector('.composer-voice-status')?.textContent).toContain('7')
+    const notice = required(document.querySelector('[data-testid="voice-notice"]'))
+    expect(notice.getAttribute('role')).toBe('status')
+    expect(notice.closest('.composer-voice')).toBeTruthy()
+    expect(notice.textContent).toBe('没听清，请再说一次')
   })
 })
 
