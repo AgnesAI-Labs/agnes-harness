@@ -186,6 +186,8 @@ export function useAgentLaunch(data: BusinessAgentsData) {
       void prepare(card, work)
     },
     pageId: launch?.pageId ?? catalog.pageId,
+    /** The launch waits for the user's decision, or has failed. */
+    attention: launch?.phase === 'review' || launch?.phase === 'failed',
     dialog: (
       <>
         {catalog.dialog}

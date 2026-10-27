@@ -1,11 +1,12 @@
 /** @vitest-environment happy-dom */
 import type { AgentPlan, ApplicationState } from '@agnes/protocol'
-import { applicationIdentity } from '@agnes/web-client'
+import { applicationIdentity, homeEntries, homeNavigation } from '@agnes/web-client'
 import { clearResources, createDocumentLocaleSource, UiLocaleProvider } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { AgentsPage } from '../src/pages/agents-page.js'
+import { HomePageHost } from '../src/pages/host.js'
 
 const mock = vi.hoisted(() => ({ connect: vi.fn() }))
 vi.mock('../src/pages/admin-api.js', () => ({ homeAdmin: mock.connect }))
@@ -603,28 +604,38 @@ it.each(['en', 'zh-CN'] as const)(
       const root = createRoot(host)
       const localized = createDocumentLocaleSource({})
       const assign = vi.spyOn(location, 'assign').mockImplementation(() => {})
+      let unregister: (() => void) | undefined
       try {
+        const shown: (string | undefined)[] = []
+        unregister = homeEntries.register({
+          id: 'agents',
+          icon: 'bot',
+          titleKey: 'agents',
+          order: 1,
+          component: AgentsPage,
+        })
+        homeNavigation.open('agents', {
+          workAction: {
+            applicationId: 'acme',
+            packageId: 'acme/kit',
+            actionId: 'review',
+            object: { type: 'batch', id: 'B-017' },
+          },
+        })
         await act(async () =>
           root.render(
-            createElement(
-              UiLocaleProvider,
-              { source: localized.source },
-              createElement(AgentsPage, {
-                context: {
-                  t: (key) => key,
-                  selection: {
-                    workAction: {
-                      applicationId: 'acme',
-                      packageId: 'acme/kit',
-                      actionId: 'review',
-                      object: { type: 'batch', id: 'B-017' },
-                    },
-                  },
-                },
-              }),
-            ),
+            createElement(HomePageHost, {
+              locale: { t: (key: string) => key } as never,
+              source: localized.source,
+              data: {} as never,
+              onActive: (id) => {
+                shown.push(id)
+              },
+            }),
           ),
         )
+        if (consent === 'covered') expect(shown.every((id) => id === undefined)).toBe(true)
+        else await vi.waitFor(() => expect(shown.at(-1)).toBe('agents'))
         if (consent !== 'covered') {
           const confirm = host.querySelector('[data-testid="agent-launch-confirm"]')
           const cancel = host.querySelector('[data-testid="agent-launch-close"]')
@@ -663,6 +674,8 @@ it.each(['en', 'zh-CN'] as const)(
         )
       } finally {
         await act(async () => root.unmount())
+        unregister?.()
+        homeNavigation.close()
         host.remove()
         localized.dispose()
         assign.mockRestore()

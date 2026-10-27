@@ -44,6 +44,7 @@ import { homeAdmin } from './admin-api.js'
 import { useAgentLaunch } from './agents-launch.js'
 import { declaredAgentCards } from './agents-model.js'
 import { HomePageFrame } from './page-frame.js'
+import { workLaunch } from './work-launch.js'
 
 const source = { connect: homeAdmin }
 
@@ -107,6 +108,11 @@ function AgentList({
   const workRequest = (selection as { workAction?: ApplicationWorkRequest } | undefined)?.workAction
   const work = workRequest && resolveApplicationWork(workRequest, locale)
   const workHandled = useRef<unknown>()
+  const workCard = work && cards.find((item) => item.ref === work.agent && !item.catalogAgent)
+  const workStuck = (!!workRequest && (!workCard || !data.api)) || starter.attention
+  useEffect(() => {
+    if (workStuck) workLaunch.surface()
+  }, [workStuck])
   useEffect(() => {
     if (!workRequest || !work || workHandled.current === selection) return
     const card = cards.find((item) => item.ref === work.agent && !item.catalogAgent)
@@ -271,6 +277,9 @@ function AgentList({
 export function AgentsPage({ context }: { context: UiExtensionContext }) {
   const { t } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const data = useBusinessAgents(source)
+  useEffect(() => {
+    if (data.error) workLaunch.surface()
+  }, [data.error])
   return (
     <HomePageFrame
       id="agents"

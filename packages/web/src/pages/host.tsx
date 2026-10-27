@@ -15,6 +15,7 @@ import {
   type UiLocaleSource,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { useWorkLaunchQuiet } from './work-launch.js'
 
 /**
  * What the workbench hands a built-in home page as `context.data`. Plugin pages receive it too but
@@ -65,7 +66,8 @@ export function HomePageHost({
   // component lifetime even when it reuses the same ID and component function.
   const mounted = useRef({ entry, version: 0 })
   if (mounted.current.entry !== entry) mounted.current = { entry, version: mounted.current.version + 1 }
-  const active = entry?.id
+  const quiet = useWorkLaunchQuiet()
+  const active = quiet ? undefined : entry?.id
   useEffect(() => onActive(active), [active, onActive])
   if (!entry) return null
   const Page = entry.component
