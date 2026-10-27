@@ -4,8 +4,10 @@ import {
   JEV_WIRE_API,
   JevAdapter,
   OPENAI_AUDIO_WIRE_API,
+  openAiAudioUnits,
   probeOpenAiAudioEndpoint,
   type WireEvent,
+  wavHeader,
 } from '@agnes/ai'
 import type {
   ConfigModel,
@@ -17,6 +19,9 @@ import type {
 } from '@agnes/protocol'
 import { ConfigurationError } from './configuration-error.js'
 import { normalizeConfigModel } from './configuration-models.js'
+
+// The voice adapter's wire facts for the host voice calls, which may not import the AI package itself.
+export { OPENAI_AUDIO_WIRE_API, openAiAudioUnits, wavHeader }
 
 export type PayloadOnlyCapabilities = Readonly<{ payloadOnly?: boolean }>
 
