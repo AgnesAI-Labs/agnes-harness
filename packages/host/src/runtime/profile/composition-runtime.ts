@@ -58,6 +58,7 @@ import {
 } from './composition-selection.js'
 import { mergeCompositionStatuses } from './composition-status.js'
 import { modelCatalogPublisher } from './model-catalog-publication.js'
+import { createResolutionSources } from './resolution-sources.js'
 import { lazyRoleChildren } from './role-children.js'
 import { admitSessionBundlePresets } from './session-bundle-presets.js'
 import { resolveSessionCapabilities } from './session-capabilities.js'
@@ -68,9 +69,13 @@ type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
 /** Composition selects a container; runtime generation management continues to own generations, leases and durable pins. */
 export async function createCompositionHost(
   profile: ResolvedProfile,
-  options: HostOptions,
+  hostOptions: HostOptions,
   factory: Factory,
 ): Promise<Host> {
+  const resolution = createResolutionSources(hostOptions.runtimePluginSources)
+  const options: HostOptions = resolution.read
+    ? { ...hostOptions, runtimePluginSources: resolution.read }
+    : hostOptions
   const legacyPublication =
     !profile.composition && !profile.bundlePresets && !Object.keys(profile.bundleCatalog ?? {}).length
   const store = new CompositionSessionStore(options.profileDir)
@@ -508,13 +513,15 @@ export async function createCompositionHost(
   const admission = (
     rows = latestTarget?.tree.rows ?? initial.host.runtimeTargetSnapshot?.()?.tree.rows ?? [],
   ) => sessionAdmission(profile, modelProfile, options, activeAgentPackages(rows))
-  const prepareAgent = createAgentResolver({
-    admission,
-    host: initial.host,
-    packageDirs: options.packageDirs ?? new Map(),
-    adminLoop: () => readAdminLoopDefault(configuration),
-    open,
-  })
+  const prepareAgent = resolution.scoped(
+    createAgentResolver({
+      admission,
+      host: initial.host,
+      packageDirs: options.packageDirs ?? new Map(),
+      adminLoop: () => readAdminLoopDefault(configuration),
+      open,
+    }),
+  )
   const mergeGenerationStatuses = (statuses: readonly PluginGenerationStatus[]) =>
     mergeCompositionStatuses(statuses, containers.values(), openingFailures)
   const overrides: HostFacadeOverrides = {
