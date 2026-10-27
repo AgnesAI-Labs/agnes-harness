@@ -11,13 +11,17 @@
     margin: 0;
   }
   /* The full tool list of one source: names wrap as chips of text, never a table. */
-  /* A session can carry dozens of tool sources; the list scrolls so the dialog stays readable. */
+  /* A session can carry dozens of tool sources; the list scrolls so the dialog stays readable.
+     A flex column keeps every group row at its own height; a grid list was squeezing the rows. */
   .session-runtime-tool-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
     max-height: 17.5rem;
     overflow-y: auto;
   }
   .session-runtime-tool-groups > * {
-    flex-shrink: 0;
+    flex: 0 0 auto;
   }
   .session-runtime-tools {
     display: flex;

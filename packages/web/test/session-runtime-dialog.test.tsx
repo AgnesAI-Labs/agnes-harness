@@ -1,4 +1,6 @@
 /** @vitest-environment happy-dom */
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { SessionApprovalGrant, SessionRuntimeDescriptor, SessionToolsResult } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk/browser'
 import { act, createElement } from 'react'
@@ -16,6 +18,15 @@ import {
 import { enT } from './helpers/locale.js'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+/** The declarations of the first rule whose selector contains every given part. */
+function cssRule(css: string, ...parts: string[]): string {
+  for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = match[1]?.replace(/\s+/g, ' ') ?? ''
+    if (parts.every((part) => selector.includes(part))) return match[2] ?? ''
+  }
+  throw new Error(`no rule for ${parts.join(' + ')}`)
+}
 
 const descriptor = (id: string | undefined, extra: Partial<SessionRuntimeDescriptor> = {}) =>
   ({
@@ -432,6 +443,14 @@ it('groups the session tools by source and explains an unopened session', async 
     createElement(SessionToolList, { tools: undefined, failed: true, busy: false, onRefresh() {}, t: enT }),
   )
   expect(view.host.textContent).toContain(enT('session.runtime.toolsUnavailable'))
+  // The list is a flex column, so rows keep their height instead of being squashed into overlap.
+  const homePages = readFileSync(resolve(import.meta.dirname, '../public/styles/30-home-pages.css'), 'utf8')
+  const groupList = cssRule(homePages, '.session-runtime-tool-groups')
+  expect(groupList).toContain('display: flex')
+  expect(groupList).toContain('flex-direction: column')
+  expect(groupList).toContain('max-height: 17.5rem')
+  expect(groupList).toContain('overflow-y: auto')
+  expect(cssRule(homePages, '.session-runtime-tool-groups > *')).toContain('flex: 0 0 auto')
   await view.close()
 })
 
