@@ -2266,7 +2266,24 @@ const stopSessionConfiguration = onBroadcast(
   'agnes:session-configuration-changed',
   sessionConfigurationChanged,
 )
+// A started agent or quick action hands its session over here instead of reloading the page.
+const stopOpenSession = onBroadcast('agnes:open-session', (event) => {
+  const target =
+    event instanceof CustomEvent ? (event.detail as { sessionId?: unknown; prompt?: unknown }) : {}
+  if (typeof target.sessionId !== 'string') return
+  const { sessionId, prompt } = target as { sessionId: string; prompt?: string }
+  run(async () => {
+    // The page behind stays up until the conversation is ready, so no empty frame shows between.
+    try {
+      await open(sessionId)
+      if (prompt) composerRuntime.setDraft(prompt)
+    } finally {
+      homeNavigation.close()
+    }
+  })
+})
 onPageHide(() => {
+  stopOpenSession()
   notice.clearErrors()
   readOnlyController.clear()
   sidebarPages.reset()

@@ -34,14 +34,15 @@ import {
 
 type Text = (key: string, vars?: Record<string, string | number>) => string
 export type StartedSession = { sessionId: string; prompt?: string | undefined }
+/** The workbench listens for this on `window` and opens the session in place, without a reload. */
+export const OPEN_SESSION_EVENT = 'agnes:open-session'
 /**
- * Opens the new-session draft the way every other start link does: the loop is selected, the
- * package's session bundles are requested and the sample prompt is filled in, never sent.
+ * Opens the started session in the running workbench: the conversation is selected and the sample
+ * prompt is filled into its composer, never sent.
  */
-export const openStartedSession = (target: StartedSession): void =>
-  location.assign(
-    `/?${new URLSearchParams({ session: target.sessionId, ...(target.prompt ? { prompt: target.prompt } : {}) })}`,
-  )
+export const openStartedSession = (target: StartedSession): void => {
+  window.dispatchEvent(new CustomEvent<StartedSession>(OPEN_SESSION_EVENT, { detail: target }))
+}
 
 type Reviewed = PackagePreview | PackageInstalledDescriptor
 type GetsRow = { icon: IconName; title: string; detail?: string | undefined; caution?: boolean }

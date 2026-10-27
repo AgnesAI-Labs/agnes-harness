@@ -115,7 +115,8 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     const complete = (result: { sessionId: string; draft?: BundleLaunch['prompt'] }) => {
       if (current.current !== running) return
       set(undefined)
-      nav.back()
+      // `finish` closes the review page at once; `back` is a late popstate that would reopen the page behind the session.
+      nav.finish()
       rememberSessionAgent(result.sessionId, pending.ref, attempt.plan.launch.title)
       const work = pending.work && resolveApplicationWork(pending.work, locale)
       if (work && work.agent === pending.ref)

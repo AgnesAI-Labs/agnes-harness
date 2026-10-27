@@ -153,6 +153,9 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
     const host = document.body.appendChild(document.createElement('div'))
     const root = createRoot(host)
     const assign = vi.spyOn(location, 'assign').mockImplementation(() => {})
+    const opened: unknown[] = []
+    const onOpen = (event: Event) => opened.push((event as CustomEvent).detail)
+    window.addEventListener('agnes:open-session', onOpen)
     try {
       await act(async () => root.render(createElement(AgentsPage, { context: { t: (key) => key } })))
       await vi.waitFor(() => expect(host.querySelectorAll('[data-agent-ref]')).toHaveLength(2))
@@ -265,13 +268,15 @@ it.each(['success', 'recover', 'unknown', 'wrong-ref', 'cancel', 'enable', 'inhe
           host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-retry"]')?.click(),
         )
       }
-      await vi.waitFor(() =>
-        expect(assign).toHaveBeenLastCalledWith('/?session=session-reviewed&prompt=Backend+editable+draft'),
-      )
+      await vi.waitFor(() => expect(opened).toHaveLength(1))
+      expect(opened[0]).toEqual({ sessionId: 'session-reviewed', prompt: 'Backend editable draft' })
+      // Opening the started session is an in-app hand-over, not a document navigation.
+      expect(assign).toHaveBeenCalledTimes(1)
       expect(startAgent).toHaveBeenCalledTimes(1)
       if (outcome === 'enable') expect(enabled).toBe(true)
       if (outcome === 'recover' || outcome === 'unknown') expect(readAgent).toHaveBeenCalledWith(operationId)
     } finally {
+      window.removeEventListener('agnes:open-session', onOpen)
       await act(async () => root.unmount())
     }
   },
@@ -669,6 +674,9 @@ it.each(['en', 'zh-CN'] as const)(
       const root = createRoot(host)
       const localized = createDocumentLocaleSource({})
       const assign = vi.spyOn(location, 'assign').mockImplementation(() => {})
+      const opened: unknown[] = []
+      const onOpen = (event: Event) => opened.push((event as CustomEvent).detail)
+      window.addEventListener('agnes:open-session', onOpen)
       let unregister: (() => void) | undefined
       try {
         const shown: (string | undefined)[] = []
@@ -729,14 +737,16 @@ it.each(['en', 'zh-CN'] as const)(
             host.querySelector<HTMLButtonElement>('[data-testid="agent-launch-confirm"]')?.click(),
           )
         }
-        await vi.waitFor(() => expect(assign).toHaveBeenCalled())
+        await vi.waitFor(() => expect(opened).toHaveLength(1))
+        expect(assign).not.toHaveBeenCalled()
         expect(startAgent).toHaveBeenCalledWith('ticket', expect.any(String))
         expect(host.querySelector('[data-testid="agent-launch-review"]')).toBeNull()
         const { applicationWorkDraft } = await import('@agnes/web-client')
         expect(applicationWorkDraft.read(`work-${locale}-${consent}`)?.object?.id).toBe('B-017')
-        expect(new URL(assign.mock.calls[0]![0], 'http://localhost').searchParams.get('prompt')).toBe(
-          locale === 'en' ? 'Review this batch.' : '请复核此批次。',
-        )
+        expect(opened[0]).toEqual({
+          sessionId: `work-${locale}-${consent}`,
+          prompt: locale === 'en' ? 'Review this batch.' : '请复核此批次。',
+        })
       } finally {
         await act(async () => root.unmount())
         unregister?.()
@@ -744,6 +754,7 @@ it.each(['en', 'zh-CN'] as const)(
         host.remove()
         localized.dispose()
         assign.mockRestore()
+        window.removeEventListener('agnes:open-session', onOpen)
       }
     }
   },
