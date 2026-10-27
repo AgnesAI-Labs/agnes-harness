@@ -7,6 +7,7 @@ import {
   type RegisteredResource,
   SessionHookPort,
   type SessionImpl,
+  sessionUnattended,
   type WorkspaceHookSandbox,
 } from '@agnes/core'
 import type {
@@ -126,6 +127,7 @@ export function createSessionHookPort(
         signal: session.ac.signal,
         replayed: false,
         log: session.d.logger,
+        ...(sessionUnattended(session) ? { unattended: true } : {}),
         ...(workspace ? { workspaceHooks: workspace.snapshot, workspaceSandbox: workspace.sandbox } : {}),
       }
     },
