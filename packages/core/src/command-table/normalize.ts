@@ -7,6 +7,41 @@ export type { PolicyRule }
 
 const PATH_TOOLS = new Set(['read', 'write', 'edit', 'ls', 'grep', 'find'])
 
+const URI_SCHEME = /^([a-z][a-z0-9+.-]*):\/\//i
+
+const unpadded = (digits: string) => digits.replace(/^0+(?=\d)/, '')
+
+/**
+ * The identity of a reference whose scheme a tool declared as not naming a workspace path.
+ *
+ * `session-file://6/1` names the first file of message 6 and `artifact://<sha256>?size=<bytes>` text
+ * the output guard cut out of a tool result. On Windows, path normalization read their scheme colon
+ * as an ambiguous drive and refused every one of them. Such a reference must still reduce to one
+ * identity - a decision cached under one spelling would otherwise cover another - so every accepted
+ * form is spelled out here and a declared scheme with no rule is refused rather than folded into
+ * some other identity.
+ */
+function normalizeNonWorkspaceReference(scheme: string, remainder: string): string {
+  if (scheme === 'session-file' || scheme === 'session-image') {
+    if (remainder === 'list') return `${scheme}://list`
+    const reference = /^(\d+)\/(\d+)$/.exec(remainder)
+    if (!reference) throw new NotCanonical('not a session attachment reference')
+    const [seq = '', index = ''] = reference.slice(1)
+    return `${scheme}://${unpadded(seq)}/${unpadded(index)}`
+  }
+  if (scheme === 'artifact') {
+    // The output guard writes `artifact://<sha256>?size=<bytes>`; the digest alone is the other
+    // spelling a model tries, and the tool refuses it with a message of its own. Size travels with
+    // the digest, so a reference with one is a different identity from the digest alone.
+    const artifact = /^([0-9a-f]{64})(?:\?size=(\d{1,16}))?$/i.exec(remainder)
+    if (!artifact) throw new NotCanonical('not an artifact reference')
+    const [digest = '', size] = artifact.slice(1)
+    const sha = digest.toLowerCase()
+    return size === undefined ? `artifact://${sha}` : `artifact://${sha}?size=${unpadded(size)}`
+  }
+  throw new NotCanonical('unrecognized non-workspace scheme')
+}
+
 /** Thrown when an argument cannot be reduced to one identity, so no decision may be cached under it. */
 export class NotCanonical extends Error {
   constructor(reason: string) {
@@ -89,6 +124,11 @@ function normalizeWindowsPath(path: string, workspaceRoot: string, controlledRoo
  * The drive-letter refusal is per segment rather than only at the front of the string: `./C:` is one
  * of the spellings that motivated this rule, and a check anchored at the start of the string does
  * not see it.
+ *
+ * A `path` carrying a URI scheme the tool declared in `ToolMeta.paths[].nonWorkspaceSchemes` is not
+ * a filesystem path at all, so the URI itself is the identity and no platform normalization applies.
+ * Only the declared schemes are treated that way: an undeclared one stays an ambiguous path on
+ * Windows, exactly as before.
  */
 export function normalizeArgv(
   tool: string,
@@ -96,12 +136,17 @@ export function normalizeArgv(
   workspaceRoot: string,
   commandArg?: string,
   controlledRoot?: string,
+  nonWorkspaceSchemes?: readonly string[],
 ): string {
   const a = (args ?? {}) as Record<string, unknown>
   const command = commandArg === undefined ? undefined : a[commandArg]
   if (typeof command === 'string') return command.trim().replace(/\s+/g, ' ')
   if (PATH_TOOLS.has(tool) && typeof a.path === 'string') {
     const p = a.path
+    const scheme = URI_SCHEME.exec(p)
+    const name = scheme?.[1]?.toLowerCase()
+    if (scheme && name && nonWorkspaceSchemes?.includes(name))
+      return normalizeNonWorkspaceReference(name, p.slice(scheme[0].length))
     if (windowsRoot(workspaceRoot)) return normalizeWindowsPath(p, workspaceRoot, controlledRoot)
     if (p.includes('\0')) throw new NotCanonical('path contains NUL')
     if (p.includes('\\')) throw new NotCanonical('path contains a backslash')
