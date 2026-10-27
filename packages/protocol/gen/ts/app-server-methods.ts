@@ -168,6 +168,11 @@ export interface AppServerMethods {
   "_agnes/v1/session.deliverables": { params: Static<typeof import("./agnes-v1.js").SessionDeliverablesParams>; result: Static<typeof import("./agnes-v1.js").SessionDeliverablesResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.fork": { params: Static<typeof import("./agnes-v1.js").SessionForkParams>; result: Static<typeof import("./agnes-v1.js").SessionIdParams>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.btw": { params: Static<typeof import("./agnes-v1.js").SessionBtwParams>; result: Static<typeof import("./agnes-v1.js").SessionBtwResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.voice.transcribe": { params: Static<typeof import("./agnes-v1.js").SessionVoiceTranscribeParams>; result: Static<typeof import("./agnes-v1.js").SessionVoiceTranscribeResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.voice.speak": { params: Static<typeof import("./agnes-v1.js").SessionVoiceSpeakParams>; result: Static<typeof import("./agnes-v1.js").SessionVoiceSpeakResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/voice.status": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").VoiceStatusResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/voice.settings.get": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").VoiceSettingsSnapshot>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/voice.settings.save": { params: Static<typeof import("./agnes-v1.js").VoiceSettingsSaveParams>; result: Static<typeof import("./agnes-v1.js").VoiceSettingsSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.rename": { params: Static<typeof import("./agnes-v1.js").SessionRenameParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.archive": { params: Static<typeof import("./agnes-v1.js").SessionArchiveParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.pin": { params: Static<typeof import("./agnes-v1.js").SessionPinParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
