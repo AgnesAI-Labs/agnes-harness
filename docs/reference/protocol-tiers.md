@@ -60,7 +60,7 @@ revision. Neither refusal changes the listing or archives sessions. Repeated rem
 Existing session bindings remain valid for recovery through the archive.
 
 `session.voice.transcribe` turns one recorded clip (base64 WAV, 16 kHz mono, at most 20 seconds) into text,
-and `session.voice.speak` reads at most 120 characters aloud as base64 mp3. Both belong to the session's owner
+and `session.voice.speak` reads at most 120 UTF-16 code units of text (a character outside the Basic Multilingual Plane, such as an emoji, counts as 2) aloud as base64 mp3. Both belong to the session's owner
 and use the side-model account named in the voice settings. `voice.status` reports whether each feature is
 available and why not (no account, no model for the role, missing credential, ambiguous account) together
 with the saved settings. `voice.settings.get` and `voice.settings.save` (admin tier, compare-and-swap on the

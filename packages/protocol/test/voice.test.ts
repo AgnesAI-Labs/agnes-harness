@@ -30,10 +30,13 @@ describe('voice protocol contract', () => {
     expect(ok(t, 'params', { sessionId: 's', audio: 'A'.repeat(63) })).toBe(false)
   })
 
-  it('bounds speech text to 120 characters and speed to 0.25-4', () => {
+  it('bounds speech text to 120 UTF-16 units and speed to 0.25-4', () => {
     const s = '_agnes/v1/session.voice.speak'
     expect(ok(s, 'params', { sessionId: 's', text: '字'.repeat(120) })).toBe(true)
     expect(ok(s, 'params', { sessionId: 's', text: '字'.repeat(121) })).toBe(false)
+    // The limit is 120 UTF-16 code units (TypeBox), so an emoji counts as two.
+    expect(ok(s, 'params', { sessionId: 's', text: '😀'.repeat(60) })).toBe(true)
+    expect(ok(s, 'params', { sessionId: 's', text: '😀'.repeat(61) })).toBe(false)
     expect(ok(s, 'params', { sessionId: 's', text: '' })).toBe(false)
     expect(ok(s, 'params', { sessionId: 's', text: 'hi', speed: 0.2 })).toBe(false)
     expect(ok(s, 'params', { sessionId: 's', text: 'hi', speed: 4 })).toBe(true)
@@ -89,6 +92,18 @@ describe('voice protocol contract', () => {
     expect(METHOD_TIERS['_agnes/v1/voice.settings.get']).toBe('admin')
     expect(METHOD_TIERS['_agnes/v1/voice.settings.save']).toBe('admin')
     expect(METHODS['_agnes/v1/voice.status']).toMatchObject({ kind: 'request', direction: 'c2s' })
+  })
+
+  it('freezes the shared defaults deeply', () => {
+    for (const v of [
+      DEFAULT_VOICE_SETTINGS,
+      DEFAULT_VOICE_SETTINGS.input,
+      DEFAULT_VOICE_SETTINGS.reading,
+      DEFAULT_VOICE_SETTINGS.conversation,
+    ])
+      expect(Object.isFrozen(v)).toBe(true)
+    expect(structuredClone(DEFAULT_VOICE_SETTINGS)).toEqual(DEFAULT_VOICE_SETTINGS)
+    expect(Object.isFrozen(structuredClone(DEFAULT_VOICE_SETTINGS))).toBe(false)
   })
 
   it('derives the size constants from one another', () => {

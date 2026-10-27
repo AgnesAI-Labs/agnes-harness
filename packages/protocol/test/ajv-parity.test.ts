@@ -11397,3 +11397,50 @@ describe('side-call protocol additions: ajv ↔ TypeBox parity', () => {
     assertParity({ schema, check: ajvDef(fileId, name) }, fileId, name, sample, expected)
   })
 })
+
+describe('voice additions: ajv ↔ TypeBox parity on the language pattern and astral text', () => {
+  const lang = (language?: string) => ({
+    sessionId: 's',
+    audio: 'A'.repeat(64),
+    ...(language === undefined ? {} : { language }),
+  })
+  const settingsWith = (language: string) => ({
+    ...VOICE_SETTINGS,
+    input: { ...VOICE_SETTINGS.input, language },
+  })
+  const cases: [string, unknown, boolean][] = [
+    ['SessionVoiceTranscribeParams', lang(), true], // language absent
+    ['SessionVoiceTranscribeParams', lang(''), true], // pattern branch: empty
+    ['SessionVoiceTranscribeParams', lang('zh'), true], // pattern branch: bare language
+    ['SessionVoiceTranscribeParams', lang('zh-Hans-CN'), true], // pattern branch: subtags
+    ['SessionVoiceTranscribeParams', lang('z'), false], // one letter
+    ['SessionVoiceTranscribeParams', lang('zh_CN'), false], // underscore
+    ['SessionVoiceTranscribeParams', lang('zh-'), false], // dangling subtag separator
+    ['VoiceSettings', settingsWith('zh-CN'), true], // non-empty language in the settings
+    ['VoiceSettings', settingsWith('en'), true],
+    ['VoiceSettings', settingsWith('english-US-x'), false], // first subtag longer than 3 letters
+  ]
+  it.each(cases)('%s %j', (name, sample, expected) => {
+    const schema = DEFS_BY_FILE[AGNES_ID]?.[name]
+    if (!schema) throw new Error(`missing generated schema ${name}`)
+    assertParity({ schema, check: ajvDef(AGNES_ID, name) }, AGNES_ID, name, sample, expected)
+  })
+
+  // `maxLength` counts UTF-16 code units in the TypeBox runtime gate (the authority the daemon uses).
+  it('counts an emoji as two units in speech text', () => {
+    const name = 'SessionVoiceSpeakParams'
+    const schema = DEFS_BY_FILE[AGNES_ID]?.[name]
+    if (!schema) throw new Error(`missing generated schema ${name}`)
+    const ajv = ajvDef(AGNES_ID, name)
+    const sample = (n: number) => ({ sessionId: 's', text: '😀'.repeat(n) })
+    expect(Value.Check(schema, sample(60))).toBe(true)
+    expect(Value.Check(schema, sample(61))).toBe(false)
+    expect(validateMethod('_agnes/v1/session.voice.speak', 'params', sample(60)).ok).toBe(true)
+    expect(validateMethod('_agnes/v1/session.voice.speak', 'params', sample(61)).ok).toBe(false)
+    // Known library difference: ajv counts code points, so it still accepts 61 emoji (122 units). The
+    // daemon's gate is TypeBox, which stays the authority; this pins the difference so a change in
+    // either library shows up here instead of silently moving the limit.
+    expect(ajv(sample(60))).toBe(true)
+    expect(ajv(sample(61))).toBe(true)
+  })
+})
