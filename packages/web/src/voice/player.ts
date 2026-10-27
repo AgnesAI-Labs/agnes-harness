@@ -138,6 +138,8 @@ export class SpeechPlayer {
       }
     } catch (error) {
       outcome = this.run === run && !(error instanceof Stopped) ? 'failed' : 'stopped'
+      // A failed playlist must not leave its prefetch running.
+      run.abort.abort()
     }
     if (this.run === run) {
       this.run = undefined

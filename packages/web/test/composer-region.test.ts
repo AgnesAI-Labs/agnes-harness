@@ -483,6 +483,20 @@ describe('rendered composer region', () => {
     expect(voice.openSettings).toHaveBeenCalledTimes(1)
   })
 
+  it('spins the mic and holds the wave while a dictation is transcribed', async () => {
+    const { voice } = fakeVoice({
+      dictation: { visible: true, phase: 'transcribing', seconds: 3, level: 0 },
+    })
+    runtime = await mountRenderedIndex({ voice })
+    runtime.composer?.render(readyView)
+    const mic = required(document.querySelector<HTMLElement>('[data-testid="voice-mic"]'))
+    expect(mic.querySelector('.composer-voice-spin')).toBeTruthy()
+    const wave = required(document.querySelector<HTMLButtonElement>('[data-testid="voice-wave"]'))
+    expect(wave.getAttribute('aria-disabled')).toBe('true')
+    wave.click()
+    expect(voice.toggleConversation).not.toHaveBeenCalled()
+  })
+
   it('shows the recording time, the conversation phase and a notice in the voice group', async () => {
     const { voice } = fakeVoice({
       dictation: { visible: true, phase: 'recording', seconds: 7, level: 3 },

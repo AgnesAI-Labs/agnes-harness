@@ -151,6 +151,30 @@ it('saves each switch at once, numbers on blur, and refuses an out-of-range valu
   })
 })
 
+it('reverts only the invalid field, keeping a switch whose save is still on its way', async () => {
+  const api = fakeApi()
+  let release: (() => void) | undefined
+  api.save.mockImplementationOnce(
+    (settings) =>
+      new Promise((resolve) => {
+        release = () => resolve({ revision: REV1, settings: structuredClone(settings) })
+      }),
+  )
+  const host = await mount(api)
+  await toggle(host, 'voice-auto-read')
+  expect(api.save).toHaveBeenCalledTimes(1)
+  await type(host, 'voice-speed', '5')
+  expect(query(host, 'voice-speed-error')).not.toBeNull()
+  expect(field(host, 'voice-auto-read').getAttribute('aria-checked')).toBe('true')
+  await act(async () => release?.())
+  await act(async () => {})
+  for (const [sent] of api.save.mock.calls) {
+    expect(sent.reading.autoRead).toBe(true)
+    expect(sent.reading.speed).toBe(D.reading.speed)
+  }
+  expect(field(host, 'voice-auto-read').getAttribute('aria-checked')).toBe('true')
+})
+
 it('saves a typed value after typing pauses, without a blur', async () => {
   const api = fakeApi()
   const host = await mount(api)

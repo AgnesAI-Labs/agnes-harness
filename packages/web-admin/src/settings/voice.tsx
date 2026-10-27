@@ -191,8 +191,9 @@ function VoiceFields(props: {
     if (
       configIssues(voiceConfigSchema, { ...form, [name]: value }).some((issue) => issue.path === `/${name}`)
     ) {
-      // An invalid entry is never sent; it also cancels an earlier valid entry that is still waiting.
-      if (!autosave.failed) autosave.set(stored, 'idle')
+      // An invalid entry is never sent; it also cancels an earlier valid entry of this field that is still
+      // waiting. Other fields keep their edits, including a switch whose save is on its way.
+      if (!autosave.failed) change({ [name]: toVoiceForm(stored)[name] }, 'idle')
       return
     }
     change({ [name]: value } as Partial<Form>, 'idle')

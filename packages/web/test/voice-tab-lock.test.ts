@@ -6,6 +6,8 @@ class FakeChannel {
   private readonly listeners = new Set<(event: MessageEvent) => void>()
   readonly peers: FakeChannel[] = []
   closed = false
+  /** Deliver on a later task, as a real BroadcastChannel does. */
+  later = false
   addEventListener(_type: 'message', listener: (event: MessageEvent) => void): void {
     this.listeners.add(listener)
   }
@@ -14,7 +16,9 @@ class FakeChannel {
   }
   postMessage(data: unknown): void {
     this.sent.push(data)
-    for (const peer of this.peers) peer.receive(data)
+    for (const peer of this.peers)
+      if (this.later) setTimeout(() => peer.receive(data), 0)
+      else peer.receive(data)
   }
   receive(data: unknown): void {
     for (const listener of [...this.listeners]) listener({ data } as MessageEvent)
@@ -24,9 +28,11 @@ class FakeChannel {
   }
 }
 
-function pair(): [FakeChannel, FakeChannel] {
+function pair(later = false): [FakeChannel, FakeChannel] {
   const a = new FakeChannel()
   const b = new FakeChannel()
+  a.later = later
+  b.later = later
   a.peers.push(b)
   b.peers.push(a)
   return [a, b]
@@ -66,12 +72,13 @@ describe('VoiceTabLock', () => {
     expect(heardByB).toHaveBeenCalledTimes(3)
   })
 
-  it('lets the lower tab id win an auto-read claim for the same key', async () => {
-    const [ca, cb] = pair()
+  it('lets the lower tab id win when two tabs claim the same key at once', async () => {
+    const [ca, cb] = pair(true)
     const a = lock('a', ca)
     const b = lock('b', cb)
-    const ra = a.claimAuto('s:t1')
+    // Neither has heard the other yet: the tie-break decides, not the order.
     const rb = b.claimAuto('s:t1')
+    const ra = a.claimAuto('s:t1')
     let settled = false
     void rb.then(() => {
       settled = true
@@ -81,6 +88,20 @@ describe('VoiceTabLock', () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(await ra).toBe(true)
     expect(await rb).toBe(false)
+  })
+
+  it('lets the first claim win when a lower tab id claims the same key later', async () => {
+    const [ca, cb] = pair()
+    const a = lock('a', ca)
+    const b = lock('b', cb)
+    const rb = b.claimAuto('s:t1')
+    await vi.advanceTimersByTimeAsync(200)
+    expect(await rb).toBe(true)
+    const ra = a.claimAuto('s:t1')
+    await vi.advanceTimersByTimeAsync(150)
+    expect(await ra).toBe(false)
+    // The yielding tab posts no claim of its own.
+    expect(ca.sent).toEqual([])
   })
 
   it('does not let a claim for another key block the claimant', async () => {

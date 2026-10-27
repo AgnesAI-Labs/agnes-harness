@@ -33,6 +33,11 @@ export function browserMedia(): VoiceMedia {
         recorder.addEventListener('dataavailable', (event) => {
           if (event.data.size > 0) chunks.push(event.data)
         })
+        // Made before recording starts: a recorder that stops on its own (the headset is unplugged)
+        // fires its one stop event before anyone asks for the recording.
+        const stopped = new Promise<void>((resolve) => {
+          recorder.addEventListener('stop', () => resolve(), { once: true })
+        })
         recorder.start()
         let finished = false
         return {
@@ -40,27 +45,20 @@ export function browserMedia(): VoiceMedia {
             analyser.getFloatTimeDomainData(frame)
             return rmsOf(frame)
           },
-          stop() {
+          async stop() {
             finished = true
-            return new Promise<RecordedAudio>((resolve, reject) => {
-              recorder.addEventListener(
-                'stop',
-                () => {
-                  void new Blob(chunks, { type: recorder.mimeType })
-                    .arrayBuffer()
-                    .then((bytes) => context.decodeAudioData(bytes))
-                    .then((decoded) => {
-                      const channels = Array.from({ length: decoded.numberOfChannels }, (_, i) =>
-                        decoded.getChannelData(i),
-                      )
-                      resolve({ channels, sampleRate: decoded.sampleRate })
-                    }, reject)
-                    .finally(release)
-                },
-                { once: true },
+            if (recorder.state !== 'inactive') recorder.stop()
+            try {
+              await stopped
+              const bytes = await new Blob(chunks, { type: recorder.mimeType }).arrayBuffer()
+              const decoded = await context.decodeAudioData(bytes)
+              const channels = Array.from({ length: decoded.numberOfChannels }, (_, i) =>
+                decoded.getChannelData(i),
               )
-              recorder.stop()
-            })
+              return { channels, sampleRate: decoded.sampleRate }
+            } finally {
+              release()
+            }
           },
           cancel() {
             if (finished) return

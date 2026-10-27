@@ -169,6 +169,7 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
       }
       statusRunning = false
       emit()
+      if (!failure) applySettings()
       if (statusAgain) {
         statusAgain = false
         refresh()
@@ -179,6 +180,7 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
   /** A voice call; a session still busy with an aborted call is retried with backoff. */
   const voiceCall = async <T>(method: string, params: unknown, signal: AbortSignal): Promise<T> => {
     for (let attempt = 0; ; attempt++) {
+      signal.throwIfAborted()
       try {
         return await deps.call<T>(method, params, { signal, timeoutMs: VOICE_LINK_TIMEOUT_MS })
       } catch (error) {
@@ -416,10 +418,24 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
     current.input?.cancel()
     setDictation(IDLE_DICTATION)
   }
+  /** Cancels a recording, and drops a transcription on its way: its text goes nowhere. */
+  const dropDictation = (): void => {
+    cancelDictation()
+    const current = transcribing
+    if (!current) return
+    transcribing = undefined
+    current.abort()
+    setDictation(IDLE_DICTATION)
+  }
   const finishDictation = async (): Promise<void> => {
     const current = recording
-    const input = current?.input
-    if (!current || !input) return cancelDictation()
+    if (!current) return
+    const input = current.input
+    // Nothing was said (or the microphone had not even opened): nothing to decode or send.
+    if (!input || !current.heard) {
+      cancelDictation()
+      return showNotice('empty')
+    }
     recording = undefined
     clearInterval(current.timer)
     const abort = new AbortController()
@@ -428,7 +444,8 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
     try {
       const heard = await input.stop()
       const target = current.target
-      if (!current.heard || seconds(heard) < MIN_SECONDS) return showNotice('empty')
+      if (abort.signal.aborted) return
+      if (seconds(heard) < MIN_SECONDS) return showNotice('empty')
       if (!target) throw new Error('no composer')
       const text = await transcribeAll(heard, target, abort.signal)
       if (abort.signal.aborted) return
@@ -461,8 +478,16 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
     watch.reset()
     // The session this voice input opened on the new-chat page is not a switch away.
     if (previous === undefined && next !== undefined && (ensuring > 0 || next === ensured)) return
+    dropDictation()
     player.stop()
     conversation.exit()
+  }
+  /** A feature the settings turn off stops at once, not only its button. */
+  const applySettings = (): void => {
+    const { input, reading } = settings()
+    if (!input.enabled) dropDictation()
+    if (!input.enabled || !reading.enabled) conversation.exit()
+    if (!reading.enabled) player.stop()
   }
 
   const featureReason = (state: VoiceFeatureState): VoiceUnavailable | undefined => {
@@ -555,8 +580,13 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
       sessionId = next.getSnapshot()
       watch.reset()
       const stop = next.subscribe(onSessionChange)
+      // A connection that comes back clears an offline status, which nothing else would ask for again.
+      const stopReadiness = next.readiness.subscribe(() => {
+        if (failure === 'offline' && next.readiness.getSnapshot().status === 'ready') refresh()
+      })
       return () => {
         stop()
+        stopReadiness()
         if (session === next) session = undefined
       }
     },
@@ -578,7 +608,8 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
     toggleConversation() {
       if (conversation.phase.getSnapshot() !== 'idle') return conversation.exit()
       const state = snapshot?.conversation
-      if (!state?.visible || state.disabled) return
+      // A dictation being transcribed finishes first: its text would land in the conversation.
+      if (!state?.visible || state.disabled || dictation.phase === 'transcribing') return
       cancelDictation()
       player.stop()
       conversation.start()
@@ -599,8 +630,7 @@ export function createVoiceController(deps: VoiceControllerDeps): VoiceControlle
     dispose() {
       if (disposed) return
       conversation.exit()
-      cancelDictation()
-      transcribing?.abort()
+      dropDictation()
       player.stop()
       disposed = true
       bindEscape()

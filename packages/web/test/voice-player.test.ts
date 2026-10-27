@@ -205,6 +205,17 @@ describe('SpeechPlayer', () => {
     expect(await done).toBe('failed')
   })
 
+  it('cancels the prefetch when the playlist fails', async () => {
+    const { player, call, audio } = setup()
+    const done = player.play('n1', ['a', 'b', 'c'])
+    call(0).resolve(MP3)
+    await flush()
+    expect(call(1).signal.aborted).toBe(false)
+    audio(0).fail()
+    expect(await done).toBe('failed')
+    expect(call(1).signal.aborted).toBe(true)
+  })
+
   it('resolves failed when the audio element errors or cannot start', async () => {
     const first = setup()
     const a = first.player.play('n1', ['a'])

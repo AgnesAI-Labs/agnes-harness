@@ -10,6 +10,7 @@ function VoiceButton({
   testId,
   icon,
   label,
+  spin = false,
   level,
   reason,
   inactive = false,
@@ -19,6 +20,8 @@ function VoiceButton({
 }: {
   testId: string
   icon: IconName
+  /** The icon turns: work is under way. */
+  spin?: boolean
   label: string
   level: number
   reason?: VoiceUnavailable | undefined
@@ -42,7 +45,7 @@ function VoiceButton({
       aria-disabled={blocked || undefined}
       {...(pressed === undefined ? {} : { 'aria-pressed': pressed })}
       title={reason ? undefined : label}
-      icon={<Icon name={icon} size={16} />}
+      icon={<Icon name={icon} size={16} className={spin ? 'composer-voice-spin' : undefined} />}
       onClick={() => {
         if (!blocked) onClick()
       }}
@@ -84,19 +87,20 @@ export function VoiceComposerButtons({
   const { dictation, conversation, notice } = state
   if (!dictation.visible && !conversation.visible) return null
   const talking = conversation.phase !== 'idle'
+  const transcribing = dictation.phase === 'transcribing'
   const micIcon: IconName =
-    dictation.phase === 'recording' ? 'square' : dictation.phase === 'transcribing' ? 'loader-circle' : 'mic'
+    dictation.phase === 'recording' ? 'square' : transcribing ? 'loader-circle' : 'mic'
   const micLabel =
     dictation.phase === 'recording'
       ? t('voice.micStop')
-      : dictation.phase === 'transcribing'
+      : transcribing
         ? t('voice.phase.transcribing')
         : t('voice.mic')
   const status = talking
     ? t(`voice.phase.${conversation.phase}`)
     : dictation.phase === 'recording'
       ? t('voice.seconds', { seconds: dictation.seconds })
-      : dictation.phase === 'transcribing'
+      : transcribing
         ? t('voice.phase.transcribing')
         : ''
   return (
@@ -105,11 +109,12 @@ export function VoiceComposerButtons({
         <VoiceButton
           testId="voice-mic"
           icon={micIcon}
+          spin={transcribing}
           label={micLabel}
           level={talking ? conversation.level : dictation.level}
           reason={dictation.disabled}
           // In a conversation the mic only interrupts the reading; a transcription is not interrupted.
-          inactive={(talking && conversation.phase !== 'reading') || dictation.phase === 'transcribing'}
+          inactive={(talking && conversation.phase !== 'reading') || transcribing}
           onClick={voice.toggleDictation}
           onConfigure={voice.openSettings}
         />
@@ -121,6 +126,8 @@ export function VoiceComposerButtons({
           label={talking ? t('voice.waveStop') : t('voice.wave')}
           level={conversation.level}
           reason={talking ? undefined : conversation.disabled}
+          // A dictation being transcribed finishes first; its text would land in the conversation.
+          inactive={!talking && transcribing}
           pressed={talking}
           onClick={voice.toggleConversation}
           onConfigure={voice.openSettings}

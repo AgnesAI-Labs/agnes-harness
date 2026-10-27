@@ -1,12 +1,12 @@
 @layer app {
-  /* Voice: the mic and wave buttons sit in the card's control row right before send; the status line
-     (recording seconds or the conversation phase) gives way first when the row is narrow. */
+  /* Voice: the mic and wave buttons sit in the card's control row right before send. The group lays its
+     parts out in the row itself: the buttons keep their size like send and cancel, while the status line
+     and the notice shrink and cut off with an ellipsis, so a narrow row never pushes send out. */
   .composer-voice {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s4);
+    display: contents;
+  }
+  .composer-voice-button {
     flex: none;
-    min-width: 0;
   }
   .composer-voice-button[aria-disabled="true"] {
     opacity: 0.5;
@@ -31,9 +31,13 @@
   }
   .composer-voice-status,
   .composer-voice-notice {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
     color: var(--agnes-text-tertiary);
     font-size: var(--font-size-xs);
     white-space: nowrap;
+    text-overflow: ellipsis;
   }
   .composer-voice-status:empty,
   .composer-voice-notice:empty {
@@ -45,6 +49,20 @@
   @container (max-width: 480px) {
     .composer-voice-status {
       display: none;
+    }
+  }
+  /* The transcribing icon turns, except for those who asked for less motion. */
+  .composer-voice-spin {
+    animation: composer-voice-spin 1s linear infinite;
+  }
+  @keyframes composer-voice-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-voice-spin {
+      animation: none;
     }
   }
   .voice-reason {

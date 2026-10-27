@@ -1,6 +1,6 @@
 const CHANNEL_NAME = 'agnes-voice'
 const CLAIM_WAIT_MS = 150
-/** A claim stays on record this long, so a tab that asks a moment later still yields to a lower id. */
+/** A claim stays on record this long, so a tab that asks a moment later yields to it. */
 const CLAIM_KEEP_MS = 3_000
 const HEARTBEAT_MS = 2_000
 const PEER_EXPIRY_MS = 5_000
@@ -73,10 +73,14 @@ export class VoiceTabLock {
     return this.add(this.playing, listener)
   }
 
-  /** True when this tab may auto-read `key`: visible, and no lower tab id claimed the same key. */
+  /**
+   * True when this tab may auto-read `key`: visible, no peer claimed it before this tab asked (the first
+   * claim wins), and no lower tab id claimed it within the wait (the tie-break).
+   */
   async claimAuto(key: string): Promise<boolean> {
     if (this.disposed || !this.visible()) return false
     if (!this.channel) return true
+    if (this.claims.has(key)) return false
     this.post({ type: 'claim', key, tab: this.tabId })
     const alive = await new Promise<boolean>((resolve) => {
       const abandon = () => resolve(false)

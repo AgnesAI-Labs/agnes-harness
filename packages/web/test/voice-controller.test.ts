@@ -186,10 +186,11 @@ function setup(o: Setup = {}) {
   const log: string[] = []
   const texts = [...(o.texts ?? [])]
   const audios: FakeAudio[] = []
+  let status = o.status
   const call = vi.fn(async (method: string, params: unknown, _options?: unknown): Promise<unknown> => {
     if (method === '_agnes/v1/voice.status') {
-      if (o.status instanceof Error) throw o.status
-      return o.status ?? ready()
+      if (status instanceof Error) throw status
+      return status ?? ready()
     }
     if (method === '_agnes/v1/session.voice.transcribe') {
       log.push('transcribe')
@@ -258,6 +259,10 @@ function setup(o: Setup = {}) {
     speaks,
     unbindComposer,
     unbindSession,
+    /** What the next status call returns. */
+    setStatus(next: VoiceStatusResult | Error) {
+      status = next
+    },
   }
 }
 const statusCalls = (call: ReturnType<typeof vi.fn>) =>
@@ -461,6 +466,22 @@ describe('voice button state', () => {
     expect(statusCalls(call)).toBe(3)
   })
 
+  it('asks for the status again when the session becomes ready after an offline status', async () => {
+    const { snapshot, session, call, setStatus } = setup({ status: new Error('socket closed') })
+    await flush()
+    expect(snapshot().dictation.disabled).toBe('offline')
+    setStatus(ready())
+    // The same session, a new readiness epoch: the connection is back.
+    session.set('s1')
+    await flush()
+    expect(statusCalls(call)).toBe(2)
+    expect(snapshot().dictation.disabled).toBeUndefined()
+    // Once the status is known, readiness changes cost no call.
+    session.set('s1')
+    await flush()
+    expect(statusCalls(call)).toBe(2)
+  })
+
   it('lists the enabled voice accounts and opens the side-model settings from the configure link', async () => {
     const { controller, openSettings } = setup()
     expect(await controller.settingsApi.accounts()).toEqual([{ route: 'account-a', label: '硅基流动' }])
@@ -562,6 +583,67 @@ describe('dictation', () => {
     // The notice shows for four seconds.
     await vi.advanceTimersByTimeAsync(4_000)
     expect(snapshot().notice).toBeUndefined()
+  })
+
+  it('says it did not catch anything for a stop before any speech, without decoding the recording', async () => {
+    const { media, inputs } = fakeMedia({ level: 0.001 })
+    const { controller, snapshot, call } = setup({ media })
+    await flush()
+    controller.toggleDictation()
+    await vi.advanceTimersByTimeAsync(400)
+    controller.toggleDictation()
+    expect(snapshot().notice?.key).toBe('empty')
+    expect(snapshot().dictation.phase).toBe('idle')
+    expect(inputs[0]?.stop).not.toHaveBeenCalled()
+    expect(inputs[0]?.cancel).toHaveBeenCalled()
+    // A stop before the microphone even opened says the same.
+    controller.toggleDictation()
+    controller.toggleDictation()
+    expect(snapshot().notice?.key).toBe('empty')
+    await flush()
+    expect(inputs[1]?.cancel).toHaveBeenCalled()
+    expect(snapshot().dictation.phase).toBe('idle')
+    expect(call.mock.calls.some(([method]) => method === '_agnes/v1/session.voice.transcribe')).toBe(false)
+  })
+
+  it('drops a transcription when the session changes while it runs', async () => {
+    let release: ((value: { text: string }) => void) | undefined
+    const { controller, composer, session, snapshot } = setup({
+      status: ready({ settings: settings({ input: { autoSend: true } }) }),
+      transcribe: () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    })
+    await flush()
+    controller.toggleDictation()
+    await vi.advanceTimersByTimeAsync(400)
+    controller.toggleDictation()
+    await flush()
+    expect(snapshot().dictation.phase).toBe('transcribing')
+    session.set('s2')
+    expect(snapshot().dictation.phase).toBe('idle')
+    release?.({ text: '发给别的会话' })
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(composer.insertText).not.toHaveBeenCalled()
+    expect(composer.submit).not.toHaveBeenCalled()
+    expect(snapshot().notice).toBeUndefined()
+  })
+
+  it('cancels a recording when the settings turn voice input off', async () => {
+    const { media, inputs } = fakeMedia()
+    const { controller, snapshot, call, setStatus } = setup({ media })
+    await flush()
+    controller.toggleDictation()
+    await vi.advanceTimersByTimeAsync(400)
+    expect(snapshot().dictation.phase).toBe('recording')
+    setStatus(ready({ settings: settings({ input: { enabled: false } }) }))
+    controller.refresh()
+    await flush()
+    expect(snapshot().dictation).toMatchObject({ visible: false, phase: 'idle' })
+    expect(inputs[0]?.cancel).toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(call.mock.calls.some(([method]) => method === '_agnes/v1/session.voice.transcribe')).toBe(false)
   })
 
   it.each([
@@ -792,6 +874,18 @@ describe('read-aloud', () => {
     expect(audios[0]?.plays).toBe(2)
   })
 
+  it('stops reading when the settings turn read-aloud off', async () => {
+    const { controller, snapshot, setStatus } = setup()
+    await flush()
+    controller.toggleReading('a1', REPLY)
+    await flush()
+    expect(snapshot().reading.phase).toBe('playing')
+    setStatus(ready({ settings: settings({ reading: { enabled: false } }) }))
+    controller.refresh()
+    await flush()
+    expect(snapshot().reading).toMatchObject({ visible: false, phase: 'idle' })
+  })
+
   it('stops when another tab starts playing', async () => {
     const [left, right] = pair()
     const a = setup({ channel: left, tabId: 'tab-a' })
@@ -863,6 +957,62 @@ describe('voice conversation in the controller', () => {
     window.dispatchEvent(esc)
     expect(esc.defaultPrevented).toBe(true)
     expect(snapshot().conversation.phase).toBe('idle')
+  })
+
+  it('stops listening when the settings turn voice input off mid-conversation', async () => {
+    const { media, inputs } = fakeMedia({ level: 0.001 })
+    const { controller, snapshot, composer, setStatus } = setup({ media })
+    await flush()
+    controller.toggleConversation()
+    await flush()
+    expect(snapshot().conversation.phase).toBe('listening')
+    setStatus(ready({ settings: settings({ input: { enabled: false } }) }))
+    controller.refresh()
+    await flush()
+    expect(snapshot().conversation).toMatchObject({ visible: false, phase: 'idle' })
+    expect(inputs[0]?.cancel).toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(media.open).toHaveBeenCalledTimes(1)
+    expect(composer.submit).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing more when the settings turn read-aloud off while a turn is transcribed', async () => {
+    let release: ((value: { text: string }) => void) | undefined
+    const { controller, snapshot, composer, setStatus } = setup({
+      media: fakeMedia({ levels: utterance, samples: noise(2) }).media,
+      transcribe: () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    })
+    await flush()
+    controller.toggleConversation()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(snapshot().conversation.phase).toBe('transcribing')
+    setStatus(ready({ settings: settings({ reading: { enabled: false } }) }))
+    controller.refresh()
+    await flush()
+    expect(snapshot().conversation.phase).toBe('idle')
+    release?.({ text: '你好' })
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(composer.insertText).not.toHaveBeenCalled()
+    expect(composer.submit).not.toHaveBeenCalled()
+  })
+
+  it('ignores the wave while a dictation is being transcribed', async () => {
+    const { media } = fakeMedia()
+    const { controller, snapshot } = setup({ media, transcribe: () => new Promise(() => {}) })
+    await flush()
+    controller.toggleDictation()
+    await vi.advanceTimersByTimeAsync(400)
+    controller.toggleDictation()
+    await flush()
+    expect(snapshot().dictation.phase).toBe('transcribing')
+    controller.toggleConversation()
+    await flush()
+    expect(snapshot().conversation.phase).toBe('idle')
+    expect(snapshot().dictation.phase).toBe('transcribing')
+    expect(media.open).toHaveBeenCalledTimes(1)
   })
 
   it('drops the silence before the speech in a conversation', async () => {
