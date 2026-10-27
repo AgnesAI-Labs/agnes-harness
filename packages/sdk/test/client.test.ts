@@ -608,6 +608,17 @@ describe('createClient', () => {
       [META_KEY]: { clientId: 'cid-0' },
     })
   })
+
+  it('defaults the history load budget so a cold worker start is not mistaken for a stall', () => {
+    const c = createClient({
+      transport: { kind: 'inproc', endpoint: fakeEndpoint({}).endpoint },
+      journal: memoryJournal(),
+      authProviders: providers,
+    })
+
+    expect(c.timeouts.loadIdle).toBe(90_000)
+    expect(c.timeouts.loadHard).toBe(600_000)
+  })
 })
 
 describe('memoryJournal', () => {

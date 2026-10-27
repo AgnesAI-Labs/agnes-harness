@@ -252,7 +252,7 @@ export class Client {
     this.journal = opts.journal ?? memoryJournal(opts.clientId)
     this.timeouts = {
       request: opts.timeouts?.request ?? 30_000,
-      loadIdle: opts.timeouts?.loadIdle ?? 30_000,
+      loadIdle: opts.timeouts?.loadIdle ?? 90_000,
       loadHard: opts.timeouts?.loadHard ?? 600_000,
       initialize: opts.timeouts?.initialize ?? 10_000,
       claim: opts.timeouts?.claim ?? 4_000,
@@ -702,6 +702,7 @@ export class Client {
     return loadHistory({
       ...(signal ? { signal } : {}),
       sessionId: id,
+      method: open ? '_agnes/v1/session.open' : 'session/load',
       idleMs: this.timeouts.loadIdle,
       hardMs: this.timeouts.loadHard,
       subscribe: (fn) => this.conn.onNotification(fn),

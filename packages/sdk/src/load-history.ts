@@ -5,6 +5,8 @@ import { RequestTimeout } from './errors.js'
 /** A long open is bounded by genuine forward progress and an independent hard deadline. */
 export async function loadHistory<T>(options: {
   sessionId: string
+  /** RPC method behind this load; timeout diagnostics name what the caller actually invoked. */
+  method?: string
   idleMs: number
   hardMs: number
   subscribe(fn: (method: string, params: unknown) => void): () => void
@@ -14,19 +16,20 @@ export async function loadHistory<T>(options: {
 }): Promise<T> {
   if (![options.idleMs, options.hardMs].every((ms) => Number.isSafeInteger(ms) && ms > 0))
     throw new RangeError('load timeouts must be positive safe integers')
+  const method = options.method ?? 'session/load'
   const controller = new AbortController()
   const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal
   let idle: ReturnType<typeof setTimeout> | undefined
   const reset = () => {
     clearTimeout(idle)
     idle = setTimeout(
-      () => controller.abort(new RequestTimeout('session/load (idle)', options.idleMs)),
+      () => controller.abort(new RequestTimeout(`${method} (idle)`, options.idleMs)),
       options.idleMs,
     )
   }
   reset()
   const hard = setTimeout(
-    () => controller.abort(new RequestTimeout('session/load (hard)', options.hardMs)),
+    () => controller.abort(new RequestTimeout(`${method} (hard)`, options.hardMs)),
     options.hardMs,
   )
   let active = true
