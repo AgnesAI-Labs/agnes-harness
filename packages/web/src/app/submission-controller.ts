@@ -114,6 +114,17 @@ export function createSubmissionController(
     return request
   }
 
+  /** An agent request stands alone; `session.new` refuses it beside a loop, bundles, a recipe or a level. */
+  function newSessionOptions() {
+    const request = draftRequest()
+    if ('agent' in request) return request
+    return {
+      ...(context.draftLoop ? { loop: context.draftLoop } : {}),
+      ...request,
+      ...(context.draftBundles.length ? { bundles: context.draftBundles } : {}),
+    }
+  }
+
   async function prepareComposerSession(): Promise<Session> {
     if (context.current) return context.current
     if (referenceSessionPending) return referenceSessionPending
@@ -138,9 +149,7 @@ export function createSubmissionController(
       const created = await context.client.session.new({
         cwd: workspace?.path ?? '',
         sessionKey: key,
-        ...(context.draftLoop ? { loop: context.draftLoop } : {}),
-        ...draftRequest(),
-        ...(context.draftBundles.length ? { bundles: context.draftBundles } : {}),
+        ...newSessionOptions(),
       })
       if (!context.sessionBinding.isCurrent(epoch)) throw new Error(context.t('app.session.selectionChanged'))
       const opening = context.open(created.id, {
@@ -492,9 +501,7 @@ export function createSubmissionController(
       const created = await context.client.session.new({
         cwd: workspace.path,
         sessionKey: key,
-        ...(context.draftLoop ? { loop: context.draftLoop } : {}),
-        ...draftRequest(),
-        ...(context.draftBundles.length ? { bundles: context.draftBundles } : {}),
+        ...newSessionOptions(),
       })
       if (!context.sessionBinding.isCurrent(epoch) || !context.draftingNew)
         throw new Error(context.t('app.session.selectionChanged'))

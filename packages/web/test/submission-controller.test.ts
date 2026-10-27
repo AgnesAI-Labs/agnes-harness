@@ -84,8 +84,15 @@ describe('new session request', () => {
       { preset: 'minimal', permission: 'workspace-write' },
     ],
     ['nothing chosen', {}, { preset: 'standard', permission: 'default' }],
+    ['an application default agent', { agent: 'devboard.coordinator' }, { agent: 'devboard.coordinator' }],
+    [
+      'a chosen recipe over the application agent',
+      { agent: 'devboard.coordinator', preset: 'ptc' },
+      { preset: 'ptc', permission: 'default' },
+    ],
   ] as const)('sends %s from every creation path', async (_case, choice, expected) => {
     const binding = new SessionBindingOwner()
+    const loop = { id: 'synthetic-loop', version: '1' }
     const created = vi.fn(async () => {
       throw new Error('stop after the request')
     })
@@ -99,6 +106,7 @@ describe('new session request', () => {
       draftLoopAvailable: () => true,
       loopCatalogPending: false,
       draftBundles: [],
+      draftLoop: loop,
       runtimeCatalog: runtime,
       draftSessionRequest: () =>
         newSessionRequest({
@@ -117,7 +125,12 @@ describe('new session request', () => {
     await expect(controller.prepareComposerSession()).rejects.toThrow('stop after the request')
     await expect(controller.prepareAttachmentSession()).rejects.toThrow('stop after the request')
     for (const [request] of created.mock.calls as unknown as [Record<string, unknown>][])
-      expect(request).toEqual({ cwd: '/synthetic/work', sessionKey: expect.any(String), ...expected })
+      expect(request).toEqual({
+        cwd: '/synthetic/work',
+        sessionKey: expect.any(String),
+        ...('agent' in expected ? {} : { loop }),
+        ...expected,
+      })
     expect(created).toHaveBeenCalledTimes(2)
   })
 

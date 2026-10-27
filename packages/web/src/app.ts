@@ -59,7 +59,7 @@ import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
 import { settingsCatalog } from '@agnes/web-admin/settings/locales'
 import { mountStatusCheck } from '@agnes/web-admin/settings/status-check'
-import { homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
+import { effectiveApplication, homeEntries, homeNavigation, settingsSections } from '@agnes/web-client'
 import type { LiveProjection } from '@agnes/web-conversation/live-projection'
 import { errorNotice, type KnownSessionModel, type Translate } from '@agnes/web-conversation/presentation'
 import { workbenchLocaleCatalog } from '@agnes/web-conversation/workbench'
@@ -1154,8 +1154,17 @@ let newSessionCatalog: NewSessionCatalog | undefined
 let loopCatalogError = false
 let loopCatalogPending = false
 let sessionCatalogGeneration = 0
+/** The workbench's default agent, unless the draft already picked a recipe, bundles or a loop. */
+function draftApplicationAgent(): string | undefined {
+  const app = effectiveApplication()
+  const agent = app?.defaultAgent
+  if (!agent || draftBundles.length || draftLoopEdited || (app.agents && !app.agents.includes(agent)))
+    return undefined
+  return agent
+}
 function draftPermissionInput() {
   return {
+    agent: draftApplicationAgent(),
     explicit: draftPermission,
     remembered: readWebComposerMemory()?.permission,
     preset: draftPreset,
