@@ -116,17 +116,21 @@ function newToolResults(w: Window, hashes: string[]): number {
   return w.results.filter((e) => e.seq > since).length
 }
 
+const trustedRow = (e: Event) =>
+  e.origin === 'system' &&
+  e.trust === 'trusted' &&
+  typeof (e.data as { toolUseId?: string }).toolUseId === 'string'
+
 function assemble(s: SessionImpl, w: Window): CoreVerifyInput {
+  // Refused before any effect, with the correction in the refusal: an argument-recovery failure,
+  // or a call to a tool this request did not offer, whose schema the model never had to violate.
   const rejected = new Set(
-    w.refusals
-      .filter(
-        (e) =>
-          e.origin === 'system' &&
-          e.trust === 'trusted' &&
-          Number((e.data as { failures?: number }).failures) > 0 &&
-          typeof (e.data as { toolUseId?: string }).toolUseId === 'string',
-      )
-      .map((e) => (e.data as { toolUseId: string }).toolUseId),
+    [
+      ...w.refusals.filter((e) => trustedRow(e) && Number((e.data as { failures?: number }).failures) > 0),
+      ...w.results.filter(
+        (e) => trustedRow(e) && (e.data as { code?: unknown }).code === 'TOOL_NOT_DISCLOSED',
+      ),
+    ].map((e) => (e.data as { toolUseId: string }).toolUseId),
   )
   const toolCalls = w.calls.map((e) => {
     const d = e.data as { name?: unknown; args?: unknown }

@@ -18,9 +18,28 @@ export type VerifyInput = {
   history?: Pick<VerifyInput, 'toolCalls' | 'recentToolKeys' | 'surfaceTailHashes' | 'newToolResults'>
 }
 
+type Call = VerifyInput['toolCalls'][number]
+const invalid = (c: Call) => !c.schemaOk && !c.rejected
+
+/**
+ * Over a whole turn, an invalid call counts only while it still stands: no later valid call to the
+ * same tool replaced it, or the same tool was called invalidly again. One slip the model corrected
+ * says nothing about the answer the turn ended with.
+ */
+export function unresolvedInvalid(calls: readonly Call[]): boolean {
+  const slips = new Map<string, { count: number; open: boolean }>()
+  for (const c of calls) {
+    const slip = slips.get(c.name)
+    if (invalid(c)) slips.set(c.name, { count: (slip?.count ?? 0) + 1, open: true })
+    else if (slip && c.schemaOk && !c.rejected) slip.open = false
+  }
+  return [...slips.values()].some((slip) => slip.open || slip.count > 1)
+}
+
 /**
  * Tier 0: five pure checks over one step/turn's worth of shape, no model call. `tool`/`step` scope
- * only sees the failure-grade checks (schema, deviation, truncation); `turn`/`task` scope adds the
+ * only sees the failure-grade checks (schema, deviation, truncation), and `turn`/`task` scope reads
+ * the schema check as the turn's outcome (see `unresolvedInvalid`); `turn`/`task` scope adds the
  * two revision-grade checks (repeat, no-progress) that need a run of history to make sense of. A
  * `step` input that carries `history` (a limited or unattended turn) gets them too, over that
  * history; core turns such a step verdict into a progress check, never into a stop.
@@ -34,7 +53,8 @@ export const verifierT0: SeamFactory<VerifierSeam> = async (ctx) => {
       const x = input as VerifyInput
       const fail: string[] = []
       const revise: string[] = []
-      if (x.toolCalls.some((c) => !c.schemaOk && !c.rejected)) fail.push('schema_invalid')
+      if (scope === 'turn' || scope === 'task' ? unresolvedInvalid(x.toolCalls) : x.toolCalls.some(invalid))
+        fail.push('schema_invalid')
       if (x.deviations > 0) fail.push('tool_call_as_text')
       if (x.lastFinishReason === 'length') fail.push('output_truncated')
       const h = scope === 'turn' || scope === 'task' ? x : scope === 'step' ? x.history : undefined
