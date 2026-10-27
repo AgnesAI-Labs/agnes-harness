@@ -2,10 +2,17 @@ import { presetDefaults } from '@agnes/core-common/step/preset'
 import { SeamRuntime } from '@agnes/core-effects/effects/wrap'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import { describe, expect, it, vi } from 'vitest'
+import { ToolRegistry } from '../src/registry/tools.js'
 import { domainDecisionSource } from '../src/step/domain-decision.js'
-import { fakeProvider, textTurn } from './helpers/fake-provider.js'
+import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, immediateTimers, openSession, testWorkspaceInvocation } from './helpers/open-session.js'
+import {
+  actor,
+  immediateTimers,
+  openSession,
+  readTool,
+  testWorkspaceInvocation,
+} from './helpers/open-session.js'
 
 const run = (h: Awaited<ReturnType<typeof openSession>>) =>
   h.session.run({ until: 'turn-end', signal: new AbortController().signal })
@@ -87,7 +94,7 @@ describe('automatic verifier recovery', () => {
         expect(approvalRequest).not.toHaveBeenCalled()
         expect(await h.session.decisions.list()).toEqual([])
         expect((await h.session.projectUI()).nodes.some((n) => n.kind === 'approval')).toBe(false)
-        expect(JSON.stringify(provider.requests[1]?.messages)).toContain('Repair the answer once')
+        expect(JSON.stringify(provider.requests[1]?.messages)).toContain('Check that failed:')
         const [audit] = await h.log.scan({ type: 'x/core/verifier-recovery', limit: 5 })
         expect(audit?.data).toMatchObject({
           verdict: { verdict, reasons: ['schema_invalid'] },
@@ -106,6 +113,41 @@ describe('automatic verifier recovery', () => {
       }
     },
   )
+  // The repair note names the check and its evidence; a vague one read as "the task failed" and
+  // the model broke work it had already verified.
+  it.each([
+    ['repeated_write:3', ['repeated_write:3', 'read']],
+    ['output_truncated', ['output_truncated', 'output limit']],
+    ['plugin says no', ['plugin says no']],
+  ])('states the failed check (%s) and asks to keep verified work', async (reason, expected) => {
+    const registry = new ToolRegistry()
+    registry.add(readTool(), { source: 'test', trust: 'builtin' })
+    let checks = 0
+    const provider = fakeProvider([toolTurn('read', {}), textTurn('draft'), textTurn('corrected answer')])
+    const h = await openSession({
+      provider,
+      registry,
+      seams: fakeSeams({
+        verifier: {
+          verify: async (scope) =>
+            scope === 'turn' && ++checks === 1
+              ? { verdict: 'fail', reasons: [reason] }
+              : { verdict: 'pass', reasons: [] },
+        },
+        repair: { decide: async () => 'repair' },
+      }),
+    })
+    try {
+      await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
+      expect((await run(h)).reason).toBe('completed')
+      const note = JSON.stringify(provider.requests[2]?.messages.at(-1))
+      for (const text of expected) expect(note).toContain(text)
+      expect(note).toContain('Keep the work you have already verified')
+      expect(note).not.toContain('could not verify completion')
+    } finally {
+      await h.session.close()
+    }
+  })
   it.each(['park', 'repair', 'escalate'] as const)(
     'bounds a persistent failure even when repair policy returns %s',
     async (decision) => {
