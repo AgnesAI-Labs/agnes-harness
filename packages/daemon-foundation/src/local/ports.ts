@@ -54,11 +54,23 @@ export interface JobsPort {
 }
 
 export interface SchedulesPort {
+  /** Bound reminder sessions only; excludes sessions created by past independent runs. */
+  boundSessionKeys?(): Promise<readonly string[]>
+  history?(
+    params: import('@agnes/protocol').SchedulesHistoryParams,
+  ): Promise<import('@agnes/protocol').SchedulesHistoryResult>
+  receipt?(params: import('@agnes/protocol').SchedulesReceiptParams): Promise<{ updated: boolean }>
   list(params: {
     scope: 'session' | 'all'
     sessionKey?: string
     includeArchived?: boolean
-  }): Promise<{ schedules: unknown[] }>
+    targetKind?: 'session' | 'new-session'
+    workspace?: string
+    /** Derived from the server lister; never accepted from a client. */
+    workspaceSessionKeys?: readonly string[]
+    search?: string
+    status?: import('@agnes/protocol').SchedulesListParams['status']
+  }): Promise<{ schedules: unknown[]; activity?: { nextRunAt: number | null; hasOpenRuns: boolean } }>
   upsert(params: unknown): Promise<unknown>
   archive(params: { id: string }): Promise<{ deleted: boolean }>
   control(params: { id: string; action: 'run' | 'pause' | 'resume' }): Promise<unknown>

@@ -1,3 +1,4 @@
+import type { SchedulesListParams } from '@agnes/protocol'
 import {
   Button,
   ConfirmDialog,
@@ -32,6 +33,7 @@ import { captureRequest, useRequestScope } from './async-request.js'
 import { AUTOMATION_NAMESPACE, automationCatalog } from './automation-locale.js'
 import { SETTINGS_NAMESPACE, settingsCatalog } from './locales.js'
 import { useSettingsOverlay } from './overlay.js'
+import { matchesSchedule, ScheduleFilters, type TaskStatus } from './schedule-filters.js'
 import {
   draftOf,
   emptyDraft,
@@ -42,6 +44,7 @@ import {
   targetOf,
 } from './schedule-form.js'
 import {
+  activityOf,
   folderName,
   rowsOf,
   type ScheduleChoices,
@@ -52,6 +55,7 @@ import {
   type Workspace,
   workspacesOf,
 } from './schedule-model.js'
+import { ScheduleHistory, ScheduleRecords, type ScheduleRecordsApi } from './schedule-records.js'
 import { useScheduleRefresh } from './schedule-refresh.js'
 import {
   codeOf,
@@ -65,8 +69,8 @@ import {
 
 export { describeSchedule, localTimeZone } from './schedule-text.js'
 
-export type SchedulesApi = {
-  list(params: { scope: 'session' | 'all'; sessionKey?: string; includeArchived?: boolean }): Promise<unknown>
+export type SchedulesApi = ScheduleRecordsApi & {
+  list(params: SchedulesListParams): Promise<unknown>
   upsert(params: unknown): Promise<unknown>
   archive(params: { id: string }): Promise<unknown>
   /** Run now, pause or resume; absent on a daemon without `schedules.control`. */
@@ -194,9 +198,27 @@ export function SchedulesPage({
   const { t: ux } = useUiText(AUTOMATION_NAMESPACE, automationCatalog)
   const [filter, setFilter] = useState<Filter>('all')
   const [includeArchived, setIncludeArchived] = useState(false)
+  const [view, setView] = useState('tasks')
+  const [search, setSearch] = useState('')
+  const [status, setStatus] = useState<TaskStatus>('all')
+  const [workspaceFilter, setWorkspaceFilter] = useState('')
+  const query = useMemo<SchedulesListParams>(
+    () =>
+      view === 'results'
+        ? { scope: 'all', includeArchived: true }
+        : {
+            scope: 'all',
+            includeArchived,
+            ...(search.trim() ? { search: search.trim() } : {}),
+            ...(status !== 'all' ? { status } : {}),
+            ...(workspaceFilter ? { workspace: workspaceFilter } : {}),
+            ...(filter !== 'all' ? { targetKind: filter } : {}),
+          },
+    [includeArchived, search, status, workspaceFilter, view, filter],
+  )
   // The list is a cached read: shown at once when the page opens again, refreshed behind.
-  const listKey = api ? `schedules:${apiKey(api)}:${includeArchived ? 'all' : 'live'}` : undefined
-  const list = useResource(listKey, () => (api as SchedulesApi).list({ scope: 'all', includeArchived }), {
+  const listKey = api ? `schedules:${apiKey(api)}:${JSON.stringify(query)}` : undefined
+  const list = useResource(listKey, () => (api as SchedulesApi).list(query), {
     revalidateOnFocus: false,
   })
   const rows = useMemo(() => (list.data === undefined ? [] : rowsOf(list.data)), [list.data])
@@ -263,22 +285,27 @@ export function SchedulesPage({
       }
       const request = captureRequest(lifetime)
       return api
-        .list({ scope: 'all', includeArchived })
+        .list(query)
         .then((value) => {
           if (request.isCurrent() && listKey) setResource(listKey, value)
         })
         .catch(() => undefined)
     },
-    [api, includeArchived, listKey, lifetime],
+    [api, listKey, lifetime, query],
   )
-  const live = useScheduleRefresh(() => refresh(true), rows, Boolean(api))
+  const activity = activityOf(list.data)
+  const live = useScheduleRefresh(() => refresh(true), rows, Boolean(api), activity)
   const sessionTitle = useMemo(() => new Map(sessions.map((item) => [item.id, item])), [sessions])
   const workspaceName = useMemo(() => new Map(workspaces.map((item) => [item.path, item.name])), [workspaces])
   const homeWorkspace = () => {
     const from = sessionKey ? sessionTitle.get(sessionKey)?.cwd : undefined
     return from || workspaces.find((item) => item.available)?.path || ''
   }
-  const visible = rows.filter((row) => filter === 'all' || row.target.kind === filter)
+  const visible = rows.filter(
+    (row) =>
+      (filter === 'all' || row.target.kind === filter) &&
+      matchesSchedule(row, search, status, workspaceFilter, sessionTitle),
+  )
   const save = async () => {
     if (!api || busy) return
     const request = captureRequest(lifetime)
@@ -409,30 +436,56 @@ export function SchedulesPage({
           {t('schedulesUnavailable')}
         </SettingsState>
       )}
-      <div className="agnes-settings-filters">
-        <Segmented<Filter>
-          label={ux('filterLabel')}
-          testId="schedules-scope"
-          value={filter}
-          onChange={setFilter}
+      {api?.history && (
+        <Segmented
+          label={ux('automationView')}
+          value={view}
+          onChange={setView}
           options={[
-            { value: 'all', label: ux('filterAll'), testId: 'schedules-scope-all' },
-            { value: 'new-session', label: ux('filterNew'), testId: 'schedules-scope-new-session' },
-            { value: 'session', label: ux('filterSession'), testId: 'schedules-scope-session' },
+            { value: 'tasks', label: ux('taskList'), testId: 'schedules-view-tasks' },
+            { value: 'results', label: ux('resultInbox'), testId: 'schedules-view-results' },
           ]}
         />
-        <label className="agnes-settings-checkbox" htmlFor="schedules-include-archived">
-          <StateSwitch
-            id="schedules-include-archived"
-            testId="schedules-include-archived"
-            label={t('schedulesIncludeArchived')}
-            disabled={false}
-            checked={includeArchived}
-            onToggle={setIncludeArchived}
+      )}
+      {view === 'results' && api && <ScheduleRecords api={api} refreshKey={rows} />}
+      {view === 'tasks' && (
+        <>
+          <ScheduleFilters
+            search={search}
+            status={status}
+            workspace={workspaceFilter}
+            workspaces={workspaces}
+            onSearch={setSearch}
+            onStatus={setStatus}
+            onWorkspace={setWorkspaceFilter}
+            ux={ux}
           />
-          {t('schedulesIncludeArchived')}
-        </label>
-      </div>
+          <div className="agnes-settings-filters">
+            <Segmented<Filter>
+              label={ux('filterLabel')}
+              testId="schedules-scope"
+              value={filter}
+              onChange={setFilter}
+              options={[
+                { value: 'all', label: ux('filterAll'), testId: 'schedules-scope-all' },
+                { value: 'new-session', label: ux('filterNew'), testId: 'schedules-scope-new-session' },
+                { value: 'session', label: ux('filterSession'), testId: 'schedules-scope-session' },
+              ]}
+            />
+            <label className="agnes-settings-checkbox" htmlFor="schedules-include-archived">
+              <StateSwitch
+                id="schedules-include-archived"
+                testId="schedules-include-archived"
+                label={t('schedulesIncludeArchived')}
+                disabled={false}
+                checked={includeArchived}
+                onToggle={setIncludeArchived}
+              />
+              {t('schedulesIncludeArchived')}
+            </label>
+          </div>
+        </>
+      )}
       {runRequested && (
         <StatusMessage kind="pending" data-testid="schedules-run-requested">
           {ux('runStarted')}
@@ -467,7 +520,7 @@ export function SchedulesPage({
           {failureText(error, ux, t)}
         </StatusMessage>
       )}
-      {api && (
+      {api && view === 'tasks' && (
         <Loadable
           loading={loading}
           error={list.error}
@@ -484,8 +537,12 @@ export function SchedulesPage({
             <EmptyState
               data-testid="schedules-empty"
               icon={<Icon name="clock" size={48} />}
-              title={t('schedulesEmpty')}
-              description={t('schedulesHelp')}
+              title={
+                search || status !== 'all' || workspaceFilter ? ux('noMatchingTasks') : t('schedulesEmpty')
+              }
+              description={
+                search || status !== 'all' || workspaceFilter ? ux('changeFilters') : t('schedulesHelp')
+              }
             />
           )}
           {visible.length > 0 && (
@@ -493,7 +550,11 @@ export function SchedulesPage({
               {visible.map((row) => {
                 const live = row.status === 'active' || row.status === 'paused'
                 const last = row.runs.at(-1)
-                const resultSession = last?.sessionKey
+                const outstanding = row.runs.findLast((run) =>
+                  ['running', 'waiting_approval', 'needs_attention'].includes(run.outcome),
+                )
+                const statusRun = row.status === 'ended' ? outstanding : last
+                const resultSession = statusRun?.sessionKey ?? last?.sessionKey
                 const target = row.target
                 const link = target.kind === 'session' ? target.sessionKey : undefined
                 return (
@@ -525,9 +586,9 @@ export function SchedulesPage({
                       </>
                     }
                     status={
-                      row.status === 'active' ? (
-                        last ? (
-                          <OutcomeTag run={last} ux={ux} />
+                      row.status === 'active' || (row.status === 'ended' && statusRun) ? (
+                        statusRun ? (
+                          <OutcomeTag run={statusRun} ux={ux} />
                         ) : (
                           <span className="automation-status">
                             <StatusDot tone="success" />
@@ -596,7 +657,11 @@ export function SchedulesPage({
                       )
                     }
                   >
-                    {row.runs.length > 0 && <RunHistory runs={row.runs} ux={ux} />}
+                    {api?.history ? (
+                      <ScheduleHistory api={api} id={row.id} refreshKey={rows} />
+                    ) : (
+                      row.runs.length > 0 && <RunHistory runs={row.runs} ux={ux} />
+                    )}
                   </ListRow>
                 )
               })}

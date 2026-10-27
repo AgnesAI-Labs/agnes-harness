@@ -94,8 +94,12 @@ import {
   SchedulesArchiveResult,
   SchedulesControlParams,
   SchedulesControlResult,
+  SchedulesHistoryParams,
+  SchedulesHistoryResult,
   SchedulesListParams,
   SchedulesListResult,
+  SchedulesReceiptParams,
+  SchedulesReceiptResult,
   SchedulesUpsertParams,
   SchedulesUpsertResult,
   ScheduleTarget,
@@ -232,6 +236,10 @@ ajv.addSchema({
     SchedulesArchiveResult,
     SchedulesControlParams,
     SchedulesControlResult,
+    SchedulesHistoryParams,
+    SchedulesHistoryResult,
+    SchedulesReceiptParams,
+    SchedulesReceiptResult,
     SchedulesListParams,
     SchedulesListResult,
     SchedulesUpsertParams,
@@ -7884,6 +7892,10 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SchedulesArchiveResult,
     SchedulesControlParams,
     SchedulesControlResult,
+    SchedulesHistoryParams,
+    SchedulesHistoryResult,
+    SchedulesReceiptParams,
+    SchedulesReceiptResult,
     SchedulesListParams,
     SchedulesListResult,
     SchedulesUpsertParams,
@@ -9130,6 +9142,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
   '_agnes/v1/jobs.enqueue': { fileId: AGNES_ID, params: 'JobSpec', result: 'JobIdResult' },
   '_agnes/v1/jobs.poll': { fileId: AGNES_ID, params: 'JobIdParams', result: 'JobStatus' },
   '_agnes/v1/jobs.cancel': { fileId: AGNES_ID, params: 'JobIdParams', result: 'Empty' },
+  '_agnes/v1/schedules.history': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesHistoryParams',
+    result: 'SchedulesHistoryResult',
+  },
+  '_agnes/v1/schedules.receipt': {
+    fileId: SCHEDULES_ID,
+    params: 'SchedulesReceiptParams',
+    result: 'SchedulesReceiptResult',
+  },
   '_agnes/v1/schedules.list': {
     fileId: SCHEDULES_ID,
     params: 'SchedulesListParams',
@@ -9935,9 +9957,34 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/jobs.enqueue': AGNES_SAMPLES.JobSpec as Sample,
   '_agnes/v1/jobs.poll': AGNES_SAMPLES.JobIdParams as Sample,
   '_agnes/v1/jobs.cancel': AGNES_SAMPLES.JobIdParams as Sample,
+  '_agnes/v1/schedules.history': {
+    valid: { limit: 20 },
+    invalid: [{ limit: 0 }, { limit: 101 }, { before: 'bad' }],
+    note: 'bounded seek pagination',
+  },
+  '_agnes/v1/schedules.receipt': {
+    valid: { id: 'sched_0123456789abcdef', runId: 'run_' + '1'.repeat(32), read: true },
+    invalid: [{ id: 'sched_0123456789abcdef' }, { id: 'sched_0123456789abcdef', runId: 'bad', read: true }],
+    note: 'explicit persisted receipt state',
+  },
   '_agnes/v1/schedules.list': {
-    valid: { scope: 'session', sessionKey: 's' },
-    invalid: [{ scope: 'session', extra: true }, { scope: 'nope' }, { scope: 'all', sessionKey: '' }],
+    valid: {
+      scope: 'session',
+      sessionKey: 's',
+      search: 'billing',
+      status: 'failed',
+      workspace: '/work',
+      targetKind: 'session',
+    },
+    invalid: [
+      { scope: 'session', extra: true },
+      { scope: 'nope' },
+      { scope: 'all', sessionKey: '' },
+      { scope: 'all', status: 'unknown' },
+      { scope: 'all', targetKind: 'unknown' },
+      { scope: 'all', search: 'x'.repeat(257) },
+      { scope: 'all', workspaceSessionKeys: ['forged'] },
+    ],
     note: 'session scope may name a session; global scope is authorized separately',
   },
   '_agnes/v1/schedules.upsert': {
@@ -10595,8 +10642,31 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/jobs.enqueue': AGNES_SAMPLES.JobIdResult as Sample,
   '_agnes/v1/jobs.poll': AGNES_SAMPLES.JobStatus as Sample,
   '_agnes/v1/jobs.cancel': AGNES_SAMPLES.Empty as Sample,
+  '_agnes/v1/schedules.history': {
+    valid: {
+      runs: [
+        {
+          id: 'run_' + '1'.repeat(32),
+          scheduleId: 'sched_0123456789abcdef',
+          title: 'Report',
+          at: 1,
+          outcome: 'ran',
+          read: false,
+          summary: 'Done',
+        },
+      ],
+    },
+    invalid: [{ runs: [{ at: 1 }] }, { runs: [], nextCursor: 'bad' }],
+    note: 'durable history receipts',
+  },
+  '_agnes/v1/schedules.receipt': {
+    valid: { updated: true },
+    invalid: [{}, { updated: 'yes' }],
+    note: 'receipt update result',
+  },
   '_agnes/v1/schedules.list': {
     valid: {
+      activity: { nextRunAt: 123, hasOpenRuns: false },
       schedules: [
         {
           id: 'sched_0123456789abcdef',
@@ -10616,6 +10686,9 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
       ],
     },
     invalid: [
+      { schedules: [], activity: { nextRunAt: null } },
+      { schedules: [], activity: { nextRunAt: 1.5, hasOpenRuns: true } },
+      { schedules: [], activity: { nextRunAt: null, hasOpenRuns: 'yes' } },
       { schedules: [], extra: true },
       { schedules: [{ id: 'sched_0123456789abcdef' }] },
       {

@@ -46,6 +46,18 @@ describe('noticeText', () => {
     { kind: 'job_dispatched', detail: {}, at: 't' },
     { kind: 'job_dead', detail: {}, at: 't' },
     {
+      kind: 'session_activity',
+      sessionId: 'k',
+      detail: {
+        profile: 'default',
+        owner: 'operator',
+        sessionId: 'k',
+        state: 'waiting',
+        waiting: 'approval',
+      },
+      at: 't',
+    },
+    {
       kind: 'decisions_changed',
       detail: { profile: 'default', principal: { id: 'operator', org: 'local' } },
       at: 't',

@@ -1,11 +1,19 @@
 import { ScheduleRejected } from '@agnes/base/schedule'
 import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import type { SchedulesPort } from '@agnes/daemon-foundation/local/ports'
-import { type AgentPlan, rpcError, type SchedulesUpsertParams } from '@agnes/protocol'
+import type { SchedulesPort, SessionLister } from '@agnes/daemon-foundation/local/ports'
+import {
+  type AgentPlan,
+  rpcError,
+  type SchedulesHistoryParams,
+  type SchedulesListParams,
+  type SchedulesReceiptParams,
+  type SchedulesUpsertParams,
+} from '@agnes/protocol'
 
 type Deps = {
   host?: { resolveAgent?(ref: string): Promise<AgentPlan> }
   schedules?: SchedulesPort
+  lister?: SessionLister
   registry: { get(key: string): { session: unknown } | undefined }
 }
 
@@ -57,13 +65,58 @@ export function registerSchedules(
     }
     return value
   }
+  ep.register('_agnes/v1/schedules.history', async (params, c) => {
+    const query = params as SchedulesHistoryParams
+    const port = schedules()
+    if (!port.history) throw rpcError('CAPABILITY_DENIED', { method: 'schedules.history' })
+    if (query.id) {
+      const row = await port.read(query.id)
+      if (!row) return { runs: [] }
+      requireScheduleOwner('schedules.history', row.sessionKey, c)
+    } else if (c.conn.authKind !== 'local')
+      throw rpcError('CAPABILITY_DENIED', { method: 'schedules.history' })
+    return scheduleCall(() => port.history!(query))
+  })
+  ep.register('_agnes/v1/schedules.receipt', async (params, c) => {
+    const query = params as SchedulesReceiptParams
+    const port = schedules()
+    if (!port.receipt) throw rpcError('CAPABILITY_DENIED', { method: 'schedules.receipt' })
+    const row = await port.read(query.id)
+    if (!row) return { updated: false }
+    requireScheduleOwner('schedules.receipt', row.sessionKey, c)
+    return scheduleCall(() => port.receipt!(query))
+  })
   ep.register('_agnes/v1/schedules.list', async (params, c) => {
-    const query = params as { scope: 'session' | 'all'; sessionKey?: string; includeArchived?: boolean }
+    const query = params as SchedulesListParams
     if (query.scope === 'all') {
       if (c.conn.authKind !== 'local') throw rpcError('CAPABILITY_DENIED', { method: 'schedules.list' })
     } else if (query.sessionKey) requireOwner('schedules.list', query.sessionKey, c)
     else throw rpcError('SEMANTIC_REJECTED', { code: 'invalid_selector', reason: 'sessionKey required' })
-    return scheduleCall(async () => withApprovals(await schedules().list(query)))
+    const workspaceSessionKeys: string[] = []
+    const port = schedules()
+    const bound = !query.workspace
+      ? undefined
+      : query.scope === 'session' && query.sessionKey
+        ? [query.sessionKey]
+        : await port.boundSessionKeys?.()
+    if (query.workspace && deps.lister && (!bound || bound.length)) {
+      let cursor: string | undefined
+      do {
+        const page = await deps.lister.list({
+          cwd: query.workspace,
+          ...(bound ? { sessionIds: bound } : {}),
+          limit: 500,
+          ...(cursor ? { cursor } : {}),
+        })
+        workspaceSessionKeys.push(...page.items.map((item) => item.sessionId))
+        if (page.cursor && page.cursor === cursor)
+          throw rpcError('INTERNAL_ERROR', { method: 'schedules.list' })
+        cursor = page.cursor
+      } while (cursor)
+    }
+    return scheduleCall(async () =>
+      withApprovals(await port.list({ ...query, ...(query.workspace ? { workspaceSessionKeys } : {}) })),
+    )
   })
   ep.register('_agnes/v1/schedules.upsert', async (params, c) => {
     const body = params as { id?: string; target?: { kind?: string; sessionKey?: string } }

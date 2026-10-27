@@ -28,6 +28,8 @@ export function AutomationPage({ context }: { context: UiExtensionContext }) {
   const schedules = useMemo<SchedulesApi>(
     () => ({
       list: (params) => data.call('_agnes/v1/schedules.list', params),
+      history: (params) => data.call('_agnes/v1/schedules.history', params),
+      receipt: (params) => data.call('_agnes/v1/schedules.receipt', params),
       upsert: (params) => data.call('_agnes/v1/schedules.upsert', params),
       archive: (params) => data.call('_agnes/v1/schedules.archive', params),
       control: (params) => data.call('_agnes/v1/schedules.control', params),

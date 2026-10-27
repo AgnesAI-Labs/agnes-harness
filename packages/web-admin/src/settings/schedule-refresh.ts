@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { ScheduleRow } from './schedule-model.js'
+import type { ScheduleActivity, ScheduleRow } from './schedule-model.js'
 
 export const SCHEDULE_ACTIVE_REFRESH_MS = 5_000
 
@@ -21,9 +21,10 @@ export function useScheduleRefresh(
   refresh: () => Promise<void>,
   rows: readonly ScheduleRow[],
   enabled: boolean,
+  activity?: ScheduleActivity,
 ): { expectRun(): void } {
-  const latest = useRef({ refresh, rows })
-  latest.current = { refresh, rows }
+  const latest = useRef({ refresh, rows, activity })
+  latest.current = { refresh, rows, activity }
   const expected = useRef(0)
   const reschedule = useRef<() => void>(() => undefined)
   useEffect(() => {
@@ -36,7 +37,13 @@ export function useScheduleRefresh(
       clearTimeout(timer)
       if (!alive || inFlight || document.visibilityState === 'hidden') return
       const now = Date.now()
-      if (schedulesActive(latest.current.rows, now) || now < expected.current) {
+      const activity = latest.current.activity
+      if (
+        activity?.hasOpenRuns ||
+        (activity?.nextRunAt != null && activity.nextRunAt <= now) ||
+        schedulesActive(latest.current.rows, now) ||
+        now < expected.current
+      ) {
         timer = setTimeout(tick, Math.min(30_000, SCHEDULE_ACTIVE_REFRESH_MS * 2 ** attempts))
       } else {
         attempts = 0
@@ -44,6 +51,7 @@ export function useScheduleRefresh(
         const due = latest.current.rows.flatMap((row) =>
           row.status === 'active' && row.nextRunAt !== null && row.nextRunAt > now ? [row.nextRunAt] : [],
         )
+        if (activity?.nextRunAt != null && activity.nextRunAt > now) due.push(activity.nextRunAt)
         if (due.length) timer = setTimeout(tick, Math.min(2_147_483_647, Math.min(...due) - now))
       }
     }
@@ -78,7 +86,7 @@ export function useScheduleRefresh(
     }
   }, [enabled])
   // biome-ignore lint/correctness/useExhaustiveDependencies: new rows change the next due time.
-  useEffect(() => reschedule.current(), [rows])
+  useEffect(() => reschedule.current(), [rows, activity])
   return {
     expectRun() {
       expected.current = Date.now() + 2 * 60_000

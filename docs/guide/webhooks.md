@@ -20,6 +20,8 @@ Every accepted delivery creates a normal root session using the selected workspa
 
 ## Authentication and replay
 
+The test result appears beside the test action in the editor. An untouched default sample gets a fresh timestamp when sent; an edited sample is sent exactly as entered, including its timestamp.
+
 **GitHub:** configure the webhook's JSON payload and shared secret. AGH verifies `X-Hub-Signature-256` using HMAC SHA-256 over the exact raw body. `X-GitHub-Event` selects the event and `X-GitHub-Delivery` supplies its id. GitHub does **not** sign a timestamp header, so configure a timestamp field in the signed payload: `$.issue.updated_at`, `$.pull_request.updated_at`, or `$.head_commit.timestamp`. Events without a suitable timestamp (including ordinary ping payloads) are rejected by the replay window. A trusted ingress that envelopes such events can use the generic provider instead. Re-deliveries of old events outside the window are refused.
 
 **Generic HMAC:** send `X-Webhook-Id`, `X-Webhook-Event`, `X-Webhook-Timestamp` (Unix seconds), and `X-Webhook-Signature: sha256=HEX`. The signature input is the UTF-8 prefix `TIMESTAMP\nDELIVERY_ID\nEVENT\n` followed by the exact raw JSON body. The timestamp, id and event are authenticated together. Duplicate security headers are refused.
