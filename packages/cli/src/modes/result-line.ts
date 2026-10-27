@@ -10,6 +10,8 @@ export type CliResult = {
   credits?: unknown
   ticket?: string
   text?: string
+  /** An `error` turn's code (never its message, which can carry provider text). */
+  error?: { code: string }
   /** `--output-schema`: the final reply parsed and validated. */
   structured?: unknown
 }

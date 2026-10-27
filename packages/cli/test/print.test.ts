@@ -687,6 +687,36 @@ describe('runPrint in json mode', () => {
     expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
   })
 
+  // Machine modes keep stderr quiet, so an `error` turn whose turn/end never arrived left a wrapper
+  // with exit 1 and nothing else to go on. The code rides in the line; the message stays out.
+  it.each([
+    ['a thrown TURN_ERROR without a row', undefined],
+    ['the turn/end row', { code: 'TRANSPORT', message: 'status=400 private' }],
+  ] as const)('names the error code from %s in the line', async (_from, turnEndError) => {
+    const ep = turnEndError
+      ? scriptedEndpoint({ reason: 'error', turnEndError })
+      : scriptedEndpoint().on('session/prompt', () => {
+          throw Object.assign(new Error('INTERNAL_ERROR'), {
+            code: -32603,
+            data: {
+              code: 'TURN_ERROR',
+              turnEnd: { reason: 'error' },
+              error: { code: 'E_STEP_FAILED', message: 'private detail' },
+            },
+          })
+        })
+    const o = io()
+    expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', 'json']), o)).toBe(1)
+    const line = JSON.parse(o.out())
+    expect(line).toMatchObject({
+      reason: 'error',
+      exitCode: 1,
+      error: { code: turnEndError ? 'TRANSPORT' : 'E_STEP_FAILED' },
+    })
+    expect(o.out()).not.toContain('private')
+    expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
+  })
+
   it('carries the ticket in the line when the turn parked', async () => {
     const o = io()
     const ep = scriptedEndpoint({ reason: 'parked', parkedTicket: 'tk-9' })
