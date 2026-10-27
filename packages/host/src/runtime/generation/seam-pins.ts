@@ -124,10 +124,15 @@ export function classifyGenerationFailure(error: unknown): SessionVersionIssue |
     case 'E_GENERATION_SNAPSHOT_MISSING':
     case 'E_GENERATION_SEAMS_MISSING':
     case 'E_GENERATION_UNTRUSTED':
-    case 'E_WORKSPACE_UNTRUSTED':
     case 'E_SEAM_MISSING':
     case 'E_FORMAT_OLDER':
       return 'older'
+    // Only a stored generation whose trust decision went stale is a version problem. Any other
+    // workspace refusal (cwd outside the workspace, a binding mismatch) is a refusal, not an old session.
+    case 'E_WORKSPACE_UNTRUSTED':
+      return (error as { detail?: { generationRestore?: unknown } }).detail?.generationRestore === true
+        ? 'older'
+        : undefined
     case 'E_GENERATION_INTEGRITY':
     case 'E_GENERATION_CONFIG_INTEGRITY':
     case 'E_COMPOSITION_BINDING_INVALID':
