@@ -32,7 +32,9 @@ export function noticeText(notice: DaemonNotice): string | null {
       return '消息太多，正在追赶'
     case 'job_dispatched':
     case 'job_dead':
-    // Profile invalidations belong to the Web workbench, not channel conversations.
+    // Profile invalidations and the session list's run states belong to the Web workbench, not
+    // channel conversations.
+    case 'session_activity':
     case 'packages_changed':
     case 'tree_changed':
     case 'decisions_changed':
