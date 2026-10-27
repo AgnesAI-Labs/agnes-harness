@@ -445,6 +445,10 @@
   .composer-footer {
     padding: var(--s4) var(--s10) var(--s10);
   }
+  /* The ghost is out of flow; its slot must not take space or a flex gap beside the textarea. */
+  .composer-hint-slot {
+    display: contents;
+  }
   .composer-example-hint {
     display: flex;
     align-items: start;
