@@ -31,6 +31,11 @@ function CaptionTable({ children, ...props }: HTMLAttributes<HTMLTableElement>) 
   )
 }
 
+/** antd stamps a native title on ellipsis sortable headers; the sorter Tooltip already covers them and aria-label names them. */
+function HeaderCell({ title: _title, ...props }: HTMLAttributes<HTMLTableCellElement>) {
+  return <th {...props} />
+}
+
 /** Sticky, sortable antd table with an independently focusable horizontal scroll region. */
 export function Table<T extends object>({
   caption,
@@ -64,9 +69,7 @@ export function Table<T extends object>({
           const text = String(rendered)
           return (
             <AntTooltip title={text} rootClassName="agh-tooltip" mouseEnterDelay={0.5}>
-              <span className="agh-table-cell" title={text}>
-                {text}
-              </span>
+              <span className="agh-table-cell">{text}</span>
             </AntTooltip>
           )
         }
@@ -89,6 +92,7 @@ export function Table<T extends object>({
           locale={{ emptyText: empty ?? <p role="status">{fallbackT('ui.tableEmpty')}</p>, ...props.locale }}
           components={{
             ...props.components,
+            header: { ...props.components?.header, cell: HeaderCell },
             table: CaptionTable,
           }}
         />

@@ -34,14 +34,15 @@ import {
 
 type Text = (key: string, vars?: Record<string, string | number>) => string
 export type StartedSession = { sessionId: string; prompt?: string | undefined }
+/** The workbench listens for this on `window` and opens the session in place, without a reload. */
+export const OPEN_SESSION_EVENT = 'agnes:open-session'
 /**
- * Opens the new-session draft the way every other start link does: the loop is selected, the
- * package's session bundles are requested and the sample prompt is filled in, never sent.
+ * Opens the started session in the running workbench: the conversation is selected and the sample
+ * prompt is filled into its composer, never sent.
  */
-export const openStartedSession = (target: StartedSession): void =>
-  location.assign(
-    `/?${new URLSearchParams({ session: target.sessionId, ...(target.prompt ? { prompt: target.prompt } : {}) })}`,
-  )
+export const openStartedSession = (target: StartedSession): void => {
+  window.dispatchEvent(new CustomEvent<StartedSession>(OPEN_SESSION_EVENT, { detail: target }))
+}
 
 type Reviewed = PackagePreview | PackageInstalledDescriptor
 type GetsRow = { icon: IconName; title: string; detail?: string | undefined; caution?: boolean }
@@ -167,6 +168,8 @@ type Phase =
       progress: StartProgress
       failure: StartFailure
       launch?: LaunchAttempt
+      /** Re-reading the original receipt: the failure stays on screen with a busy action. */
+      checking?: boolean
     }
 
 /** The page a start opens inside Agent FDE: `agent-<slug>`, so a link opens the agent's start. */
@@ -296,7 +299,11 @@ export function useBusinessAgentStart(options: {
   const launch = async (agent: BusinessAgent, plan: StartPlan, attempt: LaunchAttempt, recover = false) => {
     const api = latest.current.api
     if (!api) return
-    setPhase({ kind: 'running', agent, plan, progress: { ...idle, session: 'running' }, launch: attempt })
+    setPhase((now) =>
+      recover && now.kind === 'failed'
+        ? { ...now, checking: true }
+        : { kind: 'running', agent, plan, progress: { ...idle, session: 'running' }, launch: attempt },
+    )
     const complete = (result: { sessionId: string; draft?: StartTarget['launch']['prompt'] }) => {
       setPhase({ kind: 'idle' })
       hide(agent)
@@ -394,6 +401,7 @@ export function useBusinessAgentStart(options: {
     <Button
       appearance="link"
       data-testid="agent-start-plugins"
+      disabled={phase.kind === 'failed' && !!phase.checking}
       onClick={() => {
         const agent = phase.agent
         hide(agent)
@@ -546,12 +554,14 @@ export function useBusinessAgentStart(options: {
                 <>
                   {pluginsLink}
                   <span className="agent-start-spacer" />
-                  <Button data-testid="agent-start-close" onClick={close}>
+                  <Button data-testid="agent-start-close" disabled={!!phase.checking} onClick={close}>
                     {t('dialog.close')}
                   </Button>
                   <Button
                     appearance="primary"
                     data-testid="agent-start-retry"
+                    loading={!!phase.checking}
+                    disabled={!!phase.checking}
                     onClick={() => {
                       if (phase.launch && phase.plan) {
                         void launch(phase.agent, phase.plan, phase.launch, true)
@@ -573,7 +583,11 @@ export function useBusinessAgentStart(options: {
                     {t(phase.launch ? 'launch.check' : 'dialog.retry')}
                   </Button>
                   {phase.launch && (
-                    <Button data-testid="agent-start-new-intent" onClick={() => begin(phase.agent, false)}>
+                    <Button
+                      data-testid="agent-start-new-intent"
+                      disabled={!!phase.checking}
+                      onClick={() => begin(phase.agent, false)}
+                    >
                       {t('launch.another')}
                     </Button>
                   )}

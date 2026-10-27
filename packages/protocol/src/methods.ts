@@ -165,6 +165,7 @@ export type MethodName =
   | '_agnes/v1/diagnostics.collect'
   | '_agnes/v1/diagnostics.events'
   | '_agnes/v1/session.list'
+  | '_agnes/v1/session.activity'
   | '_agnes/v1/session.groups'
   | '_agnes/v1/workspace.list'
   | '_agnes/v1/workspace.add'
@@ -424,6 +425,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     params: A.SessionListParams,
     result: A.PageSessionMeta,
   },
+  '_agnes/v1/session.activity': clientRequest(A.SessionActivityParams, A.SessionActivityResult),
   '_agnes/v1/session.groups': clientRequest(A.SessionGroupsParams, A.SessionGroupsResult),
   '_agnes/v1/workspace.list': clientRequest(A.WorkspaceListParams, A.WorkspaceListResult),
   '_agnes/v1/workspace.add': clientRequest(A.WorkspaceAddParams, A.WorkspaceAddResult),

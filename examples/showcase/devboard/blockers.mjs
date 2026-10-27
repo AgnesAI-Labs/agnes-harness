@@ -32,10 +32,10 @@ const ms = (iso) => {
 /** When the item last moved into `to`, or undefined; a note kept without a move is not an entry. */
 const enteredAt = (item, to) =>
   [...(item.history ?? [])].reverse().find((e) => e.to === to && e.from !== to)?.at
+// The series number orders baselines (CB-…-03 after -02), as in domain.mjs: back-dated times can tie.
+const seqOf = (b) => Number(/-(\d+)$/.exec(b.id)?.[1] ?? 0)
 const latest = (list, projectId, type) =>
-  list
-    .filter((b) => b.projectId === projectId && b.type === type)
-    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))[0]
+  list.filter((b) => b.projectId === projectId && b.type === type).sort((a, b) => seqOf(b) - seqOf(a))[0]
 
 /**
  * Every blocker in `state` at `now` (ms), oldest first within a kind. `projectId` narrows the result.
@@ -94,7 +94,8 @@ export function blockers(state, now = Date.now(), projectId) {
         { type: 'gate', id: g.id, sub: f.id },
         name,
         `评审意见 ${f.id} 未关闭：${f.text}`,
-        f.at,
+        // Findings carry no time of their own; they are raised when the gate is submitted.
+        f.at ?? g.submittedAt,
         { stage: stage?.stage },
       )
   }

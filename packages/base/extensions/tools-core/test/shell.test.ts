@@ -468,16 +468,33 @@ describe('shell near the turn deadline', () => {
     return { tool: createShellTool(jobs), waits, kill }
   }
 
-  it("ends a session job's foreground wait at the cap and lets the same process continue", async () => {
+  // The process keeps running, so the wait hands control back with half of the usable time left
+  // rather than at the margin: the model can still act on what it sees.
+  it("ends a session job's foreground wait with time to spare and lets the same process continue", async () => {
     vi.spyOn(Date, 'now').mockImplementation(() => NOW)
     const { tool, waits, kill } = jobsFor('running')
     const ctx = fakeToolContext({ timeoutMs: 598_000, defaultTimeoutMs: 120_000, turnTimeLimit: limit })
     const r = await tool.execute({ command: 'make all' }, ctx)
-    expect(waits).toEqual([70_000])
+    expect(waits).toEqual([35_000])
     expect(kill).not.toHaveBeenCalled()
     expect(textOf(r)).toBe(
-      "background job job-1 started (foreground wait stopped after 70000ms because this turn's time limit is nearly up: about 1m40s of the turn remains (deadline 00:18:20 UTC); the same process continues); use job_output, job_list or job_kill. Use the time left for short steps: leave the work in its best checked state and end with a short summary.",
+      'background job job-1 started (foreground wait stopped after 35000ms (requested 120000ms) to leave time in this turn: about 1m40s of the turn remains (deadline 00:18:20 UTC); the same process continues); use job_output, job_list or job_kill. Use the time left for short steps: leave the work in its best checked state and end with a short summary.',
     )
+  })
+
+  it('never lets one foreground wait take the rest of a timed turn', async () => {
+    // query-optimize: 900 s asked for with 585 s of an 840 s turn left (margin 42 s).
+    vi.spyOn(Date, 'now').mockImplementation(() => NOW)
+    const { tool, waits } = jobsFor('running')
+    const ctx = fakeToolContext({
+      timeoutMs: 1_800_000,
+      turnTimeLimit: { timeLimitMs: 840_000, deadlineAt: NOW + 585_000 },
+    })
+    await tool.execute({ command: 'sqlite3 db < slow.sql', timeoutMs: 900_000 }, ctx)
+    expect(waits).toEqual([271_500])
+    // A wait that fits in half the usable time is left alone.
+    await tool.execute({ command: 'make', timeoutMs: 200_000 }, ctx)
+    expect(waits).toEqual([271_500, 200_000])
   })
 
   it('kills a session job at the cap when it may not continue in the background', async () => {

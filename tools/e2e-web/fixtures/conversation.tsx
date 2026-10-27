@@ -60,7 +60,11 @@ const resources = {
 function Fixture() {
   const [plan, setPlan] = useState(true)
   const [decision, setDecision] = useState('')
-  const session = {} as SessionService
+  // A read-only fixture session: no live scope, always ready.
+  const session = {
+    getSnapshot: () => undefined,
+    readiness: { subscribe: () => () => {}, getSnapshot: () => ({ status: 'ready' }) },
+  } as unknown as SessionService
   return (
     <main className="conversation-fixture">
       <div id="transcript-content">

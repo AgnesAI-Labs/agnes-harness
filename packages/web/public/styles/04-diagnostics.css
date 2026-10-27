@@ -143,6 +143,11 @@
     flex: 0 1 18.75rem;
     min-width: 0;
   }
+  /* In a page header the lookup keeps one line: the field shrinks instead of pushing the refresh
+   button onto a second row, which grew the header and lifted the field onto the dialog edge. */
+  .agh-push-actions .agnes-diagnostics-lookup {
+    flex-wrap: nowrap;
+  }
   /* In the page header the input's placeholder names it; the label stays for assistive tech only. */
   .agnes-diagnostics-lookup .agnes-ui-field-label {
     position: absolute;

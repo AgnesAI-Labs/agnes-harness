@@ -1,7 +1,7 @@
 import { homeNavigation } from '@agnes/web-client'
 import { Badge, Button, Select } from '@agnes/web-ui'
 import React from 'react'
-import { byId, day, gateBadge, gateName, h, options, stageName, stateBadge } from './board.js'
+import { byId, day, gateBadge, gateName, h, options, resubmitted, stageName, stateBadge } from './board.js'
 
 // 研发全景: one lane per project (or per blocking role / discipline), like `git log --graph` over a
 // timeline. Plain SVG and CSS; every node is a keyboard-focusable button that opens the drawer.
@@ -143,7 +143,7 @@ function describeSelection(data, sel) {
     badge = stateBadge(data, s.state)
     rows.push(['项目', p.name], ['负责人', s.author ?? p.manager])
     rows.push(['计划完成', day(s.plannedEnd)], ['实际完成', day(s.actualEnd)])
-    for (const g of data.gates.filter((x) => x.stageId === s.id && !x.superseded))
+    for (const g of data.gates.filter((x) => x.stageId === s.id && !x.superseded && !resubmitted(data, x)))
       rows.push([gateName(g), gateBadge(data, g.decision)])
     blockers.push(...data.blockers.filter((b) => b.projectId === p.id && b.stage === s.stage))
   } else if (sel.type === 'gate') {
@@ -494,7 +494,8 @@ export function Panorama({ data, role: demoRole }) {
         if (Math.abs(gx - lastGateX) < 10) gx += 10
         lastGateX = gx
         const gBad = pBlockers.some((b) => b.ref.id === g.id)
-        const gCls = `${g.superseded ? 'is-todo is-faded' : g.decision === 'APPROVED' ? 'is-done' : g.decision === 'PENDING' ? 'is-active is-pulse' : 'is-bad'}${gBad ? ' is-bad' : ''}`
+        const history = g.superseded || resubmitted(data, g)
+        const gCls = `${history ? 'is-todo is-faded' : g.decision === 'APPROVED' ? 'is-done' : g.decision === 'PENDING' ? 'is-active is-pulse' : 'is-bad'}${gBad ? ' is-bad' : ''}`
         drawn.push(
           h(Node, {
             key: g.id,
@@ -503,7 +504,7 @@ export function Panorama({ data, role: demoRole }) {
             shape: 'diamond',
             r: 5,
             cls: gCls,
-            title: `${gateName(g)} · ${g.superseded ? '已作废（返工）' : (data.labels.state[g.decision] ?? '待决议')}`,
+            title: `${gateName(g)} · ${g.superseded ? '已作废（返工）' : history ? '已驳回（已重新提交）' : (data.labels.state[g.decision] ?? '待决议')}`,
             selected: sel?.id === g.id,
             onPick: pick('gate', g.id),
           }),
@@ -720,7 +721,7 @@ export function Panorama({ data, role: demoRole }) {
     toolbar,
     h(
       'div',
-      { className: `pano-body${sel ? ' has-drawer' : ''}` },
+      { className: `pano-body${shownSel ? ' has-drawer' : ''}` },
       h(
         'div',
         { className: 'pano-plot', ref: wrap, 'data-guide': 'panorama-lanes' },

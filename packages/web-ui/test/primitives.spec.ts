@@ -452,7 +452,8 @@ for (const theme of ['light', 'dark'])
       if (!script || !styles) throw new Error('Sidebar fixture must bundle its script and vendor styles')
       await page.addStyleTag({ content: inCssLayer(styles.text, 'vendor') })
       await page.addScriptTag({ content: script.text })
-      const heading = page.locator('.workspace-heading'),
+      // The Workspaces section heading sits above the project; the project heading owns the row checks.
+      const heading = page.locator('.workspace-group .workspace-heading'),
         session = page.locator('.session')
       await expect(session).toHaveAttribute('aria-current', 'page')
       for (const locator of [heading, session]) {
@@ -475,7 +476,8 @@ for (const theme of ['light', 'dark'])
       ).not.toBe('rgba(0, 0, 0, 0)')
       const sidebar = (await page.locator('.sidebar').boundingBox())!
       for (const selector of [
-        '.workspace-heading-row',
+        '.sidebar-section > .workspace-heading-row',
+        '.workspace-group .workspace-heading-row',
         '.session-row',
         '.workspace-new-session',
         '.session-menu-trigger',
@@ -484,7 +486,7 @@ for (const theme of ['light', 'dark'])
         expect(box.x).toBeGreaterThanOrEqual(sidebar.x)
         expect(box.x + box.width).toBeLessThanOrEqual(sidebar.x + sidebar.width)
       }
-      for (const selector of ['.workspace-name', '.session-title']) {
+      for (const selector of ['.workspace-group .workspace-name', '.session-title']) {
         expect(
           await page.locator(selector).evaluate((node) => {
             const label = node.querySelector('.navigation-label-start') ?? node

@@ -249,3 +249,23 @@ it('notifies an automation owner without attachment and its bound channel, exclu
   })
   expect([owner, other, channel].map((ep) => ep.pending().events)).toEqual([1, 0, 1])
 })
+
+it('tells a session owner about its activity without attachment, and nobody else who is not attached', () => {
+  const owner = new LocalEndpoint({ clock: () => 0, principalId: 'owner', profile: 'p' })
+  const other = new LocalEndpoint({ clock: () => 0, principalId: 'other', profile: 'p' })
+  const elsewhere = new LocalEndpoint({ clock: () => 0, principalId: 'owner', profile: 'q' })
+  for (const ep of [owner, other, elsewhere]) {
+    ep.conn.initialized = true
+    ep.conn.authKind = 'local'
+    ep.conn.credentialKind = 'local'
+  }
+  const sink = new NoticeSink({
+    clock: () => 42,
+    endpoints: () => [owner, other, elsewhere].map((ep) => ({ ep, conn: ep.conn })),
+  })
+  sink.emit('session_activity', {
+    sessionId: 'run',
+    detail: { profile: 'p', owner: 'owner', sessionId: 'run', state: 'idle', reason: 'completed' },
+  })
+  expect([owner, other, elsewhere].map((ep) => ep.pending().events)).toEqual([1, 0, 0])
+})

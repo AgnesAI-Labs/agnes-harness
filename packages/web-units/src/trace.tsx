@@ -57,7 +57,8 @@ export const TRACE_PANEL_STORAGE_KEY = 'agnes.web.tracePanel'
 export type TraceMeta = {
   controlFacts?: readonly SessionControlFact[]
   hasEarlier: boolean
-  loadEarlier?: () => void
+  /** Settles once the earlier page is loaded and rendered. */
+  loadEarlier?: () => void | Promise<unknown>
   sessionId?: string
   loop?: {
     id: string
@@ -459,11 +460,38 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           reveal(id)
           return true
         }
-        if (params.anchor.kind !== 'authoring' || !options.readFactChain) return false
+        // A record before the loaded window: page back until it arrives, then reveal it.
+        const seekEarlier = (chain?: import('@agnes/protocol').FactChainResult): boolean => {
+          const first = (latest.current ?? currentSnapshot.current).meta
+          if (!first?.hasEarlier || !first.loadEarlier) return false
+          const find = () => {
+            const shown = latest.current ?? currentSnapshot.current
+            if (shown.meta?.sessionId !== params.sessionId) return undefined
+            const rows = placeTraceRowsInTurns(buildTraceRows(shown.nodes, shown.turns), shown.turns)
+            return chain ? authoringRow(rows, chain) : resolveFactRow(rows, shown.nodes, params.anchor)
+          }
+          void (async () => {
+            for (let page = 0; page < 50; page++) {
+              const meta = (latest.current ?? currentSnapshot.current).meta
+              if (meta?.sessionId !== params.sessionId || !meta.hasEarlier || !meta.loadEarlier) return
+              await meta.loadEarlier()
+              // The loaded page renders before its load settles; let that commit land first.
+              await new Promise((done) => setTimeout(done, 0))
+              const id = find()
+              if (id) {
+                reveal(id)
+                return
+              }
+            }
+          })()
+          return true
+        }
+        if (params.anchor.kind !== 'authoring' || !options.readFactChain) return seekEarlier()
         options.readFactChain(params).then(
           (result) => {
             const target = authoringRow(placed, result)
             if (target) reveal(target)
+            else seekEarlier(result)
           },
           () => undefined,
         )
@@ -867,25 +895,27 @@ export const Trace = forwardRef<TraceHandle, TraceProps>(function Trace(
           ) : null}
           {listItems.slice(listWindow.start, listWindow.end).map((item) => {
             if (item.kind === 'header' && 'loadEarlier' in item)
+              // A list holds only items: the action that loads earlier records is one of them.
               return (
-                <Button
-                  appearance="ghost"
-                  size="small"
-                  key={item.key}
-                  className="trace-load-earlier"
-                  htmlType="button"
-                  onClick={() => {
-                    const list = listRef.current
-                    earlierPosition.current = {
-                      sessionId: snapshot.meta?.sessionId,
-                      firstNodeId: snapshot.nodes[0]?.id,
-                      anchor: list ? captureTraceVirtualAnchor(listLayout, list.scrollTop) : undefined,
-                    }
-                    item.loadEarlier()
-                  }}
-                >
-                  {traceText('trace.loadEarlier')}
-                </Button>
+                <div key={item.key} role="listitem">
+                  <Button
+                    appearance="ghost"
+                    size="small"
+                    className="trace-load-earlier"
+                    htmlType="button"
+                    onClick={() => {
+                      const list = listRef.current
+                      earlierPosition.current = {
+                        sessionId: snapshot.meta?.sessionId,
+                        firstNodeId: snapshot.nodes[0]?.id,
+                        anchor: list ? captureTraceVirtualAnchor(listLayout, list.scrollTop) : undefined,
+                      }
+                      item.loadEarlier()
+                    }}
+                  >
+                    {traceText('trace.loadEarlier')}
+                  </Button>
+                </div>
               )
             if (item.kind === 'header')
               return (

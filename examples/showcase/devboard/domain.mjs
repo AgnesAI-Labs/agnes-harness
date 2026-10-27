@@ -63,7 +63,8 @@ export const MACHINES = Object.freeze({
   change: {
     SUBMITTED: ['ANALYZED', 'REJECTED'],
     ANALYZED: ['CCB_REVIEW', 'SUBMITTED'],
-    CCB_REVIEW: ['APPROVED', 'REJECTED'],
+    // Back to ANALYZED when no ECR runs: a send-back to the initiator is answered by revising the analysis.
+    CCB_REVIEW: ['APPROVED', 'REJECTED', 'ANALYZED'],
     APPROVED: ['IMPLEMENTED'],
     REJECTED: ['CLOSED'],
     IMPLEMENTED: ['CLOSED'],
@@ -300,8 +301,11 @@ const stageLabel = (state, stage) => {
 }
 function record(item, at, by, from, to, note) {
   const all = [...(item.history ?? []), { at, by, from, to, ...(note ? { note } : {}) }]
-  // The first line (who created it, and when) stays: approval rights and timelines read it.
-  item.history = all.length > HISTORY_LIMIT ? [all[0], ...all.slice(1 - HISTORY_LIMIT)] : all
+  // The first line (who created it, and when) and the move into the current state stay: approval
+  // rights, timelines and the blocker clocks read them, and kept notes would otherwise push them out.
+  const entry = all.findLastIndex((e, i) => i > 0 && e.from !== e.to)
+  let drop = all.length - HISTORY_LIMIT
+  item.history = all.filter((_, i) => i === 0 || i === entry || drop-- <= 0)
   item.state = to
 }
 
@@ -366,7 +370,7 @@ export function transition(state, input, now = Date.now()) {
       now,
     )
   }
-  const item = find(state, kind, id)
+  const item = find(state, kind, id, input.projectId)
   const from = effectiveState(item, kind, now)
   if (!MACHINES[kind][from]?.includes(to)) fail(`非法状态流转：${from} 不可流转至 ${to}`)
   guardFlow(state, kind, item, to, input)
@@ -428,13 +432,12 @@ function moveStage(state, stage, { to, by, note, author }, now) {
   if (to !== 'IN_PROGRESS' || !MACHINES.stage[stage.state]?.includes(to))
     fail(`非法状态流转：${stage.state} 不可流转至 ${to}`)
   const index = STAGES.indexOf(stage.stage)
-  if (stage.state === 'NOT_STARTED' && index > 0) {
-    const previous = stageOf(state, stage.projectId, STAGES[index - 1])
-    if (previous.state !== 'PASSED')
-      fail(
-        `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，不能开始「${stageLabel(state, stage)}」`,
-      )
-  }
+  // A stage a change reopened restarts in order too, after the earlier ones it reopened.
+  const previous = unpassedBefore(state, stage)
+  if (previous)
+    fail(
+      `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，不能开始「${stageLabel(state, stage)}」`,
+    )
   // The stage keeps the canonical role, so the self-approval check holds for "技术负责人 张三" too.
   if (author) stage.author = knownRole(author)
   record(stage, new Date(now).toISOString(), by || '未署名', stage.state, 'IN_PROGRESS', note)
@@ -442,6 +445,13 @@ function moveStage(state, stage, { to, by, note, author }, now) {
   const project = projectOf(state, stage.projectId)
   if (index > STAGES.indexOf(project.stage)) project.stage = stage.stage
   return stage
+}
+
+/** The nearest earlier stage that has not passed: a stage starts, and goes to review, only after all of them. */
+function unpassedBefore(state, stage) {
+  return STAGES.slice(0, STAGES.indexOf(stage.stage))
+    .map((name) => stageOf(state, stage.projectId, name))
+    .findLast((s) => s && s.state !== 'PASSED')
 }
 
 /** A named author is kept as its canonical role, so the self-approval check and approval flows can find it. */
@@ -508,16 +518,18 @@ function closeReleaseFindings(state, flow, at) {
       f.closed = true
       f.closedNote = `发布审批 ${flow.id} 已批准（系统）`
     }
-    if (gate.auto && gate.findings.every((f) => f.closed))
-      approve(
-        state,
-        find(state, 'stage', gate.stageId),
-        gate,
-        '系统（评审意见已全部关闭）',
-        '评审意见全部关闭，自动通过',
-        at,
-      )
+    passAuto(state, find(state, 'stage', gate.stageId), gate, at)
   }
+}
+/** An auto gate (TR4) passes once every finding is closed and no earlier stage is left unpassed (an approved change can reopen one). */
+function passAuto(state, stage, gate, at, what = '评审意见') {
+  if (
+    gate.auto &&
+    gate.decision === 'PENDING' &&
+    gate.findings.every((f) => f.closed) &&
+    !unpassedBefore(state, stage)
+  )
+    approve(state, stage, gate, `系统（${what}已全部关闭）`, `${what}全部关闭，自动通过`, at)
 }
 function closeFindings(gate, closes, by) {
   for (const close of closes ?? []) {
@@ -544,6 +556,11 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
   const actor = by || '未署名'
   let gate = pendingGate(state, stage.id)
   if (stage.state === 'IN_PROGRESS') {
+    const previous = unpassedBefore(state, stage)
+    if (previous)
+      fail(
+        `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，「${stageLabel(state, stage)}」不能提交评审`,
+      )
     const def =
       nextGate(state, project, stage) ?? fail(`阶段「${stageLabel(state, stage)}」没有待提交的评审门`)
     const n = state.gates.filter((g) => g.stageId === stage.id && g.code === def.code).length + 1
@@ -617,8 +634,7 @@ export function submitGate(state, { stageId, by, note, findings, closeFindings: 
       `评审意见 ${system.map((c) => c.id).join('、')} 是系统检查意见：由审批人在决议时关闭，提交方不能关闭`,
     )
   closeFindings(gate, closes, actor)
-  if (gate.auto && gate.findings.every((f) => f.closed))
-    approve(state, stage, gate, '系统（代码评审意见已全部关闭）', '代码评审意见全部关闭，自动通过', at)
+  passAuto(state, stage, gate, at, '代码评审意见')
   return { stage, gate }
 }
 
@@ -662,6 +678,12 @@ function approve(state, stage, gate, by, comment, at) {
   const nextStage = STAGES[STAGES.indexOf(stage.stage) + 1]
   if (nextStage && project.stage === stage.stage) project.stage = nextStage
   if (!nextStage) project.actualEnd = at
+  // A later auto gate held back by this stage's rework passes now that it has passed.
+  for (const later of STAGES.slice(STAGES.indexOf(stage.stage) + 1)) {
+    const item = stageOf(state, stage.projectId, later)
+    const held = item?.state === 'IN_REVIEW' && pendingGate(state, item.id)
+    if (held) passAuto(state, item, held, at)
+  }
 }
 
 /**
@@ -688,6 +710,12 @@ export function decideGate(state, input, now = Date.now()) {
   const at = new Date(now).toISOString()
   const comment = optional(input.comment)
   if (decision === 'APPROVED') {
+    // A change can reopen an earlier stage while this one is in review: stages still pass in order.
+    const previous = unpassedBefore(state, stage)
+    if (previous)
+      fail(
+        `阶段顺序不满足：前一阶段「${stageLabel(state, previous)}」尚未通过评审，「${stageLabel(state, stage)}」的评审门暂不能批准`,
+      )
     if (gate.signatures.some((s) => s.role === role)) fail(`评审门不满足：角色「${role}」已签署本门`)
     const waiting = roles.filter((r) => r !== role && !gate.signatures.some((s) => s.role === r))
     const held =
@@ -757,14 +785,28 @@ function moveChange(cr, to, by, at, note, members) {
 const LEVEL_STAGE = { CUS: 'REQUIREMENTS', SYS: 'REQUIREMENTS', SWR: 'REQUIREMENTS', DES: 'DESIGN' }
 
 /** The next number in a baseline series of one project and type, and the latest revs to build on. */
-function addBaseline(state, projectId, type, fallbacks, bumps, at, note) {
-  const seqOf = (b) => Number(/-(\d+)$/.exec(b.id)?.[1] ?? 0)
-  const mine = (t) => state.configBaselines.filter((b) => b.projectId === projectId && b.type === t)
-  const latest = (t) => mine(t).reduce((top, b) => (!top || seqOf(b) > seqOf(top) ? b : top), undefined)
-  const base = [type, ...fallbacks].map(latest).find(Boolean)
-  const revs = { ...(base?.revs ?? {}) }
+const seqOf = (b) => Number(/-(\d+)$/.exec(b.id)?.[1] ?? 0)
+const baselinesOf = (state, projectId, type) =>
+  state.configBaselines.filter((b) => b.projectId === projectId && b.type === type)
+
+/** The revisions a new baseline of `type` builds on; refuses a change written against an older revision. */
+function revsFor(state, projectId, type, fallbacks, bumps, note, hint) {
+  const latest = (t) =>
+    baselinesOf(state, projectId, t).reduce((top, b) => (!top || seqOf(b) > seqOf(top) ? b : top), undefined)
+  const revs = { ...([type, ...fallbacks].map(latest).find(Boolean)?.revs ?? {}) }
+  // Applying it would roll the item back over a newer one.
+  for (const { itemId, fromRev } of bumps)
+    if (fromRev && revs[itemId] !== undefined && revs[itemId] !== fromRev)
+      fail(`${itemId} 当前为 ${revs[itemId]} 版，${note} 从 ${fromRev} 版改起：${hint}`)
+  return revs
+}
+const STALE_DESIGN =
+  '该物料已被其他变更改版，批准后的变更不能再改影响物料：驳回本次 ECN 发布，按现行版本另起变更'
+
+function addBaseline(state, projectId, type, fallbacks, bumps, at, note, hint) {
+  const revs = revsFor(state, projectId, type, fallbacks, bumps, note, hint)
   for (const { itemId, toRev } of bumps) revs[itemId] = toRev
-  const seq = Math.max(0, ...mine(type).map(seqOf)) + 1
+  const seq = Math.max(0, ...baselinesOf(state, projectId, type).map(seqOf)) + 1
   const baseline = {
     id: `CB-${projectId}-${type}-${pad(seq, 2)}`,
     projectId,
@@ -794,7 +836,7 @@ function ecnId(state, cr) {
 
 /**
  * An approved change (its ECR flow) gets its ECN. It marks impacted requirements CHANGED and sends
- * impacted PASSED or IN_REVIEW stages to rework (the pending gate of the latter is withdrawn), except in a project already in service. The as-designed baseline
+ * impacted PASSED or IN_REVIEW stages, and a stage between two of its gates, to rework (the pending gate of the latter is withdrawn), except in a project already in service. The as-designed baseline
  * comes later, when the ECN_RELEASE flow is approved.
  */
 function applyChange(state, cr, at) {
@@ -806,6 +848,20 @@ function applyChange(state, cr, at) {
     const req = state.reqs.find((r) => r.id === id && r.projectId === cr.projectId)
     if (!req) continue
     req.status = 'CHANGED'
+    // Its cases verified the old text: they pass again before the requirement counts as verified.
+    for (const tc of state.reqs)
+      if (
+        tc.projectId === cr.projectId &&
+        tc.level === 'TC' &&
+        tc.parent?.includes(id) &&
+        tc.status === 'VERIFIED'
+      )
+        tc.status = 'APPROVED'
+    // A changed case no longer verifies its requirements: they wait for it to pass again.
+    if (req.level === 'TC')
+      for (const swr of state.reqs)
+        if (swr.projectId === cr.projectId && req.parent?.includes(swr.id) && swr.status === 'VERIFIED')
+          swr.status = 'APPROVED'
     if (LEVEL_STAGE[req.level]) stages.add(LEVEL_STAGE[req.level])
   }
   for (const id of cr.impact?.artifacts ?? []) {
@@ -815,7 +871,11 @@ function applyChange(state, cr, at) {
   const reworked = []
   for (const name of project.service ? [] : stages) {
     const stage = state.stages.find((s) => s.id === `${cr.projectId}/${name}`)
-    if (!['PASSED', 'IN_REVIEW'].includes(stage?.state)) continue
+    // A stage between two of its gates has already passed one of them on the old content.
+    const between =
+      stage?.state === 'IN_PROGRESS' &&
+      state.gates.some((g) => g.stageId === stage.id && g.decision === 'APPROVED' && !g.superseded)
+    if (!['PASSED', 'IN_REVIEW'].includes(stage?.state) && !between) continue
     const note = `${cr.id} 已批准，受影响阶段返工`
     record(stage, at, 'CCB', stage.state, 'REWORK', note)
     for (const g of state.gates) {
@@ -832,24 +892,58 @@ function applyChange(state, cr, at) {
           superseded: true,
         })
     }
-    for (const a of stageArtifacts(state, stage)) if (a.status === 'IN_REVIEW') a.status = 'DRAFT'
+    for (const a of stageArtifacts(state, stage)) {
+      if (a.status === 'IN_REVIEW') a.status = 'DRAFT'
+      // A release flow still running approves the old content: it is withdrawn with the stage's gates.
+      const flow = runningFlow(state, 'artifact', a.id)
+      if (!flow) continue
+      const node = flow.nodes[flow.current]
+      flow.actions.push({ nodeId: node.id, role: 'CCB', by: 'CCB', action: 'WITHDRAW', comment: note, at })
+      for (const n of flow.nodes) if (n.state !== 'DONE') n.state = 'SKIPPED'
+      Object.assign(flow, { state: 'WITHDRAWN', endedAt: at })
+    }
     reworked.push(stage.id)
   }
   cr.reworked = reworked
+  // A project with a stage back in rework is not finished any more.
+  if (reworked.length) delete project.actualEnd
+}
+
+/** Every item of the change is already at its new revision in the latest as-designed baseline. */
+function carried(state, cr) {
+  const designed = latestBaseline(state, cr.projectId, 'AS_DESIGNED')?.revs ?? {}
+  const items = cr.impact?.items ?? []
+  return items.length > 0 && items.every(({ itemId, toRev }) => designed[itemId] === toRev)
 }
 
 /** Releasing an ECN, when it names items, creates the new as-designed baseline. */
 function releaseEcn(state, cr, at) {
   if (!cr.impact?.items?.length) return undefined
-  return addBaseline(state, cr.projectId, 'AS_DESIGNED', [], cr.impact.items, at, `${cr.ecn}：${cr.title}`)
+  return addBaseline(
+    state,
+    cr.projectId,
+    'AS_DESIGNED',
+    [],
+    cr.impact.items,
+    at,
+    `${cr.ecn}：${cr.title}`,
+    STALE_DESIGN,
+  )
 }
 
 /** Retrofit progress only increases; the last door brings the as-maintained baseline up to the ECN. */
 function setRetrofit(state, { id, done, by, note }, now) {
   const cr = find(state, 'change', id)
   if (!cr.retrofit) fail(`${cr.id} 未设置整改总数`)
-  if (!['APPROVED', 'IMPLEMENTED'].includes(cr.state))
-    fail(`${cr.id} 处于 ${cr.state}，批准后才能更新整改进度`)
+  // A change closed after verification still has doors in service to bring to its ECN.
+  const approved = ['APPROVED', 'IMPLEMENTED'].includes(cr.state) || (cr.state === 'CLOSED' && cr.ecn)
+  if (!approved) fail(`${cr.id} 处于 ${cr.state}，批准后才能更新整改进度`)
+  // Doors are brought to a released design: the as-maintained baseline must not run ahead of the as-designed one.
+  const released = state.approvals.some(
+    (a) => a.template === 'ECN_RELEASE' && a.subject.id === cr.id && a.state === 'APPROVED',
+  )
+  if (cr.impact?.items?.length && !released && !carried(state, cr))
+    fail(`${cr.ecn} 尚未发布：ECN 发布审批通过后才能更新整改进度`)
   const next = intIn(done, 'done', cr.retrofit.total)
   if (next <= cr.retrofit.done) fail(`整改进度只能递增：当前 ${cr.retrofit.done}，收到 ${next}`)
   const at = new Date(now).toISOString()
@@ -864,6 +958,7 @@ function setRetrofit(state, { id, done, by, note }, now) {
       cr.impact?.items ?? [],
       at,
       `${cr.ecn ?? cr.id} 整改完成`,
+      '先完成该物料之前变更的整改，再完成本变更的整改',
     )
   return cr
 }
@@ -976,6 +1071,8 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
   if (!Array.isArray(items) || !items.length || items.length > 100) fail('items 需为 1–100 条')
   const at = new Date(now).toISOString()
   const touched = { created: [], updated: [] }
+  // The SWRs whose test cases changed; only a test run verifies one, but a case it has not passed un-verifies it.
+  const affected = new Set()
   for (const input of items) {
     const id = text(input?.id, 'id', 16)
     const match =
@@ -993,6 +1090,7 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
       for (const p of (item.parent ?? []).filter((x) => !parent.includes(x))) {
         const old = state.reqs.find((r) => r.id === p && r.projectId === projectId)
         if (old?.verifiedBy) old.verifiedBy = old.verifiedBy.filter((x) => x !== id)
+        if (level === 'TC') affected.add(p)
       }
       item.parent = parent
     }
@@ -1018,7 +1116,14 @@ export function upsertReqs(state, { projectId, items, by }, now = Date.now()) {
       if (parent.level !== PARENT_LEVEL[r.level])
         fail(`${r.id} 的上游必须是 ${PARENT_LEVEL[r.level] ?? '（客户条款没有上游）'}，收到 ${p}`)
       if (r.level === 'TC' && !parent.verifiedBy.includes(r.id)) parent.verifiedBy.push(r.id)
+      if (r.level === 'TC') affected.add(p)
     }
+  }
+  for (const id of affected) {
+    const swr = mine.find((x) => x.id === id && x.level === 'SWR')
+    if (swr?.status !== 'VERIFIED') continue
+    const tcs = mine.filter((x) => x.level === 'TC' && x.parent?.includes(id))
+    if (!tcs.length || tcs.some((x) => x.status !== 'VERIFIED')) swr.status = 'APPROVED'
   }
   return touched
 }
@@ -1136,7 +1241,12 @@ export function recordArtifact(state, input, now = Date.now()) {
     source: { type: 'workspace', path },
     updatedAt: new Date(now).toISOString(),
   })
-  if (artifact.status === 'BASELINED') artifact.status = 'DRAFT'
+  if (artifact.status === 'BASELINED') {
+    artifact.status = 'DRAFT'
+    // New content for a released deliverable is its next revision, so the next baseline names it apart.
+    const v = /^V(\d+)\.(\d+)$/.exec(artifact.version)
+    if (input.version === undefined && v) artifact.version = `V${v[1]}.${Number(v[2]) + 1}`
+  }
   if (!existing) state.artifacts.push(artifact)
   if (typeof input.markdown === 'string') {
     state.docs ??= {}
@@ -1163,8 +1273,9 @@ const yearSeq = (list, prefix, year) =>
 const pad = (n, width) => String(n).padStart(width, '0')
 
 function createProject(state, input, at, now) {
-  const year = new Date(now).getUTCFullYear()
-  // minSeq is for internal callers only (fast-forward skips project numbers whose directory exists on disk).
+  // minSeq and year are for internal callers only: fast-forward skips project numbers whose directory exists on
+  // disk, and numbers its back-dated project in the year it is made.
+  const year = Number(input.year) || new Date(now).getUTCFullYear()
   const id = `PRJ-${year}-${pad(Math.max(yearSeq(state.projects, 'PRJ', year), Number(input.minSeq) || 0), 3)}`
   const by = input.by || '研发协调员'
   const kind = oneOf(input.projectKind ?? 'SOFTWARE', Object.keys(GATE_PROFILES), 'projectKind')
@@ -1467,8 +1578,26 @@ export function upsertTrial(state, input, now = Date.now()) {
   // A move applies the report fields itself, after a retest has put the previous report in the history.
   if (input.to) transition(state, { ...input, kind: 'trial', id: trial.id, to: input.to, by }, now)
   else {
+    const before = { result: trial.result, reportNo: trial.reportNo }
     trialFields(state, trial, input)
-    keepNote(trial, input, at, by)
+    // An issued report edited before it is signed keeps what it said, so the approver sees a changed conclusion.
+    const edits = [
+      ['结论', 'result'],
+      ['报告号', 'reportNo'],
+    ]
+      .filter(([, key]) => trial.state === 'REPORTED' && before[key] !== trial[key])
+      .map(([name, key]) => `${name} ${before[key] ?? '—'} → ${trial[key]}`)
+    const note = optional(input.note, 2000)
+    if (edits.length)
+      record(
+        trial,
+        at,
+        by,
+        trial.state,
+        trial.state,
+        `修改报告：${edits.join('；')}${note ? `；${note}` : ''}`,
+      )
+    else keepNote(trial, input, at, by)
   }
   return trial
 }
@@ -1550,8 +1679,11 @@ function problemClosable(state, problem) {
   if (!problem.steps?.D8?.done) fail(`${problem.id} 的 D8（总结与关闭）尚未完成`)
   if (problem.changeId) {
     const change = state.changes.find((c) => c.id === problem.changeId)
+    // A change the CCB rejected leaves the problem to a new change or to a stated reason, as the refusal says.
+    const rejected = change?.ccb?.decision === 'REJECTED'
+    if (rejected && problem.noChangeReason) return
     if (change?.state !== 'CLOSED') fail(`${problem.id} 关联的变更 ${problem.changeId} 尚未关闭`)
-    if (change.ccb?.decision === 'REJECTED')
+    if (rejected)
       fail(
         `${problem.id} 关联的变更 ${problem.changeId} 已被 CCB 驳回：请关联新的变更，或写明不需要设计变更的理由`,
       )
@@ -1702,7 +1834,8 @@ function applyResults(state, project, run, by, at) {
   for (const { tc, status } of run.results) {
     if (status !== 'fail') continue
     const defect = state.defects.find(
-      (d) => d.projectId === project.id && d.testCase === tc && OPEN_DEFECT.includes(d.state),
+      // A deferred defect still tracks its case: the failure is expected and noted on it.
+      (d) => d.projectId === project.id && d.testCase === tc && d.state !== 'CLOSED',
     )
     if (defect) {
       record(defect, at, by, defect.state, defect.state, `测试运行 ${run.id} 中 ${tc} 失败`)
@@ -1873,6 +2006,15 @@ function startable(state, template, subject) {
       )
     )
       fail(`${subject.ecn} 已发布`)
+    // Checked before anyone signs: a release written against an older revision could never be approved.
+    const items = subject.impact?.items ?? []
+    if (items.length) {
+      if (carried(state, subject))
+        fail(
+          `${subject.ecn} 的物料版本已体现在设计态基线 ${latestBaseline(state, subject.projectId, 'AS_DESIGNED').id} 中，无需再发布`,
+        )
+      revsFor(state, subject.projectId, 'AS_DESIGNED', [], items, subject.ecn, STALE_DESIGN)
+    }
   }
   if (template === 'PROBLEM_CLOSE') {
     if (subject.state !== 'VERIFYING') fail(`${same(subject.state)}，处于验证中才能发起关闭审批`)
@@ -1882,6 +2024,20 @@ function startable(state, template, subject) {
     if (subject.state !== 'REPORTED') fail(`${same(subject.state)}，出具报告后才能发起试验报告审批`)
     trialApprovable(state, subject)
   }
+}
+
+const byAgent = (who) => who === AGENT_NAME || String(who ?? '').startsWith(`${AGENT_NAME} · `)
+/**
+ * Whether the coordinator drafted an object (under any acting role), so it may start its flow. A change it
+ * sent to CCB itself also counts: the customer change the presenter registered and handed over is analysed
+ * and sent to CCB by the agent.
+ */
+export function agentDrafted(type, subject) {
+  if (type === 'artifact') return subject.source?.type === 'workspace'
+  const sentToCcb =
+    type === 'change' &&
+    byAgent(subject.history?.findLast((h) => h.to === 'CCB_REVIEW' && h.from !== 'CCB_REVIEW')?.by)
+  return byAgent(type === 'change' ? subject.raisedBy : subject.history?.[0]?.by) || sentToCcb
 }
 
 /**
@@ -1899,19 +2055,8 @@ export function submitApproval(state, { template, subjectId, by, agent }, now = 
   const running = runningFlow(state, type, subject.id)
   if (running) fail(`${subject.id} 已有进行中的审批 ${running.id}：一个对象同一时间只能有一个进行中的流程`)
   startable(state, template, subject)
-  if (agent) {
-    // The coordinator drafted it (under any acting role). A change it sent to CCB itself also counts: the
-    // customer change the presenter registered and handed over is analysed and sent to CCB by the agent.
-    const byAgent = (who) => who === AGENT_NAME || String(who ?? '').startsWith(`${AGENT_NAME} · `)
-    const sentToCcb =
-      type === 'change' &&
-      byAgent(subject.history?.findLast((h) => h.to === 'CCB_REVIEW' && h.from !== 'CCB_REVIEW')?.by)
-    const mine =
-      type === 'artifact'
-        ? subject.source?.type === 'workspace'
-        : byAgent(type === 'change' ? subject.raisedBy : subject.history?.[0]?.by) || sentToCcb
-    if (!mine) fail(`${subject.id} 不是智能体起草的对象：请让用户在看板上发起审批`)
-  }
+  if (agent && !agentDrafted(type, subject))
+    fail(`${subject.id} 不是智能体起草的对象：请让用户在看板上发起审批`)
   const year = new Date(now).getUTCFullYear()
   const flow = newFlow({
     id: `AP-${year}-${pad(yearSeq(state.approvals, 'AP', year), 4)}`,
@@ -1931,7 +2076,14 @@ export function actApproval(state, input, now = Date.now()) {
   const flow = state.approvals.find((a) => a.id === input.id) ?? fail(`未找到审批 ${input.id}`)
   const draft = structuredClone(flow)
   const outcome = act(draft, input, now)
-  if (outcome) settle(state, draft, outcome, now)
+  // Settlement reads the flows in state (a deliverable whose flow still runs stays out of a baseline), so it sees this one acted.
+  const at = state.approvals.indexOf(flow)
+  state.approvals[at] = draft
+  try {
+    if (outcome) settle(state, draft, outcome, now)
+  } finally {
+    state.approvals[at] = flow
+  }
   for (const key of Object.keys(flow)) delete flow[key]
   return Object.assign(flow, draft)
 }
@@ -2064,10 +2216,9 @@ export function metrics(state, project, now = Date.now()) {
   }
 }
 
+// The series number orders baselines, as when one is built on the last: back-dated times can tie.
 const latestBaseline = (state, projectId, type) =>
-  state.configBaselines
-    .filter((b) => b.projectId === projectId && b.type === type)
-    .reduce((top, b) => (!top || Date.parse(b.at) >= Date.parse(top.at) ? b : top), undefined)
+  baselinesOf(state, projectId, type).reduce((top, b) => (!top || seqOf(b) > seqOf(top) ? b : top), undefined)
 
 /** Field, trial and baseline figures; zero for a project with none of them. */
 function fieldMetrics(state, project, now) {
@@ -2078,7 +2229,10 @@ function fieldMetrics(state, project, now) {
       Date.parse(f.detectedAt) > now - 30 * DAY &&
       Date.parse(f.detectedAt) <= now,
   )
-  const retrofits = own(state.changes).filter((c) => c.retrofit)
+  // Doors are counted once a change is approved; a draft or rejected total is not fleet work.
+  const retrofits = own(state.changes).filter(
+    (c) => c.retrofit && ['APPROVED', 'IMPLEMENTED', 'CLOSED'].includes(c.state),
+  )
   const designed = latestBaseline(state, project.id, 'AS_DESIGNED')?.revs ?? {}
   const maintained = latestBaseline(state, project.id, 'AS_MAINTAINED')?.revs
   const trials = own(state.trials)

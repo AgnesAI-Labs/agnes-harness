@@ -101,6 +101,8 @@ export type AgnesContext = LocalContext & {
   directory?: DirectoryPort
   lister?: SessionLister
   sidebarSessions?: SidebarSessionPort
+  /** Running and waiting sessions by owner, read from every session's ledger rows (session.activity). */
+  sessionActivity?: { list(principalId: string): import('@agnes/protocol').SessionActivityResult }
   authKind: AuthKind
   credentialKind: CredentialKind
   artifactRead?: boolean
@@ -1144,6 +1146,9 @@ export function registerAgnes(
   // `cx.lister` is declared optional on `AgnesContext` only because nothing outside this package's
   // own `createLocalEndpoint` constructs one directly; that one always supplies a `RegistryLister`
   // default (`index.ts`), so the guard below is defensive, not a real production path.
+  ep.register('_agnes/v1/session.activity', async (_params, c) =>
+    cx.sessionActivity ? cx.sessionActivity.list(c.conn.principalId) : { items: [] },
+  )
   ep.register('_agnes/v1/session.groups', async (_params, c) => {
     if (!cx.sidebarSessions) throw rpcError('SEMANTIC_REJECTED', { code: 'SESSION_SIDEBAR_UNAVAILABLE' })
     return cx.sidebarSessions.groups(c.conn.principalId)

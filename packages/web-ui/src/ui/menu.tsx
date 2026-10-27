@@ -78,9 +78,17 @@ function useMenuDismiss({ open, close, anchor, popup }: MenuDismissOptions) {
   useEffect(() => {
     if (!open) return
     const doc = anchor.current?.ownerDocument ?? document
+    const place = () => {
+      const box = anchor.current?.getBoundingClientRect()
+      return box ? `${box.top}:${box.left}` : ''
+    }
+    const opened = place()
     const dismiss = (event: Event) => {
       // Scrolling inside the menu itself is navigation, not movement of its anchor.
       if (popup.current && event.composedPath().includes(popup.current)) return
+      // A pane that adjusts its own scroll while the popup mounts leaves the anchor where it was;
+      // only a scroll that carries the anchor away strands the menu.
+      if (event.type === 'scroll' && place() === opened) return
       close()
     }
     // Capture sees scrolls of inner panes; the popup is portalled outside them.

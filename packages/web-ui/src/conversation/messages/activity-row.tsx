@@ -84,7 +84,12 @@ export function ActivityRow({
           </span>
         ) : null}
         {target ? (
-          <span className="activity-target" data-mono={mono ? 'true' : undefined}>
+          // A mono target is a literal path or command: browser translation leaves it alone.
+          <span
+            className="activity-target"
+            data-mono={mono ? 'true' : undefined}
+            {...(mono ? { translate: 'no' as const } : {})}
+          >
             {target}
           </span>
         ) : null}

@@ -19,7 +19,7 @@ import type {
   TurnEndReason,
 } from '../../step/session.js'
 import { turnMaxSteps } from '../../step/step-cap.js'
-import { turnVerifyInput } from '../../step/verify-input.js'
+import { type CoreVerifyInput, turnVerifyInput } from '../../step/verify-input.js'
 import { discloseTools, estimateTokens, resolveModel } from './inference.js'
 
 // A provider is free to publish nothing for a route, same as resolveModel's own fallback; this is
@@ -283,6 +283,38 @@ export async function beforeStepGate(s: SessionImpl, step: number): Promise<'ok'
 /** A loop may stop at its completion edge or request another model round. */
 export type GateResume = 'continue' | 'complete'
 
+/** What each of the built-in verifier's reasons means, said so the model can act on it. */
+const REASON_TEXT: Record<string, (input: CoreVerifyInput, n?: string) => string> = {
+  schema_invalid: (input) => {
+    const names = [...new Set(input.toolCalls.filter((c) => !c.schemaOk && !c.rejected).map((c) => c.name))]
+    return `a tool call's arguments did not match its schema and no later valid call to the same tool replaced it, or one tool was called invalidly more than once${names.length ? ` (invalid calls to: ${names.join(', ')})` : ''}`
+  },
+  tool_call_as_text: () => 'a tool call was written as text, so it did not run',
+  output_truncated: () => 'the last reply was cut off at the output limit',
+  repeated_write: (input, n) =>
+    `the same call${input.toolCalls.at(-1) ? ` to ${input.toolCalls.at(-1)?.name}` : ''} was repeated ${n ?? 'several'} times in a row`,
+  no_progress: (_input, n) =>
+    `the last ${n ?? 'several'} replies were the same, with no new tool results between them`,
+}
+
+/**
+ * The note a repair round opens with. It names each check that failed and what it saw, because a
+ * bare "could not verify completion" reads as "the task is not done" and a model will then undo
+ * work it had already checked. Reasons from another verifier are quoted as they came.
+ */
+function repairNote(verdict: VerifierVerdict, input: CoreVerifyInput): string {
+  const checks = verdict.reasons.map((reason) => {
+    const [code = reason, n] = reason.split(':', 2)
+    const explain = REASON_TEXT[code]
+    return `- ${reason.slice(0, 200)}${explain ? `: ${explain(input, n)}` : ''}`
+  })
+  return [
+    `The turn's automatic check did not pass (${verdict.verdict}). ${checks.length ? 'Check that failed:' : 'It gave no reason.'}`,
+    ...checks,
+    'This check is about how the turn ran; it does not say the task result is wrong. Keep the work you have already verified, and do not undo or redo it. Fix only what is named above if it still matters, then give the final answer. Keep internal errors in diagnostics. If the task cannot be completed, explain the limitation plainly.',
+  ].join('\n')
+}
+
 /** The gate a turn has to pass to be allowed to finish. */
 async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<StepOutcome> {
   const op = s.op() as OpStateObj
@@ -310,9 +342,10 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
     disclosed: discloseTools(s),
     model: { slot: 'primary', route, model },
   }
+  const verifyInput = await turnVerifyInput(s, op.meta.triggerSeq)
   const verdict: VerifierVerdict & { unavailable?: true } = await s.d.runtime.verify(
     'turn',
-    await turnVerifyInput(s, op.meta.triggerSeq),
+    verifyInput,
     s.ac.signal,
   )
   if (s.ac.signal.aborted) return finishAborted(s)
@@ -412,7 +445,7 @@ async function builtinStopGate(s: SessionImpl, _resume: GateResume): Promise<Ste
         content: [
           {
             type: 'text',
-            text: 'The system could not verify completion. Repair the answer once using available evidence; avoid failed call paths. Keep internal errors in diagnostics. If the task cannot be completed, explain the limitation plainly.',
+            text: repairNote(verdict, verifyInput),
           },
         ],
       }),

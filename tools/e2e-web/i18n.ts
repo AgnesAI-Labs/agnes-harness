@@ -41,10 +41,15 @@ export function unresolvedLabels(known: string[]) {
       element.getAttribute('title'),
     ]
     if (!element.children.length && element.tagName !== 'TEXTAREA') values.push(element.textContent)
+    // A tooltip that repeats a literal the control shows untranslated (a path) is that literal.
+    const literals = new Set(
+      [...element.querySelectorAll('[translate="no"]')].map((node) => node.textContent?.trim()),
+    )
     for (const value of values) {
       const text = value?.trim()
       if (
         text &&
+        !literals.has(text) &&
         (keys.has(text) ||
           (namespaces.has(text.split('.')[0]) && /^[a-z][\w-]*\.[\w.-]+$/i.test(text)) ||
           /^(?:app|shell|settings|composer|index-shell|cards|session|topbar|sidebar|tool|goal|workbench)\.[\w.-]+$/.test(

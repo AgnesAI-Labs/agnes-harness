@@ -345,6 +345,8 @@ it('adopts the whole catalog sentence mid-animation and keeps ordinary Tab focus
   const hint = () => host.querySelector('.composer-example-hint')
   expect(prompt.placeholder).toBe(idle.input.placeholder)
   expect(hint()?.getAttribute('aria-hidden')).toBe('true')
+  // The ghost lives in the input's own content box, below any header chip, never over it.
+  expect(hint()?.closest('.composer-content')).not.toBeNull()
   // The offer is honest from the first frame: the full sentence is already available to Tab.
   expect(host.querySelector('#composer-suggestion')?.textContent).toContain(examples[0])
   expect(key(prompt, { key: 'Tab', shiftKey: true }).defaultPrevented).toBe(false)

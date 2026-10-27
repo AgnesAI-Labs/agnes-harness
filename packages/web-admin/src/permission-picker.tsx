@@ -88,6 +88,12 @@ export type PermissionPickerProps = {
  * Session approval mode. The app keeps the confirmed mode; this component owns the transient
  * list only. A choice is sent at once and the list collapses when the host accepts it.
  */
+/**
+ * The chip sits at the composer's left edge on a phone, where a right-aligned panel flips past the
+ * window's right edge. Like the model picker, shift it back into view instead.
+ */
+export const PERMISSION_PANEL_ALIGN = { overflow: { shiftX: true, adjustX: true, adjustY: true } }
+
 export function PermissionPickerControl({ state, onSelect, onError }: PermissionPickerProps): ReactElement {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -115,6 +121,7 @@ export function PermissionPickerControl({ state, onSelect, onError }: Permission
       open={open}
       trigger="click"
       placement="topRight"
+      align={PERMISSION_PANEL_ALIGN}
       arrow={false}
       destroyOnHidden={true}
       // Opened many times a day, often from the keyboard: no entrance or exit motion.

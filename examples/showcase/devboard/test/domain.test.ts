@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { act, newFlow, view } from '../approvals.mjs'
 import { BLOCKER_KINDS, blockers } from '../blockers.mjs'
 import { entryFile, evidenceDocs, latestRuns, showCustomerChange, showDelivery } from '../client/delivery.js'
@@ -7,6 +7,7 @@ import { mainProgress } from '../client/guide-progress.js'
 import {
   ACTING_ROLES,
   ACTIVITY_LIMIT,
+  AGENT_NAME,
   actApproval,
   actorOf,
   artifactBody,
@@ -355,9 +356,32 @@ describe('multi-gate stages and tailoring', () => {
     expect(codes).toEqual(['TR2', 'TR3', 'PDCP'])
   })
 
+  it('sends a stage between two of its gates to rework when an approved change hits it', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '完整 IPD' }, NOW)
+    p.tailoring = undefined
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'DES-001', title: 'd', text: 'd' }], by: 'x' }, NOW)
+    pass(state, p.id, 'INITIATION')
+    pass(state, p.id, 'REQUIREMENTS')
+    const design = byId(state.stages, `${p.id}/DESIGN`)
+    start(state, design.id)
+    const tr2 = submitGate(state, { stageId: design.id, by: 'x' }, NOW).gate
+    for (const role of tr2.approverRoles) sign(state, tr2.id, role)
+    expect(design.state).toBe('IN_PROGRESS')
+    const cr = approvedChange(state, p.id, { impact: { reqs: ['DES-001'] } })
+    expect(cr.reworked).toEqual([design.id])
+    expect(design.state).toBe('REWORK')
+    expect(tr2.superseded).toBe(true)
+  })
+
   it('passes the auto gate TR4 once every finding is closed, replacing the v2 special case', () => {
     const state = blank()
     const p = create(state, { kind: 'project', name: '自动门' }, NOW)
+    const earlier = (id: string) =>
+      ['INITIATION', 'REQUIREMENTS', 'DESIGN'].forEach((name) => {
+        byId(state.stages, `${id}/${name}`).state = 'PASSED'
+      })
+    earlier(p.id)
     const impl = byId(state.stages, `${p.id}/IMPLEMENTATION`)
     impl.state = 'IN_PROGRESS'
     const review = submitGate(
@@ -374,8 +398,37 @@ describe('multi-gate stages and tailoring', () => {
     )
     expect(impl.state).toBe('PASSED')
     expect(review.gate).toMatchObject({ decision: 'APPROVED', approver: '系统（代码评审意见已全部关闭）' })
+    // While an earlier stage is back in rework, TR4 waits for it and passes once it passes again.
+    const held = create(state, { kind: 'project', name: '返工中' }, NOW)
+    earlier(held.id)
+    const design = byId(state.stages, `${held.id}/DESIGN`)
+    const code = byId(state.stages, `${held.id}/IMPLEMENTATION`)
+    code.state = 'IN_PROGRESS'
+    const tr4 = submitGate(state, { stageId: code.id, by: '研发协调员', findings: ['x'] }, NOW).gate
+    // the hand-off has the coordinator work the auto gate's findings instead of waiting for a person
+    expect(handoff(state, { type: 'gate', id: tr4.id }).next).toEqual([
+      'TR4 是自动门：意见全部关闭且前面阶段都已通过后自动通过，不用等人决议；逐条修复评审意见 F-01，再用 devboard_gate_submit 的 closeFindings 关闭',
+    ])
+    design.state = 'IN_PROGRESS'
+    // ...and, while an earlier stage is open again, points at that stage
+    const waiting = handoff(state, { type: 'gate', id: tr4.id })
+    expect(waiting.nextStep.stage).toBe('DESIGN')
+    expect(waiting.next[1]).toContain('本门要等它重新通过才能自动通过')
+    submitGate(
+      state,
+      { stageId: code.id, by: '研发协调员', closeFindings: [{ id: 'F-01', note: '已改' }] },
+      NOW,
+    )
+    expect(tr4.decision).toBe('PENDING')
+    expect(code.state).toBe('IN_REVIEW')
+    const tr3 = submitGate(state, { stageId: design.id, by: '研发协调员' }, NOW).gate
+    decideGate(state, { gateId: tr3.id, decision: 'APPROVED', by: '技术负责人' }, NOW)
+    expect(design.state).toBe('PASSED')
+    expect(tr4).toMatchObject({ decision: 'APPROVED', approver: '系统（评审意见已全部关闭）' })
+    expect(code.state).toBe('PASSED')
     // Other gates are never automatic.
     const order = newProject(state, 'NEW_BUILD')
+    earlier(order.id)
     const proto = byId(state.stages, `${order.id}/IMPLEMENTATION`)
     proto.state = 'IN_PROGRESS'
     const gate = submitGate(state, { stageId: proto.id, by: 'x' }, NOW).gate
@@ -476,6 +529,13 @@ describe('approver roles and co-signing', () => {
     expect(() =>
       transition(state, { kind: 'stage', id: `${p.id}/INITIATION`, to: 'PASSED', by: 'x' }, NOW),
     ).toThrow('只能通过评审门决议')
+    // a later stage does not go to review while an earlier one is reopened
+    for (const name of ['INITIATION', 'REQUIREMENTS']) pass(state, p.id, name)
+    start(state, `${p.id}/DESIGN`)
+    byId(state.stages, `${p.id}/REQUIREMENTS`).state = 'REWORK'
+    expect(() => submitGate(state, { stageId: `${p.id}/DESIGN`, by: 'x' }, NOW)).toThrow(
+      '阶段顺序不满足：前一阶段「技术协议与需求」尚未通过评审',
+    )
   })
 })
 
@@ -739,6 +799,8 @@ describe('faults and quality problems', () => {
     for (let i = 0; i < 40; i++) upsertProblem(state, { id: qp.id, note: `记录 ${i}` }, NOW)
     expect(qp.history).toHaveLength(30)
     expect(qp.history[0]).toMatchObject({ to: 'OPEN', note: '登记' })
+    // and so does the move into its state, which the stall clock reads
+    expect(qp.history).toContainEqual(expect.objectContaining({ from: 'OPEN', to: 'ANALYZING' }))
     upsertProblem(state, { id: qp.id, to: 'ACTION' }, NOW)
     upsertProblem(state, { id: qp.id, to: 'VERIFYING' }, NOW)
     const close = () => submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW)
@@ -781,6 +843,11 @@ describe('faults and quality problems', () => {
       submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW),
     ).toThrow('已被 CCB 驳回')
     expect(() => upsertProblem(state, { id: qp.id, changeId: 'CR-404' }, NOW)).toThrow('未找到')
+    // the refusal's other way out: a stated reason closes it without a new change
+    upsertProblem(state, { id: qp.id, noChangeReason: '驳回后复核：现场调整即可，无需设计变更' }, NOW)
+    expect(submitApproval(state, { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: 'x' }, NOW).state).toBe(
+      'RUNNING',
+    )
   })
 })
 
@@ -925,6 +992,25 @@ describe('change requests and the field-to-design loop', () => {
     expect(designed[1].revs).toEqual({ 'NC-BUF-01': 'C', 'NC-MOT-02': 'A' })
     expect(state.stages.every((s: Item) => s.state === 'PASSED')).toBe(true)
     expect(metrics(state, p, NOW)).toMatchObject({ baselineGap: 1, retrofit: { done: 0, total: 1920 } })
+    // a retrofit total on a change nobody approved is not fleet work yet
+    create(
+      state,
+      { kind: 'change', projectId: p.id, title: '草案', reason: 'r', retrofit: { total: 500 } },
+      NOW,
+    )
+    expect(metrics(state, p, NOW).retrofit).toEqual({ done: 0, total: 1920 })
+    // a change written against the old revision does not roll the item back
+    const same = approvedChange(state, p.id, bufferChange)
+    expect(() => release(state, 'ECN_RELEASE', same.id)).toThrow('已体现在设计态基线')
+    const stale = approvedChange(state, p.id, {
+      ...bufferChange,
+      impact: { ...bufferChange.impact, items: [{ itemId: 'NC-BUF-01', fromRev: 'B', toRev: 'D' }] },
+    })
+    expect(() => release(state, 'ECN_RELEASE', stale.id)).toThrow('NC-BUF-01 当前为 C 版')
+    // refused before anyone signs, and it says the way out: an approved change keeps its items
+    expect(() => release(state, 'ECN_RELEASE', stale.id)).toThrow('另起变更')
+    expect(state.approvals.some((a: Item) => a.subject.id === stale.id && a.state === 'RUNNING')).toBe(false)
+    expect(state.configBaselines.filter((b: Item) => b.type === 'AS_DESIGNED')).toHaveLength(2)
   })
 
   it('still sends passed stages of a project in development to rework, and they pass their gates again', () => {
@@ -934,8 +1020,11 @@ describe('change requests and the field-to-design loop', () => {
     pass(state, p.id, 'INITIATION')
     pass(state, p.id, 'REQUIREMENTS')
     start(state, `${p.id}/DESIGN`)
+    const design = submitGate(state, { stageId: `${p.id}/DESIGN`, by: 'x' }, NOW).gate
     const cr = approvedChange(state, p.id)
     expect(cr.reworked).toEqual([`${p.id}/REQUIREMENTS`])
+    // a later stage waits for the reworked earlier one before its gate is approved
+    expect(() => sign(state, design.id, design.approverRoles[0])).toThrow('阶段顺序不满足')
     expect(byId(state.reqs, 'CUS-001', p.id).status).toBe('CHANGED')
     const stage = byId(state.stages, `${p.id}/REQUIREMENTS`)
     expect(stage.state).toBe('REWORK')
@@ -948,6 +1037,18 @@ describe('change requests and the field-to-design loop', () => {
     for (const role of gate.approverRoles) sign(state, gate.id, role, { closeFindings })
     expect(stage.state).toBe('PASSED')
     expect(byId(state.projects, p.id).stage).toBe('DESIGN')
+  })
+
+  it('takes back the end date of a finished project an approved change reopens', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '已完成' }, NOW)
+    upsertReqs(state, { projectId: p.id, items: [{ id: 'CUS-001', title: 'c', text: 'c' }] }, NOW)
+    for (const stage of ['INITIATION', 'REQUIREMENTS', 'DESIGN', 'IMPLEMENTATION', 'VERIFICATION', 'RELEASE'])
+      pass(state, p.id, stage)
+    expect(p.actualEnd).toBeTruthy()
+    approvedChange(state, p.id)
+    expect(byId(state.stages, `${p.id}/REQUIREMENTS`).state).toBe('REWORK')
+    expect(p.actualEnd).toBeUndefined()
   })
 
   it('needs a verification before CLOSED; a rejected change may close without one', () => {
@@ -990,6 +1091,9 @@ describe('change requests and the field-to-design loop', () => {
     const before = designed().length
     expect(release(state, 'ECN_RELEASE', cr.id).state).toBe('APPROVED')
     expect(designed()).toHaveLength(before + 1)
+    // doors brought to the released design after the close still count and complete the as-maintained baseline
+    transition(state, { kind: 'retrofit', id: cr.id, done: cr.retrofit.total, by: '客服工程师' }, NOW)
+    expect(cr.retrofit.done).toBe(cr.retrofit.total)
     const rejected = create(
       state,
       { kind: 'change', projectId: p.id, title: 'r', reason: 'r', impact: { reqs: ['CUS-001'] } },
@@ -1003,9 +1107,11 @@ describe('change requests and the field-to-design loop', () => {
   it('updates retrofit progress only upwards and creates the as-maintained baseline on completion', () => {
     const { state, p } = inService()
     const cr = approvedChange(state, p.id, { ...bufferChange, rootCause: '根因' })
-    release(state, 'ECN_RELEASE', cr.id)
     const progress = (done: number, id = cr.id) =>
       transition(state, { kind: 'retrofit', id, done, by: '客服工程师' }, NOW)
+    // doors are brought to a released design only
+    expect(() => progress(480)).toThrow('尚未发布')
+    release(state, 'ECN_RELEASE', cr.id)
     progress(480)
     expect(cr.retrofit).toEqual({ done: 480, total: 1920 })
     expect(() => progress(480)).toThrow('整改进度只能递增')
@@ -1160,6 +1266,22 @@ describe('traceability and deliverables', () => {
         items: [{ id: 'TC-002', title: 't', text: 't', parent: ['CUS-001'] }],
       }),
     ).toThrow('TC-002 的上游必须是 SWR')
+  })
+
+  it('gives a released deliverable revised after a change its next version and the stage a new baseline', () => {
+    const state = blank()
+    const p = create(state, { kind: 'project', name: '实时项目' }, NOW)
+    const plan = { projectId: p.id, stage: 'INITIATION', kind: 'PLAN', path: 'docs/PLAN.md' }
+    const art = recordArtifact(state, { ...plan, markdown: 'a' }, NOW)
+    const stage = pass(state, p.id, 'INITIATION')
+    const first = stage.baseline.id
+    expect(art).toMatchObject({ status: 'BASELINED', version: 'V1.0' })
+    approvedChange(state, p.id, { impact: { artifacts: [art.id] } })
+    recordArtifact(state, { ...plan, markdown: 'b' }, NOW)
+    expect(art).toMatchObject({ status: 'DRAFT', version: 'V1.1' })
+    pass(state, p.id, 'INITIATION')
+    expect(stage.baseline.id).not.toBe(first)
+    expect(art).toMatchObject({ status: 'BASELINED', version: 'V1.1' })
   })
 
   it('allows several deliverables of one kind through a suffix, with the new kinds', () => {
@@ -1419,6 +1541,19 @@ describe('approval flows', () => {
     expect(doc(legacy).initiator.role).toBe('系统设计师')
   })
 
+  it('withdraws the release flow of a deliverable whose stage an approved change sends to rework', () => {
+    const { state, p } = setup()
+    const stage = byId(state.stages, `${p.id}/INITIATION`)
+    if (stage.state !== 'IN_PROGRESS') start(state, stage.id)
+    submitGate(state, { stageId: stage.id, by: 'x' }, NOW)
+    const flow = doc(state)
+    const cr = ccb(state, p, { impact: { artifacts: ['DOC-1-SAD'] } })
+    approveFlow(state, ecr(state, cr.id).id)
+    expect(stage.state).toBe('REWORK')
+    expect(flow.state).toBe('WITHDRAWN')
+    expect(byId(state.artifacts, 'DOC-1-SAD')).toMatchObject({ status: 'DRAFT', version: 'V0.1' })
+  })
+
   it('walks SERIAL nodes to APPROVED, baselines the deliverable and refuses the wrong role, node and a finished flow', () => {
     const { state } = setup()
     const flow = doc(state)
@@ -1543,6 +1678,10 @@ describe('approval flows', () => {
     expect(() => act(state, flow.id, '机械设计师', 'ADD_SIGN', { role: '没有这个角色' })).toThrow(
       '加签角色无效',
     )
+    // the author's own role is kept off the flow, so nobody signs their own work through an added node
+    expect(() => act(state, flow.id, '机械设计师', 'ADD_SIGN', { role: flow.initiator.role })).toThrow(
+      '发起人',
+    )
     act(state, flow.id, '机械设计师', 'ADD_SIGN', { role: 'RAMS 工程师' })
     act(state, flow.id, '机械设计师', 'ADD_SIGN', { role: '质量工程师' })
     expect(flow.nodes.map((n: Item) => n.id)).toEqual([
@@ -1561,6 +1700,26 @@ describe('approval flows', () => {
     act(state, flow.id, '机械设计师', 'APPROVE')
     expect(flow.nodes[flow.current].id).toBe('add2')
     expect(() => act(state, flow.id, '技术负责人', 'APPROVE')).toThrow('当前节点「加签：质量工程师」')
+  })
+
+  it('lets a change sent back to its initiator return to analysis once its ECR is withdrawn', () => {
+    const { state, p } = setup()
+    const cr = ccb(state, p)
+    const flow = ecr(state, cr.id)
+    act(state, flow.id, flow.nodes[0].roles[0], 'RETURN', { to: 'INITIATOR', comment: '影响分析漏了物料' })
+    const back = () => transition(state, { kind: 'change', id: cr.id, to: 'ANALYZED', by: 'x' }, NOW)
+    expect(back).toThrow('有进行中的审批')
+    actApproval(state, { id: flow.id, by: flow.initiator.by, action: 'WITHDRAW' }, NOW)
+    back()
+    updateChange(state, { id: cr.id, title: '补充物料后的变更' })
+    expect(cr).toMatchObject({ state: 'ANALYZED', title: '补充物料后的变更' })
+  })
+
+  it('refuses releasing an ECN the as-designed baseline already carries', () => {
+    const state = read(memoryStore(), NOW)
+    expect(() =>
+      submitApproval(state, { template: 'ECN_RELEASE', subjectId: 'CR-2026-012', by: '配置管理员' }, NOW),
+    ).toThrow('已体现在设计态基线')
   })
 
   it('lets only the initiator withdraw, and only before the first node is handled', () => {
@@ -1650,6 +1809,11 @@ describe('approval flows', () => {
     upsertTrial(state, { id: tt.id, to: 'REPORTED', reportNo: 'R-9', result: 'PASS' }, NOW)
     // a report whose result was edited back to PENDING is not approvable
     upsertTrial(state, { id: tt.id, result: 'PENDING' }, NOW)
+    expect(tt.history.at(-1)).toMatchObject({
+      from: 'REPORTED',
+      to: 'REPORTED',
+      note: '修改报告：结论 PASS → PENDING',
+    })
     expect(() => submitApproval(state, { template: 'TRIAL_REPORT', subjectId: tt.id }, NOW)).toThrow(
       '缺少试验结论',
     )
@@ -1757,6 +1921,11 @@ describe('approval flows', () => {
     expect(gate.findings[0].closed).toBe(true)
     expect(gate.decision).toBe('APPROVED')
     expect(byId(state.stages, id).state).toBe('PASSED')
+    // the deliverable its flow just approved is in the stage baseline
+    expect(byId(state.stages, id).baseline).toMatchObject({
+      id: expect.stringMatching(/-CODE-V1\.0$/),
+      items: [code.id],
+    })
   })
 
   it('refuses new content for a deliverable while its release flow runs', () => {
@@ -1975,6 +2144,9 @@ describe('blockers', () => {
     const list = blockers(state, NOW) as Item[]
     expect(kinds(list)).toEqual(['GATE_FINDING', 'STAGE_OVERDUE'])
     expect(list[0].role).toBe(stage.author)
+    // a finding is as old as the submission that raised it
+    state.gates[0].submittedAt = at(4)
+    expect((blockers(state, NOW) as Item[])[0].days).toBe(4)
     expect(list[1]).toMatchObject({ days: 5, ref: { type: 'stage', id: stage.id } })
     stage.state = 'PASSED'
     expect(kinds(blockers(state, NOW))).toEqual(['GATE_FINDING'])
@@ -2043,11 +2215,22 @@ describe('blockers', () => {
       (b: Item) => b.projectId === project && b.type === 'AS_MAINTAINED',
     )
     expect(blockers(state, NOW)).toEqual([])
-    maintained[maintained.length - 1].revs['NC-DR-1218'] = 'A'
+    const last = maintained[maintained.length - 1]
+    const levelled = { ...last.revs }
+    last.revs['NC-DR-1218'] = 'A'
     const list = blockers(state, NOW) as Item[]
     expect(list).toHaveLength(1)
     expect(list[0]).toMatchObject({ kind: 'BASELINE_GAP', projectId: project, role: '配置管理员' })
     expect(list[0].reason).toContain('NC-DR-1218')
+    // the next baseline in the series counts even when written at the same moment, on the card as in the blockers
+    const next = {
+      ...last,
+      id: last.id.replace(/\d+$/, (n: string) => String(Number(n) + 1).padStart(2, '0')),
+    }
+    state.configBaselines.push({ ...next, revs: levelled })
+    expect(blockers(state, NOW)).toEqual([])
+    expect(metrics(state, byId(state.projects, project), NOW).baselineGap).toBe(0)
+    state.configBaselines.pop()
     // with no as-maintained baseline nothing lags, on the card as in the blockers
     state.configBaselines = state.configBaselines.filter((b: Item) => !maintained.includes(b))
     expect(blockers(state, NOW)).toEqual([])
@@ -2347,6 +2530,16 @@ describe('fast-forward from the shipped sample', () => {
     }
   })
 
+  it('numbers a fast-forwarded project in the current year, though its history starts in the last one', async () => {
+    vi.useFakeTimers({ now: new Date('2027-01-03T08:00:00Z'), toFake: ['Date'] })
+    try {
+      const out = (await run(memoryStore(), 'DONE')) as Item
+      expect(out.data.projectId).toMatch(/^PRJ-2027-/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('creates a new project every time and never takes a directory that already exists', async () => {
     const store = memoryStore()
     const a = ((await run(store, 'TR1')) as Item).data.projectId
@@ -2401,6 +2594,15 @@ describe('fast-forward from the shipped sample', () => {
     // seed and order projects never show it
     const seeded = snapshot(seed(NOW))
     expect(seeded.projects.some((p: Item) => showDelivery(seeded, p))).toBe(false)
+    // two runs of one level at the same time: the later-registered one is the newest, as the metrics read it
+    const at = new Date(NOW).toISOString()
+    const tie = {
+      testRuns: [
+        { id: 'R1', projectId: 'P', level: 'UNIT', at, passed: 1 },
+        { id: 'R2', projectId: 'P', level: 'UNIT', at, passed: 9 },
+      ],
+    }
+    expect(latestRuns(tie, 'P').map((r: Item) => r.id)).toEqual(['R2'])
   })
 
   it('TR3_CHANGE: a customer change waits in CCB review with its ECR flow, and approving it sends the stages back', async () => {
@@ -2446,6 +2648,8 @@ describe('fast-forward from the shipped sample', () => {
     )
     const changed = state.reqs.filter((r: Item) => r.projectId === data.projectId && r.status === 'CHANGED')
     expect(changed.map((r: Item) => r.id).sort()).toEqual(applied.impact.reqs)
+    // the reopened stages run again in order: design waits for requirements
+    expect(() => start(state, `${data.projectId}/DESIGN`)).toThrow('阶段顺序不满足')
     // the stages run their gates again, and the old gate is not reused
     for (const name of ['REQUIREMENTS', 'DESIGN']) pass(state, data.projectId, name)
     expect([stage('REQUIREMENTS').state, stage('DESIGN').state]).toEqual(['PASSED', 'PASSED'])
@@ -2504,6 +2708,9 @@ describe('fast-forward from the shipped sample', () => {
       )
       transition(state, { kind: 'defect', id: later.id, to: 'DEFERRED', by: 'x' }, NOW)
       expect(() => approve(state, gate)).toThrow(later.id)
+      // and the hand-off lists the deferred A defect that holds the gate
+      const out = handoff(state, { type: 'project', id: projectId })
+      expect(out.openDefects.map((d: Item) => d.id)).toContain(later.id)
     })
 
     it('closing the defect closes its finding as the system, and then the gate can be approved', async () => {
@@ -2882,6 +3089,32 @@ describe('hand-off to the coordinator', () => {
     expect(JSON.stringify(out).length).toBeLessThan(8000)
   })
 
+  it('takes back the verification of an SWR an approved change marks CHANGED until a case passes again', () => {
+    const state = blank()
+    const p = newProject(state, 'SOFTWARE')
+    const items = [
+      { id: 'CUS-001', title: 'c', text: 'c' },
+      { id: 'SYS-001', title: 's', text: 's', parent: ['CUS-001'] },
+      { id: 'SWR-001', title: 'w', text: 'w', parent: ['SYS-001'] },
+      { id: 'TC-001', title: 't1', text: 't1', parent: ['SWR-001'] },
+    ]
+    upsertReqs(state, { projectId: p.id, by: 'x', items }, NOW)
+    const status = (id: string) => byId(state.reqs, id, p.id).status
+    const run = (s: string, at: number) =>
+      recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-001', status: s }] }, at)
+    run('pass', NOW)
+    expect(status('SWR-001')).toBe('VERIFIED')
+    approvedChange(state, p.id, { impact: { reqs: ['SWR-001'] } })
+    expect([status('SWR-001'), status('TC-001')]).toEqual(['CHANGED', 'APPROVED'])
+    run('skip', NOW + 1)
+    expect(status('SWR-001')).toBe('CHANGED')
+    run('pass', NOW + 2)
+    expect(status('SWR-001')).toBe('VERIFIED')
+    // a change that names the case itself takes the verification of its requirement back too
+    approvedChange(state, p.id, { impact: { reqs: ['TC-001'] } })
+    expect([status('SWR-001'), status('TC-001')]).toEqual(['APPROVED', 'CHANGED'])
+  })
+
   it('tells the coordinator which failed test cases still need a defect', () => {
     const state = blank()
     const p = newProject(state, 'SOFTWARE')
@@ -2926,6 +3159,20 @@ describe('hand-off to the coordinator', () => {
     // a later passing run clears it
     recordTestRun(state, { projectId: p.id, results: [{ tc: 'TC-002', status: 'pass' }] }, NOW + 1)
     expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual([])
+    // a deferred defect still tracks its case: a new failure is noted on it, not reported as needing another
+    const deferred = create(
+      state,
+      { kind: 'defect', projectId: p.id, title: 'd2', testCase: 'TC-002', by: 'x' },
+      NOW,
+    )
+    transition(state, { kind: 'defect', id: deferred.id, to: 'DEFERRED', by: 'x' }, NOW)
+    const run = recordTestRun(
+      state,
+      { projectId: p.id, results: [{ tc: 'TC-002', status: 'fail' }] },
+      NOW + 4000,
+    )
+    expect(run.effects).toMatchObject({ needsDefect: [], defectsNoted: [deferred.id] })
+    expect(handoff(state, { type: 'project', id: p.id }).untrackedFailures).toEqual([])
   })
 
   it('follows the state of the change a trial is linked to', () => {
@@ -2941,6 +3188,9 @@ describe('hand-off to the coordinator', () => {
     expect(step()).toContain('新变更')
     cr.state = 'CLOSED'
     expect(step()).toContain('已关闭')
+    // a change closed after the CCB rejected it still leaves the failed trial without a change
+    cr.ccb = { ...cr.ccb, decision: 'REJECTED' }
+    expect(step()).toContain('新变更')
   })
 
   it('has nothing to do for a closed fault without a problem or with a closed one', () => {
@@ -2976,6 +3226,149 @@ describe('hand-off to the coordinator', () => {
     const out = handoff(state, { type: 'change', id: cr.id })
     expect(out.change.reason.length).toBe(600)
     expect(out.next[0]).toContain('traceFrom')
+  })
+
+  it('tells the coordinator the outcome and comment of a finished approval flow, and where its subject now stands', () => {
+    const state = seed(NOW)
+    for (const p of state.projects) p.live = true
+    actApproval(
+      state,
+      { id: 'AP-2026-0027', by: '质量工程师 q', action: 'REJECT', comment: '报告数据不全' },
+      NOW,
+    )
+    const project = handoff(state, { type: 'project', id: 'PRJ-2025-042' })
+    expect(project.decidedApprovals).toEqual([
+      expect.objectContaining({
+        id: 'AP-2026-0027',
+        template: 'TRIAL_REPORT',
+        outcome: 'REJECTED',
+        comment: '报告数据不全',
+        subject: expect.objectContaining({ type: 'trial', id: 'TT-2026-019', state: 'IN_PROGRESS' }),
+      }),
+    ])
+    expect(project.next.join('')).toContain('报告数据不全')
+    const trial = handoff(state, { type: 'trial', id: 'TT-2026-019' })
+    expect(trial.lastApproval).toMatchObject({
+      id: 'AP-2026-0027',
+      outcome: 'REJECTED',
+      comment: '报告数据不全',
+    })
+    // a rejected 8D close leaves every step drafted: the hand-off must not call that "steps still to draft"
+    const qp = byId(state.problems, 'QP-2026-007')
+    for (const step of Object.values(qp.steps) as Item[]) step.done = true
+    upsertProblem(state, { id: qp.id, rootCause: '根因', containment: '围堵', to: 'ACTION' }, NOW)
+    upsertProblem(state, { id: qp.id, to: 'VERIFYING', noChangeReason: '仅更换耗材' }, NOW)
+    const close = submitApproval(
+      state,
+      { template: 'PROBLEM_CLOSE', subjectId: qp.id, by: '质量工程师 x' },
+      NOW,
+    )
+    actApproval(state, { id: close.id, by: '质量工程师 q', action: 'APPROVE' }, NOW)
+    actApproval(
+      state,
+      { id: close.id, by: '分技术中心主任 d', action: 'REJECT', comment: '验证数据不足' },
+      NOW,
+    )
+    const problem = handoff(state, { type: 'problem', id: qp.id })
+    expect(problem.next[0]).not.toContain('均已起草')
+    expect(problem.next.join('')).toContain('验证数据不足')
+    expect(problem.lastApproval).toMatchObject({ id: close.id, outcome: 'REJECTED' })
+  })
+
+  it('says a stage is in rework because of an approved change, with the change to cite and what it touched', () => {
+    const state = seed(NOW)
+    for (const p of state.projects) p.live = true
+    const P = 'PRJ-2026-008'
+    const cr = create(
+      state,
+      {
+        kind: 'change',
+        projectId: P,
+        title: '改接口',
+        reason: '客户要求',
+        source: { type: 'CUSTOMER' },
+        impact: { reqs: ['DES-301'] },
+      },
+      NOW,
+    )
+    ccbApprove(state, cr.id)
+    expect(byId(state.changes, cr.id).reworked).toEqual([`${P}/DESIGN`])
+    const project = handoff(state, { type: 'project', id: P })
+    expect(project.next[0]).toContain(cr.id)
+    expect(project.next[0]).toContain('DES-301')
+    expect(project.next[0]).not.toContain('未关闭意见')
+    const change = handoff(state, { type: 'change', id: cr.id })
+    expect(change.reworkedStages).toEqual([{ stage: 'DESIGN', state: 'REWORK' }])
+    expect(change.next[0]).toContain('DESIGN')
+  })
+
+  it('has the coordinator start the ECR only for a change it drafted or sent to CCB itself', () => {
+    const state = seed(NOW)
+    const toCcb = (by: string) => {
+      const cr = create(
+        state,
+        { kind: 'change', projectId: 'PRJ-2026-008', title: 'c', reason: 'r', impact: { reqs: ['DES-301'] } },
+        NOW,
+      )
+      for (const to of ['ANALYZED', 'CCB_REVIEW'])
+        transition(state, { kind: 'change', id: cr.id, to, by }, NOW)
+      return handoff(state, { type: 'change', id: cr.id }).next[0]
+    }
+    expect(toCcb('变更经理 x')).toContain('请用户在看板上发起 ECR')
+    expect(toCcb(AGENT_NAME)).toContain('用 devboard_approval_submit（ECR）发起审批')
+  })
+
+  it('keeps the rejected gate, its comment and its open findings on the project hand-off', () => {
+    const state = seed(NOW)
+    for (const p of state.projects) p.live = true
+    const gate = byId(state.gates, 'GATE-PRJ-2026-008-DL2-1')
+    const open = gate.findings.filter((f: Item) => !f.closed).map((f: Item) => f.id)
+    expect(open.length).toBeGreaterThan(0)
+    decideGate(
+      state,
+      { gateId: gate.id, decision: 'REJECTED', by: '项目经理 x', comment: '接口清单缺失' },
+      NOW,
+    )
+    const project = handoff(state, { type: 'project', id: 'PRJ-2026-008' })
+    expect(project.nextStep.state).toBe('REWORK')
+    expect(project.next[0]).toContain('DL2')
+    expect(project.next[0]).toContain('接口清单缺失')
+    for (const id of open) expect(project.next[0]).toContain(id)
+    expect(project.nextStep.reworkFrom).toMatchObject({ gate: gate.id, comment: '接口清单缺失' })
+    expect(project.nextStep.reworkFrom.openFindings.map((f: Item) => f.id)).toEqual(open)
+  })
+
+  it('reads a gate a change voided as void whatever its old decision, and defers to a newer gate of its code', () => {
+    const state = seed(NOW)
+    for (const p of state.projects) p.live = true
+    const P = 'PRJ-2026-008'
+    const cr = create(
+      state,
+      {
+        kind: 'change',
+        projectId: P,
+        title: '改接口',
+        reason: '客户要求',
+        source: { type: 'CUSTOMER' },
+        impact: { reqs: ['DES-301'] },
+      },
+      NOW,
+    )
+    ccbApprove(state, cr.id)
+    // a change voids the gates a stage had passed, keeping their decision
+    const approved = state.gates.find((g: Item) => g.decision === 'APPROVED' && g.stageId.startsWith(P))
+    approved.superseded = true
+    const out = handoff(state, { type: 'gate', id: approved.id })
+    expect(out.next[0]).toContain('作废')
+    expect(out.summary).toContain('作废')
+    expect(out.summary).not.toMatch(/已通过；/)
+    // the stage submits the gate again: the voided one points at the new one, not at "redo"
+    const voided = state.gates.find((g: Item) => g.superseded && g.decision === 'REJECTED')
+    state.gates.push({ ...voided, id: 'GATE-NEW', decision: 'PENDING', superseded: undefined, findings: [] })
+    const again = handoff(state, { type: 'gate', id: voided.id })
+    expect(again.next[0]).toContain('GATE-NEW')
+    expect(again.next[0]).toContain('以新门为准')
+    expect(again.next[0]).not.toContain('按返工重做')
   })
 })
 
@@ -3025,6 +3418,13 @@ describe('per-test-case results', () => {
     run([{ tc: 'TC-002', status: 'pass' }])
     expect(status('SWR-001')).toBe('VERIFIED')
     expect(state.testRuns.filter((r: Item) => r.projectId === p.id)).toHaveLength(2)
+    // a new case under it has not passed yet, so the SWR is no longer verified
+    upsertReqs(
+      state,
+      { projectId: p.id, items: [{ id: 'TC-009', title: 't', text: 't', parent: ['SWR-001'] }] },
+      NOW,
+    )
+    expect(status('SWR-001')).toBe('APPROVED')
   })
 
   it('takes a VERIFIED case back when it fails, without making a defect', () => {

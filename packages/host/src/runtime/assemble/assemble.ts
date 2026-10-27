@@ -213,7 +213,14 @@ async function mountExtensions(ctx: AssemblyContext, f: Foundation, t: Tree, c: 
 }
 type Extensions = Awaited<ReturnType<typeof mountExtensions>>
 
-function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Extensions): Assembled {
+function publish(
+  ctx: AssemblyContext,
+  f: Foundation,
+  t: Tree,
+  c: Core,
+  e: Extensions,
+  timing: Readonly<{ reason: string; durationMs: number; stages: Readonly<Record<string, number>> }>,
+): Assembled {
   const { deps } = ctx
   const { adapters } = f.proc
   const { pluginTree, publisher } = t.runtimeTarget
@@ -225,7 +232,7 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
       [managed.statusEntries(), rowExtensions.statusEntries(), builtinRows.statusEntries()],
       rowExtensions.replacedBy,
     )
-  ctx.say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length })
+  ctx.say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length, ...timing })
   const { servicesInvocation, sessionConfiguration, profileServices } = createHostServices(ctx, {
     proc: f.proc,
     kernel: c.kernelStage.kernel,
@@ -321,14 +328,34 @@ function publish(ctx: AssemblyContext, f: Foundation, t: Tree, c: Core, e: Exten
   }
 }
 
+/** Times the phases for the host.ready audit row: `lap()` is the ms since the previous lap. */
+function phaseClock() {
+  const started = performance.now()
+  let mark = started
+  const lap = () => {
+    const now = performance.now(),
+      ms = Math.round(now - mark)
+    mark = now
+    return ms
+  }
+  return { lap, total: () => Math.round(performance.now() - started) }
+}
+
 export async function assemble(profile: ResolvedProfile, deps: AssembleDeps): Promise<Assembled> {
   const ctx = createAssemblyContext(profile, deps)
+  const { reason, ...cause } = deps.assemblyCause ?? { reason: 'unspecified' }
+  ctx.say('host.assembling', { reason, ...cause, hash: profile.hash })
+  const clock = phaseClock()
   try {
     const foundation = await openFoundation(ctx)
+    const foundationMs = clock.lap()
     const tree = await mountTree(ctx, foundation)
+    const treeMs = clock.lap()
     const core = await startCore(ctx, foundation, tree)
+    const coreMs = clock.lap()
     const extensions = await mountExtensions(ctx, foundation, tree, core)
-    return publish(ctx, foundation, tree, core, extensions)
+    const stages = { foundationMs, treeMs, coreMs, extensionsMs: clock.lap() }
+    return publish(ctx, foundation, tree, core, extensions, { reason, durationMs: clock.total(), stages })
   } catch (e) {
     return failAssembly(ctx, e)
   }

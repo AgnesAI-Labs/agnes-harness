@@ -792,6 +792,23 @@ describe('reconciliation and calls that never ran', () => {
     expect(row()?.querySelector('[data-state="cancelled"]')).toBeNull()
   })
 
+  it('keeps a literal path target out of translation', async () => {
+    const read: Extract<UINode, { kind: 'tool' }> = {
+      kind: 'tool',
+      id: 'read-review',
+      seq: 8,
+      toolUseId: 'call-3',
+      name: 'read',
+      status: 'completed',
+      summary: 'read review.ts',
+      argsPreview: '{"path":"review.ts"}',
+    }
+    await act(async () => root.render(createElement(ConversationToolCard, { node: read, t })))
+    const target = host.querySelector<HTMLElement>('.activity-target')
+    expect(target?.textContent).toBe('review.ts')
+    expect([target?.dataset.mono, target?.getAttribute('translate')]).toEqual(['true', 'no'])
+  })
+
   it("says a call the turn never carried out was not run, and keeps a running turn's plan quiet", async () => {
     const planned: Extract<UINode, { kind: 'tool' }> = {
       kind: 'tool',

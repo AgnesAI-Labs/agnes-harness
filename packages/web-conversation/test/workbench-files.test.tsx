@@ -353,6 +353,9 @@ describe('FilesPanel preview', () => {
     await open('main.ts')
     const header = q('[data-testid="file-header"]') as HTMLElement
     expect(header.querySelector('.workbench-file-crumb')?.textContent).toBe('WorkLLM/main.ts')
+    // Paths are names, not prose: translation leaves the crumb, tree row and tab untouched.
+    expect(header.querySelector('.workbench-file-crumb')?.getAttribute('translate')).toBe('no')
+    expect(q('[data-path="main.ts"] .workbench-file-name')?.getAttribute('translate')).toBe('no')
     expect(q('[data-testid="file-meta"]')?.textContent).toMatch(/^2 KB · Read at /)
     expect(q('[data-testid="file-view-mode"]')).toBeNull()
     const pre = q('[data-testid="file-preview"]') as HTMLElement
@@ -738,6 +741,11 @@ describe('file tabs', () => {
     expect(q('[data-testid="file-tab"][data-path="story.md"]')?.dataset.active).toBe('true')
     // A toolbar, not a tablist: a tablist may own only tabs, and each tab also needs a close button.
     expect(q('[data-testid="file-tabs"]')?.getAttribute('role')).toBe('toolbar')
+    expect(
+      q('[data-testid="file-tab"][data-path="story.md"] [data-testid="file-tab-select"]')?.getAttribute(
+        'translate',
+      ),
+    ).toBe('no')
     expect(
       q('[data-testid="file-tab"][data-path="story.md"] [data-testid="file-tab-select"]')?.getAttribute(
         'aria-pressed',

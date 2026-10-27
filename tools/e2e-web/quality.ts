@@ -249,13 +249,17 @@ export async function screen(page: Page, info: TestInfo, name: string, mask: Loc
     }
   })
   const workspaceChoices = page.locator(
-    '.workspace-option-path, [data-workspace-path], #memory-workspace option, [data-testid="memory-root"]',
+    // The memory picker shows its value on a custom trigger beside the hidden native select.
+    '.workspace-option-path, [data-workspace-path], #memory-workspace option, [id="memory-workspace-trigger"] *, [data-testid="memory-root"]',
   )
   await workspaceChoices.evaluateAll((nodes) => {
     for (const node of nodes) {
       if (node.childElementCount) continue
       const original = node.textContent ?? ''
-      const normalized = original.replace(/(?:\/private)?\/tmp\/agh-e2e-[^/\s]+\/w/g, '/workspace/w')
+      const normalized = original
+        .replace(/(?:\/private)?\/tmp\/agh-e2e-[^/\s]+\/w/g, '/workspace/w')
+        // Other folders under the isolated root, such as the home's chats folder.
+        .replace(/(?:\/private)?\/tmp\/agh-e2e-[^/\s]+\//g, '/agh-e2e/')
       if (normalized === original) continue
       node.setAttribute('data-e2e-workspace-choice-original', original)
       node.textContent = normalized

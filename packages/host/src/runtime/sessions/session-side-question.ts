@@ -11,7 +11,7 @@ import {
   scanAll,
   toProviderRequest,
 } from '@agnes/core'
-import type { InferenceEvent } from '@agnes/protocol'
+import { type InferenceEvent, rpcError } from '@agnes/protocol'
 import { bestEffort } from '../../best-effort.js'
 import type { HostSession } from '../lifecycle/host.js'
 
@@ -26,6 +26,15 @@ export class SideQuestionError extends Error {
     super(message)
     this.name = 'SideQuestionError'
   }
+}
+
+/** The wire error for a failed side question, wherever the session runs; any other error is returned as is. */
+export function sideQuestionRpcError(error: unknown): unknown {
+  if (!(error instanceof SideQuestionError)) return error
+  if (error.code === 'timeout') return rpcError('REQUEST_TIMEOUT', { reason: 'btw' })
+  if (error.code === 'budget') return rpcError('SEMANTIC_REJECTED', { reason: 'BUDGET' })
+  if (error.code === 'unavailable') return rpcError('SEMANTIC_REJECTED', { reason: 'MODEL_UNAVAILABLE' })
+  return rpcError('INTERNAL_ERROR', { reason: 'btw failed' })
 }
 
 /** Which auxiliary slots a review may use, in order; the first one with a configured model wins. */

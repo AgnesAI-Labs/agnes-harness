@@ -83,8 +83,9 @@ export class NoticeSink {
     )
     const params = n.params as DaemonNotice
     const decision = params.kind === 'decisions_changed' ? params.detail : undefined
+    // Both name the session owner: a page hears them for every session it owns, attached or not.
     const automation =
-      params.kind === 'automation_attention'
+      params.kind === 'automation_attention' || params.kind === 'session_activity'
         ? (params.detail as { profile?: string; owner?: string })
         : undefined
     const noticeProfile =

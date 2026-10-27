@@ -28,6 +28,7 @@ import { type RegistryOptions, WorkerRegistry } from './registry.js'
 import { SupervisorRegistry, supervisorLister } from './registry-facade.js'
 import { wireResourceSnapshotNotifications } from './resource-snapshot-notifications.js'
 import { createInProcessRuntimeTargetProbe } from './runtime-target-probe.js'
+import { createSessionActivity, SESSION_ACTIVITY_EVENT_TYPES } from './session-activity.js'
 import { observeSessionRequests, SESSION_REQUEST_EVENT_TYPES } from './session-request-events.js'
 import { createAutomationEvents, deliverWorkerEvent } from './worker-events.js'
 import { WorkerPool } from './worker-pool.js'
@@ -89,6 +90,11 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     : undefined
   const runtimeTargetProbe = runtimeStore ? createInProcessRuntimeTargetProbe() : undefined
   const automationEvents = createAutomationEvents(sessionOwnership, notices, o.profile.name)
+  const sessionActivity = createSessionActivity({
+    ownership: sessionOwnership,
+    notices,
+    profile: o.profile.name,
+  })
   const workerRequests = assemblyPort<NonNullable<ConstructorParameters<typeof WorkerPool>[0]['onRequest']>>()
   lifetime.own({ dispose: () => workerRequests.close() })
   const pool = new WorkerPool({
@@ -109,6 +115,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     onEvent: (sessionKey, e) =>
       deliverWorkerEvent(registry, tickets, clock, sessionKey, e, workspaces, () => {
         automationEvents.observe(sessionKey, e)
+        sessionActivity.observe(sessionKey, e)
         observeSessionRequests(pool, sessionKey, e)
       }),
     onPreview: (sessionKey, p) => registry.deliverPreview(sessionKey, p),
@@ -144,6 +151,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     history: createWorkerHistory({
       pool,
       automationEvents,
+      sessionActivity,
       tickets,
       clock,
       cwd: (key) => registry.get(key)?.session.cwd,
@@ -226,6 +234,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     runtimeDelivery,
     runtimeTargetProbe,
     automationEvents,
+    sessionActivity,
     workerRequests,
     pool,
     stopDesired,
@@ -245,12 +254,14 @@ export type WorkersState = Awaited<ReturnType<typeof openWorkers>>
 function createWorkerHistory({
   pool,
   automationEvents,
+  sessionActivity,
   tickets,
   clock,
   cwd,
 }: {
   pool: WorkerPool
   automationEvents: ReturnType<typeof createAutomationEvents>
+  sessionActivity: ReturnType<typeof createSessionActivity>
   tickets: StoresState['tickets']
   clock: AssemblyBase['clock']
   cwd(key: string): string | undefined
@@ -261,6 +272,8 @@ function createWorkerHistory({
       observe: (key, e) => observeSessionRequests(pool, key, e),
     },
     { types: RUN_PROGRESS_EVENT_TYPES, observe: (key, e) => automationEvents.observe(key, e) },
+    // Rebuilds a reopened session's running/waiting state without announcing its past.
+    { types: SESSION_ACTIVITY_EVENT_TYPES, observe: (key, e) => sessionActivity.observe(key, e, false) },
     ...(tickets
       ? [
           {

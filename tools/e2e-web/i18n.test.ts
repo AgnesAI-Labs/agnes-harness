@@ -13,6 +13,11 @@ it('finds catalog keys in visible labels, accessible names and placeholders, inc
   document.body.innerHTML = `<button aria-label="catalog.custom">Settings</button>
     <input placeholder="settings.futureLabel"><textarea placeholder="composer.futureLabel">Literal draft</textarea><span>shell.collapseNav</span>
     <span>shell.collapseNav</span><span data-i18n="custom.future">custom.future</span><button title="settings.selectPicker.ariaJoin">Open</button>`
+  // A tooltip only counts as a literal when the control shows that same text untranslated.
+  document.body.insertAdjacentHTML(
+    'beforeend',
+    '<button title="shell.otherLabel">Edit <span translate="no">review.ts</span></button>',
+  )
   expect(unresolvedLabels(['catalog.custom'])).toEqual([
     'catalog.custom',
     'settings.futureLabel',
@@ -20,6 +25,7 @@ it('finds catalog keys in visible labels, accessible names and placeholders, inc
     'shell.collapseNav',
     'custom.future',
     'settings.selectPicker.ariaJoin',
+    'shell.otherLabel',
   ])
 })
 
@@ -27,6 +33,7 @@ it('accepts translated zh/en text and literal examples while ignoring hidden con
   document.body.innerHTML = `<button aria-label="设置">Settings</button><input placeholder="搜索">
     <pre>settings.example</pre><code>shell.example</code><textarea>composer.example</textarea>
     <span translate="no" title="review.ts">review.ts</span><span translate="no"><span>review.md</span></span>
+    <button title="review.ts">Edit <span translate="no">review.ts</span></button>
     <span style="display:none">shell.hidden</span>`
   expect(unresolvedLabels(['shell.hidden', 'review.future'])).toEqual([])
 })

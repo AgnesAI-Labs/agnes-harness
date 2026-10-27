@@ -26,6 +26,7 @@ import {
   pageVisible,
 } from './app/global-events.js'
 import { createReadOnlyController } from './app/read-only-controller.js'
+import { SessionActivityView } from './app/session-activity.js'
 import { createSessionController } from './app/session-controller.js'
 import { SessionBindingOwner } from './app/session-owner.js'
 import { createSubmissionController } from './app/submission-controller.js'
@@ -39,6 +40,7 @@ import type {
   ConfigSnapshot,
   ModelSettings,
   PageSessionMeta,
+  SessionActivity,
   UITimeline,
   UITurn,
   WorkspaceEntry,
@@ -147,6 +149,7 @@ export interface AppSessionContext {
   controlsHistory: typeof controlsHistory
   conversationRuntime: typeof conversationRuntime
   readonly submissions: SubmissionOwner
+  readonly sessionActivity: SessionActivityView
   readonly sessionBinding: Pick<SessionBindingOwner, 'capture' | 'isCurrent' | 'targetId'>
   readonly current: Session | undefined
   dockControlsHost: typeof dockControlsHost
@@ -228,7 +231,9 @@ export interface AppSessionContext {
 }
 const sessionBinding = new SessionBindingOwner()
 const submissions = new SubmissionOwner(sessionBinding)
+const sessionActivity = new SessionActivityView()
 const appSessionContext: AppSessionContext = {
+  sessionActivity,
   invalidateSessionRuntime: (id) => sessionActions.invalidateRuntime(id),
   sessionBinding,
   submissions,
@@ -971,6 +976,18 @@ const clientModules = await startClientModules({
   },
   rosterSource,
 })
+// The session list shows every session the daemon reports running or waiting for its owner, and
+// marks a turn that ended while another session was on screen.
+sessionActivity.subscribe(() => {
+  clientModules.sidebar?.setRunning(sessionActivity.running())
+  clientModules.sidebar?.setMarks(sessionActivity.marks())
+})
+const readSessionActivity = () =>
+  client.session
+    .activity()
+    .then((result) => sessionActivity.reset(result.items))
+    .catch(() => undefined)
+void readSessionActivity()
 const tracePanel = clientModules.trace as NonNullable<typeof clientModules.trace>
 if (!tracePanel) throw new Error('missing trace region')
 // Every «View in trace» link (requests, tools, changes, deliverables, feedback) opens the trace.
@@ -1585,9 +1602,8 @@ function renderSessionRecovery(message: string | (() => string) = ''): void {
     },
   })
 }
-function clearSessionRecovery(): void {
-  readOnlyController.clear()
-  if (!sessionRecovery) return
+function clearSessionRecovery(nextSessionId?: string): void {
+  if (!sessionRecovery || sessionRecovery.id === nextSessionId) return
   sessionRecovery = undefined
   notice.setText('')
   notice.setKind('')
@@ -1644,7 +1660,7 @@ function render(): void {
 }
 function transcriptMeta(): {
   hasEarlier: boolean
-  loadEarlier?: () => void
+  loadEarlier?: () => Promise<unknown>
   sessionId?: string
   loop?: { id: string; version: string }
   controlFacts?: NonNullable<SessionControlStateResult['facts']>
@@ -1734,6 +1750,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   selectComposerDraft()
   sessionPending = true
   workspaceController.resolveDraft(workspace)
+  readOnlyController.clear()
   clearSessionRecovery()
   const { binding: epoch, previous } = sessionBinding.begin()
   references.clear()
@@ -2162,6 +2179,8 @@ const stopConnectionEvents = bindConnectionEvents(appSessionContext, {
   reconnect,
   setConnection,
   async refresh() {
+    // Notices sent while the connection was down are lost; the daemon's current state replaces them.
+    void readSessionActivity()
     await modelRefresh.request()
     await list(undefined, true)
     scheduleClientRosterRead()
@@ -2196,6 +2215,11 @@ const packageNotices = coalesceBurst(() => {
 // Roster invalidation push: packages_changed is only a hint; reread the roster on receipt.
 client.on('notice', (payload) => {
   const incoming = payload as { kind?: unknown; detail?: unknown }
+  if (incoming.kind === 'session_activity') {
+    const detail = incoming.detail as SessionActivity | undefined
+    if (detail?.sessionId && detail.state) sessionActivity.apply(detail)
+    return
+  }
   if (incoming.kind === 'automation_attention') {
     notice.setKind('warning')
     notice.setText(() => t('app.automation.needsAttention'))
@@ -2242,7 +2266,24 @@ const stopSessionConfiguration = onBroadcast(
   'agnes:session-configuration-changed',
   sessionConfigurationChanged,
 )
+// A started agent or quick action hands its session over here instead of reloading the page.
+const stopOpenSession = onBroadcast('agnes:open-session', (event) => {
+  const target =
+    event instanceof CustomEvent ? (event.detail as { sessionId?: unknown; prompt?: unknown }) : {}
+  if (typeof target.sessionId !== 'string') return
+  const { sessionId, prompt } = target as { sessionId: string; prompt?: string }
+  run(async () => {
+    // The page behind stays up until the conversation is ready, so no empty frame shows between.
+    try {
+      await open(sessionId)
+      if (prompt) composerRuntime.setDraft(prompt)
+    } finally {
+      homeNavigation.close()
+    }
+  })
+})
 onPageHide(() => {
+  stopOpenSession()
   notice.clearErrors()
   readOnlyController.clear()
   sidebarPages.reset()
@@ -2435,6 +2476,8 @@ run(async () => {
       await beginNewDraft(
         configured && !startupSection && !startupTerminal && !startupMoved && !homeNavigation.getSnapshot(),
       )
+    // The guide opens over the shell: its sidebar and composer still come from the profile roster.
+    else scheduleClientRosterRead(true)
   } else {
     scheduleClientRosterRead(true)
     sessionPending = false

@@ -18,6 +18,7 @@ import {
   ProjectSelect,
   pct,
   RoleHint,
+  resubmitted,
   signProgress,
   stageName,
   stateBadge,
@@ -62,7 +63,9 @@ function StageBar({ data, projectId }) {
 
 /** One chip per gate of the project's profile (minus tailored-out gates), coloured by decision. */
 function GateChips({ data, projectId }) {
-  const gates = stagesOf(data, projectId).flatMap((s) => gatesOf(data, s.id).filter((g) => !g.superseded))
+  const gates = stagesOf(data, projectId).flatMap((s) =>
+    gatesOf(data, s.id).filter((g) => !g.superseded && !resubmitted(data, g)),
+  )
   return h(
     'div',
     { className: 'devboard-chips', 'aria-label': '评审点' },
@@ -423,7 +426,7 @@ export function GatePanel({ data, gate, board, role, setRole }) {
               h(
                 'span',
                 { className: 'devboard-muted' },
-                `还有 ${open.length} 条意见未关闭：批准前需全部关闭（可在上表填写关闭说明）。`,
+                `还有 ${open.length} 条意见未关闭：最后一个签署角色批准前需全部关闭（可在上表填写关闭说明）。`,
               ),
             can &&
               h(NoteField, {
@@ -448,17 +451,19 @@ export function GatePanel({ data, gate, board, role, setRole }) {
             'section',
             { className: 'devboard-actions' },
             h('p', null, decided ? '已决议。现场项目请让研发协调员继续推进。' : '该评审门已决议。'),
-            h(
-              WorkButton,
-              {
-                board,
-                ...workOf('continueGate', { ...gate, decision: 'APPROVED' }),
-                appearance: decided ? 'primary' : 'secondary',
-                guide: 'gate-continue',
-                title: '打开研发协调员会话，草稿由你点发送',
-              },
-              '继续推进',
-            ),
+            // Only a live project has a coordinator session to continue, as in 我的待办.
+            byId(data.projects, stage?.projectId)?.live &&
+              h(
+                WorkButton,
+                {
+                  board,
+                  ...workOf('continueGate', { ...gate, decision: 'APPROVED' }),
+                  appearance: decided ? 'primary' : 'secondary',
+                  guide: 'gate-continue',
+                  title: '打开研发协调员会话，草稿由你点发送',
+                },
+                '继续推进',
+              ),
             h(
               'details',
               { className: 'devboard-evidence' },

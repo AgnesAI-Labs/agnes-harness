@@ -82,6 +82,32 @@ it('a subpage of a tabbed settings page keeps its breadcrumb line', async () => 
     )
 })
 
+it('the recent-errors lookup stays on one line in its subpage header', () => {
+  const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
+  // The header actions are sized to their content; a wrapping lookup put the refresh button on a
+  // second row, so the header grew and its search field sat on the dialog's top edge.
+  expect(ruleBody(css, '.agnes-diagnostics-lookup')).toContain('flex-wrap: wrap')
+  expect(ruleBody(css, '.agh-push-actions .agnes-diagnostics-lookup')).toContain('flex-wrap: nowrap')
+})
+
+it('a path value takes only the room its row label leaves', async () => {
+  const primitives = await readFile(resolve(packageDirectory, '../web-ui/src/components.css'), 'utf8')
+  // The label wraps anywhere: a control sized to the whole path would squeeze 「Memory directory」
+  // into «director/y». A zero basis gives the path what is left; the value cuts it with an ellipsis.
+  expect(
+    ruleBody(
+      primitives,
+      '.agnes-settings-item:not([data-stacked]) > .agnes-settings-item-control:has(> .agnes-settings-value-path)',
+    ),
+  ).toContain('flex: 100 1 0')
+  expect(ruleBody(primitives, '.agnes-settings-value-path')).toContain('display: block')
+  expect(ruleBody(primitives, '.agnes-settings-value')).toContain('text-overflow: ellipsis')
+  const memory = await readFile(resolve(packageDirectory, '../web-admin/src/settings/memory.tsx'), 'utf8')
+  expect(memory).toMatch(
+    /className="agnes-settings-value agnes-settings-value-path"[^>]*data-testid="memory-root"/,
+  )
+})
+
 it('list rows use fixed tracks so the Switch column aligns across rows', async () => {
   const css = readWebStyleSource(resolve(publicDirectory, 'style.css'))
   // Each row is its own grid, so an `auto` track is sized per row and the Switch column drifts.

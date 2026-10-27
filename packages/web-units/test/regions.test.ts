@@ -340,11 +340,16 @@ describe('independent core web-unit implementations', () => {
     })
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
     expect(revealed).toHaveLength(1)
-    // Once the subsection is on screen the link is spent: a back step to the page stays on the page.
-    const subsection = document.createElement('div')
-    subsection.id = 'settings-subsection-context'
-    document.body.append(subsection)
+    // The page may commit its rows after that frame: the subsection opens once its row mounts.
     revealed[0]?.(0)
+    const subsection = document.createElement('button')
+    subsection.id = 'settings-subsection-context'
+    subsection.dataset.settingsDrill = 'context'
+    let opened = 0
+    subsection.addEventListener('click', () => opened++)
+    document.body.append(subsection)
+    await vi.waitFor(() => expect(opened).toBe(1))
+    // Once the subsection is on screen the link is spent: a back step to the page stays on the page.
     form.dispatchEvent(new CustomEvent('agnes:settings-route', { detail: 'models', bubbles: true }))
     expect(revealed).toHaveLength(1)
     frame.mockRestore()

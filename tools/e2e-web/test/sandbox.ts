@@ -25,7 +25,13 @@ export async function sandboxedSession(
     body: result.stdout,
     contentType: 'application/json',
   })
-  const opening = client.session.new({ cwd: runtime.workspace, preset, sessionKey: `wb1-terminal-${preset}` })
+  // Access is a permission level on the standard recipe; the old recipe aliases are gone.
+  const opening = client.session.new({
+    cwd: runtime.workspace,
+    preset: 'standard',
+    permission: preset,
+    sessionKey: `wb1-terminal-${preset}`,
+  })
   if (backend.backend !== 'none') return await opening
   await expect(opening).rejects.toMatchObject({
     code: -32011,

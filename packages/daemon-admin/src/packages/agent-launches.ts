@@ -21,6 +21,10 @@ type Operation = RetainedOperation & {
   review: Review
   sessionId?: string
   code?: string
+  /** The daemon's answered code for an unknown outcome; diagnosis only, never a state. */
+  cause?: string
+  /** The daemon's own diagnostic id for that answer; it finds the row in `diagnostics/errors.jsonl`. */
+  diagnosticId?: string
 }
 type State = { reviews: Record<string, Review>; operations: Record<string, Operation> }
 export interface AgentLaunchBackend {
@@ -132,6 +136,8 @@ export function createAgentLaunches(options: {
         return {
           state: op.state,
           ...(op.code ? { code: op.code } : {}),
+          ...(op.cause ? { cause: op.cause } : {}),
+          ...(op.diagnosticId ? { diagnosticId: op.diagnosticId } : {}),
           ...(op.sessionId ? result(op) : {}),
         }
       }
@@ -193,18 +199,24 @@ export function createAgentLaunches(options: {
         op = { payload, review, state: 'running' }
         state.operations[key] = op
         await save(state)
+        let stage: 'before' | 'opening' | 'opened' = 'before'
         try {
           await check(review, await backend.caller())
           // Dispatch deadline: resolution and consent reads may have crossed the ticket's expiry.
           if (review.expires <= now()) deny()
+          stage = 'opening'
           op.sessionId = await backend.open(review.plan, `agent:${key}`)
+          stage = 'opened'
           await check(review, await backend.caller(), true)
           op.state = 'completed'
           op.terminalAt = now()
           await save(state)
           return result(op)
         } catch (error) {
-          const value = error as { message?: unknown; data?: { code?: unknown } } | null
+          const value = error as {
+            message?: unknown
+            data?: { code?: unknown; diagnosticId?: unknown }
+          } | null
           const known = [
             'E_PACKAGE_PREVIEW_STALE',
             'E_PACKAGE_STATE',
@@ -214,10 +226,30 @@ export function createAgentLaunches(options: {
             'E_PRESET_UNSUPPORTED',
             'E_MODEL_UNSUPPORTED',
           ]
+          const answered = value?.data?.code
+          // Only a refusal before `open` was dispatched proves nothing exists. After dispatch, even a coded
+          // rejection can leave a session behind (the registry entry, ledger or ownership reservation, or a
+          // tool-filter/activation refusal after `registry.open` returned), so it stays unknown. The daemon's
+          // answered code is kept beside it for diagnosis.
           const code =
-            [value?.data?.code, value?.message].find(
+            [answered, value?.message].find(
               (code): code is string => typeof code === 'string' && known.includes(code),
-            ) ?? 'OUTCOME_UNKNOWN'
+            ) ?? (stage === 'before' ? 'E_LAUNCH_FAILED' : 'OUTCOME_UNKNOWN')
+          if (
+            code === 'OUTCOME_UNKNOWN' &&
+            stage === 'opening' &&
+            typeof answered === 'string' &&
+            /^[A-Z][A-Z0-9_]{2,63}$/.test(answered) &&
+            answered !== 'OUTCOME_UNKNOWN'
+          )
+            op.cause = answered
+          const id = value?.data?.diagnosticId
+          if (
+            code === 'OUTCOME_UNKNOWN' &&
+            typeof id === 'string' &&
+            /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id)
+          )
+            op.diagnosticId = id
           op.state = code === 'OUTCOME_UNKNOWN' ? 'unknown' : 'failed'
           op.code = code
           op.terminalAt = now()

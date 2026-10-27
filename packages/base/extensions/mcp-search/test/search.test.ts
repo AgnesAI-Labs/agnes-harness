@@ -463,7 +463,14 @@ describe('tool_search / tool_describe', () => {
         else
           expect(results[1]?.data).toMatchObject({
             code: 'TOOL_NOT_DISCLOSED',
-            content: [{ text: expect.stringContaining(message) }],
+            // A deferred tool the model calls directly is loaded by that refusal, as describe would.
+            content: [
+              {
+                text: expect.stringContaining(
+                  status === 'deferred' ? 'now loaded for the next request' : message,
+                ),
+              },
+            ],
           })
       } finally {
         await session.close()

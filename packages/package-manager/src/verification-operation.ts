@@ -17,12 +17,14 @@ type VerificationOperation = {
 const operations = new AsyncLocalStorage<VerificationOperation | undefined>()
 
 /**
- * For a read that opts in, trees AGH stores itself (installed packages, runtime snapshots, shipped
- * builtins) are hashed in full once per process. Later opted-in reads reuse that digest while the
- * canonical directory, the exact expected identity and the root's inode are unchanged: installs,
+ * For Worker runtime-source reads that opt in, trees AGH stores itself (installed packages,
+ * runtime snapshots, shipped builtins) are hashed in full once per process. Later opted-in reads reuse
+ * that digest while the canonical directory, the exact expected identity and the root's inode are unchanged: installs,
  * updates and snapshot writes replace whole directories, so a replaced tree is hashed again. An
- * in-place edit is not seen by these reads until the process restarts; ordinary reads still see it.
- * Editable workspace/local sources never settle.
+ * in-place edit is not seen by these reads until the process restarts. Editable workspace/local
+ * sources never settle here. Below this layer, hashDirectory itself reuses a digest for every caller
+ * while each file's size, mtime and inode are unchanged (see sources.ts), so an ordinary read sees an
+ * in-place edit only when it changes one of those.
  */
 type SettledTree = Readonly<{ dev: number; ino: number; digest: string }>
 const settledTrees = new Map<string, SettledTree>()
@@ -46,18 +48,6 @@ function settledDigest(directory: string, key: string): string | undefined {
   if (root?.dev === known.dev && root.ino === known.ino) return known.digest
   settledTrees.delete(key)
   return undefined
-}
-
-/**
- * The digest an opted-in read of this process already verified for this exact AGH-stored tree, if
- * its root has not been replaced since. Lets a writer that hard-links the tree skip hashing it again.
- */
-export function settledTreeDigest(
-  directory: string,
-  identity: Parameters<typeof verifiedDirectoryDigest>[1],
-): string | undefined {
-  const key = directoryKey(directory, identity, false)
-  return key === undefined ? undefined : settledDigest(directory, key)
 }
 
 /** Records a digest only when the root was not replaced while it was being hashed. */
@@ -104,48 +94,46 @@ export async function withPackageVerification<T>(
   })
 }
 
-/** Writers and pre-use/copy/execute/publish gates must never consume an earlier read's result. */
+/**
+ * Writers and pre-use/copy/execute/publish gates never consume an earlier read's observations or
+ * settled trees. Their own hashing still reuses hashDirectory's metadata-keyed digests (sources.ts).
+ */
 export function withoutPackageVerification<T>(action: () => T): T
 export function withoutPackageVerification(action: () => unknown): unknown {
   const parent = operations.getStore()
-  invalidatePackageVerification()
+  dropPackageObservations()
   try {
     const result = operations.run(undefined, action)
     if (result instanceof Promise)
       return result.finally(() => {
-        invalidatePackageVerification()
+        dropPackageObservations()
         invalidate(parent)
       })
     return result
   } finally {
-    invalidatePackageVerification()
+    dropPackageObservations()
     invalidate(parent)
   }
 }
 
 /**
- * Generation snapshots only: leaves any read operation without discarding settled trees. Linking an
- * AGH-stored tree into a generation changes no package bytes, so it is not a write gate; a failure
- * still invalidates everything, like any refusal.
+ * A refusal, retry or recovery invalidates every earlier file observation: settled trees, and the
+ * digests the hashing layer keeps by file metadata (see `forgetDirectoryDigests`).
  */
-export function outsidePackageVerification<T>(action: () => T): T {
-  const refused = (error: unknown): never => {
-    invalidatePackageVerification()
-    throw error
-  }
-  try {
-    const result = operations.run(undefined, action)
-    return (result instanceof Promise ? result.catch(refused) : result) as T
-  } catch (error) {
-    return refused(error)
-  }
+export function invalidatePackageVerification(): void {
+  dropPackageObservations()
+  forgetDirectoryDigests()
 }
 
-/** A retry or recovery mutation invalidates every earlier file observation, settled trees included. */
-export function invalidatePackageVerification(): void {
+/**
+ * A routine boundary (entering or leaving a write, ending a runtime transaction) drops what earlier
+ * reads observed and the settled trees, but keeps the hashing layer's metadata-keyed digests: a writer
+ * that replaces or edits a tree changes the metadata those digests are keyed by. Clearing them here
+ * emptied the store on every Host publication, so a worker start hashed most trees again.
+ */
+export function dropPackageObservations(): void {
   invalidate(operations.getStore())
   settledTrees.clear()
-  forgetDirectoryDigests()
   evidenceEpoch++
 }
 
@@ -171,7 +159,8 @@ function observeDigest(digest: string, expected: string | undefined): string {
   return digest
 }
 
-/** Exact expected identity plus canonical directory and digest formula, never mtime/size. Failures
+/** Exact expected identity plus canonical directory and digest formula; the hashing below reuses
+ * digests by file size/mtime/inode (sources.ts). Failures
  * are not memoized. Resolve and reject a link on every access, including a memo hit (retargeting).
  * This synchronous seam is intentionally separate from hashDirectory for read-only async callers. */
 export function verifiedDirectoryDigest(

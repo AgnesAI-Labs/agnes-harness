@@ -49,13 +49,18 @@ const DEADLINE_FLOOR_MS = 1_000
  * model unable to wrap up. `capped` says the turn's deadline, not the command's own timeout, decided.
  * A turn without a time limit leaves the timeout unchanged.
  */
-export function deadlineWait(ctx: ToolContext, timeoutMs: number): { waitMs: number; capped: boolean } {
+export function deadlineWait(
+  ctx: ToolContext,
+  timeoutMs: number,
+  opts: { continues?: boolean } = {},
+): { waitMs: number; capped: boolean } {
   const limit = ctx.turnTimeLimit
   if (!limit) return { waitMs: timeoutMs, capped: false }
-  const allowed = Math.max(
-    DEADLINE_FLOOR_MS,
-    limit.deadlineAt - Date.now() - deadlineMarginMs(limit.timeLimitMs),
-  )
+  const usable = limit.deadlineAt - Date.now() - deadlineMarginMs(limit.timeLimitMs)
+  // A wait whose process keeps running after it ends gives control back with half the usable time
+  // still left, so the model can act on what it sees; cut at the margin, one wait could take the
+  // whole rest of the turn. A wait that kills its process at the cut keeps all of it.
+  const allowed = Math.max(DEADLINE_FLOOR_MS, opts.continues ? Math.floor(usable / 2) : usable)
   return allowed < timeoutMs ? { waitMs: allowed, capped: true } : { waitMs: timeoutMs, capped: false }
 }
 
@@ -75,6 +80,13 @@ export function deadlineStop(ctx: ToolContext, waitMs: number): string {
   const deadlineAt = ctx.turnTimeLimit?.deadlineAt ?? Date.now()
   const at = new Date(deadlineAt).toISOString().slice(11, 19)
   return `stopped after ${waitMs}ms because this turn's time limit is nearly up: about ${duration(deadlineAt - Date.now())} of the turn remains (deadline ${at} UTC)`
+}
+
+/** Why a capped wait whose process continues ended early, and what the turn has left. */
+export function deadlineYield(ctx: ToolContext, waitMs: number, requestedMs: number): string {
+  const deadlineAt = ctx.turnTimeLimit?.deadlineAt ?? Date.now()
+  const at = new Date(deadlineAt).toISOString().slice(11, 19)
+  return `stopped after ${waitMs}ms (requested ${requestedMs}ms) to leave time in this turn: about ${duration(deadlineAt - Date.now())} of the turn remains (deadline ${at} UTC)`
 }
 
 export const DEADLINE_ADVICE =

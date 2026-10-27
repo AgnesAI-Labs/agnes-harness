@@ -24,8 +24,12 @@ type Launch = {
   name: string
   pageId: string
   phase: 'preparing' | 'review' | 'starting' | 'failed'
+  /** Re-reading the original receipt: the failure panel stays up with a busy action. */
+  checking?: boolean
   attempt?: Attempt
   error?: string
+  /** The daemon refused the start: no session exists, so retrying cannot create a duplicate. */
+  definite?: boolean
   consent?: 'covered' | 'changed' | 'unavailable'
   changes?: string[]
   work?: ApplicationWorkRequest
@@ -93,18 +97,26 @@ export function useAgentLaunch(data: BusinessAgentsData) {
   }
   const start = async (pending: Launch, recover = false) => {
     const api = data.api
-    if (!api || !pending.attempt || current.current !== pending || pending.phase === 'starting') return
+    if (
+      !api ||
+      !pending.attempt ||
+      current.current !== pending ||
+      pending.phase === 'starting' ||
+      pending.checking
+    )
+      return
     if (pending.work && resolveApplicationWork(pending.work, locale)?.agent !== pending.ref) {
       set({ ...pending, phase: 'failed', error: t('reason.changed') })
       return
     }
     const attempt = pending.attempt
-    const running: Launch = { ...pending, phase: 'starting' }
+    const running: Launch = recover ? { ...pending, checking: true } : { ...pending, phase: 'starting' }
     set(running)
     const complete = (result: { sessionId: string; draft?: BundleLaunch['prompt'] }) => {
       if (current.current !== running) return
       set(undefined)
-      nav.back()
+      // `finish` closes the review page at once; `back` is a late popstate that would reopen the page behind the session.
+      nav.finish()
       rememberSessionAgent(result.sessionId, pending.ref, attempt.plan.launch.title)
       const work = pending.work && resolveApplicationWork(pending.work, locale)
       if (work && work.agent === pending.ref)
@@ -116,8 +128,18 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     }
     const read = async () => {
       const result = await api.readAgent(attempt.operationId)
-      if (result.state !== 'completed' || !result.sessionId)
-        throw new Error(result.code ?? (result.state === 'running' ? 'START_PENDING' : 'OUTCOME_UNKNOWN'))
+      if (result.state !== 'completed' || !result.sessionId) {
+        const code = result.code ?? (result.state === 'running' ? 'START_PENDING' : 'OUTCOME_UNKNOWN')
+        const text =
+          code === 'OUTCOME_UNKNOWN'
+            ? `${t('launch.unknown')}${result.cause ? ` (${result.cause})` : ''}`
+            : code === 'START_PENDING'
+              ? t('launch.pending')
+              : code === 'E_PACKAGE_PREVIEW_STALE'
+                ? t('reason.changed')
+                : `${t('launch.refused')} (${code})`
+        throw Object.assign(new Error(text), { definite: result.state === 'failed' })
+      }
       complete({ ...result, sessionId: result.sessionId })
     }
     try {
@@ -135,6 +157,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
           ...pending,
           phase: 'failed',
           error: error instanceof Error ? error.message : t('reason.request'),
+          definite: (error as { definite?: boolean } | null)?.definite === true,
         })
     }
   }
@@ -152,6 +175,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
     if (launch?.phase === 'preparing' || launch?.phase === 'review' || !launch?.attempt) set(undefined)
     nav.back()
   }
+  const uncertain = !!launch?.attempt && !launch.definite
   return {
     start(card: AgentCard, work?: ApplicationWorkRequest) {
       const pending = current.current
@@ -172,6 +196,8 @@ export function useAgentLaunch(data: BusinessAgentsData) {
       void prepare(card, work)
     },
     pageId: launch?.pageId ?? catalog.pageId,
+    /** The launch waits for the user's decision, or has failed. */
+    attention: launch?.phase === 'review' || launch?.phase === 'failed',
     dialog: (
       <>
         {catalog.dialog}
@@ -199,12 +225,16 @@ export function useAgentLaunch(data: BusinessAgentsData) {
             {launch.phase === 'failed' && (
               <>
                 <Banner tone="error">{launch.error}</Banner>
-                <Button onClick={() => homeNavigation.open('plugins')}>{t('plugins')}</Button>
-                {launch.attempt && <p>{t('launch.uncertain')}</p>}
+                <Button disabled={!!launch.checking} onClick={() => homeNavigation.open('plugins')}>
+                  {t('plugins')}
+                </Button>
+                {uncertain && <p>{t('launch.uncertain')}</p>}
                 <Button
                   data-testid="agent-launch-retry"
+                  loading={!!launch.checking}
+                  disabled={!!launch.checking}
                   onClick={() => {
-                    if (launch.attempt) void start(launch, true)
+                    if (uncertain) void start(launch, true)
                     else
                       void prepare(
                         {
@@ -216,11 +246,12 @@ export function useAgentLaunch(data: BusinessAgentsData) {
                       )
                   }}
                 >
-                  {t(launch.attempt ? 'launch.check' : 'dialog.retry')}
+                  {t(uncertain ? 'launch.check' : 'dialog.retry')}
                 </Button>
-                {launch.attempt && (
+                {uncertain && (
                   <Button
                     data-testid="agent-launch-new-intent"
+                    disabled={!!launch.checking}
                     onClick={() => {
                       void prepare(
                         {
@@ -238,7 +269,7 @@ export function useAgentLaunch(data: BusinessAgentsData) {
               </>
             )}
             {launch.phase !== 'review' && (
-              <Button data-testid="agent-launch-close" onClick={close}>
+              <Button data-testid="agent-launch-close" disabled={!!launch.checking} onClick={close}>
                 {t(launch.phase === 'preparing' ? 'dialog.cancel' : 'dialog.close')}
               </Button>
             )}

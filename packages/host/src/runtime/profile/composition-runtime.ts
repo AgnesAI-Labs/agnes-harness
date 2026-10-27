@@ -94,16 +94,15 @@ export async function createCompositionHost(
       .map((source) => source.snapshot.packageId),
   )
   const refreshTrust = async () => {
+    const sources =
+      (await options.runtimePluginSources?.()) ??
+      options.runtimePluginSnapshots ??
+      options.runtimePluginCatalogue ??
+      []
     trustedPackages = new Set(
-      (
-        (await options.runtimePluginSources?.()) ??
-        options.runtimePluginSnapshots ??
-        options.runtimePluginCatalogue ??
-        []
-      )
-        .filter((source) => source.trusted)
-        .map((source) => source.snapshot.packageId),
+      sources.filter((source) => source.trusted).map((source) => source.snapshot.packageId),
     )
+    return sources
   }
   const prepared = new Map<string, Parameters<Host['extensionRows']['prepare']>[0]>()
   let currentSkills = options.skillResources
@@ -181,7 +180,11 @@ export async function createCompositionHost(
       resources: target.resource.resources,
     })
   const containerKey = (binding: CompositionBinding) => `${binding.tree.hash}:${binding.profile.hash}`
-  const open = async (binding: CompositionBinding): Promise<Container> => {
+  const open = async (
+    binding: CompositionBinding,
+    // Agent resolution and child sessions pass `open` along and always open for a session.
+    reason: 'boot' | 'session' | 'migration' = 'session',
+  ): Promise<Container> => {
     const identity = containerKey(binding)
     const found = containers.get(identity)
     if (found) {
@@ -249,6 +252,11 @@ export async function createCompositionHost(
         binding.legacy ? deployment : profileForComposition(deployment, binding.tree),
         {
           ...options,
+          assemblyCause: {
+            reason,
+            composition: binding.tree.hash,
+            ...(binding.sessionKey ? { session: binding.sessionKey } : {}),
+          },
           compositionPin: binding.tree,
           ...(pinned && binding.sessionKey ? { retainedModelBootstrap: true } : {}),
           ...(binding.sessionKey ? { profileAuthorityPublication: 'retained' as const } : {}),
@@ -310,13 +318,16 @@ export async function createCompositionHost(
           const row = host.extensionRows.prepare({ ...input, ...(dynamic ? { dynamic } : {}) })
           rows.set(row.id, row)
         }
-        let applied: string | undefined
+        let applied: Container['applied']
         if (target) {
           const projected = project(target, binding.tree, host)
           const report = await host.applyRuntimeTarget(projected)
           assertHostPublication(report.publication)
           if (!report.ok) throw new Error('E_COMPOSITION_PUBLICATION: new container did not converge')
-          applied = effectiveTarget(projected)
+          applied = {
+            target: effectiveTarget(projected),
+            sources: structuredClone(new RuntimePluginCatalogue(sources ?? []).select(projected)),
+          }
         }
         const selectedRows = latestRows ?? (prepared.size ? [...rows.values()] : undefined)
         if (selectedRows) {
@@ -369,11 +380,14 @@ export async function createCompositionHost(
       packageCatalog: bootProfile.packages,
     },
   )
-  const initial = await open({
-    sessionKey: '',
-    tree: initialTree,
-    profile: profileForComposition(bootProfile, initialTree),
-  }).catch((error) => {
+  const initial = await open(
+    {
+      sessionKey: '',
+      tree: initialTree,
+      profile: profileForComposition(bootProfile, initialTree),
+    },
+    'boot',
+  ).catch((error) => {
     writer.close()
     throw error
   })
@@ -582,7 +596,7 @@ export async function createCompositionHost(
             )
               throw new HostError('E_PRESET_UNSUPPORTED', 'session bundle selection is immutable')
             try {
-              const container = await open(binding)
+              const container = await open(binding, 'session')
               if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
               const loop = generations.session(key)?.loop ?? binding.tree.selection.loop
               if (input.loop && loop && (input.loop.id !== loop.id || input.loop.version !== loop.version))
@@ -637,7 +651,7 @@ export async function createCompositionHost(
           if (!initial.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
           return initial.host.migrateSessionGeneration(key, context)
         }
-        const container = await open(binding)
+        const container = await open(binding, 'migration')
         if (container.draining) throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: session bundle is disabled')
         if (!container.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
         const result = await container.host.migrateSessionGeneration(key, context)
@@ -675,7 +689,7 @@ export async function createCompositionHost(
       }),
     applyRuntimeTarget: (target) =>
       calls.enqueue(async () => {
-        await refreshTrust()
+        const sources = await refreshTrust()
         const { current: nextCatalog } = await admission(target.tree.rows)
         const publication = await broadcast('runtime-target', async (container) => {
           const projected = project(target, container.tree, container.host)
@@ -683,10 +697,24 @@ export async function createCompositionHost(
           container.draining = draining(target.tree.rows, container.tree, container.host)
           // A composition the change does not reach (say a plugin its sessions never enabled) runs the
           // same rows and resources as before; rebuilding its generation would change nothing.
-          if (container.applied === effective) return undefined
+          if (container.applied?.target === effective) {
+            // Row equality cannot attest the current grant for the code already running here.
+            await assertGenerationTrust(
+              container.applied.sources,
+              options.profileDir,
+              profile.name,
+              options.agnesVersion ?? '0.0.0',
+              options.runtimePluginSources,
+            )
+            return undefined
+          }
           delete container.applied
           const report = await container.host.applyRuntimeTarget(projected)
-          if (report.ok) container.applied = effective
+          if (report.ok)
+            container.applied = {
+              target: effective,
+              sources: structuredClone(new RuntimePluginCatalogue(sources).select(projected)),
+            }
           return report
         })
         if (publication.ok) {

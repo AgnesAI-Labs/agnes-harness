@@ -296,6 +296,12 @@ describe('DevBoard plugin contract', () => {
       severity: 'C',
     })
     expect(read(store).activity.length).toBe(before + 1)
+    // a move naming another project does not reach this project's defect
+    const other = read(store).projects.find((x: Any) => x.id !== p.id).id
+    expect(
+      (await defect.execute({ id: made.id, projectId: other, to: 'CONFIRMED' }, ctx)).structured,
+    ).toBeUndefined()
+    expect(read(store).defects.find((d: Any) => d.id === made.id).state).toBe('NEW')
     // a class-A defect holds TR5 and ADCP: the agent closes it only after its retest, through either tool
     const fatal = (await defect.execute({ projectId: p.id, title: 'f', severity: 'A' }, ctx)).structured.data
     expect((await defect.execute({ id: fatal.id, to: 'CLOSED' }, ctx)).isError).toBe(true)

@@ -5,6 +5,7 @@ import {
   DEADLINE_ADVICE,
   deadlineStop,
   deadlineWait,
+  deadlineYield,
   shellGuidance,
   timeoutGuidance,
 } from '../../tools-core/src/shell-guidance.js'
@@ -41,9 +42,10 @@ export async function runShellJob(
         : (ctx.defaultTimeoutMs ?? 120000),
       Math.max(1, ctx.timeoutMs - 25),
     )
+    const continues = args.timeoutToBackground !== false
     const { waitMs, capped } = args.background
       ? { waitMs: ownWaitMs, capped: false }
-      : deadlineWait(ctx, ownWaitMs)
+      : deadlineWait(ctx, ownWaitMs, { continues })
     const job = args.background ? started : await jobs.wait(ctx, id, waitMs)
     if (job.status === 'running') {
       if (!args.background && args.timeoutToBackground === false) {
@@ -66,7 +68,7 @@ export async function runShellJob(
         content: [
           {
             type: 'text',
-            text: `${notes.length ? notes.join('\n') + '\n' : ''}background job ${id} started${args.background ? '' : capped ? ` (foreground wait ${deadlineStop(ctx, waitMs)}; the same process continues)` : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; use job_output, job_list or job_kill${capped ? `. ${DEADLINE_ADVICE}` : ''}`,
+            text: `${notes.length ? notes.join('\n') + '\n' : ''}background job ${id} started${args.background ? '' : capped ? ` (foreground wait ${deadlineYield(ctx, waitMs, ownWaitMs)}; the same process continues)` : ` (foreground wait reached ${waitMs}ms; the same process continues)`}; use job_output, job_list or job_kill${capped ? `. ${DEADLINE_ADVICE}` : ''}`,
           },
         ],
         details: {

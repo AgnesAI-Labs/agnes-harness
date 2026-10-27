@@ -361,3 +361,20 @@ it('opens the turn from the usage popover on its source tab', () => {
   expect(selected(root)).toBe('a1')
   expect(pane(root)?.getAttribute('data-pane')).toBe('source')
 })
+
+it('pages back to a fact whose record lies before the loaded window, then opens it', async () => {
+  const { root, panel } = mount({}, true)
+  // Only the latest record is loaded; the tool call that produced the fact is earlier.
+  const loadEarlier = vi.fn(() => panel.render(nodes, turns, { hasEarlier: false, sessionId: 's' }))
+  panel.render(nodes.slice(0, 1), [{ ...turns[0]!, nodeIds: ['u1'] }], {
+    hasEarlier: true,
+    loadEarlier,
+    sessionId: 's',
+  })
+  expect(
+    panel.focusFact?.({ sessionId: 's', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'use-1' } }),
+  ).toBe(true)
+  await vi.waitFor(() => expect(selected(root)).toBe('t1'))
+  expect(loadEarlier).toHaveBeenCalledTimes(1)
+  expect(pane(root)?.getAttribute('data-pane')).toBe('source')
+})

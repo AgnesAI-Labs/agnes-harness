@@ -63,6 +63,8 @@ export function FileTabs({
             className="workbench-file-tab-select"
             data-testid="file-tab-select"
             title={path}
+            // A workspace path is not prose: browser translation and locale checks leave it alone.
+            translate="no"
             aria-pressed={active === path}
             tabIndex={active === path || (index < 0 && position === 0) ? 0 : -1}
             onClick={() => activate(path)}
@@ -88,7 +90,9 @@ export function FileTabs({
               document.getElementById(tabId(tabs.indexOf(next)))?.focus()
             }}
           >
-            <span className="workbench-file-tab-name">{label(path)}</span>
+            <span className="workbench-file-tab-name" translate="no">
+              {label(path)}
+            </span>
           </Button>
           <IconButton
             name="x"

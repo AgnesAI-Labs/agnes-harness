@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import {
+  constants,
+  copyFileSync,
   existsSync,
-  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -28,7 +29,6 @@ import * as sources from '../src/sources.js'
 import { hashDirectory } from '../src/sources.js'
 import {
   invalidatePackageVerification,
-  settledTreeDigest,
   verifiedDirectoryDigest,
   withoutPackageVerification,
   withPackageVerification,
@@ -36,15 +36,15 @@ import {
 
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
-  return { ...actual, linkSync: vi.fn(actual.linkSync) }
+  return { ...actual, copyFileSync: vi.fn(actual.copyFileSync) }
 })
 
-const { linkSync: realLinkSync } = await vi.importActual<typeof import('node:fs')>('node:fs')
+const { copyFileSync: realCopyFileSync } = await vi.importActual<typeof import('node:fs')>('node:fs')
 
 const homes: string[] = []
 afterEach(() => {
   vi.restoreAllMocks()
-  vi.mocked(linkSync).mockImplementation(realLinkSync)
+  vi.mocked(copyFileSync).mockImplementation(realCopyFileSync)
   invalidatePackageVerification()
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
 })
@@ -473,8 +473,8 @@ describe('generation package trees', () => {
     return { directory, plugin: { snapshot, generation: 1, trusted: true } }
   }
 
-  // A writable hard link currently mutates both the source snapshot and other generations.
-  it.fails('isolates writes through a generation path from its snapshot and sibling generation', () => {
+  // Writes through one generation must leave the source snapshot and sibling generation intact.
+  it('isolates writes through a generation path from its snapshot and sibling generation', () => {
     const { home, store, target } = fixture()
     const { directory, plugin } = source(home)
     const first = store.create(target, [plugin], 'compat', undefined, undefined, SEAMS)
@@ -512,8 +512,8 @@ describe('generation package trees', () => {
     await expect(store.readAsync(created.id)).rejects.toThrow('E_GENERATION_INTEGRITY')
   })
 
-  it.each(['EXDEV', 'EPERM', 'ENOTSUP', 'ENOSYS'])(
-    'copies and freshly verifies the generation when hard links fail with %s',
+  it.each(['supported', 'EXDEV', 'EPERM', 'ENOTSUP', 'ENOSYS'])(
+    'copies and freshly verifies destination bytes with clone outcome %s',
     async (code) => {
       const { home, store, target } = fixture()
       const { directory, plugin } = source(home)
@@ -521,8 +521,12 @@ describe('generation package trees', () => {
         async () => verifiedDirectoryDigest(directory, plugin.snapshot, false, true),
         { settleTrees: true },
       )
-      vi.mocked(linkSync).mockImplementation(() => {
-        throw Object.assign(new Error(code), { code })
+      let corruptCopy = false
+      vi.mocked(copyFileSync).mockImplementation((from, to, mode) => {
+        if (mode === constants.COPYFILE_FICLONE && code !== 'supported')
+          throw Object.assign(new Error(code), { code })
+        realCopyFileSync(from, to, mode)
+        if (corruptCopy && basename(String(to)) === 'index.mjs') writeFileSync(to, 'export const main = 2\n')
       })
       const created = await store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
       writeFileSync(join(directory, 'index.mjs'), 'export const main = 2\n')
@@ -534,11 +538,19 @@ describe('generation package trees', () => {
       await expect(
         store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS),
       ).rejects.toThrow('E_GENERATION_INTEGRITY')
+      // The source is healthy again, but a damaged destination must still block publication.
+      writeFileSync(join(directory, 'index.mjs'), 'export const main = 1\n')
+      corruptCopy = true
+      await expect(
+        store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS),
+      ).rejects.toThrow('E_GENERATION_INTEGRITY')
+      expect(hashDirectory(directory, { exclude: [] })).toBe(plugin.snapshot.treeIntegrity)
+      expect(readdirSync(store.root)).toEqual([created.id])
     },
   )
 
-  // A completed worker read currently supplies stale evidence to the next archive creation.
-  it.fails.each(['sync', 'cooperative'] as const)(
+  // A completed Worker read must never supply evidence to the next archive creation.
+  it.each(['sync', 'cooperative'] as const)(
     'refuses an in-place edit after a completed worker read before %s generation creation',
     async (mode) => {
       const { home, store, target } = fixture()
@@ -565,8 +577,8 @@ describe('generation package trees', () => {
     },
   )
 
-  // Checked source indexes currently exempt changed bytes from the final read-back.
-  it.fails.each(['sync', 'cooperative'] as const)(
+  // Source edits after copying must not change the published archive.
+  it.each(['sync', 'cooperative'] as const)(
     'rechecks the first package changed after its hash while creating a %s multi-package archive',
     async (mode) => {
       const { home, store, target } = fixture()
@@ -612,56 +624,53 @@ describe('generation package trees', () => {
     },
   )
 
-  it('links a tree this process verified, without hashing it again, into its own directory', async () => {
+  it('archives independently verified bytes even after a Worker read, and survives source collection', async () => {
     const { home, store, target } = fixture()
     const { directory, plugin } = source(home)
-    // An opted-in read (a Worker's) verifies and settles the snapshot tree.
     await withPackageVerification(
       async () => verifiedDirectoryDigest(directory, plugin.snapshot, false, true),
       { settleTrees: true },
     )
-    const hashed = vi.spyOn(sources, 'hashDirectoryAsync')
     const created = await store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
-    expect(hashed).not.toHaveBeenCalled()
-    const linked = join(created.sources[0]!.snapshot.directory, 'index.mjs')
+    const archived = join(created.sources[0]!.snapshot.directory, 'index.mjs')
     expect(created.sources[0]!.snapshot.directory).not.toBe(directory)
-    expect(statSync(linked).ino).toBe(statSync(join(directory, 'index.mjs')).ino)
-    // The generation keeps its bytes after the runtime snapshot is collected.
+    expect(statSync(archived).ino).not.toBe(statSync(join(directory, 'index.mjs')).ino)
     rmSync(directory, { recursive: true })
-    expect(readFileSync(linked, 'utf8')).toBe('export const main = 1\n')
+    expect(readFileSync(archived, 'utf8')).toBe('export const main = 1\n')
     expect((await store.readAsync(created.id)).sources).toHaveLength(1)
-    hashed.mockRestore()
   })
 
-  it('hashes a tree no read of this process verified, and refuses one that changed', async () => {
+  it('hashes a new archive and refuses one whose source bytes changed', async () => {
     const { home, store, target } = fixture()
     const { directory, plugin } = source(home)
-    const hashed = vi.spyOn(sources, 'hashDirectoryAsync')
-    await store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
-    expect(hashed).toHaveBeenCalledTimes(1)
-    hashed.mockRestore()
+    const created = await store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
+    expect(hashDirectory(created.sources[0]!.snapshot.directory, { exclude: [] })).toBe(
+      plugin.snapshot.treeIntegrity,
+    )
     writeFileSync(join(directory, 'index.mjs'), 'export const main = 2\n')
     await expect(store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)).rejects.toThrow(
       'E_GENERATION_INTEGRITY',
     )
   })
 
-  it('keeps settled trees across a generation, and clears them when one refuses a tree', async () => {
-    const settled = source(fixture().home)
-    await withPackageVerification(
-      async () => verifiedDirectoryDigest(settled.directory, settled.plugin.snapshot, false, true),
-      { settleTrees: true },
-    )
-    const { home, store, target } = fixture()
-    const { directory, plugin } = source(home)
-    await store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
-    expect(settledTreeDigest(settled.directory, settled.plugin.snapshot)).toBe(
-      settled.plugin.snapshot.treeIntegrity,
-    )
-    writeFileSync(join(directory, 'index.mjs'), 'export const main = 2\n')
-    await expect(store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)).rejects.toThrow(
-      'E_GENERATION_INTEGRITY',
-    )
-    expect(settledTreeDigest(settled.directory, settled.plugin.snapshot)).toBeUndefined()
-  })
+  it.each(['success', 'refusal'] as const)(
+    'invalidates earlier Worker evidence at a generation write gate on %s',
+    async (outcome) => {
+      const settled = source(fixture().home)
+      const read = () =>
+        withPackageVerification(
+          async () => verifiedDirectoryDigest(settled.directory, settled.plugin.snapshot, false, true),
+          { settleTrees: true },
+        )
+      expect(await read()).toBe(settled.plugin.snapshot.treeIntegrity)
+      writeFileSync(join(settled.directory, 'index.mjs'), 'export const main = 2\n')
+      const { home, store, target } = fixture()
+      const { directory, plugin } = source(home)
+      if (outcome === 'refusal') writeFileSync(join(directory, 'index.mjs'), 'export const main = 2\n')
+      const creating = store.createAsync(target, [plugin], 'compat', undefined, undefined, SEAMS)
+      if (outcome === 'refusal') await expect(creating).rejects.toThrow('E_GENERATION_INTEGRITY')
+      else await creating
+      expect(await read()).not.toBe(settled.plugin.snapshot.treeIntegrity)
+    },
+  )
 })

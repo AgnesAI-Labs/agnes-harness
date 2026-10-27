@@ -221,6 +221,19 @@ describe('read', () => {
     expect(JSON.stringify(result)).not.toContain('sk-private')
   })
 
+  it('names a missing file under a content-addressed directory instead of redacting the line', async () => {
+    const digest = 'a'.repeat(24) + '627f3aad5d82e1c66e1a9ff7c70ee206617dc9a6219fb0c'
+    const path = `fde-output/data-report/${digest}/4-report.md`
+    const result = await readTool.execute({ path }, ctxOf())
+    expect(result.details).toMatchObject({ code: 'ENOENT' })
+    expect(textOf(result)).toContain(path)
+    expect(textOf(result)).toContain('path does not exist')
+    expect(textOf(result)).not.toContain('REDACTED')
+    // A credential shape in the path is still withheld, digest segment or not.
+    const leaky = await readTool.execute({ path: `${digest}/sk-live-abcdefghijklmnop.md` }, ctxOf())
+    expect(JSON.stringify(leaky)).not.toContain('sk-live-abcdefghijklmnop')
+  })
+
   it('scans only the first 8 KB for the NUL that marks a binary file', async () => {
     // The bound is what keeps the check cheap on a large file. It is pinned rather than left
     // implicit: a NUL past it is not detected, and that is a known consequence, not an accident.

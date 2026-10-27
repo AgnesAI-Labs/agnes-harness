@@ -158,6 +158,8 @@ function SettingsBuiltinImpl(
     [form, open],
   )
   const requestedPage = useRef('')
+  // A subsection link waiting for its page to mount the row; a later route replaces it.
+  const pendingReveal = useRef<() => void>()
   useLayoutEffect(() => {
     const root = host.current
     if (!root) return
@@ -180,6 +182,7 @@ function SettingsBuiltinImpl(
         const route = settingsRoute(requested)
         const id = route.id
         requestedPage.current = requested
+        pendingReveal.current?.()
         const tabFocused = tabs?.contains(document.activeElement)
         const entries = navigationEntries()
         const selected = entries.find((entry) => entry.id === id)
@@ -262,15 +265,37 @@ function SettingsBuiltinImpl(
             root.dispatchEvent(new CustomEvent('agnes:settings-page', { detail: id, bubbles: true }))
         }
         if (changeAddress) window.dispatchEvent(new Event(SETTINGS_ROUTE_EVENT))
-        if (route.anchor)
-          requestAnimationFrame(() => {
-            const anchor = route.anchor ?? ''
+        if (route.anchor) {
+          const anchor = route.anchor
+          const reveal = () => {
             // Once its subsection is on screen the link is spent: a later route to this page (a
             // back step, the hub's echo) is the page itself and must not open the subsection again.
             if (document.getElementById(anchor) && requestedPage.current === requested)
               requestedPage.current = id
             revealSettingsAnchor(anchor)
+          }
+          requestAnimationFrame(() => {
+            if (document.getElementById(anchor) || requestedPage.current !== requested) {
+              reveal()
+              return
+            }
+            // The page commits its rows on React's schedule, which can be after this frame: open
+            // the subsection when its row mounts.
+            const observer = new MutationObserver(() => {
+              if (!document.getElementById(anchor)) return
+              stop()
+              reveal()
+            })
+            const timer = setTimeout(() => stop(), 10_000)
+            const stop = () => {
+              observer.disconnect()
+              clearTimeout(timer)
+              if (pendingReveal.current === stop) pendingReveal.current = undefined
+            }
+            pendingReveal.current = stop
+            observer.observe(document.body, { childList: true, subtree: true })
           })
+        }
         if (notify && !tabFocused && window.matchMedia('(max-width: 767px)').matches)
           root.querySelector<HTMLButtonElement>('#settings-back')?.focus({ preventScroll: true })
         if (tabFocused)
@@ -289,6 +314,7 @@ function SettingsBuiltinImpl(
       listeners.push(() => {
         back?.removeEventListener('click', onBack)
         navigateRef.current = undefined
+        pendingReveal.current?.()
       })
       const onClick = (event: Event) => {
         const target = (event.target as Element | null)?.closest<HTMLElement>(

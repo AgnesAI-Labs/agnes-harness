@@ -77,7 +77,7 @@ export function FilePreview({
   return (
     <>
       <header className="workbench-file-header" data-testid="file-header">
-        <span className="workbench-file-crumb" title={path}>
+        <span className="workbench-file-crumb" title={path} translate="no">
           {[workspace, ...segments].filter(Boolean).map((part, index) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: path segments repeat and never reorder.
             <span key={index} className="workbench-file-crumb-part">

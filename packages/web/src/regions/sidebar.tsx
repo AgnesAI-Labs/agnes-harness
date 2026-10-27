@@ -9,6 +9,7 @@ import {
 import { createRegionRenderer } from '@agnes/web-ui'
 import {
   EMPTY_SIDEBAR_STATE,
+  type SessionListMark,
   Sidebar,
   type SidebarActions,
   type SidebarDependencies,
@@ -44,6 +45,7 @@ export function SidebarDshFrame({
   handle,
   state,
   running,
+  marks,
   actions,
   dependencies,
   profileApprovals,
@@ -51,6 +53,7 @@ export function SidebarDshFrame({
   handle: { current: SidebarHandle | null }
   state: SidebarState
   running?: readonly string[]
+  marks?: Readonly<Record<string, SessionListMark>>
   actions?: Partial<SidebarActions>
   dependencies: SidebarDependencies
   profileApprovals?: ReactNode
@@ -64,6 +67,7 @@ export function SidebarDshFrame({
       ref={handle}
       state={state}
       {...(running ? { running } : {})}
+      {...(marks ? { marks } : {})}
       actions={actions}
       dependencies={dependencies}
       slots={{
@@ -119,6 +123,7 @@ export function mountSidebarRegion(
 ): SidebarRegionMount {
   let state = options.state ?? EMPTY_SIDEBAR_STATE
   let running: readonly string[] = []
+  let marks: Readonly<Record<string, SessionListMark>> = {}
   // Render-time lookup: navigation copy resolves on each rebuild against the current locale.
   const sidebarDependencies: SidebarDependencies = {
     ...SIDEBAR_DEPENDENCIES_BASE,
@@ -149,6 +154,7 @@ export function mountSidebarRegion(
         handle,
         state,
         running,
+        marks,
         ...(options.actions === undefined ? {} : { actions: options.actions }),
         dependencies: sidebarDependencies,
         profileApprovals: options.profileApprovals,
@@ -180,6 +186,10 @@ export function mountSidebarRegion(
     setRunning(ids) {
       running = ids
       handle.current?.setRunning(ids)
+    },
+    setMarks(next) {
+      marks = next
+      handle.current?.setMarks?.(next)
     },
     close() {
       handle.current?.close()

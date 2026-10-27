@@ -87,7 +87,9 @@ export function FileTree({
                   className="workbench-file-icon"
                 />
               )}
-              <span className="workbench-file-name">{entry.name}</span>
+              <span className="workbench-file-name" translate="no">
+                {entry.name}
+              </span>
               {change && <ChangeBadge change={change} t={t} />}
               {entry.git && (
                 <span

@@ -1,7 +1,7 @@
 // What the coordinator needs to know about one board object before it continues the work (devboard_handoff,
 // devboard.handoff). Read-only and bounded: every text is clipped and every list capped, so a hand-off
 // never grows with the board. Texts quoted from the board are data, not instructions.
-import { DomainError, effectiveState, LABELS, STAGES } from './domain.mjs'
+import { agentDrafted, DomainError, effectiveState, LABELS, STAGES } from './domain.mjs'
 import { GATE_PROFILES } from './profiles.mjs'
 
 export const HANDOFF_TYPES = ['gate', 'project', 'change', 'trial', 'fault', 'problem', 'intervention']
@@ -53,6 +53,38 @@ const gatesToPass = (state, project, stage) => {
   )
 }
 
+/** The approved change whose approval sent this stage back to rework, when that is why it is in rework now. */
+const reworkChange = (state, item) => {
+  const note = item.history?.findLast((h) => h.to === 'REWORK')?.note ?? ''
+  return state.changes.findLast((c) => c.reworked?.includes(item.id) && note.startsWith(c.id))
+}
+
+/** The gate a human rejected that sent this stage back: the stage's newest gate, when it is a live rejection. */
+const reworkGate = (state, item) => {
+  const gate = state.gates.findLast((g) => g.stageId === item.id)
+  return gate?.decision === 'REJECTED' && !gate.superseded ? gate : undefined
+}
+
+function reworkFrom(state, item) {
+  if (item.state !== 'REWORK' || reworkChange(state, item)) return undefined
+  const gate = reworkGate(state, item)
+  return (
+    gate && { gate: gate.id, code: gate.code, comment: clip(gate.comment), openFindings: openFindings(gate) }
+  )
+}
+
+function reworkText(state, item, name) {
+  const cr = reworkChange(state, item)
+  const gate = !cr && reworkGate(state, item)
+  if (gate) {
+    const ids = openFindings(gate).map((f) => f.id)
+    return `${name} 返工：${gate.code} 被驳回${gate.comment ? `，意见：${clip(gate.comment, 120)}` : ''}；${ids.length ? `逐条处理未关闭意见 ${ids.join('、')}` : '按驳回意见修改'}后用 devboard_stage_update 重新开始，再提交评审`
+  }
+  if (cr)
+    return `${name} 返工：变更 ${cr.id}${cr.ecn ? `（${cr.ecn}）` : ''} 已批准，受影响条目 ${top(cr.impact?.reqs ?? [], 5).join('、') || '见变更'}；按变更修改后用 devboard_stage_update 重新开始，重新提交评审时引用 ${cr.id}`
+  return `${name} 返工：按未关闭意见修改后用 devboard_stage_update 重新开始，再提交评审`
+}
+
 /** The step the project is at in one stage: what to start, finish or wait for. */
 function stageStep(state, project, stage) {
   const item = stageOf(state, project.id, stage)
@@ -62,21 +94,40 @@ function stageStep(state, project, stage) {
   const work = project.live && project.kind === 'SOFTWARE' ? SOFTWARE_WORK[stage] : undefined
   const by = {
     NOT_STARTED: `用 devboard_stage_update 开始 ${name}`,
-    REWORK: `${name} 返工：按未关闭意见修改后用 devboard_stage_update 重新开始，再提交评审`,
+    REWORK: reworkText(state, item, name),
     IN_PROGRESS: `完成 ${name} 的交付物${gate ? `，再用 devboard_gate_submit 提交 ${gate.code}` : ''}`,
-    IN_REVIEW: `${name} 的评审门正在等人决议，本轮不要替人批准`,
+    IN_REVIEW: autoText(state, item) ?? `${name} 的评审门正在等人决议，本轮不要替人批准`,
     PASSED: `${name} 已通过`,
   }[item.state]
   return {
     stage,
     state: item.state,
     nextGate: gate && { code: gate.code, name: gate.name, approverRoles: gate.approverRoles },
+    reworkFrom: reworkFrom(state, item),
     deliverables:
       item.state === 'NOT_STARTED' || item.state === 'IN_PROGRESS' || item.state === 'REWORK'
         ? work
         : undefined,
     action: by,
   }
+}
+
+/** A pending auto gate (TR4) is the coordinator's to work: it closes its own findings and the gate passes by itself. */
+function autoText(state, item) {
+  const gate = state.gates.find((g) => g.stageId === item.id && g.decision === 'PENDING')
+  if (!gate?.auto) return undefined
+  const open = (gate.findings ?? []).filter((f) => !f.closed)
+  const own = open.filter((f) => f.by !== '系统检查').map((f) => f.id)
+  const system = open.filter((f) => f.by === '系统检查').map((f) => f.id)
+  return [
+    `${gate.code} 是自动门：意见全部关闭且前面阶段都已通过后自动通过，不用等人决议`,
+    own.length
+      ? `逐条修复评审意见 ${top(own).join('、')}，再用 devboard_gate_submit 的 closeFindings 关闭`
+      : '',
+    system.length ? `系统检查意见 ${top(system).join('、')} 随缺陷关闭或发布审批批准而关闭` : '',
+  ]
+    .filter(Boolean)
+    .join('；')
 }
 
 /** The project's real current work: the first stage, in flow order, that has not passed (an approved change can reopen early ones). */
@@ -96,6 +147,37 @@ const doneText = (project) =>
 const openFindings = (gate) =>
   top((gate.findings ?? []).filter((f) => !f.closed)).map((f) => ({ id: f.id, text: clip(f.text) }))
 
+const FLOW_SUBJECTS = { artifact: 'artifacts', change: 'changes', problem: 'problems', trial: 'trials' }
+
+/** A finished approval flow as the coordinator needs it: outcome, the human's last comment, where its subject now stands. */
+function decidedFlow(state, flow) {
+  const { type, id } = flow.subject ?? {}
+  const item = state[FLOW_SUBJECTS[type]]?.find((x) => x.id === id)
+  const last = flow.actions?.at(-1)
+  return {
+    id: flow.id,
+    template: flow.template,
+    outcome: flow.state,
+    by: last?.by,
+    comment: clip(last?.comment, 200),
+    decidedAt: flow.endedAt,
+    subject: { type, id, state: item?.state ?? item?.status },
+  }
+}
+
+/** The latest flow on one object, when it has finished (a flow still running or withdrawn says nothing yet). */
+function lastApproval(state, type, id) {
+  const flow = state.approvals?.findLast((a) => a.subject?.type === type && a.subject.id === id)
+  return flow && (flow.state === 'APPROVED' || flow.state === 'REJECTED')
+    ? decidedFlow(state, flow)
+    : undefined
+}
+
+const decidedText = (d) =>
+  d.outcome === 'REJECTED'
+    ? `审批 ${d.id}（${d.template} ${d.subject.id}）已被驳回${d.comment ? `，意见：${d.comment}` : ''}；${d.subject.id} 现为 ${d.subject.state}：按意见修改后重新发起审批`
+    : `审批 ${d.id}（${d.template} ${d.subject.id}）已通过${d.comment ? `，意见：${d.comment}` : ''}；${d.subject.id} 现为 ${d.subject.state}`
+
 function gateHandoff(state, gate) {
   const stage = state.stages.find((s) => s.id === gate.stageId)
   const project = state.projects.find((p) => p.id === stage?.projectId)
@@ -104,23 +186,39 @@ function gateHandoff(state, gate) {
   const decision = gate.decision
   const next = []
   let step
-  if (decision === 'PENDING') {
+  const newer = state.gates.findLast((g) => g.stageId === gate.stageId && g.code === gate.code)
+  // The first unpassed stage: an earlier stage in rework comes before this one (the domain refuses it otherwise).
+  const current = () => currentStep(state, project)
+  if (gate.superseded) {
+    // A voided gate is void whatever it decided; a newer gate of its code is the one that counts.
+    step = current()
+    next.push(
+      newer !== gate
+        ? `该门已被批准的变更作废，已重新提交为 ${newer.id}：以新门为准，不再处理本门意见`
+        : `该门已被批准的变更作废（${decision === 'APPROVED' ? '原为已通过，现不再有效' : '非人工驳回'}）：${label(LABELS.stage, stage.stage)}阶段按返工重做，修复后重新提交（${gate.code}）`,
+    )
+    if (step) next.push(step.action)
+  } else if (decision === 'PENDING') {
     const signed = (gate.signatures ?? []).map((s) => s.role)
     const waiting = gate.approverRoles.filter((r) => !signed.includes(r))
-    next.push(`该门尚未决议，等待 ${waiting.join('、')}；不要替人批准`)
+    next.push(autoText(state, stage) ?? `该门尚未决议，等待 ${waiting.join('、')}；不要替人批准`)
+    const first = current()
+    if (first && first.stage !== stage.stage) {
+      step = first
+      next.push(
+        `前一阶段「${stageLabel(project, first.stage)}」尚未通过，本门要等它重新通过才能${gate.auto ? '自动通过' : '批准'}：${first.action}`,
+      )
+    }
   } else if (decision === 'APPROVED') {
     // A passed stage has nothing left to do: point at the project's real current work.
-    step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
+    step = current()
     next.push(step ? step.action : doneText(project))
   } else {
-    const newer = state.gates.findLast((g) => g.stageId === gate.stageId && g.code === gate.code)
-    step = stage.state === 'PASSED' ? currentStep(state, project) : stageStep(state, project, stage.stage)
+    step = current()
     next.push(
-      gate.superseded
-        ? `该门已被批准的变更作废（非人工驳回）：${label(LABELS.stage, stage.stage)}阶段按返工重做，修复后重新提交（${gate.code}）`
-        : newer !== gate
-          ? `该门被驳回后已重新提交为 ${newer.id}：以它为准，不再处理本门意见`
-          : `该门被驳回：逐条处理未关闭意见，修复后重新提交（${gate.code}）`,
+      newer !== gate
+        ? `该门被驳回后已重新提交为 ${newer.id}：以它为准，不再处理本门意见`
+        : `该门被驳回：逐条处理未关闭意见，修复后重新提交（${gate.code}）`,
     )
     if (step) next.push(step.action)
   }
@@ -154,7 +252,7 @@ function gateHandoff(state, gate) {
     skippedGates: project.tailoring?.skipped,
     next,
     summary: [
-      `${gate.code}（${gate.name}）${decision === 'PENDING' ? '待决议' : label(LABELS.state, decision)}${gate.approver ? `，${gate.approver}` : ''}`,
+      `${gate.code}（${gate.name}）${gate.superseded ? '已作废' : decision === 'PENDING' ? '待决议' : label(LABELS.state, decision)}${gate.approver ? `，${gate.approver}` : ''}`,
       gate.comment ? `意见：${clip(gate.comment, 80)}` : '',
       open.length ? `未关闭意见 ${open.map((f) => f.id).join('、')}` : '无未关闭意见',
       `下一步：${next[0]}`,
@@ -173,7 +271,10 @@ function projectHandoff(state, project) {
   const stage = project.stage
   const step = currentStep(state, project)
   const tasks = own(state.tasks).filter((t) => OPEN_TASK.has(t.state))
-  const defects = own(state.defects).filter((d) => OPEN_DEFECT.has(d.state))
+  // A deferred A defect is not being worked on, but it still holds TR5 and ADCP.
+  const defects = own(state.defects).filter(
+    (d) => OPEN_DEFECT.has(d.state) || (d.state === 'DEFERRED' && d.severity === 'A'),
+  )
   const changes = own(state.changes).filter((c) => OPEN_CHANGE.has(c.state))
   const pending = state.gates.filter(
     (g) => g.decision === 'PENDING' && g.stageId.startsWith(`${project.id}/`),
@@ -186,13 +287,26 @@ function projectHandoff(state, project) {
   const handled = (tc, at) =>
     own(state.defects).some(
       (d) =>
-        d.testCase === tc &&
-        (OPEN_DEFECT.has(d.state) || (d.createdAt ?? '') >= at || (d.closedAt ?? '') >= at),
+        d.testCase === tc && (d.state !== 'CLOSED' || (d.createdAt ?? '') >= at || (d.closedAt ?? '') >= at),
     )
   const untracked = [...latest.values()]
     .filter((r) => r.status === 'fail' && !handled(r.tc, r.at))
     .map((r) => r.tc)
   const next = [step?.action ?? doneText(project)].filter(Boolean)
+  // Flows people finished whose hand-back card still waits: the card points at the project, this says what they decided.
+  const decided = state.approvals
+    .filter(
+      (a) =>
+        a.projectId === project.id &&
+        state.handbacks?.some(
+          (c) => c.state === 'OPEN' && c.subject?.type === 'approval' && c.subject.id === a.id,
+        ) &&
+        lastApproval(state, a.subject?.type, a.subject?.id)?.id === a.id,
+    )
+    .toReversed()
+    .slice(0, 3)
+    .map((a) => decidedFlow(state, a))
+  for (const d of decided) next.push(decidedText(d))
   if (untracked.length)
     next.push(`为 ${top(untracked).join('、')} 建缺陷（devboard_defect_upsert，testCase 填 TC 编号）`)
   if (defects.length) next.push(`先处理 ${defects.length} 条未关闭缺陷（A 类会挡住 TR5 与 ADCP）`)
@@ -209,6 +323,7 @@ function projectHandoff(state, project) {
     },
     stages: STAGES.map((s) => ({ stage: s, state: stageOf(state, project.id, s)?.state })),
     pendingGates: pending.map((g) => ({ id: g.id, code: g.code, approverRoles: g.approverRoles })),
+    decidedApprovals: decided,
     nextStep: step,
     openTasks: top(tasks).map((t) => ({ id: t.id, title: clip(t.title, 120), state: t.state, type: t.type })),
     openDefects: top(defects).map((d) => ({
@@ -225,6 +340,9 @@ function projectHandoff(state, project) {
     summary: [
       `${project.id} ${clip(project.name, 40)}，${label(LABELS.stage, stage)}阶段`,
       pending.length ? `待决议 ${pending.map((g) => g.code).join('、')}` : '',
+      decided.length
+        ? `审批 ${decided[0].id}${label(LABELS.approvalState, decided[0].outcome)}${decided[0].comment ? `：${clip(decided[0].comment, 60)}` : ''}`
+        : '',
       `未完成任务 ${tasks.length}、未关闭缺陷 ${defects.length}、未关闭变更 ${changes.length}`,
       `下一步：${next[0]}`,
     ]
@@ -237,9 +355,9 @@ const CHANGE_NEXT = {
   SUBMITTED:
     '补齐影响分析（devboard_change_upsert，impact.reqs 写起点并设 traceFrom: true；来源为现场或型式试验还需 rootCause），推进到已分析，再提交 CCB',
   ANALYZED: '推进到 CCB_REVIEW，并用 devboard_approval_submit（ECR）发起审批后停下',
-  CCB_REVIEW:
-    '等人在「我的待办」完成 ECR 审批与 CCB 决议；还没有流程时用 devboard_approval_submit（ECR）发起',
-  APPROVED: '变更已批准：按 ECN 改受影响的条目并回归，实施后登记',
+  CCB_REVIEW: '等人在「我的待办」完成 ECR 审批与 CCB 决议',
+  APPROVED:
+    '变更已批准：按 ECN 改受影响的条目并回归，实施后登记；影响物料的变更还要发布 ECN（ECN_RELEASE 审批批准后生成新的设计态基线）',
   IMPLEMENTED: '登记验证结果（verification）后才能关闭',
   REJECTED: '变更被驳回，不再继续；如需调整请新建变更',
   CLOSED: '变更已关闭',
@@ -251,6 +369,17 @@ function changeHandoff(state, cr) {
   )
   const impact = cr.impact ?? {}
   const next = [CHANGE_NEXT[cr.state] ?? `变更处于 ${cr.state}`]
+  // Only a change the coordinator drafted or sent to CCB is its to put through ECR; others wait for people.
+  if (cr.state === 'CCB_REVIEW' && !flow)
+    next[0] = agentDrafted('change', cr)
+      ? '还没有 ECR 流程：用 devboard_approval_submit（ECR）发起审批后停下'
+      : '还没有 ECR 流程：这不是你起草或送审的变更，请用户在看板上发起 ECR，不要自行发起'
+  const reworkedStages = (cr.reworked ?? [])
+    .map((id) => state.stages.find((s) => s.id === id))
+    .filter(Boolean)
+    .map((s) => ({ stage: s.stage, state: s.state }))
+  if (reworkedStages.length)
+    next[0] = `${next[0]}；受影响阶段 ${reworkedStages.map((s) => `${s.stage}（${label(LABELS.state, s.state)}）`).join('、')} 已因本变更进入返工，它们重新提交评审时引用 ${cr.id}`
   return {
     change: {
       id: cr.id,
@@ -264,6 +393,7 @@ function changeHandoff(state, cr) {
       ecn: cr.ecn,
       runningApproval: flow?.id,
     },
+    reworkedStages,
     impact: {
       reqs: top(impact.reqs ?? [], 20),
       artifacts: top(impact.artifacts ?? [], 20),
@@ -290,12 +420,14 @@ function trialHandoff(state, trial) {
   else if (change)
     next.push(
       `已关联变更 ${change.id}（${label(LABELS.state, change.state)}）：${
-        change.state === 'REJECTED' && trial.result === 'FAIL'
+        (change.state === 'REJECTED' || change.ccb?.decision === 'REJECTED') && trial.result === 'FAIL'
           ? '变更被驳回而试验仍不合格：读完整驳回意见，另起草新变更并用 devboard_trial_upsert(changeId) 改关联'
           : (CHANGE_NEXT[change.state] ?? '')
       }`,
     )
   else next.push('试验未出现需要起草变更的不合格结论；批准试验是人的决定')
+  const approval = lastApproval(state, 'trial', trial.id)
+  if (approval) next.push(decidedText(approval))
   return {
     trial: {
       id: trial.id,
@@ -312,6 +444,7 @@ function trialHandoff(state, trial) {
       verifies: top(trial.verifies ?? [], 20),
       changeId: trial.changeId,
     },
+    lastApproval: approval,
     next,
     summary: `${trial.id}「${clip(trial.title, 60)}」${label(LABELS.state, trial.state)}，结论 ${label(LABELS.trialResult, trial.result)}${trial.reportNo ? `，报告 ${trial.reportNo}` : ''}；下一步：${next[0]}`,
   }
@@ -351,7 +484,7 @@ function faultHandoff(state, fault) {
   }
 }
 
-function problemHandoff(_state, problem) {
+function problemHandoff(state, problem) {
   const steps = Object.fromEntries(
     Object.entries(problem.steps ?? {}).map(([k, v]) => [
       k,
@@ -361,11 +494,15 @@ function problemHandoff(_state, problem) {
   const todo = Object.entries(steps)
     .filter(([, v]) => !v.done)
     .map(([k]) => k)
+  const approval = lastApproval(state, 'problem', problem.id)
   const next = [
     problem.state === 'CLOSED'
       ? '问题已关闭'
-      : `起草尚未完成的步骤 ${todo.join('、') || '（均已起草）'}；只起草，不关闭问题，关闭由人在看板完成`,
+      : todo.length
+        ? `起草尚未完成的步骤 ${todo.join('、')}；只起草，不关闭问题，关闭由人在看板完成`
+        : '8D 各步骤都已有内容；只起草，不关闭问题，关闭由人在看板完成',
   ]
+  if (approval && problem.state !== 'CLOSED') next.push(decidedText(approval))
   return {
     problem: {
       id: problem.id,
@@ -380,6 +517,7 @@ function problemHandoff(_state, problem) {
       noChangeReason: clip(problem.noChangeReason),
     },
     steps,
+    lastApproval: approval,
     next,
     summary: `${problem.id}「${clip(problem.title, 60)}」${label(LABELS.state, problem.state)}，D 步骤未完成 ${todo.length} 个；下一步：${next[0]}`,
   }

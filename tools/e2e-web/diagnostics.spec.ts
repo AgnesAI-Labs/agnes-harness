@@ -98,7 +98,7 @@ for (const locale of ['en', 'zh-CN'])
       ])
       await page.getByTestId('settings-subpage-back').click()
       await expect(doctor).toContainText(
-        locale === 'zh-CN' ? '当前无运行中的 Worker' : 'No Worker is currently running',
+        locale === 'zh-CN' ? '当前没有运行中的后台工作进程' : 'No background worker is currently running',
       )
       await doctor.scrollIntoViewIfNeeded()
       await screen(page, info, `diagnostics-status-${locale}-${theme}`)
@@ -116,9 +116,17 @@ for (const locale of ['en', 'zh-CN'])
           await expect(
             page.getByTestId(id === 'bundles' ? 'bundles-panel' : 'settings-subsection-provider-types'),
           ).toBeVisible()
-          const heading = await page.locator('#config h2:visible').boundingBox()
+          // A subpage shows its group title and its own title; neither may run under the close button.
           const exit = await close.boundingBox()
-          expect(heading && exit && heading.x + heading.width <= exit.x).toBe(true)
+          for (const title of await page.locator('#config h2:visible').all()) {
+            // The text, not the block that holds it, must end before the close button.
+            const right = await title.evaluate((node) => {
+              const range = document.createRange()
+              range.selectNodeContents(node)
+              return range.getBoundingClientRect().right
+            })
+            expect(exit && right <= exit.x).toBe(true)
+          }
         }
         await section(page, 'security')
         // Permissions load their own data rather than the shared runtime catalog.

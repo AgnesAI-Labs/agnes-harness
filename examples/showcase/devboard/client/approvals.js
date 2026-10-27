@@ -267,7 +267,11 @@ function Actions({ data, flow, board, role, setRole }) {
           'aria-label': '加签角色',
           value: signer,
           onChange: setSigner,
-          options: [{ value: '', label: '加签角色…' }, ...data.roles.map((r) => ({ value: r, label: r }))],
+          // The initiator's role cannot sign its own flow, as on the server.
+          options: [
+            { value: '', label: '加签角色…' },
+            ...data.roles.filter((r) => r !== flow.initiator.role).map((r) => ({ value: r, label: r })),
+          ],
           style: { minWidth: 180 },
         }),
         h(

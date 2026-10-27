@@ -36,7 +36,8 @@ for (const locale of ['en', 'zh-CN']) {
         await snapshots?.capture(page, frame)
       }
       await expect(guide).toHaveAttribute('data-step', 'account')
-      await expect(page.getByTestId('composer-agent')).toHaveAttribute('aria-label', name('More', '更多'))
+      // The guide defers the new-session catalogs, so the composer's agent chip is not drawn yet.
+      await expect(page.getByTestId('composer-agent')).toHaveCount(0)
       const modal = page.getByRole('dialog', {
         name: name('Welcome to Agnes Harness', '欢迎使用 Agnes Harness'),
         exact: true,
@@ -61,7 +62,7 @@ for (const locale of ['en', 'zh-CN']) {
         await page.getByRole('option', { name: 'DeepSeek', exact: true }).click()
         await expand(connection.locator('#config-account-advanced'))
         await connection.locator('#config-base-url').fill(provider.baseUrl)
-        await connection.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
+        await connection.getByRole('textbox', { name: 'API Key', exact: true }).fill(provider.apiKey)
         await page.getByTestId('first-run-next').click()
         await expect(guide).toHaveAttribute('data-step', 'workspace')
         // The completed progress step replaces the retired inline saved badge.
@@ -108,6 +109,8 @@ for (const locale of ['en', 'zh-CN']) {
         if (diagnostics.checks.find((check) => check.id === 'sandbox')?.status !== 'ok')
           await fullAccess(page, locale)
         const composer = page.getByRole('textbox', { name: name('Task content', '任务内容'), exact: true })
+        // With the draft's catalogs read, the single-Loop agent chip offers only 「More」.
+        await expect(page.getByTestId('composer-agent')).toHaveAttribute('aria-label', name('More', '更多'))
         await composer.fill('Complete my first task')
         await composer.press('Enter')
         await expect(page.getByTestId('conversation-turn')).toContainText('FIRST_TASK_COMPLETED')
@@ -126,7 +129,7 @@ for (const locale of ['en', 'zh-CN']) {
         await account.locator('#config-account-advanced > :is(summary, .agh-disclosure-summary)').click()
         await account.locator('#config-account-name').fill('Second account')
         await account.locator('#config-base-url').fill(provider.baseUrl)
-        await account.getByLabel('API Key', { exact: true }).fill(provider.apiKey)
+        await account.getByRole('textbox', { name: 'API Key', exact: true }).fill(provider.apiKey)
         await account.locator('#config-save').click()
         await expect(account).toBeHidden()
         await expect(page.locator('.config-account')).toHaveCount(2)
@@ -253,7 +256,19 @@ test('first run Demo reaches a conversation without storing an account', async (
   const composer = page.getByRole('textbox', { name: 'Task content', exact: true })
   await page.evaluate(() => document.fonts.ready)
   const height = () => composer.evaluate((input) => input.getBoundingClientRect().height)
-  const restingHeight = await height()
+  // The saved text-size preference rescales the shell just after it opens; measure the resting
+  // composer once two reads half a second apart agree.
+  let restingHeight = await height()
+  await expect
+    .poll(
+      async () => {
+        const previous = restingHeight
+        restingHeight = await height()
+        return restingHeight === previous
+      },
+      { intervals: [500] },
+    )
+    .toBe(true)
   const multilineDraft = Array.from({ length: 8 }, (_, row) => `Demo draft line ${row + 1}`).join('\n')
   await composer.fill(multilineDraft)
   await expect(composer).toHaveValue(multilineDraft)

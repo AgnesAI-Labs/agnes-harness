@@ -44,6 +44,7 @@ import { homeAdmin } from './admin-api.js'
 import { useAgentLaunch } from './agents-launch.js'
 import { declaredAgentCards } from './agents-model.js'
 import { HomePageFrame } from './page-frame.js'
+import { workLaunch } from './work-launch.js'
 
 const source = { connect: homeAdmin }
 
@@ -107,6 +108,11 @@ function AgentList({
   const workRequest = (selection as { workAction?: ApplicationWorkRequest } | undefined)?.workAction
   const work = workRequest && resolveApplicationWork(workRequest, locale)
   const workHandled = useRef<unknown>()
+  const workCard = work && cards.find((item) => item.ref === work.agent && !item.catalogAgent)
+  const workStuck = (!!workRequest && (!workCard || !data.api)) || starter.attention
+  useEffect(() => {
+    if (workStuck) workLaunch.surface()
+  }, [workStuck])
   useEffect(() => {
     if (!workRequest || !work || workHandled.current === selection) return
     const card = cards.find((item) => item.ref === work.agent && !item.catalogAgent)
@@ -118,7 +124,10 @@ function AgentList({
   const linkedPage = navigation.stack.at(-1)
   const linked = cards.find(
     (card) =>
-      linkedPage === `agent-${card.slug}` || linkedPage === `agent-${card.entry.id.split('/').at(-1)}`,
+      linkedPage === `agent-${card.slug}` ||
+      // A hand-typed or shared link holds the plain ref (`agent-@pkg/id#agent`), the route having decoded it once.
+      linkedPage === `agent-${card.ref}` ||
+      linkedPage === `agent-${card.entry.id.split('/').at(-1)}`,
   )
   const linkHandled = useRef<string>()
   useEffect(() => {
@@ -126,7 +135,12 @@ function AgentList({
       linkHandled.current = undefined
       return
     }
-    if (!linked || starter.pageId === linkedPage || linkHandled.current === linkedPage) return
+    if (starter.pageId === linkedPage || linkHandled.current === linkedPage) return
+    // The agents are loaded and none matches: a link to an agent that is not here would wait forever.
+    if (!linked) {
+      navigation.backTo(0)
+      return
+    }
     const canonical = `agent-${linked.slug}`
     if (linkedPage !== canonical) {
       navigation.replace(canonical)
@@ -271,6 +285,9 @@ function AgentList({
 export function AgentsPage({ context }: { context: UiExtensionContext }) {
   const { t } = useUiText(AGENTS_NAMESPACE, agentsCatalog)
   const data = useBusinessAgents(source)
+  useEffect(() => {
+    if (data.error) workLaunch.surface()
+  }, [data.error])
   return (
     <HomePageFrame
       id="agents"

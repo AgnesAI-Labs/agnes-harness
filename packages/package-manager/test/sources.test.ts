@@ -29,8 +29,9 @@ import {
   hashDirectoryAsync,
   packageDir,
   parseSource,
+  withFreshDigests,
 } from '../src/sources.js'
-import { invalidatePackageVerification } from '../src/verification-operation.js'
+import { invalidatePackageVerification, withoutPackageVerification } from '../src/verification-operation.js'
 
 const fixtures = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -132,7 +133,11 @@ describe('hashDirectory', () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'agnes-hash-'))
   })
-  afterEach(() => rmSync(root, { recursive: true, force: true }))
+  // Each test starts without reused digests, so sync/async comparisons compute both sides.
+  afterEach(() => {
+    forgetDirectoryDigests()
+    rmSync(root, { recursive: true, force: true })
+  })
 
   it('is deterministic, path-sensitive, and excludes only the configured trees', async () => {
     mkdirSync(join(root, '中文 空间', 'nested dir'), { recursive: true })
@@ -168,8 +173,10 @@ describe('hashDirectory', () => {
     const file = join(root, 'payload')
     writeFileSync(file, 'first')
     writeFileSync(join(root, 'other'), 'other')
-    // Whole seconds, so restoring the time below is exact on every filesystem.
+    // Whole seconds, so restoring the time below is exact on every filesystem; and old, because a
+    // tree with a file written in the last two seconds is never stored.
     utimesSync(file, 1_700_000_000, 1_700_000_000)
+    utimesSync(join(root, 'other'), 1_700_000_000, 1_700_000_000)
     const first = hashDirectory(root)
     // The documented blind spot: a same-size rewrite that restores mtime is not read again.
     writeFileSync(file, 'xxxxx')
@@ -187,24 +194,68 @@ describe('hashDirectory', () => {
   })
 
   it('hashes again when a size or mtime changes, or a verification refusal clears what it knows', async () => {
-    const file = join(root, 'payload')
+    const file = join(root, 'payload'),
+      old = 1_700_000_000
     writeFileSync(file, 'first')
+    utimesSync(file, old, old)
     const first = hashDirectory(root)
     writeFileSync(file, 'longer than before')
+    utimesSync(file, old, old)
     const grown = hashDirectory(root)
     expect(grown).not.toBe(first)
     expect(await hashDirectoryAsync(root)).toBe(grown)
-    const before = statSync(file)
     writeFileSync(file, 'longer than BEFORE')
-    utimesSync(file, before.atime, new Date(before.mtimeMs + 5_000))
+    utimesSync(file, old, old + 5)
     const touched = hashDirectory(root)
     expect(touched).not.toBe(grown)
-    const now = statSync(file)
     writeFileSync(file, 'longer than before')
-    utimesSync(file, now.atime, now.mtime)
+    utimesSync(file, old, old + 5)
     expect(hashDirectory(root)).toBe(touched)
     invalidatePackageVerification()
     expect(hashDirectory(root)).toBe(grown)
+  })
+
+  it('hashes in full inside a write gate, even where a reused digest would hide an edit', async () => {
+    const file = join(root, 'payload'),
+      old = 1_700_000_000
+    writeFileSync(file, 'first')
+    utimesSync(file, old, old)
+    const first = hashDirectory(root)
+    writeFileSync(file, 'xxxxx')
+    utimesSync(file, old, old)
+    expect(hashDirectory(root)).toBe(first)
+    const fresh = withFreshDigests(() => hashDirectory(root))
+    expect(fresh).not.toBe(first)
+    expect(await withFreshDigests(() => hashDirectoryAsync(root))).toBe(fresh)
+  })
+
+  it('keeps digests across a routine write boundary', () => {
+    // Every Host publication enters and leaves one; clearing here made each worker start hash again.
+    const file = join(root, 'payload'),
+      old = 1_700_000_000
+    writeFileSync(file, 'first')
+    utimesSync(file, old, old)
+    const first = hashDirectory(root)
+    writeFileSync(file, 'xxxxx')
+    utimesSync(file, old, old)
+    withoutPackageVerification(() => undefined)
+    expect(hashDirectory(root)).toBe(first)
+  })
+
+  it('does not keep a digest for a tree with a file written moments before hashing', async () => {
+    // File times advance in ticks; a same-size rewrite in the same tick must not reuse the digest.
+    const file = join(root, 'payload'),
+      now = Math.floor(Date.now() / 1000)
+    writeFileSync(file, 'first')
+    utimesSync(file, now, now)
+    const first = hashDirectory(root)
+    writeFileSync(file, 'xxxxx')
+    utimesSync(file, now, now)
+    const second = hashDirectory(root)
+    expect(second).not.toBe(first)
+    writeFileSync(file, 'yyyyy')
+    utimesSync(file, now, now)
+    expect(await hashDirectoryAsync(root)).not.toBe(second)
   })
 
   it('still refuses a symbolic link that appears after a digest was reused', async () => {

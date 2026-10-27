@@ -9,10 +9,12 @@ import {
 } from '@agnes/web-client'
 import { Button, useDocumentLanguage } from '@agnes/web-ui'
 import { useSyncExternalStore } from 'react'
+import { useWorkLaunchQuiet } from '../pages/work-launch.js'
 
 export function ApplicationWorkActions() {
   useSyncExternalStore(applicationIdentity.subscribe, applicationIdentity.getSnapshot)
   const language = useDocumentLanguage() === 'zh-CN' ? 'zh-CN' : 'en'
+  const launching = useWorkLaunchQuiet()
   const actions = effectiveApplication()?.workbench?.actions
   if (!actions?.length) return null
   return (
@@ -21,7 +23,12 @@ export function ApplicationWorkActions() {
       aria-label={language === 'en' ? 'Work actions' : '工作快捷操作'}
     >
       {actions.map((action) => (
-        <Button key={action.id} size="small" onClick={() => openApplicationWork(action.id)}>
+        <Button
+          key={action.id}
+          size="small"
+          disabled={launching}
+          onClick={() => openApplicationWork(action.id)}
+        >
           {action.title[language] ?? action.title.en}
         </Button>
       ))}

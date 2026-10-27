@@ -203,11 +203,25 @@ function NewChange({ data, board, role, projectId }) {
 }
 
 /** Advance the retrofit count of an approved change; progress only goes up, the last door closes the gap. */
-function RetrofitBar({ change, board, role }) {
+function RetrofitBar({ data, change, board, role }) {
   const rf = change.retrofit
   const [done, setDone] = React.useState('')
+  const approved =
+    ['APPROVED', 'IMPLEMENTED'].includes(change.state) || (change.state === 'CLOSED' && Boolean(change.ecn))
+  // Doors follow a released design, so a change that names items waits for its ECN release.
+  const seq = (b) => Number(/-(\d+)$/.exec(b.id)?.[1] ?? 0)
+  const designed = data.configBaselines
+    .filter((b) => b.projectId === change.projectId && b.type === 'AS_DESIGNED')
+    .reduce((top, b) => (!top || seq(b) > seq(top) ? b : top), undefined)?.revs
+  const items = change.impact?.items ?? []
+  const unreleased =
+    items.length > 0 &&
+    !data.approvals.some(
+      (a) => a.template === 'ECN_RELEASE' && a.subject.id === change.id && a.state === 'APPROVED',
+    ) &&
+    !items.every(({ itemId, toRev }) => designed?.[itemId] === toRev)
   // A finished retrofit takes no more progress.
-  const locked = !['APPROVED', 'IMPLEMENTED'].includes(change.state) || rf.done >= rf.total
+  const locked = !approved || unreleased || rf.done >= rf.total
   const submit = async () => {
     const ok = await board.run(
       'devboard.transition',
@@ -249,7 +263,9 @@ function RetrofitBar({ change, board, role }) {
               ? '变更已关闭，整改进度不再更新。'
               : change.state === 'REJECTED'
                 ? '变更已驳回，无需整改。'
-                : '批准后才能更新整改进度。',
+                : approved
+                  ? `${change.ecn} 尚未发布：ECN 发布审批通过后才能更新整改进度。`
+                  : '批准后才能更新整改进度。',
         ),
     ),
   )
@@ -368,7 +384,7 @@ export function Changes({ data, board, role, setRole }) {
             '进入 CCB 评审前必须完成影响分析（现场或型式试验来源还需失效原因分析）；CCB 批准只能经 ECR 审批流程（专业会签 → CCB 决议），批准后生成 ECN，ECN 发布流程批准后生成设计态基线；研发中项目的受影响阶段自动返工，在役项目不返工；关闭前需验证记录。',
           ),
           h(ImpactTree, { data, change: item }),
-          item.retrofit && h(RetrofitBar, { key: item.id, change: item, board, role }),
+          item.retrofit && h(RetrofitBar, { key: item.id, data, change: item, board, role }),
           h(AnalysisFiles, { data, board, projectId: item.projectId, ids: [item.id, item.ecn] }),
           workOf('changeImpact', item) &&
             h(

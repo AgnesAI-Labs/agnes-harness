@@ -86,8 +86,14 @@ test('v3 archive filter restores the same session and its conversation', async (
     .poll(async () => (await client.session.list()).items.find((row) => row.sessionId === id)?.archived)
     .toBe(true)
   await chooseView(page, 'archived')
-  const row = page.getByTestId('session-inventory').locator(`[data-session="${id}"]`)
+  // The row's open button carries the session id; the restore action sits beside it in the same row.
+  const row = page
+    .getByTestId('session-inventory')
+    .locator('.session-row')
+    .filter({ has: page.locator(`[data-session="${id}"]`) })
   await expect(row).toBeVisible()
+  // The restore action appears when the row is pointed at.
+  await row.hover()
   await row.getByTestId('archived-restore').click()
   await expect
     .poll(async () => (await client.session.list()).items.find((row) => row.sessionId === id)?.archived)

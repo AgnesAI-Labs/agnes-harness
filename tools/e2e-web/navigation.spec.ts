@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { expand, section, sectionSurface, sidebar } from './ui.js'
+import { expand, section, sectionSurface } from './ui.js'
 
 // Explicit Playwright tier. Run against an isolated demo home after all streams are integrated.
 for (const locale of ['en', 'zh-CN']) {
@@ -33,11 +33,15 @@ for (const locale of ['en', 'zh-CN']) {
     await page.keyboard.press('Escape')
     await section(page, 'diagnostics')
     await expand(page.getByTestId('plugin-diagnostics'))
+    // The technical details subpage folds publication and generations into their own sections.
+    await expand(page.getByTestId('runtime-publication'))
     await expect(page.getByTestId('composition-publication')).toBeVisible()
+    await expand(page.getByTestId('runtime-generations'))
     await expand(page.getByTestId('plugin-generations'))
     await expand(page.getByTestId('migration-manual'))
     await expect(page.getByTestId('migration-session-key')).toBeVisible()
     await expect(page.getByTestId('migrate-session')).toBeVisible()
+    await expand(page.getByTestId('runtime-local'))
     await page.getByTestId('local-plugins').locator('summary, .agh-disclosure-summary').click()
     await expect(page.getByTestId('reload-local-plugins')).toBeVisible()
     await section(page, 'security')
@@ -66,7 +70,10 @@ for (const locale of ['en', 'zh-CN']) {
     await expect(page.getByTestId('search-providers')).toBeVisible()
     await page.goto('/?page=agents')
     await expect(page.getByTestId('home-page-agents')).toBeVisible()
-    await expect(page.locator('[data-testid^="business-agent-"][data-package]').first()).toBeVisible()
+    // One feed: the catalog's applications and standalone agents beside the general assistant.
+    await expect(
+      page.getByTestId('agents-gallery').locator('[data-application], [data-agent-ref]').first(),
+    ).toBeVisible()
     expect(pageErrors).toEqual([])
   })
 }
@@ -77,7 +84,8 @@ test('confirms migration of an isolated fixture session', async ({ page }) => {
   // Keep the fixture closed: automatic selection would reopen the latest session.
   await page.goto('/admin/plugins?session=missing-migration-fixture')
   await section(page, 'diagnostics')
-  await page.getByTestId('plugin-diagnostics').locator('summary, .agh-disclosure-summary').first().click()
+  await expand(page.getByTestId('plugin-diagnostics'))
+  await expand(page.getByTestId('runtime-generations'))
   await expand(page.getByTestId('plugin-generations'))
   await expand(page.getByTestId('migration-manual'))
   await page.getByTestId('migration-session-key').fill(sessionId)
@@ -95,8 +103,9 @@ test('settings navigation, narrow master-detail and old links keep their destina
   test.setTimeout(150_000)
   await page.goto('/?settings=model')
   await expect(page.locator('#config')).toBeVisible()
+  // General, Models, Permissions and Application.
   const everyday = page.locator('#settings-everyday button[data-settings-group]')
-  await expect(everyday).toHaveCount(3)
+  await expect(everyday).toHaveCount(4)
   // Advanced settings show until the reader turns them off.
   await expect(page.getByTestId('settings-advanced')).toBeVisible()
   await section(page, 'general')
@@ -114,28 +123,31 @@ test('settings navigation, narrow master-detail and old links keep their destina
   await expect(page.getByTestId('settings-back')).toBeFocused()
   await page.getByTestId('settings-back').click()
   await expect(page.getByTestId('settings-nav-general')).toBeFocused()
+  // Provider kinds now live in the diagnostics technical-details subpage.
   for (const [old, target, anchor] of [
-    ['context', 'models', 'context'],
-    ['providers', 'diagnostics', 'providers'],
-  ]) {
+    ['context', 'models', '#settings-subsection-context'],
+    ['providers', 'diagnostics', '[data-testid="settings-subsection-provider-types"]'],
+  ] as const) {
     await page.goto(`/?settings=${old}`)
     await expect(page.getByTestId(`settings-page-${target}`)).toBeVisible()
-    await expect(page.locator(`#settings-subsection-${anchor}`)).toBeVisible()
-    // A settings link is followed once: the address no longer names it, so a reload shows the workbench.
-    expect(new URL(page.url()).searchParams.get('settings')).toBeNull()
+    await expect(page.locator(anchor)).toBeVisible()
+    // The address now names the current settings route instead of the old link, so a reload returns
+    // to the same page.
+    const route = new URL(page.url()).searchParams.get('settings')
+    expect(route).not.toBeNull()
+    expect(route).not.toBe(old)
     expect(new URL(page.url()).hash).toBe('')
     await page.reload()
-    await sidebar(page)
-    await expect(page.getByTestId('home-entries')).toBeVisible()
-    await expect(page.locator('#config')).toBeHidden()
+    await expect(page.getByTestId(`settings-page-${target}`)).toBeVisible()
   }
   // Memory is part of 个性化 on the General page, which the advanced switch does not hide.
   await page.goto('/?settings=memory')
   await expect(page.locator('#settings-subsection-memory')).toBeVisible()
-  expect(new URL(page.url()).searchParams.get('settings')).toBeNull()
+  expect(new URL(page.url()).searchParams.get('settings')).not.toBe('memory')
   for (const [old, target, tab, surface] of [
-    ['engines', 'plugins', 'plugins.subagents', 'plugins-subagents'],
-    ['search', 'plugins', 'plugins.search', 'plugins-search'],
+    // Capability pages open as subpages of the Plugins tab, which the address names.
+    ['engines', 'plugins', 'plugins', 'plugins-subagents'],
+    ['search', 'plugins', 'plugins', 'plugins-search'],
     ['skills', 'plugins', 'skills', 'plugins'],
     ['mcp', 'plugins', 'mcp', 'plugins'],
     ['examples', 'agents', null, 'agents'],

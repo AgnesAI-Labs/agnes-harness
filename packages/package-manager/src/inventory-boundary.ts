@@ -2,7 +2,8 @@ import { statSync } from 'node:fs'
 import { join } from 'node:path'
 
 // Small policy/lock files are change sentinels ONLY for joining a pending scan, never authority
-// for skipping byte verification. A scan itself always reads current policy and installed bytes.
+// for skipping byte verification. A scan itself always reads current policy; installed bytes are
+// re-read unless hashDirectory's file size/mtime/inode signature is unchanged (sources.ts).
 export const readBoundary = (
   directory: string,
   files = ['agnes-lock.json', 'plugin-capabilities.json', 'package-sources.json'],

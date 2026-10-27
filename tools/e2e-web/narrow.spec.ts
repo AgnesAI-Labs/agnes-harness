@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from 'node:util'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, settled, translated } from './quality.js'
-import { prompt, toolResult } from './sdk.js'
+import { describingFirst, prompt, toolResult } from './sdk.js'
 import {
   advanced,
   closeSettings,
@@ -219,22 +219,32 @@ for (const locale of ['en', 'zh-CN'])
       await client.session.rename(session.id, 'Review the delivery and its execution evidence')
       await prompt(session, 'call read {"path":"report.md"}')
       await prompt(session, 'call present {"files":[{"path":"report.md","name":"Delivery report.md"}]}')
-      await prompt(session, 'call plugin_helper_guide {"kind":"tool"}')
-      const result = (await toolResult(session, 'plugin_helper_guide'))?.content[0]
+      // The on-demand authoring tools are described first; their turns live in a session of their
+      // own so the inspected conversation keeps its turns inside the opening window.
+      const authoring = await client.session.new({
+        cwd: runtime.workspace,
+        preset: 'standard',
+        // Under full access a commit publishes at once; this flow inspects the pending review.
+        permission: 'workspace-write',
+        sessionKey: 'narrow-authoring',
+      })
+      await authoring.attach()
+      authoring.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
+      await client.session.rename(authoring.id, 'Prepare the reviewed plugin')
+      const promptOnDemand = describingFirst((input) => prompt(authoring, input))
+      await promptOnDemand('call plugin_helper_guide {"kind":"tool"}')
+      const result = (await toolResult(authoring, 'plugin_helper_guide'))?.content[0]
       if (result?.type !== 'text') throw new Error('The authoring guide must provide fixture files')
-      await prompt(
-        session,
+      await promptOnDemand(
         `call plugin_helper_create ${JSON.stringify({ files: JSON.parse(result.text).files })}`,
       )
-      const created = (await toolResult(session, 'plugin_helper_create'))?.content[0]
+      const created = (await toolResult(authoring, 'plugin_helper_create'))?.content[0]
       if (created?.type !== 'text') throw new Error('The fixture candidate must be created')
       const candidate = JSON.parse(created.text) as { candidateId: string; packageId: string }
-      await prompt(
-        session,
+      await promptOnDemand(
         `call plugin_helper_install ${JSON.stringify({ action: 'test', proposalId: candidate.candidateId })}`,
       )
-      await prompt(
-        session,
+      await promptOnDemand(
         'call plugin_helper_install ' +
           JSON.stringify({ action: 'commit', proposalId: candidate.candidateId }),
       )
@@ -462,7 +472,11 @@ for (const locale of ['en', 'zh-CN'])
           await expect(page.locator('.trace-row').first()).toBeFocused()
           await page.locator('#view-chat').click()
           await workbenchTab(page, 'files')
-          await page.getByTestId('files-panel').locator('[data-path="report.md"]').click()
+          await page
+            .getByTestId('files-panel')
+            .getByTestId('workspace-file')
+            .and(page.locator('[data-path="report.md"]'))
+            .click()
           await expect(page.getByTestId('file-preview')).toContainText('Synthetic delivery')
           await usable(page, info, `files-${viewport.width}`)
           if (viewport.width === 768) await capture('workbench', viewport.width)

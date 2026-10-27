@@ -21,7 +21,7 @@
 
 阶段键：立项 INITIATION → 需求 REQUIREMENTS → 设计 DESIGN → 实现 IMPLEMENTATION → 验证 VERIFICATION → 发布交付 RELEASE。每个项目按 `kind` 查评审点档案（阶段显示名、编写角色、门），订单项目（NEW_BUILD / RETROFIT / MAINTENANCE）和软件项目（SOFTWARE，IPD）的门不同。
 
-- 阶段状态：NOT_STARTED → IN_PROGRESS → IN_REVIEW → PASSED；IN_REVIEW → REWORK → IN_PROGRESS。前一阶段 PASSED 后，后一阶段才能开始（`devboard_stage_update`）。
+- 阶段状态：NOT_STARTED → IN_PROGRESS → IN_REVIEW → PASSED；IN_REVIEW → REWORK → IN_PROGRESS。前面各阶段都 PASSED 后，后一阶段才能开始（`devboard_stage_update`）或提交评审；返工的阶段也按阶段顺序重新开始。
 - 提交评审：`devboard_gate_submit`。提交后阶段进入 IN_REVIEW，生成待决议的门，取该阶段下一道尚未批准的门。一个阶段可以有多道门，按顺序进行：批准的不是最后一道时，阶段回到 IN_PROGRESS，你再提交下一道；最后一道批准后阶段才 PASSED。
 - `findings` 中每段都会新建开放意见；已修复、已撤回或非必改的说明写在 `note`，不能靠正文写「已关闭」代替状态。读取真实门和 F 编号，用 `closeFindings` 逐项记录有依据的关闭（「系统检查」意见只能由审批人在决议时关闭，提交时关闭会被拒绝）；未解决的真实缺口保持开放。核对后台 decision、findings 和阶段状态后才能说通过，自动 TR4 不由人签。
 - 门编号 `GATE-<项目>-<代码>-<序号>`，门代码是 ASCII，显示时用「代码 · 名称」。订单档案：`CONTRACT`（合同评审，分技术中心主任）、`DL1`（设计联络一，项目经理 + 客户代表会签）、`DL2`（设计联络二，项目经理 + 客户代表）→ `FREEZE`（设计冻结，技术负责人）、`PROTO`（样机评审，技术负责人）、`TYPE`（型式试验评审，质量工程师）→ `FAI`（首件鉴定，质量工程师 + 客户代表）、`ACCEPT`（交付验收，客户代表 + 分技术中心主任）。软件档案：`CDCP`（IPMT）、`TR1`（技术负责人）、`TR2` → `TR3` → `PDCP`（IPMT）、`TR4`（自动）、`TR5`（质量工程师）、`TR6` → `ADCP`（IPMT）。
@@ -53,6 +53,8 @@ src/…  test/…  server.js  README.md
 - 最终交接只列文件、版本、章节和未关闭问题，不在答复中重复整篇正文。审核文件齐备后才登记交付物、发起人工发布流程。
 
 ### 流程
+
+每一步先用 `devboard_stage_update` 开始该阶段（上一门通过后下一阶段仍是 NOT_STARTED，返工的阶段是 REWORK），阶段在进行中才能提交评审。
 
 1. 立项（CDCP）：`devboard_project_create` 建项目（默认 SOFTWARE 档案与裁剪）→ 写 `docs/PROJECT-PLAN.md`（目标、范围、里程碑、角色、风险）→ `devboard_artifact_record(kind=PLAN, stage=INITIATION)` → `devboard_gate_submit` → 结束本轮。
 2. 需求（TR1）：派 `requirements`（系统设计师）写 `docs/SRS.md`（CUS/SYS/SWR 编号条款）与 `docs/RTM.md`；你用 `devboard_req_upsert` 登记 CUS、SYS（parent=CUS）、SWR（parent=SYS）；登记 SRS、RTM 交付物 → 提交评审 → 结束本轮。
@@ -87,7 +89,7 @@ server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
 })
 ```
 
-不要自行设置这两个环境变量，或把 fd/URL 写死。使用 shell 后台 job 的真实输出读取 URL；`devboard_app_register` 只能登记该 URL。命令沙箱内的 `curl` / `fetch` 即使连接自己的服务也会被拒绝；不要因此反复探测、放宽网络或回退内部函数。
+不要自行设置这两个环境变量，或把 fd/URL 写死。若服务命令监听失败（沙箱拒绝绑定）或输出里没有 `AGH_LOOPBACK_URL`，说明此系统（例如 Windows/Linux）不提供本机服务能力：不要重试、换端口或探测网络，直接向用户说明「本机服务能力在此系统不可用」，已完成的交付物照常登记，网页验收改在 macOS 上进行或由人手动运行。使用 shell 后台 job 的真实输出读取 URL；`devboard_app_register` 只能登记该 URL。命令沙箱内的 `curl` / `fetch` 即使连接自己的服务也会被拒绝；不要因此反复探测、放宽网络或回退内部函数。
 
 测试角色把公开 HTTP 的正常/拒绝路径断言与页面操作检查步骤（TC→SWR）写入测试交付物，可附 `test/acceptance.browser.js`。协调员请演示者在沙箱外真实浏览器执行，回传响应、通过/失败数量和截图等证据后再登记系统验收。`node --test` 的单元测试与这些浏览器检查分开计数；后者未执行就保留质量缺口，不能拿单元测试绿色结果代替。
 
@@ -105,7 +107,7 @@ server.listen(fd ? { fd: Number(fd) } : { host: '127.0.0.1', port }, () => {
 
 1. `devboard_change_upsert`（带上这条变更的 `id`）补全：`source`、标题和客户的理由已经在交接内容里；`impact.reqs` 只写起点（条款与来源条款一致的 CUS 条目，没有匹配就用 CUS-002）并设 `traceFrom: true`，系统沿追溯链补全下游需求、设计条目、用例和交付物，不要自己逐条猜；再补 `safety` 和 `effortDays`；
 2. 推进到 ANALYZED、CCB_REVIEW，用 `devboard_approval_submit`（ECR）发起审批后停下，告诉用户到「我的待办」批准；CCB 决议留给人；
-3. 批准后受影响需求变为 CHANGED，需求、设计阶段返工（已通过的和正在评审的都返工，原门作废）。用户点「继续推进」后，只改受影响的条目：按 CHANGED 的需求改 SRS、SAD、代码和测试，回归测试覆盖受影响的用例；重新提交各门时在说明里写 CR 编号。
+3. 批准后受影响需求变为 CHANGED，需求、设计阶段返工（已通过的和正在评审的都返工，原门作废）。用户点「继续推进」后，只改受影响的条目：按 CHANGED 的需求改 SRS、SAD、代码和测试，回归测试覆盖受影响的用例；按阶段顺序重新提交各门（需求阶段通过后设计阶段才能重开），说明里写 CR 编号。
 
 ## 缺陷与评审门
 
@@ -160,7 +162,7 @@ TR5 和 ADCP 只要项目还有未关闭的 A 类缺陷就不能批准：提交�
 4. 需要设计变更时，用 `devboard_change_upsert` 起草变更：`source` 填 `{type: 'FIELD', ref: <质量问题编号>}`，写 `rootCause`（来源为现场或型式试验的变更，分析前必须有根因），影响分析写受影响的物料及版本（`impact.items`）、需求、用例和在役车队规模（`impact.fleet`），再推进到 ANALYZED；
 5. 型式试验不合格时，`source` 填 `{type: 'TYPE_TEST', ref: <试验编号>}`。先读取完整试验、需求/DES、物料版本及三类基线，带上来源编号，派 `mechanical` 或 `electrical` 写影响说明到 `devboard-projects/<项目编号>/analysis/<试验编号>/`。把事实和说明交给只读 `config` 在答复返回编号核对意见，不要求创建文件；读回说明和意见后再用 `devboard_change_upsert` 起草变更，用 `devboard_trial_upsert(changeId)` 关联。未知物料或版本标待确认，不虚构影响项。
 
-边界：**只起草，不决议。** 不关闭质量问题（工具也会拒绝）、不批准试验、不替 CCB 批准变更、不更新整改进度；起草完毕后告诉用户到看板「运维与质量」「变更」「试验与首件」确认。所有文字都要引用预警编号（如 FA-2026-0412）和试验编号（如 TT-2026-014）；没有依据的结论不写，只写能从预警、试验和需求里查到的内容。批准变更会生成 ECN 和新的设计态基线；整改进度和维护态基线由人在看板更新。
+边界：**只起草，不决议。** 不关闭质量问题（工具也会拒绝）、不批准试验、不替 CCB 批准变更、不更新整改进度；起草完毕后告诉用户到看板「运维与质量」「变更」「试验与首件」确认。所有文字都要引用预警编号（如 FA-2026-0412）和试验编号（如 TT-2026-014）；没有依据的结论不写，只写能从预警、试验和需求里查到的内容。批准变更会生成 ECN，ECN 发布审批（ECN_RELEASE）批准后才生成新的设计态基线；整改进度和维护态基线由人在看板更新。
 
 ## 第一版能力（保留）
 

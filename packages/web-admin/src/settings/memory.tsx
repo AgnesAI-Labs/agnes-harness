@@ -27,7 +27,7 @@ type Request = Parameters<typeof memoryRequest>[0]
  * Memory on the General page: the workspace, whether the agent may remember (off / ask / auto), and a
  * Memory files subpage with the files, an editor that checks the version on save, and where it is kept.
  */
-export function MemoryPanel({ canSave }: { canSave: boolean }) {
+export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: number }) {
   const { t, locale } = useUiText('@agnes/web/memory', memoryCatalog)
   const lifetime = useRef<AbortController | undefined>(undefined)
   const [workspaces, setWorkspaces] = useState<{ path: string; available: boolean }[]>([])
@@ -72,6 +72,18 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
       })
     return () => abort.abort()
   }, [reads, canSave])
+
+  // Settings stay mounted while closed. On a later visit, re-read what an agent may have written
+  // since; an open file is re-read only when it holds no unsaved edit.
+  const firstVisit = useRef(visit)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new visit starts this read.
+  useEffect(() => {
+    if (visit === firstVisit.current || !selectedCwd.current) return
+    void request({
+      cwd: selectedCwd.current,
+      ...(file && content === file.content ? { file: file.path } : {}),
+    })
+  }, [visit])
 
   async function request(input: Request, kind: 'read' | 'change' | 'file' = 'read') {
     if (busy) return
@@ -254,7 +266,11 @@ export function MemoryPanel({ canSave }: { canSave: boolean }) {
               </span>
             </SettingsItem>
             <SettingsItem label={t('location')}>
-              <span className="agnes-settings-value" translate="no" data-testid="memory-root">
+              <span
+                className="agnes-settings-value agnes-settings-value-path"
+                translate="no"
+                data-testid="memory-root"
+              >
                 {inspection.root}
               </span>
             </SettingsItem>

@@ -3,7 +3,7 @@ import { resolve } from 'node:path'
 import { startProviderFixture } from '../acceptance/provider-fixture.js'
 import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
-import { prompt, toolResult } from './sdk.js'
+import { describingFirst, prompt, toolResult } from './sdk.js'
 import {
   chooseWorkspace,
   closeSettings,
@@ -369,10 +369,10 @@ test('v3 pending review inbox opens a real Demo-authored draft and preserves its
   })
   await session.attach()
   session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
+  const promptOnDemand = describingFirst((input) => prompt(session, input))
   const content =
     '---\nname: REG5 reviewed method\ndescription: Offline review fixture\n---\n\nRead the approved report.\n'
-  await prompt(
-    session,
+  await promptOnDemand(
     'call skill_helper_create ' +
       JSON.stringify({
         name: 'reg5-reviewed-method',
@@ -386,12 +386,10 @@ test('v3 pending review inbox opens a real Demo-authored draft and preserves its
   if (created?.type !== 'text') throw new Error('Draft creation must return its candidate')
   const candidate = JSON.parse(created.text) as import('@agnes/protocol').AuthoringCandidate
   expect(candidate.candidateId).toMatch(/^candidate-/)
-  await prompt(
-    session,
+  await promptOnDemand(
     'call skill_helper_install ' + JSON.stringify({ action: 'test', proposalId: candidate.candidateId }),
   )
-  await prompt(
-    session,
+  await promptOnDemand(
     'call skill_helper_install ' + JSON.stringify({ action: 'commit', proposalId: candidate.candidateId }),
   )
   await homePage(page, 'plugins', 'review')

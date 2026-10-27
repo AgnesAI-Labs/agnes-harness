@@ -235,7 +235,7 @@ const VERBS = {
   CLAIMED: () => '认领',
   OPEN: () => '放弃认领',
   RESOLVED: () => '处理完成',
-  ANALYZED: () => '完成影响分析',
+  ANALYZED: (from) => (from === 'CCB_REVIEW' ? '退回修改分析' : '完成影响分析'),
   CCB_REVIEW: () => '提交 CCB',
   SUBMITTED: () => '退回补充',
   APPROVED: () => 'CCB 批准',
@@ -306,6 +306,9 @@ export const gateLabel = (data, decision) =>
   decision === 'PENDING' ? '待决议' : (data.labels.state[decision] ?? decision)
 export const gateBadge = (data, decision) =>
   h(Badge, { tone: TONES[decision] ?? 'off' }, gateLabel(data, decision))
+/** A rejected gate whose stage was submitted again is history: the newer gate of its code is the one that counts. */
+export const resubmitted = (data, g) =>
+  g.decision === 'REJECTED' && data.gates.findLast((x) => x.stageId === g.stageId && x.code === g.code) !== g
 /** A gate voided by a change rework reads as such, whatever its old decision was. */
 export const gateOutcome = (data, g) => (g.superseded ? '已作废（返工）' : gateLabel(data, g.decision))
 export const gateOutcomeBadge = (data, g) =>
@@ -519,7 +522,8 @@ export function TransitionBar({
               f.lines
                 ? extra[f.key]
                     .split('\n')
-                    .map((l) => l.trim())
+                    // A line is one entry of at most 300 characters, as the server clips it (the schema refuses longer ones).
+                    .map((l) => l.trim().slice(0, 300))
                     .filter(Boolean)
                 : extra[f.key].trim(),
             ]),

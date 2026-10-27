@@ -179,6 +179,20 @@ describe('trace panel', () => {
     expect(modelBars.some((bar) => Number.parseFloat(bar.style.width) > 8)).toBe(true)
   })
 
+  it('keeps the load-earlier action inside a list item of the record list', () => {
+    const { root, panel } = mount()
+    panel.render(nodes, [turn(sampleTrace, ['u1', 'c1', 'a1', 't1'])], {
+      hasEarlier: true,
+      loadEarlier: vi.fn(),
+      sessionId: 's',
+    })
+    const list = root.querySelector<HTMLElement>('.trace-list[role="list"]')
+    const earlier = list?.querySelector('.trace-load-earlier')
+    // A list owns items, never a bare control.
+    expect(earlier?.parentElement?.getAttribute('role')).toBe('listitem')
+    expect(list?.querySelectorAll(':scope > button')).toHaveLength(0)
+  })
+
   it('shows empty state and does not throw when there are no nodes', () => {
     const { root, panel } = mount()
     expect(() => panel.render([], [turn()])).not.toThrow()

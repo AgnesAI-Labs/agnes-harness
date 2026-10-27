@@ -311,7 +311,8 @@ for (const locale of ['en', 'zh-CN'])
           await screen(page, info, `discover-duplicate-versions-${locale}-${theme}`)
           await versions.locator('.agh-disclosure-summary').click()
           await expect(packageRow.locator('.plugin-source')).toHaveCount(0)
-          await packageRow.scrollIntoViewIfNeeded()
+          // Edge alignment can leave the expanded card a subpixel above the pane; centre it instead.
+          await packageRow.evaluate((card) => card.scrollIntoView({ block: 'center', behavior: 'instant' }))
           await expect(packageRow).toBeInViewport({ ratio: 1 })
           await screen(page, info, `discover-version-picker-${locale}-${theme}`)
           const picker = packageRow.getByTestId('plugin-version-picker')
@@ -326,12 +327,13 @@ for (const locale of ['en', 'zh-CN'])
           await versions.locator('summary, .agh-disclosure-summary').click()
           await page
             .getByRole('searchbox', { name: locale === 'en' ? 'Search plugins' : '搜索插件', exact: true })
-            .fill('@agnes-example/dag-loop')
+            .fill('@agnes-showcase/pharma-gmp')
+          // Before installation the catalog advertises the showcase applications, not the teaching Loops.
           const results = page.getByTestId('market-card')
           await expect(results).toHaveCount(1)
-          await expect(results).toHaveAttribute('data-plugin-id', '@agnes-example/dag-loop')
+          await expect(results).toHaveAttribute('data-plugin-id', '@agnes-showcase/pharma-gmp')
           await expect(results.getByRole('heading')).toHaveText(
-            locale === 'en' ? 'Task graph Loop' : '任务图 Loop',
+            locale === 'en' ? 'Sableleaf GMP Quality Hub' : '沙叶 GMP 质量中枢',
           )
         }
         await quality(`settings-${id}`, id === 'general' || ['plugins', 'discover', 'skills'].includes(id))

@@ -38,6 +38,32 @@ describe('createHost', () => {
     expect(kinds.at(-1)).toBe('host.closed')
     await expect(host.createSession({ cwd: dataDir })).rejects.toThrow(/E_HOST_CLOSED/)
   })
+  it('records why a Host is assembled and how long each stage took', async () => {
+    const plain = await createTestHost({ dataDir: tmp() })
+    await plain.host.close()
+    const kinds = plain.audit.events.map((e) => e.kind)
+    expect(kinds.indexOf('host.assembling')).toBeGreaterThanOrEqual(0)
+    expect(kinds.indexOf('host.assembling')).toBeLessThan(kinds.indexOf('host.ready'))
+    const ready = plain.audit.events.find((e) => e.kind === 'host.ready')?.detail as Record<string, unknown>
+    expect(ready).toMatchObject({ reason: 'unspecified', durationMs: expect.any(Number) })
+    const stages = ready.stages as Record<string, number>
+    expect(Object.keys(stages).sort()).toEqual(['coreMs', 'extensionsMs', 'foundationMs', 'treeMs'])
+    expect(Object.values(stages).every((ms) => Number.isInteger(ms) && ms >= 0)).toBe(true)
+    expect(Object.values(stages).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(ready.durationMs as number)
+
+    const cause = {
+      reason: 'session',
+      session: 'session-1',
+      composition: `sha256-${'1'.repeat(64)}`,
+    } as const
+    const opened = await createTestHost({ dataDir: tmp(), assemblyCause: cause })
+    await opened.host.close()
+    expect(opened.audit.events.find((e) => e.kind === 'host.assembling')?.detail).toMatchObject(cause)
+    expect(opened.audit.events.find((e) => e.kind === 'host.ready')?.detail).toMatchObject({
+      reason: 'session',
+    })
+  })
+
   it('carries systemPromptAppend from createSession into the new session pinned prompt', async () => {
     const dataDir = tmp()
     const { host } = await createTestHost({

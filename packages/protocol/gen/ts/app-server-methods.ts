@@ -176,6 +176,7 @@ export interface AppServerMethods {
   "_agnes/v1/diagnostics.collect": { params: Static<typeof import("./agnes-v1.js").DiagnosticsCollectParams>; result: Static<typeof import("./agnes-v1.js").DiagnosticsCollectResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/diagnostics.events": { params: Static<typeof import("./agnes-v1.js").DiagnosticsEventsParams>; result: Static<typeof import("./agnes-v1.js").DiagnosticsEventsResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.list": { params: Static<typeof import("./agnes-v1.js").SessionListParams>; result: Static<typeof import("./agnes-v1.js").PageSessionMeta>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.activity": { params: Static<typeof import("./agnes-v1.js").SessionActivityParams>; result: Static<typeof import("./agnes-v1.js").SessionActivityResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.groups": { params: Static<typeof import("./agnes-v1.js").SessionGroupsParams>; result: Static<typeof import("./agnes-v1.js").SessionGroupsResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/workspace.list": { params: Static<typeof import("./agnes-v1.js").WorkspaceListParams>; result: Static<typeof import("./agnes-v1.js").WorkspaceListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/workspace.add": { params: Static<typeof import("./agnes-v1.js").WorkspaceAddParams>; result: Static<typeof import("./agnes-v1.js").WorkspaceAddResult>; direction: "c2s"; kind: "request" }

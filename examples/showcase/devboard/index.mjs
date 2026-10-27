@@ -322,7 +322,7 @@ export const tools = [
   ),
   tool(
     'devboard_stage_update',
-    'Start a stage (NOT_STARTED or REWORK → IN_PROGRESS); the previous stage must have PASSED. Optionally set its writing role. 开始阶段。',
+    'Start a stage (NOT_STARTED or REWORK → IN_PROGRESS); every earlier stage must have PASSED. Optionally set its writing role. 开始阶段。',
     Type.Object({ projectId: id, stage: literals(STAGES), author: Type.Optional(short(32)), note }, strict),
     (input, ctx, a) =>
       a.mutate(ctx.store, (s) =>
@@ -368,7 +368,7 @@ export const tools = [
   ),
   tool(
     'devboard_req_upsert',
-    'Register or update CUS/SYS/SWR/DES/TC items of a project (ids like CUS-001, SWR-012, TC-020, unique within the project; MER-/EER- are the mechanical and electrical sub-system requirement prefixes, level SWR). parent names the items one level up: SYS→CUS, SWR→SYS, DES→SWR, TC→SWR. discipline MECH/ELEC/SW on SWR and DES; partNo/drawingNo/module on DES; clause/compliance/responseNote on CUS. SWR and TC become VERIFIED only through devboard_test_record results. 登记需求、设计与用例并挂接追溯。',
+    'Register or update CUS/SYS/SWR/DES/TC items of a project (ids like CUS-001, SWR-012, TC-020, unique within the project; MER-/EER- are the mechanical and electrical sub-system requirement prefixes, level SWR). parent names the items one level up: SYS→CUS, SWR→SYS, DES→SWR, TC→SWR. discipline MECH/ELEC/SW on SWR and DES; partNo/drawingNo/module on DES; clause/compliance/responseNote on CUS. A new id needs title and text; an update carries only the fields it changes. SWR and TC become VERIFIED only through devboard_test_record results. 登记需求、设计与用例并挂接追溯。',
     Type.Object(
       {
         projectId: id,
@@ -400,7 +400,7 @@ export const tools = [
   ),
   tool(
     'devboard_gate_submit',
-    'Submit a stage for review (IN_PROGRESS → IN_REVIEW, new PENDING gate for the next gate of the project profile, e.g. TR1 or DL2), or add/close findings on its pending gate. After submitting a human gate, end the turn and ask the user to approve it on the board (the gate names the roles that must sign). The gate marked auto (TR4) passes once all findings are closed. 提交评审。',
+    'Submit a stage for review (IN_PROGRESS → IN_REVIEW, new PENDING gate for the next gate of the project profile, e.g. TR1 or DL2; every earlier stage must have PASSED), or add/close findings on its pending gate. After submitting a human gate, end the turn and ask the user to approve it on the board (the gate names the roles that must sign). The gate marked auto (TR4) passes once all findings are closed. 提交评审。',
     Type.Object(
       {
         projectId: id,
@@ -494,13 +494,20 @@ export const tools = [
       return a.mutate(ctx.store, (s) => {
         if (!input.id) return create(s, { ...input, kind: 'defect', by: a.by })
         closableByAgent(s, input.id, input.to)
-        return transition(s, { kind: 'defect', id: input.id, to: input.to, note: input.note, by: a.by })
+        return transition(s, {
+          kind: 'defect',
+          id: input.id,
+          projectId: input.projectId,
+          to: input.to,
+          note: input.note,
+          by: a.by,
+        })
       })
     },
   ),
   tool(
     'devboard_change_upsert',
-    'Create a change request (omit id), edit its title, reason, impact analysis (reqs, artifacts, tests, items with revisions, fleet; the impact fields you give replace those fields, the others are kept), source and root cause before CCB review, its retrofit total (refused while an approval flow runs on it) or verification, and/or move it. Set traceFrom: true to complete the impact from the requirement chain: impact.reqs are the starting points, and every downstream requirement, design item, test case and deliverable is added to what you gave (nothing you gave is removed). SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW → APPROVED only by an approved ECR flow (start it with devboard_approval_submit; it generates the ECN, and releasing the ECN adds the as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Record rationale in note; it remains in change history even without a state move. Leave CCB decisions to people unless told otherwise. 登记或推进变更，note 依据保留在变更留痕。',
+    'Create a change request (omit id), edit its title, reason, impact analysis (reqs, artifacts, tests, items with revisions, fleet; the impact fields you give replace those fields, the others are kept), source and root cause before CCB review, its retrofit total (refused while an approval flow runs on it) or verification, and/or move it. Set traceFrom: true to complete the impact from the requirement chain: impact.reqs are the starting points, and every downstream requirement, design item, test case and deliverable is added to what you gave (nothing you gave is removed). SUBMITTED → ANALYZED (needs impact; a FIELD or TYPE_TEST source also needs rootCause) → CCB_REVIEW (back to ANALYZED when no ECR runs, e.g. after people sent the ECR back to you and you withdrew it) → APPROVED only by an approved ECR flow (start it with devboard_approval_submit; it generates the ECN, and releasing the ECN adds the as-designed baseline) /REJECTED → IMPLEMENTED → CLOSED (needs verification). Record rationale in note; it remains in change history even without a state move. Leave CCB decisions to people unless told otherwise. 登记或推进变更，note 依据保留在变更留痕。',
     Type.Object(
       {
         id: Type.Optional(id),
