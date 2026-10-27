@@ -1,4 +1,4 @@
-import { CoreError } from '@agnes/core-common/types'
+import { CoreError, type EventInput } from '@agnes/core-common/types'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import { sessionIdentity } from '../../loop/scope.js'
 import { modelVisibleTool } from '../../step/model-tools.js'
@@ -37,4 +37,17 @@ export async function discloseTool(s: SessionImpl, name: string, signal: AbortSi
   const names = new Set(loadedToolNames(s))
   names.add(name)
   loaded.set(sessionIdentity(s), names)
+}
+
+/**
+ * A model call to a deferred tool it was never shown loads that tool, exactly as `tool_describe`
+ * would, and returns the row to commit with the refusal. The model has already chosen the tool; the
+ * schema it lacked is what makes its next call right, instead of a second guess at argument names.
+ */
+export function discloseRefusedCall(s: SessionImpl, name: string): EventInput[] {
+  if (loadedToolNames(s).has(name)) return []
+  const names = new Set(loadedToolNames(s))
+  names.add(name)
+  loaded.set(sessionIdentity(s), names)
+  return [s.ev(EVENT, { name }, { ignorable: true })]
 }

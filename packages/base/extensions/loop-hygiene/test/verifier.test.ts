@@ -80,6 +80,36 @@ describe('verifier T0', () => {
     })
     expect(await v.verify('tool', { ...step, history }, opts)).toEqual({ verdict: 'pass', reasons: [] })
   })
+  // A turn verdict judges how the turn ended, not every slip on the way there.
+  it('fails a turn only on an invalid call that was never corrected or that recurred', async () => {
+    const v = await verifierT0(fakeSeamInit())
+    const call = (name: string, schemaOk: boolean) => ({ name, args: {}, schemaOk, isReadOnly: true })
+    const turn = (...toolCalls: ReturnType<typeof call>[]) => ({
+      ...base,
+      toolCalls,
+      recentToolKeys: toolCalls.map((c) => `${c.name}|{}`),
+    })
+    // Corrected by a later valid call to the same tool.
+    expect(await v.verify('turn', turn(call('a', false), call('b', true), call('a', true)), opts)).toEqual({
+      verdict: 'pass',
+      reasons: [],
+    })
+    // A valid call to some other tool does not correct it.
+    expect(await v.verify('turn', turn(call('a', false), call('b', true)), opts)).toEqual({
+      verdict: 'fail',
+      reasons: ['schema_invalid'],
+    })
+    // The same tool called invalidly twice is a pattern, even if a third call got it right.
+    expect(await v.verify('turn', turn(call('a', false), call('a', false), call('a', true)), opts)).toEqual({
+      verdict: 'fail',
+      reasons: ['schema_invalid'],
+    })
+    // A step is still judged on its own calls.
+    expect(await v.verify('step', turn(call('a', false), call('a', true)), opts)).toEqual({
+      verdict: 'fail',
+      reasons: ['schema_invalid'],
+    })
+  })
   it('flags repeats and no progress only on turn scope, honouring preset thresholds', async () => {
     const v = await verifierT0(
       fakeSeamInit({ preset: { loop: { repeat_threshold: 2, no_progress_steps: 2 } } }),
@@ -208,4 +238,102 @@ it('completes after invalid argument fallback with real T0 and keeps schema reje
   } finally {
     await session.close()
   }
+})
+
+/**
+ * The Terminal-Bench git-multibranch chain, replayed on real Core + T0: a shell hint names a deferred
+ * tool, the model guesses its argument names, and the call is refused. That early slip must neither
+ * fail the final verdict nor send the model into a repair of finished work.
+ */
+describe('a refused call to a deferred tool', () => {
+  const setup = () => {
+    const registry = new ToolRegistry()
+    const tool = readTool() as ToolDef
+    const executed: unknown[] = []
+    registry.add(
+      {
+        ...tool,
+        name: 'tool_describe',
+        parameters: Type.Object({ name: Type.String() }),
+        async execute(args, ctx) {
+          if (!ctx.tools.disclose) throw new Error('expected tool disclosure port')
+          await ctx.tools.disclose((args as { name: string }).name)
+          return { content: [{ type: 'text', text: 'loaded' }] }
+        },
+      },
+      { source: 's', trust: 'builtin' },
+    )
+    registry.add(
+      {
+        ...tool,
+        name: 'job_output',
+        parameters: Type.Object({ jobId: Type.String() }, { additionalProperties: false }),
+        meta: { ...tool.meta, deferLoading: true },
+        async execute(args) {
+          executed.push(args)
+          return { content: [{ type: 'text', text: 'PASS_MAIN PASS_DEV\n[exited; exit 0]' }] }
+        },
+      },
+      { source: 's', trust: 'builtin' },
+    )
+    return { registry, executed }
+  }
+  const runTurn = async (registry: ToolRegistry, provider: ReturnType<typeof fakeProvider>) => {
+    const opened = await openSession({
+      registry,
+      provider,
+      seams: fakeSeams({ verifier: await verifierT0(fakeSeamInit()) }),
+    })
+    await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'set up' }] })
+    const end = await opened.session.run({ until: 'turn-end', signal: new AbortController().signal })
+    return { ...opened, end }
+  }
+
+  it('loads the tool, returns its schema, and lets a corrected call complete the turn', async () => {
+    const { registry, executed } = setup()
+    const provider = fakeProvider([
+      toolTurn('job_output', { job_id: 'j1' }),
+      toolTurn('job_output', { jobId: 'j1' }),
+      textTurn('Setup complete and verified end to end.'),
+      textTurn('must not be needed'),
+      textTurn('must not be needed'),
+    ])
+    const { session, log, end } = await runTurn(registry, provider)
+    try {
+      expect(end.reason).toBe('completed')
+      expect(provider.calls).toBe(3)
+      const [refused] = await log.scan({ type: 'tool/result', limit: 1 })
+      expect(refused?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })
+      // The refusal carries the schema the model was missing, and the next request offers the tool.
+      expect(JSON.stringify(refused?.data)).toContain('jobId')
+      expect(provider.requests[0]?.tools.map((t) => t.name)).not.toContain('job_output')
+      expect(provider.requests[1]?.tools.map((t) => t.name)).toContain('job_output')
+      expect(executed).toEqual([{ jobId: 'j1' }])
+      expect(await log.scan({ type: 'repair/decision', limit: 5 })).toEqual([])
+      const signals = await log.scan({ type: 'verifier/signal', limit: 10 })
+      expect(signals.map((e) => e.data)).not.toContainEqual(
+        expect.objectContaining({ reasons: ['schema_invalid'] }),
+      )
+      expect(signals.at(-1)?.data).toMatchObject({ scope: 'turn', verdict: 'pass' })
+    } finally {
+      await session.close()
+    }
+  })
+
+  it('does not fail the turn when the model finishes without retrying the tool', async () => {
+    const { registry } = setup()
+    const provider = fakeProvider([
+      toolTurn('job_output', { job_id: 'j1' }),
+      textTurn('Done; verified with the shell.'),
+      textTurn('must not be needed'),
+    ])
+    const { session, log, end } = await runTurn(registry, provider)
+    try {
+      expect(end.reason).toBe('completed')
+      expect(provider.calls).toBe(2)
+      expect(await log.scan({ type: 'repair/decision', limit: 5 })).toEqual([])
+    } finally {
+      await session.close()
+    }
+  })
 })

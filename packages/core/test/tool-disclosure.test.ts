@@ -313,7 +313,9 @@ it.each(['allowed-once', 'rejected'] as const)(
       ])
       const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
       expect(results[0]?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })
-      expect(JSON.stringify(results[0]?.data)).toContain('call tool_describe')
+      // The refused call loads the tool itself, with the parameters the model was missing.
+      expect(JSON.stringify(results[0]?.data)).toContain('now loaded for the next request')
+      expect(provider.requests[1]?.tools.map((tool) => tool.name)).toContain('remote_3')
       expect(executed).toEqual(verdict === 'allowed-once' ? [{}] : [])
       expect(approvals).toEqual(['remote_3'])
     } finally {
