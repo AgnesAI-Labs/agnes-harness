@@ -1622,26 +1622,6 @@
     gap: var(--s16);
     min-width: 0;
   }
-  .side-editor-static {
-    display: grid;
-    justify-items: start;
-    gap: var(--s4);
-    font-size: var(--font-size-sm);
-    line-height: 1.6;
-  }
-  .side-editor-chip {
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--s8);
-    justify-self: start;
-    min-height: var(--control-height);
-    padding: 0 var(--s12);
-    border-radius: var(--radius-control);
-    color: var(--agnes-text-primary);
-    background: var(--agnes-bg-subtle);
-    font-size: var(--font-size-sm);
-  }
   .side-editor-route {
     display: inline-flex;
     align-items: center;

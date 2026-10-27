@@ -5381,6 +5381,142 @@
         }
       }
     },
+    "VoiceSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account", "input", "reading", "conversation"],
+      "properties": {
+        "account": { "type": "string", "maxLength": 64 },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "language", "autoSend", "maxSeconds"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "language": {
+              "type": "string",
+              "maxLength": 16,
+              "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$"
+            },
+            "autoSend": { "type": "boolean" },
+            "maxSeconds": { "type": "integer", "minimum": 5, "maximum": 120 }
+          }
+        },
+        "reading": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "voice", "speed", "autoRead"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "voice": { "type": "string", "maxLength": 128 },
+            "speed": { "type": "number", "minimum": 0.25, "maximum": 4 },
+            "autoRead": { "type": "boolean" }
+          }
+        },
+        "conversation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pauseSeconds"],
+          "properties": {
+            "pauseSeconds": { "type": "number", "minimum": 0.5, "maximum": 5 }
+          }
+        }
+      }
+    },
+    "VoiceSettingsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "settings"],
+      "properties": {
+        "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "settings": { "$ref": "#/$defs/VoiceSettings" }
+      }
+    },
+    "VoiceSettingsSaveParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings", "expectedRevision"],
+      "properties": {
+        "settings": { "$ref": "#/$defs/VoiceSettings" },
+        "expectedRevision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "VoiceFeatureState": {
+      "type": "string",
+      "enum": ["available", "unconfigured", "no-model", "credential-missing", "ambiguous"]
+    },
+    "VoiceStatusResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transcribe", "speech", "settings"],
+      "properties": {
+        "transcribe": { "$ref": "#/$defs/VoiceFeatureState" },
+        "speech": { "$ref": "#/$defs/VoiceFeatureState" },
+        "account": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["route", "label"],
+          "properties": {
+            "route": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "label": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        },
+        "reason": { "type": "string", "enum": ["no-account", "credential-missing", "ambiguous"] },
+        "settings": { "$ref": "#/$defs/VoiceSettings" }
+      }
+    },
+    "SessionVoiceTranscribeParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "audio"],
+      "properties": {
+        "sessionId": { "type": "string" },
+        "audio": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 900000,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 16,
+          "pattern": "^$|^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8}){0,3}$"
+        }
+      }
+    },
+    "SessionVoiceTranscribeResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "maxLength": 16384 }
+      }
+    },
+    "SessionVoiceSpeakParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "text"],
+      "properties": {
+        "sessionId": { "type": "string" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "voice": { "type": "string", "maxLength": 128 },
+        "speed": { "type": "number", "minimum": 0.25, "maximum": 4 }
+      }
+    },
+    "SessionVoiceSpeakResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["audio", "mimeType"],
+      "properties": {
+        "audio": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024000,
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        },
+        "mimeType": { "type": "string", "const": "audio/mpeg" }
+      }
+    },
     "WorkspaceEntry": {
       "type": "object",
       "additionalProperties": false,
@@ -6425,6 +6561,10 @@
         "maxTokens": { "type": "integer", "minimum": 1 },
         "cost": { "$ref": "model.json#/$defs/ModelCost" },
         "defaultSettings": { "$ref": "model.json#/$defs/ModelSettings" },
+        "audioRole": {
+          "enum": ["transcribe", "speech"],
+          "description": "Voice side models only: the voice operation this model serves."
+        },
         "id": {
           "type": "string",
           "minLength": 1,

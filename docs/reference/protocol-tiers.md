@@ -25,6 +25,9 @@ What third-party clients rely on: sessions, submit, decisions and events. These 
 - `_agnes/v1/session.activity`
 - `_agnes/v1/session.fork`
 - `_agnes/v1/session.btw`
+- `_agnes/v1/session.voice.transcribe`
+- `_agnes/v1/session.voice.speak`
+- `_agnes/v1/voice.status`
 - `_agnes/v1/session.rename`
 - `_agnes/v1/session.archive`
 - `_agnes/v1/session.pin`
@@ -55,6 +58,13 @@ owner, archives all sessions in the workspace and removes only its listing, neve
 revision. Neither refusal changes the listing or archives sessions. Repeated removal returns
 `removed: false`; re-adding the folder restores its listing and leaves sessions archived.
 Existing session bindings remain valid for recovery through the archive.
+
+`session.voice.transcribe` turns one recorded clip (base64 WAV, 16 kHz mono, at most 20 seconds) into text,
+and `session.voice.speak` reads at most 120 UTF-16 code units of text (a character outside the Basic Multilingual Plane, such as an emoji, counts as 2) aloud as base64 mp3. Both belong to the session's owner
+and use the side-model account named in the voice settings. `voice.status` reports whether each feature is
+available and why not (no account, no model for the role, missing credential, ambiguous account) together
+with the saved settings. `voice.settings.get` and `voice.settings.save` (admin tier, compare-and-swap on the
+revision) read and write those settings.
 
 ### Submit and turn control
 
@@ -273,6 +283,8 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/autoReview.save`
 - `_agnes/v1/systemPrompt.get`
 - `_agnes/v1/systemPrompt.save`
+- `_agnes/v1/voice.settings.get`
+- `_agnes/v1/voice.settings.save`
 
 ### Configuration
 

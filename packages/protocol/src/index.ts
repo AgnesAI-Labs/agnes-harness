@@ -210,6 +210,10 @@ export type {
   SessionViewNotice,
   SessionViewParams,
   SessionViewResult,
+  SessionVoiceSpeakParams,
+  SessionVoiceSpeakResult,
+  SessionVoiceTranscribeParams,
+  SessionVoiceTranscribeResult,
   SessionWorkspaceChange,
   SessionWorkspaceChangeEvidence,
   SessionWorkspaceChangesParams,
@@ -246,6 +250,11 @@ export type {
   UITurnCall,
   UITurnUsage,
   UsageView,
+  VoiceFeatureState,
+  VoiceSettings,
+  VoiceSettingsSaveParams,
+  VoiceSettingsSnapshot,
+  VoiceStatusResult,
   WorkspaceAddParams,
   WorkspaceAddResult,
   WorkspaceEntry,
@@ -789,4 +798,5 @@ export {
   validateUserAttachments,
 } from './validate.js'
 export { HARNESS_VERSION } from './version.js'
+export * from './voice.js'
 export * from './worker-generation.js'

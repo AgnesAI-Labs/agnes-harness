@@ -1,19 +1,8 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import {
-  applyBeforeRequestPatches,
-  type ChildControlStore,
-  type CostLedger,
-  capToMicrocredits,
-  chargeToMicrocredits,
-  conservativeModelCredits,
-  deriveRequest,
-  hasChildControl,
-  scanAll,
-  toProviderRequest,
-} from '@agnes/core'
-import { type InferenceEvent, rpcError } from '@agnes/protocol'
-import { bestEffort } from '../../best-effort.js'
+import { applyBeforeRequestPatches, deriveRequest, scanAll, toProviderRequest } from '@agnes/core'
+import { type RequestBody, rpcError } from '@agnes/protocol'
 import type { HostSession } from '../lifecycle/host.js'
+import { abortable, accountedSideCall, type SideCallRun } from './session-side-call.js'
 
 export type SideQuestionFailure = 'budget' | 'unavailable' | 'timeout' | 'failed'
 
@@ -105,7 +94,6 @@ async function ask(
   const timer = setTimeout(cancel, options.timeoutMs ?? 60_000)
   const signal = abort.signal
   const stopped = () => new SideQuestionError('timeout', 'side question cancelled or timed out')
-  let permit: { store: ChildControlStore; id: string } | undefined
   try {
     if (options.signal?.aborted) abort.abort()
     // Read the nodes and their bound in one synchronous step so the cut below is consistent.
@@ -179,12 +167,6 @@ async function ask(
     })
 
     const tokens = new TextEncoder().encode(JSON.stringify(wire)).byteLength + maxTokens
-    const projected = await abortable(
-      s.d.runtime.billingProjected({ tokensEstimate: tokens, model: modelId }),
-      signal,
-      stopped,
-    )
-    const hold = Math.max(projected.credits, conservativeModelCredits(tokens, maxTokens, model.cost))
     // An auxiliary review honours the open turn's budget override exactly like `generate` does.
     let cap = s.preset.budget.perRequestCap
     if (options.slots) {
@@ -197,128 +179,74 @@ async function ask(
         cap = override.creditsCap ?? cap
       }
     }
-    if (!Number.isFinite(hold) || (cap !== null && hold > cap))
-      throw new SideQuestionError('budget', 'side question exceeds the per-request budget')
-    const effectId = `${label}:${randomUUID()}`
-    if (s.preset.treeBudgetCredits !== null) {
-      const store = s.d.log.storage
-      if (!hasChildControl(store) || !start)
-        throw new SideQuestionError('budget', 'tree budget unavailable for a side question')
-      const rootTaskId = `${s.key}:${s.lane}:${start.seq}`
-      const scope = await store.ensureRootScope(rootTaskId, capToMicrocredits(s.preset.treeBudgetCredits))
-      const reserved = await store.reserve({
-        rootTaskId,
-        scopeIds: [scope.scopeId],
-        qMicro: chargeToMicrocredits(hold),
-        effectId,
+    const { text, usage, completed } = await accountedSideCall(
+      s,
+      {
+        label,
+        route,
+        modelId,
+        model,
+        tokensEstimate: tokens,
+        outputEstimate: maxTokens,
+        cap,
         requestHash: derived.header.derived_hash,
-        writerGeneration: (await store.writerGeneration?.(rootTaskId)) ?? 1,
-      })
-      if (!reserved.ok) throw new SideQuestionError('budget', 'tree budget exhausted')
-      permit = { store, id: reserved.permitId }
-    }
-    if (signal.aborted) throw stopped()
-
-    let usage: Extract<InferenceEvent, { type: 'usage' }> | undefined
-    let text = ''
-    let completed = false
-    // From here the provider may bill tokens whatever happens next, so a failure is still accounted.
-    let failure: unknown
-    try {
-      const iterator = s.d.provider
-        .infer(wire, { signal, toolNames: [], retry: false })
-        [Symbol.asyncIterator]()
-      try {
-        while (true) {
-          const next = await abortable(iterator.next(), signal, stopped)
-          if (next.done) break
-          const event = next.value
-          if (event.type === 'usage') usage = event
-          if (event.type === 'text_delta') text += event.delta
-          if (text.length > MAX_TEXT) {
-            text = text.slice(0, MAX_TEXT)
-            completed = true
-            break
-          }
-          if (event.type === 'done') {
-            completed = event.reason === 'stop' || event.reason === 'length'
-            break
-          }
-          if (event.type === 'error' || event.type === 'toolcall_end' || event.type === 'deviation') break
-        }
-      } finally {
-        // Early stream cancellation can reject return(); settlement remains owned by this request.
-        void iterator.return?.().catch(() => undefined)
-      }
-    } catch (error) {
-      failure = error
-    }
-    if (!failure && signal.aborted && !completed) failure = stopped()
-
-    const turn = (start?.data as { turn?: number } | undefined)?.turn
-    const spend: CostLedger = {
-      purpose: 'side-call',
-      ...(typeof turn === 'number' && turn >= 1 ? { sourceTurn: turn } : {}),
-      effectId,
-      model: modelId,
-      route,
-      tokens: usage?.tokens ?? {
-        input: tokens,
-        output: Math.ceil(text.length / 4),
-        cacheRead: 0,
-        cacheWrite: 0,
+        start,
+        estimatedTokens: (answer) => ({
+          input: tokens,
+          output: Math.ceil(answer.length / 4),
+          cacheRead: 0,
+          cacheWrite: 0,
+        }),
+        run: (signal) => streamAnswer(s, wire, signal, stopped),
       },
-      creditSource: usage?.creditSource ?? 'estimated',
-      ...(usage?.credits === undefined ? {} : { credits: usage.credits }),
-      ...(usage?.billing ? { billing: usage.billing } : {}),
-      ...(!completed ? { interrupted: true } : {}),
-    }
-    // The append is the durable fact; if it fails the reservation is released by the finally below.
-    const appended = await s.locked(() => s.append([s.ev('cost/ledger', spend)]))
-    if (permit) {
-      await permit.store.settleOrigin({
-        permitId: permit.id,
-        originSessionKey: s.key,
-        originCostSeq: appended.firstSeq,
-        actualMicro: usage?.credits === undefined ? null : chargeToMicrocredits(usage.credits),
-        complete: usage?.credits !== undefined,
-        creditSource: usage?.creditSource ?? 'unknown',
-      })
-      permit = undefined
-    }
-    await s.d.runtime.billingRecord({
-      ...spend,
-      sessionKey: s.key,
-      lane: s.lane,
-      turn: typeof turn === 'number' ? turn : 0,
-      step: 0,
-    })
-    if (failure) throw failure
+      signal,
+      (code, message) => new SideQuestionError(code, message),
+    )
     if (!completed || !text.trim()) throw new SideQuestionError('failed', 'the model returned no answer')
     return { text, model: modelId, ...(usage?.credits === undefined ? {} : { credits: usage.credits }) }
   } finally {
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', cancel)
     abort.abort()
-    // Still held only when the provider was never called or accounting itself failed.
-    if (permit)
-      await permit.store
-        .releaseReservation(permit.id)
-        .catch(bestEffort(s.d.logger, 'side-question-reservation-release'))
   }
 }
 
-/** An uncooperative adapter must not hold the request open past its deadline. */
-async function abortable<T>(work: Promise<T>, signal: AbortSignal, onAbort: () => Error): Promise<T> {
-  let abort!: () => void
-  const cancelled = new Promise<never>((_resolve, reject) => {
-    abort = () => reject(onAbort())
-  })
-  signal.addEventListener('abort', abort, { once: true })
+/** The answer stream, cut at MAX_TEXT; it stops at the first error, tool call or deviation. */
+async function streamAnswer(
+  s: HostSession,
+  wire: RequestBody,
+  signal: AbortSignal,
+  stopped: () => Error,
+): Promise<SideCallRun> {
+  let usage: SideCallRun['usage']
+  let text = ''
+  let completed = false
   try {
-    if (signal.aborted) abort()
-    return await Promise.race([work, cancelled])
-  } finally {
-    signal.removeEventListener('abort', abort)
+    const iterator = s.d.provider.infer(wire, { signal, toolNames: [], retry: false })[Symbol.asyncIterator]()
+    try {
+      while (true) {
+        const next = await abortable(iterator.next(), signal, stopped)
+        if (next.done) break
+        const event = next.value
+        if (event.type === 'usage') usage = event
+        if (event.type === 'text_delta') text += event.delta
+        if (text.length > MAX_TEXT) {
+          text = text.slice(0, MAX_TEXT)
+          completed = true
+          break
+        }
+        if (event.type === 'done') {
+          completed = event.reason === 'stop' || event.reason === 'length'
+          break
+        }
+        if (event.type === 'error' || event.type === 'toolcall_end' || event.type === 'deviation') break
+      }
+    } finally {
+      // Early stream cancellation can reject return(); settlement remains owned by this request.
+      void iterator.return?.().catch(() => undefined)
+    }
+  } catch (failure) {
+    return { text, ...(usage ? { usage } : {}), completed, failure }
   }
+  return { text, ...(usage ? { usage } : {}), completed }
 }

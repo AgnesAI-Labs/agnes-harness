@@ -1,6 +1,6 @@
 import { modelAdapterKind } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
-import { JevAdapter, modelAdaptersPlugin, PI_ADAPTER_APIS } from '../src/index.js'
+import { JevAdapter, modelAdaptersPlugin, OpenAiAudioAdapter, PI_ADAPTER_APIS } from '../src/index.js'
 import { fakeModel } from '../testkit/index.js'
 
 type Registration = {
@@ -25,8 +25,13 @@ function registered(): Registration[] {
 }
 
 describe('the built-in model adapter registrations', () => {
-  it('registers every pi protocol, openai, and typesafe-systemone', () => {
-    expect(registered().map((r) => r.id)).toEqual([...PI_ADAPTER_APIS, 'openai', 'typesafe-systemone'])
+  it('registers every pi protocol, openai, typesafe-systemone and openai-audio', () => {
+    expect(registered().map((r) => r.id)).toEqual([
+      ...PI_ADAPTER_APIS,
+      'openai',
+      'typesafe-systemone',
+      'openai-audio',
+    ])
   })
 
   it('selects each adapter by the id that routes name in api', () => {
@@ -34,7 +39,7 @@ describe('the built-in model adapter registrations', () => {
   })
 
   it('leaves the pi registrations as chat adapters with no payload keys', () => {
-    const pi = registered().filter((r) => r.id !== 'typesafe-systemone')
+    const pi = registered().filter((r) => r.id !== 'typesafe-systemone' && r.id !== 'openai-audio')
     expect(pi.length).toBe(PI_ADAPTER_APIS.length + 1)
     for (const r of pi) {
       expect(r.capabilities).toEqual({ imageInput: true, tools: true, streaming: true })
@@ -87,6 +92,46 @@ describe('the built-in model adapter registrations', () => {
     controller.abort()
     expect(() =>
       (jev.create as (c: unknown, s: AbortSignal) => unknown)({ routes: [] }, controller.signal),
+    ).toThrow()
+  })
+
+  it('registers openai-audio as a payload-only adapter with its own version', () => {
+    const audio = registered().find((r) => r.id === 'openai-audio') as Registration
+    expect(audio).toMatchObject({ id: 'openai-audio', wireApi: 'openai-audio', version: '1.0.0' })
+    expect(audio.capabilities).toEqual({
+      imageInput: false,
+      tools: false,
+      streaming: false,
+      payload: true,
+      payloadOnly: true,
+    })
+    expect(() => modelAdapterKind.validate?.(audio as never)).not.toThrow()
+    expect(modelAdapterKind.capabilities?.(audio as never)).toEqual(['payload', 'payloadOnly'])
+  })
+
+  it('creates an openai-audio instance that accepts a payload, and not for an aborted registration', () => {
+    const audio = registered().find((r) => r.id === 'openai-audio') as Registration
+    const baseUrl = 'https://audio.example.invalid/v1'
+    const instance = audio.create({
+      routes: [
+        {
+          route: 'audio',
+          api: 'openai-audio',
+          baseUrl,
+          models: [
+            fakeModel({ id: 'FunAudioLLM/SenseVoiceSmall', route: 'audio', api: 'openai-audio', baseUrl }),
+          ],
+        },
+      ],
+    })
+    expect(instance).toBeInstanceOf(OpenAiAudioAdapter)
+    expect((instance as OpenAiAudioAdapter).acceptsPayload).toBe(true)
+    expect((instance as OpenAiAudioAdapter).id).toBe('openai-audio')
+    void (instance as OpenAiAudioAdapter).dispose()
+    const controller = new AbortController()
+    controller.abort()
+    expect(() =>
+      (audio.create as (c: unknown, s: AbortSignal) => unknown)({ routes: [] }, controller.signal),
     ).toThrow()
   })
 })

@@ -10,7 +10,17 @@ import {
 } from '@agnes/web-ui'
 import { type ReactNode, useState } from 'react'
 import { SIDE_MODELS_NAMESPACE, sideModelsCatalog } from '../side-models-locale.js'
-import { blankModel, draftProvider, type EditorDraft, type ModelDraft } from './model.js'
+import {
+  type AdapterPreset,
+  blankModel,
+  type EditorDraft,
+  type ModelDraft,
+  presetsFor,
+  SIDE_PROVIDERS,
+  type SideProviderId,
+  type VoiceError,
+  voiceRows,
+} from './model.js'
 
 export type SideModelEditorProps = {
   draft: EditorDraft
@@ -18,13 +28,15 @@ export type SideModelEditorProps = {
   route: string
   canSave: boolean
   busy: boolean
-  fieldError: 'baseUrl' | 'credentialRef' | undefined
+  fieldError: 'baseUrl' | 'credentialRef' | VoiceError | undefined
   endpointChanged: boolean
   options: readonly { id: string; label: string }[]
   testState: string
   /** The save outcome line. */
   status: ReactNode
   onPatch(next: Partial<EditorDraft>): void
+  /** A new entry switches adapter or preset: label, endpoint and models are replaced, the credential kept. */
+  onPreset(preset: AdapterPreset): void
   onModels(update: (models: ModelDraft[]) => ModelDraft[]): void
   /** Creates a credential and selects it; resolves whether it was created. */
   onCreateCredential(label: string, value: string): Promise<boolean>
@@ -44,11 +56,18 @@ const COSTS = [
 export function SideModelEditor(props: SideModelEditorProps) {
   const { t } = useUiText(SIDE_MODELS_NAMESPACE, sideModelsCatalog)
   const { draft, busy, fieldError, endpointChanged } = props
+  const presets = presetsFor(draft.providerId)
+  const voice = draft.providerId === 'openai-audio'
+  const voiceError = fieldError?.startsWith('side.voice.') ? (fieldError as VoiceError) : undefined
   const [creating, setCreating] = useState(false)
   const [newLabel, setNewLabel] = useState('')
   const [newValue, setNewValue] = useState('')
   const patchModel = (index: number, next: Partial<ModelDraft>) =>
     props.onModels((models) => models.map((row, at) => (at === index ? { ...row, ...next } : row)))
+  const patchRole = (role: NonNullable<ModelDraft['audioRole']>, next: Partial<ModelDraft>) =>
+    props.onModels((models) =>
+      voiceRows(models).map((row) => (row.audioRole === role ? { ...row, ...next } : row)),
+    )
   const createCredential = async () => {
     if (!(await props.onCreateCredential(newLabel.trim(), newValue.trim()))) return
     setNewLabel('')
@@ -59,13 +78,42 @@ export function SideModelEditor(props: SideModelEditorProps) {
     <div className="side-editor" data-testid="side-editor">
       <SettingsSection title={t('side.basics')} description={t('side.basicsNote')}>
         <div className="side-editor-fields">
-          <div className="side-editor-static">
-            <span>{t('side.adapter')}</span>
-            <span className="side-editor-chip" data-testid="side-adapter" data-value={draftProvider()}>
-              {t(`side.adapter.${draftProvider()}`)}
-              <MetaText>· {t('side.adapterOnly')}</MetaText>
-            </span>
-          </div>
+          <Field label={t('side.adapter')}>
+            <SettingsSelect
+              data-testid="side-adapter"
+              value={draft.providerId}
+              disabled={busy || !draft.isNew}
+              onChange={(event) => {
+                const preset = presetsFor(event.target.value as SideProviderId)[0]
+                if (preset) props.onPreset(preset)
+              }}
+            >
+              {SIDE_PROVIDERS.map((id) => (
+                <option key={id} value={id}>
+                  {t(`side.adapter.${id}`)}
+                </option>
+              ))}
+            </SettingsSelect>
+          </Field>
+          {draft.isNew && presets.length > 1 && (
+            <Field label={t('side.preset')}>
+              <SettingsSelect
+                data-testid="side-preset"
+                value={draft.presetId}
+                disabled={busy}
+                onChange={(event) => {
+                  const preset = presets.find((item) => item.id === event.target.value)
+                  if (preset) props.onPreset(preset)
+                }}
+              >
+                {presets.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {t(item.nameKey)}
+                  </option>
+                ))}
+              </SettingsSelect>
+            </Field>
+          )}
           <Field
             label={t('side.label')}
             hint={
@@ -175,103 +223,146 @@ export function SideModelEditor(props: SideModelEditorProps) {
           )}
         </div>
       </SettingsSection>
-      <SettingsSection
-        title={t('side.models')}
-        description={draft.isNew ? `${t('side.modelsNote')}${t('side.modelsPrefill')}` : t('side.modelsNote')}
-      >
-        <div className="side-editor-fields">
-          {draft.models.map((row, index) => (
-            <div key={row.key} className="side-editor-model" data-testid={`side-model-row-${index}`}>
-              <div className="side-editor-grid">
-                <Field label={t('side.modelId')}>
-                  <SettingsInput
-                    className="side-editor-mono"
-                    data-testid={`side-model-id-${index}`}
-                    value={row.id}
-                    disabled={busy}
-                    onChange={(event) => patchModel(index, { id: event.target.value })}
-                  />
-                </Field>
-                <Field label={t('side.modelName')}>
-                  <SettingsInput
-                    data-testid={`side-model-name-${index}`}
-                    value={row.name}
-                    disabled={busy}
-                    onChange={(event) => patchModel(index, { name: event.target.value })}
-                  />
-                </Field>
-                <Field label={t('side.modelContext')}>
-                  <SettingsInput
-                    data-testid={`side-model-context-${index}`}
-                    inputMode="numeric"
-                    value={row.contextWindow}
-                    disabled={busy}
-                    onChange={(event) => patchModel(index, { contextWindow: event.target.value })}
-                  />
-                </Field>
-                <Field label={t('side.modelTokens')}>
-                  <SettingsInput
-                    data-testid={`side-model-tokens-${index}`}
-                    inputMode="numeric"
-                    value={row.maxTokens}
-                    disabled={busy}
-                    onChange={(event) => patchModel(index, { maxTokens: event.target.value })}
-                  />
-                </Field>
-              </div>
-              <Button
-                type="text"
-                className="side-editor-fold"
-                data-testid={`side-model-cost-toggle-${index}`}
-                aria-expanded={row.showCost}
-                disabled={busy}
-                onClick={() => patchModel(index, { showCost: !row.showCost })}
-              >
-                <Icon name={row.showCost ? 'chevron-down' : 'chevron-right'} />
-                {t('side.costToggle')}
-              </Button>
-              {row.showCost && (
-                <div className="side-editor-grid">
-                  {COSTS.map(([field, label, testid]) => (
-                    <Field key={field} label={t(label)}>
+      {voice ? (
+        <SettingsSection title={t('side.models')} description={t('side.voice.note')}>
+          <div className="side-editor-fields">
+            {voiceRows(draft.models).map((row) => {
+              const role = row.audioRole ?? 'speech'
+              return (
+                <div key={role} className="side-editor-model" data-testid={`side-voice-row-${role}`}>
+                  <div className="side-editor-grid">
+                    <Field
+                      label={t(`side.voice.${role}`)}
+                      error={
+                        role === 'speech' && voiceError ? (
+                          <span data-testid="side-voice-error">{t(voiceError)}</span>
+                        ) : undefined
+                      }
+                    >
                       <SettingsInput
-                        data-testid={`side-model-cost-${testid}-${index}`}
-                        inputMode="decimal"
-                        value={row[field]}
+                        className="side-editor-mono"
+                        data-testid={`side-voice-model-${role}`}
+                        value={row.id}
                         disabled={busy}
-                        onChange={(event) =>
-                          patchModel(index, { [field]: event.target.value } as Partial<ModelDraft>)
-                        }
+                        onChange={(event) => patchRole(role, { id: event.target.value })}
                       />
                     </Field>
-                  ))}
+                    <Field label={t('side.costToggle.units')}>
+                      <SettingsInput
+                        data-testid={`side-voice-price-${role}`}
+                        inputMode="decimal"
+                        value={row.costInput}
+                        disabled={busy}
+                        onChange={(event) => patchRole(role, { costInput: event.target.value })}
+                      />
+                    </Field>
+                  </div>
                 </div>
-              )}
-              {draft.models.length > 1 && (
+              )
+            })}
+          </div>
+        </SettingsSection>
+      ) : (
+        <SettingsSection
+          title={t('side.models')}
+          description={
+            draft.isNew ? `${t('side.modelsNote')}${t('side.modelsPrefill')}` : t('side.modelsNote')
+          }
+        >
+          <div className="side-editor-fields">
+            {draft.models.map((row, index) => (
+              <div key={row.key} className="side-editor-model" data-testid={`side-model-row-${index}`}>
+                <div className="side-editor-grid">
+                  <Field label={t('side.modelId')}>
+                    <SettingsInput
+                      className="side-editor-mono"
+                      data-testid={`side-model-id-${index}`}
+                      value={row.id}
+                      disabled={busy}
+                      onChange={(event) => patchModel(index, { id: event.target.value })}
+                    />
+                  </Field>
+                  <Field label={t('side.modelName')}>
+                    <SettingsInput
+                      data-testid={`side-model-name-${index}`}
+                      value={row.name}
+                      disabled={busy}
+                      onChange={(event) => patchModel(index, { name: event.target.value })}
+                    />
+                  </Field>
+                  <Field label={t('side.modelContext')}>
+                    <SettingsInput
+                      data-testid={`side-model-context-${index}`}
+                      inputMode="numeric"
+                      value={row.contextWindow}
+                      disabled={busy}
+                      onChange={(event) => patchModel(index, { contextWindow: event.target.value })}
+                    />
+                  </Field>
+                  <Field label={t('side.modelTokens')}>
+                    <SettingsInput
+                      data-testid={`side-model-tokens-${index}`}
+                      inputMode="numeric"
+                      value={row.maxTokens}
+                      disabled={busy}
+                      onChange={(event) => patchModel(index, { maxTokens: event.target.value })}
+                    />
+                  </Field>
+                </div>
                 <Button
                   type="text"
-                  className="side-editor-link"
-                  data-testid={`side-model-row-remove-${index}`}
+                  className="side-editor-fold"
+                  data-testid={`side-model-cost-toggle-${index}`}
+                  aria-expanded={row.showCost}
                   disabled={busy}
-                  onClick={() => props.onModels((models) => models.filter((_, at) => at !== index))}
+                  onClick={() => patchModel(index, { showCost: !row.showCost })}
                 >
-                  {t('side.modelRemove')}
+                  <Icon name={row.showCost ? 'chevron-down' : 'chevron-right'} />
+                  {t('side.costToggle')}
                 </Button>
-              )}
-            </div>
-          ))}
-          <Button
-            type="text"
-            className="side-editor-link"
-            data-testid="side-model-row-add"
-            disabled={busy}
-            onClick={() => props.onModels((models) => [...models, blankModel()])}
-          >
-            <Icon name="plus" />
-            {t('side.modelAdd')}
-          </Button>
-        </div>
-      </SettingsSection>
+                {row.showCost && (
+                  <div className="side-editor-grid">
+                    {COSTS.map(([field, label, testid]) => (
+                      <Field key={field} label={t(label)}>
+                        <SettingsInput
+                          data-testid={`side-model-cost-${testid}-${index}`}
+                          inputMode="decimal"
+                          value={row[field]}
+                          disabled={busy}
+                          onChange={(event) =>
+                            patchModel(index, { [field]: event.target.value } as Partial<ModelDraft>)
+                          }
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                )}
+                {draft.models.length > 1 && (
+                  <Button
+                    type="text"
+                    className="side-editor-link"
+                    data-testid={`side-model-row-remove-${index}`}
+                    disabled={busy}
+                    onClick={() => props.onModels((models) => models.filter((_, at) => at !== index))}
+                  >
+                    {t('side.modelRemove')}
+                  </Button>
+                )}
+              </div>
+            ))}
+            <Button
+              type="text"
+              className="side-editor-link"
+              data-testid="side-model-row-add"
+              disabled={busy}
+              onClick={() => props.onModels((models) => [...models, blankModel()])}
+            >
+              <Icon name="plus" />
+              {t('side.modelAdd')}
+            </Button>
+          </div>
+        </SettingsSection>
+      )}
       {props.status}
       <div className="side-editor-footer">
         <div className="side-editor-test">

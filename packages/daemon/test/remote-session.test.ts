@@ -304,3 +304,42 @@ it('forwards UI credentials through the remote bridge and binds identity in the 
   expect(frames).toEqual([{ input, credential }])
   expect(admitted).toEqual([{ request: input, actor }])
 })
+
+it('forwards voice calls with a voice run id and aborts them by run id', async () => {
+  const calls: unknown[][] = []
+  let settle!: (value: unknown) => void
+  const link = {
+    alive: true,
+    command: async (...args: unknown[]) => {
+      calls.push(args)
+      return args[0] === 'abort' ? undefined : new Promise((resolve) => (settle = resolve))
+    },
+  }
+  const remote = new RemoteSession('s', 'writer', 1, link as never, '/test')
+  const abort = new AbortController()
+  const spoken = remote.voice('voice.speak', { text: 'hi', route: 'r' }, abort.signal)
+  expect(calls).toEqual([
+    [
+      'voice.speak',
+      { text: 'hi', route: 'r', runId: expect.stringMatching(/^voice:/) },
+      { timeoutMs: 35_000 },
+    ],
+  ])
+  const runIdOf = (index: number) => (calls[index]?.[1] as { runId?: string } | undefined)?.runId
+  const runId = runIdOf(0)
+  expect(remote.running).toBe(true)
+  abort.abort()
+  expect(calls[1]).toEqual(['abort', { runId }])
+  expect(remote.running).toBe(true)
+  settle({ audio: 'AAAA', mimeType: 'audio/mpeg' })
+  await expect(spoken).resolves.toEqual({ audio: 'AAAA', mimeType: 'audio/mpeg' })
+  expect(remote.running).toBe(false)
+  // Each call has its own run id, and a call already aborted never reaches the worker.
+  const heard = remote.voice('voice.transcribe', { audio: 'A', route: 'r' }, new AbortController().signal)
+  expect(runIdOf(2)).toMatch(/^voice:/)
+  expect(runIdOf(2)).not.toBe(runId)
+  settle({ text: 'ok' })
+  await expect(heard).resolves.toEqual({ text: 'ok' })
+  await expect(remote.voice('voice.speak', { text: 'x', route: 'r' }, abort.signal)).rejects.toThrow()
+  expect(calls).toHaveLength(3)
+})

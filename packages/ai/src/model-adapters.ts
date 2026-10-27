@@ -1,6 +1,11 @@
 import type { ModelAdapterConfig, ProviderPluginContext } from '@agnes/extension-api'
 import { modelAdapterKind } from '@agnes/extension-api'
 import { JEV_ADAPTER_VERSION, JEV_WIRE_API, JevAdapter } from './adapters/jev/index.js'
+import {
+  OPENAI_AUDIO_ADAPTER_VERSION,
+  OPENAI_AUDIO_WIRE_API,
+  OpenAiAudioAdapter,
+} from './adapters/openai-audio/index.js'
 import { PiAdapter } from './adapters/pi/index.js'
 import { PI_ADAPTER_APIS } from './adapters/pi/wire.js'
 
@@ -40,11 +45,24 @@ const jevRegistration = {
   },
 }
 
+/** Speech to text and text to speech take a payload and answer with text: no messages, no tools. */
+const openAiAudioRegistration = {
+  id: OPENAI_AUDIO_WIRE_API,
+  wireApi: OPENAI_AUDIO_WIRE_API,
+  version: OPENAI_AUDIO_ADAPTER_VERSION,
+  capabilities: { imageInput: false, tools: false, streaming: false, payload: true, payloadOnly: true },
+  create: (config: ModelAdapterConfig, signal?: AbortSignal) => {
+    signal?.throwIfAborted()
+    return new OpenAiAudioAdapter({ routes: config.routes })
+  },
+}
+
 /** Builtin adapters contribute through the same factory port as community packages. */
 export const modelAdaptersPlugin = {
   inject: ['providers'],
   apply(ctx: ProviderPluginContext) {
     for (const adapter of registrations) ctx.providers.register(modelAdapterKind, adapter)
     ctx.providers.register(modelAdapterKind, jevRegistration)
+    ctx.providers.register(modelAdapterKind, openAiAudioRegistration)
   },
 }

@@ -164,3 +164,20 @@ it('describes nothing when the image in force cannot describe routes', async () 
   expect(runtime.provider.describeRoute?.('gw', 'flash')).toBeUndefined()
   await runtime.dispose()
 })
+
+it('forwards the audio facts of the image a call runs on', async () => {
+  const audio = { wav: () => undefined, units: () => 1 }
+  const image = (provider: Provider) => ({
+    provider,
+    contractForModel: (() => ({ contract_id: null, parser_version: '1' })) as NonNullable<
+      KernelOptions['contractForModel']
+    >,
+    dispose: async () => undefined,
+  })
+  const plain: Provider = { models: () => [], infer: async function* () {} }
+  const runtime = modelRuntime(image(plain), () => {})
+  expect(runtime.provider.audio).toBeUndefined()
+  runtime.publish(image({ ...plain, audio }))
+  expect(runtime.provider.audio).toBe(audio)
+  await runtime.dispose()
+})

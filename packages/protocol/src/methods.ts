@@ -161,6 +161,11 @@ export type MethodName =
   | '_agnes/v1/session.deliverables'
   | '_agnes/v1/session.fork'
   | '_agnes/v1/session.btw'
+  | '_agnes/v1/session.voice.transcribe'
+  | '_agnes/v1/session.voice.speak'
+  | '_agnes/v1/voice.status'
+  | '_agnes/v1/voice.settings.get'
+  | '_agnes/v1/voice.settings.save'
   | '_agnes/v1/session.rename'
   | '_agnes/v1/session.archive'
   | '_agnes/v1/session.pin'
@@ -418,6 +423,14 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     result: A.SessionIdParams,
   },
   '_agnes/v1/session.btw': clientRequest(A.SessionBtwParams, A.SessionBtwResult),
+  '_agnes/v1/session.voice.transcribe': clientRequest(
+    A.SessionVoiceTranscribeParams,
+    A.SessionVoiceTranscribeResult,
+  ),
+  '_agnes/v1/session.voice.speak': clientRequest(A.SessionVoiceSpeakParams, A.SessionVoiceSpeakResult),
+  '_agnes/v1/voice.status': clientRequest(A.ConfigEmptyParams, A.VoiceStatusResult),
+  '_agnes/v1/voice.settings.get': clientRequest(A.ConfigEmptyParams, A.VoiceSettingsSnapshot),
+  '_agnes/v1/voice.settings.save': clientRequest(A.VoiceSettingsSaveParams, A.VoiceSettingsSnapshot),
   '_agnes/v1/session.rename': clientRequest(A.SessionRenameParams, A.SessionPreferences),
   '_agnes/v1/session.archive': clientRequest(A.SessionArchiveParams, A.SessionPreferences),
   '_agnes/v1/session.pin': clientRequest(A.SessionPinParams, A.SessionPreferences),

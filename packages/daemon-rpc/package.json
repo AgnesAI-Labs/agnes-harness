@@ -23,6 +23,7 @@
     "./local/methods/session-workspace-reveal": "./src/local/methods/session-workspace-reveal.ts",
     "./local/methods/session-preferences": "./src/local/methods/session-preferences.ts",
     "./local/methods/session-selection": "./src/local/methods/session-selection.ts",
+    "./local/methods/session-voice": "./src/local/methods/session-voice.ts",
     "./local/methods/surfaces": "./src/local/methods/surfaces.ts",
     "./local/methods/workspaces": "./src/local/methods/workspaces.ts",
     "./local/plan-commands": "./src/local/plan-commands.ts",
