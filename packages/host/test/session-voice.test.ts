@@ -1,4 +1,4 @@
-import { JEV_WIRE_API, MAX_SPEECH_BYTES, OPENAI_AUDIO_WIRE_API } from '@agnes/ai'
+import { JEV_WIRE_API, MAX_SPEECH_BYTES, OPENAI_AUDIO_WIRE_API, openAiAudioUnits, wavHeader } from '@agnes/ai'
 import type { Event } from '@agnes/core'
 import { redactRequest } from '@agnes/host-infrastructure/request-traces'
 import {
@@ -6,6 +6,7 @@ import {
   DEFAULT_VOICE_SETTINGS,
   type InferenceEvent,
   type ModelRecord,
+  type ProviderAudioFacts,
   type RequestBody,
   VOICE_SPEECH_MAX_BASE64,
   VOICE_TRANSCRIPT_MAX_CHARS,
@@ -14,6 +15,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import type { HostSession } from '../src/runtime/lifecycle/host.js'
 import {
   chooseVoiceAccount,
+  VOICE_WIRE_API,
   VoiceError,
   voiceRpcError,
   voiceSpeak,
@@ -65,11 +67,14 @@ const MODELS = [
 ]
 
 /** A WAV of `seconds` of silence: 16 kHz mono 16-bit unless told otherwise. */
-function wav(seconds: number, o: { sampleRate?: number; channels?: number; bits?: number } = {}): string {
+function wav(
+  seconds: number,
+  o: { sampleRate?: number; channels?: number; bits?: number; byteRate?: number } = {},
+): string {
   const sampleRate = o.sampleRate ?? 16_000
   const channels = o.channels ?? 1
   const bits = o.bits ?? 16
-  const byteRate = (sampleRate * channels * bits) / 8
+  const byteRate = o.byteRate ?? (sampleRate * channels * bits) / 8
   const data = Math.round(seconds * byteRate)
   const head = Buffer.alloc(44)
   head.write('RIFF', 0, 'latin1')
@@ -96,6 +101,8 @@ const usage = (tokens: { input: number }): InferenceEvent => ({
   creditSource: 'estimated',
 })
 const done = (): InferenceEvent => ({ type: 'done', reason: 'stop' })
+/** What the assembled provider gives the host (host-providers PROVIDER_AUDIO_FACTS). */
+const AUDIO: ProviderAudioFacts = { wav: wavHeader, units: openAiAudioUnits }
 
 function fixture(
   o: {
@@ -106,6 +113,10 @@ function fixture(
     closed?: boolean
     turns?: boolean
     treeBudgetCredits?: number | null
+    /** false: the provider has no voice payload facts. */
+    audio?: false
+    childControl?: object
+    snapshot?: boolean
   } = {},
 ) {
   const rows: Event[] = (o.turns === false
@@ -122,6 +133,7 @@ function fixture(
     credits: o.credits?.(q.tokensEstimate) ?? 0,
   }))
   const billingRecord = vi.fn(async () => true)
+  const withModelSnapshot = vi.fn(<T>(work: () => Promise<T>) => work())
   const session = {
     key: 'synthetic',
     lane: 'main',
@@ -146,12 +158,13 @@ function fixture(
       return { firstSeq }
     },
     d: {
-      log: { storage: {} },
-      provider: { models: () => MODELS, infer },
+      log: { storage: o.childControl ?? {} },
+      provider: { models: () => MODELS, infer, ...(o.audio === false ? {} : { audio: AUDIO }) },
       runtime: { billingProjected, billingRecord },
+      ...(o.snapshot ? { withModelSnapshot } : {}),
     },
   } as unknown as HostSession
-  return { session, rows, infer, billingProjected, billingRecord }
+  return { session, rows, infer, billingProjected, billingRecord, withModelSnapshot }
 }
 const costRows = (rows: Event[]) => rows.filter((r) => r.type === 'cost/ledger')
 
@@ -161,6 +174,10 @@ afterEach(() => {
 
 it('ties the speech byte cap of the adapter to the base64 cap of the protocol', () => {
   expect(Math.ceil(MAX_SPEECH_BYTES / 3) * 4).toBe(VOICE_SPEECH_MAX_BASE64)
+})
+
+it('names the voice wire api exactly as the adapter does', () => {
+  expect(VOICE_WIRE_API).toBe(OPENAI_AUDIO_WIRE_API)
 })
 
 it.each([
@@ -228,8 +245,13 @@ it('reports each feature by audioRole', () => {
 })
 
 it('reads the format and length of a recording', () => {
-  expect(wavInfo(wav16k(2.4))).toEqual({ sampleRate: 16_000, channels: 1, bitsPerSample: 16, seconds: 2.4 })
-  expect(wavInfo('not a wav')).toBeUndefined()
+  expect(wavInfo(AUDIO, wav16k(2.4))).toEqual({
+    sampleRate: 16_000,
+    channels: 1,
+    bitsPerSample: 16,
+    seconds: 2.4,
+  })
+  expect(wavInfo(AUDIO, 'not a wav')).toBeUndefined()
 })
 
 it('transcribes through the voice route and records one voice.transcribe cost row in seconds', async () => {
@@ -357,13 +379,103 @@ it('refuses a chat route, a Jev route and a route without the role before callin
 
 it('refuses a closed session before calling the provider', async () => {
   const { session, infer } = fixture({ closed: true, events: [done()] })
-  await expect(voiceTranscribe(session, { audio: wav16k(1) }, { route: 'account-a' })).rejects.toBeInstanceOf(
-    VoiceError,
-  )
+  await expect(voiceTranscribe(session, { audio: wav16k(1) }, { route: 'account-a' })).rejects.toMatchObject({
+    code: 'unavailable',
+  })
   await expect(voiceSpeak(session, { text: 'hi' }, { route: 'account-a' })).rejects.toMatchObject({
     code: 'unavailable',
   })
   expect(infer).not.toHaveBeenCalled()
+})
+
+it('refuses every call when the provider gives no voice payload facts', async () => {
+  const { session, rows, infer } = fixture({ audio: false, events: [done()] })
+  const before = rows.length
+  await expect(voiceTranscribe(session, { audio: wav16k(1) }, { route: 'account-a' })).rejects.toMatchObject({
+    code: 'unavailable',
+  })
+  await expect(voiceSpeak(session, { text: 'hi' }, { route: 'account-a' })).rejects.toMatchObject({
+    code: 'unavailable',
+  })
+  expect(infer).not.toHaveBeenCalled()
+  expect(rows.length).toBe(before)
+})
+
+it('runs the call on one model snapshot', async () => {
+  const { session, withModelSnapshot } = fixture({
+    snapshot: true,
+    events: [delta('hi'), usage({ input: 1 }), done()],
+  })
+  await expect(voiceTranscribe(session, { audio: wav16k(1) }, { route: 'account-a' })).resolves.toEqual({
+    text: 'hi',
+  })
+  await voiceSpeak(session, { text: 'hi' }, { route: 'account-a' })
+  expect(withModelSnapshot).toHaveBeenCalledTimes(2)
+})
+
+it('reserves the voice call in the tree budget of the latest turn and settles it', async () => {
+  const reserve = vi.fn(async (_q: { rootTaskId: string; qMicro: number; effectId: string }) => ({
+    ok: true as const,
+    permitId: 'permit-1',
+  }))
+  const settleOrigin = vi.fn(async (_q: { permitId: string; originCostSeq: number }) => undefined)
+  const releaseReservation = vi.fn(async () => undefined)
+  const childControl = {
+    createDelegatedChild: () => undefined,
+    lookupByKey: () => undefined,
+    reserve,
+    ensureRootScope: vi.fn(async () => ({ scopeId: 'scope-1' })),
+    settleOrigin,
+    releaseReservation,
+  }
+  const { session, rows } = fixture({
+    treeBudgetCredits: 5,
+    childControl,
+    credits: () => 0.25,
+    events: [delta('hi'), usage({ input: 1 }), done()],
+  })
+  await expect(voiceTranscribe(session, { audio: wav16k(1) }, { route: 'account-a' })).resolves.toEqual({
+    text: 'hi',
+  })
+  expect(reserve).toHaveBeenCalledOnce()
+  expect(reserve.mock.calls[0]?.[0]).toMatchObject({
+    rootTaskId: 'synthetic:main:1',
+    effectId: expect.stringMatching(/^voice\.transcribe:/),
+  })
+  const row = rows.at(-1)
+  expect(reserve.mock.calls[0]?.[0].effectId).toBe((row?.data as { effectId?: string } | undefined)?.effectId)
+  expect(settleOrigin).toHaveBeenCalledWith(
+    expect.objectContaining({ permitId: 'permit-1', originCostSeq: rows.at(-1)?.seq }),
+  )
+  expect(releaseReservation).not.toHaveBeenCalled()
+  expect(rows.at(-1)?.data).toMatchObject({ sourceTurn: 1 })
+})
+
+it('refuses a WAV whose byte rate does not match its format', async () => {
+  const { session, infer } = fixture({ events: [done()] })
+  await expect(
+    voiceTranscribe(session, { audio: wav(1, { byteRate: 16_000 }) }, { route: 'account-a' }),
+  ).rejects.toMatchObject({ code: 'invalid-audio' })
+  expect(infer).not.toHaveBeenCalled()
+})
+
+it('keeps the cause of an unexpected provider throw but never puts it on the wire', async () => {
+  const cause = new Error('upstream said: key sk-live-123 at https://vendor.example/v1')
+  const { session, rows } = fixture({
+    infer: async function* () {
+      yield* []
+      throw cause
+    },
+  })
+  const failure = await voiceTranscribe(session, { audio: wav16k(1) }, { route: 'account-a' }).catch(
+    (error: unknown) => error,
+  )
+  expect(failure).toMatchObject({ code: 'provider', detail: { providerCode: 'TRANSPORT' } })
+  expect((failure as Error).cause).toBe(cause)
+  const wire = JSON.stringify(voiceRpcError(failure))
+  expect(wire).not.toContain('sk-live')
+  expect(wire).not.toContain('vendor.example')
+  expect(costRows(rows)).toHaveLength(1)
 })
 
 it('refuses oversized or non-16 kHz mono audio before calling the provider', async () => {

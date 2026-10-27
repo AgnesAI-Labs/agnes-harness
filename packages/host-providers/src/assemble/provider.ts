@@ -8,8 +8,10 @@ import {
   getSubscriptionProvider,
   loadContractStore,
   NullContractStore,
+  openAiAudioUnits,
   PARSER_VERSION,
   subscriptionAuth,
+  wavHeader,
 } from '@agnes/ai'
 import { Context } from '@agnes/cordis'
 // Provider is protocol-owned and reaches this file through core's re-export.
@@ -23,7 +25,7 @@ import {
   isSubscriptionCredential,
 } from '@agnes/host-infrastructure/adapters/credential-store'
 import { RELEASE_DEFAULTS } from '@agnes/package-manager'
-import type { RouteTable } from '@agnes/protocol'
+import type { ProviderAudioFacts, RouteTable } from '@agnes/protocol'
 import {
   builtinModelAdaptersPlugin,
   installModelAdapters,
@@ -97,6 +99,12 @@ function withSetupErrors<T>(create: () => T): T {
     throw error
   }
 }
+
+/** The voice payload facts the host reads through the provider instead of importing the AI package. */
+export const PROVIDER_AUDIO_FACTS: ProviderAudioFacts = Object.freeze({
+  wav: wavHeader,
+  units: openAiAudioUnits,
+})
 
 export async function buildProvider(
   profile: ResolvedProfile,
@@ -314,7 +322,7 @@ export async function buildProvider(
     )
     verifyRoutes(routes, provider.registry)
     return {
-      provider,
+      provider: Object.assign(provider, { audio: PROVIDER_AUDIO_FACTS }),
       contractStore: built.contractStore,
       dispose,
       preconfiguredRoutes: Object.freeze(

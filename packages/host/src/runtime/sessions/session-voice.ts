@@ -1,13 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
-  OPENAI_AUDIO_WIRE_API,
-  openAiAudioUnits,
-  wavHeader,
-} from '@agnes/host-infrastructure/configuration-payload-only'
-import {
   type AiErrorCode,
   type ConfigAccount,
   type JsonValue,
+  type ProviderAudioFacts,
   type RequestBody,
   rpcError,
   VOICE_AUDIO_MAX_BASE64,
@@ -23,6 +19,12 @@ import {
 import type { HostSession } from '../lifecycle/host.js'
 import { abortable, accountedSideCall, type SideCallRun } from './session-side-call.js'
 
+/**
+ * The wire api of the payload-only voice adapter, which also names its provider entry. The AI package
+ * owns the value (`OPENAI_AUDIO_WIRE_API`); the host may not import it, and a test pins the two equal.
+ */
+export const VOICE_WIRE_API = 'openai-audio'
+
 export type VoiceFailure = 'unavailable' | 'too-large' | 'invalid-audio' | 'budget' | 'timeout' | 'provider'
 export type VoiceFailureDetail = Readonly<{
   providerCode?: AiErrorCode
@@ -36,8 +38,9 @@ export class VoiceError extends Error {
     readonly code: VoiceFailure,
     message: string,
     readonly detail: VoiceFailureDetail = {},
+    options?: { cause: unknown },
   ) {
-    super(message)
+    super(message, options)
     this.name = 'VoiceError'
   }
 }
@@ -79,7 +82,7 @@ export type VoiceAccountChoice =
  */
 export function chooseVoiceAccount(accounts: readonly ConfigAccount[], selected: string): VoiceAccountChoice {
   // The voice provider entry is named after its wire api.
-  const candidates = accounts.filter((a) => a.providerId === OPENAI_AUDIO_WIRE_API && a.enabled)
+  const candidates = accounts.filter((a) => a.providerId === VOICE_WIRE_API && a.enabled)
   const chosen = selected === '' ? candidates : candidates.filter((a) => a.route === selected)
   if (chosen.length > 1 && selected === '') return { state: 'ambiguous' }
   const [found] = chosen
@@ -121,13 +124,18 @@ export function voiceStatus(input: {
   return { transcribe: choice.state, speech: choice.state, reason, settings }
 }
 
-/** The format and length of a base64 PCM WAV, or undefined when it is not one. */
+/**
+ * The format and length of a base64 PCM WAV, read with the provider's audio facts, or undefined when
+ * it is not one or its byte rate does not follow from its format.
+ */
 export function wavInfo(
+  audio: ProviderAudioFacts,
   base64: string,
 ): { sampleRate: number; channels: number; bitsPerSample: number; seconds: number } | undefined {
-  const header = wavHeader(base64)
+  const header = audio.wav(base64)
   if (!header) return undefined
   const { sampleRate, channels, bits, byteRate, dataBytes } = header
+  if (byteRate !== (sampleRate * channels * bits) / 8) return undefined
   return { sampleRate, channels, bitsPerSample: bits, seconds: dataBytes / byteRate }
 }
 
@@ -143,10 +151,10 @@ export async function voiceTranscribe(
   input: { audio: string; language?: string },
   options: VoiceCallOptions,
 ): Promise<{ text: string }> {
-  if (s.closingOrClosed) throw unavailable()
+  const facts = audioFacts(s)
   const { audio, language } = input
   if (audio.length > VOICE_AUDIO_MAX_BASE64) throw new VoiceError('too-large', 'the recording is too large')
-  const info = wavInfo(audio)
+  const info = wavInfo(facts, audio)
   if (info?.sampleRate !== 16_000 || info.channels !== 1 || info.bitsPerSample !== 16)
     throw new VoiceError('invalid-audio', 'the recording is not 16 kHz mono 16-bit WAV')
   if (info.seconds > VOICE_SEGMENT_MAX_SECONDS + VOICE_SEGMENT_SLACK_SECONDS)
@@ -156,7 +164,7 @@ export async function voiceTranscribe(
     audio: { type: 'audio', data: audio, mimeType: 'audio/wav' },
     ...(language ? { language } : {}),
   }
-  const text = await voiceCall(s, 'transcribe', payload, VOICE_TRANSCRIPT_MAX_CHARS, options)
+  const text = await voiceCall(s, facts, 'transcribe', payload, VOICE_TRANSCRIPT_MAX_CHARS, options)
   return { text }
 }
 
@@ -169,7 +177,7 @@ export async function voiceSpeak(
   input: { text: string; voice?: string; speed?: number },
   options: VoiceCallOptions,
 ): Promise<{ audio: string; mimeType: 'audio/mpeg' }> {
-  if (s.closingOrClosed) throw unavailable()
+  const facts = audioFacts(s)
   const { text, voice, speed } = input
   if (text.length < 1 || text.length > VOICE_SPEAK_MAX_CHARS)
     throw new VoiceError('too-large', 'the speech text is empty or too long')
@@ -179,7 +187,7 @@ export async function voiceSpeak(
     ...(voice ? { voice } : {}),
     ...(speed === undefined ? {} : { speed }),
   }
-  const audio = await voiceCall(s, 'speech', payload, VOICE_SPEECH_MAX_BASE64, options)
+  const audio = await voiceCall(s, facts, 'speech', payload, VOICE_SPEECH_MAX_BASE64, options)
   if (audio === '') throw providerFormat()
   return { audio, mimeType: 'audio/mpeg' }
 }
@@ -187,6 +195,12 @@ export async function voiceSpeak(
 type VoicePayload = { [key: string]: JsonValue }
 
 const unavailable = () => new VoiceError('unavailable', 'voice is unavailable on this route')
+/** An open session whose provider gives the voice payload facts; without them no voice call is served. */
+function audioFacts(s: HostSession): ProviderAudioFacts {
+  const facts = s.closingOrClosed ? undefined : s.d.provider.audio
+  if (!facts) throw unavailable()
+  return facts
+}
 const providerFormat = () =>
   new VoiceError('provider', 'the voice provider gave no usable answer', {
     providerCode: 'FORMAT',
@@ -196,6 +210,7 @@ const providerFormat = () =>
 /** One accounted payload call on the voice route's model with the role; returns the joined text. */
 function voiceCall(
   s: HostSession,
+  facts: ProviderAudioFacts,
   role: 'transcribe' | 'speech',
   payload: VoicePayload,
   maxText: number,
@@ -205,9 +220,9 @@ function voiceCall(
     const { route } = options
     const record = s.d.provider
       .models()
-      .find((m) => m.route === route && m.api === OPENAI_AUDIO_WIRE_API && m.audioRole === role)
+      .find((m) => m.route === route && m.api === VOICE_WIRE_API && m.audioRole === role)
     if (!record) throw unavailable()
-    const units = openAiAudioUnits(payload)
+    const units = facts.units(payload)
     if (units === undefined) throw new VoiceError('invalid-audio', 'the voice payload has no size')
     const label = role === 'speech' ? 'voice.speak' : 'voice.transcribe'
     const t = options.timeoutMs ?? VOICE_CALL_TIMEOUT_MS
@@ -320,11 +335,17 @@ async function collect(
       void iterator.return?.().catch(() => undefined)
     }
   } catch (error) {
-    failure = error instanceof VoiceError ? error : signal.aborted ? stopped() : providerFailure()
+    failure = error instanceof VoiceError ? error : signal.aborted ? stopped() : providerFailure(error)
   }
   if (!failure && !completed && !signal.aborted) failure = providerFormat()
   return { text, ...(usage ? { usage } : {}), completed, ...(failure ? { failure } : {}) }
 }
 
-const providerFailure = () =>
-  new VoiceError('provider', 'the voice provider failed', { providerCode: 'TRANSPORT', retryable: false })
+/** The wire keeps only TRANSPORT; the thrown error stays on `cause` for whoever logs the failure. */
+const providerFailure = (cause: unknown) =>
+  new VoiceError(
+    'provider',
+    'the voice provider failed',
+    { providerCode: 'TRANSPORT', retryable: false },
+    { cause },
+  )

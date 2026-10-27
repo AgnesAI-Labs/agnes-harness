@@ -39,7 +39,6 @@
     "./audit": "./src/audit.ts",
     "./codex-login": "./src/codex-login.ts",
     "./configuration": "./src/configuration.ts",
-    "./configuration-payload-only": "./src/configuration-payload-only.ts",
     "./sandbox-readiness-manager": "./src/sandbox-readiness-manager.ts",
     "./sandbox-seam": "./src/sandbox-seam.ts",
     "./session-workspace-runtime": "./src/session-workspace-runtime.ts",
