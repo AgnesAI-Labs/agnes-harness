@@ -213,11 +213,18 @@ export class Applications {
     ]
     // A missing/unresolvable plan cannot authorize a direct launch. Adoption remains usable.
     const resolveAgent = this.options.resolveAgent
+    // One at a time: the Host runs them serially anyway, and a burst of queued resolutions would
+    // hold every session open that arrives during the review behind the whole batch.
     const agentLaunches =
       includeLaunches && resolveAgent
-        ? (await Promise.all(refs.map((ref) => resolveAgent(profile, ref).catch(() => null)))).filter(
-            (plan) => plan !== null,
-          )
+        ? await (async () => {
+            const plans: AgentPlan[] = []
+            for (const ref of refs) {
+              const plan = await resolveAgent(profile, ref).catch(() => null)
+              if (plan !== null) plans.push(plan)
+            }
+            return plans
+          })()
         : undefined
     const pageRefs = new Set([
       ...(declaration.presentation?.navigation?.entries ?? []),
