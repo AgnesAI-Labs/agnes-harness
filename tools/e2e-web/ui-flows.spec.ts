@@ -794,7 +794,7 @@ test('Settings jobs session picker lists the same sessions as the sidebar', asyn
   await client.session.archive(ids[0]!, true)
   await page.reload()
   await sidebar(page)
-  const rows = await page.locator('.session-row').allTextContents()
+  const rows = await page.locator('.session-row .session-title').allTextContents()
   await settings(page)
   await page.getByTestId('settings-nav-background-jobs').click()
   await page.getByRole('button', { name: /^Session:/ }).click()
